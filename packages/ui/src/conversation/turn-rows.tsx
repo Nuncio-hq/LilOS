@@ -270,8 +270,13 @@ function LazyShell({
     }
     const el = ref.current;
     if (!el) return;
+    /* #554: notifications already in flight when the find session flips
+       lazyOn off can still land after disconnect and re-stub a row — find
+       would then miss text inside it for the whole session. */
+    let cancelled = false;
     const io = new IntersectionObserver(
       (entries) => {
+        if (cancelled) return;
         for (const en of entries) {
           if (en.isIntersecting) {
             /* ?stubHydrateMs= defers a born-stub's FIRST un-hold — the
@@ -310,6 +315,7 @@ function LazyShell({
     );
     io.observe(el);
     return () => {
+      cancelled = true;
       io.disconnect();
       if (hydrateTimer.current !== undefined) {
         clearTimeout(hydrateTimer.current);

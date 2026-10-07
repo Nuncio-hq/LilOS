@@ -88,6 +88,7 @@ import {
 } from "../lib/attachments";
 import { requestConnect } from "../lib/connect";
 import { FoldCache, type FoldInputs } from "../lib/conv-fold";
+import { DesktopFindBar } from "../lib/desktop-find";
 import {
   listHirableProfiles,
   removeEmployee,
@@ -1620,6 +1621,8 @@ export function DmPage() {
               replace: true,
             })
           }
+          /* #554: ⌘F over the conversation (desktop bridge; absent on web). */
+          findBar={<DesktopFindBar />}
           pending={pendingItems}
           reconnecting={reconnecting}
           onRemovePending={onRemovePending}
@@ -1699,9 +1702,13 @@ export function DmPage() {
     }
 
     threadEl = (
+      /* bg-background is not decorative here: on the desktop app the body is
+         transparent and the column would otherwise show the window's light
+         vibrancy backing under dark mode — the same surface treatment the
+         right panel and Focus thread pane already carry. */
       <div
         data-thread-panel
-        className="flex min-h-0 w-[420px] shrink-0 flex-col border-l xl:w-[460px]"
+        className="flex min-h-0 w-[420px] shrink-0 flex-col border-l bg-background xl:w-[460px]"
       >
         {historyNotice && (
           <div className="px-3 pt-2 sm:px-5">{historyNotice}</div>
@@ -1834,6 +1841,8 @@ export function DmPage() {
                 }
               : undefined
           }
+          /* #554: ⌘F over the conversation (desktop bridge; absent on web). */
+          findBar={<DesktopFindBar />}
         />
         {openQuestion && (
           <QuestionCard

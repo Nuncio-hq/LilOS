@@ -3,6 +3,19 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- #565 AC-3: no remote scripts; the page's only remote connections are
+         the loopback relay/harness endpoints it is configured with.
+         `unsafe-inline` covers the inline theme bootstrap below and the
+         vite dev preamble; `wasm-unsafe-eval` is shiki's oniguruma engine.
+         connect-src data:/blob: are the attachment pipeline — chips live on
+         blob: object URLs and sends fetch() them back to bytes. Remote
+         images stay click-to-load (#566) — img-src http(s) is for that
+         deliberate path only. IPv6 literals can't be expressed in a CSP
+         source list; loopback endpoints are named 127.0.0.1/localhost. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' data: blob: ws://127.0.0.1:* ws://localhost:* wss://127.0.0.1:* wss://localhost:* http://127.0.0.1:* http://localhost:* https://127.0.0.1:* https://localhost:*; img-src 'self' data: blob: http: https:; font-src 'self' data:; media-src 'self' blob: data:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'"
+    />
     <title>LilOS</title>
     <script>
       (() => { const t = localStorage.getItem("lilos-theme") ?? "system"

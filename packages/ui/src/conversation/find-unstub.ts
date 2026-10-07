@@ -17,10 +17,10 @@ import {
  * window and rows re-stub when it lapses. The chord is only observed,
  * never consumed: the browser's own find bar must still open.
  *
- * apps/desktop has no app-level find (Electron's editMenu role carries no
- * Find item, nothing calls `webContents.findInPage`), so this window-level
- * keydown path is the only one to hook — and it rides in packages/ui so
- * the prototype and apps/web share it.
+ * apps/desktop's own find bar (#554) pins the window for its whole find
+ * session via `setFindSessionOpen` — held rows stay findable while the
+ * bar is open — and the window-level chord listener stays as the
+ * fallback for platforms where the browser's own find owns the keys.
  */
 
 export const FIND_UNSTUB_MS = 10_000;
@@ -51,6 +51,10 @@ export const FIND_UNSTUB_NUDGE_PX = (() => {
 const listeners = new Set<() => void>();
 let active = false;
 let timer: ReturnType<typeof setTimeout> | undefined;
+/* #554: an app-level find UI (the Electron find bar) pins the window for
+   its whole find session — held rows stay mounted and findable while the
+   bar is open, instead of re-stubbing 10 s after the last chord. */
+let pinned = false;
 
 const emit = () => {
   for (const l of listeners) l();
@@ -63,6 +67,9 @@ function noteFindChord() {
   if (timer !== undefined) clearTimeout(timer);
   timer = setTimeout(() => {
     timer = undefined;
+    /* A pinned find session outlives the lapse — a chord mid-session
+       re-arms the window but must not un-mount the rows (#554). */
+    if (pinned) return;
     active = false;
     emit();
   }, windowMs);
@@ -96,8 +103,32 @@ function subscribe(cb: () => void): () => void {
       if (timer !== undefined) clearTimeout(timer);
       timer = undefined;
       active = false;
+      /* A pinned find session dies with its last lazy thread — re-opening
+         must mount rows again, not early-return on a stale flag (#554). */
+      pinned = false;
     }
   };
+}
+
+/** Pin (or release) the un-stub window for an app-level find session
+    (#554). Opening mounts every held row and keeps them mounted; closing
+    hands the session back to the ordinary lapse — the anchor then
+    re-stubs at wherever the reader's find jump left them. */
+export function setFindSessionOpen(open: boolean): void {
+  if (open === pinned) return;
+  pinned = open;
+  if (open) {
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      timer = undefined;
+    }
+    if (!active) {
+      active = true;
+      emit();
+    }
+  } else {
+    noteFindChord();
+  }
 }
 
 const noopSubscribe = () => () => {};

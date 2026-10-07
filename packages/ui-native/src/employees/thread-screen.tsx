@@ -22,6 +22,7 @@ import { threadBottomInset } from "./thread-layout";
 import { transcriptItems } from "./transcript-items";
 import type {
   ContextUsage,
+  GrantOption,
   PullRequestRef,
   SessionState,
   SubagentRow,
@@ -43,6 +44,7 @@ export function ThreadScreen({
   modelUnavailable,
   onApprove,
   onDeny,
+  onGrant,
   onAnswer,
   onSend,
   onStop,
@@ -56,6 +58,8 @@ export function ThreadScreen({
   prefill,
   unreachableNote,
   stale,
+  asksStale,
+  answerHint,
 }: {
   t: ThreadDetail;
   /** Omit when the engine reports no models — the composer's chip hides. */
@@ -66,6 +70,9 @@ export function ThreadScreen({
   modelUnavailable?: boolean;
   onApprove: (id: string) => void;
   onDeny: (id: string) => void;
+  /** #601: the tapped option on an approval card — one of the ask's own
+      grantOptions (Once / This session / Always / Deny). */
+  onGrant?: (id: string, option: GrantOption) => void;
   /** #420: a question ask's answer — a question's Cancel rides `onDeny`. */
   onAnswer?: (id: string, answer: QuestionAnswer) => void;
   onSend: (text: string) => void;
@@ -93,6 +100,11 @@ export function ThreadScreen({
      the header degrades to "Last seen working" and Stop renders disabled
      (a press can't be delivered until the Mac is back). */
   stale?: boolean;
+  /** #652: the Mac is unreachable — open ask cards (approval, plan,
+     question) render their pills disabled; `answerHint` is the card's
+     "Answer once <Mac> is back" line. Any state, not only `stale`. */
+  asksStale?: boolean;
+  answerHint?: string;
 }) {
   const insets = useSafeAreaInsets();
   const scroller = useRef<ScrollView>(null);
@@ -204,11 +216,14 @@ export function ThreadScreen({
                   tone={t.employee.tone}
                   onApprove={onApprove}
                   onDeny={onDeny}
+                  onGrant={onGrant}
                   onAnswer={onAnswer}
                   onOpenSubagent={onOpenSubagent}
                   onOpenSubagents={onOpenSubagents}
                   onPlan={onPlan}
                   onOpenPlan={onOpenPlan}
+                  stale={asksStale}
+                  answerHint={answerHint}
                 />
               )}
             </Rise>
@@ -223,7 +238,9 @@ export function ThreadScreen({
           )}
           {unreachableNote && (
             <View
-              className="flex-row items-center justify-center gap-1.5"
+              /* #652 AC-3: its own 8px of breathing room above — flush
+                 against the last row it read as that card's footer. */
+              className="flex-row items-center justify-center gap-1.5 pt-2"
               onLayout={(e) => setNoteHeight(e.nativeEvent.layout.height)}
             >
               <Icon
