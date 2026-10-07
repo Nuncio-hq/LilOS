@@ -79,3 +79,8 @@ contextBridge.exposeInMainWorld("lilos", {
       ipcRenderer.removeListener("lilos:open-conversation", listener);
   },
 });
+
+/* #674 AC-2: the renderer's `online` event is the "network came back"
+   signal (Electron's main-process `net` is poll-only — no event); main may
+   run an early update check off it, rate-limited there. */
+window.addEventListener("online", () => ipcRenderer.send("lilos:online"));
