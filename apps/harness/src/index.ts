@@ -308,7 +308,7 @@ const wakeWatch = watchWake({
 
 // Client session feed: read-only engine-protocol surface for apps (the app
 // never talks to the engine itself — describe/events.since + live events).
-const feed = createFeedHandler(harness);
+const feed = createFeedHandler(harness, config.feedDelayMs);
 // Host API on the same loopback port (issue #113): POST /host, Bearer = the
 // install token. The /ws feed authenticates the same credential (#564) —
 // read-only still broadcasts live agent output, so nothing here is open.
