@@ -62,6 +62,11 @@ export async function allowAll(page: Page) {
  * waits that outlive one card (a queued next turn can ask again, #298).
  * `until` is the caller's own expectation (e.g. `expectSettled(turn)`); it
  * is re-awaited at the end so its own failure surfaces.
+ * #621: the loop lasts as long as `until` is pending — the old fixed guard
+ * budget gave up after ~6s of no-card, and any ask that opened later
+ * (request.opened → fold → paint outrunning it on a loaded box) parked the
+ * turn on an approval nobody answered: the settle wait then burned its
+ * whole timeout.
  */
 export async function allowAllWhile(page: Page, until: Promise<unknown>) {
   let done = false;
@@ -70,10 +75,10 @@ export async function allowAllWhile(page: Page, until: Promise<unknown>) {
     .finally(() => {
       done = true;
     });
-  for (let guard = 0; guard < 24 && !done; guard++) {
+  while (!done) {
     const card = openCard(page);
     try {
-      await card.waitFor({ state: "visible", timeout: 250 });
+      await card.waitFor({ state: "visible", timeout: 500 });
     } catch {
       continue; // no card open right now — poll until `until` lands
     }

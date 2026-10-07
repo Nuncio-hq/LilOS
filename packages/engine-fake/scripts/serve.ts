@@ -4,6 +4,7 @@
  *
  *   bun packages/engine-fake/scripts/serve.ts [--port N] [--tick MS] [--no-steer]
  *                                        [--watch-stdin] [--tag MARKER]
+ *                                        [--ask-open-delay MS]
  *
  * Serves the protocol at ws://127.0.0.1:PORT/ws and prints
  * `LISTENING ws://...` on stdout once up. `--no-steer` serves an engine that
@@ -38,6 +39,10 @@ const cap = (id: string) => !noCap.has(id);
 
 const engine = new FakeEngine({
   tick: arg("tick", 25),
+  /* #621 e2e hook: delay each approval's `request.opened` — mirrors the
+     open→paint lag a loaded box adds before the card, so ask-driving
+     helpers can be exercised against a late card. 0 opens at once. */
+  askOpenDelayMs: arg("ask-open-delay", 0),
   capabilities: {
     steer: !flag("no-steer") && cap("steer"),
     subagents: cap("subagents"),

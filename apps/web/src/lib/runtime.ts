@@ -46,7 +46,11 @@ export let engine: EngineClient;
  */
 export async function bootRuntime(cfg: LilosConfig): Promise<void> {
   relay = new RelayClient({ url: cfg.relayWs, token: cfg.relayToken });
-  engine = new EngineClient({ url: cfg.engineWs, token: cfg.relayToken });
+  engine = new EngineClient({
+    url: cfg.engineWs,
+    token: cfg.relayToken,
+    feedHold: cfg.feedHold,
+  });
   // #118: the signed-in human's profile is relay-owned — mirror it into the
   // identity atoms; the OS full name prefills the fields the relay left empty.
   relay.profile.listen((s) => profile.set(s));
