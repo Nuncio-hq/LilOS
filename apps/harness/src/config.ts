@@ -58,6 +58,11 @@ export interface HarnessConfig {
       tail (the cross-socket race that rendered a reply twice). `0`/unset =
       send immediately. */
   feedDelayMs: number;
+  /** #621: e2e hook (`LILOS_ASK_OPEN_DELAY_MS`) — hold each approval
+      before `request.opened` emits in engine-fake, so approval-driving
+      helpers provably survive a card that paints late on a loaded box.
+      `0`/unset = open immediately. */
+  askOpenDelayMs: number;
 }
 
 const DEFAULT_RELAY_URL = "ws://127.0.0.1:4577/ws";
@@ -130,6 +135,9 @@ export function resolveHarnessConfig(
     sessionIdleMs: Number(env.LILOS_SESSION_IDLE_MINUTES ?? 30) * 60_000,
     bindDelayMs: Number(env.LILOS_BIND_DELAY_MS ?? 0) || 0,
     feedDelayMs: Number(env.LILOS_FEED_DELAY_MS ?? 0) || 0,
+    /* #621 e2e hook: hold each approval's `request.opened` in engine-fake
+       (argv, not env — the engine spawn scrubs LILOS_*). */
+    askOpenDelayMs: Number(env.LILOS_ASK_OPEN_DELAY_MS ?? 0) || 0,
   };
 }
 
@@ -151,6 +159,9 @@ export function launcherFor(
           : {}),
         ...(config.engine.tag ? { tag: config.engine.tag } : {}),
         ...(serveBins.fake ? { serveBin: serveBins.fake } : {}),
+        ...(config.askOpenDelayMs
+          ? { askOpenDelayMs: config.askOpenDelayMs }
+          : {}),
         log,
       });
     case "hermes":
