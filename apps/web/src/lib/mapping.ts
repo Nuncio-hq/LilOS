@@ -460,9 +460,20 @@ export function mergeTurns(
         !used.has(x) &&
         !x.agentInitiated &&
         r.from === employeeId &&
-        x.text.trim() &&
-        x.text.trim() === r.text.trim() &&
-        (refPos.get(x) ?? -1) < ri,
+        (refPos.get(x) ?? -1) < ri &&
+        r.text.trim() !== "" &&
+        (x.text.trim() === r.text.trim() ||
+          /* #659: the harness posts the answer row — and flips the
+             conversation back to `idle` — the instant its turn.completed
+             lands, while the model's last turn.delta frames can still be
+             in flight on the feed socket. The row is this turn's answer
+             even though the card has only streamed a prefix of it (or
+             nothing yet), so the exact match misses and row + card both
+             render. The model's live turn claims it early; the in-flight
+             deltas can only converge to the posted text. `model.live`,
+             not the #327 `liveTurn`: conv.state is already `idle` in this
+             window — gating on it would make the claim unreachable. */
+          (x === model.live && r.text.trim().startsWith(x.text.trim()))),
     );
     if (!t) {
       blocks.push([r]);
