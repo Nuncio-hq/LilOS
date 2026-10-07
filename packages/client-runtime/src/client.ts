@@ -1486,15 +1486,53 @@ export class RelayClient {
 
   /** Re-pull one channel's conversations after a subscribe's replay window. */
   private async refreshChannelConversations(channelId: string): Promise<void> {
-    const { conversations } = await this.request<{
+    /* #666: `conversation.updated` rides the channel feed only — a frame
+       emitted between the directory read and this subscribe going live
+       (a reload landing mid-turn misses the turn-end patch) is lost for
+       good, and the summary rows embed their own copy of the
+       conversation, so a DM row's turnFailure/turnStopped/state would
+       stay stale forever. Re-read the channel's summaries too, not just
+       its conversations: also covers a conv opened in the gap and drops
+       rows whose conv is gone. The summaries pull is newer than every
+       scoped fetch already in flight for this channel — invalidate
+       their tickets so an older response can't roll the fresh rows back
+       (#571 ticket rule). Each heal applies as its own response lands —
+       a hanging pull must not hold the other one back. */
+    const healConversations = this.request<{
       conversations: Conversation[];
-    }>("conversations.list", { channelId, includeArchived: true });
-    const rest = this.conversations
-      .get()
-      .filter((c) => c.channelId !== channelId);
-    this.conversations.set(
-      [...rest, ...conversations].sort((a, b) => a.createdAt - b.createdAt),
+    }>("conversations.list", { channelId, includeArchived: true }).then(
+      ({ conversations }) => {
+        const rest = this.conversations
+          .get()
+          .filter((c) => c.channelId !== channelId);
+        this.conversations.set(
+          [...rest, ...conversations].sort((a, b) => a.createdAt - b.createdAt),
+        );
+      },
     );
+    const healSummaries = this.request<{
+      summaries: ConversationSummary[];
+    }>("conversations.summaries", { channelId, includeArchived: true }).then(
+      ({ summaries }) => {
+        const channelConvs = new Set(
+          this.conversations
+            .get()
+            .filter((c) => c.channelId === channelId)
+            .map((c) => c.id),
+        );
+        for (const convId of [...this.summaryTickets.keys()])
+          if (channelConvs.has(convId)) this.summaryTickets.delete(convId);
+        const rest = this.conversationSummaries
+          .get()
+          .filter((s) => s.conversation.channelId !== channelId);
+        this.conversationSummaries.set(
+          [...rest, ...summaries].sort(
+            (a, b) => a.conversation.createdAt - b.conversation.createdAt,
+          ),
+        );
+      },
+    );
+    await Promise.allSettled([healConversations, healSummaries]);
   }
 
   /** Insert or replace an ask, keeping the atom's `createdAt` order. */

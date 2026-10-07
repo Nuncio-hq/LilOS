@@ -1406,6 +1406,76 @@ describe("#571 incremental conversation summaries", () => {
     expect(s.messageCount).toBe(1);
   });
 
+  /* #666: `conversation.updated` rides the channel subscription only — a
+     frame emitted between the directory read and the subscribe going live
+     is lost for good, and nothing re-reads the summary's embedded
+     conversation. The post-sync conversations re-pull must heal
+     `s.conversation` too, or a reloaded DM row keeps its stale copy
+     forever — the ac-583 dark-leg flake: a finished turn's `turnFailure`
+     never lands on the row. */
+  it("channel.synced heals the summary's embedded conversation (#666)", async () => {
+    const staleConv = {
+      id: "conv1",
+      channelId: "ch1",
+      rootMessageId: "conv1-root",
+      engineRef: "sess_1",
+      state: "active",
+      title: "conv1",
+      titleSource: "auto",
+      archived: false,
+      deliveredSeq: 0,
+      createdAt: 1,
+    };
+    const freshConv = {
+      ...staleConv,
+      state: "idle",
+      turnFailure: { kind: "model", text: "engine-fake: scripted failure" },
+    };
+    const { client, socket } = await connectWithSummaries([
+      mkSummary("conv1", { conversation: staleConv }),
+    ]);
+
+    /* Subscribe → synced; the missed conversation.updated is never
+       emitted — only the re-pull's fresh row can heal the copy. */
+    client.channelMessages("ch1");
+    socket.respondTo("channel.subscribe", { channel: { id: "ch1" } });
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "channel.synced",
+      params: { channelId: "ch1", lastSeq: 0 },
+    });
+    socket.respondTo("conversations.list", {
+      conversations: [
+        freshConv,
+        { ...staleConv, id: "conv2", rootMessageId: "conv2-root" },
+      ],
+    });
+    /* The channel-scoped summaries re-pull carries the fresh row AND a
+       conv opened inside the same gap (no row at all before). */
+    socket.respondTo("conversations.summaries", {
+      summaries: [
+        mkSummary("conv1", { conversation: freshConv }),
+        mkSummary("conv2"),
+      ],
+    });
+    await flush();
+    const [s] = client.conversationSummaries.get();
+    expect(s.conversation.state).toBe("idle");
+    expect(s.conversation.turnFailure?.text).toBe(
+      "engine-fake: scripted failure",
+    );
+    expect(
+      client.conversationSummaries.get().map((x) => x.conversation.id),
+    ).toEqual(["conv1", "conv2"]);
+    /* One channel-scoped pull — no per-conversation fetches. */
+    const reqs = summaryRequests(socket);
+    expect(reqs).toHaveLength(1);
+    expect(reqs[0].params).toEqual({
+      channelId: "ch1",
+      includeArchived: true,
+    });
+  });
+
   /* The one race a ticket does guard: two scoped fetches overlap because
      relay handlers interleave at awaits — the older response landing last
      must not roll the row back. */

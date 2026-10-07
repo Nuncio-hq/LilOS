@@ -1,6 +1,7 @@
 import {
   type DescribeResult,
   EngineEvent,
+  type EngineEventType,
   EVENT_METHOD,
   type EventsSinceResult,
   type OpenRequest,
@@ -48,6 +49,13 @@ export interface EngineClientOptions {
   reconnectMaxDelayMs?: number;
   connectTimeoutMs?: number;
   requestTimeoutMs?: number;
+  /* #685 test knob — inert when unset: hold feed events of `type` for `ms`
+     before dispatch, queueing the session's tail so seq order survives. A
+     held `turn.completed` reproduces the loaded-runner reorder where the
+     relay's `message.created` (the turn's answer post) reaches the client
+     while the model still shows the turn live — the settle→claim window
+     the Workbench tab-hold race rides. */
+  feedHold?: { type: EngineEventType; ms: number };
   onFatalError?: (error: EngineError) => void;
 }
 
@@ -180,6 +188,8 @@ export class EngineClient {
       if (entry.timer) clearTimeout(entry.timer);
     }
     this.resyncRetries.clear();
+    for (const { timer } of this.heldTails.values()) clearTimeout(timer);
+    this.heldTails.clear();
     this.socket?.close();
     this.dropSocket(new EngineError("engine socket closed", "socket_closed"));
     this.connectPromise = undefined;
@@ -369,7 +379,36 @@ export class EngineClient {
     this.dispatchEvent(event.data);
   }
 
+  /* `feedHold` (#685): events of the held type park here — the session's
+     later events queue behind them so a flush still applies in seq order. */
+  private readonly heldTails = new Map<
+    string,
+    { timer: ReturnType<typeof setTimeout>; queued: EngineEvent[] }
+  >();
+
   private dispatchEvent(event: EngineEvent): void {
+    const hold = this.options.feedHold;
+    if (hold && hold.ms > 0) {
+      const tail = this.heldTails.get(event.sessionId);
+      if (tail) {
+        tail.queued.push(event);
+        return;
+      }
+      if (event.type === hold.type) {
+        const timer = setTimeout(() => {
+          const held = this.heldTails.get(event.sessionId);
+          this.heldTails.delete(event.sessionId);
+          this.dispatchNow(event);
+          for (const e of held?.queued ?? []) this.dispatchNow(e);
+        }, hold.ms);
+        this.heldTails.set(event.sessionId, { timer, queued: [] });
+        return;
+      }
+    }
+    this.dispatchNow(event);
+  }
+
+  private dispatchNow(event: EngineEvent): void {
     const feed = this.feeds.get(event.sessionId);
     if (feed) this.applyFeedEvent(feed, event);
     for (const fn of this.listeners) fn(event);

@@ -122,9 +122,9 @@ describe("question-card port fit (FIX #515 r5)", () => {
     const cap = Number.parseFloat(list.style.maxHeight);
     expect(Number.isFinite(cap)).toBe(true);
     /* Cap can only give the list what the port leaves the card's chrome —
-       whole card ≤ port is the invariant (the 96px floor aside). */
-    expect(cap).toBeLessThanOrEqual(PORT_H - 16 - CHROME);
-    expect(CHROME + cap).toBeLessThanOrEqual(PORT_H - 16);
+       whole card ≤ port is the invariant (the 80px floor aside). */
+    expect(cap).toBeLessThanOrEqual(PORT_H - 24 - CHROME);
+    expect(CHROME + cap).toBeLessThanOrEqual(PORT_H - 24);
   });
 
   test("the question arriving after an answer lifts actions into the port", () => {
@@ -160,12 +160,12 @@ describe("question-card port fit (FIX #515 r5)", () => {
 
   test("questionOptionCap: cap = port minus chrome, over only on overflow", () => {
     expect(questionOptionCap(360, 210, 441)).toEqual({
-      cap: 215,
+      cap: 207,
       over: true,
     });
     /* Fits already → no cap needed (over=false lets the list go uncapped). */
     expect(questionOptionCap(180, 210, 441).over).toBe(false);
-    /* Floor: chrome alone nearly fills the port → still ≥ one row + peek. */
-    expect(questionOptionCap(360, 600, 441).cap).toBe(96);
+    /* Floor: chrome alone nearly fills the port → still ≥ one full row. */
+    expect(questionOptionCap(360, 600, 441).cap).toBe(80);
   });
 });
