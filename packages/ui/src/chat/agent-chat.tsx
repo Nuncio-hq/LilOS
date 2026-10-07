@@ -6,6 +6,7 @@ import {
   CheckIcon,
   CircleStopIcon,
   ClockIcon,
+  LoaderCircleIcon,
   PencilIcon,
   Trash2Icon,
 } from "lucide-react";
@@ -178,6 +179,27 @@ export function NotSentTray({
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+/* #557: the relay socket dropped and the client is redialing — a thin line
+   over the composer so a send typed in the window doesn't read as lost: it
+   waits and goes out on reconnect. Amber, the "waiting" family color. The
+   same line sits above the composer in the thread panel and in Focus,
+   where the sidebar status row is hidden. */
+export function ReconnectingLine() {
+  return (
+    <div
+      className="mb-1 flex items-center gap-1.5 px-2 text-amber-800 text-xs dark:text-amber-300"
+      data-reconnecting
+      role="status"
+    >
+      <LoaderCircleIcon className="size-3 animate-spin" />
+      <span className="font-medium">Reconnecting…</span>
+      <span className="text-amber-700/80 dark:text-amber-300/70">
+        sends go out when it&apos;s back
+      </span>
     </div>
   );
 }

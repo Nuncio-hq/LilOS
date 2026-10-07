@@ -28,6 +28,7 @@ import {
 } from "electron";
 import { diskVersionStore, helperServiceControl } from "./control";
 import { appMenuTemplate } from "./menu";
+import { appDocumentUrl, guardWindow } from "./navigation-guard";
 import { postDesktopNotification } from "./notify";
 import { checkForUpdate } from "./update";
 import {
@@ -406,6 +407,14 @@ function appUrl(): { file: string } | { url: string } | undefined {
 
 let mainWindow: BrowserWindow | undefined;
 
+/* #565: rendered links (agent markdown can carry any scheme) only leave the
+   app through this path — the scheme filter lives in navigation-guard. */
+const openInBrowser = (url: string) => {
+  void shell.openExternal(url).catch((e) => {
+    console.warn(`[lilos] openExternal failed for ${url}:`, e);
+  });
+};
+
 /* #132 AC-1: ⌘, / LilOS → Settings… asks the app window to open its
    Settings screen. When no app window exists yet (the approval gate is up),
    one opens first and the request lands after it finishes loading. */
@@ -484,11 +493,9 @@ function createAppWindow(): void {
   win.on("closed", () => {
     if (mainWindow === win) mainWindow = undefined;
   });
-  // Never open a new window; external links go to the browser.
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url);
-    return { action: "deny" };
-  });
+  // #565: never open a new window, never navigate off the app's own origin;
+  // https:/http:/mailto: links open in the user's browser instead.
+  guardWindow(win.webContents, appDocumentUrl(target), openInBrowser);
   if ("file" in target) void win.loadFile(target.file);
   else void win.loadURL(target.url);
 }
@@ -501,18 +508,29 @@ function createStatusWindow(): void {
     statusWin.focus();
     return;
   }
+  const statusFile = join(UI_DIR, "index.html");
   statusWin = new BrowserWindow({
     width: 760,
     height: 560,
     title: "LilOS Status",
     ...nativeWindowChrome("status"),
-    webPreferences: { preload: join(UI_DIR, "preload.cjs") },
+    webPreferences: {
+      preload: join(UI_DIR, "preload.cjs"),
+      contextIsolation: true,
+      sandbox: true,
+    },
   });
   watchWindowChrome(statusWin);
   statusWin.on("closed", () => {
     statusWin = undefined;
   });
-  void statusWin.loadFile(join(UI_DIR, "index.html"));
+  // #565: the status page has no links, but it gets the same guard anyway.
+  guardWindow(
+    statusWin.webContents,
+    appDocumentUrl({ file: statusFile }),
+    openInBrowser,
+  );
+  void statusWin.loadFile(statusFile);
 }
 
 /* -------------------------------- app ----------------------------------- */
