@@ -12,6 +12,7 @@ import { SectionTitle } from "../components/bits";
 import { Icon } from "../components/icon";
 import { Orb, type OrbState, type OrbTone } from "../components/orb";
 import { Pulse, plain } from "../components/prose";
+import { whatLine } from "./approval-copy";
 import { Composer } from "./composer";
 import { DM_GROUPS } from "./dm-groups";
 import { LifePill } from "./life-pill";
@@ -159,7 +160,9 @@ function ThreadRow({
   const body = failed
     ? (t.failure?.text ?? "Turn failed")
     : needs
-      ? (t.approval?.reason ?? plain(t.preview ?? ""))
+      ? t.approval
+        ? whatLine(t.approval)
+        : plain(t.preview ?? "")
       : t.state === "working"
         ? (t.live ?? plain(t.preview ?? ""))
         : plain(t.preview ?? t.prompt);
