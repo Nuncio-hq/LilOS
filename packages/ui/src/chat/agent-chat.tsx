@@ -19,6 +19,8 @@ import {
   TooltipTrigger,
 } from "../components/ui/tooltip";
 import { cn } from "../lib/utils";
+import type { AttachedFile } from "../types";
+import { AttachmentChips } from "./attachment-chips";
 
 /* Steer is a declared engine capability (Engine protocol: session.steer), not a constant: the host
    reads describe().capabilities once and passes `steer` to ThreadView/FocusView. A message sent while
@@ -214,8 +216,12 @@ export function ReconnectingLine() {
    tray. Amber: the "waiting on the turn" family (the landed steer rows share it).
    Rows are bare strings, or `{text, removable}` (#315): the engine already holds an
    accepted-but-unlanded steer (`removable: false`), so its row lists in the tray but
-   Edit/Remove stay hidden. */
-export type QueuedTrayItem = string | { text: string; removable?: boolean };
+   Edit/Remove stay hidden. #676: `{files}` carries the send's attachments — an image
+   reply queued behind a turn must still show its chip, or it reads as lost until the
+   drain. */
+export type QueuedTrayItem =
+  | string
+  | { text: string; removable?: boolean; files?: AttachedFile[] };
 
 /** Item text for callers that take the row back (e.g. Edit → composer). */
 export const queuedItemText = (item: QueuedTrayItem): string =>
@@ -223,6 +229,9 @@ export const queuedItemText = (item: QueuedTrayItem): string =>
 
 const queuedItemRemovable = (item: QueuedTrayItem): boolean =>
   typeof item === "string" || item.removable !== false;
+
+const queuedItemFiles = (item: QueuedTrayItem): AttachedFile[] | undefined =>
+  typeof item === "string" ? undefined : item.files;
 
 export function QueuedTray({
   items,
@@ -260,59 +269,65 @@ export function QueuedTray({
           : `${one ? "Runs" : "Run in order"} when this turn ends`}
       </div>
       <ul>
-        {items.map((q, i) => (
-          <li key={i} className="group/q flex items-center gap-2 py-0.5">
-            <span className="shrink-0 font-mono text-[10px] text-amber-700">
-              {i + 1}
-            </span>
-            <span
-              className="min-w-0 flex-1 truncate text-amber-950"
-              title={plain(queuedItemText(q))}
-            >
-              {plain(queuedItemText(q))}
-            </span>
-            <TooltipProvider>
-              {onEdit && queuedItemRemovable(q) && (
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <button
-                        type="button"
-                        onClick={() => onEdit(i)}
-                        aria-label="Edit"
-                        data-queued-edit={i}
-                        className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:bg-amber-100 hover:text-amber-900 dark:text-amber-300 dark:hover:text-amber-900"
-                      />
-                    }
-                  >
-                    <PencilIcon className="size-3.5" />
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    Edit · moves it back to the box
-                  </TooltipContent>
-                </Tooltip>
-              )}
-              {onRemove && queuedItemRemovable(q) && (
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <button
-                        type="button"
-                        onClick={() => onRemove(i)}
-                        aria-label="Remove"
-                        data-queued-remove={i}
-                        className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600 dark:text-amber-300 dark:hover:text-red-900"
-                      />
-                    }
-                  >
-                    <Trash2Icon className="size-3.5" />
-                  </TooltipTrigger>
-                  <TooltipContent>Remove</TooltipContent>
-                </Tooltip>
-              )}
-            </TooltipProvider>
-          </li>
-        ))}
+        {items.map((q, i) => {
+          const files = queuedItemFiles(q);
+          return (
+            <li key={i} className="group/q flex items-center gap-2 py-0.5">
+              <span className="shrink-0 font-mono text-[10px] text-amber-700">
+                {i + 1}
+              </span>
+              <div className="min-w-0 flex-1">
+                <span
+                  className="block truncate text-amber-950"
+                  title={plain(queuedItemText(q))}
+                >
+                  {plain(queuedItemText(q))}
+                </span>
+                {files && <AttachmentChips files={files} />}
+              </div>
+              <TooltipProvider>
+                {onEdit && queuedItemRemovable(q) && (
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <button
+                          type="button"
+                          onClick={() => onEdit(i)}
+                          aria-label="Edit"
+                          data-queued-edit={i}
+                          className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:bg-amber-100 hover:text-amber-900 dark:text-amber-300 dark:hover:text-amber-900"
+                        />
+                      }
+                    >
+                      <PencilIcon className="size-3.5" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      Edit · moves it back to the box
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+                {onRemove && queuedItemRemovable(q) && (
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <button
+                          type="button"
+                          onClick={() => onRemove(i)}
+                          aria-label="Remove"
+                          data-queued-remove={i}
+                          className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600 dark:text-amber-300 dark:hover:text-red-900"
+                        />
+                      }
+                    >
+                      <Trash2Icon className="size-3.5" />
+                    </TooltipTrigger>
+                    <TooltipContent>Remove</TooltipContent>
+                  </Tooltip>
+                )}
+              </TooltipProvider>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
