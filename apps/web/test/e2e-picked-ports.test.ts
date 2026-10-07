@@ -11,8 +11,8 @@
 
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { createServer } from "node:net";
 import type { AddressInfo } from "node:net";
+import { createServer } from "node:net";
 import { describe, expect, it } from "vitest";
 import { freePort, pickPorts } from "../../../e2e/helpers/stack";
 
