@@ -1,6 +1,6 @@
 import { type AppClient, RelayError } from "@lilos/client-runtime";
 import type { Ask } from "@lilos/contracts/app";
-import type { ApprovalOutcome } from "@lilos/contracts/engine";
+import type { ApprovalOption, ApprovalOutcome } from "@lilos/contracts/engine";
 import * as Haptics from "expo-haptics";
 import { Alert } from "react-native";
 import { $asks } from "./dm-store";
@@ -13,22 +13,47 @@ import { describeError } from "./mapping";
    back in the shared atoms so every surface (thread card, Activity sheet,
    Needs-you accessory, DM grouping) folds within one update. */
 
-/** yes/no -> the wire outcome this ask's kind accepts. A question can't be
-    approved without free text, so its Approve pill hides and this returns
-    undefined — decide() then refuses rather than shipping a bad respond. */
-export function askOutcome(
+/* #601: the phone sends the option tapped — the ask's own
+   `request.options` list is the boundary, like the Mac card (contracts:
+   ApprovalOption). `outcomeAllowed` refuses a respond the ask never
+   offered; `primaryOutcome` is the one-tap surfaces' default (the ask's
+   first non-deny option). */
+
+/** True when `outcome` is an answer this ask actually accepts. */
+export function outcomeAllowed(
   ask: Pick<Ask, "request">,
-  approved: boolean,
-): ApprovalOutcome | undefined {
-  const kind = ask.request.kind;
-  if (approved) {
-    if (kind === "approval") return "once";
-    if (kind === "plan") return "approve";
-    return undefined;
+  outcome: ApprovalOutcome,
+): boolean {
+  const r = ask.request;
+  if (r.kind === "approval") {
+    return (
+      r.options.includes(outcome as ApprovalOption) || outcome === "cancel"
+    );
   }
-  if (kind === "approval") return "deny";
-  if (kind === "plan") return "reject";
+  if (r.kind === "plan") {
+    return (
+      outcome === "approve" || outcome === "reject" || outcome === "change"
+    );
+  }
+  return outcome === "answer" || outcome === "cancel";
+}
+
+/** The outcome a one-tap Approve lands — the ask's first non-deny option
+   (almost always Once); a deny-only ask denies. */
+export function primaryOutcome(ask: Pick<Ask, "request">): ApprovalOutcome {
+  const r = ask.request;
+  if (r.kind === "approval") {
+    return r.options.find((o) => o !== "deny") ?? "deny";
+  }
+  if (r.kind === "plan") return "approve";
   return "cancel";
+}
+
+/** The outcome a "no" tap sends — Deny / Reject / Cancel by kind (a
+    question's Skip is a cancel, a plan's Deny is a reject). */
+export function negativeOutcome(ask: Pick<Ask, "request">): ApprovalOutcome {
+  const k = ask.request.kind;
+  return k === "approval" ? "deny" : k === "plan" ? "reject" : "cancel";
 }
 
 /** The wire shape decide needs — an AppClient satisfies it. */
@@ -159,19 +184,24 @@ export async function answerPlanChange(
 }
 
 /**
- * Approve or deny one ask. Fires the decide haptic on the tap, sends
- * asks.respond, then folds the resolved ask into the stores. An ask already
- * answered elsewhere (Mac or an earlier tap) is "done", never an error.
+ * Answer one ask with the option the user tapped — for an approval that is
+ * one of the ask's own `options` (Once / This session / Always / Deny);
+ * plans take approve/reject, questions answer/cancel. Fires the decide
+ * haptic on the tap, sends asks.respond, then folds the resolved ask into
+ * the stores. An ask already answered elsewhere (Mac or an earlier tap) is
+ * "done", never an error.
  */
 export async function decide(
   client: DecideClient,
   askId: string,
-  approved: boolean,
+  outcome: ApprovalOutcome,
 ): Promise<void> {
   if (inFlight.has(askId)) return;
   inFlight.add(askId);
+  const granted =
+    outcome !== "deny" && outcome !== "reject" && outcome !== "cancel";
   void Haptics.notificationAsync(
-    approved
+    granted
       ? Haptics.NotificationFeedbackType.Success
       : Haptics.NotificationFeedbackType.Warning,
   );
@@ -179,8 +209,9 @@ export async function decide(
     const ask = await findAsk(client, askId);
     // Off the relay's list = already answered, here or on another device.
     if (!ask) return;
-    const outcome = askOutcome(ask, approved);
-    if (!outcome) return;
+    // #601: never ship an outcome the ask didn't offer — a stale surface
+    // renders from last-known asks and could tap a grant this ask lacks.
+    if (!outcomeAllowed(ask, outcome)) return;
     try {
       const res = await client.request<{ ask: Ask }>("asks.respond", {
         askId: ask.id,
