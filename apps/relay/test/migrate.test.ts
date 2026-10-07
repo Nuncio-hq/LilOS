@@ -57,8 +57,9 @@ describe("relay migrations", () => {
     // adds #106's access level on conversations; v19 adds #419's
     // turn_failure card on conversations; v20 adds #346's life column;
     // v21 adds #571's (conversation_id, seq) index and retires the
-    // conversation_id-only one it's a strict prefix of.
-    expect(out.version).toBe(21);
+    // conversation_id-only one it's a strict prefix of; v22 adds #583's
+    // turn_stopped word; v23 adds #583's bg_jobs count.
+    expect(out.version).toBe(23);
     expect(out.msgCols).toContain("dropped");
     expect(out.msgCols).toContain("removed");
     expect(out.msgCols).toContain("claimed");
@@ -72,6 +73,8 @@ describe("relay migrations", () => {
     expect(out.colsAt7).toContain("access");
     expect(out.colsAt7).toContain("turn_failure");
     expect(out.colsAt7).toContain("life");
+    expect(out.colsAt7).toContain("turn_stopped");
+    expect(out.colsAt7).toContain("bg_jobs");
     expect(out.tables).toContain("settings");
     expect(out.tables).toContain("profile");
     expect(out.tables).toContain("messages_fts");

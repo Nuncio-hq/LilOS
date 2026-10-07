@@ -187,9 +187,9 @@ export function EditEmployeeDialog({
             ))}
           {showEngine && (
             <div className="rounded-lg border bg-muted/30 p-3 text-muted-foreground text-xs">
-              Applies to new chats — a chat already running keeps the persona
-              and model it started with. The per-chat model picker still
-              overrides the default.
+              Applies to new threads — a thread already running keeps the
+              persona and model it started with. The per-thread model picker
+              still overrides the default.
             </div>
           )}
           {updatable.length > 0 && !canEditEngine && (
@@ -240,10 +240,11 @@ export function EditEmployeeDialog({
                   Remove {e.name} from the company?
                 </ConfirmationTitle>
                 <div className="space-y-1 text-muted-foreground text-xs">
+                  {/* #588 AC-1: only losses that exist today — there are no
+                      channel memberships to warn about (DMs only). */}
                   <div>
                     <span className="font-medium text-foreground">Goes:</span>{" "}
-                    the company record, channel memberships, and DMs with{" "}
-                    {e.name}.
+                    the company record and {e.name}'s DMs.
                   </div>
                   <div>
                     <span className="font-medium text-foreground">Stays:</span>{" "}
@@ -251,7 +252,7 @@ export function EditEmployeeDialog({
                     <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px]">
                       {e.profile}
                     </code>{" "}
-                    — its sessions, memory, and skills.
+                    — its history, memory, and skills.
                   </div>
                 </div>
                 <ConfirmationRequest>
@@ -290,12 +291,10 @@ export function EditEmployeeDialog({
           </div>
         )}
         <div className="flex items-center gap-2 border-t bg-muted/30 p-3">
-          <span
-            className="flex min-w-0 items-center gap-1.5 text-muted-foreground text-xs"
-            title={e.id}
-          >
+          {/* #588 AC-2: the @handle is the profile, never the emp_ record id. */}
+          <span className="flex min-w-0 items-center gap-1.5 text-muted-foreground text-xs">
             <UserIcon className="size-3.5 shrink-0" />
-            <span className="truncate">@{e.id}</span>
+            <span className="truncate">@{e.profile}</span>
           </span>
           <div className="ml-auto flex items-center gap-2">
             {!confirming && (

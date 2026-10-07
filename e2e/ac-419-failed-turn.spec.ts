@@ -90,10 +90,13 @@ test("AC-1/AC-3 a turn.completed.error shows the failure chip on the turn and th
   );
   // The turn ended — the settled footer exists (hover surface for Retry).
   await expect(failed.locator("[data-turnsettled]")).toHaveCount(1);
-  // The harness's in-thread note carries the error, not a manual "Retry."
+  // #585: the harness's "Error: …" system note is dropped — the turn's own
+  // failure chip already says the same thing (deduped, not stacked).
   await expect(
-    page.getByText(/Error: engine-fake: scripted failure/),
-  ).toBeVisible();
+    page.locator("[data-sysnote]", {
+      hasText: /engine-fake: scripted failure/,
+    }),
+  ).toHaveCount(0);
   await settled(page, "[data-agentturn]");
   await page.screenshot({ path: `${SHOTS}/ac-419-1-failed-turn-light.png` });
 

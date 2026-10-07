@@ -80,7 +80,8 @@ const shot = (page: Page, dir: string, name: string) =>
   page.screenshot({ path: path.join(OUT, dir, `${name}.png`) });
 
 const RUNNING_HINT = /Enter (steers|queues) · ⌘\. stop/;
-const STOPPED = "Stopped · session.interrupt";
+/* #585 stripped the wire name — the turn chip renders "Stopped" plain. */
+const STOPPED = /^Stopped$/;
 
 /** Each dialog #576 names, shot open, then Esc closed. */
 async function dialogsPass(page: Page, tag: string) {

@@ -319,6 +319,22 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
       `DROP INDEX IF EXISTS messages_conversation`,
     ],
   },
+  {
+    /* #583: the last turn ended stopped — the DM session row's "stopped"
+       word survives a released/replayed session (the live turn model is
+       gone). Host-written, cleared on the next `turn.started` — same
+       lifecycle as v19's turn_failure. */
+    version: 22,
+    statements: [`ALTER TABLE conversations ADD COLUMN turn_stopped INTEGER`],
+  },
+  {
+    /* #583 AC-3: running background-job count — the DM session row's
+       "N in background" badge and the session-watch seed survive a
+       released session (the live job model is gone). Host-written on
+       `job.started`/`job.exited` — same lifecycle as v19's turn_failure. */
+    version: 23,
+    statements: [`ALTER TABLE conversations ADD COLUMN bg_jobs INTEGER`],
+  },
 ];
 
 /**

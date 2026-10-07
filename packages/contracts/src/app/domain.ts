@@ -193,6 +193,20 @@ export const Conversation = z.object({
    * Absent once a turn started fresh or no turn has failed yet.
    */
   turnFailure: TurnFailure.optional(),
+  /**
+   * The last turn ended stopped (#583) — the DM session row's "stopped"
+   * word. Same lifecycle as `turnFailure`: host-written at turn end,
+   * cleared on the next `turn.started`. A released or replayed session's
+   * row still shows it once the live turn model is gone.
+   */
+  turnStopped: z.boolean().optional(),
+  /**
+   * Count of this session's still-running background jobs (#583 AC-3).
+   * Same lifecycle as `turnStopped`: host-written on `job.started` /
+   * `job.exited`, so the row's "N in background" badge — and the
+   * session feed it keeps alive — survive a released session.
+   */
+  bgJobs: z.number().int().nonnegative().optional(),
   createdAt: Timestamp,
 });
 export type Conversation = z.infer<typeof Conversation>;

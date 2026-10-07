@@ -66,7 +66,7 @@ export function WorkspacePicker({
         </DropdownMenuTrigger>
         <DropdownMenuContent className="w-72" side="top">
           <DropdownMenuGroup>
-            <DropdownMenuLabel>Run this session in</DropdownMenuLabel>
+            <DropdownMenuLabel>Run this thread in</DropdownMenuLabel>
             {folders.map((x) => (
               <DropdownMenuItem
                 key={x.id}
@@ -251,13 +251,13 @@ export function WorkspacePicker({
 
 export const wsHint = (f: Folder | undefined, p: WsPick, directOnly = false) =>
   !f
-    ? "Chat only · no folder. Enter opens a new session"
+    ? "Chat only · no folder. Enter opens a new thread"
     : !f.branches.length
-      ? `Enter opens a session in ${f.path} · edits land there directly`
+      ? `Enter opens a thread in ${f.path} · edits land there directly`
       : p.mode === "new"
-        ? `Enter opens a session in a new worktree off ${p.base}`
+        ? `Enter opens a thread in a new worktree off ${p.base}`
         : p.mode === "existing"
-          ? `Enter opens a session in ${f.workstreams.find((w) => w.branch === p.existing)?.path ?? "the worktree"}`
+          ? `Enter opens a thread in ${f.workstreams.find((w) => w.branch === p.existing)?.path ?? "the worktree"}`
           : directOnly
-            ? `Enter opens a session in ${f.path} · edits land on the checked-out branch (${p.base})`
-            : `Enter opens a session in ${f.path} · edits land on ${p.base} directly`;
+            ? `Enter opens a thread in ${f.path} · edits land on the checked-out branch (${p.base})`
+            : `Enter opens a thread in ${f.path} · edits land on ${p.base} directly`;

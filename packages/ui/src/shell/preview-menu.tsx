@@ -34,7 +34,7 @@ export const SCENARIOS: { id: PreviewScenario; label: string }[] = [
   { id: "all-connected", label: "All connected" },
   { id: "connect-updating", label: "Connect updating" },
   { id: "first-run", label: "First run" },
-  { id: "loading", label: "Loading sessions" },
+  { id: "loading", label: "Loading threads" },
   { id: "reconnecting", label: "Reconnecting to relay" },
   { id: "harness-down", label: "Harness down" },
   { id: "engine-down", label: "Engine down" },
