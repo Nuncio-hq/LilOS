@@ -49,6 +49,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import logo from "../assets/logo.png";
 import { directoryCache } from "./cache";
 import { $demo, DEMO_MAC, enterDemo, exitDemo } from "./demo/lifecycle";
+import { loadDrafts } from "./draft-store";
 import { openAsks } from "./home-model";
 import {
   $blockedUpdate,
@@ -676,6 +677,8 @@ export default function App() {
       const mac = $connections.get()[0];
       if (mac) {
         const cached = await directoryCache.load();
+        /* #556: composer drafts hydrate with the Home snapshot. */
+        await loadDrafts();
         startLink(mac, cached ?? undefined);
       }
       setBooted(true);

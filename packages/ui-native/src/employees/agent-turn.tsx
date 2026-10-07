@@ -17,6 +17,7 @@ import { type PlanAction, PlanCard } from "./plan-card";
 import { PrCard } from "./pr-badges";
 import { type QuestionAnswer, QuestionCard } from "./question-card";
 import { isAnswerableQuestion } from "./question-gate";
+import { replyActionsSheet } from "./reply-actions";
 import { StepRow, tool } from "./step-row";
 import { SubagentsCard, SubagentsLink } from "./subagents";
 import type {
@@ -146,7 +147,14 @@ export function AgentTurn({
           <SubagentsCard agents={e.subagents} onOpen={onOpenSubagent} />
         ))}
       {e.text ? (
-        <Prose text={e.text} />
+        /* #556 AC-1: long-press anywhere on the reply offers Copy / Share
+           of its raw markdown (the same gesture code blocks already use). */
+        <Pressable
+          onLongPress={() => replyActionsSheet(e.text ?? "")}
+          accessibilityHint="Long-press for copy and share options"
+        >
+          <Prose text={e.text} />
+        </Pressable>
       ) : (
         writing && (
           <Pulse>

@@ -185,6 +185,17 @@ function Pair({ navigation }: Props<"Pair">) {
   );
 }
 
+/* #556: composer drafts survive navigation within the run — a plain Map
+   mirrors what the real app persists to disk per conversation/employee. */
+const drafts = new Map<string, string>();
+const draftProps = (key: string) => ({
+  initialDraft: drafts.get(key),
+  onDraftChange: (text: string) => {
+    if (text === "") drafts.delete(key);
+    else drafts.set(key, text);
+  },
+});
+
 // ── Step 3: scan (camera + permission live here, not in ui-native) ─────────
 
 function Scan({ navigation }: Props<"Scan">) {
@@ -553,6 +564,7 @@ function Dm({ navigation, route }: Props<"Dm">) {
       }}
       onPickFolder={() => navigation.navigate("FolderPicker")}
       onPickModel={() => navigation.navigate("ModelPicker", {})}
+      {...draftProps(`dm:${employee.id}`)}
     />
   );
 }
@@ -647,6 +659,7 @@ function Thread({ navigation, route }: Props<"Thread">) {
       }}
       onOpenPlan={() => navigation.navigate("Plan", { thread: t.id })}
       prefill={prefill}
+      {...draftProps(`thread:${t.id}`)}
     />
   );
 }

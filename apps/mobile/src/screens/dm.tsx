@@ -52,6 +52,7 @@ import {
   refreshModelCatalog,
   watchDm,
 } from "../dm-store";
+import { draftFor, setDraft } from "../draft-store";
 import { $client, $link, $welcome } from "../link";
 import { describeError, toneOf, unreachableNoteFor } from "../mapping";
 import { $connections } from "../paired-macs";
@@ -364,6 +365,9 @@ export function Dm({
       }
       onSend={send}
       unreachableNote={mac ? unreachableNoteFor(link, mac.name) : undefined}
+      /* #556 AC-2: the employee's new-thread draft persists device-local. */
+      initialDraft={draftFor(`dm:${employeeId}`)}
+      onDraftChange={(text) => setDraft(`dm:${employeeId}`, text)}
       onPickFolder={() => navigation.navigate("FolderPicker", { employeeId })}
       {...(catalog.models.length
         ? {
