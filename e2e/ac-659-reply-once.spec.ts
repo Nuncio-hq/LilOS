@@ -69,22 +69,21 @@ test("AC-1/2 a reply renders exactly once while the answer row beats the stream"
 
   const answer = thread.getByText("Noted. Plan for this session");
   await send(page, "second marker");
-  /* ~50 frames × 150 ms ≈ 7–8 s of drain; the relay row lands at its head.
-     Poll the strict locator across the whole window: any duplicate match
-     fails immediately, a single claimed surface stays green. */
-  for (let i = 0; i < 30; i++) {
-    const paras = await thread
-      .locator("p, [data-streaming] p")
-      .allTextContents()
-      .catch(() => ["<gone>"]);
-    console.log(
-      `[659dbg] i=${i} answerMatches=${await answer.count()} paras=${JSON.stringify(
-        paras.map((t) => t.slice(0, 45)),
-      )}`,
-    );
-    await expect(answer).toBeVisible();
-    await page.waitForTimeout(300);
+  /* ~60 frames × 150 ms ≈ 9 s of drain BEHIND turn 1's tail — the relay row
+     lands at its head (~2 s) while the live card's streamed text only
+     reaches the asserted prefix near the drain's tail. Poll `count()` until
+     the turn settles (a second data-turnsettled appears): it answers
+     instantly, so a bare row + streaming card (2 matches, the #659 dup)
+     fails on that poll — a polling `toHaveCount`/`toBeVisible` would wait
+     the transient out (or time out while the claimed row is legitimately
+     invisible under the fix). */
+  const settled = thread.locator("[data-turnsettled]");
+  for (let i = 0; i < 400 && (await settled.count()) < 2; i++) {
+    expect(await answer.count()).toBeLessThanOrEqual(1);
+    await page.waitForTimeout(150);
   }
-  /* Settled end state: exactly one answer surface in the thread. */
-  await expect(answer).toHaveCount(1, { timeout: 30_000 });
+  /* Settled end state: the turn completed and exactly one answer surface
+     remains in the thread. */
+  expect(await settled.count()).toBeGreaterThanOrEqual(2);
+  expect(await answer.count()).toBe(1);
 });
