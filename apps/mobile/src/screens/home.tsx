@@ -15,7 +15,7 @@ import { useStore } from "@nanostores/react";
 import { atom } from "nanostores";
 import { useEffect, useMemo, useState } from "react";
 import { Alert } from "react-native";
-import { decide } from "../asks";
+import { decide, negativeOutcome, primaryOutcome } from "../asks";
 import { $demo, DEMO_MAC } from "../demo/lifecycle";
 import {
   askThreadTarget,
@@ -162,8 +162,11 @@ export function NeedsYouSlot({
     <NeedsYouAccessory
       approvals={approvals}
       placement={placement}
+      /* #601: the one-tap Approve lands the ask's primary option (its
+         first non-deny) — not a hard-coded "once". */
       onApprove={(id) => {
-        if (client) void decide(client, id, true);
+        const ask = wire.asks.find((a) => a.id === id);
+        if (client && ask) void decide(client, id, primaryOutcome(ask));
       }}
       onReview={openPlanThread}
       onOpen={() => nav.navigate("Tabs", { screen: "Activity" })}
@@ -181,9 +184,9 @@ export function Activity() {
     () => openAsks(wire.asks).map((a) => toApproval(a, wire, nowMs)),
     [wire, nowMs],
   );
-  /* #595: same landing as the accessory's Review — the asking thread
-     pushed over its DM. */
-  const openPlanThread = (askId: string) => {
+  /* #594/#595: Open and a plan's Review share one landing — the asking
+     thread pushed over its DM, so Back returns to the DM. */
+  const openAskThread = (askId: string) => {
     const ask = wire.asks.find((a) => a.id === askId);
     const target = ask && askThreadTarget(ask, wire);
     if (!target) return;
@@ -200,19 +203,23 @@ export function Activity() {
           ? { mac: mac.name, asOf: ago(mac.lastSeenAt) }
           : undefined
       }
+      /* #601: approval rows offer the ask's own options — the tapped one
+         is the outcome; the plain Approve/Deny path stays for kinds the
+         sheet doesn't grant through (question Skip → cancel, plan →
+         reject). */
       onApprove={(id) => {
-        if (client) void decide(client, id, true);
+        const ask = wire.asks.find((a) => a.id === id);
+        if (client && ask) void decide(client, id, primaryOutcome(ask));
       }}
       onDeny={(id) => {
-        if (client) void decide(client, id, false);
+        const ask = wire.asks.find((a) => a.id === id);
+        if (client && ask) void decide(client, id, negativeOutcome(ask));
       }}
-      onOpen={(askId) => {
-        const ask = wire.asks.find((a) => a.id === askId);
-        const channel = wire.channels.find((c) => c.id === ask?.channelId);
-        if (channel?.employeeId)
-          nav.navigate("Dm", { employeeId: channel.employeeId });
+      onGrant={(id, option) => {
+        if (client) void decide(client, id, option);
       }}
-      onReview={openPlanThread}
+      onOpen={openAskThread}
+      onReview={openAskThread}
     />
   );
 }
