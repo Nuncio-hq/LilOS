@@ -91,8 +91,14 @@ const ConversationEscapeGuard = (): null => {
       scrollToBottom({ animation: "instant" });
       sc.scrollTop = sc.scrollHeight;
     };
+    let lastGesture = Number.NEGATIVE_INFINITY;
     const wheel = (e: WheelEvent) => {
+      lastGesture = performance.now();
       if (e.deltaY < 0) cancelHeal();
+    };
+    const gesture = () => {
+      lastGesture = performance.now();
+      cancelHeal();
     };
     const guard = () => {
       const top = sc.scrollTop;
@@ -110,7 +116,18 @@ const ConversationEscapeGuard = (): null => {
       const shifted = sc.clientHeight !== lastHeight;
       last = top;
       lastHeight = sc.clientHeight;
-      if (up && (shifted || clamped) && !readerEscape) {
+      /* A shifted frame classifies any coinciding up-scroll as layout —
+         during a continuous resize that would heal a REAL reader scroll
+         every frame. Gesture recency is the tell: a wheel/touch/key in
+         the last ~200ms means a human is steering, so the event is the
+         reader's, not the layout's. Nudges recur, a skipped heal only
+         delays the recovery to the next frame. */
+      if (
+        up &&
+        (shifted || clamped) &&
+        !readerEscape &&
+        performance.now() - lastGesture > 200
+      ) {
         cancelHeal();
         healTop = top;
         heal = setTimeout(repin, 2);
@@ -129,7 +146,8 @@ const ConversationEscapeGuard = (): null => {
     };
     sc.addEventListener("scroll", guard, { passive: true });
     sc.addEventListener("wheel", wheel, { passive: true });
-    sc.addEventListener("touchstart", cancelHeal, { passive: true });
+    sc.addEventListener("touchstart", gesture, { passive: true });
+    sc.addEventListener("keydown", gesture, { passive: true });
     /* Flag-only re-pins fire no scroll event — catch them on the same
        content resize that triggered them (the library's observer runs
        first, so its re-pin is already visible here). Observing the port
@@ -141,7 +159,8 @@ const ConversationEscapeGuard = (): null => {
       cancelHeal();
       sc.removeEventListener("scroll", guard);
       sc.removeEventListener("wheel", wheel);
-      sc.removeEventListener("touchstart", cancelHeal);
+      sc.removeEventListener("touchstart", gesture);
+      sc.removeEventListener("keydown", gesture);
       ro.disconnect();
     };
   }, [scrollRef, contentRef, state, stopScroll, scrollToBottom]);

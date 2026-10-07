@@ -126,8 +126,20 @@ export function QuestionCard({
     const list = listRef.current;
     const card = cardRef.current;
     if (!list || !card) return;
-    const port = scrollPortOf(list);
+    /* The port is re-resolved on every measure: at mount the scroller's
+       overflow style may not apply yet (Focus mounts the whole thread
+       tree at once) and a null here would pin the cap to the window's
+       height forever — a stale cap lets the card outgrow the port at
+       tighter viewports (#649 CI). */
+    let port = scrollPortOf(list);
+    const ro = new ResizeObserver(() => measure());
     const measure = () => {
+      const p = scrollPortOf(list);
+      if (p !== port) {
+        if (port) ro.unobserve(port);
+        port = p;
+        if (port) ro.observe(port);
+      }
       const natural = list.scrollHeight;
       /* The list gets the scrollport height minus everything else on the
          card and a margin — the pb-28 scroll slack below the last item
@@ -149,7 +161,7 @@ export function QuestionCard({
         ? Math.min(
             capPx,
             Math.max(
-              96,
+              80,
               lastVisible
                 ? lastVisible.getBoundingClientRect().bottom - listTop + 30
                 : capPx,
@@ -160,12 +172,11 @@ export function QuestionCard({
       setScrollable(over);
       setHidden(over ? Math.max(1, rows.length - visible) : 0);
     };
+    if (port) ro.observe(port);
     measure();
-    const ro = port ? new ResizeObserver(measure) : undefined;
-    if (port && ro) ro.observe(port);
     window.addEventListener("resize", measure);
     return () => {
-      ro?.disconnect();
+      ro.disconnect();
       window.removeEventListener("resize", measure);
     };
   }, [options.length]);

@@ -57,11 +57,15 @@ function measureCard(args: { portSel: string; cardSel: string }) {
   const cardR = card.getBoundingClientRect();
   const scR = sc.getBoundingClientRect();
   const compR = comp.getBoundingClientRect();
+  const list = card.querySelector<HTMLElement>("[data-question-options]");
   return {
     top: sc.scrollTop,
     h: sc.scrollHeight,
     ch: sc.clientHeight,
+    cardTop: cardR.top,
     cardBottom: cardR.bottom,
+    cardH: cardR.height,
+    listH: list?.getBoundingClientRect().height,
     scBottom: scR.bottom,
     compTop: compR.top,
     gap: compR.top - cardR.bottom,
