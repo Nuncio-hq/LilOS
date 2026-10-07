@@ -1,8 +1,9 @@
 import { PairingExchangeFailed, RelayError } from "@lilos/client-runtime";
-import type { AppChannel } from "@lilos/contracts/app";
+import { type AppChannel, ProtocolVersionMismatch } from "@lilos/contracts/app";
 import type {
   ChannelRow,
   ConnectingState,
+  MacLink,
   OrbTone,
   ProjectGroup,
 } from "@lilos/ui-native";
@@ -54,6 +55,57 @@ export function connectingOutcome(error: unknown): {
     return { state: "mismatch" };
   }
   return { state: "unreachable" };
+}
+
+/** Which side a `protocol_version_mismatch` says is stale — "phone" when the
+   wire's `update` is `client` (this iPhone is behind), "mac" for `server`
+   (the relay on the Mac). `#597`. */
+export type BlockedUpdate = "phone" | "mac";
+
+/** #597 AC-2: the fatal error → the side that must update, or undefined when
+   the fatal isn't a version mismatch / the payload can't be read. */
+export function blockedUpdateFor(error: unknown): BlockedUpdate | undefined {
+  if (!(error instanceof RelayError)) return undefined;
+  if (error.code !== "protocol_version_mismatch") return undefined;
+  const data = ProtocolVersionMismatch.safeParse(error.data);
+  if (!data.success) return undefined;
+  return data.data.update === "client" ? "phone" : "mac";
+}
+
+/** #597 AC-1: the body line under a "version mismatch" blocked state. */
+export function blockedLine(update: BlockedUpdate | undefined): string {
+  if (update === "phone") return "Update LilOS on this iPhone, then try again.";
+  if (update === "mac") return "Update LilOS on the Mac, then try again.";
+  return "LilOS versions don't match — update LilOS, then try again.";
+}
+
+/** #597 AC-1: the supervisor's raw `lastError` → one plain line for the
+   "last seen" slot. The unreachable family (refused, closed, timeout, no
+   network) all mean the same thing to Oscar: the Mac isn't answering. */
+export function plainLinkReason(message: string | undefined): string {
+  const m = message ?? "";
+  if (/protocol.*(version|mismatch)|version mismatch/i.test(m))
+    return "LilOS versions don't match — update LilOS, then try again.";
+  if (/unauthenticated|unauthorized|device_revoked|forbidden/i.test(m))
+    return "This pairing was removed — pair again from the Mac.";
+  if (
+    /refus|closed|unreach|offline|timed?\s*out|timeout|socket|dns|econn|enet|ehost|network|abort/i.test(
+      m,
+    )
+  )
+    return "Mac asleep or offline.";
+  return "Can't reach your Mac right now.";
+}
+
+/** #597: the thin note above composers / under headers while the Mac can't
+   serve: a reach problem vs the version-mismatch update. */
+export function unreachableNoteFor(
+  link: MacLink,
+  macName: string,
+): string | undefined {
+  if (link === "blocked") return "Update needed";
+  if (link === "offline") return `Can't reach ${macName}`;
+  return undefined;
 }
 
 /** One plain line for a failed send/open — same mapping as web's. */

@@ -23,7 +23,9 @@ export type MacDetail = {
   /** "via Tailscale" / "on this network" */
   route: string;
   link: MacLink;
-  /** Relay facts the phone knows after the handshake. */
+  /** Relay facts the phone knows after the handshake. `lastSeen` is the
+      reach tile's whole label verbatim ("seen just now", a plain reason,
+      "last seen 3 min ago") — the sheet no longer prefixes it (#597). */
   relay: { version: string; latency?: string; lastSeen: string };
   engine: { name: string; version: string };
   paired: string;
@@ -36,11 +38,19 @@ export type MacDetail = {
    and the way out. Few words; details are one line each. */
 export function MacSheet({
   mac,
+  blocked,
   onRetry,
   onForget,
   onDone,
 }: {
   mac: MacDetail;
+  /** #597 AC-2: a version mismatch is its own blocked state — the update
+      line plus the action that takes Oscar to it (e.g. Open TestFlight on
+      the phone side; Try again stays alongside it). */
+  blocked?: {
+    body: string;
+    action?: { label: string; onPress: () => void };
+  };
   onRetry: () => void;
   onForget: () => void;
   onDone: () => void;
@@ -48,6 +58,7 @@ export function MacSheet({
   const insets = useSafeAreaInsets();
   const online = mac.link === "online";
   const offline = mac.link === "offline";
+  const blockedLink = mac.link === "blocked";
   return (
     <View className="flex-1 bg-background">
       <SheetHeader title="" onDone={onDone} />
@@ -66,22 +77,24 @@ export function MacSheet({
                 {mac.name}
               </Text>
               <View
-                className={`flex-row items-center gap-1.5 rounded-full px-2.5 py-1 ${online ? "bg-success/12" : offline ? "bg-destructive/10" : "bg-fill"}`}
+                className={`flex-row items-center gap-1.5 rounded-full px-2.5 py-1 ${online ? "bg-success/12" : offline ? "bg-destructive/10" : blockedLink ? "bg-warning/15" : "bg-fill"}`}
               >
                 <View
-                  className={`size-[7px] rounded-full ${online ? "bg-success" : offline ? "bg-destructive" : "bg-muted-foreground"}`}
+                  className={`size-[7px] rounded-full ${online ? "bg-success" : offline ? "bg-destructive" : blockedLink ? "bg-warning" : "bg-muted-foreground"}`}
                 />
                 <AppText
                   size="xs"
                   weight="semibold"
                   tone="none"
-                  className={`text-[12.5px] ${online ? "text-success" : offline ? "text-destructive" : "text-muted-foreground"}`}
+                  className={`text-[12.5px] ${online ? "text-success" : offline ? "text-destructive" : blockedLink ? "text-warning" : "text-muted-foreground"}`}
                 >
                   {online
                     ? `Connected ${mac.route}`
                     : offline
                       ? "Can't reach it"
-                      : "Reconnecting…"}
+                      : blockedLink
+                        ? "Update needed"
+                        : "Reconnecting…"}
                 </AppText>
               </View>
               <Text
@@ -93,6 +106,28 @@ export function MacSheet({
               </Text>
             </View>
             {offline && <Pill label="Try again" size="sm" onPress={onRetry} />}
+            {blockedLink && blocked && (
+              <View className="w-full items-center gap-3 px-1">
+                <AppText size="sm" tone="muted" className="text-center">
+                  {blocked.body}
+                </AppText>
+                <View className="flex-row gap-2">
+                  {blocked.action && (
+                    <Pill
+                      label={blocked.action.label}
+                      size="sm"
+                      onPress={blocked.action.onPress}
+                    />
+                  )}
+                  <Pill
+                    label="Try again"
+                    size="sm"
+                    variant={blocked.action ? "soft" : "primary"}
+                    onPress={onRetry}
+                  />
+                </View>
+              </View>
+            )}
           </View>
         </Rise>
 
@@ -102,7 +137,9 @@ export function MacSheet({
               icon="bolt.fill"
               tone={online ? "success" : "muted-foreground"}
               value={online ? (mac.relay.latency ?? "—") : "—"}
-              label={`${online ? "seen" : "last seen"} ${mac.relay.lastSeen}`}
+              /* `lastSeen` carries the whole label — "seen just now", a
+                 plain offline reason (#597), "last seen 3 min ago". */
+              label={mac.relay.lastSeen}
             />
             <Tile
               icon="point.3.connected.trianglepath.dotted"
@@ -154,6 +191,7 @@ export function MacSheet({
 function LinkHero({ link }: { link: MacLink }) {
   const online = link === "online";
   const offline = link === "offline";
+  const blocked = link === "blocked";
   const t = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     if (!online) return;
@@ -192,8 +230,10 @@ function LinkHero({ link }: { link: MacLink }) {
             <View
               // biome-ignore lint/suspicious/noArrayIndexKey: fixed dots
               key={i}
-              className={`size-[4px] rounded-full ${offline ? "bg-destructive/40" : "bg-muted-strong"}`}
-              style={offline && i === 4 ? { opacity: 0 } : undefined}
+              className={`size-[4px] rounded-full ${offline ? "bg-destructive/40" : blocked ? "bg-warning/40" : "bg-muted-strong"}`}
+              style={
+                (offline || blocked) && i === 4 ? { opacity: 0 } : undefined
+              }
             />
           ))}
         </View>
@@ -219,6 +259,11 @@ function LinkHero({ link }: { link: MacLink }) {
         {offline && (
           <View className="absolute self-center">
             <Icon name="xmark.circle.fill" size={16} tone="destructive" />
+          </View>
+        )}
+        {blocked && (
+          <View className="absolute self-center">
+            <Icon name="arrow.down.circle.fill" size={16} tone="warning" />
           </View>
         )}
       </View>
@@ -251,7 +296,9 @@ function Tile({
       >
         {value}
       </Text>
-      <AppText size="xs" tone="muted" numberOfLines={1}>
+      {/* #597 AC-2: the label can carry the engine's failure reason —
+          let it wrap instead of squeezing into one truncated line. */}
+      <AppText size="xs" tone="muted">
         {label}
       </AppText>
     </View>

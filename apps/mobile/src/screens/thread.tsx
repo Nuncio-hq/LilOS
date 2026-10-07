@@ -51,8 +51,8 @@ import {
   refreshModelCatalog,
   watchDm,
 } from "../dm-store";
-import { $client, $link, $welcome } from "../link";
-import { describeError } from "../mapping";
+import { $client, $link, $welcome, linkUnreachable } from "../link";
+import { describeError, unreachableNoteFor } from "../mapping";
 import { $connections } from "../paired-macs";
 import { $prs, refreshConversationPrs } from "../prs";
 import type { DmRoutes } from "../routes";
@@ -488,7 +488,8 @@ export function Thread({
           {...(detail?.context ? { context: detail.context } : {})}
           /* #591: offline a "working" header is last-known, not live. */
           stale={
-            threadSurface(detail?.state ?? "working", link === "offline").stale
+            threadSurface(detail?.state ?? "working", linkUnreachable(link))
+              .stale
           }
           onPress={() =>
             conv &&
@@ -514,12 +515,10 @@ export function Thread({
       }}
       onSend={send}
       onStop={stop}
-      unreachableNote={
-        link === "offline" && mac ? `Can't reach ${mac.name}` : undefined
-      }
+      unreachableNote={mac ? unreachableNoteFor(link, mac.name) : undefined}
       /* #591: offline + a cached "working" thread — disabled Stop with a
          hint; the header chip degrades via threadSurface's rule. */
-      stale={threadSurface(detail.state, link === "offline").stale}
+      stale={threadSurface(detail.state, linkUnreachable(link)).stale}
       {...(catalog.models.length
         ? {
             onPickModel: () =>

@@ -50,7 +50,7 @@ import {
   watchDm,
 } from "../dm-store";
 import { $client, $link, $welcome } from "../link";
-import { describeError, toneOf } from "../mapping";
+import { describeError, toneOf, unreachableNoteFor } from "../mapping";
 import { $connections } from "../paired-macs";
 import { $prs, refreshPrsFor } from "../prs";
 import type { DmRoutes } from "../routes";
@@ -351,9 +351,7 @@ export function Dm({
         navigation.navigate("Thread", { conversationId: id })
       }
       onSend={send}
-      unreachableNote={
-        link === "offline" && mac ? `Can't reach ${mac.name}` : undefined
-      }
+      unreachableNote={mac ? unreachableNoteFor(link, mac.name) : undefined}
       onPickFolder={() => navigation.navigate("FolderPicker", { employeeId })}
       {...(catalog.models.length
         ? {
