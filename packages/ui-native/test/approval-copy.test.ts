@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   approvalSentence,
+  decidedVerb,
   describeAsk,
+  GRANT_LABEL,
   whatLine,
 } from "../src/employees/approval-copy";
 
@@ -129,5 +131,21 @@ describe("describeAsk — one human line per ask", () => {
     };
     expect(whatLine(a)).toContain("wants to run");
     expect(whatLine(a)).toContain("git commit");
+  });
+});
+
+/* #582 / D-#582: the glossary — "session" is backend-only; the phone reads
+   "This thread" for the session grant and "need you" for a parked ask. */
+describe("D-#582 glossary — one word per thing in UI copy", () => {
+  it("the session grant option labels itself This thread", () => {
+    expect(GRANT_LABEL.session).toBe("This thread");
+    expect(GRANT_LABEL.once).toBe("Once");
+    expect(GRANT_LABEL.always).toBe("Always");
+    expect(GRANT_LABEL.deny).toBe("Deny");
+  });
+
+  it("a landed session grant receipts as 'You allowed for this thread:'", () => {
+    expect(decidedVerb("session")).toBe("You allowed for this thread:");
+    expect(decidedVerb("always")).toBe("You always allowed:");
   });
 });

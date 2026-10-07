@@ -4,6 +4,7 @@ import { Button } from "../components/button";
 import { useThemeColor } from "../components/icon";
 import { Screen } from "../components/screen";
 import { StateBlock } from "../components/state-block";
+import { type CodeEntry, mismatchActions } from "../lib/pairing-code";
 import { MacCard } from "./mac-card";
 
 export type ConnectingState =
@@ -23,6 +24,7 @@ export function ConnectingScreen({
   macName,
   host,
   retryAfterSeconds,
+  entry,
   onCancel,
   onRetry,
   onRescan,
@@ -33,6 +35,8 @@ export function ConnectingScreen({
   host: string;
   /** Throttle wait from the 429's Retry-After (#568); only for 'throttled'. */
   retryAfterSeconds?: number;
+  /** How the code was entered — decides the mismatch retry (#688 AC-1). */
+  entry?: CodeEntry;
   onCancel: () => void;
   onRetry: () => void;
   onRescan: () => void;
@@ -97,22 +101,38 @@ export function ConnectingScreen({
   }
 
   if (state === "mismatch") {
+    const actions = mismatchActions(entry);
     return (
       <Screen
         topInset={false}
         footer={
-          <>
-            <Button
-              label="Scan a new code"
-              icon="qrcode.viewfinder"
-              onPress={onRescan}
-            />
-            <Button
-              label="Enter code instead"
-              variant="ghost"
-              onPress={onManual}
-            />
-          </>
+          actions.primary === "reenter" ? (
+            <>
+              <Button
+                label="Re-enter code"
+                icon="keyboard"
+                onPress={onManual}
+              />
+              <Button
+                label="Scan a QR code instead"
+                variant="ghost"
+                onPress={onRescan}
+              />
+            </>
+          ) : (
+            <>
+              <Button
+                label="Scan a new code"
+                icon="qrcode.viewfinder"
+                onPress={onRescan}
+              />
+              <Button
+                label="Enter code instead"
+                variant="ghost"
+                onPress={onManual}
+              />
+            </>
+          )
         }
       >
         <StateBlock
