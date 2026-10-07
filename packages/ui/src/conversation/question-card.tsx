@@ -133,7 +133,19 @@ export function QuestionCard({
        tighter viewports (#649 CI). */
     let port = scrollPortOf(list);
     const ro = new ResizeObserver(() => measure());
+    let cancelled = false;
+    let raf = 0;
+    let lastCap: number | undefined;
+    let stable = 0;
+    /* A wrong or missing port at mount is only caught if a measure runs
+       after the real one settles — but the RO observes what `port` pointed
+       at, and a settled card stops resizing, so nothing re-arms it (the
+       324px cap in a 341px port on #649 CI). Keep re-measuring on the next
+       frames until the cap holds steady twice against a resolved port;
+       the deadline bounds an oscillating layout. */
+    const settleUntil = performance.now() + 2500;
     const measure = () => {
+      if (cancelled) return;
       const p = scrollPortOf(list);
       if (p !== port) {
         if (port) ro.unobserve(port);
@@ -148,24 +160,6 @@ export function QuestionCard({
       const others = card.scrollHeight - list.clientHeight;
       const portH = port ? port.clientHeight : window.innerHeight;
       const { cap: capPx, over } = questionOptionCap(natural, others, portH);
-      /* TEMP DEBUG #649 — cap measure history, read by the AC-3 dump */
-      try {
-        const log = JSON.parse(list.dataset.caplog ?? "[]");
-        log.push({
-          t: Math.round(performance.now()),
-          port: port
-            ? `${port.tagName}.ch${port.clientHeight}.${(port.getAttribute("class") ?? "").slice(0, 40)}`
-            : null,
-          portH,
-          others,
-          natural,
-          capPx,
-          over,
-          cardH: card.scrollHeight,
-          scOv: port ? getComputedStyle(port).overflowY : null,
-        });
-        list.dataset.caplog = JSON.stringify(log.slice(-20));
-      } catch {}
       /* Snap the cap to a whole-row boundary plus a peek of the next tile
          (no half-glyph rows), and count what's left hidden — measured
          against the list's own top edge, not an offsetParent. */
@@ -189,6 +183,16 @@ export function QuestionCard({
       setCap(snapped);
       setScrollable(over);
       setHidden(over ? Math.max(1, rows.length - visible) : 0);
+      /* Two identical results against a bound port = settled; a null port
+         never counts (the walk can only miss while styles land). */
+      stable = port && snapped === lastCap ? stable + 1 : 0;
+      lastCap = snapped;
+      if (
+        stable < 2 &&
+        performance.now() < settleUntil &&
+        typeof requestAnimationFrame === "function"
+      )
+        raf = requestAnimationFrame(measure);
     };
     if (port) ro.observe(port);
     /* The card too: `others` is everything non-list — header, question,
@@ -200,11 +204,31 @@ export function QuestionCard({
        is self-limiting: a converged setCap changes nothing, so no
        further resize fires. */
     ro.observe(card);
+    /* Overflow is a style write, not a resize — the RO never sees the
+       scroller gain it, and a mount-null port observes nothing at all.
+       Ancestor attribute flips (the library's inline overflow write, tab
+       `hidden`, theme classes) are the events that re-resolve the walk. */
+    const mo = new MutationObserver(() => measure());
+    for (let p = list.parentElement; p; p = p.parentElement)
+      mo.observe(p, {
+        attributes: true,
+        attributeFilter: ["class", "style", "hidden"],
+      });
     measure();
     window.addEventListener("resize", measure);
+    /* `load` is the first moment every stylesheet is applied — a scroller
+       whose overflow-auto rule was still in flight resolves only now. */
+    window.addEventListener("load", measure, { once: true });
+    /* A late webfont changes every metric at once — re-measure once it
+       lands (ready resolves at once when fonts are already in). */
+    void document.fonts?.ready.then(() => measure());
     return () => {
+      cancelled = true;
       ro.disconnect();
+      mo.disconnect();
+      if (raf) cancelAnimationFrame(raf);
       window.removeEventListener("resize", measure);
+      window.removeEventListener("load", measure);
     };
   }, [options.length]);
 
@@ -226,95 +250,113 @@ export function QuestionCard({
   useEffect(() => {
     const el = cardRef.current;
     if (!el || !interactive) return;
-    const port = scrollPortOf(el);
-    /* TEMP DEBUG #649 — record what the arrival-align resolved */
-    try {
-      const list = el.querySelector("[data-question-options]");
-      if (list instanceof HTMLElement)
-        list.dataset.aport = port
-          ? `${port.tagName}.ch${port.clientHeight}.${(port.getAttribute("class") ?? "").slice(0, 40)}`
-          : "null";
-    } catch {}
-    if (!port) return;
     let cancelled = false;
-    const align = () => {
-      const e = el.getBoundingClientRect();
-      const p = port.getBoundingClientRect();
-      const over = p.top + 8 - e.top;
-      if (over > 1) {
-        // head clipped under the sticky header — lift until it clears
-        port.scrollTop -= over;
+    let raf = 0;
+    let tries = 0;
+    let teardown: (() => void) | undefined;
+    const start = () => {
+      if (cancelled || teardown) return;
+      const port = scrollPortOf(el);
+      /* The scroller's overflow can apply after this effect runs — a null
+         here used to skip the align window for good; retry briefly so a
+         late port still gets the card parked (#649 CI). */
+      if (!port) {
+        if (tries++ < 120 && typeof requestAnimationFrame === "function")
+          raf = requestAnimationFrame(start);
         return;
       }
-      if (e.top > p.bottom - 48 && e.top - p.bottom < p.height) {
-        // below the fold — a question that arrives after an answer gets
-        // the same lift as a fresh arrival (FIX r4), but never a giant
-        // jump when the card is deep below
-        port.scrollTop += e.top - p.top - 8;
-        return;
-      }
-      const under = e.bottom - (p.bottom - 16);
-      if (under > 1) {
-        // partially visible with the tail cut — reveal the whole card,
-        // or as much as fits before the head would clip again. The tail
-        // margin is 16, not the head's 8: where the composer hugs the
-        // port edge (Focus has no composer margin) a smaller tail leaves
-        // the card's border tucking under the composer (#649).
-        const nudge = Math.min(under, e.top - p.top - 8);
-        if (Math.abs(nudge) > 1) port.scrollTop += nudge;
-      }
+      teardown = mount(el, port);
     };
-    const realign = () => {
-      if (cancelled) return;
-      const e = el.getBoundingClientRect();
-      const p = port.getBoundingClientRect();
-      /* Only re-park a tail the layout pushed under the fold — a card
-         whose head sits above the port top, or that lives more than a
-         viewport below, belongs to the reader's scroll position. */
-      if (
-        e.top < p.top ||
-        e.top - p.bottom > p.height ||
-        e.bottom - (p.bottom - 16) <= 1
-      )
-        return;
-      align();
+    const mount = (el: HTMLElement, port: HTMLElement) => {
+      const align = () => {
+        const e = el.getBoundingClientRect();
+        const p = port.getBoundingClientRect();
+        const over = p.top + 8 - e.top;
+        if (over > 1) {
+          // head clipped under the sticky header — lift until it clears
+          port.scrollTop -= over;
+          return;
+        }
+        if (e.top > p.bottom - 48 && e.top - p.bottom < p.height) {
+          // below the fold — a question that arrives after an answer gets
+          // the same lift as a fresh arrival (FIX r4), but never a giant
+          // jump when the card is deep below
+          port.scrollTop += e.top - p.top - 8;
+          return;
+        }
+        const under = e.bottom - (p.bottom - 16);
+        if (under > 1) {
+          // partially visible with the tail cut — reveal the whole card,
+          // or as much as fits before the head would clip again. The tail
+          // margin is 16, not the head's 8: where the composer hugs the
+          // port edge (Focus has no composer margin) a smaller tail leaves
+          // the card's border tucking under the composer (#649).
+          const nudge = Math.min(under, e.top - p.top - 8);
+          if (Math.abs(nudge) > 1) port.scrollTop += nudge;
+        }
+      };
+      const realign = () => {
+        if (cancelled) return;
+        const e = el.getBoundingClientRect();
+        const p = port.getBoundingClientRect();
+        /* Only re-park a tail the layout pushed under the fold — a card
+           whose head sits above the port top, or that lives more than a
+           viewport below, belongs to the reader's scroll position. */
+        if (
+          e.top < p.top ||
+          e.top - p.bottom > p.height ||
+          e.bottom - (p.bottom - 16) <= 1
+        )
+          return;
+        align();
+      };
+      const kick = setTimeout(align, 450);
+      const ride = setInterval(align, 350);
+      const end = setTimeout(() => clearInterval(ride), 3500);
+      let retry: ReturnType<typeof setInterval> | undefined;
+      let retryEnd: ReturnType<typeof setTimeout> | undefined;
+      const ro = new ResizeObserver(() => {
+        /* Layout writes land a frame after the size change — retry on a
+           short ride so a mid-animation read can't gate-skip the fix. */
+        realign();
+        clearInterval(retry);
+        clearTimeout(retryEnd);
+        retry = setInterval(realign, 350);
+        retryEnd = setTimeout(() => clearInterval(retry), 1400);
+      });
+      ro.observe(port);
+      /* The content's height is where streaming growth shows up — the
+         port alone doesn't resize then. */
+      if (port.firstElementChild instanceof HTMLElement)
+        ro.observe(port.firstElementChild);
+      const stop = () => {
+        cancelled = true;
+        clearInterval(ride);
+        clearTimeout(end);
+        clearInterval(retry);
+        clearTimeout(retryEnd);
+        ro.disconnect();
+      };
+      port.addEventListener("wheel", stop, { passive: true });
+      port.addEventListener("touchstart", stop, { passive: true });
+      port.addEventListener("keydown", stop);
+      return () => {
+        clearTimeout(kick);
+        stop();
+        port.removeEventListener("wheel", stop);
+        port.removeEventListener("touchstart", stop);
+        port.removeEventListener("keydown", stop);
+      };
     };
-    const kick = setTimeout(align, 450);
-    const ride = setInterval(align, 350);
-    const end = setTimeout(() => clearInterval(ride), 3500);
-    let retry: ReturnType<typeof setInterval> | undefined;
-    let retryEnd: ReturnType<typeof setTimeout> | undefined;
-    const ro = new ResizeObserver(() => {
-      /* Layout writes land a frame after the size change — retry on a
-         short ride so a mid-animation read can't gate-skip the fix. */
-      realign();
-      clearInterval(retry);
-      clearTimeout(retryEnd);
-      retry = setInterval(realign, 350);
-      retryEnd = setTimeout(() => clearInterval(retry), 1400);
-    });
-    ro.observe(port);
-    /* The content's height is where streaming growth shows up — the
-       port alone doesn't resize then. */
-    if (port.firstElementChild instanceof HTMLElement)
-      ro.observe(port.firstElementChild);
-    const cancel = () => {
-      cancelled = true;
-      clearInterval(ride);
-      clearTimeout(end);
-      clearInterval(retry);
-      clearTimeout(retryEnd);
-      ro.disconnect();
-    };
-    port.addEventListener("wheel", cancel, { passive: true });
-    port.addEventListener("touchstart", cancel, { passive: true });
-    port.addEventListener("keydown", cancel);
+    start();
+    /* A port that only becomes scrollable once stylesheets land still
+       gets its align window. */
+    window.addEventListener("load", start, { once: true });
     return () => {
-      clearTimeout(kick);
-      cancel();
-      port.removeEventListener("wheel", cancel);
-      port.removeEventListener("touchstart", cancel);
-      port.removeEventListener("keydown", cancel);
+      cancelled = true;
+      if (raf) cancelAnimationFrame(raf);
+      window.removeEventListener("load", start);
+      teardown?.();
     };
   }, [interactive, resolved]);
 

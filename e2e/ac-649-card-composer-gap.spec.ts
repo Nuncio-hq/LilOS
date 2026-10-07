@@ -78,11 +78,8 @@ function measureCard(args: { portSel: string; cardSel: string }) {
     cardH: cardR.height,
     listH: list?.getBoundingClientRect().height,
     listMaxH: list ? getComputedStyle(list).maxHeight : undefined,
-    /* #649 CI forensics: the cap effect's per-measure history (what port
-       it resolved, the port height it saw, the raw cap) and what the
-       arrival-align resolved — a stale cap points at whichever lied. */
-    caplog: list?.dataset.caplog ? JSON.parse(list.dataset.caplog) : null,
-    aport: list?.dataset.aport ?? null,
+    /* Whether use-stick-to-bottom had to write inline overflow — non-empty
+       means the overflow-auto class never applied at mount. */
     scInlineOv: sc.style.overflow || sc.style.overflowY || "",
     portOf,
     scCls: (sc.getAttribute("class") ?? "").slice(0, 60),
