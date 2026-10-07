@@ -173,6 +173,15 @@ export function QuestionCard({
       setHidden(over ? Math.max(1, rows.length - visible) : 0);
     };
     if (port) ro.observe(port);
+    /* The card too: `others` is everything non-list — header, question,
+       the "+N more" row that only exists once `hidden` lands, and the
+       actions row that can mount a commit later. A cap computed while
+       chrome is still mounting undershoots it, and chrome growth never
+       resizes the port — without this the card stays taller than the
+       port forever (the 390px card in a 398px port, #649 CI). The loop
+       is self-limiting: a converged setCap changes nothing, so no
+       further resize fires. */
+    ro.observe(card);
     measure();
     window.addEventListener("resize", measure);
     return () => {
