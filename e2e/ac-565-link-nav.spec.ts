@@ -131,17 +131,38 @@ test("AC-1+AC-2 links can't open windows or take over the app window", async () 
       .toEqual(["https://example.com/", "https://example.com/x"]);
     expect(win.url()).toBe(appUrl);
 
-    /* file: and about:blank take paths will-navigate never sees — the
-       renderer blocks file: (often committing a chrome-error page) and
-       about:blank commits silently. The did-navigate net snaps the window
-       back to the app document; assert the return, not the side trip —
-       which leg Chromium took varies by platform. */
+    /* file: never reaches the browser process — the renderer refuses it
+       ("not allowed to load local resource"), so the window stays on the
+       app but the frame keeps a phantom pending navigation that wedges
+       Playwright's actionability wait ("waiting for navigation to
+       finish" for the full timeout, though the document is untouched).
+       about:blank really commits, and the did-navigate net snaps the
+       window back to the app. Assert the end state — app URL and a
+       rendered sidebar — via evaluate, which doesn't wait on the
+       phantom navigation. */
+    const asideShown = () =>
+      win
+        .evaluate(() => {
+          const el = document.querySelector("aside");
+          if (!el) return false;
+          const r = el.getBoundingClientRect();
+          const s = getComputedStyle(el);
+          return (
+            r.width > 0 &&
+            r.height > 0 &&
+            s.visibility !== "hidden" &&
+            s.display !== "none"
+          );
+        })
+        /* evaluate races the snap-back's context swap ("execution context
+           was destroyed") — not-yet-shown, not an error to the poll. */
+        .catch(() => false);
     for (const target of ["file:///etc/passwd", "about:blank"]) {
       await win.evaluate((u) => {
         window.location.href = u;
       }, target);
       await expect.poll(() => win.url(), { timeout: 60_000 }).toBe(appUrl);
-      await expect(win.locator("aside")).toBeVisible({ timeout: 60_000 });
+      await expect.poll(asideShown, { timeout: 60_000 }).toBe(true);
     }
     await expect.poll(() => openedExternal(app)).toHaveLength(2);
 
