@@ -228,13 +228,15 @@ test("AC-4 a running session keeps its model; the next new session uses the upda
     .click();
 
   // A reply in the SAME conversation still runs on the start-time model.
-  // #195: the row opens the peek panel at /dm/e/c; its ↗ carries on to Focus.
+  // #195/#577: the row opens the thread panel at /dm/e/c; its ↗ carries on
+  // to Focus at /dm/e/c/focus.
   await openConvRow(page, "first session");
+  await expect(page).toHaveURL(convUrl);
   await page
     .locator("[data-thread-panel]")
     .getByTitle("Focus", { exact: true })
     .click();
-  await expect(page).toHaveURL(convUrl);
+  await expect(page).toHaveURL(`${convUrl}/focus`);
   await replyInSession(page, "still the old model");
   await expect(
     page

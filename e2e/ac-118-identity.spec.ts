@@ -77,9 +77,7 @@ test("AC-2 first run folds name+company into the card, prefilled; AC-1 the choic
     const box = page.locator("textarea").last();
     await box.fill("hello identity");
     await box.press("Enter");
-    // Sending opens the session in Focus (#114); Back lands on the feed where
-    // the row renders.
-    await page.getByRole("button", { name: "Back to DM" }).click();
+    // #577: the send stays on the DM feed — the row renders right away.
     const ownRow = page
       .locator("div.group.grid")
       .filter({ hasText: "hello identity" })

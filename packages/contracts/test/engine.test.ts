@@ -45,6 +45,7 @@ describe("engine wire contract", () => {
       "session.setTitle",
       "session.setHidden",
       "session.rewind",
+      "session.moveWorkspace",
       "session.ask",
       "jobs.list",
       "jobs.stop",

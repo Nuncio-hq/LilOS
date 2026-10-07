@@ -109,6 +109,7 @@ import {
   folderBrowse,
   folderDetail,
   folderDiscover,
+  moveConversationFolder,
   onRelayRequest,
   rewindConversation,
 } from "./harness/relay-requests";
@@ -598,6 +599,7 @@ Object.assign(Harness.prototype, {
   markDelivered,
   markTurnInterrupted,
   mirrorMeta,
+  moveConversationFolder,
   noteNow,
   onAskResolved,
   onChannelRemoved,

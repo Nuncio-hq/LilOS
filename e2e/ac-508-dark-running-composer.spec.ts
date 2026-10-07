@@ -1,7 +1,12 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  panelIntoFocus,
+  pickPorts,
+  type Stack,
+} from "./helpers/stack";
 
 /**
  * Issue #508 — the running Focus composer's capsule read light-gray in dark
@@ -176,7 +181,8 @@ async function runningFocus(page: Page) {
   const box = page.locator("textarea").last();
   await box.fill("LILOS_TURN_HOLD keep this turn running");
   await box.press("Enter");
-  await page.waitForURL(/\/dm\/[^/]+\/[^/]+\/focus$/, { timeout: 30_000 });
+  // #577: send lands on the panel; Focus opens only from its button.
+  await panelIntoFocus(page);
   await expect(page.getByRole("button", { name: "Stop (⌘.)" })).toBeVisible({
     timeout: 30_000,
   });

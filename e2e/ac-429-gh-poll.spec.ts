@@ -11,7 +11,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import { allowAllWhile, expectSettled } from "./helpers/approvals";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  panelIntoFocus,
+  pickPorts,
+  type Stack,
+} from "./helpers/stack";
 
 /**
  * Issue #429 — the Workbench's `forge.pr` re-read is a `gh pr view`
@@ -169,7 +174,7 @@ const sendTurn = async (page: Page, text: string) => {
   }
   await send(page, text);
   const mine = page
-    .locator("main [data-msg]")
+    .locator("[data-msg]")
     .filter({ hasText: text })
     .filter({ hasNot: page.locator("[data-agentturn]") })
     .last();
@@ -205,7 +210,8 @@ test("AC-1 a running turn makes at most one gh call per minute", async ({
   await dmDefault(page);
   await pickSessionFolder(page, repoDir);
   await send(page, "check in");
-  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  // #577: the send lands on the panel — the PR tab lives in Focus's workbench.
+  await panelIntoFocus(page);
   /* The PR tab only exists once forge.pr has answered — its presence proves
      the probe's first `gh pr view` already logged. */
   await expect(tab(page, /PR/)).toBeVisible({ timeout: 30_000 });
