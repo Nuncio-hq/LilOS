@@ -58,6 +58,17 @@ function measureCard(args: { portSel: string; cardSel: string }) {
   const scR = sc.getBoundingClientRect();
   const compR = comp.getBoundingClientRect();
   const list = card.querySelector<HTMLElement>("[data-question-options]");
+  /* What the card's own port-walk resolves right now — a null/wrong port
+     pins the options cap to the window height (Focus's all-at-once mount
+     raced the library's overflow write; the class should make it stick). */
+  let portOf: string | null = null;
+  for (let p = list?.parentElement; p; p = p.parentElement) {
+    const oy = getComputedStyle(p).overflowY;
+    if (/(auto|scroll)/.test(oy)) {
+      portOf = `${p.tagName.toLowerCase()}#ch${p.clientHeight}#${(p.getAttribute("class") ?? "").slice(0, 40)}`;
+      break;
+    }
+  }
   return {
     top: sc.scrollTop,
     h: sc.scrollHeight,
@@ -66,6 +77,9 @@ function measureCard(args: { portSel: string; cardSel: string }) {
     cardBottom: cardR.bottom,
     cardH: cardR.height,
     listH: list?.getBoundingClientRect().height,
+    listMaxH: list ? getComputedStyle(list).maxHeight : undefined,
+    portOf,
+    scCls: (sc.getAttribute("class") ?? "").slice(0, 60),
     scBottom: scR.bottom,
     compTop: compR.top,
     gap: compR.top - cardR.bottom,
