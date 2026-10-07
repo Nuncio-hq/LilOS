@@ -35,8 +35,9 @@ export interface ExpoPushMessage {
   subtitle?: string;
   /** What it needs / the reply excerpt, truncated (AC-3). */
   body: string;
-  /** Tap opens the thread — nothing else rides the payload. */
-  data: { conversationId: string };
+  /** Tap opens the thread; `employeeId` lets a thread gone by tap time
+      still name who it was about (#596). */
+  data: { conversationId: string; employeeId?: string };
 }
 
 export interface ExpoSendResult {
@@ -183,7 +184,10 @@ export function createPushFanout(options: {
       title,
       ...(subtitle ? { subtitle } : {}),
       body: truncateBody(body),
-      data: { conversationId: conversation.id },
+      data: {
+        conversationId: conversation.id,
+        ...(employee ? { employeeId: employee.id } : {}),
+      },
     }));
     let receipts: ExpoSendResult[];
     try {
