@@ -14,7 +14,7 @@ export type PairOutcome =
   | "mismatch"
   | "throttled"
   | "hang";
-export type LinkOutcome = "online" | "offline";
+export type LinkOutcome = "online" | "offline" | "blocked";
 export type ScanOverride = "live" | "denied" | "invalid";
 
 export const PAIR_OUTCOMES: { id: PairOutcome; label: string }[] = [
@@ -28,6 +28,7 @@ export const PAIR_OUTCOMES: { id: PairOutcome; label: string }[] = [
 export const LINK_OUTCOMES: { id: LinkOutcome; label: string }[] = [
   { id: "online", label: "Reconnects" },
   { id: "offline", label: "Mac offline" },
+  { id: "blocked", label: "Version mismatch" },
 ];
 export const SCAN_OVERRIDES: { id: ScanOverride; label: string }[] = [
   { id: "live", label: "Real camera" },

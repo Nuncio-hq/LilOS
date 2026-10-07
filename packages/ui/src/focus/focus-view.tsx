@@ -42,6 +42,7 @@ import { useUiLayer } from "../chat/ui-layers";
 import {
   Conversation,
   ConversationContent,
+  type ConversationPin,
 } from "../components/ai-elements/conversation";
 import {
   Queue,
@@ -58,6 +59,7 @@ import { Button } from "../components/ui/button";
 import { askKeyDown, pendingAsk } from "../conversation/ask-keys";
 import { openStartRequest } from "../conversation/cards";
 import { FindUnstubAnchor, FindUnstubNudge } from "../conversation/find-unstub";
+import { landJump } from "../conversation/jump-to-hit";
 import type { PlanAction } from "../conversation/plan-card";
 import {
   type QuestionAnswer,
@@ -65,6 +67,8 @@ import {
 } from "../conversation/question-card";
 import { TranscriptNoteRow } from "../conversation/transcript-note";
 import {
+  estTurnHeight,
+  openTailStart,
   RewindHover,
   TURN_LAZY_AFTER,
   type TurnActs,
@@ -428,8 +432,12 @@ export function FocusView({
   }, [initialTab]);
   /* #138 AC-3: a search hit opens the session in Focus (#114) scrolled to
      that message with a short flash — mirrors ThreadView's jump-to-hit.
-     Waits for the row to render (history may still be loading). */
+     Waits for the row to render (history may still be loading).
+     #570: `landJump` releases the bottom pin before the native write (an
+     in-flight spring would overwrite it before its scroll event lands an
+     escape) and keeps the row landed while born-stubs hydrate around it. */
   const turnsRef = useRef<HTMLElement>(null);
+  const convPin = useRef<ConversationPin | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
   const flashedRef = useRef<string | null>(null);
   useEffect(() => {
@@ -443,7 +451,7 @@ export function FocusView({
     );
     if (!el) return;
     flashedRef.current = scrollTo;
-    el.scrollIntoView({ block: "center" });
+    landJump(el, convPin.current);
     setFlash(scrollTo);
     onScrolled?.();
   }, [scrollTo, thread.replies, onScrolled]);
@@ -627,6 +635,22 @@ export function FocusView({
     onCancel,
   };
   const lazyRows = thread.replies.length > TURN_LAZY_AFTER;
+  /* #570: a lazy thread opens on its tail — rows above `tailStart` never
+     mount on first paint; they start as estimated-height stubs and the
+     observer mounts them at the window edge. */
+  const estHeights = useMemo(
+    () =>
+      lazyRows
+        ? thread.replies.map((r) => estTurnHeight(r, !!emp(r.from), "focus"))
+        : [],
+    [lazyRows, thread.replies, emp],
+  );
+  const tailStart = openTailStart(estHeights);
+  /* Same jump-request gate as thread-view: `initial` is read once at
+     mount while replies still stream in — keying it on the row's
+     presence lets an engaged pin sweep the port to the bottom before
+     `landJump` can run, and near-bottom re-arms keep its landing under
+     the bottom writes. A stale id pays a top-open, not a broken jump. */
   /* #340 AC-2b: `workbench_open` brings the panel forward on the target's
      tab — the Workbench applies `target`; here the panel opens and follow
      stops (it is the agent's explicit "look at this"). */
@@ -987,7 +1011,16 @@ export function FocusView({
               {banner}
             </div>
           )}
-          <Conversation className="min-h-0 [mask-image:linear-gradient(to_bottom,transparent,#000_28px)]">
+          {/* #570: a lazy thread's first pin lands instantly — a smooth
+              sweep would mount every stub it scrolls past (see
+              thread-view); a scrollTo open skips the pin so the jump
+              lands first. `resize` stays smooth for the streaming
+              chase. */}
+          <Conversation
+            className="min-h-0 [mask-image:linear-gradient(to_bottom,transparent,#000_28px)]"
+            pinRef={convPin}
+            initial={scrollTo ? false : lazyRows ? "instant" : "smooth"}
+          >
             <ConversationContent
               data-thread
               className="mx-auto w-full max-w-[46rem] gap-7 px-5 pt-8 pb-3"
@@ -1031,6 +1064,8 @@ export function FocusView({
                   lastRow={i === thread.replies.length - 1}
                   flashed={flash === r.id}
                   lazy={lazyRows}
+                  startHeld={i < tailStart}
+                  estHeight={estHeights[i]}
                   scrollTarget={scrollTo === r.id}
                   running={running}
                   emp={emp}
