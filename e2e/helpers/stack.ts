@@ -17,6 +17,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import * as playwright from "@playwright/test";
 import { engineTag, expectNoEngineLeak } from "../engine-leak";
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/helpers
@@ -149,18 +150,46 @@ export async function waitForToken(home: string): Promise<string> {
     running optimizer (#84). */
 export const WORKER = Number(process.env.TEST_WORKER_INDEX ?? "0");
 
+/* #689: pick BELOW the kernel's ephemeral range, not out of it. `listen(0)`
+   draws from that range — and so does every `bind(0)` listener (engine-fake
+   launches on `--port 0`) and every outbound connect() source port, so a
+   probed-free ephemeral port can be re-issued to another child in the
+   release→bind gap (ac-659 repeat 18: engine-fake took the web port, vite
+   died EADDRINUSE, `page.goto` landed on engine-fake's 404 page and the
+   aside wait timed out). The allocator never hands out ports below its
+   floor — Linux `ip_local_port_range` starts at 32768, macOS/Windows at
+   49152 — so a picked port in this band stays free until our child binds
+   it. A pick-vs-pick race is still possible, but it needs another caller
+   choosing the same port in the same instant. */
+const PICK_PORT_LO = 20_000;
+const PICK_PORT_HI = 32_767;
+const PICK_PORT_TRIES = 100;
+
 export const freePort = () =>
   new Promise<number>((resolve, reject) => {
-    const srv = createServer();
-    srv.once("error", reject);
-    srv.listen(0, "127.0.0.1", () => {
-      const addr = srv.address();
-      srv.close(() =>
-        typeof addr === "object" && addr
-          ? resolve(addr.port)
-          : reject(new Error("no port")),
-      );
-    });
+    let tries = 0;
+    const attempt = () => {
+      if (++tries > PICK_PORT_TRIES) {
+        reject(
+          new Error(
+            `no free port in ${PICK_PORT_LO}-${PICK_PORT_HI} after ${PICK_PORT_TRIES} tries`,
+          ),
+        );
+        return;
+      }
+      const port =
+        PICK_PORT_LO +
+        Math.floor(Math.random() * (PICK_PORT_HI - PICK_PORT_LO + 1));
+      const srv = createServer();
+      srv.once("error", (e: NodeJS.ErrnoException) => {
+        if (e.code === "EADDRINUSE") attempt();
+        else reject(e);
+      });
+      srv.listen(port, "127.0.0.1", () => {
+        srv.close(() => resolve(port));
+      });
+    };
+    attempt();
   });
 
 /** Three distinct free ports — repeat/parallel runs must never collide. */
@@ -355,4 +384,28 @@ export async function bootStack(
     await killProc(proc);
     throw e;
   }
+}
+
+/**
+ * #577 navigation helper: a send lands on the DM list with the thread open
+ * in the side panel (`/dm/:e/:c`); Focus opens only from the panel's ↗
+ * button. Specs that need Focus after a send call this — it waits for the
+ * panel URL, clicks Focus, and waits for the Focus URL.
+ */
+export async function panelIntoFocus(
+  page: import("@playwright/test").Page,
+  focusUrl: RegExp = /\/dm\/[^/]+\/[^/]+\/focus$/,
+): Promise<void> {
+  const { expect } = playwright;
+  await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+$/, { timeout: 30_000 });
+  // The URL lands before the panel mounts (the conv resolves async under
+  // load) — wait for the surface, then the button.
+  await expect(page.locator("[data-thread-panel]")).toBeVisible({
+    timeout: 30_000,
+  });
+  await page
+    .locator("[data-thread-panel]")
+    .getByTitle("Focus", { exact: true })
+    .click({ timeout: 15_000 });
+  await expect(page).toHaveURL(focusUrl, { timeout: 30_000 });
 }

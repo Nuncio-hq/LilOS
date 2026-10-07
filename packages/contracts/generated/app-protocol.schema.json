@@ -387,6 +387,7 @@
         "conversations.open",
         "conversations.update",
         "conversations.rewind",
+        "conversations.moveFolder",
         "messages.list",
         "messages.post",
         "messages.setCheckpoint",
@@ -2801,6 +2802,17 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
+        },
+        "cwd": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "life": {
           "type": "string",

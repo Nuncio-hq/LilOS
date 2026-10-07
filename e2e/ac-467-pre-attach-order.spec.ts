@@ -2,7 +2,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import { allowAllWhile, expectSettled } from "./helpers/approvals";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  panelIntoFocus,
+  pickPorts,
+  type Stack,
+} from "./helpers/stack";
 
 /**
  * Issue #467 — post-reload, the thread must never paint the unanchored frame:
@@ -167,6 +172,8 @@ test("AC-1 post-reload, no painted frame ever places a newer user row above an o
   // posts land AFTER the later user rows, the raw order that breaks #308
   // when mergeTurns has no model yet.
   await send(page, "Add a release note to the readme");
+  // #577: a send lands on the thread panel; [data-thread] lives in Focus.
+  await panelIntoFocus(page);
   await expect(page.getByText("Approval needed").first()).toBeVisible({
     timeout: 120_000,
   });

@@ -96,6 +96,9 @@ export async function updateConversation(
     /** #419: stamp the last turn's failure (DM alert card); `null`
         clears it. */
     turnFailure?: TurnFailure | null;
+    /** #581: the thread's working folder — `conversations.moveFolder`
+        writes it after re-homing the session; `null` clears it. */
+    cwd?: string | null;
     /** #583: the last turn ended stopped (DM row word); `null` clears
         it on the next `turn.started`. */
     turnStopped?: boolean | null;

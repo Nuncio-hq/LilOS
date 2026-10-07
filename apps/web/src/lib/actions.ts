@@ -440,6 +440,16 @@ export async function archiveConversation(
   await relay.request("conversations.update", { conversationId, archived });
 }
 
+/** #581 AC-2: move a thread's working folder — the engine re-homes the
+ *  session (same thread, same memory) when it declares `workspace_move`;
+ *  the relay writes a system note saying exactly what happened. */
+export async function moveConversationFolder(
+  conversationId: string,
+  path: string,
+): Promise<void> {
+  await relay.request("conversations.moveFolder", { conversationId, path });
+}
+
 /** engine `describe` capability check (e.g. "steer"). */
 export function hasCapability(id: string): boolean {
   const caps = engine.description.get()?.capabilities ?? [];

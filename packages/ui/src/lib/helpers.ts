@@ -27,6 +27,11 @@ export const folderLabel = (
       : f.project;
 export const parentOf = (path: string) =>
   path.includes("/") ? path.slice(0, path.lastIndexOf("/")) || "/" : "~";
+/* #590 AC-3: a path as the user reads it — macOS resolves /tmp, /var & friends
+   through /private (realpath), and showing the synthetic prefix reads like
+   an internal. `/private/tmp/x` → `/tmp/x`; everything else passes through. */
+export const prettyPath = (path: string) =>
+  path.startsWith("/private/") ? path.slice("/private".length) : path;
 export const slugOf = (s: string) =>
   s
     .toLowerCase()

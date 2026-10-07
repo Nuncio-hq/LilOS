@@ -23,6 +23,7 @@ import {
   StateBlock,
   SubagentSheet,
   SubagentsSheet,
+  safeExternalUrl,
   ThreadHeaderTitle,
   ThreadInfoSheet,
   ThreadScreen,
@@ -653,7 +654,10 @@ export function Thread({
       onOpenWorkbench={(e) => {
         const t = e.target;
         if (t.url !== undefined) {
-          void Linking.openURL(t.url);
+          /* #598 review: engine-supplied URL — the phone's openURL
+             policy (https + loopback http); a refused URL is not opened. */
+          const url = safeExternalUrl(t.url);
+          if (url) void Linking.openURL(url);
           return;
         }
         if (t.pr === true) {

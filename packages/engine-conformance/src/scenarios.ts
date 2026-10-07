@@ -1,3 +1,6 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { EngineEvent } from "@lilos/contracts/engine";
 import { assert, assertMonotonic, type Harness } from "./harness.js";
 
@@ -2682,6 +2685,95 @@ export const BACKGROUND_JOBS_SCENARIOS: Scenario[] = [
 ];
 
 /**
+ * `workspace_move` capability (#581): `session.moveWorkspace {cwd}` re-homes
+ * the session's working folder — transcript, memory and event stream
+ * untouched. Proven by what runs next, not just the ack: a suspended-then-
+ * resumed session re-announces `session.started` with its real cwd, which
+ * must name the moved-to folder.
+ */
+export const WORKSPACE_MOVE_SCENARIOS: Scenario[] = [
+  {
+    id: "describe wires session.moveWorkspace under the workspace_move capability",
+    async run(h) {
+      const r = (await h.request("describe")) as {
+        capabilities: { id: string; methods?: string[] }[];
+      };
+      const cap = r.capabilities.find((c) => c.id === "workspace_move");
+      assert(
+        cap,
+        "workspace_move suite runs only against engines declaring workspace_move",
+      );
+      assert(
+        cap?.methods?.includes("session.moveWorkspace") === true,
+        "the workspace_move descriptor names session.moveWorkspace",
+      );
+    },
+  },
+  {
+    id: "session.moveWorkspace re-homes the session — a resume opens in the new folder",
+    async run(h) {
+      const dirA = mkdtempSync(join(tmpdir(), "lilos-mv-a-"));
+      const dirB = mkdtempSync(join(tmpdir(), "lilos-mv-b-"));
+      const { sessionId } = (await h.request("session.start", {
+        agent: "builder",
+        cwd: dirA,
+      })) as StartResult;
+      await h.request(
+        "prompt",
+        textPrompt(sessionId, "remember the codeword LILOS_MOVE_1"),
+      );
+      const moved = (await h.request("session.moveWorkspace", {
+        sessionId,
+        cwd: dirB,
+      })) as { cwd: string };
+      assert(
+        moved.cwd === dirB,
+        `session.moveWorkspace reports the new cwd, got ${moved.cwd}`,
+      );
+      /* The stored row moved too: close the session and prompt — the
+         resume's re-announce must name the NEW folder (the live-session
+         follow is the harness-level live check in scripts/live/581.sh). */
+      await h.request("session.suspend", { sessionId });
+      await h.waitEvent(
+        h.forSession(
+          sessionId,
+          (e) => e.type === "session.state" && e.payload.state === "closed",
+        ),
+      );
+      await h.request("prompt", textPrompt(sessionId, "hi"));
+      const resumed = h.events
+        .filter((e) => e.type === "session.started")
+        .filter((e) => e.sessionId === sessionId);
+      assert(
+        resumed.length === 2,
+        `resume re-announces session.started, got ${resumed.length}`,
+      );
+      assert(
+        resumed[1].payload.cwd === dirB,
+        `the resumed session opens in the moved folder, got ${String(resumed[1].payload.cwd)}`,
+      );
+    },
+  },
+  {
+    id: "session.moveWorkspace refuses a folder that does not exist",
+    async run(h) {
+      const dirA = mkdtempSync(join(tmpdir(), "lilos-mv-c-"));
+      const { sessionId } = (await h.request("session.start", {
+        agent: "builder",
+        cwd: dirA,
+      })) as StartResult;
+      assert(
+        (await errorCode(h, "session.moveWorkspace", {
+          sessionId,
+          cwd: join(dirA, "no-such-dir-581"),
+        })) === -32602,
+        "a missing folder -> INVALID_PARAMS",
+      );
+    },
+  },
+];
+
+/**
  * Suite registry: `core` always runs; each capability the engine declares on
  * `describe` adds its suite. Pending suites are registered so engines (and CI)
  * can list them; they are intentionally empty until the capability lands.
@@ -2725,4 +2817,9 @@ export const SUITES: {
   { capability: "usage", implemented: false, scenarios: [] },
   { capability: "plan", implemented: true, scenarios: PLAN_SCENARIOS },
   { capability: "rewind", implemented: true, scenarios: REWIND_SCENARIOS },
+  {
+    capability: "workspace_move",
+    implemented: true,
+    scenarios: WORKSPACE_MOVE_SCENARIOS,
+  },
 ];

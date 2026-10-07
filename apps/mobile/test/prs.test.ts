@@ -59,6 +59,12 @@ describe("#159 AC-2 toPullRequestRef — gh row -> badge view model", () => {
       "pending",
     );
   });
+
+  it("#598: the wire url rides through — the tap target needs it", () => {
+    expect(toPullRequestRef(item()).url).toBe(
+      "https://github.com/acme/widgets/pull/96",
+    );
+  });
 });
 
 const msg = (over: Partial<AppMessage> = {}): AppMessage => ({
@@ -170,6 +176,7 @@ describe("#159 AC-1 refreshConversationPrs — one conversations.prs call fills 
         title: "Fix the badge",
         status: "draft",
         checks: "failing",
+        url: "https://github.com/acme/widgets/pull/96",
       },
     ]);
   });
