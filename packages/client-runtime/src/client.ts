@@ -982,6 +982,16 @@ export class RelayClient {
       : this.request<{ devices: PairedDevice[] }>("devices.list", {}).catch(
           () => undefined,
         );
+    /* #645: `conversations.summaries` is the enrichment layer (root text,
+       previews, counts) — `conversations.list` already carries the rows
+       themselves, so a slow or failed summaries fetch must not hold the
+       whole directory at "Loading…". Per-conversation refreshes on live
+       events and the next resync refill it. */
+    const summariesRead = this.request<{
+      summaries: ConversationSummary[];
+    }>("conversations.summaries", { includeArchived: true }).catch(
+      () => undefined,
+    );
     try {
       const [
         employees,
@@ -998,10 +1008,7 @@ export class RelayClient {
         this.request<{ conversations: Conversation[] }>("conversations.list", {
           includeArchived: true,
         }),
-        this.request<{ summaries: ConversationSummary[] }>(
-          "conversations.summaries",
-          { includeArchived: true },
-        ),
+        summariesRead,
         this.request<{ profile: ProfileSettings }>("profile.get", {}),
         devicesRead,
         this.request<{ asks: Ask[] }>("asks.list", {}),
@@ -1009,10 +1016,12 @@ export class RelayClient {
       this.employees.set(employees.employees);
       this.channels.set(channels.channels);
       this.conversations.set(conversations.conversations);
-      /* The directory is the authority — any scoped refresh still in
-         flight carries an older snapshot and must not apply (#571). */
-      this.summaryTickets.clear();
-      this.conversationSummaries.set(summaries.summaries);
+      if (summaries) {
+        /* The directory is the authority — any scoped refresh still in
+           flight carries an older snapshot and must not apply (#571). */
+        this.summaryTickets.clear();
+        this.conversationSummaries.set(summaries.summaries);
+      }
       this.profile.set(settings.profile);
       if (devices) this.devices.set(devices.devices);
       this.asks.set(asks.asks);

@@ -438,7 +438,23 @@ export function DmPage() {
         .sort((a, b) => a.createdAt - b.createdAt),
     [summaries, channel],
   );
-  const openConv = convs.find((c) => c.id === conversationId);
+  /* #645: the open thread must not WAIT on the summaries fetch — it is the
+     enrichment layer (root text, previews, counts), and under load it
+     landed after the send that opened the conversation (or never, once
+     every refresh outlasted the request timeout), so `openConv` resolved
+     late or stayed undefined and the thread panel rendered nothing.
+     `relay.conversations` is push-fed by `conversation.updated`/
+     `conversations.list` — the authority for the conversation's
+     existence, and the ONLY source here: a summary fallback would swap
+     `openConv`'s identity the moment the row landed, tearing menus
+     mounted off the thread (ac-110's Open-in-editor). Summaries still
+     qualify the feed's rows (and deliberately drop retired sys-notes);
+     the open URL names a real conversation, so mount it the moment the
+     push feed carries it. */
+  const allConvs = useAtom(relay.conversations);
+  const openConv = allConvs.find(
+    (c) => c.id === conversationId && c.channelId === channel?.id,
+  );
 
   /* #340 AC-2b: the session's `workbench_open` opens the Workbench — Focus
      carries it, so a spot for another view navigates there first; the
@@ -1019,7 +1035,24 @@ export function DmPage() {
     ? models[openConv.engineRef]
     : undefined;
   useEffect(() => {
-    if (openConv && openModel?.live) clearPending(openConv.id);
+    /* #645: the marker stays armed until the turn is OBSERVED — live now
+       (modelLive takes over) or already folded to a terminal phase the
+       feed watched end (`liveAttached` marks turns with events past the
+       attach watermark; turns already finished when the feed attached —
+       replayed history — carry neither flag and don't count). One replay
+       can fold `turn.started`+`turn.completed` together so `live` never
+       reads true here — clearing only on live latched the marker
+       forever: the composer kept the "…is working. Enter steers this
+       turn…" placeholder, unaddressable. Clearing on feed ATTACH
+       instead would drop `running` inside the send→`turn.started` gap,
+       and picks made there hold the workbench tab via `running`
+       (pickedDuringTurn, #606) — the pick-hold must not lift early. */
+    const foldedDone = openModel?.turns.some(
+      (t) =>
+        t.liveAttached &&
+        (t.phase === "done" || t.phase === "stopped" || t.phase === "failed"),
+    );
+    if (openConv && (openModel?.live || foldedDone)) clearPending(openConv.id);
   }, [openConv, openModel]);
 
   /* `@` mentions (#105): every employee in the Employees section, and — when
