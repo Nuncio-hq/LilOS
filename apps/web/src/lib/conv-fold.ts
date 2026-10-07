@@ -31,6 +31,7 @@ import type {
 } from "@lilos/contracts/app";
 import type { QueuedTrayItem } from "@lilos/ui";
 import type { Msg, Reply, Workspace } from "@lilos/ui/types";
+import { toAttachedFiles } from "./attachments";
 import { wsFor } from "./folders";
 import {
   conversationReplies,
@@ -316,10 +317,15 @@ function computeThread(
     replies,
     notSent: i.msgs.filter((m) => m.dropped),
     /* An accepted-but-unlanded steer already reached the engine — its row
-       still lists in the tray but Edit/Remove aren't offered (#315 AC-4). */
-    pendingItems: waiting.waiting.map((w) =>
-      w.removable ? w.message.text : { text: w.message.text, removable: false },
-    ),
+       still lists in the tray but Edit/Remove aren't offered (#315 AC-4).
+       #676: the row's attachments ride along too — an image reply queued
+       behind a turn must keep its chips or it reads as lost until the
+       drain. */
+    pendingItems: waiting.waiting.map((w) => ({
+      text: w.message.text,
+      removable: w.removable,
+      files: toAttachedFiles(w.message.attachments),
+    })),
   };
 }
 
