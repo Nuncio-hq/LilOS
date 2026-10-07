@@ -534,12 +534,10 @@ export function Thread({
          <Mac> is back" — any thread state, not only a stale working.
          #597: blocked counts as unreachable here too. */
       asksStale={
-        threadSurface(detail.state, linkUnreachable(link), mac?.name)
-          .asksStale
+        threadSurface(detail.state, linkUnreachable(link), mac?.name).asksStale
       }
       answerHint={
-        threadSurface(detail.state, linkUnreachable(link), mac?.name)
-          .answerHint
+        threadSurface(detail.state, linkUnreachable(link), mac?.name).answerHint
       }
       {...(catalog.models.length
         ? {
