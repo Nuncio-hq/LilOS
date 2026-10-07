@@ -92,6 +92,10 @@ const session = (
   },
 });
 
+/* Like the app's hosts: fresh lambdas every render. A per-render identity
+   change must NOT defeat the row memo — EmployeeHome routes the row's
+   callbacks through a ref so the memo sees stable identities. (emp/human
+   are stable lookups and stay pass-through props.) */
 const props = (feed: Msg[]) => ({
   e: EMP,
   feed,

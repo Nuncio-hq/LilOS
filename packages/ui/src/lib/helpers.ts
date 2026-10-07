@@ -70,7 +70,7 @@ const blockLines = (node: RootContent): string[] => {
   }
 };
 
-export const preview = (md: string) => {
+const parsePreview = (md: string) => {
   try {
     return fromMarkdown(md)
       .children.flatMap(blockLines)
@@ -85,10 +85,7 @@ export const preview = (md: string) => {
   }
 };
 
-/* One flat line, no " · " separators — the subagent now-line and the
-   Start-work title seed (#448). Same parse as preview(); blocks and
-   wrapped lines join with a single space. */
-export const inline = (md: string) => {
+const parseInline = (md: string) => {
   try {
     return fromMarkdown(md)
       .children.flatMap(blockLines)
@@ -100,6 +97,35 @@ export const inline = (md: string) => {
     return md.replace(/\s+/g, " ").trim();
   }
 };
+
+/* #569: the DM list re-parses every session row's preview on each
+   streamed word — the profile's single biggest block. Parse once per
+   distinct text. The map is FIFO-bounded: a growing stream mints a fresh
+   key per delta and the dead prefixes never re-hit, so an unbounded map
+   would just leak them. */
+const textCache = (cap: number) => {
+  const m = new Map<string, string>();
+  return (text: string, parse: (t: string) => string): string => {
+    const hit = m.get(text);
+    if (hit !== undefined) return hit;
+    const out = parse(text);
+    if (m.size >= cap) {
+      const oldest = m.keys().next().value;
+      if (oldest !== undefined) m.delete(oldest);
+    }
+    m.set(text, out);
+    return out;
+  };
+};
+const previewCached = textCache(256);
+const inlineCached = textCache(256);
+
+export const preview = (md: string) => previewCached(md, parsePreview);
+
+/* One flat line, no " · " separators — the subagent now-line and the
+   Start-work title seed (#448). Same parse as preview(); blocks and
+   wrapped lines join with a single space. */
+export const inline = (md: string) => inlineCached(md, parseInline);
 
 /* The Start-work dialog's title seed: `**@name**` mentions out, the rest
    flattened to one line, capped at 60 chars (#448). */
