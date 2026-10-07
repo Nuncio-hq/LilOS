@@ -614,7 +614,7 @@ function Thread({ navigation, route }: Props<"Thread">) {
       unstable_headerRightItems: () => [
         {
           type: "button",
-          label: "Session info",
+          label: "Thread info",
           icon: { type: "sfSymbol", name: "info.circle" },
           onPress: info,
         },

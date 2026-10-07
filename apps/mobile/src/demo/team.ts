@@ -294,7 +294,7 @@ export const DEMO_CAPABILITIES: Capability[] = [
   { id: "subagents", name: "Subagents" },
   { id: "background_jobs", name: "Background jobs" },
   { id: "usage", name: "Usage" },
-  { id: "session_meta", name: "Session metadata" },
+  { id: "session_meta", name: "Thread metadata" },
 ];
 
 /* ── PRs the conversations carry (thread rows + PrCards) ─────────────────── */
