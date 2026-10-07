@@ -17,6 +17,7 @@ import type {
 } from "@lilos/ui-native";
 import { atom, type ReadableAtom } from "nanostores";
 import { toModelCatalog } from "./dm-model";
+import { resetDrafts } from "./draft-store";
 import { watchPrs } from "./prs";
 
 /* Shared DM state (#156): open asks, folder recents, the engine model
@@ -301,4 +302,6 @@ export function resetDmStore(): void {
   $modelPicks.set({});
   $pendingOpens.set(new Map());
   $wbCards.set({});
+  /* #556: drafts belong to the Mac's conversations — forget takes them. */
+  resetDrafts();
 }
