@@ -30,10 +30,18 @@ export function ManualCodeScreen({
   const codeRef = useRef<TextInput>(null);
 
   /* `autoFocus` only applies on mount — this screen stays mounted under
-     Connecting, so reentry focuses programmatically and
-     `selectTextOnFocus` selects the kept entry. */
+     Connecting, so reentry focuses programmatically and selects the
+     whole kept entry (AC-1: first keystroke replaces it). Selection is
+     set imperatively: iOS doesn't apply selectTextOnFocus or a
+     controlled `selection` prop for a programmatic .focus(). */
   useEffect(() => {
-    if (reenter) codeRef.current?.focus();
+    if (!reenter) return;
+    const t = setTimeout(() => {
+      const input = codeRef.current;
+      input?.focus();
+      input?.setSelection?.(0, CODE_FORMATTED_LENGTH);
+    }, 100);
+    return () => clearTimeout(t);
   }, [reenter]);
 
   const submit = () => {
@@ -89,7 +97,6 @@ export function ManualCodeScreen({
             /* The value is the formatted code — the cap counts its dashes
                (#593 AC-1). normalizeCode still slices to 12 real chars. */
             maxLength={CODE_FORMATTED_LENGTH}
-            selectTextOnFocus={reenter}
             returnKeyType="go"
             onSubmitEditing={submit}
             className={`${field(errors.code)} font-mono text-xl tracking-[2px]`}
