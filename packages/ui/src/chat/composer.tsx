@@ -200,11 +200,19 @@ export function Composer({
   }, [onSearchFiles, fragmentQuery]);
   /* Flat keyboard navigation across both sections (issue #105, AC-1): one
      active index over [employees…, files…]; ↓/↑ move, Enter picks, Esc stays
-     the existing dismiss path. */
+     the existing dismiss path. The reset runs during render, not in an
+     effect: it must commit atomically with the rows it belongs to — a
+     passive effect flushes a task late, and a ↓ landing in that window got
+     clobbered back to the top row (#693). */
   const [active, setActive] = useState(0);
-  useEffect(() => {
+  const [navRows, setNavRows] = useState<{
+    query: string | null;
+    hits: FileMention[] | null;
+  }>({ query: fragmentQuery, hits: fileHits });
+  if (navRows.query !== fragmentQuery || navRows.hits !== fileHits) {
+    setNavRows({ query: fragmentQuery, hits: fileHits });
     setActive(0);
-  }, [fragmentQuery, fileHits]);
+  }
   type Row =
     | { kind: "emp"; employee: Employee }
     | { kind: "file"; file: FileMention };
