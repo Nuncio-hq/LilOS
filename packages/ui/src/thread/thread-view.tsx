@@ -1,5 +1,5 @@
 import type { ChatStatus } from "ai";
-import { CheckIcon, Maximize2Icon, PlayIcon } from "lucide-react";
+import { CheckIcon, Maximize2Icon, PlayIcon, XIcon } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { AccessPill } from "../chat/access-pill";
 import {
@@ -122,6 +122,7 @@ export function ThreadView({
   seedFiles,
   onSeededFiles,
   onOpenSession,
+  onAddFolder,
   onPlan,
   onAnswer,
   onCancel,
@@ -222,6 +223,9 @@ export function ThreadView({
   onSeededFiles?: () => void;
   /* A subagent row that is another employee links to their session (issue #170). */
   onOpenSession?: (employeeId: string, session: string) => void;
+  /* #581: a folder-less DM thread can pick a real folder — the host moves
+     the session there (the pick is only offered where the engine can move). */
+  onAddFolder?: () => void;
   /* Plan card decisions (issue #175). */
   onPlan?: (a: PlanAction, planId: string) => void;
   /* #420: question-ask answer/cancel — passed, the handler owns the
@@ -382,6 +386,22 @@ export function ThreadView({
           >
             {channelLabel}
             {leadEmp && !isDM && ` · ${leadEmp.name}`}
+            {isDM && !work && !repo && !thread.ws && onAddFolder && (
+              /* #581 AC-2: a folder-less DM session gets a real "Add a
+                 folder" affordance — picking one moves the session there.
+                 Inline so the header keeps its two-row height (#602). */
+              <>
+                {" · "}
+                <button
+                  type="button"
+                  onClick={onAddFolder}
+                  data-add-folder
+                  className="font-medium text-foreground/80 underline decoration-dotted underline-offset-2 hover:text-foreground"
+                >
+                  Add a folder
+                </button>
+              </>
+            )}
             {/* #583 AC-3: a live background job says so right under the
                 title — "1 running in background". */}
             {runningJobs > 0 && (
@@ -459,6 +479,20 @@ export function ThreadView({
               onClick={onFocus}
             >
               <Maximize2Icon />
+            </Button>
+          )}
+          {/* #577 AC-2: a visible ✕ — the way back to the DM list beside
+              Esc (which the same onClose owns). */}
+          {onClose && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="ml-0.5"
+              title="Close"
+              aria-label="Close thread panel"
+              onClick={onClose}
+            >
+              <XIcon />
             </Button>
           )}
         </div>

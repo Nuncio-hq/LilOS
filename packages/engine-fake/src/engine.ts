@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import {
   type AgentDescriptor,
@@ -38,6 +38,7 @@ import {
   RPC_ERRORS,
   SESSION_META_CAPABILITY,
   type SessionAskParams,
+  type SessionMoveWorkspaceParams,
   type SessionRewindParams,
   type SessionSetAccessParams,
   type SessionSetHiddenParams,
@@ -52,6 +53,7 @@ import {
   STEER_CAPABILITY,
   SUBAGENTS_CAPABILITY,
   type Usage,
+  WORKSPACE_MOVE_CAPABILITY,
 } from "@lilos/contracts/engine";
 import {
   DEFAULT_MODEL,
@@ -376,6 +378,10 @@ export class FakeEngine {
         return this.sessionSteer(parsed.data as SessionSteerParams);
       case "session.rewind":
         return this.sessionRewind(parsed.data as SessionRewindParams);
+      case "session.moveWorkspace":
+        return this.sessionMoveWorkspace(
+          parsed.data as SessionMoveWorkspaceParams,
+        );
       case "session.ask":
         return this.sessionAsk(parsed.data as SessionAskParams);
       case "agents.list":
@@ -461,6 +467,7 @@ export class FakeEngine {
       ...(this.capOn("subagents") ? [SUBAGENTS_CAPABILITY] : []),
       ...(this.capOn("background_jobs") ? [BACKGROUND_JOBS_CAPABILITY] : []),
       ...(this.capOn("side_prompt") ? [SIDE_PROMPT_CAPABILITY] : []),
+      ...(this.capOn("workspace_move") ? [WORKSPACE_MOVE_CAPABILITY] : []),
       /* #106: the policy the Settings Approvals section writes via
          approvals.setPolicy — `current` reports the live value. */
       ...(this.capOn("approval_policy")
@@ -878,6 +885,27 @@ export class FakeEngine {
       s.steers.length = 0;
     }
     return { removed };
+  }
+
+  /**
+   * `session.moveWorkspace` (#581): re-home the session's working folder —
+   * transcript, memory and event log untouched; the next turn runs in the
+   * new `cwd` (its script's `Session cwd is …` echo proves it). Like a real
+   * engine the folder must exist; a missing one answers INVALID_PARAMS.
+   */
+  private sessionMoveWorkspace(p: SessionMoveWorkspaceParams) {
+    const s = this.require(p.sessionId);
+    /* A suspended session is still re-homable (the engine moves the stored
+       row); a truly closed one is not. */
+    if (s.state === "closed" && !s.suspended)
+      throw new RpcError(RPC_ERRORS.INVALID_STATE, `session ${s.id} is closed`);
+    if (!existsSync(p.cwd) || !statSync(p.cwd).isDirectory())
+      throw new RpcError(
+        RPC_ERRORS.INVALID_PARAMS,
+        `working directory does not exist: ${p.cwd}`,
+      );
+    s.cwd = p.cwd;
+    return { cwd: s.cwd };
   }
 
   private agentsList() {

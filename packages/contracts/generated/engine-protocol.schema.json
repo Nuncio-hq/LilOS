@@ -2809,6 +2809,43 @@
         "additionalProperties": false
       }
     },
+    "session.moveWorkspace": {
+      "doc": "Re-home the session's working folder (issue #581) — memory and transcript untouched; the next turn runs in `cwd`. Engines that can't re-home (ACP today) don't declare the capability.",
+      "capability": "workspace_move",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "cwd": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "sessionId",
+          "cwd"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "cwd": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "cwd"
+        ],
+        "additionalProperties": false
+      }
+    },
     "session.ask": {
       "doc": "One-shot question the engine answers for the session (issue #584): nothing is added to the session's transcript, context or event stream — the Workbench's 'Suggest' asks go through here. Runs alongside a live turn.",
       "capability": "side_prompt",
