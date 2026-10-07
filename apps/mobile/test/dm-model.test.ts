@@ -627,7 +627,7 @@ describe("dm-model helpers", () => {
     expect(toSessionTurns([summary("c3")], CTX)[0].failure).toBeUndefined();
   });
 
-  it("askApproval renders an approval ask as the row's reason", () => {
+  it("askApproval renders an approval ask as the row's reason and carries its options", () => {
     const approval = askApproval(ask("a1"), {
       employeeId: "builder",
       employee: "Builder",
@@ -639,6 +639,21 @@ describe("dm-model helpers", () => {
     expect(approval.command).toBe("rm -rf tmp");
     expect(approval.session).toBe("Fix the flapper");
     expect(approval.employee).toBe("Builder");
+    // #601: the ask's own options ride the row — the card offers them.
+    expect(approval.grantOptions).toEqual(["once"]);
+    // Questions carry no grant options.
+    expect(
+      askApproval(
+        ask("a2", { request: { kind: "question", question: "Ship it?" } }),
+        {
+          employeeId: "builder",
+          employee: "Builder",
+          tone: "blue",
+          session: "s",
+          now: T0,
+        },
+      ).grantOptions,
+    ).toBeUndefined();
   });
 
   it("askApproval's reason is the command even with a description, and reads questions", () => {
