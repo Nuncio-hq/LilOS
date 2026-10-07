@@ -3,7 +3,12 @@ import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import WebSocket from "ws";
 import { RelayClient } from "../packages/client-runtime/src/index";
-import { bootStack, panelIntoFocus, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  panelIntoFocus,
+  pickPorts,
+  type Stack,
+} from "./helpers/stack";
 
 /**
  * Issue #558 — answer approval/plan cards from the keyboard. ↵ allows once

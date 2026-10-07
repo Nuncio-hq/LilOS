@@ -90,7 +90,9 @@ test("AC-1..4 picker + session cwd + Workbench Files/Changes over host API", asy
     .locator("[data-toast]")
     .waitFor({ state: "attached", timeout: 5_000 })
     .catch(() => {});
-  await page.locator("[data-toast]").waitFor({ state: "detached", timeout: 15_000 });
+  await page
+    .locator("[data-toast]")
+    .waitFor({ state: "detached", timeout: 15_000 });
 
   // The new folder is picked for this DM; switch it to direct mode (edit in place).
   await page.locator("[data-ws='branch']").click();
