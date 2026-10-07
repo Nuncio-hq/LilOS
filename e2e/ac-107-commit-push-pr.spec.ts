@@ -110,6 +110,10 @@ test.beforeAll(async () => {
     PATH: `${fakeGh}:${process.env.PATH}`,
     GH_FAKE_DIR: ghFakeDir,
     GH_FAKE_LOG: ghLogFile,
+    /* #621: every approval opens 4s late, so the spec always exercises the
+       late-card path this issue regressed — two or more asks in a row now
+       outlast a helper that stops answering after ~6s of quiet. */
+    LILOS_ASK_OPEN_DELAY_MS: "4000",
   });
 });
 test.afterAll(async () => {
