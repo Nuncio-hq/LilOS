@@ -254,7 +254,7 @@ export function PlanCard({
             </View>
           )}
           {stale && answerHint && (
-            <AppText size="xs" tone="muted" className="mt-1.5">
+            <AppText size="xs" tone="muted" className="mt-2 pb-1">
               {answerHint}
             </AppText>
           )}
