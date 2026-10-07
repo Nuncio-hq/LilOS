@@ -177,13 +177,14 @@ export function QuestionCard({
      short arrival window (scrolling up only — never drag the card down),
      and stop the moment the user scrolls. `resolved` in deps re-arms
      the window when a sibling ask resolves — the question that becomes
-     visible after an answer gets the same lift (FIX r4). The port RO
-     re-aligns on resizes too: shrinking the window GROWS the max
-     scrollTop, so no scroll event fires and neither the lock nor the
-     expired arrival ride restores the card — it can sit clipped under
-     the fold forever (#649). The gate keeps the reader in charge: a
-     card scrolled away above the port, or more than a viewport below,
-     is left alone. */
+     visible after an answer gets the same lift (FIX r4). The RO
+     re-aligns on port resizes AND content growth: a window shrink
+     GROWS the max scrollTop (no scroll event fires) and streaming rows
+     push the tail under the fold without touching the port's size —
+     neither the lock nor the expired arrival ride restores the card
+     then, so it can sit clipped under the composer forever (#649). The
+     gate keeps the reader in charge: a card scrolled away above the
+     port, or more than a viewport below, is left alone. */
   useEffect(() => {
     const el = cardRef.current;
     if (!el || !interactive) return;
@@ -235,12 +236,28 @@ export function QuestionCard({
     const kick = setTimeout(align, 450);
     const ride = setInterval(align, 350);
     const end = setTimeout(() => clearInterval(ride), 3500);
-    const ro = new ResizeObserver(realign);
+    let retry: ReturnType<typeof setInterval> | undefined;
+    let retryEnd: ReturnType<typeof setTimeout> | undefined;
+    const ro = new ResizeObserver(() => {
+      /* Layout writes land a frame after the size change — retry on a
+         short ride so a mid-animation read can't gate-skip the fix. */
+      realign();
+      clearInterval(retry);
+      clearTimeout(retryEnd);
+      retry = setInterval(realign, 350);
+      retryEnd = setTimeout(() => clearInterval(retry), 1400);
+    });
     ro.observe(port);
+    /* The content's height is where streaming growth shows up — the
+       port alone doesn't resize then. */
+    if (port.firstElementChild instanceof HTMLElement)
+      ro.observe(port.firstElementChild);
     const cancel = () => {
       cancelled = true;
       clearInterval(ride);
       clearTimeout(end);
+      clearInterval(retry);
+      clearTimeout(retryEnd);
       ro.disconnect();
     };
     port.addEventListener("wheel", cancel, { passive: true });
