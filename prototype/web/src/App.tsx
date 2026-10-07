@@ -1337,6 +1337,14 @@ export default function App() {
     }
   }, [liveStatus, liveBanner, scenario])
 
+  /* #557: the thin "Reconnecting…" line over the composer — driven by the
+     same signal as the sidebar status row (the relay leg reporting
+     `connecting`), but sitting where a send is typed: Focus hides the
+     sidebar, so it can't stand in for this. */
+  const relayReconnecting = (liveStatus?.components ?? STATUS[scenario]).some(
+    (c) => c.id === "relay" && c.state === "connecting",
+  )
+
   const goChannel = (id: string) => { setView({ kind: "channel", id }); setThreadId(null); setFocus(false); setNavOpen(false) }
   const goDM = (id: string) => {
     const last = [...(feeds[`dm-${id}`] ?? [])].reverse().find((m) => m.kind === "msg" && m.thread)
@@ -2087,7 +2095,7 @@ export default function App() {
       transcriptNote={transcriptNoteOf(openThread.thread)}
       lastSent={lastSentIn(openThread)}
       onRetry={(e) => retry(openThread, e)} onUnqueue={(i) => unqueue(openThread, i)} onSendQueued={(i) => sendQueuedNow(openThread, i)}
-      pending={pendingSteers[openThread.id] ?? []} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
+      pending={pendingSteers[openThread.id] ?? []} reconnecting={relayReconnecting} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
       models={canModels ? MODEL_OPTS : undefined} onModel={canModels ? (m) => setModel(openThread, m) : undefined} picker={pickerExtras}
       access={access} onAccess={setAccess}
       scrollTo={scrollTo ?? undefined} onScrolled={() => setScrollTo(null)}
@@ -2159,7 +2167,7 @@ export default function App() {
           // LilOS Browser (#214) replaces it only in the mock prototype.
           browser={realSurfaces ? undefined : threadBrowser(openThread.id)}
           initialTab={focusTab}
-          pending={pendingSteers[openThread.id] ?? []} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
+          pending={pendingSteers[openThread.id] ?? []} reconnecting={relayReconnecting} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
           ship={shipFor(openThread)}
           /* The built-in engine declares all three workbench caps (#587):
              fixed tab membership, empty tabs greyed. */

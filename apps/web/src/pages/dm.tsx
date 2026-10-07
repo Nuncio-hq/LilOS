@@ -262,6 +262,12 @@ export function DmPage() {
   const pending = useAtom(pendingStart);
   const engineState = useAtom(engine.state);
   const statusPoll = useAtom(relay.status);
+  /* #557: the socket dropped and the client is redialing — both composers
+     show the thin "Reconnecting…" line so a send made in the window reads
+     as waiting, not lost. The sidebar row can't cover this: Focus hides
+     the whole sidebar. */
+  const relayState = useAtom(relay.state);
+  const reconnecting = relayState === "reconnecting";
   const fatal = useAtom(relay.fatal);
   const [profileOpen, setProfileOpen] = useState(false);
   /* #421: the header card lists the engine's profiles for the
@@ -377,7 +383,7 @@ export function DmPage() {
     () =>
       toStatusComponents({
         result: statusPoll.result,
-        connection: "ready",
+        connection: statusPoll.connection,
         fatal,
       }).find((c) => c.id === "engine"),
     [statusPoll, fatal],
@@ -1632,6 +1638,7 @@ export function DmPage() {
             })
           }
           pending={pendingItems}
+          reconnecting={reconnecting}
           onRemovePending={onRemovePending}
           onUnqueue={onUnqueue}
           onSendQueued={onSendQueued}
@@ -1784,6 +1791,7 @@ export function DmPage() {
           onSend={sendInThread}
           onPlan={planCap ? onPlan : undefined}
           pending={pendingItems}
+          reconnecting={reconnecting}
           onRemovePending={onRemovePending}
           onUnqueue={onUnqueue}
           onSendQueued={onSendQueued}

@@ -8,6 +8,7 @@ import {
   QueuedTray,
   type QueuedTrayItem,
   queuedItemText,
+  ReconnectingLine,
   runningComposer,
   waitingComposer,
 } from "../chat/agent-chat";
@@ -90,6 +91,7 @@ export function ThreadView({
   onUnqueue,
   onSendQueued,
   pending = [],
+  reconnecting,
   accept,
   maxFileSize,
   maxFiles,
@@ -167,6 +169,10 @@ export function ThreadView({
      composer; `steer` (engine declared session.steer) only changes when they get read (issue #9).
      A `{text, removable}` row the engine already holds hides its Edit/Remove (#315). */
   pending?: QueuedTrayItem[];
+  /* #557: the relay socket is down and the client is redialing — a thin
+     "Reconnecting…" line over the composer; the send waits and lands once
+     the socket is back. */
+  reconnecting?: boolean;
   /* Composer attachment types the host accepts (e.g. "image/*"); absent = no attach UI. */
   accept?: string;
   /* Attachment byte cap + count cap + where rejections surface (issue #31). */
@@ -661,6 +667,7 @@ export function ThreadView({
         }
         queued={
           <>
+            {reconnecting && <ReconnectingLine />}
             {/* Every mid-turn send waits here until the agent reads it — steer or not (issue #9). */}
             <QueuedTray
               items={pending}

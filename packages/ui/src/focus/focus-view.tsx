@@ -32,6 +32,7 @@ import {
   QueuedTray,
   type QueuedTrayItem,
   queuedItemText,
+  ReconnectingLine,
   runningComposer,
   waitingComposer,
 } from "../chat/agent-chat";
@@ -150,6 +151,7 @@ export function FocusView({
   onPrMerge,
   surfaces,
   pending,
+  reconnecting,
   steer = false,
   agentWorking = false,
   onRemovePending,
@@ -234,6 +236,10 @@ export function FocusView({
   surfaces?: LiveSurfaces;
   /* Mid-turn sends the agent hasn't read yet — the waiting tray above the composer (issue #9). */
   pending?: QueuedTrayItem[];
+  /* #557: the relay socket is down and the client is redialing — a thin
+     "Reconnecting…" line over the composer (Focus hides the sidebar
+     status row); the send waits and lands once the socket is back. */
+  reconnecting?: boolean;
   /* os.editors + a bound os.open (issue #110, same pair ThreadView takes):
      the caller probes `host.describe` — onOpenPath={null} means os.open was
      absent, so the badge stays a plain label even when the accessors object
@@ -1105,6 +1111,7 @@ export function FocusView({
             {/* Mid-turn sends still waiting to be read (issue #9) and the not-sent tray —
                 same markup as the thread panel, above the composer there too. queue holds ONLY
                 messages the Stop button stopped before they landed. */}
+            {reconnecting && <ReconnectingLine />}
             <QueuedTray
               items={pendingSteers}
               steer={steer}
