@@ -19,6 +19,12 @@ describe("threadBottomInset — tray + toast feed the bottom inset", () => {
     expect(threadBottomInset(96, 0, 0, 0, 40)).toBe(96 + 40 + 8);
   });
 
+  it("uses the toast's onLayout-measured height, not a smaller floor", () => {
+    /* Vision review: the fixed 40pt reserve left the pill flush against
+       "You stopped this turn" — a real ~56pt pill needs its own number. */
+    expect(threadBottomInset(96, 0, 0, 0, 56)).toBe(96 + 56 + 8);
+  });
+
   it("stacks tray and toast together above the composer", () => {
     expect(threadBottomInset(96, 0, 0, 72, 40)).toBe(96 + 72 + 8 + 40 + 8);
   });

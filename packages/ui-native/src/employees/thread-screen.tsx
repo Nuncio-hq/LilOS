@@ -38,7 +38,10 @@ import { WorkbenchCard } from "./workbench-card";
 const HIT_TOP_GAP = 12;
 /* The Remove toast's visible window before the remove stands. */
 const REMOVED_TOAST_MS = 5000;
-const REMOVED_TOAST_H = 40;
+/* Floor for the Undo toast's inset reserve until onLayout reports — the
+   pill (py-2 + sm text) lands ~48-56pt tall, so a 0 first frame would
+   still park the last row under it. The measured height wins. */
+const REMOVED_TOAST_H = 48;
 /* Floor for the not-sent tray's inset reserve while its real height is
    unmeasured (onLayout can report 0 or land a frame late — a 0 reserve
    parks the last transcript row under the tray). Header + one wrapped
@@ -157,6 +160,7 @@ export function ThreadScreen({
   const [pillHeight, setPillHeight] = useState(0);
   const [noteHeight, setNoteHeight] = useState(0);
   const [trayHeight, setTrayHeight] = useState(0);
+  const [toastHeight, setToastHeight] = useState(0);
   /* #555: search-hit navigation — each row's scroll offset lands here;
      while the pending target is pending, EVERY scroll keeps it centred
      (content still grows under it — scrollToEnd would steal it back),
@@ -273,7 +277,7 @@ export function ThreadScreen({
     pill ? pillHeight : 0,
     unreachableNote ? noteHeight : 0,
     parked.length ? Math.max(trayHeight, TRAY_MIN_H) : 0,
-    removed ? REMOVED_TOAST_H : 0,
+    removed ? Math.max(toastHeight, REMOVED_TOAST_H) : 0,
   );
   /* The pending hit re-centres on each layout pass until the content
      settles; a beat after the first centre it flashes and stands down. */
@@ -462,9 +466,12 @@ export function ThreadScreen({
           {removed && (
             /* #555: Remove's ~5s Undo — an inverted pill above the
                composer, gone on its own (web keeps the deleted row's
-               toast slot). Its height is a fixed reserve in the bottom
-               inset — the last row never sits under it. */
-            <View className="mx-4 items-center">
+               toast slot). Its measured height reserves room in the
+               bottom inset — the last row never sits under it. */
+            <View
+              className="mx-4 items-center"
+              onLayout={(e) => setToastHeight(e.nativeEvent.layout.height)}
+            >
               <View className="flex-row items-center gap-3 rounded-full bg-foreground/95 px-4 py-2">
                 <AppText size="sm" className="text-background">
                   Message removed
