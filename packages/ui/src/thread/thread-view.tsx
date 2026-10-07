@@ -350,7 +350,7 @@ export function ThreadView({
           >
             {channelLabel}
             {leadEmp && !isDM && ` · ${leadEmp.name}`}
-            {isDM && !work && !repo && onAddFolder && (
+            {isDM && !work && !repo && !thread.ws && onAddFolder && (
               /* #581 AC-2: a folder-less DM session gets a real "Add a
                  folder" affordance — picking one moves the session there.
                  Inline so the header keeps its two-row height (#602). */
