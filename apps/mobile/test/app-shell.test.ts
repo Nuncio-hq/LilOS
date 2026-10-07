@@ -158,4 +158,35 @@ describe("#596 — push/deep links stack DM under Thread; loading & gone states"
     /* The header can no longer claim Working over an empty body. */
     expect(thread).not.toContain('?? "working"');
   });
+
+  it("AC-2b the gone card carries its own way back — 'Back to <employee>'", () => {
+    /* A cold-launch push user stares at the centre of the screen: the
+       button lives inside the gone StateBlock, lands on the resolved
+       employee's DM (popTo — the push stacked that DM under the Thread),
+       and falls back to plain Back when no employee was resolved. */
+    expect(thread).toContain("thread-gone-back");
+    expect(thread).toContain("Back to");
+    expect(thread).toContain("goneEmployee.name");
+    expect(thread).toContain('popTo("Dm"');
+    expect(thread).toContain("navigation.canGoBack()");
+    /* The employee can't resolve off a conversation the directory has
+       already forgotten — push/ask flows carry it through the route. */
+    const routes = read("apps/mobile/src/routes.ts");
+    expect(routes).toContain("Thread: { conversationId: string; employeeId?");
+    expect(push).toContain("employeeId: target.employeeId");
+  });
+
+  it("AC-2c a gone thread stops fetching: the directory gates the feed", () => {
+    /* The HUD's climbing net count was resyncSessionFeeds re-pulling
+       session.events for a conversation the synced directory no longer
+       lists. The gate lives in client-runtime's syncSessionFeed — the
+       gone id settles synced-and-empty without a round trip, and a
+       conversation.updated that arrives later still resyncs it. */
+    const client = read("packages/client-runtime/src/client.ts");
+    expect(client).toContain("directoryReady.get()");
+    const gateAt = client.indexOf("directoryReady.get()");
+    expect(client.slice(gateAt, gateAt + 400)).toContain("session.events");
+    /* Screen-side too: the PR badge doesn't burn a `not_found` call. */
+    expect(thread).toContain("if (!client || gone) return");
+  });
 });

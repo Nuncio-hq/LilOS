@@ -138,7 +138,13 @@ const pushThread = (conversationId: string) => {
       channels: client.channels.get(),
     });
   if (target) nav.navigate("Dm", { employeeId: target.employeeId });
-  nav.navigate("Thread", { conversationId });
+  /* AC-2b: hand the resolved employee to the Thread too — if the thread
+     is gone by the time it opens, its card can still offer "Back to
+     <employee>" and land on this DM. */
+  nav.navigate("Thread", {
+    conversationId,
+    ...(target ? { employeeId: target.employeeId } : {}),
+  });
 };
 
 /* The tap waits only for what the DM needs: resolvable now, or the first

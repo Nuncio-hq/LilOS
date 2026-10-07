@@ -16,6 +16,7 @@ import type { Job } from "@lilos/contracts/engine";
 import type { ModelPick, PlanAction } from "@lilos/ui-native";
 import {
   BackgroundSheet,
+  Button,
   findModel,
   modelLabel,
   PlanSheet,
@@ -123,13 +124,6 @@ function useThread(conversationId: string) {
   const prsMap = useStore($prs);
   const wbCards = useStore($wbCards);
 
-  /* #159 AC-5: opening the thread refetches its PRs; `turn.completed`
-     refetches through watchPrs (registered by watchDm below). */
-  useEffect(() => {
-    if (!client) return;
-    void refreshConversationPrs(client, conversationId);
-  }, [client, conversationId]);
-
   const pendingEntry = pending.get(conversationId);
   const conv =
     conversations.find((c) => c.id === conversationId) ??
@@ -137,6 +131,16 @@ function useThread(conversationId: string) {
   /* #596: "unknown id" is only "gone" once the first directory sync
      landed — before that it's still loading. */
   const directoryReady = useStore(client?.directoryReady ?? $noReady);
+  const gone = directoryReady && conv === undefined;
+
+  /* #159 AC-5: opening the thread refetches its PRs; `turn.completed`
+     refetches through watchPrs (registered by watchDm below). #596: a
+     gone thread skips it — the relay only has a `not_found` for it. */
+  useEffect(() => {
+    if (!client || gone) return;
+    void refreshConversationPrs(client, conversationId);
+  }, [client, conversationId, gone]);
+
   const channelId = conv?.channelId;
   const chanAtom = useMemo(
     () => (client && channelId ? client.channelMessages(channelId) : undefined),
@@ -358,6 +362,7 @@ function useThread(conversationId: string) {
     conv,
     channelId,
     employee,
+    employees,
     detail,
     directoryReady,
     catalog,
@@ -383,6 +388,7 @@ export function Thread({
     conv,
     channelId,
     employee,
+    employees,
     detail,
     directoryReady,
     catalog,
@@ -518,6 +524,15 @@ export function Thread({
     /* #596 AC-2: a deep-linked thread is "Loading…" while the directory
        hasn't synced, "This thread is gone" once it has — never blank. */
     const bodyState = threadBodyState(conv !== undefined, directoryReady);
+    /* AC-2b: a cold-launch push user lands staring at the centre of the
+       screen — the gone card must offer the way back itself. The push/
+       ask flow carried the resolved employee through the route (the wire
+       can't anymore: `conversations` no longer lists the thread); when
+       nothing resolved, fall back to plain Back. */
+    const goneEmployeeId = route.params.employeeId;
+    const goneEmployee = goneEmployeeId
+      ? employees.find((e) => e.id === goneEmployeeId)
+      : undefined;
     return (
       <View className="flex-1 items-center justify-center bg-background px-6">
         {bodyState === "gone" ? (
@@ -526,7 +541,28 @@ export function Thread({
             title="This thread is gone"
             body="It may have been removed on the Mac."
             testID="thread-gone"
-          />
+          >
+            <View className="mt-2 self-stretch">
+              <Button
+                label={goneEmployee ? `Back to ${goneEmployee.name}` : "Back"}
+                icon="chevron.left"
+                variant="secondary"
+                testID="thread-gone-back"
+                onPress={() => {
+                  if (goneEmployeeId) {
+                    /* The DM for this employee is already under the Thread
+                       (pushThread stacked it); popTo drops the dead
+                       Thread and lands on it. */
+                    navigation.popTo("Dm", { employeeId: goneEmployeeId });
+                  } else if (navigation.canGoBack()) {
+                    navigation.goBack();
+                  } else {
+                    navigation.popToTop();
+                  }
+                }}
+              />
+            </View>
+          </StateBlock>
         ) : (
           <StateBlock
             visual={<ActivityIndicator color={spinner} />}
@@ -695,7 +731,10 @@ export function Subagent({
         const emp = channels.find((c) => c.id === conv?.channelId)?.employeeId;
         navigation.goBack();
         if (emp) navigation.navigate("Dm", { employeeId: emp });
-        navigation.navigate("Thread", { conversationId: threadId });
+        navigation.navigate("Thread", {
+          conversationId: threadId,
+          ...(emp ? { employeeId: emp } : {}),
+        });
       }}
     />
   );
@@ -729,7 +768,10 @@ export function Subagents({
         const emp = channels.find((c) => c.id === conv?.channelId)?.employeeId;
         navigation.goBack();
         if (emp) navigation.navigate("Dm", { employeeId: emp });
-        navigation.navigate("Thread", { conversationId: threadId });
+        navigation.navigate("Thread", {
+          conversationId: threadId,
+          ...(emp ? { employeeId: emp } : {}),
+        });
       }}
       onDone={() => navigation.goBack()}
     />
