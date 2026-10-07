@@ -130,6 +130,10 @@ export function toApproval(ask: Ask, wire: HomeWire, nowMs: number): Approval {
     /* #601: the ask's own options ride the row — the card + sheet offer
        Once / This session / Always / Deny as it asked them. */
     grantOptions: request.kind === "approval" ? request.options : undefined,
+    /* #553: a question ask carries its answer buttons + free-text flag —
+       the Activity card renders the same QuestionCard the thread does. */
+    options: request.kind === "question" ? request.options : undefined,
+    freeText: request.kind === "question" ? request.freeText : undefined,
     age: ageLabel(ask.createdAt, nowMs),
     /* #591 AC-2: an offline Activity keeps its rows — each says "last
        known" instead of pretending they were just fetched. */
