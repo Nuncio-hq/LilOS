@@ -143,6 +143,10 @@ export type DmCtx = {
   >;
   /** Each conversation's PRs (#159) — absent key = nothing to show (AC-4). */
   prs?: Readonly<Record<string, PullRequestRef[]>>;
+  /* #600: the DM's own send in flight (conversations.open hasn't
+     answered) — the row shows at once, before even a pending marker can
+     exist. */
+  sending?: { text: string; at: number };
   now: number;
 };
 
@@ -244,6 +248,22 @@ export function toSessionTurns(
         ...(p.conversation.workspace?.branch
           ? { branch: p.conversation.workspace.branch }
           : {}),
+      },
+    });
+  }
+  /* #600: still inside `conversations.open` — no pending marker to draw
+     from yet, so the row renders from the draft text itself. */
+  if (ctx.sending) {
+    rows.push({
+      at: ctx.sending.at,
+      turn: {
+        id: `sending:${ctx.sending.at}`,
+        prompt: ctx.sending.text,
+        title: ctx.sending.text,
+        state: "working",
+        life: "running",
+        when: timeLabel(ctx.sending.at, ctx.now),
+        live: "Sending…",
       },
     });
   }

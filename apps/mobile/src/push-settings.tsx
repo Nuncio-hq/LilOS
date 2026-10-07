@@ -41,7 +41,7 @@ export function PushSettingsSection() {
           <AppText tone="muted">Fix</AppText>
         </Row>
       ) : permission === "undetermined" ? (
-        <Row onPress={() => void requestPushPermission()}>
+        <Row onPress={() => void requestPushPermission({ manual: true })}>
           <AppText className="flex-1">Allow notifications</AppText>
           <AppText tone="muted">Ask</AppText>
         </Row>

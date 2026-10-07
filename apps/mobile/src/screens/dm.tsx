@@ -43,9 +43,12 @@ import {
   $modelPicks,
   $modelVisibility,
   $pendingOpens,
+  $sendingDm,
   $wsPicks,
   clearPending,
+  clearSending,
   markPending,
+  markSending,
   refreshModelCatalog,
   watchDm,
 } from "../dm-store";
@@ -107,6 +110,7 @@ export function Dm({
   const wsPicks = useStore($wsPicks);
   const modelPicks = useStore($modelPicks);
   const pending = useStore($pendingOpens);
+  const sending = useStore($sendingDm);
   const prsMap = useStore($prs);
   const now = useNow();
 
@@ -204,6 +208,9 @@ export function Dm({
         openAsks,
         pending,
         prs: prsMap,
+        ...(sending.get(employeeId)
+          ? { sending: sending.get(employeeId) }
+          : {}),
         now,
       })
     : [];
@@ -299,6 +306,9 @@ export function Dm({
   const send = (text: string) => {
     const c = client;
     if (!c) return;
+    /* #600: the draft clears on send — show the row at once instead of
+       leaving an empty beat until conversations.open answers. */
+    markSending(employeeId, text);
     /* #552: the open's key belongs to the draft — the failure path
        refills the composer with the same text, so the resend repeats the
        key and the relay answers the thread it already stored. */
@@ -336,6 +346,8 @@ export function Dm({
       } catch (e) {
         Alert.alert("Couldn't send", describeError(e));
         setPrefill({ text });
+      } finally {
+        clearSending(employeeId);
       }
     })();
   };
