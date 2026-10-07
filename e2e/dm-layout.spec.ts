@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { bootStack } from "./helpers/stack";
+import { bootStack, panelIntoFocus } from "./helpers/stack";
 
 /**
  * DM page layout. With no session open, the employee feed must fill the
@@ -157,9 +157,10 @@ test("AC-660 the DM main pane stays mounted through send → Focus", async ({
     const box = page.locator("textarea").last();
     await box.fill(PROMPT);
     await box.press("Enter");
-    await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+\/focus/, {
-      timeout: 30_000,
-    });
+    /* #577: the send lands on the thread panel; open Focus the way the user
+       does — the panel's Focus button. The summary-delayed openConv still
+       lands inside the swap window this AC samples. */
+    await panelIntoFocus(page);
     // Wait for the Focus surface itself — with the summary held back this
     // settles only once the delayed row lands and Focus takes the pane.
     await expect(page.getByRole("button", { name: /back to dm/i })).toBeVisible(
