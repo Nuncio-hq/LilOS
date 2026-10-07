@@ -1823,11 +1823,17 @@ export function DmPage() {
             })
           }
           /* #581 AC-2: a folder-less DM thread gets "Add a folder" — the
-             pick moves the session there (same thread, same memory). */
-          onAddFolder={() => {
-            setMoveFolderOpen(true);
-            toastOnFail("Couldn't scan for repos", loadDiscovered());
-          }}
+             pick moves the session there (same thread, same memory). The
+             panel keeps work=null for DM by design, so the gate is the
+             conversation's cwd itself. */
+          onAddFolder={
+            conv.cwd
+              ? undefined
+              : () => {
+                  setMoveFolderOpen(true);
+                  toastOnFail("Couldn't scan for repos", loadDiscovered());
+                }
+          }
           mentionables={mentionables}
           onSearchFiles={fileSearch(conv.cwd)}
           scrollTo={scrollTo ?? undefined}
