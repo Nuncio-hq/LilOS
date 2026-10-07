@@ -246,10 +246,16 @@ test("AC-2 sends attachments over conversations.open and messages.post", async (
     0,
   );
 
-  // Reply leg: the thread composer posts through messages.post.
+  // Reply leg: the thread composer posts through messages.post. Wait for the
+  // turn to END (not just its text — reply text lands mid-turn): a send while
+  // the turn is live parks in the QueuedTray and renders no [data-attachments]
+  // until it delivers (#315) — submitting then races the tray, not the wire.
   await expect(page.locator("text=/prompt content block/i").last()).toBeVisible(
     { timeout: 15_000 },
   );
+  await expect(page.locator("[data-turnsettled]").last()).toBeVisible({
+    timeout: 15_000,
+  });
   await attach(page, "pick", "reply.png", "thread");
   await page
     .locator("textarea")
@@ -453,7 +459,12 @@ test("AC-2b an image-only send (no typed text) opens a session and replies", asy
   ).messages.find((m) => m.attachments?.[0]?.name === "only.png");
   expect(rootOnly?.text).toBe("");
 
-  // Same again as a reply in the open thread.
+  // Same again as a reply in the open thread — same ordering: a send while
+  // the turn is still live trays the message without [data-attachments]
+  // (#315), so the reply goes out only once the turn has settled.
+  await expect(page.locator("[data-turnsettled]").last()).toBeVisible({
+    timeout: 15_000,
+  });
   await attach(page, "pick", "only-reply.png", "thread");
   await formOf(page, "thread").evaluate((f: HTMLFormElement) =>
     f.requestSubmit(),
