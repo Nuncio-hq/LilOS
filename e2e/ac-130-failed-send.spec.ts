@@ -372,6 +372,13 @@ test("AC-3 a successful send clears the composer and Enter-Enter sends once", as
   /* #577: a send lands on the DM list with the thread open beside it. */
   await page.waitForURL(/\/dm\/[^/]+\/[^/]+$/);
 
+  /* Turn 1 must be settled: the panel arrives before it finishes, and a
+     reply typed mid-turn is a pending steer — the tray shows it but it is
+     not a landed user message on the wire yet. */
+  await expect(page.locator("[data-turnsettled]").last()).toBeVisible({
+    timeout: 30_000,
+  });
+
   // Reply via a real Enter-Enter: one send, composer cleared.
   const text = "double-enter sends once";
   await boxOf(page, "thread").fill(text);

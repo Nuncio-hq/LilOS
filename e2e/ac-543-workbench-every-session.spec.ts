@@ -59,7 +59,6 @@ test.afterAll(async () => {
 
 test.describe.configure({ mode: "serial" });
 
-const FOCUS_URL = /\/dm\/[^/]+\/[^/]+\/focus/;
 const PANEL_URL = /\/dm\/[^/]+\/conv_[^/]+$/;
 
 async function openDefault(page: Page, s: Stack = stack) {
@@ -330,9 +329,13 @@ test("screenshots: folderless Focus on Subagents + Background, light + dark (128
   }
   for (const scheme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme: scheme });
+    /* The context-usage hover card sits over the tab row once opened —
+       park the pointer off the header so it closes before clicking. */
+    await page.mouse.move(10, 300);
     await tab(page, "Subagents").click();
     await expect(page.locator("[data-subagent]")).toHaveCount(3);
     await page.screenshot({ path: `${SHOTS}/subagents-${scheme}.png` });
+    await page.mouse.move(10, 300);
     await tab(page, "Background").click();
     await expect(page.locator('[data-job][data-status="running"]')).toHaveCount(
       1,
