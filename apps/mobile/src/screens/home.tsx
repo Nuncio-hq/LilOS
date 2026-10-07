@@ -25,8 +25,8 @@ import {
   toApproval,
   toEmployeeRow,
 } from "../home-model";
-import { $client, $link } from "../link";
-import { toHomeChannels } from "../mapping";
+import { $blockedUpdate, $client, $link, linkUnreachable } from "../link";
+import { blockedLine, toHomeChannels } from "../mapping";
 import { $connections } from "../paired-macs";
 import { nav } from "../routes";
 import { ago } from "../time";
@@ -71,7 +71,10 @@ export function useHomeWire(): {
         conversations,
         summaries,
         asks,
-        online: link !== "offline",
+        /* #591+#597: live data only while online/reconnecting — offline and
+           the version-mismatch `blocked` both leave stale rows, so both
+           read last-known. */
+        online: !linkUnreachable(link),
       },
     }),
     [client, link, employees, channels, conversations, summaries, asks],
@@ -107,6 +110,7 @@ export function Home() {
      the fake DEMO_MAC (same seam Settings uses; never persisted). */
   const mac = demo ? DEMO_MAC : paired;
   const link = useStore($link);
+  const blockedUpdate = useStore($blockedUpdate);
   const { client, wire } = useHomeWire();
   useLiveChannels(client, wire.channels);
   const nowMs = useNowMs();
@@ -121,6 +125,9 @@ export function Home() {
         link === "offline"
           ? `Showing last known · ${ago(mac.lastSeenAt)}`
           : undefined
+      }
+      blockedDetail={
+        link === "blocked" ? blockedLine(blockedUpdate) : undefined
       }
       employees={wire.employees.map((e) => toEmployeeRow(e, wire, nowMs))}
       company={company}
@@ -156,7 +163,10 @@ export function NeedsYouSlot({
       return;
     }
     nav.navigate("Dm", { employeeId: target.employeeId });
-    nav.navigate("Thread", { conversationId: target.conversationId });
+    nav.navigate("Thread", {
+      conversationId: target.conversationId,
+      employeeId: target.employeeId,
+    });
   };
   return (
     <NeedsYouAccessory
@@ -191,7 +201,10 @@ export function Activity() {
     const target = ask && askThreadTarget(ask, wire);
     if (!target) return;
     nav.navigate("Dm", { employeeId: target.employeeId });
-    nav.navigate("Thread", { conversationId: target.conversationId });
+    nav.navigate("Thread", {
+      conversationId: target.conversationId,
+      employeeId: target.employeeId,
+    });
   };
   return (
     <ApprovalsSheet
@@ -199,8 +212,13 @@ export function Activity() {
       /* #591: while the Mac is unreachable the list is last-known — the
          sheet marks it and the empty state never reads "All clear". */
       unreachable={
-        link === "offline" && mac
-          ? { mac: mac.name, asOf: ago(mac.lastSeenAt) }
+        linkUnreachable(link) && mac
+          ? {
+              mac: mac.name,
+              asOf: ago(mac.lastSeenAt),
+              /* #597: blocked is an update prompt, not a reach issue. */
+              line: link === "blocked" ? "Update needed" : undefined,
+            }
           : undefined
       }
       /* #601: approval rows offer the ask's own options — the tapped one

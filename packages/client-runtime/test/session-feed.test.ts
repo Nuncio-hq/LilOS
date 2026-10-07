@@ -104,6 +104,33 @@ const WELCOME = {
    one microtask is too shallow. */
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
+/* The directory row behind every feed this file opens — conv-1 is the
+   known conversation (#596's gone gate reads the synced directory). */
+const CONV = {
+  id: "conv-1",
+  channelId: "ch-1",
+  rootMessageId: "m1",
+  engineRef: "sess-1",
+  state: "active",
+  title: "hi",
+  titleSource: "auto",
+  archived: false,
+  deliveredSeq: 1,
+  createdAt: 0,
+};
+
+/* refreshDirectory awaits all of these on (re)connect — answer the lot so
+   a test client lands `directoryReady` the way the real app does. */
+const answerDirectory = (socket: FakeSocket) => {
+  socket.respondTo("employees.list", { employees: [] });
+  socket.respondTo("channels.list", { channels: [] });
+  socket.respondTo("conversations.list", { conversations: [CONV] });
+  socket.respondTo("conversations.summaries", { summaries: [] });
+  socket.respondTo("profile.get", { profile: {} });
+  socket.respondTo("devices.list", { devices: [] });
+  socket.respondTo("asks.list", { asks: [] });
+};
+
 async function connectClient(client: RelayClient, socket: FakeSocket) {
   const pending = client.connect();
   await flush();
@@ -111,9 +138,7 @@ async function connectClient(client: RelayClient, socket: FakeSocket) {
   await flush();
   socket.respondTo("session.hello", WELCOME);
   await pending;
-  socket.respondTo("employees.list", { employees: [] });
-  socket.respondTo("channels.list", { channels: [] });
-  socket.respondTo("conversations.list", { conversations: [] });
+  answerDirectory(socket);
   await flush();
 }
 
@@ -192,9 +217,7 @@ describe("AC-1 sessionFeed — conversation-scoped engine feed (#157)", () => {
     await flush();
     socket.respondTo("session.hello", WELCOME);
     await pending;
-    socket.respondTo("employees.list", { employees: [] });
-    socket.respondTo("channels.list", { channels: [] });
-    socket.respondTo("conversations.list", { conversations: [] });
+    answerDirectory(socket);
     const replays = socket.requestsOf("session.events");
     expect(replays).toHaveLength(2);
     expect(replays[1]?.params).toMatchObject({
@@ -343,9 +366,7 @@ describe("AC-1 sessionFeed — conversation-scoped engine feed (#157)", () => {
     await flush();
     socket.respondTo("session.hello", WELCOME);
     await pending;
-    socket.respondTo("employees.list", { employees: [] });
-    socket.respondTo("channels.list", { channels: [] });
-    socket.respondTo("conversations.list", { conversations: [] });
+    answerDirectory(socket);
     await flush();
 
     // The resync sent `after: 5` — in sess-1's space — but the relay answers
@@ -430,5 +451,49 @@ describe("AC-1 sessionFeed — conversation-scoped engine feed (#157)", () => {
     await flush();
     expect(feed.get().events.map((e) => e.seq)).toEqual([1, 2, 3, 4]);
     expect(feed.get().coverageSeq).toBe(4);
+  });
+
+  it("#596 a thread the synced directory doesn't know never fetches — not on open, not on reconnect", async () => {
+    const { client, socket } = makeClient();
+    await connectClient(client, socket);
+    expect(client.directoryReady.get()).toBe(true);
+
+    /* The deep link's id is simply absent: the feed settles synced-and-
+       empty with no session.events round trip at all — before this gate
+       it got `not_found` at open, then re-pulled on every reconnect
+       forever (the gone card's HUD kept counting). */
+    const feed = client.sessionFeed("conv-gone");
+    await flush();
+    expect(feed.get().synced).toBe(true);
+    expect(socket.requestsOf("session.events")).toHaveLength(0);
+
+    socket.emitClose();
+    const pending = client.connect();
+    await flush();
+    socket.openSocket();
+    await flush();
+    socket.respondTo("session.hello", WELCOME);
+    await pending;
+    answerDirectory(socket);
+    await flush();
+    expect(socket.requestsOf("session.events")).toHaveLength(0);
+
+    /* The gate is a skip, not a tombstone: if the conversation appears
+       after all (a conversation.updated lands while the feed lives),
+       the feed syncs like any fresh one. */
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "conversation.updated",
+      params: {
+        channelId: "ch-1",
+        conversation: { ...CONV, id: "conv-gone" },
+      },
+    });
+    await flush();
+    const replay = socket.requestsOf("session.events").at(-1);
+    expect(replay?.params).toMatchObject({
+      conversationId: "conv-gone",
+      after: 0,
+    });
   });
 });
