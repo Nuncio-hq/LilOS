@@ -5,6 +5,12 @@ import {
 import type { RelayCtx } from "./ctx";
 import { badParams, JsonRpcCode, RpcError } from "./rpc";
 
+/* #666 e2e knob: hold `channel.subscribe` before the peer joins the live
+   set — every channel emit inside the window is then genuinely missed, the
+   boot/reload gap a subscribe lands late under load (`0`/unset = no hold). */
+const SUBSCRIBE_DELAY_MS =
+  Number(process.env.LILOS_SUBSCRIBE_DELAY_MS ?? 0) || 0;
+
 /**
  * Moved verbatim out of `../session.ts`'s handle() (#441) — case
  * bodies are byte-identical modulo re-indentation. Returns `false`
@@ -36,6 +42,8 @@ export async function handleChannel(c: RelayCtx): Promise<false | undefined> {
           "channel not found",
         );
       }
+      if (SUBSCRIBE_DELAY_MS > 0)
+        await new Promise((r) => setTimeout(r, SUBSCRIBE_DELAY_MS));
       // Register for live frames first so nothing lands between the read
       // below and the subscribe going live — seq dedupe absorbs the overlap.
       let peers = subscribers.get(channelId);
