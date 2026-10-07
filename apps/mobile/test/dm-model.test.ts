@@ -811,3 +811,19 @@ describe("DM section grouping (#592 fix)", () => {
     ]);
   });
 });
+
+/* #600: a send in flight before `conversations.open` answers still shows a
+   row — "Sending…", seeded from the draft text itself. */
+describe("#600: the sending row", () => {
+  it("ctx.sending renders a Working-styled row at once", () => {
+    const turns = toSessionTurns([], {
+      ...CTX,
+      sending: { text: "prove the flake is gone", at: T0 },
+    });
+    expect(turns).toHaveLength(1);
+    expect(turns[0].title).toBe("prove the flake is gone");
+    expect(turns[0].prompt).toBe("prove the flake is gone");
+    expect(turns[0].state).toBe("working");
+    expect(turns[0].live).toBe("Sending…");
+  });
+});

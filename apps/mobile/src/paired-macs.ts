@@ -1,5 +1,7 @@
+import type { PairingOffer } from "@lilos/ui-native";
 import * as SecureStore from "expo-secure-store";
 import { atom } from "nanostores";
+import { resetDmStore } from "./dm-store";
 
 /* Paired Macs (#154). The UI shows one Mac for now, but connections are a
    list keyed by id so a second Mac is additive, not a migration. The list —
@@ -68,14 +70,27 @@ export async function touchMac(id: string): Promise<void> {
   );
 }
 
-/** AC-6: Forget drops the credential AND the cached directory. */
+/** AC-6: Forget drops the credential AND the cached directory. #600: and
+   the DM picks — a fresh pairing must not inherit the old Mac's folder
+   and model choices (previously only the demo reset them). */
 export async function forgetMacs(
   clearCache: () => Promise<void>,
 ): Promise<void> {
   await SecureStore.deleteItemAsync(KEY);
   await clearCache();
+  resetDmStore();
   $connections.set([]);
   $phase.set("onboarding");
+}
+
+/** #600: a pair offer while already paired is "Switch to <new Mac>?" —
+   true only when the offer is for a DIFFERENT Mac (same host = the code
+   the current Mac just minted; re-entering it silently re-pairs). */
+export function isOtherMacOffer(
+  offer: PairingOffer,
+  current: PairedMac | undefined,
+): boolean {
+  return current !== undefined && offer.host !== current.host;
 }
 
 /**

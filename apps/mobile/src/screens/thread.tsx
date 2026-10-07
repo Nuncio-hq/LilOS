@@ -497,6 +497,18 @@ export function Thread({
           }
         />
       ),
+      /* #600: an explicit Session-info affordance — the prototype shows a
+         ⓘ; tapping the bare title was the only way in before. */
+      unstable_headerRightItems: () => [
+        {
+          type: "button",
+          label: "Session info",
+          icon: { type: "sfSymbol", name: "info.circle" },
+          onPress: () =>
+            conv &&
+            navigation.navigate("ThreadInfo", { conversationId: conv.id }),
+        },
+      ],
     });
   }, [navigation, detail, conv, link]);
 

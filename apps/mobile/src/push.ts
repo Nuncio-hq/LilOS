@@ -3,7 +3,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 import * as Notifications from "expo-notifications";
 import { atom } from "nanostores";
-import { AppState, type AppStateStatus } from "react-native";
+import { Alert, AppState, type AppStateStatus } from "react-native";
 import { $demo } from "./demo/lifecycle";
 import { $client, $link } from "./link";
 import { $phase } from "./paired-macs";
@@ -117,9 +117,25 @@ export const unregisterPush = async (): Promise<void> => {
 };
 
 /** Ask iOS for the permission — first run only; after that the Settings
-    row steers to the OS page. */
+    row steers to the OS page. #600: say WHY first — the system dialog
+    fires with no context straight after pairing otherwise. */
 export const requestPushPermission = async (): Promise<void> => {
   if ($pushPermission.get() !== "undetermined") return;
+  const go = await new Promise<boolean>((resolve) => {
+    Alert.alert(
+      "Get notified",
+      "LilOS can tell you when a thread finishes or needs you.",
+      [
+        {
+          text: "Not now",
+          style: "cancel",
+          onPress: () => resolve(false),
+        },
+        { text: "Continue", onPress: () => resolve(true) },
+      ],
+    );
+  });
+  if (!go) return;
   await Notifications.requestPermissionsAsync().catch(() => {});
   await refreshPermission();
 };
