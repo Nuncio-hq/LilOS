@@ -206,6 +206,14 @@ export const ConversationContent = ({
   ...props
 }: ConversationContentProps) => (
   <StickToBottom.Content
+    /* The library only writes overflow:auto on the scroll div from its
+       own useLayoutEffect — AFTER descendant layout effects have already
+       run. Children that measure the scroller on mount (the question
+       card's options cap) then find no scrollport when the whole tree
+       mounts at once (Focus) and pin their math to the window height
+       forever (#649 CI). The class is the declaration, the lib's
+       fallback becomes a no-op. */
+    scrollClassName="overflow-auto"
     className={cn(
       "flex flex-col gap-8 p-4",
       className,
