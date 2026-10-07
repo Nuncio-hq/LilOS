@@ -104,7 +104,6 @@ const SHIP: ShipBar = {
   message: "",
   busy: null,
   error: null,
-  running: false,
 };
 
 const wb = (over: Partial<Parameters<typeof Workbench>[0]> = {}) => (

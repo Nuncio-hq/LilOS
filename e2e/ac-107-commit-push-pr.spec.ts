@@ -316,7 +316,8 @@ test("AC-2 (#584) Suggest is a side request: no user message, no turn; fills the
 
   /* AC-2 (#584): still works mid-turn — LILOS_TURN_HOLD keeps the fake's
      turn running until the interrupt lands, so the ask provably overlaps it
-     (no pacing race). */
+     (no pacing race — #644's fix is that no assert catches a running
+     window; the bar never gates on it). */
   const turn = await sendTurn(
     page,
     "LILOS_TURN_HOLD add a note while the bar is busy",
