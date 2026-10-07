@@ -1,6 +1,6 @@
 import type { ChatStatus } from "ai";
 import { CheckIcon, Maximize2Icon, PlayIcon } from "lucide-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { AccessPill } from "../chat/access-pill";
 import {
   ConversationKeepBottom,
@@ -18,11 +18,13 @@ import { useUiLayer } from "../chat/ui-layers";
 import {
   Conversation,
   ConversationContent,
+  type ConversationPin,
 } from "../components/ai-elements/conversation";
 import { Button } from "../components/ui/button";
 import { askKeyDown, pendingAsk } from "../conversation/ask-keys";
 import { openStartRequest } from "../conversation/cards";
 import { FindUnstubAnchor, FindUnstubNudge } from "../conversation/find-unstub";
+import { landJump } from "../conversation/jump-to-hit";
 import type { PlanAction } from "../conversation/plan-card";
 import {
   type QuestionAnswer,
@@ -30,6 +32,8 @@ import {
 } from "../conversation/question-card";
 import { TranscriptNoteRow } from "../conversation/transcript-note";
 import {
+  estTurnHeight,
+  openTailStart,
   RewindHover,
   TURN_LAZY_AFTER,
   type TurnActs,
@@ -264,8 +268,12 @@ export function ThreadView({
   const channelLabel = isDM ? `DM · ${channel.name}` : `#${channel.name}`;
   const startCardOpen = openStartRequest(thread, resolved);
   /* #138 AC-3: jump-to-hit — scroll the message into view, flash it, hand
-     back control. Waits for the row to render (history may still load). */
+     back control. Waits for the row to render (history may still load).
+     #570: `landJump` releases the bottom pin before the native write (an
+     in-flight spring would overwrite it before its scroll event lands an
+     escape) and keeps the row landed while born-stubs hydrate around it. */
   const bodyRef = useRef<HTMLDivElement>(null);
+  const convPin = useRef<ConversationPin | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
   const flashedRef = useRef<string | null>(null);
   useEffect(() => {
@@ -279,7 +287,7 @@ export function ThreadView({
     );
     if (!el) return;
     flashedRef.current = scrollTo;
-    el.scrollIntoView({ block: "center" });
+    landJump(el, convPin.current);
     setFlash(scrollTo);
     onScrolled?.();
   }, [scrollTo, thread.replies, onScrolled]);
@@ -334,6 +342,24 @@ export function ThreadView({
     onCancel,
   };
   const lazyRows = thread.replies.length > TURN_LAZY_AFTER;
+  /* #570: a lazy thread opens on its tail — rows above `tailStart` never
+     mount on first paint; they start as estimated-height stubs and the
+     observer mounts them at the window edge. */
+  const estHeights = useMemo(
+    () =>
+      lazyRows
+        ? thread.replies.map((r) => estTurnHeight(r, !!emp(r.from), "panel"))
+        : [],
+    [lazyRows, thread.replies, emp],
+  );
+  const tailStart = openTailStart(estHeights);
+  /* A scrollTo open skips the pin — keyed on the jump REQUEST, not the
+     row's presence: `initial` is read once at mount and the replies are
+     still streaming then, so an engaged pin would sweep the port to the
+     bottom before `landJump` could even run (ac-570: the mount's instant
+     chase plus near-bottom re-arms dragged the jump's landing back to
+     the bottom every frame). A stale id pays a top-open instead — the
+     rare case, and readable — rather than a broken jump every time. */
   return (
     <div ref={bodyRef} className="flex min-h-0 flex-1 flex-col">
       <div className="lilos-drag flex shrink-0 items-center gap-2 border-b px-4 py-2.5">
@@ -437,7 +463,18 @@ export function ThreadView({
           )}
         </div>
       </div>
-      <Conversation className="min-h-0">
+      {/* #570: the first pin on a lazy thread must land instantly — the
+          default smooth sweep would scroll through the whole stub field
+          and mount every row it passes, recreating the open-time freeze.
+          A scrollTo open skips the pin outright (initial=false): the jump
+          would otherwise race the pin's first write before the escape
+          check lands. `resize` stays smooth: the streaming chase is
+          unchanged. */}
+      <Conversation
+        className="min-h-0"
+        pinRef={convPin}
+        initial={scrollTo ? false : lazyRows ? "instant" : "smooth"}
+      >
         {/* The composer sits below the scroller in normal flow — nothing
             overlays the last turn, so only a small bottom pad is needed;
             the question card's Skip row stays fully visible on its own row
@@ -495,6 +532,8 @@ export function ThreadView({
               lastRow={i === thread.replies.length - 1}
               flashed={flash === r.id}
               lazy={lazyRows}
+              startHeld={i < tailStart}
+              estHeight={estHeights[i]}
               scrollTarget={scrollTo === r.id}
               running={running}
               emp={emp}
