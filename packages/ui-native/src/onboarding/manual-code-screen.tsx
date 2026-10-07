@@ -1,4 +1,4 @@
-import { type ReactNode, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { TextInput, View } from "react-native";
 import { AppText } from "../components/app-text";
 import { Button } from "../components/button";
@@ -16,13 +16,25 @@ import {
 /* Step 3b — type what the Mac shows under its QR: the address and the code. */
 export function ManualCodeScreen({
   onSubmit,
+  reenter,
 }: {
   onSubmit: (offer: PairingOffer) => void;
+  /** #688 AC-1: back from a wrong typed code — the field is focused with
+     its whole entry selected so the first keystroke replaces it (screen
+     state survives the popTo, so the previous entry is already there). */
+  reenter?: boolean;
 }) {
   const [host, setHost] = useState("");
   const [code, setCode] = useState("");
   const [errors, setErrors] = useState<ManualErrors>({});
   const codeRef = useRef<TextInput>(null);
+
+  /* `autoFocus` only applies on mount — this screen stays mounted under
+     Connecting, so reentry focuses programmatically and
+     `selectTextOnFocus` selects the kept entry. */
+  useEffect(() => {
+    if (reenter) codeRef.current?.focus();
+  }, [reenter]);
 
   const submit = () => {
     const e = validateManual(host, code);
@@ -77,6 +89,7 @@ export function ManualCodeScreen({
             /* The value is the formatted code — the cap counts its dashes
                (#593 AC-1). normalizeCode still slices to 12 real chars. */
             maxLength={CODE_FORMATTED_LENGTH}
+            selectTextOnFocus={reenter}
             returnKeyType="go"
             onSubmitEditing={submit}
             className={`${field(errors.code)} font-mono text-xl tracking-[2px]`}
