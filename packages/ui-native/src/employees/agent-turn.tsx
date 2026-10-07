@@ -5,14 +5,27 @@ import { Card, CommandLine, nonBreaking, Pill } from "../components/bits";
 import { Icon } from "../components/icon";
 import { Orb, type OrbTone } from "../components/orb";
 import { Prose, Pulse } from "../components/prose";
-import { approvalSentence } from "./approval-copy";
+import {
+  cardLine,
+  decidedVerb,
+  describeAsk,
+  GRANT_LABEL,
+  grantPills,
+} from "./approval-copy";
+
 import { type PlanAction, PlanCard } from "./plan-card";
 import { PrCard } from "./pr-badges";
 import { type QuestionAnswer, QuestionCard } from "./question-card";
 import { isAnswerableQuestion } from "./question-gate";
 import { StepRow, tool } from "./step-row";
 import { SubagentsCard, SubagentsLink } from "./subagents";
-import type { AgentEntry, Approval, SubagentRow, ToolStep } from "./types";
+import type {
+  AgentEntry,
+  Approval,
+  GrantOption,
+  SubagentRow,
+  ToolStep,
+} from "./types";
 
 /* One conversation turn — the mobile twin of the web AgentTurn/UserTurn
    (packages/ui/src/conversation/turns.tsx): who + time, "Thought for Ns"
@@ -52,17 +65,23 @@ export function AgentTurn({
   tone,
   onApprove,
   onDeny,
+  onGrant,
   onAnswer,
   onOpenSubagent,
   onOpenSubagents,
   onPlan,
   onOpenPlan,
+  stale,
+  answerHint,
 }: {
   e: AgentEntry;
   name: string;
   tone: OrbTone;
   onApprove: (id: string) => void;
   onDeny: (id: string) => void;
+  /** #601: the tapped option on an approval card — one of the ask's own
+      grantOptions (Once / This session / Always / Deny). */
+  onGrant?: (id: string, option: GrantOption) => void;
   /** #420: a question ask's answer (options send their wire id, free text
       the typed string); a question's Cancel rides `onDeny`. */
   onAnswer?: (id: string, answer: QuestionAnswer) => void;
@@ -75,6 +94,11 @@ export function AgentTurn({
   /** Approve / Change / Reject on this turn's plan (issue #175). */
   onPlan?: (a: PlanAction, planId: string) => void;
   onOpenPlan?: () => void;
+  /** #652: the Mac is unreachable — open asks render visibly disabled
+      (nothing can be sent or queued) and the card says they wake when
+      the Mac is back. */
+  stale?: boolean;
+  answerHint?: string;
 }) {
   const steps = e.steps ?? [];
   /* #264: an open ask blocks the turn — nothing is still thinking or
@@ -134,7 +158,13 @@ export function AgentTurn({
       )}
       {e.pr && <PrCard pr={e.pr} />}
       {e.plan && (
-        <PlanCard plan={e.plan} onAction={onPlan} onOpen={onOpenPlan} />
+        <PlanCard
+          plan={e.plan}
+          onAction={onPlan}
+          onOpen={onOpenPlan}
+          stale={stale}
+          answerHint={answerHint}
+        />
       )}
       {e.decided && <Receipt d={e.decided} />}
       {e.stopped && (
@@ -165,9 +195,22 @@ export function AgentTurn({
       )}
       {e.approval &&
         (isAnswerableQuestion(e.approval) ? (
-          <QuestionCard a={e.approval} onAnswer={onAnswer} onCancel={onDeny} />
+          <QuestionCard
+            a={e.approval}
+            onAnswer={onAnswer}
+            onCancel={onDeny}
+            stale={stale}
+            answerHint={answerHint}
+          />
         ) : (
-          <ApprovalCard a={e.approval} onApprove={onApprove} onDeny={onDeny} />
+          <ApprovalCard
+            a={e.approval}
+            onApprove={onApprove}
+            onDeny={onDeny}
+            onGrant={onGrant}
+            stale={stale}
+            answerHint={answerHint}
+          />
         ))}
       {e.footer && !e.live && !e.stopped && <Footer f={e.footer} />}
     </View>
@@ -341,15 +384,30 @@ function ApprovalCard({
   a,
   onApprove,
   onDeny,
+  onGrant,
   flat,
+  stale,
+  answerHint,
 }: {
   a: Approval;
   onApprove: (id: string) => void;
   onDeny: (id: string) => void;
+  /** #601: one pill per option the ask offered, in its order. */
+  onGrant?: (id: string, option: GrantOption) => void;
   /** Inside a session card: no second border, no label (the chip says it). */
   flat?: boolean;
+  /** #652: the Mac is unreachable — the pills render disabled and the
+      hint says when answering works again. */
+  stale?: boolean;
+  answerHint?: string;
 }) {
   const Box = flat ? FlatBox : Card;
+  /* #652 AC-2: the ask's human description once — file tools get a
+     path detail line, shell commands keep the `$` box, unknown tools'
+     args hide behind the Args tap. */
+  const d = describeAsk(a.command);
+  const isFileAsk = !!d?.detail && !d.detail.startsWith("{");
+  const [showArgs, setShowArgs] = useState(false);
   return (
     // Its own responder, so a tap on the card never opens the row under it.
     <View onStartShouldSetResponder={() => true}>
@@ -367,13 +425,33 @@ function ApprovalCard({
             </AppText>
           </View>
         )}
-        {/* #264: one sentence + the command box — never the command twice. */}
+        {/* #264/#652: one human sentence — a file tool reads
+            "wants to edit <file>" with its full path under it, a real
+            shell command keeps the `$` box, an unknown tool's args sit
+            behind an Args tap. Never the raw `{…}` line. */}
         <AppText size="sm" className="leading-5">
-          {approvalSentence(a)}
+          {cardLine(a)}
         </AppText>
-        {a.command && (
+        {d?.detail && isFileAsk && (
+          <AppText size="xs" tone="muted" className="mt-1 font-mono">
+            {d.detail}
+          </AppText>
+        )}
+        {d?.detail && !isFileAsk && (
+          <Pressable onPress={() => setShowArgs((v) => !v)} className="mt-1">
+            <AppText size="xs" tone="muted">
+              {showArgs ? "Hide args" : "Args…"}
+            </AppText>
+          </Pressable>
+        )}
+        {d?.detail && !isFileAsk && showArgs && (
+          <View className="mt-2">
+            <CommandLine command={d.detail} />
+          </View>
+        )}
+        {d?.boxed && (
           <View className="mt-2.5">
-            <CommandLine command={a.command} />
+            <CommandLine command={d.boxed} />
           </View>
         )}
         {a.file && (
@@ -389,12 +467,44 @@ function ApprovalCard({
             </View>
           </View>
         )}
-        <View className="mt-3 flex-row gap-2">
-          {a.kind !== "question" && (
-            <Pill label="Approve" onPress={() => onApprove(a.id)} />
+        <View className="mt-3 flex-row flex-wrap items-center gap-2">
+          {/* #601: the ask's own options, its own order — the first grant
+              is the prominent pill like the Mac's first action, Deny reads
+              soft. A pre-options row (prototype) falls back to Approve +
+              Deny via grantPills. */}
+          {a.kind === "approval" && onGrant ? (
+            grantPills(a).map((opt, i) => (
+              <Pill
+                key={opt}
+                label={GRANT_LABEL[opt]}
+                variant={i === 0 && opt !== "deny" ? undefined : "soft"}
+                disabled={stale}
+                onPress={() => onGrant(a.id, opt)}
+              />
+            ))
+          ) : (
+            <>
+              {a.kind !== "question" && (
+                <Pill
+                  label="Approve"
+                  disabled={stale}
+                  onPress={() => onApprove(a.id)}
+                />
+              )}
+              <Pill
+                label="Deny"
+                variant="soft"
+                disabled={stale}
+                onPress={() => onDeny(a.id)}
+              />
+            </>
           )}
-          <Pill label="Deny" variant="soft" onPress={() => onDeny(a.id)} />
         </View>
+        {stale && answerHint && (
+          <AppText size="xs" tone="muted" className="mt-1.5">
+            {answerHint}
+          </AppText>
+        )}
       </Box>
     </View>
   );
@@ -443,9 +553,7 @@ function Receipt({ d }: { d: NonNullable<AgentEntry["decided"]> }) {
             ? d.approved
               ? "You answered: "
               : "You cancelled: "
-            : d.approved
-              ? "You approved: "
-              : "You denied: "}
+            : `${decidedVerb(d.outcome, d.approved)} `}
         </Text>
         <Text className="font-mono text-[12px]">{nonBreaking(d.what)}</Text>
       </Text>
