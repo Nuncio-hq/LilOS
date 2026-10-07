@@ -45,7 +45,6 @@ export function PrPanel({
   diffs,
   commits,
   lead,
-  session,
   human,
   onComment,
   onMerge,
@@ -55,7 +54,6 @@ export function PrPanel({
   diffs: Diff[];
   commits: GitCommit[];
   lead?: Employee;
-  session: string;
   human: HumanFn;
   /* Controls render only when their handler is passed (issue #19): no onMerge → no merge row,
      no onComment → no comment form, no say → no toast-only buttons/checkbox. Handlers may return
@@ -349,7 +347,7 @@ export function PrPanel({
                       : pending
                         ? "Waiting for checks"
                         : failed
-                          ? `${author} is fixing CI in ${session}`
+                          ? `${author} is fixing CI in this thread`
                           : "You have write access on this repo."}
                   </span>
                 </div>
@@ -502,7 +500,7 @@ export function PrPanel({
                         onChange={(e) =>
                           say(
                             e.target.checked
-                              ? "PR monitoring off for this session"
+                              ? "PR monitoring off for this thread"
                               : "PR monitoring on",
                           )
                         }
@@ -525,7 +523,7 @@ export function PrPanel({
                 <Textarea
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
-                  placeholder="Add a comment… (Builder picks it up in this session)"
+                  placeholder="Add a comment… (Builder picks it up in this thread)"
                   className="min-h-20 text-[14px]"
                 />
                 <div className="flex justify-end">

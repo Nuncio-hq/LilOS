@@ -332,7 +332,7 @@ export function ModelsSection({
           className="h-11 md:h-7"
           onClick={onManage}
         >
-          Manage models…
+          Edit models…
         </Button>
       </div>
       <Hint>Same list as “Edit models…” in the model picker.</Hint>
@@ -404,7 +404,7 @@ export function EngineSection({ engine }: { engine: EngineProps }) {
           </div>
         )}
         <Hint>
-          Connected profiles see LilOS — DMs, files, tickets, work — in sessions
+          Connected profiles see LilOS — DMs, files, tickets, work — in threads
           LilOS opens. Declining keeps chat working.
         </Hint>
       </Field>

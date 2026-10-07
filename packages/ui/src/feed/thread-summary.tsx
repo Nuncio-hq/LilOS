@@ -1,5 +1,6 @@
-import { ChevronRightIcon, CircleDotIcon } from "lucide-react";
-import { PHASE_LABEL } from "../lib/helpers";
+import { ChevronRightIcon } from "lucide-react";
+import { threadState } from "../lib/helpers";
+import { cn } from "../lib/utils";
 import { HermesAvatar } from "../shell/avatars";
 import type { EmpFn, Thread, Work } from "../types";
 
@@ -15,11 +16,21 @@ export function ThreadSummary({
   emp: EmpFn;
   onOpen: () => void;
 }) {
-  const last = thread.replies[thread.replies.length - 1];
-  if (!last) return null;
+  if (!thread.replies.length) return null;
   const workers = [
     ...new Set(thread.replies.map((r) => r.from).filter((f) => emp(f))),
   ];
+  /* #583 AC-2/AC-3: the chip states the thread — needs you / running /
+     failed / stopped — plus any live background job; #585: system notes
+     aren't replies. */
+  const replyCount = thread.replies.filter((r) => !r.system).length;
+  const state = threadState(thread);
+  /* The live `jobs` list wins once the feed lands; the relay-stamped
+     `bgJobs` count (#583) covers the pre-attach/released window. */
+  const bgJobs =
+    thread.jobs?.filter((j) => j.status === "running").length ??
+    thread.bgJobs ??
+    0;
   return (
     <button
       onClick={onOpen}
@@ -38,9 +49,9 @@ export function ThreadSummary({
         ))}
       </span>
       <span className="font-medium text-tint-text">
-        {thread.replies.length} replies
+        {replyCount} {replyCount === 1 ? "reply" : "replies"}
       </span>
-      {thread.replies.some((r) => r.approval) && (
+      {state?.word === "needs you" && (
         <span
           title="Needs you"
           className="grid size-4 place-items-center rounded-full bg-primary font-bold text-[10px] text-primary-foreground"
@@ -49,12 +60,26 @@ export function ThreadSummary({
           <span className="sr-only">needs you</span>
         </span>
       )}
-      {last.streaming || last.live ? (
-        <span className="flex items-center gap-1 text-muted-foreground">
-          <CircleDotIcon className="size-3 animate-pulse text-work" />
-          {last.phase ? PHASE_LABEL[last.phase] : "working"}
+      {state && (
+        <span
+          data-thread-state={state.word}
+          className={cn(
+            "font-medium",
+            state.word === "needs you" && "text-amber-600",
+            state.word === "running" && "text-work",
+            state.word === "failed" && "text-red-600",
+            state.word === "stopped" &&
+              "text-muted-foreground dark:text-foreground/80",
+          )}
+        >
+          {state.word}
         </span>
-      ) : null}
+      )}
+      {bgJobs > 0 && (
+        <span data-bg-jobs className="text-muted-foreground">
+          {bgJobs} in background
+        </span>
+      )}
       <ChevronRightIcon className="size-3.5 text-muted-foreground" />
     </button>
   );

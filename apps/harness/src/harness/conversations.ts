@@ -96,6 +96,12 @@ export async function updateConversation(
     /** #419: stamp the last turn's failure (DM alert card); `null`
         clears it. */
     turnFailure?: TurnFailure | null;
+    /** #583: the last turn ended stopped (DM row word); `null` clears
+        it on the next `turn.started`. */
+    turnStopped?: boolean | null;
+    /** #583: running background-job count (DM row badge + session-feed
+        seed); `null` clears it. */
+    bgJobs?: number | null;
   },
 ) {
   await this.opts.relay.request("conversations.update", {

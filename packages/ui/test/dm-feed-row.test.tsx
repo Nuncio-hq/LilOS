@@ -103,7 +103,7 @@ describe("issue #83", () => {
     const line1 = content?.firstElementChild;
     expect(line1?.textContent).toContain("Ada");
     expect(line1?.textContent).toContain("07:20 PM");
-    expect(line1?.querySelector("[aria-label='Session actions']")).toBeTruthy();
+    expect(line1?.querySelector("[aria-label='Thread actions']")).toBeTruthy();
   });
 
   test("AC-1 a renamed session's title sits under the name line, not above", () => {
