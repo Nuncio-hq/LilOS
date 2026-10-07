@@ -343,17 +343,35 @@ async function trial(shotsDir: string): Promise<Map<number, Window>> {
   return out;
 }
 
-/** 1288×900 DM-list shots, light + dark — the AC-2 "unchanged" evidence. */
+/** 1288×900 DM-list shots, light + dark — the AC-2 "unchanged" evidence.
+   The list's stick-to-bottom can lag the last delta by a frame, so pin
+   the scroller to the end before capturing (same anchor on both legs →
+   identical slice for the pixel diff). */
 async function takeShots(page: Page, dir: string) {
   mkdirSync(dir, { recursive: true });
   await page.mouse.move(0, 0);
-  const main = page.locator("main").first();
+  const scrollBottom = () =>
+    page.evaluate(() => {
+      for (const el of document.querySelectorAll("main *"))
+        if (el.scrollHeight > el.clientHeight + 4)
+          el.scrollTop = el.scrollHeight;
+    });
+  const twoFrames = () =>
+    page.evaluate(
+      () =>
+        new Promise<void>((r) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => r())),
+        ),
+    );
+  await scrollBottom();
+  await twoFrames();
+  await scrollBottom();
+  await twoFrames();
   await page.screenshot({ path: path.join(dir, "dm-list-light.png") });
   await page.emulateMedia({ colorScheme: "dark" });
   await quiet(page);
   await page.screenshot({ path: path.join(dir, "dm-list-dark.png") });
   await page.emulateMedia({ colorScheme: "light" });
-  void main;
   console.log(`    shots → ${dir}/dm-list-{light,dark}.png`);
 }
 
