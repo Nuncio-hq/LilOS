@@ -483,7 +483,12 @@ test("AC-5 the PR tab reads checks + comments through forge.pr; comment and merg
   // copy names the next step the user can take (#579 AC-2: ask the employee,
   // then Retry) — never a command to type, never raw stderr, never "gh failed:".
   writeFileSync(failPath, "auth\n");
-  await page.reload();
+  /* #720: arm `?wbPrSigMark` for the failure leg — while the landed
+     `forge.pr` answer is a failure it bumps `data-pr-sig-mark` on the PR
+     tabpanel per signal-driven read decision, so the Retry press below is
+     timed strictly after the scheduled land that used to yank the button
+     mid-click (the land-vs-press race made deterministic). */
+  await page.goto(`${page.url()}&wbPrSigMark=1`);
   await expect(tab(page, /^PR$/)).toBeVisible({ timeout: 30_000 });
   await tab(page, /^PR$/).click();
   await expect(
@@ -497,9 +502,8 @@ test("AC-5 the PR tab reads checks + comments through forge.pr; comment and merg
   await expect(page.getByText("gh auth login")).toHaveCount(0);
   /* #419 wired the last turn's own hover Retry — scope this one to the PR
      panel or the name resolves to both. */
-  const retry = page
-    .getByRole("tabpanel", { name: "PR" })
-    .getByRole("button", { name: "Retry" });
+  const prPanel = page.getByRole("tabpanel", { name: "PR" });
+  const retry = prPanel.getByRole("button", { name: "Retry" });
   await expect(retry).toBeVisible();
   await expect(page.getByText(/gh failed:/)).toHaveCount(0);
   await page.screenshot({ path: `${SHOTS}/ac-5-gh-auth.png` });
@@ -507,6 +511,16 @@ test("AC-5 the PR tab reads checks + comments through forge.pr; comment and merg
   // Retry re-probes for real: gh healthy again → the PR renders in place.
   rmSync(failPath);
   writeView(PR_VIEW);
+  /* #720: a window-focus event is a real `forge.pr` signal — the same one
+     the CI flake rode. The mark must move before the press: pre-fix that
+     land commits `PrFailure` → `PrPanel` and detaches the button the click
+     resolved; post-fix the landed failure holds scheduled reads and only
+     the press's own `forge.pr` may lift it. */
+  const prSigMark = Number(await prPanel.getAttribute("data-pr-sig-mark"));
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect
+    .poll(async () => Number(await prPanel.getAttribute("data-pr-sig-mark")))
+    .toBeGreaterThan(prSigMark);
   await retry.click();
   await expect(page.locator("[data-pr='7']")).toBeVisible({
     timeout: 15_000,
