@@ -156,7 +156,10 @@ export function NeedsYouSlot({
       return;
     }
     nav.navigate("Dm", { employeeId: target.employeeId });
-    nav.navigate("Thread", { conversationId: target.conversationId });
+    nav.navigate("Thread", {
+      conversationId: target.conversationId,
+      employeeId: target.employeeId,
+    });
   };
   return (
     <NeedsYouAccessory
@@ -191,7 +194,10 @@ export function Activity() {
     const target = ask && askThreadTarget(ask, wire);
     if (!target) return;
     nav.navigate("Dm", { employeeId: target.employeeId });
-    nav.navigate("Thread", { conversationId: target.conversationId });
+    nav.navigate("Thread", {
+      conversationId: target.conversationId,
+      employeeId: target.employeeId,
+    });
   };
   return (
     <ApprovalsSheet
