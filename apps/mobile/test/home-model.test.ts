@@ -9,6 +9,10 @@ import type {
 } from "@lilos/contracts/app";
 import { describe, expect, it } from "vitest";
 import {
+  accessoryWhat,
+  whatLine,
+} from "../../../packages/ui-native/src/employees/approval-copy";
+import {
   askThreadTarget,
   deepThreadTarget,
   dmChannelFor,
@@ -429,5 +433,83 @@ describe("home-model (#155)", () => {
     expect(
       deepThreadTarget("c1", wire({ conversations: [conv("c1", "ch1")] })),
     ).toBeUndefined();
+  });
+});
+
+describe("#652 — the needs-you card reads last-known and human while offline (AC-2)", () => {
+  const w = (online: boolean) =>
+    wire({
+      online,
+      employees: [emp("e1")],
+      channels: [ch("ch1", "e1")],
+    });
+
+  it("the line leads with the human sentence, not the raw tool call", () => {
+    const a = toApproval(
+      ask("a1", "ch1", "c1", NOW - 60_000, {
+        request: {
+          kind: "approval",
+          command: 'patch {"path":"README.md"}',
+          description: 'Default wants to run: patch {"path":"README.md"}',
+          options: ["once", "always", "deny"],
+        },
+      }),
+      w(true),
+      NOW,
+    );
+    /* Old line was the bare `patch {…}` JSON — the accessory says the
+       same human sentence the thread card leads with (#652 AC-2). */
+    expect(accessoryWhat(a)).toBe("Emp e1 wants to edit README.md");
+    expect(accessoryWhat(a)).not.toContain("{");
+    expect(accessoryWhat(a)).not.toContain('"path"');
+  });
+
+  it("offline, the marker is FIRST — truncation can't cut it away", () => {
+    const a = toApproval(
+      ask("a1", "ch1", "c1", NOW - 60_000, {
+        request: {
+          kind: "approval",
+          command: `patch ${"x".repeat(400)}`,
+          description: "wants to run",
+          options: ["once", "deny"],
+        },
+      }),
+      w(false),
+      NOW,
+    );
+    expect(accessoryWhat(a).startsWith("Last known · ")).toBe(true);
+    expect(a.lastKnown).toBe(true);
+  });
+
+  it("a plan ask keeps its reason — no sentence bolted on", () => {
+    const a = toApproval(
+      ask("a1", "ch1", "c1", NOW - 60_000, {
+        request: { kind: "plan", planId: "p-1" },
+      }),
+      w(false),
+      NOW,
+    );
+    expect(accessoryWhat(a)).toBe("Last known · Plan waiting for your review");
+  });
+
+  it("the Activity card's line is human too — never a `$ patch {…}` box", () => {
+    const a = toApproval(
+      ask("a1", "ch1", "c1", NOW - 60_000, {
+        request: {
+          kind: "approval",
+          command: 'patch {"path":"README.md"}',
+          description: 'Default wants to run: patch {"path":"README.md"}',
+          options: ["once", "deny"],
+        },
+      }),
+      w(true),
+      NOW,
+    );
+    /* What the sheet's body line renders — the same human sentence the
+       accessory shows, without the `$ ` terminal box (#652 AC-2). */
+    expect(whatLine(a)).toBe("Emp e1 wants to edit README.md");
+    expect(whatLine(a)).not.toContain("{");
+    expect(whatLine(a)).not.toContain('"path"');
+    expect(whatLine(a)).not.toContain("$");
   });
 });

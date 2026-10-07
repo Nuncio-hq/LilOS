@@ -45,6 +45,10 @@ export type QuestionOption = {
   description?: string;
 };
 
+/** #601: the grant choices an approval ask can offer — the wire's
+    ApprovalOption ("This session" is `session`). */
+export type GrantOption = "once" | "session" | "always" | "deny";
+
 /** Something an employee is blocked on until you choose. */
 export type Approval = {
   id: string;
@@ -67,6 +71,12 @@ export type Approval = {
   command?: string;
   /** …or a file it wants to post. */
   file?: { name: string; detail: string };
+  /** #601: the options an approval ask itself offers (wire
+      `request.options`), in display order — Once / This session / Always /
+      Deny. Absent on questions, plans and prototype rows; an approval row
+      without it falls back to Once + Deny. Distinct from `options`, which
+      is a question's answer buttons. */
+  grantOptions?: GrantOption[];
   /** #420: question options as buttons (id → the answer sent back). */
   options?: QuestionOption[];
   /** #420: the ask allows a typed answer besides the listed options. */
@@ -253,7 +263,14 @@ export type AgentEntry = {
   /** What you decided on this turn's approval — kept as a receipt.
       `question` (#420) marks an answered/cancelled question ask: the
       receipt reads "You answered:" / "You cancelled:". */
-  decided?: { approved: boolean; what: string; question?: boolean };
+  decided?: {
+    approved: boolean;
+    what: string;
+    question?: boolean;
+    /** #601: the wire outcome granted — the receipt names it ("This
+        session", "always", …) instead of a bare "approved". */
+    outcome?: string;
+  };
   approval?: Approval;
   /** The plan this turn proposed (issue #175; web: Plan). */
   plan?: PlanRow;

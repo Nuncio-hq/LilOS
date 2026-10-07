@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Conversation, ConversationContent, ConversationScrollButton } from "@lilos/ui/components/ai-elements/conversation"
 import {
   AddFolderDialog,
@@ -1080,11 +1080,19 @@ export default function App() {
     setScenario(id)
   }
 
-  const emp: EmpFn = (id) => employees.find((e) => e.id === id) ?? removed[id] ?? (id === "default" ? DEFAULT_EMP : undefined)
+  /* #569: stable identities — the memoized DM session row reads emp/human as
+     props; fresh closures per render would defeat the memo here like they
+     would in the app. */
+  const emp: EmpFn = useCallback(
+    (id) => employees.find((e) => e.id === id) ?? removed[id] ?? (id === "default" ? DEFAULT_EMP : undefined),
+    [employees, removed],
+  )
   /* `user` is the real app's author id — in mock data it aliases the seeded
      human so components keying on VIEWER_ID resolve the same person. */
-  const human: HumanFn = (id) =>
-    id === "user" || id === "oscar" ? me : HUMANS[id]
+  const human: HumanFn = useCallback(
+    (id) => (id === "user" || id === "oscar" ? me : HUMANS[id]),
+    [me],
+  )
 
   /* #338: connList is Settings → Engine's row list — the profiles of the
      employees the scenario shows, joined with connection state. connOf is the
@@ -1336,6 +1344,14 @@ export default function App() {
         return null
     }
   }, [liveStatus, liveBanner, scenario])
+
+  /* #557: the thin "Reconnecting…" line over the composer — driven by the
+     same signal as the sidebar status row (the relay leg reporting
+     `connecting`), but sitting where a send is typed: Focus hides the
+     sidebar, so it can't stand in for this. */
+  const relayReconnecting = (liveStatus?.components ?? STATUS[scenario]).some(
+    (c) => c.id === "relay" && c.state === "connecting",
+  )
 
   const goChannel = (id: string) => { setView({ kind: "channel", id }); setThreadId(null); setFocus(false); setNavOpen(false) }
   const goDM = (id: string) => {
@@ -2062,7 +2078,7 @@ export default function App() {
       transcriptNote={transcriptNoteOf(openThread.thread)}
       lastSent={lastSentIn(openThread)}
       onRetry={(e) => retry(openThread, e)} onUnqueue={(i) => unqueue(openThread, i)} onSendQueued={(i) => sendQueuedNow(openThread, i)}
-      pending={pendingSteers[openThread.id] ?? []} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
+      pending={pendingSteers[openThread.id] ?? []} reconnecting={relayReconnecting} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
       models={canModels ? MODEL_OPTS : undefined} onModel={canModels ? (m) => setModel(openThread, m) : undefined} picker={pickerExtras}
       access={access} onAccess={setAccess}
       scrollTo={scrollTo ?? undefined} onScrolled={() => setScrollTo(null)}
@@ -2134,7 +2150,7 @@ export default function App() {
           // LilOS Browser (#214) replaces it only in the mock prototype.
           browser={realSurfaces ? undefined : threadBrowser(openThread.id)}
           initialTab={focusTab}
-          pending={pendingSteers[openThread.id] ?? []} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
+          pending={pendingSteers[openThread.id] ?? []} reconnecting={relayReconnecting} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
           ship={shipFor(openThread)}
           /* The built-in engine declares all three workbench caps (#587):
              fixed tab membership, empty tabs greyed. */

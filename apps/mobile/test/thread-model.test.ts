@@ -398,6 +398,7 @@ describe("thread-model — #157 AC mapping", () => {
       id: "ask-1",
       reason: "rm -rf build/",
       command: "rm -rf build/",
+      grantOptions: ["once", "always", "deny"],
     });
   });
 
@@ -429,6 +430,39 @@ describe("thread-model — #157 AC mapping", () => {
     expect(card.decided).toEqual({
       approved: false,
       what: "rm -rf build/",
+      outcome: "deny",
+    });
+  });
+
+  it("#601 the decided receipt carries the granted outcome — 'This session' names itself", () => {
+    const model = reduceSessionEvents("sess-1", [
+      ev("turn.started", { turnId: "t1", model: "fake-small" }),
+      ev("turn.delta", { turnId: "t1", stream: "text", delta: "done" }),
+      ev("turn.completed", { turnId: "t1", stopReason: "end_turn" }),
+    ]);
+    const ask: Ask = {
+      id: "ask-1",
+      channelId: "ch-dm",
+      conversationId: "conv-1",
+      turnId: "t1",
+      requestId: "r1",
+      request: {
+        kind: "approval",
+        command: "pnpm -r test",
+        description: "terminal wants to run: pnpm -r test",
+        options: ["once", "session", "always", "deny"],
+      },
+      state: "resolved",
+      outcome: "session",
+      createdAt: T0,
+    };
+    const entries = mergeThreadEntries([], model, { ...OPTS, asks: [ask] });
+    const card = entries[0];
+    if (card.kind !== "agent") throw new Error("expected agent entry");
+    expect(card.decided).toEqual({
+      approved: true,
+      what: "pnpm -r test",
+      outcome: "session",
     });
   });
 
@@ -459,7 +493,11 @@ describe("thread-model — #157 AC mapping", () => {
     const entries = mergeThreadEntries([], model, { ...OPTS, asks: [ask] });
     const card = entries[0];
     if (card.kind !== "agent") throw new Error("expected agent entry");
-    expect(card.decided).toEqual({ approved: true, what: command });
+    expect(card.decided).toEqual({
+      approved: true,
+      what: command,
+      outcome: "once",
+    });
   });
 
   it("#134 a rewound turn never resurrects (refs and texts both hide it)", () => {
@@ -1548,5 +1586,35 @@ describe("threadBodyState — the opened thread with no conversation (#596)", ()
     expect(threadBodyState(false, true)).toBe("gone");
     expect(threadBodyState(true, false)).toBeUndefined();
     expect(threadBodyState(true, true)).toBeUndefined();
+  });
+});
+
+describe("threadSurface — open asks can't be answered while the Mac is unreachable (#652)", () => {
+  it("AC-1 offline stale-marks the ask card on EVERY state, with a hint naming the Mac", () => {
+    for (const state of [
+      "working",
+      "needs-you",
+      "done",
+      "failed",
+      "stopped",
+    ] as const) {
+      const s = threadSurface(state, true, "Mac-local");
+      /* Not `stale` — that one is only for a thread claiming a live turn;
+         an open ask can't be answered offline whatever the state is. */
+      expect(s.asksStale).toBe(true);
+      expect(s.answerHint).toBe("Answer once Mac-local is back");
+    }
+  });
+
+  it("AC-1 online leaves the card live and hint-free", () => {
+    const s = threadSurface("needs-you", false, "Mac-local");
+    expect(s.asksStale).toBe(false);
+    expect(s.answerHint).toBeUndefined();
+  });
+
+  it("AC-1 the hint degrades gracefully when the Mac is unnamed", () => {
+    expect(threadSurface("needs-you", true).answerHint).toBe(
+      "Answer once the Mac is back",
+    );
   });
 });

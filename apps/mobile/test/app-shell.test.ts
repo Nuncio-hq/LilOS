@@ -71,6 +71,31 @@ describe("#247 AC-5 — DM rows keep the needs-you badge + trimmed meta", () => 
   });
 });
 
+describe("#594 — Activity Open pushes DM then Thread", () => {
+  /* #594 AC-1: a request's **Open** landed on the employee's thread list and
+     left the asking thread to hunt for by hand. It now resolves the channel
+     via `askThreadTarget` and pushes the DM under the asking thread — the
+     same landing a plan's Review already used, and Back returns to the DM. */
+  const home = read("apps/mobile/src/screens/home.tsx");
+  const activity = home.slice(home.indexOf("export function Activity"));
+
+  it("Open resolves the ask via askThreadTarget and pushes Dm before Thread", () => {
+    expect(activity).toContain("askThreadTarget(ask, wire)");
+    /* onOpen must not navigate("Dm") alone — it goes through the same
+       openAskThread helper Review uses (Dm pushed, then Thread on top). */
+    expect(activity).toContain("onOpen={openAskThread}");
+    const dm = activity.indexOf('navigate("Dm"');
+    const thread = activity.indexOf('navigate("Thread"');
+    expect(dm).toBeGreaterThan(-1);
+    expect(thread).toBeGreaterThan(dm);
+  });
+
+  it("Back returns to the DM — Thread is pushed, never reset or replaced", () => {
+    expect(activity).not.toContain("nav.reset");
+    expect(activity).not.toContain("nav.replace");
+  });
+});
+
 describe("#373 — the chat nav bar paints a blur backdrop under itself", () => {
   /* The bleed: `headerTransparent` + only a top scroll edge effect left
      scrolled message text crisp behind ThreadHeaderTitle's second row —

@@ -127,6 +127,9 @@ export function toApproval(ask: Ask, wire: HomeWire, nowMs: number): Approval {
           ? "Plan waiting for your review"
           : request.command,
     command: request.kind === "approval" ? request.command : undefined,
+    /* #601: the ask's own options ride the row — the card + sheet offer
+       Once / This session / Always / Deny as it asked them. */
+    grantOptions: request.kind === "approval" ? request.options : undefined,
     age: ageLabel(ask.createdAt, nowMs),
     /* #591 AC-2: an offline Activity keeps its rows — each says "last
        known" instead of pretending they were just fetched. */
