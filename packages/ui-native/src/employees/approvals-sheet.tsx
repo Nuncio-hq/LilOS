@@ -39,8 +39,9 @@ export function ApprovalsSheet({
   /** #591: set while the Mac is unreachable — the list is last-known
      (rows carry `lastKnown`), the sheet says so under the title, and the
      empty state never reads "All clear". `asOf` = last-seen age
-     ("2 min ago"). */
-  unreachable?: { mac: string; asOf?: string };
+     ("2 min ago"). #597: `line` overrides the "Can't reach <mac>" lead —
+     a blocked version mismatch is an update prompt, not a reach issue. */
+  unreachable?: { mac: string; asOf?: string; line?: string };
 }) {
   const insets = useSafeAreaInsets();
   return (
@@ -99,7 +100,7 @@ export function ApprovalsSheet({
               weight="medium"
             />
             <AppText size="sm" tone="muted" className="flex-1">
-              {`Can't reach ${unreachable.mac} — showing last known${unreachable.asOf ? ` · ${unreachable.asOf}` : ""}`}
+              {`${unreachable.line ?? `Can't reach ${unreachable.mac}`} — showing last known${unreachable.asOf ? ` · ${unreachable.asOf}` : ""}`}
             </AppText>
           </View>
         )}
@@ -114,7 +115,9 @@ export function ApprovalsSheet({
                   tone="muted-foreground"
                 />
               </View>
-              <AppText tone="muted">{`Can't reach ${unreachable.mac}`}</AppText>
+              <AppText tone="muted">
+                {unreachable.line ?? `Can't reach ${unreachable.mac}`}
+              </AppText>
               <AppText size="sm" tone="muted">
                 {`Last known: nothing waiting${unreachable.asOf ? ` · ${unreachable.asOf}` : ""}`}
               </AppText>
@@ -162,51 +165,70 @@ export function ApprovalsSheet({
                 </View>
               </View>
             )}
-            <View className="mt-3 flex-row flex-wrap items-center gap-2">
-              {/* #591: a last-known row offers no dead pills — the tap
-                  couldn't reach the Mac anyway. Open still works: it
-                  opens the cached thread. */}
-              {/* #595: a plan's primary is **Review** — it opens the plan
-                  in its thread; nothing approves a plan sight-unseen.
-                  Command approvals keep the one-tap Approve (AC-2). */}
-              {!a.lastKnown && a.primary === "review" && (
-                <Pill
-                  label="Review"
-                  onPress={() => (onReview ?? onOpen)(a.id)}
-                />
-              )}
-              {/* #601: an approval row offers the ask's own options in its
-                  order (Once / This session / Always / Deny) when onGrant
-                  is passed; the plain Approve/Deny pair stays the
-                  fallback. */}
+            {/* #601: the row splits two zones — the grants wrap in the
+                left zone (Review / Approve / the ask's non-deny options)
+                while Deny keeps its own weight pinned to the trailing
+                edge ahead of Open (muted fill, destructive label), so a
+                wrap never orphans it onto a second row. */}
+            <View className="mt-3 flex-row items-center gap-2">
+              <View className="flex-1 flex-row flex-wrap items-center gap-2">
+                {/* #591: a last-known row offers no dead pills — the tap
+                    couldn't reach the Mac anyway. Open still works: it
+                    opens the cached thread. */}
+                {/* #595: a plan's primary is **Review** — it opens the
+                    plan in its thread; nothing approves a plan
+                    sight-unseen. Command approvals keep the one-tap
+                    Approve (AC-2). */}
+                {!a.lastKnown && a.primary === "review" && (
+                  <Pill
+                    label="Review"
+                    onPress={() => (onReview ?? onOpen)(a.id)}
+                  />
+                )}
+                {/* #601: an approval row offers the ask's own options in
+                    its order (Once / This session / Always) when onGrant
+                    is passed — Deny splits out to the trailing edge; the
+                    plain Approve/Deny pair stays the fallback. */}
+                {!a.lastKnown &&
+                  onGrant &&
+                  a.kind === "approval" &&
+                  grantPills(a)
+                    .filter((o) => o !== "deny")
+                    .map((opt, i) => (
+                      <Pill
+                        key={opt}
+                        label={GRANT_LABEL[opt]}
+                        variant={i === 0 ? undefined : "soft"}
+                        onPress={() => onGrant(a.id, opt)}
+                      />
+                    ))}
+                {!a.lastKnown &&
+                  !onGrant &&
+                  onApprove &&
+                  (a.primary ?? "approve") === "approve" &&
+                  a.kind !== "question" && (
+                    <Pill label="Approve" onPress={() => onApprove(a.id)} />
+                  )}
+              </View>
               {!a.lastKnown &&
                 onGrant &&
                 a.kind === "approval" &&
-                grantPills(a).map((opt, i) => (
+                grantPills(a).includes("deny") && (
                   <Pill
-                    key={opt}
-                    label={GRANT_LABEL[opt]}
-                    variant={i === 0 && opt !== "deny" ? undefined : "soft"}
-                    onPress={() => onGrant(a.id, opt)}
+                    label={GRANT_LABEL.deny}
+                    variant="destructive"
+                    onPress={() => onGrant(a.id, "deny")}
                   />
-                ))}
-              {!a.lastKnown &&
-                !onGrant &&
-                onApprove &&
-                (a.primary ?? "approve") === "approve" &&
-                a.kind !== "question" && (
-                  <Pill label="Approve" onPress={() => onApprove(a.id)} />
                 )}
               {!a.lastKnown &&
                 !(onGrant && a.kind === "approval") &&
                 onDeny && (
                   <Pill
                     label={isAnswerableQuestion(a) ? "Skip" : "Deny"}
-                    variant="soft"
+                    variant={isAnswerableQuestion(a) ? "soft" : "destructive"}
                     onPress={() => onDeny(a.id)}
                   />
                 )}
-              <View className="flex-1" />
               {/* On a plan card Review IS the open — no second route pill. */}
               {a.primary !== "review" && (
                 <Pill

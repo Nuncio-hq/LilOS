@@ -85,3 +85,15 @@ html[data-desktop]
   ) {
   -webkit-app-region: no-drag;
 }
+
+/* #554 ⌘F: the DOM find paints matches through the Custom Highlight API —
+   the same look Chromium's findInPage gave them (rest yellow, active
+   orange), legible in both themes. */
+::highlight(lilos-find) {
+  background-color: rgb(255 224 71);
+  color: rgb(23 23 23);
+}
+::highlight(lilos-find-active) {
+  background-color: rgb(255 159 28);
+  color: rgb(23 23 23);
+}

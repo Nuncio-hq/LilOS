@@ -50,7 +50,7 @@ import {
   watchDm,
 } from "../dm-store";
 import { $client, $link, $welcome } from "../link";
-import { describeError, toneOf } from "../mapping";
+import { describeError, toneOf, unreachableNoteFor } from "../mapping";
 import { $connections } from "../paired-macs";
 import { $prs, refreshPrsFor } from "../prs";
 import type { DmRoutes } from "../routes";
@@ -330,6 +330,7 @@ export function Dm({
         markPending(res.conversation, res.rootMessage);
         navigation.navigate("Thread", {
           conversationId: res.conversation.id,
+          employeeId,
         });
       } catch (e) {
         Alert.alert("Couldn't send", describeError(e));
@@ -348,12 +349,10 @@ export function Dm({
       modelLogo={provider?.logo}
       modelUnavailable={!catalog.models.length && catalogUnavailable}
       onOpenSession={(id) =>
-        navigation.navigate("Thread", { conversationId: id })
+        navigation.navigate("Thread", { conversationId: id, employeeId })
       }
       onSend={send}
-      unreachableNote={
-        link === "offline" && mac ? `Can't reach ${mac.name}` : undefined
-      }
+      unreachableNote={mac ? unreachableNoteFor(link, mac.name) : undefined}
       onPickFolder={() => navigation.navigate("FolderPicker", { employeeId })}
       {...(catalog.models.length
         ? {

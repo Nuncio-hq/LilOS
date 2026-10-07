@@ -4,7 +4,7 @@ import { AppText } from "../components/app-text";
 import { Button } from "../components/button";
 import { Screen } from "../components/screen";
 import {
-  CODE_LENGTH,
+  CODE_FORMATTED_LENGTH,
   formatCode,
   type ManualErrors,
   normalizeCode,
@@ -71,10 +71,12 @@ export function ManualCodeScreen({
               setCode(normalizeCode(t));
               if (errors.code) setErrors({ ...errors, code: undefined });
             }}
-            placeholder="ABC-123"
+            placeholder="XXXX-XXXX-XXXX"
             autoCapitalize="characters"
             autoCorrect={false}
-            maxLength={CODE_LENGTH + 1}
+            /* The value is the formatted code — the cap counts its dashes
+               (#593 AC-1). normalizeCode still slices to 12 real chars. */
+            maxLength={CODE_FORMATTED_LENGTH}
             returnKeyType="go"
             onSubmitEditing={submit}
             className={`${field(errors.code)} font-mono text-xl tracking-[2px]`}

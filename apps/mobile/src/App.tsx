@@ -1,9 +1,6 @@
 import "../global.css";
 
-import {
-  exchangePairingGrant,
-  PairingExchangeFailed,
-} from "@lilos/client-runtime";
+import { exchangePairingGrant } from "@lilos/client-runtime";
 import {
   AppText,
   ConnectedScreen,
@@ -54,6 +51,7 @@ import { directoryCache } from "./cache";
 import { $demo, DEMO_MAC, enterDemo, exitDemo } from "./demo/lifecycle";
 import { openAsks } from "./home-model";
 import {
+  $blockedUpdate,
   $latencyMs,
   $link,
   $linkError,
@@ -62,6 +60,7 @@ import {
   startLink,
   stopLink,
 } from "./link";
+import { blockedLine, connectingOutcome, plainLinkReason } from "./mapping";
 import { NetSpyBadge } from "./netspy-badge";
 import {
   $connections,
@@ -212,6 +211,7 @@ function Manual({ navigation }: Props<"Manual">) {
 function Connecting({ navigation, route }: Props<"Connecting">) {
   const { offer } = route.params;
   const [state, setState] = useState<ConnectingState>("connecting");
+  const [retryAfter, setRetryAfter] = useState<number | undefined>(undefined);
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
@@ -221,13 +221,30 @@ function Connecting({ navigation, route }: Props<"Connecting">) {
   // biome-ignore lint/correctness/useExhaustiveDependencies: `attempt` re-runs the exchange on Try again.
   useEffect(() => {
     const ac = new AbortController();
+    /* #593 AC-3: the exchange gets 15s before the Mac is declared
+       unreachable; the screen's Cancel aborts the same fetch. The flag
+       keeps a timeout firing the "unreachable" state while a user's
+       Cancel still exits silently. */
+    let timedOut = false;
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      ac.abort();
+    }, 15_000);
     void (async () => {
       try {
-        const result = await exchangePairingGrant(`http://${offer.host}`, {
-          code: offer.code,
-          name: Device.deviceName ?? "iPhone",
-        });
-        if (ac.signal.aborted) return;
+        const result = await exchangePairingGrant(
+          `http://${offer.host}`,
+          {
+            code: offer.code,
+            name: Device.deviceName ?? "iPhone",
+          },
+          { signal: ac.signal },
+        );
+        /* A real grant that resolves after the timeout still counts —
+           swallowing it leaves the spinner up forever with the grant
+           spent (a retry lands on 'used'). Only a user Cancel/unmount
+           exits quietly. */
+        if (ac.signal.aborted && !timedOut) return;
         void Haptics.notificationAsync(
           Haptics.NotificationFeedbackType.Success,
         );
@@ -242,19 +259,22 @@ function Connecting({ navigation, route }: Props<"Connecting">) {
           deviceId: result.deviceId,
           credential: result.credential,
         });
+        if (ac.signal.aborted && !timedOut) return;
         navigation.replace("Connected");
       } catch (error) {
-        if (ac.signal.aborted) return;
+        /* Cancel/unmount leaves the screen quietly; the timeout lands on
+           "unreachable" like any other dial failure. */
+        if (ac.signal.aborted && !timedOut) return;
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        setState(
-          error instanceof PairingExchangeFailed &&
-            (error.reason === "expired" || error.reason === "used")
-            ? "expired"
-            : "unreachable",
-        );
+        const outcome = connectingOutcome(error);
+        setRetryAfter(outcome.retryAfterSeconds);
+        setState(outcome.state);
       }
     })();
-    return () => ac.abort();
+    return () => {
+      clearTimeout(timeout);
+      ac.abort();
+    };
   }, [attempt, offer, navigation]);
 
   return (
@@ -262,6 +282,7 @@ function Connecting({ navigation, route }: Props<"Connecting">) {
       state={state}
       macName={offer.name ?? fallbackName(offer.host)}
       host={offer.host}
+      retryAfterSeconds={retryAfter}
       onCancel={() => navigation.goBack()}
       onRetry={() => {
         setState("connecting");
@@ -424,6 +445,7 @@ function Mac({ navigation }: Props<"Mac">) {
   const mac = useStore($connections)[0];
   const link = useStore($link);
   const lastError = useStore($linkError);
+  const blockedUpdate = useStore($blockedUpdate);
   const welcome = useStore($welcome);
   const latency = useStore($latencyMs);
   if (!mac) return null;
@@ -438,8 +460,12 @@ function Mac({ navigation }: Props<"Mac">) {
         relay: {
           version: welcome?.relayVersion ?? "—",
           latency: latency === undefined ? undefined : `${latency} ms`,
+          /* #597 AC-1: the tile's whole label — a plain reason while
+             offline, the seen-age otherwise. */
           lastSeen:
-            link === "offline" && lastError ? lastError : ago(mac.lastSeenAt),
+            link === "offline" && lastError
+              ? plainLinkReason(lastError)
+              : `${link === "online" ? "seen" : "last seen"} ${ago(mac.lastSeenAt)}`,
         },
         engine: {
           name: engineHost?.detail ?? (engineHost?.connected ? "Hermes" : "—"),
@@ -453,6 +479,25 @@ function Mac({ navigation }: Props<"Mac">) {
           year: "numeric",
         }),
       }}
+      blocked={
+        link === "blocked"
+          ? {
+              body: blockedLine(blockedUpdate),
+              /* The update action: when this iPhone is the stale side the
+                 sheet's primary button takes them to TestFlight, where
+                 LilOS ships. A Mac-side stale stays a Try again — the
+                 update happens on the Mac itself. */
+              action:
+                blockedUpdate === "phone"
+                  ? {
+                      label: "Open TestFlight",
+                      onPress: () =>
+                        void Linking.openURL("https://testflight.apple.com"),
+                    }
+                  : undefined,
+            }
+          : undefined
+      }
       onRetry={() => currentSupervisor()?.retryNow()}
       onForget={() => {
         navigation.goBack();

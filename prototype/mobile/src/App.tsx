@@ -282,6 +282,7 @@ function Manual({ navigation }: Props<"Manual">) {
 function Connecting({ navigation, route }: Props<"Connecting">) {
   const { offer } = route.params;
   const [state, setState] = useState<ConnectingState>("connecting");
+  const [retryAfter, setRetryAfter] = useState<number | undefined>(undefined);
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
@@ -297,6 +298,7 @@ function Connecting({ navigation, route }: Props<"Connecting">) {
           void Haptics.notificationAsync(
             Haptics.NotificationFeedbackType.Error,
           );
+          setRetryAfter(r.retryAfterSeconds);
           setState(r.reason);
           return;
         }
@@ -323,6 +325,7 @@ function Connecting({ navigation, route }: Props<"Connecting">) {
       state={state}
       macName={offer.name ?? fallbackName(offer.host)}
       host={offer.host}
+      retryAfterSeconds={retryAfter}
       onCancel={() => navigation.goBack()}
       onRetry={() => {
         setState("connecting");
@@ -365,6 +368,12 @@ function Home() {
   useEffect(() => {
     if (!mac) return;
     const ac = new AbortController();
+    /* #597: the preview's Version mismatch is its own outcome — the link
+       lands on `blocked`, not another "can't reach". */
+    if ($preview.get().link === "blocked") {
+      $link.set("blocked");
+      return () => ac.abort();
+    }
     $link.set("reconnecting");
     reachMac(ac.signal)
       .then((ok) => {
@@ -806,7 +815,14 @@ function Mac({ navigation }: Props<"Mac">) {
         host: mac.host,
         route: ROUTE_LABEL[mac.route],
         link,
-        relay: { version: "0.1.4", latency: "38 ms", lastSeen: "just now" },
+        relay: {
+          version: "0.1.4",
+          latency: "38 ms",
+          lastSeen:
+            link === "offline"
+              ? "Mac asleep or offline."
+              : `${link === "online" ? "seen" : "last seen"} just now`,
+        },
         engine: { name: "Hermes", version: "0.19.2" },
         paired: new Date(mac.pairedAt).toLocaleDateString(undefined, {
           day: "numeric",
@@ -814,6 +830,18 @@ function Mac({ navigation }: Props<"Mac">) {
           year: "numeric",
         }),
       }}
+      blocked={
+        link === "blocked"
+          ? {
+              body: "Update LilOS on this iPhone, then try again.",
+              action: {
+                label: "Open TestFlight",
+                onPress: () =>
+                  void Linking.openURL("https://testflight.apple.com"),
+              },
+            }
+          : undefined
+      }
       onRetry={() => $attempt.set($attempt.get() + 1)}
       onForget={() => {
         navigation.goBack();
