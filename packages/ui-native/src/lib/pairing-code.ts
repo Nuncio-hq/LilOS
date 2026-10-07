@@ -15,6 +15,12 @@ export type PairingOffer = {
 
 export const CODE_LENGTH = 12;
 
+/** The formatted code's display length — `XXXX-XXXX-XXXX` = 14. Fields that
+   cap input must admit the dashes too (#593: maxLength=13 blocked the 12th
+   character). */
+export const CODE_FORMATTED_LENGTH =
+  CODE_LENGTH + Math.ceil(CODE_LENGTH / 4) - 1;
+
 export function normalizeCode(raw: string): string {
   return raw
     .toUpperCase()
@@ -22,7 +28,8 @@ export function normalizeCode(raw: string): string {
     .slice(0, CODE_LENGTH);
 }
 
-/** "7K4MQR2X9TBP" → "7K4M-QR2X-9TBP" (how the Mac shows it). */
+/** "7K4MQR2X9TBP" → "7K4M-QR2X-9TBP" (how the Mac shows it —
+   CODE_FORMATTED_LENGTH characters). */
 export function formatCode(code: string): string {
   const c = normalizeCode(code);
   return c.match(/.{1,4}/g)?.join("-") ?? c;

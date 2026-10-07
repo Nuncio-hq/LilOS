@@ -408,6 +408,11 @@ function ApprovalCard({
   const d = describeAsk(a.command);
   const isFileAsk = !!d?.detail && !d.detail.startsWith("{");
   const [showArgs, setShowArgs] = useState(false);
+  /* #601: Deny splits out of the option list — the grants wrap in the
+     left zone while Deny keeps its own weight at the trailing edge, so
+     a wrap never orphans it onto a second row. */
+  const grants = grantPills(a).filter((o) => o !== "deny");
+  const hasDeny = grantPills(a).includes("deny");
   return (
     // Its own responder, so a tap on the card never opens the row under it.
     <View onStartShouldSetResponder={() => true}>
@@ -467,37 +472,48 @@ function ApprovalCard({
             </View>
           </View>
         )}
-        <View className="mt-3 flex-row flex-wrap items-center gap-2">
-          {/* #601: the ask's own options, its own order — the first grant
-              is the prominent pill like the Mac's first action, Deny reads
-              soft. A pre-options row (prototype) falls back to Approve +
-              Deny via grantPills. */}
+        {/* #601: the ask's own options, its own order — the grants wrap
+            in the left zone with the first prominent like the Mac's
+            first action, while Deny keeps its own weight pinned to the
+            trailing edge (muted fill, destructive label) so a wrap never
+            orphans it onto a second row. A pre-options row (prototype)
+            falls back to Approve + Deny via grantPills. */}
+        <View className="mt-3 flex-row items-center gap-2">
+          <View className="flex-1 flex-row flex-wrap items-center gap-2">
+            {a.kind === "approval" && onGrant
+              ? grants.map((opt, i) => (
+                  <Pill
+                    key={opt}
+                    label={GRANT_LABEL[opt]}
+                    variant={i === 0 ? undefined : "soft"}
+                    disabled={stale}
+                    onPress={() => onGrant(a.id, opt)}
+                  />
+                ))
+              : a.kind !== "question" && (
+                  <Pill
+                    label="Approve"
+                    disabled={stale}
+                    onPress={() => onApprove(a.id)}
+                  />
+                )}
+          </View>
           {a.kind === "approval" && onGrant ? (
-            grantPills(a).map((opt, i) => (
+            hasDeny && (
               <Pill
-                key={opt}
-                label={GRANT_LABEL[opt]}
-                variant={i === 0 && opt !== "deny" ? undefined : "soft"}
+                label={GRANT_LABEL.deny}
+                variant="destructive"
                 disabled={stale}
-                onPress={() => onGrant(a.id, opt)}
+                onPress={() => onGrant(a.id, "deny")}
               />
-            ))
+            )
           ) : (
-            <>
-              {a.kind !== "question" && (
-                <Pill
-                  label="Approve"
-                  disabled={stale}
-                  onPress={() => onApprove(a.id)}
-                />
-              )}
-              <Pill
-                label="Deny"
-                variant="soft"
-                disabled={stale}
-                onPress={() => onDeny(a.id)}
-              />
-            </>
+            <Pill
+              label="Deny"
+              variant="destructive"
+              disabled={stale}
+              onPress={() => onDeny(a.id)}
+            />
           )}
         </View>
         {stale && answerHint && (

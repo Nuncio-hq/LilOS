@@ -20,6 +20,11 @@ import { noFolderDedupeKey } from "../store";
 import type { RelayCtx } from "./ctx";
 import { badParams, JsonRpcCode, RpcError } from "./rpc";
 
+/* #660 e2e knob: hold `conversations.summaries` answers — the client's
+   `openConv` lands late, so a DM send → /focus rides the whole
+   summary-fetch window the CI flake sampled inside. `0`/unset = no hold. */
+const SUMMARY_DELAY_MS = Number(process.env.LILOS_SUMMARY_DELAY_MS ?? 0) || 0;
+
 /**
  * Moved verbatim out of `../session.ts`'s handle() (#441) — case
  * bodies are byte-identical modulo re-indentation. Returns `false`
@@ -58,6 +63,8 @@ export async function handleConversations(
     case "conversations.summaries": {
       const parsed = ConversationsSummariesParams.safeParse(params ?? {});
       if (!parsed.success) throw badParams(parsed.error.issues);
+      if (SUMMARY_DELAY_MS > 0)
+        await new Promise((r) => setTimeout(r, SUMMARY_DELAY_MS));
       respond(peer, id, {
         summaries: await store.listConversationSummaries({
           channelId: parsed.data.channelId,
