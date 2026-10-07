@@ -84,7 +84,19 @@ describe("issue #659 — an agent reply renders exactly once", () => {
       phase: "text",
       text: "Noted. Plan for this session now:",
     });
-    const out = mergeTurns(replies, session([live], live), "emp");
+    /* conversationState "idle": the harness flips the conversation back at
+       the same turn.completed that posts the row — the real e2e window.
+       The claim must still reach the model's live turn. */
+    const out = mergeTurns(
+      replies,
+      session([live], live),
+      "emp",
+      [],
+      undefined,
+      undefined,
+      undefined,
+      "idle",
+    );
     expect(answerSurfaces(out)).toHaveLength(1);
     /* the card kept the relay row's id (search anchor, #138). */
     expect(out.map((r) => r.id)).toEqual(["q2", "a2"]);
@@ -106,7 +118,16 @@ describe("issue #659 — an agent reply renders exactly once", () => {
       phase: "reasoning",
       text: "",
     });
-    const out = mergeTurns(replies, session([live], live), "emp");
+    const out = mergeTurns(
+      replies,
+      session([live], live),
+      "emp",
+      [],
+      undefined,
+      undefined,
+      undefined,
+      "idle",
+    );
     expect(out.map((r) => r.id)).toEqual(["q2", "a2"]);
     expect(out[1].turnId).toBe("t2");
     expect(answerSurfaces(out).length).toBeLessThanOrEqual(1);
@@ -133,7 +154,16 @@ describe("issue #659 — an agent reply renders exactly once", () => {
         phase: delta ? "text" : "reasoning",
         text: delta,
       });
-      const out = mergeTurns(replies, session([live], live), "emp");
+      const out = mergeTurns(
+        replies,
+        session([live], live),
+        "emp",
+        [],
+        undefined,
+        undefined,
+        undefined,
+        "idle",
+      );
       expect(answerSurfaces(out).length).toBeLessThanOrEqual(1);
       expect(out.map((r) => r.id)).toEqual(["q2", "a2"]);
     }
@@ -172,8 +202,46 @@ describe("issue #659 — an agent reply renders exactly once", () => {
       phase: "text",
       text: "Noted. Plan for this session now:",
     });
-    const out = mergeTurns(replies, session([live], live), "emp");
+    const out = mergeTurns(
+      replies,
+      session([live], live),
+      "emp",
+      [],
+      undefined,
+      undefined,
+      undefined,
+      "idle",
+    );
     /* a1 stays a bare row ahead of q2; the card anchors under q2. */
     expect(out.map((r) => r.id)).toEqual(["q1", "a1", "q2", "live-t2"]);
+  });
+
+  test("AC-2 an empty row is never claimed — even by the empty live turn", () => {
+    /* "" prefixes every string, so an empty live text would otherwise
+       swallow ANY row — and an empty row is never a posted answer. */
+    const replies = conversationReplies(
+      [u("q2", 1, "ship it"), a("a2", 2, "")],
+      "c1",
+    );
+    const live = turn({
+      turnId: "t2",
+      ref: "q2",
+      phase: "reasoning",
+      text: "",
+    });
+    const out = mergeTurns(
+      replies,
+      session([live], live),
+      "emp",
+      [],
+      undefined,
+      undefined,
+      undefined,
+      "idle",
+    );
+    /* a2 stays a bare row — under `idle` the empty live card is itself
+       orphan-dropped; either way the row keeps its own id, unclaimed. */
+    expect(out.map((r) => r.id)).toEqual(["q2", "a2"]);
+    expect(out[1].turnId).toBeUndefined();
   });
 });
