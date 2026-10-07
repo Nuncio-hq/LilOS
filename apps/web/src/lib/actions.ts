@@ -95,7 +95,7 @@ export async function sendDm(
           const conv = relay.conversations
             .get()
             .find((c) => c.id === conversationId);
-          return conv as Conversation;
+          return conv;
         }
         const res = await relay.request<{
           conversation: Conversation;
