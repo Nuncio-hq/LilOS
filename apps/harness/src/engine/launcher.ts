@@ -91,6 +91,8 @@ export interface CommandLauncherOptions {
    * the engine immediately instead of counting a restartable crash.
    */
   fatalExitCodes?: number[];
+  /** spawn seam for tests; production uses node:child_process.spawn. */
+  spawn?: typeof spawn;
   log: Logger;
 }
 
@@ -113,7 +115,8 @@ export function commandLauncher(
           engine: options.name,
           command: options.command.join(" "),
         });
-        const child = spawn(bin, args, {
+        const spawnImpl = options.spawn ?? spawn;
+        const child = spawnImpl(bin, args, {
           cwd: options.cwd,
           env: {
             ...scrubLilosEnv(process.env),
