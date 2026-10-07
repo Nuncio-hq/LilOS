@@ -31,6 +31,7 @@ const SHOTS = path.join(repo, "test-results", "ac-581");
      when the app redirects / → /dm before initHost reads location.search.
    - moveDir: under the real $HOME on purpose — moving a live session is
      a host write, gated to inside the Mac's home folder. */
+mkdirSync(path.join(homedir(), "repos"), { recursive: true }); // ~/repos may not exist on a fresh CI runner
 const ROOT = mkdtempSync(path.join(homedir(), "repos", "lilos-581-"));
 const repoDir = path.join(ROOT, "lilos-repo-581");
 const moveDir = mkdtempSync(path.join(homedir(), "lilos-581-move-"));

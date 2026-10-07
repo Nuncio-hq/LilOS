@@ -35,6 +35,7 @@ const SHOTS = path.join(repo, "test-results", "ac-590");
      screen is the internal-looking bug). */
 const ROOT = mkdtempSync(path.join(tmpdir(), "lilos-590-"));
 const repoDir = path.join(ROOT, "lilos-repo-590");
+mkdirSync(path.join(homedir(), "repos"), { recursive: true }); // ~/repos may not exist on a fresh CI runner
 const HOME_ROOT = mkdtempSync(path.join(homedir(), "repos", "lilos-590-"));
 const homeRepoDir = path.join(HOME_ROOT, "lilos-repo-590");
 const homeRepoShown = `~/repos/${path.basename(HOME_ROOT)}/lilos-repo-590`;
