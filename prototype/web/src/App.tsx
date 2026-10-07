@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Conversation, ConversationContent, ConversationScrollButton } from "@lilos/ui/components/ai-elements/conversation"
 import {
   AddFolderDialog,
@@ -1080,11 +1080,19 @@ export default function App() {
     setScenario(id)
   }
 
-  const emp: EmpFn = (id) => employees.find((e) => e.id === id) ?? removed[id] ?? (id === "default" ? DEFAULT_EMP : undefined)
+  /* #569: stable identities — the memoized DM session row reads emp/human as
+     props; fresh closures per render would defeat the memo here like they
+     would in the app. */
+  const emp: EmpFn = useCallback(
+    (id) => employees.find((e) => e.id === id) ?? removed[id] ?? (id === "default" ? DEFAULT_EMP : undefined),
+    [employees, removed],
+  )
   /* `user` is the real app's author id — in mock data it aliases the seeded
      human so components keying on VIEWER_ID resolve the same person. */
-  const human: HumanFn = (id) =>
-    id === "user" || id === "oscar" ? me : HUMANS[id]
+  const human: HumanFn = useCallback(
+    (id) => (id === "user" || id === "oscar" ? me : HUMANS[id]),
+    [me],
+  )
 
   /* #338: connList is Settings → Engine's row list — the profiles of the
      employees the scenario shows, joined with connection state. connOf is the

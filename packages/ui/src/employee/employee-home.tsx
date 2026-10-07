@@ -3,14 +3,10 @@ import {
   ArchiveIcon,
   CalendarClockIcon,
   ChevronRightIcon,
-  EllipsisIcon,
-  FolderIcon,
   MenuIcon,
   MessageSquareIcon,
-  MoonIcon,
   PanelRightIcon,
   PencilIcon,
-  RotateCcwIcon,
   SearchIcon,
   TriangleAlertIcon,
   UserIcon,
@@ -26,12 +22,6 @@ import {
   ConversationScrollButton,
 } from "../components/ai-elements/conversation";
 import { Button } from "../components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "../components/ui/dropdown-menu";
 import { Input } from "../components/ui/input";
 import {
   Select,
@@ -41,17 +31,8 @@ import {
   SelectValue,
 } from "../components/ui/select";
 import { NotConnectedNotice } from "../connect/not-connected-notice";
-import { AttachmentChips } from "../conversation/turns";
 import { WorkspacePicker, wsHint } from "../dialogs/workspace-picker";
-import { Body, Row, Who } from "../feed/row";
-import {
-  folderLabel,
-  LIFE_LABEL,
-  PHASE_LABEL,
-  preview,
-  sessionLife,
-  threadState,
-} from "../lib/helpers";
+import { folderLabel } from "../lib/helpers";
 import { InlineCodeText } from "../lib/inline-code";
 import { cn } from "../lib/utils";
 import { HermesAvatar } from "../shell/avatars";
@@ -70,101 +51,9 @@ import type {
   ModelOption,
   ModelPickerExtras,
   Msg,
-  SessionAlert,
   WsPick,
 } from "../types";
-
-/* The ⋯ menu on a DM session row: rename / archive (or unarchive). Each item renders
-   only when its handler is passed; with neither there is no menu at all. */
-function SessionMenu({
-  archived,
-  onRename,
-  onArchive,
-}: {
-  archived?: boolean;
-  onRename?: () => void;
-  onArchive?: () => void;
-}) {
-  if (!onRename && !onArchive) return null;
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={
-          <button
-            type="button"
-            aria-label="Thread actions"
-            className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-          />
-        }
-      >
-        <EllipsisIcon className="size-4" />
-      </DropdownMenuTrigger>
-      {/* sticky: the session list scroll-settles (use-stick-to-bottom) right
-          as the menu opens; without it, floating-ui's limitShift caps the
-          clamp at the clipped anchor's edge and the popup parks offscreen.
-          sticky removes the limiter so the popup stays inside the
-          scrollport. (#492) */}
-      <DropdownMenuContent align="end" sticky className="w-44">
-        {onRename && (
-          <DropdownMenuItem onClick={onRename}>
-            <PencilIcon />
-            Rename thread
-          </DropdownMenuItem>
-        )}
-        {onArchive && (
-          <DropdownMenuItem onClick={onArchive}>
-            {archived ? <RotateCcwIcon /> : <ArchiveIcon />}
-            {archived ? "Unarchive thread" : "Archive thread"}
-          </DropdownMenuItem>
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-/* A designed failure state on one session in the list (model error, sleep interrupt). */
-function SessionAlertRow({
-  alert,
-  onRetry,
-}: {
-  alert: SessionAlert;
-  onRetry?: () => void;
-}) {
-  const warm = alert.kind === "sleep";
-  return (
-    <div
-      data-session-alert
-      className={cn(
-        "mt-1 flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs",
-        warm
-          ? "border-amber-200 bg-amber-50 text-amber-900"
-          : "border-red-200 bg-red-50 text-red-900",
-      )}
-    >
-      {warm ? (
-        <MoonIcon className="size-3.5 shrink-0" />
-      ) : (
-        <TriangleAlertIcon className="size-3.5 shrink-0" />
-      )}
-      <span className="min-w-0 flex-1">{alert.text}</span>
-      {alert.retry && onRetry && (
-        <button
-          type="button"
-          onClick={onRetry}
-          className={cn(
-            "flex shrink-0 items-center gap-1 rounded-md px-2 py-0.5 font-medium text-white",
-            warm
-              ? "bg-amber-600 hover:bg-amber-700"
-              : "bg-red-600 hover:bg-red-700",
-          )}
-        >
-          <RotateCcwIcon className="size-3" />
-          Retry
-        </button>
-      )}
-    </div>
-  );
-}
+import { SessionRow } from "./session-row";
 
 /* `<mark>`-tagged search excerpt → elements (parsed, never set as HTML —
    the relay's snippet() doesn't entity-escape, so only the mark tags are
@@ -372,157 +261,63 @@ export function EmployeeHome({
   }, [hits]);
   const archived = sessions.filter((m) => m.thread!.archived && matches(m));
 
-  const sessionRow = (m: Extract<Msg, { kind: "msg" }>, isArchived = false) => {
-    const t = m.thread!;
-    const life = isArchived ? undefined : sessionLife(t);
-    const firstAnswer = t.replies.find((r) => emp(r.from) && r.text);
-    /* #583 AC-2: the row says its state in words; #585: system notes don't
-       count as replies; #583 AC-3: live background jobs say so. */
-    const replyCount = t.replies.filter((r) => !r.system).length;
-    const state = isArchived ? undefined : threadState(t);
-    const bgJobs = t.jobs?.filter((j) => j.status === "running").length ?? 0;
-    return (
-      <div
-        key={m.id}
-        data-session={m.id}
-        data-archived={isArchived || undefined}
-      >
-        <Row from={m.from} emp={emp} human={human} active={m.id === threadId}>
-          <div className="flex items-start gap-1">
-            <div className="min-w-0 flex-1">
-              <Who id={m.from} time={m.time} emp={emp} human={human} />
-            </div>
-            <SessionMenu
-              archived={isArchived}
-              onRename={
-                onRename
-                  ? () => {
-                      setDraft(t.title || preview(m.text));
-                      setEditing(m.id);
-                    }
-                  : undefined
-              }
-              onArchive={
-                onArchive ? () => onArchive(m.id, !isArchived) : undefined
-              }
-            />
-          </div>
-          {editing === m.id ? (
-            <Input
-              aria-label="Thread title"
-              value={draft}
-              autoFocus
-              className="h-7 w-full text-sm"
-              onChange={(ev) => setDraft(ev.target.value)}
-              onKeyDown={(ev) => {
-                if (ev.key === "Enter" && draft.trim()) {
-                  onRename?.(m.id, draft.trim());
-                  setEditing(null);
-                }
-                if (ev.key === "Escape") setEditing(null);
-              }}
-              onBlur={() => {
-                if (draft.trim()) onRename?.(m.id, draft.trim());
-                setEditing(null);
-              }}
-            />
-          ) : (
-            t.title && (
-              <div
-                className={cn(
-                  "truncate font-medium",
-                  isArchived && "text-muted-foreground",
-                )}
-              >
-                {t.title}
-              </div>
-            )
-          )}
-          {t.scheduled && scheduled && (
-            <button
-              type="button"
-              data-scheduled-chip={t.scheduled.task}
-              onClick={() => scheduled.onOpenTask(t.scheduled!.task)}
-              title="Started by a scheduled task. Open the task."
-              className="mb-0.5 flex w-fit items-center gap-1 rounded-full border px-2 py-0.5 text-muted-foreground text-xs hover:bg-muted hover:text-foreground"
-            >
-              <CalendarClockIcon className="size-3" />
-              Scheduled · {t.scheduled.name}
-            </button>
-          )}
-          <Body text={m.text} />
-          {m.attachments && <AttachmentChips files={m.attachments} />}
-          {firstAnswer && (
-            <p className="line-clamp-2 border-l-2 pl-2.5 text-[13px] leading-5 text-muted-foreground">
-              {preview(firstAnswer.text)}
-            </p>
-          )}
-          {t.alert && (
-            <SessionAlertRow
-              alert={t.alert}
-              onRetry={onRetrySession ? () => onRetrySession(m) : undefined}
-            />
-          )}
-          <button
-            onClick={() => onOpen(m.id)}
-            title={[t.session, t.ws?.project, t.ws?.branch]
-              .filter(Boolean)
-              .join(" · ")}
-            data-life={life}
-            className={cn(
-              "lilos-lift relative mt-1 flex w-fit max-w-full flex-wrap items-center gap-x-2 gap-y-1 rounded-full bg-accent px-2.5 py-1 text-left text-xs hover:bg-foreground/10 [&>*]:shrink-0 [&>*]:whitespace-nowrap",
-              life && life !== "closed" && "lilos-life",
-              life === "running" && "lilos-life-run",
-            )}
-          >
-            <HermesAvatar name={e.name} className="size-5" />
-            <span className="font-medium text-tint-text">
-              {replyCount} {replyCount === 1 ? "reply" : "replies"}
-            </span>
-            {t.ws && <FolderIcon className="size-3 text-muted-foreground" />}
-            {/* #583 AC-2: every row states itself — needs you / running /
-                failed / stopped. Needs-you keeps its "!" badge too: it asks
-                the user to act. */}
-            {state?.word === "needs you" && (
-              <span
-                title="Needs you"
-                className="grid size-4 place-items-center rounded-full bg-primary font-bold text-[10px] text-primary-foreground"
-              >
-                <span aria-hidden>!</span>
-                <span className="sr-only">{PHASE_LABEL.waiting}</span>
-              </span>
-            )}
-            {state && (
-              <span
-                data-thread-state={state.word}
-                className={cn(
-                  "font-medium",
-                  state.word === "needs you" && "text-amber-600",
-                  state.word === "running" && "text-work",
-                  state.word === "failed" && "text-red-600",
-                  state.word === "stopped" &&
-                    "text-muted-foreground dark:text-foreground/80",
-                )}
-              >
-                {state.word}
-              </span>
-            )}
-            {bgJobs > 0 && (
-              <span
-                data-bg-jobs
-                className="text-muted-foreground"
-                title={`${bgJobs} running in background`}
-              >
-                {bgJobs} in background
-              </span>
-            )}
-            {life && <span className="sr-only">{LIFE_LABEL[life]}</span>}
-            <ChevronRightIcon className="size-3.5 text-muted-foreground" />
-          </button>
-        </Row>
-      </div>
-    );
+  /* #569: each row is a memoized SessionRow on the fold's stable Msg — a
+     streamed word rebuilds only that session's Msg, so the memo re-renders
+     just the row the word lands in. Hosts pass fresh lambda props every
+     render, which a shallow memo would see as change — the ref keeps the
+     LATEST callbacks behind trampolines created once (the same pattern as
+     searchRef above). emp/human stay pass-through: they're stable lookups
+     whose identity changes exactly when their data does. */
+  const rowCb = useRef({
+    onOpen,
+    onRename,
+    onArchive,
+    onRetrySession,
+    onOpenTask: scheduled?.onOpenTask,
+  });
+  rowCb.current = {
+    onOpen,
+    onRename,
+    onArchive,
+    onRetrySession,
+    onOpenTask: scheduled?.onOpenTask,
   };
+  const row = useMemo(
+    () => ({
+      open: (id: string) => rowCb.current.onOpen(id),
+      rename: (id: string, title: string) =>
+        rowCb.current.onRename?.(id, title),
+      archive: (id: string, archivedFlag: boolean) =>
+        rowCb.current.onArchive?.(id, archivedFlag),
+      retry: (root: Extract<Msg, { kind: "msg" }>) =>
+        rowCb.current.onRetrySession?.(root),
+      openTask: (taskId: string) => rowCb.current.onOpenTask?.(taskId),
+    }),
+    [],
+  );
+
+  const sessionRow = (m: Extract<Msg, { kind: "msg" }>, isArchived = false) => (
+    <SessionRow
+      key={m.id}
+      m={m}
+      archived={isArchived}
+      active={m.id === threadId}
+      /* The live draft goes only to the row being renamed — handed to every
+         row it would re-render all of them per keystroke. */
+      editing={editing === m.id}
+      draft={editing === m.id ? draft : ""}
+      empName={e.name}
+      emp={emp}
+      human={human}
+      onOpenTask={scheduled?.onOpenTask ? row.openTask : undefined}
+      onEditDraft={setDraft}
+      onEditing={setEditing}
+      onRename={onRename ? row.rename : undefined}
+      onArchive={onArchive ? row.archive : undefined}
+      onOpen={row.open}
+      onRetrySession={onRetrySession ? row.retry : undefined}
+    />
+  );
 
   return (
     <main className="lilos-glass flex min-h-0 min-w-0 flex-1 flex-col">

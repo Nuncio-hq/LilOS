@@ -1,6 +1,6 @@
 import type { ChatStatus } from "ai";
 import { CheckIcon, Maximize2Icon, PlayIcon, XIcon } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { AccessPill } from "../chat/access-pill";
 import {
   ConversationKeepBottom,
@@ -124,6 +124,7 @@ export function ThreadView({
   onCancel,
   access,
   onAccess,
+  findBar,
 }: {
   root: Extract<Msg, { kind: "msg" }>;
   thread: Thread;
@@ -231,6 +232,9 @@ export function ThreadView({
      Both or neither (D-#19: no access record, no control). */
   access?: ConversationAccess;
   onAccess?: (a: ConversationAccess) => void;
+  /* #554: the host's wired find bar, rendered as an overlay inside the
+     conversation scrollport (desktop ⌘F); absent = no find UI. */
+  findBar?: ReactNode;
 }) {
   const lead = thread.replies.find((r) => emp(r.from));
   const leadEmp = lead ? emp(lead.from) : undefined;
@@ -586,6 +590,7 @@ export function ThreadView({
         <QuestionAwareScrollButton />
         <FindUnstubNudge />
         <FindUnstubAnchor lazy={lazyRows} />
+        {findBar}
         {/* The not-sent tray and pending-steer chips grow the composer area below; re-stick so the
            stopped turn + tray are both fully visible (issue #15). Inside <Conversation> so it can
            use the stick-to-bottom context. */}
