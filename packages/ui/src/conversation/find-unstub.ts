@@ -1,4 +1,5 @@
 import {
+  useContext,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -8,6 +9,7 @@ import {
   type StickToBottomState,
   useStickToBottomContext,
 } from "use-stick-to-bottom";
+import { ConversationPin } from "../components/ai-elements/conversation";
 
 /**
  * #512: a held (stubbed) turn row carries no text nodes (#430), so browser
@@ -263,6 +265,7 @@ function holdTopEdge(
     JUMPED position: a mid-window scroll is the reader's and stands. */
 export function FindUnstubNudge(): null {
   const { scrollRef, state } = useStickToBottomContext();
+  const pin = useContext(ConversationPin);
   const open = useFindUnstub(FIND_UNSTUB_NUDGE_PX > 0);
   useEffect(() => {
     if (!open) return;
@@ -272,6 +275,11 @@ export function FindUnstubNudge(): null {
       done = true;
       const port = scrollRef.current;
       if (port) {
+        /* The nudge IS the reader-sim: the escape guard excludes hold-
+           window writes from its scrollTop patch (hold corrections ride
+           the same setter), so mark the intent directly — the jumped
+           position is the reader's and must stand after the window. */
+        if (pin) pin.escaped.v = true;
         port.scrollTop = Math.max(0, port.scrollTop - FIND_UNSTUB_NUDGE_PX);
         /* The post-write position is the spec's ground truth: under #570's
            estimated stubs the pre-window top drifts while the mount holds

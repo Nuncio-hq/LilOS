@@ -20,12 +20,17 @@ let jumpGen = 0;
 
 export function landJump(el: Element, pin: ConversationPin | null): void {
   const port = el.closest('[role="log"]');
-  const pr = port?.getBoundingClientRect();
-  if (pin && pr && el.getBoundingClientRect().top < pr.top) {
-    /* The jump goes up — escape now, synchronously: the write about to
-       land can no longer be overwritten by the spring, and the hydration
-       window's noise quarantine can't mistake it for a clamp. A downward
-       or already-visible hit keeps the pin as it was. */
+  if (pin) {
+    /* The jump is reader intent wherever the row sits. Escaping only for
+       an above-the-port target assumed an in-view row was already landed
+       — but on a jump mount the doc is still growing, so a "visible" row
+       is just waiting to be pushed out of the port, and a still-engaged
+       pin re-pins over the landing (ac-570's held-stub target: the hit's
+       row streamed in early, sat in view at top=0, escaped nothing, then
+       the finished doc dragged the port to the bottom). The guard's
+       near-bottom reset re-engages the pin when the landing really is
+       the bottom edge, so an unconditional escape costs a bottom hit
+       nothing. */
     pin.escaped.v = true;
     pin.state.escapedFromLock = true;
     pin.state.isAtBottom = false;
@@ -33,20 +38,36 @@ export function landJump(el: Element, pin: ConversationPin | null): void {
   el.scrollIntoView({ block: "center" });
 
   const gen = ++jumpGen;
+  /* The loop owns the port until it retires — the guard reads this so
+     near-bottom noise can't wipe the jump's escape mid-landing. Only the
+     owning generation clears it. */
+  if (pin) pin.jumping.v = gen;
+  const retire = () => {
+    if (pin && pin.jumping.v === gen) pin.jumping.v = 0;
+  };
   let still = 0;
   let lastOff = Number.NaN;
   let frames = 0;
   const step = () => {
-    if (gen !== jumpGen || ++frames > 240 || !el.isConnected) return;
+    if (gen !== jumpGen || ++frames > 240 || !el.isConnected) {
+      retire();
+      return;
+    }
     const rect = port?.getBoundingClientRect();
-    if (!rect) return;
+    if (!rect) {
+      retire();
+      return;
+    }
     const r = el.getBoundingClientRect();
     const off = r.top - rect.top;
     if (r.top < rect.top || r.bottom > rect.bottom) {
       el.scrollIntoView({ block: "center" });
       still = 0;
     } else if (off === lastOff) {
-      if (++still >= 8) return;
+      if (++still >= 8) {
+        retire();
+        return;
+      }
     } else {
       still = 0;
     }

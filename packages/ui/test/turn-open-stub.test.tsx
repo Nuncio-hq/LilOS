@@ -293,6 +293,7 @@ describe("the pin tracks stub→real height swaps (#570 CI races)", () => {
     } as unknown as StickToBottomState,
     hydratedAt: { v: 0 },
     escaped: { v: false },
+    jumping: { v: 0 },
     repin: vi.fn(),
     ...pinOver,
   });
@@ -307,12 +308,12 @@ describe("the pin tracks stub→real height swaps (#570 CI races)", () => {
         })}
       </ConversationPin.Provider>,
     );
-    /* The stub commit is not a swap — no re-pin, no hydration mark. */
-    expect(pin.repin).not.toHaveBeenCalled();
-    expect(pin.hydratedAt.v).toBe(0);
-    act(() => FakeIO.latest().fire(true));
+    /* The mount commit marks the wake AND re-pins — materializing rows
+       are the mount wave the open pin's measured-bottom chase rides. */
     expect(pin.repin).toHaveBeenCalledTimes(1);
     expect(pin.hydratedAt.v).toBeGreaterThan(0);
+    act(() => FakeIO.latest().fire(true));
+    expect(pin.repin).toHaveBeenCalledTimes(2);
   });
 
   test("the swap leaves an escaped reader alone — the scroll is theirs", () => {
@@ -345,7 +346,8 @@ describe("the pin tracks stub→real height swaps (#570 CI races)", () => {
       </ConversationPin.Provider>,
     );
     act(() => FakeIO.latest().fire(true));
-    expect(clamped.repin).toHaveBeenCalledTimes(1);
+    /* The clamp landing revives on the mount commit AND the swap. */
+    expect(clamped.repin).toHaveBeenCalledTimes(2);
     v1.unmount();
     /* Dead mid-document — a scrollbar drag the fingerprint can't claim
        — stays dead across commits. */
@@ -404,7 +406,12 @@ describe("the pin tracks stub→real height swaps (#570 CI races)", () => {
     port.remove();
   });
 
-  test("a downward/in-view jump keeps the pin", () => {
+  test("an in-view jump escapes too — the mount race can push it out", () => {
+    /* #570: a hit that streams in early sits "in view" at top=0 while the
+       doc is still growing — skipping the escape left the pin engaged,
+       and the finished doc dragged the port to the bottom over the jump
+       (the held-stub target CI failure). The guard's near-bottom reset
+       re-engages the pin when a landing really is the bottom edge. */
     const el = document.createElement("div");
     const port = portOf(el);
     vi.spyOn(el, "getBoundingClientRect").mockImplementation(() =>
@@ -412,9 +419,9 @@ describe("the pin tracks stub→real height swaps (#570 CI races)", () => {
     );
     const pin = pinState();
     landJump(el, pin);
-    expect(pin.state.isAtBottom).toBe(true);
-    expect(pin.state.escapedFromLock).toBe(false);
-    expect(pin.escaped.v).toBe(false);
+    expect(pin.state.isAtBottom).toBe(false);
+    expect(pin.state.escapedFromLock).toBe(true);
+    expect(pin.escaped.v).toBe(true);
     port.remove();
   });
 
@@ -587,6 +594,88 @@ describe("the escape guard quarantines hydration scroll noise (#570)", () => {
     expect(pin.state.isAtBottom).toBe(false);
     expect(pin.state.escapedFromLock).toBe(true);
     expect(pin.escaped.v).toBe(false);
+    rafSpy.mockRestore();
+  });
+
+  test("a flag lying off the bottom is re-pinned — the swallowed-escape strand", async () => {
+    const { sc, pin, rafSpy } = mount();
+    /* The #626/CI shape, deterministically: resizeDifference swallows
+       the deferred escape, so the flags still claim a healthy pin while
+       the port sits mid-document. No fingerprint can claim the landing
+       — the lie itself is the proof: a real scroll would have landed an
+       escape, a healthy chase would carry an animation. */
+    pin.state.isAtBottom = true;
+    pin.state.resizeDifference = 1;
+    pin.hydratedAt.v = performance.now();
+    rawSet(sc, 9499);
+    sc.dispatchEvent(new Event("scroll"));
+    rawSet(sc, 3183);
+    sc.dispatchEvent(new Event("scroll"));
+    expect(pin.escaped.v).toBe(false);
+    expect(pin.state.isAtBottom).toBe(true);
+    await flush();
+    expect(pin.state.isAtBottom).toBe(true);
+    expect(pin.state.escapedFromLock).toBe(false);
+    expect(sc.scrollTop).toBe(9499);
+    rafSpy.mockRestore();
+  });
+
+  test("a noise-dead pin mid-document is revived; an escape-path position stands", async () => {
+    /* First the noise death: the pin was alive (a bottom scroll event
+       proves it), then the flags died without an escape-path event —
+       the library's own swallowed/deferred escape — so the armed chain
+       revives it wherever it fell. */
+    const first = mount();
+    first.pin.state.isAtBottom = true;
+    first.pin.hydratedAt.v = performance.now();
+    rawSet(first.sc, 9499);
+    first.sc.dispatchEvent(new Event("scroll"));
+    first.pin.state.isAtBottom = false;
+    first.pin.state.escapedFromLock = true;
+    rawSet(first.sc, 3183);
+    first.sc.dispatchEvent(new Event("scroll"));
+    await flush();
+    expect(first.pin.state.isAtBottom).toBe(true);
+    expect(first.sc.scrollTop).toBe(9499);
+    first.rafSpy.mockRestore();
+    cleanup();
+
+    /* Then the reader's: an off-fingerprint up-scroll OUTSIDE the wake
+       escaped through the cold path — its landing is event-attributed
+       and a later wave must not pull it. */
+    const second = mount();
+    second.pin.state.isAtBottom = true;
+    second.pin.hydratedAt.v = performance.now() - 60_000;
+    rawSet(second.sc, 9499);
+    second.sc.dispatchEvent(new Event("scroll"));
+    rawSet(second.sc, 3000);
+    second.sc.dispatchEvent(new Event("scroll"));
+    expect(second.pin.state.isAtBottom).toBe(false);
+    /* A new wave opens — the dead pin's position was the reader's. */
+    second.pin.hydratedAt.v = performance.now();
+    rawSet(second.sc, 2000);
+    second.sc.dispatchEvent(new Event("scroll"));
+    await flush();
+    expect(second.pin.state.isAtBottom).toBe(false);
+    expect(second.sc.scrollTop).toBe(2000);
+    second.rafSpy.mockRestore();
+  });
+
+  test("the top edge never revives — a dead pin at scrollTop 0 stands", async () => {
+    const { sc, pin, rafSpy } = mount();
+    /* `initial={false}` jump mounts and the reader's own scroll-to-top
+       both sit at 0 with a dead pin — a noise revive must never pull
+       the port to the bottom from it. */
+    pin.state.isAtBottom = false;
+    pin.state.escapedFromLock = true;
+    pin.hydratedAt.v = performance.now();
+    rawSet(sc, 9499);
+    sc.dispatchEvent(new Event("scroll"));
+    rawSet(sc, 0);
+    sc.dispatchEvent(new Event("scroll"));
+    await flush();
+    expect(sc.scrollTop).toBe(0);
+    expect(pin.state.isAtBottom).toBe(false);
     rafSpy.mockRestore();
   });
 });

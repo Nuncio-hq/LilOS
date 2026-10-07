@@ -243,6 +243,9 @@ function LazyShell({
      held→real edge for the layout effect below. */
   const pin = useContext(ConversationPin);
   const wasStub = useRef(initialHeld);
+  /* First-commit materialization stamps the pin's hydration wake — the
+     mount wave's clamp noise is quarantined the same way a swap's is. */
+  const mountedRef = useRef(false);
   /* First hydration only: ?stubHydrateMs= models the CI-slow mount a
      born-stub pays once; measured re-mounts stay instant. */
   const hydratedRef = useRef(false);
@@ -311,7 +314,24 @@ function LazyShell({
           }
         }
       },
-      { rootMargin: `${LAZY_MARGIN} 0px` },
+      /* #570: the pre-mount band only reaches through the clip that
+         produces it. With the implicit viewport root the margin expands
+         the window's bounds while the scroller's own clip applies raw,
+         so a row just below the port edge never intersects and never
+         mounts (ac-570's scroll-to-top left the early turns held). Root
+         the observer at the nearest scrollable ancestor — the port
+         itself, which sits INSIDE the role="log" wrapper — and the
+         ±LAZY_MARGIN band works as tuned. */
+      {
+        root: (() => {
+          for (let a = el.parentElement; a; a = a.parentElement) {
+            const oy = getComputedStyle(a).overflowY;
+            if (oy === "auto" || oy === "scroll") return a;
+          }
+          return null;
+        })(),
+        rootMargin: `${LAZY_MARGIN} 0px`,
+      },
     );
     io.observe(el);
     return () => {
@@ -336,8 +356,14 @@ function LazyShell({
    * gets cleared here so the lock keeps tracking the measured bottom. */
   useLayoutEffect(() => {
     const swapped = wasStub.current && !held;
+    /* A row's first commit is materialization too — the mount wave's
+       clamp noise is the same noise the hydration wake exists to
+       quarantine, and the open pin's measured-bottom re-pin rides the
+       same commits. */
+    const firstCommit = !mountedRef.current;
+    mountedRef.current = true;
     wasStub.current = held;
-    if (!swapped || !pin) return;
+    if ((!swapped && !firstCommit) || !pin) return;
     /* Record this commit's wake: the hydration clock (un-attributed
        up-scrolls are quarantined while it runs), the new layout max
        (the next clamp event's landing is fingerprinted against it),
@@ -480,7 +506,7 @@ function TurnRowImpl({
         msgId={r.id}
         className={cls}
         lazy={lazy}
-        keep={scrollTarget}
+        keep={scrollTarget || flashed}
         kind="note"
         settled
       >
@@ -505,8 +531,12 @@ function TurnRowImpl({
         /* A turn row whose phase isn't terminal is still being written:
            `streaming` only covers the text phase, and `live` drops when the
            conversation isn't active — so a non-terminal turn must never
-           hold (a stub would freeze partial height and fake the marker). */
-        keep={scrollTarget || (!!r.turnId && !TERMINAL.has(r.phase))}
+           hold (a stub would freeze partial height and fake the marker).
+           `flashed` keeps the jump target real through the whole flash
+           window: `scrollTo` clears the moment the jump lands, but stubs
+           around it keep hydrating and pushing the row out of view — a
+           re-hold would drop the flashed anchor's content mid-wave. */
+        keep={scrollTarget || flashed || (!!r.turnId && !TERMINAL.has(r.phase))}
         startHeld={startHeld}
         estHeight={estHeight}
         kind="agent"
@@ -622,7 +652,7 @@ function TurnRowImpl({
          `group`/`relative` live here; the panel's Row already carries both. */
       className={cn(cls, frame === "focus" && rewind && "group relative")}
       lazy={lazy}
-      keep={scrollTarget}
+      keep={scrollTarget || flashed}
       startHeld={startHeld}
       estHeight={estHeight}
       kind={r.from === "" ? "note" : "user"}

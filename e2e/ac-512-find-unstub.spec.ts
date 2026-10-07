@@ -90,11 +90,13 @@ test("AC-1: Cmd+F mounts held rows — a held row's text enters the DOM; the lap
     })
     .toBe(0);
 
-  /* #537: which rows hold is a function of where the scrollport's clip
-     boundary sits — the row observer's implicit root means its 1600px
-     rootMargin widens only the window bounds while the port's clip
-     decides intersection, so a lazy row holds iff its box clears the
-     port. */
+  /* #537/#570: which rows hold is a function of where the scrollport's
+     OBSERVED boundary sits. The row observer is rooted at the port
+     itself (#570 — the implicit window root let the port's clip apply
+     raw while rootMargin expanded only the window, so rows just off the
+     port edge never mounted). Its 1600px rootMargin therefore inflates
+     the port's own clip: a lazy row holds iff its box clears the port
+     by more than LAZY_MARGIN. */
   const portScrollTop = () =>
     page.evaluate(() => {
       const first = document.querySelector("[data-thread-panel] [data-msg]");
@@ -126,10 +128,14 @@ test("AC-1: Cmd+F mounts held rows — a held row's text enters the DOM; the lap
       }
       return null;
     });
-  /* Lazy rows whose held flag contradicts their box vs the port rect
-     (±1 px edge rows are IO-tie territory and don't count). */
+  /* Lazy rows whose held flag contradicts their box vs the port's
+     OBSERVED boundary — its rect inflated by the row observer's
+     rootMargin (LAZY_MARGIN in turn-rows.tsx), which is the hold
+     boundary the port-rooted observer actually enforces (±1 px edge
+     rows are IO-tie territory and don't count). */
   const badBoxRows = () =>
     page.evaluate(() => {
+      const MARGIN = 1600;
       const panelEl = document.querySelector("[data-thread-panel]");
       const first = panelEl?.querySelector("[data-msg]");
       let port = first?.parentElement ?? null;
@@ -138,12 +144,14 @@ test("AC-1: Cmd+F mounts held rows — a held row's text enters the DOM; the lap
       }
       if (!panelEl || !port) return -1;
       const pt = port.getBoundingClientRect();
+      const boundTop = pt.top - MARGIN;
+      const boundBottom = pt.bottom + MARGIN;
       let bad = 0;
       for (const el of panelEl.querySelectorAll("[data-msg][data-lazy]")) {
         const r = el.getBoundingClientRect();
         const held = !!el.querySelector("[data-held-stub]");
-        const inside = r.bottom > pt.top + 1 && r.top < pt.bottom - 1;
-        const outside = r.bottom < pt.top - 1 || r.top > pt.bottom + 1;
+        const inside = r.bottom > boundTop + 1 && r.top < boundBottom - 1;
+        const outside = r.bottom < boundTop - 1 || r.top > boundBottom + 1;
         if ((inside && held) || (outside && !held)) bad += 1;
       }
       return bad;

@@ -196,7 +196,7 @@ test("AC-2: scroll, find, and jump-to-message reach held turns on a lazy thread"
      scrolled to the match (#138) — the hit's row is a stub until the
      scroll target keeps it mounted. */
   await page.goto(`${stack.webUrl}/dm/${grown.employeeId}`);
-  const filter = page.getByPlaceholder("Filter sessions");
+  const filter = page.getByPlaceholder("Filter threads");
   await filter.fill("quaggmire");
   const hitsPanel = page.locator("[data-message-hits]");
   await expect(hitsPanel).toBeVisible({ timeout: 15_000 });

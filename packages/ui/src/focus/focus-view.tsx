@@ -642,11 +642,11 @@ export function FocusView({
     [lazyRows, thread.replies, emp],
   );
   const tailStart = openTailStart(estHeights);
-  /* Same stale-target guard as thread-view: a scrollTo id with no row
-     left in this thread must not keep the open pin suppressed. */
-  const jumpPending =
-    !!scrollTo &&
-    (root.id === scrollTo || thread.replies.some((r) => r.id === scrollTo));
+  /* Same jump-request gate as thread-view: `initial` is read once at
+     mount while replies still stream in — keying it on the row's
+     presence lets an engaged pin sweep the port to the bottom before
+     `landJump` can run, and near-bottom re-arms keep its landing under
+     the bottom writes. A stale id pays a top-open, not a broken jump. */
   /* #340 AC-2b: `workbench_open` brings the panel forward on the target's
      tab — the Workbench applies `target`; here the panel opens and follow
      stops (it is the agent's explicit "look at this"). */
@@ -1018,7 +1018,7 @@ export function FocusView({
           <Conversation
             className="min-h-0 [mask-image:linear-gradient(to_bottom,transparent,#000_28px)]"
             pinRef={convPin}
-            initial={jumpPending ? false : lazyRows ? "instant" : "smooth"}
+            initial={scrollTo ? false : lazyRows ? "instant" : "smooth"}
           >
             <ConversationContent
               data-thread

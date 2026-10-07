@@ -38,6 +38,13 @@ export interface ConversationPin {
   state: StickToBottomState;
   hydratedAt: { v: number };
   escaped: { v: boolean };
+  /* A jump-to-hit re-land loop's generation — nonzero while it owns the
+     port. Near-bottom scroll noise must not wipe a jump's escape: an
+     `initial` pin's mount sweep or a short-doc re-arm can put the port at
+     the bottom while the target row is still on its way, and each such
+     event would otherwise read as "reader returned to the bottom" and
+     free the pin machinery to drag the port back over the jump. */
+  jumping: { v: number };
   /* Instant re-pin to the measured bottom: clears a stale clamp escape,
      kills any in-flight spring, and refreshes the React-side pin flags —
      everything the hydration commit edge needs in one call. */
@@ -70,6 +77,7 @@ const ConversationPinBridge = ({
       state,
       hydratedAt: { v: 0 },
       escaped: { v: false },
+      jumping: { v: 0 },
       repin: () => {
         state.escapedFromLock = false;
         void scrollToBottom({ animation: "instant" });
@@ -208,10 +216,39 @@ const ConversationEscapeGuard = (): null => {
          mount), never a clamp worth reviving. */
       (sc.scrollTop !== 0 &&
         (sc.scrollTop === prevMax || staleMaxes.has(sc.scrollTop)));
+    /* A pin whose flag claims the bottom while the port sits off it is a
+       stranded lie — #626's swallowed escape left the flags healthy or
+       a chase lost its last frame. Only noise produces this shape: a
+       real scroll lands a library escape (escapedFromLock set) or an
+       input escape (escaped.v), and a legit mid-flight chase carries
+       state.animation. */
+    const pinLies = () =>
+      state.isAtBottom && !state.animation && !atEdge();
+    /* The present dead state was produced by an escape-path scroll
+       event, so the position it left may be a reader's and is never
+       auto-revived. Noise deaths — the library's own deferred escape,
+       a quarantined clamp killing the flags — carry no event
+       attribution and are always revivable. */
+    let deadByEvent = false;
+    /* Only a pin that WAS engaged can come back: an `initial={false}`
+       jump mount starts dead on purpose, and any position it lands on
+       (scrollIntoView, a reader's top edge) is someone else's business
+       — reviving it would yank the jump to the bottom. Engagement is
+       proven by the port physically sitting on the bottom edge of a
+       scrollable doc: the library's near-bottom re-arm can flip
+       `isAtBottom` true during a mount's short-doc window (top=0 while
+       rows stream in), which must not count — a jump mount's flag can
+       carry exactly that lie. */
+    let aliveSeen = state.isAtBottom;
     pin.noteMax = noteMax;
     pin.isClampTop = isClampTop;
     const escape = () => {
       escaped.v = true;
+      deadByEvent = true;
+      /* The reader's own input supersedes a re-land loop's claim on the
+         port — the loop reads the pin flags, not this, but the escape
+         alone now owns the position. */
+      pin.jumping.v = 0;
       stopScroll();
     };
 
@@ -244,9 +281,23 @@ const ConversationEscapeGuard = (): null => {
        swap wave, so the re-pin stands down while it holds. */
     const reinstateStep = () => {
       rearmRaf = 0;
-      if (cancelled || escaped.v) return;
-      if (!state.isAtBottom && !findAnchorActive(state) && isClampTop())
+      if (cancelled || escaped.v || findAnchorActive(state)) return;
+      /* Revive a pin whose position the reader never produced: a flag
+         lie (claims the bottom, sits off it), a dead pin on a clamp
+         landing, or any death no escape-path event caused. A position
+         an escape-path event left behind is the reader's and stands —
+         and the top edge is never touched: it is the reader's own
+         scroll or an `initial={false}` mount waiting for its jump. */
+      if (
+        aliveSeen &&
+        (pinLies() ||
+          (!state.isAtBottom &&
+            sc.scrollTop !== 0 &&
+            (isClampTop() || !deadByEvent)))
+      ) {
+        deadByEvent = false;
         pin.repin();
+      }
       if (--rearmFrames > 0) rearmRaf = requestAnimationFrame(reinstateStep);
     };
     const armReinstate = () => {
@@ -265,8 +316,25 @@ const ConversationEscapeGuard = (): null => {
       noteMax();
       reconcileAnchor();
       /* state.isNearBottom reads live scroll geometry — never the
-         droppable flags. */
-      if (state.isNearBottom) escaped.v = false;
+         droppable flags. It is also true at top=0 while the doc is
+         still shorter than the port — a jump mount's early window —
+         where it would wipe the jump's escape and fake an engagement,
+         so a real bottom only counts once the port has somewhere to
+         scroll from (top > 0). */
+      if (state.isAtBottom && sc.scrollTop !== 0 && atEdge())
+        aliveSeen = true;
+      /* Near the bottom on a scrollable doc the reader's escape is done —
+         but not while a jump loop owns the port: its target landing short
+         of the edge reads identically and would free the machinery to
+         re-pin over the jump. */
+      if (state.isNearBottom && sc.scrollTop !== 0 && !pin.jumping.v) {
+        escaped.v = false;
+        deadByEvent = false;
+      }
+      /* Growth that leaves the pin off its claimed bottom is a stranded
+         lie with no dedicated scroll event — the content observer lands
+         it here the same way a clamp event would. */
+      if (!escaped.v && aliveSeen && pinLies()) armReinstate();
       if (!up) return;
       /* An up-scroll landing on a layout max — the current edge, the
          previous one (the event can beat the resize observer), or one a
@@ -288,10 +356,15 @@ const ConversationEscapeGuard = (): null => {
         return;
       }
       stopScroll();
+      deadByEvent = true;
     };
     const denyRepin = () => {
-      if (escaped.v && state.isAtBottom && !state.escapedFromLock)
-        stopScroll();
+      /* Any `isAtBottom` while the reader's escape stands is pollution —
+         the library re-arms it on near-bottom shrinks and near-bottom
+         scrolls, and every true tick is a bottom write the jump's
+         landing has to beat. escapedFromLock doesn't gate this: the
+         negative-resize branch clears it before flipping isAtBottom. */
+      if (escaped.v && state.isAtBottom) stopScroll();
     };
     const onScroll = () => {
       guard();
@@ -374,9 +447,14 @@ const ConversationEscapeGuard = (): null => {
           const before = get.call(sc);
           set.call(sc, v);
           const after = get.call(sc);
+          /* The write is reader intent whether or not the pin is alive
+             to fight it (a dead pin has no spring, but the escape flags
+             still tell the revive machinery this position was chosen).
+             A find hold's own top-edge corrections are layout, not the
+             reader. */
           if (
             after < before &&
-            state.isAtBottom &&
+            !findAnchorActive(state) &&
             sc.scrollHeight - after - sc.clientHeight > 1.5
           )
             escape();
