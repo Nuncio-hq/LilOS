@@ -94,6 +94,8 @@ const rowToConversation = (row: ConversationRow): Conversation => {
     turnFailure: row.turnFailure
       ? (JSON.parse(row.turnFailure) as TurnFailure)
       : undefined,
+    turnStopped: row.turnStopped ?? undefined,
+    bgJobs: row.bgJobs ?? undefined,
   };
 };
 
@@ -432,7 +434,9 @@ export function createDrizzleStore(db: Db): RelayStore {
         model, provider, effort, fast, cwd, workspace, access, title,
         title_source AS titleSource, archived, delivered_seq AS deliveredSeq,
         usage, usage_session_id AS usageSessionId, usage_seq AS usageSeq,
-        life, turn_failure AS turnFailure, created_at AS createdAt`;
+        life, turn_failure AS turnFailure,
+        turn_stopped AS turnStopped, bg_jobs AS bgJobs,
+        created_at AS createdAt`;
       const convWhere: string[] = [];
       const convParams: (string | number)[] = [];
       if (channelId) {
@@ -457,6 +461,9 @@ export function createDrizzleStore(db: Db): RelayStore {
           ...r,
           archived: !!r.archived,
           fast: r.fast === null ? null : !!r.fast,
+          /* #583: raw SQL returns the 0/1 integer — coerce like `fast` so
+             the boolean schema doesn't see a number. */
+          turnStopped: r.turnStopped == null ? null : !!r.turnStopped,
         } as ConversationRow),
       );
       if (convs.length === 0) return [];
@@ -862,6 +869,7 @@ export function createDrizzleStore(db: Db): RelayStore {
         conversationId: string | null;
         channelId: string;
         authorId: string;
+        authorKind: "employee" | "system" | "user";
         snippet: string;
         createdAt: number;
       }>(sql`
@@ -869,6 +877,7 @@ export function createDrizzleStore(db: Db): RelayStore {
                m.conversation_id AS conversationId,
                m.channel_id AS channelId,
                m.author_id AS authorId,
+               m.author_kind AS authorKind,
                snippet(messages_fts, 0, '<mark>', '</mark>', '…', 12) AS snippet,
                m.created_at AS createdAt
         FROM messages_fts

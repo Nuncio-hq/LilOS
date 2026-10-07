@@ -73,7 +73,7 @@ export { HireCardInline } from "./feed/hire-card";
 export { Body, EventRow, FeedList, Row, Who } from "./feed/row";
 export { ThreadSummary } from "./feed/thread-summary";
 // first run
-export { FirstRun } from "./first-run/first-run";
+export { FirstRun, type FirstRunCheck } from "./first-run/first-run";
 // focus mode
 export { FocusView } from "./focus/focus-view";
 export { SessionUsage } from "./focus/session-usage";

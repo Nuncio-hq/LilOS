@@ -300,7 +300,7 @@ export function AgentTurn({
         </Shimmer>
       )}
       {r.live && r.phase === "submitted" && (
-        <Shimmer className="text-[15px]">Opening Hermes session…</Shimmer>
+        <Shimmer className="text-[15px]">Opening thread…</Shimmer>
       )}
       {/* Mid-stream text rides the same MessageResponse path as the finished
           reply — streamdown's incomplete-markdown pass closes dangling
@@ -324,8 +324,8 @@ export function AgentTurn({
       ) : null}
       <SteerRows steers={r.steers} by={human?.(VIEWER_ID)?.name ?? "You"} />
       {r.phase === "stopped" && (
-        <div className="w-fit rounded bg-muted px-1.5 py-0.5 text-muted-foreground text-xs">
-          Stopped · session.interrupt
+        <div className="w-fit rounded bg-muted px-1.5 py-0.5 text-muted-foreground text-xs dark:text-foreground/80">
+          Stopped
         </div>
       )}
       {/* #419: a turn that ended on `turn.completed.error` — the chip

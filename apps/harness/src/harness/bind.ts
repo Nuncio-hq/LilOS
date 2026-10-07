@@ -198,6 +198,7 @@ export async function bindConversation(
         nowAt: 0,
         lastActivity: Date.now(),
         openSubagents: new Set(),
+        runningJobs: new Set(),
         suspended: false,
       };
       this.bindings.set(conv.id, binding);
@@ -267,6 +268,7 @@ export async function bindConversation(
     nowAt: 0,
     lastActivity: Date.now(),
     openSubagents: new Set(),
+    runningJobs: new Set(),
     suspended: false,
   };
   binding.employeeId = employee?.id;

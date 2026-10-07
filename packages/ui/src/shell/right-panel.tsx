@@ -67,7 +67,7 @@ export function RightPanel({
             <p className="p-6 text-center text-muted-foreground">
               {dm ? (
                 <>
-                  Pick a session on the left,
+                  Pick a thread on the left,
                   <br />
                   or send a message to start one.
                 </>

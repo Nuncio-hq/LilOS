@@ -148,7 +148,7 @@ export function LiveTerminal({
       </TerminalHeader>
       <div
         role="textbox"
-        aria-label="Terminal input — click to type into the session's shell"
+        aria-label="Terminal input — click to type into the thread's shell"
         tabIndex={0}
         className="flex min-h-0 flex-1 cursor-text flex-col outline-none focus:ring-1 focus:ring-emerald-600"
         onKeyDown={(e) => {
@@ -277,7 +277,7 @@ export function LivePreview({ live }: { live: LiveSurfaces }) {
             <GlobeIcon className="size-5" />
             {live.previews.length > 0 ? (
               <>
-                <p>The session's dev server:</p>
+                <p>The thread's dev server:</p>
                 {live.previews.map((p) => (
                   <button
                     key={p.url}

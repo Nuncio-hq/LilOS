@@ -107,7 +107,7 @@ export const titleSeed = (text: string) =>
   inline(text.replace(/\*\*@\w+\*\*/g, "")).slice(0, 60);
 
 export const PHASE_LABEL: Record<Phase, string> = {
-  submitted: "opening session",
+  submitted: "opening thread",
   thinking: "thinking",
   tools: "working",
   waiting: "needs you",
@@ -146,7 +146,31 @@ export const sessionLife = (t: Thread): SessionLife =>
 
 /* Screen-reader text for the wordless ring. */
 export const LIFE_LABEL: Record<SessionLife, string> = {
-  running: "Session running",
-  open: "Session open",
-  closed: "Session closed",
+  running: "Thread running",
+  open: "Thread open",
+  closed: "Thread closed",
+};
+
+/* #583 AC-2: the one state word a DM row says in text — running / needs
+   you / failed / stopped. "needs you" wins while any turn waits on the user
+   (a parked ask outlives the live flag); a failure card (conv turnFailure
+   → thread.alert) or a last turn that ended failed/stopped says so after
+   live work stops. Nothing renders when nothing is wrong or in flight. */
+export const threadState = (
+  t: Thread,
+): { word: "needs you" | "running" | "failed" | "stopped" } | undefined => {
+  if (t.replies.some((r) => r.phase === "waiting"))
+    return { word: "needs you" };
+  if (
+    t.replies.some(
+      (r) => r.live || r.subagents?.some((s) => s.status === "running"),
+    )
+  )
+    return { word: "running" };
+  const lastTurn = [...t.replies].reverse().find((r) => r.turnId);
+  if (t.alert || lastTurn?.phase === "failed") return { word: "failed" };
+  /* `t.stopped` is the row's own stamp (#583): a released session's replies
+     carry no turnId, so the live-turn check alone would lose the word. */
+  if (t.stopped || lastTurn?.phase === "stopped") return { word: "stopped" };
+  return undefined;
 };
