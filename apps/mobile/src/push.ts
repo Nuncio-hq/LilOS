@@ -30,6 +30,7 @@ import { nav } from "./routes";
  */
 
 const PREFS_KEY = "lilos.push.prefs.v1";
+const ASKED_KEY = "lilos.push.asked.v1";
 
 const DEFAULT_PUSH_PREFS: PushPrefs = {
   needsApproval: true,
@@ -45,6 +46,13 @@ export const $pushPermission = atom<"undetermined" | "denied" | "granted">(
 );
 
 let started = false;
+/** The pre-prompt is asked once per device — "Not now" counts, so a
+    refused ask never re-presents itself; the Settings row stays the
+    manual way back in. */
+let asked = false;
+/** Alerts are non-reentrant: register()s racing on the same online flip
+    would otherwise stack Alert over Alert. */
+let prompting = false;
 /** A tapped push awaiting its navigator (cold start before `phase==="app"`). */
 let pendingThread: { conversationId: string; employeeId?: string } | undefined;
 
@@ -120,25 +128,42 @@ export const unregisterPush = async (): Promise<void> => {
 /** Ask iOS for the permission — first run only; after that the Settings
     row steers to the OS page. #600: say WHY first — the system dialog
     fires with no context straight after pairing otherwise. */
-export const requestPushPermission = async (): Promise<void> => {
+export const requestPushPermission = async ({
+  manual = false,
+}: {
+  manual?: boolean;
+} = {}): Promise<void> => {
   if ($pushPermission.get() !== "undetermined") return;
-  const go = await new Promise<boolean>((resolve) => {
-    Alert.alert(
-      "Get notified",
-      "LilOS can tell you when a thread finishes or needs you.",
-      [
-        {
-          text: "Not now",
-          style: "cancel",
-          onPress: () => resolve(false),
-        },
-        { text: "Continue", onPress: () => resolve(true) },
-      ],
-    );
-  });
-  if (!go) return;
-  await Notifications.requestPermissionsAsync().catch(() => {});
-  await refreshPermission();
+  /* "Not now" leaves the OS state undetermined and register() fires on
+     every online flip and foreground — without a persisted flag the
+     pre-prompt re-alerts forever. Once answered (either way) the auto
+     path never asks again; Settings "Ask" passes manual to bypass the
+     flag. `prompting` keeps concurrent register()s from stacking. */
+  if (prompting || (!manual && asked)) return;
+  prompting = true;
+  try {
+    const go = await new Promise<boolean>((resolve) => {
+      Alert.alert(
+        "Get notified",
+        "LilOS can tell you when a thread finishes or needs you.",
+        [
+          {
+            text: "Not now",
+            style: "cancel",
+            onPress: () => resolve(false),
+          },
+          { text: "Continue", onPress: () => resolve(true) },
+        ],
+      );
+    });
+    asked = true;
+    void AsyncStorage.setItem(ASKED_KEY, "1").catch(() => {});
+    if (!go) return;
+    await Notifications.requestPermissionsAsync().catch(() => {});
+    await refreshPermission();
+  } finally {
+    prompting = false;
+  }
 };
 
 /* #596 AC-1: the thread opens pushed over its own DM — Back returns to the
@@ -228,6 +253,7 @@ export function initPush(): void {
 
   void (async () => {
     const raw = await AsyncStorage.getItem(PREFS_KEY).catch(() => null);
+    asked = (await AsyncStorage.getItem(ASKED_KEY).catch(() => null)) === "1";
     if (raw) {
       try {
         $pushPrefs.set({ ...DEFAULT_PUSH_PREFS, ...JSON.parse(raw) });
