@@ -170,8 +170,13 @@ function LazyShell({
     }
     const el = ref.current;
     if (!el) return;
+    /* #554: notifications already in flight when the find session flips
+       lazyOn off can still land after disconnect and re-stub a row — find
+       would then miss text inside it for the whole session. */
+    let cancelled = false;
     const io = new IntersectionObserver(
       (entries) => {
+        if (cancelled) return;
         for (const en of entries) {
           if (en.isIntersecting) {
             if (wasHeldRef.current) {
@@ -199,7 +204,10 @@ function LazyShell({
       { rootMargin: `${LAZY_MARGIN} 0px` },
     );
     io.observe(el);
-    return () => io.disconnect();
+    return () => {
+      cancelled = true;
+      io.disconnect();
+    };
   }, [lazyOn, keep]);
 
   return (

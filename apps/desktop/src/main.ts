@@ -10,11 +10,13 @@ import {
 } from "@lilos/background";
 import { RelayClient } from "@lilos/client-runtime";
 import {
+  DESKTOP_FIND_CHANNEL,
   DESKTOP_NOTIFY_CHANNEL,
   DESKTOP_ONLINE_CHANNEL,
   DESKTOP_OPEN_CONVERSATION_CHANNEL,
   DESKTOP_OPEN_SETTINGS_CHANNEL,
   DESKTOP_THEME_CHANNEL,
+  type DesktopFindAction,
   type DesktopUpdateOutcome,
 } from "@lilos/contracts/app";
 import {
@@ -444,6 +446,15 @@ function openAppSettings(): void {
   }
 }
 
+/* #554: the Edit menu's Find items forward to the app window, whose find
+   bar runs the search in the renderer (a DOM walk painted with CSS Custom
+   Highlights — findInPage would match the bar's own input and fight IME
+   composition). With no app window the items are inert — same convention
+   as TextEdit's Find menu. */
+function sendFind(action: DesktopFindAction): void {
+  mainWindow?.webContents.send(DESKTOP_FIND_CHANNEL, action);
+}
+
 function openConversation(conversationId: string): void {
   const win = mainWindow;
   if (!win) return;
@@ -630,7 +641,7 @@ app.whenReady().then(async () => {
   // status window stays one click away on its own item, no accelerator.
   Menu.setApplicationMenu(
     Menu.buildFromTemplate(
-      appMenuTemplate(openAppSettings, createStatusWindow),
+      appMenuTemplate(openAppSettings, createStatusWindow, sendFind),
     ),
   );
   wireNotifications();
