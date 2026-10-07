@@ -46,12 +46,19 @@ export function Pill({
         weight="semibold"
         tone={
           disabled
-            ? "muted"
+            ? /* #687 AC-2: a disabled destructive keeps its meaning — the
+                 label stays red, muted by opacity, not neutral grey. */
+              variant === "destructive"
+              ? "destructive"
+              : "muted"
             : variant === "primary"
               ? "inverse"
               : variant === "destructive"
                 ? "destructive"
                 : "default"
+        }
+        className={
+          disabled && variant === "destructive" ? "opacity-60" : undefined
         }
       >
         {label}
