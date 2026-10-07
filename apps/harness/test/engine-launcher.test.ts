@@ -1,3 +1,5 @@
+import type { spawn as nodeSpawn } from "node:child_process";
+import { EventEmitter } from "node:events";
 import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -307,5 +309,35 @@ describe("AC-1 (#412) the engine env is allow-listed — no LilOS internals", ()
       if (prevSurfaces === undefined) delete process.env.LILOS_SURFACES_URL;
       else process.env.LILOS_SURFACES_URL = prevSurfaces;
     }
+  });
+});
+
+describe("AC-1 (#699) the exited-before-ready verdict waits for stdio close", () => {
+  it("a ready line already written when 'exit' fires still resolves — pipe data survives the writer", async () => {
+    /* On a loaded shared runner the child's 'exit' can be delivered before
+       the last buffered stdout chunk — the #699 flake ("envtest exited
+       before ready (code 0)"). The verdict must wait for 'close': every
+       pending 'data' has landed by then, so a written ready line always
+       gets its match before the exit reason is read. */
+    const child = Object.assign(new EventEmitter(), {
+      stdout: new EventEmitter(),
+      stderr: new EventEmitter(),
+      pid: 4242,
+      kill: () => true,
+    });
+    const spawn = (() => child) as unknown as typeof nodeSpawn;
+    const started = commandLauncher({
+      name: "envtest",
+      command: ["sh", "-c", "env; echo LISTENING ws://x"],
+      readyPattern: /LISTENING (ws:\/\/\S+)/,
+      spawn,
+      log: log(),
+    }).start();
+    // The loaded-runner ordering: 'exit' lands while LISTENING still sits
+    // buffered in the pipe.
+    child.emit("exit", 0, null);
+    child.stdout.emit("data", Buffer.from("LISTENING ws://x\n"));
+    child.emit("close", 0, null);
+    await expect(started).resolves.toMatchObject({ url: "ws://x" });
   });
 });
