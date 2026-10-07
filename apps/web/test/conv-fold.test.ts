@@ -304,6 +304,95 @@ describe("AC-427 FoldCache", () => {
     ).toBe(after);
   });
 
+  test("a queued reply's chips ride the waiting tray and survive a stale summary swap (#676)", () => {
+    /* A mid-turn reply with attachments can't steer (session.steer is
+       text-only, #112) — it queues behind the running turn, so
+       `waitingMessages` parks it in the tray instead of the reply list.
+       The tray item used to carry text only: the image read as "missing"
+       for the whole queue window (the ac-112 AC-2 flake — a sent image
+       looked gone until the drain). The fold must hand the tray its
+       chips. */
+    const cache = new FoldCache();
+    const c = { ...conv("c1"), deliveredSeq: 1 };
+    const root = msg({ id: c.rootMessageId, conversationId: c.id, seq: 1 });
+    const att: MessageAttachment = {
+      id: "att-676",
+      name: "reply.png",
+      mimeType: "image/png",
+      sizeBytes: 4,
+    };
+    const reply = msg({
+      id: "m-reply",
+      conversationId: c.id,
+      text: "and this one?",
+      seq: 2,
+      attachments: [att],
+    });
+    const i = inputs(c, { msgs: [root, reply], urls: [undefined] });
+    const t = cache.thread(i, { rootId: c.rootMessageId, planCap: true });
+    /* Queued: hidden from replies, listed in the tray — WITH its file. */
+    expect(t.feed.waiting.hiddenIds.has("m-reply")).toBe(true);
+    expect(t.thread.replies.some((r) => r.id === "m-reply")).toBe(false);
+    expect(t.thread.pendingItems).toEqual([
+      {
+        text: "and this one?",
+        removable: true,
+        files: [{ name: "reply.png", mediaType: "image/png" }],
+      },
+    ]);
+    /* The thumbnail lands when the blob resolves — the same urls keying
+       the row chips already refold on (#572). */
+    attachmentUrls.set({ "att-676": "data:image/png;base64,AAAA" });
+    const t2 = cache.thread(
+      inputs(c, { msgs: [root, reply], urls: ["data:image/png;base64,AAAA"] }),
+      { rootId: c.rootMessageId, planCap: true },
+    );
+    const item2 = t2.thread.pendingItems[0];
+    expect(typeof item2 === "object" && item2.files?.[0]?.url).toBe(
+      "data:image/png;base64,AAAA",
+    );
+    /* #571's scoped `conversations.summaries` response replaces the conv +
+       summary wholesale — a fetch-time snapshot can carry an older
+       `deliveredSeq`. The row stays waiting either way, and its chip must
+       ride the tray unchanged through that swap. */
+    const staleConv = { ...c, deliveredSeq: 0 };
+    const summary = {
+      conversation: staleConv,
+      root,
+      last: root,
+      messageCount: 1,
+    };
+    const t3 = cache.thread(
+      inputs(staleConv, {
+        msgs: [root, reply],
+        urls: ["data:image/png;base64,AAAA"],
+        summary,
+      }),
+      { rootId: c.rootMessageId, planCap: true },
+    );
+    /* deliveredSeq: 0 puts the root itself in the tray too — find the
+       reply's own item. */
+    const item3 = t3.thread.pendingItems.find(
+      (p) => typeof p === "object" && p.text === "and this one?",
+    );
+    expect(typeof item3 === "object" && item3.files?.[0]?.name).toBe(
+      "reply.png",
+    );
+    /* Once claimed (#377) the row leaves the tray and renders as its own
+       bubble — the chip never has an invisible window. */
+    const claimed = { ...reply, claimed: true };
+    const t4 = cache.thread(
+      inputs(c, {
+        msgs: [root, claimed],
+        urls: ["data:image/png;base64,AAAA"],
+      }),
+      { rootId: c.rootMessageId, planCap: true },
+    );
+    expect(t4.thread.pendingItems).toHaveLength(0);
+    const rendered = t4.thread.replies.find((r) => r.id === "m-reply");
+    expect(rendered?.attachments?.[0]?.name).toBe("reply.png");
+  });
+
   test("the feed row keeps summary padding + scoped turn keys", () => {
     const cache = new FoldCache();
     const c = conv("c1");
