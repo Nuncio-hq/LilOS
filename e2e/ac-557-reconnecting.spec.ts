@@ -8,6 +8,7 @@ import { engineTag, expectNoEngineLeak } from "./engine-leak";
 import {
   captureProc,
   killProc,
+  panelIntoFocus,
   pickPorts,
   type StackPorts,
   WORKER,
@@ -180,13 +181,14 @@ const boxOf = (page: Page, scope: "home" | "thread") =>
     ? page.locator("main textarea")
     : page.locator("textarea").last();
 
-/** Open a session: the home composer's send lands on its Focus view. */
+/** Open a session: the home composer's send lands on the thread panel
+   (#577); open Focus the way the user does — the panel's Focus button. */
 async function openSession(page: Page, text: string) {
   await boxOf(page, "home").fill(text);
   await formOf(page, "home").evaluate((f: HTMLFormElement) =>
     f.requestSubmit(),
   );
-  await page.waitForURL(/\/dm\/[^/]+\/[^/]+\/focus$/);
+  await panelIntoFocus(page);
 }
 
 /** Back to the thread panel — in-app nav keeps the loaded page state (a

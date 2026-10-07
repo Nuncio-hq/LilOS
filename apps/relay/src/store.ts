@@ -79,6 +79,9 @@ export interface ConversationPatch {
   /** Host-only (#419): stamp the last turn's failure for the DM alert
       card; `null` clears it (next `turn.started`). */
   turnFailure?: TurnFailure | null;
+  /** Host-only (#581): the thread's working folder — `conversations.moveFolder`
+      writes it after re-homing the session; `null` clears it. */
+  cwd?: string | null;
   /** #583: the last turn ended stopped — host-written, same lifecycle
       as `turnFailure`. */
   turnStopped?: boolean | null;

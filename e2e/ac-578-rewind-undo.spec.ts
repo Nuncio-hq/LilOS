@@ -11,7 +11,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Locator, type Page, test } from "@playwright/test";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  panelIntoFocus,
+  pickPorts,
+  type Stack,
+} from "./helpers/stack";
 
 /**
  * Issue #578 — rewind is no longer one-click destructive. The affordance
@@ -154,7 +159,7 @@ test("AC-578-1 the affordance lives on the message, revealed on hover — no lin
   await dmDefault(stackA, page, ROOT);
   await pickFolder(page, repoDir);
   await send(page, "alpha marker one");
-  await page.waitForURL(/\/dm\/[^/]+\/[^/]+\/focus$/);
+  await panelIntoFocus(page);
   convA = decodeURIComponent(page.url().split("/dm/")[1].split("/")[1]);
   empA = decodeURIComponent(page.url().split("/dm/")[1].split("/")[0]);
   await expect(
@@ -277,7 +282,7 @@ test("AC-578-4 after the window the files and the engine's memory follow", async
   await dmDefault(stackA, page, ROOT);
   await pickFolder(page, repoDir);
   await send(page, "alpha in the timed session");
-  await page.waitForURL(/\/dm\/[^/]+\/[^/]+\/focus$/);
+  await panelIntoFocus(page);
   const thread = page.locator("[data-thread]");
   await expect(thread.getByText("If you want me to change code")).toBeVisible({
     timeout: 60_000,

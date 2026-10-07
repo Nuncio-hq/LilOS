@@ -88,6 +88,7 @@ describe("engine-fake", () => {
       "subagents",
       "background_jobs",
       "side_prompt",
+      "workspace_move",
       "approval_policy",
     ]);
     c.close();

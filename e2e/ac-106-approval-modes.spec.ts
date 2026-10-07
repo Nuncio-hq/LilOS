@@ -18,7 +18,9 @@ const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
 const repo = path.resolve(here, "..");
 
 const SHOTS = path.join(repo, "test-results", "ac-106");
-const pill = (page: Page) => page.locator('[data-slot="access-pill"]');
+const pill = (page: Page) =>
+  // #577: home + thread pills coexist on /dm/e/c — the thread's is last.
+  page.locator('[data-slot="access-pill"]').last();
 const openCard = (page: Page) =>
   page.locator('[data-ask-id][data-ask-state="open"]');
 const settled = (page: Page) => page.locator("[data-turnsettled]").last();

@@ -5,7 +5,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import { allowAllWhile, expectSettled } from "./helpers/approvals";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  panelIntoFocus,
+  pickPorts,
+  type Stack,
+} from "./helpers/stack";
 
 /**
  * Evidence capture for Group B (#587/#579/#584) — the Workbench/PR PR.
@@ -91,7 +96,6 @@ test.afterAll(async () => {
 
 test.describe.configure({ mode: "serial" });
 
-const FOCUS_URL = /\/dm\/[^/]+\/[^/]+\/focus$/;
 const PANEL_URL = /\/dm\/[^/]+\/conv_[^/]+$/;
 const tab = (page: Page, name: RegExp | string) =>
   page.getByRole("tab", { name });
@@ -187,7 +191,7 @@ const sendTurn = async (page: Page, text: string) => {
   await expectSettled(turns(page).last(), 60_000);
   await send(page, text);
   const mine = page
-    .locator("main [data-msg]")
+    .locator("[data-msg]")
     .filter({ hasText: text })
     .filter({ hasNot: page.locator("[data-agentturn]") })
     .last();
@@ -241,7 +245,7 @@ for (const s of SIZES) {
       await dmDefault(page);
       await pickSessionFolder(page, repoDir);
       await send(page, "evidence ship session");
-      await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+      await panelIntoFocus(page);
       /* Unique file per context — the stack (and the repo) is shared
          across tests, so an already-committed name would leave no diff. */
       writeFileSync(
@@ -371,7 +375,7 @@ for (const s of SIZES) {
         .click();
       await pickSessionFolder(page, nonremoteDir);
       await send(page, "no remote evidence");
-      await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+      await panelIntoFocus(page);
       await openTab(page, /Changes/);
       writeFileSync(path.join(nonremoteDir, `n2-${tag}.txt`), "more\n");
       const nrTurn = await sendTurn(page, "Add a note");
@@ -403,7 +407,7 @@ for (const s of SIZES) {
         .getByText("No folder · just chat")
         .click();
       await send(page, "just chat evidence");
-      await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+      await panelIntoFocus(page);
       await expect(page.getByTitle("Workbench", { exact: true })).toBeVisible({
         timeout: 30_000,
       });

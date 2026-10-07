@@ -100,6 +100,7 @@ export {
   type WbDiffFile,
   WbDiffSheet,
 } from "./employees/workbench-diff";
+export { safeExternalUrl } from "./lib/external-url";
 export {
   buildPairingUrl,
   CODE_LENGTH,

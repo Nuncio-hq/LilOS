@@ -2,7 +2,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import { allowAllWhile, expectSettled } from "./helpers/approvals";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  panelIntoFocus,
+  pickPorts,
+  type Stack,
+} from "./helpers/stack";
 
 /**
  * Issue #308 — a reply must anchor under ITS own prompt row, never below a
@@ -73,6 +78,9 @@ test("AC-2/AC-3 an engine leg keeps its own card above newer rows; its post is c
      suite-wide tick used to give EVERY turn) so "meanwhile" still lands
      mid-leg; the arming turn and the queue drains run at engine tick. */
   await send(page, "slowleg: leg:ZEBRA report delivered");
+  /* #577: a send lands on the thread panel; [data-thread] asserts live in
+     Focus — step in via the panel's ↗. */
+  await panelIntoFocus(page);
   // The prompt turn answers first; the leg opens after it settles.
   const turns = page.locator("[data-agentturn]");
   await expect(turns.first()).toContainText("I'll report back", {
@@ -136,6 +144,8 @@ test("AC-1/AC-5 queued replies anchor under their own prompt — even after relo
   await dmDefault(page);
   // Hold the session open on an approval so both sends queue behind it.
   await send(page, "Add a release note to the readme");
+  // #577: a send lands on the thread panel; [data-thread] lives in Focus.
+  await panelIntoFocus(page);
   await expect(page.getByText("Approval needed").first()).toBeVisible({
     timeout: 120_000,
   });
