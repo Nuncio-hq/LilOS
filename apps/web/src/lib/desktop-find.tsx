@@ -4,54 +4,103 @@ import { useCallback, useEffect, useRef, useState } from "react";
 /**
  * Issue #554 — ⌘F find over the open thread, desktop only. The Edit menu's
  * Find items (⌘F / ⌘G / ⇧⌘G) arrive over the preload bridge; the bar then
- * drives `webContents.findInPage`, which highlights every match and scrolls
- * the active one into view. Held rows stay mounted for the whole find
- * session via `setFindSessionOpen`, so early turns of a long thread match
- * too (#430/#512).
+ * searches the thread's DOM itself — a TreeWalker collects every text-node
+ * occurrence, the CSS Custom Highlight API paints them (the active match in
+ * its own accent highlight), and `ensureMatchVisible` scrolls the active
+ * one inside the scrollport and out from under the bar. Held rows stay
+ * mounted for the whole find session via `setFindSessionOpen`, so early
+ * turns of a long thread match too (#430/#512).
+ *
+ * A DOM find never sees the bar itself — the walker skips the
+ * `[data-find-bar]` subtree — so the query field can never count as a
+ * match, whatever it holds (digits, symbols, any script). The query text is
+ * never rewritten either, which keeps macOS IME composition (Telex etc.)
+ * and screen readers intact.
  *
  * Rendered once per conversation surface (the host passes it to
  * ThreadView/FocusView's `findBar` slot); on plain web there is no bridge
  * and it renders nothing — the browser's own find bar owns the chord.
  */
-/** Element holding the `ordinal`-th occurrence of `text` in document
-    order — the same ordering Chromium's `activeMatchOrdinal` counts by. */
-const locateNthOccurrence = (text: string, ordinal: number) => {
-  const needle = text.toLowerCase();
-  if (!needle || ordinal < 1) return null;
-  let seen = 0;
-  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
-    const value = (n.nodeValue ?? "").toLowerCase();
-    for (let at = value.indexOf(needle); at !== -1; ) {
-      seen += 1;
-      if (seen === ordinal) return n.parentElement;
-      at = value.indexOf(needle, at + needle.length);
-    }
+
+/** Case-folded + canonically decomposed, so an NFC query still matches NFD
+    text in the DOM (Vietnamese diacritics land in either form depending on
+    the keyboard/IME that produced them). */
+const fold = (s: string) => s.normalize("NFD").toLowerCase();
+
+/* All occurrences of `needle` inside one text node, folded. Each folded
+   offset maps back to the code point that produced it; a match covering
+   only part of a decomposed character (e.g. the "o" in "ờ") paints the
+   whole glyph — a half-glyph highlight isn't paintable anyway. */
+const findInNode = (node: Text, needle: string): Range[] => {
+  const raw = node.nodeValue ?? "";
+  let hay = "";
+  const cpIdx: number[] = []; // folded offset -> code point index
+  const cps: { s: number; e: number }[] = []; // code point index -> raw [start, end)
+  for (let i = 0, ci = 0; i < raw.length; ci += 1) {
+    const cp = raw.codePointAt(i) ?? 0;
+    const len = cp > 0xffff ? 2 : 1;
+    const d = fold(raw.slice(i, i + len));
+    for (let k = 0; k < d.length; k += 1) cpIdx.push(ci);
+    cps.push({ s: i, e: i + len });
+    hay += d;
+    i += len;
   }
-  return null;
+  const ranges: Range[] = [];
+  for (let at = hay.indexOf(needle); at !== -1; ) {
+    const first = cpIdx[at];
+    const last = cpIdx[at + needle.length - 1];
+    if (first === undefined || last === undefined) break;
+    const r = document.createRange();
+    r.setStart(node, cps[first].s);
+    r.setEnd(node, cps[last].e);
+    ranges.push(r);
+    at = hay.indexOf(needle, at + Math.max(needle.length, 1));
+  }
+  return ranges;
 };
 
-/** Ordinal of the find bar's own match, when there is one. FindBar renders
-    the query with a lookalike-letter swap so the field's text can never
-    hold the needle — except a query with no mappable letter (digits or
-    symbols only), whose field still matches once, at the input's
-    flat-tree position: every text-node occurrence before it, plus one. */
-const inputMatchOrdinal = (text: string) => {
-  const input = document.querySelector<HTMLInputElement>("[data-find-input]");
-  if (!input?.value.toLowerCase().includes(text.toLowerCase())) return null;
-  const needle = text.toLowerCase();
-  let seen = 0;
-  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
-    if (!(input.compareDocumentPosition(n) & Node.DOCUMENT_POSITION_PRECEDING))
-      continue;
-    const value = n.nodeValue ?? "";
-    for (let at = value.toLowerCase().indexOf(needle); at !== -1; ) {
-      seen += 1;
-      at = value.toLowerCase().indexOf(needle, at + needle.length);
-    }
+/** The text-node occurrences of `query` inside the conversation surface
+    that hosts the bar — the bar's parent element (the Conversation root in
+    Thread, the column in Focus), with the bar's own subtree excluded.
+    Matches are per text node; a needle split across element boundaries
+    (e.g. half inside a code span) isn't joined — same scope trade-off the
+    count probe makes. */
+const collectMatches = (host: Element, query: string): Range[] => {
+  const root = host.parentElement;
+  const needle = fold(query);
+  if (!root || !needle) return [];
+  const ranges: Range[] = [];
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: (n) =>
+      n.parentElement?.closest("[data-find-bar]")
+        ? NodeFilter.FILTER_REJECT
+        : NodeFilter.FILTER_ACCEPT,
+  });
+  for (
+    let n = walker.nextNode() as Text | null;
+    n;
+    n = walker.nextNode() as Text | null
+  ) {
+    ranges.push(...findInNode(n, needle));
   }
-  return seen + 1;
+  return ranges;
+};
+
+const paintHighlights = (ranges: Range[], active: number) => {
+  const registry = CSS.highlights;
+  if (!registry) return;
+  registry.set("lilos-find", new Highlight(...ranges));
+  registry.set(
+    "lilos-find-active",
+    active >= 0 && ranges[active]
+      ? new Highlight(ranges[active])
+      : new Highlight(),
+  );
+};
+
+const clearHighlights = () => {
+  CSS.highlights?.delete("lilos-find");
+  CSS.highlights?.delete("lilos-find-active");
 };
 
 export function DesktopFindBar() {
@@ -68,37 +117,40 @@ export function DesktopFindBar() {
   live.current = { open, query };
   /* Invalidates a running ensureMatchVisible retry chain. */
   const scrollRun = useRef(0);
-  /* Direction of the last step, used to keep walking when the active match
-     lands on the bar's own input. */
-  const lastStepDir = useRef(true);
-  /* Chromium's raw active ordinal on the last result, for stall checks. */
-  const lastRawOrd = useRef(0);
-  /* A step that comes back with the ordinal unmoved didn't move: Blink can
-     re-report the current match once or twice after the session has been
-     re-anchored by repeated fresh searches — retry the step, bounded. */
-  const pendingStep = useRef<{
-    dir: boolean;
-    from: number;
-    tries: number;
-  } | null>(null);
+  /* The live find session's ranges in document order + the 0-based active
+     index. Rebuilt on every query/step so rows that mount or stream in
+     mid-session can't leave stale ranges painted. */
+  const matchRanges = useRef<Range[]>([]);
+  const activeIdx = useRef(0);
+  /* Host element for scoping — the FindBar div itself. */
+  const hostRef = useRef<Element | null>(null);
 
-  /* Chromium scrolls the active match into view itself, but the jump can
-     land while the un-stub mount still holds the scrollport's top edge —
-     the hold then undoes it and the match stays off-screen. Re-scroll the
-     match's own element until it sits inside its scroller's clip — and out
-     from under the bar, which overlays the port's top edge. */
-  const ensureMatchVisible = useCallback((text: string, ordinal: number) => {
+  const paint = useCallback((active: number) => {
+    activeIdx.current = active;
+    paintHighlights(matchRanges.current, active);
+  }, []);
+
+  /* Chromium used to scroll the active match into view itself; a DOM find
+     re-scrolls the match's own element until it sits inside its scroller's
+     clip — and out from under the bar, which overlays the port's top
+     edge. */
+  const ensureMatchVisible = useCallback((index: number) => {
     const run = ++scrollRun.current;
     const attempt = () => {
       if (run !== scrollRun.current) return;
-      if (!live.current.open || live.current.query !== text) return;
-      const el = locateNthOccurrence(text, ordinal);
-      if (!el) return;
+      if (!live.current.open) return;
+      const range = matchRanges.current[index];
+      if (!range) return;
+      const start = range.startContainer;
+      const el = (
+        start.nodeType === Node.TEXT_NODE ? start.parentElement : start
+      ) as Element | null;
+      if (!el || !document.contains(el)) return;
       let port = el.parentElement;
       while (port && !/(auto|scroll)/.test(getComputedStyle(port).overflowY))
         port = port.parentElement;
       const pt = port?.getBoundingClientRect();
-      const r = el.getBoundingClientRect();
+      const r = range.getClientRects()[0] ?? el.getBoundingClientRect();
       const bar = document
         .querySelector("[data-find-bar]")
         ?.getBoundingClientRect();
@@ -117,32 +169,56 @@ export function DesktopFindBar() {
     attempt();
   }, []);
 
+  const runFind = useCallback(
+    (text: string, activate: number | "wrap-next" | "wrap-prev") => {
+      const host = hostRef.current;
+      const ranges = host ? collectMatches(host, text) : [];
+      matchRanges.current = ranges;
+      const len = ranges.length;
+      if (!len) {
+        paint(-1);
+        setResult({ matches: 0, activeMatchOrdinal: 0 });
+        return;
+      }
+      const next =
+        activate === "wrap-next"
+          ? (activeIdx.current + 1) % len
+          : activate === "wrap-prev"
+            ? (activeIdx.current - 1 + len) % len
+            : Math.min(activate, len - 1);
+      paint(next);
+      setResult({ matches: len, activeMatchOrdinal: next + 1 });
+      ensureMatchVisible(next);
+    },
+    [paint, ensureMatchVisible],
+  );
+
   const openBar = useCallback(() => {
     setFindSessionOpen(true);
     setOpen(true);
     setFocusSignal((n) => n + 1);
     /* The bar keeps its last query across closes (like Chrome's): on
-       reopen re-run the find so matches re-highlight immediately. */
+       reopen re-run the find so matches re-highlight immediately. Rows may
+       still be re-mounting — wait a frame so the walker sees them all. */
     const q = live.current.query;
-    if (q) window.lilos?.findInPage?.({ text: q });
-  }, []);
+    if (q) requestAnimationFrame(() => runFind(q, 0));
+  }, [runFind]);
 
-  const step = useCallback((forward: boolean) => {
-    const q = live.current.query;
-    if (!q) return;
-    lastStepDir.current = forward;
-    pendingStep.current = { dir: forward, from: lastRawOrd.current, tries: 0 };
-    window.lilos?.findInPage?.({
-      text: q,
-      step: forward ? "next" : "prev",
-    });
-  }, []);
+  const step = useCallback(
+    (forward: boolean) => {
+      const q = live.current.query;
+      if (!q) return;
+      runFind(q, forward ? "wrap-next" : "wrap-prev");
+    },
+    [runFind],
+  );
 
   const closeBar = useCallback(() => {
     scrollRun.current += 1;
     setOpen(false);
     setResult(null);
-    window.lilos?.stopFindInPage?.();
+    matchRanges.current = [];
+    clearHighlights();
     setFindSessionOpen(false);
   }, []);
 
@@ -156,54 +232,6 @@ export function DesktopFindBar() {
     const offFind = bridge.onFind?.((action) =>
       action === "open" ? openBar() : openThen(() => step(action === "next")),
     );
-    const offResult = bridge.onFindResult?.((r) => {
-      const q = live.current.query;
-      lastRawOrd.current = r.activeMatchOrdinal;
-      /* A requested step that reports the ordinal unmoved didn't move —
-         Blink can re-report the current match right after the session is
-         re-anchored; retry the step (bounded) instead of showing a stall. */
-      const stepped = pendingStep.current;
-      pendingStep.current = null;
-      if (
-        stepped &&
-        r.matches > 1 &&
-        r.activeMatchOrdinal === stepped.from &&
-        stepped.tries < 3
-      ) {
-        pendingStep.current = { ...stepped, tries: stepped.tries + 1 };
-        window.lilos?.findInPage?.({
-          text: q,
-          step: stepped.dir ? "next" : "prev",
-        });
-        return;
-      }
-      /* The field's display value is unmatchable by construction; only a
-         query with no mappable letter still lands a match inside the
-         input — subtract it from the count/ordinal and step on past it
-         instead of activating the field itself. */
-      const skip = q ? inputMatchOrdinal(q) : null;
-      const total = r.matches - (skip ? 1 : 0);
-      let ord = r.activeMatchOrdinal;
-      if (skip && ord === skip) {
-        if (r.matches > 1) {
-          pendingStep.current = {
-            dir: lastStepDir.current,
-            from: r.activeMatchOrdinal,
-            tries: 0,
-          };
-          window.lilos?.findInPage?.({
-            text: q,
-            step: lastStepDir.current ? "next" : "prev",
-          });
-          return;
-        }
-        ord = 0;
-      } else if (skip && ord > skip) {
-        ord -= 1;
-      }
-      setResult({ matches: total, activeMatchOrdinal: ord });
-      if (total > 0 && ord > 0) ensureMatchVisible(q, ord);
-    });
     /* The renderer keydown path — a find chord that reaches the page (a
        menu-less dev window, or a platform that passes the chord through)
        does exactly what the menu item would. Both are idempotent, so a
@@ -220,42 +248,80 @@ export function DesktopFindBar() {
       }
     };
     window.addEventListener("keydown", onKey, true);
+    /* Rows mount/stream while a session is open — re-run the live find so
+       the count and highlights track the DOM instead of freezing at query
+       time (debounced: held rows mount in a burst when the bar opens). */
+    let moTimer: ReturnType<typeof setTimeout> | undefined;
+    const debounced = new MutationObserver(() => {
+      clearTimeout(moTimer);
+      moTimer = setTimeout(() => {
+        const { open: o, query: q } = live.current;
+        const el = hostRef.current;
+        if (!o || !q || !el) return;
+        const next = collectMatches(el, q);
+        const len = next.length;
+        if (len === matchRanges.current.length) return;
+        matchRanges.current = next;
+        const idx = len ? Math.min(activeIdx.current, len - 1) : -1;
+        paint(idx);
+        setResult({
+          matches: len,
+          activeMatchOrdinal: len ? idx + 1 : 0,
+        });
+      }, 150);
+    });
+    /* The bar mounts lazily inside the surface — observe the document so a
+       surface swap (Thread → Focus) still gets caught. */
+    debounced.observe(document.body, {
+      subtree: true,
+      childList: true,
+      characterData: true,
+    });
     return () => {
       offFind?.();
-      offResult?.();
+      debounced.disconnect();
+      clearTimeout(moTimer);
       window.removeEventListener("keydown", onKey, true);
       /* Unmounting mid-session ends the find: no stale highlights or pinned
          rows left behind in the next surface. */
       if (live.current.open) {
-        bridge.stopFindInPage?.();
+        clearHighlights();
+        matchRanges.current = [];
         setFindSessionOpen(false);
       }
     };
-  }, [openBar, step, ensureMatchVisible]);
+  }, [openBar, step, paint]);
 
   if (!window.lilos?.isDesktop || !open) return null;
   return (
-    <FindBar
-      query={query}
-      matches={query ? (result?.matches ?? null) : null}
-      activeOrdinal={result?.activeMatchOrdinal ?? null}
-      focusSignal={focusSignal}
-      onQuery={(v) => {
-        scrollRun.current += 1;
-        pendingStep.current = null;
-        setQuery(v);
-        if (!v) {
-          window.lilos?.stopFindInPage?.();
-          setResult(null);
-        } else {
-          window.lilos?.findInPage?.({ text: v });
-        }
+    <div
+      ref={(el) => {
+        hostRef.current = el;
       }}
-      onNext={() => step(true)}
-      onPrev={() => step(false)}
-      onClose={closeBar}
-      /* Over the scrollport's top edge but under Focus's 28px fade mask. */
-      className="absolute top-9 right-3 z-20"
-    />
+      className="contents"
+    >
+      <FindBar
+        query={query}
+        matches={query ? (result?.matches ?? null) : null}
+        activeOrdinal={result?.activeMatchOrdinal ?? null}
+        focusSignal={focusSignal}
+        onQuery={(v) => {
+          scrollRun.current += 1;
+          setQuery(v);
+          if (!v) {
+            matchRanges.current = [];
+            clearHighlights();
+            setResult(null);
+          } else {
+            runFind(v, 0);
+          }
+        }}
+        onNext={() => step(true)}
+        onPrev={() => step(false)}
+        onClose={closeBar}
+        /* Over the scrollport's top edge but under Focus's 28px fade mask. */
+        className="absolute top-9 right-3 z-20"
+      />
+    </div>
   );
 }

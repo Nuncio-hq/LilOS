@@ -36,6 +36,10 @@ const isMac = process.platform === "darwin";
 /* A word planted in two turns — early (held) and late — so the ordinal
    readout and the direction keys have two real matches to walk. */
 const PROBE = "findprobe554";
+/* Turn 60 also carries a Vietnamese word stored NFD; the user types it
+   NFC (macOS Telex output) — the find folds both sides so they match. */
+const VIET_NFD = "\u0111u\u031bo\u031b\u0323c";
+const VIET_NFC = "được";
 
 let stack: Stack;
 let app: ElectronApplication;
@@ -137,19 +141,21 @@ async function probeMatch(scope: string, text: string) {
 }
 
 /** Text-node occurrences of the probe inside the scope — the count the bar
-    must read back. The input's own value can never add to it — the field
-    renders the query with a lookalike letter swapped in, so its text can
-    never equal the needle Chromium searches for. */
+    must read back. Folds both sides (NFD + lowercase) the same way the
+    implementation does, so an NFC needle counts NFD DOM text. The find
+    input never adds to it: the walker never enters the [data-find-bar]
+    subtree, whatever the field holds. */
 async function domOccurrences(scope: string, text: string) {
   return win.evaluate(
     ({ sel, probe }) => {
       const scopeEl = document.querySelector(sel);
       if (!scopeEl) return 0;
-      const needle = probe.toLowerCase();
+      const fold = (s: string) => s.normalize("NFD").toLowerCase();
+      const needle = fold(probe);
       let seen = 0;
       const walker = document.createTreeWalker(scopeEl, NodeFilter.SHOW_TEXT);
       for (let n = walker.nextNode(); n; n = walker.nextNode()) {
-        const value = (n.nodeValue ?? "").toLowerCase();
+        const value = fold(n.nodeValue ?? "");
         for (let at = value.indexOf(needle); at !== -1; ) {
           seen += 1;
           at = value.indexOf(needle, at + needle.length);
@@ -177,7 +183,7 @@ test.beforeAll(async () => {
     `status check pass 2 ${PROBE}`,
     ...Array.from({ length: 56 }, (_, i) => `status check pass ${i + 3}`),
     `status check pass 59 ${PROBE}`,
-    "status check pass 60",
+    `status check pass 60 — hôm nay ${VIET_NFD} nghỉ`,
   ]);
   app = await launchDesktop(
     `${stack.webUrl}/dm/${grown.employeeId}/${grown.conversationId}`,
@@ -278,16 +284,15 @@ test("AC-1/AC-3 (#554) ⌘F highlights + scrolls to a held early turn; ⌘G/⇧�
     timeout: 15_000,
   });
 
-  /* Typing drives webContents.findInPage; found-in-page feeds the readout.
-     The readout counts thread occurrences exactly — Chromium also searches
-     form fields, so the bar's own input must never add to the total. */
+  /* Typing runs the DOM find; the readout counts thread occurrences
+     exactly — the walker never enters the bar's subtree, so the field's
+     own text can't add to the total however it's written. */
   await input.fill(PROBE);
   const threadCount = await domOccurrences("[data-thread-panel]", PROBE);
   expect(threadCount).toBeGreaterThan(1);
   await expect(count).toHaveText(`1 of ${threadCount}`, { timeout: 15_000 });
-  /* …and the query in the field keeps normal selection styling — the
-     find-match yellow can never reach it (the field's displayed value can't
-     equal the needle). */
+  /* The query in the field keeps normal selection styling — the match
+     highlight can never reach it. */
   const selBg = await win.evaluate(
     () =>
       getComputedStyle(
@@ -295,11 +300,55 @@ test("AC-1/AC-3 (#554) ⌘F highlights + scrolls to a held early turn; ⌘G/⇧�
         "::selection",
       ).backgroundColor,
   );
-  expect(selBg).not.toBe("rgb(255, 255, 0)");
-  /* Even a single-char needle — the one case the field's value can equal —
-     is subtracted: absent from the thread, it reads No results, not 1. */
+  expect(selBg).not.toBe("rgb(255, 224, 71)"); // ::highlight(lilos-find)
+  /* The cases a query-rewriting dodge would leak: digits-only, symbol-only
+     and Vietnamese diacritics all count the thread alone — the DOM find
+     folds to NFD, so the NFC typed query matches the NFD-stored text. */
+  await input.fill("60");
+  const digits = await domOccurrences("[data-thread-panel]", "60");
+  expect(digits).toBeGreaterThan(0);
+  await expect(count).toHaveText(`1 of ${digits}`, { timeout: 15_000 });
   await input.fill("§");
   await expect(count).toHaveText("No results", { timeout: 15_000 });
+  await input.fill(VIET_NFC);
+  const vietCount = await domOccurrences("[data-thread-panel]", VIET_NFC);
+  expect(vietCount).toBeGreaterThan(0);
+  await expect(count).toHaveText(`1 of ${vietCount}`, { timeout: 15_000 });
+  /* IME composition keeps the field's own text: a Telex-style compose run
+     (dduwowcj → được) ends with the composed string intact — the bar
+     never rewrites a controlled input mid-composition. */
+  await input.fill("");
+  await input.evaluate((el) => {
+    const inp = el as HTMLInputElement;
+    const set = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )?.set;
+    const put = (v: string) => {
+      set?.call(inp, v);
+      inp.dispatchEvent(
+        new CompositionEvent("compositionupdate", { data: v, bubbles: true }),
+      );
+      inp.dispatchEvent(
+        new InputEvent("input", {
+          data: v,
+          inputType: "insertCompositionText",
+          isComposing: true,
+          bubbles: true,
+        }),
+      );
+    };
+    inp.dispatchEvent(
+      new CompositionEvent("compositionstart", { bubbles: true }),
+    );
+    for (const v of ["d", "dd", "đ", "đu", "đươ", "đượ", "được"]) put(v);
+    inp.dispatchEvent(
+      new CompositionEvent("compositionend", { data: "được", bubbles: true }),
+    );
+    inp.dispatchEvent(new InputEvent("input", { data: "được", bubbles: true }));
+  });
+  await expect(input).toHaveValue("được");
+  await expect(count).toHaveText(`1 of ${vietCount}`, { timeout: 15_000 });
   await input.fill(PROBE);
   await expect(count).toHaveText(`1 of ${threadCount}`, { timeout: 15_000 });
 

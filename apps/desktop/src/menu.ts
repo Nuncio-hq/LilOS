@@ -11,7 +11,7 @@ import type { MenuItemConstructorOptions } from "electron";
  * there too (#554): the standard roles keep ⌘Z/⌘X/⌘C/⌘V/⌘A, then the Find
  * items carry the macOS chords — ⌘F opens the thread find bar, ⌘G / ⇧⌘G
  * walk matches. Each click forwards to the app window, where the find bar
- * drives `webContents.findInPage`.
+ * runs the DOM find itself (findInPage would match the bar's own input).
  */
 export type FindMenuAction = "open" | "next" | "prev";
 
