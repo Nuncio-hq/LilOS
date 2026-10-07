@@ -204,7 +204,7 @@ test("AC-5 typing mid-turn steers (capability `steer`); stop interrupts", async 
   // (turn.completed -> data-turnsettled), not a wall-clock guess (#257).
   const stopped = page.locator("[data-agentturn]").last();
   await expectSettled(stopped);
-  await expect(stopped.getByText(/Stopped · session.interrupt/)).toBeVisible();
+  await expect(stopped.getByText(/Stopped/)).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-5-stopped.png` });
 });
 

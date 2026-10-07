@@ -56,8 +56,8 @@ test("AC-1 first run: relay connects, `default` is the first employee, DM opens 
   await page.getByRole("button", { name: "Continue" }).click();
   await expect(page.getByText("Connect Hermes to LilOS")).toBeVisible();
   await page.getByRole("button", { name: "Later" }).click();
-  await expect(page.getByPlaceholder(/New session with Default/)).toBeVisible();
-  await expect(page.getByText(/Start a session with Default/)).toBeVisible();
+  await expect(page.getByPlaceholder(/New thread with Default/)).toBeVisible();
+  await expect(page.getByText(/Start a thread with Default/)).toBeVisible();
   expect(errors).toEqual([]);
 });
 
@@ -96,11 +96,11 @@ test("AC-3 designed states: empty DM and loading sessions", async ({
 
   // Empty DM: Marketer has no sessions yet → designed empty state.
   await openDM(page, "Marketer");
-  await expect(page.getByText(/Start a session with Marketer/)).toBeVisible();
+  await expect(page.getByText(/Start a thread with Marketer/)).toBeVisible();
 
   // Loading: skeleton rows where the session list will land.
   await openDM(page, "Builder");
-  await pickScenario(page, "Loading sessions");
+  await pickScenario(page, "Loading threads");
   await expect(page.locator("[data-session-skeleton]").first()).toBeVisible();
   expect(await page.locator("[data-session-skeleton]").count()).toBe(3);
   expect(errors).toEqual([]);
@@ -184,35 +184,35 @@ test("AC-4 session management: filter, rename, archive and restore in the DM lis
   // the subagents (#170) and plan (#175) demos, and the folderless (#543)
   // session).
   await expect(page.locator("[data-session]")).toHaveCount(8);
-  await page.getByPlaceholder("Filter sessions").fill("summarise");
+  await page.getByPlaceholder("Filter threads").fill("summarise");
   await expect(page.locator("[data-session]")).toHaveCount(1);
   await expect(page.locator("[data-session]")).toContainText("Summarise");
-  await page.getByPlaceholder("Filter sessions").fill("");
+  await page.getByPlaceholder("Filter threads").fill("");
 
   // Rename via the row menu → the session shows its title.
   const d2 = page.locator('[data-session="d2"]');
-  await d2.getByRole("button", { name: "Session actions" }).click();
-  await page.getByRole("menuitem", { name: "Rename session" }).click();
-  await page.getByLabel("Session title").fill("Monday summary");
-  await page.getByLabel("Session title").press("Enter");
+  await d2.getByRole("button", { name: "Thread actions" }).click();
+  await page.getByRole("menuitem", { name: "Rename thread" }).click();
+  await page.getByLabel("Thread title").fill("Monday summary");
+  await page.getByLabel("Thread title").press("Enter");
   await expect(d2).toContainText("Monday summary");
 
   // Filter matches the title too.
-  await page.getByPlaceholder("Filter sessions").fill("monday");
+  await page.getByPlaceholder("Filter threads").fill("monday");
   await expect(page.locator("[data-session]")).toHaveCount(1);
-  await page.getByPlaceholder("Filter sessions").fill("");
+  await page.getByPlaceholder("Filter threads").fill("");
 
   // Archive hides the row under a disclosure; Restore brings it back.
-  await d2.getByRole("button", { name: "Session actions" }).click();
-  await page.getByRole("menuitem", { name: "Archive session" }).click();
+  await d2.getByRole("button", { name: "Thread actions" }).click();
+  await page.getByRole("menuitem", { name: "Archive thread" }).click();
   await expect(page.locator("[data-session]")).toHaveCount(7);
   await page.getByRole("button", { name: /Archived \(1\)/ }).click();
   await expect(page.locator('[data-archived="true"]')).toHaveCount(1);
   await page
     .locator('[data-archived="true"]')
-    .getByRole("button", { name: "Session actions" })
+    .getByRole("button", { name: "Thread actions" })
     .click();
-  await page.getByRole("menuitem", { name: "Unarchive session" }).click();
+  await page.getByRole("menuitem", { name: "Unarchive thread" }).click();
   await expect(page.locator("[data-session]")).toHaveCount(8);
   expect(errors).toEqual([]);
 });
@@ -281,15 +281,15 @@ test("AC-4b archive menu item stays clickable while the session list settles (#4
   /* Same settle pattern as AC-4: filter → clear → rename → filter → clear,
      so the second regrowth lands while the archive menu is opening. */
   const d2 = page.locator('[data-session="d2"]');
-  await page.getByPlaceholder("Filter sessions").fill("summarise");
+  await page.getByPlaceholder("Filter threads").fill("summarise");
   await expect(page.locator("[data-session]")).toHaveCount(1);
-  await page.getByPlaceholder("Filter sessions").fill("");
-  await d2.getByRole("button", { name: "Session actions" }).click();
-  await page.getByRole("menuitem", { name: "Rename session" }).click();
-  await page.getByLabel("Session title").fill("Monday summary");
-  await page.getByLabel("Session title").press("Enter");
+  await page.getByPlaceholder("Filter threads").fill("");
+  await d2.getByRole("button", { name: "Thread actions" }).click();
+  await page.getByRole("menuitem", { name: "Rename thread" }).click();
+  await page.getByLabel("Thread title").fill("Monday summary");
+  await page.getByLabel("Thread title").press("Enter");
   await expect(d2).toContainText("Monday summary");
-  await page.getByPlaceholder("Filter sessions").fill("monday");
+  await page.getByPlaceholder("Filter threads").fill("monday");
   await expect(page.locator("[data-session]")).toHaveCount(1);
 
   /* Re-pin the list to its bottom — the armed-pin state the settle spring
@@ -310,14 +310,14 @@ test("AC-4b archive menu item stays clickable while the session list settles (#4
       window as unknown as { __armRowLayoutDelay: () => void }
     ).__armRowLayoutDelay(),
   );
-  await page.getByPlaceholder("Filter sessions").fill("");
-  await d2.getByRole("button", { name: "Session actions" }).click();
+  await page.getByPlaceholder("Filter threads").fill("");
+  await d2.getByRole("button", { name: "Thread actions" }).click();
   /* The injected delay has delivered when the settle scroll clips the
      anchor while the menu is open — data-anchor-hidden is the positioner's
      marker for it. This is the wild failure's precondition; without the
      injection it almost never happens inside the click window. */
   await expect(page.locator(".isolate[data-anchor-hidden]")).toBeAttached();
-  await page.getByRole("menuitem", { name: "Archive session" }).click();
+  await page.getByRole("menuitem", { name: "Archive thread" }).click();
   await expect(page.locator("[data-session]")).toHaveCount(7);
   expect(errors).toEqual([]);
 });
@@ -360,7 +360,7 @@ test("AC-5 employee management: edit name + role, remove keeps profile, missing 
     .first()
     .click();
   await expect(page.locator("[role=alert]")).toContainText(
-    "its sessions, memory, and skills",
+    "its history, memory, and skills",
   );
   await page
     .locator("[role=alert]")
@@ -416,7 +416,7 @@ test("AC-6 sidebar badges: needs-approval count and running count per employee",
 
   // A live turn → running badge on the employee while it works.
   await openDM(page, "Builder");
-  const box = page.getByPlaceholder(/New session with Builder/);
+  const box = page.getByPlaceholder(/New thread with Builder/);
   await box.fill("Check the relay reconnect plan");
   await box.press("Enter");
   await expect(
@@ -466,8 +466,8 @@ test("AC-7 composer attachments: pick, drop and paste show a chip before send", 
   await expect(main.getByText("pasted.png")).toBeVisible();
 
   // Send: composer chips clear, the sent session row shows all three attachment names.
-  await main.getByPlaceholder(/New session with Builder/).fill("see attached");
-  await main.getByPlaceholder(/New session with Builder/).press("Enter");
+  await main.getByPlaceholder(/New thread with Builder/).fill("see attached");
+  await main.getByPlaceholder(/New thread with Builder/).press("Enter");
   const sent = main.locator("[data-attachments]");
   await expect(sent).toContainText("picked.png");
   await expect(sent).toContainText("dropped.png");

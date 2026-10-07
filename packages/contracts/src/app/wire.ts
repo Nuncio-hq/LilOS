@@ -537,6 +537,12 @@ export const ConversationsUpdateParams = z.object({
   /** Host-only (#419): the last turn's failure the DM card shows —
       `null` clears it (the next `turn.started` erases the card). */
   turnFailure: TurnFailure.nullable().optional(),
+  /** Host-only (#583): the last turn ended stopped — `null` clears it
+      (the next `turn.started` erases the word). */
+  turnStopped: z.boolean().nullable().optional(),
+  /** Host-only (#583): running background-job count — the row's badge
+      and the session-watch seed. */
+  bgJobs: z.number().int().nonnegative().nullable().optional(),
 });
 export type ConversationsUpdateParams = z.infer<
   typeof ConversationsUpdateParams
@@ -661,6 +667,10 @@ export const MessageSearchHit = z.object({
   channelId: z.string().min(1),
   /* Who wrote the matching message — the hit row shows it ("anyone said it"). */
   authorId: z.string().min(1),
+  /* The author's kind (#585): system notes label "LilOS" in search, not
+     Oscar — `authorId` alone can't tell, since stored notes may carry the
+     relay's "user" default. Optional: relays before #585 don't send it. */
+  authorKind: AuthorKind.optional(),
   snippet: z.string(),
   createdAt: Timestamp,
 });

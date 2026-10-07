@@ -177,7 +177,7 @@ export function SessionUsage({
             /* Lifetime throughput, labeled as what it is — these sums count
                every tool-loop call, not what sits in the window (#415). */
             <p className="text-[12px] text-muted-foreground">
-              This session — {n(usage.input)} in ·{" "}
+              This thread — {n(usage.input)} in ·{" "}
               {n(usage.output + usage.reasoning)} out
               {usage.cache ? ` · ${n(usage.cache)} cached` : ""}
             </p>

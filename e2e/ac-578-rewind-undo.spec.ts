@@ -352,7 +352,8 @@ test("AC-578-5 prototype: hover affordance + Undo toast restore the rows", async
     .first()
     .getByRole("button", { name: /Builder/ })
     .click();
-  const box = page.getByPlaceholder(/New session with Builder/);
+  /* #582 renamed the placeholder's "session" to "thread" on Mac UI. */
+  const box = page.getByPlaceholder(/New thread with Builder/);
   await box.fill("prototype alpha");
   await box.press("Enter");
   await expect(page.locator("[data-rewind]").nth(0)).toBeEnabled({

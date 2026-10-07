@@ -99,6 +99,12 @@ export async function updateConversation(
     /** #581: the thread's working folder — `conversations.moveFolder`
         writes it after re-homing the session; `null` clears it. */
     cwd?: string | null;
+    /** #583: the last turn ended stopped (DM row word); `null` clears
+        it on the next `turn.started`. */
+    turnStopped?: boolean | null;
+    /** #583: running background-job count (DM row badge + session-feed
+        seed); `null` clears it. */
+    bgJobs?: number | null;
   },
 ) {
   await this.opts.relay.request("conversations.update", {

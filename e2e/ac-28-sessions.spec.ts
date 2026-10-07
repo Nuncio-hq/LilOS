@@ -200,9 +200,14 @@ async function dmDefault(stack: Procs, page: Page) {
   await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
     timeout: 60_000, // the first run spawns the engine; suite runs are parallel
   });
-  const dmBtn = page.getByRole("button", {
-    name: /open dm|set up later|message/i,
-  });
+  /* #589: Open DM stays disabled while first-run checks fail (a dead
+     harness never goes green) — pick the first ENABLED match so "Set up
+     later" wins over the blocked Open DM. */
+  const dmBtn = page
+    .getByRole("button", {
+      name: /open dm|set up later|message/i,
+    })
+    .and(page.locator("button:not([disabled])"));
   if (
     await dmBtn
       .first()
@@ -301,9 +306,9 @@ test("AC-1/4 restart keeps conversations listed; filter narrows them", async ({
   await page.screenshot({ path: `${SHOTS}/ac1-after-restart.png` });
 
   // AC-4: filter by the first message text narrows the list.
-  await page.getByPlaceholder("Filter sessions").fill("zzz-no-match");
+  await page.getByPlaceholder("Filter threads").fill("zzz-no-match");
   await expect(row).toBeHidden();
-  await page.getByPlaceholder("Filter sessions").fill("repo layout");
+  await page.getByPlaceholder("Filter threads").fill("repo layout");
   await expect(row).toBeVisible();
 
   // Open it back up for the next leg — the row's replies button navigates.
@@ -352,16 +357,16 @@ test("AC-3 rename + archive persist across restart", async ({ page }) => {
   });
 
   // Rename via the row's session menu -> inline input (only one session).
-  await page.getByRole("button", { name: "Session actions" }).first().click();
-  await page.getByRole("menuitem", { name: "Rename session" }).click();
-  const input = page.getByLabel("Session title");
+  await page.getByRole("button", { name: "Thread actions" }).first().click();
+  await page.getByRole("menuitem", { name: "Rename thread" }).click();
+  const input = page.getByLabel("Thread title");
   await input.fill("Repo summary thread");
   await input.press("Enter");
   await expect(page.getByText("Repo summary thread").first()).toBeVisible();
 
   // Archive it — the row leaves the open list into the Archived section.
-  await page.getByRole("button", { name: "Session actions" }).first().click();
-  await page.getByRole("menuitem", { name: "Archive session" }).click();
+  await page.getByRole("button", { name: "Thread actions" }).first().click();
+  await page.getByRole("menuitem", { name: "Archive thread" }).click();
   await page.getByText(/Archived/).click(); // expand the archived section
   await expect(page.getByText("Repo summary thread").first()).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac3-archived.png` });

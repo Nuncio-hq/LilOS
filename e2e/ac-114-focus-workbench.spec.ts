@@ -358,7 +358,7 @@ test("AC-2 Focus is the same live conversation: streaming, steps, approvals, mod
   // Wait the turn-ended wire condition before asserting the footer chip
   // (turn.completed -> data-turnsettled), not a wall-clock guess (#257).
   await expectSettled(stopped);
-  await expect(stopped.getByText("Stopped · session.interrupt")).toBeVisible();
+  await expect(stopped.getByText("Stopped")).toBeVisible();
   await expect(page).toHaveURL(FOCUS_URL);
   await page.screenshot({ path: `${SHOTS}/ac-2-stopped.png` });
 });

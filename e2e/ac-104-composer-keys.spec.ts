@@ -69,7 +69,11 @@ const send = async (page: Page, text: string) => {
 const employeeIdFromUrl = (page: Page) =>
   decodeURIComponent(page.url().split("/dm/")[1].split("/")[0]);
 
-const STOPPED = "Stopped · session.interrupt";
+const STOPPED = "Stopped";
+/* "Stopped" text also appears on a DM-home row whose last turn was stopped
+   (#583 state word) — negative checks scope to turn elements only. */
+const stoppedChip = (p: import("@playwright/test").Page) =>
+  p.locator("[data-agentturn]").getByText(STOPPED);
 const RUNNING_HINT = /Enter (steers|queues) · ⌘\. stop/;
 
 test("AC-1 Esc never stops the running turn — ⌘. stops it (same as ■)", async ({
@@ -90,9 +94,9 @@ test("AC-1 Esc never stops the running turn — ⌘. stops it (same as ■)", as
   await page.keyboard.press("Escape");
   await page.waitForTimeout(400);
   await expect(page.getByText(RUNNING_HINT)).toBeVisible();
-  await expect(page.getByText(STOPPED)).toHaveCount(0);
+  await expect(stoppedChip(page)).toHaveCount(0);
   await page.keyboard.press("Meta+Period");
-  await expect(page.getByText(STOPPED)).toBeVisible({ timeout: 30_000 });
+  await expect(stoppedChip(page)).toBeVisible({ timeout: 30_000 });
   await page.screenshot({ path: `${SHOTS}/ac-1-cmddot-stopped.png` });
 });
 
@@ -106,14 +110,12 @@ test("AC-2 Esc with no turn running does nothing (no Stop → nothing)", async (
   await home.click();
   await page.keyboard.press("Escape");
   await page.waitForTimeout(400);
-  await expect(page.getByText(STOPPED)).toHaveCount(0);
+  await expect(stoppedChip(page)).toHaveCount(0);
 
   // A finished turn: running is false → ⌘. inert; Esc does its only job —
   // closes the Focus surface back to the panel — it never touches the turn.
   await send(page, "Say hello then list files");
-  await expect(
-    page.getByPlaceholder(/in this session|Continue session/),
-  ).toBeVisible({
+  await expect(page.getByPlaceholder(/Reply to /)).toBeVisible({
     timeout: 90_000,
   });
   // #577: hop to Focus so Esc closes it and lands back on the panel.
@@ -123,7 +125,7 @@ test("AC-2 Esc with no turn running does nothing (no Stop → nothing)", async (
   await page.waitForURL(/\/dm\/[^/]+\/[^/]+$/);
   await page.keyboard.press("Meta+Period");
   await page.waitForTimeout(400);
-  await expect(page.getByText(STOPPED)).toHaveCount(0);
+  await expect(stoppedChip(page)).toHaveCount(0);
 });
 
 test("AC-3 Esc closes an open popover/dialog first — the turn keeps running", async ({
@@ -146,7 +148,7 @@ test("AC-3 Esc closes an open popover/dialog first — the turn keeps running", 
     page.locator('[data-slot="popover-content"][data-open]'),
   ).toHaveCount(0, { timeout: 15_000 });
   await expect(page.getByText(RUNNING_HINT)).toBeVisible();
-  await expect(page.getByText(STOPPED)).toHaveCount(0);
+  await expect(stoppedChip(page)).toHaveCount(0);
 
   // Status dialog: Esc inside it closes only the dialog. Focus has no
   // sidebar (#246) — the status button lives there, so leave focus first.
@@ -158,7 +160,7 @@ test("AC-3 Esc closes an open popover/dialog first — the turn keeps running", 
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0, { timeout: 15_000 });
   await expect(page.getByText(RUNNING_HINT)).toBeVisible();
-  await expect(page.getByText(STOPPED)).toHaveCount(0);
+  await expect(stoppedChip(page)).toHaveCount(0);
   await page.screenshot({ path: `${SHOTS}/ac-3-overlays.png` });
 });
 
@@ -177,10 +179,10 @@ test("AC-4 ⌘. with a steer draft typed still stops the turn and keeps the text
   // Esc is inert mid-draft — the turn keeps running, the draft stays.
   await page.keyboard.press("Escape");
   await page.waitForTimeout(400);
-  await expect(page.getByText(STOPPED)).toHaveCount(0);
+  await expect(stoppedChip(page)).toHaveCount(0);
   await expect(box).toHaveValue("also mention bananas");
   await page.keyboard.press("Meta+Period");
-  await expect(page.getByText(STOPPED)).toBeVisible({ timeout: 30_000 });
+  await expect(stoppedChip(page)).toBeVisible({ timeout: 30_000 });
   await expect(box).toHaveValue("also mention bananas");
   await page.screenshot({ path: `${SHOTS}/ac-4-stopped-keeps-draft.png` });
 });
@@ -236,7 +238,9 @@ test("AC-6 the Stop button's label names the real shortcut — ⌘.", async ({
   test.setTimeout(120_000);
   await dmDefault(stackA, page);
   await send(page, "LILOS_TURN_HOLD Add a release note to the readme");
-  const stop = page.getByRole("button", { name: /stop/i });
+  /* #583: rows whose word is "stopped" also match /stop/i — name the
+     button by its exact aria-label instead. */
+  const stop = page.getByRole("button", { name: /^stop \(⌘\.\)$/i });
   await expect(stop).toBeVisible({ timeout: 30_000 });
   await expect(stop).toHaveAttribute("aria-label", /⌘\./);
   await expect(stop).toHaveAttribute("title", /⌘\./);
@@ -250,7 +254,7 @@ async function sendProtoDM(page: Page, text: string) {
     .first()
     .getByRole("button", { name: /Builder/ })
     .click();
-  const box = page.getByPlaceholder(/New session with Builder/);
+  const box = page.getByPlaceholder(/New thread with Builder/);
   await box.fill(text);
   await box.press("Enter");
 }
@@ -281,9 +285,9 @@ test("AC-7 prototype: ⌘. stops the turn (Esc never does); ↑ recalls; Esc clo
   // Esc does NOT stop the turn — ⌘. does (same as ■), draft kept.
   await page.keyboard.press("Escape");
   await page.waitForTimeout(300);
-  await expect(page.getByText(STOPPED)).toHaveCount(0);
+  await expect(stoppedChip(page)).toHaveCount(0);
   await page.keyboard.press("Meta+Period");
-  await expect(page.getByText(STOPPED).first()).toBeVisible({
+  await expect(stoppedChip(page).first()).toBeVisible({
     timeout: 15_000,
   });
   const box = page.getByPlaceholder(/Reply to Builder/);

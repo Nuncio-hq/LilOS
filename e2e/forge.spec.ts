@@ -129,7 +129,7 @@ test("AC-1..4 PR tab over the host forge (fake gh)", async ({ page }) => {
   await page.locator("[data-ws='branch']").dispatchEvent("click");
   await page.getByText(/Edit\s+main\s+directly/).click();
 
-  const box = page.getByPlaceholder(/New session with Builder/);
+  const box = page.getByPlaceholder(/New thread with Builder/);
   await box.fill("check in");
   await box.press("Enter");
   await page.getByRole("button", { name: "Focus" }).click({ timeout: 15_000 });

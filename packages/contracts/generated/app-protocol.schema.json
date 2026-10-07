@@ -1853,6 +1853,14 @@
           ],
           "additionalProperties": false
         },
+        "turnStopped": {
+          "type": "boolean"
+        },
+        "bgJobs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
         "createdAt": {
           "type": "integer",
           "minimum": 0,
@@ -2158,6 +2166,14 @@
                   "text"
                 ],
                 "additionalProperties": false
+              },
+              "turnStopped": {
+                "type": "boolean"
+              },
+              "bgJobs": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
               },
               "createdAt": {
                 "type": "integer",
@@ -2525,6 +2541,14 @@
               ],
               "additionalProperties": false
             },
+            "turnStopped": {
+              "type": "boolean"
+            },
+            "bgJobs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
             "createdAt": {
               "type": "integer",
               "minimum": 0,
@@ -2825,6 +2849,24 @@
               "type": "null"
             }
           ]
+        },
+        "turnStopped": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "bgJobs": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -3038,6 +3080,14 @@
                 "text"
               ],
               "additionalProperties": false
+            },
+            "turnStopped": {
+              "type": "boolean"
+            },
+            "bgJobs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
             },
             "createdAt": {
               "type": "integer",
@@ -3880,6 +3930,14 @@
           "type": "string",
           "minLength": 1
         },
+        "authorKind": {
+          "type": "string",
+          "enum": [
+            "user",
+            "employee",
+            "system"
+          ]
+        },
         "snippet": {
           "type": "string"
         },
@@ -3929,6 +3987,14 @@
               "authorId": {
                 "type": "string",
                 "minLength": 1
+              },
+              "authorKind": {
+                "type": "string",
+                "enum": [
+                  "user",
+                  "employee",
+                  "system"
+                ]
               },
               "snippet": {
                 "type": "string"
@@ -4506,6 +4572,14 @@
                 "text"
               ],
               "additionalProperties": false
+            },
+            "turnStopped": {
+              "type": "boolean"
+            },
+            "bgJobs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
             },
             "createdAt": {
               "type": "integer",
@@ -5192,6 +5266,14 @@
                       "text"
                     ],
                     "additionalProperties": false
+                  },
+                  "turnStopped": {
+                    "type": "boolean"
+                  },
+                  "bgJobs": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
                   },
                   "createdAt": {
                     "type": "integer",
@@ -7540,6 +7622,14 @@
                 "text"
               ],
               "additionalProperties": false
+            },
+            "turnStopped": {
+              "type": "boolean"
+            },
+            "bgJobs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
             },
             "createdAt": {
               "type": "integer",

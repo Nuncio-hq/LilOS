@@ -10,7 +10,7 @@ import { bootStack, pickPorts, type Stack } from "./helpers/stack";
  * access is enforced by the harness (no card ever reaches the user, the
  * turn logs "Auto-approved"); AC-3 new conversations start on Settings'
  * default and never remember the last-used level; AC-4 cards offer
- * Once / This session / Always / Deny; AC-9 the Settings Approvals copy
+ * Once / This thread / Always / Deny; AC-9 the Settings Approvals copy
  * says what the level gates.
  */
 
@@ -91,11 +91,11 @@ test("AC-1+AC-2+AC-4+AC-3 the pill drives the mode; cards offer the four options
     await pill(page).click();
     await expect(pill(page)).toHaveAttribute("data-access", "ask");
 
-    /* ── Ask: the card offers Once / This session / Always / Deny ── */
+    /* ── Ask: the card offers Once / This thread / Always / Deny ── */
     await send(page, "Change the header color");
     const card = openCard(page).first();
     await expect(card).toBeVisible({ timeout: 30_000 });
-    for (const name of ["Once", "This session", "Always", "Deny"]) {
+    for (const name of ["Once", "This thread", "Always", "Deny"]) {
       await expect(
         card.getByRole("button", { name, exact: true }),
       ).toBeVisible();

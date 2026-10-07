@@ -82,6 +82,11 @@ export interface ConversationPatch {
   /** Host-only (#581): the thread's working folder — `conversations.moveFolder`
       writes it after re-homing the session; `null` clears it. */
   cwd?: string | null;
+  /** #583: the last turn ended stopped — host-written, same lifecycle
+      as `turnFailure`. */
+  turnStopped?: boolean | null;
+  /** #583: running background-job count — host-written, same lifecycle. */
+  bgJobs?: number | null;
 }
 
 export interface OpenConversationInput {

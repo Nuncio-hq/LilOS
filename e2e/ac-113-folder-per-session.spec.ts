@@ -111,7 +111,7 @@ test("AC-2 + #208 AC-1 the composer shows the folder picker; Add folder opens th
   await dmDefault(page);
   await expect(pickerButton(page)).toBeVisible();
   const menu = await openPicker(page);
-  await expect(menu.getByText("Run this session in")).toBeVisible();
+  await expect(menu.getByText("Run this thread in")).toBeVisible();
   await expect(menu.getByText("No folder · just chat")).toBeVisible();
   await expect(menu.getByText("Add a folder")).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-2-picker-empty.png` });
@@ -271,10 +271,11 @@ test("AC-6 the employee pre-selects its last folder; a no-folder session is a pl
   await expect(page.locator("[data-wsbadge]")).toHaveCount(0);
   await expect(page.getByText(/read-only/i)).toHaveCount(0);
   // Composer hints reveal once there's a draft — calm at rest (#246), so
-  // type a character first. On the panel the composer is "Reply to … in
-  // this session".
-  const replyBox0 = page.getByRole("textbox", { name: /Reply to/ });
-  await replyBox0.pressSequentially("x");
+  // type a character first. The composer is named "Reply to …" on
+  // Focus and "Reply to …" on the panel (which mounts
+  // once the thread hydrates and sits outside `main`).
+  const panelBox = page.getByRole("textbox", { name: /Reply to/ });
+  await panelBox.pressSequentially("x");
   await expect(page.getByText(/Reply to .*…/).first()).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-6-no-folder-panel.png` });
   // Focus shows the same no-folder session (↗ on the panel).
@@ -283,7 +284,7 @@ test("AC-6 the employee pre-selects its last folder; a no-folder session is a pl
     .getByTitle("Focus", { exact: true })
     .click();
   await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+\/focus/);
-  const focusBox = page.getByRole("textbox", { name: /Continue session/ });
+  const focusBox = page.getByRole("textbox", { name: /Reply to/ });
   await expect(focusBox).toBeVisible({ timeout: 15_000 });
   await expect(page.locator("[data-wsbadge]")).toHaveCount(0);
   await expect(page.getByText(/read-only/i)).toHaveCount(0);

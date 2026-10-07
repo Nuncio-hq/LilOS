@@ -18,7 +18,7 @@ import {
  *       duration, opening a row shows brief/steps/report; rows survive a
  *       mid-turn reload (seq replay), no duplicates.
  *   AC-2 a helper's file write lands in Workbench → Changes (same checkout).
- *   AC-3 an employee-helper row shows that employee's avatar + Open session
+ *   AC-3 an employee-helper row shows that employee's avatar + Open thread
  *       → their own session in their DM.
  *   AC-4 a background process lists under Workbench → Background with
  *       command/status/uptime/URL/output tail; Stop ends it ("stopped by you").
@@ -283,7 +283,7 @@ test("AC-2 a helper's file write counts in Workbench → Changes (same checkout)
   await page.screenshot({ path: `${SHOTS}/ac-2-changes.png` });
 });
 
-test("AC-3 an employee-helper row shows their avatar + Open session into their DM", async ({
+test("AC-3 an employee-helper row shows their avatar + Open thread into their DM", async ({
   page,
 }) => {
   test.setTimeout(180_000);
@@ -346,7 +346,7 @@ test("AC-3 an employee-helper row shows their avatar + Open session into their D
   );
   await page.screenshot({ path: `${SHOTS}/ac-3-employee-helper.png` });
 
-  const open = helper.getByRole("button", { name: "Open session" });
+  const open = helper.getByRole("button", { name: "Open thread" });
   await expect(open).toBeVisible();
   await open.click();
   // Their own session in their DM — not a copy of the helper's work (D-#25).
@@ -582,8 +582,8 @@ test("AC-319 a `?tab=subagents` deep link on a zero-helper session lands on the 
     );
     throw e;
   }
-  await expect(page.getByText("No subagents in this session yet.")).toBeVisible(
-    { timeout: 30_000 },
-  );
+  await expect(page.getByText("No subagents in this thread yet.")).toBeVisible({
+    timeout: 30_000,
+  });
   await page.screenshot({ path: `${SHOTS}/ac-319-3-empty.png` });
 });

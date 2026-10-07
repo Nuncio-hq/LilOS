@@ -119,6 +119,7 @@ import {
 import {
   clock,
   formatUptime,
+  sessionLabel,
   threadUsage,
   toJob,
   toUiEmployee,
@@ -183,10 +184,10 @@ const outcomeLabel = (o: ApprovalOutcome, name: string): string => {
   switch (o) {
     case "once":
       return `Allowed once by ${name}`;
-    /* #106: "This session" — the grant lives until the conversation's
+    /* #106: "This thread" — the grant lives until the thread's engine
        session ends; only this thread stopped asking. */
     case "session":
-      return `Allowed this session by ${name}`;
+      return `Allowed this thread by ${name}`;
     case "always":
       return "Always allowed here";
     case "deny":
@@ -208,8 +209,9 @@ const outcomeLabel = (o: ApprovalOutcome, name: string): string => {
 function outcomeFromLabel(v: string): ApprovalOutcome {
   if (v.startsWith("Denied")) return "deny";
   if (v.startsWith("Always")) return "always";
-  /* #106: the card's resolved label for the session-scoped grant. */
-  if (v.startsWith("Allowed this session")) return "session";
+  /* #106: the card's resolved label for the thread-scoped grant — reads
+     both the current wording and pre-#582 stored rows. */
+  if (v.startsWith("Allowed this ")) return "session";
   if (v.startsWith("Cancelled")) return "cancel";
   if (v.startsWith("Answered")) return "answer";
   return "once";
@@ -463,7 +465,9 @@ export function DmPage() {
             {
               rootId: conv?.rootMessageId ?? h.messageId,
               messageId: h.messageId,
-              from: h.authorId,
+              /* #585 AC-3: system notes label "LilOS" in search, not the user —
+                 stored notes can carry the relay's "user" authorId default. */
+              from: h.authorKind === "system" ? "system" : h.authorId,
               time: clock(h.createdAt),
               snippet: h.snippet,
               archived: conv?.archived,
@@ -776,7 +780,7 @@ export function DmPage() {
       })
       .join("\n");
     const text =
-      "Picking up mid-session after a rewind — earlier transcript:\n\n" +
+      "Picking up mid-thread after a rewind — earlier transcript:\n\n" +
       `${quote}\n\n—\n\n` +
       (threadDraft.trim() || target.text);
     const key = sendKeyFor(`sfresh:${conv.id}`, text);
@@ -931,7 +935,7 @@ export function DmPage() {
     );
     const text = last?.text ?? summaryOf(conv)?.root?.text;
     if (!text) {
-      say("Nothing to retry — the session has no sent message.");
+      say("Nothing to retry — the thread has no sent message.");
       return;
     }
     /* #552: one key per (conv, retried text) — a second click after the
@@ -1213,7 +1217,7 @@ export function DmPage() {
           conv.engineRef && openFeed.historyTrimmed
           ? {
               kind: "trimmed",
-              text: "Earlier history was trimmed — this session's event log is capped.",
+              text: "Earlier history was trimmed — this thread's event log is capped.",
             }
           : undefined;
 
@@ -1438,7 +1442,9 @@ export function DmPage() {
     const pendingItems = folded.thread.pendingItems;
 
     const thread: Thread = {
-      session: engineRef?.slice(0, 8) ?? conv.id.slice(0, 8),
+      /* #586: the tag is display-only (onOpenSession resolves on the full
+         engineRef) — the TAIL is the unique part of a Hermes ref. */
+      session: sessionLabel(engineRef ?? conv.id),
       title: conv.title || undefined,
       archived: conv.archived,
       replies,
@@ -1484,7 +1490,7 @@ export function DmPage() {
     const sharerName = sharer
       ? sharer.title ||
         summaryOf(sharer)?.root?.text.slice(0, 60) ||
-        "another session"
+        "another thread"
       : "";
     const rewindWarning = sharer
       ? `This folder is shared with “${sharerName}” — rewinding changes its files too.`
@@ -1510,7 +1516,7 @@ export function DmPage() {
           onClick: () => setHistoryAttempt((n) => n + 1),
         }}
       >
-        Couldn't load this session's history — earlier messages may be missing.
+        Couldn't load this thread's history — earlier messages may be missing.
       </StatusBanner>
     ) : undefined;
     const rootMsg: Msg = root
@@ -1674,14 +1680,14 @@ export function DmPage() {
             <StatusBanner
               tone="amber"
               action={{
-                label: "Start a new session from here",
+                label: "Start a new thread from here",
                 onClick: () => startFreshFrom(conv, filesOnly.target),
               }}
             >
               {filesOnly.filesRestored
                 ? "Files restored to the earlier checkpoint — but this "
                 : "The folder kept its current state (no checkpoint stored) — and this "}
-              session's transport can't rewind the agent's memory: it still
+              thread's transport can't rewind the agent's memory: it still
               remembers the dropped messages.
             </StatusBanner>
           )}
@@ -1714,14 +1720,14 @@ export function DmPage() {
           <StatusBanner
             tone="amber"
             action={{
-              label: "Start a new session from here",
+              label: "Start a new thread from here",
               onClick: () => startFreshFrom(conv, filesOnly.target),
             }}
           >
             {filesOnly.filesRestored
               ? "Files restored to the earlier checkpoint — but this "
               : "The folder kept its current state (no checkpoint stored) — and this "}
-            session's transport can't rewind the agent's memory: it still
+            thread's transport can't rewind the agent's memory: it still
             remembers the dropped messages.
           </StatusBanner>
         )}
@@ -1945,7 +1951,7 @@ export function DmPage() {
           const conv = convs.find((c) => c.rootMessageId === id);
           if (conv)
             toastOnFail(
-              "Couldn't rename the session",
+              "Couldn't rename the thread",
               renameConversation(conv.id, title),
             );
         }}
@@ -1954,8 +1960,8 @@ export function DmPage() {
           if (conv)
             toastOnFail(
               archived
-                ? "Couldn't archive the session"
-                : "Couldn't unarchive the session",
+                ? "Couldn't archive the thread"
+                : "Couldn't unarchive the thread",
               archiveConversation(conv.id, archived),
             );
         }}

@@ -284,7 +284,7 @@ export function Composer({
                   />
                   <span className="font-medium">{e.name}</span>
                   <span className="ml-auto text-muted-foreground text-xs">
-                    {e.role} · new session
+                    {e.role} · new thread
                   </span>
                 </button>
               ))}

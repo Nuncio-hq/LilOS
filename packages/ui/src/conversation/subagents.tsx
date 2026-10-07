@@ -43,7 +43,7 @@ const STATUS_ICON: Record<Subagent["status"], React.ReactNode> = {
 /* What the row says right now: the running tool + its argument, else the report's first line. */
 function nowLine(a: Subagent): string {
   if (a.status === "running") {
-    if (a.employee) return "Working in their own session…";
+    if (a.employee) return "Working in their own thread…";
     const s = a.steps.find((x) => x.running) ?? a.steps[a.steps.length - 1];
     if (!s) return "Starting…";
     const arg = String(
@@ -126,7 +126,7 @@ export function SubagentRow({
             onClick={() => onOpenSession(a.employee!.id, a.employee!.session)}
             className="flex shrink-0 items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[12px] text-muted-foreground hover:bg-muted hover:text-foreground"
           >
-            Open session
+            Open thread
             <ArrowUpRightIcon className="size-3" />
           </button>
         )}

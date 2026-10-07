@@ -50,6 +50,7 @@ import {
   PHASE_LABEL,
   preview,
   sessionLife,
+  threadState,
 } from "../lib/helpers";
 import { InlineCodeText } from "../lib/inline-code";
 import { cn } from "../lib/utils";
@@ -91,7 +92,7 @@ function SessionMenu({
         render={
           <button
             type="button"
-            aria-label="Session actions"
+            aria-label="Thread actions"
             className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
           />
         }
@@ -107,13 +108,13 @@ function SessionMenu({
         {onRename && (
           <DropdownMenuItem onClick={onRename}>
             <PencilIcon />
-            Rename session
+            Rename thread
           </DropdownMenuItem>
         )}
         {onArchive && (
           <DropdownMenuItem onClick={onArchive}>
             {archived ? <RotateCcwIcon /> : <ArchiveIcon />}
-            {archived ? "Unarchive session" : "Archive session"}
+            {archived ? "Unarchive thread" : "Archive thread"}
           </DropdownMenuItem>
         )}
       </DropdownMenuContent>
@@ -373,10 +374,13 @@ export function EmployeeHome({
 
   const sessionRow = (m: Extract<Msg, { kind: "msg" }>, isArchived = false) => {
     const t = m.thread!;
-    const last = t.replies[t.replies.length - 1];
-    const running = t.replies.some((r) => r.live);
     const life = isArchived ? undefined : sessionLife(t);
     const firstAnswer = t.replies.find((r) => emp(r.from) && r.text);
+    /* #583 AC-2: the row says its state in words; #585: system notes don't
+       count as replies; #583 AC-3: live background jobs say so. */
+    const replyCount = t.replies.filter((r) => !r.system).length;
+    const state = isArchived ? undefined : threadState(t);
+    const bgJobs = t.jobs?.filter((j) => j.status === "running").length ?? 0;
     return (
       <div
         key={m.id}
@@ -405,7 +409,7 @@ export function EmployeeHome({
           </div>
           {editing === m.id ? (
             <Input
-              aria-label="Session title"
+              aria-label="Thread title"
               value={draft}
               autoFocus
               className="h-7 w-full text-sm"
@@ -473,18 +477,43 @@ export function EmployeeHome({
           >
             <HermesAvatar name={e.name} className="size-5" />
             <span className="font-medium text-tint-text">
-              {t.replies.length} {t.replies.length === 1 ? "reply" : "replies"}
+              {replyCount} {replyCount === 1 ? "reply" : "replies"}
             </span>
             {t.ws && <FolderIcon className="size-3 text-muted-foreground" />}
-            {/* #344: no "working" label — the ring around this pill says it.
-                Needs-you keeps its badge: it asks the user to act. */}
-            {running && last?.phase === "waiting" && (
+            {/* #583 AC-2: every row states itself — needs you / running /
+                failed / stopped. Needs-you keeps its "!" badge too: it asks
+                the user to act. */}
+            {state?.word === "needs you" && (
               <span
                 title="Needs you"
                 className="grid size-4 place-items-center rounded-full bg-primary font-bold text-[10px] text-primary-foreground"
               >
                 <span aria-hidden>!</span>
                 <span className="sr-only">{PHASE_LABEL.waiting}</span>
+              </span>
+            )}
+            {state && (
+              <span
+                data-thread-state={state.word}
+                className={cn(
+                  "font-medium",
+                  state.word === "needs you" && "text-amber-600",
+                  state.word === "running" && "text-work",
+                  state.word === "failed" && "text-red-600",
+                  state.word === "stopped" &&
+                    "text-muted-foreground dark:text-foreground/80",
+                )}
+              >
+                {state.word}
+              </span>
+            )}
+            {bgJobs > 0 && (
+              <span
+                data-bg-jobs
+                className="text-muted-foreground"
+                title={`${bgJobs} running in background`}
+              >
+                {bgJobs} in background
               </span>
             )}
             {life && <span className="sr-only">{LIFE_LABEL[life]}</span>}
@@ -562,8 +591,8 @@ export function EmployeeHome({
               <Input
                 value={filter}
                 onChange={(ev) => setFilter(ev.target.value)}
-                placeholder="Filter sessions"
-                title={`Private to you. Each message opens its own session; ${e.name} replies in its thread.`}
+                placeholder="Filter threads"
+                title={`Private to you. Each message opens its own thread; ${e.name} replies in it.`}
                 className="h-7 rounded-full border-transparent bg-foreground/[0.06] pl-7 text-xs shadow-none dark:bg-white/[0.08]"
               />
             </div>
@@ -650,15 +679,15 @@ export function EmployeeHome({
               icon={<HermesAvatar name={e.name} className="size-12" />}
               title={
                 q
-                  ? `No sessions match “${filter}”`
-                  : `Start a session with ${e.name}`
+                  ? `No threads match “${filter}”`
+                  : `Start a thread with ${e.name}`
               }
               description={
                 q
                   ? onSearchMessages
                     ? "Titles and messages are searched. Clear the filter to see everything."
                     : "Titles and first messages are searched. Clear the filter to see everything."
-                  : "Your first message opens a new engine session. Replies stay in its thread."
+                  : "Your first message opens a new thread. Replies stay in it."
               }
             />
           ) : (
@@ -696,7 +725,7 @@ export function EmployeeHome({
                       <div key={rootId}>
                         <div className="flex items-center gap-1.5 px-2 pt-1 pb-0.5 text-muted-foreground text-xs">
                           <span className="truncate font-medium text-foreground/80">
-                            {m?.thread?.title || m?.text || "Session"}
+                            {m?.thread?.title || m?.text || "Thread"}
                           </span>
                           {isArchived && (
                             <span
@@ -718,7 +747,11 @@ export function EmployeeHome({
                             className="block w-full rounded-md py-1.5 pr-2 pl-6 text-left text-xs hover:bg-accent/50"
                           >
                             <span className="text-muted-foreground">
-                              {emp(h.from)?.name ?? human(h.from)?.name}
+                              {/* #585 AC-3: a note written by LilOS itself
+                                  is labeled "LilOS", never the user. */}
+                              {h.from === "system"
+                                ? "LilOS"
+                                : (emp(h.from)?.name ?? human(h.from)?.name)}
                             </span>
                             <span className="mx-1.5 text-muted-foreground">
                               ·
@@ -749,8 +782,8 @@ export function EmployeeHome({
       <Composer
         placeholder={
           pickedFolder
-            ? `New session with ${e.name} in ${folderLabel(pickedFolder, folders)}…`
-            : `New session with ${e.name}…`
+            ? `New thread with ${e.name} in ${folderLabel(pickedFolder, folders)}…`
+            : `New thread with ${e.name}…`
         }
         employees={mentionables ?? []}
         onSearchFiles={onSearchFiles}

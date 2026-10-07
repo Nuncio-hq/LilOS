@@ -38,12 +38,10 @@ test.afterAll(async () => {
 
 test.describe.configure({ mode: "serial" });
 
-const homeComposer = (page: Page) => page.getByPlaceholder(/New session with/);
-/* The session composer: "Reply to … in this session" in the peek panel,
-   "Continue session …" in Focus — a send opens the session on the panel
-   (#577). */
-const threadComposer = (page: Page) =>
-  page.getByPlaceholder(/Reply to .* in this session|Continue session/);
+const homeComposer = (page: Page) => page.getByPlaceholder(/New thread with/);
+/* The thread composer reads "Reply to …" on the panel and in Focus
+   (#114 lands a send in Focus). */
+const threadComposer = (page: Page) => page.getByPlaceholder(/Reply to /);
 
 /** Open the app, land on Default's DM (dismissing the first-run card). */
 async function dmDefault(page: Page) {
@@ -247,9 +245,9 @@ test("AC-6 clearing text drops the draft; archive + remove prune theirs", async 
   await threadComposer(page).fill("draft to prune");
   await openDm(page, /default/i); // the session rows live on the DM home
   await sessionRowWith(page, "session to archive")
-    .getByRole("button", { name: "Session actions" })
+    .getByRole("button", { name: "Thread actions" })
     .click();
-  await page.getByRole("menuitem", { name: "Archive session" }).click();
+  await page.getByRole("menuitem", { name: "Archive thread" }).click();
   await page.waitForTimeout(500);
   for (const k of await draftKeys(page)) expect(k.endsWith(convA)).toBe(false);
   await page.screenshot({ path: `${SHOTS}/ac-6-pruned.png` });
@@ -324,8 +322,8 @@ test("AC-7 prototype shows the same behaviour", async ({ page }) => {
     .first()
     .getByRole("button", { name: /Builder/ })
     .click();
-  const home = page.getByPlaceholder(/New session with Builder/);
-  const thread = page.getByPlaceholder(/Reply to .* in this session/);
+  const home = page.getByPlaceholder(/New thread with Builder/);
+  const thread = page.getByPlaceholder(/Reply to .*…/);
   await home.fill("prototype session");
   await home.press("Enter");
   await expect(thread).toBeVisible({ timeout: 15_000 });
@@ -336,7 +334,7 @@ test("AC-7 prototype shows the same behaviour", async ({ page }) => {
     .first()
     .getByRole("button", { name: /Reviewer/ })
     .click();
-  await expect(page.getByPlaceholder(/New session with Reviewer/)).toBeVisible({
+  await expect(page.getByPlaceholder(/New thread with Reviewer/)).toBeVisible({
     timeout: 15_000,
   });
   await page

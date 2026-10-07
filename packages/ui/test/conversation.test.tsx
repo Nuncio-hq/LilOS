@@ -227,9 +227,9 @@ describe("issue #19 — one conversation from shared pieces", () => {
     expect(within(notDm.container).getByText("Thread")).toBeTruthy();
     expect(within(notDm.container).getByText(/#DM tooling/)).toBeTruthy();
     cleanup();
-    // dm:true → Session frame, DM label, no Start work affordance.
+    // dm:true → Thread frame (one word per concept, #582), DM label, no Start work affordance.
     const dm = render(<ThreadView {...panelProps} channel={dmChannel} />);
-    expect(within(dm.container).getByText("Session")).toBeTruthy();
+    expect(within(dm.container).getByText("Thread")).toBeTruthy();
     expect(within(dm.container).getByText(/DM · Builder/)).toBeTruthy();
     expect(
       within(dm.container).queryByRole("button", { name: /Start work/ }),
