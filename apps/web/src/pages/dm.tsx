@@ -4,6 +4,7 @@ import {
   type SessionModel,
   sendKeyDone,
   sendKeyFor,
+  shouldClearPending,
   toStatusComponents,
 } from "@lilos/client-runtime";
 import type {
@@ -1035,24 +1036,12 @@ export function DmPage() {
     ? models[openConv.engineRef]
     : undefined;
   useEffect(() => {
-    /* #645: the marker stays armed until the turn is OBSERVED — live now
-       (modelLive takes over) or already folded to a terminal phase the
-       feed watched end (`liveAttached` marks turns with events past the
-       attach watermark; turns already finished when the feed attached —
-       replayed history — carry neither flag and don't count). One replay
-       can fold `turn.started`+`turn.completed` together so `live` never
-       reads true here — clearing only on live latched the marker
-       forever: the composer kept the "…is working. Enter steers this
-       turn…" placeholder, unaddressable. Clearing on feed ATTACH
-       instead would drop `running` inside the send→`turn.started` gap,
-       and picks made there hold the workbench tab via `running`
-       (pickedDuringTurn, #606) — the pick-hold must not lift early. */
-    const foldedDone = openModel?.turns.some(
-      (t) =>
-        t.liveAttached &&
-        (t.phase === "done" || t.phase === "stopped" || t.phase === "failed"),
-    );
-    if (openConv && (openModel?.live || foldedDone)) clearPending(openConv.id);
+    /* #645: `shouldClearPending` is the observed-turn rule — clearing only
+       on `live` latched the marker forever after a folded replay (composer
+       stuck on "…is working. Enter steers this turn…"); clearing on a
+       stale terminal turn would drop `running` in the send→`turn.started`
+       gap and lift the #606 pick-hold early. */
+    if (openConv && shouldClearPending(openModel)) clearPending(openConv.id);
   }, [openConv, openModel]);
 
   /* `@` mentions (#105): every employee in the Employees section, and — when
