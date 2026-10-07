@@ -1,7 +1,12 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  panelIntoFocus,
+  pickPorts,
+  type Stack,
+} from "./helpers/stack";
 
 /* Issue #649 — when a decision card (approval ask, question ask, plan) is
    the last conversation row, its bottom edge must rest ≥12px above the
@@ -257,7 +262,9 @@ test.describe("AC-1/2 approval + plan cards (real app, engine-fake)", () => {
       await page.setViewportSize({ width: 1288, height: 700 });
       await openDm(page);
       await send(page, "hello there");
-      await expect(page).toHaveURL(/\/focus/, { timeout: 30_000 });
+      /* #577: a send lands on the thread panel (`/dm/:e/:c`) — Focus opens
+         only from the panel's button. */
+      await panelIntoFocus(page);
       await idle(page);
       await makeScrollable(page);
       /* An edit-shaped prompt gates the first tool behind an approval ask —
@@ -299,7 +306,9 @@ test.describe("AC-1/2 approval + plan cards (real app, engine-fake)", () => {
       await page.setViewportSize({ width: 1288, height: 700 });
       await openDm(page);
       await send(page, "hello there");
-      await expect(page).toHaveURL(/\/focus/, { timeout: 30_000 });
+      /* #577: a send lands on the thread panel (`/dm/:e/:c`) — Focus opens
+         only from the panel's button. */
+      await panelIntoFocus(page);
       await idle(page);
       await makeScrollable(page);
       await send(page, "plan: propose — backoff reconnect");

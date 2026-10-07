@@ -131,15 +131,6 @@ const StickDropWindow = (): null => {
   return null;
 };
 
-/* e2e/dev knob — `?pinDebug=1` exposes the live pin state on the scroll
-   port (`port.__pin = { state }`) so a driving script can sample
-   isAtBottom/escapedFromLock/animation per frame. Read once at module
-   load, like `?stickDropMs=`. */
-const PIN_DEBUG = (() => {
-  if (typeof window === "undefined") return false;
-  return new URLSearchParams(window.location.search).has("pinDebug");
-})();
-
 /* Keys that scroll a focused scrollport — reader intent, not layout. */
 const SCROLL_KEYS = new Set([
   "ArrowUp",
@@ -182,8 +173,6 @@ const ConversationEscapeGuard = (): null => {
   useEffect(() => {
     const sc = scrollRef.current;
     if (!sc || !pin) return;
-    /* `?pinDebug=1` — the repro samples the live pin on the port. */
-    if (PIN_DEBUG) (sc as unknown as { __pin: unknown }).__pin = pin;
     let last = sc.scrollTop;
     let cancelled = false;
     let rearmRaf = 0;
@@ -377,6 +366,13 @@ const ConversationEscapeGuard = (): null => {
     const content = contentRef.current;
     const ro = new ResizeObserver(onScroll);
     if (content) ro.observe(content);
+    /* The port's own box can settle after the pin lands — the composer
+       region below it (trays, the ↓ gutter) mounts late and shrinks
+       clientHeight, moving the bottom edge up with no scroll event and
+       no content resize. Without this the stale "at bottom" flag is
+       never re-examined and the pin strands short of a mounted card
+       (#649). */
+    ro.observe(sc);
 
     /* Reader intent arrives as INPUT, not scroll deltas: wheel-up and
        touch drags on the port, nav keys while it's focused, a press in
