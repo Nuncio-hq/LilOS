@@ -55,6 +55,7 @@ import {
 import { InlineCodeText } from "../lib/inline-code";
 import { cn } from "../lib/utils";
 import { HermesAvatar } from "../shell/avatars";
+import { MainPane } from "../shell/main-pane";
 import type {
   AttachedFile,
   ConnectionState,
@@ -237,6 +238,7 @@ export function EmployeeHome({
   draft: composerDraft,
   onDraftChange,
   scheduled,
+  bare,
 }: {
   e: Employee;
   feed: Msg[];
@@ -318,6 +320,9 @@ export function EmployeeHome({
     onOpen: () => void;
     onOpenTask: (taskId: string) => void;
   };
+  /* #660: the caller mounts the shared <main> landmark itself (DmPage) so
+     the pane element survives the feed↔Focus swap — omit → own <main>. */
+  bare?: boolean;
 }) {
   const pickedFolder = folders.find((x) => x.id === pick.folder);
   const [filter, setFilter] = useState("");
@@ -520,7 +525,7 @@ export function EmployeeHome({
   };
 
   return (
-    <main className="lilos-glass flex min-h-0 min-w-0 flex-1 flex-col">
+    <MainPane bare={bare}>
       <header className="lilos-drag flex h-14 shrink-0 items-center gap-2 border-b px-3 sm:gap-3 sm:px-5">
         <Button
           variant="ghost"
@@ -817,7 +822,7 @@ export function EmployeeHome({
           </>
         }
       />
-    </main>
+    </MainPane>
   );
 }
 

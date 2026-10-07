@@ -104,6 +104,7 @@ export { SettingsView } from "./settings/settings-view";
 export { HermesAvatar, HumanAvatar } from "./shell/avatars";
 export { StatusBanner } from "./shell/banner";
 export { ChannelHeader } from "./shell/channel-header";
+export { MainPane } from "./shell/main-pane";
 export {
   type PreviewScenario,
   PrototypePreviewMenu,
