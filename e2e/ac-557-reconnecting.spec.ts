@@ -334,14 +334,15 @@ test("AC-2 a send made while reconnecting lands exactly once after the relay is 
 });
 
 /* PR evidence matrix — NOT an AC gate. The Reconnecting line in Thread and
-   Focus, light and dark, at the two PR shot sizes, written to shots/557/.
+   Focus, light and dark, at the three PR shot sizes, written to shots/557/.
    The stack is shared; each theme drives one kill/restart cycle on its own
    browser context. */
 const OUT = path.join(ROOT, "shots", "557");
 const S1288x700 = { width: 1288, height: 700 };
+const S1288x900 = { width: 1288, height: 900 };
 const S1440x900 = { width: 1440, height: 900 };
 
-test("shots — the line in Thread and Focus, light/dark, 1288x700 + 1440x900", async ({
+test("shots — the line in Thread and Focus, light/dark, 1288x700 + 1288x900 + 1440x900", async ({
   browser,
 }) => {
   test.setTimeout(300_000);
@@ -370,9 +371,15 @@ test("shots — the line in Thread and Focus, light/dark, 1288x700 + 1440x900", 
       await page.setViewportSize(S1440x900);
       await page.waitForTimeout(300);
       await shot("line-thread-1440x900");
+      await page.setViewportSize(S1288x900);
+      await page.waitForTimeout(300);
+      await shot("line-thread-1288x900");
 
       await toFocus(page);
       await expect(page.locator(LINE)).toBeVisible();
+      await page.waitForTimeout(300);
+      await shot("line-focus-1288x900");
+      await page.setViewportSize(S1440x900);
       await page.waitForTimeout(300);
       await shot("line-focus-1440x900");
       await page.setViewportSize(S1288x700);
