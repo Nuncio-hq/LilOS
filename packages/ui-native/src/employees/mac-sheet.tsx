@@ -45,7 +45,7 @@ export function MacSheet({
 }: {
   mac: MacDetail;
   /** #597 AC-2: a version mismatch is its own blocked state — the update
-      line plus the action that takes Oscar to it (e.g. Open TestFlight on
+      line plus the action that takes them to it (e.g. Open TestFlight on
       the phone side; Try again stays alongside it). */
   blocked?: {
     body: string;

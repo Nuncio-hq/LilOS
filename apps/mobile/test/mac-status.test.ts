@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { blockedLine, blockedUpdateFor, plainLinkReason } from "../src/mapping";
 
 /* #597: Mac status speaks plainly. `plainLinkReason` turns the supervisor's
-   raw `lastError` (socket text, fetch failures) into the one line Oscar can
+   raw `lastError` (socket text, fetch failures) into the one line people can
    act on; `blockedUpdateFor` + `blockedLine` give protocol_version_mismatch
    its own blocked state naming the side that must update. */
 

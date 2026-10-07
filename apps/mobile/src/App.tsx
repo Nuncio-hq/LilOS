@@ -477,7 +477,7 @@ function Mac({ navigation }: Props<"Mac">) {
           ? {
               body: blockedLine(blockedUpdate),
               /* The update action: when this iPhone is the stale side the
-                 sheet's primary button takes Oscar to TestFlight, where
+                 sheet's primary button takes them to TestFlight, where
                  LilOS ships. A Mac-side stale stays a Try again — the
                  update happens on the Mac itself. */
               action:

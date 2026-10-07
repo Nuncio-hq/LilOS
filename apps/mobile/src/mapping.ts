@@ -81,7 +81,8 @@ export function blockedLine(update: BlockedUpdate | undefined): string {
 
 /** #597 AC-1: the supervisor's raw `lastError` → one plain line for the
    "last seen" slot. The unreachable family (refused, closed, timeout, no
-   network) all mean the same thing to Oscar: the Mac isn't answering. */
+   network) all mean the same thing to the person holding the phone:
+   the Mac isn't answering. */
 export function plainLinkReason(message: string | undefined): string {
   const m = message ?? "";
   if (/protocol.*(version|mismatch)|version mismatch/i.test(m))
