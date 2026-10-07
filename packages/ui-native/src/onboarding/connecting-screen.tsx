@@ -6,15 +6,23 @@ import { Screen } from "../components/screen";
 import { StateBlock } from "../components/state-block";
 import { MacCard } from "./mac-card";
 
-export type ConnectingState = "connecting" | "unreachable" | "expired";
+export type ConnectingState =
+  | "connecting"
+  | "unreachable"
+  | "expired"
+  | "mismatch"
+  | "throttled";
 
-/* Step 4 — talking to the Mac, and the two ways it fails, each with the one
-   thing to do next: can't reach it (awake? Tailscale on?) or the code expired
-   (make a new one on the Mac and scan again). */
+/* Step 4 — talking to the Mac, and the ways it fails, each with the one
+   thing to do next: can't reach it (awake? Tailscale on?), the code expired
+   (make a new one on the Mac and scan again), the code doesn't match (#593 —
+   check it or make a new one), or too many tries (#568 — wait out the
+   throttle). */
 export function ConnectingScreen({
   state,
   macName,
   host,
+  retryAfterSeconds,
   onCancel,
   onRetry,
   onRescan,
@@ -23,6 +31,8 @@ export function ConnectingScreen({
   state: ConnectingState;
   macName: string;
   host: string;
+  /** Throttle wait from the 429's Retry-After (#568); only for 'throttled'. */
+  retryAfterSeconds?: number;
   onCancel: () => void;
   onRetry: () => void;
   onRescan: () => void;
@@ -80,6 +90,64 @@ export function ConnectingScreen({
               </View>
             ))}
           </View>
+          {mac}
+        </StateBlock>
+      </Screen>
+    );
+  }
+
+  if (state === "mismatch") {
+    return (
+      <Screen
+        topInset={false}
+        footer={
+          <>
+            <Button
+              label="Scan a new code"
+              icon="qrcode.viewfinder"
+              onPress={onRescan}
+            />
+            <Button
+              label="Enter code instead"
+              variant="ghost"
+              onPress={onManual}
+            />
+          </>
+        }
+      >
+        <StateBlock
+          icon="number.circle"
+          iconTone="destructive"
+          title="That code doesn't match"
+          body="Check it or make a new one on the Mac."
+        >
+          {mac}
+        </StateBlock>
+      </Screen>
+    );
+  }
+
+  if (state === "throttled") {
+    return (
+      <Screen
+        topInset={false}
+        footer={
+          <>
+            <Button label="Try again" onPress={onRetry} />
+            <Button
+              label="Scan a new code"
+              variant="ghost"
+              onPress={onRescan}
+            />
+          </>
+        }
+      >
+        <StateBlock
+          icon="hand.raised"
+          iconTone="warning"
+          title="Too many tries"
+          body={`Wait about ${retryAfterSeconds ?? 60} seconds, then try again.`}
+        >
           {mac}
         </StateBlock>
       </Screen>

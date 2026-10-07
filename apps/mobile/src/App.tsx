@@ -1,9 +1,6 @@
 import "../global.css";
 
-import {
-  exchangePairingGrant,
-  PairingExchangeFailed,
-} from "@lilos/client-runtime";
+import { exchangePairingGrant } from "@lilos/client-runtime";
 import {
   AppText,
   ConnectedScreen,
@@ -62,6 +59,7 @@ import {
   startLink,
   stopLink,
 } from "./link";
+import { connectingOutcome } from "./mapping";
 import { NetSpyBadge } from "./netspy-badge";
 import {
   $connections,
@@ -212,6 +210,7 @@ function Manual({ navigation }: Props<"Manual">) {
 function Connecting({ navigation, route }: Props<"Connecting">) {
   const { offer } = route.params;
   const [state, setState] = useState<ConnectingState>("connecting");
+  const [retryAfter, setRetryAfter] = useState<number | undefined>(undefined);
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
@@ -221,12 +220,25 @@ function Connecting({ navigation, route }: Props<"Connecting">) {
   // biome-ignore lint/correctness/useExhaustiveDependencies: `attempt` re-runs the exchange on Try again.
   useEffect(() => {
     const ac = new AbortController();
+    /* #593 AC-3: the exchange gets 15s before the Mac is declared
+       unreachable; the screen's Cancel aborts the same fetch. The flag
+       keeps a timeout firing the "unreachable" state while a user's
+       Cancel still exits silently. */
+    let timedOut = false;
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      ac.abort();
+    }, 15_000);
     void (async () => {
       try {
-        const result = await exchangePairingGrant(`http://${offer.host}`, {
-          code: offer.code,
-          name: Device.deviceName ?? "iPhone",
-        });
+        const result = await exchangePairingGrant(
+          `http://${offer.host}`,
+          {
+            code: offer.code,
+            name: Device.deviceName ?? "iPhone",
+          },
+          { signal: ac.signal },
+        );
         if (ac.signal.aborted) return;
         void Haptics.notificationAsync(
           Haptics.NotificationFeedbackType.Success,
@@ -244,17 +256,19 @@ function Connecting({ navigation, route }: Props<"Connecting">) {
         });
         navigation.replace("Connected");
       } catch (error) {
-        if (ac.signal.aborted) return;
+        /* Cancel/unmount leaves the screen quietly; the timeout lands on
+           "unreachable" like any other dial failure. */
+        if (ac.signal.aborted && !timedOut) return;
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        setState(
-          error instanceof PairingExchangeFailed &&
-            (error.reason === "expired" || error.reason === "used")
-            ? "expired"
-            : "unreachable",
-        );
+        const outcome = connectingOutcome(error);
+        setRetryAfter(outcome.retryAfterSeconds);
+        setState(outcome.state);
       }
     })();
-    return () => ac.abort();
+    return () => {
+      clearTimeout(timeout);
+      ac.abort();
+    };
   }, [attempt, offer, navigation]);
 
   return (
@@ -262,6 +276,7 @@ function Connecting({ navigation, route }: Props<"Connecting">) {
       state={state}
       macName={offer.name ?? fallbackName(offer.host)}
       host={offer.host}
+      retryAfterSeconds={retryAfter}
       onCancel={() => navigation.goBack()}
       onRetry={() => {
         setState("connecting");

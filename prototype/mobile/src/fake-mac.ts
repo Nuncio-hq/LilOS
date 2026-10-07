@@ -7,7 +7,13 @@ import { atom, map } from "nanostores";
    Simulator has no camera and a mock never fails on its own. The real calls
    are the relay's pairing exchange and reconnect (backend slice, #88). */
 
-export type PairOutcome = "ok" | "unreachable" | "expired" | "hang";
+export type PairOutcome =
+  | "ok"
+  | "unreachable"
+  | "expired"
+  | "mismatch"
+  | "throttled"
+  | "hang";
 export type LinkOutcome = "online" | "offline";
 export type ScanOverride = "live" | "denied" | "invalid";
 
@@ -15,6 +21,8 @@ export const PAIR_OUTCOMES: { id: PairOutcome; label: string }[] = [
   { id: "ok", label: "Pairing succeeds" },
   { id: "unreachable", label: "Mac unreachable" },
   { id: "expired", label: "Code expired" },
+  { id: "mismatch", label: "Wrong code" },
+  { id: "throttled", label: "Too many tries" },
   { id: "hang", label: "Stays connecting" },
 ];
 export const LINK_OUTCOMES: { id: LinkOutcome; label: string }[] = [
@@ -71,7 +79,12 @@ export function applyPreviewQuery(query: string): {
 
 export type PairResult =
   | { ok: true; name: string }
-  | { ok: false; reason: "unreachable" | "expired" };
+  | {
+      ok: false;
+      reason: "unreachable" | "expired" | "mismatch" | "throttled";
+      /** #593/#568: the throttle's wait, from the refusal's Retry-After. */
+      retryAfterSeconds?: number;
+    };
 
 const wait = (ms: number, signal: AbortSignal) =>
   new Promise<void>((resolve, reject) => {
@@ -90,7 +103,11 @@ export async function pairWithMac(
   if (outcome === "hang") return new Promise(() => {});
   await wait(outcome === "unreachable" ? 2200 : 1400, signal);
   if (outcome === "ok") return { ok: true, name: offer.name ?? "your Mac" };
-  return { ok: false, reason: outcome };
+  return {
+    ok: false,
+    reason: outcome,
+    retryAfterSeconds: outcome === "throttled" ? 42 : undefined,
+  };
 }
 
 /** Reconnect on launch: resolves true when the Mac answers. */
