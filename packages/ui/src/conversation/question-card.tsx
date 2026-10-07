@@ -60,15 +60,17 @@ const scrollPortOf = (el: HTMLElement | null) => {
 
 /* The list cap in one rule (tested in question-card.test.tsx): the
    options list gets whatever the scrollport leaves after the card's own
-   chrome — header, question, actions — minus the arrival-align margins,
-   so a card can never be taller than its port (FIX #515 r5). The 96px
-   floor keeps one row + a peek even when chrome eats the port. */
+   chrome — header, question, actions — minus the arrival-align margins
+   (8px head + 16px tail), so a card can never be taller than its port
+   (FIX #515 r5). The 80px floor keeps one full option row + a sliver of
+   the next even when chrome eats the port — at a port that tight the
+   align's tail room yields first, never the head (#649). */
 export const questionOptionCap = (
   natural: number,
   others: number,
   portH: number,
 ) => {
-  const cap = Math.max(96, portH - 16 - others);
+  const cap = Math.max(80, portH - 24 - others);
   return { cap, over: natural > cap + 4 };
 };
 export function QuestionCard({
@@ -124,8 +126,32 @@ export function QuestionCard({
     const list = listRef.current;
     const card = cardRef.current;
     if (!list || !card) return;
-    const port = scrollPortOf(list);
+    /* The port is re-resolved on every measure: at mount the scroller's
+       overflow style may not apply yet (Focus mounts the whole thread
+       tree at once) and a null here would pin the cap to the window's
+       height forever — a stale cap lets the card outgrow the port at
+       tighter viewports (#649 CI). */
+    let port = scrollPortOf(list);
+    const ro = new ResizeObserver(() => measure());
+    let cancelled = false;
+    let raf = 0;
+    let lastCap: number | undefined;
+    let stable = 0;
+    /* A wrong or missing port at mount is only caught if a measure runs
+       after the real one settles — but the RO observes what `port` pointed
+       at, and a settled card stops resizing, so nothing re-arms it (the
+       324px cap in a 341px port on #649 CI). Keep re-measuring on the next
+       frames until the cap holds steady twice against a resolved port;
+       the deadline bounds an oscillating layout. */
+    const settleUntil = performance.now() + 2500;
     const measure = () => {
+      if (cancelled) return;
+      const p = scrollPortOf(list);
+      if (p !== port) {
+        if (port) ro.unobserve(port);
+        port = p;
+        if (port) ro.observe(port);
+      }
       const natural = list.scrollHeight;
       /* The list gets the scrollport height minus everything else on the
          card and a margin — the pb-28 scroll slack below the last item
@@ -147,7 +173,7 @@ export function QuestionCard({
         ? Math.min(
             capPx,
             Math.max(
-              96,
+              80,
               lastVisible
                 ? lastVisible.getBoundingClientRect().bottom - listTop + 30
                 : capPx,
@@ -157,14 +183,52 @@ export function QuestionCard({
       setCap(snapped);
       setScrollable(over);
       setHidden(over ? Math.max(1, rows.length - visible) : 0);
+      /* Two identical results against a bound port = settled; a null port
+         never counts (the walk can only miss while styles land). */
+      stable = port && snapped === lastCap ? stable + 1 : 0;
+      lastCap = snapped;
+      if (
+        stable < 2 &&
+        performance.now() < settleUntil &&
+        typeof requestAnimationFrame === "function"
+      )
+        raf = requestAnimationFrame(measure);
     };
+    if (port) ro.observe(port);
+    /* The card too: `others` is everything non-list — header, question,
+       the "+N more" row that only exists once `hidden` lands, and the
+       actions row that can mount a commit later. A cap computed while
+       chrome is still mounting undershoots it, and chrome growth never
+       resizes the port — without this the card stays taller than the
+       port forever (the 390px card in a 398px port, #649 CI). The loop
+       is self-limiting: a converged setCap changes nothing, so no
+       further resize fires. */
+    ro.observe(card);
+    /* Overflow is a style write, not a resize — the RO never sees the
+       scroller gain it, and a mount-null port observes nothing at all.
+       Ancestor attribute flips (the library's inline overflow write, tab
+       `hidden`, theme classes) are the events that re-resolve the walk. */
+    const mo = new MutationObserver(() => measure());
+    for (let p = list.parentElement; p; p = p.parentElement)
+      mo.observe(p, {
+        attributes: true,
+        attributeFilter: ["class", "style", "hidden"],
+      });
     measure();
-    const ro = port ? new ResizeObserver(measure) : undefined;
-    if (port && ro) ro.observe(port);
     window.addEventListener("resize", measure);
+    /* `load` is the first moment every stylesheet is applied — a scroller
+       whose overflow-auto rule was still in flight resolves only now. */
+    window.addEventListener("load", measure, { once: true });
+    /* A late webfont changes every metric at once — re-measure once it
+       lands (ready resolves at once when fonts are already in). */
+    void document.fonts?.ready.then(() => measure());
     return () => {
-      ro?.disconnect();
+      cancelled = true;
+      ro.disconnect();
+      mo.disconnect();
+      if (raf) cancelAnimationFrame(raf);
       window.removeEventListener("resize", measure);
+      window.removeEventListener("load", measure);
     };
   }, [options.length]);
 
@@ -175,52 +239,124 @@ export function QuestionCard({
      short arrival window (scrolling up only — never drag the card down),
      and stop the moment the user scrolls. `resolved` in deps re-arms
      the window when a sibling ask resolves — the question that becomes
-     visible after an answer gets the same lift (FIX r4). */
+     visible after an answer gets the same lift (FIX r4). The RO
+     re-aligns on port resizes AND content growth: a window shrink
+     GROWS the max scrollTop (no scroll event fires) and streaming rows
+     push the tail under the fold without touching the port's size —
+     neither the lock nor the expired arrival ride restores the card
+     then, so it can sit clipped under the composer forever (#649). The
+     gate keeps the reader in charge: a card scrolled away above the
+     port, or more than a viewport below, is left alone. */
   useEffect(() => {
     const el = cardRef.current;
     if (!el || !interactive) return;
-    const port = scrollPortOf(el);
-    if (!port) return;
-    const align = () => {
-      const e = el.getBoundingClientRect();
-      const p = port.getBoundingClientRect();
-      const over = p.top + 8 - e.top;
-      if (over > 1) {
-        // head clipped under the sticky header — lift until it clears
-        port.scrollTop -= over;
+    let cancelled = false;
+    let raf = 0;
+    let tries = 0;
+    let teardown: (() => void) | undefined;
+    const start = () => {
+      if (cancelled || teardown) return;
+      const port = scrollPortOf(el);
+      /* The scroller's overflow can apply after this effect runs — a null
+         here used to skip the align window for good; retry briefly so a
+         late port still gets the card parked (#649 CI). */
+      if (!port) {
+        if (tries++ < 120 && typeof requestAnimationFrame === "function")
+          raf = requestAnimationFrame(start);
         return;
       }
-      if (e.top > p.bottom - 48 && e.top - p.bottom < p.height) {
-        // below the fold — a question that arrives after an answer gets
-        // the same lift as a fresh arrival (FIX r4), but never a giant
-        // jump when the card is deep below
-        port.scrollTop += e.top - p.top - 8;
-        return;
-      }
-      const under = e.bottom - (p.bottom - 8);
-      if (under > 1) {
-        // partially visible with the tail cut — reveal the whole card,
-        // or as much as fits before the head would clip again
-        const nudge = Math.min(under, e.top - p.top - 8);
-        if (Math.abs(nudge) > 1) port.scrollTop += nudge;
-      }
+      teardown = mount(el, port);
     };
-    const kick = setTimeout(align, 450);
-    const ride = setInterval(align, 350);
-    const end = setTimeout(() => clearInterval(ride), 3500);
-    const cancel = () => {
-      clearInterval(ride);
-      clearTimeout(end);
+    const mount = (el: HTMLElement, port: HTMLElement) => {
+      const align = () => {
+        const e = el.getBoundingClientRect();
+        const p = port.getBoundingClientRect();
+        const over = p.top + 8 - e.top;
+        if (over > 1) {
+          // head clipped under the sticky header — lift until it clears
+          port.scrollTop -= over;
+          return;
+        }
+        if (e.top > p.bottom - 48 && e.top - p.bottom < p.height) {
+          // below the fold — a question that arrives after an answer gets
+          // the same lift as a fresh arrival (FIX r4), but never a giant
+          // jump when the card is deep below
+          port.scrollTop += e.top - p.top - 8;
+          return;
+        }
+        const under = e.bottom - (p.bottom - 16);
+        if (under > 1) {
+          // partially visible with the tail cut — reveal the whole card,
+          // or as much as fits before the head would clip again. The tail
+          // margin is 16, not the head's 8: where the composer hugs the
+          // port edge (Focus has no composer margin) a smaller tail leaves
+          // the card's border tucking under the composer (#649).
+          const nudge = Math.min(under, e.top - p.top - 8);
+          if (Math.abs(nudge) > 1) port.scrollTop += nudge;
+        }
+      };
+      const realign = () => {
+        if (cancelled) return;
+        const e = el.getBoundingClientRect();
+        const p = port.getBoundingClientRect();
+        /* Only re-park a tail the layout pushed under the fold — a card
+           whose head sits above the port top, or that lives more than a
+           viewport below, belongs to the reader's scroll position. */
+        if (
+          e.top < p.top ||
+          e.top - p.bottom > p.height ||
+          e.bottom - (p.bottom - 16) <= 1
+        )
+          return;
+        align();
+      };
+      const kick = setTimeout(align, 450);
+      const ride = setInterval(align, 350);
+      const end = setTimeout(() => clearInterval(ride), 3500);
+      let retry: ReturnType<typeof setInterval> | undefined;
+      let retryEnd: ReturnType<typeof setTimeout> | undefined;
+      const ro = new ResizeObserver(() => {
+        /* Layout writes land a frame after the size change — retry on a
+           short ride so a mid-animation read can't gate-skip the fix. */
+        realign();
+        clearInterval(retry);
+        clearTimeout(retryEnd);
+        retry = setInterval(realign, 350);
+        retryEnd = setTimeout(() => clearInterval(retry), 1400);
+      });
+      ro.observe(port);
+      /* The content's height is where streaming growth shows up — the
+         port alone doesn't resize then. */
+      if (port.firstElementChild instanceof HTMLElement)
+        ro.observe(port.firstElementChild);
+      const stop = () => {
+        cancelled = true;
+        clearInterval(ride);
+        clearTimeout(end);
+        clearInterval(retry);
+        clearTimeout(retryEnd);
+        ro.disconnect();
+      };
+      port.addEventListener("wheel", stop, { passive: true });
+      port.addEventListener("touchstart", stop, { passive: true });
+      port.addEventListener("keydown", stop);
+      return () => {
+        clearTimeout(kick);
+        stop();
+        port.removeEventListener("wheel", stop);
+        port.removeEventListener("touchstart", stop);
+        port.removeEventListener("keydown", stop);
+      };
     };
-    port.addEventListener("wheel", cancel, { passive: true });
-    port.addEventListener("touchstart", cancel, { passive: true });
-    port.addEventListener("keydown", cancel);
+    start();
+    /* A port that only becomes scrollable once stylesheets land still
+       gets its align window. */
+    window.addEventListener("load", start, { once: true });
     return () => {
-      clearTimeout(kick);
-      cancel();
-      port.removeEventListener("wheel", cancel);
-      port.removeEventListener("touchstart", cancel);
-      port.removeEventListener("keydown", cancel);
+      cancelled = true;
+      if (raf) cancelAnimationFrame(raf);
+      window.removeEventListener("load", start);
+      teardown?.();
     };
   }, [interactive, resolved]);
 

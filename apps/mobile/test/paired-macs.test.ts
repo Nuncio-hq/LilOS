@@ -75,7 +75,6 @@ describe("paired-macs (#154)", () => {
     expect($connections.get()).toHaveLength(1);
   });
 });
-
 /* #688 AC-2 — an IP is never a Mac's name. */
 describe("fallbackName (#688)", () => {
   it.each([
@@ -93,5 +92,44 @@ describe("fallbackName (#688)", () => {
   it("a tailnet name keeps its first label", () => {
     expect(fallbackName("oscars-mac.tail0000.ts.net")).toBe("oscars-mac");
     expect(fallbackName("oscars-mac.tail0000.ts.net:4577")).toBe("oscars-mac");
+  });
+});
+
+describe("#600: Forget clears the DM store, and another Mac's offer asks", () => {
+  it("forgetMacs resets folder/model picks (the demo's reset ran nowhere else)", async () => {
+    const { $modelPicks, $wsPicks } = await import("../src/dm-store");
+    $wsPicks.set({
+      emp_1: { folder: "/tmp/x", base: "main", mode: "existing" },
+    });
+    $modelPicks.set({ emp_1: { provider: "anthropic", model: "m" } });
+
+    const { forgetMacs } = await import("../src/paired-macs");
+    await forgetMacs(async () => {});
+
+    expect($wsPicks.get()).toEqual({});
+    expect($modelPicks.get()).toEqual({});
+  });
+
+  it("isOtherMacOffer — a different host asks 'Switch?', the same host stays silent", async () => {
+    const { isOtherMacOffer } = await import("../src/paired-macs");
+    expect(
+      isOtherMacOffer(
+        { host: "office-mac.tail0000.ts.net:4577", code: "ABCDEFGHIJKL" },
+        mac,
+      ),
+    ).toBe(false);
+    expect(
+      isOtherMacOffer(
+        { host: "studio-mac.tail0000.ts.net:4577", code: "ABCDEFGHIJKL" },
+        mac,
+      ),
+    ).toBe(true);
+    /* Unpaired keeps the onboarding path — not a switch question. */
+    expect(
+      isOtherMacOffer(
+        { host: "studio-mac.tail0000.ts.net:4577", code: "ABCDEFGHIJKL" },
+        undefined,
+      ),
+    ).toBe(false);
   });
 });
