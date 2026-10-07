@@ -199,7 +199,7 @@ const sendTurn = async (page: Page, text: string) => {
   }
   await send(page, text);
   const mine = page
-    .locator("main [data-msg]")
+    .locator("[data-msg]")
     .filter({ hasText: text })
     .filter({ hasNot: page.locator("[data-agentturn]") })
     .last();

@@ -370,6 +370,11 @@ export async function panelIntoFocus(
 ): Promise<void> {
   const { expect } = playwright;
   await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+$/, { timeout: 30_000 });
+  // The URL lands before the panel mounts (the conv resolves async under
+  // load) — wait for the surface, then the button.
+  await expect(page.locator("[data-thread-panel]")).toBeVisible({
+    timeout: 30_000,
+  });
   await page
     .locator("[data-thread-panel]")
     .getByTitle("Focus", { exact: true })

@@ -303,13 +303,13 @@ test("AC-2 (#584) Suggest is a side request: no user message, no turn; fills the
 
   /* First with the thread idle: the ask answers off-transcript — nothing
      posts to the thread, no agent turn opens. */
-  const msgsBefore = await page.locator("main [data-msg]").count();
+  const msgsBefore = await page.locator("[data-msg]").count();
   await page.locator("[data-shipsuggest]").click();
   await expect(page.locator("[data-shipmessage]")).toHaveValue(
     "feat: update a.txt",
     { timeout: 60_000 },
   );
-  expect(await page.locator("main [data-msg]").count()).toBe(msgsBefore);
+  expect(await page.locator("[data-msg]").count()).toBe(msgsBefore);
   await expect(
     page.locator("main").getByText(/one-line git commit message/),
   ).toHaveCount(0);
@@ -441,7 +441,7 @@ test("AC-3 Push sets upstream and lands the branch; rejected, no-remote and auth
   await askBtn.click();
   await expect(
     page
-      .locator("main [data-msg]")
+      .locator("[data-msg]")
       .filter({ hasText: /pull|rejected/i })
       .last(),
   ).toBeVisible({ timeout: 30_000 });

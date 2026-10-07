@@ -125,7 +125,7 @@ const send = async (page: Page, text: string) => {
   await box.press("Enter");
 };
 
-const turns = (page: Page) => page.locator("main [data-agentturn]");
+const turns = (page: Page) => page.locator("[data-agentturn]");
 
 /* #474: where a send lands is decided by the session, not the spec. An
    idle send claims its own bubble and a new agent turn answers it; a send
@@ -136,12 +136,12 @@ const turns = (page: Page) => page.locator("main [data-agentturn]");
    substring match, and a stale row would silently satisfy the or-wait. */
 const awaitSendLanding = async (page: Page, text: string) => {
   const mine = page
-    .locator("main [data-msg]")
+    .locator("[data-msg]")
     .filter({ hasText: text })
     .filter({ hasNot: page.locator("[data-agentturn]") })
     .last();
   const steered = page
-    .locator("main [data-agentturn]")
+    .locator("[data-agentturn]")
     .filter({
       has: page.locator("[data-steerstate='landed']").filter({ hasText: text }),
     })
@@ -165,7 +165,7 @@ const awaitSendLanding = async (page: Page, text: string) => {
 const sendTurn = async (page: Page, text: string) => {
   await expect(
     page
-      .locator("main [data-msg]")
+      .locator("[data-msg]")
       .last()
       .locator("[data-agentturn] [data-turnsettled]"),
   ).toBeVisible({ timeout: 60_000 });
@@ -339,7 +339,7 @@ test("AC-2 + AC-4 Send posts one message quoting path:line + code; sent comments
   // [data-agentturn]: the answering turn echoes the prompt, so it also
   // carries the marker text — only the user message is the sent one.
   const sent = page
-    .locator("main [data-msg]")
+    .locator("[data-msg]")
     .filter({ hasText: "Review comments on the diff" })
     .filter({ hasNot: page.locator("[data-agentturn]") });
   await page.locator("[data-diff-send]").click();

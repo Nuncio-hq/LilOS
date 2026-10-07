@@ -1,7 +1,12 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { bootStack, panelIntoFocus, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  panelIntoFocus,
+  pickPorts,
+  type Stack,
+} from "./helpers/stack";
 
 /**
  * Issue #104 — DM composer keys, updated for #576: Esc now only ever CLOSES
@@ -270,6 +275,9 @@ test("AC-7 prototype: ⌘. stops the turn (Esc never does); ↑ recalls; Esc clo
   await page.keyboard.press("ArrowUp");
   await expect(steer).toHaveValue("also the flaky e2e retry counts");
 
+  /* #577: Esc on the panel closes it — hop into the prototype's Focus first,
+     mirroring the real-app legs (Esc then only exits Focus, never the turn). */
+  await page.getByTitle("Focus", { exact: true }).click();
   // Esc does NOT stop the turn — ⌘. does (same as ■), draft kept.
   await page.keyboard.press("Escape");
   await page.waitForTimeout(300);

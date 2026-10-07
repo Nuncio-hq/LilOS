@@ -84,6 +84,12 @@ test("AC-1..4 picker + session cwd + Workbench Files/Changes over host API", asy
   await page.locator("[data-addbtn]").click();
   /* folders.add fires a toast that overlays the composer footer for a few
      seconds — it swallows the branch picker's click. Wait for it to go. */
+  /* The "projects.create …" toast pops a beat after the dialog closes and
+       covers the composer controls — wait for it to show, then leave. */
+  await page
+    .locator("[data-toast]")
+    .waitFor({ state: "attached", timeout: 5_000 })
+    .catch(() => {});
   await page.locator("[data-toast]").waitFor({ state: "detached", timeout: 15_000 });
 
   // The new folder is picked for this DM; switch it to direct mode (edit in place).
