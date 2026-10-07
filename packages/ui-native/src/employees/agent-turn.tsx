@@ -256,15 +256,22 @@ export function AgentTurn({
                 accessibilityRole="button"
                 accessibilityLabel="Retry turn"
                 onPress={onRetry}
-                className="h-11 flex-row items-center gap-1 rounded-full bg-fill px-4 active:opacity-70"
+                /* Teal accent, not the error red — red is the failure
+                   itself; the way forward wears the app's accent. */
+                className="h-11 flex-row items-center gap-1 rounded-full bg-accent-soft px-4 active:opacity-70"
               >
                 <Icon
                   name="arrow.clockwise"
                   size={13}
-                  tone="destructive"
+                  tone="accent-text"
                   weight="semibold"
                 />
-                <AppText size="xs" tone="destructive" weight="semibold">
+                <AppText
+                  size="xs"
+                  tone="none"
+                  weight="semibold"
+                  className="text-accent-text"
+                >
                   Retry
                 </AppText>
               </Pressable>

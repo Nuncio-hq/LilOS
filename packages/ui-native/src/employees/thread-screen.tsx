@@ -33,6 +33,12 @@ import type {
 } from "./types";
 import { WorkbenchCard } from "./workbench-card";
 
+/* #555: a scroll-to-hit row rests this far below the floating header —
+   its flash band's rounded top corners never sit flush against the bar. */
+const HIT_TOP_GAP = 12;
+/* The Remove toast's visible window before the remove stands. */
+const REMOVED_TOAST_MS = 5000;
+
 /* One session opened as a thread (web: ThreadView), iOS style: the native
    nav bar carries the title + state (ThreadHeaderTitle) and an info button
    that opens the session's facts in a sheet (ThreadInfoSheet). The
@@ -208,7 +214,7 @@ export function ThreadScreen({
      leaves, the entry stays deleted. */
   useEffect(() => {
     if (!removed) return;
-    const id = setTimeout(() => setRemoved(null), 5000);
+    const id = setTimeout(() => setRemoved(null), REMOVED_TOAST_MS);
     return () => clearTimeout(id);
   }, [removed]);
   /* A Remove pulls the row from the tray and offers Undo for ~5s — the
@@ -222,13 +228,13 @@ export function ThreadScreen({
   /* #555: centre the hit row in the scroll view — never under the header
      or the composer stack; falls back to a top offset before the view
      height lands. The transparent chat header floats over the top, so
-     the floor is the top inset, not 0 — a first-row hit rests just
-     below the bar. */
+     the floor is the top inset, not 0 — a first-row hit rests 12pt
+     below the bar, its rounded corners clear. */
   const scrollToHit = (eid: string) => {
     const top = offsets.current.get(eid);
     if (top === undefined) return;
     const row = rowHeights.current.get(eid) ?? 0;
-    const floor = -(insets.top + 44);
+    const floor = -(insets.top + 44 + HIT_TOP_GAP);
     const y = viewH.current ? top - (viewH.current - row) / 2 : top + floor - 8;
     scroller.current?.scrollTo({ y: Math.max(floor, y), animated: false });
   };
@@ -278,9 +284,10 @@ export function ThreadScreen({
           contentInsetAdjustmentBehavior="automatic"
           /* The chat header is transparent + floats — content must rest
              BELOW it, not start under it (the top inset is the header's
-             height; scrolling still carries turns under the blurred bar). */
+             height plus a 12pt gap; scrolling still carries turns under
+             the blurred bar). */
           contentInset={{
-            top: insets.top + 44,
+            top: insets.top + 44 + HIT_TOP_GAP,
             /* #182 + #181: the bottom stack floats over this scroll view —
                the inset must clear ALL of it: the measured composer plus,
                while a background pill shows, the pill and its stack gap.
