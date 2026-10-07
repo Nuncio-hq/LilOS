@@ -1,5 +1,10 @@
 import { expect, type Page, test } from "@playwright/test";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  panelIntoFocus,
+  pickPorts,
+  type Stack,
+} from "./helpers/stack";
 
 /**
  * Issue #659 — an agent reply rendered twice in one thread (ac-134 strict
@@ -67,6 +72,10 @@ test("AC-1/2 a reply renders exactly once while the answer row beats the stream"
      paced feed — every reply must render exactly once the whole time. */
   const thread = page.locator("[data-thread]");
   await send(page, "first marker");
+  /* #577: a send opens the thread in the DM panel now — hop into Focus so
+     [data-thread] and the rest of this spec see the same surface the
+     soak was written against. */
+  await panelIntoFocus(page);
   await expect(thread.getByText("If you want me to change code")).toBeVisible({
     timeout: 60_000,
   });
