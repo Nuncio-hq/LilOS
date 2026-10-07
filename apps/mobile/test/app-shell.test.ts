@@ -170,10 +170,13 @@ describe("#596 — push/deep links stack DM under Thread; loading & gone states"
     expect(thread).toContain('popTo("Dm"');
     expect(thread).toContain("navigation.canGoBack()");
     /* The employee can't resolve off a conversation the directory has
-       already forgotten — push/ask flows carry it through the route. */
+       already forgotten — push/ask flows carry it through the route,
+       and the push payload itself names the employee as fallback (the
+       only id a gone-by-tap-time thread can still offer). */
     const routes = read("apps/mobile/src/routes.ts");
     expect(routes).toContain("Thread: { conversationId: string; employeeId?");
-    expect(push).toContain("employeeId: target.employeeId");
+    expect(push).toContain("target?.employeeId ?? payloadEmployeeId");
+    expect(push).toContain("data?.employeeId");
   });
 
   it("AC-2c a gone thread stops fetching: the directory gates the feed", () => {

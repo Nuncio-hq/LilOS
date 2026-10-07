@@ -219,7 +219,7 @@ describe("push fan-out — transition → push decision (#161)", () => {
   it("AC-2/3 an opened approval ask pushes title=name, body=need, data=conversationId", async () => {
     const { relay, pairing, sent } = newWorld();
     const host = await registeredHost(relay);
-    const { channel, conversation } = await setupConversation(host, {
+    const { employee, channel, conversation } = await setupConversation(host, {
       name: "Ada",
       title: "Fix the readme",
     });
@@ -236,7 +236,9 @@ describe("push fan-out — transition → push decision (#161)", () => {
       title: "Ada",
       subtitle: "Fix the readme",
       body: "rm -rf node_modules",
-      data: { conversationId: conversation.id },
+      /* #596: the payload names the employee too — a thread gone by tap
+         time can still offer "Back to <employee>". */
+      data: { conversationId: conversation.id, employeeId: employee.id },
     });
   });
 

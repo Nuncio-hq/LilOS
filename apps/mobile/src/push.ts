@@ -46,7 +46,7 @@ export const $pushPermission = atom<"undetermined" | "denied" | "granted">(
 
 let started = false;
 /** A tapped push awaiting its navigator (cold start before `phase==="app"`). */
-let pendingThread: string | undefined;
+let pendingThread: { conversationId: string; employeeId?: string } | undefined;
 
 const readPermission = async (): Promise<
   "undetermined" | "denied" | "granted"
@@ -129,7 +129,7 @@ export const requestPushPermission = async (): Promise<void> => {
    DM, the same landing an ask's Open/Review takes. The employee resolves
    from the wire: a hydrated cache resolves at cold start, a thread created
    while the app was closed resolves once the first sync lands. */
-const pushThread = (conversationId: string) => {
+const pushThread = (conversationId: string, payloadEmployeeId?: string) => {
   const client = $client.get();
   const target =
     client &&
@@ -137,13 +137,15 @@ const pushThread = (conversationId: string) => {
       conversations: client.conversations.get(),
       channels: client.channels.get(),
     });
-  if (target) nav.navigate("Dm", { employeeId: target.employeeId });
-  /* AC-2b: hand the resolved employee to the Thread too — if the thread
-     is gone by the time it opens, its card can still offer "Back to
-     <employee>" and land on this DM. */
+  /* AC-2b: the wire resolution wins when it exists; the payload's own
+     employeeId is the fallback — the only id a gone-by-tap-time thread
+     can still name. Either way the DM stacks under the Thread and the
+     gone card's "Back to <employee>" has somewhere to land. */
+  const employeeId = target?.employeeId ?? payloadEmployeeId;
+  if (employeeId) nav.navigate("Dm", { employeeId });
   nav.navigate("Thread", {
     conversationId,
-    ...(target ? { employeeId: target.employeeId } : {}),
+    ...(employeeId ? { employeeId } : {}),
   });
 };
 
@@ -164,18 +166,27 @@ const threadTargetReady = (conversationId: string): boolean => {
   return client.directoryReady.get() || $link.get() === "offline";
 };
 
-const openPushThread = (conversationId: string | undefined) => {
+const openPushThread = (
+  conversationId: string | undefined,
+  payloadEmployeeId?: string,
+) => {
   if (!conversationId) return;
   if (
     nav.isReady() &&
     $phase.get() === "app" &&
-    threadTargetReady(conversationId)
+    /* A payload that already names its employee needs no wire
+       resolution — open at once and let the thread's own states answer
+       whether it still exists. */
+    (payloadEmployeeId || threadTargetReady(conversationId))
   ) {
-    pushThread(conversationId);
+    pushThread(conversationId, payloadEmployeeId);
   } else {
     /* Cold start, mid-onboarding, or still syncing: hold it until the
        stack — and the DM underneath it — can be pushed. */
-    pendingThread = conversationId;
+    pendingThread = {
+      conversationId,
+      ...(payloadEmployeeId ? { employeeId: payloadEmployeeId } : {}),
+    };
   }
 };
 
@@ -184,11 +195,12 @@ const drainPendingThread = () => {
     pendingThread &&
     nav.isReady() &&
     $phase.get() === "app" &&
-    threadTargetReady(pendingThread)
+    (pendingThread.employeeId !== undefined ||
+      threadTargetReady(pendingThread.conversationId))
   ) {
-    const conversationId = pendingThread;
+    const held = pendingThread;
     pendingThread = undefined;
-    pushThread(conversationId);
+    pushThread(held.conversationId, held.employeeId);
   }
 };
 
@@ -231,6 +243,7 @@ export function initPush(): void {
         typeof data?.conversationId === "string"
           ? data.conversationId
           : undefined,
+        typeof data?.employeeId === "string" ? data.employeeId : undefined,
       );
     },
   );
@@ -240,6 +253,7 @@ export function initPush(): void {
       typeof data?.conversationId === "string"
         ? data.conversationId
         : undefined,
+      typeof data?.employeeId === "string" ? data.employeeId : undefined,
     );
   });
 
