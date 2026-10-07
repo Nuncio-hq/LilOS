@@ -34,6 +34,7 @@ import {
   QueuedTray,
   type QueuedTrayItem,
   queuedItemText,
+  ReconnectingLine,
   runningComposer,
   waitingComposer,
 } from "../chat/agent-chat";
@@ -155,6 +156,7 @@ export function FocusView({
   onPrMerge,
   surfaces,
   pending,
+  reconnecting,
   steer = false,
   agentWorking = false,
   onRemovePending,
@@ -239,6 +241,10 @@ export function FocusView({
   surfaces?: LiveSurfaces;
   /* Mid-turn sends the agent hasn't read yet — the waiting tray above the composer (issue #9). */
   pending?: QueuedTrayItem[];
+  /* #557: the relay socket is down and the client is redialing — a thin
+     "Reconnecting…" line over the composer (Focus hides the sidebar
+     status row); the send waits and lands once the socket is back. */
+  reconnecting?: boolean;
   /* os.editors + a bound os.open (issue #110, same pair ThreadView takes):
      the caller probes `host.describe` — onOpenPath={null} means os.open was
      absent, so the badge stays a plain label even when the accessors object
@@ -463,13 +469,18 @@ export function FocusView({
   );
   const live = thread.replies.find((r) => r.live);
   const lastStep = live?.steps?.[live.steps.length - 1];
-  /* #420: parked on an open QUESTION ask = WAITING, not working — the
-     composer says "waiting for your answer" and shows Send, not Stop
-     (Hermes FIX #515). Scoped to r.question, which only the question card
-     sets: approval/plan asks keep the steer composer. */
-  const waiting = running && live?.phase === "waiting" && !!live?.question;
+  /* #420 + #583 AC-1: parked on ANY open ask (question/approval/plan) =
+     WAITING, not working — the composer placeholder names what it waits
+     on. A question ask also parks the composer (Send, not Stop — Hermes
+     FIX #515); an approval/plan-parked turn is still interruptible and
+     steerable, so it keeps Stop (⌘.), steers and the running hint. */
+  const waiting = running && live?.phase === "waiting";
+  const parkedOnQuestion = waiting && live?.waitingOn === "question";
+  /* #583 AC-3: background processes still running under this thread. */
+  const runningJobs =
+    thread.jobs?.filter((j) => j.status === "running").length ?? 0;
   const status: ChatStatus = running
-    ? waiting
+    ? parkedOnQuestion
       ? "ready"
       : live?.phase === "submitted"
         ? "submitted"
@@ -892,6 +903,15 @@ export function FocusView({
               {live?.phase ? PHASE_LABEL[live.phase] : "working"}
             </span>
           )}
+          {/* #583 AC-3: a live background job says so in the header too. */}
+          {runningJobs > 0 && (
+            <span
+              data-bg-jobs
+              className="hidden text-muted-foreground text-xs sm:inline"
+            >
+              · {runningJobs} running in background
+            </span>
+          )}
           {thread.usage && (
             <SessionUsage usage={thread.usage} model={model} models={models} />
           )}
@@ -904,7 +924,7 @@ export function FocusView({
               title={
                 startCardOpen
                   ? "Answer the request below"
-                  : "New ticket + worktree for this session"
+                  : "New ticket + worktree for this thread"
               }
             >
               <Button
@@ -1014,7 +1034,7 @@ export function FocusView({
                   from={root.from}
                   time={root.time}
                   text={root.text}
-                  note={`opened session ${thread.session}`}
+                  note={`opened thread ${thread.session}`}
                   human={human}
                   attachments={root.attachments}
                 />
@@ -1130,6 +1150,7 @@ export function FocusView({
             {/* Mid-turn sends still waiting to be read (issue #9) and the not-sent tray —
                 same markup as the thread panel, above the composer there too. queue holds ONLY
                 messages the Stop button stopped before they landed. */}
+            {reconnecting && <ReconnectingLine />}
             <QueuedTray
               items={pendingSteers}
               steer={steer}
@@ -1154,7 +1175,7 @@ export function FocusView({
               onRemove={onUnqueue}
             />
             <FocusComposer
-              running={running && !waiting}
+              running={running && !parkedOnQuestion}
               status={status}
               choice={
                 models?.length
@@ -1185,18 +1206,22 @@ export function FocusView({
                   ? `${lead?.name ?? "The agent"} is paused while you use the terminal`
                   : running
                     ? waiting
-                      ? waitingComposer(lead?.name ?? "Employee").placeholder
+                      ? waitingComposer(
+                          lead?.name ?? "Employee",
+                          live?.waitingOn,
+                        ).placeholder
                       : runningComposer(
                           lead?.name ?? "Employee",
                           steer,
                           agentWorking,
                         ).placeholder
-                    : `Continue session ${thread.session} with ${lead?.name ?? "the employee"}…`
+                    : `Reply to ${lead?.name ?? "the employee"}…`
               }
               hint={
                 running
-                  ? waiting
-                    ? waitingComposer(lead?.name ?? "Employee").hint
+                  ? parkedOnQuestion
+                    ? waitingComposer(lead?.name ?? "Employee", live?.waitingOn)
+                        .hint
                     : runningComposer(
                         lead?.name ?? "Employee",
                         steer,

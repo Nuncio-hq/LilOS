@@ -113,9 +113,9 @@ test("AC-2 the employee's answer references the image that came through", async 
     .locator('input[type="file"]')
     .setInputFiles({ name: "shot.png", mimeType: "image/png", buffer: PNG });
   await main
-    .getByPlaceholder(/New session with Builder/)
+    .getByPlaceholder(/New thread with Builder/)
     .fill("what does this show");
-  await main.getByPlaceholder(/New session with Builder/).press("Enter");
+  await main.getByPlaceholder(/New thread with Builder/).press("Enter");
 
   // The thread opens: Oscar's turn shows the attachment chip with a thumbnail,
   // in the session feed AND in the thread panel (the thread root)…

@@ -225,7 +225,9 @@ test.describe("AC-1-4 (#33) live system status", () => {
       // A harness speaking a newer protocol gets rejected; status names relay.
       await page.evaluate(
         async ({ port, token }) => {
-          const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+          const ws = new WebSocket(
+            `ws://127.0.0.1:${port}/ws?token=${encodeURIComponent(token)}`,
+          );
           await new Promise((res, rej) => {
             ws.onopen = res;
             ws.onerror = rej;

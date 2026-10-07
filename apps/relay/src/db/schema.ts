@@ -106,6 +106,12 @@ export const conversations = sqliteTable(
         the DM session row's alert card; host-written, cleared on the
         next `turn.started`. */
     turnFailure: text("turn_failure"),
+    /** The last turn ended stopped (#583): the DM session row's "stopped"
+        word; same host-written lifecycle as `turn_failure`. */
+    turnStopped: integer("turn_stopped", { mode: "boolean" }),
+    /** Running background-job count (#583): the DM session row's
+        "N in background" badge; same host-written lifecycle. */
+    bgJobs: integer("bg_jobs"),
     createdAt: integer("created_at").notNull(),
   },
   (t) => [index("conversations_channel").on(t.channelId)],
@@ -153,7 +159,10 @@ export const messages = sqliteTable(
   (t) => [
     uniqueIndex("messages_channel_seq").on(t.channelId, t.seq),
     uniqueIndex("messages_dedupe_key").on(t.channelId, t.dedupeKey),
-    index("messages_conversation").on(t.conversationId),
+    /* #571: conv-scoped reads order by seq — the composite serves both the
+       equality seek and the range/order (the old conversation_id-only index
+       is a strict prefix of this one). */
+    index("messages_conversation_seq").on(t.conversationId, t.seq),
   ],
 );
 

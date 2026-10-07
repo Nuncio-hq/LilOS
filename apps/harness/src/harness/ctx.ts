@@ -144,6 +144,10 @@ export interface SessionBinding {
   /** #346 AC-3: subagent ids still running — a session under one never
       suspends, even when the parent turn is quiet. */
   openSubagents: Set<string>;
+  /** #583 AC-3: background job ids still running — the DM row's
+      "N in background" count stamps onto the conversation so the badge
+      and the session feed outlive a released session. */
+  runningJobs: Set<string>;
   /** #346: marked after `session.suspend` so the reaper skips it; any
       engine event or a dispatched send clears it — the session is live
       again through the resume path. */
@@ -386,6 +390,12 @@ export interface HarnessCtx {
       /** #419: stamp the last turn's failure (DM alert card); `null`
           clears it. */
       turnFailure?: TurnFailure | null;
+      /** #583: the last turn ended stopped (DM row word); `null` clears
+          it on the next `turn.started`. */
+      turnStopped?: boolean | null;
+      /** #583: running background-job count — the row's badge; `null`
+          clears it. */
+      bgJobs?: number | null;
     },
   ): Promise<void>;
   postSystem(

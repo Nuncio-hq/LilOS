@@ -150,9 +150,8 @@ export function StartWorkDialog({
               </div>
               <div className="flex gap-1.5 text-muted-foreground">
                 <CheckIcon className="mt-0.5 size-3.5 shrink-0 text-emerald-600" />
-                Hermes session{" "}
-                <span className="font-mono">{thread.session}</span>. It moves to
-                the worktree; no new session, no summary.
+                This thread <span className="font-mono">{thread.session}</span>.
+                It moves to the worktree; no new thread, no summary.
               </div>
             </div>
             <label className="flex cursor-pointer items-start gap-2 text-xs">
@@ -177,7 +176,7 @@ export function StartWorkDialog({
         <div className="flex flex-wrap items-center gap-2 border-t px-5 py-3">
           <code className="w-full min-w-0 break-all text-muted-foreground text-xs sm:w-auto sm:flex-1">
             {channel.repo
-              ? `git worktree add ${dir} -b ${branch} → session.workspace.move`
+              ? `git worktree add ${dir} -b ${branch} — the thread moves there`
               : `ticket ${ticket}`}
           </code>
           <Button variant="ghost" size="sm" onClick={onClose}>

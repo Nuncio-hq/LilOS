@@ -90,6 +90,7 @@ export type {
   ThreadDetail,
   ThreadEntry,
   ToolStep,
+  TurnFailure,
   WbCardEntry,
   WbCardTarget,
   WorkspacePick,

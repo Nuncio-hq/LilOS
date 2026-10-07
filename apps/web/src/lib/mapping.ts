@@ -10,6 +10,7 @@ import type {
   Ask,
   Conversation,
   Employee,
+  SummaryMessage,
 } from "@lilos/contracts/app";
 import type {
   BackgroundJob,
@@ -319,14 +320,21 @@ export function stripPlans(
     );
 }
 
+/** #571: summary rows carry the preview subset of a message — these
+    mappers read only fields both shapes share. */
+type ReplySource = AppMessage | SummaryMessage;
+
 /* One relay row -> one Reply. conv-fold caches these per message row so
    rows untouched by a delta keep their identity for the memoized
-   renderer (#430). */
-const messageReply = (m: AppMessage): Reply => ({
+   renderer (#430). #585: system rows carry `system` and keep their text
+   bare — the renderer draws the centred note and the prefix is gone from
+   what the reader sees. */
+const messageReply = (m: ReplySource): Reply => ({
   id: m.id,
   from: m.authorKind === "system" ? "" : m.authorId,
   time: clock(m.createdAt),
-  text: m.authorKind === "system" ? `⚠ ${m.text}` : m.text,
+  text: m.text,
+  ...(m.authorKind === "system" ? { system: true } : {}),
   model: m.model,
   effort: m.effort,
   fast: m.fast,
@@ -338,9 +346,9 @@ const messageReply = (m: AppMessage): Reply => ({
     `cache` (#430): pass a WeakMap keyed on the message row to keep Reply
     identity stable across re-folds. */
 export function conversationReplies(
-  messages: AppMessage[],
+  messages: ReplySource[],
   conversationId: string,
-  cache?: WeakMap<AppMessage, Reply>,
+  cache?: WeakMap<ReplySource, Reply>,
 ): Reply[] {
   return (
     messages
@@ -596,11 +604,15 @@ export function mergeTurns(
     if (t.ref ? rewound?.refs?.has(t.ref) : rewound?.texts?.has(t.text.trim()))
       continue;
     /* #419: a failed turn with no output still renders — its failure chip
-       is the only surface the error has (same reason stopped stays). */
+       is the only surface the error has (same reason stopped stays).
+       #585 AC-2: a turn whose ask was answered (denied, cancelled) keeps
+       its card too — `requests` non-empty means the turn opened a request
+       the user resolved, and the card is the only surface of that outcome. */
     if (
       !t.text.trim() &&
       t.phase !== "stopped" &&
       t.phase !== "failed" &&
+      t.requests.length === 0 &&
       t !== liveTurn
     )
       continue;
@@ -651,7 +663,41 @@ export function mergeTurns(
     bump(t);
     prevEnd = dest + 1;
   }
-  return blocks.flat();
+  /* #585 AC-1: a system note that only repeats what its neighbour already
+     says drops out — "Stopped." beside a stopped turn, "Error:" beside a
+     failed one, the silent-end note beside a turn whose card still shows
+     (the denied ask is the real state). The note lands right before or
+     right after the turn it describes (relay seq order); matching is
+     positional because dedupeKey never crosses the wire. Notes that say
+     something no neighbour shows (auto-approved, worktree/model errors)
+     always stay. */
+  const isNote = (b: Reply[]) => b.length === 1 && !!b[0].system;
+  const hasCard = (r: Reply) =>
+    !!r.approval || !!r.question || !!r.plan || !!r.steps?.length;
+  const duplicates = (note: Reply, turn?: Reply) => {
+    if (!turn || turn.system || !turn.turnId) return false;
+    const t = note.text;
+    if (t === "Stopped.") return turn.phase === "stopped";
+    if (t.startsWith("Error: ") || t.startsWith("Turn interrupted"))
+      return turn.phase === "failed";
+    if (t === "(the engine ended the turn silently)")
+      return !turn.text.trim() && hasCard(turn);
+    return false;
+  };
+  const kept = blocks.filter((b, bi) => {
+    if (!isNote(b)) return true;
+    let prev: Reply | undefined;
+    for (let i = bi - 1; i >= 0 && !prev; i--) {
+      const x = blocks[i];
+      if (!isNote(x)) prev = x[x.length - 1];
+    }
+    const next = blocks
+      .slice(bi + 1)
+      .find((x) => !isNote(x))
+      ?.at(-1);
+    return !duplicates(b[0], prev) && !duplicates(b[0], next);
+  });
+  return kept.flat();
 }
 
 /**
@@ -669,15 +715,30 @@ export function threadUsage(
 }
 
 /**
+ * #586: the short tag thread chrome shows for a session — Hermes stamps
+ * engine refs date-first (`20261006_221236_cfe2c4`), so two same-day
+ * sessions share a `slice(0,8)` prefix; the unique part is the TAIL.
+ * The last six alphanumeric characters fit every ref shape (uuid tails,
+ * `s<N>`, conv ids) — long enough that collisions need ~17M threads.
+ */
+export function sessionLabel(ref: string): string {
+  const m = /[a-zA-Z0-9]{1,6}$/.exec(ref.replace(/[^a-zA-Z0-9]+$/, ""));
+  return m ? m[0] : ref;
+}
+
+/**
  * The DM home feed: one Msg row per conversation (root user message). Pass
  * `mergeTurns` output as `replies` so engine turns show as rich cards.
  */
 export function toFeed(
-  root: AppMessage,
+  root: ReplySource,
   conv: Conversation,
   replies: Reply[],
   /** Folder the session works in (#113) — feeds the row + header badges. */
   ws?: Workspace,
+  /** The session's background processes (#583 AC-3) — the row says when
+      one is still running. */
+  jobs?: BackgroundJob[],
 ): Msg {
   return {
     kind: "msg",
@@ -687,7 +748,7 @@ export function toFeed(
     text: root.text,
     attachments: toAttachedFiles(root.attachments),
     thread: {
-      session: conv.engineRef?.slice(0, 8) ?? conv.id.slice(0, 8),
+      session: sessionLabel(conv.engineRef ?? conv.id),
       title: conv.title || undefined,
       archived: conv.archived,
       /* #346 AC-4: the stored open/closed bit — `running` itself is
@@ -700,7 +761,14 @@ export function toFeed(
       ...(conv.turnFailure
         ? { alert: { ...conv.turnFailure, retry: true } }
         : {}),
+      /* #583: a stopped turn's word — relay-persisted like `turnFailure`
+         so a released session's summary-only row still says "stopped". */
+      ...(conv.turnStopped ? { stopped: true } : {}),
+      /* #583 AC-3: the relay-stamped running-job count — the row's badge
+         renders before the session feed lands. */
+      ...(conv.bgJobs ? { bgJobs: conv.bgJobs } : {}),
       ...(ws ? { ws } : {}),
+      ...(jobs?.length ? { jobs } : {}),
     },
   };
 }

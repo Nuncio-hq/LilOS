@@ -110,7 +110,7 @@ export function notificationForEvent(
         conversationId: c.id,
         kind: "failed",
         title: `${name} hit a problem`,
-        body: e.payload.reason ?? "The session reported an error",
+        body: e.payload.reason ?? "The thread reported an error",
       };
     }
     default:

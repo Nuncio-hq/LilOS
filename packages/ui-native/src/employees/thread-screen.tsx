@@ -280,9 +280,12 @@ export function ThreadHeaderTitle({
   waiting,
   stale,
   onPress,
+  failureKind,
 }: {
   title: string;
   state: SessionState;
+  /** #592: "sleep" failures read amber "Mac went to sleep" in the chip. */
+  failureKind?: "model" | "sleep" | "generic";
   prs?: PullRequestRef[];
   /** Adds the context gauge beside the state. */
   context?: ContextUsage;
@@ -311,7 +314,10 @@ export function ThreadHeaderTitle({
         {title}
       </AppText>
       <View className="flex-row items-center gap-1.5">
-        <StateChip state={stale && state === "working" ? "last-seen" : state} />
+        <StateChip
+          state={stale && state === "working" ? "last-seen" : state}
+          failureKind={failureKind}
+        />
         {/* Waiting is not working — no progress ring next to "Needs you"
             while a question the card can answer is open (Hermes FIX #515).
             Other needs-you asks keep the ring: they ARE still working. */}

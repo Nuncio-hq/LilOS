@@ -41,7 +41,7 @@ async function rpc(
   token: string,
   calls: { method: string; params: Record<string, unknown> }[],
 ): Promise<Record<string, unknown>[]> {
-  const ws = new WebSocket(relayWs);
+  const ws = new WebSocket(`${relayWs}?token=${encodeURIComponent(token)}`);
   await new Promise<void>((res, rej) => {
     ws.onopen = () => res();
     ws.onerror = () => rej(new Error("ws connect failed"));
@@ -84,7 +84,7 @@ async function openApp(page: Page, name = "Default") {
   await expect(row).toBeVisible({ timeout: 30_000 });
   await row.click();
   await expect(
-    page.getByRole("textbox", { name: new RegExp(`New session with ${name}`) }),
+    page.getByRole("textbox", { name: new RegExp(`New thread with ${name}`) }),
   ).toBeVisible();
 }
 
@@ -202,7 +202,7 @@ test("AC-2 the missing-profile switch works end to end", async ({ page }) => {
   // The next session boots on the switched profile: send a DM, then read
   // the conversation's engine replay for session.started.agent.
   await page.getByRole("button", { name: "Message" }).click();
-  const composer = page.getByPlaceholder(/New session with/);
+  const composer = page.getByPlaceholder(/New thread with/);
   await composer.fill("switch check");
   await composer.press("Enter");
   await expect(page).toHaveURL(new RegExp(`/dm/${employeeId}/[^/]+`), {
@@ -342,7 +342,7 @@ test("AC-3 (#504) shots: with + without SOUL.md, 3 dims × light/dark", async ({
       .click();
     await expect(
       page.getByRole("textbox", {
-        name: new RegExp(`New session with ${name}`),
+        name: new RegExp(`New thread with ${name}`),
       }),
     ).toBeVisible();
     await page.getByRole("button", { name: /^Profile$/ }).click();

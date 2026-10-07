@@ -11,6 +11,7 @@ import {
 } from "react";
 import { ConversationPin } from "../components/ai-elements/conversation";
 import { Body, Row, Who } from "../feed/row";
+import { InlineCodeText } from "../lib/inline-code";
 import { cn } from "../lib/utils";
 import type {
   EmpFn,
@@ -452,6 +453,31 @@ function TurnRowImpl({
     frame === "focus" && "rounded-lg",
     flashed && "bg-amber-100 dark:bg-amber-900/40",
   );
+  /* #585 AC-1: a LilOS system note is centred between hairlines — never
+     the user's right-aligned bubble and never an agent card. `data-sysnote`
+     is the spec anchor; deduped notes never reach the row at all. */
+  if (r.system) {
+    return (
+      <LazyShell
+        msgId={r.id}
+        className={cls}
+        lazy={lazy}
+        keep={scrollTarget}
+        kind="note"
+        settled
+      >
+        <div data-sysnote className="flex items-center gap-2 px-3 py-1 sm:px-5">
+          <span className="h-px flex-1 bg-border" />
+          <span className="text-center text-muted-foreground text-xs">
+            {/* #585: `tool …` spans render as code chips, like the
+                assistant's text — never literal backticks. */}
+            <InlineCodeText text={r.text} />
+          </span>
+          <span className="h-px flex-1 bg-border" />
+        </div>
+      </LazyShell>
+    );
+  }
   if (emp(r.from)) {
     return (
       <LazyShell
