@@ -19,7 +19,12 @@ const alertSpy = vi.hoisted(() => vi.fn());
 vi.mock("react-native", () => ({ Alert: { alert: alertSpy } }));
 
 import { reduceSessionEvents } from "@lilos/client-runtime";
-import { askOutcome, decide } from "../src/asks";
+import {
+  decide,
+  negativeOutcome,
+  outcomeAllowed,
+  primaryOutcome,
+} from "../src/asks";
 import { $asks } from "../src/dm-store";
 import { openAsks } from "../src/home-model";
 import { mergeThreadEntries } from "../src/thread-model";
@@ -92,7 +97,7 @@ describe("asks — #158 approve/deny from the phone", () => {
     client.asks.set([ask]);
     $asks.set([ask]);
 
-    await decide(client, "ask-1", true);
+    await decide(client, "ask-1", "once");
 
     expect(client.request).toHaveBeenCalledWith("asks.respond", {
       askId: "ask-1",
@@ -107,7 +112,7 @@ describe("asks — #158 approve/deny from the phone", () => {
     const client = clientOf(vi.fn(respondOk(resolved(ask, "deny"))));
     client.asks.set([ask]);
 
-    await decide(client, "ask-1", false);
+    await decide(client, "ask-1", "deny");
 
     expect(client.request).toHaveBeenCalledWith("asks.respond", {
       askId: "ask-1",
@@ -121,7 +126,7 @@ describe("asks — #158 approve/deny from the phone", () => {
     const client = clientOf(vi.fn(respondOk(resolved(ask, "once"))));
     $asks.set([ask]);
 
-    await decide(client, "ask-1", true);
+    await decide(client, "ask-1", "once");
 
     const model = reduceSessionEvents("sess-1", [
       {
@@ -145,6 +150,7 @@ describe("asks — #158 approve/deny from the phone", () => {
     expect(card.decided).toEqual({
       approved: true,
       what: "bun run build",
+      outcome: "once",
     });
     expect(card.approval).toBeUndefined();
   });
@@ -162,7 +168,7 @@ describe("asks — #158 approve/deny from the phone", () => {
     client.asks.set([ask]);
     $asks.set([ask]);
 
-    await decide(client, "ask-1", true);
+    await decide(client, "ask-1", "once");
 
     expect(alertSpy).not.toHaveBeenCalled();
     expect(client.request).toHaveBeenCalledWith("asks.list", {});
@@ -175,10 +181,10 @@ describe("asks — #158 approve/deny from the phone", () => {
     const client = clientOf(vi.fn(respondOk(resolved(ask, "once"))));
     client.asks.set([approvalAsk(), approvalAsk({ id: "ask-2" })]);
 
-    await decide(client, "ask-1", true);
+    await decide(client, "ask-1", "once");
     expect(haptics.notify).toHaveBeenLastCalledWith("success");
 
-    await decide(client, "ask-2", false);
+    await decide(client, "ask-2", "deny");
     expect(haptics.notify).toHaveBeenLastCalledWith("warning");
   });
 
@@ -190,7 +196,7 @@ describe("asks — #158 approve/deny from the phone", () => {
     );
     client.asks.set([a1, a2]);
 
-    await decide(client, "ask-1", true);
+    await decide(client, "ask-1", "once");
 
     const respondCalls = client.request.mock.calls.filter(
       ([m]) => m === "asks.respond",
@@ -199,24 +205,94 @@ describe("asks — #158 approve/deny from the phone", () => {
     expect(openAsks(client.asks.get()).map((a) => a.id)).toEqual(["ask-2"]);
   });
 
-  it("kind map: plan approve/reject, question cancel; question+approve sends nothing", async () => {
-    expect(askOutcome(approvalAsk(), true)).toBe("once");
-    expect(askOutcome(approvalAsk(), false)).toBe("deny");
-    expect(askOutcome(planAsk(), true)).toBe("approve");
-    expect(askOutcome(planAsk(), false)).toBe("reject");
-    expect(askOutcome(questionAsk(), false)).toBe("cancel");
-    // A question's approve needs free text — the UI hides that pill and
-    // decide refuses rather than shipping a malformed respond.
-    expect(askOutcome(questionAsk(), true)).toBeUndefined();
+  it("outcomeAllowed: an approval answers only its own options (+cancel); plan/question take their kinds", async () => {
+    expect(outcomeAllowed(approvalAsk(), "once")).toBe(true);
+    expect(outcomeAllowed(approvalAsk(), "deny")).toBe(true);
+    // #601: the ask offered "always" but no "session" — the phone can
+    // never ship a respond the engine did not offer.
+    expect(outcomeAllowed(approvalAsk(), "always")).toBe(true);
+    expect(outcomeAllowed(approvalAsk(), "session")).toBe(false);
+    expect(outcomeAllowed(approvalAsk(), "approve")).toBe(false);
+    expect(outcomeAllowed(approvalAsk(), "cancel")).toBe(true);
+    expect(outcomeAllowed(planAsk(), "approve")).toBe(true);
+    expect(outcomeAllowed(planAsk(), "reject")).toBe(true);
+    expect(outcomeAllowed(planAsk(), "change")).toBe(true);
+    expect(outcomeAllowed(planAsk(), "once")).toBe(false);
+    expect(outcomeAllowed(questionAsk(), "cancel")).toBe(true);
+    expect(outcomeAllowed(questionAsk(), "answer")).toBe(true);
+    expect(outcomeAllowed(questionAsk(), "once")).toBe(false);
+  });
 
-    const client = clientOf(
-      vi.fn(respondOk(resolved(questionAsk(), "answer"))),
-    );
-    client.asks.set([questionAsk()]);
-    await decide(client, "ask-1", true);
+  it("#601 the tapped option is the outcome sent — 'This session' answers with session", async () => {
+    const ask = approvalAsk({
+      request: {
+        kind: "approval",
+        command: "bun run build",
+        description: "build the app",
+        options: ["once", "session", "always", "deny"],
+      },
+    });
+    const client = clientOf(vi.fn(respondOk(resolved(ask, "session"))));
+    client.asks.set([ask]);
+    $asks.set([ask]);
+
+    await decide(client, "ask-1", "session");
+
+    expect(client.request).toHaveBeenCalledWith("asks.respond", {
+      askId: "ask-1",
+      outcome: "session",
+    });
+    expect(openAsks(client.asks.get())).toEqual([]);
+  });
+
+  it("#601 an outcome the ask's options never offered refuses — no respond ships", async () => {
+    const ask = approvalAsk({
+      request: {
+        kind: "approval",
+        command: "bun run build",
+        description: "build the app",
+        options: ["once", "deny"],
+      },
+    });
+    const client = clientOf(vi.fn(respondOk(resolved(ask, "session"))));
+    client.asks.set([ask]);
+
+    await decide(client, "ask-1", "session");
+
     expect(
       client.request.mock.calls.filter(([m]) => m === "asks.respond"),
     ).toHaveLength(0);
+    expect(openAsks(client.asks.get())).toHaveLength(1);
+  });
+
+  it("#601 primaryOutcome: the one-tap grant is the ask's first non-deny option", () => {
+    expect(primaryOutcome(approvalAsk())).toBe("once");
+    expect(
+      primaryOutcome(
+        approvalAsk({
+          request: {
+            kind: "approval",
+            command: "rm x",
+            options: ["session", "always", "deny"],
+          },
+        }),
+      ),
+    ).toBe("session");
+    expect(
+      primaryOutcome(
+        approvalAsk({
+          request: { kind: "approval", command: "rm x", options: ["deny"] },
+        }),
+      ),
+    ).toBe("deny");
+    expect(primaryOutcome(planAsk())).toBe("approve");
+    expect(primaryOutcome(questionAsk())).toBe("cancel");
+  });
+
+  it("#601 negativeOutcome: the 'no' tap sends the outcome its kind takes", () => {
+    expect(negativeOutcome(approvalAsk())).toBe("deny");
+    expect(negativeOutcome(planAsk())).toBe("reject");
+    expect(negativeOutcome(questionAsk())).toBe("cancel");
   });
 
   it("a failed respond surfaces an alert, not a silent no-op", async () => {
@@ -230,7 +306,7 @@ describe("asks — #158 approve/deny from the phone", () => {
     );
     client.asks.set([ask]);
 
-    await decide(client, "ask-1", true);
+    await decide(client, "ask-1", "once");
 
     expect(alertSpy).toHaveBeenCalledOnce();
     // Still open — nothing claimed to have answered it.
