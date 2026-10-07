@@ -355,7 +355,9 @@ function Settings() {
          the sheet (and its Forget, which deletes the real Keychain) stays
          unreachable. */
       onOpenMac={demo ? undefined : () => nav.navigate("Mac")}
-      onForget={demo ? () => {} : confirmForget}
+      /* #599: no dead Forget in the demo — its Mac is fake and "Exit
+         demo" already lives in the Demo section below. */
+      onForget={demo ? undefined : confirmForget}
     >
       {demo ? (
         <Section title="Demo">
