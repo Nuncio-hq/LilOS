@@ -10,6 +10,7 @@ import type {
 import { describe, expect, it } from "vitest";
 import {
   askThreadTarget,
+  deepThreadTarget,
   dmChannelFor,
   ensureChannelSubscriptions,
   type HomeWire,
@@ -411,5 +412,22 @@ describe("home-model (#155)", () => {
     });
     // Channel gone from the wire → no target (the surface falls back).
     expect(askThreadTarget(plan, wire())).toBeUndefined();
+  });
+
+  it("#596 AC-1: a push/deep link's Thread lands DM-under-Thread too", () => {
+    const w = wire({
+      channels: [ch("ch1", "e1")],
+      conversations: [conv("c1", "ch1")],
+    });
+    expect(deepThreadTarget("c1", w)).toEqual({
+      employeeId: "e1",
+      conversationId: "c1",
+    });
+    /* An id the wire doesn't know yet can't name a DM — the caller pushes
+       Thread alone and its own loading/gone state takes over. */
+    expect(deepThreadTarget("nope", w)).toBeUndefined();
+    expect(
+      deepThreadTarget("c1", wire({ conversations: [conv("c1", "ch1")] })),
+    ).toBeUndefined();
   });
 });

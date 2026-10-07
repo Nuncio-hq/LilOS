@@ -100,3 +100,37 @@ describe("#373 — the chat nav bar paints a blur backdrop under itself", () => 
     expect(protoHeader).toContain('headerBlurEffect: "systemMaterial"');
   });
 });
+
+describe("#596 — push/deep links stack DM under Thread; loading & gone states", () => {
+  const push = read("apps/mobile/src/push.ts");
+  const thread = read("apps/mobile/src/screens/thread.tsx");
+
+  it("AC-1 the tap path pushes the DM before the Thread (Back → DM)", () => {
+    /* The DM can't stack until the wire names its employee — the tap waits
+       on deepThreadTarget, never a bare Thread. */
+    expect(push).toContain("deepThreadTarget");
+    const dmAt = push.indexOf('navigate("Dm"');
+    const threadAt = push.indexOf('navigate("Thread"');
+    expect(dmAt).toBeGreaterThan(-1);
+    expect(threadAt).toBeGreaterThan(dmAt);
+    /* Cold-start pending drains through the same stacking path. */
+    expect(push).not.toContain("nav.reset");
+    expect(push).not.toContain("nav.replace");
+  });
+
+  it("AC-1 a not-yet-known id waits for the directory before it opens", () => {
+    /* The gate: resolvable now, or the first sync concluded (a miss opens
+       too — 'gone' is an answer), or the link already gave up. */
+    expect(push).toContain("directoryReady");
+    expect(push).toContain('=== "offline"');
+  });
+
+  it("AC-2 the blank body splits: spinner while loading, 'gone' after sync", () => {
+    expect(thread).toContain("ActivityIndicator");
+    expect(thread).toContain("Loading…");
+    expect(thread).toContain("This thread is gone");
+    expect(thread).toContain("threadBodyState");
+    /* The header can no longer claim Working over an empty body. */
+    expect(thread).not.toContain('?? "working"');
+  });
+});
