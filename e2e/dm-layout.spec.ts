@@ -33,9 +33,10 @@ async function dmDefault(page: Page, webUrl: string) {
   await expect(page).toHaveURL(/\/dm\//);
 }
 
-/* The DM page's middle pane is EmployeeHome's <main>. With no session open
-   there is no thread panel, so it must reach the window's right edge — no
-   reserved-but-empty column (Oscar's report on the desktop app). */
+/* The DM page's middle pane is its one <main> landmark (owned by DmPage
+   via MainPane, #660). With no session open there is no thread panel, so
+   it must reach the window's right edge — no reserved-but-empty column
+   (Oscar's report on the desktop app). */
 const mainPane = (page: Page) => page.locator("main").first();
 
 /* The pane must reach the window's inner edge. In a browser tab the app is a
@@ -143,6 +144,7 @@ test("AC-660 the DM main pane stays mounted through send → Focus", async ({
     await dmDefault(page, stack.webUrl);
     await expect(mainPane(page)).toBeVisible();
     const feedMain = await mainPane(page).elementHandle();
+    expect(feedMain, "feed pane handle before send").not.toBeNull();
 
     const box = page.locator("textarea").last();
     await box.fill(PROMPT);
