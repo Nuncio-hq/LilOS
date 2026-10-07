@@ -25,6 +25,7 @@ import {
   useRef,
   useState,
 } from "react";
+import type { StickToBottomContext } from "use-stick-to-bottom";
 import { AccessPill } from "../chat/access-pill";
 import {
   ConversationKeepBottom,
@@ -58,6 +59,7 @@ import { Button } from "../components/ui/button";
 import { askKeyDown, pendingAsk } from "../conversation/ask-keys";
 import { openStartRequest } from "../conversation/cards";
 import { FindUnstubAnchor, FindUnstubNudge } from "../conversation/find-unstub";
+import { landJump } from "../conversation/jump-to-hit";
 import type { PlanAction } from "../conversation/plan-card";
 import {
   type QuestionAnswer,
@@ -416,8 +418,12 @@ export function FocusView({
   }, [initialTab]);
   /* #138 AC-3: a search hit opens the session in Focus (#114) scrolled to
      that message with a short flash — mirrors ThreadView's jump-to-hit.
-     Waits for the row to render (history may still be loading). */
+     Waits for the row to render (history may still be loading).
+     #570: `landJump` releases the bottom pin before the native write (an
+     in-flight spring would overwrite it before its scroll event lands an
+     escape) and keeps the row landed while born-stubs hydrate around it. */
   const turnsRef = useRef<HTMLElement>(null);
+  const convCtx = useRef<StickToBottomContext | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
   const flashedRef = useRef<string | null>(null);
   useEffect(() => {
@@ -431,7 +437,7 @@ export function FocusView({
     );
     if (!el) return;
     flashedRef.current = scrollTo;
-    el.scrollIntoView({ block: "center" });
+    landJump(el, convCtx.current?.state ?? null);
     setFlash(scrollTo);
     onScrolled?.();
   }, [scrollTo, thread.replies, onScrolled]);
@@ -987,6 +993,7 @@ export function FocusView({
               chase. */}
           <Conversation
             className="min-h-0 [mask-image:linear-gradient(to_bottom,transparent,#000_28px)]"
+            contextRef={convCtx}
             initial={jumpPending ? false : lazyRows ? "instant" : "smooth"}
           >
             <ConversationContent

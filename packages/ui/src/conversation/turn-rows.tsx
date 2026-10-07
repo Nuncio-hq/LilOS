@@ -3,10 +3,13 @@ import {
   type MutableRefObject,
   memo,
   type ReactNode,
+  useContext,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
+import { ConversationPin } from "../components/ai-elements/conversation";
 import { Body, Row, Who } from "../feed/row";
 import { cn } from "../lib/utils";
 import type {
@@ -50,6 +53,19 @@ export const TURN_LAZY_AFTER = 24;
 
 /* How far outside the viewport a row goes before it is held as a stub. */
 const LAZY_MARGIN = "1600px";
+
+/* e2e/dev knob — `?stubHydrateMs=<ms>` defers a born-stub's un-hold that
+   long after its observer intersects: the CI-slow first hydration, where
+   the mounts land in a quiet port long after the open pin ran and every
+   estimate→real delta is a standalone scroll event (#570's slow-box
+   reproducer). Read once at module load, like `?stickDropMs=`. */
+const STUB_HYDRATE_MS = (() => {
+  if (typeof window === "undefined") return 0;
+  const v = Number(
+    new URLSearchParams(window.location.search).get("stubHydrateMs"),
+  );
+  return Number.isFinite(v) && v > 0 ? v : 0;
+})();
 
 /* #570: a lazy thread's FIRST mount renders only its tail — rows older
    than an estimated `OPEN_TAIL_PX` of content start as stubs instead of
@@ -221,6 +237,17 @@ function LazyShell({
   const wasHeldRef = useRef(initialHeld);
   const [held, setHeld] = useState(initialHeld);
   const [remounted, setRemounted] = useState(false);
+  /* #570: the port's pin — a stub→real commit swaps the estimate for the
+     real height, moving the bottom the pin sits on. `wasStub` tracks the
+     held→real edge for the layout effect below. */
+  const pin = useContext(ConversationPin);
+  const wasStub = useRef(initialHeld);
+  /* First hydration only: ?stubHydrateMs= models the CI-slow mount a
+     born-stub pays once; measured re-mounts stay instant. */
+  const hydratedRef = useRef(false);
+  const hydrateTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
   /* #512: while a find chord's ~10 s window runs, every held row mounts so
      browser find-in-page can match its text; the window lapsing re-arms
      the observer path and off-screen rows re-stub. */
@@ -228,12 +255,16 @@ function LazyShell({
   const lazyOn = lazy && !findOpen;
 
   useEffect(() => {
-    if (!lazyOn || keep || typeof IntersectionObserver === "undefined") {
+    const unhold = () => {
+      hydratedRef.current = true;
       if (wasHeldRef.current) {
         wasHeldRef.current = false;
         setRemounted(true);
       }
       setHeld(false);
+    };
+    if (!lazyOn || keep || typeof IntersectionObserver === "undefined") {
+      unhold();
       return;
     }
     const el = ref.current;
@@ -242,12 +273,22 @@ function LazyShell({
       (entries) => {
         for (const en of entries) {
           if (en.isIntersecting) {
-            if (wasHeldRef.current) {
-              wasHeldRef.current = false;
-              setRemounted(true);
+            /* ?stubHydrateMs= defers a born-stub's FIRST un-hold — the
+               CI-slow hydration the pin fix is proved against. */
+            if (STUB_HYDRATE_MS > 0 && initialHeld && !hydratedRef.current) {
+              if (hydrateTimer.current === undefined)
+                hydrateTimer.current = setTimeout(() => {
+                  hydrateTimer.current = undefined;
+                  unhold();
+                }, STUB_HYDRATE_MS);
+            } else {
+              unhold();
             }
-            setHeld(false);
           } else {
+            if (hydrateTimer.current !== undefined) {
+              clearTimeout(hydrateTimer.current);
+              hydrateTimer.current = undefined;
+            }
             /* Only a laid-out row may hold — a 0-height stub would let the
                scroll extent collapse. #537: keep the stub's height EXACT —
                offsetHeight rounds to whole pixels while real rows land
@@ -267,8 +308,31 @@ function LazyShell({
       { rootMargin: `${LAZY_MARGIN} 0px` },
     );
     io.observe(el);
-    return () => io.disconnect();
+    return () => {
+      io.disconnect();
+      if (hydrateTimer.current !== undefined) {
+        clearTimeout(hydrateTimer.current);
+        hydrateTimer.current = undefined;
+      }
+    };
   }, [lazyOn, keep]);
+
+  /* #570: a stub→real commit swaps the estimate for the measured height —
+   * the bottom edge the pin is glued to just moved. While the pin is
+   * engaged, re-pin to the MEASURED bottom in this commit (before paint):
+   * the library's smooth chase would crawl frames behind a hydration
+   * wave, and a mid-chase layout-clamp scroll event can escape the
+   * library's post-resize drop window on a slow box, killing the pin and
+   * stranding the port above the real bottom (CI: ac-570's open pin).
+   * Escaped/dead pins (a reader mid-thread, a find window) are skipped —
+   * their scroll stays theirs. */
+  useLayoutEffect(() => {
+    const swapped = wasStub.current && !held;
+    wasStub.current = held;
+    if (!swapped || !pin) return;
+    if (pin.isAtBottom && !pin.escapedFromLock)
+      pin.scrollTop = pin.calculatedTargetScrollTop;
+  });
 
   return (
     <div

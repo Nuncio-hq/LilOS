@@ -1,6 +1,7 @@
 import type { ChatStatus } from "ai";
 import { CheckIcon, Maximize2Icon, PlayIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { StickToBottomContext } from "use-stick-to-bottom";
 import { AccessPill } from "../chat/access-pill";
 import {
   ConversationKeepBottom,
@@ -22,6 +23,7 @@ import { Button } from "../components/ui/button";
 import { askKeyDown, pendingAsk } from "../conversation/ask-keys";
 import { openStartRequest } from "../conversation/cards";
 import { FindUnstubAnchor, FindUnstubNudge } from "../conversation/find-unstub";
+import { landJump } from "../conversation/jump-to-hit";
 import type { PlanAction } from "../conversation/plan-card";
 import {
   type QuestionAnswer,
@@ -256,8 +258,12 @@ export function ThreadView({
   const channelLabel = isDM ? `DM · ${channel.name}` : `#${channel.name}`;
   const startCardOpen = openStartRequest(thread, resolved);
   /* #138 AC-3: jump-to-hit — scroll the message into view, flash it, hand
-     back control. Waits for the row to render (history may still load). */
+     back control. Waits for the row to render (history may still load).
+     #570: `landJump` releases the bottom pin before the native write (an
+     in-flight spring would overwrite it before its scroll event lands an
+     escape) and keeps the row landed while born-stubs hydrate around it. */
   const bodyRef = useRef<HTMLDivElement>(null);
+  const convCtx = useRef<StickToBottomContext | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
   const flashedRef = useRef<string | null>(null);
   useEffect(() => {
@@ -271,7 +277,7 @@ export function ThreadView({
     );
     if (!el) return;
     flashedRef.current = scrollTo;
-    el.scrollIntoView({ block: "center" });
+    landJump(el, convCtx.current?.state ?? null);
     setFlash(scrollTo);
     onScrolled?.();
   }, [scrollTo, thread.replies, onScrolled]);
@@ -439,6 +445,7 @@ export function ThreadView({
           unchanged. */}
       <Conversation
         className="min-h-0"
+        contextRef={convCtx}
         initial={jumpPending ? false : lazyRows ? "instant" : "smooth"}
       >
         {/* The composer sits below the scroller in normal flow — nothing

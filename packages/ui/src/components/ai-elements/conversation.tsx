@@ -4,10 +4,34 @@ import { Button } from "../ui/button";
 import { cn } from "../../lib/utils";
 import { ArrowDownIcon } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
-import { useCallback, useEffect } from "react";
-import { StickToBottom, useStickToBottomContext } from "use-stick-to-bottom";
+import { createContext, useCallback, useEffect } from "react";
+import {
+  type StickToBottomState,
+  StickToBottom,
+  useStickToBottomContext,
+} from "use-stick-to-bottom";
+import { findAnchorActive } from "../../conversation/find-unstub";
 
 export type ConversationProps = ComponentProps<typeof StickToBottom>;
+
+/* The pin's live `state` for rows that re-pin on hydrate (#570's
+   LazyShell). The object is stable for the StickToBottom instance, so
+   this context's value never changes and consumers never re-render on
+   pin flag flips. */
+export const ConversationPin = createContext<StickToBottomState | null>(null);
+
+const ConversationPinBridge = ({
+  children,
+}: {
+  children: ReactNode;
+}) => {
+  const { state } = useStickToBottomContext();
+  return (
+    <ConversationPin.Provider value={state}>
+      {children}
+    </ConversationPin.Provider>
+  );
+};
 
 /* e2e/dev knob — `?stickDropMs=<ms>` keeps the library's post-resize
    scroll-event drop window (`state.resizeDifference`) forced open for <ms>
@@ -54,7 +78,7 @@ const StickDropWindow = (): null => {
    re-engaging the lock, a dropped near-flag refresh). scrollToBottom
    callers keep escapedFromLock set, so intended pins aren't caught. */
 const ConversationEscapeGuard = (): null => {
-  const { scrollRef, contentRef, state, stopScroll } =
+  const { scrollRef, contentRef, state, stopScroll, scrollToBottom } =
     useStickToBottomContext();
   useEffect(() => {
     const sc = scrollRef.current;
@@ -64,14 +88,71 @@ const ConversationEscapeGuard = (): null => {
        near-bottom band; being inside the band (their own scroll, a
        shrink, a settle) re-arms the lock normally. */
     let readerEscape = false;
+    let cancelled = false;
+    let rearmRaf = 0;
+
+    /* #570: while the pin is engaged the port must not let the browser's
+       scroll anchor correct for height deltas above the view — a held
+       stub hydrating taller/shorter than its estimate makes the engine
+       write scrollTop to keep the view still, and that up-scroll event
+       is indistinguishable from a reader escape (#626); on a slow box
+       it lands outside the library's post-resize drop window and kills
+       the pin mid-open. The find window owns the flag while it runs
+       (#537): its top-edge hold needs anchoring off too. Reconciled on
+       every scroll/resize signal — the pin's truth is the mutable
+       state, React copies lag the anchor's raw writes. */
+    const reconcileAnchor = () => {
+      const want =
+        (state.isAtBottom && !state.escapedFromLock) || findAnchorActive(state)
+          ? "none"
+          : "";
+      if (sc.style.overflowAnchor !== want) sc.style.overflowAnchor = want;
+    };
+
+    /* A scroll event that moved UP but left the port on the bottom edge
+       is a layout clamp — content shrank under the pin — not a reader
+       scroll. Its escape rides the library's deferred 1 ms timeout, which
+       can land on either side of any single frame check, so the reinstate
+       runs a short frame chain instead of one shot: every frame the pin
+       is dead while the port still sits on the bottom edge, re-pin to the
+       measured bottom (the write carries ignoreScrollToTop, so the stale
+       event can't re-escape it). A real reader escape leaves the edge —
+       or sets readerEscape — and stops the chain. Each new clamp event
+       refreshes the budget, so a hydration wave is covered end to end. */
+    let rearmFrames = 0;
+    const reinstateStep = () => {
+      rearmRaf = 0;
+      if (cancelled || readerEscape) return;
+      if (!state.isAtBottom) {
+        if (sc.scrollHeight - sc.scrollTop - sc.clientHeight > 1.5) return;
+        state.escapedFromLock = false;
+        void scrollToBottom({ animation: "instant" });
+      }
+      if (--rearmFrames > 0) rearmRaf = requestAnimationFrame(reinstateStep);
+    };
+    const armReinstate = () => {
+      rearmFrames = 8;
+      if (!rearmRaf) rearmRaf = requestAnimationFrame(reinstateStep);
+    };
+
     const guard = () => {
       const top = sc.scrollTop;
       const up = top < last;
       last = top;
+      reconcileAnchor();
       /* state.isNearBottom reads live scroll geometry — never the
          droppable flags. */
       if (state.isNearBottom) {
         readerEscape = false;
+        /* The pin's target is scrollHeight − 1 − clientHeight; a
+           browser clamp lands at scrollHeight − clientHeight. Anything
+           within that ~1.5 px band moving up is layout, not a reader. */
+        if (
+          up &&
+          state.isAtBottom &&
+          sc.scrollHeight - top - sc.clientHeight <= 1.5
+        )
+          armReinstate();
       } else if (up) {
         readerEscape = true;
         stopScroll();
@@ -90,11 +171,60 @@ const ConversationEscapeGuard = (): null => {
     const content = contentRef.current;
     const ro = new ResizeObserver(guard);
     if (content) ro.observe(content);
+
+    /* #570: a programmatic scrollTop write (a spec's `port.scrollTop =
+       0`, the find nudge knob) can be overwritten by the in-flight
+       bottom spring before its scroll event even dispatches — the
+       coalesced event reads the spring's value, the escape never lands,
+       and the port is dragged back to the bottom. A JS write that
+       LOWERS scrollTop and lands off the bottom edge is the reader
+       jumping: escape synchronously, before the spring's next frame.
+       The library's own decreasing writes land ON the bottom edge (its
+       ResizeObserver overscroll clamp), so they pass; native scrolls —
+       wheel, drag, scrollIntoView — never touch this setter. */
+    let proto: object | null = sc;
+    let desc: PropertyDescriptor | undefined;
+    while (
+      proto &&
+      !(desc = Object.getOwnPropertyDescriptor(proto, "scrollTop"))
+    )
+      proto = Object.getPrototypeOf(proto);
+    let patched = false;
+    if (desc?.get && desc.set) {
+      patched = true;
+      const get = desc.get as (this: Element) => number;
+      const set = desc.set as (this: Element, v: number) => void;
+      Object.defineProperty(sc, "scrollTop", {
+        configurable: true,
+        enumerable: desc.enumerable,
+        get() {
+          return get.call(this);
+        },
+        set(v: number) {
+          const before = get.call(sc);
+          set.call(sc, v);
+          const after = get.call(sc);
+          if (
+            after < before &&
+            state.isAtBottom &&
+            sc.scrollHeight - after - sc.clientHeight > 1.5
+          ) {
+            readerEscape = true;
+            stopScroll();
+          }
+        },
+      });
+    }
+    reconcileAnchor();
     return () => {
+      cancelled = true;
+      cancelAnimationFrame(rearmRaf);
       sc.removeEventListener("scroll", guard);
       ro.disconnect();
+      if (patched) Reflect.deleteProperty(sc, "scrollTop");
+      if (!findAnchorActive(state)) sc.style.overflowAnchor = "";
     };
-  }, [scrollRef, contentRef, state, stopScroll]);
+  }, [scrollRef, contentRef, state, stopScroll, scrollToBottom]);
   return null;
 };
 
@@ -124,7 +254,9 @@ export const Conversation = ({
     {STICK_DROP_MS > 0 && <StickDropWindow />}
     {/* StickToBottom also accepts a function child; every Conversation
         caller passes nodes, so the union is narrowed for JSX. */}
-    {children as ReactNode}
+    <ConversationPinBridge>
+      {children as ReactNode}
+    </ConversationPinBridge>
   </StickToBottom>
 );
 

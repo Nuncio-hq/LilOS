@@ -83,8 +83,12 @@ test("AC-1: opening a lazy thread mounts only the tail — older turns start as 
     }).observe(document.documentElement, { childList: true, subtree: true });
   }, EARLY_PROBE);
 
+  /* `?stubHydrateMs=` delays each born-stub's un-hold — the CI-slow
+     hydration under which the open pin and the scroll-to-top leg must
+     still resolve (the named slow-box knob, not a timeout bump). */
   await page.goto(
-    `${stack.webUrl}/dm/${grown.employeeId}/${grown.conversationId}`,
+    `${stack.webUrl}/dm/${grown.employeeId}/${grown.conversationId}` +
+      `?stubHydrateMs=60`,
   );
   const panel = page.locator("[data-thread-panel]");
   await expect(panel).toBeVisible({ timeout: 60_000 });
@@ -112,20 +116,35 @@ test("AC-1: opening a lazy thread mounts only the tail — older turns start as 
     .toBeGreaterThan(40);
 
   /* …and they hold the scroll extent: the pin still lands at the bottom
-     on the newest turn. */
-  const extent = await page.evaluate(() => {
-    const first = document.querySelector("[data-thread-panel] [data-msg]");
-    let port = first?.parentElement ?? null;
-    while (port && !/(auto|scroll)/.test(getComputedStyle(port).overflowY))
-      port = port.parentElement;
-    return port
-      ? {
-          top: port.scrollTop,
-          h: port.scrollHeight,
-          ch: port.clientHeight,
-        }
-      : null;
-  });
+     on the newest turn. The read waits for the port to go STILL —
+     knob-delayed hydration resolves estimate→real heights for frames
+     after the last turn settles, and every commit re-pins; a one-shot
+     read races that tail (CI #570's `extent.top` miss). */
+  const extent = await page.evaluate(
+    () =>
+      new Promise<{ top: number; h: number; ch: number } | null>((resolve) => {
+        const first = document.querySelector("[data-thread-panel] [data-msg]");
+        let port = first?.parentElement ?? null;
+        while (port && !/(auto|scroll)/.test(getComputedStyle(port).overflowY))
+          port = port.parentElement;
+        if (!port) return resolve(null);
+        const el = port;
+        let lastTop = -1;
+        let lastH = -1;
+        let still = 0;
+        let n = 0;
+        const tick = () => {
+          const { scrollTop: top, scrollHeight: h, clientHeight: ch } = el;
+          if (++n > 1500) return resolve({ top, h, ch });
+          if (top === lastTop && h === lastH && ++still >= 10)
+            return resolve({ top, h, ch });
+          lastTop = top;
+          lastH = h;
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }),
+  );
   if (!extent) throw new Error("no scroll port in the thread panel");
   expect(extent.h).toBeGreaterThan(extent.ch * 3);
   /* scrollTop within a row of the bottom — the pin settled on the tail. */
@@ -136,7 +155,9 @@ test("AC-2: scroll, find, and jump-to-message reach held turns on a lazy thread"
   page,
 }) => {
   test.setTimeout(240_000);
-  const convUrl = `${stack.webUrl}/dm/${grown.employeeId}/${grown.conversationId}`;
+  const convUrl =
+    `${stack.webUrl}/dm/${grown.employeeId}/${grown.conversationId}` +
+    `?stubHydrateMs=60`;
   await page.goto(convUrl);
   const panel = page.locator("[data-thread-panel]");
   await expect(panel).toBeVisible({ timeout: 60_000 });

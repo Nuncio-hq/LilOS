@@ -9,7 +9,10 @@
    by hand, same as turn-find-unstub.test.tsx. */
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import type { MutableRefObject } from "react";
+import type { StickToBottomState } from "use-stick-to-bottom";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { ConversationPin } from "../src/components/ai-elements/conversation";
+import { landJump } from "../src/conversation/jump-to-hit";
 import {
   estTurnHeight,
   OPEN_TAIL_PX,
@@ -265,5 +268,146 @@ describe("AC-2: held-on-mount rows behave like held rows — mount on view, find
     const anchor = container.querySelector("[data-msg='m7']");
     expect(anchor).toBeTruthy();
     expect(anchor?.querySelector("[data-held-stub]")).toBeTruthy();
+  });
+});
+
+/* The CI failures this guards: a stub→real swap changes the bottom the
+   pin is glued to; without the re-pin the port strands above the real
+   bottom (ac-570's `extent.top` miss), and the pin's own spring can
+   overwrite a jump's native write before its escape event lands. */
+describe("the pin tracks stub→real height swaps (#570 CI races)", () => {
+  const pinState = (over: Record<string, unknown> = {}) =>
+    ({
+      isAtBottom: true,
+      escapedFromLock: false,
+      calculatedTargetScrollTop: 4321,
+      scrollTop: 4000,
+      ...over,
+    }) as unknown as StickToBottomState;
+
+  test("a born-held row hydrating re-pins to the measured bottom", () => {
+    const pin = pinState();
+    render(
+      <ConversationPin.Provider value={pin}>
+        {row(agentDone("m8", "repin probe"), {
+          startHeld: true,
+          estHeight: 180,
+        })}
+      </ConversationPin.Provider>,
+    );
+    /* The stub commit is not a swap — no write. */
+    expect(pin.scrollTop).toBe(4000);
+    act(() => FakeIO.latest().fire(true));
+    expect(pin.scrollTop).toBe(4321);
+  });
+
+  test("the swap leaves an escaped or dead pin alone — the scroll is the reader's", () => {
+    for (const over of [{ escapedFromLock: true }, { isAtBottom: false }]) {
+      const pin = pinState(over);
+      const view = render(
+        <ConversationPin.Provider value={pin}>
+          {row(agentDone(`m9-${String(over.escapedFromLock ?? "dead")}`, "x"), {
+            startHeld: true,
+            estHeight: 180,
+          })}
+        </ConversationPin.Provider>,
+      );
+      act(() => FakeIO.latest().fire(true));
+      expect(pin.scrollTop).toBe(4000);
+      view.unmount();
+    }
+  });
+
+  /* jump-to-hit: landJump must release the pin BEFORE the native
+     scrollIntoView write — the in-flight spring can overwrite it before
+     its scroll event dispatches — and re-land the row while hydration
+     drift keeps moving it. */
+  const rect = (top: number, bottom: number) =>
+    ({
+      x: 0,
+      y: top,
+      top,
+      left: 0,
+      bottom,
+      right: 0,
+      width: 0,
+      height: bottom - top,
+      toJSON: () => ({}),
+    }) as DOMRect;
+
+  const portOf = (el: Element) => {
+    const port = document.createElement("div");
+    port.setAttribute("role", "log");
+    port.appendChild(el);
+    document.body.appendChild(port);
+    vi.spyOn(port, "getBoundingClientRect").mockImplementation(() =>
+      rect(0, 600),
+    );
+    return port;
+  };
+
+  test("an upward jump escapes the pin synchronously", () => {
+    const el = document.createElement("div");
+    const port = portOf(el);
+    vi.spyOn(el, "getBoundingClientRect").mockImplementation(() =>
+      rect(-500, -380),
+    );
+    const pin = pinState();
+    landJump(el, pin);
+    expect(pin.isAtBottom).toBe(false);
+    expect(pin.escapedFromLock).toBe(true);
+    port.remove();
+  });
+
+  test("a downward/in-view jump keeps the pin", () => {
+    const el = document.createElement("div");
+    const port = portOf(el);
+    vi.spyOn(el, "getBoundingClientRect").mockImplementation(() =>
+      rect(300, 420),
+    );
+    const pin = pinState();
+    landJump(el, pin);
+    expect(pin.isAtBottom).toBe(true);
+    expect(pin.escapedFromLock).toBe(false);
+    port.remove();
+  });
+
+  test("hydration drift re-lands the row until its offset goes quiet", () => {
+    const rafs: FrameRequestCallback[] = [];
+    const rafSpy = vi
+      .spyOn(globalThis, "requestAnimationFrame")
+      .mockImplementation((cb) => {
+        rafs.push(cb);
+        return rafs.length;
+      });
+    const flush = () => {
+      for (const cb of rafs.splice(0)) cb(0);
+    };
+    let elTop = -500;
+    const el = document.createElement("div");
+    const port = portOf(el);
+    vi.spyOn(el, "getBoundingClientRect").mockImplementation(() =>
+      rect(elTop, elTop + 120),
+    );
+    const siv = vi.fn();
+    const sivSpy = vi
+      .spyOn(Element.prototype, "scrollIntoView")
+      .mockImplementation(siv);
+    landJump(el, null);
+    expect(siv).toHaveBeenCalledTimes(1);
+    /* A stub hydration pushed the row below the port — next frame
+       re-lands it. */
+    elTop = 1000;
+    flush();
+    expect(siv).toHaveBeenCalledTimes(2);
+    /* Re-landed and quiet — the loop retires, later drift can't pull it. */
+    elTop = 200;
+    for (let i = 0; i < 12; i++) flush();
+    elTop = 1000;
+    flush();
+    expect(siv).toHaveBeenCalledTimes(2);
+    sivSpy.mockRestore();
+    rafSpy.mockRestore();
+    port.remove();
   });
 });

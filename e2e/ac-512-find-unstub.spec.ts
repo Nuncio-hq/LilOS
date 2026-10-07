@@ -104,6 +104,28 @@ test("AC-1: Cmd+F mounts held rows — a held row's text enters the DOM; the lap
       }
       return port?.scrollTop ?? -1;
     });
+  /* The row under the port's top edge and its offset below that edge —
+     what #537's hold preserves through a mass swap. scrollTop itself
+     legitimately moves under #570's estimated stubs (each born-stub
+     swap trades an estimate for the measured height, and the hold
+     writes that delta into scrollTop to keep the view still), so the
+     position asserts read the edge row, not the counter. */
+  const edgeRow = () =>
+    page.evaluate(() => {
+      const first = document.querySelector("[data-thread-panel] [data-msg]");
+      let port = first?.parentElement ?? null;
+      while (port && !/(auto|scroll)/.test(getComputedStyle(port).overflowY)) {
+        port = port.parentElement;
+      }
+      if (!port) return null;
+      const pt = port.getBoundingClientRect();
+      for (const row of port.querySelectorAll("[data-msg]")) {
+        const r = row.getBoundingClientRect();
+        if (r.bottom > pt.top)
+          return { id: row.getAttribute("data-msg"), off: r.top - pt.top };
+      }
+      return null;
+    });
   /* Lazy rows whose held flag contradicts their box vs the port rect
      (±1 px edge rows are IO-tie territory and don't count). */
   const badBoxRows = () =>
@@ -160,6 +182,7 @@ test("AC-1: Cmd+F mounts held rows — a held row's text enters the DOM; the lap
     );
   await expect.poll(settledTop, { timeout: 30_000 }).not.toBe(-1);
   const beforeTop = await portScrollTop();
+  const edgeBefore = await edgeRow();
   expect(beforeTop).toBeGreaterThan(NUDGE_PX);
   const nodesBefore = await page.evaluate(
     () => document.querySelectorAll("*").length,
@@ -199,26 +222,56 @@ test("AC-1: Cmd+F mounts held rows — a held row's text enters the DOM; the lap
   /* Ctrl+F — the find chord: every held row mounts; the probe phrase is
      DOM text a find-in-page could match. */
   await page.keyboard.press("Control+f");
-  const afterOpenTop = await openSettled;
+  await openSettled;
   await expect(panel.getByText("findprobe-alpha-turn2").first()).toBeAttached({
     timeout: 15_000,
   });
   const nodesOpen = await page.evaluate(
     () => document.querySelectorAll("*").length,
   );
-  /* (a) before the chord vs right after the open mount settles. */
-  expect(Math.abs(afterOpenTop - beforeTop)).toBeLessThanOrEqual(2);
+  /* (a) the open mount must not move the VIEW: the row under the port's
+     top edge rides at the same offset before the chord and after the
+     mount settles. scrollTop itself legitimately moves under #570's
+     estimated stubs — the hold writes the estimate→real deltas into it
+     to keep the edge still (#537's invariant, restated on the view). */
+  await expect
+    .poll(
+      async () => {
+        const e = await edgeRow();
+        return e && e.id === edgeBefore?.id
+          ? Math.abs(e.off - (edgeBefore?.off ?? 0))
+          : Number.POSITIVE_INFINITY;
+      },
+      { timeout: 15_000 },
+    )
+    .toBeLessThanOrEqual(2);
 
   /* The `?findUnstubNudge=` knob now models the find bar JUMPING to a
      match: it lands once the open mount has settled, through a real
      scrollTop write — the scroll-event path that escapes the bottom pin,
      so the floating ↓ appears. The jump is the reader's: the window must
-     never undo it. */
+     never undo it. The knob records the top it wrote — under #570's
+     estimated stubs the pre-chord scrollTop is no longer the jump's
+     base, so the assert reads the recorded landing. */
   await expect
     .poll(
-      async () => Math.abs((await portScrollTop()) - (beforeTop - NUDGE_PX)),
+      () =>
+        page.evaluate(
+          () =>
+            (window as unknown as { __findUnstubNudged?: number })
+              .__findUnstubNudged ?? -1,
+        ),
       { timeout: 15_000 },
     )
+    .toBeGreaterThanOrEqual(0);
+  const jumpedTo = (await page.evaluate(
+    () =>
+      (window as unknown as { __findUnstubNudged?: number }).__findUnstubNudged,
+  )) as number;
+  await expect
+    .poll(async () => Math.abs((await portScrollTop()) - jumpedTo), {
+      timeout: 15_000,
+    })
     .toBeLessThanOrEqual(2);
   const nudgedTop = await portScrollTop();
   const jumpButton = panel.locator("[role='log'] > button");
