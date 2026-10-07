@@ -40,8 +40,12 @@ test("AC-1/2 a reply renders exactly once while the answer row beats the stream"
   test.setTimeout(120_000);
   await page.goto(stack.webUrl);
   const aside = page.locator("aside");
+  /* 60 s, not the usual 30: under --repeat-each the previous iteration's
+     paced drain can still be clearing when the next page boots, and the
+     relay/warmup has once needed >30 s to paint the sidebar (repeat 18
+     of the x20 leg flaked here; the dup assertion never ran). */
   await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
-    timeout: 30_000,
+    timeout: 60_000,
   });
   const dmBtn = page.getByRole("button", {
     name: /open dm|set up later|message/i,
