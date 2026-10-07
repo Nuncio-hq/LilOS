@@ -340,6 +340,7 @@ export function Dm({
         markPending(res.conversation, res.rootMessage);
         navigation.navigate("Thread", {
           conversationId: res.conversation.id,
+          employeeId,
         });
       } catch (e) {
         Alert.alert("Couldn't send", describeError(e));
@@ -360,7 +361,7 @@ export function Dm({
       modelLogo={provider?.logo}
       modelUnavailable={!catalog.models.length && catalogUnavailable}
       onOpenSession={(id) =>
-        navigation.navigate("Thread", { conversationId: id })
+        navigation.navigate("Thread", { conversationId: id, employeeId })
       }
       onSend={send}
       unreachableNote={mac ? unreachableNoteFor(link, mac.name) : undefined}
