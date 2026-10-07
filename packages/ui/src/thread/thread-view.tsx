@@ -1,7 +1,6 @@
 import type { ChatStatus } from "ai";
 import { CheckIcon, Maximize2Icon, PlayIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { StickToBottomContext } from "use-stick-to-bottom";
 import { AccessPill } from "../chat/access-pill";
 import {
   ConversationKeepBottom,
@@ -19,6 +18,7 @@ import { useUiLayer } from "../chat/ui-layers";
 import {
   Conversation,
   ConversationContent,
+  type ConversationPin,
 } from "../components/ai-elements/conversation";
 import { Button } from "../components/ui/button";
 import { askKeyDown, pendingAsk } from "../conversation/ask-keys";
@@ -269,7 +269,7 @@ export function ThreadView({
      in-flight spring would overwrite it before its scroll event lands an
      escape) and keeps the row landed while born-stubs hydrate around it. */
   const bodyRef = useRef<HTMLDivElement>(null);
-  const convCtx = useRef<StickToBottomContext | null>(null);
+  const convPin = useRef<ConversationPin | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
   const flashedRef = useRef<string | null>(null);
   useEffect(() => {
@@ -283,7 +283,7 @@ export function ThreadView({
     );
     if (!el) return;
     flashedRef.current = scrollTo;
-    landJump(el, convCtx.current?.state ?? null);
+    landJump(el, convPin.current);
     setFlash(scrollTo);
     onScrolled?.();
   }, [scrollTo, thread.replies, onScrolled]);
@@ -467,7 +467,7 @@ export function ThreadView({
           unchanged. */}
       <Conversation
         className="min-h-0"
-        contextRef={convCtx}
+        pinRef={convPin}
         initial={jumpPending ? false : lazyRows ? "instant" : "smooth"}
       >
         {/* The composer sits below the scroller in normal flow — nothing

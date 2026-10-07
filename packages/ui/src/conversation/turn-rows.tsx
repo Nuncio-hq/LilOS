@@ -24,7 +24,7 @@ import type {
   Work,
 } from "../types";
 import { ReplyCards } from "./cards";
-import { useFindUnstub } from "./find-unstub";
+import { findAnchorActive, useFindUnstub } from "./find-unstub";
 import type { PlanAction } from "./plan-card";
 import type { QuestionAnswer } from "./question-card";
 import { AgentTurn, AttachmentChips, PrCard, UserTurn } from "./turns";
@@ -319,20 +319,32 @@ function LazyShell({
   }, [lazyOn, keep]);
 
   /* #570: a stub→real commit swaps the estimate for the measured height —
-   * the bottom edge the pin is glued to just moved. While the pin is
-   * engaged, re-pin to the MEASURED bottom in this commit (before paint):
-   * the library's smooth chase would crawl frames behind a hydration
-   * wave, and a mid-chase layout-clamp scroll event can escape the
-   * library's post-resize drop window on a slow box, killing the pin and
-   * stranding the port above the real bottom (CI: ac-570's open pin).
-   * Escaped/dead pins (a reader mid-thread, a find window) are skipped —
-   * their scroll stays theirs. */
+   * the bottom edge the pin is glued to just moved. Mark the hydration
+   * wake on the pin (the escape guard quarantines its scroll noise) and,
+   * while the reader hasn't escaped, re-pin to the MEASURED bottom in
+   * this commit (before paint): the library's smooth chase crawls frames
+   * behind a hydration wave, and a mid-chase layout-clamp scroll event
+   * can kill the library pin outright on a slow box, stranding the port
+   * above the real bottom (CI: ac-570's open pin). `escaped` is the
+   * guard's own reader-intent flag — a clamp-tripped `escapedFromLock`
+   * gets cleared here so the lock keeps tracking the measured bottom. */
   useLayoutEffect(() => {
     const swapped = wasStub.current && !held;
     wasStub.current = held;
     if (!swapped || !pin) return;
-    if (pin.isAtBottom && !pin.escapedFromLock)
-      pin.scrollTop = pin.calculatedTargetScrollTop;
+    /* Record this commit's wake: the hydration clock (un-attributed
+       up-scrolls are quarantined while it runs), the new layout max
+       (the next clamp event's landing is fingerprinted against it),
+       and the guard's re-pin chain. */
+    pin.hydratedAt.v = performance.now();
+    pin.noteMax?.();
+    pin.armReinstate?.();
+    /* The reader (guard-escaped) or a find window (top-edge hold owns
+       the port) stands down the re-pin. A pin the clamp already killed
+       is revived only when the port still sits on a clamp landing —
+       a real scroll position is never touched. */
+    if (pin.escaped.v || findAnchorActive(pin.state)) return;
+    if (pin.state.isAtBottom || pin.isClampTop?.()) pin.repin();
   });
 
   return (

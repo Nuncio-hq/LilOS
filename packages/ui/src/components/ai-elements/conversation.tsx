@@ -3,8 +3,15 @@
 import { Button } from "../ui/button";
 import { cn } from "../../lib/utils";
 import { ArrowDownIcon } from "lucide-react";
-import type { ComponentProps, ReactNode } from "react";
-import { createContext, useCallback, useEffect } from "react";
+import type { ComponentProps, ReactNode, RefObject } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+} from "react";
 import {
   type StickToBottomState,
   StickToBottom,
@@ -12,22 +19,73 @@ import {
 } from "use-stick-to-bottom";
 import { findAnchorActive } from "../../conversation/find-unstub";
 
-export type ConversationProps = ComponentProps<typeof StickToBottom>;
+export type ConversationProps = ComponentProps<typeof StickToBottom> & {
+  /* The port's pin object for callers that need to reach it before or
+     outside the tree (thread/focus jump-to-hit) — assigned by the
+     bridge, same shape as the ConversationPin context value. */
+  pinRef?: RefObject<ConversationPin | null>;
+};
 
-/* The pin's live `state` for rows that re-pin on hydrate (#570's
-   LazyShell). The object is stable for the StickToBottom instance, so
-   this context's value never changes and consumers never re-render on
-   pin flag flips. */
-export const ConversationPin = createContext<StickToBottomState | null>(null);
+/* #570: the pin the rows re-pin against — the library's live `state`
+   plus two fields only this port's own machinery may set:
+   - `hydratedAt` — performance.now() of the latest held→real commit; the
+     escape guard treats the commits' wake (height churn, layout clamps)
+     as layout noise for a quiet window after the last one.
+   - `escaped` — the READER's intent, set only by input events (wheel-up,
+     touch, nav keys) and decreasing JS scrollTop writes — never by the
+     library's deferred flag flips, which a clamp can trip on a slow box. */
+export interface ConversationPin {
+  state: StickToBottomState;
+  hydratedAt: { v: number };
+  escaped: { v: boolean };
+  /* Instant re-pin to the measured bottom: clears a stale clamp escape,
+     kills any in-flight spring, and refreshes the React-side pin flags —
+     everything the hydration commit edge needs in one call. */
+  repin: () => void;
+  /* Installed by the escape guard — optional because a commit can land
+     before the guard's effect runs. */
+  /* Record the current layout max so a later clamp event landing on it
+     is fingerprinted as layout, not a reader. */
+  noteMax?: () => void;
+  /* True when the port sits on a clamp landing: the live bottom edge or
+     a max recorded by an earlier commit — the dead-pin revive check. */
+  isClampTop?: () => boolean;
+  /* Re-arm the guard's bounded re-pin chain (each suspicious event or
+     hydration commit refreshes it). */
+  armReinstate?: () => void;
+}
+
+export const ConversationPin = createContext<ConversationPin | null>(null);
 
 const ConversationPinBridge = ({
   children,
+  pinRef,
 }: {
   children: ReactNode;
+  pinRef?: RefObject<ConversationPin | null>;
 }) => {
-  const { state } = useStickToBottomContext();
+  const { state, scrollToBottom } = useStickToBottomContext();
+  const pin = useMemo<ConversationPin>(
+    () => ({
+      state,
+      hydratedAt: { v: 0 },
+      escaped: { v: false },
+      repin: () => {
+        state.escapedFromLock = false;
+        void scrollToBottom({ animation: "instant" });
+      },
+    }),
+    [state, scrollToBottom],
+  );
+  useLayoutEffect(() => {
+    if (!pinRef) return;
+    pinRef.current = pin;
+    return () => {
+      pinRef.current = null;
+    };
+  }, [pin, pinRef]);
   return (
-    <ConversationPin.Provider value={state}>
+    <ConversationPin.Provider value={pin}>
       {children}
     </ConversationPin.Provider>
   );
@@ -65,6 +123,31 @@ const StickDropWindow = (): null => {
   return null;
 };
 
+/* e2e/dev knob — `?pinDebug=1` exposes the live pin state on the scroll
+   port (`port.__pin = { state }`) so a driving script can sample
+   isAtBottom/escapedFromLock/animation per frame. Read once at module
+   load, like `?stickDropMs=`. */
+const PIN_DEBUG = (() => {
+  if (typeof window === "undefined") return false;
+  return new URLSearchParams(window.location.search).has("pinDebug");
+})();
+
+/* Keys that scroll a focused scrollport — reader intent, not layout. */
+const SCROLL_KEYS = new Set([
+  "ArrowUp",
+  "ArrowDown",
+  "PageUp",
+  "PageDown",
+  "Home",
+  "End",
+  " ",
+]);
+
+/* How long after the last held→real commit the hydration wave still
+   counts as in flight — knob-delayed un-holds space commits ~60–100 ms
+   apart, so 300 ms bridges the gaps without lingering once it ends. */
+const HYDRATION_QUIET_MS = 300;
+
 /* #626: the library's upward-scroll escape rides a setTimeout(1) that a
    post-resize `resizeDifference` window can swallow — then `isAtBottom`
    stays stale-true and the still-running bottom-lock spring physically
@@ -72,24 +155,65 @@ const StickDropWindow = (): null => {
    the port snapped back to the bottom, so the ↓ never mounted). A wheel
    gesture escapes synchronously, but a drag/keyboard/programmatic scroll
    has only the droppable event path.
-   This guard owns the escape itself: any upward scroll leaving the
-   near-bottom band calls stopScroll — synchronous, no drop window — and
-   while the reader stays escaped it denies flag-only re-pins (a shrink
-   re-engaging the lock, a dropped near-flag refresh). scrollToBottom
-   callers keep escapedFromLock set, so intended pins aren't caught. */
+   #570 flips the same race inside out: a born-held stub hydrating
+   shorter than its estimate CLAMPS scrollTop — an un-attributed
+   up-scroll event whose deferred escape can land past the reset on a
+   slow box and kill the pin mid-open; and a coalesced event can even
+   read a taller scrollHeight than the clamp saw, landing the port
+   mid-document where "on the bottom edge" can't excuse it.
+   So this guard owns escape intent outright: the READER is wheel-up,
+   touch, a nav key, or a decreasing JS scrollTop write — everything
+   else during the hydration window is layout noise and the bounded
+   frame chain re-pins to the measured bottom until it drains. Outside
+   the window an off-edge up-scroll still escapes synchronously (#626's
+   drop-window fix stands). */
 const ConversationEscapeGuard = (): null => {
-  const { scrollRef, contentRef, state, stopScroll, scrollToBottom } =
+  const pin = useContext(ConversationPin);
+  const { scrollRef, contentRef, state, stopScroll } =
     useStickToBottomContext();
   useEffect(() => {
     const sc = scrollRef.current;
-    if (!sc) return;
+    if (!sc || !pin) return;
+    /* `?pinDebug=1` — the repro samples the live pin on the port. */
+    if (PIN_DEBUG) (sc as unknown as { __pin: unknown }).__pin = pin;
     let last = sc.scrollTop;
-    /* The reader's escape stands while they hold a position outside the
-       near-bottom band; being inside the band (their own scroll, a
-       shrink, a settle) re-arms the lock normally. */
-    let readerEscape = false;
     let cancelled = false;
     let rearmRaf = 0;
+    let rearmFrames = 0;
+    const escaped = pin.escaped;
+    const hydrating = () =>
+      performance.now() - pin.hydratedAt.v < HYDRATION_QUIET_MS;
+    const atEdge = () =>
+      sc.scrollHeight - sc.scrollTop - sc.clientHeight <= 1.5;
+    /* A browser clamp always lands scrollTop on a layout max
+       (scrollHeight − clientHeight). Every height change passes a
+       React commit (LazyShell bumps noteMax) or the content observer
+       below, so every max that ever existed is in {prevMax, staleMaxes} —
+       and every clamp landing is fingerprinted. An event coalesced past
+       later growth reads a STALE max: the exact CI strand shape. A
+       scrollbar drag or wheel lands anywhere else — not a clamp. */
+    let prevMax = sc.scrollHeight - sc.clientHeight;
+    const staleMaxes = new Set<number>();
+    const noteMax = () => {
+      const max = sc.scrollHeight - sc.clientHeight;
+      if (max === prevMax) return;
+      staleMaxes.add(prevMax);
+      if (staleMaxes.size > 24)
+        staleMaxes.delete(staleMaxes.values().next().value as number);
+      prevMax = max;
+    };
+    const isClampTop = () =>
+      atEdge() ||
+      /* 0 is the reader's top edge (an `initial={false}` jump-pending
+         mount), never a clamp worth reviving. */
+      (sc.scrollTop !== 0 &&
+        (sc.scrollTop === prevMax || staleMaxes.has(sc.scrollTop)));
+    pin.noteMax = noteMax;
+    pin.isClampTop = isClampTop;
+    const escape = () => {
+      escaped.v = true;
+      stopScroll();
+    };
 
     /* #570: while the pin is engaged the port must not let the browser's
        scroll anchor correct for height deltas above the view — a held
@@ -109,68 +233,114 @@ const ConversationEscapeGuard = (): null => {
       if (sc.style.overflowAnchor !== want) sc.style.overflowAnchor = want;
     };
 
-    /* A scroll event that moved UP but left the port on the bottom edge
-       is a layout clamp — content shrank under the pin — not a reader
-       scroll. Its escape rides the library's deferred 1 ms timeout, which
-       can land on either side of any single frame check, so the reinstate
-       runs a short frame chain instead of one shot: every frame the pin
-       is dead while the port still sits on the bottom edge, re-pin to the
-       measured bottom (the write carries ignoreScrollToTop, so the stale
-       event can't re-escape it). A real reader escape leaves the edge —
-       or sets readerEscape — and stops the chain. Each new clamp event
-       refreshes the budget, so a hydration wave is covered end to end. */
-    let rearmFrames = 0;
+    /* A dead pin sitting on a clamp landing (the current edge or a
+       recorded max) was killed by layout, not the reader — re-pin it.
+       Its library escape rides a deferred timeout that can land on
+       either side of any single frame check, so the reinstate runs a
+       short frame chain: each new suspicious event or hydration commit
+       refreshes the budget, so the wave is covered end to end. A real
+       reader escape sets escaped and stops the chain on the next
+       frame; a find window's top-edge hold owns the port for its whole
+       swap wave, so the re-pin stands down while it holds. */
     const reinstateStep = () => {
       rearmRaf = 0;
-      if (cancelled || readerEscape) return;
-      if (!state.isAtBottom) {
-        if (sc.scrollHeight - sc.scrollTop - sc.clientHeight > 1.5) return;
-        state.escapedFromLock = false;
-        void scrollToBottom({ animation: "instant" });
-      }
+      if (cancelled || escaped.v) return;
+      if (!state.isAtBottom && !findAnchorActive(state) && isClampTop())
+        pin.repin();
       if (--rearmFrames > 0) rearmRaf = requestAnimationFrame(reinstateStep);
     };
     const armReinstate = () => {
       rearmFrames = 8;
       if (!rearmRaf) rearmRaf = requestAnimationFrame(reinstateStep);
     };
+    pin.armReinstate = armReinstate;
 
     const guard = () => {
       const top = sc.scrollTop;
       const up = top < last;
       last = top;
+      /* The clamp fingerprint must see the max from BEFORE this event
+         — capture it, then record. */
+      const maxBefore = prevMax;
+      noteMax();
       reconcileAnchor();
       /* state.isNearBottom reads live scroll geometry — never the
          droppable flags. */
-      if (state.isNearBottom) {
-        readerEscape = false;
-        /* The pin's target is scrollHeight − 1 − clientHeight; a
-           browser clamp lands at scrollHeight − clientHeight. Anything
-           within that ~1.5 px band moving up is layout, not a reader. */
-        if (
-          up &&
-          state.isAtBottom &&
-          sc.scrollHeight - top - sc.clientHeight <= 1.5
-        )
-          armReinstate();
-      } else if (up) {
-        readerEscape = true;
-        stopScroll();
-      } else if (
-        readerEscape &&
-        state.isAtBottom &&
-        !state.escapedFromLock
+      if (state.isNearBottom) escaped.v = false;
+      if (!up) return;
+      /* An up-scroll landing on a layout max — the current edge, the
+         previous one (the event can beat the resize observer), or one a
+         few commits back (the event coalesced past growth: the CI
+         strand) — is a browser clamp, not the reader. During the
+         hydration wave ANY un-attributed up-scroll is quarantined the
+         same way: the reader's wheel/key/write was already caught
+         synchronously by the input paths. Quiet-window off-fingerprint
+         up-scrolls still kill the spring synchronously (#626) — but
+         through the LIBRARY flags only: `escaped` is input-proven
+         intent, so a misread noise escape can't strand the pin — the
+         next clamp-landing commit revives it through the chain. */
+      if (
+        atEdge() ||
+        (top !== 0 && (top === maxBefore || staleMaxes.has(top))) ||
+        hydrating()
       ) {
-        stopScroll();
+        armReinstate();
+        return;
       }
+      stopScroll();
     };
-    sc.addEventListener("scroll", guard, { passive: true });
+    const denyRepin = () => {
+      if (escaped.v && state.isAtBottom && !state.escapedFromLock)
+        stopScroll();
+    };
+    const onScroll = () => {
+      guard();
+      denyRepin();
+    };
+    sc.addEventListener("scroll", onScroll, { passive: true });
     /* Flag-only re-pins fire no scroll event — catch them on the same
        content resize that triggered them (the library's observer runs
        first, so its re-pin is already visible here). */
     const content = contentRef.current;
-    const ro = new ResizeObserver(guard);
+    const ro = new ResizeObserver(onScroll);
     if (content) ro.observe(content);
+
+    /* Reader intent arrives as INPUT, not scroll deltas: wheel-up and
+       touch drags on the port, nav keys while it's focused, a press in
+       the scrollbar gutter. Escape synchronously — before the in-flight
+       spring's next frame can overwrite the reader's landing. */
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaY < 0) escape();
+    };
+    const onTouchMove = () => escape();
+    const onKeyDown = (e: KeyboardEvent) => {
+      /* Keys aimed at a control belong to it — Space on a focused button
+         clicks, arrows in an editor move the caret — neither scrolls the
+         port, so neither is reader intent. */
+      if (
+        e.target instanceof Element &&
+        e.target.closest(
+          'input,textarea,select,button,[contenteditable]:not([contenteditable="false"])',
+        )
+      )
+        return;
+      if (SCROLL_KEYS.has(e.key)) escape();
+    };
+    const onPointerDown = (e: PointerEvent) => {
+      /* offsetX/Y are relative to the event's TARGET, not the port —
+         only a press targeting the port itself can land in the
+         scrollbar gutter; a bubbled press inside a row taller than the
+         port would otherwise misread as a gutter grab. */
+      if (
+        e.target === sc &&
+        (e.offsetX > sc.clientWidth || e.offsetY > sc.clientHeight)
+      )
+        escape();
+    };
+    sc.addEventListener("wheel", onWheel, { passive: true });
+    sc.addEventListener("touchmove", onTouchMove, { passive: true });
+    sc.addEventListener("keydown", onKeyDown);
+    sc.addEventListener("pointerdown", onPointerDown);
 
     /* #570: a programmatic scrollTop write (a spec's `port.scrollTop =
        0`, the find nudge knob) can be overwritten by the in-flight
@@ -208,10 +378,8 @@ const ConversationEscapeGuard = (): null => {
             after < before &&
             state.isAtBottom &&
             sc.scrollHeight - after - sc.clientHeight > 1.5
-          ) {
-            readerEscape = true;
-            stopScroll();
-          }
+          )
+            escape();
         },
       });
     }
@@ -219,12 +387,19 @@ const ConversationEscapeGuard = (): null => {
     return () => {
       cancelled = true;
       cancelAnimationFrame(rearmRaf);
-      sc.removeEventListener("scroll", guard);
+      pin.armReinstate = undefined;
+      pin.isClampTop = undefined;
+      pin.noteMax = undefined;
+      sc.removeEventListener("scroll", onScroll);
+      sc.removeEventListener("wheel", onWheel);
+      sc.removeEventListener("touchmove", onTouchMove);
+      sc.removeEventListener("keydown", onKeyDown);
+      sc.removeEventListener("pointerdown", onPointerDown);
       ro.disconnect();
       if (patched) Reflect.deleteProperty(sc, "scrollTop");
       if (!findAnchorActive(state)) sc.style.overflowAnchor = "";
     };
-  }, [scrollRef, contentRef, state, stopScroll, scrollToBottom]);
+  }, [pin, scrollRef, contentRef, state, stopScroll]);
   return null;
 };
 
@@ -238,6 +413,7 @@ const ConversationEscapeGuard = (): null => {
 export const Conversation = ({
   className,
   children,
+  pinRef,
   ...props
 }: ConversationProps) => (
   <StickToBottom
@@ -250,11 +426,11 @@ export const Conversation = ({
     role="log"
     {...props}
   >
-    <ConversationEscapeGuard />
-    {STICK_DROP_MS > 0 && <StickDropWindow />}
     {/* StickToBottom also accepts a function child; every Conversation
         caller passes nodes, so the union is narrowed for JSX. */}
-    <ConversationPinBridge>
+    <ConversationPinBridge pinRef={pinRef}>
+      <ConversationEscapeGuard />
+      {STICK_DROP_MS > 0 && <StickDropWindow />}
       {children as ReactNode}
     </ConversationPinBridge>
   </StickToBottom>

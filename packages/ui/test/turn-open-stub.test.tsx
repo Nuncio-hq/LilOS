@@ -11,7 +11,11 @@ import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import type { MutableRefObject } from "react";
 import type { StickToBottomState } from "use-stick-to-bottom";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { ConversationPin } from "../src/components/ai-elements/conversation";
+import {
+  Conversation,
+  ConversationContent,
+  ConversationPin,
+} from "../src/components/ai-elements/conversation";
 import { landJump } from "../src/conversation/jump-to-hit";
 import {
   estTurnHeight,
@@ -276,14 +280,22 @@ describe("AC-2: held-on-mount rows behave like held rows — mount on view, find
    bottom (ac-570's `extent.top` miss), and the pin's own spring can
    overwrite a jump's native write before its escape event lands. */
 describe("the pin tracks stub→real height swaps (#570 CI races)", () => {
-  const pinState = (over: Record<string, unknown> = {}) =>
-    ({
+  const pinState = (
+    over: Record<string, unknown> = {},
+    pinOver: Partial<ConversationPin> = {},
+  ): ConversationPin => ({
+    state: {
       isAtBottom: true,
       escapedFromLock: false,
       calculatedTargetScrollTop: 4321,
       scrollTop: 4000,
       ...over,
-    }) as unknown as StickToBottomState;
+    } as unknown as StickToBottomState,
+    hydratedAt: { v: 0 },
+    escaped: { v: false },
+    repin: vi.fn(),
+    ...pinOver,
+  });
 
   test("a born-held row hydrating re-pins to the measured bottom", () => {
     const pin = pinState();
@@ -295,27 +307,59 @@ describe("the pin tracks stub→real height swaps (#570 CI races)", () => {
         })}
       </ConversationPin.Provider>,
     );
-    /* The stub commit is not a swap — no write. */
-    expect(pin.scrollTop).toBe(4000);
+    /* The stub commit is not a swap — no re-pin, no hydration mark. */
+    expect(pin.repin).not.toHaveBeenCalled();
+    expect(pin.hydratedAt.v).toBe(0);
     act(() => FakeIO.latest().fire(true));
-    expect(pin.scrollTop).toBe(4321);
+    expect(pin.repin).toHaveBeenCalledTimes(1);
+    expect(pin.hydratedAt.v).toBeGreaterThan(0);
   });
 
-  test("the swap leaves an escaped or dead pin alone — the scroll is the reader's", () => {
-    for (const over of [{ escapedFromLock: true }, { isAtBottom: false }]) {
-      const pin = pinState(over);
-      const view = render(
-        <ConversationPin.Provider value={pin}>
-          {row(agentDone(`m9-${String(over.escapedFromLock ?? "dead")}`, "x"), {
-            startHeld: true,
-            estHeight: 180,
-          })}
-        </ConversationPin.Provider>,
-      );
-      act(() => FakeIO.latest().fire(true));
-      expect(pin.scrollTop).toBe(4000);
-      view.unmount();
-    }
+  test("the swap leaves an escaped reader alone — the scroll is theirs", () => {
+    const pin = pinState({}, { escaped: { v: true } });
+    render(
+      <ConversationPin.Provider value={pin}>
+        {row(agentDone("m9-escaped", "x"), {
+          startHeld: true,
+          estHeight: 180,
+        })}
+      </ConversationPin.Provider>,
+    );
+    act(() => FakeIO.latest().fire(true));
+    expect(pin.repin).not.toHaveBeenCalled();
+    /* The hydration mark still lands — the guard needs the wave's clock
+       even when this row's own re-pin stands down. */
+    expect(pin.hydratedAt.v).toBeGreaterThan(0);
+  });
+
+  test("a clamp-dead pin on a clamp landing is revived; a reader's scroll position is not", () => {
+    /* The library's deferred escape killed the pin (isAtBottom false)
+       but the port still sits where a clamp left it — revive it. */
+    const clamped = pinState(
+      { isAtBottom: false, escapedFromLock: true },
+      { isClampTop: () => true },
+    );
+    const v1 = render(
+      <ConversationPin.Provider value={clamped}>
+        {row(agentDone("m9-clamp", "x"), { startHeld: true, estHeight: 180 })}
+      </ConversationPin.Provider>,
+    );
+    act(() => FakeIO.latest().fire(true));
+    expect(clamped.repin).toHaveBeenCalledTimes(1);
+    v1.unmount();
+    /* Dead mid-document — a scrollbar drag the fingerprint can't claim
+       — stays dead across commits. */
+    const dragged = pinState(
+      { isAtBottom: false, escapedFromLock: true },
+      { isClampTop: () => false },
+    );
+    render(
+      <ConversationPin.Provider value={dragged}>
+        {row(agentDone("m9-drag", "x"), { startHeld: true, estHeight: 180 })}
+      </ConversationPin.Provider>,
+    );
+    act(() => FakeIO.latest().fire(true));
+    expect(dragged.repin).not.toHaveBeenCalled();
   });
 
   /* jump-to-hit: landJump must release the pin BEFORE the native
@@ -354,8 +398,9 @@ describe("the pin tracks stub→real height swaps (#570 CI races)", () => {
     );
     const pin = pinState();
     landJump(el, pin);
-    expect(pin.isAtBottom).toBe(false);
-    expect(pin.escapedFromLock).toBe(true);
+    expect(pin.state.isAtBottom).toBe(false);
+    expect(pin.state.escapedFromLock).toBe(true);
+    expect(pin.escaped.v).toBe(true);
     port.remove();
   });
 
@@ -367,8 +412,9 @@ describe("the pin tracks stub→real height swaps (#570 CI races)", () => {
     );
     const pin = pinState();
     landJump(el, pin);
-    expect(pin.isAtBottom).toBe(true);
-    expect(pin.escapedFromLock).toBe(false);
+    expect(pin.state.isAtBottom).toBe(true);
+    expect(pin.state.escapedFromLock).toBe(false);
+    expect(pin.escaped.v).toBe(false);
     port.remove();
   });
 
@@ -409,5 +455,138 @@ describe("the pin tracks stub→real height swaps (#570 CI races)", () => {
     sivSpy.mockRestore();
     rafSpy.mockRestore();
     port.remove();
+  });
+});
+
+/* The CI strand this guards: a stub hydrating shorter clamps scrollTop;
+   the browser's coalesced scroll event can dispatch after LATER commits
+   already grew scrollHeight — the event reads mid-document, and on the
+   old code the guard counted it as a reader escape and let the pin die
+   (ac-570 AC-1 on CI: top=3363 with h=22898). Now: scroll deltas alone
+   never set `escaped` — the pin's own reader-intent flag — and the
+   reinstate chain re-pins while the hydration wake is open. Only input
+   (wheel-up here) or a decreasing scrollTop write proves the reader. */
+describe("the escape guard quarantines hydration scroll noise (#570)", () => {
+  const rafs: FrameRequestCallback[] = [];
+  /* Instant re-pins re-queue a frame, and the scroll write rides a
+     promise `.then` — drain rAFs and microtasks until both go quiet. */
+  const flush = async () => {
+    for (let i = 0; i < 40 && rafs.length; i++) {
+      for (const cb of rafs.splice(0)) cb(0);
+      await Promise.resolve();
+    }
+  };
+
+  /* Write scrollTop the way a browser layout clamp does — through the
+     prototype accessor, bypassing the guard's own-property patch. */
+  const rawSet = (el: Element, v: number) => {
+    let p: object | null = Object.getPrototypeOf(el);
+    let d: PropertyDescriptor | undefined;
+    while (p && !d) {
+      d = Object.getOwnPropertyDescriptor(p, "scrollTop");
+      if (!d) p = Object.getPrototypeOf(p);
+    }
+    if (d?.set) d.set.call(el, v);
+    else (el as HTMLElement).scrollTop = v;
+  };
+
+  const mount = () => {
+    const pinRef: MutableRefObject<ConversationPin | null> = {
+      current: null,
+    };
+    const rafSpy = vi
+      .spyOn(globalThis, "requestAnimationFrame")
+      .mockImplementation((cb) => {
+        rafs.push(cb);
+        return rafs.length;
+      });
+    render(
+      <Conversation pinRef={pinRef}>
+        <ConversationContent>
+          <div>row</div>
+        </ConversationContent>
+      </Conversation>,
+    );
+    const wrap = document.querySelector('[role="log"]');
+    const sc = wrap?.querySelector("div");
+    if (!wrap || !sc || !pinRef.current)
+      throw new Error("no pin/scroller mounted");
+    /* happy-dom has no layout — pin the geometry the guard reads;
+       `h` is the live scrollHeight so commits can shrink/grow it. */
+    const geo = { h: 10000 };
+    Object.defineProperty(sc, "scrollHeight", {
+      get: () => geo.h,
+      configurable: true,
+    });
+    Object.defineProperty(sc, "clientHeight", {
+      get: () => 500,
+      configurable: true,
+    });
+    return { sc, pin: pinRef.current, rafSpy, geo };
+  };
+
+  test("a stale clamp event during hydration is noise — the chain re-pins", async () => {
+    const { sc, pin, rafSpy, geo } = mount();
+    const pinState = pin.state;
+    pinState.isAtBottom = true;
+    pin.hydratedAt.v = performance.now();
+    /* Pinned on the edge of the estimated extent. */
+    rawSet(sc, 9499);
+    sc.dispatchEvent(new Event("scroll"));
+    /* The CI strand, step by step: a stub hydrates SHORTER (h 10000→
+       8000), the browser clamps scrollTop to the new max 7500 — and the
+       scroll event is coalesced behind a GROWTH commit (h→30000) plus
+       the library's deferred escape, so it dispatches mid-document. */
+    geo.h = 8000;
+    pin.noteMax?.();
+    rawSet(sc, 7500);
+    geo.h = 30000;
+    pin.noteMax?.();
+    pinState.isAtBottom = false;
+    pinState.escapedFromLock = true;
+    sc.dispatchEvent(new Event("scroll"));
+    expect(pin.escaped.v).toBe(false);
+    /* The armed chain re-pins: escapedFromLock cleared, isAtBottom back,
+       port written to the measured bottom (scrollTop = h − 1 − ch). */
+    await flush();
+    expect(pinState.escapedFromLock).toBe(false);
+    expect(pinState.isAtBottom).toBe(true);
+    expect(sc.scrollTop).toBe(29499);
+    rafSpy.mockRestore();
+  });
+
+  test("a wheel-up during hydration is the reader — no re-pin", async () => {
+    const { sc, pin, rafSpy } = mount();
+    pin.state.isAtBottom = true;
+    pin.hydratedAt.v = performance.now();
+    rawSet(sc, 9499);
+    sc.dispatchEvent(new Event("scroll"));
+    const wheel = new Event("wheel") as WheelEvent;
+    Object.defineProperty(wheel, "deltaY", { value: -120 });
+    sc.dispatchEvent(wheel);
+    rawSet(sc, 3000);
+    sc.dispatchEvent(new Event("scroll"));
+    expect(pin.escaped.v).toBe(true);
+    await flush();
+    expect(pin.state.isAtBottom).toBe(false);
+    expect(sc.scrollTop).toBe(3000);
+    rafSpy.mockRestore();
+  });
+
+  test("a quiet-window up-scroll kills the spring but not the pin's comeback", async () => {
+    const { sc, pin, rafSpy } = mount();
+    pin.state.isAtBottom = true;
+    /* The wave ended long ago — a scrollbar-drag-like up-scroll escapes
+       synchronously (#626) yet stays recoverable: `escaped` is input
+       territory, the scroll path never sets it. */
+    pin.hydratedAt.v = performance.now() - 60_000;
+    rawSet(sc, 9499);
+    sc.dispatchEvent(new Event("scroll"));
+    rawSet(sc, 3000);
+    sc.dispatchEvent(new Event("scroll"));
+    expect(pin.state.isAtBottom).toBe(false);
+    expect(pin.state.escapedFromLock).toBe(true);
+    expect(pin.escaped.v).toBe(false);
+    rafSpy.mockRestore();
   });
 });

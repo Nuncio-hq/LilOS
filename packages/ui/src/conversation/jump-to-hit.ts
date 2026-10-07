@@ -4,27 +4,31 @@
    1. An in-flight bottom spring can overwrite the native write before its
       scroll event dispatches — the coalesced event then reads the
       spring's position, no escape lands, and the port is dragged back to
-      the bottom (CI: ac-570's jump target "not found"). Releasing the pin
-      BEFORE the jump — straight on the mutable state, the same move the
-      find window makes at open — leaves nothing to overwrite the write.
+      the bottom (CI: ac-570's jump target "not found"). Escaping on the
+      pin BEFORE the jump — the guard's own `escaped` flag plus the
+      mutable state, the same moves the find window makes at open —
+      leaves nothing to overwrite the write, and hydration commits along
+      the way stand down (`escaped.v` stays set).
    2. Born-stubs around the target keep hydrating after the jump lands —
       every estimate→real swap drifts the row's viewport position. The
       frame loop re-lands the row whenever drift pushes it out of the
       port and retires once its offset goes quiet (each stub hydrates
       once — the wave is finite) or a newer jump takes over. */
-import type { StickToBottomState } from "use-stick-to-bottom";
+import type { ConversationPin } from "../components/ai-elements/conversation";
 
 let jumpGen = 0;
 
-export function landJump(el: Element, pin: StickToBottomState | null): void {
+export function landJump(el: Element, pin: ConversationPin | null): void {
   const port = el.closest('[role="log"]');
   const pr = port?.getBoundingClientRect();
-  if (pin?.isAtBottom && pr && el.getBoundingClientRect().top < pr.top) {
+  if (pin && pr && el.getBoundingClientRect().top < pr.top) {
     /* The jump goes up — escape now, synchronously: the write about to
-       land can no longer be overwritten by the spring. A downward or
-       already-visible hit keeps the pin as it was. */
-    pin.escapedFromLock = true;
-    pin.isAtBottom = false;
+       land can no longer be overwritten by the spring, and the hydration
+       window's noise quarantine can't mistake it for a clamp. A downward
+       or already-visible hit keeps the pin as it was. */
+    pin.escaped.v = true;
+    pin.state.escapedFromLock = true;
+    pin.state.isAtBottom = false;
   }
   el.scrollIntoView({ block: "center" });
 

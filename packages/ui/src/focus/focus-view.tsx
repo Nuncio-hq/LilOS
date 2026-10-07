@@ -25,7 +25,6 @@ import {
   useRef,
   useState,
 } from "react";
-import type { StickToBottomContext } from "use-stick-to-bottom";
 import { AccessPill } from "../chat/access-pill";
 import {
   ConversationKeepBottom,
@@ -44,6 +43,7 @@ import { useUiLayer } from "../chat/ui-layers";
 import {
   Conversation,
   ConversationContent,
+  type ConversationPin,
 } from "../components/ai-elements/conversation";
 import {
   Queue,
@@ -429,7 +429,7 @@ export function FocusView({
      in-flight spring would overwrite it before its scroll event lands an
      escape) and keeps the row landed while born-stubs hydrate around it. */
   const turnsRef = useRef<HTMLElement>(null);
-  const convCtx = useRef<StickToBottomContext | null>(null);
+  const convPin = useRef<ConversationPin | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
   const flashedRef = useRef<string | null>(null);
   useEffect(() => {
@@ -443,7 +443,7 @@ export function FocusView({
     );
     if (!el) return;
     flashedRef.current = scrollTo;
-    landJump(el, convCtx.current?.state ?? null);
+    landJump(el, convPin.current);
     setFlash(scrollTo);
     onScrolled?.();
   }, [scrollTo, thread.replies, onScrolled]);
@@ -1013,7 +1013,7 @@ export function FocusView({
               chase. */}
           <Conversation
             className="min-h-0 [mask-image:linear-gradient(to_bottom,transparent,#000_28px)]"
-            contextRef={convCtx}
+            pinRef={convPin}
             initial={jumpPending ? false : lazyRows ? "instant" : "smooth"}
           >
             <ConversationContent
