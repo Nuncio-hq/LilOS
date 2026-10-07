@@ -715,10 +715,17 @@ export class HermesEngine {
         description:
           "session.rewind maps to hermes `session.undo` on WS sessions (soft-deletes the tail on disk, looped N times). ACP sessions expose no history undo — they answer METHOD_NOT_FOUND.",
       },
-      /* #581: WS-only like rewind — `session.workspace.move` re-homes the
-         stored session AND the live agent follows; ACP has no re-home, so
-         the capability stays off on that driver. */
-      ...(this.opts.acp ? [] : [WORKSPACE_MOVE_CAPABILITY]),
+      {
+        ...WORKSPACE_MOVE_CAPABILITY,
+        /* #581: real only for WS sessions — `session.workspace.move`
+           re-homes the stored session AND the live agent follows. ACP
+           sessions have no re-home: `session.moveWorkspace` answers with
+           the typed error (same shape as rewind above). Declared
+           unconditionally like REWIND — `opts.acp` is the driver's
+           config, not the session's transport. */
+        description:
+          "session.moveWorkspace re-homes the session's working folder over `session.workspace.move` (WS sessions; the live agent follows). ACP sessions expose no workspace re-home — they answer the typed error.",
+      },
     ];
     if (this.opts.acp) {
       capabilities.push({
