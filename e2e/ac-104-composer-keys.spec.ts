@@ -232,6 +232,53 @@ test("AC-5 ↑ recalls the last sent message — thread, then home composer", as
   await page.screenshot({ path: `${SHOTS}/ac-5-home-recalled.png` });
 });
 
+/* #700: AC-5's flake was a positional-send race, not a recall mix-up. The
+   first send resolves `conversations.open` → navigates to the thread URL —
+   but `openConv` (and so the panel's reply composer) only exists once the
+   scoped `conversations.summaries` answer lands. In that gap the only
+   textarea on the page is the HOME composer, so `send()`'s
+   `textarea.last()` filled it and minted a second top-level conversation:
+   "second reply" became its own root, and the home ↑ rightly recalled the
+   newest top-level message — conv2's root (CI job 112651194005 received
+   exactly that). LILOS_SUMMARY_DELAY_MS holds every summaries answer so the
+   mount gap stays open long enough to make the mis-aim deterministic —
+   the same knob AC-660 used for its openConv window. */
+test("AC-700 ↑ recall stays per-composer while the thread's summary is held back", async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  const stack = await bootStack("keysd", await pickPorts(), {
+    LILOS_SUMMARY_DELAY_MS: "2000",
+  });
+  try {
+    await dmDefault(stack, page);
+    await send(page, "first root: pick a color");
+    // No panel wait — this send's `textarea.last()` must land inside the
+    // held-open mount gap, on the home composer (the buggy aim).
+    await send(page, "second reply: make it blue");
+    await expect(page.locator("[data-thread-panel]")).toBeVisible({
+      timeout: 30_000,
+    });
+    const box = page.locator("textarea").last();
+    await box.click();
+    await page.keyboard.press("ArrowUp");
+    await expect(box).toHaveValue("second reply: make it blue");
+
+    // Home composer: the feed row gates the summaries snapshot landing
+    // before the one-shot ↑ reads it.
+    await page.goto(`${stack.webUrl}/dm/${employeeIdFromUrl(page)}`);
+    await expect(
+      page.getByText("first root: pick a color").first(),
+    ).toBeVisible({ timeout: 30_000 });
+    const home = page.locator("textarea").first();
+    await home.click();
+    await page.keyboard.press("ArrowUp");
+    await expect(home).toHaveValue("first root: pick a color");
+  } finally {
+    await stack.stop();
+  }
+});
+
 test("AC-6 the Stop button's label names the real shortcut — ⌘.", async ({
   page,
 }) => {
