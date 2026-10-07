@@ -4,6 +4,7 @@ import {
   type SessionModel,
   sendKeyDone,
   sendKeyFor,
+  shouldClearPending,
   toStatusComponents,
 } from "@lilos/client-runtime";
 import type {
@@ -439,7 +440,23 @@ export function DmPage() {
         .sort((a, b) => a.createdAt - b.createdAt),
     [summaries, channel],
   );
-  const openConv = convs.find((c) => c.id === conversationId);
+  /* #645: the open thread must not WAIT on the summaries fetch — it is the
+     enrichment layer (root text, previews, counts), and under load it
+     landed after the send that opened the conversation (or never, once
+     every refresh outlasted the request timeout), so `openConv` resolved
+     late or stayed undefined and the thread panel rendered nothing.
+     `relay.conversations` is push-fed by `conversation.updated`/
+     `conversations.list` — the authority for the conversation's
+     existence, and the ONLY source here: a summary fallback would swap
+     `openConv`'s identity the moment the row landed, tearing menus
+     mounted off the thread (ac-110's Open-in-editor). Summaries still
+     qualify the feed's rows (and deliberately drop retired sys-notes);
+     the open URL names a real conversation, so mount it the moment the
+     push feed carries it. */
+  const allConvs = useAtom(relay.conversations);
+  const openConv = allConvs.find(
+    (c) => c.id === conversationId && c.channelId === channel?.id,
+  );
 
   /* #340 AC-2b: the session's `workbench_open` opens the Workbench — Focus
      carries it, so a spot for another view navigates there first; the
@@ -1020,7 +1037,12 @@ export function DmPage() {
     ? models[openConv.engineRef]
     : undefined;
   useEffect(() => {
-    if (openConv && openModel?.live) clearPending(openConv.id);
+    /* #645: `shouldClearPending` is the observed-turn rule — clearing only
+       on `live` latched the marker forever after a folded replay (composer
+       stuck on "…is working. Enter steers this turn…"); clearing on a
+       stale terminal turn would drop `running` in the send→`turn.started`
+       gap and lift the #606 pick-hold early. */
+    if (openConv && shouldClearPending(openModel)) clearPending(openConv.id);
   }, [openConv, openModel]);
 
   /* `@` mentions (#105): every employee in the Employees section, and — when

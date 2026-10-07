@@ -43,12 +43,16 @@ import {
   $modelPicks,
   $modelVisibility,
   $pendingOpens,
+  $sendingDm,
   $wsPicks,
   clearPending,
+  clearSending,
   markPending,
+  markSending,
   refreshModelCatalog,
   watchDm,
 } from "../dm-store";
+import { draftFor, setDraft } from "../draft-store";
 import { $client, $link, $welcome } from "../link";
 import { describeError, toneOf, unreachableNoteFor } from "../mapping";
 import { $connections } from "../paired-macs";
@@ -106,6 +110,7 @@ export function Dm({
   const wsPicks = useStore($wsPicks);
   const modelPicks = useStore($modelPicks);
   const pending = useStore($pendingOpens);
+  const sending = useStore($sendingDm);
   const prsMap = useStore($prs);
   const now = useNow();
 
@@ -203,6 +208,9 @@ export function Dm({
         openAsks,
         pending,
         prs: prsMap,
+        ...(sending.get(employeeId)
+          ? { sending: sending.get(employeeId) }
+          : {}),
         now,
       })
     : [];
@@ -298,6 +306,9 @@ export function Dm({
   const send = (text: string) => {
     const c = client;
     if (!c) return;
+    /* #600: the draft clears on send — show the row at once instead of
+       leaving an empty beat until conversations.open answers. */
+    markSending(employeeId, text);
     /* #552: the open's key belongs to the draft — the failure path
        refills the composer with the same text, so the resend repeats the
        key and the relay answers the thread it already stored. */
@@ -335,6 +346,8 @@ export function Dm({
       } catch (e) {
         Alert.alert("Couldn't send", describeError(e));
         setPrefill({ text });
+      } finally {
+        clearSending(employeeId);
       }
     })();
   };
@@ -353,6 +366,9 @@ export function Dm({
       }
       onSend={send}
       unreachableNote={mac ? unreachableNoteFor(link, mac.name) : undefined}
+      /* #556 AC-2: the employee's new-thread draft persists device-local. */
+      initialDraft={draftFor(`dm:${employeeId}`)}
+      onDraftChange={(text) => setDraft(`dm:${employeeId}`, text)}
       onPickFolder={() => navigation.navigate("FolderPicker", { employeeId })}
       {...(catalog.models.length
         ? {

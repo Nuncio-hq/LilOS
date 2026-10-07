@@ -13,10 +13,12 @@ import {
   grantPills,
 } from "./approval-copy";
 
+import { grantRows } from "./grant-rows";
 import { type PlanAction, PlanCard } from "./plan-card";
 import { PrCard } from "./pr-badges";
 import { type QuestionAnswer, QuestionCard } from "./question-card";
 import { isAnswerableQuestion } from "./question-gate";
+import { replyActionsSheet } from "./reply-actions";
 import { StepRow, tool } from "./step-row";
 import { SubagentsCard, SubagentsLink } from "./subagents";
 import type {
@@ -146,7 +148,14 @@ export function AgentTurn({
           <SubagentsCard agents={e.subagents} onOpen={onOpenSubagent} />
         ))}
       {e.text ? (
-        <Prose text={e.text} />
+        /* #556 AC-1: long-press anywhere on the reply offers Copy / Share
+           of its raw markdown (the same gesture code blocks already use). */
+        <Pressable
+          onLongPress={() => replyActionsSheet(e.text ?? "")}
+          accessibilityHint="Long-press for copy and share options"
+        >
+          <Prose text={e.text} />
+        </Pressable>
       ) : (
         writing && (
           <Pulse>
@@ -408,11 +417,9 @@ function ApprovalCard({
   const d = describeAsk(a.command);
   const isFileAsk = !!d?.detail && !d.detail.startsWith("{");
   const [showArgs, setShowArgs] = useState(false);
-  /* #601: Deny splits out of the option list — the grants wrap in the
-     left zone while Deny keeps its own weight at the trailing edge, so
-     a wrap never orphans it onto a second row. */
-  const grants = grantPills(a).filter((o) => o !== "deny");
-  const hasDeny = grantPills(a).includes("deny");
+  /* #687: row assignment comes from grantRows — grants pair left-to-right
+     and Deny trails the last grant row on its baseline, so it can never
+     float vertically centred between two wrapped rows. */
   return (
     // Its own responder, so a tap on the card never opens the row under it.
     <View onStartShouldSetResponder={() => true}>
@@ -472,52 +479,60 @@ function ApprovalCard({
             </View>
           </View>
         )}
-        {/* #601: the ask's own options, its own order — the grants wrap
-            in the left zone with the first prominent like the Mac's
-            first action, while Deny keeps its own weight pinned to the
-            trailing edge (muted fill, destructive label) so a wrap never
-            orphans it onto a second row. A pre-options row (prototype)
-            falls back to Approve + Deny via grantPills. */}
-        <View className="mt-3 flex-row items-center gap-2">
-          <View className="flex-1 flex-row flex-wrap items-center gap-2">
-            {a.kind === "approval" && onGrant
-              ? grants.map((opt, i) => (
+        {/* #687: the ask's own options in its order, laid out as
+            grantRows rows — the first grant stays prominent like the
+            Mac's first action and Deny pins to the trailing edge of its
+            assigned row (muted fill, destructive label). A pre-options
+            row (prototype) falls back to Approve + Deny via grantPills. */}
+        {a.kind === "approval" && onGrant ? (
+          grantRows(grantPills(a)).map((row, ri) => (
+            <View
+              key={row.join(":")}
+              className={`flex-row items-center gap-2 ${ri === 0 ? "mt-3" : "mt-2"}`}
+            >
+              {row.map((opt, i) =>
+                opt === "deny" ? (
+                  <View key={opt} className="ml-auto">
+                    <Pill
+                      label={GRANT_LABEL.deny}
+                      variant="destructive"
+                      disabled={stale}
+                      onPress={() => onGrant(a.id, "deny")}
+                    />
+                  </View>
+                ) : (
                   <Pill
                     key={opt}
                     label={GRANT_LABEL[opt]}
-                    variant={i === 0 ? undefined : "soft"}
+                    variant={ri === 0 && i === 0 ? undefined : "soft"}
                     disabled={stale}
                     onPress={() => onGrant(a.id, opt)}
                   />
-                ))
-              : a.kind !== "question" && (
-                  <Pill
-                    label="Approve"
-                    disabled={stale}
-                    onPress={() => onApprove(a.id)}
-                  />
-                )}
-          </View>
-          {a.kind === "approval" && onGrant ? (
-            hasDeny && (
+                ),
+              )}
+            </View>
+          ))
+        ) : (
+          <View className="mt-3 flex-row items-center gap-2">
+            {a.kind !== "question" && (
               <Pill
-                label={GRANT_LABEL.deny}
+                label="Approve"
+                disabled={stale}
+                onPress={() => onApprove(a.id)}
+              />
+            )}
+            <View className="ml-auto">
+              <Pill
+                label="Deny"
                 variant="destructive"
                 disabled={stale}
-                onPress={() => onGrant(a.id, "deny")}
+                onPress={() => onDeny(a.id)}
               />
-            )
-          ) : (
-            <Pill
-              label="Deny"
-              variant="destructive"
-              disabled={stale}
-              onPress={() => onDeny(a.id)}
-            />
-          )}
-        </View>
+            </View>
+          </View>
+        )}
         {stale && answerHint && (
-          <AppText size="xs" tone="muted" className="mt-1.5">
+          <AppText size="xs" tone="muted" className="mt-2 pb-1">
             {answerHint}
           </AppText>
         )}

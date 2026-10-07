@@ -17,6 +17,7 @@ import type {
 } from "@lilos/ui-native";
 import { atom, type ReadableAtom } from "nanostores";
 import { toModelCatalog } from "./dm-model";
+import { resetDrafts } from "./draft-store";
 import { watchPrs } from "./prs";
 
 /* Shared DM state (#156): open asks, folder recents, the engine model
@@ -49,6 +50,27 @@ export const $modelPicks = atom<Record<string, ModelPick>>({});
 export const $pendingOpens = atom<
   Map<string, { conversation: Conversation; root: AppMessage }>
 >(new Map());
+
+/* #600: a send in flight before `conversations.open` answers — the DM
+   shows the row at once instead of an empty beat after the draft clears.
+   Keyed by employee: one compose box per DM. */
+export const $sendingDm = atom<Map<string, { text: string; at: number }>>(
+  new Map(),
+);
+
+export function markSending(employeeId: string, text: string): void {
+  const next = new Map($sendingDm.get());
+  next.set(employeeId, { text, at: Date.now() });
+  $sendingDm.set(next);
+}
+
+export function clearSending(employeeId: string): void {
+  const cur = $sendingDm.get();
+  if (!cur.has(employeeId)) return;
+  const next = new Map(cur);
+  next.delete(employeeId);
+  $sendingDm.set(next);
+}
 /** `workbench.opened` events per conversation (#340 AC-2b) — the tappable
     "look at this" cards appended to the thread, newest last. */
 export const $wbCards = atom<
@@ -300,5 +322,8 @@ export function resetDmStore(): void {
   $wsPicks.set({});
   $modelPicks.set({});
   $pendingOpens.set(new Map());
+  $sendingDm.set(new Map());
   $wbCards.set({});
+  /* #556: drafts belong to the Mac's conversations — forget takes them. */
+  resetDrafts();
 }

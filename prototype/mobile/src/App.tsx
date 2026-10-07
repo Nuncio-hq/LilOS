@@ -5,6 +5,7 @@ import {
   BackgroundSheet,
   buildPairingUrl,
   Choice,
+  type CodeEntry,
   ConnectedScreen,
   ConnectingScreen,
   type ConnectingState,
@@ -133,8 +134,8 @@ type Routes = {
   Welcome: undefined;
   Pair: undefined;
   Scan: undefined;
-  Manual: undefined;
-  Connecting: { offer: PairingOffer };
+  Manual: { reenter?: boolean } | undefined;
+  Connecting: { offer: PairingOffer; entry?: CodeEntry };
   Connected: undefined;
   Tabs: NavigatorScreenParams<TabRoutes>;
   Dm: { employeeId: string };
@@ -185,6 +186,17 @@ function Pair({ navigation }: Props<"Pair">) {
   );
 }
 
+/* #556: composer drafts survive navigation within the run — a plain Map
+   mirrors what the real app persists to disk per conversation/employee. */
+const drafts = new Map<string, string>();
+const draftProps = (key: string) => ({
+  initialDraft: drafts.get(key),
+  onDraftChange: (text: string) => {
+    if (text === "") drafts.delete(key);
+    else drafts.set(key, text);
+  },
+});
+
 // ── Step 3: scan (camera + permission live here, not in ui-native) ─────────
 
 function Scan({ navigation }: Props<"Scan">) {
@@ -217,7 +229,7 @@ function Scan({ navigation }: Props<"Scan">) {
       }
       locked.current = true;
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      navigation.navigate("Connecting", { offer });
+      navigation.navigate("Connecting", { offer, entry: "scanned" });
     },
     [navigation],
   );
@@ -268,11 +280,14 @@ function Scan({ navigation }: Props<"Scan">) {
   );
 }
 
-function Manual({ navigation }: Props<"Manual">) {
+function Manual({ navigation, route }: Props<"Manual">) {
   // Push, so Cancel on Connecting comes back to the filled-in form.
   return (
     <ManualCodeScreen
-      onSubmit={(offer) => navigation.navigate("Connecting", { offer })}
+      reenter={route.params?.reenter}
+      onSubmit={(offer) =>
+        navigation.navigate("Connecting", { offer, entry: "typed" })
+      }
     />
   );
 }
@@ -280,7 +295,7 @@ function Manual({ navigation }: Props<"Manual">) {
 // ── Step 4–5 ────────────────────────────────────────────────────────────────
 
 function Connecting({ navigation, route }: Props<"Connecting">) {
-  const { offer } = route.params;
+  const { offer, entry } = route.params;
   const [state, setState] = useState<ConnectingState>("connecting");
   const [retryAfter, setRetryAfter] = useState<number | undefined>(undefined);
   const [attempt, setAttempt] = useState(0);
@@ -331,8 +346,14 @@ function Connecting({ navigation, route }: Props<"Connecting">) {
         setState("connecting");
         setAttempt((a) => a + 1);
       }}
+      entry={entry}
       onRescan={() => navigation.popTo("Scan")}
-      onManual={() => navigation.popTo("Manual")}
+      onManual={() =>
+        navigation.popTo(
+          "Manual",
+          entry === "typed" ? { reenter: true } : undefined,
+        )
+      }
     />
   );
 }
@@ -553,6 +574,7 @@ function Dm({ navigation, route }: Props<"Dm">) {
       }}
       onPickFolder={() => navigation.navigate("FolderPicker")}
       onPickModel={() => navigation.navigate("ModelPicker", {})}
+      {...draftProps(`dm:${employee.id}`)}
     />
   );
 }
@@ -604,7 +626,7 @@ function Thread({ navigation, route }: Props<"Thread">) {
       unstable_headerRightItems: () => [
         {
           type: "button",
-          label: "Session info",
+          label: "Thread info",
           icon: { type: "sfSymbol", name: "info.circle" },
           onPress: info,
         },
@@ -647,6 +669,7 @@ function Thread({ navigation, route }: Props<"Thread">) {
       }}
       onOpenPlan={() => navigation.navigate("Plan", { thread: t.id })}
       prefill={prefill}
+      {...draftProps(`thread:${t.id}`)}
     />
   );
 }

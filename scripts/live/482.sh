@@ -114,6 +114,12 @@ fi
 export LILOS_ENGINE=hermes
 export LILOS_REPO_ROOT="$PWD"
 
+# #642: connect the `lilos` plugin on the scratch HERMES_HOME exactly like
+# connect.ts — sessions must offer lilos_* tools, not log "still not
+# loaded". The leg's session.start runs under `default`.
+. scripts/live/lib/lilos-plugin.sh
+lilos_connect_plugin
+
 echo "== issue-482 live leg: engine=hermes label=${LABEL} (isolated HOME=${HOME}) =="
 if bun scripts/live/482.ts; then
   echo "RESULT: PASS (engine=hermes, label=${LABEL})"

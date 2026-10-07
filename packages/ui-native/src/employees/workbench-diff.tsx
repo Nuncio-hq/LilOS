@@ -37,7 +37,7 @@ export function WbDiffSheet({
         <AppText tone="muted" className="text-center">
           {focus
             ? `No recorded edits to ${focus} yet.`
-            : "No recorded edits in this session yet."}
+            : "No recorded edits in this thread yet."}
         </AppText>
       )}
       {!!rows.length && (

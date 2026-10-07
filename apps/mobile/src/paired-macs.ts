@@ -1,5 +1,7 @@
+import type { PairingOffer } from "@lilos/ui-native";
 import * as SecureStore from "expo-secure-store";
 import { atom } from "nanostores";
+import { resetDmStore } from "./dm-store";
 
 /* Paired Macs (#154). The UI shows one Mac for now, but connections are a
    list keyed by id so a second Mac is additive, not a migration. The list —
@@ -68,14 +70,27 @@ export async function touchMac(id: string): Promise<void> {
   );
 }
 
-/** AC-6: Forget drops the credential AND the cached directory. */
+/** AC-6: Forget drops the credential AND the cached directory. #600: and
+   the DM picks — a fresh pairing must not inherit the old Mac's folder
+   and model choices (previously only the demo reset them). */
 export async function forgetMacs(
   clearCache: () => Promise<void>,
 ): Promise<void> {
   await SecureStore.deleteItemAsync(KEY);
   await clearCache();
+  resetDmStore();
   $connections.set([]);
   $phase.set("onboarding");
+}
+
+/** #600: a pair offer while already paired is "Switch to <new Mac>?" —
+   true only when the offer is for a DIFFERENT Mac (same host = the code
+   the current Mac just minted; re-entering it silently re-pairs). */
+export function isOtherMacOffer(
+  offer: PairingOffer,
+  current: PairedMac | undefined,
+): boolean {
+  return current !== undefined && offer.host !== current.host;
 }
 
 /**
@@ -101,7 +116,20 @@ export const ROUTE_LABEL: Record<Route, string> = {
   local: "on this network",
 };
 
-/** "my-mac.tail0000.ts.net" → "my-mac" when the QR had no name. */
+/** "my-mac.tail0000.ts.net" → "my-mac" when the QR had no name. An IP
+   literal (or localhost) is never a name — "172" is not a Mac — so the
+   card falls back to "Your Mac" (#688 AC-2). */
 export function fallbackName(host: string): string {
-  return host.split(".")[0]?.split(":")[0] || host;
+  const first = host.startsWith("[")
+    ? (host.match(/^\[(.*?)\]/)?.[1] ?? host)
+    : (host.split(":")[0] ?? "");
+  if (
+    /^\d{1,3}(\.\d{1,3}){3}$/.test(first) ||
+    first.includes("::") ||
+    /^\[.*\]$/.test(first) ||
+    first === "localhost" ||
+    /^\d+$/.test(first)
+  )
+    return "Your Mac";
+  return host.split(".")[0]?.split(":")[0] || "Your Mac";
 }

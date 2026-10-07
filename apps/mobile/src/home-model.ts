@@ -174,7 +174,7 @@ export function toEmployeeRow(
       now:
         staleNote +
         (pending.length === 1
-          ? `Waiting on you · ${sessionLabel(oldest.conversationId, wire)}`
+          ? `Needs you · ${sessionLabel(oldest.conversationId, wire)}`
           : `${pending.length} need you`),
       when: ageLabel(oldest.createdAt, nowMs),
       ...(stale ? { lastKnown: true as const } : {}),

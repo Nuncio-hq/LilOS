@@ -829,3 +829,20 @@ export function reduceSessionEvents(
 ): SessionModel {
   return new SessionReducer(sessionId).apply(events, snapshot);
 }
+
+/**
+ * #645: whether a conversation's "submitted" marker (armed on send, kept
+ * through the send→`turn.started` gap) may clear for this session model.
+ * True once the turn is OBSERVED: `live` now (the live card takes over)
+ * or folded to a terminal phase with events past the attach watermark —
+ * one replay can batch `turn.started`+`turn.completed` so `live` never
+ * reads true, and clearing only on `live` latched the marker forever.
+ * Replayed history — turns finished before attach, carrying neither flag —
+ * must NOT clear: a stale terminal turn would disarm the marker inside the
+ * send→`turn.started` gap and lift the #606 pick-hold early.
+ */
+export function shouldClearPending(model?: SessionModel): boolean {
+  if (!model) return false;
+  if (model.live) return true;
+  return model.turns.some((t) => t.liveAttached && TERMINAL.has(t.phase));
+}

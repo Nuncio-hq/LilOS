@@ -61,6 +61,7 @@ export {
   type SessionModel,
   SessionReducer,
   type SubagentModel,
+  shouldClearPending,
   type TurnModel,
   type TurnPhase,
   type TurnPlan,

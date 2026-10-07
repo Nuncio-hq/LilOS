@@ -248,6 +248,11 @@ export interface FakeEngineOptions {
   /** #431: per-session replay log bound — defaults to EVENT_LOG_CAP;
       tests pass a small value to exercise `truncated`. */
   eventLogCap?: number;
+  /** #621 e2e hook (`--ask-open-delay`): hold each approval before
+      `request.opened` emits — on a loaded box the approval card paints
+      well after the gated step, so ask-driving helpers must survive a
+      late card. `0`/unset opens immediately (production). */
+  askOpenDelayMs?: number;
 }
 
 /**
@@ -279,6 +284,7 @@ export class FakeEngine {
   private policy: ApprovalPolicy = "smart";
   private readonly sessionNamespace: string;
   private readonly eventLogCap: number;
+  private readonly askOpenDelayMs: number;
   private sessionCounter = 0;
   private refCounter = 0;
   private turnCounter = 0;
@@ -289,6 +295,7 @@ export class FakeEngine {
     this.caps = opts.capabilities ?? {};
     this.sessionNamespace = opts.sessionNamespace ?? randomNamespace();
     this.eventLogCap = opts.eventLogCap ?? EVENT_LOG_CAP;
+    this.askOpenDelayMs = opts.askOpenDelayMs ?? 0;
   }
 
   private readonly caps: Partial<Record<KnownCapability, boolean>>;
@@ -2074,6 +2081,10 @@ export class FakeEngine {
     turnId: string,
     step: FakeStep,
   ): Promise<ApprovalOutcome> {
+    if (this.askOpenDelayMs > 0) {
+      await new Promise((r) => setTimeout(r, this.askOpenDelayMs));
+      if (s.turn?.interrupted) throw new Interrupted();
+    }
     const requestId = `r${++s.requestCounter}`;
     const command = FakeEngine.stepCommand(step);
     const request = {

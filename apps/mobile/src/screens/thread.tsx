@@ -58,6 +58,7 @@ import {
   refreshModelCatalog,
   watchDm,
 } from "../dm-store";
+import { draftFor, setDraft } from "../draft-store";
 import { $client, $link, $welcome, linkUnreachable } from "../link";
 import { describeError, unreachableNoteFor } from "../mapping";
 import { $connections } from "../paired-macs";
@@ -74,7 +75,7 @@ import {
 /* #157 — the live thread: messages.list + channel.subscribe resume (AC-1),
    engine turns projected live through sessionFeed -> reduceSessionEvents ->
    ThreadEntry[] (AC-2), reply/steer via messages.post (AC-3), turns.interrupt
-   stop (AC-4), per-thread model pick (AC-5), the ⓘ session sheet (AC-6).
+   stop (AC-4), per-thread model pick (AC-5), the ⓘ info sheet (AC-6).
    #158: approve/deny runs asks.respond through `decide`.
    #182: plan/task cards + the plan ask (Approve / Change… / Reject), the
    Change-composer prefill, and the Plan sheet — all behind the engine's
@@ -519,6 +520,18 @@ export function Thread({
           }
         />
       ),
+      /* #600: an explicit Session-info affordance — the prototype shows a
+         ⓘ; tapping the bare title was the only way in before. */
+      unstable_headerRightItems: () => [
+        {
+          type: "button",
+          label: "Thread info",
+          icon: { type: "sfSymbol", name: "info.circle" },
+          onPress: () =>
+            conv &&
+            navigation.navigate("ThreadInfo", { conversationId: conv.id }),
+        },
+      ],
     });
   }, [navigation, detail, conv, link]);
 
@@ -604,6 +617,9 @@ export function Thread({
       onSend={send}
       onStop={stop}
       unreachableNote={mac ? unreachableNoteFor(link, mac.name) : undefined}
+      /* #556 AC-2: this thread's draft persists device-local. */
+      initialDraft={draftFor(`thread:${conversationId}`)}
+      onDraftChange={(text) => setDraft(`thread:${conversationId}`, text)}
       /* #591: offline + a cached "working" thread — disabled Stop with a
          hint; the header chip degrades via threadSurface's rule. */
       stale={threadSurface(detail.state, linkUnreachable(link)).stale}

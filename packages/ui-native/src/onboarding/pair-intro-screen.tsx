@@ -6,7 +6,8 @@ import { Screen } from "../components/screen";
 
 const STEPS = [
   "Open LilOS on your Mac.",
-  "Click Pair phone at the bottom of the sidebar.",
+  /* #600: the control is an icon-only button — say where it sits. */
+  "Click the phone icon at the bottom of the sidebar.",
   "Scan the code it shows.",
 ];
 
