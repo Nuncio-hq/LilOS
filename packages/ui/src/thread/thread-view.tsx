@@ -1,6 +1,6 @@
 import type { ChatStatus } from "ai";
 import { CheckIcon, Maximize2Icon, PlayIcon } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { AccessPill } from "../chat/access-pill";
 import {
   ConversationKeepBottom,
@@ -8,6 +8,7 @@ import {
   QueuedTray,
   type QueuedTrayItem,
   queuedItemText,
+  ReconnectingLine,
   runningComposer,
   waitingComposer,
 } from "../chat/agent-chat";
@@ -90,6 +91,7 @@ export function ThreadView({
   onUnqueue,
   onSendQueued,
   pending = [],
+  reconnecting,
   accept,
   maxFileSize,
   maxFiles,
@@ -121,6 +123,7 @@ export function ThreadView({
   onCancel,
   access,
   onAccess,
+  findBar,
 }: {
   root: Extract<Msg, { kind: "msg" }>;
   thread: Thread;
@@ -166,6 +169,10 @@ export function ThreadView({
      composer; `steer` (engine declared session.steer) only changes when they get read (issue #9).
      A `{text, removable}` row the engine already holds hides its Edit/Remove (#315). */
   pending?: QueuedTrayItem[];
+  /* #557: the relay socket is down and the client is redialing — a thin
+     "Reconnecting…" line over the composer; the send waits and lands once
+     the socket is back. */
+  reconnecting?: boolean;
   /* Composer attachment types the host accepts (e.g. "image/*"); absent = no attach UI. */
   accept?: string;
   /* Attachment byte cap + count cap + where rejections surface (issue #31). */
@@ -221,6 +228,9 @@ export function ThreadView({
      Both or neither (D-#19: no access record, no control). */
   access?: ConversationAccess;
   onAccess?: (a: ConversationAccess) => void;
+  /* #554: the host's wired find bar, rendered as an overlay inside the
+     conversation scrollport (desktop ⌘F); absent = no find UI. */
+  findBar?: ReactNode;
 }) {
   const lead = thread.replies.find((r) => emp(r.from));
   const leadEmp = lead ? emp(lead.from) : undefined;
@@ -546,6 +556,7 @@ export function ThreadView({
         <QuestionAwareScrollButton />
         <FindUnstubNudge />
         <FindUnstubAnchor lazy={lazyRows} />
+        {findBar}
         {/* The not-sent tray and pending-steer chips grow the composer area below; re-stick so the
            stopped turn + tray are both fully visible (issue #15). Inside <Conversation> so it can
            use the stick-to-bottom context. */}
@@ -627,6 +638,7 @@ export function ThreadView({
         }
         queued={
           <>
+            {reconnecting && <ReconnectingLine />}
             {/* Every mid-turn send waits here until the agent reads it — steer or not (issue #9). */}
             <QueuedTray
               items={pending}

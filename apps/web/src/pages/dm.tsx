@@ -89,6 +89,7 @@ import {
 } from "../lib/attachments";
 import { requestConnect } from "../lib/connect";
 import { FoldCache, type FoldInputs } from "../lib/conv-fold";
+import { DesktopFindBar } from "../lib/desktop-find";
 import {
   listHirableProfiles,
   removeEmployee,
@@ -260,6 +261,12 @@ export function DmPage() {
   const pending = useAtom(pendingStart);
   const engineState = useAtom(engine.state);
   const statusPoll = useAtom(relay.status);
+  /* #557: the socket dropped and the client is redialing — both composers
+     show the thin "Reconnecting…" line so a send made in the window reads
+     as waiting, not lost. The sidebar row can't cover this: Focus hides
+     the whole sidebar. */
+  const relayState = useAtom(relay.state);
+  const reconnecting = relayState === "reconnecting";
   const fatal = useAtom(relay.fatal);
   const [profileOpen, setProfileOpen] = useState(false);
   /* #421: the header card lists the engine's profiles for the
@@ -371,7 +378,7 @@ export function DmPage() {
     () =>
       toStatusComponents({
         result: statusPoll.result,
-        connection: "ready",
+        connection: statusPoll.connection,
         fatal,
       }).find((c) => c.id === "engine"),
     [statusPoll, fatal],
@@ -1624,7 +1631,10 @@ export function DmPage() {
                   replace: true,
                 })
               }
+              /* #554: ⌘F over the conversation (desktop bridge; absent on web). */
+              findBar={<DesktopFindBar />}
               pending={pendingItems}
+              reconnecting={reconnecting}
               onRemovePending={onRemovePending}
               onUnqueue={onUnqueue}
               onSendQueued={onSendQueued}
@@ -1710,9 +1720,13 @@ export function DmPage() {
     }
 
     threadEl = (
+      /* bg-background is not decorative here: on the desktop app the body is
+         transparent and the column would otherwise show the window's light
+         vibrancy backing under dark mode — the same surface treatment the
+         right panel and Focus thread pane already carry. */
       <div
         data-thread-panel
-        className="flex min-h-0 w-[420px] shrink-0 flex-col border-l xl:w-[460px]"
+        className="flex min-h-0 w-[420px] shrink-0 flex-col border-l bg-background xl:w-[460px]"
       >
         {historyNotice && (
           <div className="px-3 pt-2 sm:px-5">{historyNotice}</div>
@@ -1785,6 +1799,7 @@ export function DmPage() {
           onSend={sendInThread}
           onPlan={planCap ? onPlan : undefined}
           pending={pendingItems}
+          reconnecting={reconnecting}
           onRemovePending={onRemovePending}
           onUnqueue={onUnqueue}
           onSendQueued={onSendQueued}
@@ -1844,6 +1859,8 @@ export function DmPage() {
                 }
               : undefined
           }
+          /* #554: ⌘F over the conversation (desktop bridge; absent on web). */
+          findBar={<DesktopFindBar />}
         />
         {openQuestion && (
           <QuestionCard

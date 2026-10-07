@@ -121,7 +121,9 @@ export function askApproval(
     session: ctx.session,
     kind: r.kind,
     reason: askReason(ask),
-    ...(r.kind === "approval" ? { command: r.command } : {}),
+    ...(r.kind === "approval"
+      ? { command: r.command, grantOptions: r.options }
+      : {}),
     age: timeLabel(ask.createdAt, ctx.now),
   };
 }
