@@ -1,4 +1,4 @@
-import { type ReactNode, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { TextInput, View } from "react-native";
 import { AppText } from "../components/app-text";
 import { Button } from "../components/button";
@@ -16,13 +16,33 @@ import {
 /* Step 3b — type what the Mac shows under its QR: the address and the code. */
 export function ManualCodeScreen({
   onSubmit,
+  reenter,
 }: {
   onSubmit: (offer: PairingOffer) => void;
+  /** #688 AC-1: back from a wrong typed code — the field is focused with
+     its whole entry selected so the first keystroke replaces it (screen
+     state survives the popTo, so the previous entry is already there). */
+  reenter?: boolean;
 }) {
   const [host, setHost] = useState("");
   const [code, setCode] = useState("");
   const [errors, setErrors] = useState<ManualErrors>({});
   const codeRef = useRef<TextInput>(null);
+
+  /* `autoFocus` only applies on mount — this screen stays mounted under
+     Connecting, so reentry focuses programmatically and selects the
+     whole kept entry (AC-1: first keystroke replaces it). Selection is
+     set imperatively: iOS doesn't apply selectTextOnFocus or a
+     controlled `selection` prop for a programmatic .focus(). */
+  useEffect(() => {
+    if (!reenter) return;
+    const t = setTimeout(() => {
+      const input = codeRef.current;
+      input?.focus();
+      input?.setSelection?.(0, CODE_FORMATTED_LENGTH);
+    }, 100);
+    return () => clearTimeout(t);
+  }, [reenter]);
 
   const submit = () => {
     const e = validateManual(host, code);
