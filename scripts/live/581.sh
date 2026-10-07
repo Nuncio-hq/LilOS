@@ -62,17 +62,28 @@ SCRATCH=$(mktemp -d /tmp/lilos581-home.XXXXXX)
 # at the HERMES_HOME each invocation ran under — left alone, a scratch-home
 # run would leave the REAL `hermes` pointing at a python under the deleted
 # scratch dir, breaking every engine on the machine. Snapshot the launcher
-# dir and restore it on exit, whatever happens.
+# dir and restore it on exit, whatever happens. cp -R, not cp -a: -a keeps
+# macOS file flags, and launchers locked `chflags uchg` would make the
+# snapshot un-rm-able inside SCRATCH (same pattern as 548.sh).
 INSTALL_BIN="$REAL_HOME/.hermes/hermes-agent/.hermes/bin"
 LAUNCHER_SNAPSHOT="$SCRATCH/launcher-backup"
 mkdir -p "$LAUNCHER_SNAPSHOT"
 if [ -d "$INSTALL_BIN" ]; then
-  cp -a "$INSTALL_BIN/." "$LAUNCHER_SNAPSHOT/" 2>/dev/null || true
+  cp -R "$INSTALL_BIN/." "$LAUNCHER_SNAPSHOT/" 2>/dev/null || true
 fi
 cleanup() {
   if [ -d "$INSTALL_BIN" ] && [ -n "$(ls -A "$LAUNCHER_SNAPSHOT" 2>/dev/null)" ]; then
-    cp -af "$LAUNCHER_SNAPSHOT/." "$INSTALL_BIN/" 2>/dev/null || true
+    # Restore per file, skipping ones cmp -s reports unchanged — a locked
+    # (uchg) launcher is only rewritten when the run really changed it, and
+    # the copy must not trip on files identical to the snapshot.
+    (cd "$LAUNCHER_SNAPSHOT" && find . -type f -print | while read -r f; do
+      if ! cmp -s "$f" "$INSTALL_BIN/$f" 2>/dev/null; then
+        chflags nouchg "$INSTALL_BIN/$f" 2>/dev/null || true
+        cp -f "$f" "$INSTALL_BIN/$f" 2>/dev/null || true
+      fi
+    done)
   fi
+  chflags -R nouchg "$SCRATCH" 2>/dev/null || true
   rm -rf "$SCRATCH"
 }
 trap cleanup EXIT

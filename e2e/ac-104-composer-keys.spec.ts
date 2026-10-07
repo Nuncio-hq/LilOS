@@ -284,7 +284,12 @@ test("AC-7 prototype: ⌘. stops the turn (Esc never does); ↑ recalls; Esc clo
   await page.getByTitle("Focus", { exact: true }).click();
   // Esc does NOT stop the turn — ⌘. does (same as ■), draft kept.
   await page.keyboard.press("Escape");
-  await page.waitForTimeout(300);
+  // Settle on the close, not a sleep: Focus's back control unmounts when the
+  // surface closes — and the steer placeholder still greets a running turn.
+  await expect(
+    page.getByRole("button", { name: /back to dm/i }),
+  ).toHaveCount(0);
+  await expect(steer).toBeVisible();
   await expect(stoppedChip(page)).toHaveCount(0);
   await page.keyboard.press("Meta+Period");
   await expect(stoppedChip(page).first()).toBeVisible({
