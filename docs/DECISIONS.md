@@ -289,6 +289,11 @@ PR does not exist.
   `ref` echoes the prompting message, `initiatedBy:"agent"` marks
   engine-opened work. Not: stamping legs on the settled turn id, or the
   mapping layer guessing ownership. — #308
+- **D-#581 A session's working folder moves through the engine:
+  `conversations.moveFolder` (app) → `session.moveWorkspace` under the
+  `workspace_move` capability, and the harness refuses rather than fakes a
+  move the engine can't do.** Not: a label-only `cwd` write, or a
+  Hermes-specific move in the app. — #581
 - **D-#431 The replay log is compacted + bounded: a finished turn's
   `turn.delta` run collapses into one `turn.recap` (`{turnId, text,
   reasoning}` — both whole streams, replace not append) that reuses the

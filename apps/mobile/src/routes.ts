@@ -1,4 +1,4 @@
-import type { PairingOffer } from "@lilos/ui-native";
+import type { CodeEntry, PairingOffer } from "@lilos/ui-native";
 import {
   createNavigationContainerRef,
   type NavigatorScreenParams,
@@ -12,16 +12,23 @@ export type Routes = {
   Welcome: undefined;
   Pair: undefined;
   Scan: undefined;
-  Manual: undefined;
-  Connecting: { offer: PairingOffer };
+  /* `reenter` = back from a wrong typed code: the code field comes up
+     focused with its kept entry selected (#688 AC-1). */
+  Manual: { reenter?: boolean } | undefined;
+  /* `entry` records how the code was entered so a mismatch retry leads
+     with retyping (typed) or rescanning (scanned/link) (#688 AC-1). */
+  Connecting: { offer: PairingOffer; entry?: CodeEntry };
   Connected: undefined;
   Tabs: NavigatorScreenParams<TabRoutes>;
   Mac: undefined;
   /** An employee's DM; `{ employeeId }` selects whose. */
   Dm: { employeeId: string };
   /* The DM slice's stack routes (#156); #157 adds ThreadInfo + the
-     thread-scoped model pick (conversationId present = thread scope). */
-  Thread: { conversationId: string };
+     thread-scoped model pick (conversationId present = thread scope).
+     `employeeId` is the employee the push/ask resolved this thread to —
+     the gone card's "Back to <employee>" uses it once the thread itself
+     is unknown to the directory (#596). */
+  Thread: { conversationId: string; employeeId?: string };
   ThreadInfo: { conversationId: string };
   /* #182: the thread's plan sheet — every version, files per step, risks. */
   Plan: { conversationId: string };

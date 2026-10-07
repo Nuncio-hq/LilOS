@@ -1,4 +1,5 @@
 import {
+  useContext,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -8,6 +9,7 @@ import {
   type StickToBottomState,
   useStickToBottomContext,
 } from "use-stick-to-bottom";
+import { ConversationPin } from "../components/ai-elements/conversation";
 
 /**
  * #512: a held (stubbed) turn row carries no text nodes (#430), so browser
@@ -133,6 +135,24 @@ export function setFindSessionOpen(open: boolean): void {
 
 const noopSubscribe = () => () => {};
 
+/** Peek at the window without subscribing — for the escape guard's
+    overflow-anchor handoff (#570), which must not mount the keydown
+    listener on ports that aren't lazy. */
+export const findUnstubOpen = () => active;
+
+/* #570: the conversation escape guard also manages the port's
+   overflow-anchor while the bottom pin holds — but while a find hold is
+   mid-swap the flag is THIS module's (open edge or lapse hold, both need
+   anchoring off while they correct scrollTop). Counted per port (keyed
+   on the stick state) so two Conversations can't mask each other. */
+const anchorHolds = new WeakMap<object, number>();
+const trackAnchorHold = (state: object, delta: number) =>
+  anchorHolds.set(state, (anchorHolds.get(state) ?? 0) + delta);
+/** True while a find window or a find hold owns the port's
+    overflow-anchor — the escape guard must not restore it mid-swap. */
+export const findAnchorActive = (state: object) =>
+  findUnstubOpen() || (anchorHolds.get(state) ?? 0) > 0;
+
 /** True while the find window is open — LazyShell reads it to keep every
     row mounted. A row in a short thread (`engaged` false) never subscribes
     and never mounts the keydown listener. */
@@ -245,6 +265,7 @@ function holdTopEdge(
     JUMPED position: a mid-window scroll is the reader's and stands. */
 export function FindUnstubNudge(): null {
   const { scrollRef, state } = useStickToBottomContext();
+  const pin = useContext(ConversationPin);
   const open = useFindUnstub(FIND_UNSTUB_NUDGE_PX > 0);
   useEffect(() => {
     if (!open) return;
@@ -253,8 +274,21 @@ export function FindUnstubNudge(): null {
       if (done) return;
       done = true;
       const port = scrollRef.current;
-      if (port)
+      if (port) {
+        /* The nudge IS the reader-sim: the escape guard excludes hold-
+           window writes from its scrollTop patch (hold corrections ride
+           the same setter), so mark the intent directly — the jumped
+           position is the reader's and must stand after the window. */
+        if (pin) pin.escaped.v = true;
         port.scrollTop = Math.max(0, port.scrollTop - FIND_UNSTUB_NUDGE_PX);
+        /* The post-write position is the spec's ground truth: under #570's
+           estimated stubs the pre-window top drifts while the mount holds
+           the view, so "did the jump land" must read where the write
+           landed, not the pre-chord scrollTop. */
+        (
+          window as unknown as { __findUnstubNudged?: number }
+        ).__findUnstubNudged = port.scrollTop;
+      }
     };
     const gate = holdGate(state);
     if (gate.holding) {
@@ -302,12 +336,14 @@ export function FindUnstubAnchor({ lazy }: { lazy: boolean }): null {
       wasOpen.current = true;
       const gate = holdGate(state);
       gate.holding = true;
+      trackAnchorHold(state, +1);
       return holdTopEdge(
         port,
         state,
         captureTopEdge(port),
         (frames) => frames > 30 || !port.querySelector("[data-held-stub]"),
         () => {
+          trackAnchorHold(state, -1);
           gate.holding = false;
           for (const f of gate.waiters) f();
           gate.waiters.clear();
@@ -318,12 +354,14 @@ export function FindUnstubAnchor({ lazy }: { lazy: boolean }): null {
     wasOpen.current = false;
     /* LAPSE edge — capture where the reader is NOW, the moment the
        window lapses, then hold through the re-stub swap. */
+    trackAnchorHold(state, +1);
     return holdTopEdge(
       port,
       state,
       captureTopEdge(port),
       (frames) => frames > 30 || !!port.querySelector("[data-held-stub]"),
       () => {
+        trackAnchorHold(state, -1);
         port.style.overflowAnchor = "";
         /* Re-pin only if the port is at the bottom at lapse time — the
            library's lock target is scrollHeight − 1 − clientHeight and

@@ -40,6 +40,7 @@ export const KNOWN_CAPABILITIES = [
   "background_jobs",
   "approval_policy",
   "side_prompt",
+  "workspace_move",
 ] as const;
 export type KnownCapability = (typeof KNOWN_CAPABILITIES)[number];
 
@@ -185,4 +186,19 @@ export const SIDE_PROMPT_CAPABILITY: Capability = {
   description:
     "session.ask answers a one-shot question for the session without touching its transcript, context or event stream.",
   methods: ["session.ask"],
+};
+
+/**
+ * The canonical `workspace_move` descriptor (issue #581): `session.moveWorkspace`
+ * re-homes the session's working folder — transcript, memory and event stream
+ * untouched — so the next turn runs in the new `cwd`. Not declared on
+ * transports that can't re-home a session (ACP today); the app then applies
+ * the folder as a pick on the next session start instead.
+ */
+export const WORKSPACE_MOVE_CAPABILITY: Capability = {
+  id: "workspace_move",
+  name: "Workspace move",
+  description:
+    "session.moveWorkspace re-homes the session's working folder; the next turn runs there.",
+  methods: ["session.moveWorkspace"],
 };

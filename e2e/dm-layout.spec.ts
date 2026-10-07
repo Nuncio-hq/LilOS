@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { bootStack } from "./helpers/stack";
+import { bootStack, panelIntoFocus } from "./helpers/stack";
 
 /**
  * DM page layout. With no session open, the employee feed must fill the
@@ -33,9 +33,10 @@ async function dmDefault(page: Page, webUrl: string) {
   await expect(page).toHaveURL(/\/dm\//);
 }
 
-/* The DM page's middle pane is EmployeeHome's <main>. With no session open
-   there is no thread panel, so it must reach the window's right edge — no
-   reserved-but-empty column (Oscar's report on the desktop app). */
+/* The DM page's middle pane is its one <main> landmark (owned by DmPage
+   via MainPane, #660). With no session open there is no thread panel, so
+   it must reach the window's right edge — no reserved-but-empty column
+   (Oscar's report on the desktop app). */
 const mainPane = (page: Page) => page.locator("main").first();
 
 /* The pane must reach the window's inner edge. In a browser tab the app is a
@@ -81,12 +82,20 @@ test("DM page: with no session open the feed fills the window (no empty right co
     await expect(mainPane(page)).toBeVisible();
     expect(await rightGapSettled(page)).toBeLessThanOrEqual(3);
 
-    // With a session open, Focus takes over and fills the window (#114) —
+    // With a session open, the send lands on the thread panel (#577) —
+    // the ↗ opens Focus, which takes over and fills the window (#114) —
     // still no reserved-but-empty column. (This session has no folder, so
     // the Workbench stays hidden; AC-114 covers the Workbench layout.)
     const box = page.locator("textarea").last();
     await box.fill(PROMPT);
     await box.press("Enter");
+    await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+$/, {
+      timeout: 30_000,
+    });
+    await page
+      .locator("[data-thread-panel]")
+      .getByTitle("Focus", { exact: true })
+      .click();
     await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+\/focus/, {
       timeout: 30_000,
     });
@@ -116,6 +125,51 @@ test("DM page: with no session open the feed fills the window (no empty right co
       .getByRole("button", { name: /default/i })
       .click();
     await expect(page).toHaveURL(/\/dm\/[^/]+$/);
+    expect(await rightGapSettled(page)).toBeLessThanOrEqual(3);
+  } finally {
+    await stack.stop();
+  }
+});
+
+/* #660: the flake was `boundingBox()` returning null — the resolved <main>
+   was detached again by the time the box was measured. The DM pane is two
+   different <main> elements (the feed's and Focus's), so send → /focus
+   swaps the node mid-poll. LILOS_SUMMARY_DELAY_MS holds the new session's
+   summary back so `openConv` lands AFTER the /focus navigation — the exact
+   window the CI failure sampled inside. The assertion is on the element
+   itself: a pane that survives the transition still has a box; a remounted
+   one never does (detached → null, deterministically). */
+test("AC-660 the DM main pane stays mounted through send → Focus", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1288, height: 700 });
+  const stack = await bootStack(
+    "dmpane",
+    { relay: 4640, feed: 4641, web: 5230 },
+    { LILOS_SUMMARY_DELAY_MS: "1500" },
+  );
+  try {
+    await dmDefault(page, stack.webUrl);
+    await expect(mainPane(page)).toBeVisible();
+    const feedMain = await mainPane(page).elementHandle();
+    expect(feedMain, "feed pane handle before send").not.toBeNull();
+
+    const box = page.locator("textarea").last();
+    await box.fill(PROMPT);
+    await box.press("Enter");
+    /* #577: the send lands on the thread panel; open Focus the way the user
+       does — the panel's Focus button. The summary-delayed openConv still
+       lands inside the swap window this AC samples. */
+    await panelIntoFocus(page);
+    // Wait for the Focus surface itself — with the summary held back this
+    // settles only once the delayed row lands and Focus takes the pane.
+    await expect(page.getByRole("button", { name: /back to dm/i })).toBeVisible(
+      { timeout: 30_000 },
+    );
+
+    // The pane element measured before the send must still be mounted:
+    // a remount here is what detached the node and null'd boundingBox.
+    expect(await feedMain.boundingBox()).not.toBeNull();
     expect(await rightGapSettled(page)).toBeLessThanOrEqual(3);
   } finally {
     await stack.stop();

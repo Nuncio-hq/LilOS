@@ -137,6 +137,33 @@ describe("client feed (read-only engine surface)", () => {
     }
   });
 
+  it("#659 frameDelayMs paces broadcast frames one per delay — the e2e race knob", async () => {
+    /* The ac-659 spec leans on LILOS_FEED_DELAY_MS to stretch the engine
+       stream over seconds so the relay's answer row lands first. Prove the
+       knob really spaces frames: a ~50-frame turn burst drains at the set
+       pace instead of in one tick. */
+    const w = await setupWorld();
+    try {
+      const DELAY = 80;
+      const feed = createFeedHandler(w.harness, DELAY);
+      const stamps: number[] = [];
+      feed.attach(() => {
+        stamps.push(Date.now());
+      });
+      const { channel } = await openDmConversation(w.user);
+      await openConversation(w.user, channel.id, "Add a release note");
+      await waitFor(() => stamps.length >= 6, "six paced frames");
+      /* Frame 1 goes out at once; every later frame is ≥ ~one delay behind
+         its predecessor — the queue can only lag further under load, never
+         clump back into a burst. */
+      for (let i = 1; i < stamps.length; i++)
+        expect(stamps[i] - stamps[i - 1]).toBeGreaterThanOrEqual(DELAY * 0.6);
+      feed.close();
+    } finally {
+      await w.cleanup();
+    }
+  });
+
   it("rejects writes and malformed calls with JSON-RPC errors", async () => {
     const w = await setupWorld();
     try {

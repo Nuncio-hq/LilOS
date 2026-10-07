@@ -36,6 +36,7 @@ import { folderLabel } from "../lib/helpers";
 import { InlineCodeText } from "../lib/inline-code";
 import { cn } from "../lib/utils";
 import { HermesAvatar } from "../shell/avatars";
+import { MainPane } from "../shell/main-pane";
 import type {
   AttachedFile,
   ConnectionState,
@@ -98,6 +99,7 @@ export function EmployeeHome({
   lastSent,
   panelOpen,
   onPanel,
+  onPanelClose,
   folders,
   pick,
   setPick,
@@ -126,6 +128,7 @@ export function EmployeeHome({
   draft: composerDraft,
   onDraftChange,
   scheduled,
+  bare,
 }: {
   e: Employee;
   feed: Msg[];
@@ -151,6 +154,10 @@ export function EmployeeHome({
   lastSent?: string;
   panelOpen: boolean;
   onPanel: () => void;
+  /* #577 AC-2: the panel icon is a labelled toggle — this closes the
+     open panel (back to the plain DM list). Absent, the toggle keeps
+     calling onPanel (which opens the latest session). */
+  onPanelClose?: () => void;
   folders: Folder[];
   pick: WsPick;
   setPick: (p: WsPick) => void;
@@ -207,6 +214,9 @@ export function EmployeeHome({
     onOpen: () => void;
     onOpenTask: (taskId: string) => void;
   };
+  /* #660: the caller mounts the shared <main> landmark itself (DmPage) so
+     the pane element survives the feed↔Focus swap — omit → own <main>. */
+  bare?: boolean;
 }) {
   const pickedFolder = folders.find((x) => x.id === pick.folder);
   const [filter, setFilter] = useState("");
@@ -315,13 +325,15 @@ export function EmployeeHome({
   );
 
   return (
-    <main className="lilos-glass flex min-h-0 min-w-0 flex-1 flex-col">
+    <MainPane bare={bare}>
       <header className="lilos-drag flex h-14 shrink-0 items-center gap-2 border-b px-3 sm:gap-3 sm:px-5">
         <Button
           variant="ghost"
           size="icon-sm"
           className="lg:hidden"
           onClick={onNav}
+          title="Sidebar"
+          aria-label="Sidebar"
         >
           <MenuIcon />
         </Button>
@@ -412,11 +424,25 @@ export function EmployeeHome({
           >
             <UserIcon />
           </Button>
-          {!panelOpen && (
-            <Button variant="ghost" size="icon-sm" onClick={onPanel}>
-              <PanelRightIcon />
-            </Button>
-          )}
+          {/* #577 AC-2: a labelled toggle — shows/hides the thread
+              panel; says what it does instead of a bare icon. */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={panelOpen ? (onPanelClose ?? onPanel) : onPanel}
+            title={
+              panelOpen ? "Hide the thread panel" : "Show the latest thread"
+            }
+            aria-label={
+              panelOpen ? "Hide the thread panel" : "Show the latest thread"
+            }
+            aria-pressed={panelOpen}
+            className="gap-1 px-2"
+            data-panel-toggle
+          >
+            <PanelRightIcon />
+            <span className="max-sm:sr-only">Panel</span>
+          </Button>
         </div>
       </header>
       {connection && connection.state !== "connected" && (
@@ -612,7 +638,7 @@ export function EmployeeHome({
           </>
         }
       />
-    </main>
+    </MainPane>
   );
 }
 

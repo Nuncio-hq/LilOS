@@ -15,6 +15,12 @@ export type PairingOffer = {
 
 export const CODE_LENGTH = 12;
 
+/** The formatted code's display length — `XXXX-XXXX-XXXX` = 14. Fields that
+   cap input must admit the dashes too (#593: maxLength=13 blocked the 12th
+   character). */
+export const CODE_FORMATTED_LENGTH =
+  CODE_LENGTH + Math.ceil(CODE_LENGTH / 4) - 1;
+
 export function normalizeCode(raw: string): string {
   return raw
     .toUpperCase()
@@ -22,7 +28,8 @@ export function normalizeCode(raw: string): string {
     .slice(0, CODE_LENGTH);
 }
 
-/** "7K4MQR2X9TBP" → "7K4M-QR2X-9TBP" (how the Mac shows it). */
+/** "7K4MQR2X9TBP" → "7K4M-QR2X-9TBP" (how the Mac shows it —
+   CODE_FORMATTED_LENGTH characters). */
 export function formatCode(code: string): string {
   const c = normalizeCode(code);
   return c.match(/.{1,4}/g)?.join("-") ?? c;
@@ -61,6 +68,21 @@ export function parsePairingUrl(raw: string): PairingOffer | null {
   if (!isValidHost(host) || code.length !== CODE_LENGTH) return null;
   const name = q.get("name")?.trim();
   return name ? { host, code, name } : { host, code };
+}
+
+/** #688 AC-1: how the wrong code got here decides the retry — a typed
+   code is probably a typo, so "Re-enter code" is primary and leads back
+   to the field (entry kept, selected); a scanned/deep-link code can't be
+   retyped, so "Scan a new code" stays primary. */
+export type CodeEntry = "typed" | "scanned" | "link";
+
+export function mismatchActions(entry: CodeEntry | undefined): {
+  primary: "reenter" | "rescan";
+  secondary: "rescan" | "manual";
+} {
+  return entry === "typed"
+    ? { primary: "reenter", secondary: "rescan" }
+    : { primary: "rescan", secondary: "manual" };
 }
 
 export type ManualErrors = { host?: string; code?: string };

@@ -78,7 +78,7 @@ import {
   useDiffComments,
 } from "../lib/diff-comments";
 import { draftKey, useDraft } from "../lib/drafts";
-import { plural } from "../lib/helpers";
+import { plural, prettyPath } from "../lib/helpers";
 import {
   EMPTY_WB_PROBE,
   patchWbCache,
@@ -1259,7 +1259,7 @@ export function Workbench({
         data-wb-probing
         className="flex min-h-0 flex-1 items-center justify-center gap-1.5 p-6 text-center text-muted-foreground text-xs"
       >
-        Reading <span className="font-mono">{cwd}</span>…
+        Reading <span className="font-mono">{prettyPath(cwd)}</span>…
       </div>
     );
   }
@@ -1282,7 +1282,7 @@ export function Workbench({
         ) : (
           <p>
             Nothing to show — the host has no answer for{" "}
-            <span className="font-mono">{cwd}</span>.
+            <span className="font-mono">{prettyPath(cwd)}</span>.
           </p>
         )}
       </div>
@@ -1447,7 +1447,7 @@ export function Workbench({
                 {liveMode ? (
                   <p>
                     Clean working tree in{" "}
-                    <span className="font-mono">{cwd}</span>.
+                    <span className="font-mono">{prettyPath(cwd)}</span>.
                   </p>
                 ) : work?.branch ? (
                   <p>
@@ -1653,7 +1653,7 @@ export function Workbench({
                 dir="rtl"
                 title={cwd}
               >
-                {cwd}
+                {prettyPath(cwd)}
               </span>
               {openPath && (
                 <OpenPathButton
@@ -1674,7 +1674,7 @@ export function Workbench({
                 data-wb-probing
                 className="py-6 text-center text-muted-foreground text-xs"
               >
-                Reading <span className="font-mono">{cwd}</span>…
+                Reading <span className="font-mono">{prettyPath(cwd)}</span>…
               </div>
             ) : viewFile ? (
               <div data-fileview className="space-y-2">
@@ -1693,10 +1693,10 @@ export function Workbench({
                     title={viewFile.path}
                   >
                     {(() => {
-                      const i = viewFile.path.lastIndexOf("/");
-                      const dir = i >= 0 ? viewFile.path.slice(0, i) : "";
-                      const base =
-                        i >= 0 ? viewFile.path.slice(i) : viewFile.path;
+                      const shown = prettyPath(viewFile.path);
+                      const i = shown.lastIndexOf("/");
+                      const dir = i >= 0 ? shown.slice(0, i) : "";
+                      const base = i >= 0 ? shown.slice(i) : shown;
                       return (
                         <>
                           {dir !== "" && (
@@ -1705,7 +1705,7 @@ export function Workbench({
                             </span>
                           )}
                           <span className="shrink-0 font-medium text-foreground">
-                            {dir !== "" ? base : viewFile.path}
+                            {dir !== "" ? base : shown}
                           </span>
                         </>
                       );

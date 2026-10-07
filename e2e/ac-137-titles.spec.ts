@@ -105,9 +105,7 @@ test("AC-3/AC-4 placeholder then engine titles land live in header, list, search
   await page.screenshot({ path: `${SHOTS}/ac34-header-llm-title.png` });
 
   // AC-4: the session list row + title search show the engine title.
-  // #195: back out of Focus lands on the session's peek panel — the feed
-  // (and its session rows) stays mounted beside it.
-  await page.goBack();
+  // #577: the send landed on /dm/e/c — feed + panel are already mounted.
   await expect(page).toHaveURL(/\/dm\/[^/]+\/conv_[^/]+$/, {
     timeout: 10_000,
   });

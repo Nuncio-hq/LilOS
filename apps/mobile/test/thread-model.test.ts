@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import {
   dropRewound,
   mergeThreadEntries,
+  threadBodyState,
   threadSurface,
   toThreadDetail,
 } from "../src/thread-model";
@@ -732,7 +733,7 @@ describe("thread-model — #157 AC mapping", () => {
         ...(historyTrimmed === undefined ? {} : { historyTrimmed }),
       });
     expect(detail(true).transcriptNote).toBe(
-      "Earlier history was trimmed — this session's event log is capped.",
+      "Earlier history was trimmed — this thread's event log is capped.",
     );
     expect(detail(false).transcriptNote).toBeUndefined();
     expect(detail().transcriptNote).toBeUndefined();
@@ -1575,6 +1576,19 @@ describe("threadSurface — the live thread degraded by an unreachable Mac (#591
   });
 });
 
+describe("threadBodyState — the opened thread with no conversation (#596)", () => {
+  it("AC-2 unknown is 'loading' until the directory syncs, then 'gone'", () => {
+    /* A push/deep link can open a conversationId before any sync lands —
+       that is still loading, not absent. Once the directory synced and the
+       id isn't there, the thread is gone. A resolved conversation never
+       gets a body state. */
+    expect(threadBodyState(false, false)).toBe("loading");
+    expect(threadBodyState(false, true)).toBe("gone");
+    expect(threadBodyState(true, false)).toBeUndefined();
+    expect(threadBodyState(true, true)).toBeUndefined();
+  });
+});
+
 describe("threadSurface — open asks can't be answered while the Mac is unreachable (#652)", () => {
   it("AC-1 offline stale-marks the ask card on EVERY state, with a hint naming the Mac", () => {
     for (const state of [
@@ -1602,5 +1616,115 @@ describe("threadSurface — open asks can't be answered while the Mac is unreach
     expect(threadSurface("needs-you", true).answerHint).toBe(
       "Answer once the Mac is back",
     );
+  });
+});
+
+describe("thread-model — #691 a mid-stream posted row renders once", () => {
+  /* #659 parity: the harness posts the answer row (and flips conv.state
+     to idle) at turn.completed while the feed's last turn.delta frames
+     are still in flight — the model's turn is still live and holds only
+     a prefix. The live turn must claim that row, or the bare row and the
+     live card render the same answer twice. */
+  it("the live turn claims a posted row whose text extends its streamed prefix", () => {
+    const user = msg({ id: "m1", seq: 1, text: "go" });
+    const posted = msg({
+      id: "m2",
+      seq: 2,
+      authorKind: "employee",
+      authorId: ada.id,
+      text: "the full answer",
+      createdAt: T0 + 5000,
+    });
+    const model = reduceSessionEvents("sess-1", [
+      ev("turn.started", { turnId: "t1", model: "fake-small", ref: "m1" }),
+      ev("turn.delta", {
+        turnId: "t1",
+        stream: "text",
+        delta: "the full",
+      }),
+      /* turn.completed hasn't landed on this socket — the relay row
+         won the cross-socket race. */
+    ]);
+    const entries = mergeThreadEntries([user, posted], model, {
+      ...OPTS,
+      conversationState: "idle",
+    });
+    /* Exactly one surface: the claimed card at the row's slot. The bare
+       employee row is spliced into it (its id is the search anchor). */
+    expect(entries).toHaveLength(2);
+    expect(entries[0].id).toBe("m1");
+    expect(entries[1]).toMatchObject({ kind: "agent", id: "turn-t1" });
+    expect(entries.some((e) => e.id === "m2")).toBe(false);
+  });
+
+  it("the live turn claims its row while its streamed text is still empty", () => {
+    const user = msg({ id: "m1", seq: 1, text: "go" });
+    const posted = msg({
+      id: "m2",
+      seq: 2,
+      authorKind: "employee",
+      authorId: ada.id,
+      text: "already posted",
+      createdAt: T0 + 3000,
+    });
+    const model = reduceSessionEvents("sess-1", [
+      ev("turn.started", { turnId: "t1", ref: "m1" }),
+      /* no text delta yet */
+    ]);
+    const entries = mergeThreadEntries([user, posted], model, {
+      ...OPTS,
+      conversationState: "idle",
+    });
+    expect(entries).toHaveLength(2);
+    expect(entries[1]).toMatchObject({ kind: "agent", id: "turn-t1" });
+    expect(entries.some((e) => e.id === "m2")).toBe(false);
+  });
+
+  it("the live turn cannot steal a row posted before its prompt", () => {
+    const oldReply = msg({
+      id: "m0",
+      seq: 0,
+      authorKind: "employee",
+      authorId: ada.id,
+      text: "earlier answer",
+      createdAt: T0,
+    });
+    const user = msg({ id: "m1", seq: 1, text: "next" });
+    const model = reduceSessionEvents("sess-1", [
+      ev("turn.started", { turnId: "t1", ref: "m1" }),
+    ]);
+    const entries = mergeThreadEntries([oldReply, user], model, {
+      ...OPTS,
+      conversationState: "active",
+    });
+    expect(entries[0]).toMatchObject({ id: "m0", text: "earlier answer" });
+    /* The live card still anchors under its prompt at the tail. */
+    expect(entries[2]).toMatchObject({ kind: "agent", id: "turn-t1" });
+  });
+
+  it("a live turn's claimed row and its tail card can't double-render while deltas land", () => {
+    /* The other window: conv.state hasn't flipped yet (still "active")
+       — the claimed entry must be marked used so the live-tail pass
+       doesn't append the same `turn-t1` card a second time. */
+    const user = msg({ id: "m1", seq: 1, text: "go" });
+    const posted = msg({
+      id: "m2",
+      seq: 2,
+      authorKind: "employee",
+      authorId: ada.id,
+      text: "converging text",
+      createdAt: T0 + 2000,
+    });
+    const model = reduceSessionEvents("sess-1", [
+      ev("turn.started", { turnId: "t1", ref: "m1" }),
+      ev("turn.delta", { turnId: "t1", stream: "text", delta: "converging" }),
+    ]);
+    const entries = mergeThreadEntries([user, posted], model, {
+      ...OPTS,
+      conversationState: "active",
+    });
+    const t1 = entries.filter((e) => e.id === "turn-t1");
+    expect(t1).toHaveLength(1);
+    expect(t1[0]).toMatchObject({ kind: "agent", live: true });
   });
 });

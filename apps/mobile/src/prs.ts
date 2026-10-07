@@ -20,6 +20,8 @@ export function toPullRequestRef(item: ForgePrListItem): PullRequestRef {
     // A closed/merged draft is still closed/merged — draft only wins over open.
     status: item.state === "open" && item.draft ? "draft" : item.state,
     ...(item.checks !== "none" ? { checks: item.checks } : {}),
+    /* #598: the row/badge/card opens this on tap. */
+    url: item.url,
   };
 }
 

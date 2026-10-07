@@ -9,6 +9,7 @@ import { electronScreenshot, ensureDesktopPayload } from "./helpers/electron";
 import {
   bootStack,
   freePort,
+  panelIntoFocus,
   pickPorts,
   type Stack,
   waitForHttp,
@@ -281,6 +282,9 @@ test("#315 AC-5 Stop parks waiting sends in the not-sent tray; Send runs it late
   test.setTimeout(180_000);
   await dmDefault(stackA, page);
   await send(page, "Add a release note to the readme");
+  /* #577: a send lands on the thread panel — the queued-send tray and the
+     data-userturn markers this AC reads live in the thread/F Focus view. */
+  await panelIntoFocus(page);
   await expect(page.getByText("Approval needed").first()).toBeVisible({
     timeout: 60_000,
   });
@@ -386,6 +390,9 @@ test("#315 AC-3/AC-4 without `steer`: a queued send runs next, Remove drops it",
     await expect(page.getByText("Enter queues · ⌘. stop")).toBeVisible({
       timeout: 30_000,
     });
+    /* #577: sends land on the thread panel — data-userturn markers exist
+       only on the Focus surface this AC asserts against. */
+    await panelIntoFocus(page);
     await send(page, "never mind that");
     const tray = page.locator("[data-queued]");
     await expect(tray).toHaveAttribute("data-queued-mode", "next");

@@ -15,7 +15,9 @@ export function Pill({
 }: {
   label: string;
   onPress: () => void;
-  variant?: "primary" | "soft" | "ghost";
+  /** "destructive" is the iOS pair of a muted fill with a destructive
+      label — the ask card's Deny next to the grant pills. */
+  variant?: "primary" | "soft" | "ghost" | "destructive";
   size?: "sm" | "md";
   /** #652: renders the pill visibly inert — muted fill + muted label,
       no press (e.g. an ask that can't be answered while the Mac is
@@ -26,9 +28,9 @@ export function Pill({
     ? "bg-muted"
     : variant === "primary"
       ? "bg-primary"
-      : variant === "soft"
-        ? "bg-fill"
-        : "bg-transparent";
+      : variant === "ghost"
+        ? "bg-transparent"
+        : "bg-fill";
   return (
     <Pressable
       accessibilityRole="button"
@@ -43,7 +45,20 @@ export function Pill({
         size="sm"
         weight="semibold"
         tone={
-          disabled ? "muted" : variant === "primary" ? "inverse" : "default"
+          disabled
+            ? /* #687 AC-2: a disabled destructive keeps its meaning — the
+                 label stays red, muted by opacity, not neutral grey. */
+              variant === "destructive"
+              ? "destructive"
+              : "muted"
+            : variant === "primary"
+              ? "inverse"
+              : variant === "destructive"
+                ? "destructive"
+                : "default"
+        }
+        className={
+          disabled && variant === "destructive" ? "opacity-60" : undefined
         }
       >
         {label}

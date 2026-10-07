@@ -1,7 +1,12 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  panelIntoFocus,
+  pickPorts,
+  type Stack,
+} from "./helpers/stack";
 
 /**
  * Issue #576 — Esc only ever CLOSES something; it never stops an employee's
@@ -72,6 +77,10 @@ test("AC-576-1 Esc during a running turn never stops it — ⌘. does", async ({
   await dmDefault(stackA, page);
   await send(page, "LILOS_TURN_HOLD Add a release note to the readme");
   await expect(page.getByText(RUNNING_HINT)).toBeVisible({ timeout: 30_000 });
+  /* #577: hop into Focus — Esc pops it back onto the thread panel (the hint
+     stays mounted); on the panel itself Esc closes the panel — also true,
+     but this AC is about the turn surviving. */
+  await panelIntoFocus(page);
 
   /* Esc while typing in the composer pops the top layer (Focus → thread
      view) but stops nothing — the running hint is visible on both. */
@@ -95,7 +104,8 @@ test("AC-576-2 Esc closes the top-most surface only — menu → dialog → Focu
   await dmDefault(stackA, page);
   await send(page, "LILOS_TURN_HOLD Add a release note to the readme");
   await expect(page.getByText(RUNNING_HINT)).toBeVisible({ timeout: 30_000 });
-  await page.waitForURL(/\/dm\/[^/]+\/[^/]+\/focus$/);
+  // #577: send lands on the panel — hop to Focus for the layer walk.
+  await panelIntoFocus(page);
   /* Remember the conversation before Esc takes the URL back to /dm/<emp>. */
   const [emp, conv] = page
     .url()

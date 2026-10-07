@@ -1,5 +1,8 @@
 import {
   ConversationsListParams,
+  type ConversationsMoveFolderHostParams,
+  type ConversationsMoveFolderHostResult,
+  ConversationsMoveFolderParams,
   ConversationsOpenParams,
   ConversationsPrsParams,
   type ConversationsRewindHostParams,
@@ -19,6 +22,11 @@ import type { ConversationPatch } from "../store";
 import { noFolderDedupeKey } from "../store";
 import type { RelayCtx } from "./ctx";
 import { badParams, JsonRpcCode, RpcError } from "./rpc";
+
+/* #660 e2e knob: hold `conversations.summaries` answers — the client's
+   `openConv` lands late, so a DM send → /focus rides the whole
+   summary-fetch window the CI flake sampled inside. `0`/unset = no hold. */
+const SUMMARY_DELAY_MS = Number(process.env.LILOS_SUMMARY_DELAY_MS ?? 0) || 0;
 
 /**
  * Moved verbatim out of `../session.ts`'s handle() (#441) — case
@@ -58,6 +66,8 @@ export async function handleConversations(
     case "conversations.summaries": {
       const parsed = ConversationsSummariesParams.safeParse(params ?? {});
       if (!parsed.success) throw badParams(parsed.error.issues);
+      if (SUMMARY_DELAY_MS > 0)
+        await new Promise((r) => setTimeout(r, SUMMARY_DELAY_MS));
       respond(peer, id, {
         summaries: await store.listConversationSummaries({
           channelId: parsed.data.channelId,
@@ -139,6 +149,7 @@ export async function handleConversations(
         "deliveredSeq",
         "life",
         "turnFailure",
+        "cwd",
         "turnStopped",
         "bgJobs",
       ] as const;
@@ -146,7 +157,7 @@ export async function handleConversations(
         throw new RpcError(
           JsonRpcCode.forbidden,
           "forbidden",
-          "only the registered engine host may write engineRef/state/model/provider/effort/fast/deliveredSeq/life/turnFailure/turnStopped/bgJobs",
+          "only the registered engine host may write engineRef/state/model/provider/effort/fast/deliveredSeq/life/turnFailure/cwd/turnStopped/bgJobs",
         );
       }
       const { conversationId, ...rest } = parsed.data;
@@ -278,6 +289,63 @@ export async function handleConversations(
         removedCount: marked.length,
         removedIds,
       });
+      return;
+    }
+    case "conversations.moveFolder": {
+      /* Move a thread's working folder (#581): the engine host owns the
+         path boundary + the session re-home (session.moveWorkspace) and
+         writes the landed `cwd` back through conversations.update — same
+         callHost pattern as conversations.rewind. */
+      const parsed = ConversationsMoveFolderParams.safeParse(params);
+      if (!parsed.success) throw badParams(parsed.error.issues);
+      const conversation = await store.getConversation(
+        parsed.data.conversationId,
+      );
+      if (!conversation) {
+        throw new RpcError(
+          JsonRpcCode.notFound,
+          "not_found",
+          "conversation not found",
+        );
+      }
+      const hostParams: ConversationsMoveFolderHostParams = {
+        conversationId: conversation.id,
+        engineRef: conversation.engineRef,
+        path: parsed.data.path,
+      };
+      const hostResult = (await callHost(
+        "conversations.moveFolder",
+        hostParams,
+        /* The engine re-home crosses a backend call — a touch wider
+           than the generic timeout. */
+        60_000,
+      )) as ConversationsMoveFolderHostResult | null;
+      /* The host's conversations.update {cwd} write re-emitted the row;
+         re-read so the response carries the landed folder, not the
+         caller's string. */
+      const moved = await store.getConversation(conversation.id);
+      if (!moved) {
+        throw new RpcError(
+          JsonRpcCode.notFound,
+          "not_found",
+          "conversation not found",
+        );
+      }
+      /* A plain note (like rewind's): what the thread's folder is now and
+         whether the running session followed — the user reads it as proof
+         the move really happened, not just a label change. */
+      const note = hostResult?.engineMoved
+        ? `Moved this thread to \`${moved.cwd}\` — the running session moved too; same thread, same memory.`
+        : `Moved this thread to \`${moved.cwd}\` — the next turn works there.`;
+      const { message: noteMessage } = await store.appendMessage({
+        channelId: conversation.channelId,
+        conversationId: conversation.id,
+        authorId: "system",
+        authorKind: "system",
+        text: note,
+      });
+      emitMessage(conversation.channelId, noteMessage);
+      respond(peer, id, { conversation: moved });
       return;
     }
     case "conversations.setModel": {

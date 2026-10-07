@@ -97,6 +97,8 @@ export const NOT_AGENT_FACING: Record<string, string> = {
   "messages.remove": "the user retracts a still-waiting message (#315)",
   "messages.send": "the user re-sends a parked (dropped) message (#315)",
   "conversations.rewind": "the user rewinds a conversation",
+  "conversations.moveFolder":
+    "the user moves a thread's working folder (#581) — like folders.add/folders.browse, picking is the user's",
   "conversations.setModel": "the user picks the session's model",
   "conversations.setAccess":
     "the composer pill is the user's — an agent must never grant itself Full access (#106)",

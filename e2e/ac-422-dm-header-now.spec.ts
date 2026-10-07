@@ -74,10 +74,9 @@ test("AC-1/AC-3: role at idle, 'now: <tool> <target>' on the scripted step, clea
 
   // slow:1200 paces every turn boundary at 1.2s — the scripted
   // `terminal history --turns` step is observable well past CI jitter.
-  // Sending lands the app in Focus mode; the DM header lives on the home
-  // route — step back while the turn keeps running.
+  // #577: the send stays on the DM home (thread in the panel) — the header
+  // is already rendered while the turn keeps running.
   await send(page, "slow:1200 recall: earlier turns");
-  await page.getByRole("button", { name: /back to dm/i }).click();
   await expect(quietLine(page)).toContainText("now: thinking", {
     timeout: 30_000,
   });
@@ -103,9 +102,9 @@ test("AC-2 screenshot matrix: header 1288x700/1288x900/1440x900, light + dark, r
   await expect(html).not.toHaveClass(/dark/);
   // slow:1500 paces the scripted turn to ~50s — room for the matrix,
   // still clears well inside the 90s idle wait.
-  // Back out of Focus mode so the shots frame the DM header itself.
+  // #577: a send lands on the DM list with the thread panel beside it —
+  // the header the shots frame is already on screen (no Focus jump).
   await send(page, "slow:1500 recall: header shots");
-  await page.getByRole("button", { name: /back to dm/i }).click();
   await expect(quietLine(page)).toContainText("now: terminal history --turns", {
     timeout: 60_000,
   });

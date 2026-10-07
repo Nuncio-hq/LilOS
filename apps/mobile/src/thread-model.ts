@@ -387,10 +387,10 @@ export function mergeThreadEntries(
      without it, a rebound session's turn (turn ids restart per session)
      steals an older session's identical reply and shows the wrong card
      (phantom subagents + a bogus duration, #181 AC-4). A settled turn
-     (done/stopped) only — a live turn's streamed text can already equal
-     the posted reply while the relay event that settles it is still
-     queued, and claiming it would render its card twice under the same
-     `turn-tN` key (once at the message, once at the tail). */
+     (done/stopped) claims on exact text; the still-live turn claims on a
+     text prefix (#691 — the posted row wins its race against the settling
+     feed events), and `used` then keeps the tail pass from rendering its
+     card a second time. */
   const promptIdx = new Map<TurnModel, number>();
   for (const t of model.turns) {
     if (!t.ref) continue;
@@ -423,18 +423,33 @@ export function mergeThreadEntries(
   };
   for (const [mi, m] of visible.entries()) {
     if (m.authorKind !== "employee") continue;
-    const turn = model.turns.find(
-      (x) =>
-        !used.has(x) &&
-        !x.agentInitiated &&
-        (x.phase === "done" ||
-          x.phase === "stopped" ||
-          /* #419: a failed turn's partial answer posts too — claim it. */
-          x.phase === "failed") &&
-        x.text.trim() &&
-        x.text.trim() === m.text.trim() &&
-        (promptIdx.get(x) ?? -1) < mi,
-    );
+    const turn = model.turns.find((x) => {
+      if (
+        used.has(x) ||
+        x.agentInitiated ||
+        !m.text.trim() ||
+        (promptIdx.get(x) ?? -1) >= mi
+      )
+        return false;
+      const txt = x.text.trim();
+      if (
+        x.phase === "done" ||
+        x.phase === "stopped" ||
+        /* #419: a failed turn's partial answer posts too — claim it. */
+        x.phase === "failed"
+      )
+        return txt !== "" && txt === m.text.trim();
+      /* #691 (web parity, #659): the harness posts the answer row — and
+         flips the conversation back to `idle` — the instant its
+         turn.completed lands, while the feed's last turn.delta frames
+         are still in flight on the other socket. The turn is still live
+         in the model and holds only a prefix of the posted text (or
+         nothing yet); let it claim the row or the bare row and its card
+         render the same answer twice. `model.live`, not `liveTurn`:
+         conv.state is already `idle` in this window, so the #327 clamp
+         would make the claim unreachable. */
+      return x === model.live && m.text.trim().startsWith(txt);
+    });
     if (!turn) continue;
     used.add(turn);
     const idx = entries.findIndex((e) => e.id === m.id);
@@ -584,8 +599,11 @@ export function mergeThreadEntries(
   }
   /* The live turn anchors under its prompting message like a posted one
      (#308) — a newer question must not push it below itself at the tail.
-     byRef is stale past the leftover splices, so look the row up fresh. */
-  if (liveTurn) {
+     byRef is stale past the leftover splices, so look the row up fresh.
+     A live turn that already claimed its posted row (#691) is `used` —
+     rendering it here too would double its card under one `turn-<id>`
+     key (the failure this issue reports). */
+  if (liveTurn && !used.has(liveTurn)) {
     const rows = [
       ...supersededPlanEntries(liveTurn, opts.planCapable),
       entryFor(liveTurn),
@@ -847,7 +865,7 @@ export function toThreadDetail(opts: {
     ...(opts.historyTrimmed
       ? {
           transcriptNote:
-            "Earlier history was trimmed — this session's event log is capped.",
+            "Earlier history was trimmed — this thread's event log is capped.",
         }
       : {}),
     entries: [
@@ -916,4 +934,16 @@ export function threadSurface(
       ? { answerHint: `Answer once ${macName ?? "the Mac"} is back` }
       : {}),
   };
+}
+
+/** #596 AC-2: a Thread opened on a conversationId the wire doesn't know
+   yet is still loading — only once the first directory sync lands is it
+   really gone. Before this, both states rendered the same empty body and
+   an unknown id stayed blank forever. */
+export function threadBodyState(
+  known: boolean,
+  directoryReady: boolean,
+): "loading" | "gone" | undefined {
+  if (known) return undefined;
+  return directoryReady ? "gone" : "loading";
 }

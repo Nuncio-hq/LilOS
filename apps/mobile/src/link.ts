@@ -13,6 +13,7 @@ import NetInfo from "@react-native-community/netinfo";
 import { atom } from "nanostores";
 import { AppState, type AppStateStatus } from "react-native";
 import { directoryCache } from "./cache";
+import { type BlockedUpdate, blockedUpdateFor } from "./mapping";
 import { type PairedMac, removedByMac, touchMac } from "./paired-macs";
 
 /**
@@ -38,6 +39,10 @@ export const $client = atom<AppClient | undefined>(undefined);
 export const $link = atom<MacLink>("reconnecting");
 /** supervisor.state.lastError — surfaced under the offline banner's Details. */
 export const $linkError = atom<string | undefined>(undefined);
+/** #597: which side a version-mismatch says is stale — drives the blocked
+   state's "Update LilOS on this iPhone / on the Mac" line. Undefined both
+   for "not blocked" and "blocked but can't read the update side". */
+export const $blockedUpdate = atom<BlockedUpdate | undefined>(undefined);
 export const $welcome = atom<WelcomeResult | undefined>(undefined);
 /** RTT of the last successful keep-alive probe (Mac sheet). */
 export const $latencyMs = atom<number | undefined>(undefined);
@@ -53,19 +58,28 @@ export function currentSupervisor(): ConnectionSupervisor | undefined {
   return supervisor;
 }
 
-/** supervisor phase -> the UI's three words. `backoff`/`offline`/`blocked`
-   all read "Can't reach <Mac>" — and so does a retry `connecting` once a
-   failure has landed (`lastError` set): the banner appears with the first
-   failure and holds through every retry instead of blinking off per
-   attempt (#591 AC-1). `reconnecting` stays reserved for a never-failed
-   attempt — a cold launch or a healthy-session reconnect — so the banner
-   never flickers before anything has actually gone wrong. */
+/** supervisor phase -> the UI's words. `backoff`/`offline` all read
+   "Can't reach <Mac>" — and so does a retry `connecting` once a failure
+   has landed (`lastError` set): the banner appears with the first failure
+   and holds through every retry instead of blinking off per attempt
+   (#591 AC-1). `reconnecting` stays reserved for a never-failed attempt —
+   a cold launch or a healthy-session reconnect — so the banner never
+   flickers before anything has actually gone wrong. `blocked` (fatal:
+   protocol_version_mismatch) is its own word (#597 AC-2) — it's an update
+   prompt, not a reach problem. */
 export function macLinkFor(s: SupervisorState): MacLink {
   if (s.phase === "connected") return "online";
+  if (s.phase === "blocked") return "blocked";
   if (s.phase === "connecting" && s.lastError === undefined)
     return "reconnecting";
   return "offline";
 }
+
+/** #597: the socket is dead in both words — `offline` (retrying) and
+   `blocked` (fatal: version mismatch). Screens that mark stale rows and
+   mute sends should treat them alike. */
+export const linkUnreachable = (link: MacLink): boolean =>
+  link === "offline" || link === "blocked";
 
 /** Cold launch + every later launch: cache hydrate first, then dial. */
 export function startLink(mac: PairedMac, cached?: CachedDirectory): void {
@@ -141,10 +155,19 @@ export function startLink(mac: PairedMac, cached?: CachedDirectory): void {
       $latencyMs.set(Date.now() - started);
     },
     onFatalError: (error) => {
+      /* #597: a version mismatch keeps the pairing — block with the side
+         to update so the UI says "Update LilOS on this iPhone / on the
+         Mac" instead of "Can't reach it". */
+      if (
+        error instanceof RelayError &&
+        error.code === "protocol_version_mismatch"
+      ) {
+        $blockedUpdate.set(blockedUpdateFor(error));
+        return;
+      }
       /* The Mac revoked this phone (socket closed 4403) or won't take the
          stored credential at hello — the pairing is dead either way: drop
-         it and send the user back to pair instead of retrying forever.
-         protocol_version_mismatch stays a "Can't reach" detail. */
+         it and send the user back to pair instead of retrying forever. */
       if (
         error instanceof RelayError &&
         (error.code === "device_revoked" || error.code === "unauthenticated")
@@ -159,7 +182,10 @@ export function startLink(mac: PairedMac, cached?: CachedDirectory): void {
   const unsubLink = sv.state.listen((s) => {
     $linkError.set(s.lastError);
     $link.set(macLinkFor(s));
-    if (s.phase === "connected") void touchMac(mac.id);
+    if (s.phase === "connected") {
+      $blockedUpdate.set(undefined);
+      void touchMac(mac.id);
+    }
   });
 
   // Foreground wake: probe-or-replace lives in the supervisor; we only owe
@@ -219,6 +245,7 @@ export function stopLink(): void {
   $client.set(undefined);
   $link.set("reconnecting");
   $linkError.set(undefined);
+  $blockedUpdate.set(undefined);
   $welcome.set(undefined);
   $latencyMs.set(undefined);
 }

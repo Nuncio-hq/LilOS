@@ -31,6 +31,8 @@ import {
   EditEmployeeDialog,
   EmployeeHome,
   FocusView,
+  getDraft,
+  MainPane,
   NO_WS,
   type PlanAction,
   StatusBanner,
@@ -69,6 +71,7 @@ import {
   hasCapability,
   interruptSession,
   loadThreadHistory,
+  moveConversationFolder,
   openDmChannel,
   pendingStart,
   refreshModels,
@@ -100,6 +103,7 @@ import {
   cwdInfo,
   discovered,
   folders,
+  foldersLoaded,
   fsRows,
   loadDir,
   loadDiscovered,
@@ -344,6 +348,10 @@ export function DmPage() {
   const cwdBranches = useAtom(cwdInfo);
   const [wsPicks, setWsPicks] = useState<Record<string, WsPick>>({});
   const [addFolderOpen, setAddFolderOpen] = useState(false);
+  /* #581 AC-2: "Add a folder" on a folder-less thread opens the same
+     dialog — but picks a MOVE target for that session, not a recents
+     entry for the next send. */
+  const [moveFolderOpen, setMoveFolderOpen] = useState(false);
   useEffect(() => {
     toastOnFail("Couldn't load folders", refreshFolders());
   }, []);
@@ -803,9 +811,10 @@ export function DmPage() {
       if (!c) return;
       sendKeyDone(`sfresh:${conv.id}`, text);
       filesOnlyBanner.set(null);
-      /* Sessions land on Focus (#149) — the seeded session does too. */
+      /* #577: a fresh session lands where a new send does — the DM
+         list with the thread open beside it, not a jump into Focus. */
       void navigate({
-        to: "/dm/$employeeId/$conversationId/focus",
+        to: "/dm/$employeeId/$conversationId",
         params: { employeeId, conversationId: c.id },
       });
     });
@@ -859,26 +868,32 @@ export function DmPage() {
     return ids.size || texts.size ? { ids, texts } : undefined;
   }, [localRewoundIds, localRewoundTexts, drops, openConvId]);
 
-  /* AC-6: pre-select the employee's last session's folder once it and the
-     recents are known — but never stomp a pick the user already made. */
+  /* AC-6 + #581 AC-1: pre-select what the LAST session used — a folder
+     pick follows the last session's folder, and a folder-less last
+     session means "No folder" follows too (it was silently reselecting
+     the repo before). Never stomps a pick the user already made — and
+     never stamps "No folder" while the recents probe is still out: a
+     folder-bound last session waits for folderRows before its pick
+     resolves (the stamp is once-only). */
+  const recentsReady = useAtom(foldersLoaded);
   useEffect(() => {
     if (wsPicks[employeeId] !== undefined) return;
-    const lastCwd = [...convs].reverse().find((c) => c.cwd)?.cwd;
-    const f = folderRows.find((x) => x.path === lastCwd && !x.missing);
-    if (!f) return;
+    const last = convs.at(-1);
+    if (!last) return;
+    const pickForLast = (): WsPick | undefined => {
+      if (!last.cwd) return NO_WS;
+      if (!recentsReady) return undefined;
+      const f = folderRows.find((x) => x.path === last.cwd && !x.missing);
+      return f
+        ? { folder: f.id, base: f.branches[0] ?? "", mode: "direct" }
+        : NO_WS;
+    };
+    const pick = pickForLast();
+    if (pick === undefined) return;
     setWsPicks((w) =>
-      w[employeeId] !== undefined
-        ? w
-        : {
-            ...w,
-            [employeeId]: {
-              folder: f.id,
-              base: f.branches[0] ?? "",
-              mode: "direct",
-            },
-          },
+      w[employeeId] !== undefined ? w : { ...w, [employeeId]: pick },
     );
-  }, [employeeId, convs, folderRows, wsPicks]);
+  }, [employeeId, convs, folderRows, recentsReady, wsPicks]);
 
   const feedAttached = useAtom(sessionFeedAttached);
   const watched = useAtom(sessionWatched);
@@ -1140,18 +1155,13 @@ export function DmPage() {
       clearDraftIfSent(draftKey.dm(employeeId), text);
       setDraftPick(({ [employeeId]: _drop, ...rest }) => rest);
       setDraftAccess(({ [employeeId]: _drop, ...rest }) => rest);
-      /* A fresh session still lands in Focus (#195 keeps send-as-today),
-         but through the panel URL first — every way back out of Focus
-         (Back/Esc/browser back) then lands on the same open peek. */
+      /* #577 (decided 2026-10-07): a new send STAYS on the DM list with
+         the thread open in the side panel, like the prototype — Focus
+         opens only when the user asks for it. */
       return navigate({
         to: "/dm/$employeeId/$conversationId",
         params: { employeeId, conversationId: conv.id },
-      }).then(() =>
-        navigate({
-          to: "/dm/$employeeId/$conversationId/focus",
-          params: { employeeId, conversationId: conv.id },
-        }),
-      );
+      });
     });
   };
 
@@ -1275,6 +1285,14 @@ export function DmPage() {
         setThreadDraft(PLAN_CHANGE_PREFIX);
         return;
       }
+      /* #590 AC-1: an Approve/Reject decides the plan — a prefix the user
+         never typed into (draft still exactly "Change the plan: ") is
+         cleared, or the composer keeps a dead prompt to edit a decided
+         plan. A draft with content stays. The draft is read live (the
+         store, not the render-scope value): a fast Approve can beat the
+         re-render that would carry the prefix into this closure. */
+      if (getDraft(draftKey.thread(conv.id)) === PLAN_CHANGE_PREFIX)
+        setThreadDraft("");
       void awaitPlanAsk(planId).then((ask) => {
         /* respondToRequest toasts its own failure line — the catch only
            keeps the rethrow from going unhandled. */
@@ -1528,176 +1546,193 @@ export function DmPage() {
          back button return to the DM with the panel open on this session
          (#195 AC-2). */
       return (
-        <FocusView
-          root={rootMsg}
-          thread={thread}
-          channel={uiChannel}
-          lead={uiEmp}
-          emp={empFn}
-          human={human}
-          resolved={resolved}
-          setResolved={(r) => {
-            const diff = Object.entries(r).find(([k, v]) => resolved[k] !== v);
-            if (diff) {
-              void respondToRequest(diff[0], outcomeFromLabel(diff[1])).catch(
-                () => {},
-              );
-            }
-          }}
-          work={work}
-          onOpenSession={onOpenSession}
-          onStopJob={jobsCapable ? onStopJob : undefined}
-          onBack={() =>
-            void navigate({
-              to: "/dm/$employeeId/$conversationId",
-              params: { employeeId, conversationId: conv.id },
-            })
-          }
-          onNav={() => navOpen.set(true)}
-          running={running}
-          onSend={sendInThread}
-          onPlan={planCap ? onPlan : undefined}
-          onStop={
-            running
-              ? () =>
-                  toastOnFail(
-                    "Couldn't stop the turn",
-                    interruptSession(conv.id),
-                  )
-              : undefined
-          }
-          lastSent={lastSent}
-          /* #419: hover Retry on the last turn re-sends the last user
+        <div className="flex min-h-0 min-w-0 flex-1">
+          {/* #660: the page owns the <main> landmark — the feed, panel and
+              Focus all render inside the same element, so nothing detaches
+              the pane mid-layout. */}
+          <MainPane>
+            <FocusView
+              bare
+              root={rootMsg}
+              thread={thread}
+              channel={uiChannel}
+              lead={uiEmp}
+              emp={empFn}
+              human={human}
+              resolved={resolved}
+              setResolved={(r) => {
+                const diff = Object.entries(r).find(
+                  ([k, v]) => resolved[k] !== v,
+                );
+                if (diff) {
+                  void respondToRequest(
+                    diff[0],
+                    outcomeFromLabel(diff[1]),
+                  ).catch(() => {});
+                }
+              }}
+              work={work}
+              onOpenSession={onOpenSession}
+              onStopJob={jobsCapable ? onStopJob : undefined}
+              onBack={() =>
+                void navigate({
+                  to: "/dm/$employeeId/$conversationId",
+                  params: { employeeId, conversationId: conv.id },
+                })
+              }
+              onNav={() => navOpen.set(true)}
+              running={running}
+              onSend={sendInThread}
+              onPlan={planCap ? onPlan : undefined}
+              onStop={
+                running
+                  ? () =>
+                      toastOnFail(
+                        "Couldn't stop the turn",
+                        interruptSession(conv.id),
+                      )
+                  : undefined
+              }
+              lastSent={lastSent}
+              /* #419: hover Retry on the last turn re-sends the last user
              message into this same session. */
-          onRetry={() => retryConv(conv)}
-          onRewind={conv.engineRef ? (id) => rewindTo(conv, id) : undefined}
-          rewindWarning={rewindWarning}
-          seedFiles={seedFiles}
-          onSeededFiles={() => setSeedFiles(undefined)}
-          onModel={(c) =>
-            toastOnFail(
-              "Couldn't switch the model",
-              setConversationModel(conv.id, c),
-            )
-          }
-          banner={historyNotice}
-          models={catalog.length ? catalog : undefined}
-          /* Focus is a picker surface too — the same Refresh / Edit models…
+              onRetry={() => retryConv(conv)}
+              onRewind={conv.engineRef ? (id) => rewindTo(conv, id) : undefined}
+              rewindWarning={rewindWarning}
+              seedFiles={seedFiles}
+              onSeededFiles={() => setSeedFiles(undefined)}
+              onModel={(c) =>
+                toastOnFail(
+                  "Couldn't switch the model",
+                  setConversationModel(conv.id, c),
+                )
+              }
+              banner={historyNotice}
+              models={catalog.length ? catalog : undefined}
+              /* Focus is a picker surface too — the same Refresh / Edit models…
              extras as the thread panel (#140: the not-in-list row's hint
              runs Refresh). */
-          picker={picker}
-          defaultModel={defaultModel}
-          defaultProvider={defaultProvider}
-          access={conv.access}
-          onAccess={(a) =>
-            toastOnFail(
-              "Couldn't change the access level",
-              setConversationAccess(conv.id, a),
-            )
-          }
-          accept={canAttachImages ? "image/*" : undefined}
-          maxFileSize={MAX_ATTACHMENT_BYTES}
-          onAttachError={sayError}
-          say={sayNotice}
-          /* #543: the Workbench exists for every session — the accessors
+              picker={picker}
+              defaultModel={defaultModel}
+              defaultProvider={defaultProvider}
+              access={conv.access}
+              onAccess={(a) =>
+                toastOnFail(
+                  "Couldn't change the access level",
+                  setConversationAccess(conv.id, a),
+                )
+              }
+              accept={canAttachImages ? "image/*" : undefined}
+              maxFileSize={MAX_ATTACHMENT_BYTES}
+              onAttachError={sayError}
+              say={sayNotice}
+              /* #543: the Workbench exists for every session — the accessors
              are folder-independent (each call takes the cwd), so `host`
              rides unconditionally; the Workbench gates its folder-bound
              tabs on `work?.path` itself. */
-          host={hostAccessors}
-          transcriptNote={transcriptNote}
-          scrollTo={scrollTo ?? undefined}
-          onScrolled={() => setScrollTo(null)}
-          steer={steer}
-          agentWorking={!!modelLive?.agentInitiated}
-          /* #319 AC-2: the URL carries the Workbench tab — opening on
+              host={hostAccessors}
+              transcriptNote={transcriptNote}
+              scrollTo={scrollTo ?? undefined}
+              onScrolled={() => setScrollTo(null)}
+              steer={steer}
+              agentWorking={!!modelLive?.agentInitiated}
+              /* #319 AC-2: the URL carries the Workbench tab — opening on
              `?tab=` (a panel link's pick) and keeping it on further picks
              means a reload always lands on the tab the URL names. */
-          initialTab={focusTab}
-          onTab={(t: WbTab) =>
-            void navigate({
-              to: "/dm/$employeeId/$conversationId/focus",
-              params: { employeeId, conversationId: conv.id },
-              search: { tab: t },
-              replace: true,
-            })
-          }
-          /* #554: ⌘F over the conversation (desktop bridge; absent on web). */
-          findBar={<DesktopFindBar />}
-          pending={pendingItems}
-          reconnecting={reconnecting}
-          onRemovePending={onRemovePending}
-          onUnqueue={onUnqueue}
-          onSendQueued={onSendQueued}
-          draft={threadDraft}
-          onDraftChange={setThreadDraft}
-          /* Same capability probe as the thread panel (#110): null pins the
+              initialTab={focusTab}
+              onTab={(t: WbTab) =>
+                void navigate({
+                  to: "/dm/$employeeId/$conversationId/focus",
+                  params: { employeeId, conversationId: conv.id },
+                  search: { tab: t },
+                  replace: true,
+                })
+              }
+              /* #554: ⌘F over the conversation (desktop bridge; absent on web). */
+              findBar={<DesktopFindBar />}
+              pending={pendingItems}
+              reconnecting={reconnecting}
+              onRemovePending={onRemovePending}
+              onUnqueue={onUnqueue}
+              onSendQueued={onSendQueued}
+              draft={threadDraft}
+              onDraftChange={setThreadDraft}
+              /* Same capability probe as the thread panel (#110): null pins the
              badge to a plain label when os.open isn't on the host. */
-          editors={editors ?? undefined}
-          onOpenPath={
-            openCwd && editors !== null
-              ? (path, app, line) => {
-                  void hostOsOpen(openCwd, path, app, line).catch((e) =>
-                    sayError(describeActionError("Couldn't open the file", e)),
-                  );
-                }
-              : null
-          }
-          wbSpot={wbSpot}
-          /* #587 AC-1: the Workbench's engine-owned tabs gate on the
+              editors={editors ?? undefined}
+              onOpenPath={
+                openCwd && editors !== null
+                  ? (path, app, line) => {
+                      void hostOsOpen(openCwd, path, app, line).catch((e) =>
+                        sayError(
+                          describeActionError("Couldn't open the file", e),
+                        ),
+                      );
+                    }
+                  : null
+              }
+              wbSpot={wbSpot}
+              /* #587 AC-1: the Workbench's engine-owned tabs gate on the
              declared capabilities — the strip's membership is fixed. */
-          caps={{
-            plan: planCap,
-            subagents: hasCapability("subagents"),
-            background: jobsCapable,
-          }}
-          /* #584: Suggest rides `session.ask` — a side request that adds
-             nothing to the transcript. Only where the engine declares it. */
-          onSuggest={
-            hasCapability("side_prompt") && conv.engineRef
-              ? (files) =>
-                  relay
-                    .request<{ answer: string }>("session.ask", {
-                      sessionId: conv.engineRef,
-                      text: `Write a one-line git commit message for these changed files: ${
-                        files.join(", ") || "the listed files"
-                      }`,
-                    })
-                    .then((r) => r.answer)
-              : undefined
-          }
-          /* #579 AC-1: the probe's live forge read updates the header
-             chip the moment it answers (a PR the session just opened). */
-          onPr={setProbePr}
-        >
-          {filesOnly?.conversationId === conv.id && (
-            <StatusBanner
-              tone="amber"
-              action={{
-                label: "Start a new thread from here",
-                onClick: () => startFreshFrom(conv, filesOnly.target),
+              caps={{
+                plan: planCap,
+                subagents: hasCapability("subagents"),
+                background: jobsCapable,
               }}
+              /* #584: Suggest rides `session.ask` — a side request that adds
+             nothing to the transcript. Only where the engine declares it. */
+              onSuggest={
+                hasCapability("side_prompt") && conv.engineRef
+                  ? (files) =>
+                      relay
+                        .request<{ answer: string }>("session.ask", {
+                          sessionId: conv.engineRef,
+                          text: `Write a one-line git commit message for these changed files: ${
+                            files.join(", ") || "the listed files"
+                          }`,
+                        })
+                        .then((r) => r.answer)
+                  : undefined
+              }
+              /* #579 AC-1: the probe's live forge read updates the header
+             chip the moment it answers (a PR the session just opened). */
+              onPr={setProbePr}
             >
-              {filesOnly.filesRestored
-                ? "Files restored to the earlier checkpoint — but this "
-                : "The folder kept its current state (no checkpoint stored) — and this "}
-              thread's transport can't rewind the agent's memory: it still
-              remembers the dropped messages.
-            </StatusBanner>
-          )}
-          {openQuestion && (
-            <QuestionCard
-              ask={openQuestion}
-              onAnswer={(answer) =>
-                void respondToRequest(openQuestion.id, "answer", answer).catch(
-                  () => {},
-                )
-              }
-              onCancel={() =>
-                void respondToRequest(openQuestion.id, "cancel").catch(() => {})
-              }
-            />
-          )}
-        </FocusView>
+              {filesOnly?.conversationId === conv.id && (
+                <StatusBanner
+                  tone="amber"
+                  action={{
+                    label: "Start a new thread from here",
+                    onClick: () => startFreshFrom(conv, filesOnly.target),
+                  }}
+                >
+                  {filesOnly.filesRestored
+                    ? "Files restored to the earlier checkpoint — but this "
+                    : "The folder kept its current state (no checkpoint stored) — and this "}
+                  thread's transport can't rewind the agent's memory: it still
+                  remembers the dropped messages.
+                </StatusBanner>
+              )}
+              {openQuestion && (
+                <QuestionCard
+                  ask={openQuestion}
+                  onAnswer={(answer) =>
+                    void respondToRequest(
+                      openQuestion.id,
+                      "answer",
+                      answer,
+                    ).catch(() => {})
+                  }
+                  onCancel={() =>
+                    void respondToRequest(openQuestion.id, "cancel").catch(
+                      () => {},
+                    )
+                  }
+                />
+              )}
+            </FocusView>
+          </MainPane>
+        </div>
       );
     }
 
@@ -1826,6 +1861,18 @@ export function DmPage() {
               params: { employeeId },
             })
           }
+          /* #581 AC-2: a folder-less DM thread gets "Add a folder" — the
+             pick moves the session there (same thread, same memory). The
+             panel keeps work=null for DM by design, so the gate is the
+             conversation's cwd itself. */
+          onAddFolder={
+            conv.cwd
+              ? undefined
+              : () => {
+                  setMoveFolderOpen(true);
+                  toastOnFail("Couldn't scan for repos", loadDiscovered());
+                }
+          }
           mentionables={mentionables}
           onSearchFiles={fileSearch(conv.cwd)}
           scrollTo={scrollTo ?? undefined}
@@ -1863,97 +1910,109 @@ export function DmPage() {
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1">
-      <EmployeeHome
-        e={uiEmp}
-        feed={feed}
-        threadId={openConv?.rootMessageId ?? null}
-        emp={empFn}
-        human={human}
-        onNav={() => navOpen.set(true)}
-        onProfile={() => setProfileOpen((v) => !v)}
-        onOpen={openThread}
-        onSend={send}
-        draft={homeDraft}
-        onDraftChange={setHomeDraft}
-        accept={canAttachImages ? "image/*" : undefined}
-        maxFileSize={MAX_ATTACHMENT_BYTES}
-        maxFiles={MAX_ATTACHMENTS_PER_MESSAGE}
-        onAttachError={sayError}
-        lastSent={lastSentTop}
-        panelOpen={!!openConv}
-        onPanel={() => {
-          const last = convs.at(-1);
-          if (last)
+      {/* #660: the page owns the <main> landmark — the feed, panel and Focus
+          all render inside the same element, so nothing detaches the pane
+          mid-layout. */}
+      <MainPane>
+        <EmployeeHome
+          bare
+          e={uiEmp}
+          feed={feed}
+          threadId={openConv?.rootMessageId ?? null}
+          emp={empFn}
+          human={human}
+          onNav={() => navOpen.set(true)}
+          onProfile={() => setProfileOpen((v) => !v)}
+          onOpen={openThread}
+          onSend={send}
+          draft={homeDraft}
+          onDraftChange={setHomeDraft}
+          accept={canAttachImages ? "image/*" : undefined}
+          maxFileSize={MAX_ATTACHMENT_BYTES}
+          maxFiles={MAX_ATTACHMENTS_PER_MESSAGE}
+          onAttachError={sayError}
+          lastSent={lastSentTop}
+          panelOpen={!!openConv}
+          onPanel={() => {
+            const last = convs.at(-1);
+            if (last)
+              void navigate({
+                to: "/dm/$employeeId/$conversationId",
+                params: { employeeId, conversationId: last.id },
+              });
+          }}
+          onPanelClose={() =>
             void navigate({
-              to: "/dm/$employeeId/$conversationId",
-              params: { employeeId, conversationId: last.id },
-            });
-        }}
-        folders={folderRows}
-        pick={pick}
-        setPick={setPick}
-        onAddFolder={onAddFolder}
-        loading={!channel && !dmOpenFailed}
-        composerNote={composerNote}
-        mentionables={mentionables}
-        onSearchFiles={fileSearch(pickedFolderPath)}
-        onSearchMessages={searchMessages}
-        onOpenHit={onOpenHit}
-        /* #339: the employee's connect row off system.status — the notice
+              to: "/dm/$employeeId",
+              params: { employeeId },
+            })
+          }
+          folders={folderRows}
+          pick={pick}
+          setPick={setPick}
+          onAddFolder={onAddFolder}
+          loading={!channel && !dmOpenFailed}
+          composerNote={composerNote}
+          mentionables={mentionables}
+          onSearchFiles={fileSearch(pickedFolderPath)}
+          onSearchMessages={searchMessages}
+          onOpenHit={onOpenHit}
+          /* #339: the employee's connect row off system.status — the notice
            renders only for non-connected states. */
-        connection={
-          employeeRow
-            ? {
-                state: employeeRow.state,
-                ...(employeeRow.reason ? { reason: employeeRow.reason } : {}),
-                onConnect: () =>
-                  toastOnFail("Couldn't turn on Connect", requestConnect()),
-              }
-            : undefined
-        }
-        models={catalog.length ? catalog : undefined}
-        access={draftAccess[employeeId] ?? defaultAccess.get()}
-        onAccess={(a) => setDraftAccess((d) => ({ ...d, [employeeId]: a }))}
-        modelChoice={
-          draftPick[employeeId] ??
-          choiceFor(
-            employee.model || defaultModel || "",
-            catalog,
-            /* the engine default's provider disambiguates a shared id */
-            employee.model ? undefined : defaultProvider,
-          )
-        }
-        onModel={
-          catalog.length
-            ? (c) => setDraftPick((d) => ({ ...d, [employeeId]: c }))
-            : undefined
-        }
-        picker={picker}
-        onRename={(id, title) => {
-          const conv = convs.find((c) => c.rootMessageId === id);
-          if (conv)
-            toastOnFail(
-              "Couldn't rename the thread",
-              renameConversation(conv.id, title),
-            );
-        }}
-        onArchive={(id, archived) => {
-          const conv = convs.find((c) => c.rootMessageId === id);
-          if (conv)
-            toastOnFail(
-              archived
-                ? "Couldn't archive the thread"
-                : "Couldn't unarchive the thread",
-              archiveConversation(conv.id, archived),
-            );
-        }}
-        /* #419: the session row's failure card retries the whole session —
+          connection={
+            employeeRow
+              ? {
+                  state: employeeRow.state,
+                  ...(employeeRow.reason ? { reason: employeeRow.reason } : {}),
+                  onConnect: () =>
+                    toastOnFail("Couldn't turn on Connect", requestConnect()),
+                }
+              : undefined
+          }
+          models={catalog.length ? catalog : undefined}
+          access={draftAccess[employeeId] ?? defaultAccess.get()}
+          onAccess={(a) => setDraftAccess((d) => ({ ...d, [employeeId]: a }))}
+          modelChoice={
+            draftPick[employeeId] ??
+            choiceFor(
+              employee.model || defaultModel || "",
+              catalog,
+              /* the engine default's provider disambiguates a shared id */
+              employee.model ? undefined : defaultProvider,
+            )
+          }
+          onModel={
+            catalog.length
+              ? (c) => setDraftPick((d) => ({ ...d, [employeeId]: c }))
+              : undefined
+          }
+          picker={picker}
+          onRename={(id, title) => {
+            const conv = convs.find((c) => c.rootMessageId === id);
+            if (conv)
+              toastOnFail(
+                "Couldn't rename the thread",
+                renameConversation(conv.id, title),
+              );
+          }}
+          onArchive={(id, archived) => {
+            const conv = convs.find((c) => c.rootMessageId === id);
+            if (conv)
+              toastOnFail(
+                archived
+                  ? "Couldn't archive the thread"
+                  : "Couldn't unarchive the thread",
+                archiveConversation(conv.id, archived),
+              );
+          }}
+          /* #419: the session row's failure card retries the whole session —
            same re-send as the turn's hover Retry. */
-        onRetrySession={(m) => {
-          const conv = convs.find((c) => c.rootMessageId === m.id);
-          if (conv) retryConv(conv);
-        }}
-      />
+          onRetrySession={(m) => {
+            const conv = convs.find((c) => c.rootMessageId === m.id);
+            if (conv) retryConv(conv);
+          }}
+        />
+      </MainPane>
       {threadEl}
       {addFolderOpen && (
         <AddFolderDialog
@@ -1963,6 +2022,22 @@ export function DmPage() {
           onNeedDir={loadDir}
           onClose={() => setAddFolderOpen(false)}
           onAdd={onDialogAdd}
+        />
+      )}
+      {moveFolderOpen && openConv && (
+        <AddFolderDialog
+          folders={folderRows}
+          fs={fsListing}
+          discovered={discoveredRows}
+          onNeedDir={loadDir}
+          onClose={() => setMoveFolderOpen(false)}
+          onAdd={(path) => {
+            setMoveFolderOpen(false);
+            toastOnFail(
+              "Couldn't move the session to that folder",
+              moveConversationFolder(openConv.id, path),
+            );
+          }}
         />
       )}
       {profileOpen && !editOpen && (
