@@ -121,3 +121,46 @@ test("DM page: with no session open the feed fills the window (no empty right co
     await stack.stop();
   }
 });
+
+/* #660: the flake was `boundingBox()` returning null — the resolved <main>
+   was detached again by the time the box was measured. The DM pane is two
+   different <main> elements (the feed's and Focus's), so send → /focus
+   swaps the node mid-poll. LILOS_SUMMARY_DELAY_MS holds the new session's
+   summary back so `openConv` lands AFTER the /focus navigation — the exact
+   window the CI failure sampled inside. The assertion is on the element
+   itself: a pane that survives the transition still has a box; a remounted
+   one never does (detached → null, deterministically). */
+test("AC-660 the DM main pane stays mounted through send → Focus", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1288, height: 700 });
+  const stack = await bootStack(
+    "dmpane",
+    { relay: 4640, feed: 4641, web: 5230 },
+    { LILOS_SUMMARY_DELAY_MS: "1500" },
+  );
+  try {
+    await dmDefault(page, stack.webUrl);
+    await expect(mainPane(page)).toBeVisible();
+    const feedMain = await mainPane(page).elementHandle();
+
+    const box = page.locator("textarea").last();
+    await box.fill(PROMPT);
+    await box.press("Enter");
+    await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+\/focus/, {
+      timeout: 30_000,
+    });
+    // Wait for the Focus surface itself — with the summary held back this
+    // settles only once the delayed row lands and Focus takes the pane.
+    await expect(page.getByRole("button", { name: /back to dm/i })).toBeVisible(
+      { timeout: 30_000 },
+    );
+
+    // The pane element measured before the send must still be mounted:
+    // a remount here is what detached the node and null'd boundingBox.
+    expect(await feedMain.boundingBox()).not.toBeNull();
+    expect(await rightGapSettled(page)).toBeLessThanOrEqual(3);
+  } finally {
+    await stack.stop();
+  }
+});
