@@ -893,6 +893,20 @@ export class RelayClient {
     const store = this.sessionFeeds.get(conversationId);
     if (!store) return;
     const f = store.get();
+    /* #596: the synced directory is the authority on which conversations
+       exist. A feed for one it doesn't know — a stale push/deep link to a
+       thread since removed on the Mac — must not pull `session.events` at
+       all (before this it got `not_found`, then re-tried on every
+       reconnect forever). Its honest state is "synced and empty"; a
+       conversation that appears later re-syncs via `conversation.updated`
+       like any fresh feed. */
+    if (
+      this.directoryReady.get() &&
+      !this.conversations.get().some((c) => c.id === conversationId)
+    ) {
+      store.set({ ...f, synced: true });
+      return;
+    }
     let res: EventsSinceResult;
     try {
       res = await this.request<EventsSinceResult>("session.events", {
@@ -1408,18 +1422,6 @@ export class RelayClient {
       }
       case "conversation.updated": {
         const event = ConversationUpdatedEvent.parse(params);
-        /* A conversation gained an engine session (engineRef bound): an
-           empty/unsynced feed resyncs now so history shows without a
-           reopen. */
-        const feed = this.sessionFeeds.get(event.conversation.id);
-        if (
-          event.conversation.engineRef &&
-          feed &&
-          (!feed.get().synced || feed.get().events.length === 0) &&
-          this.state.get() === "ready"
-        ) {
-          void this.syncSessionFeed(event.conversation.id).catch(() => {});
-        }
         const list = this.conversations.get();
         const idx = list.findIndex((c) => c.id === event.conversation.id);
         const next =
@@ -1429,6 +1431,19 @@ export class RelayClient {
                 c.id === event.conversation.id ? event.conversation : c,
               );
         this.conversations.set(next);
+        /* A conversation gained an engine session (engineRef bound): an
+           empty/unsynced feed resyncs now so history shows without a
+           reopen. Runs after the directory write so the just-arrived
+           conversation counts as known to the gone-feed gate (#596). */
+        const feed = this.sessionFeeds.get(event.conversation.id);
+        if (
+          event.conversation.engineRef &&
+          feed &&
+          (!feed.get().synced || feed.get().events.length === 0) &&
+          this.state.get() === "ready"
+        ) {
+          void this.syncSessionFeed(event.conversation.id).catch(() => {});
+        }
         const summaries = this.conversationSummaries.get();
         const sIdx = summaries.findIndex(
           (s) => s.conversation.id === event.conversation.id,
