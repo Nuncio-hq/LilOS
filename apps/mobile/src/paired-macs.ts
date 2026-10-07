@@ -101,7 +101,20 @@ export const ROUTE_LABEL: Record<Route, string> = {
   local: "on this network",
 };
 
-/** "my-mac.tail0000.ts.net" → "my-mac" when the QR had no name. */
+/** "my-mac.tail0000.ts.net" → "my-mac" when the QR had no name. An IP
+   literal (or localhost) is never a name — "172" is not a Mac — so the
+   card falls back to "Your Mac" (#688 AC-2). */
 export function fallbackName(host: string): string {
-  return host.split(".")[0]?.split(":")[0] || host;
+  const first = host.startsWith("[")
+    ? (host.match(/^\[(.*?)\]/)?.[1] ?? host)
+    : (host.split(":")[0] ?? "");
+  if (
+    /^\d{1,3}(\.\d{1,3}){3}$/.test(first) ||
+    first.includes("::") ||
+    /^\[.*\]$/.test(first) ||
+    first === "localhost" ||
+    /^\d+$/.test(first)
+  )
+    return "Your Mac";
+  return host.split(".")[0]?.split(":")[0] || "Your Mac";
 }

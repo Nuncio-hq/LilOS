@@ -70,6 +70,21 @@ export function parsePairingUrl(raw: string): PairingOffer | null {
   return name ? { host, code, name } : { host, code };
 }
 
+/** #688 AC-1: how the wrong code got here decides the retry — a typed
+   code is probably a typo, so "Re-enter code" is primary and leads back
+   to the field (entry kept, selected); a scanned/deep-link code can't be
+   retyped, so "Scan a new code" stays primary. */
+export type CodeEntry = "typed" | "scanned" | "link";
+
+export function mismatchActions(entry: CodeEntry | undefined): {
+  primary: "reenter" | "rescan";
+  secondary: "rescan" | "manual";
+} {
+  return entry === "typed"
+    ? { primary: "reenter", secondary: "rescan" }
+    : { primary: "rescan", secondary: "manual" };
+}
+
 export type ManualErrors = { host?: string; code?: string };
 
 export function validateManual(host: string, code: string): ManualErrors {

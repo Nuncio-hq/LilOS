@@ -104,7 +104,9 @@ export { safeExternalUrl } from "./lib/external-url";
 export {
   buildPairingUrl,
   CODE_LENGTH,
+  type CodeEntry,
   formatCode,
+  mismatchActions,
   normalizeCode,
   normalizeHost,
   type PairingOffer,

@@ -1,4 +1,4 @@
-import type { PairingOffer } from "@lilos/ui-native";
+import type { CodeEntry, PairingOffer } from "@lilos/ui-native";
 import {
   createNavigationContainerRef,
   type NavigatorScreenParams,
@@ -12,8 +12,12 @@ export type Routes = {
   Welcome: undefined;
   Pair: undefined;
   Scan: undefined;
-  Manual: undefined;
-  Connecting: { offer: PairingOffer };
+  /* `reenter` = back from a wrong typed code: the code field comes up
+     focused with its kept entry selected (#688 AC-1). */
+  Manual: { reenter?: boolean } | undefined;
+  /* `entry` records how the code was entered so a mismatch retry leads
+     with retyping (typed) or rescanning (scanned/link) (#688 AC-1). */
+  Connecting: { offer: PairingOffer; entry?: CodeEntry };
   Connected: undefined;
   Tabs: NavigatorScreenParams<TabRoutes>;
   Mac: undefined;

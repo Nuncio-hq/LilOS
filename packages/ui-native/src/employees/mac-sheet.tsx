@@ -46,9 +46,11 @@ export function MacSheet({
   mac: MacDetail;
   /** #597 AC-2: a version mismatch is its own blocked state — the update
       line plus the action that takes them to it (e.g. Open TestFlight on
-      the phone side; Try again stays alongside it). */
+      the phone side; Try again stays alongside it). `side` is the stale
+      device — the link badge sits on it (#688 AC-3). */
   blocked?: {
     body: string;
+    side?: "phone" | "mac";
     action?: { label: string; onPress: () => void };
   };
   onRetry: () => void;
@@ -71,7 +73,7 @@ export function MacSheet({
       >
         <Rise>
           <View className="items-center gap-4 pt-1">
-            <LinkHero link={mac.link} />
+            <LinkHero link={mac.link} updateSide={blocked?.side} />
             <View className="items-center gap-1.5">
               <Text className="text-center font-bold text-[26px] text-foreground leading-[32px] tracking-tight">
                 {mac.name}
@@ -104,6 +106,12 @@ export function MacSheet({
               >
                 {mac.host}
               </Text>
+              {/* #688 AC-3: the reach line (a plain offline reason, "seen
+                  just now") is a caption here — tiles only exist while
+                  they hold data. */}
+              <AppText size="xs" tone="muted" className="text-center">
+                {mac.relay.lastSeen}
+              </AppText>
             </View>
             {offline && <Pill label="Try again" size="sm" onPress={onRetry} />}
             {blockedLink && blocked && (
@@ -131,22 +139,27 @@ export function MacSheet({
           </View>
         </Rise>
 
+        {/* #688 AC-3: a tile only renders while it holds data — no "—"
+            placeholders (the reach line moved up under the status pill,
+            and "not running" always carries the engine's name). */}
         <Rise delay={80}>
           <View className="flex-row gap-2.5">
-            <Tile
-              icon="bolt.fill"
-              tone={online ? "success" : "muted-foreground"}
-              value={online ? (mac.relay.latency ?? "—") : "—"}
-              /* `lastSeen` carries the whole label — "seen just now", a
-                 plain offline reason (#597), "last seen 3 min ago". */
-              label={mac.relay.lastSeen}
-            />
-            <Tile
-              icon="point.3.connected.trianglepath.dotted"
-              tone="primary"
-              value={mac.relay.version}
-              label="Relay"
-            />
+            {mac.relay.latency && (
+              <Tile
+                icon="bolt.fill"
+                tone="success"
+                value={mac.relay.latency}
+                label="Latency"
+              />
+            )}
+            {mac.relay.version !== "—" && (
+              <Tile
+                icon="point.3.connected.trianglepath.dotted"
+                tone="primary"
+                value={mac.relay.version}
+                label="Relay"
+              />
+            )}
             <Tile
               icon="sparkle"
               tone="merged"
@@ -159,14 +172,30 @@ export function MacSheet({
         <Rise delay={160}>
           <Group title="This phone can">
             <View className="flex-row justify-around px-2 py-3.5">
-              <Can icon="bubble.left.and.bubble.right.fill" label="Message" />
-              <Can icon="checkmark.seal.fill" label="Approve" />
-              <Can icon="eye.fill" label="Review" />
+              {/* #688 AC-3: nothing here works until a version-mismatch
+                  update lands — the whole row reads disabled. */}
+              <Can
+                icon="bubble.left.and.bubble.right.fill"
+                label="Message"
+                off={blockedLink ? "available after the update" : undefined}
+              />
+              <Can
+                icon="checkmark.seal.fill"
+                label="Approve"
+                off={blockedLink ? "available after the update" : undefined}
+              />
+              <Can
+                icon="eye.fill"
+                label="Review"
+                off={blockedLink ? "available after the update" : undefined}
+              />
               <Can icon="person.badge.plus" label="Hire" off />
             </View>
           </Group>
           <AppText size="xs" tone="muted" className="mt-1.5 px-2">
-            {`Paired ${mac.paired} · hiring stays on the Mac`}
+            {blockedLink
+              ? `Paired ${mac.paired} · available after the update`
+              : `Paired ${mac.paired} · hiring stays on the Mac`}
           </AppText>
         </Rise>
 
@@ -187,8 +216,15 @@ export function MacSheet({
 
 /* Phone · · · · Mac — the connection, drawn. While connected a pulse
    travels phone → Mac → phone and back again, easing at each end; red dots
-   and a ✕ when the phone can't reach it. */
-function LinkHero({ link }: { link: MacLink }) {
+   and a ✕ when the phone can't reach it. On a version mismatch the update
+   badge sits on the device that's stale (#688 AC-3). */
+function LinkHero({
+  link,
+  updateSide,
+}: {
+  link: MacLink;
+  updateSide?: "phone" | "mac";
+}) {
   const online = link === "online";
   const offline = link === "offline";
   const blocked = link === "blocked";
@@ -218,9 +254,21 @@ function LinkHero({ link }: { link: MacLink }) {
     return () => loop.stop();
   }, [online, t]);
   const W = 96;
+  /* The update badge rides on whichever device is stale — bottom edge of
+     its art; no `updateSide` known keeps the old mid-line spot. */
+  const updateBadge = (
+    <Icon name="arrow.down.circle.fill" size={16} tone="warning" />
+  );
   return (
     <View className="flex-row items-end gap-4">
-      <PhoneArt scale={1.05} />
+      <View>
+        <PhoneArt scale={1.05} />
+        {blocked && updateSide === "phone" && (
+          <View className="absolute -right-1.5 -bottom-1.5 rounded-full bg-background">
+            {updateBadge}
+          </View>
+        )}
+      </View>
       <View
         style={{ width: W, height: 14, marginBottom: 22 }}
         className="justify-center"
@@ -261,13 +309,18 @@ function LinkHero({ link }: { link: MacLink }) {
             <Icon name="xmark.circle.fill" size={16} tone="destructive" />
           </View>
         )}
-        {blocked && (
-          <View className="absolute self-center">
-            <Icon name="arrow.down.circle.fill" size={16} tone="warning" />
+        {blocked && !updateSide && (
+          <View className="absolute self-center">{updateBadge}</View>
+        )}
+      </View>
+      <View>
+        <MacArt scale={1.05} />
+        {blocked && updateSide === "mac" && (
+          <View className="absolute -right-1.5 -bottom-1.5 rounded-full bg-background">
+            {updateBadge}
           </View>
         )}
       </View>
-      <MacArt scale={1.05} />
     </View>
   );
 }
@@ -312,12 +365,19 @@ function Can({
 }: {
   icon: SFSymbol;
   label: string;
-  off?: boolean;
+  /** `true` = Mac-only (hire); a string = the reason it's disabled. */
+  off?: boolean | string;
 }) {
   return (
     <View
       accessible
-      accessibilityLabel={off ? `${label}: only on the Mac` : label}
+      accessibilityLabel={
+        typeof off === "string"
+          ? `${label}: ${off}`
+          : off
+            ? `${label}: only on the Mac`
+            : label
+      }
       className="items-center gap-1.5"
       style={off ? { opacity: 0.4 } : undefined}
     >

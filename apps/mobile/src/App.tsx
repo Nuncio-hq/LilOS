@@ -157,7 +157,7 @@ function Scan({ navigation }: Props<"Scan">) {
       }
       locked.current = true;
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      navigation.navigate("Connecting", { offer });
+      navigation.navigate("Connecting", { offer, entry: "scanned" });
     },
     [navigation],
   );
@@ -198,10 +198,13 @@ function Scan({ navigation }: Props<"Scan">) {
   );
 }
 
-function Manual({ navigation }: Props<"Manual">) {
+function Manual({ navigation, route }: Props<"Manual">) {
   return (
     <ManualCodeScreen
-      onSubmit={(offer) => navigation.navigate("Connecting", { offer })}
+      reenter={route.params?.reenter}
+      onSubmit={(offer) =>
+        navigation.navigate("Connecting", { offer, entry: "typed" })
+      }
     />
   );
 }
@@ -209,7 +212,7 @@ function Manual({ navigation }: Props<"Manual">) {
 /* The only place the grant is spent: POST {host}/pair/exchange → the phone's
    own device credential, straight into the Keychain list. */
 function Connecting({ navigation, route }: Props<"Connecting">) {
-  const { offer } = route.params;
+  const { offer, entry } = route.params;
   const [state, setState] = useState<ConnectingState>("connecting");
   const [retryAfter, setRetryAfter] = useState<number | undefined>(undefined);
   const [attempt, setAttempt] = useState(0);
@@ -283,13 +286,21 @@ function Connecting({ navigation, route }: Props<"Connecting">) {
       macName={offer.name ?? fallbackName(offer.host)}
       host={offer.host}
       retryAfterSeconds={retryAfter}
+      entry={entry}
       onCancel={() => navigation.goBack()}
       onRetry={() => {
         setState("connecting");
         setAttempt((a) => a + 1);
       }}
       onRescan={() => navigation.popTo("Scan")}
-      onManual={() => navigation.popTo("Manual")}
+      /* A wrong typed code goes back to its own field (kept + selected);
+         a scanned one just opens Manual normally (#688 AC-1). */
+      onManual={() =>
+        navigation.popTo(
+          "Manual",
+          entry === "typed" ? { reenter: true } : undefined,
+        )
+      }
     />
   );
 }
@@ -414,7 +425,7 @@ function Tabs() {
         name="Activity"
         component={Activity}
         options={{
-          title: "Needs you",
+          title: "Activity",
           tabBarLabel:
             offline && waiting ? `Activity · ${waiting}` : "Activity",
           // This tab is the full list; the accessory would repeat it.
@@ -468,7 +479,9 @@ function Mac({ navigation }: Props<"Mac">) {
               : `${link === "online" ? "seen" : "last seen"} ${ago(mac.lastSeenAt)}`,
         },
         engine: {
-          name: engineHost?.detail ?? (engineHost?.connected ? "Hermes" : "—"),
+          /* #688 AC-3: "not running" always names its engine — never a
+             bare "—" subject. */
+          name: engineHost?.detail ?? "Hermes",
           version: engineHost?.connected
             ? (engineHost.state ?? "running")
             : "not running",
@@ -483,6 +496,8 @@ function Mac({ navigation }: Props<"Mac">) {
         link === "blocked"
           ? {
               body: blockedLine(blockedUpdate),
+              /* The badge sits on the stale device (#688 AC-3). */
+              side: blockedUpdate,
               /* The update action: when this iPhone is the stale side the
                  sheet's primary button takes them to TestFlight, where
                  LilOS ships. A Mac-side stale stays a Try again — the
@@ -550,7 +565,8 @@ function useDeepLinks(phase: string) {
     /* Exiting flips the phase, which refires this effect on the fresh
        onboarding nav tree. */
     if ($demo.get()) return exitDemo();
-    if (phase === "onboarding") nav.navigate("Connecting", { offer });
+    if (phase === "onboarding")
+      nav.navigate("Connecting", { offer, entry: "link" });
   }, [url, phase]);
 }
 
