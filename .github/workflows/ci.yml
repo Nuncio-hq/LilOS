@@ -125,6 +125,30 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+  # TEMPORARY #659 evidence leg — ac-134's strict locators 20x green plus the
+  # paced-feed repro spec 20x green under LILOS_FEED_DELAY_MS. Removed before
+  # the PR is marked ready; intentionally NOT part of `verify`'s needs.
+  e2e-659-repeat:
+    needs: scope
+    if: needs.scope.outputs.e2e == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Install Playwright browsers
+        run: bunx playwright install --with-deps chromium
+      - name: Install Xvfb
+        run: sudo apt-get install -y xvfb
+      - name: E2E ac-134 + ac-659 x20
+        run: >-
+          xvfb-run -a bun run test:e2e
+          e2e/ac-134-rewind.spec.ts e2e/ac-659-reply-once.spec.ts
+          --repeat-each=20
+
   verify:
     needs: [scope, checks, e2e]
     if: always() # reports on every path: draft, docs-only, failure, cancel
