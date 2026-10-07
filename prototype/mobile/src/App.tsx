@@ -80,8 +80,12 @@ import {
   deny,
   playOnOpen,
   rejectPlan,
+  removeNotSent,
   reply,
   resetTeam,
+  retryTurn,
+  searchDm,
+  sendNow,
   startLife,
   startSession,
   stop,
@@ -138,7 +142,7 @@ type Routes = {
   Connected: undefined;
   Tabs: NavigatorScreenParams<TabRoutes>;
   Dm: { employeeId: string };
-  Thread: { id: string };
+  Thread: { id: string; scrollTo?: string };
   ThreadInfo: { id: string };
   /** A subagent of a turn in that thread (issue #170). */
   Subagent: { thread: string; id: string };
@@ -553,6 +557,13 @@ function Dm({ navigation, route }: Props<"Dm">) {
       }}
       onPickFolder={() => navigation.navigate("FolderPicker")}
       onPickModel={() => navigation.navigate("ModelPicker", {})}
+      onSearchMessages={(q) => searchDm(employee.id, q)}
+      onOpenHit={(h) =>
+        navigation.navigate("Thread", {
+          id: h.threadId,
+          scrollTo: h.entryId,
+        })
+      }
     />
   );
 }
@@ -631,6 +642,16 @@ function Thread({ navigation, route }: Props<"Thread">) {
         void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
         stop(t.id);
       }}
+      onRetry={() => {
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        retryTurn(t.id);
+      }}
+      onSendNow={(eid) => {
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        sendNow(t.id, eid);
+      }}
+      onRemoveNotSent={(eid) => removeNotSent(t.id, eid)}
+      scrollToEntry={route.params.scrollTo}
       onPickModel={() => navigation.navigate("ModelPicker", { thread: t.id })}
       onOpenSubagent={(a) =>
         navigation.navigate("Subagent", { thread: t.id, id: a.id })

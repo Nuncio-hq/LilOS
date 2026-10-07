@@ -1,15 +1,16 @@
-import { useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import {
   KeyboardAvoidingView,
   Pressable,
   ScrollView,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText } from "../components/app-text";
 import { SectionTitle } from "../components/bits";
-import { Icon } from "../components/icon";
+import { Icon, useThemeColor } from "../components/icon";
 import { Orb, type OrbState, type OrbTone } from "../components/orb";
 import { Pulse, plain } from "../components/prose";
 import { whatLine } from "./approval-copy";
@@ -17,7 +18,7 @@ import { Composer } from "./composer";
 import { DM_GROUPS } from "./dm-groups";
 import { LifePill } from "./life-pill";
 import { PrLine } from "./pr-badges";
-import type { SessionState, SessionTurn } from "./types";
+import type { DmMessageHit, SessionState, SessionTurn } from "./types";
 
 /* A DM with one employee, as a Mail-style list of its threads: each message
    you send opens a thread, and the threads group by what they need from
@@ -38,6 +39,8 @@ export function EmployeeDmScreen({
   onSend,
   onPickFolder,
   onPickModel,
+  onSearchMessages,
+  onOpenHit,
   prefill,
   unreachableNote,
 }: {
@@ -55,6 +58,11 @@ export function EmployeeDmScreen({
   onSend: (text: string) => void;
   onPickFolder: () => void;
   onPickModel?: () => void;
+  /** #555: full-text message search behind the same filter box (web:
+     `onSearchMessages`, #138) — the field renders only when this exists. */
+  onSearchMessages?: (query: string) => DmMessageHit[];
+  /** A hit opens its thread scrolled to the message (web: onOpenHit). */
+  onOpenHit?: (hit: DmMessageHit) => void;
   /** Composer text to put in and focus (e.g. a draft a failed send kept). */
   prefill?: { text: string };
   /** #591: a thin line above the composer while the Mac is unreachable
@@ -62,8 +70,31 @@ export function EmployeeDmScreen({
   unreachableNote?: string;
 }) {
   const insets = useSafeAreaInsets();
+  const muted = useThemeColor("muted-foreground");
   const [composerHeight, setComposerHeight] = useState(96);
   const newest = [...turns].reverse();
+  /* #555: the filter box matches titles locally and asks the host for
+     message hits (debounced — the callback may cross the wire). */
+  const [filter, setFilter] = useState("");
+  const q = filter.trim().toLowerCase();
+  const [hits, setHits] = useState<DmMessageHit[]>([]);
+  const searchRef = useRef(onSearchMessages);
+  searchRef.current = onSearchMessages;
+  useEffect(() => {
+    if (!q || !searchRef.current) {
+      setHits([]);
+      return;
+    }
+    const id = setTimeout(() => setHits(searchRef.current?.(q) ?? []), 250);
+    return () => clearTimeout(id);
+  }, [q]);
+  const shown = q
+    ? newest.filter(
+        (t) =>
+          t.title.toLowerCase().includes(q) ||
+          t.prompt.toLowerCase().includes(q),
+      )
+    : newest;
 
   return (
     <KeyboardAvoidingView behavior="padding" className="flex-1 bg-background">
@@ -74,11 +105,58 @@ export function EmployeeDmScreen({
           className="flex-1"
           contentInsetAdjustmentBehavior="automatic"
           keyboardDismissMode="interactive"
+          /* The search field rides the top like iOS's list search — it
+             stays pinned while the thread list scrolls under it. */
+          stickyHeaderIndices={onSearchMessages && turns.length > 0 ? [0] : []}
           contentContainerStyle={{
             flexGrow: 1,
             paddingBottom: composerHeight + 16,
           }}
         >
+          {onSearchMessages && turns.length > 0 && (
+            <View className="bg-background px-4 pb-1 pt-1">
+              <View className="flex-row items-center gap-1.5 rounded-full bg-fill px-3">
+                <Icon
+                  name="magnifyingglass"
+                  size={14}
+                  tone="muted-foreground"
+                />
+                <TextInput
+                  value={filter}
+                  onChangeText={setFilter}
+                  placeholder="Search"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  returnKeyType="search"
+                  className="h-9 min-w-0 flex-1 text-[15px] text-foreground"
+                  placeholderTextColor={muted}
+                />
+                {filter.length > 0 && (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Clear search"
+                    onPress={() => setFilter("")}
+                    hitSlop={6}
+                    className="active:opacity-60"
+                  >
+                    <Icon
+                      name="xmark.circle.fill"
+                      size={15}
+                      tone="muted-foreground"
+                    />
+                  </Pressable>
+                )}
+              </View>
+            </View>
+          )}
+          {q && shown.length === 0 && hits.length === 0 ? (
+            <View className="flex-1 items-center justify-center gap-3 px-10">
+              <Orb tone={tone} size={64} />
+              <AppText tone="muted" className="text-center text-[15px]">
+                {`No threads match “${filter.trim()}”\nTitles and messages are searched.`}
+              </AppText>
+            </View>
+          ) : null}
           {turns.length === 0 && (
             <View className="flex-1 items-center justify-center gap-3 px-10">
               <Orb tone={tone} size={64} />
@@ -88,7 +166,7 @@ export function EmployeeDmScreen({
             </View>
           )}
           {DM_GROUPS.map((g) => {
-            const rows = newest.filter((t) => g.states.includes(t.state));
+            const rows = shown.filter((t) => g.states.includes(t.state));
             if (!rows.length) return null;
             return (
               <View key={g.title}>
@@ -104,6 +182,20 @@ export function EmployeeDmScreen({
               </View>
             );
           })}
+          {hits.length > 0 && (
+            <View>
+              <SectionTitle title="Messages" />
+              {hits.map((h, i) => (
+                <HitRow
+                  key={`${h.threadId}:${h.entryId}`}
+                  h={h}
+                  query={q}
+                  last={i === hits.length - 1}
+                  onPress={() => onOpenHit?.(h)}
+                />
+              ))}
+            </View>
+          )}
         </ScrollView>
 
         <View className="absolute inset-x-0 bottom-0 gap-2">
@@ -342,4 +434,70 @@ export function DmHeaderTitle({
       </View>
     </Pressable>
   );
+}
+
+/* #555: one search hit — the thread it lives in on top, then sender ·
+   time and a two-line snippet with the matched text in semibold (web:
+   the hit row under its thread group, #138). */
+function HitRow({
+  h,
+  query,
+  last,
+  onPress,
+}: {
+  h: DmMessageHit;
+  query: string;
+  last: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${h.threadTitle}, ${h.from}, ${h.snippet}`}
+      onPress={onPress}
+      className="active:bg-fill"
+    >
+      <View className="mx-4 gap-0.5 py-2.5">
+        <AppText tone="muted" numberOfLines={1} className="text-[12px]">
+          {h.threadTitle}
+        </AppText>
+        <View className="flex-row items-baseline gap-1.5">
+          <AppText weight="medium" className="text-[14px]">
+            {h.from}
+          </AppText>
+          <AppText tone="muted" className="text-[12px]">
+            {h.time}
+          </AppText>
+        </View>
+        <Text
+          numberOfLines={2}
+          className="text-[14px] leading-5 text-foreground/90"
+        >
+          <Marked text={h.snippet} query={query} />
+        </Text>
+        {!last && <View className="mt-2.5 h-px bg-border" />}
+      </View>
+    </Pressable>
+  );
+}
+
+/* The query inside a hit's snippet, emphasised (web: <mark> parsing). */
+function Marked({ text, query }: { text: string; query: string }) {
+  if (!query) return <>{text}</>;
+  const lower = text.toLowerCase();
+  const parts: ReactNode[] = [];
+  let i = 0;
+  for (;;) {
+    const at = lower.indexOf(query, i);
+    if (at < 0) break;
+    if (at > i) parts.push(text.slice(i, at));
+    parts.push(
+      <Text key={at} className="font-semibold text-foreground">
+        {text.slice(at, at + query.length)}
+      </Text>,
+    );
+    i = at + query.length;
+  }
+  parts.push(text.slice(i));
+  return <>{parts}</>;
 }

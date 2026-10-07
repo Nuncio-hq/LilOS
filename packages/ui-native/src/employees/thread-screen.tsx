@@ -14,6 +14,7 @@ import { AgentTurn, UserBubble } from "./agent-turn";
 import { BackgroundPill } from "./background-sheet";
 import { Composer } from "./composer";
 import { ContextRing } from "./context-meter";
+import { NotSentTray } from "./not-sent-tray";
 import type { PlanAction } from "./plan-card";
 import { PrBadge, prHeadline } from "./pr-badges";
 import type { QuestionAnswer } from "./question-card";
@@ -27,6 +28,7 @@ import type {
   SessionState,
   SubagentRow,
   ThreadDetail,
+  ThreadEntry,
   WbCardEntry,
 } from "./types";
 import { WorkbenchCard } from "./workbench-card";
@@ -55,6 +57,10 @@ export function ThreadScreen({
   onPlan,
   onOpenPlan,
   onOpenWorkbench,
+  onRetry,
+  onSendNow,
+  onRemoveNotSent,
+  scrollToEntry,
   prefill,
   unreachableNote,
   stale,
@@ -90,6 +96,14 @@ export function ThreadScreen({
   onOpenPlan?: () => void;
   /** A `workbench_open` card's tap → the target's phone view (#340). */
   onOpenWorkbench?: (e: WbCardEntry) => void;
+  /** #555: re-runs the last failed turn — its card carries the Retry. */
+  onRetry?: () => void;
+  /** #555: the Not-sent tray's Send now / Remove (web: NotSentTray). */
+  onSendNow?: (entryId: string) => void;
+  onRemoveNotSent?: (entryId: string) => void;
+  /** #555: a search hit opened this thread — scroll to that row and
+     flash it (web: scrollTo + the amber flash, #138). */
+  scrollToEntry?: string;
   /** Composer text to put in and focus (plan "Change…"). */
   prefill?: { text: string };
   /** #591: a thin line directly above the composer while the Mac is
@@ -111,6 +125,13 @@ export function ThreadScreen({
   const [composerHeight, setComposerHeight] = useState(96);
   const [pillHeight, setPillHeight] = useState(0);
   const [noteHeight, setNoteHeight] = useState(0);
+  const [trayHeight, setTrayHeight] = useState(0);
+  /* #555: search-hit navigation — each row's scroll offset lands here;
+     when the pending target lays out we scroll to it and flash it once,
+     and the keep-latest scrollToEnd stands down until then. */
+  const offsets = useRef(new Map<string, number>());
+  const pendingScroll = useRef<string | undefined>(scrollToEntry);
+  const [flashId, setFlashId] = useState<string>();
   const running = t.state === "working" && !stale;
   /* #420: parked on an open QUESTION ask the card can answer — the
      composer says waiting, no steer copy and no stop (Hermes FIX #515).
@@ -118,6 +139,21 @@ export function ThreadScreen({
      question ask (its view-model maps neither) keeps the Reply
      composer; approval asks keep their own flow (the sheet). */
   const waiting = waitingOnQuestion(t.entries);
+  /* #555: a send parked by Stop leaves the transcript for the tray — it
+     was never delivered, so it renders nowhere until Send now / Remove
+     (web: the rows stay out of the list and live in NotSentTray). */
+  const parked = t.entries.filter(
+    (e): e is Extract<ThreadEntry, { kind: "user" }> =>
+      e.kind === "user" && !!e.notSent,
+  );
+  const items = transcriptItems(t).filter(
+    (e) => !(e.kind === "user" && e.notSent),
+  );
+  /* #555: the Retry rides the last TURN like web's `last` (#419) — an
+     earlier failed turn is history; AgentTurn gates on `failed` itself. */
+  const lastAgentId = [...t.entries]
+    .reverse()
+    .find((e) => e.kind === "agent")?.id;
   // The background pill floats above the composer; keep the last turn clear of it.
   const pill =
     !!onOpenBackground && !!t.jobs?.some((j) => j.status === "running");
@@ -126,11 +162,19 @@ export function ThreadScreen({
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-scroll is triggered by the composer height change, not read in the body
   useEffect(() => {
     const id = setTimeout(
-      () => scroller.current?.scrollToEnd({ animated: false }),
+      () =>
+        !pendingScroll.current &&
+        scroller.current?.scrollToEnd({ animated: false }),
       50,
     );
     return () => clearTimeout(id);
   }, [composerHeight]);
+  /* The flash outlives the scroll to the hit row, then fades on its own. */
+  useEffect(() => {
+    if (flashId === undefined) return;
+    const id = setTimeout(() => setFlashId(undefined), 1600);
+    return () => clearTimeout(id);
+  }, [flashId]);
 
   return (
     <KeyboardAvoidingView behavior="padding" className="flex-1 bg-background">
@@ -141,6 +185,7 @@ export function ThreadScreen({
           ref={scroller}
           className="flex-1"
           onContentSizeChange={() =>
+            !pendingScroll.current &&
             scroller.current?.scrollToEnd({ animated: true })
           }
           contentInsetAdjustmentBehavior="automatic"
@@ -153,6 +198,7 @@ export function ThreadScreen({
               composerHeight,
               pill ? pillHeight : 0,
               unreachableNote ? noteHeight : 0,
+              parked.length ? trayHeight : 0,
             ),
           }}
           keyboardDismissMode="interactive"
@@ -165,68 +211,85 @@ export function ThreadScreen({
             gap: 24,
           }}
         >
-          {transcriptItems(t).map((e) => (
-            <Rise key={e.id}>
-              {/* #514: a transcript state note heads the scroll — the
+          {items.map((e) => (
+            <View
+              key={e.id}
+              onLayout={(ev) => {
+                offsets.current.set(e.id, ev.nativeEvent.layout.y);
+                if (pendingScroll.current === e.id) {
+                  pendingScroll.current = undefined;
+                  scroller.current?.scrollTo({
+                    y: Math.max(0, ev.nativeEvent.layout.y - 8),
+                    animated: false,
+                  });
+                  setFlashId(e.id);
+                }
+              }}
+              className={`-mx-2 -my-1 rounded-xl px-2 py-1 ${flashId === e.id ? "bg-amber-100 dark:bg-amber-900/40" : ""}`}
+            >
+              <Rise>
+                {/* #514: a transcript state note heads the scroll — the
                   trimmed note describes history missing ABOVE the first
                   entry, so it renders first, a centered divider (not the
                   bottom box web uses for the #28 'unavailable' note).
                   The text shrinks + wraps to 2 lines inside the thread
                   gutter; the hairlines keep ≥24px so the divider reads at
                   any Dynamic Type size. */}
-              {e.kind === "transcript-note" ? (
-                <View className="flex-row items-center gap-3">
-                  <View
-                    className="h-px flex-1 bg-border"
-                    style={{ minWidth: 24 }}
+                {e.kind === "transcript-note" ? (
+                  <View className="flex-row items-center gap-3">
+                    <View
+                      className="h-px flex-1 bg-border"
+                      style={{ minWidth: 24 }}
+                    />
+                    <AppText
+                      tone="muted"
+                      numberOfLines={2}
+                      className="shrink text-center text-[12px] leading-[16px]"
+                    >
+                      {e.text}
+                    </AppText>
+                    <View
+                      className="h-px flex-1 bg-border"
+                      style={{ minWidth: 24 }}
+                    />
+                  </View>
+                ) : e.kind === "user" ? (
+                  <UserBubble
+                    text={e.text}
+                    time={
+                      e.queued
+                        ? e.waiting
+                          ? "Waiting for you"
+                          : "Queued · runs next"
+                        : e.time
+                    }
                   />
-                  <AppText
-                    tone="muted"
-                    numberOfLines={2}
-                    className="shrink text-center text-[12px] leading-[16px]"
-                  >
-                    {e.text}
-                  </AppText>
-                  <View
-                    className="h-px flex-1 bg-border"
-                    style={{ minWidth: 24 }}
+                ) : e.kind === "workbench" ? (
+                  <WorkbenchCard
+                    target={e.target}
+                    time={e.time}
+                    onPress={() => onOpenWorkbench?.(e)}
                   />
-                </View>
-              ) : e.kind === "user" ? (
-                <UserBubble
-                  text={e.text}
-                  time={
-                    e.queued
-                      ? e.waiting
-                        ? "Waiting for you"
-                        : "Queued · runs next"
-                      : e.time
-                  }
-                />
-              ) : e.kind === "workbench" ? (
-                <WorkbenchCard
-                  target={e.target}
-                  time={e.time}
-                  onPress={() => onOpenWorkbench?.(e)}
-                />
-              ) : (
-                <AgentTurn
-                  e={e}
-                  name={t.employee.name}
-                  tone={t.employee.tone}
-                  onApprove={onApprove}
-                  onDeny={onDeny}
-                  onGrant={onGrant}
-                  onAnswer={onAnswer}
-                  onOpenSubagent={onOpenSubagent}
-                  onOpenSubagents={onOpenSubagents}
-                  onPlan={onPlan}
-                  onOpenPlan={onOpenPlan}
-                  stale={asksStale}
-                  answerHint={answerHint}
-                />
-              )}
-            </Rise>
+                ) : (
+                  <AgentTurn
+                    e={e}
+                    name={t.employee.name}
+                    tone={t.employee.tone}
+                    onApprove={onApprove}
+                    onDeny={onDeny}
+                    onGrant={onGrant}
+                    onAnswer={onAnswer}
+                    onOpenSubagent={onOpenSubagent}
+                    onOpenSubagents={onOpenSubagents}
+                    onPlan={onPlan}
+                    onOpenPlan={onOpenPlan}
+                    onRetry={e.id === lastAgentId ? onRetry : undefined}
+                    stale={asksStale}
+                    answerHint={answerHint}
+                  />
+                )}
+              </Rise>
+            </View>
           ))}
         </ScrollView>
 
@@ -255,6 +318,15 @@ export function ThreadScreen({
                     looks live but can't be delivered. */}
                 {`${unreachableNote}${stale ? " · Stop works once the Mac is back" : ""}`}
               </AppText>
+            </View>
+          )}
+          {parked.length > 0 && (
+            <View onLayout={(e) => setTrayHeight(e.nativeEvent.layout.height)}>
+              <NotSentTray
+                items={parked.map((m) => ({ id: m.id, text: m.text }))}
+                onSendNow={onSendNow}
+                onRemove={onRemoveNotSent}
+              />
             </View>
           )}
           <Composer

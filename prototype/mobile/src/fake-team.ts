@@ -599,6 +599,52 @@ export const THREADS: ThreadDetail[] = [
     ],
   },
   {
+    /* #555: a turn that died on an engine error — the failure card with
+       Retry (web #419). Retry replays the same card and recovers. */
+    id: "s-failed",
+    title: "Rebuild the search index",
+    state: "failed",
+    employee: BUILDER,
+    when: "Yesterday",
+    started: "Yesterday 18:12",
+    folder: LILOS,
+    branch: { name: "main", detail: "read-only · no worktree" },
+    model: "Claude Opus 5.5 · High",
+    session: "ses_d41f",
+    failure: { kind: "generic", text: "engine lost contact mid-turn" },
+    entries: [
+      {
+        kind: "user",
+        id: "u1",
+        time: "18:12",
+        text: "Rebuild the messages search index — it misses hits from archived threads.",
+      },
+      {
+        kind: "agent",
+        id: "g1",
+        time: "18:12",
+        thought: 4,
+        reasoning:
+          "The indexer skips archived conversations on the backfill pass. Rebuild, then re-run the search spec.",
+        steps: [
+          {
+            id: "1",
+            tool: "read_file",
+            arg: "apps/relay/src/search.ts",
+            output: "212 lines · channelId, conversationId filters",
+          },
+          {
+            id: "2",
+            tool: "terminal",
+            arg: "bun run search:reindex --include-archived",
+            output: "reindexing 41,208 rows…",
+          },
+        ],
+        failed: "engine lost contact mid-turn",
+      },
+    ],
+  },
+  {
     id: "s-flake",
     title: "ac-80 flake",
     state: "needs-you",

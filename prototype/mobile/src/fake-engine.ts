@@ -1,6 +1,7 @@
 import type {
   AgentEntry,
   Approval,
+  DmMessageHit,
   EmployeeRow,
   OrbState,
   ProjectGroup,
@@ -207,6 +208,9 @@ type Script = {
   reasoning?: string;
   steps?: StepSpec[];
   text?: string;
+  /** #555: the turn dies on this error after its steps (a failed turn
+     gets the failure card with Retry, like the Mac's #419). */
+  fail?: string;
   /** Ends the turn blocked on you instead of done. */
   approval?: Omit<Approval, "age">;
   /** Runs when that approval is approved / denied. */
@@ -246,6 +250,8 @@ const now = () => {
 };
 const uid = () => Math.random().toString(36).slice(2, 8);
 class Stopped extends Error {}
+/** #555: an engine error the turn dies on (mock of turn.completed.error). */
+class Failed extends Error {}
 
 /** Play one turn. With `eid`, continue that entry (after an approval). */
 async function run(tid: string, s: Script, eid?: string) {
@@ -339,6 +345,7 @@ async function run(tid: string, s: Script, eid?: string) {
       }));
       planStep(i, "completed");
     }
+    if (s.fail) throw new Failed(s.fail);
     if (s.subagents?.length) await helpers(s.subagents, set, tick);
     if (s.text) {
       await tick(300);
@@ -411,6 +418,35 @@ async function run(tid: string, s: Script, eid?: string) {
             }
           : e,
       );
+    if (err instanceof Failed && g === gen) {
+      /* #555: the turn died on an engine error — the card keeps what it
+         did, the failure line carries the reason, the thread reads
+         "failed" (and the DM row reads the reason, #592). */
+      set((e) => ({
+        ...e,
+        live: false,
+        writing: false,
+        failed: err.message,
+        steps: e.steps?.map((x) => ({ ...x, running: false })),
+        subagents: e.subagents?.map((a) =>
+          a.status === "running"
+            ? {
+                ...a,
+                status: "failed" as const,
+                steps: a.steps.map((x) => ({ ...x, running: false })),
+              }
+            : a,
+        ),
+        footer: { dur: Math.round((Date.now() - started) / 1000) },
+      }));
+      mapThread(tid, (x) => ({
+        ...x,
+        state: "failed",
+        when: "now",
+        failure: { kind: "generic", text: err.message },
+      }));
+      return;
+    }
     if (!(err instanceof Stopped) || g !== gen) return;
     set((e) => ({
       ...e,
@@ -429,7 +465,19 @@ async function run(tid: string, s: Script, eid?: string) {
       ),
       footer: { dur: Math.round((Date.now() - started) / 1000) },
     }));
-    mapThread(tid, (x) => ({ ...x, state: "stopped", when: "now" }));
+    mapThread(tid, (x) => ({
+      ...x,
+      state: "stopped",
+      when: "now",
+      /* #555: whatever was queued behind the turn never ran — it leaves
+         the transcript and parks under Not sent until Send now / Remove
+         (web: NotSentTray). */
+      entries: x.entries.map((e) =>
+        e.kind === "user" && e.queued
+          ? { ...e, queued: undefined, waiting: undefined, notSent: true }
+          : e,
+      ),
+    }));
     stops.delete(tid);
   }
   // A message you sent mid-turn runs next, as its own turn.
@@ -578,6 +626,101 @@ export function answerAsk(id: string, answer: { label: string }) {
 /** Stop the running turn (■). What it already did stays. */
 export function stop(tid: string) {
   stops.add(tid);
+}
+
+/** #555: the Not-sent tray's Send now — the parked send delivers as its
+    own turn (web: the tray's Send). */
+export function sendNow(tid: string, entryId: string) {
+  const t = $threads.get().find((x) => x.id === tid);
+  const q = t?.entries.find(
+    (e) => e.kind === "user" && e.id === entryId && e.notSent,
+  );
+  if (!t || !q || q.kind !== "user") return;
+  mapThread(tid, (x) => ({
+    ...x,
+    entries: x.entries.map((e) =>
+      e.id === entryId && e.kind === "user" ? { ...e, notSent: undefined } : e,
+    ),
+  }));
+  void run(tid, followUp(q.text, t));
+}
+
+/** #555: the Not-sent tray's Remove — the parked send drops for good. */
+export function removeNotSent(tid: string, entryId: string) {
+  mapThread(tid, (x) => ({
+    ...x,
+    entries: x.entries.filter((e) => e.id !== entryId),
+  }));
+}
+
+/** #555: the failed turn's Retry — the same card runs again and recovers
+    on the retry (the mock's deterministic "transient error" script).
+    Web: the last turn's Retry (#419) replays the turn. */
+export function retryTurn(tid: string) {
+  const t = $threads.get().find((x) => x.id === tid);
+  const failed = [...(t?.entries ?? [])]
+    .reverse()
+    .find((e): e is AgentEntry => e.kind === "agent" && e.failed !== undefined);
+  if (!t || !failed) return;
+  /* The card replays from scratch — its partial text and steps were the
+     attempt that died. */
+  mapEntry(tid, failed.id, (e) => ({
+    ...e,
+    failed: undefined,
+    footer: undefined,
+    reasoning: undefined,
+    thought: undefined,
+    steps: [],
+    text: undefined,
+  }));
+  mapThread(tid, (x) => ({ ...x, failure: undefined }));
+  void run(
+    tid,
+    {
+      reasoning:
+        "Same brief again — the engine came back, so the retry picks up where the attempt left off.",
+      steps: [
+        {
+          tool: "terminal",
+          arg: "bun run verify",
+          output: "✓ all green (3.1s)",
+          ms: 1400,
+        },
+      ],
+      text: "Back on track — the retry ran clean and the turn completed. Nothing was lost; the earlier error was transient.",
+    },
+    failed.id,
+  );
+}
+
+/** #555: message search inside one employee's DM (web: messages.search,
+    #138). Case-insensitive substring over user + agent text; the hit's
+    snippet is a window around the first match. */
+export function searchDm(employeeId: string, query: string): DmMessageHit[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  const hits: DmMessageHit[] = [];
+  for (const t of $threads.get()) {
+    if (t.employee.id !== employeeId) continue;
+    for (const e of t.entries) {
+      if (e.kind !== "user" && e.kind !== "agent") continue;
+      const text = e.text ?? "";
+      const at = text.toLowerCase().indexOf(q);
+      if (at < 0) continue;
+      const start = Math.max(0, at - 36);
+      const end = Math.min(text.length, at + q.length + 64);
+      hits.push({
+        threadId: t.id,
+        threadTitle: t.title,
+        entryId: e.id,
+        from: e.kind === "user" ? "You" : t.employee.name,
+        time: e.time,
+        snippet: `${start > 0 ? "…" : ""}${text.slice(start, end).trim()}${end < text.length ? "…" : ""}`,
+      });
+      if (hits.length >= 50) return hits;
+    }
+  }
+  return hits;
 }
 
 /** A new session from a DM: it opens as a thread and starts working. */
@@ -1060,6 +1203,21 @@ const isLinkSafetyProbe = (text: string) =>
   /^md(?:arkdown)?:\s*links/i.test(text);
 
 function followUp(text: string, t: ThreadDetail): Script {
+  /* #555: "fail" in a message scripts a turn that dies — Oscar can watch
+     the failure card land and Retry recover it. */
+  if (/^fail\b/i.test(text.trim()))
+    return {
+      reasoning: "Picking it up — first step reads the room.",
+      steps: [
+        {
+          tool: "terminal",
+          arg: "bun run typecheck",
+          output: "…type-checking",
+          ms: 1800,
+        },
+      ],
+      fail: "engine lost contact mid-turn",
+    };
   if (isLinkSafetyProbe(text))
     return {
       reasoning:

@@ -71,6 +71,7 @@ export function AgentTurn({
   onOpenSubagents,
   onPlan,
   onOpenPlan,
+  onRetry,
   stale,
   answerHint,
 }: {
@@ -94,6 +95,9 @@ export function AgentTurn({
   /** Approve / Change / Reject on this turn's plan (issue #175). */
   onPlan?: (a: PlanAction, planId: string) => void;
   onOpenPlan?: () => void;
+  /** #555: re-run this turn after it failed — renders on the failure
+     line (web: the last turn's hover Retry, #419). */
+  onRetry?: () => void;
   /** #652: the Mac is unreachable — open asks render visibly disabled
       (nothing can be sent or queued) and the card says they wake when
       the Mac is back. */
@@ -176,13 +180,38 @@ export function AgentTurn({
         </View>
       )}
       {/* #419: the turn died on an engine error — the failure line carries
-          its text like web's "Failed · <error>" chip. */}
+          its text like web's "Failed · <error>" chip. #555: a Retry
+          rides it like the Mac's hover action, visible (no hover here). */}
       {e.failed !== undefined && (
         <View className="flex-row items-center gap-1.5">
           <View className="size-2.5 rounded-[2px] bg-destructive" />
-          <AppText size="xs" tone="destructive" weight="medium">
+          <AppText
+            size="xs"
+            tone="destructive"
+            weight="medium"
+            className="min-w-0 flex-1"
+          >
             Turn failed{e.failed ? ` · ${e.failed}` : ""}
           </AppText>
+          {onRetry && (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Retry turn"
+              onPress={onRetry}
+              hitSlop={4}
+              className="flex-row items-center gap-1 rounded-full bg-fill px-3 py-1.5 active:opacity-70"
+            >
+              <Icon
+                name="arrow.clockwise"
+                size={12}
+                tone="destructive"
+                weight="semibold"
+              />
+              <AppText size="xs" tone="destructive" weight="semibold">
+                Retry
+              </AppText>
+            </Pressable>
+          )}
         </View>
       )}
       {e.agentInitiated && (

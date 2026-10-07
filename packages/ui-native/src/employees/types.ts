@@ -318,6 +318,10 @@ export type ThreadEntry =
       /** Queued behind a conversation that is blocked on an open ask — the
          caption reads "Waiting for you", not "Queued · runs next" (#264). */
       waiting?: boolean;
+      /** #555: queued when Stop landed — the turn ended before it ran, so
+         it leaves the transcript and parks under "Not sent" until
+         "Send now" delivers it or "Remove" drops it (web: NotSentTray). */
+      notSent?: boolean;
     }
   | AgentEntry
   | WbCardEntry;
@@ -420,4 +424,20 @@ export type MacDir = {
   /** Current branch when this folder is a git repo. */
   branch?: string;
   folders: { name: string; path: string; branch?: string }[];
+};
+
+/** #555: a message-search hit inside a thread (web: MessageHit). The DM
+    screen lists these under their thread; a tap opens the thread scrolled
+    to `entryId`. */
+export type DmMessageHit = {
+  threadId: string;
+  /** The hit's thread — the row heads it like web's hit group title. */
+  threadTitle: string;
+  /** The transcript entry the hit names — the scroll target. */
+  entryId: string;
+  /** Who wrote the line: the employee's name or "You". */
+  from: string;
+  time: string;
+  /** A window of the entry's text around the match (plain text). */
+  snippet: string;
 };

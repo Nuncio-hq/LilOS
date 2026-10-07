@@ -73,6 +73,7 @@ export type {
   BackgroundJobRow,
   ChannelRow,
   ContextUsage,
+  DmMessageHit,
   EmployeeRow,
   FolderOption,
   MacDir,
