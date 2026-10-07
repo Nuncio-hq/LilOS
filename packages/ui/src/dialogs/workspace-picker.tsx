@@ -42,8 +42,12 @@ export function WorkspacePicker({
   onWorktree?: (p: WsPick) => void;
 }) {
   const f = folders.find((x) => x.id === pick.folder);
+  /* Chips compress + truncate when the composer's one-row tools strip is
+     tight: shrink-0 children used to overflow the (shrunk) picker box and
+     end up painted under the next control — clickable by nobody (e2e:
+     the model picker's label intercepted the branch chip's clicks). */
   const chip =
-    "h-7 max-w-64 gap-1.5 rounded-md px-2 text-xs font-normal text-foreground/80 hover:text-foreground data-[popup-open]:bg-muted [&>span]:min-w-0";
+    "h-7 max-w-64 min-w-0 shrink gap-1.5 rounded-md px-2 text-xs font-normal text-foreground/80 hover:text-foreground data-[popup-open]:bg-muted [&>span]:min-w-0 [&>span]:truncate";
   const modeLabel =
     pick.mode === "new"
       ? "new workstream"
@@ -51,7 +55,10 @@ export function WorkspacePicker({
         ? "direct"
         : "workstream";
   return (
-    <div className="flex min-w-0 items-center gap-0.5" data-wspicker>
+    <div
+      className="flex min-w-0 items-center gap-0.5 overflow-hidden"
+      data-wspicker
+    >
       <DropdownMenu>
         <DropdownMenuTrigger
           render={
@@ -59,7 +66,7 @@ export function WorkspacePicker({
           }
         >
           <FolderIcon className="size-3.5" />
-          <span className={cn("shrink-0", !f && "text-foreground/70")}>
+          <span className={cn(!f && "text-foreground/70")}>
             {f ? folderLabel(f, folders) : "No folder"}
           </span>
           <ChevronDownIcon className="size-3" />
@@ -117,7 +124,7 @@ export function WorkspacePicker({
 
       {f && !f.branches.length && (
         <span
-          className="flex h-7 items-center gap-1.5 px-2 text-foreground/70 text-xs"
+          className="flex h-7 min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap px-2 text-foreground/70 text-xs"
           data-ws="nogit"
           title="Not a git repo: no branches or worktrees, edits land in the folder"
         >
@@ -127,12 +134,12 @@ export function WorkspacePicker({
       )}
       {f && f.branches.length > 0 && !onWorktree && (
         <span
-          className="flex h-7 items-center gap-1.5 px-2 text-foreground/70 text-xs"
+          className="flex h-7 min-w-0 items-center gap-1.5 overflow-hidden px-2 text-foreground/70 text-xs"
           data-ws="branch"
           title="Direct mode: edits land on the checked-out branch"
         >
-          <PencilLineIcon className="size-3.5" />
-          <span className="shrink-0 font-mono">{f.branches[0]}</span>
+          <PencilLineIcon className="size-3.5 shrink-0" />
+          <span className="min-w-0 truncate font-mono">{f.branches[0]}</span>
           <span className="hidden shrink-0 lg:inline">· direct</span>
         </span>
       )}
@@ -150,10 +157,10 @@ export function WorkspacePicker({
             ) : (
               <GitBranchPlusIcon className="size-3.5" />
             )}
-            <span className="shrink-0 font-mono">
+            <span className="font-mono">
               {pick.mode === "existing" ? pick.existing : pick.base}
             </span>
-            <span className="hidden shrink-0 text-foreground/70 lg:inline">
+            <span className="hidden text-foreground/70 lg:inline">
               · {modeLabel}
             </span>
             <ChevronDownIcon className="size-3" />

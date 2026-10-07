@@ -5,6 +5,7 @@ import {
   BackgroundSheet,
   buildPairingUrl,
   Choice,
+  type CodeEntry,
   ConnectedScreen,
   ConnectingScreen,
   type ConnectingState,
@@ -137,8 +138,8 @@ type Routes = {
   Welcome: undefined;
   Pair: undefined;
   Scan: undefined;
-  Manual: undefined;
-  Connecting: { offer: PairingOffer };
+  Manual: { reenter?: boolean } | undefined;
+  Connecting: { offer: PairingOffer; entry?: CodeEntry };
   Connected: undefined;
   Tabs: NavigatorScreenParams<TabRoutes>;
   Dm: { employeeId: string };
@@ -221,7 +222,7 @@ function Scan({ navigation }: Props<"Scan">) {
       }
       locked.current = true;
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      navigation.navigate("Connecting", { offer });
+      navigation.navigate("Connecting", { offer, entry: "scanned" });
     },
     [navigation],
   );
@@ -272,11 +273,14 @@ function Scan({ navigation }: Props<"Scan">) {
   );
 }
 
-function Manual({ navigation }: Props<"Manual">) {
+function Manual({ navigation, route }: Props<"Manual">) {
   // Push, so Cancel on Connecting comes back to the filled-in form.
   return (
     <ManualCodeScreen
-      onSubmit={(offer) => navigation.navigate("Connecting", { offer })}
+      reenter={route.params?.reenter}
+      onSubmit={(offer) =>
+        navigation.navigate("Connecting", { offer, entry: "typed" })
+      }
     />
   );
 }
@@ -284,7 +288,7 @@ function Manual({ navigation }: Props<"Manual">) {
 // ── Step 4–5 ────────────────────────────────────────────────────────────────
 
 function Connecting({ navigation, route }: Props<"Connecting">) {
-  const { offer } = route.params;
+  const { offer, entry } = route.params;
   const [state, setState] = useState<ConnectingState>("connecting");
   const [retryAfter, setRetryAfter] = useState<number | undefined>(undefined);
   const [attempt, setAttempt] = useState(0);
@@ -335,8 +339,14 @@ function Connecting({ navigation, route }: Props<"Connecting">) {
         setState("connecting");
         setAttempt((a) => a + 1);
       }}
+      entry={entry}
       onRescan={() => navigation.popTo("Scan")}
-      onManual={() => navigation.popTo("Manual")}
+      onManual={() =>
+        navigation.popTo(
+          "Manual",
+          entry === "typed" ? { reenter: true } : undefined,
+        )
+      }
     />
   );
 }

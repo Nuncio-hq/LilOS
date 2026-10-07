@@ -1015,6 +1015,8 @@ const CI: Script = {
       title: "e2e: scope ac-83 avatar locator",
       status: "open",
       checks: "pending",
+      /* #598: taps open the URL — rows/badges/cards all press through. */
+      url: "https://github.com/Nuncio-hq/LilOS/pull/97",
     },
   },
   onDeny: {

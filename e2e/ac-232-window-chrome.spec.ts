@@ -9,7 +9,12 @@ import {
   test,
 } from "@playwright/test";
 import { TRAFFIC_LIGHTS_END } from "../apps/desktop/src/window-chrome";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  panelIntoFocus,
+  pickPorts,
+  type Stack,
+} from "./helpers/stack";
 
 /**
  * Issue #232 — native macOS window chrome. Each acceptance criterion is a
@@ -355,12 +360,12 @@ test("#295 Focus header reserves the lights strip while the sidebar is hidden", 
       .getByRole("button", { name: /default/i })
       .click();
     await expect(win).toHaveURL(/\/dm\//, { timeout: 30_000 });
-    // A send lands straight in Focus (#149); the sidebar leaves the grid and
-    // the surface header becomes the window's leftmost edge.
+    /* #577: a send lands on the panel; Focus still means "the sidebar
+       leaves the grid" — open it via the panel's ↗ button. */
     const box = win.locator("textarea").last();
     await box.fill("check in");
     await box.press("Enter");
-    await expect(win).toHaveURL(/\/focus$/, { timeout: 30_000 });
+    await panelIntoFocus(win);
 
     const header = win.locator("main > header").first();
     await expect(header).toBeVisible({ timeout: 30_000 });
@@ -382,7 +387,7 @@ test("#295 Focus header reserves the lights strip while the sidebar is hidden", 
 
     // Dark AC shot: the sidebar opens as an overlay in Focus — the header
     // hamburger is itself one of the controls the strip now clears.
-    await header.getByTitle("Workspace", { exact: true }).click();
+    await header.getByTitle("Sidebar", { exact: true }).click();
     await win.locator('[data-theme-opt="dark"]').click();
     await win.getByRole("button", { name: "Close sidebar" }).last().click();
     await waitForNativeFrame(app, win);

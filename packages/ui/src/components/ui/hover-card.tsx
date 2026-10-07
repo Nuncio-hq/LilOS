@@ -32,7 +32,12 @@ function HoverCardContent({
         alignOffset={alignOffset}
         side={side}
         sideOffset={sideOffset}
-        className="isolate z-50"
+        // Preview cards are glanceable content, not click targets: the card
+        // can cover controls beneath its anchor (the context meter parks
+        // over the workbench tabs), and an interactive positioner eats every
+        // click there while open. Children that genuinely need pointer
+        // events opt back in with `pointer-events-auto`.
+        className="isolate pointer-events-none z-50"
       >
         <PreviewCardPrimitive.Popup
           data-slot="hover-card-content"

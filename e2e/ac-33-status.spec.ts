@@ -196,7 +196,7 @@ test.describe("AC-1-4 (#33) live system status", () => {
         path: join(SHOTS, "ac1-harness-down.png"),
         fullPage: true,
       });
-      await page.getByRole("button", { name: "Close" }).click();
+      await dialog.getByRole("button", { name: "Close" }).click();
       await page.screenshot({
         path: join(SHOTS, "ac1-harness-banner.png"),
         fullPage: true,
@@ -268,7 +268,7 @@ test.describe("AC-1-4 (#33) live system status", () => {
       await expect(dialog).toContainText("harness spoke protocol 9", {
         timeout: 30_000,
       });
-      await page.getByRole("button", { name: "Close" }).click();
+      await dialog.getByRole("button", { name: "Close" }).click();
       await expect(page.locator("body")).toContainText("update the relay", {
         timeout: 30_000,
       });

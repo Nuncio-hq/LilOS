@@ -1,7 +1,16 @@
-import { Text, View } from "react-native";
+import { Linking, Pressable, Text, View } from "react-native";
 import { AppText } from "../components/app-text";
 import { Icon, type IconTone } from "../components/icon";
+import { safeExternalUrl } from "../lib/external-url";
 import type { PullRequestRef } from "./types";
+
+/* #598: a PR anywhere is a link — Safari (or the GitHub app when installed)
+   opens it. Every badge/card presses through `pr.url`, filtered by the
+   phone's openURL policy (https + loopback http only — review). */
+const openPr = (pr: PullRequestRef) => {
+  const url = safeExternalUrl(pr.url);
+  if (url) void Linking.openURL(url);
+};
 
 /* Pull requests a session opened, GitHub's language on iOS symbols:
    green = open, purple = merged, gray = draft, red = closed. A session can
@@ -102,10 +111,17 @@ export function PrIcon({
   return <Icon name={l.icon} size={size} tone={l.tone} weight="semibold" />;
 }
 
-/** One PR as "⇅ #94" in its status color. */
+/** One PR as "⇅ #94" in its status color — a link (#598); nested inside
+    a row's own Pressable the badge still wins its own tap. */
 export function PrBadge({ pr }: { pr: PullRequestRef }) {
   return (
-    <View className="flex-row items-center gap-0.5">
+    <Pressable
+      accessibilityRole="link"
+      accessibilityLabel={`PR ${pr.number}, ${prStatusLabel(pr)}`}
+      {...(safeExternalUrl(pr.url) ? { onPress: () => openPr(pr) } : {})}
+      hitSlop={6}
+      className="flex-row items-center gap-0.5"
+    >
       <PrIcon pr={pr} />
       <Text
         className={`font-medium text-[13px] ${LOOK[pr.status].text}`}
@@ -113,7 +129,7 @@ export function PrBadge({ pr }: { pr: PullRequestRef }) {
       >
         {`#${pr.number}`}
       </Text>
-    </View>
+    </Pressable>
   );
 }
 
@@ -156,14 +172,16 @@ export function prHeadline(prs: PullRequestRef[]) {
 }
 
 /** The card under the turn that opened a PR (web: PrCard) — the reply
-   "status is live on the card below" points at this. */
+   "status is live on the card below" points at this. #598: taps open. */
 export function PrCard({ pr }: { pr: PullRequestRef }) {
   const l = LOOK[pr.status];
   return (
-    <View
+    <Pressable
       accessible
+      accessibilityRole="link"
       accessibilityLabel={`PR ${pr.number}, ${pr.title}, ${prStatusLabel(pr)}`}
-      className="flex-row items-center gap-3 self-start rounded-[18px] bg-card px-3.5 py-3"
+      {...(safeExternalUrl(pr.url) ? { onPress: () => openPr(pr) } : {})}
+      className="flex-row items-center gap-3 self-start rounded-[18px] bg-card px-3.5 py-3 active:opacity-70"
       style={{ borderCurve: "continuous" }}
     >
       {/* #264: `place-items-center` is not a native layout — flex centers
@@ -188,7 +206,15 @@ export function PrCard({ pr }: { pr: PullRequestRef }) {
           <PrStatusText pr={pr} />
         </View>
       </View>
-    </View>
+      {safeExternalUrl(pr.url) && (
+        <Icon
+          name="arrow.up.right"
+          size={11}
+          weight="semibold"
+          tone="muted-foreground"
+        />
+      )}
+    </Pressable>
   );
 }
 

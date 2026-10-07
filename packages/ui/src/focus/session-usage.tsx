@@ -101,7 +101,22 @@ export function SessionUsage({
 
   return (
     <Context usedTokens={used} maxTokens={max} usage={u} onOpenChange={setOpen}>
-      <ContextTrigger size="sm" className="h-7 px-1.5 text-xs" />
+      {/* #590 AC-3: the bare "3.5%" gets a real name — hover reads
+          "Context used: 3.5% of 262k", not an unexplained number. */}
+      <ContextTrigger
+        size="sm"
+        className="h-7 px-1.5 text-xs"
+        title={
+          full
+            ? "Context window full"
+            : `Context used: ${pct(used, max)} of ${n(max)}`
+        }
+        aria-label={
+          full
+            ? "Context window full"
+            : `Context used: ${pct(used, max)} of ${n(max)}`
+        }
+      />
       <ContextContent className="w-80 divide-y-0 rounded-2xl p-0">
         <div className="space-y-3 p-4" data-context-panel>
           <div className="flex items-baseline justify-between gap-3">

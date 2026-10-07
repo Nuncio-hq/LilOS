@@ -284,9 +284,8 @@ describe("issue #19 — one conversation from shared pieces", () => {
       expect(qf.queryByRole("button", { name })).toBeNull();
     expect(qf.queryByText(/Add a comment/)).toBeNull();
     // icon buttons whose only accessible handle is the title
-    expect(
-      quietFocus.container.querySelector('[title="Exit focus"]'),
-    ).toBeNull();
+    // (#577: the single back control is labelled "Back to …", not Exit focus)
+    expect(quietFocus.container.querySelector('[title^="Back to"]')).toBeNull();
     expect(
       quietFocus.container.querySelector('[title="Workspace"]'),
     ).toBeNull();
@@ -378,7 +377,7 @@ describe("issue #19 — one conversation from shared pieces", () => {
     fireEvent.click(prTab);
     await wf.findByRole("button", { name: /Squash and merge/ });
     expect(
-      wiredFocus.container.querySelector('[title="Exit focus"]'),
+      wiredFocus.container.querySelector('[title="Back to #engineering"]'),
     ).toBeTruthy();
   });
 });

@@ -212,14 +212,18 @@ test("AC-4 + AC-7 a session picked on the repo runs there; the header shows fold
   await expect(pickerButton(page)).toContainText("lilos-repo-a");
   await send(page, "hello — first turn", "first");
   await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+/);
-  // Wait for turn 1 to finish, or the next message becomes a steer inside
-  // the running turn instead of the follow-up turn that echoes the cwd.
+  /* Wait for turn 1 to finish, or the next message becomes a steer inside
+     the running turn instead of the follow-up turn that echoes the cwd.
+     Scope to the open thread's panel: #577 leaves the DM list rendered
+     beside it, and a previous attempt's thread carries the same canned
+     reply text — a page-wide match can settle before this turn streams. */
+  const panel = page.locator("[data-thread-panel]");
   await expect(
-    page.getByText("If you want me to change code", { exact: false }).last(),
+    panel.getByText("If you want me to change code", { exact: false }).last(),
   ).toBeVisible({ timeout: 30_000 });
   // The reply text renders before the turn settles — wait for streaming to
   // end so the follow-up starts a new turn rather than steering this one.
-  await expect(page.locator("[data-agentturn] [data-streaming]")).toHaveCount(
+  await expect(panel.locator("[data-agentturn] [data-streaming]")).toHaveCount(
     0,
     { timeout: 30_000 },
   );
@@ -230,7 +234,7 @@ test("AC-4 + AC-7 a session picked on the repo runs there; the header shows fold
      still-streaming live turn overlap in the DOM for a moment, so a bare
      `code` search can resolve to both copies of the reply at once. */
   await expect(
-    page
+    panel
       .locator("[data-agentturn]")
       .last()
       .locator("code")
@@ -256,11 +260,12 @@ test("AC-6 the employee pre-selects its last folder; a no-folder session is a pl
   const menu = await openPicker(page);
   await menu.getByText("No folder · just chat").click();
   await send(page, "no folder please", "first");
-  // A new session opens straight into Focus (#114 AC-1) — assert there
-  // first: the turn settles (an employee turn renders) and nothing
-  // announces the missing folder: no system note, no header chip, a
-  // neutral hint (#196 — supersedes the #113 AC-6 notice).
-  await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+\/focus/);
+  /* #577: a new send stays on the DM list with the thread open beside it —
+     Focus opens only from the panel's ↗. Assert the panel state first:
+     the turn settles (an employee turn renders) and nothing announces the
+     missing folder: no system note, no header chip, a neutral hint (#196 —
+     supersedes the #113 AC-6 notice). */
+  await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+$/);
   await expect(page.locator("[data-agentturn]").first()).toBeVisible({
     timeout: 30_000,
   });
@@ -273,9 +278,20 @@ test("AC-6 the employee pre-selects its last folder; a no-folder session is a pl
   // type a character first. The composer is named "Reply to …" on
   // Focus and "Reply to …" on the panel (which mounts
   // once the thread hydrates and sits outside `main`).
-  const focusBox = page.getByRole("textbox", { name: /Reply to/ });
-  await focusBox.pressSequentially("x");
+  const panelBox = page.getByRole("textbox", { name: /Reply to/ });
+  await panelBox.pressSequentially("x");
   await expect(page.getByText(/Reply to .*…/).first()).toBeVisible();
+  await page.screenshot({ path: `${SHOTS}/ac-6-no-folder-panel.png` });
+  // Focus shows the same no-folder session (↗ on the panel).
+  await page
+    .locator("[data-thread-panel]")
+    .getByTitle("Focus", { exact: true })
+    .click();
+  await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+\/focus/);
+  const focusBox = page.getByRole("textbox", { name: /Reply to/ });
+  await expect(focusBox).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator("[data-wsbadge]")).toHaveCount(0);
+  await expect(page.getByText(/read-only/i)).toHaveCount(0);
   await page.screenshot({ path: `${SHOTS}/ac-6-no-folder-focus.png` });
   // The session panel is the same: no chip, no "discussion" label,
   // neutral hint.
@@ -353,17 +369,22 @@ test("AC-3 (#208) a typed non-git folder says 'Not a git repo', adds, and the se
   await expect(pickerButton(page)).toContainText("lilos-fresh-d");
   await send(page, "hello — plain folder turn", "first");
   await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+/);
-  // Let turn 1 settle so the follow-up is a fresh turn that echoes the cwd.
+  /* Let turn 1 settle so the follow-up is a fresh turn that echoes the cwd.
+     Scope the waits to the open thread's panel: #577 leaves the DM list
+     rendered beside it, and every sibling thread carries the same canned
+     reply text — a page-wide match settles instantly and the next send
+     lands as a steer inside the still-running turn. */
+  const panel = page.locator("[data-thread-panel]");
   await expect(
-    page.getByText("If you want me to change code", { exact: false }).last(),
+    panel.getByText("If you want me to change code", { exact: false }).last(),
   ).toBeVisible({ timeout: 30_000 });
-  await expect(page.locator("[data-agentturn] [data-streaming]")).toHaveCount(
+  await expect(panel.locator("[data-agentturn] [data-streaming]")).toHaveCount(
     0,
     { timeout: 30_000 },
   );
   await send(page, "where are you working?", "last");
   await expect(
-    page
+    panel
       .locator("[data-agentturn]")
       .last()
       .locator("code")
