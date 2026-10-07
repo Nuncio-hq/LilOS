@@ -248,39 +248,8 @@ export function DesktopFindBar() {
       }
     };
     window.addEventListener("keydown", onKey, true);
-    /* Rows mount/stream while a session is open — re-run the live find so
-       the count and highlights track the DOM instead of freezing at query
-       time (debounced: held rows mount in a burst when the bar opens). */
-    let moTimer: ReturnType<typeof setTimeout> | undefined;
-    const debounced = new MutationObserver(() => {
-      clearTimeout(moTimer);
-      moTimer = setTimeout(() => {
-        const { open: o, query: q } = live.current;
-        const el = hostRef.current;
-        if (!o || !q || !el) return;
-        const next = collectMatches(el, q);
-        const len = next.length;
-        if (len === matchRanges.current.length) return;
-        matchRanges.current = next;
-        const idx = len ? Math.min(activeIdx.current, len - 1) : -1;
-        paint(idx);
-        setResult({
-          matches: len,
-          activeMatchOrdinal: len ? idx + 1 : 0,
-        });
-      }, 150);
-    });
-    /* The bar mounts lazily inside the surface — observe the document so a
-       surface swap (Thread → Focus) still gets caught. */
-    debounced.observe(document.body, {
-      subtree: true,
-      childList: true,
-      characterData: true,
-    });
     return () => {
       offFind?.();
-      debounced.disconnect();
-      clearTimeout(moTimer);
       window.removeEventListener("keydown", onKey, true);
       /* Unmounting mid-session ends the find: no stale highlights or pinned
          rows left behind in the next surface. */
@@ -290,7 +259,58 @@ export function DesktopFindBar() {
         setFindSessionOpen(false);
       }
     };
-  }, [openBar, step, paint]);
+  }, [openBar, step]);
+
+  /* Rows mount/stream while a session is open — re-run the live find so
+     the count and highlights track the DOM instead of freezing at query
+     time (debounced: held rows mount in a burst when the bar opens). The
+     observer exists only for the session — mounted with the open bar,
+     disconnected when it closes — and watches only the conversation
+     surface the bar sits in (its host's parent), never document.body:
+     a closed bar must not schedule find work on the streaming hot path
+     (#713). If the bar's host is re-seated on a different surface while
+     the session is open (a Thread ↔ Focus swap that keeps the bar
+     mounted re-parents the div), the old surface records the removal and
+     the observer follows onto the new parent. */
+  useEffect(() => {
+    if (!open) return;
+    let observed = hostRef.current?.parentElement;
+    if (!observed) return;
+    let moTimer: ReturnType<typeof setTimeout> | undefined;
+    const opts = { subtree: true, childList: true, characterData: true };
+    const debounced = new MutationObserver(() => {
+      const seat = hostRef.current?.parentElement;
+      if (seat && seat !== observed) {
+        observed = seat;
+        debounced.disconnect();
+        debounced.observe(seat, opts);
+      }
+      if (!live.current.query) return;
+      clearTimeout(moTimer);
+      moTimer = setTimeout(() => {
+        const q = live.current.query;
+        const el = hostRef.current;
+        if (!q || !el) return;
+        const next = collectMatches(el, q);
+        const len = next.length;
+        if (len === matchRanges.current.length) return;
+        matchRanges.current = next;
+        /* A match set that emptied mid-session leaves activeIdx at -1 —
+           clamp back into range so the first new match is active. */
+        const idx = len ? Math.min(Math.max(activeIdx.current, 0), len - 1) : -1;
+        paint(idx);
+        setResult({
+          matches: len,
+          activeMatchOrdinal: len ? idx + 1 : 0,
+        });
+      }, 150);
+    });
+    debounced.observe(observed, opts);
+    return () => {
+      debounced.disconnect();
+      clearTimeout(moTimer);
+    };
+  }, [open, paint]);
 
   if (!window.lilos?.isDesktop || !open) return null;
   return (
