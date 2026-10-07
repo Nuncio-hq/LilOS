@@ -3,15 +3,17 @@ import { AppText } from "../components/app-text";
 import { Button } from "../components/button";
 import { Icon, useThemeColor } from "../components/icon";
 
-export type MacLink = "reconnecting" | "online" | "offline";
+export type MacLink = "reconnecting" | "online" | "offline" | "blocked";
 
 /* Step 6 — top of Home on every launch after pairing: reconnecting, connected,
-   or can't reach the Mac (asleep / Tailscale off) with Try again. */
+   can't reach the Mac (asleep / Tailscale off) with Try again, or blocked on
+   a version mismatch with the update line (#597). */
 export function MacStatusCard({
   name,
   link,
   routeLabel,
   lastConnected,
+  blockedDetail,
   onRetry,
 }: {
   name: string;
@@ -19,6 +21,9 @@ export function MacStatusCard({
   routeLabel: string;
   /** e.g. "5 min ago" */
   lastConnected: string;
+  /** #597: the "Update LilOS on this iPhone / on the Mac" line while
+      `link === "blocked"`. */
+  blockedDetail?: string;
   onRetry: () => void;
 }) {
   const spinner = useThemeColor("muted-foreground");
@@ -33,7 +38,7 @@ export function MacStatusCard({
               <ActivityIndicator size="small" color={spinner} />
             ) : (
               <View
-                className={`size-2 rounded-full ${link === "online" ? "bg-success" : "bg-destructive"}`}
+                className={`size-2 rounded-full ${link === "online" ? "bg-success" : link === "blocked" ? "bg-warning" : "bg-destructive"}`}
               />
             )}
             <AppText size="sm" tone="muted">
@@ -41,7 +46,9 @@ export function MacStatusCard({
                 ? "Reconnecting…"
                 : link === "online"
                   ? `Connected ${routeLabel}`
-                  : `Can't reach it · last connected ${lastConnected}`}
+                  : link === "blocked"
+                    ? "Update needed"
+                    : `Can't reach it · last connected ${lastConnected}`}
             </AppText>
           </View>
         </View>
@@ -51,6 +58,15 @@ export function MacStatusCard({
           <AppText size="sm" tone="muted">
             Your Mac may be asleep, or Tailscale is off on one of the devices.
             Your employees' work is safe — it continues when the Mac is back.
+          </AppText>
+          <Button label="Try again" onPress={onRetry} />
+        </>
+      )}
+      {link === "blocked" && (
+        <>
+          <AppText size="sm" tone="muted">
+            {blockedDetail ??
+              "LilOS versions don't match — update LilOS, then try again."}
           </AppText>
           <Button label="Try again" onPress={onRetry} />
         </>
