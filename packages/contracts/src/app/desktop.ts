@@ -30,6 +30,16 @@ export const DESKTOP_OPEN_SETTINGS_CHANNEL = "lilos:open-app-settings" as const;
  *  (#674). */
 export const DESKTOP_ONLINE_CHANNEL = "lilos:online" as const;
 
+/** IPC channel: main → renderer, a Find-menu action the renderer's find
+ * bar executes (issue #554): "open" shows/focuses the bar, "next"/"prev"
+ * advance the active match. The find itself runs in the renderer — a DOM
+ * search painted with CSS Custom Highlights — so the bar's own input and
+ * IME composition stay out of it, unlike `webContents.findInPage`. */
+export const DESKTOP_FIND_CHANNEL = "lilos:find" as const;
+
+/** What the Edit menu's Find items ask the renderer to do (#554). */
+export type DesktopFindAction = "open" | "next" | "prev";
+
 /** The app's stored theme — the window's appearance must match it or the
  * sidebar vibrancy material turns unreadable (dark text on dark vibrancy). */
 export type ThemeSource = "light" | "dark" | "system";
@@ -126,4 +136,8 @@ export interface DesktopBridge {
   updateStatus?: () => Promise<DesktopUpdateStatus | undefined>;
   /** Un-skip a rolled-back build and re-run the update check (#539). */
   retryUpdate?: () => Promise<DesktopUpdateOutcome>;
+  /** Subscribe to Edit-menu Find actions — ⌘F / ⌘G / ⇧⌘G (#554). Absent on
+   *  plain web, where the browser's own find bar owns the chord. Returns
+   *  an unsubscribe function. */
+  onFind?: (cb: (action: DesktopFindAction) => void) => () => void;
 }
