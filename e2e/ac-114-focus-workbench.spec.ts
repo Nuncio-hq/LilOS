@@ -11,7 +11,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import { allowAllWhile, expectSettled } from "./helpers/approvals";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  panelIntoFocus,
+  pickPorts,
+  type Stack,
+} from "./helpers/stack";
 
 /**
  * Issue #114 — Focus mode + Workbench in the real app (apps/web), on the real
@@ -194,7 +199,7 @@ const sendTurn = async (page: Page, text: string) => {
   }
   await send(page, text);
   const mine = page
-    .locator("main [data-msg]")
+    .locator("[data-msg]")
     .filter({ hasText: text })
     .filter({ hasNot: page.locator("[data-agentturn]") })
     .last();
@@ -239,12 +244,17 @@ test("AC-1 a session opens in the panel; ↗ reaches Focus; Esc/Back return thro
   await dmDefault(page);
   await pickSessionFolder(page, repoDir);
   await send(page, "check in");
-  // A send still lands in Focus, at its own URL (#195 routes it through the
-  // panel URL so every way back out lands on the same open peek).
-  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
-  await expect(page.locator("main").getByText("check in").first()).toBeVisible({
+  /* #577 (supersedes #195's send→Focus): a send STAYS on the DM list with
+     the thread open in the side panel; Focus opens only from the panel's
+     ↗, so every way back out still lands on the same open peek. */
+  await expect(page).toHaveURL(PANEL_URL, { timeout: 30_000 });
+  const sentPanel = page.locator("[data-thread-panel]");
+  await expect(sentPanel.getByText("check in").first()).toBeVisible({
     timeout: 30_000,
   });
+  await page.screenshot({ path: `${SHOTS}/ac-1-send-panel.png` });
+  await sentPanel.getByTitle("Focus", { exact: true }).click();
+  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
   await expect(workbenchToggle(page)).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-1-focus.png` });
 
@@ -529,7 +539,8 @@ test("AC-6 tabs render only when their host method answers; a session without a 
   // only the Files tab renders. Browser/Terminal never render in this slice.
   await pickSessionFolder(page, plainDir);
   await send(page, "check the folder");
-  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  await panelIntoFocus(page);
   await expect(workbenchToggle(page)).toBeVisible({ timeout: 30_000 });
   await expect(tab(page, "Files")).toBeVisible({ timeout: 30_000 });
   await expect(tab(page, /Changes/)).toHaveCount(0);
@@ -558,7 +569,8 @@ test("AC-6 tabs render only when their host method answers; a session without a 
     .getByText("No folder · just chat")
     .click();
   await send(page, "just chat — no folder");
-  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  await panelIntoFocus(page);
   await expect(workbenchToggle(page)).toBeVisible({ timeout: 30_000 });
   /* The panel opens on demand here — auto-open at ≥lg is for a panel that
      already has content to show (a folder, or live engine work). */
@@ -617,7 +629,8 @@ test("AC-396 a turn that starts while you watch re-arms follow after a manual ta
   await dmDefault(page);
   await pickSessionFolder(page, regDir);
   await send(page, "say hi");
-  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  await panelIntoFocus(page);
   /* Remount with NO live turn: the first live sighting after this mount
      must be a turn that BEGAN while mounted — that is exactly when
      follow may re-arm (the mount-time turn must never re-arm it, AC-319). */

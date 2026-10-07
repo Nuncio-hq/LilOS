@@ -5,7 +5,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import { allowAllWhile, expectSettled } from "./helpers/approvals";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  panelIntoFocus,
+  pickPorts,
+  type Stack,
+} from "./helpers/stack";
 
 /**
  * Issue #416 — the turn footer's "N files changed" counts the files the
@@ -114,9 +119,8 @@ test('AC-2 create + edit in one turn → the footer reads "2 files changed"', as
   await dmDefault(page);
   await pickSessionFolder(page, repoDir);
   await send(page, "Add a changelog note to the readme");
-  await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+\/focus$/, {
-    timeout: 30_000,
-  });
+  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  await panelIntoFocus(page);
 
   const turn = turns(page).last();
   await allowAllWhile(page, expectSettled(turn));

@@ -268,6 +268,32 @@ export const SessionRewindResult = z.object({
 });
 export type SessionRewindResult = z.infer<typeof SessionRewindResult>;
 
+// ── session.moveWorkspace (capability: workspace_move, #581) ────────────────
+/**
+ * Re-home the session's working folder (issue #581): the engine moves the
+ * stored session — memory, transcript and event stream untouched — so the
+ * next turn runs in `cwd`. A live session follows too (the engine moves its
+ * live working dir when the transport supports it). Engines on transports
+ * that can't re-home (ACP today) don't declare the capability; the app then
+ * keeps the folder as a pick for the next session instead of offering the
+ * in-place move.
+ */
+export const SessionMoveWorkspaceParams = z.strictObject({
+  sessionId: SessionId,
+  /** Folder the session moves to — expanded (`~`) host-side; must exist. */
+  cwd: z.string().min(1),
+});
+export type SessionMoveWorkspaceParams = z.infer<
+  typeof SessionMoveWorkspaceParams
+>;
+export const SessionMoveWorkspaceResult = z.object({
+  /** The folder the session now lives in (canonical absolute form). */
+  cwd: z.string().min(1),
+});
+export type SessionMoveWorkspaceResult = z.infer<
+  typeof SessionMoveWorkspaceResult
+>;
+
 // ── session.ask (capability: side_prompt, #584) ─────────────────────────────
 export const SessionAskParams = z.strictObject({
   sessionId: SessionId,
@@ -425,6 +451,12 @@ export const ENGINE_METHODS: Record<string, EngineMethodContract> = {
     result: SessionRewindResult,
     doc: "Drop all user turns after `toTurn` from the session's context (issue #134). Refuses INVALID_STATE while a turn runs. Engines on transports without history rewind (ACP today) don't declare the capability.",
     capability: "rewind",
+  },
+  "session.moveWorkspace": {
+    params: SessionMoveWorkspaceParams,
+    result: SessionMoveWorkspaceResult,
+    doc: "Re-home the session's working folder (issue #581) — memory and transcript untouched; the next turn runs in `cwd`. Engines that can't re-home (ACP today) don't declare the capability.",
+    capability: "workspace_move",
   },
   "session.ask": {
     params: SessionAskParams,

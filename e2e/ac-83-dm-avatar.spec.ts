@@ -78,8 +78,7 @@ test("AC-1/AC-2 the avatar and name line share a top edge (≤4px)", async ({
   try {
     await dmDefault(page, stack.webUrl);
     await send(page, PROMPT);
-    // Sending opens the session in Focus (#114); Back lands on the feed.
-    await page.getByRole("button", { name: "Back to DM" }).click();
+    /* #577: the send stays on the DM feed — the row is already rendered. */
     const row = feedRow(page);
     await expect(row).toBeVisible({ timeout: 30_000 });
     // Settled state: engine-fake's reply is in, the session chip is rendered.
@@ -267,8 +266,7 @@ test("AC-3 desktop app: the DM feed row in Electron", async () => {
       const win = await app.firstWindow();
       await dmDefault(win, stack.webUrl);
       await send(win, PROMPT);
-      // Send opens Focus (#114); Back returns to the feed the row lives on.
-      await win.getByRole("button", { name: "Back to DM" }).click();
+      // #577: the send stays on the feed — no back hop needed.
       const row = feedRow(win);
       await expect(row).toBeVisible({ timeout: 30_000 });
       await expect(row.getByText(/\d+ repl(y|ies)/)).toBeVisible({

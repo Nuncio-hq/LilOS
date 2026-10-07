@@ -1,5 +1,10 @@
 import { expect, type Page, test } from "@playwright/test";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  panelIntoFocus,
+  pickPorts,
+  type Stack,
+} from "./helpers/stack";
 
 /* Issue #602 — at rest (scrolled to the bottom) the gap between the last
    message and the composer must be ≤ 24px on every chat surface.
@@ -437,7 +442,8 @@ test.describe("AC-1 real app (engine-fake stack)", () => {
         const box = page.locator("textarea").last();
         await box.fill("Say hello");
         await box.press("Enter");
-        await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+\/focus/, {
+        // #577: a send lands on the panel (conv URL), no jump to Focus.
+        await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+$/, {
           timeout: 30_000,
         });
         const emp = page.url().split("/dm/")[1].split("/")[0];
@@ -459,9 +465,8 @@ test.describe("AC-1 real app (engine-fake stack)", () => {
     const box = page.locator("textarea").last();
     await box.fill("Say hello then list files");
     await box.press("Enter");
-    await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+\/focus/, {
-      timeout: 30_000,
-    });
+    // #577: send lands on the panel; Focus opens only from its button.
+    await panelIntoFocus(page);
     /* Send follow-ups until the Focus scroller overflows (cap 6) — the
        engine-fake turn settles quickly; poll scrollHeight > clientHeight. */
     const isScrollable = (sel: string) =>

@@ -11,7 +11,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import { allowAllWhile, expectSettled } from "./helpers/approvals";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  panelIntoFocus,
+  pickPorts,
+  type Stack,
+} from "./helpers/stack";
 
 /**
  * Issue #107 — Workbench → Changes commits, pushes and opens a PR without
@@ -186,8 +191,10 @@ const sendTurn = async (page: Page, text: string) => {
     await expectSettled(turns(page).last(), 60_000);
   }
   await send(page, text);
+  /* #577: the send lands on the thread panel, which lives outside <main> —
+     match data-msg on either surface. */
   const mine = page
-    .locator("main [data-msg]")
+    .locator("[data-msg]")
     .filter({ hasText: text })
     .filter({ hasNot: page.locator("[data-agentturn]") })
     .last();
@@ -235,7 +242,8 @@ test("AC-1 checkboxes pick the staged set; Commit commits only the checked files
   await dmDefault(page);
   await pickSessionFolder(page, repoDir);
   await send(page, SHIP_SESSION);
-  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  await panelIntoFocus(page);
 
   await tab(page, /Changes/).click();
   await expect(page.getByText(/Clean working tree/)).toBeVisible({
@@ -295,13 +303,13 @@ test("AC-2 (#584) Suggest is a side request: no user message, no turn; fills the
 
   /* First with the thread idle: the ask answers off-transcript — nothing
      posts to the thread, no agent turn opens. */
-  const msgsBefore = await page.locator("main [data-msg]").count();
+  const msgsBefore = await page.locator("[data-msg]").count();
   await page.locator("[data-shipsuggest]").click();
   await expect(page.locator("[data-shipmessage]")).toHaveValue(
     "feat: update a.txt",
     { timeout: 60_000 },
   );
-  expect(await page.locator("main [data-msg]").count()).toBe(msgsBefore);
+  expect(await page.locator("[data-msg]").count()).toBe(msgsBefore);
   await expect(
     page.locator("main").getByText(/one-line git commit message/),
   ).toHaveCount(0);
@@ -433,7 +441,7 @@ test("AC-3 Push sets upstream and lands the branch; rejected, no-remote and auth
   await askBtn.click();
   await expect(
     page
-      .locator("main [data-msg]")
+      .locator("[data-msg]")
       .filter({ hasText: /pull|rejected/i })
       .last(),
   ).toBeVisible({ timeout: 30_000 });
@@ -476,7 +484,8 @@ test("AC-3 Push sets upstream and lands the branch; rejected, no-remote and auth
     .click();
   await pickSessionFolder(page, nonremoteDir);
   await send(page, "no remote session");
-  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  await panelIntoFocus(page);
   await tab(page, /Changes/).click();
   writeFileSync(path.join(nonremoteDir, "n2.txt"), "more\n");
   const nrTurn = await sendTurn(page, "Add a note");
@@ -505,7 +514,8 @@ test("AC-3 Push sets upstream and lands the branch; rejected, no-remote and auth
     .click();
   await pickSessionFolder(page, authDir);
   await send(page, "auth remote session");
-  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  await panelIntoFocus(page);
   await tab(page, /Changes/).click();
   writeFileSync(path.join(authDir, "s2.txt"), "more\n");
   const aTurn = await sendTurn(page, "Add a note");
@@ -607,7 +617,8 @@ test("AC-6 a folder that is not a git repo shows no ship bar and no Changes/PR t
   await dmDefault(page);
   await pickSessionFolder(page, plainDir);
   await send(page, "plain folder session");
-  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  await panelIntoFocus(page);
   await expect(page.getByTitle("Workbench", { exact: true })).toBeVisible({
     timeout: 30_000,
   });

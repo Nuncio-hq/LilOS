@@ -3,7 +3,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import { allowAllWhile } from "./helpers/approvals";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  panelIntoFocus,
+  pickPorts,
+  type Stack,
+} from "./helpers/stack";
 
 /**
  * AC-112: image attachments in the real app's DM composers — the same path
@@ -175,7 +180,8 @@ test("AC-1 attach button + pick/drop/paste chips in both composers", async ({
   await page.locator("main form").evaluate((f: HTMLFormElement) => {
     f.requestSubmit();
   });
-  await page.waitForURL(/\/dm\/[^/]+\/[^/]+\/focus$/);
+  /* #577: sends land on the panel; Focus opens via its ↗. */
+  await panelIntoFocus(page);
   await expect(page.locator("form")).toHaveCount(1);
   await expect(page.locator('input[type="file"]')).toHaveCount(1);
   await attach(page, "pick", "thread.png", "thread");
@@ -215,7 +221,8 @@ test("AC-2 sends attachments over conversations.open and messages.post", async (
   await page.locator("main form").evaluate((f: HTMLFormElement) => {
     f.requestSubmit();
   });
-  await page.waitForURL(/\/dm\/[^/]+\/[^/]+\/focus$/);
+  /* #577: sends land on the panel; Focus opens via its ↗. */
+  await panelIntoFocus(page);
   const dmUrl = page.url().match(/\/dm\/([^/]+)\/([^/]+?)(?:\/focus)?$/);
   if (!dmUrl) throw new Error("not on a conversation");
   const [, emp, conv] = dmUrl;
@@ -285,7 +292,8 @@ test("AC-3 thumbnails render from stored refs, survive reload + reopen", async (
   await page.locator("main form").evaluate((f: HTMLFormElement) => {
     f.requestSubmit();
   });
-  await page.waitForURL(/\/dm\/[^/]+\/[^/]+\/focus$/);
+  /* #577: sends land on the panel; Focus opens via its ↗. */
+  await panelIntoFocus(page);
   await expect(
     page.locator('[data-attachments] img[alt="stored.png"]').first(),
   ).toBeVisible();
@@ -405,7 +413,8 @@ test("AC-5 engine-fake receives the image as a prompt content block", async ({
   await page.locator("main form").evaluate((f: HTMLFormElement) => {
     f.requestSubmit();
   });
-  await page.waitForURL(/\/dm\/[^/]+\/[^/]+\/focus$/);
+  /* #577: sends land on the panel; Focus opens via its ↗. */
+  await panelIntoFocus(page);
   await expect(
     page.locator("text=/prompt content block/i").last(),
   ).toContainText("image/png (78 bytes)", { timeout: 15_000 });
@@ -421,7 +430,8 @@ test("AC-2b an image-only send (no typed text) opens a session and replies", asy
   await page.locator("main form").evaluate((f: HTMLFormElement) => {
     f.requestSubmit();
   });
-  await page.waitForURL(/\/dm\/[^/]+\/[^/]+\/focus$/);
+  /* #577: sends land on the panel; Focus opens via its ↗. */
+  await panelIntoFocus(page);
   // The message rendered with its thumbnail and the engine answered it —
   // the fake only prints "prompt content block" for a real image block.
   await expect(
@@ -480,7 +490,8 @@ test("AC-5b a mid-turn image queues as the next prompt instead of steering", asy
   await page.locator("main form").evaluate((f: HTMLFormElement) => {
     f.requestSubmit();
   });
-  await page.waitForURL(/\/dm\/[^/]+\/[^/]+\/focus$/);
+  /* #577: sends land on the panel; Focus opens via its ↗. */
+  await panelIntoFocus(page);
   await expect(page.getByText("Approval needed").first()).toBeVisible({
     timeout: 60_000,
   });
