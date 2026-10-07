@@ -60,7 +60,9 @@ export function ThreadScreen({
   onRetry,
   onSendNow,
   onRemoveNotSent,
+  onUndoNotSent,
   scrollToEntry,
+  hitQuery,
   prefill,
   unreachableNote,
   stale,
@@ -101,9 +103,18 @@ export function ThreadScreen({
   /** #555: the Not-sent tray's Send now / Remove (web: NotSentTray). */
   onSendNow?: (entryId: string) => void;
   onRemoveNotSent?: (entryId: string) => void;
+  /** #555: Remove's Undo toast rides this — the removed send re-parks in
+     its old slot. Absent, Remove is plain (no toast). */
+  onUndoNotSent?: (
+    entry: Extract<ThreadEntry, { kind: "user" }>,
+    index: number,
+  ) => void;
   /** #555: a search hit opened this thread — scroll to that row and
      flash it (web: scrollTo + the amber flash, #138). */
   scrollToEntry?: string;
+  /** #555: the hit's term — bolded inside the row `scrollToEntry` lands
+     on (web: the <mark> on the scrolled hit). */
+  hitQuery?: string;
   /** Composer text to put in and focus (plan "Change…"). */
   prefill?: { text: string };
   /** #591: a thin line directly above the composer while the Mac is
@@ -122,15 +133,31 @@ export function ThreadScreen({
 }) {
   const insets = useSafeAreaInsets();
   const scroller = useRef<ScrollView>(null);
+  /* #555: the scroll view's own height — the search-hit scroll CENTRES
+     the row (never under the header or the composer stack). */
+  const viewH = useRef(0);
   const [composerHeight, setComposerHeight] = useState(96);
+  /* #555: the Remove toast's entry — it re-parks on Undo inside ~5s. */
+  const [removed, setRemoved] = useState<{
+    entry: Extract<ThreadEntry, { kind: "user" }>;
+    index: number;
+  } | null>(null);
   const [pillHeight, setPillHeight] = useState(0);
   const [noteHeight, setNoteHeight] = useState(0);
   const [trayHeight, setTrayHeight] = useState(0);
   /* #555: search-hit navigation — each row's scroll offset lands here;
-     when the pending target lays out we scroll to it and flash it once,
-     and the keep-latest scrollToEnd stands down until then. */
+     while the pending target is pending, EVERY scroll keeps it centred
+     (content still grows under it — scrollToEnd would steal it back),
+     then it flashes once settled. */
   const offsets = useRef(new Map<string, number>());
+  const rowHeights = useRef(new Map<string, number>());
   const pendingScroll = useRef<string | undefined>(scrollToEntry);
+  /* Once the hit lands it stays centred as content keeps sizing under it
+     — scrollToEnd would steal the scroll right back to the bottom. */
+  const hitAnchor = useRef<string | undefined>(undefined);
+  const hitSettle = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
   const [flashId, setFlashId] = useState<string>();
   const running = t.state === "working" && !stale;
   /* #420: parked on an open QUESTION ask the card can answer — the
@@ -164,17 +191,71 @@ export function ThreadScreen({
     const id = setTimeout(
       () =>
         !pendingScroll.current &&
+        !hitAnchor.current &&
         scroller.current?.scrollToEnd({ animated: false }),
       50,
     );
     return () => clearTimeout(id);
   }, [composerHeight]);
-  /* The flash outlives the scroll to the hit row, then fades on its own. */
+  /* The flash outlives the scroll to the hit row, then fades on its
+     own — 6s so Oscar still sees the amber when he lands. */
   useEffect(() => {
     if (flashId === undefined) return;
-    const id = setTimeout(() => setFlashId(undefined), 1600);
+    const id = setTimeout(() => setFlashId(undefined), 6000);
     return () => clearTimeout(id);
   }, [flashId]);
+  /* #555: the Undo toast auto-dismisses — the remove stands once it
+     leaves, the entry stays deleted. */
+  useEffect(() => {
+    if (!removed) return;
+    const id = setTimeout(() => setRemoved(null), 5000);
+    return () => clearTimeout(id);
+  }, [removed]);
+  /* A Remove pulls the row from the tray and offers Undo for ~5s — the
+     engine already dropped the entry, so the toast keeps its copy. */
+  const removeParked = (id: string) => {
+    const index = t.entries.findIndex((e) => e.id === id);
+    const entry = index >= 0 ? t.entries[index] : undefined;
+    onRemoveNotSent?.(id);
+    if (entry?.kind === "user" && onUndoNotSent) setRemoved({ entry, index });
+  };
+  /* #555: centre the hit row in the scroll view — never under the header
+     or the composer stack; falls back to a top offset before the view
+     height lands. The transparent chat header floats over the top, so
+     the floor is the top inset, not 0 — a first-row hit rests just
+     below the bar. */
+  const scrollToHit = (eid: string) => {
+    const top = offsets.current.get(eid);
+    if (top === undefined) return;
+    const row = rowHeights.current.get(eid) ?? 0;
+    const floor = -(insets.top + 44);
+    const y = viewH.current ? top - (viewH.current - row) / 2 : top + floor - 8;
+    scroller.current?.scrollTo({ y: Math.max(floor, y), animated: false });
+  };
+  /* The pending hit re-centres on each layout pass until the content
+     settles; a beat after the first centre it flashes and stands down. */
+  const onHitLayout = (eid: string) => {
+    scrollToHit(eid);
+    if (!hitSettle.current) {
+      hitSettle.current = setTimeout(() => {
+        pendingScroll.current = undefined;
+        hitAnchor.current = eid;
+        hitSettle.current = undefined;
+        setFlashId(eid);
+      }, 350);
+    }
+  };
+  /* #555: navigate() reuses the mounted screen — a new scrollTo param
+     re-arms the pending hit (no remount, no ref init). A warm offset
+     scrolls right away; a cold one waits for the row's layout. */
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-arms on the param only — the scroll helpers re-read the latest refs every call
+  useEffect(() => {
+    pendingScroll.current = scrollToEntry;
+    hitAnchor.current = undefined;
+    setFlashId(undefined);
+    if (scrollToEntry && offsets.current.has(scrollToEntry))
+      onHitLayout(scrollToEntry);
+  }, [scrollToEntry]);
 
   return (
     <KeyboardAvoidingView behavior="padding" className="flex-1 bg-background">
@@ -184,22 +265,37 @@ export function ThreadScreen({
         <ScrollView
           ref={scroller}
           className="flex-1"
+          onLayout={(ev) => {
+            viewH.current = ev.nativeEvent.layout.height;
+          }}
           onContentSizeChange={() =>
-            !pendingScroll.current &&
-            scroller.current?.scrollToEnd({ animated: true })
+            pendingScroll.current
+              ? scrollToHit(pendingScroll.current)
+              : hitAnchor.current
+                ? scrollToHit(hitAnchor.current)
+                : scroller.current?.scrollToEnd({ animated: true })
           }
           contentInsetAdjustmentBehavior="automatic"
-          /* #182 + #181: the bottom stack floats over this scroll view —
-             the inset must clear ALL of it: the measured composer plus,
-             while a background pill shows, the pill and its stack gap.
-             Composer-only leaves the newest line under the pill. */
+          /* The chat header is transparent + floats — content must rest
+             BELOW it, not start under it (the top inset is the header's
+             height; scrolling still carries turns under the blurred bar). */
           contentInset={{
+            top: insets.top + 44,
+            /* #182 + #181: the bottom stack floats over this scroll view —
+               the inset must clear ALL of it: the measured composer plus,
+               while a background pill shows, the pill and its stack gap.
+               Composer-only leaves the newest line under the pill. */
             bottom: threadBottomInset(
               composerHeight,
               pill ? pillHeight : 0,
               unreachableNote ? noteHeight : 0,
               parked.length ? trayHeight : 0,
             ),
+          }}
+          /* A manual scroll ends the pin — the hit's anchor stands down. */
+          onScrollBeginDrag={() => {
+            pendingScroll.current = undefined;
+            hitAnchor.current = undefined;
           }}
           keyboardDismissMode="interactive"
           contentContainerStyle={{
@@ -216,16 +312,10 @@ export function ThreadScreen({
               key={e.id}
               onLayout={(ev) => {
                 offsets.current.set(e.id, ev.nativeEvent.layout.y);
-                if (pendingScroll.current === e.id) {
-                  pendingScroll.current = undefined;
-                  scroller.current?.scrollTo({
-                    y: Math.max(0, ev.nativeEvent.layout.y - 8),
-                    animated: false,
-                  });
-                  setFlashId(e.id);
-                }
+                rowHeights.current.set(e.id, ev.nativeEvent.layout.height);
+                if (pendingScroll.current === e.id) onHitLayout(e.id);
               }}
-              className={`-mx-2 -my-1 rounded-xl px-2 py-1 ${flashId === e.id ? "bg-amber-100 dark:bg-amber-900/40" : ""}`}
+              className={`-mx-2 -my-1 rounded-xl px-2 py-1.5 ${flashId === e.id ? "bg-amber-100 dark:bg-amber-800/60" : ""}`}
             >
               <Rise>
                 {/* #514: a transcript state note heads the scroll — the
@@ -256,6 +346,7 @@ export function ThreadScreen({
                 ) : e.kind === "user" ? (
                   <UserBubble
                     text={e.text}
+                    mark={e.id === scrollToEntry ? hitQuery : undefined}
                     time={
                       e.queued
                         ? e.waiting
@@ -284,6 +375,7 @@ export function ThreadScreen({
                     onPlan={onPlan}
                     onOpenPlan={onOpenPlan}
                     onRetry={e.id === lastAgentId ? onRetry : undefined}
+                    mark={e.id === scrollToEntry ? hitQuery : undefined}
                     stale={asksStale}
                     answerHint={answerHint}
                   />
@@ -325,8 +417,37 @@ export function ThreadScreen({
               <NotSentTray
                 items={parked.map((m) => ({ id: m.id, text: m.text }))}
                 onSendNow={onSendNow}
-                onRemove={onRemoveNotSent}
+                onRemove={removeParked}
               />
+            </View>
+          )}
+          {removed && (
+            /* #555: Remove's ~5s Undo — an inverted pill above the
+               composer, gone on its own (web keeps the deleted row's
+               toast slot). */
+            <View className="mx-4 items-center">
+              <View className="flex-row items-center gap-3 rounded-full bg-foreground/95 px-4 py-2">
+                <AppText size="sm" className="text-background">
+                  Message removed
+                </AppText>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Undo remove"
+                  onPress={() => {
+                    onUndoNotSent?.(removed.entry, removed.index);
+                    setRemoved(null);
+                  }}
+                  className="min-h-11 items-center justify-center active:opacity-70"
+                >
+                  <AppText
+                    size="sm"
+                    weight="semibold"
+                    className="text-background underline"
+                  >
+                    Undo
+                  </AppText>
+                </Pressable>
+              </View>
             </View>
           )}
           <Composer

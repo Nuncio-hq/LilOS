@@ -442,4 +442,6 @@ export type DmMessageHit = {
   time: string;
   /** A window of the entry's text around the match (plain text). */
   snippet: string;
+  /** The matched term — the thread bolds it on the row the hit opens. */
+  query?: string;
 };

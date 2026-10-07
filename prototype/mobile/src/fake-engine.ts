@@ -444,6 +444,14 @@ async function run(tid: string, s: Script, eid?: string) {
         state: "failed",
         when: "now",
         failure: { kind: "generic", text: err.message },
+        /* #555: a send queued behind a turn that FAILED parks under Not
+           sent exactly like a stopped one — it never ran. Without this
+           the bubble reads "Queued · runs next" on a dead turn forever. */
+        entries: x.entries.map((e) =>
+          e.kind === "user" && e.queued
+            ? { ...e, queued: undefined, waiting: undefined, notSent: true }
+            : e,
+        ),
       }));
       return;
     }
@@ -653,6 +661,22 @@ export function removeNotSent(tid: string, entryId: string) {
   }));
 }
 
+/** #555: the Undo toast's restore — the removed send parks back in its
+    old transcript slot (still notSent — it returns to the tray, not the
+    transcript). */
+export function restoreNotSent(
+  tid: string,
+  entry: Extract<ThreadEntry, { kind: "user" }>,
+  index: number,
+) {
+  mapThread(tid, (x) => {
+    if (x.entries.some((e) => e.id === entry.id)) return x;
+    const entries = [...x.entries];
+    entries.splice(Math.min(index, entries.length), 0, entry);
+    return { ...x, entries };
+  });
+}
+
 /** #555: the failed turn's Retry — the same card runs again and recovers
     on the retry (the mock's deterministic "transient error" script).
     Web: the last turn's Retry (#419) replays the turn. */
@@ -716,6 +740,8 @@ export function searchDm(employeeId: string, query: string): DmMessageHit[] {
         from: e.kind === "user" ? "You" : t.employee.name,
         time: e.time,
         snippet: `${start > 0 ? "…" : ""}${text.slice(start, end).trim()}${end < text.length ? "…" : ""}`,
+        /* #555: the hit's own thread bolds this term on the scrolled row. */
+        query: q,
       });
       if (hits.length >= 50) return hits;
     }
@@ -1229,7 +1255,10 @@ function followUp(text: string, t: ThreadDetail): Script {
   if (!t.folder)
     return {
       reasoning: "A follow-up question; answer it directly.",
-      text: `Got it: "${text}". I'd keep it simple and do that first.`,
+      /* #555: don't echo the send verbatim — the bubble just said it, so
+         a "Got it: \"<same text>\"" reply reads as the message appended
+         twice. */
+      text: "Got it — I'd keep it simple and do that first.",
     };
   const file =
     [...t.entries]

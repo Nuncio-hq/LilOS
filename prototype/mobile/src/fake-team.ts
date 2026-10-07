@@ -645,6 +645,53 @@ export const THREADS: ThreadDetail[] = [
     ],
   },
   {
+    /* #555: a send queued behind the turn parked in the Not-sent tray
+       when Stop landed — one parked message wraps so Send now shows
+       what it sends (web: NotSentTray). */
+    id: "s-stopped",
+    title: "Cache the embedding lookups",
+    state: "stopped",
+    employee: BUILDER,
+    when: "Yesterday",
+    started: "Yesterday 17:02",
+    folder: LILOS,
+    branch: { name: "main", detail: "read-only · no worktree" },
+    model: "Claude Opus 5.5 · High",
+    session: "ses_e118",
+    entries: [
+      {
+        kind: "user",
+        id: "u1",
+        time: "17:02",
+        text: "Cache the embedding lookups — the DM search re-fetches every keystroke.",
+      },
+      {
+        kind: "agent",
+        id: "g1",
+        time: "17:02",
+        thought: 2,
+        reasoning:
+          "Memoize by conversation id so repeat queries hit the warm index.",
+        steps: [
+          {
+            id: "1",
+            tool: "read_file",
+            arg: "apps/relay/src/search.ts",
+            output: "212 lines · conversation-scoped keys",
+          },
+        ],
+        stopped: true,
+      },
+      {
+        kind: "user",
+        id: "u2",
+        time: "17:03",
+        text: "Also warm the embedding cache on app start so the first search doesn't stall.",
+        notSent: true,
+      },
+    ],
+  },
+  {
     id: "s-flake",
     title: "ac-80 flake",
     state: "needs-you",

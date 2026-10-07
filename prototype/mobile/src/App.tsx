@@ -84,6 +84,7 @@ import {
   removeNotSent,
   reply,
   resetTeam,
+  restoreNotSent,
   retryTurn,
   searchDm,
   sendNow,
@@ -143,7 +144,7 @@ type Routes = {
   Connected: undefined;
   Tabs: NavigatorScreenParams<TabRoutes>;
   Dm: { employeeId: string };
-  Thread: { id: string; scrollTo?: string };
+  Thread: { id: string; scrollTo?: string; hitQuery?: string };
   ThreadInfo: { id: string };
   /** A subagent of a turn in that thread (issue #170). */
   Subagent: { thread: string; id: string };
@@ -572,6 +573,7 @@ function Dm({ navigation, route }: Props<"Dm">) {
         navigation.navigate("Thread", {
           id: h.threadId,
           scrollTo: h.entryId,
+          hitQuery: h.query,
         })
       }
     />
@@ -661,7 +663,9 @@ function Thread({ navigation, route }: Props<"Thread">) {
         sendNow(t.id, eid);
       }}
       onRemoveNotSent={(eid) => removeNotSent(t.id, eid)}
+      onUndoNotSent={(entry, index) => restoreNotSent(t.id, entry, index)}
       scrollToEntry={route.params.scrollTo}
+      hitQuery={route.params.hitQuery}
       onPickModel={() => navigation.navigate("ModelPicker", { thread: t.id })}
       onOpenSubagent={(a) =>
         navigation.navigate("Subagent", { thread: t.id, id: a.id })
