@@ -14,6 +14,7 @@ import { SectionTitle } from "../components/bits";
 
 import { Icon } from "../components/icon";
 import { Orb } from "../components/orb";
+import { accessoryWhat } from "./approval-copy";
 import type { Approval, ChannelRow, EmployeeRow, ProjectGroup } from "./types";
 
 /* Home, as an iOS list under a large title: Employees, then Channels
@@ -183,17 +184,23 @@ export function NeedsYouAccessory({
 }) {
   const top = approvals[0];
   if (!top) return null;
-  const what = top.command
-    ? keepFlags(top.command)
-    : top.file
-      ? top.file.name
-      : top.reason;
+  /* #652: the one-line description reads like the thread card — the
+     human sentence first (never the bare `patch {…}` tool call), and a
+     last-known ask leads with "Last known" so truncation can't hide it. */
+  const what = accessoryWhat(top);
+  /* A last-known card's tap opens the ask's own thread read-only — the
+     Approve/Review pill is gone anyway; Activity stays for live asks. */
+  const open = top.lastKnown && onReview ? () => onReview(top.id) : onOpen;
   if (placement === "inline")
     return (
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`${approvals.length} waiting on you`}
-        onPress={onOpen}
+        accessibilityLabel={
+          top.lastKnown
+            ? `${approvals.length} waiting on you, last known`
+            : `${approvals.length} waiting on you`
+        }
+        onPress={open}
         className="flex-1 flex-row items-center gap-2 px-3"
       >
         <Orb tone={top.tone} size={22} badge={false} />
@@ -212,16 +219,23 @@ export function NeedsYouAccessory({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${top.employee} needs you: ${what}. Open Activity`}
-      onPress={onOpen}
+      accessibilityLabel={
+        top.lastKnown
+          ? `${top.employee} needs you, last known: ${what}. Open thread`
+          : `${top.employee} needs you: ${what}. Open Activity`
+      }
+      onPress={open}
       className="flex-1 flex-row items-center gap-3 pr-2 pl-3"
     >
-      <Orb tone={top.tone} size={28} badge={false} />
+      <View className={top.lastKnown ? "opacity-50" : ""}>
+        <Orb tone={top.tone} size={28} badge={false} />
+      </View>
       <View className="min-w-0 flex-1">
         <AppText
           size="sm"
           weight="semibold"
           numberOfLines={1}
+          tone={top.lastKnown ? "muted" : "default"}
           className="text-[14px] leading-[18px]"
         >
           {approvals.length > 1
@@ -306,11 +320,19 @@ function EmployeeItem({
       onPress={onPress}
       className="flex-row items-center gap-3 pl-3 active:bg-fill"
     >
-      <Orb tone={e.tone} state={stale ? "idle" : e.state} />
+      {/* #652: the whole row dims on last-known — orb and title too,
+          not only the now line (#591's reviewer note). */}
+      <View className={stale ? "opacity-50" : ""}>
+        <Orb tone={e.tone} state={stale ? "idle" : e.state} />
+      </View>
       <View className="min-w-0 flex-1 flex-row items-center py-3 pr-4">
         <View className="min-w-0 flex-1">
           <View className="flex-row items-baseline gap-1.5">
-            <AppText weight="semibold" className="text-[17px] leading-[22px]">
+            <AppText
+              weight="semibold"
+              tone={stale ? "muted" : "default"}
+              className="text-[17px] leading-[22px]"
+            >
               {e.name}
             </AppText>
             <AppText
@@ -440,12 +462,4 @@ function Dots() {
       ))}
     </View>
   );
-}
-
-/* Lines break only between arguments, and a flag stays with its value
-   ("--env dev"): non-breaking hyphens + a no-break space after a flag. */
-function keepFlags(command: string) {
-  return command
-    .replace(/(^|\s)(-{1,2}[\w-]+) (?=[^-\s])/g, "$1$2\u00a0")
-    .replace(/-/g, "\u2011");
 }

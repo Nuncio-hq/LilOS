@@ -2,6 +2,14 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <!-- #565 AC-3: the status page does zero network — every byte arrives via
+         preload IPC — so its CSP is a wall: nothing may connect out, and only
+         this page's own inline script/style runs (it has no remote or
+         agent-controlled content, so 'unsafe-inline' has no sink to feed). -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'"
+    />
     <title>LilOS</title>
     <style>
       :root { color-scheme: light dark; }

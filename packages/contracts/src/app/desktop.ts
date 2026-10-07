@@ -24,6 +24,11 @@ export const DESKTOP_THEME_CHANNEL = "lilos:theme-source" as const;
  * (issue #132 — the ⌘, menu item). Distinct from `lilos:open-settings`,
  * which opens macOS Login Items. */
 export const DESKTOP_OPEN_SETTINGS_CHANNEL = "lilos:open-app-settings" as const;
+/** IPC channel: renderer → main, "the network is back" — the preload
+ *  forwards the window's `online` event (no main-process equivalent in
+ *  Electron; `net` is poll-only). Triggers a rate-limited update check
+ *  (#674). */
+export const DESKTOP_ONLINE_CHANNEL = "lilos:online" as const;
 
 /** The app's stored theme — the window's appearance must match it or the
  * sidebar vibrancy material turns unreadable (dark text on dark vibrancy). */
