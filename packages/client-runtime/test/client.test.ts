@@ -1104,6 +1104,64 @@ describe("directory refresh for a paired phone", () => {
   });
 });
 
+/* #645: `conversations.summaries` is enrichment (root text, previews,
+   counts) — `conversations.list` already carries the rows. A failed or
+   timed-out summaries read must not hold the directory at "Loading…" or
+   lose the conversations (that was the latch the AC-4 flake rode). */
+describe("#645 directory survives a dead summaries read", () => {
+  const conversation = {
+    id: "conv1",
+    channelId: "c1",
+    rootMessageId: "m1",
+    engineRef: "sess-1",
+    state: "idle",
+    title: "",
+    archived: false,
+    createdAt: 3,
+  };
+
+  async function refreshWithSummaries(mode: "reject" | "hang") {
+    const { client, socket } = makeClient();
+    const pending = client.connect();
+    await Promise.resolve();
+    socket.openSocket();
+    await Promise.resolve();
+    socket.respondTo("session.hello", WELCOME);
+    await pending;
+    socket.respondTo("employees.list", { employees: [] });
+    socket.respondTo("channels.list", { channels: [] });
+    socket.respondTo("conversations.list", {
+      conversations: [conversation],
+    });
+    socket.respondTo("profile.get", { profile: { name: "", company: "" } });
+    socket.respondTo("devices.list", { devices: [] });
+    socket.respondTo("asks.list", { asks: [] });
+    if (mode === "reject") {
+      socket.failTo("conversations.summaries", {
+        code: -32000,
+        message: "summaries blew up",
+      });
+    }
+    /* "hang": never answered — the 200ms request timeout kills it. */
+    await vi.waitFor(() => expect(client.directoryReady.get()).toBe(true), {
+      timeout: 2000,
+    });
+    return { client };
+  }
+
+  it("a rejected conversations.summaries still populates the directory", async () => {
+    const { client } = await refreshWithSummaries("reject");
+    expect(client.conversations.get().map((c) => c.id)).toEqual(["conv1"]);
+    expect(client.conversationSummaries.get()).toEqual([]);
+  });
+
+  it("a hanging conversations.summaries still populates the directory", async () => {
+    const { client } = await refreshWithSummaries("hang");
+    expect(client.conversations.get().map((c) => c.id)).toEqual(["conv1"]);
+    expect(client.conversationSummaries.get()).toEqual([]);
+  });
+});
+
 describe("#571 incremental conversation summaries", () => {
   const flush = () => new Promise((r) => setTimeout(r, 0));
 
@@ -1346,6 +1404,76 @@ describe("#571 incremental conversation summaries", () => {
       "Rewound to before your message — 2 messages dropped.",
     );
     expect(s.messageCount).toBe(1);
+  });
+
+  /* #666: `conversation.updated` rides the channel subscription only — a
+     frame emitted between the directory read and the subscribe going live
+     is lost for good, and nothing re-reads the summary's embedded
+     conversation. The post-sync conversations re-pull must heal
+     `s.conversation` too, or a reloaded DM row keeps its stale copy
+     forever — the ac-583 dark-leg flake: a finished turn's `turnFailure`
+     never lands on the row. */
+  it("channel.synced heals the summary's embedded conversation (#666)", async () => {
+    const staleConv = {
+      id: "conv1",
+      channelId: "ch1",
+      rootMessageId: "conv1-root",
+      engineRef: "sess_1",
+      state: "active",
+      title: "conv1",
+      titleSource: "auto",
+      archived: false,
+      deliveredSeq: 0,
+      createdAt: 1,
+    };
+    const freshConv = {
+      ...staleConv,
+      state: "idle",
+      turnFailure: { kind: "model", text: "engine-fake: scripted failure" },
+    };
+    const { client, socket } = await connectWithSummaries([
+      mkSummary("conv1", { conversation: staleConv }),
+    ]);
+
+    /* Subscribe → synced; the missed conversation.updated is never
+       emitted — only the re-pull's fresh row can heal the copy. */
+    client.channelMessages("ch1");
+    socket.respondTo("channel.subscribe", { channel: { id: "ch1" } });
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "channel.synced",
+      params: { channelId: "ch1", lastSeq: 0 },
+    });
+    socket.respondTo("conversations.list", {
+      conversations: [
+        freshConv,
+        { ...staleConv, id: "conv2", rootMessageId: "conv2-root" },
+      ],
+    });
+    /* The channel-scoped summaries re-pull carries the fresh row AND a
+       conv opened inside the same gap (no row at all before). */
+    socket.respondTo("conversations.summaries", {
+      summaries: [
+        mkSummary("conv1", { conversation: freshConv }),
+        mkSummary("conv2"),
+      ],
+    });
+    await flush();
+    const [s] = client.conversationSummaries.get();
+    expect(s.conversation.state).toBe("idle");
+    expect(s.conversation.turnFailure?.text).toBe(
+      "engine-fake: scripted failure",
+    );
+    expect(
+      client.conversationSummaries.get().map((x) => x.conversation.id),
+    ).toEqual(["conv1", "conv2"]);
+    /* One channel-scoped pull — no per-conversation fetches. */
+    const reqs = summaryRequests(socket);
+    expect(reqs).toHaveLength(1);
+    expect(reqs[0].params).toEqual({
+      channelId: "ch1",
+      includeArchived: true,
+    });
   });
 
   /* The one race a ticket does guard: two scoped fetches overlap because

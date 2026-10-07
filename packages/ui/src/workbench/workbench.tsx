@@ -297,6 +297,17 @@ export function Workbench({
   const [probe, setProbe] = useState<WbProbeData | null>(
     restored?.probe ?? null,
   );
+  /* #685: the last answer each probe key actually landed (cache-seeded) —
+     a live read that answers nothing keeps it instead of blanking the
+     panel it gates. Lives in a ref: `merge` runs inside an effect whose
+     closure re-seats on every `running` flip. `nullStreak` bounds the
+     keep: one flap rides last-known, a second consecutive null lands so
+     a folder that stays gone still hides its tabs. */
+  const landedProbe = useRef<Partial<WbProbeData>>({
+    ...(restored?.probe ?? {}),
+  });
+  const landedCwd = useRef(liveCwd);
+  const nullStreak = useRef<Partial<Record<keyof WbProbeData, number>>>({});
   const [firstSettled, setFirstSettled] = useState(restored != null);
   const [revalidating, setRevalidating] = useState(restored != null);
   /* Open-in-editor affordances (issue #110): editors detected on this host
@@ -376,11 +387,30 @@ export function Workbench({
     }
     const cwd = liveCwd;
     let off = false;
+    /* A folder switch under one mount drops the outgoing folder's lands —
+       its answers mustn't keep the NEW folder's first-read nulls from
+       landing (a dead folder still hides its tabs). Late lands from the
+       stale run are guarded out of the keep bookkeeping below (their
+       `patchWbCache` write stays — it lands on the right folder's entry). */
+    if (landedCwd.current !== cwd) {
+      landedCwd.current = cwd;
+      landedProbe.current = {};
+      nullStreak.current = {};
+    }
     /* #544: reads land independently — every merge also writes the
        per-folder cache, so a land that resolves after unmount still warms
        the next mount's first frame. `pr` stays on the #429 funnel below:
        its ~1s `gh` subprocess never gates the folder tabs (AC-2). */
+    /* #685: `files`/`diffs` gate their panels — a read that answers nothing
+       (a transient fs/git failure; the accessor collapses errors to null)
+       must NOT overwrite a landed answer. A null flap unmounts the panel —
+       its scroll offset dies with the viewport — and poisons the folder
+       cache (`files` null reads as "never answered", so the whole entry —
+       scrolls, selection, picked tab — misses on the next mount). Same
+       keep-last-known rule `forge.pr` follows below; a null FIRST read
+       still lands so a dead folder hides its tab as before. */
     const merge = (patch: Partial<WbProbeData>) => {
+      if (landedCwd.current === cwd) Object.assign(landedProbe.current, patch);
       patchWbCache(host, cwd, (e) => ({
         ...e,
         probe: { ...e.probe, ...patch },
@@ -388,13 +418,36 @@ export function Workbench({
       }));
       if (!off) setProbe((p) => ({ ...(p ?? EMPTY_WB_PROBE), ...patch }));
     };
+    const keepLastKnown = (key: keyof WbProbeData) => {
+      if (
+        (key !== "files" && key !== "diffs") ||
+        landedCwd.current !== cwd ||
+        landedProbe.current[key] == null
+      )
+        return false;
+      const streak = nullStreak.current[key] ?? 0;
+      nullStreak.current[key] = streak + 1;
+      return streak === 0;
+    };
     const land = <K extends keyof WbProbeData>(
       key: K,
       read: Promise<WbProbeData[K] | null> | undefined,
     ) =>
       (read ?? Promise.resolve(null))
-        .then((v) => merge({ [key]: v ?? null } as Partial<WbProbeData>))
-        .catch(() => merge({ [key]: null } as Partial<WbProbeData>));
+        .then((v) => {
+          if (v != null) {
+            if (
+              (key === "files" || key === "diffs") &&
+              landedCwd.current === cwd
+            )
+              nullStreak.current[key] = 0;
+          } else if (keepLastKnown(key)) return;
+          merge({ [key]: v ?? null } as Partial<WbProbeData>);
+        })
+        .catch(() => {
+          if (keepLastKnown(key)) return;
+          merge({ [key]: null } as Partial<WbProbeData>);
+        });
     const round = () =>
       Promise.all([
         land("files", host.tree(cwd)),

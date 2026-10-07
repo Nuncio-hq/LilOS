@@ -62,6 +62,11 @@ PR does not exist.
   SQLite FTS5 external-content table + triggers (migration v9).** Engine
   transcripts, tool output and attachments are never indexed (D-#25).
   Not: a separate search service, or indexing transcripts. — #138
+- **D-#645 The open thread mounts off `relay.conversations` (push-fed);
+  `conversationSummaries` is enrichment only** (root text, previews,
+  counts — degraded out of the directory's all-or-nothing read). Not:
+  resolving the open conversation from summaries — a lagging enrichment
+  fetch parked the composer on "working…" forever. — #645
 - **D-#300 The context meter's usage + contextWindow persist on the
   conversation row** (the relay writes `turn.completed.usage`, fenced by
   `usage_session_id`/`usage_seq`); an `events.since` on a dead session id
