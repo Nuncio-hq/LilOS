@@ -155,8 +155,9 @@ export function onEngineEvent(this: HarnessCtx, event: EngineEvent) {
       this.updateConversation(binding.conversationId, {
         state: "active",
         /* #419: a fresh turn erases the last failure's card — a retry
-           that made it this far worked. */
+           that made it this far worked. Same for the stopped word. */
         turnFailure: null,
+        turnStopped: null,
       }).catch(() => {});
       /* #422: a turn is running but named no step yet — the header reads
          "thinking" until the first tool.started replaces it. Waits stay:
@@ -204,6 +205,25 @@ export function onEngineEvent(this: HarnessCtx, event: EngineEvent) {
     case "subagent.completed":
       binding?.openSubagents.delete(event.payload.subagentId);
       break;
+    /* #583 AC-3: a live background job stamps its count on the row — the
+       badge and the session feed it keeps alive survive a released
+       session (relay-persisted like `turnStopped`). */
+    case "job.started": {
+      if (!binding) break;
+      binding.runningJobs.add(event.payload.jobId);
+      this.updateConversation(binding.conversationId, {
+        bgJobs: binding.runningJobs.size,
+      });
+      break;
+    }
+    case "job.exited": {
+      if (!binding) break;
+      if (binding.runningJobs.delete(event.payload.jobId))
+        this.updateConversation(binding.conversationId, {
+          bgJobs: binding.runningJobs.size,
+        });
+      break;
+    }
     case "session.note":
       /* Engine-authored note (e.g. a deferred model switch that failed at
          turn start — "Couldn't switch to X — staying on Y"). Surfaced as a
@@ -318,7 +338,12 @@ export function onEngineEvent(this: HarnessCtx, event: EngineEvent) {
         const idx = binding.steerPending.findIndex(
           (s) => s.text === event.payload.text,
         );
+        /* #550: no pending match means the landing outran its ack —
+           engine-hermes emits this inside `session.steer`, so the event
+           arrives before the response resolves. Record the text for the
+           ack to claim; a landed steer is delivered, never parked. */
         if (idx >= 0) binding.steerPending.splice(idx, 1);
+        else binding.steerLanded.push(event.payload.text);
       }
       break;
     case "turn.completed":

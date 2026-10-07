@@ -1,9 +1,12 @@
 import { spawnSync } from "node:child_process";
 import type { MessageSearchHit } from "@lilos/contracts/app";
 import { describe, expect, it } from "vitest";
+import { MIGRATIONS } from "../src/db/migrate";
 import { createRelay } from "../src/session";
 import { BUN, helloed, RELAY_DIR, req, TOKEN } from "./helpers";
 import { createMemoryStore } from "./memory-store";
+
+const LATEST_VERSION = Math.max(...MIGRATIONS.map((m) => m.version));
 
 const lastFrame = (frames: unknown[]) =>
   frames.at(-1) as {
@@ -205,7 +208,9 @@ describe("messages.search over real SQLite FTS5 (bun fixture)", () => {
 
   it("fixture ran clean", () => {
     expect(res.status, res.stderr).toBe(0);
-    expect(steps.get("version")).toEqual({ user_version: 20 });
+    /* Tracks the latest migration (currently #583's v23) instead of a
+       pinned number — the fixture itself stamps `max(MIGRATIONS)`. */
+    expect(steps.get("version")).toEqual({ user_version: LATEST_VERSION });
   });
 
   it("AC-1 backfills pre-index rows and index follows writes", () => {

@@ -1,4 +1,4 @@
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import {
   chmodSync,
   existsSync,
@@ -7,6 +7,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname } from "node:path";
+import { equalSecret } from "@lilos/contracts/auth";
+import type { PairingService } from "./pairing";
 
 /**
  * Per-install local-process auth (issue #25): the relay generates a token on
@@ -26,15 +28,38 @@ export function loadOrCreateInstallToken(tokenPath: string): string {
 }
 
 /**
- * Constant-time secret compare (#568): hash both sides, then
- * `timingSafeEqual` over the fixed-size digests. A plain `!==`/`===`
- * early-exits on the first differing byte, so a remote caller that can
- * time `session.hello` round-trips could read off the longest matching
- * prefix. Digests keep the compare fixed-cost for any input length.
+ * #625: the `/ws` upgrade gate — a credential is checked BEFORE
+ * `server.upgrade`, so a refused handshake never attaches and never gets to
+ * sit pre-auth buffering frames up to `MAX_FRAME_BYTES` (#551 raised the cap
+ * to 160 MiB; the old 16 MiB default accidentally bounded this). The
+ * credential rides the URL's query because a browser WebSocket can't set
+ * headers — the same carrier the #564 feed gate uses: web/desktop/harness
+ * send `?token=` (the install token), a paired phone sends
+ * `?deviceId=&credential=`. `session.hello` still authenticates on the
+ * socket; this gate only bounds what runs pre-hello.
  */
-export function equalSecret(a: string, b: string): boolean {
-  return timingSafeEqual(
-    createHash("sha256").update(a).digest(),
-    createHash("sha256").update(b).digest(),
-  );
+export async function authorizeRelayUpgrade(
+  req: Request,
+  deps: { token: string; pairing?: PairingService },
+): Promise<Response | undefined> {
+  const url = new URL(req.url);
+  const presented = url.searchParams.get("token");
+  // Fail closed: an empty configured credential must never authenticate.
+  if (deps.token && presented && equalSecret(presented, deps.token)) {
+    return undefined;
+  }
+  const deviceId = url.searchParams.get("deviceId");
+  const credential = url.searchParams.get("credential");
+  if (deviceId && credential && deps.pairing) {
+    try {
+      const device = await deps.pairing.authenticateDevice(
+        deviceId,
+        credential,
+      );
+      if (device) return undefined;
+    } catch {
+      /* A store error must still fail closed — the uniform 401 below. */
+    }
+  }
+  return new Response("unauthorized\n", { status: 401 });
 }

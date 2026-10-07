@@ -11,7 +11,8 @@ import type {
   ProfileSettings,
   RecentFolder,
 } from "@lilos/contracts/app";
-import { equalSecret } from "../src/auth";
+import { toSummaryMessage, toSummaryPreview } from "@lilos/contracts/app";
+import { equalSecret } from "@lilos/contracts/auth";
 import type {
   AppendMessageInput,
   DevicePush,
@@ -222,9 +223,10 @@ export function createMemoryStore(): RelayStore {
       channels.set(channel.id, channel);
       return { channel, created: true };
     },
-    async listConversations({ channelId, includeArchived }) {
+    async listConversations({ channelId, includeArchived, conversationId }) {
       return [...conversations.values()]
         .filter((c) => (channelId ? c.channelId === channelId : true))
+        .filter((c) => (conversationId ? c.id === conversationId : true))
         .filter((c) => (includeArchived ? true : !c.archived))
         .sort((a, b) => a.createdAt - b.createdAt);
     },
@@ -244,15 +246,24 @@ export function createMemoryStore(): RelayStore {
     async getConversation(id) {
       return conversations.get(id) ?? null;
     },
-    async listConversationSummaries({ channelId, includeArchived }) {
-      const convs = [...conversations.values()]
-        .filter((c) => (channelId ? c.channelId === channelId : true))
-        .filter((c) => (includeArchived ? true : !c.archived))
-        .sort((a, b) => a.createdAt - b.createdAt);
+    async listConversationSummaries({
+      channelId,
+      includeArchived,
+      conversationId,
+    }) {
+      const convs = await this.listConversations({
+        channelId,
+        includeArchived,
+        conversationId,
+      });
       const summaries: ConversationSummary[] = [];
       for (const conversation of convs) {
         const all = conversationMessages(conversation.id);
-        const convMessages = visible(all);
+        /* SQLite parity (#571): dropped/removed hide a row just like a
+           rewind — the old filter only dropped `rewound`. */
+        const convMessages = all.filter(
+          (m) => !m.rewound && !m.dropped && !m.removed,
+        );
         /* A rewind to the root message leaves zero visible messages — the
            list row still renders the (rewound) root for context. */
         const root =
@@ -260,11 +271,12 @@ export function createMemoryStore(): RelayStore {
           all.find((m) => m.id === conversation.rootMessageId);
         const last = convMessages.at(-1) ?? all.at(-1);
         if (!root || !last) continue;
+        const answer = convMessages.find((m) => m.authorKind !== "user");
         summaries.push({
           conversation,
-          root,
-          firstAnswer: convMessages.find((m) => m.authorKind !== "user"),
-          last,
+          root: toSummaryMessage(root),
+          firstAnswer: answer ? toSummaryPreview(answer) : undefined,
+          last: toSummaryPreview(last),
           messageCount: convMessages.length,
         });
       }
@@ -341,6 +353,8 @@ export function createMemoryStore(): RelayStore {
         "effort",
         "fast",
         "turnFailure",
+        "turnStopped",
+        "bgJobs",
       ] as const) {
         if (patch[k] === null) {
           delete (conversation as Record<string, unknown>)[k];

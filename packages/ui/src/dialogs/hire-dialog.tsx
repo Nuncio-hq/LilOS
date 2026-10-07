@@ -1,5 +1,6 @@
-import { PlusIcon, SparklesIcon, UserPlusIcon, XIcon } from "lucide-react";
+import { PlusIcon, UserPlusIcon, XIcon } from "lucide-react";
 import { useState } from "react";
+import { useUiLayerEl } from "../chat/ui-layers";
 import { Button } from "../components/ui/button";
 import { Checkbox } from "../components/ui/checkbox";
 import { Input } from "../components/ui/input";
@@ -63,13 +64,19 @@ export function HireDialog({
   };
   const [chs, setChs] = useState<string[]>(["engineering"]);
   const drafted = !templates.some((t) => t.name === initial.name);
-  const slug = d.name.toLowerCase().replace(/[^a-z0-9]+/g, "-") || "employee";
+  /* #576: Esc closes this dialog while it is the top-most layer — a menu
+     open inside it keeps Esc, and it never reaches the turn underneath. */
+  const layerRef = useUiLayerEl<HTMLDivElement>({ onEscape: onClose });
   return (
     <div
       className="fixed inset-0 z-40 grid place-items-center bg-black/30 p-6"
       onClick={onClose}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Hire an employee"
+        ref={layerRef}
         className="grid max-h-[90dvh] w-full max-w-3xl grid-cols-1 overflow-hidden rounded-2xl border bg-background shadow-2xl md:grid-cols-[220px_minmax(0,1fr)]"
         onClick={(e) => e.stopPropagation()}
       >
@@ -159,12 +166,8 @@ export function HireDialog({
               </button>
             </>
           )}
-          <div className="mt-3 rounded-lg border border-dashed p-2 text-muted-foreground text-xs">
-            <SparklesIcon className="mb-1 size-3.5" />
-            Or ask an employee in chat:{" "}
-            <i>"draft an employee that triages flaky tests"</i>. It posts a hire
-            card for your approval.
-          </div>
+          {/* #588 AC-1: the chat-hire hint is dropped — the hire card path
+              doesn't exist yet (it returns with #341). */}
         </div>
         <div className="flex min-h-0 flex-col">
           <div className="flex items-center gap-3 border-b p-4">
@@ -181,7 +184,7 @@ export function HireDialog({
                     "Pick an engine profile on the left"
                   )
                 ) : drafted ? (
-                  "Drafted by Builder · review before hiring"
+                  "Drafted for you · review before hiring"
                 ) : (
                   "Creates a new engine profile"
                 )}
@@ -312,7 +315,7 @@ export function HireDialog({
                 <span className="font-medium">Connect to LilOS</span>
                 <span className="mt-0.5 block text-muted-foreground">
                   This employee sees the app — its DMs, folders, tickets and
-                  work — in sessions LilOS opens. Hermes Desktop and the CLI are
+                  work — in threads LilOS opens. Hermes Desktop and the CLI are
                   unaffected.
                 </span>
               </label>
@@ -323,12 +326,9 @@ export function HireDialog({
               {error}
             </div>
           )}
+          {/* #588 AC-1: no dev footer — the wire-call preview meant nothing
+              to the user. */}
           <div className="flex items-center gap-2 border-t bg-muted/30 p-3">
-            <code className="hidden min-w-0 truncate rounded bg-muted px-1.5 py-0.5 text-muted-foreground text-xs sm:block">
-              {mode === "existing"
-                ? `link profile ${picked?.id ?? "…"} → employee @${slug}`
-                : `agents.create ${slug} → persona → model`}
-            </code>
             <Button variant="ghost" className="ml-auto" onClick={onClose}>
               Cancel
             </Button>

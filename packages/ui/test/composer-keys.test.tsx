@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
-/* AC tests for issue #104: Esc in the composer stops the running turn through
-   the same onStop the Stop button calls — but an open overlay (the `@` menu,
-   a popover, a dialog) eats the Esc first; ↑ in an empty composer recalls the
-   last sent message. */
+/* AC tests for issues #104 + #576: Esc in the composer only ever dismisses
+   the composer's own overlay (the `@` menu) — it NEVER stops a running
+   turn. Stopping is ■ / ⌘. (#576). ↑ in an empty composer still recalls
+   the last sent message (#104). */
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { Composer } from "../src/chat/composer";
@@ -36,8 +36,8 @@ const box = (c: HTMLElement) =>
 
 const raf = () => new Promise((r) => requestAnimationFrame(() => r(null)));
 
-describe("issue #104 composer keys", () => {
-  test("AC-1 Esc in the composer while a turn runs calls onStop (the Stop button's handler)", () => {
+describe("issue #576 composer keys — Esc never stops", () => {
+  test("AC-576-1 Esc in the composer while a turn runs does NOT call onStop", () => {
     const onStop = vi.fn();
     const c = render(
       <Composer
@@ -49,10 +49,34 @@ describe("issue #104 composer keys", () => {
       />,
     );
     fireEvent.keyDown(box(c.container), { key: "Escape" });
-    expect(onStop).toHaveBeenCalledTimes(1);
+    expect(onStop).not.toHaveBeenCalled();
   });
 
-  test("AC-2 Esc with no turn running — or no onStop — does nothing", () => {
+  test("AC-576-2 ⌘. / Ctrl+. while a turn runs calls onStop (the Stop button's handler)", () => {
+    const onStop = vi.fn();
+    const c = render(
+      <Composer
+        placeholder="Reply…"
+        employees={[]}
+        hint=""
+        status="streaming"
+        onStop={onStop}
+      />,
+    );
+    fireEvent.keyDown(box(c.container), { key: ".", metaKey: true });
+    expect(onStop).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(box(c.container), { key: ".", ctrlKey: true });
+    expect(onStop).toHaveBeenCalledTimes(2);
+    /* `code` covers layouts where the key value isn't ".". */
+    fireEvent.keyDown(box(c.container), {
+      key: ">",
+      code: "Period",
+      metaKey: true,
+    });
+    expect(onStop).toHaveBeenCalledTimes(3);
+  });
+
+  test("AC-576-3 ⌘. with no turn running — or no onStop — does nothing", () => {
     const onStop = vi.fn();
     const c = render(
       <Composer
@@ -63,10 +87,9 @@ describe("issue #104 composer keys", () => {
         onStop={onStop}
       />,
     );
-    fireEvent.keyDown(box(c.container), { key: "Escape" });
+    fireEvent.keyDown(box(c.container), { key: ".", metaKey: true });
     expect(onStop).not.toHaveBeenCalled();
 
-    // D-#19: no handler → no Esc stop (same rule as the hidden Stop button).
     const d = render(
       <Composer
         placeholder="Reply…"
@@ -75,28 +98,11 @@ describe("issue #104 composer keys", () => {
         status="streaming"
       />,
     );
-    fireEvent.keyDown(box(d.container), { key: "Escape" });
-    expect(onStop).not.toHaveBeenCalled();
-
-    // IME mid-composition (e.g. Telex input): Esc cancels the composition —
-    // it must not reach onStop.
-    const f = render(
-      <Composer
-        placeholder="Reply…"
-        employees={[]}
-        hint=""
-        status="streaming"
-        onStop={onStop}
-      />,
-    );
-    fireEvent.keyDown(box(f.container), {
-      key: "Escape",
-      isComposing: true,
-    });
+    fireEvent.keyDown(box(d.container), { key: ".", metaKey: true });
     expect(onStop).not.toHaveBeenCalled();
   });
 
-  test("AC-3 Esc closes the open `@` menu first and only the next Esc stops the turn", () => {
+  test("AC-576-4 Esc closes the open `@` menu first and still never stops the turn", () => {
     const onStop = vi.fn();
     const c = render(
       <Composer
@@ -115,36 +121,13 @@ describe("issue #104 composer keys", () => {
     expect(c.container.querySelector('[role="listbox"]')).toBeNull();
     expect(onStop).not.toHaveBeenCalled();
 
+    /* The next Esc is inert too — closing the panel is the surface layer's
+       job (ui-layers), not the composer's. */
     fireEvent.keyDown(el, { key: "Escape" });
-    expect(onStop).toHaveBeenCalledTimes(1);
+    expect(onStop).not.toHaveBeenCalled();
   });
 
-  test("AC-3b an open popover owns the Esc — the turn keeps running", () => {
-    const onStop = vi.fn();
-    const c = render(
-      <Composer
-        placeholder="Reply…"
-        employees={[]}
-        hint=""
-        status="streaming"
-        onStop={onStop}
-      />,
-    );
-    const pop = document.createElement("div");
-    pop.setAttribute("data-slot", "popover-content");
-    pop.setAttribute("data-open", "");
-    document.body.appendChild(pop);
-    try {
-      fireEvent.keyDown(box(c.container), { key: "Escape" });
-      expect(onStop).not.toHaveBeenCalled();
-    } finally {
-      pop.remove();
-    }
-    fireEvent.keyDown(box(c.container), { key: "Escape" });
-    expect(onStop).toHaveBeenCalledTimes(1);
-  });
-
-  test("AC-4 Esc with a draft present still stops the turn and keeps the text", () => {
+  test("AC-576-5 Esc with a draft present keeps the text and never stops", () => {
     const onStop = vi.fn();
     const c = render(
       <Composer
@@ -158,10 +141,46 @@ describe("issue #104 composer keys", () => {
     const el = box(c.container);
     fireEvent.change(el, { target: { value: "also check the retry loop" } });
     fireEvent.keyDown(el, { key: "Escape" });
-    expect(onStop).toHaveBeenCalledTimes(1);
+    expect(onStop).not.toHaveBeenCalled();
     expect(el.value).toBe("also check the retry loop");
   });
 
+  test("AC-576-6 the Stop button's label names ⌘., not Esc", () => {
+    const c = render(
+      <Composer
+        placeholder="Reply…"
+        employees={[]}
+        hint=""
+        status="streaming"
+        onStop={() => {}}
+      />,
+    );
+    const stop = c.getByRole("button", { name: /stop/i });
+    expect(stop.getAttribute("aria-label")).toContain("⌘.");
+    expect(stop.getAttribute("title")).toContain("⌘.");
+    expect(stop.getAttribute("title")).not.toContain("Esc");
+  });
+
+  test("AC-576-7 FocusComposer: Esc never stops; ⌘. does", () => {
+    const onStop = vi.fn();
+    const c = render(
+      <FocusComposer
+        running={true}
+        status="streaming"
+        placeholder="Continue…"
+        hint=""
+        onSend={() => {}}
+        onStop={onStop}
+      />,
+    );
+    fireEvent.keyDown(box(c.container), { key: "Escape" });
+    expect(onStop).not.toHaveBeenCalled();
+    fireEvent.keyDown(box(c.container), { key: ".", metaKey: true });
+    expect(onStop).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("issue #104 composer keys", () => {
   test("AC-5 ↑ in an empty composer recalls the last sent message, caret at the end", async () => {
     const c = render(
       <Composer
@@ -192,36 +211,5 @@ describe("issue #104 composer keys", () => {
     fireEvent.change(el, { target: { value: "draft in progress" } });
     fireEvent.keyDown(el, { key: "ArrowUp" });
     expect(el.value).toBe("draft in progress");
-  });
-
-  test("AC-6 the Stop button's label says Esc", () => {
-    const c = render(
-      <Composer
-        placeholder="Reply…"
-        employees={[]}
-        hint=""
-        status="streaming"
-        onStop={() => {}}
-      />,
-    );
-    const stop = c.getByRole("button", { name: /stop/i });
-    expect(stop.getAttribute("aria-label")).toContain("Esc");
-    expect(stop.getAttribute("title")).toContain("Esc");
-  });
-
-  test("AC-1 FocusComposer: Esc stops through onStop while running", () => {
-    const onStop = vi.fn();
-    const c = render(
-      <FocusComposer
-        running={true}
-        status="streaming"
-        placeholder="Continue…"
-        hint=""
-        onSend={() => {}}
-        onStop={onStop}
-      />,
-    );
-    fireEvent.keyDown(box(c.container), { key: "Escape" });
-    expect(onStop).toHaveBeenCalledTimes(1);
   });
 });

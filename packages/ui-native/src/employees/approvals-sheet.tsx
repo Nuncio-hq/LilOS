@@ -16,7 +16,9 @@ export function ApprovalsSheet({
   onApprove,
   onDeny,
   onOpen,
+  onReview,
   onClose,
+  unreachable,
 }: {
   approvals: Approval[];
   /** Approve/Deny pills render only when their handler is passed (D-#19) —
@@ -24,8 +26,16 @@ export function ApprovalsSheet({
   onApprove?: (id: string) => void;
   onDeny?: (id: string) => void;
   onOpen: (id: string) => void;
+  /** #595: a plan ask's **Review** — opens the plan in its thread. Falls
+      back to onOpen when absent. */
+  onReview?: (id: string) => void;
   /** Omit when shown as a tab under a native large title (no own header). */
   onClose?: () => void;
+  /** #591: set while the Mac is unreachable — the list is last-known
+     (rows carry `lastKnown`), the sheet says so under the title, and the
+     empty state never reads "All clear". `asOf` = last-seen age
+     ("2 min ago"). */
+  unreachable?: { mac: string; asOf?: string };
 }) {
   const insets = useSafeAreaInsets();
   return (
@@ -75,14 +85,43 @@ export function ApprovalsSheet({
             <LargeTitle title="Needs you" />
           </View>
         )}
-        {approvals.length === 0 && (
-          <View className="items-center gap-3 pt-16">
-            <View className="size-14 items-center justify-center rounded-full bg-accent-soft">
-              <Icon name="checkmark" size={22} weight="bold" tone="primary" />
-            </View>
-            <AppText tone="muted">All clear</AppText>
+        {unreachable && (
+          <View className="flex-row items-center gap-2.5 rounded-2xl bg-card px-4 py-3">
+            <Icon
+              name="wifi.exclamationmark"
+              size={15}
+              tone="destructive"
+              weight="medium"
+            />
+            <AppText size="sm" tone="muted" className="flex-1">
+              {`Can't reach ${unreachable.mac} — showing last known${unreachable.asOf ? ` · ${unreachable.asOf}` : ""}`}
+            </AppText>
           </View>
         )}
+        {approvals.length === 0 &&
+          (unreachable ? (
+            <View className="items-center gap-3 pt-16">
+              <View className="size-14 items-center justify-center rounded-full bg-muted">
+                <Icon
+                  name="wifi.exclamationmark"
+                  size={22}
+                  weight="bold"
+                  tone="muted-foreground"
+                />
+              </View>
+              <AppText tone="muted">{`Can't reach ${unreachable.mac}`}</AppText>
+              <AppText size="sm" tone="muted">
+                {`Last known: nothing waiting${unreachable.asOf ? ` · ${unreachable.asOf}` : ""}`}
+              </AppText>
+            </View>
+          ) : (
+            <View className="items-center gap-3 pt-16">
+              <View className="size-14 items-center justify-center rounded-full bg-accent-soft">
+                <Icon name="checkmark" size={22} weight="bold" tone="primary" />
+              </View>
+              <AppText tone="muted">All clear</AppText>
+            </View>
+          ))}
         {approvals.map((a) => (
           <Card key={a.id}>
             <View className="flex-row items-center gap-2.5">
@@ -92,7 +131,7 @@ export function ApprovalsSheet({
                   {a.employee}
                 </AppText>
                 <AppText size="xs" tone="muted" numberOfLines={1}>
-                  {`${a.session} · ${a.age} ago`}
+                  {`${a.lastKnown ? "last known · " : ""}${a.session} · ${a.age} ago`}
                 </AppText>
               </View>
             </View>
@@ -121,10 +160,25 @@ export function ApprovalsSheet({
               </View>
             )}
             <View className="mt-3 flex-row items-center gap-2">
-              {onApprove && a.kind !== "question" && (
-                <Pill label="Approve" onPress={() => onApprove(a.id)} />
+              {/* #591: a last-known row offers no dead pills — the tap
+                  couldn't reach the Mac anyway. Open still works: it
+                  opens the cached thread. */}
+              {/* #595: a plan's primary is **Review** — it opens the plan
+                  in its thread; nothing approves a plan sight-unseen.
+                  Command approvals keep the one-tap Approve (AC-2). */}
+              {!a.lastKnown && a.primary === "review" && (
+                <Pill
+                  label="Review"
+                  onPress={() => (onReview ?? onOpen)(a.id)}
+                />
               )}
-              {onDeny && (
+              {!a.lastKnown &&
+                onApprove &&
+                (a.primary ?? "approve") === "approve" &&
+                a.kind !== "question" && (
+                  <Pill label="Approve" onPress={() => onApprove(a.id)} />
+                )}
+              {!a.lastKnown && onDeny && (
                 <Pill
                   label={isAnswerableQuestion(a) ? "Skip" : "Deny"}
                   variant="soft"
@@ -132,7 +186,14 @@ export function ApprovalsSheet({
                 />
               )}
               <View className="flex-1" />
-              <Pill label="Open" variant="ghost" onPress={() => onOpen(a.id)} />
+              {/* On a plan card Review IS the open — no second route pill. */}
+              {a.primary !== "review" && (
+                <Pill
+                  label="Open"
+                  variant="ghost"
+                  onPress={() => onOpen(a.id)}
+                />
+              )}
             </View>
           </Card>
         ))}

@@ -79,6 +79,11 @@ export interface ConversationPatch {
   /** Host-only (#419): stamp the last turn's failure for the DM alert
       card; `null` clears it (next `turn.started`). */
   turnFailure?: TurnFailure | null;
+  /** #583: the last turn ended stopped — host-written, same lifecycle
+      as `turnFailure`. */
+  turnStopped?: boolean | null;
+  /** #583: running background-job count — host-written, same lifecycle. */
+  bgJobs?: number | null;
 }
 
 export interface OpenConversationInput {
@@ -201,6 +206,8 @@ export function markSnippet(text: string, terms: string[]): string {
 export interface ListConversationsQuery {
   channelId?: string;
   includeArchived: boolean;
+  /** Scope to one conversation (#571's incremental summary refresh). */
+  conversationId?: string;
 }
 
 export interface NewAsk {

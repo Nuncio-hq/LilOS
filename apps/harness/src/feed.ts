@@ -1,3 +1,4 @@
+import { equalSecret } from "@lilos/contracts/auth";
 import type { EngineEvent } from "@lilos/contracts/engine";
 import type { Harness } from "./harness";
 
@@ -172,8 +173,12 @@ export function authorizeFeedUpgrade(
   req: Request,
   token: string,
 ): Response | undefined {
-  // Fail closed: an empty configured credential must never authenticate.
-  if (!token || new URL(req.url).searchParams.get("token") !== token) {
+  /* Fail closed: an empty configured credential must never authenticate.
+     #611: the `?token=` credential is a secret — constant-time compare. */
+  if (
+    !token ||
+    !equalSecret(new URL(req.url).searchParams.get("token") ?? "", token)
+  ) {
     return new Response("unauthorized\n", { status: 401 });
   }
   const origin = req.headers.get("origin");

@@ -14,11 +14,14 @@ import { expect, type Locator, type Page, test } from "@playwright/test";
 import { bootStack, pickPorts, type Stack } from "./helpers/stack";
 
 /**
- * Issue #134 — "Rewind to here" on every user message: the relay marks the
- * message + everything after it `rewound` (hidden, kept for audit), the
- * harness restores the session folder from its pre-turn shadow-git
- * checkpoint, and an engine declaring `rewind` drops the turns from agent
- * memory (engine-fake proves it via `recall:`).
+ * Issue #134 — "Rewind" on every user message, updated for #578: the
+ * affordance is a hover button on the row (no permanent line), the click
+ * applies the rewind visually and opens a 10 s Undo toast; the relay then
+ * marks the message + everything after it `rewound` (hidden, kept for
+ * audit), the harness restores the session folder from its pre-turn
+ * shadow-git checkpoint, and an engine declaring `rewind` drops the turns
+ * from agent memory (engine-fake proves it via `recall:`). Assertions that
+ * used to be instant now wait out the Undo window first.
  *
  * Two real-app stacks: stackA declares every capability (rewind on),
  * stackB hides it (`LILOS_HIDE_CAPS=rewind`) for the AC-3 files-only
@@ -227,30 +230,43 @@ test("AC-2/4 + AC-1 files: rewind drops the tail, restores the folder, refills t
   writeFileSync(path.join(repoDir, "notes.md"), "notes v2 EDITED\n");
   unlinkSync(path.join(repoDir, "seed.txt"));
 
-  /* Three user messages => three checkpoints; rewind at "beta marker two". */
+  /* Three user messages => three checkpoints; rewind at "beta marker two".
+     #578: the click applies visually + opens the 10 s Undo toast — the
+     commit (relay rows, files, engine memory) lands when it closes. */
   const triggers = page.locator("[data-rewind]");
   await expect(triggers).toHaveCount(3);
+  await triggers.nth(1).locator("..").hover();
   await triggers.nth(1).click();
 
   /* The message and everything after (its reply, the recall turn) drop out
-     of the thread; a system note lands where the thread was cut. */
+     of the thread at once — before any commit. */
   const thread = page.locator("[data-thread]");
   await expect(rowText(thread, "beta marker two")).toHaveCount(0);
   await expect(rowText(thread, "Noted. Plan for this session")).toHaveCount(0);
   await expect(rowText(thread, "I remember 2 earlier turns")).toHaveCount(0);
   await expect(rowText(thread, "alpha marker one")).toBeVisible();
-  await expect(
-    thread.getByText(/Rewound to before your message — \d+ messages dropped/),
-  ).toBeVisible();
+  await expect(page.locator("[data-toast-action]")).toHaveText("Undo");
   await expect(page.locator("textarea").last()).toHaveValue("beta marker two");
   await expect(
     page.locator("form").last().getByText("beta-proof.png"),
   ).toBeVisible({ timeout: 15_000 });
+  await page.screenshot({ path: `${SHOTS}/ac-2-4-undo-window.png` });
+
+  /* Let the Undo window close — the commit RPC lands, then the in-thread
+     system note and the file restore. */
+  await page.waitForTimeout(10_500);
+  await expect(
+    thread.getByText(/Rewound to before your message — \d+ messages dropped/),
+  ).toBeVisible({ timeout: 30_000 });
   await page.screenshot({ path: `${SHOTS}/ac-2-4-after.png` });
 
   /* AC-1 end to end: created file gone, deleted file back, edit reverted;
      the user's own git state is untouched. */
-  expect(existsSync(path.join(repoDir, "marker.txt"))).toBe(false);
+  await expect
+    .poll(() => existsSync(path.join(repoDir, "marker.txt")), {
+      timeout: 30_000,
+    })
+    .toBe(false);
   expect(readFileSync(path.join(repoDir, "seed.txt"), "utf8")).toBe(SEED_TEXT);
   expect(readFileSync(path.join(repoDir, "notes.md"), "utf8")).toBe(NOTES_TEXT);
   /* `git status`+HEAD+stash byte-identical to the pre-session state — the
@@ -311,36 +327,34 @@ test("AC-5 a folder shared with another session warns + names it before rewindin
     page.locator("[data-thread]").getByText("If you want me to change code"),
   ).toBeVisible({ timeout: 60_000 });
 
-  /* Back on session A: the click asks first, naming session B; cancelling
-     leaves the thread untouched. */
+  /* Back on session A: #578 removed the confirm dialog — the shared-folder
+     warning lives on the trigger's tooltip and the click applies at once
+     (the 10 s Undo toast is the safeguard). */
   await page.goto(`${stackA.webUrl}/dm/${empA}/${convA}/focus`);
   const thread = page.locator("[data-thread]");
-  await expect(thread.locator("[data-rewind]").first()).toBeEnabled({
+  const sharedTrigger = thread.locator("[data-rewind]").first();
+  await expect(sharedTrigger).toBeEnabled({ timeout: 30_000 });
+  /* The name renders the sharer's title or root text — the fake's llm
+     stage Title-Cases it ("Session B Alpha"), so match case-blind. */
+  await expect(sharedTrigger).toHaveAttribute("title", /shared with/i);
+  await expect(sharedTrigger).toHaveAttribute("title", /session b alpha/i);
+  await sharedTrigger.locator("..").hover();
+  await page.screenshot({ path: `${SHOTS}/ac-5-shared-tooltip.png` });
+  await sharedTrigger.click();
+  /* Rewound to the root: the whole thread drops at once, the Undo toast
+     offers the out, and the opener is back in the composer. */
+  await expect(page.locator("textarea").last()).toHaveValue("alpha marker one");
+  await expect(rowText(thread, "alpha marker one")).toHaveCount(0);
+  await expect(page.locator("[data-toast-action]")).toHaveText("Undo");
+  /* The commit lands when the window closes — the note shows at the top. */
+  await page.waitForTimeout(10_500);
+  await expect(rowText(thread, /Rewound to before your message/)).toBeVisible({
     timeout: 30_000,
   });
-  await thread.locator("[data-rewind]").first().click();
-  await expect(thread.getByText(/shared with/)).toBeVisible();
-  /* The name renders the sharer's title or root text — the fake's llm
-     stage Title-Cases it ("Session B Alpha"), so match case-blind. At the
-     old stack tick the dialog usually opened while the derived title
-     still held; the #432 fast tick lands the llm title first. */
-  await expect(thread.getByText(/session b alpha/i)).toBeVisible();
-  await page.screenshot({ path: `${SHOTS}/ac-5-shared.png` });
-  await thread.getByRole("button", { name: "Cancel" }).click();
-  /* The row plus the "I remember 1 earlier turn" list item — cancelling
-     must leave the thread exactly as it was. */
-  await expect(rowText(thread, "alpha marker one")).toHaveCount(2);
-  await thread.locator("[data-rewind]").first().click();
-  await thread.getByRole("button", { name: "Rewind anyway" }).click();
-  /* Rewound to the root: the whole thread is gone, the rewind note shows
-     alone at the top, and the opener is back in the composer. */
-  await expect(page.locator("textarea").last()).toHaveValue("alpha marker one");
-  await expect(rowText(thread, /Rewound to before your message/)).toBeVisible();
-  await expect(rowText(thread, "alpha marker one")).toHaveCount(0);
   await page.screenshot({ path: `${SHOTS}/ac-5-root.png` });
 });
 
-test("AC-3 without rewind: files restore, the plain note shows, Start a new session works", async ({
+test("AC-3 without rewind: files restore, the plain note shows, Start a new thread works", async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -362,21 +376,32 @@ test("AC-3 without rewind: files restore, the plain note shows, Start a new sess
   await expect(thread.locator("[data-rewind]").nth(1)).toBeEnabled({
     timeout: 30_000,
   });
+  await thread.locator("[data-rewind]").nth(1).locator("..").hover();
   await thread.locator("[data-rewind]").nth(1).click();
 
-  /* Files restore and the thread still drops the tail — but the banner says
-     plainly the agent still remembers, with the escape hatch. */
-  /* Both the relay's in-thread system note and the amber banner say it. */
-  await expect(page.getByText(/still remembers/)).toHaveCount(2);
-  await expect(
-    page.getByRole("button", { name: "Start a new session from here" }),
-  ).toBeVisible();
+  /* The tail drops visually at once, with the Undo toast; the commit
+     (files + the banner) lands when the window closes. */
   await expect(rowText(thread, "beta in the no-rewind session")).toHaveCount(0);
-  await expect(existsSync(path.join(repoDir, "stackb-marker.txt"))).toBe(false);
+  await expect(page.locator("[data-toast-action]")).toHaveText("Undo");
+  await page.waitForTimeout(10_500);
+
+  /* Both the relay's in-thread system note and the amber banner say the
+     agent still remembers, with the escape hatch. */
+  await expect(page.getByText(/still remembers/)).toHaveCount(2, {
+    timeout: 30_000,
+  });
+  await expect(
+    page.getByRole("button", { name: "Start a new thread from here" }),
+  ).toBeVisible();
+  await expect
+    .poll(() => existsSync(path.join(repoDir, "stackb-marker.txt")), {
+      timeout: 30_000,
+    })
+    .toBe(false);
   await page.screenshot({ path: `${SHOTS}/ac-3-banner.png` });
 
   await page
-    .getByRole("button", { name: "Start a new session from here" })
+    .getByRole("button", { name: "Start a new thread from here" })
     .click();
   /* Already sitting on convC's /focus URL — wait until it changes. */
   await page.waitForURL(
@@ -396,9 +421,9 @@ test("AC-3 without rewind: files restore, the plain note shows, Start a new sess
      bug (#260). */
   const seeded = page
     .locator("[data-thread] [data-userturn]")
-    .filter({ hasText: /Picking up mid-session after a rewind/ })
+    .filter({ hasText: /Picking up mid-thread after a rewind/ })
     .first();
-  await expect(seeded).toContainText(/Picking up mid-session after a rewind/, {
+  await expect(seeded).toContainText(/Picking up mid-thread after a rewind/, {
     timeout: 60_000,
   });
   await expect(seeded).toContainText(/alpha in the no-rewind session/, {
@@ -415,7 +440,7 @@ test("AC-8 prototype shows the action and the result", async ({ page }) => {
     .first()
     .getByRole("button", { name: /Builder/ })
     .click();
-  const box = page.getByPlaceholder(/New session with Builder/);
+  const box = page.getByPlaceholder(/New thread with Builder/);
   await box.fill("prototype alpha");
   await box.press("Enter");
   /* A message sent while a turn runs is folded in as a steer — no new user
@@ -432,11 +457,17 @@ test("AC-8 prototype shows the action and the result", async ({ page }) => {
     timeout: 60_000,
   });
   await page.screenshot({ path: `${SHOTS}/ac-8-action.png` });
+  await page.locator("[data-rewind]").nth(1).locator("..").hover();
   await page.locator("[data-rewind]").nth(1).click();
   await expect(
     page.getByText("prototype beta").and(page.locator(":not(textarea)")),
   ).toHaveCount(0);
-  await expect(page.getByText(/Rewound to before your message/)).toBeVisible();
+  await expect(page.locator("[data-toast-action]")).toHaveText("Undo");
   await expect(page.locator("textarea").last()).toHaveValue("prototype beta");
+  /* The ⚠ note lands on commit — when the Undo window closes. */
+  await page.waitForTimeout(10_500);
+  await expect(page.getByText(/Rewound to before your message/)).toBeVisible({
+    timeout: 15_000,
+  });
   await page.screenshot({ path: `${SHOTS}/ac-8-result.png` });
 });

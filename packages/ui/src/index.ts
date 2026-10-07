@@ -30,6 +30,8 @@ export {
   isHidden,
   ModelVisibilityDialog,
 } from "./chat/model-visibility-dialog";
+// Esc/key ownership by surface — menu → dialog → panel → Focus (#576)
+export { useUiLayer, useUiLayerEl } from "./chat/ui-layers";
 // connect to LilOS (issue #338): first-run step, DM notice, shared state badge
 export { ConnectBadge } from "./connect/connect-badge";
 export { ConnectStep } from "./connect/connect-step";
@@ -69,7 +71,7 @@ export { HireCardInline } from "./feed/hire-card";
 export { Body, EventRow, FeedList, Row, Who } from "./feed/row";
 export { ThreadSummary } from "./feed/thread-summary";
 // first run
-export { FirstRun } from "./first-run/first-run";
+export { FirstRun, type FirstRunCheck } from "./first-run/first-run";
 // focus mode
 export { FocusView } from "./focus/focus-view";
 export { SessionUsage } from "./focus/session-usage";

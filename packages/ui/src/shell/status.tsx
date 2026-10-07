@@ -12,6 +12,7 @@ import {
   XCircleIcon,
   XIcon,
 } from "lucide-react";
+import { useUiLayerEl } from "../chat/ui-layers";
 import { Button } from "../components/ui/button";
 import { ScrollArea } from "../components/ui/scroll-area";
 import { InlineCodeText } from "../lib/inline-code";
@@ -160,15 +161,20 @@ export function StatusDialog({
   onClose: () => void;
   onCopied: () => void;
 }) {
+  /* #576: Esc closes this dialog while it is the top-most layer — wherever
+     focus sits (the old inline handler only saw Esc when the dialog had
+     it). */
+  const layerRef = useUiLayerEl<HTMLDivElement>({ onEscape: onClose });
   return (
     <div
       className="fixed inset-0 z-40 grid place-items-center bg-black/30 p-6"
       onClick={onClose}
-      onKeyDown={(e) => e.key === "Escape" && onClose()}
     >
       <div
         role="dialog"
+        aria-modal="true"
         aria-label="System status"
+        ref={layerRef}
         className="w-full max-w-md overflow-hidden rounded-2xl border bg-background shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
@@ -177,7 +183,7 @@ export function StatusDialog({
           <div className="flex-1">
             <div className="font-semibold">System status</div>
             <div className="text-muted-foreground text-xs">
-              relay → harness → engine → model — what a session needs to run
+              relay → harness → engine → model — what a thread needs to run
             </div>
           </div>
           <Button

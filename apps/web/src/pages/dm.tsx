@@ -10,8 +10,8 @@ import type {
   AppMessage,
   Ask,
   Conversation,
-  ConversationsRewindResult,
   MessageSearchHit,
+  SummaryMessage,
 } from "@lilos/contracts/app";
 import {
   MAX_ATTACHMENT_BYTES,
@@ -116,12 +116,20 @@ import {
 import {
   clock,
   formatUptime,
+  sessionLabel,
   threadUsage,
   toJob,
   toUiEmployee,
 } from "../lib/mapping";
 import { currentName, humanFor, osFullName, osHome, profile } from "../lib/me";
 import { $prs, refreshConversationPrs, watchPrs } from "../lib/prs";
+import {
+  beginRewind,
+  filesOnlyBanner,
+  flushRewind,
+  rewindDrops,
+  rewindUndone,
+} from "../lib/rewind";
 import {
   asks as asksAtom,
   engine,
@@ -134,6 +142,7 @@ import {
   relay,
   sessionFeedAttached,
   sessionModels,
+  sessionWatched,
   workbenchRequests,
 } from "../lib/runtime";
 import { sendKeyDoneForSend, sendKeyForSend } from "../lib/send-key";
@@ -172,10 +181,10 @@ const outcomeLabel = (o: ApprovalOutcome, name: string): string => {
   switch (o) {
     case "once":
       return `Allowed once by ${name}`;
-    /* #106: "This session" — the grant lives until the conversation's
+    /* #106: "This thread" — the grant lives until the thread's engine
        session ends; only this thread stopped asking. */
     case "session":
-      return `Allowed this session by ${name}`;
+      return `Allowed this thread by ${name}`;
     case "always":
       return "Always allowed here";
     case "deny":
@@ -197,8 +206,9 @@ const outcomeLabel = (o: ApprovalOutcome, name: string): string => {
 function outcomeFromLabel(v: string): ApprovalOutcome {
   if (v.startsWith("Denied")) return "deny";
   if (v.startsWith("Always")) return "always";
-  /* #106: the card's resolved label for the session-scoped grant. */
-  if (v.startsWith("Allowed this session")) return "session";
+  /* #106: the card's resolved label for the thread-scoped grant — reads
+     both the current wording and pre-#582 stored rows. */
+  if (v.startsWith("Allowed this ")) return "session";
   if (v.startsWith("Cancelled")) return "cancel";
   if (v.startsWith("Answered")) return "answer";
   return "once";
@@ -352,7 +362,7 @@ export function DmPage() {
   const [editAgent, setEditAgent] = useState<
     AgentDescriptor | null | undefined
   >(undefined);
-  useAtom(attachmentUrls);
+  const attachUrls = useAtom(attachmentUrls);
 
   /* AC-2 (#85): an engine that's down (Hermes missing, crashed out) shows
      its plain reason above the composer — never silently sendable. */
@@ -448,7 +458,9 @@ export function DmPage() {
             {
               rootId: conv?.rootMessageId ?? h.messageId,
               messageId: h.messageId,
-              from: h.authorId,
+              /* #585 AC-3: system notes label "LilOS" in search, not the user —
+                 stored notes can carry the relay's "user" authorId default. */
+              from: h.authorKind === "system" ? "system" : h.authorId,
               time: clock(h.createdAt),
               snippet: h.snippet,
               archived: conv?.archived,
@@ -495,15 +507,13 @@ export function DmPage() {
     openConv ? draftKey.thread(openConv.id) : undefined,
   );
 
-  /* #134: rewound message attachments reseeded into the composer (AC-4),
-     and the files-only banner after a transport that can't rewind the
-     agent's memory (AC-3) — cleared when the open session changes. */
+  /* #134: rewound message attachments reseeded into the composer (AC-4).
+     The files-only banner (AC-3) and the undo window (#578) live in
+     lib/rewind atoms — the commit lands after the 10 s window, possibly
+     after this page remounted. */
   const [seedFiles, setSeedFiles] = useState<AttachedFile[] | undefined>();
-  const [filesOnly, setFilesOnly] = useState<{
-    conversationId: string;
-    target: AppMessage;
-    filesRestored: boolean;
-  } | null>(null);
+  const filesOnly = useAtom(filesOnlyBanner);
+  const drops = useAtom(rewindDrops);
   /* Both clear when the open session changes — the render-time reset keeps
      them from leaking into the next thread. */
   /* Ids of the open conversation's rewound messages — a feed turn prompted
@@ -525,10 +535,22 @@ export function DmPage() {
   if (openConv && openConv.id !== seedConv) {
     setSeedConv(openConv.id);
     setSeedFiles(undefined);
-    setFilesOnly(null);
+    filesOnlyBanner.set(null);
     setLocalRewoundIds(new Set());
     setLocalRewoundTexts(new Set());
   }
+
+  /* #578: Undo (or a failed commit) restores the pre-rewind draft and drops
+     the reseeded attachment chips — the composer state lives here, the
+     signal in lib/rewind. */
+  const undone = useAtom(rewindUndone);
+  useEffect(() => {
+    if (!undone) return;
+    rewindUndone.set(null);
+    setSeedFiles(undefined);
+    if (undone.conversationId === openConv?.id)
+      setThreadDraft(undone.draftBefore);
+  }, [undone, openConv, setThreadDraft]);
   /* Latest rewind per conversation — the fetched tail is dropped
      client-side as soon as the relay emits `conversation.rewound`. */
   const rewinds = useAtom(relay.rewinds);
@@ -575,6 +597,12 @@ export function DmPage() {
   const openConvId = openConv?.id;
   const threadPool = useMemo(() => {
     const rewoundFrom = openConvId ? rewinds[openConvId]?.fromSeq : undefined;
+    /* #578: the visual rewind — rows hide the moment Rewind clicks, before
+       the commit fires (or doesn't, on Undo). The seq rule applies to the
+       fetched pool exactly like a committed rewind; the live `messages`
+       store is filtered by id only so a later rewind note (seq above the
+       mark) still shows. */
+    const drop = openConvId ? drops[openConvId] : undefined;
     const seen = new Set<string>();
     const out: AppMessage[] = [];
     /* `threadMsgs` is a fetch-time snapshot: a rewind landing between the
@@ -588,18 +616,23 @@ export function DmPage() {
     for (const m of messages) {
       if (m.conversationId !== openConvId || seen.has(m.id) || m.rewound)
         continue;
+      if (drop?.ids.has(m.id)) continue;
       seen.add(m.id);
       out.push(m);
     }
     for (const m of threadMsgs) {
       if (m.conversationId !== openConvId || seen.has(m.id) || m.rewound)
         continue;
-      if (rewoundFrom !== undefined && m.seq >= rewoundFrom) continue;
+      const dropAt = Math.min(
+        rewoundFrom ?? Number.MAX_SAFE_INTEGER,
+        drop?.fromSeq ?? Number.MAX_SAFE_INTEGER,
+      );
+      if (m.seq >= dropAt) continue;
       seen.add(m.id);
       out.push(m);
     }
     return out;
-  }, [threadMsgs, messages, openConvId, rewinds]);
+  }, [threadMsgs, messages, openConvId, rewinds, drops]);
 
   const openFeed = useAtom(
     openConv?.engineRef ? engine.sessionFeed(openConv.engineRef) : EMPTY_FEED,
@@ -668,7 +701,7 @@ export function DmPage() {
       ...threadMsgs,
       ...summaries.flatMap((s) =>
         [s.root, s.firstAnswer, s.last].filter(
-          (m): m is AppMessage => m !== undefined,
+          (m): m is SummaryMessage => m !== undefined,
         ),
       ),
     ].flatMap((m) => m.attachments ?? []);
@@ -687,52 +720,40 @@ export function DmPage() {
   );
   const summaryOf = (conv: Conversation) => summaryByConv.get(conv.id);
 
-  /* #134: the relay rewinds files + conversation to just before the picked
-     message; the target's text lands in the composer and its images reseed
-     as attachment chips (AC-4). On a transport without `rewind` (ACP) the
-     banner offers "Start a new session from here" (AC-3). */
+  /* #134 + #578: Rewind applies visually the moment it clicks — rows
+     at/after the picked message hide (rewindDrops), the target's text and
+     attachments reseed the composer (AC-4) — while a 10 s Undo toast runs.
+     The real `conversations.rewind` commit (files + engine checkpoints)
+     fires when the window closes; Undo — or a commit failure — restores
+     everything. On a transport without `rewind` (ACP) the commit surfaces
+     the files-only banner (AC-3). */
   const rewindTo = (conv: Conversation, messageId: string) => {
-    /* Capture the about-to-drop message ids up front — the engine-feed
-       turns they prompted would otherwise re-append as rich cards after
-       the thread drops the relay rows (mergeTurns). The relay's event
-       carries the same ids; this covers the window until it lands. */
     const target = threadPool.find((m) => m.id === messageId);
-    const doomed = target
-      ? threadPool.filter(
-          (m) => m.conversationId === conv.id && m.seq >= target.seq,
-        )
-      : [];
-    const doomedIds = doomed.map((m) => m.id);
-    const doomedTexts = doomed
-      .filter((m) => m.authorKind === "employee")
-      .map((m) => m.text.trim());
-
-    void (async () => {
-      try {
-        const res = await relay.request<ConversationsRewindResult>(
-          "conversations.rewind",
-          { conversationId: conv.id, messageId },
-        );
-        setThreadDraft(res.message.text);
-        if (doomedIds.length)
-          setLocalRewoundIds((prev) => new Set([...prev, ...doomedIds]));
-        if (doomedTexts.length)
-          setLocalRewoundTexts((prev) => new Set([...prev, ...doomedTexts]));
-        const files = await hydrateAttachments(res.message.attachments);
-        if (files.length) setSeedFiles(files);
-        setFilesOnly(
-          res.engineRewound
-            ? null
-            : {
-                conversationId: conv.id,
-                target: res.message,
-                filesRestored: res.filesRestored,
-              },
-        );
-      } catch (e) {
-        sayError(describeActionError("Couldn't rewind the turn", e));
-      }
-    })();
+    if (!target) return;
+    /* Capture the about-to-drop message ids — the engine-feed turns they
+       prompted would otherwise re-append as rich cards after the thread
+       drops the relay rows (mergeTurns). */
+    const doomed = threadPool.filter(
+      (m) => m.conversationId === conv.id && m.seq >= target.seq,
+    );
+    beginRewind(
+      {
+        conversationId: conv.id,
+        messageId,
+        draftBefore: threadDraft,
+      },
+      {
+        fromSeq: target.seq,
+        ids: doomed.map((m) => m.id),
+        texts: doomed
+          .filter((m) => m.authorKind === "employee")
+          .map((m) => m.text.trim()),
+      },
+    );
+    setThreadDraft(target.text);
+    void hydrateAttachments(target.attachments).then((files) => {
+      if (files.length) setSeedFiles(files);
+    });
   };
 
   /* AC-3 follow-up: a fresh session on the same folder, seeded with the
@@ -752,7 +773,7 @@ export function DmPage() {
       })
       .join("\n");
     const text =
-      "Picking up mid-session after a rewind — earlier transcript:\n\n" +
+      "Picking up mid-thread after a rewind — earlier transcript:\n\n" +
       `${quote}\n\n—\n\n` +
       (threadDraft.trim() || target.text);
     const key = sendKeyFor(`sfresh:${conv.id}`, text);
@@ -774,7 +795,7 @@ export function DmPage() {
     ).then((c) => {
       if (!c) return;
       sendKeyDone(`sfresh:${conv.id}`, text);
-      setFilesOnly(null);
+      filesOnlyBanner.set(null);
       /* Sessions land on Focus (#149) — the seeded session does too. */
       void navigate({
         to: "/dm/$employeeId/$conversationId/focus",
@@ -807,6 +828,9 @@ export function DmPage() {
     const m = new Map<string, AppMessage[]>();
     for (const msg of messages) {
       if (!msg.conversationId) continue;
+      /* #578: rows a pending rewind hid stay out of every conv's fold too
+         — the feed preview must not show what the thread doesn't. */
+      if (drops[msg.conversationId]?.ids.has(msg.id)) continue;
       const arr = m.get(msg.conversationId);
       if (arr) arr.push(msg);
       else m.set(msg.conversationId, [msg]);
@@ -815,7 +839,18 @@ export function DmPage() {
        window — same rule the per-conv slices used to apply inline. */
     if (openConvId) m.set(openConvId, threadPool);
     return m;
-  }, [messages, threadPool, openConvId]);
+  }, [messages, threadPool, openConvId, drops]);
+
+  /* The open conv's merged suppression sets — fetch-history ids/texts
+     (#134) ∪ the pending/committed drop (#578). Memoized: the fold cache
+     keys on set identity, so a fresh union every render would refold every
+     render. */
+  const openLocalRewound = useMemo(() => {
+    const d = openConvId ? drops[openConvId] : undefined;
+    const ids = new Set([...localRewoundIds, ...(d?.ids ?? [])]);
+    const texts = new Set([...localRewoundTexts, ...(d?.texts ?? [])]);
+    return ids.size || texts.size ? { ids, texts } : undefined;
+  }, [localRewoundIds, localRewoundTexts, drops, openConvId]);
 
   /* AC-6: pre-select the employee's last session's folder once it and the
      recents are known — but never stomp a pick the user already made. */
@@ -839,6 +874,7 @@ export function DmPage() {
   }, [employeeId, convs, folderRows, wsPicks]);
 
   const feedAttached = useAtom(sessionFeedAttached);
+  const watched = useAtom(sessionWatched);
 
   const modelFor = (conv: Conversation): SessionModel | undefined =>
     conv.engineRef ? models[conv.engineRef] : undefined;
@@ -849,9 +885,13 @@ export function DmPage() {
      (and the partial model live frames alone would mint) until the first
      replay lands; a terminal replay error latches attached too so the #28
      degraded thread keeps the raw relay view. Non-engine conversations are
-     always bound — there is no feed to wait on. */
+     always bound — there is no feed to wait on. #572: neither are sessions
+     the watch doesn't feed — an unwatched conversation has no replay coming,
+     so its relay rows render as-is instead of being held back. */
   const transcriptBound = (conv: Conversation): boolean =>
-    !conv.engineRef || feedAttached[conv.engineRef] === true;
+    !conv.engineRef ||
+    feedAttached[conv.engineRef] === true ||
+    watched[conv.engineRef] !== true;
   const boundModel = (
     conv: Conversation,
   ): SessionModel | "pending" | undefined =>
@@ -881,7 +921,7 @@ export function DmPage() {
     );
     const text = last?.text ?? summaryOf(conv)?.root?.text;
     if (!text) {
-      say("Nothing to retry — the session has no sent message.");
+      say("Nothing to retry — the thread has no sent message.");
       return;
     }
     /* #552: one key per (conv, retried text) — a second click after the
@@ -889,11 +929,13 @@ export function DmPage() {
        stored retry dedupes instead of posting again. The binding frees
        on resolve, so retrying a landed turn is still a real retry. */
     const key = sendKeyFor(`retry:${conv.id}`, text);
-    void sendDm(employeeId, text, conv.id, undefined, undefined, key).then(
-      (c) => {
+    /* #578: Retry sends into the real post-rewind session — a pending
+       rewind in this conversation commits first. */
+    void flushRewind(conv.id)
+      .then(() => sendDm(employeeId, text, conv.id, undefined, undefined, key))
+      .then((c) => {
         if (c) sendKeyDone(`retry:${conv.id}`, text);
-      },
-    );
+      });
   };
 
   /* #427: one fold per conversation (waiting rows, feed replies, thread
@@ -903,6 +945,16 @@ export function DmPage() {
   const folds = useMemo(() => new FoldCache(), []);
   const foldInputs = (conv: Conversation): FoldInputs => {
     const summary = summaryByConv.get(conv.id);
+    const msgs = msgsByConv.get(conv.id) ?? NO_MSGS;
+    const root = summary?.root ?? msgById.get(conv.rootMessageId);
+    /* #572: the resolved attachment URLs key the fold — a watched
+       session's replay churn used to hide that the chips' urls bake at
+       fold time; an unwatched one folds once and needs the explicit
+       input or thumbnails never appear (ac-112). */
+    const refs = [
+      ...(root?.attachments ?? []),
+      ...msgs.flatMap((m) => m.attachments ?? []),
+    ];
     return {
       conv,
       model: modelFor(conv),
@@ -910,18 +962,22 @@ export function DmPage() {
          would keep serving the "pending" fold after the feed attaches and
          the held-back engine replies would never appear. */
       bound: boundModel(conv),
-      msgs: msgsByConv.get(conv.id) ?? NO_MSGS,
+      msgs,
       asks: convAsks(conv),
       rewoundEvent: rewinds[conv.id],
-      /* The open conv's local rewound ids/texts (#134) join the event's
-         removedIds inside the fold — the same merged view rewoundInfo
-         used to hand mergeTurns. */
+      /* The conv's rewound ids/texts (#134) join the event's removedIds
+         inside the fold — the same merged view rewoundInfo used to hand
+         mergeTurns. Open conv: fetch-history sets + the pending drop (#578);
+         other convs: their drops alone. */
       localRewound:
         conv.id === conversationId
-          ? { ids: localRewoundIds, texts: localRewoundTexts }
-          : undefined,
+          ? openLocalRewound
+          : drops[conv.id]
+            ? { ids: drops[conv.id].ids, texts: drops[conv.id].texts }
+            : undefined,
       summary,
-      root: summary?.root ?? msgById.get(conv.rootMessageId),
+      root,
+      urls: refs.length ? refs.map((r) => attachUrls[r.id]) : undefined,
       employees,
       cwdInfo: cwdBranches,
       employeeId,
@@ -1112,10 +1168,21 @@ export function DmPage() {
        the summary for list context — but the open thread must not show a
        message it just dropped. Fall back to the first surviving message
        (the "⚠ Files restored" note) instead. */
-    let root = threadPool.find((m) => m.id === conv.rootMessageId);
+    let root: AppMessage | SummaryMessage | undefined = threadPool.find(
+      (m) => m.id === conv.rootMessageId,
+    );
     if (!root) {
       const listed = summaryOf(conv)?.root;
-      root = listed && !listed.rewound ? listed : threadPool[0];
+      /* #578: a PENDING (visual, uncommitted) rewind hides the root from
+         threadPool but leaves `listed.rewound` unset until the window
+         closes — the header must honor the drop's ids too or the root
+         keeps rendering as the thread header through the Undo window. */
+      const dropped = (id: string | undefined) =>
+        !!id && !!drops[conv.id]?.ids.has(id);
+      root =
+        listed && !listed.rewound && !dropped(listed.id)
+          ? listed
+          : threadPool[0];
     }
     const modelLive = model?.live;
     const asksHere = convAsks(conv);
@@ -1141,7 +1208,7 @@ export function DmPage() {
           conv.engineRef && openFeed.historyTrimmed
           ? {
               kind: "trimmed",
-              text: "Earlier history was trimmed — this session's event log is capped.",
+              text: "Earlier history was trimmed — this thread's event log is capped.",
             }
           : undefined;
 
@@ -1218,27 +1285,34 @@ export function DmPage() {
           return conv;
         });
       }
-      return sendDm(
-        employeeId,
-        text,
-        conv.id,
-        undefined,
-        files,
-        /* #552 AC-1: the draft's own key when the draft itself goes out —
-           a Workbench/programmatic send rides a session binding instead,
-           so it can't borrow the key a stored draft send is waiting on. */
-        sendKeyForSend(
-          `conv:${conv.id}`,
-          draftKey.thread(conv.id),
-          text,
-          files,
-        ),
-      ).then((c) => {
-        if (!c) throw new Error("send failed");
-        sendKeyDoneForSend(`conv:${conv.id}`, text, files);
-        clearDraftIfSent(draftKey.thread(conv.id), text);
-        return c;
-      });
+      /* #578: a send sees the real post-rewind session — a pending rewind
+         in this conversation commits now, not at its own timer. */
+      return flushRewind(conv.id)
+        .then(() =>
+          sendDm(
+            employeeId,
+            text,
+            conv.id,
+            undefined,
+            files,
+            /* #552 AC-1: the draft's own key when the draft itself goes
+               out — a Workbench/programmatic send rides a session binding
+               instead, so it can't borrow the key a stored draft send is
+               waiting on. */
+            sendKeyForSend(
+              `conv:${conv.id}`,
+              draftKey.thread(conv.id),
+              text,
+              files,
+            ),
+          ),
+        )
+        .then((c) => {
+          if (!c) throw new Error("send failed");
+          sendKeyDoneForSend(`conv:${conv.id}`, text, files);
+          clearDraftIfSent(draftKey.thread(conv.id), text);
+          return c;
+        });
     };
     /* AC-7: the conversation's folder (+ branch for a repo) in the header;
        sessions without one show nothing extra. */
@@ -1351,7 +1425,9 @@ export function DmPage() {
     const pendingItems = folded.thread.pendingItems;
 
     const thread: Thread = {
-      session: engineRef?.slice(0, 8) ?? conv.id.slice(0, 8),
+      /* #586: the tag is display-only (onOpenSession resolves on the full
+         engineRef) — the TAIL is the unique part of a Hermes ref. */
+      session: sessionLabel(engineRef ?? conv.id),
       title: conv.title || undefined,
       archived: conv.archived,
       replies,
@@ -1397,7 +1473,7 @@ export function DmPage() {
     const sharerName = sharer
       ? sharer.title ||
         summaryOf(sharer)?.root?.text.slice(0, 60) ||
-        "another session"
+        "another thread"
       : "";
     const rewindWarning = sharer
       ? `This folder is shared with “${sharerName}” — rewinding changes its files too.`
@@ -1423,7 +1499,7 @@ export function DmPage() {
           onClick: () => setHistoryAttempt((n) => n + 1),
         }}
       >
-        Couldn't load this session's history — earlier messages may be missing.
+        Couldn't load this thread's history — earlier messages may be missing.
       </StatusBanner>
     ) : undefined;
     const rootMsg: Msg = root
@@ -1587,14 +1663,14 @@ export function DmPage() {
             <StatusBanner
               tone="amber"
               action={{
-                label: "Start a new session from here",
+                label: "Start a new thread from here",
                 onClick: () => startFreshFrom(conv, filesOnly.target),
               }}
             >
               {filesOnly.filesRestored
                 ? "Files restored to the earlier checkpoint — but this "
                 : "The folder kept its current state (no checkpoint stored) — and this "}
-              session's transport can't rewind the agent's memory: it still
+              thread's transport can't rewind the agent's memory: it still
               remembers the dropped messages.
             </StatusBanner>
           )}
@@ -1627,14 +1703,14 @@ export function DmPage() {
           <StatusBanner
             tone="amber"
             action={{
-              label: "Start a new session from here",
+              label: "Start a new thread from here",
               onClick: () => startFreshFrom(conv, filesOnly.target),
             }}
           >
             {filesOnly.filesRestored
               ? "Files restored to the earlier checkpoint — but this "
               : "The folder kept its current state (no checkpoint stored) — and this "}
-            session's transport can't rewind the agent's memory: it still
+            thread's transport can't rewind the agent's memory: it still
             remembers the dropped messages.
           </StatusBanner>
         )}
@@ -1840,7 +1916,7 @@ export function DmPage() {
           const conv = convs.find((c) => c.rootMessageId === id);
           if (conv)
             toastOnFail(
-              "Couldn't rename the session",
+              "Couldn't rename the thread",
               renameConversation(conv.id, title),
             );
         }}
@@ -1849,8 +1925,8 @@ export function DmPage() {
           if (conv)
             toastOnFail(
               archived
-                ? "Couldn't archive the session"
-                : "Couldn't unarchive the session",
+                ? "Couldn't archive the thread"
+                : "Couldn't unarchive the thread",
               archiveConversation(conv.id, archived),
             );
         }}

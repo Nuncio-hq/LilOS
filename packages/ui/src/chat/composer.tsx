@@ -276,7 +276,7 @@ export function Composer({
                   />
                   <span className="font-medium">{e.name}</span>
                   <span className="ml-auto text-muted-foreground text-xs">
-                    {e.role} · new session
+                    {e.role} · new thread
                   </span>
                 </button>
               ))}
@@ -451,8 +451,8 @@ export function Composer({
               status={status}
               type="button"
               onClick={onStop}
-              title="Stop (Esc)"
-              aria-label="Stop (Esc)"
+              title="Stop (⌘.)"
+              aria-label="Stop (⌘.)"
             >
               <SquareIcon className="size-3.5 fill-current" />
             </PromptInputSubmit>

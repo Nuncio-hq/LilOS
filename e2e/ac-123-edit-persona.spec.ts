@@ -20,7 +20,7 @@ async function rpc(
   token: string,
   calls: { method: string; params: Record<string, unknown> }[],
 ): Promise<Record<string, unknown>[]> {
-  const ws = new WebSocket(relayWs);
+  const ws = new WebSocket(`${relayWs}?token=${encodeURIComponent(token)}`);
   await new Promise<void>((res, rej) => {
     ws.onopen = () => res();
     ws.onerror = () => rej(new Error("ws connect failed"));
@@ -112,7 +112,7 @@ async function openConvRow(page: Page, rootText: string) {
  *  The composer navigates into the thread on send; if that navigate is still
  *  pending (a feed re-render can swallow it), open the new row by its text. */
 async function sendDm(page: Page, text: string) {
-  const composer = page.getByPlaceholder(/New session with/);
+  const composer = page.getByPlaceholder(/New thread with/);
   await composer.fill(text);
   await composer.press("Enter");
   await expect(page)
@@ -123,10 +123,8 @@ async function sendDm(page: Page, text: string) {
 /** Reply inside the open conversation — same session, a fresh turn. */
 async function replyInSession(page: Page, text: string) {
   /* Opening a session lands in Focus (#114): its composer reads
-     "Continue session … with …"; the peek panel keeps "Reply to …". */
-  const box = page.getByPlaceholder(
-    /Reply to .* in this session|Continue session .* with/,
-  );
+     "Reply to …" on both the Focus view and the peek panel. */
+  const box = page.getByPlaceholder(/Reply to/);
   await box.fill(text);
   await box.press("Enter");
 }
@@ -141,7 +139,7 @@ test("AC-1 the Edit dialog shows only the fields the engine advertises", async (
   await expect(dlg.getByLabel("Display name")).toBeVisible();
   await expect(dlg.getByLabel("Persona")).toBeVisible();
   await expect(dlg.getByLabel("Description")).toBeVisible();
-  await expect(dlg.getByText(/Applies to new chats/)).toBeVisible(); // AC-4's note
+  await expect(dlg.getByText(/Applies to new threads/)).toBeVisible(); // AC-4's note
   await expect(dlg.getByRole("button", { name: "Fake Small" })).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-1-edit-dialog.png` });
   await dlg.getByRole("button", { name: "Cancel" }).click();

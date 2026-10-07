@@ -90,7 +90,7 @@ test("AC-2/AC-3 workbench: open file, open file at line, reveal — real os.open
     .getByText(/Edit .* directly/)
     .click();
 
-  const box = page.getByPlaceholder(/New session with Builder/);
+  const box = page.getByPlaceholder(/New thread with Builder/);
   await box.fill("work on main.swift");
   await box.press("Enter");
 

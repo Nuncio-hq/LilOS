@@ -36,9 +36,9 @@ import {
   runningComposer,
   waitingComposer,
 } from "../chat/agent-chat";
-import { useEscapeKey } from "../chat/composer-keys";
 import { FocusComposer } from "../chat/focus-composer";
 import { sessionChoice } from "../chat/model-picker";
+import { useUiLayer } from "../chat/ui-layers";
 import {
   Conversation,
   ConversationContent,
@@ -55,6 +55,7 @@ import {
   QueueSectionTrigger,
 } from "../components/ai-elements/queue";
 import { Button } from "../components/ui/button";
+import { askKeyDown, pendingAsk } from "../conversation/ask-keys";
 import { openStartRequest } from "../conversation/cards";
 import { FindUnstubAnchor, FindUnstubNudge } from "../conversation/find-unstub";
 import type { PlanAction } from "../conversation/plan-card";
@@ -64,7 +65,7 @@ import {
 } from "../conversation/question-card";
 import { TranscriptNoteRow } from "../conversation/transcript-note";
 import {
-  RewindCheckpoint,
+  RewindHover,
   TURN_LAZY_AFTER,
   type TurnActs,
   TurnRow,
@@ -101,6 +102,7 @@ import type {
   WbTab,
   Work,
 } from "../types";
+import { VIEWER_ID } from "../types";
 import { sessionArtifacts } from "../workbench/artifacts";
 import type { LiveSurfaces } from "../workbench/live";
 import { planTodos, threadPlans } from "../workbench/plan-panel";
@@ -453,13 +455,18 @@ export function FocusView({
   );
   const live = thread.replies.find((r) => r.live);
   const lastStep = live?.steps?.[live.steps.length - 1];
-  /* #420: parked on an open QUESTION ask = WAITING, not working — the
-     composer says "waiting for your answer" and shows Send, not Stop
-     (Hermes FIX #515). Scoped to r.question, which only the question card
-     sets: approval/plan asks keep the steer composer. */
-  const waiting = running && live?.phase === "waiting" && !!live?.question;
+  /* #420 + #583 AC-1: parked on ANY open ask (question/approval/plan) =
+     WAITING, not working — the composer placeholder names what it waits
+     on. A question ask also parks the composer (Send, not Stop — Hermes
+     FIX #515); an approval/plan-parked turn is still interruptible and
+     steerable, so it keeps Stop (⌘.), steers and the running hint. */
+  const waiting = running && live?.phase === "waiting";
+  const parkedOnQuestion = waiting && live?.waitingOn === "question";
+  /* #583 AC-3: background processes still running under this thread. */
+  const runningJobs =
+    thread.jobs?.filter((j) => j.status === "running").length ?? 0;
   const status: ChatStatus = running
-    ? waiting
+    ? parkedOnQuestion
       ? "ready"
       : live?.phase === "submitted"
         ? "submitted"
@@ -662,11 +669,33 @@ export function FocusView({
       ? work != null || !isDM || engineTabs || tab === "subagents"
       : wbReported.length > 0 || engineTabs || tab === "subagents" || wbOpen);
 
-  /* Esc leaves Focus — but only when nothing else owns the key: the composer
-     takes it to stop a running turn, an open popup/menu takes it to close,
-     and Esc pressed inside a field stays there (#114 AC-1, same rules as
-     issue #104). */
-  useEscapeKey(onBack);
+  /* Focus is one UI layer: Esc backs out only while Focus is the top-most
+     surface (an open dialog or menu above it keeps Esc, #576 — it never
+     stops a turn), and while top-most it owns the surface keys — ⌘. stops
+     a running turn, ↵/⌫ answer the newest pending approval/plan card
+     (#558). */
+  const keyAsk = pendingAsk(thread.replies, resolved, !!onPlan);
+  const keyViewer = human(VIEWER_ID)?.name ?? "you";
+  useUiLayer({
+    onEscape: onBack,
+    onKey: (e) =>
+      askKeyDown(e, {
+        ask: keyAsk,
+        viewer: keyViewer,
+        resolved,
+        setResolved,
+        onPlan,
+        running,
+        onStop,
+      }),
+  });
+  /* The id the hint lives under — approval cards match on ask id, plan
+     cards on plan id. */
+  const keyTarget = keyAsk
+    ? keyAsk.kind === "approval"
+      ? keyAsk.reply.approval?.id
+      : keyAsk.reply.plan?.id
+    : undefined;
 
   /* The memoized element keeps the whole Workbench subtree out of the
      render when only `wbOpen` flips — otherwise a 2,000-row file tree
@@ -844,6 +873,15 @@ export function FocusView({
               {live?.phase ? PHASE_LABEL[live.phase] : "working"}
             </span>
           )}
+          {/* #583 AC-3: a live background job says so in the header too. */}
+          {runningJobs > 0 && (
+            <span
+              data-bg-jobs
+              className="hidden text-muted-foreground text-xs sm:inline"
+            >
+              · {runningJobs} running in background
+            </span>
+          )}
           {thread.usage && (
             <SessionUsage usage={thread.usage} model={model} models={models} />
           )}
@@ -856,7 +894,7 @@ export function FocusView({
               title={
                 startCardOpen
                   ? "Answer the request below"
-                  : "New ticket + worktree for this session"
+                  : "New ticket + worktree for this thread"
               }
             >
               <Button
@@ -946,22 +984,28 @@ export function FocusView({
               {transcriptNote?.kind === "trimmed" && (
                 <TranscriptNoteRow note={transcriptNote} />
               )}
-              {onRewind && root.id && human(root.from) && (
-                <RewindCheckpoint
-                  running={running}
-                  warning={rewindWarning}
-                  onRewind={() => onRewind(root.id ?? "")}
-                />
-              )}
-              <div data-msg={root.id} className={flashCls(root.id)}>
+              <div
+                data-msg={root.id}
+                className={cn(
+                  flashCls(root.id),
+                  onRewind && root.id && human(root.from) && "group relative",
+                )}
+              >
                 <UserTurn
                   from={root.from}
                   time={root.time}
                   text={root.text}
-                  note={`opened session ${thread.session}`}
+                  note={`opened thread ${thread.session}`}
                   human={human}
                   attachments={root.attachments}
                 />
+                {onRewind && root.id && human(root.from) && (
+                  <RewindHover
+                    running={running}
+                    warning={rewindWarning}
+                    onRewind={() => onRewind(root.id ?? "")}
+                  />
+                )}
               </div>
               {/* #430: memoized per row — a delta re-renders only the
                   turn it touched; long threads hold far-off-screen rows
@@ -987,6 +1031,7 @@ export function FocusView({
                   pr={pr}
                   prAuthor={lead?.name ?? pr?.author}
                   rewindWarning={rewindWarning}
+                  keyTarget={keyTarget}
                   acts={actsRef}
                 />
               ))}
@@ -1063,7 +1108,7 @@ export function FocusView({
             )}
             {/* Mid-turn sends still waiting to be read (issue #9) and the not-sent tray —
                 same markup as the thread panel, above the composer there too. queue holds ONLY
-                messages ■ stopped before they landed. */}
+                messages the Stop button stopped before they landed. */}
             <QueuedTray
               items={pendingSteers}
               steer={steer}
@@ -1088,7 +1133,7 @@ export function FocusView({
               onRemove={onUnqueue}
             />
             <FocusComposer
-              running={running && !waiting}
+              running={running && !parkedOnQuestion}
               status={status}
               choice={
                 models?.length
@@ -1119,18 +1164,22 @@ export function FocusView({
                   ? `${lead?.name ?? "The agent"} is paused while you use the terminal`
                   : running
                     ? waiting
-                      ? waitingComposer(lead?.name ?? "Employee").placeholder
+                      ? waitingComposer(
+                          lead?.name ?? "Employee",
+                          live?.waitingOn,
+                        ).placeholder
                       : runningComposer(
                           lead?.name ?? "Employee",
                           steer,
                           agentWorking,
                         ).placeholder
-                    : `Continue session ${thread.session} with ${lead?.name ?? "the employee"}…`
+                    : `Reply to ${lead?.name ?? "the employee"}…`
               }
               hint={
                 running
-                  ? waiting
-                    ? waitingComposer(lead?.name ?? "Employee").hint
+                  ? parkedOnQuestion
+                    ? waitingComposer(lead?.name ?? "Employee", live?.waitingOn)
+                        .hint
                     : runningComposer(
                         lead?.name ?? "Employee",
                         steer,

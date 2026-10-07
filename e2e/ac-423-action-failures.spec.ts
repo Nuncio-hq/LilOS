@@ -201,7 +201,7 @@ test("AC-2 a failed history load shows a retryable notice", async ({
   fail.reject(method("messages.list"));
   await page.reload();
   const banner = page.locator(BANNER).first();
-  await expect(banner).toContainText("Couldn't load this session's history", {
+  await expect(banner).toContainText("Couldn't load this thread's history", {
     timeout: 30_000,
   });
   await expect(banner.getByRole("button", { name: "Retry" })).toBeVisible();
@@ -222,7 +222,7 @@ test("AC-2 a failed history load shows a retryable notice", async ({
   await page.goto(page.url().replace(/\/focus$/, ""));
   await page.reload();
   await expect(page.locator(BANNER).first()).toContainText(
-    "Couldn't load this session's history",
+    "Couldn't load this thread's history",
     { timeout: 30_000 },
   );
 });
@@ -233,7 +233,7 @@ test("AC-1 a failed Stop shows its reason", async ({ page }) => {
   await dmDefault(page);
   /* `slow:` paces the turn so the Stop button stays up across the click. */
   await openSession(page, "slow:400 a turn to stop");
-  const stop = page.getByRole("button", { name: "Stop (Esc)" });
+  const stop = page.getByRole("button", { name: "Stop (⌘.)" });
   await expect(stop).toBeVisible({ timeout: 30_000 });
   fail.reject(method("turns.interrupt"));
   await stop.click();
@@ -291,7 +291,7 @@ test("AC-1 failed rename, archive and unarchive show their reasons", async ({
   /* Back on the DM home the new session is the last row's menu. */
   const home = page.url().match(/\/dm\/[^/]+/)?.[0] ?? "/dm/default";
   await page.goto(`${stack.webUrl}${home}`);
-  const menu = page.getByRole("button", { name: "Session actions" }).last();
+  const menu = page.getByRole("button", { name: "Thread actions" }).last();
   await expect(menu).toBeVisible({ timeout: 15_000 });
 
   /* Rename — conversations.update {title}. */
@@ -300,12 +300,12 @@ test("AC-1 failed rename, archive and unarchive show their reasons", async ({
     message: ERR,
   });
   await menu.click();
-  await page.getByRole("menuitem", { name: "Rename session" }).click();
-  const title = page.getByRole("textbox", { name: "Session title" });
+  await page.getByRole("menuitem", { name: "Rename thread" }).click();
+  const title = page.getByRole("textbox", { name: "Thread title" });
   await title.fill("a failed rename");
   await title.press("Enter");
   await expect(page.locator(TOAST)).toContainText(
-    "Couldn't rename the session",
+    "Couldn't rename the thread",
     { timeout: 15_000 },
   );
   await expect(page.locator(TOAST)).toContainText(LOST);
@@ -317,9 +317,9 @@ test("AC-1 failed rename, archive and unarchive show their reasons", async ({
     message: ERR,
   });
   await menu.click();
-  await page.getByRole("menuitem", { name: "Archive session" }).click();
+  await page.getByRole("menuitem", { name: "Archive thread" }).click();
   await expect(page.locator(TOAST)).toContainText(
-    "Couldn't archive the session",
+    "Couldn't archive the thread",
     { timeout: 15_000 },
   );
   await expect(page.locator(TOAST)).toContainText(LOST);
@@ -328,11 +328,11 @@ test("AC-1 failed rename, archive and unarchive show their reasons", async ({
   /* Unarchive — the row moves under the collapsed Archived section first. */
   fail.heal();
   await menu.click();
-  await page.getByRole("menuitem", { name: "Archive session" }).click();
+  await page.getByRole("menuitem", { name: "Archive thread" }).click();
   await page.getByRole("button", { name: /Archived \(\d+\)/ }).click();
   const archivedMenu = page
     .locator("[data-archived]")
-    .getByRole("button", { name: "Session actions" })
+    .getByRole("button", { name: "Thread actions" })
     .last();
   await expect(archivedMenu).toBeVisible({ timeout: 15_000 });
   fail.reject({
@@ -340,9 +340,9 @@ test("AC-1 failed rename, archive and unarchive show their reasons", async ({
     message: ERR,
   });
   await archivedMenu.click();
-  await page.getByRole("menuitem", { name: "Unarchive session" }).click();
+  await page.getByRole("menuitem", { name: "Unarchive thread" }).click();
   await expect(page.locator(TOAST)).toContainText(
-    "Couldn't unarchive the session",
+    "Couldn't unarchive the thread",
     { timeout: 15_000 },
   );
   await expect(page.locator(TOAST)).toContainText(LOST);

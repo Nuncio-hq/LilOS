@@ -8,7 +8,7 @@ import { bootStack, pickPorts, type Stack } from "./helpers/stack";
  * shots (#423's ac1/ac2 screenshots): the capsule's `transition-colors` fades
  * `background-color` across the theme flip, so anything captured in the
  * ~150ms window sees the near-opaque light glass over the dark field and the
- * "Medium" chip label, "Enter steers · ■ stop" hint and placeholder sit on it
+ * "Medium" chip label, "Enter steers · ⌘. stop" hint and placeholder sit on it
  * at ~1.3:1. The fix: the capsule's fill snaps to the theme token instead of
  * fading (theme.css — transition-property minus background-color).
  *
@@ -26,9 +26,9 @@ const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
 const repo = path.resolve(here, "..");
 const SHOTS = path.join(repo, "test-results", "ac-508");
 
-/* The running composer is the only capsule carrying a Stop (Esc) button —
+/* The running composer is the only capsule carrying a Stop (⌘.) button —
    that scopes every selector to the mid-turn surface, not a sibling one. */
-const CAPSULE = '[data-slot="input-group"]:has([aria-label="Stop (Esc)"])';
+const CAPSULE = '[data-slot="input-group"]:has([aria-label="Stop (⌘.)"])';
 
 const CHECKS = [
   { name: "placeholder", sel: `${CAPSULE} textarea`, pseudo: "::placeholder" },
@@ -177,7 +177,7 @@ async function runningFocus(page: Page) {
   await box.fill("LILOS_TURN_HOLD keep this turn running");
   await box.press("Enter");
   await page.waitForURL(/\/dm\/[^/]+\/[^/]+\/focus$/, { timeout: 30_000 });
-  await expect(page.getByRole("button", { name: "Stop (Esc)" })).toBeVisible({
+  await expect(page.getByRole("button", { name: "Stop (⌘.)" })).toBeVisible({
     timeout: 30_000,
   });
   /* The issue's exact state: the steer placeholder and the running hint. */
@@ -186,7 +186,7 @@ async function runningFocus(page: Page) {
     /Enter steers this turn/,
   );
   await expect(page.locator(`${CAPSULE} .lilos-hint`)).toHaveText(
-    "Enter steers · ■ stop",
+    "Enter steers · ⌘. stop",
   );
   /* The chip is one of the measured surfaces — wait for the catalog, don't
      measure while it's still loading. */

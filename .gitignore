@@ -13,3 +13,4 @@ e2e/.gh-fake/
 e2e/.os-fake/
 .*.bun-build
 /tmp/
+shots/

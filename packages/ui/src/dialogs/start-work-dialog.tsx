@@ -1,5 +1,6 @@
 import { CheckIcon, GitBranchIcon, PlayIcon, XIcon } from "lucide-react";
 import { useState } from "react";
+import { useUiLayerEl } from "../chat/ui-layers";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { ScrollArea } from "../components/ui/scroll-area";
@@ -43,12 +44,18 @@ export function StartWorkDialog({
   ];
   const [lead, setLead] = useState(workers[0] ?? "");
   const dir = `.lilos/wt/${ticket.toLowerCase()}`;
+  /* #576: Esc closes this dialog while it is the top-most layer. */
+  const layerRef = useUiLayerEl<HTMLDivElement>({ onEscape: onClose });
   return (
     <div
       className="fixed inset-0 z-40 grid place-items-center bg-black/30 p-4 sm:p-6"
       onClick={onClose}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Start work"
+        ref={layerRef}
         className="flex max-h-[90dvh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border bg-background shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
@@ -143,9 +150,8 @@ export function StartWorkDialog({
               </div>
               <div className="flex gap-1.5 text-muted-foreground">
                 <CheckIcon className="mt-0.5 size-3.5 shrink-0 text-emerald-600" />
-                Hermes session{" "}
-                <span className="font-mono">{thread.session}</span>. It moves to
-                the worktree; no new session, no summary.
+                This thread <span className="font-mono">{thread.session}</span>.
+                It moves to the worktree; no new thread, no summary.
               </div>
             </div>
             <label className="flex cursor-pointer items-start gap-2 text-xs">
@@ -170,7 +176,7 @@ export function StartWorkDialog({
         <div className="flex flex-wrap items-center gap-2 border-t px-5 py-3">
           <code className="w-full min-w-0 break-all text-muted-foreground text-xs sm:w-auto sm:flex-1">
             {channel.repo
-              ? `git worktree add ${dir} -b ${branch} → session.workspace.move`
+              ? `git worktree add ${dir} -b ${branch} — the thread moves there`
               : `ticket ${ticket}`}
           </code>
           <Button variant="ghost" size="sm" onClick={onClose}>

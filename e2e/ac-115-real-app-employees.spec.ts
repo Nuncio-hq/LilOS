@@ -21,7 +21,7 @@ async function rpc(
   token: string,
   calls: { method: string; params: Record<string, unknown> }[],
 ): Promise<Record<string, unknown>[]> {
-  const ws = new WebSocket(relayWs);
+  const ws = new WebSocket(`${relayWs}?token=${encodeURIComponent(token)}`);
   await new Promise<void>((res, rej) => {
     ws.onopen = () => res();
     ws.onerror = () => rej(new Error("ws connect failed"));
@@ -298,10 +298,10 @@ test("AC-5 after hiring, the sidebar + new DM appear live and the app navigates 
   const aside = page.locator("aside");
   await expect(aside.getByRole("button", { name: "Marketer" })).toBeVisible();
   // The DM channel already exists — the home renders, not a skeleton.
-  await expect(page.getByText("Start a session with Marketer")).toBeVisible();
+  await expect(page.getByText("Start a thread with Marketer")).toBeVisible();
   await expect(page.locator("textarea").last()).toHaveAttribute(
     "placeholder",
-    /New session with Marketer/,
+    /New thread with Marketer/,
   );
   await page.screenshot({ path: `${SHOTS}/ac-5-live-dm.png` });
 
@@ -367,7 +367,7 @@ test("AC-7 Remove deletes the LilOS record + DM, never the engine profile; the p
   await expect(
     dlg.getByText("Remove Reviewer from the company?"),
   ).toBeVisible();
-  await expect(dlg.getByText(/its sessions, memory, and skills/)).toBeVisible();
+  await expect(dlg.getByText(/its history, memory, and skills/)).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-7-remove-confirm.png` });
   await dlg.getByRole("button", { name: "Remove from company" }).last().click();
 

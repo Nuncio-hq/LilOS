@@ -18,6 +18,7 @@ import { Alert } from "react-native";
 import { decide } from "../asks";
 import { $demo, DEMO_MAC } from "../demo/lifecycle";
 import {
+  askThreadTarget,
   ensureChannelSubscriptions,
   type HomeWire,
   openAsks,
@@ -28,6 +29,7 @@ import { $client, $link } from "../link";
 import { toHomeChannels } from "../mapping";
 import { $connections } from "../paired-macs";
 import { nav } from "../routes";
+import { ago } from "../time";
 
 /* The app tabs after pairing (#155): Home (live employees + channels),
    Activity (every open ask), the Needs-you bottom accessory, and the DM
@@ -44,8 +46,13 @@ function soon(what: string) {
 }
 
 /** Every read model Home derives from, in one bundle for the model. */
-export function useHomeWire(): { client?: AppClient; wire: HomeWire } {
+export function useHomeWire(): {
+  client?: AppClient;
+  link: ReturnType<typeof $link.get>;
+  wire: HomeWire;
+} {
   const client = useStore($client);
+  const link = useStore($link);
   const employees = useStore(client?.employees ?? $noEmployees);
   const channels = useStore(client?.channels ?? $noChannels);
   const conversations = useStore(client?.conversations ?? $noConversations);
@@ -54,9 +61,20 @@ export function useHomeWire(): { client?: AppClient; wire: HomeWire } {
   return useMemo(
     () => ({
       client,
-      wire: { employees, channels, conversations, summaries, asks },
+      link,
+      /* #591: "online" for the model = live data. Only `offline` makes the
+         rows last-known — a clean reconnect attempt keeps them unmarked so
+         a passing hiccup doesn't flicker the whole list. */
+      wire: {
+        employees,
+        channels,
+        conversations,
+        summaries,
+        asks,
+        online: link !== "offline",
+      },
     }),
-    [client, employees, channels, conversations, summaries, asks],
+    [client, link, employees, channels, conversations, summaries, asks],
   );
 }
 
@@ -99,6 +117,11 @@ export function Home() {
       workspace="LilOS"
       macName={mac.name}
       link={link}
+      offlineDetail={
+        link === "offline"
+          ? `Showing last known · ${ago(mac.lastSeenAt)}`
+          : undefined
+      }
       employees={wire.employees.map((e) => toEmployeeRow(e, wire, nowMs))}
       company={company}
       projects={projects}
@@ -123,6 +146,18 @@ export function NeedsYouSlot({
     () => openAsks(wire.asks).map((a) => toApproval(a, wire, nowMs)),
     [wire, nowMs],
   );
+  /* #595: a plan ask's Review opens the plan where it lives — the
+     asking thread, with the DM underneath so Back returns to it. */
+  const openPlanThread = (askId: string) => {
+    const ask = wire.asks.find((a) => a.id === askId);
+    const target = ask && askThreadTarget(ask, wire);
+    if (!target) {
+      nav.navigate("Tabs", { screen: "Activity" });
+      return;
+    }
+    nav.navigate("Dm", { employeeId: target.employeeId });
+    nav.navigate("Thread", { conversationId: target.conversationId });
+  };
   return (
     <NeedsYouAccessory
       approvals={approvals}
@@ -130,21 +165,41 @@ export function NeedsYouSlot({
       onApprove={(id) => {
         if (client) void decide(client, id, true);
       }}
+      onReview={openPlanThread}
       onOpen={() => nav.navigate("Tabs", { screen: "Activity" })}
     />
   );
 }
 
 export function Activity() {
-  const { client, wire } = useHomeWire();
+  const demo = useStore($demo);
+  const paired = useStore($connections)[0];
+  const mac = demo ? DEMO_MAC : paired;
+  const { client, link, wire } = useHomeWire();
   const nowMs = useNowMs();
   const approvals = useMemo(
     () => openAsks(wire.asks).map((a) => toApproval(a, wire, nowMs)),
     [wire, nowMs],
   );
+  /* #595: same landing as the accessory's Review — the asking thread
+     pushed over its DM. */
+  const openPlanThread = (askId: string) => {
+    const ask = wire.asks.find((a) => a.id === askId);
+    const target = ask && askThreadTarget(ask, wire);
+    if (!target) return;
+    nav.navigate("Dm", { employeeId: target.employeeId });
+    nav.navigate("Thread", { conversationId: target.conversationId });
+  };
   return (
     <ApprovalsSheet
       approvals={approvals}
+      /* #591: while the Mac is unreachable the list is last-known — the
+         sheet marks it and the empty state never reads "All clear". */
+      unreachable={
+        link === "offline" && mac
+          ? { mac: mac.name, asOf: ago(mac.lastSeenAt) }
+          : undefined
+      }
       onApprove={(id) => {
         if (client) void decide(client, id, true);
       }}
@@ -157,6 +212,7 @@ export function Activity() {
         if (channel?.employeeId)
           nav.navigate("Dm", { employeeId: channel.employeeId });
       }}
+      onReview={openPlanThread}
     />
   );
 }

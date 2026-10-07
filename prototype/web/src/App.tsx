@@ -11,6 +11,7 @@ import {
   EmployeeHome,
   FeedList,
   FirstRun,
+  type FirstRunCheck,
   FocusView,
   HireDialog,
   PairPhoneDialog,
@@ -294,6 +295,15 @@ const FEEDS: Record<string, Msg[]> = {
           },
           { from: "oscar", time: "11:10", text: "Agree. Add backoff, cap at 30s." },
           { from: "builder", time: "11:11", text: "Got it. Next step changes code in `apps/harness`, so it needs its own ticket and branch.", startProposal: { title: "Harness reconnect with afterSequence replay" } },
+          { from: "oscar", time: "11:13", text: "While you're in there — what happens to messages the engine wrote during the gap?" },
+          {
+            from: "builder", time: "11:15", text: "They land in the relay's event log before the socket drops, so the same replay covers them: the harness asks for `afterSequence = last seq` and the relay re-sends every event it missed, engine output included. Nothing is polled from the engine itself.",
+            steps: [
+              { tool: "read_file", input: { path: "apps/relay/src/event-log.ts" }, output: "append-only · 204 lines" },
+            ],
+          },
+          { from: "oscar", time: "11:18", text: "Good — that also covers the Mac closing the lid mid-turn." },
+          { from: "builder", time: "11:20", text: "Right, the sleep case is the same replay, just a longer gap. I'll fold that scenario into the ticket's tests." },
         ],
       },
     },
@@ -570,6 +580,29 @@ const STATUS: Record<PreviewScenario, StatusComponent[]> = {
   ],
 }
 
+/* A status row → a first-run check (#589): ok ticks, waiting legs spin,
+   down/degraded legs fail with a plain headline — the raw reason stays
+   behind "See status" only (same copy the real app writes). */
+const FIRST_RUN_PLAIN: Record<StatusComponent["id"], (r: string) => string> = {
+  relay: () => "Couldn't connect — LilOS can't reach its relay on this Mac.",
+  engine: (r) =>
+    /Hermes not found/i.test(r)
+      ? "Couldn't start your first employee — LilOS can't find Hermes on this Mac."
+      : "Couldn't start your first employee — the engine didn't start.",
+  harness: () => "Couldn't start your first employee — the engine didn't start.",
+  model: () => "Couldn't start your first employee — the engine didn't start.",
+}
+const firstRunCheck = (
+  rows: StatusComponent[],
+  id: StatusComponent["id"],
+): FirstRunCheck => {
+  const row = rows.find((c) => c.id === id)
+  if (!row || row.state === "ok") return { state: "ok" }
+  if (row.state === "connecting" || row.state === "blocked")
+    return { state: "pending" }
+  return { state: "failed", plain: FIRST_RUN_PLAIN[id](row.reason) }
+}
+
 /* Session-level failure states (on the DM session row, with Retry where a retry makes sense). */
 const SESSION_ALERTS: Partial<Record<PreviewScenario, SessionAlert>> = {
   "model-error": { kind: "model", text: `Model error · ${MODELS[0].id}: provider returned 429 (rate limited)`, retry: true },
@@ -768,7 +801,7 @@ function scriptFor(empId: string, prompt: string, followUp = false, branch?: str
         number: n, repo, title, status: "open", author: empId, base: "main", head: branch, opened: "just now",
         body: `## Summary\n\nScaffolds the monorepo from LIL-3: \`contracts\`, \`client-runtime\`, \`apps/web\`, \`apps/relay\` on pnpm workspaces with strict TS.\n\n- \`client-runtime\` compiles with \`lib: ["ES2022"]\` only, so a DOM import fails the build\n- \`contracts\` owns the event \`Envelope\` (\`seq\`, \`kind\`, \`body\`, \`at\`)\n- README documents the workspace layout\n\n## Verification\n\n- \`pnpm -r test\`: 7 passed, 1 skipped (relay has no harness yet)\n- \`pnpm -r typecheck\`: clean\n\nSession \`ses_8f2c\` · requested by @oscar in #engineering`,
         checks: CHECKS.map((name) => ({ name, status: "pending" as const })),
-        comments: [{ from: empId, time: nowTime(), monitor: true, text: "I'll fix CI failures and address review comments from people with write access in this session. Comments containing \"(aside)\" are skipped." }],
+        comments: [{ from: empId, time: nowTime(), monitor: true, text: "I'll fix CI failures and address review comments from people with write access in this thread. Comments containing \"(aside)\" are skipped." }],
       },
     }
   }
@@ -883,7 +916,7 @@ export default function App() {
   })
   const [hireOpen, setHireOpen] = useState<HireDraft | null>(null)
   const [theme, setTheme] = useTheme()
-  const [toast, setToast] = useState<string | null>(null)
+  const [toast, setToast] = useState<{ text: string; action?: { label: string; run: () => void } } | null>(null)
   const [started, setStarted] = useState<Record<string, Work>>({})
   const startedRef = useRef(started)
   startedRef.current = started
@@ -902,6 +935,16 @@ export default function App() {
     return base
   })
   const stops = useRef<Record<string, boolean>>({})
+  /* #578: the rewind inside its 10 s Undo window — the dropped replies and
+     the draft they replace stay here until Undo or the commit timer. */
+  const rewindPending = useRef<{
+    idx: number
+    removed: Reply[]
+    rootMsg?: Extract<Msg, { kind: "msg" }>
+    draftBefore: string
+    commit: () => void
+  } | null>(null)
+  const rewindTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   /* #420: open question asks → the turn that raised them (answer/cancel
      continues it). The seeded open question registers here too. */
   const questionsRef = useRef(
@@ -1105,7 +1148,15 @@ export default function App() {
     setUpdateMsg("Checking…")
     setTimeout(() => setUpdateMsg("LilOS is up to date"), 900)
   }
-  const say = (t: string) => { setToast(t); setTimeout(() => setToast(null), 2200) }
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const showToast = (v: { text: string; action?: { label: string; run: () => void } }, ms: number) => {
+    if (toastTimer.current) clearTimeout(toastTimer.current)
+    setToast(v)
+    toastTimer.current = setTimeout(() => setToast(null), ms)
+  }
+  const say = (t: string) => showToast({ text: t }, 2200)
+  /* #578: a notice with one action — the rewind Undo toast. */
+  const sayAction = (text: string, action: { label: string; run: () => void }, ms: number) => showToast({ text, action }, ms)
   /* LilOS Browser (issue #214): ⌘⇧B toggles it; a panel beside the chat that
      pops out into its own window. Fake pages + a fake agent tab in fake-browser. */
   const [browserOpen, setBrowserOpen] = useState(() => new URLSearchParams(location.search).has("browser"))
@@ -1530,7 +1581,7 @@ export default function App() {
   /* A subagent row that is another employee → that employee's session in their DM. */
   const openSession = (empId: string, session: string) => {
     const m = (feeds[`dm-${empId}`] ?? []).find((x) => x.kind === "msg" && x.thread?.session === session)
-    if (!m) return say(`Session ${session} isn't in this prototype`)
+    if (!m) return say(`Thread ${session} isn't in this prototype`)
     setView({ kind: "dm", id: empId }); setThreadId(m.id); setPanelTab("thread"); setPanelOpen(true)
   }
   /* Plan card decisions (issue #175). Change prefills the composer; sending it revises. */
@@ -1700,25 +1751,55 @@ export default function App() {
     if (idx < 0) return
     const target = idx === 0 ? root.text : t.replies[idx]?.text
     const n = t.replies.length - idx
+    /* A second rewind commits the one still in its Undo window first. */
+    if (rewindPending.current) {
+      clearTimeout(rewindTimer.current)
+      rewindPending.current.commit()
+    }
+    const draftBefore = threadDraft
+    const removed = t.replies.slice(idx)
+    /* #578: the rows drop at once and a 10 s Undo toast runs; the final
+       step — the "⚠ Rewound" note and the file/session rollback this
+       mock stands in for — happens only when the window closes. */
+    const commit = () => {
+      rewindPending.current = null
+      if (idx === 0) return /* the root message is already out of the feed */
+      mapRoot(feedKey, root.id, (tt) => ({
+        ...tt,
+        replies: [
+          ...tt.replies,
+          {
+            from: "",
+            system: true,
+            time: "",
+            text: `Rewound to before your message — ${n} message${n === 1 ? "" : "s"} dropped, files restored to the earlier checkpoint.`,
+          },
+        ],
+      }))
+    }
+    const undo = () => {
+      const p = rewindPending.current
+      if (!p) return
+      clearTimeout(rewindTimer.current)
+      rewindPending.current = null
+      if (p.idx === 0)
+        setFeeds((fs) => ({ ...fs, [feedKey]: [...(fs[feedKey] ?? []), p.rootMsg as Extract<Msg, { kind: "msg" }>] }))
+      else
+        mapRoot(feedKey, root.id, (tt) => ({ ...tt, replies: [...tt.replies.slice(0, p.idx), ...p.removed] }))
+      setThreadDraft(p.draftBefore)
+      say("Rewind undone — the thread is back where it was.")
+    }
+    rewindPending.current = { idx, removed, rootMsg: idx === 0 ? root : undefined, draftBefore, commit }
     if (idx === 0) {
       /* Rewinding to the root drops every message — the whole thread goes. */
       setFeeds((fs) => ({ ...fs, [feedKey]: (fs[feedKey] ?? []).filter((m) => m.id !== root.id) }))
       setPanelOpen(false)
     } else {
-      mapRoot(feedKey, root.id, (tt) => ({
-        ...tt,
-        replies: [
-          ...tt.replies.slice(0, idx),
-          {
-            from: "",
-            time: "",
-            text: `⚠ Rewound to before your message — ${n} message${n === 1 ? "" : "s"} dropped, files restored to the earlier checkpoint.`,
-          },
-        ],
-      }))
+      mapRoot(feedKey, root.id, (tt) => ({ ...tt, replies: tt.replies.slice(0, idx) }))
     }
     if (target !== undefined) setThreadDraft(target)
-    say(`Rewound session ${t.session} · files + ${n} message${n === 1 ? "" : "s"}`)
+    sayAction(`Rewound thread ${t.session} · files + ${n} message${n === 1 ? "" : "s"}`, { label: "Undo", run: undo }, 10_000)
+    rewindTimer.current = setTimeout(commit, 10_000)
   }
   // conversations.setModel: the pick pins the conversation's model; the next
   // turn's reply carries it back as `turn.started.model` (AC-2).
@@ -2086,7 +2167,7 @@ export default function App() {
               }}
               draft={dmDraft} onDraftChange={setDmDraft}
               mentionables={employees} onSearchFiles={fileMentions((wsPicks[view.id] ?? NO_WS).folder)}
-              onRetrySession={(m) => { setAlertOff((n) => n + 1); retry(m, view.id); say(`Retrying session ${m.thread?.session}`) }}
+              onRetrySession={(m) => { setAlertOff((n) => n + 1); retry(m, view.id); say(`Retrying thread ${m.thread?.session}`) }}
               onSearchMessages={searchDmMessages}
               onOpenHit={(h) => { setScrollTo(h.messageId); showThread(h.rootId) }}
               accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say}
@@ -2225,6 +2306,13 @@ export default function App() {
         <FirstRun
           employee={DEFAULT_EMP}
           identity={{ name: me.name, company }}
+          /* #589: the ticks follow the scenario's status rows — same
+             mapping the real app applies to system.status. */
+          checks={{
+            relay: firstRunCheck(liveStatus?.components ?? STATUS[scenario], "relay"),
+            employee: firstRunCheck(liveStatus?.components ?? STATUS[scenario], "engine"),
+          }}
+          onSeeStatus={() => setStatusOpen(true)}
           connect={{ profiles: connectListEmpty ? [] : connList, onConnect: connectAll }}
           onOpenDM={(id) => {
             setFirstDone(true)
@@ -2246,7 +2334,7 @@ export default function App() {
           onRemove={() => removeEmployee(editEmp)}
         />
       )}
-      {toast && <div className="fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-lg bg-foreground px-4 py-2 text-background text-sm shadow-lg">{toast}</div>}
+      {toast && <div data-toast className="fixed bottom-5 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-lg bg-foreground px-4 py-2 text-background text-sm shadow-lg">{toast.text}{toast.action && <button type="button" data-toast-action className="font-medium underline underline-offset-2" onClick={toast.action.run}>{toast.action.label}</button>}</div>}
     </div>
   )
 }

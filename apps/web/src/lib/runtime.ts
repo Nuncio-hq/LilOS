@@ -27,6 +27,7 @@ import type { LilosConfig } from "./config";
 import { initConnect } from "./connect";
 import { hostUser, initHost } from "./host";
 import { osFullName, osHome, profile } from "./me";
+import { type SessionSignal, SessionWatch } from "./session-watch";
 
 export const booted = atom(false);
 export const bootError = atom<string | null>(null);
@@ -343,6 +344,18 @@ function sessionModel(sessionId: string): ReadableAtom<SessionModel> {
  */
 export const sessionModels = atom<Record<string, SessionModel>>({});
 
+/* #572: broadcast-folded truth for sessions WITHOUT a feed — running /
+   open asks / life — so badges, the life ring, and notifications answer
+   for background sessions without replaying their logs. */
+export const sessionSignals = atom<Record<string, SessionSignal>>({});
+
+/* #572: sid -> a feed is attached — the "pending" gate's watched signal
+   (an unwatched session mustn't hold relay rows hostage). */
+export const sessionWatched = atom<Record<string, boolean>>({});
+
+/** The conversation open in the thread panel — SessionWatch's scope head. */
+export const openConversation = atom<string | undefined>(undefined);
+
 /* #427: the sidebar badge map as a computed store — `sessionModels`
    rebuilds on every engine event, but the badge counts almost never move.
    `badgeStore` keeps the same record while counts are equal, so AppShell
@@ -350,7 +363,12 @@ export const sessionModels = atom<Record<string, SessionModel>>({});
    computed is built on first read (AppShell mounts post-boot). */
 let empBadges: ReadableAtom<Record<string, EmpBadge>> | undefined;
 export function employeeBadgeMap(): ReadableAtom<Record<string, EmpBadge>> {
-  empBadges ??= badgeStore(relay.channels, relay.conversations, sessionModels);
+  empBadges ??= badgeStore(
+    relay.channels,
+    relay.conversations,
+    sessionModels,
+    sessionSignals,
+  );
   return empBadges;
 }
 
@@ -364,31 +382,62 @@ export function employeeBadgeMap(): ReadableAtom<Record<string, EmpBadge>> {
  */
 export const sessionFeedAttached = atom<Record<string, boolean>>({});
 
-const feedSubs = new Map<string, () => void>();
+let sessionWatchStarted = false;
 
-/** Call once after boot: keeps `sessionModels` in sync with conversations. */
+/* #572 AC-2: a turn that finishes inside a reload gap still owes its done
+   notification — but on the fresh mount the row already reads idle, so the
+   session isn't watch-eligible and its completion never surfaces. The
+   previous mount's running set gives the watch a one-shot attach list for
+   exactly those sessions. sessionStorage scope matches the notify
+   completion store (per-tab, cleared with the session). */
+const RUNNING_SESSIONS_KEY = "lilos:runningSessions";
+
+function readRunningSessions(): ReadonlySet<string> {
+  try {
+    const raw = sessionStorage.getItem(RUNNING_SESSIONS_KEY);
+    const ids = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(ids) ? ids : []);
+  } catch {
+    return new Set();
+  }
+}
+
+/**
+ * #572: scope the feeds to the threads that matter — the open conversation
+ * plus sessions that are running or asking — instead of replaying every
+ * session's full history at boot. Everything else rides relay rows and the
+ * broadcast-folded `sessionSignals`; leaving the set releases the feed.
+ */
 export function watchSessionFeeds(): void {
-  relay.conversations.subscribe((convs) => {
-    for (const c of convs) {
-      const sid = c.engineRef;
-      if (!sid || feedSubs.has(sid)) continue;
-      const unModel = sessionModel(sid).subscribe((m) => {
-        if (sessionModels.get()[sid] !== m)
-          sessionModels.set({ ...sessionModels.get(), [sid]: m });
-      });
-      const unAttach = engine.sessionFeed(sid).subscribe((f) => {
-        const attached = f.synced || f.error !== undefined || f.coverageSeq > 0;
-        if (sessionFeedAttached.get()[sid] !== attached)
-          sessionFeedAttached.set({
-            ...sessionFeedAttached.get(),
-            [sid]: attached,
-          });
-      });
-      feedSubs.set(sid, () => {
-        unModel();
-        unAttach();
-      });
-    }
+  if (sessionWatchStarted) return;
+  sessionWatchStarted = true;
+  /* Read BEFORE subscribing the persister — subscribe fires immediately
+     with the current (empty) set and would clobber the stored list. */
+  const prevRunning = readRunningSessions();
+  new SessionWatch({
+    conversations: relay.conversations,
+    asks: relay.asks,
+    openConversationId: openConversation,
+    sessionFeed: (sid) => engine.sessionFeed(sid),
+    sessionModel: (sid) => sessionModel(sid),
+    releaseSession: (sid) => {
+      engine.releaseSession(sid);
+      modelCache.delete(sid);
+    },
+    onEvent: (fn) => engine.onEvent(fn),
+    signals: sessionSignals,
+    watched: sessionWatched,
+    models: sessionModels,
+    attached: sessionFeedAttached,
+    previouslyRunning: prevRunning,
+  }).start();
+  sessionSignals.subscribe((sigs) => {
+    try {
+      sessionStorage.setItem(
+        RUNNING_SESSIONS_KEY,
+        JSON.stringify(Object.keys(sigs).filter((sid) => sigs[sid].running)),
+      );
+    } catch {}
   });
 }
 

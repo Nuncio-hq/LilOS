@@ -27,6 +27,7 @@ import type {
   Conversation,
   ConversationSummary,
   Employee,
+  SummaryMessage,
 } from "@lilos/contracts/app";
 import type { QueuedTrayItem } from "@lilos/ui";
 import type { Msg, Reply, Workspace } from "@lilos/ui/types";
@@ -37,6 +38,7 @@ import {
   mergeTurns,
   stripPlans,
   toFeed,
+  toJob,
 } from "./mapping";
 
 type Inputs = readonly unknown[];
@@ -70,8 +72,15 @@ export interface FoldInputs {
   /** Open conv only: locally-known rewound ids + dropped answer texts. */
   localRewound?: { ids: ReadonlySet<string>; texts: ReadonlySet<string> };
   summary: ConversationSummary | undefined;
-  /** The feed row's root message (summary.root or its channel row). */
-  root: AppMessage | undefined;
+  /** The feed row's root message (summary.root or its channel row) —
+      #571: the summary's is a preview subset, not a full row. */
+  root: AppMessage | SummaryMessage | undefined;
+  /* #572/#112: resolved data URLs for this conv's attachment refs, in ref
+     order — elementwise-compared like the row slices, so a ref resolving
+     re-folds and the chips pick the thumbnail up. The fold bakes urls at
+     compute time; a watched session used to hide that via replay churn,
+     an unwatched one folds once and would keep `url: undefined` forever. */
+  urls?: readonly (string | undefined)[];
   employees: Employee[];
   cwdInfo: Record<string, { branch: string } | null>;
   employeeId: string;
@@ -118,6 +127,7 @@ const inputKey = (i: FoldInputs): Inputs => [
   i.localRewound?.texts,
   i.summary,
   i.root,
+  i.urls,
   i.employees,
   i.cwdInfo,
   i.employeeId,
@@ -128,8 +138,8 @@ const inputKey = (i: FoldInputs): Inputs => [
    through the fold so the memoized rows see the SAME `Reply` objects.
    Keyed on the source objects, so nothing is retained past GC. */
 
-/** AppMessage row -> its Reply (conversationReplies cache). */
-const msgReplyCache = new WeakMap<AppMessage, Reply>();
+/** Message row -> its Reply (conversationReplies cache). */
+const msgReplyCache = new WeakMap<AppMessage | SummaryMessage, Reply>();
 
 /** Reply -> its plan-stripped clone (stripPlans cache). */
 const strippedCache = new WeakMap<Reply, Reply>();
@@ -260,10 +270,14 @@ function computeFeed(i: FoldInputs): FeedFold {
     if (r.turnId && !r.turnId.startsWith(`${i.conv.id}:`))
       r.turnId = `${i.conv.id}:${r.turnId}`;
   const ws = wsFor(i.conv.cwd, i.cwdInfo);
+  /* #583 AC-3: a live background job lands on the DM row — same jobs the
+     thread panel's Background tab lists (#587: helpers are Subagents-tab
+     only, never job rows). */
+  const jobs = i.model ? i.model.jobs.map((j) => toJob(j)) : undefined;
   return {
     waiting,
     replies,
-    msg: i.root ? toFeed(i.root, i.conv, replies, ws) : null,
+    msg: i.root ? toFeed(i.root, i.conv, replies, ws, jobs) : null,
     ws,
   };
 }

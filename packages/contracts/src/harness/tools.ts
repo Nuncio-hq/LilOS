@@ -208,6 +208,20 @@ export const ContextResult = z.object({
     state: z.enum(["ok", "degraded", "down"]),
     components: z.array(StatusComponent),
   }),
+  /**
+   * This session's context fullness (#559) — the same numbers Oscar's
+   * context meter shows: `used` is the meter's numerator (the engine's
+   * current-occupancy report when it sends one, else the lifetime
+   * in+out sum — `contextUsedOf`, #415); `window` is the engine-reported
+   * window (absent when the engine reports none). Absent until a turn
+   * completes — `Conversation.usage` rides the relay row (#300).
+   */
+  usage: z
+    .object({
+      used: z.int().min(0),
+      window: z.int().positive().optional(),
+    })
+    .optional(),
   /** Tool areas attached to this session. */
   areas: z.array(z.string()),
   /** Host-policy version this session was issued under. */
@@ -438,7 +452,7 @@ export const LILOS_TOOLS: Record<string, LilosToolContract> = {
   context: {
     params: ContextParams,
     result: ContextResult,
-    doc: "Who and where this session is: the employee record, DM, thread, folder, the user's name, Mac status and attached tool areas.",
+    doc: "Who and where this session is: the employee record, DM, thread, folder, context usage { used, window }, the user's name, Mac status and attached tool areas.",
     area: "root",
     access: "read",
   },

@@ -22,6 +22,7 @@ import type {
   Approval,
   ModelRow,
   PullRequestRef,
+  SessionState,
   SubagentRow,
   ThreadDetail,
   ThreadEntry,
@@ -778,6 +779,9 @@ export function toThreadDetail(opts: {
       openAsks: [...opts.asks],
       pending: opts.pending,
     }),
+    /* #592: the header chip reads amber "Mac went to sleep" for sleep
+       interrupts, red "Failed" for model/generic errors. */
+    ...(conv.turnFailure ? { failure: conv.turnFailure } : {}),
     ...(sessionModel?.live?.agentInitiated ? { agentWorking: true } : {}),
     employee: { id: empId, name: employeeName, tone: toneOf(empId) },
     when: last ? timeLabel(last.createdAt, opts.now) : "now",
@@ -876,3 +880,19 @@ export function collectDiffs(
 }
 const patchPath = (patch: string): string | undefined =>
   /^\+\+\+ b\/(.+)$/m.exec(patch)?.[1];
+
+/** #591 AC-3 spirit: while the Mac is unreachable a "working" thread is
+    stale, not live — the header reads "Last seen working" and Stop is
+    disabled (it can't be delivered; the note says it works once the Mac
+    is back). Terminal states are facts, not lies — they stay as-is. */
+export function threadSurface(
+  state: SessionState,
+  unreachable: boolean,
+): { running: boolean; stale: boolean; stopHint?: string } {
+  const stale = unreachable && state === "working";
+  return {
+    running: state === "working" && !stale,
+    stale,
+    ...(stale ? { stopHint: "Stop works once the Mac is back" as const } : {}),
+  };
+}

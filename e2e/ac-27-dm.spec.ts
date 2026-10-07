@@ -177,7 +177,7 @@ test("AC-5 typing mid-turn steers (capability `steer`); stop interrupts", async 
   await expect(page.getByText("Approval needed").first()).toBeVisible({
     timeout: 60_000,
   });
-  await expect(page.getByText("Enter steers · ■ stop")).toBeVisible({
+  await expect(page.getByText("Enter steers · ⌘. stop")).toBeVisible({
     timeout: 30_000,
   });
   await send(page, "also mention bananas");
@@ -195,7 +195,7 @@ test("AC-5 typing mid-turn steers (capability `steer`); stop interrupts", async 
   // Stop: new conversation, then ■ while the turn runs.
   await page.goto(`${stackA.webUrl}/dm/${employeeIdFromUrl(page)}`);
   await send(page, "Add a docs note about steering");
-  await expect(page.getByText("Enter steers · ■ stop")).toBeVisible({
+  await expect(page.getByText("Enter steers · ⌘. stop")).toBeVisible({
     timeout: 30_000,
   });
   await page.getByRole("button", { name: "Stop" }).click();
@@ -203,7 +203,7 @@ test("AC-5 typing mid-turn steers (capability `steer`); stop interrupts", async 
   // (turn.completed -> data-turnsettled), not a wall-clock guess (#257).
   const stopped = page.locator("[data-agentturn]").last();
   await expectSettled(stopped);
-  await expect(stopped.getByText(/Stopped · session.interrupt/)).toBeVisible();
+  await expect(stopped.getByText(/Stopped/)).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-5-stopped.png` });
 });
 
@@ -218,7 +218,7 @@ test("AC-5b without the `steer` capability, mid-turn typing queues", async ({
     await dmDefault(stackB, page);
     await send(page, "Add a release note to the readme");
     // The composer copy tells the truth: no steer → Enter queues.
-    await expect(page.getByText("Enter queues · ■ stop")).toBeVisible({
+    await expect(page.getByText("Enter queues · ⌘. stop")).toBeVisible({
       timeout: 30_000,
     });
     await send(page, "also mention bananas");
@@ -383,7 +383,7 @@ test("#315 AC-3/AC-4 without `steer`: a queued send runs next, Remove drops it",
     // conversation or the engine.
     await dmDefault(stackB, page);
     await send(page, "Add a release note to the readme");
-    await expect(page.getByText("Enter queues · ■ stop")).toBeVisible({
+    await expect(page.getByText("Enter queues · ⌘. stop")).toBeVisible({
       timeout: 30_000,
     });
     await send(page, "never mind that");

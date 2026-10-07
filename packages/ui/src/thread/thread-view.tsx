@@ -12,13 +12,14 @@ import {
   waitingComposer,
 } from "../chat/agent-chat";
 import { Composer } from "../chat/composer";
-import { useEscapeKey } from "../chat/composer-keys";
 import { ModelPicker, sessionChoice } from "../chat/model-picker";
+import { useUiLayer } from "../chat/ui-layers";
 import {
   Conversation,
   ConversationContent,
 } from "../components/ai-elements/conversation";
 import { Button } from "../components/ui/button";
+import { askKeyDown, pendingAsk } from "../conversation/ask-keys";
 import { openStartRequest } from "../conversation/cards";
 import { FindUnstubAnchor, FindUnstubNudge } from "../conversation/find-unstub";
 import type { PlanAction } from "../conversation/plan-card";
@@ -28,7 +29,7 @@ import {
 } from "../conversation/question-card";
 import { TranscriptNoteRow } from "../conversation/transcript-note";
 import {
-  RewindCheckpoint,
+  RewindHover,
   TURN_LAZY_AFTER,
   type TurnActs,
   TurnRow,
@@ -58,6 +59,7 @@ import type {
   WbTab,
   Work,
 } from "../types";
+import { VIEWER_ID } from "../types";
 import { WorkspaceBadge, WsBadge } from "../workbench/ws-badges";
 
 /* #134/#430: the "Rewind to here" checkpoint lives in
@@ -223,9 +225,32 @@ export function ThreadView({
   const lead = thread.replies.find((r) => emp(r.from));
   const leadEmp = lead ? emp(lead.from) : undefined;
   const isDM = !!channel.dm;
-  /* Esc closes the peek — same ownership rules as Focus's Esc→back (issue
-     #195 AC-1): a field's Esc and an open overlay's Esc stay theirs. */
-  useEscapeKey(onClose);
+  /* The panel is one UI layer: Esc closes it only while it is the top-most
+     surface (an open dialog or menu above it keeps Esc, #576), and while
+     top-most it owns the surface keys — ⌘. stops a running turn, ↵/⌫
+     answer the newest pending approval/plan card (#558). */
+  const keyAsk = pendingAsk(thread.replies, resolved, !!onPlan);
+  const viewer = human(VIEWER_ID)?.name ?? "you";
+  useUiLayer({
+    onEscape: onClose,
+    onKey: (e) =>
+      askKeyDown(e, {
+        ask: keyAsk,
+        viewer,
+        resolved,
+        setResolved,
+        onPlan,
+        running,
+        onStop,
+      }),
+  });
+  /* The id the hint lives under — approval cards match on ask id, plan
+     cards on plan id. */
+  const keyTarget = keyAsk
+    ? keyAsk.kind === "approval"
+      ? keyAsk.reply.approval?.id
+      : keyAsk.reply.plan?.id
+    : undefined;
   const channelLabel = isDM ? `DM · ${channel.name}` : `#${channel.name}`;
   const startCardOpen = openStartRequest(thread, resolved);
   /* #138 AC-3: jump-to-hit — scroll the message into view, flash it, hand
@@ -255,15 +280,23 @@ export function ThreadView({
     const t = setTimeout(() => setFlash(null), 1800);
     return () => clearTimeout(t);
   }, [flash]);
-  /* #420: a live reply parked on an open QUESTION ask is WAITING, not
-     working — the composer says "waiting for your answer" and shows Send,
-     not Stop (Hermes FIX #515). Scoped to r.question, which only the
-     question card sets: approval/plan asks keep the steer composer. */
-  const waiting =
-    running &&
-    thread.replies.some((r) => r.live && r.phase === "waiting" && r.question);
+  /* #420 + #583 AC-1: a live reply parked on ANY open ask (question,
+     approval, plan) is WAITING, not working — the composer placeholder
+     says what it waits on. A question ask also parks the composer itself
+     (Send, not Stop — Hermes FIX #515); an approval/plan-parked turn is
+     still interruptible and steerable, so it keeps Stop (⌘.), steers and
+     the running hint — only the placeholder names the wait. `waitingOn`
+     carries the ask kind so the placeholder names it. */
+  const waitingReply = thread.replies.find(
+    (r) => r.live && r.phase === "waiting",
+  );
+  const waiting = running && !!waitingReply;
+  const parkedOnQuestion = waiting && waitingReply?.waitingOn === "question";
+  /* #583 AC-3: background processes still running under this thread. */
+  const runningJobs =
+    thread.jobs?.filter((j) => j.status === "running").length ?? 0;
   const status: ChatStatus = running
-    ? waiting
+    ? parkedOnQuestion
       ? "ready"
       : thread.replies.some((r) => r.live && r.phase === "submitted")
         ? "submitted"
@@ -299,7 +332,7 @@ export function ThreadView({
             {/* #137 AC-4: the session's title (placeholder → engine-written)
                 leads the header; untitled threads keep the kind label. */}
             <span className="truncate" data-session-title>
-              {thread.title || (isDM ? "Session" : "Thread")}
+              {thread.title || "Thread"}
             </span>
             {work?.ticket && (
               <span className="shrink-0 font-mono text-muted-foreground text-xs">
@@ -309,10 +342,18 @@ export function ThreadView({
           </div>
           <div
             className="truncate text-muted-foreground text-xs"
-            title={`Hermes session ${thread.session}`}
+            title={`Thread ${thread.session}`}
           >
             {channelLabel}
             {leadEmp && !isDM && ` · ${leadEmp.name}`}
+            {/* #583 AC-3: a live background job says so right under the
+                title — "1 running in background". */}
+            {runningJobs > 0 && (
+              <span data-bg-jobs className="text-work">
+                {" "}
+                · {runningJobs} running in background
+              </span>
+            )}
           </div>
           {/* A folder-less DM session is a plain chat — no folder label
               at all (#196). */}
@@ -358,7 +399,7 @@ export function ThreadView({
               title={
                 startCardOpen
                   ? "Answer the request below"
-                  : "New ticket + worktree for this session"
+                  : "New ticket + worktree for this thread"
               }
             >
               <Button
@@ -395,13 +436,6 @@ export function ThreadView({
           {transcriptNote?.kind === "trimmed" && (
             <TranscriptNoteRow note={transcriptNote} />
           )}
-          {onRewind && root.id && human(root.from) && (
-            <RewindCheckpoint
-              running={running}
-              warning={rewindWarning}
-              onRewind={() => onRewind(root.id ?? "")}
-            />
-          )}
           <div
             data-msg={root.id}
             className={cn(
@@ -414,15 +448,25 @@ export function ThreadView({
               <Body text={root.text} />
               {root.attachments && <AttachmentChips files={root.attachments} />}
               <div className="text-muted-foreground text-xs">
-                opened session{" "}
+                opened thread{" "}
                 <code className="rounded bg-muted px-1">{thread.session}</code>
               </div>
+              {onRewind && root.id && human(root.from) && (
+                <RewindHover
+                  running={running}
+                  warning={rewindWarning}
+                  onRewind={() => onRewind(root.id ?? "")}
+                />
+              )}
             </Row>
           </div>
           <div className="my-1 flex items-center gap-2 px-3 text-muted-foreground text-xs sm:px-5">
+            {/* #585: system notes aren't replies — the count skips them. */}
             <span>
-              {thread.replies.length}{" "}
-              {thread.replies.length === 1 ? "reply" : "replies"}
+              {thread.replies.filter((r) => !r.system).length}{" "}
+              {thread.replies.filter((r) => !r.system).length === 1
+                ? "reply"
+                : "replies"}
             </span>
             <span className="h-px flex-1 bg-border" />
           </div>
@@ -450,6 +494,7 @@ export function ThreadView({
               repo={repo}
               models={models}
               rewindWarning={rewindWarning}
+              keyTarget={keyTarget}
               acts={actsRef}
             />
           ))}
@@ -488,8 +533,8 @@ export function ThreadView({
                 {work.branch && (
                   <li className="flex gap-1.5">
                     <CheckIcon className="mt-0.5 size-3.5 shrink-0 text-emerald-600" />
-                    Session <span className="font-mono">{thread.session}</span>{" "}
-                    moved to the worktree. Same session, no history lost.
+                    Thread <span className="font-mono">{thread.session}</span>{" "}
+                    moved to the worktree. Same thread, no history lost.
                   </li>
                 )}
               </ul>
@@ -512,20 +557,26 @@ export function ThreadView({
         placeholder={
           running
             ? waiting
-              ? waitingComposer(leadEmp?.name ?? "Employee").placeholder
+              ? waitingComposer(
+                  leadEmp?.name ?? "Employee",
+                  waitingReply?.waitingOn,
+                ).placeholder
               : runningComposer(
                   leadEmp?.name ?? "Employee",
                   steer,
                   agentWorking,
                 ).placeholder
-            : `Reply to ${leadEmp?.name ?? "the thread"} in this session…`
+            : `Reply to ${leadEmp?.name ?? "the employee"}…`
         }
         employees={mentionables ?? []}
         onSearchFiles={onSearchFiles}
         hint={
           running
-            ? waiting
-              ? waitingComposer(leadEmp?.name ?? "Employee").hint
+            ? parkedOnQuestion
+              ? waitingComposer(
+                  leadEmp?.name ?? "Employee",
+                  waitingReply?.waitingOn,
+                ).hint
               : runningComposer(
                   leadEmp?.name ?? "Employee",
                   steer,
@@ -538,8 +589,8 @@ export function ThreadView({
                 : repo
                   ? "Read-only on main. Start work to edit code."
                   : isDM
-                    ? `Reply to ${leadEmp?.name ?? "the session"}…`
-                    : `session ${thread.session}`
+                    ? `Reply to ${leadEmp?.name ?? "the employee"}…`
+                    : `thread ${thread.session}`
         }
         onSend={onSend}
         draft={draft}

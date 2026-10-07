@@ -22,7 +22,7 @@ async function sendDM(page: Page, text: string) {
     .first()
     .getByRole("button", { name: /Builder/ })
     .click();
-  const box = page.getByPlaceholder(/New session with Builder/);
+  const box = page.getByPlaceholder(/New thread with Builder/);
   await box.fill(text);
   await box.press("Enter");
 }
@@ -154,7 +154,7 @@ test("Issue #15: stop+tray — the stopped turn and the tray are both fully visi
   const errors = watchConsole(page);
   const panel = await stopWithTrayInPanel(page);
 
-  const stopped = panel.getByText("Stopped · session.interrupt").last();
+  const stopped = panel.getByText("Stopped").last();
   await expect(stopped).toBeVisible();
 
   // The scroll container is the div use-stick-to-bottom scrolls (child of [role=log]).
@@ -165,9 +165,7 @@ test("Issue #15: stop+tray — the stopped turn and the tray are both fully visi
       const log = logParent.querySelector("div") as HTMLElement;
       const rect = log.getBoundingClientRect();
       const pill = Array.from(document.querySelectorAll("aside div")).find(
-        (d) =>
-          d.childElementCount === 0 &&
-          d.textContent?.trim() === "Stopped · session.interrupt",
+        (d) => d.childElementCount === 0 && d.textContent?.trim() === "Stopped",
       );
       if (!pill) throw new Error("interrupt pill missing");
       const p = pill.getBoundingClientRect();

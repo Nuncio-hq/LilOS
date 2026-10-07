@@ -21,6 +21,9 @@ export type HomeWire = {
   conversations: Conversation[];
   summaries: ConversationSummary[];
   asks: Ask[];
+  /* #591: false = everything below is last-known (cached) state — rows
+     must say so instead of looking live. */
+  online: boolean;
 };
 
 /** Every open ask, oldest first — the order Activity lists them. */
@@ -59,6 +62,21 @@ function ageLabel(createdAt: number, nowMs: number): string {
   return `${Math.floor(hours / 24)}d`;
 }
 
+/** #595: where a plan ask's **Review** lands — the employee's DM pushed
+    under the asking thread (Back returns to the DM). Undefined when the
+    ask's channel is gone from the wire — the surface falls back to
+    Activity instead of a dead end. */
+export function askThreadTarget(
+  ask: Pick<Ask, "channelId" | "conversationId">,
+  wire: Pick<HomeWire, "channels">,
+): { employeeId: string; conversationId: string } | undefined {
+  const employeeId = wire.channels.find(
+    (c) => c.id === ask.channelId,
+  )?.employeeId;
+  if (!employeeId) return undefined;
+  return { employeeId, conversationId: ask.conversationId };
+}
+
 /** An open ask as an Activity/accessory row. */
 export function toApproval(ask: Ask, wire: HomeWire, nowMs: number): Approval {
   const channel = wire.channels.find((c) => c.id === ask.channelId);
@@ -71,6 +89,16 @@ export function toApproval(ask: Ask, wire: HomeWire, nowMs: number): Approval {
     tone: employee ? toneOf(employee.id) : "stone",
     session: sessionLabel(ask.conversationId, wire),
     kind: request.kind,
+    /* #595: a plan's primary pill is **Review** — it opens the plan in its
+       thread; no surface approves a plan sight-unseen. Command approvals
+       keep the one-tap **Approve** (AC-2); a question has no primary pill
+       (it needs an answer, not an OK). */
+    primary:
+      request.kind === "plan"
+        ? "review"
+        : request.kind === "approval"
+          ? "approve"
+          : undefined,
     /* #264: like askReason — the reason is the command; the row's sentence
        ("<employee> wants to run") is composed on the surface. */
     reason:
@@ -81,6 +109,9 @@ export function toApproval(ask: Ask, wire: HomeWire, nowMs: number): Approval {
           : request.command,
     command: request.kind === "approval" ? request.command : undefined,
     age: ageLabel(ask.createdAt, nowMs),
+    /* #591 AC-2: an offline Activity keeps its rows — each says "last
+       known" instead of pretending they were just fetched. */
+    ...(wire.online ? {} : { lastKnown: true as const }),
   };
 }
 
@@ -102,24 +133,34 @@ export function toEmployeeRow(
     (c) => c.state === "active" && !c.archived && c.channelId === channel?.id,
   );
   const base = { id: e.id, name: e.name, role: e.role, tone: toneOf(e.id) };
+  /* #591 AC-2: live-looking states read "Last known · …" — the marker
+     FIRST, so truncation can never cut it off — and the row carries
+     `lastKnown` so the screen dims the live tint (no teal line, no
+     working dots, no state ring on the orb). The idle fallback needs no
+     mark: "Idle" never looks live. */
+  const stale = !wire.online;
+  const staleNote = stale ? "Last known · " : "";
   const oldest = pending[0];
   if (oldest !== undefined) {
     return {
       ...base,
       state: "needs-you",
       now:
-        pending.length === 1
+        staleNote +
+        (pending.length === 1
           ? `Waiting on you · ${sessionLabel(oldest.conversationId, wire)}`
-          : `${pending.length} need you`,
+          : `${pending.length} need you`),
       when: ageLabel(oldest.createdAt, nowMs),
+      ...(stale ? { lastKnown: true as const } : {}),
     };
   }
   if (live !== undefined) {
     return {
       ...base,
       state: "working",
-      now: sessionLabel(live.id, wire),
+      now: staleNote + sessionLabel(live.id, wire),
       when: "now",
+      ...(stale ? { lastKnown: true as const } : {}),
     };
   }
   return {

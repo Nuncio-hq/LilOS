@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { useEffect, useState } from "react";
+import { useUiLayerEl } from "../chat/ui-layers";
 import { Button } from "../components/ui/button";
 import { cn } from "../lib/utils";
 
@@ -77,12 +78,18 @@ export function PairPhoneDialog({
   /** "Turn off phone access" — the way out of the opt-in Tailscale bind. */
   onTurnOff?: () => void;
 }) {
+  /* #576: Esc closes this dialog while it is the top-most layer. */
+  const layerRef = useUiLayerEl<HTMLDivElement>({ onEscape: onClose });
   return (
     <div
       className="fixed inset-0 z-40 grid place-items-center bg-black/30 p-4 sm:p-6"
       onClick={onClose}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Pair phone"
+        ref={layerRef}
         className="flex w-full max-w-md flex-col overflow-hidden rounded-2xl border bg-background shadow-2xl"
         onClick={(e) => e.stopPropagation()}
         data-pairphone={state.kind}

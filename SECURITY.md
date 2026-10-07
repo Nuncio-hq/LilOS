@@ -36,10 +36,12 @@ The relay binds loopback (plus an opt-in Tailscale listener for phone
 pairing) and is the only thing holding the per-install token
 (`~/.lilos/relay-token`, 0600). Current hardening in force:
 
-- **Constant-time secret compares.** `session.hello`'s install token and
-  the paired-device credential are checked with `timingSafeEqual` over
-  SHA-256 digests (`apps/relay/src/auth.ts` `equalSecret`), so response
-  timing can't reveal a matching prefix.
+- **Constant-time secret compares.** `session.hello`'s install token, the
+  paired-device credential, the harness `/host` bearer, the feed `/ws`
+  upgrade, the surfaces `/view` socket and the agent gateway's
+  session/engine bearers are checked with `timingSafeEqual` over SHA-256
+  digests (`@lilos/contracts/auth` `equalSecret`), so response timing
+  can't reveal a matching prefix.
 - **WebSocket Origin gate.** `/ws` upgrades carrying an `Origin` header
   are refused unless the origin is loopback (`localhost`/`*.localhost`,
   127.0.0.0/8, `[::1]`, any port), `file://`, `null` under an Electron
@@ -54,3 +56,15 @@ pairing) and is the only thing holding the per-install token
   budget (they prove the caller already held a real code), and a
   successful exchange resets it. The budget is shared across callers;
   pairing is rare, so a lockout only delays a real attempt by a minute.
+- **Pre-upgrade credential check + hello deadline.** `/ws` upgrades carry
+  a credential in the query — `?token=` for install-token clients,
+  `?deviceId=&credential=` for paired phones — checked **before**
+  `server.upgrade` (`apps/relay/src/auth.ts` `authorizeRelayUpgrade`, the
+  #564 feed-gate pattern; the token compare stays constant-time via
+  `equalSecret`). A refused handshake answers `401` and never attaches, so
+  an unauthenticated peer can't hold a socket whose frame buffer may reach
+  `MAX_FRAME_BYTES` (160 MiB). An attached socket that hasn't completed
+  `session.hello` within **10 s** (`HELLO_DEADLINE_MS`) is closed
+  `4408`, so a stalled peer can't linger pre-auth either. `session.hello`
+  still authenticates the same credential on the socket — the gate bounds
+  what runs before it, it doesn't replace it.

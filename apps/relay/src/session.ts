@@ -10,6 +10,7 @@ import {
   type JsonRpcRequest,
   MAX_ATTACHMENT_BYTES,
   type MessageAttachment,
+  WS_CLOSE_HELLO_TIMEOUT,
 } from "@lilos/contracts/app";
 import {
   type AttachmentStore,
@@ -66,6 +67,13 @@ export interface RelayOptions {
   /** How long a forwarded engine call may go unanswered (default 15s). */
   hostCallTimeoutMs?: number;
   /**
+   * #625: ms an upgraded socket may sit before `session.hello` completes —
+   * at the deadline the peer is closed `WS_CLOSE_HELLO_TIMEOUT`. Default
+   * `HELLO_DEADLINE_MS`; tests inject a short one (`LILOS_HELLO_DEADLINE_MS`
+   * for a spawned relay).
+   */
+  helloDeadlineMs?: number;
+  /**
    * Phone pairing service (#153): mints one-time grants, exchanges them for
    * per-device credentials, and authenticates `session.hello` device calls.
    * Absent = pairing methods are unavailable (tests, bare relays).
@@ -112,6 +120,15 @@ export interface Relay {
   /** Write a line to the relay log tail (surfaced by system.status logs). */
   log(message: string): void;
 }
+
+/**
+ * #625: how long an upgraded socket may sit before completing
+ * `session.hello`. The upgrade gate already refuses credential-less peers;
+ * this deadline closes a credentialed socket that then never hellos — a
+ * stalled or half-dead client can't stay pre-auth buffering frames (Bun
+ * buffers a whole incoming frame up to `MAX_FRAME_BYTES` before dispatch).
+ */
+export const HELLO_DEADLINE_MS = 10_000;
 
 /** Pairing admin is install-token scope only — device peers are refused. */
 const PAIRING_ADMIN_METHODS = new Set([
@@ -210,6 +227,7 @@ export function createRelay(options: RelayOptions): Relay {
   const now = options.now ?? (() => Date.now());
   const homeDir = options.homeDir ?? homedir();
   const heartbeatFreshMs = options.heartbeatFreshMs ?? 45_000;
+  const helloDeadlineMs = options.helloDeadlineMs ?? HELLO_DEADLINE_MS;
   const logTail = options.logTail ?? createLogTail();
   const log = (message: string) => logTail.log(message);
   const attachmentStore = options.attachments ?? createMemoryAttachmentStore();
@@ -674,6 +692,15 @@ export function createRelay(options: RelayOptions): Relay {
     log,
     connect(peer: RelayWsPeer): RelayConnection {
       const state = { helloed: false, subscriptions: new Set<string>() };
+      /* #625: an upgraded socket gets HELLO_DEADLINE_MS to complete
+         session.hello — a peer that stays silent is hung up rather than
+         sitting pre-auth with a 160 MiB frame buffer (#551's cap) held
+         open. Cleared on hello or close. */
+      const helloTimer = setTimeout(() => {
+        if (!state.helloed) {
+          peer.close(WS_CLOSE_HELLO_TIMEOUT, "session.hello deadline");
+        }
+      }, helloDeadlineMs);
       return {
         async receive(data: string) {
           let raw: unknown;
@@ -740,8 +767,11 @@ export function createRelay(options: RelayOptions): Relay {
             return;
           }
           await handle(peer, state, candidate as unknown as JsonRpcRequest);
+          // A completed hello disarms the deadline — nothing more to bound.
+          if (state.helloed) clearTimeout(helloTimer);
         },
         closed() {
+          clearTimeout(helloTimer);
           for (const channelId of state.subscriptions) {
             subscribers.get(channelId)?.delete(peer);
           }

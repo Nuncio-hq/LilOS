@@ -193,6 +193,20 @@ export const Conversation = z.object({
    * Absent once a turn started fresh or no turn has failed yet.
    */
   turnFailure: TurnFailure.optional(),
+  /**
+   * The last turn ended stopped (#583) — the DM session row's "stopped"
+   * word. Same lifecycle as `turnFailure`: host-written at turn end,
+   * cleared on the next `turn.started`. A released or replayed session's
+   * row still shows it once the live turn model is gone.
+   */
+  turnStopped: z.boolean().optional(),
+  /**
+   * Count of this session's still-running background jobs (#583 AC-3).
+   * Same lifecycle as `turnStopped`: host-written on `job.started` /
+   * `job.exited`, so the row's "N in background" badge — and the
+   * session feed it keeps alive — survive a released session.
+   */
+  bgJobs: z.number().int().nonnegative().optional(),
   createdAt: Timestamp,
 });
 export type Conversation = z.infer<typeof Conversation>;
@@ -311,6 +325,70 @@ export const AppMessage = z.object({
 });
 export type AppMessage = z.infer<typeof AppMessage>;
 
+/* --------------------- session-list summaries (#571) --------------------- */
+
+/**
+ * Preview cap for a summary row's non-root texts (#571): the row renders a
+ * two-line snippet — anything longer is wire weight. `truncated` marks the
+ * cut so a surface can pull the full row via `messages.list`.
+ */
+export const SUMMARY_TEXT_LIMIT = 500;
+
+/**
+ * The message columns a `conversations.summaries` row renders (#571): a
+ * subset of `AppMessage` without the fields no list reads (`channelId` —
+ * the conversation carries it — `dedupeKey`/`claimed`/`checkpoint`/
+ * `dropped`/`removed`; `rewound` stays because a rewound root still
+ * headlines its row and surfaces suppress it where it shouldn't show).
+ */
+export const SummaryMessage = z.object({
+  id: z.string().min(1),
+  conversationId: z.string().min(1).nullable(),
+  authorId: z.string().min(1),
+  authorKind: AuthorKind,
+  text: z.string(),
+  seq: z.int().min(1),
+  createdAt: Timestamp,
+  /** The hidden row still headlines its summary (a rewind to the root);
+      boolean (not literal-true) so pre-#571 cached rows with an explicit
+      `rewound: false` still parse — the device cache fails closed on a
+      schema break. */
+  rewound: z.boolean().optional(),
+  /** `text` was cut to SUMMARY_TEXT_LIMIT — `messages.list` has the rest. */
+  truncated: z.literal(true).optional(),
+  attachments: z.array(MessageAttachment).optional(),
+  model: z.string().min(1).optional(),
+  effort: z.string().optional(),
+  fast: z.boolean().optional(),
+});
+export type SummaryMessage = z.infer<typeof SummaryMessage>;
+
+/** AppMessage → its summary row, text kept whole (the root's card). */
+export function toSummaryMessage(m: AppMessage): SummaryMessage {
+  return {
+    id: m.id,
+    conversationId: m.conversationId,
+    authorId: m.authorId,
+    authorKind: m.authorKind,
+    text: m.text,
+    seq: m.seq,
+    createdAt: m.createdAt,
+    ...(m.rewound ? { rewound: true as const } : {}),
+    ...(m.attachments?.length ? { attachments: m.attachments } : {}),
+    ...(m.model !== undefined ? { model: m.model } : {}),
+    ...(m.effort !== undefined ? { effort: m.effort } : {}),
+    ...(m.fast !== undefined ? { fast: m.fast } : {}),
+  };
+}
+
+/** `toSummaryMessage` for the preview texts — capped + flagged. */
+export function toSummaryPreview(m: AppMessage): SummaryMessage {
+  const s = toSummaryMessage(m);
+  return m.text.length > SUMMARY_TEXT_LIMIT
+    ? { ...s, text: s.text.slice(0, SUMMARY_TEXT_LIMIT), truncated: true }
+    : s;
+}
+
 /* ------------------------------ asks (#26) ------------------------------ */
 
 /**
@@ -367,14 +445,16 @@ export type PendingTurn = z.infer<typeof PendingTurn>;
  */
 export const ConversationSummary = z.object({
   conversation: Conversation,
-  /** The user message that opened the thread. */
-  root: AppMessage,
-  /** First non-user message in the thread — the "answer preview". */
-  firstAnswer: AppMessage.optional(),
-  /** Newest message in the thread (any author). */
-  last: AppMessage,
-  /** Total messages in the thread, root included. */
-  messageCount: z.int().min(1),
+  /** The user message that opened the thread — full text: the desktop feed
+      renders it as the session's card. */
+  root: SummaryMessage,
+  /** First non-user message in the thread — the "answer preview" (capped). */
+  firstAnswer: SummaryMessage.optional(),
+  /** Newest message in the thread (any author) — preview text only. */
+  last: SummaryMessage,
+  /** Total visible messages in the thread, root included; a rewind to the
+      root (or a removed opener) can leave none. */
+  messageCount: z.int().min(0),
 });
 export type ConversationSummary = z.infer<typeof ConversationSummary>;
 
