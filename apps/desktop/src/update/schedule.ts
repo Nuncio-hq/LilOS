@@ -87,8 +87,16 @@ export function updateScheduler(cfg: UpdateSchedulerConfig): UpdateScheduler {
     }
     inFlight = true;
     lastCheckAt = now();
-    const outcome = await cfg.check();
-    inFlight = false;
+    let outcome: DesktopUpdateOutcome;
+    try {
+      outcome = await cfg.check();
+    } catch {
+      // A throwing check must not kill the chain — it counts as a failure
+      // and rides the same retry ladder.
+      outcome = "failed";
+    } finally {
+      inFlight = false;
+    }
     if (stopped) return;
     if (outcome === "failed") {
       failures += 1;

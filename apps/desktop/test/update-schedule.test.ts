@@ -130,6 +130,31 @@ describe("update schedule (#674)", () => {
     expect(deltas(times, 1_000_000)).toEqual([5_000, 1_000, 2_000, 4 * HOUR]);
   });
 
+  test("AC-1 a throwing check counts as a failure — the ladder stays alive", async () => {
+    const clock = fakeClock();
+    const times: number[] = [];
+    const scheduler = updateScheduler({
+      check: async () => {
+        times.push(clock.now());
+        throw new Error("boom");
+      },
+      intervalMs: 4 * HOUR,
+      retryDelaysMs: RETRY,
+      now: clock.now,
+      setTimeout: clock.setTimeout,
+      clearTimeout: clock.clearTimeout,
+    });
+    scheduler.start();
+    await clock.advance(5 * HOUR);
+    expect(deltas(times, 1_000_000)).toEqual([
+      5_000,
+      MIN,
+      5 * MIN,
+      15 * MIN,
+      4 * HOUR,
+    ]);
+  });
+
   test("AC-2 wake/network triggers re-check at most once per 10 min", async () => {
     const { clock, times, scheduler } = rig(["none"]);
     scheduler.start();
