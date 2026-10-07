@@ -1,7 +1,6 @@
 import { View } from "react-native";
 import { AppText } from "../components/app-text";
 import { Icon } from "../components/icon";
-import { Mono } from "../components/state-block";
 
 /* The Mac this phone is (or is about to be) paired with. */
 export function MacCard({
@@ -10,7 +9,7 @@ export function MacCard({
   detail,
 }: {
   name: string;
-  /** Shown whole in mono (never wrapped mid-word). */
+  /** #688 AC-2: an IP:port is small secondary text, never the headliner. */
   host?: string;
   /** Plain line instead of the host, e.g. "via Tailscale". */
   detail?: string;
@@ -22,7 +21,11 @@ export function MacCard({
         <AppText weight="semibold" numberOfLines={1}>
           {name}
         </AppText>
-        {host && <Mono>{host}</Mono>}
+        {host && (
+          <AppText size="xs" tone="muted" className="font-mono">
+            {host}
+          </AppText>
+        )}
         {detail && (
           <AppText size="sm" tone="muted">
             {detail}

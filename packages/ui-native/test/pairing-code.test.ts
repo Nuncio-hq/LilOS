@@ -6,6 +6,7 @@ import {
   CODE_FORMATTED_LENGTH,
   CODE_LENGTH,
   formatCode,
+  mismatchActions,
   normalizeCode,
   normalizeHost,
   parsePairingUrl,
@@ -53,4 +54,24 @@ describe("issue #593 — manual pairing code", () => {
       code: "7K4MQR2X9TBP",
     });
   });
+});
+
+/* #688 AC-1 — the wrong-code retry leads with how the code got here. */
+describe("issue #688 — mismatch outcome → retry actions", () => {
+  test("a typed code retries with Re-enter (field kept + selected)", () => {
+    expect(mismatchActions("typed")).toEqual({
+      primary: "reenter",
+      secondary: "rescan",
+    });
+  });
+
+  test.each(["scanned", "link", undefined] as const)(
+    "a %s code retries with rescan, manual retype as the ghost",
+    (entry) => {
+      expect(mismatchActions(entry)).toEqual({
+        primary: "rescan",
+        secondary: "manual",
+      });
+    },
+  );
 });
