@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { LayoutAnimation, Pressable, Text, View } from "react-native";
 import { AppText } from "../components/app-text";
 import { Card, CommandLine, nonBreaking, Pill } from "../components/bits";
@@ -38,7 +38,59 @@ import type {
 const ease = () =>
   LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
 
-export function UserBubble({ text, time }: { text: string; time?: string }) {
+/* #555: the wire's turn-failure reason in Oscar's words, not engine
+   jargon — the raw reason never reads aloud in the transcript. */
+function failureCopy(name: string, failed?: string) {
+  if (!failed) return `${name} couldn't finish`;
+  return /lost contact|connection/i.test(failed)
+    ? `${name} lost connection before finishing`
+    : `${name} couldn't finish — ${failed}`;
+}
+
+/* #555: the search hit's term bolded inside a markdown reply — wrap each
+   occurrence in ** so Prose renders the <mark>. Escapes regex chars so a
+   query like "c++" still matches literally. */
+function markProse(text: string, mark?: string) {
+  const q = mark?.trim();
+  if (!q) return text;
+  return text.replace(
+    new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"),
+    (m) => `**${m}**`,
+  );
+}
+
+/* #555: the search hit's term emphasised inside the row it opened on —
+   the same Mark the DM hit list uses on its snippet. */
+function markSpans(text: string, mark?: string): ReactNode {
+  const q = mark?.trim().toLowerCase();
+  if (!q) return text;
+  const lower = text.toLowerCase();
+  const parts: ReactNode[] = [];
+  let i = 0;
+  for (;;) {
+    const at = lower.indexOf(q, i);
+    if (at < 0) break;
+    if (at > i) parts.push(text.slice(i, at));
+    parts.push(
+      <Text key={at} className="font-bold">
+        {text.slice(at, at + q.length)}
+      </Text>,
+    );
+    i = at + q.length;
+  }
+  parts.push(text.slice(i));
+  return <>{parts}</>;
+}
+
+export function UserBubble({
+  text,
+  time,
+  mark,
+}: {
+  text: string;
+  time?: string;
+  mark?: string;
+}) {
   return (
     <View className="items-end gap-1 pl-14">
       <View
@@ -46,7 +98,7 @@ export function UserBubble({ text, time }: { text: string; time?: string }) {
         style={{ borderCurve: "continuous" }}
       >
         <AppText tone="inverse" className="text-[17px] leading-[22px]">
-          {text}
+          {markSpans(text, mark)}
         </AppText>
       </View>
       {time && (
@@ -72,6 +124,8 @@ export function AgentTurn({
   onOpenSubagents,
   onPlan,
   onOpenPlan,
+  onRetry,
+  mark,
   stale,
   answerHint,
 }: {
@@ -95,6 +149,12 @@ export function AgentTurn({
   /** Approve / Change / Reject on this turn's plan (issue #175). */
   onPlan?: (a: PlanAction, planId: string) => void;
   onOpenPlan?: () => void;
+  /** #555: re-run this turn after it failed — renders on the failure
+     line (web: the last turn's hover Retry, #419). */
+  onRetry?: () => void;
+  /** #555: the search hit's term — the turn's reply bolds it where it
+     appears (web: the scrolled hit's <mark>). */
+  mark?: string;
   /** #652: the Mac is unreachable — open asks render visibly disabled
       (nothing can be sent or queued) and the card says they wake when
       the Mac is back. */
@@ -147,7 +207,7 @@ export function AgentTurn({
           <SubagentsCard agents={e.subagents} onOpen={onOpenSubagent} />
         ))}
       {e.text ? (
-        <Prose text={e.text} />
+        <Prose text={markProse(e.text, mark)} />
       ) : (
         writing && (
           <Pulse>
@@ -176,13 +236,53 @@ export function AgentTurn({
           </AppText>
         </View>
       )}
-      {/* #419: the turn died on an engine error — the failure line carries
-          its text like web's "Failed · <error>" chip. */}
+      {/* #419: the turn died on an engine error — plain words, not the
+          wire's reason (web keeps the "Failed · <error>" chip). #555: a
+          Retry rides it like the Mac's hover action, visible here; the
+          ⊗ matches the header chip and the hit area is a full 44pt. */}
       {e.failed !== undefined && (
-        <View className="flex-row items-center gap-1.5">
-          <View className="size-2.5 rounded-[2px] bg-destructive" />
-          <AppText size="xs" tone="destructive" weight="medium">
-            Turn failed{e.failed ? ` · ${e.failed}` : ""}
+        <View className="gap-1">
+          <View className="flex-row items-center gap-1.5">
+            <Icon name="xmark.circle.fill" size={13} tone="destructive" />
+            <AppText
+              size="xs"
+              tone="destructive"
+              weight="medium"
+              className="min-w-0 flex-1"
+            >
+              {failureCopy(name, e.failed)}
+            </AppText>
+            {onRetry && (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Retry turn"
+                onPress={onRetry}
+                /* Teal accent, not the error red — red is the failure
+                   itself; the way forward wears the app's accent. */
+                style={{ minHeight: 44 }}
+                className="flex-row items-center gap-1 rounded-full bg-accent-soft px-4 active:opacity-70"
+              >
+                <Icon
+                  name="arrow.clockwise"
+                  size={13}
+                  tone="accent-text"
+                  weight="semibold"
+                />
+                <AppText
+                  size="xs"
+                  tone="none"
+                  weight="semibold"
+                  className="text-accent-text"
+                >
+                  Retry
+                </AppText>
+              </Pressable>
+            )}
+          </View>
+          <AppText size="xs" tone="muted" className="pl-[21px]">
+            {e.steps?.length
+              ? `Nothing after step ${e.steps.length} ran`
+              : "Nothing ran"}
           </AppText>
         </View>
       )}
