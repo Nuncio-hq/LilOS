@@ -477,8 +477,20 @@ export function Workbench({
         land("branches", host.branches?.(cwd)),
         land("log", host.log?.(cwd)),
       ]);
-    const updatePr = () =>
-      host.pr?.(cwd)?.then((r) => {
+    const updatePr = () => {
+      /* #720: while the landed `forge.pr` answer is a failure, scheduled
+         re-reads (the tab-shown trailing fire, an OS-window focus, a
+         `running` flip, the keep-alive) hold — the failure copy's
+         prescribed next step is the user's own Retry, and a `{pr}` land
+         here swaps `PrFailure` → `PrPanel`, detaching the button under an
+         in-flight press (ac-114's CI flake: "element is not stable" →
+         "element was detached from the DOM"). The no-PR state keeps
+         re-reading — it has no control a press could target. */
+      if (landedProbe.current.pr?.error) {
+        if (WB_PR_SIG_MARK && !off) setPrSigMark((c) => c + 1);
+        return;
+      }
+      return host.pr?.(cwd)?.then((r) => {
         /* An unanswered `forge.pr` (outer null — unreachable, not "no
            PR") keeps the last known answer. */
         if (!r) return;
