@@ -179,19 +179,25 @@ async function dmDefault(page: Page, base: string) {
   await expect(page.locator("main form")).toBeVisible({ timeout: 15_000 });
 }
 
-/** The composer form on `scope` — "home" is main, "thread" is the panel. */
+/** The composer form on `scope` — "home" is main, "thread" is the panel.
+   The panel mounts a beat after the URL changes (its summary row lands over
+   the socket), so `form.last()`/`textarea.last()` can still be the home
+   composer — a fill then goes to the wrong draft (#719). Scoping to
+   [data-thread-panel] makes every step wait for the real thread composer. */
 const formOf = (page: Page, scope: "home" | "thread") =>
-  scope === "home" ? page.locator("main form") : page.locator("form").last();
+  scope === "home"
+    ? page.locator("main form")
+    : page.locator("[data-thread-panel] form");
 const boxOf = (page: Page, scope: "home" | "thread") =>
   scope === "home"
     ? page.locator("main textarea")
-    : page.locator("textarea").last();
+    : page.locator("[data-thread-panel] textarea");
 
 async function attach(page: Page, name: string, scope: "home" | "thread") {
   const input =
     scope === "home"
       ? page.locator('main input[type="file"]')
-      : page.locator('input[type="file"]').last();
+      : page.locator('[data-thread-panel] input[type="file"]');
   await input.setInputFiles({ name, mimeType: "image/png", buffer: PNG });
   await expect(formOf(page, scope).getByText(name)).toBeVisible();
 }
