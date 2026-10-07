@@ -11,6 +11,7 @@ import {
   EmployeeHome,
   FeedList,
   FirstRun,
+  type FirstRunCheck,
   FocusView,
   HireDialog,
   PairPhoneDialog,
@@ -579,6 +580,29 @@ const STATUS: Record<PreviewScenario, StatusComponent[]> = {
   ],
 }
 
+/* A status row → a first-run check (#589): ok ticks, waiting legs spin,
+   down/degraded legs fail with a plain headline — the raw reason stays
+   behind "See status" only (same copy the real app writes). */
+const FIRST_RUN_PLAIN: Record<StatusComponent["id"], (r: string) => string> = {
+  relay: () => "Couldn't connect — LilOS can't reach its relay on this Mac.",
+  engine: (r) =>
+    /Hermes not found/i.test(r)
+      ? "Couldn't start your first employee — LilOS can't find Hermes on this Mac."
+      : "Couldn't start your first employee — the engine didn't start.",
+  harness: () => "Couldn't start your first employee — the engine didn't start.",
+  model: () => "Couldn't start your first employee — the engine didn't start.",
+}
+const firstRunCheck = (
+  rows: StatusComponent[],
+  id: StatusComponent["id"],
+): FirstRunCheck => {
+  const row = rows.find((c) => c.id === id)
+  if (!row || row.state === "ok") return { state: "ok" }
+  if (row.state === "connecting" || row.state === "blocked")
+    return { state: "pending" }
+  return { state: "failed", plain: FIRST_RUN_PLAIN[id](row.reason) }
+}
+
 /* Session-level failure states (on the DM session row, with Retry where a retry makes sense). */
 const SESSION_ALERTS: Partial<Record<PreviewScenario, SessionAlert>> = {
   "model-error": { kind: "model", text: `Model error · ${MODELS[0].id}: provider returned 429 (rate limited)`, retry: true },
@@ -777,7 +801,7 @@ function scriptFor(empId: string, prompt: string, followUp = false, branch?: str
         number: n, repo, title, status: "open", author: empId, base: "main", head: branch, opened: "just now",
         body: `## Summary\n\nScaffolds the monorepo from LIL-3: \`contracts\`, \`client-runtime\`, \`apps/web\`, \`apps/relay\` on pnpm workspaces with strict TS.\n\n- \`client-runtime\` compiles with \`lib: ["ES2022"]\` only, so a DOM import fails the build\n- \`contracts\` owns the event \`Envelope\` (\`seq\`, \`kind\`, \`body\`, \`at\`)\n- README documents the workspace layout\n\n## Verification\n\n- \`pnpm -r test\`: 7 passed, 1 skipped (relay has no harness yet)\n- \`pnpm -r typecheck\`: clean\n\nSession \`ses_8f2c\` · requested by @oscar in #engineering`,
         checks: CHECKS.map((name) => ({ name, status: "pending" as const })),
-        comments: [{ from: empId, time: nowTime(), monitor: true, text: "I'll fix CI failures and address review comments from people with write access in this session. Comments containing \"(aside)\" are skipped." }],
+        comments: [{ from: empId, time: nowTime(), monitor: true, text: "I'll fix CI failures and address review comments from people with write access in this thread. Comments containing \"(aside)\" are skipped." }],
       },
     }
   }
@@ -1313,6 +1337,14 @@ export default function App() {
     }
   }, [liveStatus, liveBanner, scenario])
 
+  /* #557: the thin "Reconnecting…" line over the composer — driven by the
+     same signal as the sidebar status row (the relay leg reporting
+     `connecting`), but sitting where a send is typed: Focus hides the
+     sidebar, so it can't stand in for this. */
+  const relayReconnecting = (liveStatus?.components ?? STATUS[scenario]).some(
+    (c) => c.id === "relay" && c.state === "connecting",
+  )
+
   const goChannel = (id: string) => { setView({ kind: "channel", id }); setThreadId(null); setFocus(false); setNavOpen(false) }
   const goDM = (id: string) => {
     const last = [...(feeds[`dm-${id}`] ?? [])].reverse().find((m) => m.kind === "msg" && m.thread)
@@ -1557,7 +1589,7 @@ export default function App() {
   /* A subagent row that is another employee → that employee's session in their DM. */
   const openSession = (empId: string, session: string) => {
     const m = (feeds[`dm-${empId}`] ?? []).find((x) => x.kind === "msg" && x.thread?.session === session)
-    if (!m) return say(`Session ${session} isn't in this prototype`)
+    if (!m) return say(`Thread ${session} isn't in this prototype`)
     setView({ kind: "dm", id: empId }); setThreadId(m.id); setPanelTab("thread"); setPanelOpen(true)
   }
   /* Plan card decisions (issue #175). Change prefills the composer; sending it revises. */
@@ -1746,8 +1778,9 @@ export default function App() {
           ...tt.replies,
           {
             from: "",
+            system: true,
             time: "",
-            text: `⚠ Rewound to before your message — ${n} message${n === 1 ? "" : "s"} dropped, files restored to the earlier checkpoint.`,
+            text: `Rewound to before your message — ${n} message${n === 1 ? "" : "s"} dropped, files restored to the earlier checkpoint.`,
           },
         ],
       }))
@@ -1773,7 +1806,7 @@ export default function App() {
       mapRoot(feedKey, root.id, (tt) => ({ ...tt, replies: tt.replies.slice(0, idx) }))
     }
     if (target !== undefined) setThreadDraft(target)
-    sayAction(`Rewound session ${t.session} · files + ${n} message${n === 1 ? "" : "s"}`, { label: "Undo", run: undo }, 10_000)
+    sayAction(`Rewound thread ${t.session} · files + ${n} message${n === 1 ? "" : "s"}`, { label: "Undo", run: undo }, 10_000)
     rewindTimer.current = setTimeout(commit, 10_000)
   }
   // conversations.setModel: the pick pins the conversation's model; the next
@@ -2037,7 +2070,7 @@ export default function App() {
       transcriptNote={transcriptNoteOf(openThread.thread)}
       lastSent={lastSentIn(openThread)}
       onRetry={(e) => retry(openThread, e)} onUnqueue={(i) => unqueue(openThread, i)} onSendQueued={(i) => sendQueuedNow(openThread, i)}
-      pending={pendingSteers[openThread.id] ?? []} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
+      pending={pendingSteers[openThread.id] ?? []} reconnecting={relayReconnecting} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
       models={canModels ? MODEL_OPTS : undefined} onModel={canModels ? (m) => setModel(openThread, m) : undefined} picker={pickerExtras}
       access={access} onAccess={setAccess}
       scrollTo={scrollTo ?? undefined} onScrolled={() => setScrollTo(null)}
@@ -2109,7 +2142,7 @@ export default function App() {
           // LilOS Browser (#214) replaces it only in the mock prototype.
           browser={realSurfaces ? undefined : threadBrowser(openThread.id)}
           initialTab={focusTab}
-          pending={pendingSteers[openThread.id] ?? []} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
+          pending={pendingSteers[openThread.id] ?? []} reconnecting={relayReconnecting} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
           ship={shipFor(openThread)}
           /* The built-in engine declares all three workbench caps (#587):
              fixed tab membership, empty tabs greyed. */
@@ -2142,7 +2175,7 @@ export default function App() {
               }}
               draft={dmDraft} onDraftChange={setDmDraft}
               mentionables={employees} onSearchFiles={fileMentions((wsPicks[view.id] ?? NO_WS).folder)}
-              onRetrySession={(m) => { setAlertOff((n) => n + 1); retry(m, view.id); say(`Retrying session ${m.thread?.session}`) }}
+              onRetrySession={(m) => { setAlertOff((n) => n + 1); retry(m, view.id); say(`Retrying thread ${m.thread?.session}`) }}
               onSearchMessages={searchDmMessages}
               onOpenHit={(h) => { setScrollTo(h.messageId); showThread(h.rootId) }}
               accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say}
@@ -2281,6 +2314,13 @@ export default function App() {
         <FirstRun
           employee={DEFAULT_EMP}
           identity={{ name: me.name, company }}
+          /* #589: the ticks follow the scenario's status rows — same
+             mapping the real app applies to system.status. */
+          checks={{
+            relay: firstRunCheck(liveStatus?.components ?? STATUS[scenario], "relay"),
+            employee: firstRunCheck(liveStatus?.components ?? STATUS[scenario], "engine"),
+          }}
+          onSeeStatus={() => setStatusOpen(true)}
           connect={{ profiles: connectListEmpty ? [] : connList, onConnect: connectAll }}
           onOpenDM={(id) => {
             setFirstDone(true)

@@ -19,7 +19,13 @@ import {
 import { Input } from "../components/ui/input";
 import { AttachmentChips } from "../conversation/turns";
 import { Body, Row, Who } from "../feed/row";
-import { LIFE_LABEL, PHASE_LABEL, preview, sessionLife } from "../lib/helpers";
+import {
+  LIFE_LABEL,
+  PHASE_LABEL,
+  preview,
+  sessionLife,
+  threadState,
+} from "../lib/helpers";
 import { cn } from "../lib/utils";
 import { HermesAvatar } from "../shell/avatars";
 import type { EmpFn, HumanFn, Msg, SessionAlert } from "../types";
@@ -42,7 +48,7 @@ function SessionMenu({
         render={
           <button
             type="button"
-            aria-label="Session actions"
+            aria-label="Thread actions"
             className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
           />
         }
@@ -58,13 +64,13 @@ function SessionMenu({
         {onRename && (
           <DropdownMenuItem onClick={onRename}>
             <PencilIcon />
-            Rename session
+            Rename thread
           </DropdownMenuItem>
         )}
         {onArchive && (
           <DropdownMenuItem onClick={onArchive}>
             {archived ? <RotateCcwIcon /> : <ArchiveIcon />}
-            {archived ? "Unarchive session" : "Archive session"}
+            {archived ? "Unarchive thread" : "Archive thread"}
           </DropdownMenuItem>
         )}
       </DropdownMenuContent>
@@ -162,10 +168,13 @@ export const SessionRow = memo(function SessionRow({
 }) {
   const t = m.thread;
   if (!t) return null;
-  const last = t.replies[t.replies.length - 1];
-  const running = t.replies.some((r) => r.live);
   const life = archived ? undefined : sessionLife(t);
   const firstAnswer = t.replies.find((r) => emp(r.from) && r.text);
+  /* #583 AC-2: the row says its state in words; #585: system notes don't
+     count as replies; #583 AC-3: live background jobs say so. */
+  const replyCount = t.replies.filter((r) => !r.system).length;
+  const state = archived ? undefined : threadState(t);
+  const bgJobs = t.jobs?.filter((j) => j.status === "running").length ?? 0;
   const sched = t.scheduled;
   return (
     <div data-session={m.id} data-archived={archived || undefined}>
@@ -189,7 +198,7 @@ export const SessionRow = memo(function SessionRow({
         </div>
         {editing ? (
           <Input
-            aria-label="Session title"
+            aria-label="Thread title"
             value={draft}
             autoFocus
             className="h-7 w-full text-sm"
@@ -257,18 +266,43 @@ export const SessionRow = memo(function SessionRow({
         >
           <HermesAvatar name={empName} className="size-5" />
           <span className="font-medium text-tint-text">
-            {t.replies.length} {t.replies.length === 1 ? "reply" : "replies"}
+            {replyCount} {replyCount === 1 ? "reply" : "replies"}
           </span>
           {t.ws && <FolderIcon className="size-3 text-muted-foreground" />}
-          {/* #344: no "working" label — the ring around this pill says it.
-              Needs-you keeps its badge: it asks the user to act. */}
-          {running && last?.phase === "waiting" && (
+          {/* #583 AC-2: every row states itself — needs you / running /
+              failed / stopped. Needs-you keeps its "!" badge too: it asks
+              the user to act. */}
+          {state?.word === "needs you" && (
             <span
               title="Needs you"
               className="grid size-4 place-items-center rounded-full bg-primary font-bold text-[10px] text-primary-foreground"
             >
               <span aria-hidden>!</span>
               <span className="sr-only">{PHASE_LABEL.waiting}</span>
+            </span>
+          )}
+          {state && (
+            <span
+              data-thread-state={state.word}
+              className={cn(
+                "font-medium",
+                state.word === "needs you" && "text-amber-600",
+                state.word === "running" && "text-work",
+                state.word === "failed" && "text-red-600",
+                state.word === "stopped" &&
+                  "text-muted-foreground dark:text-foreground/80",
+              )}
+            >
+              {state.word}
+            </span>
+          )}
+          {bgJobs > 0 && (
+            <span
+              data-bg-jobs
+              className="text-muted-foreground"
+              title={`${bgJobs} running in background`}
+            >
+              {bgJobs} in background
             </span>
           )}
           {life && <span className="sr-only">{LIFE_LABEL[life]}</span>}

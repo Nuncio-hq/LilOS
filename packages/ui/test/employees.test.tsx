@@ -295,7 +295,7 @@ describe("AC-3/AC-4 EditEmployeeDialog", () => {
       getAllByRole("button", { name: /remove from company/i })[0]!,
     );
     // The confirm copy promises the engine profile is kept.
-    getByText(/its sessions, memory, and skills/i);
+    getByText(/its history, memory, and skills/i);
     const confirm = getAllByRole("button", { name: /remove from company/i });
     fireEvent.click(confirm[confirm.length - 1]!);
     expect(removed).toBe(1);
@@ -340,10 +340,10 @@ describe("issue #64 remove confirmation", () => {
     const { getByRole } = openConfirm();
     fireEvent.click(getByRole("button", { name: /remove from company/i }));
     const text = getByRole("alert").textContent ?? "";
-    for (const gone of ["company record", "channel memberships", "DMs"]) {
+    for (const gone of ["company record", "DMs"]) {
       expect(text).toMatch(new RegExp(gone, "i"));
     }
-    for (const stay of ["engine profile", "sessions", "memory", "skills"]) {
+    for (const stay of ["engine profile", "history", "memory", "skills"]) {
       expect(text).toMatch(new RegExp(stay, "i"));
     }
   });

@@ -379,8 +379,8 @@ export function EmployeeHome({
               <Input
                 value={filter}
                 onChange={(ev) => setFilter(ev.target.value)}
-                placeholder="Filter sessions"
-                title={`Private to you. Each message opens its own session; ${e.name} replies in its thread.`}
+                placeholder="Filter threads"
+                title={`Private to you. Each message opens its own thread; ${e.name} replies in it.`}
                 className="h-7 rounded-full border-transparent bg-foreground/[0.06] pl-7 text-xs shadow-none dark:bg-white/[0.08]"
               />
             </div>
@@ -453,15 +453,15 @@ export function EmployeeHome({
               icon={<HermesAvatar name={e.name} className="size-12" />}
               title={
                 q
-                  ? `No sessions match “${filter}”`
-                  : `Start a session with ${e.name}`
+                  ? `No threads match “${filter}”`
+                  : `Start a thread with ${e.name}`
               }
               description={
                 q
                   ? onSearchMessages
                     ? "Titles and messages are searched. Clear the filter to see everything."
                     : "Titles and first messages are searched. Clear the filter to see everything."
-                  : "Your first message opens a new engine session. Replies stay in its thread."
+                  : "Your first message opens a new thread. Replies stay in it."
               }
             />
           ) : (
@@ -499,7 +499,7 @@ export function EmployeeHome({
                       <div key={rootId}>
                         <div className="flex items-center gap-1.5 px-2 pt-1 pb-0.5 text-muted-foreground text-xs">
                           <span className="truncate font-medium text-foreground/80">
-                            {m?.thread?.title || m?.text || "Session"}
+                            {m?.thread?.title || m?.text || "Thread"}
                           </span>
                           {isArchived && (
                             <span
@@ -521,7 +521,11 @@ export function EmployeeHome({
                             className="block w-full rounded-md py-1.5 pr-2 pl-6 text-left text-xs hover:bg-accent/50"
                           >
                             <span className="text-muted-foreground">
-                              {emp(h.from)?.name ?? human(h.from)?.name}
+                              {/* #585 AC-3: a note written by LilOS itself
+                                  is labeled "LilOS", never the user. */}
+                              {h.from === "system"
+                                ? "LilOS"
+                                : (emp(h.from)?.name ?? human(h.from)?.name)}
                             </span>
                             <span className="mx-1.5 text-muted-foreground">
                               ·
@@ -552,8 +556,8 @@ export function EmployeeHome({
       <Composer
         placeholder={
           pickedFolder
-            ? `New session with ${e.name} in ${folderLabel(pickedFolder, folders)}…`
-            : `New session with ${e.name}…`
+            ? `New thread with ${e.name} in ${folderLabel(pickedFolder, folders)}…`
+            : `New thread with ${e.name}…`
         }
         employees={mentionables ?? []}
         onSearchFiles={onSearchFiles}

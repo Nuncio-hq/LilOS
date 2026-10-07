@@ -88,7 +88,7 @@ test("AC-1..4 picker + session cwd + Workbench Files/Changes over host API", asy
   await page.getByText(/Edit\s+main\s+directly/).click();
 
   // Send → the session's cwd is the picked folder; the turn's first step is `pwd`.
-  const box = page.getByPlaceholder(/New session with Builder/);
+  const box = page.getByPlaceholder(/New thread with Builder/);
   await box.fill("check in");
   await box.press("Enter");
   await page.getByRole("button", { name: "Focus" }).click({ timeout: 15_000 });

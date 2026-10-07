@@ -6,6 +6,7 @@ import {
   CheckIcon,
   CircleStopIcon,
   ClockIcon,
+  LoaderCircleIcon,
   PencilIcon,
   Trash2Icon,
 } from "lucide-react";
@@ -182,6 +183,27 @@ export function NotSentTray({
   );
 }
 
+/* #557: the relay socket dropped and the client is redialing — a thin line
+   over the composer so a send typed in the window doesn't read as lost: it
+   waits and goes out on reconnect. Amber, the "waiting" family color. The
+   same line sits above the composer in the thread panel and in Focus,
+   where the sidebar status row is hidden. */
+export function ReconnectingLine() {
+  return (
+    <div
+      className="mb-1 flex items-center gap-1.5 px-2 text-amber-800 text-xs dark:text-amber-300"
+      data-reconnecting
+      role="status"
+    >
+      <LoaderCircleIcon className="size-3 animate-spin" />
+      <span className="font-medium">Reconnecting…</span>
+      <span className="text-amber-700/80 dark:text-amber-300/70">
+        sends go out when it&apos;s back
+      </span>
+    </div>
+  );
+}
+
 /* Messages sent while the employee works that it has NOT read yet — one tray above the composer for
    every engine, so a waiting message never shows up in the conversation as if it were being answered.
    · steer declared: each joins the running turn at the next step (then shows as a landed steer row
@@ -314,10 +336,21 @@ export const runningComposer = (
     steer && !agentWork ? "Enter steers · ⌘. stop" : "Enter queues · ⌘. stop",
 });
 
-/* #420: a turn parked on an open ask (question/approval/plan) is WAITING, not
-   working — the composer says so instead of inviting steers, and there's no
-   stop-as-primary because nothing is running (Hermes FIX #515). */
-export const waitingComposer = (name: string) => ({
-  placeholder: `${name} is waiting for your answer…`,
-  hint: "Answer the card in the thread — the turn continues on its own.",
+/* #420 + #583 AC-1: a turn parked on an open ask (question/approval/plan) is
+   WAITING, not working — the composer says what it waits on instead of
+   inviting steers, and there's no stop-as-primary because nothing is
+   running (Hermes FIX #515). `kind` names the wait: a question wants an
+   answer; an approval/plan wants a decision. */
+export const waitingComposer = (
+  name: string,
+  kind?: "approval" | "question" | "plan",
+) => ({
+  placeholder:
+    kind === "question"
+      ? `${name} is waiting for your answer…`
+      : `${name} is waiting for your approval…`,
+  hint:
+    kind === "question"
+      ? "Answer the card in the thread — the turn continues on its own."
+      : "Answer the card above — the turn continues on its own.",
 });
