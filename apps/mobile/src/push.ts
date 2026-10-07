@@ -5,6 +5,7 @@ import * as Notifications from "expo-notifications";
 import { atom } from "nanostores";
 import { AppState, type AppStateStatus } from "react-native";
 import { $demo } from "./demo/lifecycle";
+import { deepThreadTarget } from "./home-model";
 import { $client, $link } from "./link";
 import { $phase } from "./paired-macs";
 import { nav } from "./routes";
@@ -124,21 +125,64 @@ export const requestPushPermission = async (): Promise<void> => {
   await refreshPermission();
 };
 
+/* #596 AC-1: the thread opens pushed over its own DM — Back returns to the
+   DM, the same landing an ask's Open/Review takes. The employee resolves
+   from the wire: a hydrated cache resolves at cold start, a thread created
+   while the app was closed resolves once the first sync lands. */
+const pushThread = (conversationId: string) => {
+  const client = $client.get();
+  const target =
+    client &&
+    deepThreadTarget(conversationId, {
+      conversations: client.conversations.get(),
+      channels: client.channels.get(),
+    });
+  if (target) nav.navigate("Dm", { employeeId: target.employeeId });
+  nav.navigate("Thread", { conversationId });
+};
+
+/* The tap waits only for what the DM needs: resolvable now, or the first
+   directory sync concluded (a miss still opens — the thread's own "gone"
+   state is the answer), or the link already gave up. */
+const threadTargetReady = (conversationId: string): boolean => {
+  const client = $client.get();
+  if (!client) return true;
+  if (
+    deepThreadTarget(conversationId, {
+      conversations: client.conversations.get(),
+      channels: client.channels.get(),
+    })
+  ) {
+    return true;
+  }
+  return client.directoryReady.get() || $link.get() === "offline";
+};
+
 const openPushThread = (conversationId: string | undefined) => {
   if (!conversationId) return;
-  if (nav.isReady() && $phase.get() === "app") {
-    nav.navigate("Thread", { conversationId });
+  if (
+    nav.isReady() &&
+    $phase.get() === "app" &&
+    threadTargetReady(conversationId)
+  ) {
+    pushThread(conversationId);
   } else {
-    // Cold start or mid-onboarding: hold it until the app stack exists.
+    /* Cold start, mid-onboarding, or still syncing: hold it until the
+       stack — and the DM underneath it — can be pushed. */
     pendingThread = conversationId;
   }
 };
 
 const drainPendingThread = () => {
-  if (pendingThread && nav.isReady() && $phase.get() === "app") {
+  if (
+    pendingThread &&
+    nav.isReady() &&
+    $phase.get() === "app" &&
+    threadTargetReady(pendingThread)
+  ) {
     const conversationId = pendingThread;
     pendingThread = undefined;
-    nav.navigate("Thread", { conversationId });
+    pushThread(conversationId);
   }
 };
 
@@ -194,10 +238,16 @@ export function initPush(): void {
   });
 
   const linkSub = $link.listen((state) => {
-    if (state === "online") {
-      void register();
-      drainPendingThread();
-    }
+    if (state === "online") void register();
+    /* #596: every link flip re-drains — offline is a drain signal too
+       (a held tap opens Thread alone rather than waiting forever). */
+    drainPendingThread();
+  });
+  /* #596: the DM under the thread only exists once the first directory
+     sync lands — re-drain when it does. `.subscribe` fires the current
+     value immediately, so a client that already exists still arms it. */
+  const clientSub = $client.subscribe((client) => {
+    client?.directoryReady.listen(drainPendingThread);
   });
   // The stack re-mounts on the onboarding→app phase flip, so nav state
   // alone doesn't cover it — drain once the app phase lands too.
@@ -218,6 +268,7 @@ export function initPush(): void {
   // the process; held for tests/hot-reload symmetry.
   void responseSub;
   void linkSub;
+  void clientSub;
   void phaseSub;
   void navSub;
   void appStateSub;

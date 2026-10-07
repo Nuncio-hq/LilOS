@@ -896,3 +896,15 @@ export function threadSurface(
     ...(stale ? { stopHint: "Stop works once the Mac is back" as const } : {}),
   };
 }
+
+/** #596 AC-2: a Thread opened on a conversationId the wire doesn't know
+   yet is still loading — only once the first directory sync lands is it
+   really gone. Before this, both states rendered the same empty body and
+   an unknown id stayed blank forever. */
+export function threadBodyState(
+  known: boolean,
+  directoryReady: boolean,
+): "loading" | "gone" | undefined {
+  if (known) return undefined;
+  return directoryReady ? "gone" : "loading";
+}

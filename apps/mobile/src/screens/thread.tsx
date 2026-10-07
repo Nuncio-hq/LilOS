@@ -19,11 +19,13 @@ import {
   findModel,
   modelLabel,
   PlanSheet,
+  StateBlock,
   SubagentSheet,
   SubagentsSheet,
   ThreadHeaderTitle,
   ThreadInfoSheet,
   ThreadScreen,
+  useThemeColor,
   WbDiffSheet,
 } from "@lilos/ui-native";
 import { useStore } from "@nanostores/react";
@@ -31,7 +33,7 @@ import type { RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { atom } from "nanostores";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Alert, Linking, View } from "react-native";
+import { ActivityIndicator, Alert, Linking, View } from "react-native";
 import {
   answerPlanChange,
   awaitPlanAsk,
@@ -59,6 +61,7 @@ import type { DmRoutes } from "../routes";
 import {
   collectDiffs,
   dropRewound,
+  threadBodyState,
   threadSurface,
   toThreadDetail,
 } from "../thread-model";
@@ -94,6 +97,7 @@ const $noFeed = atom<RelaySessionFeedState>({
 const $noRewinds = atom<
   Record<string, { fromSeq: number; removedIds: string[] }>
 >({});
+const $noReady = atom(false);
 
 /** Everything a thread screen needs from the wire, packed for the view. */
 function useThread(conversationId: string) {
@@ -128,6 +132,9 @@ function useThread(conversationId: string) {
   const conv =
     conversations.find((c) => c.id === conversationId) ??
     pendingEntry?.conversation;
+  /* #596: "unknown id" is only "gone" once the first directory sync
+     landed — before that it's still loading. */
+  const directoryReady = useStore(client?.directoryReady ?? $noReady);
   const channelId = conv?.channelId;
   const chanAtom = useMemo(
     () => (client && channelId ? client.channelMessages(channelId) : undefined),
@@ -350,6 +357,7 @@ function useThread(conversationId: string) {
     channelId,
     employee,
     detail,
+    directoryReady,
     catalog,
     catalogUnavailable,
     planCapable,
@@ -374,12 +382,14 @@ export function Thread({
     channelId,
     employee,
     detail,
+    directoryReady,
     catalog,
     catalogUnavailable,
     planCapable,
     subagentsCapable,
     jobsCapable,
   } = useThread(conversationId);
+  const spinner = useThemeColor("muted-foreground");
   const welcome = useStore($welcome);
   const link = useStore($link);
   const demo = useStore($demo);
@@ -482,13 +492,16 @@ export function Thread({
       headerTitle: () => (
         <ThreadHeaderTitle
           title={detail?.title || "Thread"}
-          state={detail?.state ?? "working"}
+          /* #596: a loading or gone thread claims no Working state. */
+          state={detail?.state}
           {...(detail?.failure ? { failureKind: detail.failure.kind } : {})}
           {...(detail?.prs?.length ? { prs: detail.prs } : {})}
           {...(detail?.context ? { context: detail.context } : {})}
           /* #591: offline a "working" header is last-known, not live. */
           stale={
-            threadSurface(detail?.state ?? "working", link === "offline").stale
+            detail
+              ? threadSurface(detail.state, link === "offline").stale
+              : false
           }
           onPress={() =>
             conv &&
@@ -499,7 +512,29 @@ export function Thread({
     });
   }, [navigation, detail, conv, link]);
 
-  if (!detail) return <View className="flex-1 bg-background" />;
+  if (!detail) {
+    /* #596 AC-2: a deep-linked thread is "Loading…" while the directory
+       hasn't synced, "This thread is gone" once it has — never blank. */
+    const bodyState = threadBodyState(conv !== undefined, directoryReady);
+    return (
+      <View className="flex-1 items-center justify-center bg-background px-6">
+        {bodyState === "gone" ? (
+          <StateBlock
+            icon="questionmark"
+            title="This thread is gone"
+            body="It may have been removed on the Mac."
+            testID="thread-gone"
+          />
+        ) : (
+          <StateBlock
+            visual={<ActivityIndicator color={spinner} />}
+            title="Loading…"
+            testID="thread-loading"
+          />
+        )}
+      </View>
+    );
+  }
   return (
     <ThreadScreen
       t={detail}
