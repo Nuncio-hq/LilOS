@@ -431,7 +431,9 @@ export function ThreadView({
         {/* The composer sits below the scroller in normal flow — nothing
             overlays the last turn, so only a small bottom pad is needed;
             the question card's Skip row stays fully visible on its own row
-            (#515, #602). */}
+            (#515, #602). No decision-card pad here (unlike Focus): the
+            composer's own margin already supplies the #649 clearance, and
+            a wider pad pushed the at-rest band past #602's 24px. */}
         <ConversationContent className="gap-0 p-0 pt-2 pb-3">
           {transcriptNote?.kind === "trimmed" && (
             <TranscriptNoteRow note={transcriptNote} />

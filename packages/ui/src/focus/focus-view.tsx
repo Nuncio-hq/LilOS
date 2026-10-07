@@ -977,9 +977,15 @@ export function FocusView({
             </div>
           )}
           <Conversation className="min-h-0 [mask-image:linear-gradient(to_bottom,transparent,#000_28px)]">
+            {/* #649: Focus's composer hugs the port's bottom edge (no margin),
+                so a decision card as the last row needs the wider bottom pad
+                — the bottom lock parks ~1px short and a ~12px pad rests at
+                ~11px, tucking the card's border under the composer. The
+                thread panel keeps its own pb-3: its composer margin already
+                supplies the band, and more pad pushes it past #602's 24px. */}
             <ConversationContent
               data-thread
-              className="mx-auto w-full max-w-[46rem] gap-7 px-5 pt-8 pb-3"
+              className="mx-auto w-full max-w-[46rem] gap-7 px-5 pt-8 pb-3 has-[>:last-child_[data-ask-id],>:last-child_[data-plan]]:pb-5"
             >
               {transcriptNote?.kind === "trimmed" && (
                 <TranscriptNoteRow note={transcriptNote} />

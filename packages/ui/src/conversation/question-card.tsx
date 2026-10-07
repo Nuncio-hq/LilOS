@@ -60,15 +60,17 @@ const scrollPortOf = (el: HTMLElement | null) => {
 
 /* The list cap in one rule (tested in question-card.test.tsx): the
    options list gets whatever the scrollport leaves after the card's own
-   chrome — header, question, actions — minus the arrival-align margins,
-   so a card can never be taller than its port (FIX #515 r5). The 96px
-   floor keeps one row + a peek even when chrome eats the port. */
+   chrome — header, question, actions — minus the arrival-align margins
+   (8px head + 16px tail), so a card can never be taller than its port
+   (FIX #515 r5). The 80px floor keeps one full option row + a sliver of
+   the next even when chrome eats the port — at a port that tight the
+   align's tail room yields first, never the head (#649). */
 export const questionOptionCap = (
   natural: number,
   others: number,
   portH: number,
 ) => {
-  const cap = Math.max(96, portH - 16 - others);
+  const cap = Math.max(80, portH - 24 - others);
   return { cap, over: natural > cap + 4 };
 };
 export function QuestionCard({
@@ -197,10 +199,13 @@ export function QuestionCard({
         port.scrollTop += e.top - p.top - 8;
         return;
       }
-      const under = e.bottom - (p.bottom - 8);
+      const under = e.bottom - (p.bottom - 16);
       if (under > 1) {
         // partially visible with the tail cut — reveal the whole card,
-        // or as much as fits before the head would clip again
+        // or as much as fits before the head would clip again. The tail
+        // margin is 16, not the head's 8: where the composer hugs the
+        // port edge (Focus has no composer margin) a smaller tail leaves
+        // the card's border tucking under the composer (#649).
         const nudge = Math.min(under, e.top - p.top - 8);
         if (Math.abs(nudge) > 1) port.scrollTop += nudge;
       }

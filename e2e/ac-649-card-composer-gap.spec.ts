@@ -22,11 +22,21 @@ const SHOTS = path.join(repo, "test-results", "ac-649");
 
 const GAP_MIN = 12;
 
+/* 1440x700 joins the matrix: the ac-602 AC-3 panel leg failed there on the
+   first cut (a uniform pb-5 decision-card pad pushed the panel's at-rest
+   band past #602's 24px — the panel's composer margin already supplies the
+   clearance) — keep that frame covered. */
 const VIEWPORTS = [
   { w: 1288, h: 700 },
   { w: 1288, h: 900 },
+  { w: 1440, h: 700 },
   { w: 1440, h: 900 },
 ] as const;
+/* The question card gets one tight-height leg on top: at 1024x600 the card
+   nearly fills the port, the lock is dead and the card's own arrival-align
+   owns the park — pad can't reach that case, only the align's tail
+   clearance does (the second-cut fix). */
+const QUESTION_VIEWPORTS = [...VIEWPORTS, { w: 1024, h: 600 }] as const;
 const THEMES = ["light", "dark"] as const;
 
 /** Sample the geometry the AC pins: card bottom vs composer top, card fully
@@ -338,7 +348,7 @@ test.describe("AC-3 question card clears the composer (prototype)", () => {
       await expect(
         port.locator('[data-question-card][data-ask-state="open"]'),
       ).toBeVisible({ timeout: 15_000 });
-      for (const { w, h } of VIEWPORTS) {
+      for (const { w, h } of QUESTION_VIEWPORTS) {
         for (const theme of THEMES) {
           await page.setViewportSize({ width: w, height: h });
           await page.emulateMedia({ colorScheme: theme });

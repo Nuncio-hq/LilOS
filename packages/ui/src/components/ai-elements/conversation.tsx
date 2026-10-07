@@ -110,7 +110,24 @@ const ConversationEscapeGuard = (): null => {
       const shifted = sc.clientHeight !== lastHeight;
       last = top;
       lastHeight = sc.clientHeight;
-      if (up && (shifted || clamped) && !readerEscape) {
+      /* The heal restores a lock that was LIVE when the layout nudge hit —
+         escapedFromLock set at event time means someone deliberately left
+         the bottom (a reader's scroll-up; the library's own 1ms timeout
+         only sets the flag for THIS nudge after the guard runs). And while
+         an OPEN question card renders, the port's rest position belongs to
+         the card's own arrival-align (#515): a repin to the scroller's end
+         would tear its park and re-clip the card head under the sticky
+         header — the align writes scrollTop both ways, so the escape flag
+         alone can't tell its park from a killed lock. The card query runs
+         last: a heal candidate is rare, so the DOM read stays off the
+         common scroll path. */
+      if (
+        up &&
+        (shifted || clamped) &&
+        !readerEscape &&
+        !state.escapedFromLock &&
+        !sc.querySelector('[data-question-card][data-ask-state="open"]')
+      ) {
         cancelHeal();
         healTop = top;
         heal = setTimeout(repin, 2);
@@ -188,14 +205,7 @@ export const ConversationContent = ({
 }: ConversationContentProps) => (
   <StickToBottom.Content
     className={cn(
-      /* #649: a decision card (approval/question ask, plan) ends flush
-         against the composer when it is the last row — the bottom lock
-         parks 1px short of the scroller's end, so the caller's ~12px
-         bottom pad rests at ~11px and the card's border and rounded
-         corners visually tuck under the composer. Only the last row's
-         card state widens the pad, so the plain-message gap (#602) is
-         untouched. */
-      "flex flex-col gap-8 p-4 has-[>:last-child_[data-ask-id],>:last-child_[data-plan]]:pb-5",
+      "flex flex-col gap-8 p-4",
       className,
     )}
     {...props}
