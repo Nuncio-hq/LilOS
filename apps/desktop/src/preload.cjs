@@ -78,6 +78,14 @@ contextBridge.exposeInMainWorld("lilos", {
     return () =>
       ipcRenderer.removeListener("lilos:open-conversation", listener);
   },
+  /* #554 find-in-thread: the Edit menu's Find items arrive over lilos:find;
+     the renderer's find bar searches the DOM itself (Custom Highlights),
+     so there is no findInPage IPC to wire back. */
+  onFind: (cb) => {
+    const listener = (_e, action) => cb(action);
+    ipcRenderer.on("lilos:find", listener);
+    return () => ipcRenderer.removeListener("lilos:find", listener);
+  },
 });
 
 /* #674 AC-2: the renderer's `online` event is the "network came back"
