@@ -1104,6 +1104,64 @@ describe("directory refresh for a paired phone", () => {
   });
 });
 
+/* #645: `conversations.summaries` is enrichment (root text, previews,
+   counts) — `conversations.list` already carries the rows. A failed or
+   timed-out summaries read must not hold the directory at "Loading…" or
+   lose the conversations (that was the latch the AC-4 flake rode). */
+describe("#645 directory survives a dead summaries read", () => {
+  const conversation = {
+    id: "conv1",
+    channelId: "c1",
+    rootMessageId: "m1",
+    engineRef: "sess-1",
+    state: "idle",
+    title: "",
+    archived: false,
+    createdAt: 3,
+  };
+
+  async function refreshWithSummaries(mode: "reject" | "hang") {
+    const { client, socket } = makeClient();
+    const pending = client.connect();
+    await Promise.resolve();
+    socket.openSocket();
+    await Promise.resolve();
+    socket.respondTo("session.hello", WELCOME);
+    await pending;
+    socket.respondTo("employees.list", { employees: [] });
+    socket.respondTo("channels.list", { channels: [] });
+    socket.respondTo("conversations.list", {
+      conversations: [conversation],
+    });
+    socket.respondTo("profile.get", { profile: { name: "", company: "" } });
+    socket.respondTo("devices.list", { devices: [] });
+    socket.respondTo("asks.list", { asks: [] });
+    if (mode === "reject") {
+      socket.failTo("conversations.summaries", {
+        code: -32000,
+        message: "summaries blew up",
+      });
+    }
+    /* "hang": never answered — the 200ms request timeout kills it. */
+    await vi.waitFor(() => expect(client.directoryReady.get()).toBe(true), {
+      timeout: 2000,
+    });
+    return { client };
+  }
+
+  it("a rejected conversations.summaries still populates the directory", async () => {
+    const { client } = await refreshWithSummaries("reject");
+    expect(client.conversations.get().map((c) => c.id)).toEqual(["conv1"]);
+    expect(client.conversationSummaries.get()).toEqual([]);
+  });
+
+  it("a hanging conversations.summaries still populates the directory", async () => {
+    const { client } = await refreshWithSummaries("hang");
+    expect(client.conversations.get().map((c) => c.id)).toEqual(["conv1"]);
+    expect(client.conversationSummaries.get()).toEqual([]);
+  });
+});
+
 describe("#571 incremental conversation summaries", () => {
   const flush = () => new Promise((r) => setTimeout(r, 0));
 
