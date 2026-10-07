@@ -38,6 +38,12 @@ import { WorkbenchCard } from "./workbench-card";
 const HIT_TOP_GAP = 12;
 /* The Remove toast's visible window before the remove stands. */
 const REMOVED_TOAST_MS = 5000;
+const REMOVED_TOAST_H = 40;
+/* Floor for the not-sent tray's inset reserve while its real height is
+   unmeasured (onLayout can report 0 or land a frame late — a 0 reserve
+   parks the last transcript row under the tray). Header + one wrapped
+   item + padding ≈ 88; the measured height wins once it's taller. */
+const TRAY_MIN_H = 88;
 
 /* One session opened as a thread (web: ThreadView), iOS style: the native
    nav bar carries the title + state (ThreadHeaderTitle) and an info button
@@ -157,6 +163,7 @@ export function ThreadScreen({
      then it flashes once settled. */
   const offsets = useRef(new Map<string, number>());
   const rowHeights = useRef(new Map<string, number>());
+  const contentH = useRef(0);
   const pendingScroll = useRef<string | undefined>(scrollToEntry);
   /* Once the hit lands it stays centred as content keeps sizing under it
      — scrollToEnd would steal the scroll right back to the bottom. */
@@ -229,15 +236,45 @@ export function ThreadScreen({
      or the composer stack; falls back to a top offset before the view
      height lands. The transparent chat header floats over the top, so
      the floor is the top inset, not 0 — a first-row hit rests 12pt
-     below the bar, its rounded corners clear. */
+     below the bar, its rounded corners clear. And it never scrolls past
+     the rest position: scrolling up further would only drag the last
+     transcript row under the floating tray/toast. */
   const scrollToHit = (eid: string) => {
     const top = offsets.current.get(eid);
     if (top === undefined) return;
     const row = rowHeights.current.get(eid) ?? 0;
     const floor = -(insets.top + 44 + HIT_TOP_GAP);
-    const y = viewH.current ? top - (viewH.current - row) / 2 : top + floor - 8;
-    scroller.current?.scrollTo({ y: Math.max(floor, y), animated: false });
+    /* Never scroll without real geometry: before the view and content
+       heights land, any offset is a guess. The pending hit re-fires on
+       the next layout pass, so waiting costs nothing. */
+    if (!viewH.current || !contentH.current) return;
+    /* Content that fits takes the rest position — scrolling up to
+       centre would only drag the tail under the floating stack. The
+       container can report a hair over the view height when it hugs it,
+       so "fits" gets the bottom inset's worth of slack. scrollToEnd
+       lands the proven rest position rather than a computed offset. */
+    if (contentH.current <= viewH.current + bottomInset) {
+      scroller.current?.scrollToEnd({ animated: false });
+      return;
+    }
+    const rest = Math.max(
+      floor,
+      contentH.current - viewH.current + bottomInset,
+    );
+    const y = Math.min(Math.max(floor, top - (viewH.current - row) / 2), rest);
+    scroller.current?.scrollTo({ y, animated: false });
   };
+  /* #555: the whole floating bottom stack feeds the transcript's bottom
+     inset — composer plus the pill/note/tray and the Undo toast's fixed
+     reserve, each with its stack gap, so the last row always rests ≥8pt
+     above whatever floats. Shared by the scroll clamp and the inset. */
+  const bottomInset = threadBottomInset(
+    composerHeight,
+    pill ? pillHeight : 0,
+    unreachableNote ? noteHeight : 0,
+    parked.length ? Math.max(trayHeight, TRAY_MIN_H) : 0,
+    removed ? REMOVED_TOAST_H : 0,
+  );
   /* The pending hit re-centres on each layout pass until the content
      settles; a beat after the first centre it flashes and stands down. */
   const onHitLayout = (eid: string) => {
@@ -274,14 +311,13 @@ export function ThreadScreen({
           onLayout={(ev) => {
             viewH.current = ev.nativeEvent.layout.height;
           }}
-          onContentSizeChange={() =>
-            pendingScroll.current
-              ? scrollToHit(pendingScroll.current)
-              : hitAnchor.current
-                ? scrollToHit(hitAnchor.current)
-                : scroller.current?.scrollToEnd({ animated: true })
-          }
-          contentInsetAdjustmentBehavior="automatic"
+          onContentSizeChange={(_w, h) => {
+            contentH.current = h;
+            if (pendingScroll.current) scrollToHit(pendingScroll.current);
+            else if (hitAnchor.current) scrollToHit(hitAnchor.current);
+            else scroller.current?.scrollToEnd({ animated: true });
+          }}
+          contentInsetAdjustmentBehavior="never"
           /* The chat header is transparent + floats — content must rest
              BELOW it, not start under it (the top inset is the header's
              height plus a 12pt gap; scrolling still carries turns under
@@ -292,12 +328,7 @@ export function ThreadScreen({
                the inset must clear ALL of it: the measured composer plus,
                while a background pill shows, the pill and its stack gap.
                Composer-only leaves the newest line under the pill. */
-            bottom: threadBottomInset(
-              composerHeight,
-              pill ? pillHeight : 0,
-              unreachableNote ? noteHeight : 0,
-              parked.length ? trayHeight : 0,
-            ),
+            bottom: bottomInset,
           }}
           /* A manual scroll ends the pin — the hit's anchor stands down. */
           onScrollBeginDrag={() => {
@@ -431,7 +462,8 @@ export function ThreadScreen({
           {removed && (
             /* #555: Remove's ~5s Undo — an inverted pill above the
                composer, gone on its own (web keeps the deleted row's
-               toast slot). */
+               toast slot). Its height is a fixed reserve in the bottom
+               inset — the last row never sits under it. */
             <View className="mx-4 items-center">
               <View className="flex-row items-center gap-3 rounded-full bg-foreground/95 px-4 py-2">
                 <AppText size="sm" className="text-background">

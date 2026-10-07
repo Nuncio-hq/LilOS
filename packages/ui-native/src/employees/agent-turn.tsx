@@ -258,7 +258,8 @@ export function AgentTurn({
                 onPress={onRetry}
                 /* Teal accent, not the error red — red is the failure
                    itself; the way forward wears the app's accent. */
-                className="h-11 flex-row items-center gap-1 rounded-full bg-accent-soft px-4 active:opacity-70"
+                style={{ minHeight: 44 }}
+                className="flex-row items-center gap-1 rounded-full bg-accent-soft px-4 active:opacity-70"
               >
                 <Icon
                   name="arrow.clockwise"
