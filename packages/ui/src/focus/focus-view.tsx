@@ -506,8 +506,12 @@ export function FocusView({
      not fire for a turn already streaming when the view attached — on a
      Focus remount that would re-engage follow and let liveKey steal the
      cache-seeded tab mid-turn (#547 AC-1). A pick made mid-turn still
-     re-arms on the NEXT turn (live.id changes) exactly as before (#396). */
-  const seenLive = useRef(live?.id);
+     re-arms on the NEXT turn (live.turnId changes) exactly as before
+     (#396). Keyed on `turnId`, not `id`: mergeTurns rewrites the live
+     reply's `id` to the relay row it claims — a `message.created` that
+     folds while `turn.completed` is still in flight must not read as a
+     new turn and drop the pick-hold (#685). */
+  const seenLive = useRef(live?.turnId);
   /* #606: a pick while a turn is in flight holds follow for THAT turn —
      its `live` row can land after the pick (`turn.started` rides the feed),
      and `seenLive` alone can't tell the late row from a new turn's. The
@@ -517,7 +521,7 @@ export function FocusView({
      the row hasn't rendered yet. */
   const pickedDuringTurn = useRef<string | null>(null);
   useEffect(() => {
-    const id = live?.id;
+    const id = live?.turnId;
     if (id === seenLive.current) return;
     seenLive.current = id;
     /* The first live row after a mid-turn pick IS the pick-time turn —
@@ -536,7 +540,7 @@ export function FocusView({
       live.postAttach !== false
     )
       followRef.current = true;
-  }, [live?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [live?.turnId]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!running && !live) pickedDuringTurn.current = null;
   }, [running, live]);
@@ -583,8 +587,9 @@ export function FocusView({
     if (followRef.current && liveHelpers) setTab("subagents");
   }, [liveHelpers]); // eslint-disable-line react-hooks/exhaustive-deps
   /* Latest in-flight turn, read at pick time — riding a ref keeps the
-     memoized `pickTab` stable across step churn (the actsRef pattern). */
-  const inFlightTurn = useRef<{ id?: string } | null>(null);
+     memoized `pickTab` stable across step churn (the actsRef pattern).
+     `turnId` survives the relay-claim id rewrite (#685). */
+  const inFlightTurn = useRef<{ turnId?: string } | null>(null);
   inFlightTurn.current = live ?? (running ? {} : null);
   const pickTab = useCallback(
     (t: WbTab) => {
@@ -593,7 +598,7 @@ export function FocusView({
          it specifically (#606): a live row arriving after the pick is that
          same turn, not a new one. */
       pickedDuringTurn.current = inFlightTurn.current
-        ? (inFlightTurn.current.id ?? "in-flight")
+        ? (inFlightTurn.current.turnId ?? "in-flight")
         : null;
       seededTab.current = true; // a manual pick counts as the seed (#547)
       followRef.current = false;

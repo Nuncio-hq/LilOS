@@ -102,8 +102,14 @@ test.describe.configure({ mode: "serial" });
 const FOCUS_URL = /\/dm\/[^/]+\/[^/]+\/focus$/;
 const PANEL_URL = /\/dm\/[^/]+\/conv_[^/]+$/;
 
+/* #685 AC-1: the whole spec rides the relay-beats-feed reorder — the
+   client holds the feed's `turn.completed` while the turn's relay answer
+   post lands first and mergeTurns claims it mid-live. Inert knob; the
+   e2e sleeps nothing — the hold IS the race window. */
+const REORDER = "feedHold=turn.completed:400";
+
 async function dmDefault(page: Page, roots = ROOT) {
-  await page.goto(`${stack.webUrl}/?roots=${roots}`);
+  await page.goto(`${stack.webUrl}/?roots=${roots}&${REORDER}`);
   const aside = page.locator("aside");
   await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
     timeout: 30_000,

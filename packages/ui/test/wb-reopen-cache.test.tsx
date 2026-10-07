@@ -74,7 +74,7 @@ const makeHost = (impls: Partial<HostAccessors> = {}) => {
   return { host, setImpl: (o: Partial<typeof impl>) => Object.assign(impl, o) };
 };
 
-const ui = (host: HostAccessors, tab: WbTab, work: Work) => (
+const ui = (host: HostAccessors, tab: WbTab, work: Work, running = false) => (
   <Workbench
     thread={THREAD}
     work={work}
@@ -84,6 +84,7 @@ const ui = (host: HostAccessors, tab: WbTab, work: Work) => (
     onClose={() => {}}
     human={() => undefined}
     host={host}
+    running={running}
   />
 );
 const mount = (host: HostAccessors, tab: WbTab = "files", work: Work = WORK) =>
@@ -313,5 +314,67 @@ describe("#547 cache-entry follow-ups", () => {
        A's values nor the reset nulls may land there. */
     expect(readWbCache(host, CWD_B)?.sel).toBe("b1.txt");
     expect(readWbCache(host, CWD_B)?.viewFile?.path).toBe("b1.txt");
+  });
+});
+
+describe("#685 transient probe failures keep the last-known folder reads", () => {
+  test("AC-5: a null tree/diff round doesn't blank Files or poison the entry — scroll survives remount", async () => {
+    const { host, setImpl } = makeHost(FAST_IMPLS);
+    const r = mount(host, "files");
+    await waitFor(() => expect(rows(r.container).length).toBeGreaterThan(0));
+    const before = rows(r.container);
+    /* Park a scroll offset so the remount has something to restore. */
+    const vp = filesVp(r.container);
+    if (!vp) throw new Error("Files scroll viewport missing");
+    vp.scrollTop = 480;
+    fireEvent.scroll(vp);
+    await waitFor(() =>
+      expect(readWbCache(host, CWD)?.scrolls?.files).toBe(480),
+    );
+
+    /* A turn flips `running` → a fresh round — while the host's tree/diff
+       reads fail transiently (the accessors collapse errors to null). The
+       round's own land proves it ran: `status` reports the flap branch. */
+    setImpl({
+      tree: async () => null,
+      diff: async () => null,
+      status: async () => ({ branch: "flap", clean: true }),
+    });
+    r.rerender(ui(host, "files", WORK, true));
+    await waitFor(() =>
+      expect(readWbCache(host, CWD)?.probe.status?.branch).toBe("flap"),
+    );
+
+    /* The failed reads did NOT overwrite the landed answers: rows stay
+       mounted (the viewport never unmounts → no scrollTop loss mid-turn)
+       and the cache entry still carries the folder's files. */
+    expect(rows(r.container)).toEqual(before);
+    expect(readWbCache(host, CWD)?.probe.files).toEqual([
+      "a.txt",
+      "src/deep.txt",
+    ]);
+
+    /* The poisoned entry would miss on remount (files==null → "never
+       answered") → probing state + no scroll restore. With the keep, the
+       remount paints last-known rows on the first frame at 480. */
+    r.unmount();
+    const second = mount(host, "files");
+    expect(rows(second.container)).toEqual(before);
+    const vp2 = filesVp(second.container);
+    expect(vp2?.scrollTop).toBe(480);
+  });
+
+  test("a FIRST round answering null still hides the folder tabs (dead folder)", async () => {
+    /* The keep-last-known rule is only for landed answers — a folder that
+       never answered still reports nothing (the tab stays hidden). The
+       settle signal is the probing hold lifting: `files:null` reads as a
+       cache miss, so the entry itself is unobservable. */
+    const { host } = makeHost({ ...FAST_IMPLS, tree: async () => null });
+    const r = mount(host, "files");
+    await waitFor(() =>
+      expect(r.container.querySelector("[data-wb-probing]")).toBeNull(),
+    );
+    expect(r.container.querySelector('[data-wb-tab="files"]')).toBeNull();
+    expect(readWbCache(host, CWD)).toBeUndefined();
   });
 });
