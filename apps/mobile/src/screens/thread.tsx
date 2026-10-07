@@ -56,8 +56,8 @@ import {
   refreshModelCatalog,
   watchDm,
 } from "../dm-store";
-import { $client, $link, $welcome } from "../link";
-import { describeError } from "../mapping";
+import { $client, $link, $welcome, linkUnreachable } from "../link";
+import { describeError, unreachableNoteFor } from "../mapping";
 import { $connections } from "../paired-macs";
 import { $prs, refreshConversationPrs } from "../prs";
 import type { DmRoutes } from "../routes";
@@ -508,7 +508,7 @@ export function Thread({
           /* #591: offline a "working" header is last-known, not live. */
           stale={
             detail
-              ? threadSurface(detail.state, link === "offline").stale
+              ? threadSurface(detail.state, linkUnreachable(link)).stale
               : false
           }
           onPress={() =>
@@ -596,19 +596,18 @@ export function Thread({
       }}
       onSend={send}
       onStop={stop}
-      unreachableNote={
-        link === "offline" && mac ? `Can't reach ${mac.name}` : undefined
-      }
+      unreachableNote={mac ? unreachableNoteFor(link, mac.name) : undefined}
       /* #591: offline + a cached "working" thread — disabled Stop with a
          hint; the header chip degrades via threadSurface's rule. */
-      stale={threadSurface(detail.state, link === "offline").stale}
+      stale={threadSurface(detail.state, linkUnreachable(link)).stale}
       /* #652: offline, open ask cards render disabled with "Answer once
-         <Mac> is back" — any thread state, not only a stale working. */
+         <Mac> is back" — any thread state, not only a stale working.
+         #597: blocked counts as unreachable here too. */
       asksStale={
-        threadSurface(detail.state, link === "offline", mac?.name).asksStale
+        threadSurface(detail.state, linkUnreachable(link), mac?.name).asksStale
       }
       answerHint={
-        threadSurface(detail.state, link === "offline", mac?.name).answerHint
+        threadSurface(detail.state, linkUnreachable(link), mac?.name).answerHint
       }
       {...(catalog.models.length
         ? {

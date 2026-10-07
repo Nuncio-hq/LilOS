@@ -56,14 +56,16 @@ export function SettingsScreen({
                 {mac.link ? (
                   <View className="flex-row items-center gap-1.5">
                     <View
-                      className={`size-[7px] rounded-full ${mac.link === "online" ? "bg-success" : mac.link === "offline" ? "bg-destructive" : "bg-muted-foreground"}`}
+                      className={`size-[7px] rounded-full ${mac.link === "online" ? "bg-success" : mac.link === "offline" ? "bg-destructive" : mac.link === "blocked" ? "bg-warning" : "bg-muted-foreground"}`}
                     />
                     <AppText size="sm" tone="muted">
                       {mac.link === "online"
                         ? `Connected ${mac.routeLabel}`
                         : mac.link === "offline"
                           ? "Can't reach it"
-                          : "Reconnecting…"}
+                          : mac.link === "blocked"
+                            ? "Update needed"
+                            : "Reconnecting…"}
                     </AppText>
                   </View>
                 ) : (
