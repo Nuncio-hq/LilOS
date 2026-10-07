@@ -73,7 +73,7 @@ describe("#247 AC-5 — DM rows keep the needs-you badge + trimmed meta", () => 
 
 describe("#594 — Activity Open pushes DM then Thread", () => {
   /* #594 AC-1: a request's **Open** landed on the employee's thread list and
-     Oscar had to hunt the asking thread. It now resolves the ask's channel
+     left the asking thread to hunt for by hand. It now resolves the channel
      via `askThreadTarget` and pushes the DM under the asking thread — the
      same landing a plan's Review already used, and Back returns to the DM. */
   const home = read("apps/mobile/src/screens/home.tsx");
