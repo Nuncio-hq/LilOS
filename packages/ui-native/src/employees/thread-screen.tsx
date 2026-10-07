@@ -307,7 +307,9 @@ export function ThreadHeaderTitle({
   failureKind,
 }: {
   title: string;
-  state: SessionState;
+  /** #596: optional — a thread still loading (or gone) claims no state,
+      so the title alone renders. */
+  state?: SessionState;
   /** #592: "sleep" failures read amber "Mac went to sleep" in the chip. */
   failureKind?: "model" | "sleep" | "generic";
   prs?: PullRequestRef[];
@@ -337,32 +339,34 @@ export function ThreadHeaderTitle({
       >
         {title}
       </AppText>
-      <View className="flex-row items-center gap-1.5">
-        <StateChip
-          state={stale && state === "working" ? "last-seen" : state}
-          failureKind={failureKind}
-        />
-        {/* Waiting is not working — no progress ring next to "Needs you"
+      {state === undefined ? null : (
+        <View className="flex-row items-center gap-1.5">
+          <StateChip
+            state={stale && state === "working" ? "last-seen" : state}
+            failureKind={failureKind}
+          />
+          {/* Waiting is not working — no progress ring next to "Needs you"
             while a question the card can answer is open (Hermes FIX #515).
             Other needs-you asks keep the ring: they ARE still working. */}
-        {context && (state !== "needs-you" || !waiting) && (
-          <ContextRing c={context} />
-        )}
-        {!!prs?.length && (
-          <>
-            <AppText tone="muted" className="text-[13px]">
-              ·
-            </AppText>
-            {one ? (
-              <PrBadge pr={one} />
-            ) : (
-              <AppText tone="muted" weight="medium" className="text-[13px]">
-                {prHeadline(prs)}
+          {context && (state !== "needs-you" || !waiting) && (
+            <ContextRing c={context} />
+          )}
+          {!!prs?.length && (
+            <>
+              <AppText tone="muted" className="text-[13px]">
+                ·
               </AppText>
-            )}
-          </>
-        )}
-      </View>
+              {one ? (
+                <PrBadge pr={one} />
+              ) : (
+                <AppText tone="muted" weight="medium" className="text-[13px]">
+                  {prHeadline(prs)}
+                </AppText>
+              )}
+            </>
+          )}
+        </View>
+      )}
     </Pressable>
   );
 }

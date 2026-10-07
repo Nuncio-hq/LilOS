@@ -125,3 +125,71 @@ describe("#373 — the chat nav bar paints a blur backdrop under itself", () => 
     expect(protoHeader).toContain('headerBlurEffect: "systemMaterial"');
   });
 });
+
+describe("#596 — push/deep links stack DM under Thread; loading & gone states", () => {
+  const push = read("apps/mobile/src/push.ts");
+  const thread = read("apps/mobile/src/screens/thread.tsx");
+
+  it("AC-1 the tap path pushes the DM before the Thread (Back → DM)", () => {
+    /* The DM can't stack until the wire names its employee — the tap waits
+       on deepThreadTarget, never a bare Thread. */
+    expect(push).toContain("deepThreadTarget");
+    const dmAt = push.indexOf('navigate("Dm"');
+    const threadAt = push.indexOf('navigate("Thread"');
+    expect(dmAt).toBeGreaterThan(-1);
+    expect(threadAt).toBeGreaterThan(dmAt);
+    /* Cold-start pending drains through the same stacking path. */
+    expect(push).not.toContain("nav.reset");
+    expect(push).not.toContain("nav.replace");
+  });
+
+  it("AC-1 a not-yet-known id waits for the directory before it opens", () => {
+    /* The gate: resolvable now, or the first sync concluded (a miss opens
+       too — 'gone' is an answer), or the link already gave up. */
+    expect(push).toContain("directoryReady");
+    expect(push).toContain('=== "offline"');
+  });
+
+  it("AC-2 the blank body splits: spinner while loading, 'gone' after sync", () => {
+    expect(thread).toContain("ActivityIndicator");
+    expect(thread).toContain("Loading…");
+    expect(thread).toContain("This thread is gone");
+    expect(thread).toContain("threadBodyState");
+    /* The header can no longer claim Working over an empty body. */
+    expect(thread).not.toContain('?? "working"');
+  });
+
+  it("AC-2b the gone card carries its own way back — 'Back to <employee>'", () => {
+    /* A cold-launch push user stares at the centre of the screen: the
+       button lives inside the gone StateBlock, lands on the resolved
+       employee's DM (popTo — the push stacked that DM under the Thread),
+       and falls back to plain Back when no employee was resolved. */
+    expect(thread).toContain("thread-gone-back");
+    expect(thread).toContain("Back to");
+    expect(thread).toContain("goneEmployee.name");
+    expect(thread).toContain('popTo("Dm"');
+    expect(thread).toContain("navigation.canGoBack()");
+    /* The employee can't resolve off a conversation the directory has
+       already forgotten — push/ask flows carry it through the route,
+       and the push payload itself names the employee as fallback (the
+       only id a gone-by-tap-time thread can still offer). */
+    const routes = read("apps/mobile/src/routes.ts");
+    expect(routes).toContain("Thread: { conversationId: string; employeeId?");
+    expect(push).toContain("target?.employeeId ?? payloadEmployeeId");
+    expect(push).toContain("data?.employeeId");
+  });
+
+  it("AC-2c a gone thread stops fetching: the directory gates the feed", () => {
+    /* The HUD's climbing net count was resyncSessionFeeds re-pulling
+       session.events for a conversation the synced directory no longer
+       lists. The gate lives in client-runtime's syncSessionFeed — the
+       gone id settles synced-and-empty without a round trip, and a
+       conversation.updated that arrives later still resyncs it. */
+    const client = read("packages/client-runtime/src/client.ts");
+    expect(client).toContain("directoryReady.get()");
+    const gateAt = client.indexOf("directoryReady.get()");
+    expect(client.slice(gateAt, gateAt + 400)).toContain("session.events");
+    /* Screen-side too: the PR badge doesn't burn a `not_found` call. */
+    expect(thread).toContain("if (!client || gone) return");
+  });
+});
