@@ -53,6 +53,11 @@ export interface HarnessConfig {
       surfaces/`session.start` steps, so a send delivered pre-bind provably
       exercises the ~1s window the loaded run opened. `0`/unset = no hold. */
   bindDelayMs: number;
+  /** #659: e2e hook — pace client-feed broadcast frames to one per N ms,
+      so the relay's answer row deterministically beats the engine stream's
+      tail (the cross-socket race that rendered a reply twice). `0`/unset =
+      send immediately. */
+  feedDelayMs: number;
 }
 
 const DEFAULT_RELAY_URL = "ws://127.0.0.1:4577/ws";
@@ -124,6 +129,7 @@ export function resolveHarnessConfig(
     /* #346 AC-3: minutes on the env knob (`0` = never), ms inside. */
     sessionIdleMs: Number(env.LILOS_SESSION_IDLE_MINUTES ?? 30) * 60_000,
     bindDelayMs: Number(env.LILOS_BIND_DELAY_MS ?? 0) || 0,
+    feedDelayMs: Number(env.LILOS_FEED_DELAY_MS ?? 0) || 0,
   };
 }
 
