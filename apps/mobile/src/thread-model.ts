@@ -115,6 +115,12 @@ function turnApproval(
           open.request.kind === "approval" ? open.request.command : undefined,
         grantOptions:
           open.request.kind === "approval" ? open.request.options : undefined,
+        /* #553: a question ask carries its answer buttons + free-text
+           flag — the shared QuestionCard renders both (AC-1). */
+        options:
+          open.request.kind === "question" ? open.request.options : undefined,
+        freeText:
+          open.request.kind === "question" ? open.request.freeText : undefined,
         age: timeLabel(open.createdAt, now),
       },
     };
@@ -129,7 +135,19 @@ function turnApproval(
             resolved.outcome === "always" ||
             resolved.outcome === "approve" ||
             resolved.outcome === "answer",
-          what: askReason(resolved),
+          /* #553: an answered question's receipt names the answer — the
+             option's label when the wire kept an id, the typed text
+             otherwise; a skipped question reads its question. */
+          what:
+            resolved.request.kind === "question" &&
+            resolved.outcome === "answer"
+              ? (resolved.request.options?.find(
+                  (o) => o.id === resolved.answer,
+                )?.label ??
+                resolved.answer ??
+                askReason(resolved))
+              : askReason(resolved),
+          question: resolved.request.kind === "question" ? true : undefined,
           /* #601: the receipt names the granted outcome — "This session"
               reads differently from "always". */
           outcome: resolved.outcome,

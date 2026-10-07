@@ -38,6 +38,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Linking, View } from "react-native";
 import {
   answerPlanChange,
+  answerQuestion,
   awaitPlanAsk,
   decide,
   negativeOutcome,
@@ -594,6 +595,11 @@ export function Thread({
       }}
       onGrant={(id, option) => {
         if (client) void decide(client, id, option);
+      }}
+      /* #553: a question card's option tap / typed answer resolves the
+         ask — the wire value is the option's id or the text itself. */
+      onAnswer={(id, a) => {
+        if (client) void answerQuestion(client, id, a.value);
       }}
       onSend={send}
       onStop={stop}

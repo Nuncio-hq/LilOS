@@ -124,6 +124,11 @@ export function askApproval(
     ...(r.kind === "approval"
       ? { command: r.command, grantOptions: r.options }
       : {}),
+    /* #553: a question ask's buttons + free-text flag ride the row — the
+       Activity sheet's card answers from the same QuestionCard. */
+    ...(r.kind === "question"
+      ? { options: r.options, freeText: r.freeText }
+      : {}),
     age: timeLabel(ask.createdAt, ctx.now),
   };
 }

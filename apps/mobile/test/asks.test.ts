@@ -20,6 +20,7 @@ vi.mock("react-native", () => ({ Alert: { alert: alertSpy } }));
 
 import { reduceSessionEvents } from "@lilos/client-runtime";
 import {
+  answerQuestion,
   decide,
   negativeOutcome,
   outcomeAllowed,
@@ -310,6 +311,209 @@ describe("asks — #158 approve/deny from the phone", () => {
 
     expect(alertSpy).toHaveBeenCalledOnce();
     // Still open — nothing claimed to have answered it.
+    expect(openAsks(client.asks.get())).toHaveLength(1);
+  });
+});
+
+/* #553: a question ask answers from the phone — the option tap sends its
+   wire id, the typed text sends itself, and the resolved ask folds to a
+   "You answered:" receipt naming the option's label (AC-1 card, AC-2
+   resolve + continue). */
+describe("asks — #553 answer a question from the phone", () => {
+  const qAsk = (over: Partial<Ask> = {}): Ask =>
+    questionAsk({
+      request: {
+        kind: "question",
+        question: "Where should #96 land?",
+        options: [
+          { id: "cherry-pick", label: "Cherry-pick to release/0.1" },
+          { id: "next-train", label: "Keep it on main" },
+        ],
+        freeText: true,
+      },
+      ...over,
+    });
+  const answered = (ask: Ask, answer: string): Ask =>
+    ({ ...ask, state: "resolved", outcome: "answer", answer }) as Ask;
+
+  it("AC-1 an open question carries options + freeText onto the turn card", () => {
+    const ask = qAsk();
+    $asks.set([ask]);
+    const model = reduceSessionEvents("sess-1", [
+      {
+        seq: 1,
+        sessionId: "sess-1",
+        type: "turn.started",
+        payload: { turnId: "t1", model: "fake-small" },
+      },
+    ] as never[]);
+    const entries = mergeThreadEntries([], model, {
+      conversationId: "conv-1",
+      deliveredSeq: 1,
+      asks: $asks.get(),
+      employeeId: "emp-ada",
+      employeeName: "Ada",
+      sessionId: "sess-1",
+      now: T0 + 60_000,
+    });
+    const card = entries[0];
+    if (card.kind !== "agent") throw new Error("expected agent entry");
+    expect(card.approval).toMatchObject({
+      kind: "question",
+      options: [
+        { id: "cherry-pick", label: "Cherry-pick to release/0.1" },
+        { id: "next-train", label: "Keep it on main" },
+      ],
+      freeText: true,
+    });
+    expect(card.waiting).toBe("question");
+  });
+
+  it("AC-2 an option tap sends asks.respond 'answer' with the wire id", async () => {
+    const ask = qAsk();
+    const client = clientOf(
+      vi.fn(respondOk(answered(ask, "cherry-pick"))),
+    );
+    client.asks.set([ask]);
+    $asks.set([ask]);
+
+    await answerQuestion(client, "ask-1", "cherry-pick");
+
+    expect(client.request).toHaveBeenCalledWith("asks.respond", {
+      askId: "ask-1",
+      outcome: "answer",
+      answer: "cherry-pick",
+    });
+    expect(openAsks(client.asks.get())).toEqual([]);
+    expect(openAsks($asks.get())).toEqual([]);
+    expect(haptics.notify).toHaveBeenLastCalledWith("success");
+  });
+
+  it("AC-2 typed free text sends the text itself as the answer", async () => {
+    const ask = qAsk();
+    const client = clientOf(
+      vi.fn(respondOk(answered(ask, "hold it until Friday"))),
+    );
+    client.asks.set([ask]);
+
+    await answerQuestion(client, "ask-1", "hold it until Friday");
+
+    expect(client.request).toHaveBeenCalledWith("asks.respond", {
+      askId: "ask-1",
+      outcome: "answer",
+      answer: "hold it until Friday",
+    });
+  });
+
+  it("AC-2 the answered ask folds to a 'You answered:' receipt naming the option's label", async () => {
+    const ask = qAsk();
+    const client = clientOf(
+      vi.fn(respondOk(answered(ask, "cherry-pick"))),
+    );
+    $asks.set([ask]);
+
+    await answerQuestion(client, "ask-1", "cherry-pick");
+
+    const model = reduceSessionEvents("sess-1", [
+      {
+        seq: 1,
+        sessionId: "sess-1",
+        type: "turn.started",
+        payload: { turnId: "t1", model: "fake-small" },
+      },
+    ] as never[]);
+    const entries = mergeThreadEntries([], model, {
+      conversationId: "conv-1",
+      deliveredSeq: 1,
+      asks: $asks.get(),
+      employeeId: "emp-ada",
+      employeeName: "Ada",
+      sessionId: "sess-1",
+      now: T0 + 60_000,
+    });
+    const card = entries[0];
+    if (card.kind !== "agent") throw new Error("expected agent entry");
+    expect(card.decided).toEqual({
+      approved: true,
+      what: "Cherry-pick to release/0.1",
+      question: true,
+      outcome: "answer",
+    });
+    expect(card.approval).toBeUndefined();
+  });
+
+  it("AC-2 a typed answer's receipt names the text; a cancelled one reads 'You cancelled:'", () => {
+    const typed = answered(qAsk(), "hold it until Friday");
+    const cancelled = {
+      ...qAsk(),
+      state: "resolved",
+      outcome: "cancel",
+    } as Ask;
+    for (const [ask, want] of [
+      [typed, "hold it until Friday"],
+      [cancelled, "Where should #96 land?"],
+    ] as const) {
+      $asks.set([ask]);
+      const model = reduceSessionEvents("sess-1", [
+        {
+          seq: 1,
+          sessionId: "sess-1",
+          type: "turn.started",
+          payload: { turnId: "t1", model: "fake-small" },
+        },
+      ] as never[]);
+      const entries = mergeThreadEntries([], model, {
+        conversationId: "conv-1",
+        deliveredSeq: 1,
+        asks: $asks.get(),
+        employeeId: "emp-ada",
+        employeeName: "Ada",
+        sessionId: "sess-1",
+        now: T0 + 60_000,
+      });
+      const card = entries[0];
+      if (card.kind !== "agent") throw new Error("expected agent entry");
+      expect(card.decided?.question).toBe(true);
+      expect(card.decided?.what).toBe(want);
+    }
+  });
+
+  it("a question answered on the Mac folds quietly — conflict is done, not an error", async () => {
+    const ask = qAsk();
+    const client = clientOf(
+      vi.fn(async (method: string) => {
+        if (method === "asks.respond")
+          throw new RelayError("ask already resolved", "conflict");
+        if (method === "asks.list")
+          return { asks: [answered(ask, "next-train")] };
+        throw new Error(`unexpected ${method}`);
+      }),
+    );
+    client.asks.set([ask]);
+    $asks.set([ask]);
+
+    await answerQuestion(client, "ask-1", "cherry-pick");
+
+    expect(alertSpy).not.toHaveBeenCalled();
+    expect(client.request).toHaveBeenCalledWith("asks.list", {});
+    expect(openAsks(client.asks.get())).toEqual([]);
+    expect(openAsks($asks.get())).toEqual([]);
+  });
+
+  it("a failed respond surfaces an alert; the ask stays open", async () => {
+    const ask = qAsk();
+    const client = clientOf(
+      vi.fn(async (method: string) => {
+        if (method === "asks.respond")
+          throw new RelayError("socket closed", "not_connected");
+        throw new Error(`unexpected ${method}`);
+      }),
+    );
+    client.asks.set([ask]);
+
+    await answerQuestion(client, "ask-1", "cherry-pick");
+
+    expect(alertSpy).toHaveBeenCalledOnce();
     expect(openAsks(client.asks.get())).toHaveLength(1);
   });
 });

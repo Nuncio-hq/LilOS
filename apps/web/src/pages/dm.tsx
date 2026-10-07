@@ -121,6 +121,7 @@ import {
 import {
   clock,
   formatUptime,
+  questionReceipt,
   sessionLabel,
   threadUsage,
   toJob,
@@ -1232,7 +1233,12 @@ export function DmPage() {
     const resolved: Record<string, string> = {};
     for (const a of asksHere) {
       if (a.state === "resolved" && a.outcome)
-        resolved[a.id] = outcomeLabel(a.outcome, currentName());
+        /* #553: a question ask's receipt names the answer — "Answered
+           "<label>" by <name>" / "Cancelled by <name>" like #420's card. */
+        resolved[a.id] =
+          a.request.kind === "question"
+            ? questionReceipt(a, currentName())
+            : outcomeLabel(a.outcome, currentName());
     }
     const engineRef = conv.engineRef;
     /* AC-6 (D-#19): plan surfaces only exist when the engine declares `plan`. */
@@ -1248,10 +1254,6 @@ export function DmPage() {
     const waiting = folded.feed.waiting;
     const notSentMsgs = folded.thread.notSent;
     const replies = folded.thread.replies;
-    // An open question ask gets a real answer card (asks.respond).
-    const openQuestion = asksHere.find(
-      (a) => a.state === "open" && a.request.kind === "question",
-    );
     /* #180: a proposed plan opens a `plan` ask on the relay — Approve/Reject
        answer it straight; Change… prefills the composer (AC-3/AC-4). */
     const openPlanAsk = asksHere.find(
@@ -1571,6 +1573,17 @@ export function DmPage() {
                   ).catch(() => {});
                 }
               }}
+              /* #553: the shared question card answers the ask — the
+                 option sends its wire id, typed text the text itself;
+                 Skip cancels. The engine-resolved write lands the receipt. */
+              onAnswer={(q, a) =>
+                void respondToRequest(q.id, "answer", a.value).catch(
+                  () => {},
+                )
+              }
+              onCancel={(q) =>
+                void respondToRequest(q.id, "cancel").catch(() => {})
+              }
               work={work}
               onOpenSession={onOpenSession}
               onStopJob={jobsCapable ? onStopJob : undefined}
@@ -1713,23 +1726,6 @@ export function DmPage() {
                   remembers the dropped messages.
                 </StatusBanner>
               )}
-              {openQuestion && (
-                <QuestionCard
-                  ask={openQuestion}
-                  onAnswer={(answer) =>
-                    void respondToRequest(
-                      openQuestion.id,
-                      "answer",
-                      answer,
-                    ).catch(() => {})
-                  }
-                  onCancel={() =>
-                    void respondToRequest(openQuestion.id, "cancel").catch(
-                      () => {},
-                    )
-                  }
-                />
-              )}
             </FocusView>
           </MainPane>
         </div>
@@ -1779,6 +1775,14 @@ export function DmPage() {
               );
             }
           }}
+          /* #553: the shared question card answers the ask (option id or
+             typed text); Skip cancels. */
+          onAnswer={(q, a) =>
+            void respondToRequest(q.id, "answer", a.value).catch(() => {})
+          }
+          onCancel={(q) =>
+            void respondToRequest(q.id, "cancel").catch(() => {})
+          }
           running={running}
           steer={steer}
           agentWorking={!!modelLive?.agentInitiated}
@@ -1891,19 +1895,6 @@ export function DmPage() {
           /* #554: ⌘F over the conversation (desktop bridge; absent on web). */
           findBar={<DesktopFindBar />}
         />
-        {openQuestion && (
-          <QuestionCard
-            ask={openQuestion}
-            onAnswer={(answer) =>
-              void respondToRequest(openQuestion.id, "answer", answer).catch(
-                () => {},
-              )
-            }
-            onCancel={() =>
-              void respondToRequest(openQuestion.id, "cancel").catch(() => {})
-            }
-          />
-        )}
       </div>
     );
   }
@@ -2107,73 +2098,6 @@ export function DmPage() {
           }}
         />
       )}
-    </div>
-  );
-}
-
-function QuestionCard({
-  ask,
-  onAnswer,
-  onCancel,
-}: {
-  ask: Ask;
-  onAnswer: (answer: string) => void;
-  onCancel: () => void;
-}) {
-  const [answer, setAnswer] = useState("");
-  const q = ask.request;
-  if (q.kind !== "question") return null;
-  const options = q.options ?? [];
-  return (
-    <div
-      data-question-card
-      className="border-t bg-amber-50/60 p-3 text-xs dark:bg-amber-950/20"
-    >
-      <div className="font-medium text-foreground">{q.question}</div>
-      {options.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {options.map((o) => (
-            <button
-              key={o.id}
-              type="button"
-              title={o.description}
-              className="rounded-md border px-2 py-1 hover:bg-muted"
-              onClick={() => onAnswer(o.id)}
-            >
-              {o.label}
-            </button>
-          ))}
-        </div>
-      )}
-      {(options.length === 0 || q.freeText) && (
-        <input
-          value={answer}
-          onChange={(e) => setAnswer(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && answer.trim()) onAnswer(answer.trim());
-          }}
-          placeholder="Type an answer…"
-          className="mt-2 w-full rounded-md border bg-background px-2 py-1"
-        />
-      )}
-      <div className="mt-2 flex gap-1.5">
-        {(options.length === 0 || q.freeText) && (
-          <button
-            type="button"
-            className="rounded-md bg-primary px-2 py-1 text-primary-foreground"
-            onClick={() => answer.trim() && onAnswer(answer.trim())}
-          >
-            Answer
-          </button>
-        )}
-        <button
-          type="button"
-          className="rounded-md px-2 py-1 text-muted-foreground hover:bg-muted"
-          onClick={onCancel}
-        >
-          Cancel
-        </button>
-      </div>
     </div>
   );
 }
