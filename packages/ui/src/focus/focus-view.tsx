@@ -511,7 +511,7 @@ export function FocusView({
      reply's `id` to the relay row it claims — a `message.created` that
      folds while `turn.completed` is still in flight must not read as a
      new turn and drop the pick-hold (#685). */
-  const seenLive = useRef(live?.turnId);
+  const seenLive = useRef(live?.turnId ?? live?.id);
   /* #606: a pick while a turn is in flight holds follow for THAT turn —
      its `live` row can land after the pick (`turn.started` rides the feed),
      and `seenLive` alone can't tell the late row from a new turn's. The
@@ -521,7 +521,7 @@ export function FocusView({
      the row hasn't rendered yet. */
   const pickedDuringTurn = useRef<string | null>(null);
   useEffect(() => {
-    const id = live?.turnId;
+    const id = live?.turnId ?? live?.id;
     if (id === seenLive.current) return;
     seenLive.current = id;
     /* The first live row after a mid-turn pick IS the pick-time turn —
@@ -540,7 +540,7 @@ export function FocusView({
       live.postAttach !== false
     )
       followRef.current = true;
-  }, [live?.turnId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [live?.turnId ?? live?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!running && !live) pickedDuringTurn.current = null;
   }, [running, live]);

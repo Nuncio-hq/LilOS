@@ -354,6 +354,17 @@ describe("#685 transient probe failures keep the last-known folder reads", () =>
       "src/deep.txt",
     ]);
 
+    /* A SECOND consecutive all-null round is not a flap — the folder is
+       gone; the null must land and hide the tab (the keep is bounded). */
+    r.rerender(ui(host, "files", WORK, false));
+    await waitFor(() => expect(rows(r.container)).toEqual([]));
+    expect(r.container.querySelector('[data-wb-tab="files"]')).toBeNull();
+
+    /* Recovered host → the next round re-lands the real rows. */
+    setImpl(FAST_IMPLS);
+    r.rerender(ui(host, "files", WORK, true));
+    await waitFor(() => expect(rows(r.container)).toEqual(before));
+
     /* The poisoned entry would miss on remount (files==null → "never
        answered") → probing state + no scroll restore. With the keep, the
        remount paints last-known rows on the first frame at 480. */
