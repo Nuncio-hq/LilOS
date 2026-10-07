@@ -208,7 +208,11 @@ export function commandLauncher(
           clearTimeout(timer);
           reject(new Error(`engine ${options.name} spawn failed: ${error}`));
         });
-        child.once("exit", (code, signal) => {
+        /* The verdict waits for 'close', not 'exit' (#699): pipe data
+           survives the writer's exit, so a loaded host may deliver 'exit'
+           while the ready line still sits buffered in the pipe — 'close'
+           fires only once every pending 'data' chunk has landed. */
+        child.once("close", (code, signal) => {
           clearTimeout(timer);
           // Flush the trailing partial line — a killed child ends mid-line.
           if (outLine) mirrorLine(outLine, "out");
