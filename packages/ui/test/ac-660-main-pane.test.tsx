@@ -60,7 +60,12 @@ const emp: EmpFn = (id) => (id === "e1" ? EMP : undefined);
 const human: HumanFn = () => undefined;
 const NO_WS: WsPick = { folder: null, base: "main", mode: "new" };
 
-const CHANNEL: Channel = { id: "dm-e1", name: "Builder", employees: ["e1"], dm: true };
+const CHANNEL: Channel = {
+  id: "dm-e1",
+  name: "Builder",
+  employees: ["e1"],
+  dm: true,
+};
 const THREAD: Thread = { session: "s_1", replies: [] };
 const ROOT: Extract<Msg, { kind: "msg" }> = {
   kind: "msg",
@@ -125,7 +130,7 @@ describe("issue #660 — the DM pane's single <main>", () => {
     const feedMain = container.querySelector("main");
     expect(feedMain).not.toBeNull();
     /* The feed really rendered — the swap below is a real view change. */
-    expect(feedMain!.textContent).toContain("Builder");
+    expect(feedMain?.textContent).toContain("Builder");
 
     rerender(<Host focus={true} />);
     const focusMain = container.querySelector("main");
@@ -140,22 +145,24 @@ describe("issue #660 — the DM pane's single <main>", () => {
   });
 
   test("without bare each view mounts its own <main> — the pre-#660 shape that detached the node", () => {
-    const { container, rerender } = render(<EmployeeHome
-      e={EMP}
-      feed={[]}
-      threadId={null}
-      emp={emp}
-      human={human}
-      onNav={() => {}}
-      onProfile={() => {}}
-      onOpen={() => {}}
-      onSend={() => {}}
-      panelOpen={false}
-      onPanel={() => {}}
-      folders={[]}
-      pick={NO_WS}
-      setPick={() => {}}
-    />);
+    const { container, rerender } = render(
+      <EmployeeHome
+        e={EMP}
+        feed={[]}
+        threadId={null}
+        emp={emp}
+        human={human}
+        onNav={() => {}}
+        onProfile={() => {}}
+        onOpen={() => {}}
+        onSend={() => {}}
+        panelOpen={false}
+        onPanel={() => {}}
+        folders={[]}
+        pick={NO_WS}
+        setPick={() => {}}
+      />,
+    );
     const feedMain = container.querySelector("main");
     expect(feedMain).not.toBeNull();
 
@@ -177,7 +184,7 @@ describe("issue #660 — the DM pane's single <main>", () => {
     /* Different node: the feed's <main> unmounted with the view — the
        detached-handle flake. Documents why the bare contract matters. */
     expect(focusMain).not.toBe(feedMain);
-    expect(feedMain!.isConnected).toBe(false);
+    expect(feedMain?.isConnected).toBe(false);
   });
 
   test("bare views render no <main> of their own — a dropped bare prop nests a second landmark", () => {

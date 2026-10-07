@@ -25,13 +25,17 @@ describe("issue #660 — DmPage owns the <main> landmark", () => {
   test("both views render bare inside a page-mounted <MainPane>", () => {
     /* <FocusView/EmployeeHome with `bare` inside a <MainPane> block — the
        prop sits on its own line under Biome formatting. */
-    expect(src).toMatch(/<MainPane>[\s\S]*?<FocusView\s+bare[\s\S]*?<\/MainPane>/);
+    expect(src).toMatch(
+      /<MainPane>[\s\S]*?<FocusView\s+bare[\s\S]*?<\/MainPane>/,
+    );
     expect(src).toMatch(/<MainPane>[\s\S]*?<EmployeeHome\s+bare/);
   });
 
   test("dm.tsx never renders a raw <main> — the landmark comes only from MainPane", () => {
     /* Strip comments first — the fix's own notes name the element. */
-    const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+    const code = src
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/[^\n]*/g, "");
     expect(code.match(/<main[\s>]/g)).toBeNull();
   });
 });
