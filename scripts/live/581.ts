@@ -125,8 +125,9 @@ const deadline = Date.now() + seconds * 1000;
 const waitFor = async <T>(
   what: string,
   fn: () => T | undefined | Promise<T | undefined>,
+  until = deadline,
 ): Promise<T> => {
-  while (Date.now() < deadline) {
+  while (Date.now() < until) {
     const v = await fn();
     if (v !== undefined) return v;
     await new Promise((r) => setTimeout(r, 200));
@@ -244,17 +245,27 @@ out("system note reports the running session moved (engineMoved)");
 
 /* ---- turn 2: the NEXT turn's shell pwd is the moved folder (AC-2) ------ */
 
+/* The instruction is explicit so a real model runs the shell (the stub
+   matches the same substring below and answers with a scripted terminal
+   call — one text works for both engines). */
 await user.request("messages.post", {
   channelId: channel.id,
   conversationId: conversation.id,
   authorId: "user",
   authorKind: "user",
-  text: "LILOS581 pwd",
+  text: "Use the terminal tool to run exactly: echo LILOS581_PWD=$PWD — then reply with its output.",
 });
-const pwd = await waitFor("terminal pwd output", () => {
-  const hit = termOutputs.find((o) => o.includes("LILOS581_PWD="));
-  return hit?.match(/LILOS581_PWD=(\S+)/)?.[1];
-});
+/* Turn 2 gets its own budget from the post: a real model needs the full
+   think → call → answer cycle, not whatever the global deadline has left
+   after turn 1 and the move. */
+const pwd = await waitFor(
+  "terminal pwd output",
+  () => {
+    const hit = termOutputs.find((o) => o.includes("LILOS581_PWD="));
+    return hit?.match(/LILOS581_PWD=(\S+)/)?.[1];
+  },
+  Date.now() + 180_000,
+);
 out(`agent shell pwd: ${pwd}`);
 /* macOS may realpath /tmp-style dirs under /private — compare resolved. */
 if (pwd !== movedDir && pwd !== realpathSync(movedDir))
@@ -274,5 +285,13 @@ try {
 }
 
 out("PASS — conversations.moveFolder re-homed the session's folder");
+/* Close the client BEFORE teardown kills the relay: its reconnect
+   supervisor would otherwise schedule retries on the dead socket and hold
+   the event loop — a live leg must never leave a process behind. */
+user.close();
+stub?.kill();
 teardown();
 console.log("[live-581] PASS");
+/* Children die on SIGTERM asynchronously and undici/WS keep-alive sockets
+   can linger past their close — exit explicitly. */
+process.exit(0);

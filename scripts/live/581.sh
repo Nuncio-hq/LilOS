@@ -129,7 +129,7 @@ done
 # `access: "full"` on the conversation keeps the call off the approval card.
 export STUB_SCRIPT='[
  {"match":"LILOS581 hello","reply":"LILOS581 turn-1 done."},
- {"match":"LILOS581 pwd","name":"terminal","arguments":"{\"command\":\"echo LILOS581_PWD=$PWD\"}"},
+ {"match":"echo LILOS581_PWD=$PWD","name":"terminal","arguments":"{\"command\":\"echo LILOS581_PWD=$PWD\"}"},
  {"reply":"LILOS581 turn-2 done."}
 ]'
 
