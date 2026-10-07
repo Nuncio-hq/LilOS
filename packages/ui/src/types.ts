@@ -738,9 +738,9 @@ export type ShipBar = {
   busy: ShipBusy;
   /** The last action's failure — cleared by the next one. */
   error: ShipError | null;
-  /** A turn is running — the bar stays usable; Suggest keeps working
-      because it is a side ask, not a steer (#584). */
-  running: boolean;
+  /* #644: no `running` flag — nothing on the bar may gate on a live turn;
+     Suggest is a side ask that keeps working mid-turn (#584), and a prop
+     here is how the hide-while-running e2e flake got in. */
   /** Upstream after a successful push (`origin/<branch>`) — the bar's ↑
       chip; muted while a push error is on screen (issue #393 AC-6). */
   upstream?: string | null;
