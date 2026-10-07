@@ -1201,4 +1201,106 @@ describe("engine-fake #573: session.stop forgets the session", () => {
       c.close();
     }
   });
+
+  test("#553 `question:` opens a question ask; the answer resolves it and the turn finishes", async () => {
+    const c = conn();
+    const events: { type: string; payload: any }[] = [];
+    c.onEvent((e) => events.push(e as never));
+    const { sessionId } = (await c.request("session.start", {
+      agent: "builder",
+      cwd: "/t",
+    })) as { sessionId: string };
+    const p = promptText(c, sessionId, "question: pick a ship target");
+    const deadline = Date.now() + 5_000;
+    let ask = events.find((e) => e.type === "request.opened");
+    while (!ask && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 5));
+      ask = events.find((e) => e.type === "request.opened");
+    }
+    if (!ask) throw new Error("no request.opened event");
+    /* AC-1's card data: a question with options + free text. */
+    expect(ask.payload.request).toMatchObject({
+      kind: "question",
+      freeText: true,
+    });
+    expect((ask.payload.request.options as unknown[]).length).toBeGreaterThan(
+      0,
+    );
+
+    /* A question refuses approval outcomes — answer or cancel only. */
+    await expect(
+      c.request("request.respond", {
+        sessionId,
+        requestId: ask.payload.requestId,
+        outcome: "once",
+      }),
+    ).rejects.toMatchObject({ code: -32602 });
+
+    /* An option's wire id resolves the ask; the turn continues past the
+       wait and finishes. */
+    await c.request("request.respond", {
+      sessionId,
+      requestId: ask.payload.requestId,
+      outcome: "answer",
+      answer: "staging",
+    });
+    const res = await p;
+    expect(res.stopReason).toBe("end_turn");
+    const text = events
+      .filter((e) => e.type === "turn.delta" && e.payload.stream === "text")
+      .map((e) => e.payload.delta)
+      .join("");
+    expect(text).toContain("Staging first");
+    c.close();
+  });
+
+  test("#553 `question:` answered with free text echoes it; cancel stops the turn", async () => {
+    const c = conn();
+    const events: { type: string; payload: any }[] = [];
+    c.onEvent((e) => events.push(e as never));
+    const { sessionId } = (await c.request("session.start", {
+      agent: "builder",
+      cwd: "/t",
+    })) as { sessionId: string };
+    const grab = async () => {
+      const deadline = Date.now() + 5_000;
+      for (;;) {
+        const ask = events.find((e) => e.type === "request.opened");
+        if (ask) return ask;
+        if (Date.now() > deadline) throw new Error("no request.opened");
+        await new Promise((r) => setTimeout(r, 5));
+      }
+    };
+
+    /* Typed text resolves with the text itself, not an option id. */
+    const p1 = promptText(c, sessionId, "question: pick a ship target");
+    const ask1 = await grab();
+    await c.request("request.respond", {
+      sessionId,
+      requestId: ask1.payload.requestId,
+      outcome: "answer",
+      answer: "the demo box",
+    });
+    const res1 = await p1;
+    expect(res1.stopReason).toBe("end_turn");
+    expect(
+      events
+        .filter((e) => e.type === "turn.delta" && e.payload.stream === "text")
+        .map((e) => e.payload.delta)
+        .join(""),
+    ).toContain("the demo box");
+
+    /* Cancel resolves the ask and interrupts the turn like an approval's. */
+    events.length = 0;
+    const p2 = promptText(c, sessionId, "question: another target");
+    const ask2 = await grab();
+    await c.request("request.respond", {
+      sessionId,
+      requestId: ask2.payload.requestId,
+      outcome: "cancel",
+    });
+    const res2 = await p2;
+    expect(res2.stopReason).toBe("cancelled");
+    c.close();
+  });
 });

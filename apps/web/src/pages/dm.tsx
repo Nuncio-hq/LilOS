@@ -1577,9 +1577,7 @@ export function DmPage() {
                  option sends its wire id, typed text the text itself;
                  Skip cancels. The engine-resolved write lands the receipt. */
               onAnswer={(q, a) =>
-                void respondToRequest(q.id, "answer", a.value).catch(
-                  () => {},
-                )
+                void respondToRequest(q.id, "answer", a.value).catch(() => {})
               }
               onCancel={(q) =>
                 void respondToRequest(q.id, "cancel").catch(() => {})

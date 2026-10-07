@@ -371,9 +371,7 @@ describe("asks — #553 answer a question from the phone", () => {
 
   it("AC-2 an option tap sends asks.respond 'answer' with the wire id", async () => {
     const ask = qAsk();
-    const client = clientOf(
-      vi.fn(respondOk(answered(ask, "cherry-pick"))),
-    );
+    const client = clientOf(vi.fn(respondOk(answered(ask, "cherry-pick"))));
     client.asks.set([ask]);
     $asks.set([ask]);
 
@@ -407,9 +405,7 @@ describe("asks — #553 answer a question from the phone", () => {
 
   it("AC-2 the answered ask folds to a 'You answered:' receipt naming the option's label", async () => {
     const ask = qAsk();
-    const client = clientOf(
-      vi.fn(respondOk(answered(ask, "cherry-pick"))),
-    );
+    const client = clientOf(vi.fn(respondOk(answered(ask, "cherry-pick"))));
     $asks.set([ask]);
 
     await answerQuestion(client, "ask-1", "cherry-pick");

@@ -111,8 +111,8 @@ describe("#553 shared question card on the Mac", () => {
       outcome: "answer",
       answer: "cherry-pick",
     };
-    expect(questionReceipt(done, "Oscar")).toBe(
-      "Answered “Cherry-pick to `release/0.1`” by Oscar",
+    expect(questionReceipt(done, "Riley")).toBe(
+      "Answered “Cherry-pick to `release/0.1`” by Riley",
     );
   });
 
@@ -123,13 +123,13 @@ describe("#553 shared question card on the Mac", () => {
       outcome: "answer",
       answer: "hold it until Friday",
     };
-    expect(questionReceipt(done, "Oscar")).toBe(
-      "Answered “hold it until Friday” by Oscar",
+    expect(questionReceipt(done, "Riley")).toBe(
+      "Answered “hold it until Friday” by Riley",
     );
   });
 
   test("questionReceipt reads cancelled for a skip", () => {
     const done: Ask = { ...qAsk(), state: "resolved", outcome: "cancel" };
-    expect(questionReceipt(done, "Oscar")).toBe("Cancelled by Oscar");
+    expect(questionReceipt(done, "Riley")).toBe("Cancelled by Riley");
   });
 });

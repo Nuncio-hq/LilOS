@@ -220,8 +220,7 @@ export function liveTurnReply(
           options: shown.request.options,
         }
       : undefined;
-  const qShown =
-    questions.find((a) => a.state === "open") ?? questions.at(-1);
+  const qShown = questions.find((a) => a.state === "open") ?? questions.at(-1);
   const question =
     qShown && qShown.request.kind === "question"
       ? {

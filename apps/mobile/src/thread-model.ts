@@ -141,9 +141,8 @@ function turnApproval(
           what:
             resolved.request.kind === "question" &&
             resolved.outcome === "answer"
-              ? (resolved.request.options?.find(
-                  (o) => o.id === resolved.answer,
-                )?.label ??
+              ? (resolved.request.options?.find((o) => o.id === resolved.answer)
+                  ?.label ??
                 resolved.answer ??
                 askReason(resolved))
               : askReason(resolved),
