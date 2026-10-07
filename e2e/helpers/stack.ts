@@ -149,18 +149,46 @@ export async function waitForToken(home: string): Promise<string> {
     running optimizer (#84). */
 export const WORKER = Number(process.env.TEST_WORKER_INDEX ?? "0");
 
+/* #689: pick BELOW the kernel's ephemeral range, not out of it. `listen(0)`
+   draws from that range — and so does every `bind(0)` listener (engine-fake
+   launches on `--port 0`) and every outbound connect() source port, so a
+   probed-free ephemeral port can be re-issued to another child in the
+   release→bind gap (ac-659 repeat 18: engine-fake took the web port, vite
+   died EADDRINUSE, `page.goto` landed on engine-fake's 404 page and the
+   aside wait timed out). The allocator never hands out ports below its
+   floor — Linux `ip_local_port_range` starts at 32768, macOS/Windows at
+   49152 — so a picked port in this band stays free until our child binds
+   it. A pick-vs-pick race is still possible, but it needs another caller
+   choosing the same port in the same instant. */
+const PICK_PORT_LO = 20_000;
+const PICK_PORT_HI = 32_767;
+const PICK_PORT_TRIES = 100;
+
 export const freePort = () =>
   new Promise<number>((resolve, reject) => {
-    const srv = createServer();
-    srv.once("error", reject);
-    srv.listen(0, "127.0.0.1", () => {
-      const addr = srv.address();
-      srv.close(() =>
-        typeof addr === "object" && addr
-          ? resolve(addr.port)
-          : reject(new Error("no port")),
-      );
-    });
+    let tries = 0;
+    const attempt = () => {
+      if (++tries > PICK_PORT_TRIES) {
+        reject(
+          new Error(
+            `no free port in ${PICK_PORT_LO}-${PICK_PORT_HI} after ${PICK_PORT_TRIES} tries`,
+          ),
+        );
+        return;
+      }
+      const port =
+        PICK_PORT_LO +
+        Math.floor(Math.random() * (PICK_PORT_HI - PICK_PORT_LO + 1));
+      const srv = createServer();
+      srv.once("error", (e: NodeJS.ErrnoException) => {
+        if (e.code === "EADDRINUSE") attempt();
+        else reject(e);
+      });
+      srv.listen(port, "127.0.0.1", () => {
+        srv.close(() => resolve(port));
+      });
+    };
+    attempt();
   });
 
 /** Three distinct free ports — repeat/parallel runs must never collide. */
