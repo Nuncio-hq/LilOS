@@ -239,7 +239,11 @@ function Connecting({ navigation, route }: Props<"Connecting">) {
           },
           { signal: ac.signal },
         );
-        if (ac.signal.aborted) return;
+        /* A real grant that resolves after the timeout still counts —
+           swallowing it leaves the spinner up forever with the grant
+           spent (a retry lands on 'used'). Only a user Cancel/unmount
+           exits quietly. */
+        if (ac.signal.aborted && !timedOut) return;
         void Haptics.notificationAsync(
           Haptics.NotificationFeedbackType.Success,
         );
@@ -254,6 +258,7 @@ function Connecting({ navigation, route }: Props<"Connecting">) {
           deviceId: result.deviceId,
           credential: result.credential,
         });
+        if (ac.signal.aborted && !timedOut) return;
         navigation.replace("Connected");
       } catch (error) {
         /* Cancel/unmount leaves the screen quietly; the timeout lands on
