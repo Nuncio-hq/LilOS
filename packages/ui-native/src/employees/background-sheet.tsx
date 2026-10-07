@@ -13,6 +13,7 @@ import { Pill } from "../components/bits";
 import { Glass } from "../components/glass";
 import { Icon } from "../components/icon";
 import { Pulse } from "../components/prose";
+import { safeExternalUrl } from "../lib/external-url";
 import { Group, SheetHeader } from "./folder-picker";
 import type { BackgroundJobRow } from "./types";
 
@@ -84,7 +85,7 @@ function JobRow({
 }) {
   const [open, setOpen] = useState(j.status === "failed");
   const running = j.status === "running";
-  const url = j.url;
+  const url = safeExternalUrl(j.url);
   return (
     <View>
       {!first && (
@@ -146,6 +147,8 @@ function JobRow({
                   onPress={() => onStop(j.id)}
                 />
               )}
+              {/* #598 review: the job's URL is engine-supplied — same
+                  openURL policy as PR links (https + loopback http). */}
               {url && (
                 <Pill
                   label={url.replace(/^https?:\/\//, "")}

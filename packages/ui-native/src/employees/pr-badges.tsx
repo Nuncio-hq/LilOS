@@ -1,12 +1,15 @@
 import { Linking, Pressable, Text, View } from "react-native";
 import { AppText } from "../components/app-text";
 import { Icon, type IconTone } from "../components/icon";
+import { safeExternalUrl } from "../lib/external-url";
 import type { PullRequestRef } from "./types";
 
 /* #598: a PR anywhere is a link — Safari (or the GitHub app when installed)
-   opens it. Every badge/card presses through `pr.url`. */
+   opens it. Every badge/card presses through `pr.url`, filtered by the
+   phone's openURL policy (https + loopback http only — review). */
 const openPr = (pr: PullRequestRef) => {
-  if (pr.url) void Linking.openURL(pr.url);
+  const url = safeExternalUrl(pr.url);
+  if (url) void Linking.openURL(url);
 };
 
 /* Pull requests a session opened, GitHub's language on iOS symbols:
@@ -115,7 +118,7 @@ export function PrBadge({ pr }: { pr: PullRequestRef }) {
     <Pressable
       accessibilityRole="link"
       accessibilityLabel={`PR ${pr.number}, ${prStatusLabel(pr)}`}
-      {...(pr.url ? { onPress: () => openPr(pr) } : {})}
+      {...(safeExternalUrl(pr.url) ? { onPress: () => openPr(pr) } : {})}
       hitSlop={6}
       className="flex-row items-center gap-0.5"
     >
@@ -177,7 +180,7 @@ export function PrCard({ pr }: { pr: PullRequestRef }) {
       accessible
       accessibilityRole="link"
       accessibilityLabel={`PR ${pr.number}, ${pr.title}, ${prStatusLabel(pr)}`}
-      {...(pr.url ? { onPress: () => openPr(pr) } : {})}
+      {...(safeExternalUrl(pr.url) ? { onPress: () => openPr(pr) } : {})}
       className="flex-row items-center gap-3 self-start rounded-[18px] bg-card px-3.5 py-3 active:opacity-70"
       style={{ borderCurve: "continuous" }}
     >
@@ -203,7 +206,7 @@ export function PrCard({ pr }: { pr: PullRequestRef }) {
           <PrStatusText pr={pr} />
         </View>
       </View>
-      {pr.url && (
+      {safeExternalUrl(pr.url) && (
         <Icon
           name="arrow.up.right"
           size={11}
