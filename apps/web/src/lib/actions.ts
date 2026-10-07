@@ -45,8 +45,13 @@ export async function openDmChannel(employeeId: string): Promise<AppChannel> {
  * composer's attached images — they ride the same call's `attachments`
  * (base64) so the relay stores them before the turn starts (#112).
  *
- * A failed send surfaces as a plain toast and resolves `undefined` so the
- * caller skips its follow-up navigation (AC-4).
+ * A send made while the socket is down (the "Reconnecting…" line is up)
+ * isn't a failure: the wire calls retry on transient errors within
+ * `SEND_BUDGET_MS`, repeating the same `dedupeKey` so an attempt that
+ * stored the write before its answer died dedupes relay-side instead of
+ * double-posting — the send lands exactly once (#557 AC-2, on #552's key).
+ * A send that still can't land surfaces as a plain toast and resolves
+ * `undefined` so the caller skips its follow-up navigation (AC-4).
  */
 export async function sendDm(
   employeeId: string,
@@ -73,42 +78,59 @@ export async function sendDm(
       sayError("An image couldn't be read — nothing was sent. Re-attach it.");
       return undefined;
     }
-    const channel = await openDmChannel(employeeId);
-    if (conversationId) {
-      await relay.request("messages.post", {
-        channelId: channel.id,
-        conversationId,
-        authorId: USER_ID,
-        authorKind: "user",
-        text,
-        ...(attachments ? { attachments } : {}),
-        ...(dedupeKey ? { dedupeKey } : {}),
-      });
-      const conv = relay.conversations
-        .get()
-        .find((c) => c.id === conversationId);
-      return conv as Conversation;
+    const deadline = Date.now() + SEND_BUDGET_MS;
+    for (;;) {
+      try {
+        const channel = await openDmChannel(employeeId);
+        if (conversationId) {
+          await relay.request("messages.post", {
+            channelId: channel.id,
+            conversationId,
+            authorId: USER_ID,
+            authorKind: "user",
+            text,
+            ...(attachments ? { attachments } : {}),
+            ...(dedupeKey ? { dedupeKey } : {}),
+          });
+          const conv = relay.conversations
+            .get()
+            .find((c) => c.id === conversationId);
+          return conv as Conversation;
+        }
+        const res = await relay.request<{
+          conversation: Conversation;
+          rootMessage: unknown;
+        }>("conversations.open", {
+          channelId: channel.id,
+          authorId: USER_ID,
+          text,
+          ...(attachments ? { attachments } : {}),
+          ...(dedupeKey ? { dedupeKey } : {}),
+          // The pick the composer showed for this fresh session (#92) rides
+          // the open call so `session.start` sees it — never a second
+          // message.
+          ...(pick?.model !== undefined ? { model: pick.model } : {}),
+          ...(pick?.provider !== undefined ? { provider: pick.provider } : {}),
+          ...(pick?.effort !== undefined ? { effort: pick.effort } : {}),
+          ...(pick?.fast !== undefined ? { fast: pick.fast } : {}),
+          ...(cwd !== undefined ? { cwd } : {}),
+          ...(access !== undefined ? { access } : {}),
+        });
+        pendingStart.set({
+          ...pendingStart.get(),
+          [res.conversation.id]: true,
+        });
+        return res.conversation;
+      } catch (e) {
+        /* #557: a transient drop mid-send (or a send typed while the
+           Reconnecting line is already up) waits out the reconnect, then
+           repeats with the same dedupeKey — exactly once on the relay. A
+           send that's still failing at the deadline falls through to the
+           toast the catch above always rendered. */
+        if (!isTransientRelayError(e) || Date.now() >= deadline) throw e;
+        await waitForRelayReady(deadline);
+      }
     }
-    const res = await relay.request<{
-      conversation: Conversation;
-      rootMessage: unknown;
-    }>("conversations.open", {
-      channelId: channel.id,
-      authorId: USER_ID,
-      text,
-      ...(attachments ? { attachments } : {}),
-      ...(dedupeKey ? { dedupeKey } : {}),
-      // The pick the composer showed for this fresh session (#92) rides the
-      // open call so `session.start` sees it — never a second message.
-      ...(pick?.model !== undefined ? { model: pick.model } : {}),
-      ...(pick?.provider !== undefined ? { provider: pick.provider } : {}),
-      ...(pick?.effort !== undefined ? { effort: pick.effort } : {}),
-      ...(pick?.fast !== undefined ? { fast: pick.fast } : {}),
-      ...(cwd !== undefined ? { cwd } : {}),
-      ...(access !== undefined ? { access } : {}),
-    });
-    pendingStart.set({ ...pendingStart.get(), [res.conversation.id]: true });
-    return res.conversation;
   } catch (e) {
     sayError(describeSendError(e));
     return undefined;
@@ -274,6 +296,10 @@ const TRANSIENT_CODES = new Set([
   "closed",
 ]);
 const ASK_RESPOND_BUDGET_MS = 15_000;
+/* #557: same budget for a user send caught in an outage — long enough to
+   ride out one reconnect cycle (backoff tops out at 4 s), short enough
+   that a send that still can't land ends in the usual toast. */
+const SEND_BUDGET_MS = 15_000;
 
 const isTransientRelayError = (e: unknown) =>
   e instanceof RelayError &&
