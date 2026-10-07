@@ -77,6 +77,25 @@ export function askThreadTarget(
   return { employeeId, conversationId: ask.conversationId };
 }
 
+/** #596: where a push/deep link lands — the employee's DM pushed under the
+   thread, the same landing an ask's Open/Review takes (Back returns to the
+   DM). Undefined while the wire can't name the conversation's employee —
+   the caller then pushes Thread alone and its loading/gone states cover
+   the gap. */
+export function deepThreadTarget(
+  conversationId: string,
+  wire: Pick<HomeWire, "channels" | "conversations">,
+): { employeeId: string; conversationId: string } | undefined {
+  const channelId = wire.conversations.find(
+    (c) => c.id === conversationId,
+  )?.channelId;
+  const employeeId = channelId
+    ? wire.channels.find((c) => c.id === channelId)?.employeeId
+    : undefined;
+  if (!employeeId) return undefined;
+  return { employeeId, conversationId };
+}
+
 /** An open ask as an Activity/accessory row. */
 export function toApproval(ask: Ask, wire: HomeWire, nowMs: number): Approval {
   const channel = wire.channels.find((c) => c.id === ask.channelId);

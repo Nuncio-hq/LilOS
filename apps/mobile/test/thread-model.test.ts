@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import {
   dropRewound,
   mergeThreadEntries,
+  threadBodyState,
   threadSurface,
   toThreadDetail,
 } from "../src/thread-model";
@@ -1572,6 +1573,19 @@ describe("threadSurface — the live thread degraded by an unreachable Mac (#591
     for (const state of ["done", "failed", "stopped"] as const) {
       expect(threadSurface(state, true).stale).toBe(false);
     }
+  });
+});
+
+describe("threadBodyState — the opened thread with no conversation (#596)", () => {
+  it("AC-2 unknown is 'loading' until the directory syncs, then 'gone'", () => {
+    /* A push/deep link can open a conversationId before any sync lands —
+       that is still loading, not absent. Once the directory synced and the
+       id isn't there, the thread is gone. A resolved conversation never
+       gets a body state. */
+    expect(threadBodyState(false, false)).toBe("loading");
+    expect(threadBodyState(false, true)).toBe("gone");
+    expect(threadBodyState(true, false)).toBeUndefined();
+    expect(threadBodyState(true, true)).toBeUndefined();
   });
 });
 
