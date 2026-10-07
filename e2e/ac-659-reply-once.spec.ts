@@ -69,21 +69,21 @@ test("AC-1/2 a reply renders exactly once while the answer row beats the stream"
 
   const answer = thread.getByText("Noted. Plan for this session");
   await send(page, "second marker");
-  /* ~60 frames × 150 ms ≈ 9 s of drain BEHIND turn 1's tail — the relay row
-     lands at its head (~2 s) while the live card's streamed text only
-     reaches the asserted prefix near the drain's tail. Poll `count()` until
-     the turn settles (a second data-turnsettled appears): it answers
-     instantly, so a bare row + streaming card (2 matches, the #659 dup)
-     fails on that poll — a polling `toHaveCount`/`toBeVisible` would wait
-     the transient out (or time out while the claimed row is legitimately
-     invisible under the fix). */
-  const settled = thread.locator("[data-turnsettled]");
-  for (let i = 0; i < 400 && (await settled.count()) < 2; i++) {
+  /* The paced queue holds both turns' ~120 frames ≈ 18 s of drain; the
+     relay row lands ~2 s in while the live card's streamed text only
+     reaches the asserted prefix near the drain's tail — the duplicate
+     window opens there. Soak it: `count()` answers instantly, so a bare
+     row + streaming card (2 matches, the #659 dup) fails on that poll.
+     A `toBeVisible`/`toHaveCount` poll would wait the transient out, and
+     `data-turnsettled` can't bound the window — a still-unclaimed bare
+     row renders it too (its phase is already "done"). */
+  const deadline = Date.now() + 30_000;
+  do {
     expect(await answer.count()).toBeLessThanOrEqual(1);
     await page.waitForTimeout(150);
-  }
+  } while (Date.now() < deadline);
   /* Settled end state: the turn completed and exactly one answer surface
      remains in the thread. */
-  expect(await settled.count()).toBeGreaterThanOrEqual(2);
+  await expect(answer).toBeVisible({ timeout: 30_000 });
   expect(await answer.count()).toBe(1);
 });
