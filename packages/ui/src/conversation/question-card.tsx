@@ -148,6 +148,24 @@ export function QuestionCard({
       const others = card.scrollHeight - list.clientHeight;
       const portH = port ? port.clientHeight : window.innerHeight;
       const { cap: capPx, over } = questionOptionCap(natural, others, portH);
+      /* TEMP DEBUG #649 — cap measure history, read by the AC-3 dump */
+      try {
+        const log = JSON.parse(list.dataset.caplog ?? "[]");
+        log.push({
+          t: Math.round(performance.now()),
+          port: port
+            ? `${port.tagName}.ch${port.clientHeight}.${(port.getAttribute("class") ?? "").slice(0, 40)}`
+            : null,
+          portH,
+          others,
+          natural,
+          capPx,
+          over,
+          cardH: card.scrollHeight,
+          scOv: port ? getComputedStyle(port).overflowY : null,
+        });
+        list.dataset.caplog = JSON.stringify(log.slice(-20));
+      } catch {}
       /* Snap the cap to a whole-row boundary plus a peek of the next tile
          (no half-glyph rows), and count what's left hidden — measured
          against the list's own top edge, not an offsetParent. */
@@ -209,6 +227,14 @@ export function QuestionCard({
     const el = cardRef.current;
     if (!el || !interactive) return;
     const port = scrollPortOf(el);
+    /* TEMP DEBUG #649 — record what the arrival-align resolved */
+    try {
+      const list = el.querySelector("[data-question-options]");
+      if (list instanceof HTMLElement)
+        list.dataset.aport = port
+          ? `${port.tagName}.ch${port.clientHeight}.${(port.getAttribute("class") ?? "").slice(0, 40)}`
+          : "null";
+    } catch {}
     if (!port) return;
     let cancelled = false;
     const align = () => {
