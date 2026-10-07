@@ -1695,9 +1695,13 @@ export function DmPage() {
     }
 
     threadEl = (
+      /* bg-background is not decorative here: on the desktop app the body is
+         transparent and the column would otherwise show the window's light
+         vibrancy backing under dark mode — the same surface treatment the
+         right panel and Focus thread pane already carry. */
       <div
         data-thread-panel
-        className="flex min-h-0 w-[420px] shrink-0 flex-col border-l xl:w-[460px]"
+        className="flex min-h-0 w-[420px] shrink-0 flex-col border-l bg-background xl:w-[460px]"
       >
         {historyNotice && (
           <div className="px-3 pt-2 sm:px-5">{historyNotice}</div>

@@ -31,6 +31,29 @@ const locateNthOccurrence = (text: string, ordinal: number) => {
   return null;
 };
 
+/** Ordinal of the find bar's own match, when there is one. FindBar renders
+    the query with a lookalike-letter swap so the field's text can never
+    hold the needle — except a query with no mappable letter (digits or
+    symbols only), whose field still matches once, at the input's
+    flat-tree position: every text-node occurrence before it, plus one. */
+const inputMatchOrdinal = (text: string) => {
+  const input = document.querySelector<HTMLInputElement>("[data-find-input]");
+  if (!input?.value.toLowerCase().includes(text.toLowerCase())) return null;
+  const needle = text.toLowerCase();
+  let seen = 0;
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    if (!(input.compareDocumentPosition(n) & Node.DOCUMENT_POSITION_PRECEDING))
+      continue;
+    const value = n.nodeValue ?? "";
+    for (let at = value.toLowerCase().indexOf(needle); at !== -1; ) {
+      seen += 1;
+      at = value.toLowerCase().indexOf(needle, at + needle.length);
+    }
+  }
+  return seen + 1;
+};
+
 export function DesktopFindBar() {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -45,11 +68,25 @@ export function DesktopFindBar() {
   live.current = { open, query };
   /* Invalidates a running ensureMatchVisible retry chain. */
   const scrollRun = useRef(0);
+  /* Direction of the last step, used to keep walking when the active match
+     lands on the bar's own input. */
+  const lastStepDir = useRef(true);
+  /* Chromium's raw active ordinal on the last result, for stall checks. */
+  const lastRawOrd = useRef(0);
+  /* A step that comes back with the ordinal unmoved didn't move: Blink can
+     re-report the current match once or twice after the session has been
+     re-anchored by repeated fresh searches — retry the step, bounded. */
+  const pendingStep = useRef<{
+    dir: boolean;
+    from: number;
+    tries: number;
+  } | null>(null);
 
   /* Chromium scrolls the active match into view itself, but the jump can
      land while the un-stub mount still holds the scrollport's top edge —
      the hold then undoes it and the match stays off-screen. Re-scroll the
-     match's own element until it sits inside its scroller's clip. */
+     match's own element until it sits inside its scroller's clip — and out
+     from under the bar, which overlays the port's top edge. */
   const ensureMatchVisible = useCallback((text: string, ordinal: number) => {
     const run = ++scrollRun.current;
     const attempt = () => {
@@ -62,7 +99,17 @@ export function DesktopFindBar() {
         port = port.parentElement;
       const pt = port?.getBoundingClientRect();
       const r = el.getBoundingClientRect();
-      const inside = !!pt && r.bottom > pt.top + 1 && r.top < pt.bottom - 1;
+      const bar = document
+        .querySelector("[data-find-bar]")
+        ?.getBoundingClientRect();
+      const underBar =
+        !!bar &&
+        r.bottom > bar.top &&
+        r.top < bar.bottom &&
+        r.right > bar.left &&
+        r.left < bar.right;
+      const inside =
+        !!pt && r.bottom > pt.top + 1 && r.top < pt.bottom - 1 && !underBar;
       if (!inside) el.scrollIntoView({ block: "center" });
       if (inside || !port) return;
       setTimeout(attempt, 100);
@@ -83,6 +130,8 @@ export function DesktopFindBar() {
   const step = useCallback((forward: boolean) => {
     const q = live.current.query;
     if (!q) return;
+    lastStepDir.current = forward;
+    pendingStep.current = { dir: forward, from: lastRawOrd.current, tries: 0 };
     window.lilos?.findInPage?.({
       text: q,
       step: forward ? "next" : "prev",
@@ -108,12 +157,52 @@ export function DesktopFindBar() {
       action === "open" ? openBar() : openThen(() => step(action === "next")),
     );
     const offResult = bridge.onFindResult?.((r) => {
-      setResult({
-        matches: r.matches,
-        activeMatchOrdinal: r.activeMatchOrdinal,
-      });
-      if (r.matches > 0 && r.activeMatchOrdinal > 0)
-        ensureMatchVisible(live.current.query, r.activeMatchOrdinal);
+      const q = live.current.query;
+      lastRawOrd.current = r.activeMatchOrdinal;
+      /* A requested step that reports the ordinal unmoved didn't move —
+         Blink can re-report the current match right after the session is
+         re-anchored; retry the step (bounded) instead of showing a stall. */
+      const stepped = pendingStep.current;
+      pendingStep.current = null;
+      if (
+        stepped &&
+        r.matches > 1 &&
+        r.activeMatchOrdinal === stepped.from &&
+        stepped.tries < 3
+      ) {
+        pendingStep.current = { ...stepped, tries: stepped.tries + 1 };
+        window.lilos?.findInPage?.({
+          text: q,
+          step: stepped.dir ? "next" : "prev",
+        });
+        return;
+      }
+      /* The field's display value is unmatchable by construction; only a
+         query with no mappable letter still lands a match inside the
+         input — subtract it from the count/ordinal and step on past it
+         instead of activating the field itself. */
+      const skip = q ? inputMatchOrdinal(q) : null;
+      const total = r.matches - (skip ? 1 : 0);
+      let ord = r.activeMatchOrdinal;
+      if (skip && ord === skip) {
+        if (r.matches > 1) {
+          pendingStep.current = {
+            dir: lastStepDir.current,
+            from: r.activeMatchOrdinal,
+            tries: 0,
+          };
+          window.lilos?.findInPage?.({
+            text: q,
+            step: lastStepDir.current ? "next" : "prev",
+          });
+          return;
+        }
+        ord = 0;
+      } else if (skip && ord > skip) {
+        ord -= 1;
+      }
+      setResult({ matches: total, activeMatchOrdinal: ord });
+      if (total > 0 && ord > 0) ensureMatchVisible(q, ord);
     });
     /* The renderer keydown path — a find chord that reaches the page (a
        menu-less dev window, or a platform that passes the chord through)
@@ -153,6 +242,7 @@ export function DesktopFindBar() {
       focusSignal={focusSignal}
       onQuery={(v) => {
         scrollRun.current += 1;
+        pendingStep.current = null;
         setQuery(v);
         if (!v) {
           window.lilos?.stopFindInPage?.();

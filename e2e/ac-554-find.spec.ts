@@ -24,7 +24,7 @@ import { bootStack, pickPorts, type Stack } from "./helpers/stack";
  * Playwright's synthetic keys can't press them either — so the spec clicks
  * the real menu items through `app.evaluate`, the same path the OS takes.
  * One 60-turn engine-fake thread is grown through relay RPC (#574); the
- * probe word rides user turns 2 and 58, which hold as stubs off-screen.
+ * probe word rides user turns 2 and 59, which hold as stubs off-screen.
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -80,8 +80,9 @@ const clickMenuItem = (id: string) =>
     id,
   );
 
-/** The deepest element whose own text is exactly the probe — the row Chromium
-    scrolled to — measured against the conversation scrollport clip. */
+/** The deepest elements whose own text holds the probe — the rows Chromium
+    scrolls to — measured against the conversation scrollport clip AND the
+    find bar: a match scrolled under the bar is not visible. */
 async function probeMatch(scope: string, text: string) {
   return win.evaluate(
     ({ sel, probe }) => {
@@ -106,19 +107,55 @@ async function probeMatch(scope: string, text: string) {
         port = port.parentElement;
       if (leaves.length === 0 || !port) return null;
       const pt = port.getBoundingClientRect();
+      const bar = document
+        .querySelector("[data-find-bar]")
+        ?.getBoundingClientRect();
       return {
         portTop: pt.top,
         portBottom: pt.bottom,
         scrollTop: port.scrollTop,
         matches: leaves.map((l) => {
           const r = l.getBoundingClientRect();
+          const underBar =
+            !!bar &&
+            r.bottom > bar.top &&
+            r.top < bar.bottom &&
+            r.right > bar.left &&
+            r.left < bar.right;
           return {
             top: r.top,
             bottom: r.bottom,
-            visible: r.bottom > pt.top + 1 && r.top < pt.bottom - 1,
+            underBar,
+            visible:
+              r.bottom > pt.top + 1 && r.top < pt.bottom - 1 && !underBar,
           };
         }),
       };
+    },
+    { sel: scope, probe: text },
+  );
+}
+
+/** Text-node occurrences of the probe inside the scope — the count the bar
+    must read back. The input's own value can never add to it — the field
+    renders the query with a lookalike letter swapped in, so its text can
+    never equal the needle Chromium searches for. */
+async function domOccurrences(scope: string, text: string) {
+  return win.evaluate(
+    ({ sel, probe }) => {
+      const scopeEl = document.querySelector(sel);
+      if (!scopeEl) return 0;
+      const needle = probe.toLowerCase();
+      let seen = 0;
+      const walker = document.createTreeWalker(scopeEl, NodeFilter.SHOW_TEXT);
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+        const value = (n.nodeValue ?? "").toLowerCase();
+        for (let at = value.indexOf(needle); at !== -1; ) {
+          seen += 1;
+          at = value.indexOf(needle, at + needle.length);
+        }
+      }
+      return seen;
     },
     { sel: scope, probe: text },
   );
@@ -203,6 +240,20 @@ test("AC-2 (#554) the Edit menu lists Find… ⌘F, Find Next ⌘G, Find Previou
   });
 });
 
+test("AC-1 (#554) the thread panel paints its own surface — dark text never lands on the window's light backing", async () => {
+  /* On the desktop app the body is transparent and every surface must paint
+     itself: the thread column used to paint nothing, so dark-mode text sat
+     on the window's permanently light backing (the vibrancy material never
+     darkens under Playwright's scheme emulation). The panel now resolves
+     --background like the right panel and the Focus thread pane. */
+  const panel = win.locator("[data-thread-panel]");
+  await win.evaluate(() => document.documentElement.classList.add("dark"));
+  await expect
+    .poll(() => panel.evaluate((el) => getComputedStyle(el).backgroundColor))
+    .toBe("rgb(28, 28, 30)"); // --background: #1c1c1e under .dark
+  await win.evaluate(() => document.documentElement.classList.remove("dark"));
+});
+
 test("AC-1/AC-3 (#554) ⌘F highlights + scrolls to a held early turn; ⌘G/⇧⌘G walk; Esc closes — Thread panel and Focus", async () => {
   test.setTimeout(180_000);
   const panel = win.locator("[data-thread-panel]");
@@ -227,9 +278,30 @@ test("AC-1/AC-3 (#554) ⌘F highlights + scrolls to a held early turn; ⌘G/⇧�
     timeout: 15_000,
   });
 
-  /* Typing drives webContents.findInPage; found-in-page feeds the readout. */
+  /* Typing drives webContents.findInPage; found-in-page feeds the readout.
+     The readout counts thread occurrences exactly — Chromium also searches
+     form fields, so the bar's own input must never add to the total. */
   await input.fill(PROBE);
-  await expect(count).toHaveText(/^1 of [2-9]/, { timeout: 15_000 });
+  const threadCount = await domOccurrences("[data-thread-panel]", PROBE);
+  expect(threadCount).toBeGreaterThan(1);
+  await expect(count).toHaveText(`1 of ${threadCount}`, { timeout: 15_000 });
+  /* …and the query in the field keeps normal selection styling — the
+     find-match yellow can never reach it (the field's displayed value can't
+     equal the needle). */
+  const selBg = await win.evaluate(
+    () =>
+      getComputedStyle(
+        document.querySelector("[data-find-input]") as Element,
+        "::selection",
+      ).backgroundColor,
+  );
+  expect(selBg).not.toBe("rgb(255, 255, 0)");
+  /* Even a single-char needle — the one case the field's value can equal —
+     is subtracted: absent from the thread, it reads No results, not 1. */
+  await input.fill("§");
+  await expect(count).toHaveText("No results", { timeout: 15_000 });
+  await input.fill(PROBE);
+  await expect(count).toHaveText(`1 of ${threadCount}`, { timeout: 15_000 });
 
   /* AC-3 — the first match is the held turn-2 row: it is highlighted AND
      scrolled into view — the scroll can land a beat after the result
@@ -291,7 +363,9 @@ test("AC-1/AC-3 (#554) ⌘F highlights + scrolls to a held early turn; ⌘G/⇧�
   await expect(bar).toBeVisible({ timeout: 15_000 });
   await expect(input).toBeFocused();
   await input.fill(PROBE);
-  await expect(count).toHaveText(/of [2-9]/, { timeout: 15_000 });
+  await expect(count).toHaveText(new RegExp(`of ${threadCount}$`), {
+    timeout: 15_000,
+  });
   await expect
     .poll(
       async () => {
