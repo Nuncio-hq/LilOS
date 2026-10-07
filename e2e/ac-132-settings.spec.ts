@@ -136,7 +136,7 @@ test("AC-2 every section renders real data", async ({ page }) => {
     await tab(page, "Models").click();
     await expect(panel).toContainText("models visible");
     await expect(
-      panel.getByRole("button", { name: "Manage models…" }),
+      panel.getByRole("button", { name: "Edit models…" }),
     ).toBeVisible();
 
     // Status: the real legs list.

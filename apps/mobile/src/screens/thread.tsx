@@ -36,8 +36,10 @@ import {
   answerPlanChange,
   awaitPlanAsk,
   decide,
+  negativeOutcome,
   PLAN_CHANGE_PREFIX,
   planChangeSend,
+  primaryOutcome,
 } from "../asks";
 import { messageCache } from "../cache";
 import { $demo, DEMO_MAC } from "../demo/lifecycle";
@@ -463,7 +465,7 @@ export function Thread({
     if (!c) return;
     void (async () => {
       const ask = await awaitPlanAsk(conversationId, planId);
-      if (ask) await decide(c, ask.id, action === "approve");
+      if (ask) await decide(c, ask.id, action);
     })();
   };
 
@@ -506,11 +508,20 @@ export function Thread({
       model={modelChip}
       modelLogo={provider?.logo}
       modelUnavailable={!catalog.models.length && catalogUnavailable}
+      /* #601: the tapped option IS the outcome — the ask's own list
+         (onGrant); the generic Approve/Deny fall back to the kind's
+         primary/negative outcome (a question's Cancel is a "cancel", a
+         plan's Deny a "reject"). */
       onApprove={(id) => {
-        if (client) void decide(client, id, true);
+        const ask = $asks.get().find((a) => a.id === id);
+        if (client && ask) void decide(client, id, primaryOutcome(ask));
       }}
       onDeny={(id) => {
-        if (client) void decide(client, id, false);
+        const ask = $asks.get().find((a) => a.id === id);
+        if (client && ask) void decide(client, id, negativeOutcome(ask));
+      }}
+      onGrant={(id, option) => {
+        if (client) void decide(client, id, option);
       }}
       onSend={send}
       onStop={stop}

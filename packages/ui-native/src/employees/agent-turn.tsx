@@ -5,14 +5,27 @@ import { Card, CommandLine, nonBreaking, Pill } from "../components/bits";
 import { Icon } from "../components/icon";
 import { Orb, type OrbTone } from "../components/orb";
 import { Prose, Pulse } from "../components/prose";
-import { cardLine, describeAsk } from "./approval-copy";
+import {
+  cardLine,
+  decidedVerb,
+  describeAsk,
+  GRANT_LABEL,
+  grantPills,
+} from "./approval-copy";
+
 import { type PlanAction, PlanCard } from "./plan-card";
 import { PrCard } from "./pr-badges";
 import { type QuestionAnswer, QuestionCard } from "./question-card";
 import { isAnswerableQuestion } from "./question-gate";
 import { StepRow, tool } from "./step-row";
 import { SubagentsCard, SubagentsLink } from "./subagents";
-import type { AgentEntry, Approval, SubagentRow, ToolStep } from "./types";
+import type {
+  AgentEntry,
+  Approval,
+  GrantOption,
+  SubagentRow,
+  ToolStep,
+} from "./types";
 
 /* One conversation turn — the mobile twin of the web AgentTurn/UserTurn
    (packages/ui/src/conversation/turns.tsx): who + time, "Thought for Ns"
@@ -52,6 +65,7 @@ export function AgentTurn({
   tone,
   onApprove,
   onDeny,
+  onGrant,
   onAnswer,
   onOpenSubagent,
   onOpenSubagents,
@@ -65,6 +79,9 @@ export function AgentTurn({
   tone: OrbTone;
   onApprove: (id: string) => void;
   onDeny: (id: string) => void;
+  /** #601: the tapped option on an approval card — one of the ask's own
+      grantOptions (Once / This session / Always / Deny). */
+  onGrant?: (id: string, option: GrantOption) => void;
   /** #420: a question ask's answer (options send their wire id, free text
       the typed string); a question's Cancel rides `onDeny`. */
   onAnswer?: (id: string, answer: QuestionAnswer) => void;
@@ -190,6 +207,7 @@ export function AgentTurn({
             a={e.approval}
             onApprove={onApprove}
             onDeny={onDeny}
+            onGrant={onGrant}
             stale={stale}
             answerHint={answerHint}
           />
@@ -366,6 +384,7 @@ function ApprovalCard({
   a,
   onApprove,
   onDeny,
+  onGrant,
   flat,
   stale,
   answerHint,
@@ -373,6 +392,8 @@ function ApprovalCard({
   a: Approval;
   onApprove: (id: string) => void;
   onDeny: (id: string) => void;
+  /** #601: one pill per option the ask offered, in its order. */
+  onGrant?: (id: string, option: GrantOption) => void;
   /** Inside a session card: no second border, no label (the chip says it). */
   flat?: boolean;
   /** #652: the Mac is unreachable — the pills render disabled and the
@@ -446,20 +467,38 @@ function ApprovalCard({
             </View>
           </View>
         )}
-        <View className="mt-3 flex-row items-center gap-2">
-          {a.kind !== "question" && (
-            <Pill
-              label="Approve"
-              disabled={stale}
-              onPress={() => onApprove(a.id)}
-            />
+        <View className="mt-3 flex-row flex-wrap items-center gap-2">
+          {/* #601: the ask's own options, its own order — the first grant
+              is the prominent pill like the Mac's first action, Deny reads
+              soft. A pre-options row (prototype) falls back to Approve +
+              Deny via grantPills. */}
+          {a.kind === "approval" && onGrant ? (
+            grantPills(a).map((opt, i) => (
+              <Pill
+                key={opt}
+                label={GRANT_LABEL[opt]}
+                variant={i === 0 && opt !== "deny" ? undefined : "soft"}
+                disabled={stale}
+                onPress={() => onGrant(a.id, opt)}
+              />
+            ))
+          ) : (
+            <>
+              {a.kind !== "question" && (
+                <Pill
+                  label="Approve"
+                  disabled={stale}
+                  onPress={() => onApprove(a.id)}
+                />
+              )}
+              <Pill
+                label="Deny"
+                variant="soft"
+                disabled={stale}
+                onPress={() => onDeny(a.id)}
+              />
+            </>
           )}
-          <Pill
-            label="Deny"
-            variant="soft"
-            disabled={stale}
-            onPress={() => onDeny(a.id)}
-          />
         </View>
         {stale && answerHint && (
           <AppText size="xs" tone="muted" className="mt-1.5">
@@ -514,9 +553,7 @@ function Receipt({ d }: { d: NonNullable<AgentEntry["decided"]> }) {
             ? d.approved
               ? "You answered: "
               : "You cancelled: "
-            : d.approved
-              ? "You approved: "
-              : "You denied: "}
+            : `${decidedVerb(d.outcome, d.approved)} `}
         </Text>
         <Text className="font-mono text-[12px]">{nonBreaking(d.what)}</Text>
       </Text>

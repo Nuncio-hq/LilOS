@@ -397,6 +397,7 @@ describe("thread-model — #157 AC mapping", () => {
       id: "ask-1",
       reason: "rm -rf build/",
       command: "rm -rf build/",
+      grantOptions: ["once", "always", "deny"],
     });
   });
 
@@ -428,6 +429,39 @@ describe("thread-model — #157 AC mapping", () => {
     expect(card.decided).toEqual({
       approved: false,
       what: "rm -rf build/",
+      outcome: "deny",
+    });
+  });
+
+  it("#601 the decided receipt carries the granted outcome — 'This session' names itself", () => {
+    const model = reduceSessionEvents("sess-1", [
+      ev("turn.started", { turnId: "t1", model: "fake-small" }),
+      ev("turn.delta", { turnId: "t1", stream: "text", delta: "done" }),
+      ev("turn.completed", { turnId: "t1", stopReason: "end_turn" }),
+    ]);
+    const ask: Ask = {
+      id: "ask-1",
+      channelId: "ch-dm",
+      conversationId: "conv-1",
+      turnId: "t1",
+      requestId: "r1",
+      request: {
+        kind: "approval",
+        command: "pnpm -r test",
+        description: "terminal wants to run: pnpm -r test",
+        options: ["once", "session", "always", "deny"],
+      },
+      state: "resolved",
+      outcome: "session",
+      createdAt: T0,
+    };
+    const entries = mergeThreadEntries([], model, { ...OPTS, asks: [ask] });
+    const card = entries[0];
+    if (card.kind !== "agent") throw new Error("expected agent entry");
+    expect(card.decided).toEqual({
+      approved: true,
+      what: "pnpm -r test",
+      outcome: "session",
     });
   });
 
@@ -458,7 +492,11 @@ describe("thread-model — #157 AC mapping", () => {
     const entries = mergeThreadEntries([], model, { ...OPTS, asks: [ask] });
     const card = entries[0];
     if (card.kind !== "agent") throw new Error("expected agent entry");
-    expect(card.decided).toEqual({ approved: true, what: command });
+    expect(card.decided).toEqual({
+      approved: true,
+      what: command,
+      outcome: "once",
+    });
   });
 
   it("#134 a rewound turn never resurrects (refs and texts both hide it)", () => {

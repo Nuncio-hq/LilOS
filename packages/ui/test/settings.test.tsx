@@ -188,7 +188,7 @@ describe("AC-2 (#139) sections carry working controls", () => {
     fireEvent.click(within(dialog).getByRole("tab", { name: "Models" }));
     await act(async () =>
       fireEvent.click(
-        within(dialog).getByRole("button", { name: /Manage models/ }),
+        within(dialog).getByRole("button", { name: /Edit models/ }),
       ),
     );
     const modelsDialog = within(body()).getByRole("dialog", { name: "Models" });

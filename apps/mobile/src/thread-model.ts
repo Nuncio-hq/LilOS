@@ -113,6 +113,8 @@ function turnApproval(
         reason: askReason(open),
         command:
           open.request.kind === "approval" ? open.request.command : undefined,
+        grantOptions:
+          open.request.kind === "approval" ? open.request.options : undefined,
         age: timeLabel(open.createdAt, now),
       },
     };
@@ -123,10 +125,14 @@ function turnApproval(
         decided: {
           approved:
             resolved.outcome === "once" ||
+            resolved.outcome === "session" ||
             resolved.outcome === "always" ||
             resolved.outcome === "approve" ||
             resolved.outcome === "answer",
           what: askReason(resolved),
+          /* #601: the receipt names the granted outcome — "This session"
+              reads differently from "always". */
+          outcome: resolved.outcome,
         },
       }
     : {};

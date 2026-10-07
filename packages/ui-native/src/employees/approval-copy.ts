@@ -1,4 +1,4 @@
-import type { Approval } from "./types";
+import type { Approval, GrantOption } from "./types";
 
 /* #264 — the one sentence an approval surface says above its command box.
    The wire's `description` is the engine's own "wants to run: <cmd>" echo
@@ -162,4 +162,29 @@ export function accessoryWhat(
   },
 ): string {
   return `${a.lastKnown ? "Last known · " : ""}${whatLine(a)}`;
+}
+
+/* #601 — the option pills read like the Mac card's (cards.tsx actionMeta):
+   the ask's own options, its own order. */
+export const GRANT_LABEL: Record<GrantOption, string> = {
+  once: "Once",
+  session: "This session",
+  always: "Always",
+  deny: "Deny",
+};
+
+/** The options a surface offers for an approval — the ask's own list;
+    pre-options rows (prototype) fall back to Once + Deny like before. */
+export function grantPills(a: Pick<Approval, "grantOptions">): GrantOption[] {
+  return a.grantOptions?.length ? a.grantOptions : ["once", "deny"];
+}
+
+/** The receipt verb a resolved outcome reads — "You allowed for this
+    session:" names the grant, a bare "You approved:" never lies about
+    which option landed. */
+export function decidedVerb(outcome?: string, approved = true): string {
+  if (outcome === "session") return "You allowed for this session:";
+  if (outcome === "always") return "You always allowed:";
+  if (outcome === "reject") return "You rejected:";
+  return approved ? "You approved:" : "You denied:";
 }

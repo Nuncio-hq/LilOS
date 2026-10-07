@@ -59,7 +59,7 @@ export function PlanPanel({ plans }: { plans: Plan[] }) {
   if (!current)
     return (
       <div className="grid h-full place-items-center p-8 text-center text-muted-foreground text-xs">
-        No plan in this session yet.
+        No plan in this thread yet.
       </div>
     );
   const { done, total, pct } = planProgress(current);

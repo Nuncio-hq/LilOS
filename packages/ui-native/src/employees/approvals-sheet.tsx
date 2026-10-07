@@ -4,9 +4,9 @@ import { AppText } from "../components/app-text";
 import { Card, LargeTitle, Pill } from "../components/bits";
 import { Icon } from "../components/icon";
 import { Orb } from "../components/orb";
-import { whatLine } from "./approval-copy";
+import { GRANT_LABEL, grantPills, whatLine } from "./approval-copy";
 import { isAnswerableQuestion } from "./question-gate";
-import type { Approval } from "./types";
+import type { Approval, GrantOption } from "./types";
 
 /* Everything waiting on you, oldest first — as a modal sheet (onClose) or
    as the Activity tab. No "Approve all" on purpose:
@@ -15,6 +15,7 @@ export function ApprovalsSheet({
   approvals,
   onApprove,
   onDeny,
+  onGrant,
   onOpen,
   onReview,
   onClose,
@@ -25,6 +26,10 @@ export function ApprovalsSheet({
       absent while approving lands in a later slice (#158). */
   onApprove?: (id: string) => void;
   onDeny?: (id: string) => void;
+  /** #601: the tapped option on an approval row — one of the ask's own
+      grantOptions (Once / This session / Always / Deny). Supersedes
+      onApprove/onDeny for approval asks when passed. */
+  onGrant?: (id: string, option: GrantOption) => void;
   onOpen: (id: string) => void;
   /** #595: a plan ask's **Review** — opens the plan in its thread. Falls
       back to onOpen when absent. */
@@ -157,7 +162,7 @@ export function ApprovalsSheet({
                 </View>
               </View>
             )}
-            <View className="mt-3 flex-row items-center gap-2">
+            <View className="mt-3 flex-row flex-wrap items-center gap-2">
               {/* #591: a last-known row offers no dead pills — the tap
                   couldn't reach the Mac anyway. Open still works: it
                   opens the cached thread. */}
@@ -170,19 +175,37 @@ export function ApprovalsSheet({
                   onPress={() => (onReview ?? onOpen)(a.id)}
                 />
               )}
+              {/* #601: an approval row offers the ask's own options in its
+                  order (Once / This session / Always / Deny) when onGrant
+                  is passed; the plain Approve/Deny pair stays the
+                  fallback. */}
               {!a.lastKnown &&
+                onGrant &&
+                a.kind === "approval" &&
+                grantPills(a).map((opt, i) => (
+                  <Pill
+                    key={opt}
+                    label={GRANT_LABEL[opt]}
+                    variant={i === 0 && opt !== "deny" ? undefined : "soft"}
+                    onPress={() => onGrant(a.id, opt)}
+                  />
+                ))}
+              {!a.lastKnown &&
+                !onGrant &&
                 onApprove &&
                 (a.primary ?? "approve") === "approve" &&
                 a.kind !== "question" && (
                   <Pill label="Approve" onPress={() => onApprove(a.id)} />
                 )}
-              {!a.lastKnown && onDeny && (
-                <Pill
-                  label={isAnswerableQuestion(a) ? "Skip" : "Deny"}
-                  variant="soft"
-                  onPress={() => onDeny(a.id)}
-                />
-              )}
+              {!a.lastKnown &&
+                !(onGrant && a.kind === "approval") &&
+                onDeny && (
+                  <Pill
+                    label={isAnswerableQuestion(a) ? "Skip" : "Deny"}
+                    variant="soft"
+                    onPress={() => onDeny(a.id)}
+                  />
+                )}
               <View className="flex-1" />
               {/* On a plan card Review IS the open — no second route pill. */}
               {a.primary !== "review" && (
