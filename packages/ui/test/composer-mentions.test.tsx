@@ -102,6 +102,44 @@ describe("issue #105 file mentions in the composer", () => {
     expect(menu(c.container)).toBeNull();
   });
 
+  test("AC-1 a ↓ landing the moment the file row appears keeps the moved highlight (#693)", async () => {
+    const c = render(
+      <Composer
+        placeholder="Reply…"
+        employees={[BUILDER]}
+        hint=""
+        onSearchFiles={search}
+      />,
+    );
+    const el = box(c.container);
+    /* #693 flake: the highlight reset must not clobber a ↓ that lands between
+       the file rows' commit and their settled state. A MutationObserver await
+       resolves on the mutation microtask — inside exactly that window — which
+       is the interleaving the rare CI failure hit. */
+    const rowAppeared = new Promise<HTMLElement>((resolve) => {
+      const mo = new MutationObserver(() => {
+        const node = c.container.querySelector(
+          '[data-mention-file="src/app.tsx"]',
+        );
+        if (node) {
+          mo.disconnect();
+          resolve(node as HTMLElement);
+        }
+      });
+      mo.observe(c.container, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+      });
+    });
+    fireEvent.change(el, { target: { value: "@app" } });
+    const row = await rowAppeared;
+    fireEvent.keyDown(el, { key: "ArrowDown" });
+    expect(row.closest('[role="option"]')?.getAttribute("aria-selected")).toBe(
+      "true",
+    );
+  });
+
   test("AC-2 with no onSearchFiles handler the Files section does not render (D-#19)", async () => {
     const c = render(
       <Composer placeholder="Reply…" employees={[BUILDER]} hint="" />,
