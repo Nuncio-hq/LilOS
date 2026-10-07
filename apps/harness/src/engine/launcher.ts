@@ -91,6 +91,8 @@ export interface CommandLauncherOptions {
    * the engine immediately instead of counting a restartable crash.
    */
   fatalExitCodes?: number[];
+  /** spawn seam for tests; production uses node:child_process.spawn. */
+  spawn?: typeof spawn;
   log: Logger;
 }
 
@@ -113,7 +115,8 @@ export function commandLauncher(
           engine: options.name,
           command: options.command.join(" "),
         });
-        const child = spawn(bin, args, {
+        const spawnImpl = options.spawn ?? spawn;
+        const child = spawnImpl(bin, args, {
           cwd: options.cwd,
           env: {
             ...scrubLilosEnv(process.env),
@@ -205,7 +208,11 @@ export function commandLauncher(
           clearTimeout(timer);
           reject(new Error(`engine ${options.name} spawn failed: ${error}`));
         });
-        child.once("exit", (code, signal) => {
+        /* The verdict waits for 'close', not 'exit' (#699): pipe data
+           survives the writer's exit, so a loaded host may deliver 'exit'
+           while the ready line still sits buffered in the pipe — 'close'
+           fires only once every pending 'data' chunk has landed. */
+        child.once("close", (code, signal) => {
           clearTimeout(timer);
           // Flush the trailing partial line — a killed child ends mid-line.
           if (outLine) mirrorLine(outLine, "out");
@@ -253,6 +260,8 @@ export function fakeServeCommand(options: {
    * Argv marker for e2e leak assertions (`pgrep -f "--tag <tag>">`).
    */
   tag?: string;
+  /** #621 e2e hook: delay each approval's `request.opened` emit (ms). */
+  askOpenDelayMs?: number;
 }): string[] {
   const script = join(
     options.repoRoot,
@@ -276,6 +285,9 @@ export function fakeServeCommand(options: {
     // Die with the harness: stdin EOF means the launcher process is gone.
     "--watch-stdin",
     ...(options.tag ? ["--tag", options.tag] : []),
+    ...(options.askOpenDelayMs
+      ? ["--ask-open-delay", String(options.askOpenDelayMs)]
+      : []),
   ];
 }
 
@@ -286,6 +298,7 @@ export function fakeEngineLauncher(options: {
   bun?: string;
   serveBin?: string;
   tag?: string;
+  askOpenDelayMs?: number;
   log: Logger;
 }): EngineLauncher {
   return {

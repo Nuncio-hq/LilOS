@@ -110,6 +110,10 @@ test.beforeAll(async () => {
     PATH: `${fakeGh}:${process.env.PATH}`,
     GH_FAKE_DIR: ghFakeDir,
     GH_FAKE_LOG: ghLogFile,
+    /* #621: every approval opens 4s late, so the spec always exercises the
+       late-card path this issue regressed — two or more asks in a row now
+       outlast a helper that stops answering after ~6s of quiet. */
+    LILOS_ASK_OPEN_DELAY_MS: "4000",
   });
 });
 test.afterAll(async () => {
@@ -188,7 +192,12 @@ const sendTurn = async (page: Page, text: string) => {
     timeout: 60_000,
   });
   if ((await turns(page).count()) > 0) {
-    await expectSettled(turns(page).last(), 60_000);
+    /* #621: on this shared stack the last turn of the opened session can be
+       parked on an approval nobody is answering — e.g. a queued follow-up
+       whose card opened after the previous test's allowAllWhile left. A
+       bare settle wait only watches the parked card; allowAllWhile keeps
+       answering it so the turn can actually finish. */
+    await allowAllWhile(page, expectSettled(turns(page).last(), 60_000));
   }
   await send(page, text);
   /* #577: the send lands on the thread panel, which lives outside <main> —

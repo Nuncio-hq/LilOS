@@ -168,7 +168,7 @@ export function accessoryWhat(
    the ask's own options, its own order. */
 export const GRANT_LABEL: Record<GrantOption, string> = {
   once: "Once",
-  session: "This session",
+  session: "This thread",
   always: "Always",
   deny: "Deny",
 };
@@ -183,7 +183,7 @@ export function grantPills(a: Pick<Approval, "grantOptions">): GrantOption[] {
     session:" names the grant, a bare "You approved:" never lies about
     which option landed. */
 export function decidedVerb(outcome?: string, approved = true): string {
-  if (outcome === "session") return "You allowed for this session:";
+  if (outcome === "session") return "You allowed for this thread:";
   if (outcome === "always") return "You always allowed:";
   if (outcome === "reject") return "You rejected:";
   return approved ? "You approved:" : "You denied:";
