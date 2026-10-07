@@ -116,9 +116,7 @@ describe("describeAsk — one human line per ask", () => {
         'Ada wants to run: write_file {"path":"docs/decisions/0002-notes.md"}',
       command: 'write_file {"path":"docs/decisions/0002-notes.md"}',
     };
-    expect(whatLine(a)).toBe(
-      "Ada wants to write docs/decisions/0002-notes.md",
-    );
+    expect(whatLine(a)).toBe("Ada wants to write docs/decisions/0002-notes.md");
     expect(whatLine(a)).not.toContain("{");
     expect(whatLine(a)).not.toContain('"path"');
   });
