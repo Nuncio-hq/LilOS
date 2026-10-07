@@ -184,9 +184,9 @@ export function Activity() {
     () => openAsks(wire.asks).map((a) => toApproval(a, wire, nowMs)),
     [wire, nowMs],
   );
-  /* #595: same landing as the accessory's Review — the asking thread
-     pushed over its DM. */
-  const openPlanThread = (askId: string) => {
+  /* #594/#595: Open and a plan's Review share one landing — the asking
+     thread pushed over its DM, so Back returns to the DM. */
+  const openAskThread = (askId: string) => {
     const ask = wire.asks.find((a) => a.id === askId);
     const target = ask && askThreadTarget(ask, wire);
     if (!target) return;
@@ -218,13 +218,8 @@ export function Activity() {
       onGrant={(id, option) => {
         if (client) void decide(client, id, option);
       }}
-      onOpen={(askId) => {
-        const ask = wire.asks.find((a) => a.id === askId);
-        const channel = wire.channels.find((c) => c.id === ask?.channelId);
-        if (channel?.employeeId)
-          nav.navigate("Dm", { employeeId: channel.employeeId });
-      }}
-      onReview={openPlanThread}
+      onOpen={openAskThread}
+      onReview={openAskThread}
     />
   );
 }
