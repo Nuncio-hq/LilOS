@@ -64,9 +64,14 @@ describe("macLinkFor (#591)", () => {
     expect(macLinkFor(st("backoff", "connect timeout"))).toBe("offline");
   });
 
-  it("offline (no network) and blocked (fatal) read offline", () => {
+  it("offline (no network) reads offline", () => {
     expect(macLinkFor(st("offline", "no network"))).toBe("offline");
-    expect(macLinkFor(st("blocked", "unauthenticated"))).toBe("offline");
+  });
+
+  it("blocked (fatal) is its own link state, not 'Can't reach' (#597 AC-2)", () => {
+    expect(macLinkFor(st("blocked", "protocol_version_mismatch"))).toBe(
+      "blocked",
+    );
   });
 
   it("idle reads offline — a disconnected Mac is not a live one", () => {

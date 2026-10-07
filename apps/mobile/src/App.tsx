@@ -51,6 +51,7 @@ import { directoryCache } from "./cache";
 import { $demo, DEMO_MAC, enterDemo, exitDemo } from "./demo/lifecycle";
 import { openAsks } from "./home-model";
 import {
+  $blockedUpdate,
   $latencyMs,
   $link,
   $linkError,
@@ -59,7 +60,7 @@ import {
   startLink,
   stopLink,
 } from "./link";
-import { connectingOutcome } from "./mapping";
+import { blockedLine, connectingOutcome, plainLinkReason } from "./mapping";
 import { NetSpyBadge } from "./netspy-badge";
 import {
   $connections,
@@ -444,6 +445,7 @@ function Mac({ navigation }: Props<"Mac">) {
   const mac = useStore($connections)[0];
   const link = useStore($link);
   const lastError = useStore($linkError);
+  const blockedUpdate = useStore($blockedUpdate);
   const welcome = useStore($welcome);
   const latency = useStore($latencyMs);
   if (!mac) return null;
@@ -458,8 +460,12 @@ function Mac({ navigation }: Props<"Mac">) {
         relay: {
           version: welcome?.relayVersion ?? "—",
           latency: latency === undefined ? undefined : `${latency} ms`,
+          /* #597 AC-1: the tile's whole label — a plain reason while
+             offline, the seen-age otherwise. */
           lastSeen:
-            link === "offline" && lastError ? lastError : ago(mac.lastSeenAt),
+            link === "offline" && lastError
+              ? plainLinkReason(lastError)
+              : `${link === "online" ? "seen" : "last seen"} ${ago(mac.lastSeenAt)}`,
         },
         engine: {
           name: engineHost?.detail ?? (engineHost?.connected ? "Hermes" : "—"),
@@ -473,6 +479,25 @@ function Mac({ navigation }: Props<"Mac">) {
           year: "numeric",
         }),
       }}
+      blocked={
+        link === "blocked"
+          ? {
+              body: blockedLine(blockedUpdate),
+              /* The update action: when this iPhone is the stale side the
+                 sheet's primary button takes them to TestFlight, where
+                 LilOS ships. A Mac-side stale stays a Try again — the
+                 update happens on the Mac itself. */
+              action:
+                blockedUpdate === "phone"
+                  ? {
+                      label: "Open TestFlight",
+                      onPress: () =>
+                        void Linking.openURL("https://testflight.apple.com"),
+                    }
+                  : undefined,
+            }
+          : undefined
+      }
       onRetry={() => currentSupervisor()?.retryNow()}
       onForget={() => {
         navigation.goBack();
