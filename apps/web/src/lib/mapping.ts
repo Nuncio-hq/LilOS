@@ -196,6 +196,12 @@ export function liveTurnReply(
   const approvals = asks.filter(
     (a) => a.turnId === turn.turnId && a.request.kind === "approval",
   );
+  /* #553: question asks ride the same relay-ask path — an open ask wins,
+     else the turn's most recent resolved question keeps its card so the
+     receipt (resolved[ask.id]) has somewhere to land. */
+  const questions = asks.filter(
+    (a) => a.turnId === turn.turnId && a.request.kind === "question",
+  );
   // An approval-blocked turn is phase "waiting" (the engine's
   // request.opened contract event); waitingOn carries the open request's
   // kind so the tool card can say "Waiting for approval" (issue #71, AC-4).
@@ -214,6 +220,16 @@ export function liveTurnReply(
           options: shown.request.options,
         }
       : undefined;
+  const qShown = questions.find((a) => a.state === "open") ?? questions.at(-1);
+  const question =
+    qShown && qShown.request.kind === "question"
+      ? {
+          id: qShown.id,
+          question: qShown.request.question,
+          options: qShown.request.options,
+          freeText: qShown.request.freeText,
+        }
+      : undefined;
   return {
     id: `live-${turn.turnId}`,
     turnId: turn.turnId,
@@ -226,6 +242,7 @@ export function liveTurnReply(
     steers: turn.steers,
     streaming: turn.phase === "text" ? turn.text : undefined,
     approval,
+    question,
     model: turn.model,
     effort: turn.effort,
     fast: turn.fast,
@@ -252,6 +269,22 @@ export function liveTurnReply(
         }
       : {}),
   };
+}
+
+/* #553: a resolved question ask's receipt — "Answered "<label>" by <name>"
+   when the wire kept an option id (the option's human wording) or a typed
+   answer (the text itself); "Cancelled by <name>" on Skip. */
+export function questionReceipt(ask: Ask, name: string): string {
+  if (ask.outcome === "answer") {
+    const label =
+      (ask.request.kind === "question"
+        ? ask.request.options?.find((o) => o.id === ask.answer)?.label
+        : undefined) ??
+      ask.answer ??
+      "";
+    return `Answered “${label}” by ${name}`;
+  }
+  return `Cancelled by ${name}`;
 }
 
 /* #180: a superseded plan version folds into its own employee reply
