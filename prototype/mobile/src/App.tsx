@@ -81,8 +81,13 @@ import {
   deny,
   playOnOpen,
   rejectPlan,
+  removeNotSent,
   reply,
   resetTeam,
+  restoreNotSent,
+  retryTurn,
+  searchDm,
+  sendNow,
   startLife,
   startSession,
   stop,
@@ -139,7 +144,7 @@ type Routes = {
   Connected: undefined;
   Tabs: NavigatorScreenParams<TabRoutes>;
   Dm: { employeeId: string };
-  Thread: { id: string };
+  Thread: { id: string; scrollTo?: string; hitQuery?: string };
   ThreadInfo: { id: string };
   /** A subagent of a turn in that thread (issue #170). */
   Subagent: { thread: string; id: string };
@@ -185,6 +190,17 @@ function Pair({ navigation }: Props<"Pair">) {
     />
   );
 }
+
+/* #556: composer drafts survive navigation within the run — a plain Map
+   mirrors what the real app persists to disk per conversation/employee. */
+const drafts = new Map<string, string>();
+const draftProps = (key: string) => ({
+  initialDraft: drafts.get(key),
+  onDraftChange: (text: string) => {
+    if (text === "") drafts.delete(key);
+    else drafts.set(key, text);
+  },
+});
 
 // ── Step 3: scan (camera + permission live here, not in ui-native) ─────────
 
@@ -563,6 +579,15 @@ function Dm({ navigation, route }: Props<"Dm">) {
       }}
       onPickFolder={() => navigation.navigate("FolderPicker")}
       onPickModel={() => navigation.navigate("ModelPicker", {})}
+      onSearchMessages={(q) => searchDm(employee.id, q)}
+      onOpenHit={(h) =>
+        navigation.navigate("Thread", {
+          id: h.threadId,
+          scrollTo: h.entryId,
+          hitQuery: h.query,
+        })
+      }
+      {...draftProps(`dm:${employee.id}`)}
     />
   );
 }
@@ -641,6 +666,18 @@ function Thread({ navigation, route }: Props<"Thread">) {
         void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
         stop(t.id);
       }}
+      onRetry={() => {
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        retryTurn(t.id);
+      }}
+      onSendNow={(eid) => {
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        sendNow(t.id, eid);
+      }}
+      onRemoveNotSent={(eid) => removeNotSent(t.id, eid)}
+      onUndoNotSent={(entry, index) => restoreNotSent(t.id, entry, index)}
+      scrollToEntry={route.params.scrollTo}
+      hitQuery={route.params.hitQuery}
       onPickModel={() => navigation.navigate("ModelPicker", { thread: t.id })}
       onOpenSubagent={(a) =>
         navigation.navigate("Subagent", { thread: t.id, id: a.id })
@@ -657,6 +694,7 @@ function Thread({ navigation, route }: Props<"Thread">) {
       }}
       onOpenPlan={() => navigation.navigate("Plan", { thread: t.id })}
       prefill={prefill}
+      {...draftProps(`thread:${t.id}`)}
     />
   );
 }

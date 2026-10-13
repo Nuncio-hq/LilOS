@@ -22,6 +22,8 @@ export function Composer({
   onPickModel,
   onLayoutHeight,
   prefill,
+  initialDraft,
+  onDraftChange,
 }: {
   placeholder: string;
   /** Omit in a thread: the session already runs somewhere. */
@@ -48,12 +50,30 @@ export function Composer({
   onLayoutHeight?: (h: number) => void;
   /** Put this text in the box and focus it — a new object each time (plan "Change…"). */
   prefill?: { text: string };
+  /** #556: the draft this box opens with — the caller's per-conversation
+      store; omitted = empty (prototype and tests). */
+  initialDraft?: string;
+  /** #556: notified on every draft change incl. the send-clear, so the
+      caller can persist it (guarded — fires only when the text differs
+      from the last notification). */
+  onDraftChange?: (text: string) => void;
 }) {
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState(initialDraft ?? "");
+  const lastNotified = useRef(initialDraft ?? "");
+  /* Every draft mutation goes through change(): update state and tell the
+     caller (guarded — fires only when the text differs from the last
+     notification, and on the send-clear so a kill can't resurrect it). */
+  const change = (text: string) => {
+    setDraft(text);
+    if (text === lastNotified.current) return;
+    lastNotified.current = text;
+    onDraftChange?.(text);
+  };
   const input = useRef<TextInput>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: one fill per prefill object — a new `change` identity must not re-seed the box.
   useEffect(() => {
     if (!prefill) return;
-    setDraft(prefill.text);
+    change(prefill.text);
     input.current?.focus();
   }, [prefill]);
   const muted = useThemeColor("muted-foreground");
@@ -62,7 +82,7 @@ export function Composer({
     const t = draft.trim();
     if (!t) return;
     onSend(t);
-    setDraft("");
+    change("");
   };
   return (
     <View
@@ -77,7 +97,7 @@ export function Composer({
         <TextInput
           ref={input}
           value={draft}
-          onChangeText={setDraft}
+          onChangeText={change}
           placeholder={placeholder}
           placeholderTextColor={muted}
           multiline

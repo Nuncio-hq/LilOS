@@ -89,7 +89,6 @@ export function CommitBar(props: ShipBar & ShipHandlers) {
     message,
     busy,
     error,
-    running,
     upstream,
     accessory,
     onMessage,
