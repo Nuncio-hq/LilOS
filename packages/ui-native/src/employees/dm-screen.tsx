@@ -40,6 +40,8 @@ export function EmployeeDmScreen({
   onPickModel,
   prefill,
   unreachableNote,
+  initialDraft,
+  onDraftChange,
 }: {
   name: string;
   tone: OrbTone;
@@ -60,6 +62,9 @@ export function EmployeeDmScreen({
   /** #591: a thin line above the composer while the Mac is unreachable
       ("Can't reach <Mac>"). */
   unreachableNote?: string;
+  /** #556: draft persistence — the employee's saved draft + its writer. */
+  initialDraft?: string;
+  onDraftChange?: (text: string) => void;
 }) {
   const insets = useSafeAreaInsets();
   const [composerHeight, setComposerHeight] = useState(96);
@@ -132,6 +137,8 @@ export function EmployeeDmScreen({
             {...(onPickModel ? { onPickModel } : {})}
             onLayoutHeight={setComposerHeight}
             prefill={prefill}
+            initialDraft={initialDraft}
+            onDraftChange={onDraftChange}
           />
         </View>
       </View>

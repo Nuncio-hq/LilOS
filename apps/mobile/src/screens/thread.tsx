@@ -38,6 +38,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Linking, View } from "react-native";
 import {
   answerPlanChange,
+  answerQuestion,
   awaitPlanAsk,
   decide,
   negativeOutcome,
@@ -57,6 +58,7 @@ import {
   refreshModelCatalog,
   watchDm,
 } from "../dm-store";
+import { draftFor, setDraft } from "../draft-store";
 import { $client, $link, $welcome, linkUnreachable } from "../link";
 import { describeError, unreachableNoteFor } from "../mapping";
 import { $connections } from "../paired-macs";
@@ -607,9 +609,17 @@ export function Thread({
       onGrant={(id, option) => {
         if (client) void decide(client, id, option);
       }}
+      /* #553: a question card's option tap / typed answer resolves the
+         ask — the wire value is the option's id or the text itself. */
+      onAnswer={(id, a) => {
+        if (client) void answerQuestion(client, id, a.value);
+      }}
       onSend={send}
       onStop={stop}
       unreachableNote={mac ? unreachableNoteFor(link, mac.name) : undefined}
+      /* #556 AC-2: this thread's draft persists device-local. */
+      initialDraft={draftFor(`thread:${conversationId}`)}
+      onDraftChange={(text) => setDraft(`thread:${conversationId}`, text)}
       /* #591: offline + a cached "working" thread — disabled Stop with a
          hint; the header chip degrades via threadSurface's rule. */
       stale={threadSurface(detail.state, linkUnreachable(link)).stale}

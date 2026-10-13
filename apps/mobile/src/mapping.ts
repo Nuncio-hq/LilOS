@@ -109,12 +109,13 @@ export function unreachableNoteFor(
   return undefined;
 }
 
-/** One plain line for a failed send/open — same mapping as web's. */
+/** One plain line for a failed send/open/stop — #600: "your Mac", never
+   "relay"; no verb baked in (the Alert's own title carries the action). */
 export function describeError(e: unknown): string {
-  if (e instanceof RelayError) {
-    if (e.code === "not_connected" || e.code === "timeout")
-      return "Couldn't reach the relay — try again.";
-    if (e.code === "invalid_params") return "Couldn't send that. Try again.";
-  }
-  return "Couldn't send that. Try again.";
+  if (
+    e instanceof RelayError &&
+    (e.code === "not_connected" || e.code === "timeout")
+  )
+    return "Can't reach your Mac — try again.";
+  return "Something went wrong on your Mac — try again.";
 }

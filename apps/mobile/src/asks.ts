@@ -183,6 +183,40 @@ export async function answerPlanChange(
   }
 }
 
+/* ── #553 question asks ──────────────────────────────────────────────────
+   A `kind:"question"` ask answers with outcome "answer" carrying the wire
+   value (the picked option's id, or the typed text when the ask allows
+   free text). Skip rides decide()'s negativeOutcome ("cancel") like the
+   Mac card's Skip. Same round-trip as the plan Change path: respond →
+   resolved ask folds into the stores → the receipt names the answer. */
+
+/** An option tap or a typed answer: asks.respond outcome "answer". */
+export async function answerQuestion(
+  client: DecideClient,
+  askId: string,
+  answer: string,
+): Promise<void> {
+  if (inFlight.has(askId)) return;
+  inFlight.add(askId);
+  try {
+    const { ask } = await client.request<{ ask: Ask }>("asks.respond", {
+      askId,
+      outcome: "answer",
+      answer,
+    });
+    upsertAsk(client, ask);
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  } catch (e) {
+    if (e instanceof RelayError && e.code === "conflict") {
+      await refreshAsks(client).catch(() => {});
+      return;
+    }
+    Alert.alert("Couldn't send the answer", respondError(e));
+  } finally {
+    inFlight.delete(askId);
+  }
+}
+
 /**
  * Answer one ask with the option the user tapped — for an approval that is
  * one of the ask's own `options` (Once / This session / Always / Deny);

@@ -336,3 +336,18 @@ describe("catalog load keeps what already landed", () => {
     expect($catalog.get().models).toHaveLength(0);
   });
 });
+
+describe("#600: the sending row", () => {
+  it("markSending holds the draft text until the open answers; reset clears it", async () => {
+    const { $sendingDm, markSending, clearSending, resetDmStore } =
+      await import("../src/dm-store");
+    markSending("emp_1", "half-written reply");
+    expect($sendingDm.get().get("emp_1")?.text).toBe("half-written reply");
+    clearSending("emp_1");
+    expect($sendingDm.get().size).toBe(0);
+
+    markSending("emp_2", "left behind");
+    resetDmStore();
+    expect($sendingDm.get().size).toBe(0);
+  });
+});
