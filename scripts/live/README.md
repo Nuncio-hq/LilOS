@@ -18,3 +18,9 @@ is evidence — it lands in the issue's PR, not in CI.
   and the harness demo scripts (`apps/harness/scripts/*`) import it by
   relative path instead of pasting their own copies; it's covered by
   `bun run typecheck` (`scripts/live/tsconfig.json`).
+- `scripts/live/lib/lilos-plugin.sh` is the shared `.sh` connect: a leg
+  sourcing it runs `lilos_connect_plugin` (bundled plugin copied +
+  `plugins enable` + tool-search off + `browser` toolset suppressed, the
+  connect.ts sequence) on its scratch HERMES_HOME, then `lilos_clone_profile
+  <name>` for each named profile the leg resolves — without it, sessions
+  under a scratch home log `'lilos' is still not loaded` (#642).

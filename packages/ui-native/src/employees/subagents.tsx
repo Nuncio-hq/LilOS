@@ -256,7 +256,7 @@ export function SubagentsSheet({
       </View>
       {!agents.length && (
         <AppText tone="muted" className="text-center">
-          No subagents in this session yet.
+          No subagents in this thread yet.
         </AppText>
       )}
       {[

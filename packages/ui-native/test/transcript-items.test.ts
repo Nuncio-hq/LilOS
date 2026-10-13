@@ -17,7 +17,7 @@ describe("transcriptItems — #514 trimmed note order", () => {
   it("note present → first item is the note, entries follow in order", () => {
     const items = transcriptItems({
       transcriptNote:
-        "Earlier history was trimmed — this session's event log is capped.",
+        "Earlier history was trimmed — this thread's event log is capped.",
       entries: [entry("a"), entry("b"), entry("c")],
     });
     expect(items.map((i) => i.kind)).toEqual([
@@ -29,7 +29,7 @@ describe("transcriptItems — #514 trimmed note order", () => {
     expect(items[1].id).toBe("a");
     expect(items[0]).toMatchObject({
       kind: "transcript-note",
-      text: "Earlier history was trimmed — this session's event log is capped.",
+      text: "Earlier history was trimmed — this thread's event log is capped.",
     });
   });
 

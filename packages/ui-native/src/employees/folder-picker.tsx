@@ -6,9 +6,9 @@ import { AppText } from "../components/app-text";
 import { Icon } from "../components/icon";
 import type { FolderOption, WorkspacePick } from "./types";
 
-/* Where a new session runs (web: WorkspacePicker) — folder first, then how
+/* Where a new thread runs (web: WorkspacePicker) — folder first, then how
    it touches git: a new worktree off a branch (the default), continue an
-   existing workstream, or edit a branch in place. "Just chat" = no folder.
+   existing workstream, or edit a branch in place. "No folder" = chat only.
    Presented as a native form sheet; each pick applies at once. */
 export function FolderPickerSheet({
   folders,
@@ -38,7 +38,7 @@ export function FolderPickerSheet({
       }}
     >
       <View className="-mx-4">
-        <SheetHeader title="Run this session in" onDone={onDone} />
+        <SheetHeader title="Run this thread in" onDone={onDone} />
       </View>
       <Group>
         {folders.map((x, i) => (
@@ -61,7 +61,7 @@ export function FolderPickerSheet({
         ))}
         <Option
           icon="bubble.left"
-          title="No folder · just chat"
+          title="No folder"
           on={!pick.folder}
           onPress={() => onPick({ folder: null, base: "", mode: "direct" })}
         />
@@ -174,10 +174,10 @@ export function FolderPickerSheet({
   );
 }
 
-/** Chip label for the composer: "LilOS · main", "LilOS · lil-3-monorepo", "Just chat". */
+/** Chip label for the composer: "LilOS · main", "LilOS · lil-3-monorepo", "No folder". */
 export function pickLabel(folders: FolderOption[], p: WorkspacePick) {
   const f = folders.find((x) => x.id === p.folder);
-  if (!f) return "Just chat";
+  if (!f) return "No folder";
   if (f.probing) return `${f.project} · …`;
   if (!f.branches.length) return f.project;
   const b = p.mode === "existing" ? p.existing : p.base || f.branches[0];

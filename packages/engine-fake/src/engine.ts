@@ -248,6 +248,11 @@ export interface FakeEngineOptions {
   /** #431: per-session replay log bound — defaults to EVENT_LOG_CAP;
       tests pass a small value to exercise `truncated`. */
   eventLogCap?: number;
+  /** #621 e2e hook (`--ask-open-delay`): hold each approval before
+      `request.opened` emits — on a loaded box the approval card paints
+      well after the gated step, so ask-driving helpers must survive a
+      late card. `0`/unset opens immediately (production). */
+  askOpenDelayMs?: number;
 }
 
 /**
@@ -279,6 +284,7 @@ export class FakeEngine {
   private policy: ApprovalPolicy = "smart";
   private readonly sessionNamespace: string;
   private readonly eventLogCap: number;
+  private readonly askOpenDelayMs: number;
   private sessionCounter = 0;
   private refCounter = 0;
   private turnCounter = 0;
@@ -289,6 +295,7 @@ export class FakeEngine {
     this.caps = opts.capabilities ?? {};
     this.sessionNamespace = opts.sessionNamespace ?? randomNamespace();
     this.eventLogCap = opts.eventLogCap ?? EVENT_LOG_CAP;
+    this.askOpenDelayMs = opts.askOpenDelayMs ?? 0;
   }
 
   private readonly caps: Partial<Record<KnownCapability, boolean>>;
@@ -1396,6 +1403,13 @@ export class FakeEngine {
           mode === "slow",
         );
       }
+      /* #553: `question:` prompts drive a `question` ask — the engine
+         opens the request (options + free text) mid-turn and waits; an
+         option's wire id or typed text resolves it and the turn
+         finishes, cancel stops it like an approval's. */
+      if (QUESTION_PROMPT.test(scripted)) {
+        return await this.runQuestionTurn(s, turnId, scripted);
+      }
       for (const w of words(script.reasoning)) {
         await this.sleep(s);
         this.emit(s, "turn.delta", { turnId, stream: "reasoning", delta: w });
@@ -1737,6 +1751,77 @@ export class FakeEngine {
     }
   }
 
+  /* ── #553 question turns ────────────────────────────────────────────
+
+  /**
+   * A `question:` turn — the engine asks on the card, then continues
+   * with the answer woven into the reply (the option's label when the
+   * wire kept an id, the typed text verbatim otherwise).
+   */
+  private async runQuestionTurn(
+    s: FakeSession,
+    turnId: string,
+    promptText: string,
+  ) {
+    const reasoning =
+      "One thing to pin down before I finish — asking on the card now.";
+    for (const w of words(reasoning)) {
+      await this.sleep(s);
+      this.emit(s, "turn.delta", { turnId, stream: "reasoning", delta: w });
+    }
+    if (s.turn) s.turn.phase = "tools";
+    const { outcome, answer } = await this.awaitQuestion(s, turnId);
+    if (outcome === "cancel") throw new Interrupted();
+    const label = QUESTION_OPTIONS.find((o) => o.id === answer)?.label;
+    const text = `Got it — going with "${label ?? answer}". Carrying on from here.`;
+    for (const w of words(text)) {
+      await this.sleep(s);
+      this.emit(s, "turn.delta", { turnId, stream: "text", delta: w });
+    }
+    return this.finishTurn(
+      s,
+      turnId,
+      "end_turn",
+      { reasoning, steps: [], text },
+      promptText,
+    );
+  }
+
+  /** The `question` ask — same lifecycle as awaitApproval/awaitPlanDecision. */
+  private async awaitQuestion(
+    s: FakeSession,
+    turnId: string,
+  ): Promise<{ outcome: ApprovalOutcome; answer?: string }> {
+    const requestId = `r${++s.requestCounter}`;
+    const request = {
+      kind: "question" as const,
+      question: QUESTION_TEXT,
+      options: [...QUESTION_OPTIONS],
+      freeText: true,
+    };
+    const promise = new Promise<{ outcome: ApprovalOutcome; answer?: string }>(
+      (resolve) => {
+        s.openRequests.set(requestId, {
+          turnId,
+          requestId,
+          request,
+          seq: s.seq + 1,
+          resolve,
+        });
+      },
+    );
+    this.emit(s, "request.opened", { turnId, requestId, request });
+    const t = s.turn;
+    if (t) t.phase = "waiting";
+    this.setState(s, "waiting");
+    const resolved = await promise;
+    if (s.turn && !s.turn.interrupted) {
+      s.turn.phase = "tools";
+      this.setState(s, "running");
+    }
+    return resolved;
+  }
+
   /** The `plan` ask behind a proposal — same lifecycle as awaitApproval. */
   private async awaitPlanDecision(
     s: FakeSession,
@@ -1996,6 +2081,10 @@ export class FakeEngine {
     turnId: string,
     step: FakeStep,
   ): Promise<ApprovalOutcome> {
+    if (this.askOpenDelayMs > 0) {
+      await new Promise((r) => setTimeout(r, this.askOpenDelayMs));
+      if (s.turn?.interrupted) throw new Interrupted();
+    }
     const requestId = `r${++s.requestCounter}`;
     const command = FakeEngine.stepCommand(step);
     const request = {
@@ -2169,6 +2258,17 @@ const SLOW_TICK = 300;
    approve / reject / change (the next version asks again). */
 
 const PLAN_PROMPT = /^\s*plan:\s*(propose|tasks|slow)\b/i;
+
+/* ── #553 question scripts ────────────────────────────────────────────
+   `question:` opens a `question` request mid-turn — options with wire
+   ids plus free text, so either path resolves the ask. */
+
+const QUESTION_PROMPT = /^\s*question:/i;
+const QUESTION_TEXT = "Which environment should this change ship to?";
+const QUESTION_OPTIONS: { id: string; label: string }[] = [
+  { id: "staging", label: "Staging first" },
+  { id: "prod", label: "Straight to prod" },
+];
 
 const PLAN_TASKS: {
   text: string;

@@ -5,6 +5,7 @@ import { Card, LargeTitle, Pill } from "../components/bits";
 import { Icon } from "../components/icon";
 import { Orb } from "../components/orb";
 import { GRANT_LABEL, grantPills, whatLine } from "./approval-copy";
+import { grantRows } from "./grant-rows";
 import { isAnswerableQuestion } from "./question-gate";
 import type { Approval, GrantOption } from "./types";
 
@@ -165,79 +166,107 @@ export function ApprovalsSheet({
                 </View>
               </View>
             )}
-            {/* #601: the row splits two zones — the grants wrap in the
-                left zone (Review / Approve / the ask's non-deny options)
-                while Deny keeps its own weight pinned to the trailing
-                edge ahead of Open (muted fill, destructive label), so a
-                wrap never orphans it onto a second row. */}
-            <View className="mt-3 flex-row items-center gap-2">
-              <View className="flex-1 flex-row flex-wrap items-center gap-2">
-                {/* #591: a last-known row offers no dead pills — the tap
-                    couldn't reach the Mac anyway. Open still works: it
-                    opens the cached thread. */}
-                {/* #595: a plan's primary is **Review** — it opens the
-                    plan in its thread; nothing approves a plan
-                    sight-unseen. Command approvals keep the one-tap
-                    Approve (AC-2). */}
-                {!a.lastKnown && a.primary === "review" && (
-                  <Pill
-                    label="Review"
-                    onPress={() => (onReview ?? onOpen)(a.id)}
-                  />
-                )}
-                {/* #601: an approval row offers the ask's own options in
-                    its order (Once / This session / Always) when onGrant
-                    is passed — Deny splits out to the trailing edge; the
-                    plain Approve/Deny pair stays the fallback. */}
-                {!a.lastKnown &&
-                  onGrant &&
-                  a.kind === "approval" &&
-                  grantPills(a)
-                    .filter((o) => o !== "deny")
-                    .map((opt, i) => (
+            {/* #687: rows come from grantRows — grants pair left-to-right
+                and Deny trails the last grant row ahead of Open on its
+                baseline, so it can never float centred between wrapped
+                rows. The Approve/Review/Skip paths keep their one-row
+                fallback. */}
+            {!a.lastKnown && onGrant && a.kind === "approval" ? (
+              grantRows(grantPills(a)).map((row, ri, rows) => (
+                <View
+                  key={row.join(":")}
+                  className={`flex-row items-center gap-2 ${ri === 0 ? "mt-3" : "mt-2"}`}
+                >
+                  {row.map((opt, i) =>
+                    opt === "deny" ? (
+                      <View
+                        key={opt}
+                        className="ml-auto flex-row items-center gap-2"
+                      >
+                        <Pill
+                          label={GRANT_LABEL.deny}
+                          variant="destructive"
+                          onPress={() => onGrant(a.id, "deny")}
+                        />
+                        {/* On a plan card Review IS the open — no second
+                            route pill. */}
+                        {ri === rows.length - 1 && a.primary !== "review" && (
+                          <Pill
+                            label="Open"
+                            variant="ghost"
+                            onPress={() => onOpen(a.id)}
+                          />
+                        )}
+                      </View>
+                    ) : (
                       <Pill
                         key={opt}
                         label={GRANT_LABEL[opt]}
-                        variant={i === 0 ? undefined : "soft"}
+                        variant={ri === 0 && i === 0 ? undefined : "soft"}
                         onPress={() => onGrant(a.id, opt)}
                       />
-                    ))}
-                {!a.lastKnown &&
-                  !onGrant &&
-                  onApprove &&
-                  (a.primary ?? "approve") === "approve" &&
-                  a.kind !== "question" && (
-                    <Pill label="Approve" onPress={() => onApprove(a.id)} />
+                    ),
                   )}
+                  {ri === rows.length - 1 &&
+                    !row.includes("deny") &&
+                    a.primary !== "review" && (
+                      <View className="ml-auto">
+                        <Pill
+                          label="Open"
+                          variant="ghost"
+                          onPress={() => onOpen(a.id)}
+                        />
+                      </View>
+                    )}
+                </View>
+              ))
+            ) : (
+              <View className="mt-3 flex-row items-center gap-2">
+                <View className="flex-1 flex-row flex-wrap items-center gap-2">
+                  {/* #591: a last-known row offers no dead pills — the tap
+                      couldn't reach the Mac anyway. Open still works: it
+                      opens the cached thread. */}
+                  {/* #595: a plan's primary is **Review** — it opens the
+                      plan in its thread; nothing approves a plan
+                      sight-unseen. Command approvals keep the one-tap
+                      Approve (AC-2). */}
+                  {!a.lastKnown && a.primary === "review" && (
+                    <Pill
+                      label="Review"
+                      onPress={() => (onReview ?? onOpen)(a.id)}
+                    />
+                  )}
+                  {/* #601: an approval row offers the ask's own options in
+                      its order (Once / This session / Always) when onGrant
+                      is passed — Deny splits out to the trailing edge; the
+                      plain Approve/Deny pair stays the fallback. */}
+                  {!a.lastKnown &&
+                    !onGrant &&
+                    onApprove &&
+                    (a.primary ?? "approve") === "approve" &&
+                    a.kind !== "question" && (
+                      <Pill label="Approve" onPress={() => onApprove(a.id)} />
+                    )}
+                </View>
+                {!a.lastKnown &&
+                  !(onGrant && a.kind === "approval") &&
+                  onDeny && (
+                    <Pill
+                      label={isAnswerableQuestion(a) ? "Skip" : "Deny"}
+                      variant={isAnswerableQuestion(a) ? "soft" : "destructive"}
+                      onPress={() => onDeny(a.id)}
+                    />
+                  )}
+                {/* On a plan card Review IS the open — no second route pill. */}
+                {a.primary !== "review" && (
+                  <Pill
+                    label="Open"
+                    variant="ghost"
+                    onPress={() => onOpen(a.id)}
+                  />
+                )}
               </View>
-              {!a.lastKnown &&
-                onGrant &&
-                a.kind === "approval" &&
-                grantPills(a).includes("deny") && (
-                  <Pill
-                    label={GRANT_LABEL.deny}
-                    variant="destructive"
-                    onPress={() => onGrant(a.id, "deny")}
-                  />
-                )}
-              {!a.lastKnown &&
-                !(onGrant && a.kind === "approval") &&
-                onDeny && (
-                  <Pill
-                    label={isAnswerableQuestion(a) ? "Skip" : "Deny"}
-                    variant={isAnswerableQuestion(a) ? "soft" : "destructive"}
-                    onPress={() => onDeny(a.id)}
-                  />
-                )}
-              {/* On a plan card Review IS the open — no second route pill. */}
-              {a.primary !== "review" && (
-                <Pill
-                  label="Open"
-                  variant="ghost"
-                  onPress={() => onOpen(a.id)}
-                />
-              )}
-            </View>
+            )}
           </Card>
         ))}
       </ScrollView>

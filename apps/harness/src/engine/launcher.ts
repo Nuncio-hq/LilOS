@@ -260,6 +260,8 @@ export function fakeServeCommand(options: {
    * Argv marker for e2e leak assertions (`pgrep -f "--tag <tag>">`).
    */
   tag?: string;
+  /** #621 e2e hook: delay each approval's `request.opened` emit (ms). */
+  askOpenDelayMs?: number;
 }): string[] {
   const script = join(
     options.repoRoot,
@@ -283,6 +285,9 @@ export function fakeServeCommand(options: {
     // Die with the harness: stdin EOF means the launcher process is gone.
     "--watch-stdin",
     ...(options.tag ? ["--tag", options.tag] : []),
+    ...(options.askOpenDelayMs
+      ? ["--ask-open-delay", String(options.askOpenDelayMs)]
+      : []),
   ];
 }
 
@@ -293,6 +298,7 @@ export function fakeEngineLauncher(options: {
   bun?: string;
   serveBin?: string;
   tag?: string;
+  askOpenDelayMs?: number;
   log: Logger;
 }): EngineLauncher {
   return {

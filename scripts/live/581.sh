@@ -144,6 +144,13 @@ fi
 export LILOS_ENGINE=hermes
 export LILOS_REPO_ROOT="$PWD"
 
+# #642: connect the `lilos` plugin on the scratch HERMES_HOME exactly like
+# connect.ts — sessions must offer lilos_* tools, not log "still not
+# loaded". `default` plus `ada` (the leg's "Ada" employee's profile).
+. scripts/live/lib/lilos-plugin.sh
+lilos_connect_plugin
+lilos_clone_profile ada
+
 echo "== issue-581 live leg: engine=hermes label=${LABEL} (isolated HOME=${HOME}) =="
 if bun scripts/live/581.ts; then
   echo "RESULT: PASS (engine=hermes, label=${LABEL})"

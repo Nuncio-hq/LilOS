@@ -46,7 +46,7 @@ export type QuestionOption = {
 };
 
 /** #601: the grant choices an approval ask can offer — the wire's
-    ApprovalOption ("This session" is `session`). */
+    ApprovalOption ("This thread" in UI copy is `session`). */
 export type GrantOption = "once" | "session" | "always" | "deny";
 
 /** Something an employee is blocked on until you choose. */

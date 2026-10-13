@@ -32,7 +32,7 @@ export function SettingsScreen({
     name: string;
     versionLabel: string;
   };
-  onForget: () => void;
+  onForget?: () => void;
   /** Opens the Mac sheet (status, versions, Forget). Replaces the Forget row. */
   onOpenMac?: () => void;
   children?: ReactNode;
@@ -83,7 +83,10 @@ export function SettingsScreen({
                 />
               )}
             </Row>
-            {!onOpenMac && (
+            {/* #599: only render Forget when a real handler exists — the
+                demo passes none (its Mac is fake; "Exit demo" lives below)
+                and the paired app keeps Forget inside the Mac sheet. */}
+            {!onOpenMac && onForget && (
               <Row onPress={onForget}>
                 <AppText tone="destructive" weight="medium">
                   Forget this Mac

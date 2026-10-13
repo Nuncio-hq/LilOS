@@ -83,6 +83,8 @@ export function ThreadScreen({
   stale,
   asksStale,
   answerHint,
+  initialDraft,
+  onDraftChange,
 }: {
   t: ThreadDetail;
   /** Omit when the engine reports no models — the composer's chip hides. */
@@ -132,6 +134,9 @@ export function ThreadScreen({
   hitQuery?: string;
   /** Composer text to put in and focus (plan "Change…"). */
   prefill?: { text: string };
+  /** #556: draft persistence — this thread's saved draft + its writer. */
+  initialDraft?: string;
+  onDraftChange?: (text: string) => void;
   /** #591: a thin line directly above the composer while the Mac is
       unreachable ("Can't reach <Mac>") — the cached thread stays
       readable, the hint explains why nothing new lands. */
@@ -519,6 +524,8 @@ export function ThreadScreen({
             {...(onPickModel ? { onPickModel } : {})}
             onLayoutHeight={setComposerHeight}
             prefill={prefill}
+            initialDraft={initialDraft}
+            onDraftChange={onDraftChange}
           />
         </View>
       </View>
@@ -560,7 +567,7 @@ export function ThreadHeaderTitle({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${title}, session info`}
+      accessibilityLabel={`${title}, thread info`}
       onPress={onPress}
       className="max-w-[240px] items-center gap-0.5 active:opacity-60"
     >

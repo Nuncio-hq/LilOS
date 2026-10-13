@@ -706,3 +706,114 @@ describe("#572 releaseSession — scoped feeds can leave the watch set", () => {
     client.close();
   });
 });
+
+describe("#685 feedHold — a held event type parks, the session tail queues behind it", () => {
+  const ev = (seq: number, type: string, payload: unknown) => ({
+    jsonrpc: "2.0",
+    method: "event",
+    params: { seq, sessionId: "s1", type, payload },
+  });
+
+  it("turn.completed dispatches after the hold; queued tail lands in seq order", async () => {
+    const socket = new FakeSocket();
+    const client = new EngineClient({
+      url: "ws://fake",
+      socketFactory: () => socket,
+      autoReconnect: false,
+      requestTimeoutMs: 1_000,
+      connectTimeoutMs: 1_000,
+      feedHold: { type: "turn.completed", ms: 50 },
+    });
+    await connectClient(client, socket);
+    const feed = client.sessionFeed("s1");
+    const seen: number[] = [];
+    client.onEvent((e) => seen.push(e.seq));
+    await vi.waitFor(() =>
+      expect(socket.sawRequest("events.since")).toBe(true),
+    );
+    socket.respondTo("events.since", {
+      events: [],
+      latestSeq: 4,
+      truncated: false,
+      openRequests: [],
+      snapshot: SNAPSHOT,
+    });
+    await vi.waitFor(() => expect(feed.get().synced).toBe(true));
+
+    socket.emit(
+      ev(5, "turn.completed", { turnId: "t1", stopReason: "end_turn" }),
+    );
+    /* Held — neither the feed log nor onEvent may see it yet. */
+    expect(feed.get().events.map((e) => e.seq)).toEqual([]);
+    expect(seen).toEqual([]);
+    /* The session's tail queues behind the held event — it must not run
+       ahead (that's the reorder the relay side exploits in e2e). */
+    socket.emit(ev(6, "session.state", { state: "idle" }));
+    socket.emit(
+      ev(8, "turn.delta", { turnId: "t2", stream: "text", delta: "x" }),
+    );
+    expect(feed.get().events.map((e) => e.seq)).toEqual([]);
+
+    await vi.waitFor(() =>
+      expect(feed.get().events.map((e) => e.seq)).toEqual([5, 6, 8]),
+    );
+    expect(seen).toEqual([5, 6, 8]);
+    expect(feed.get().latestSeq).toBe(8);
+    client.close();
+  });
+
+  it("non-held types pass immediately; the same type on another session holds independently", async () => {
+    const socket = new FakeSocket();
+    const client = new EngineClient({
+      url: "ws://fake",
+      socketFactory: () => socket,
+      autoReconnect: false,
+      requestTimeoutMs: 1_000,
+      connectTimeoutMs: 1_000,
+      feedHold: { type: "turn.completed", ms: 50 },
+    });
+    await connectClient(client, socket);
+    const feed = client.sessionFeed("s1");
+    await vi.waitFor(() =>
+      expect(socket.sawRequest("events.since")).toBe(true),
+    );
+    socket.respondTo("events.since", {
+      events: [],
+      latestSeq: 4,
+      truncated: false,
+      openRequests: [],
+      snapshot: SNAPSHOT,
+    });
+    await vi.waitFor(() => expect(feed.get().synced).toBe(true));
+    /* s2's feed subscribes (and resyncs) after s1 settles — its replay
+       stays in flight; live held events still reach it. */
+    const feed2 = client.sessionFeed("s2");
+
+    /* A non-held type lands right away even while a hold could arm… */
+    socket.emit(
+      ev(5, "turn.delta", { turnId: "t1", stream: "text", delta: "x" }),
+    );
+    expect(feed.get().events.map((e) => e.seq)).toEqual([5]);
+    /* …and the held type on ANOTHER session parks in its own queue —
+       s1's tail isn't dragged into s2's hold. */
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "event",
+      params: {
+        seq: 2,
+        sessionId: "s2",
+        type: "turn.completed",
+        payload: { turnId: "t9", stopReason: "end_turn" },
+      },
+    });
+    socket.emit(
+      ev(6, "turn.delta", { turnId: "t1", stream: "text", delta: "y" }),
+    );
+    expect(feed.get().events.map((e) => e.seq)).toEqual([5, 6]);
+    expect(feed2.get().events).toEqual([]);
+    await vi.waitFor(() =>
+      expect(feed2.get().events.map((e) => e.seq)).toEqual([2]),
+    );
+    client.close();
+  });
+});

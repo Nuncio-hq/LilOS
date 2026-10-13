@@ -134,7 +134,7 @@ export function QuestionCard({
         {/* Skip is secondary, pinned to the content edge — it names what
             it does: the asking agent decides instead (FIX #515). */}
         {stale && answerHint && (
-          <AppText size="xs" tone="muted" className="mt-2">
+          <AppText size="xs" tone="muted" className="mt-2 pb-1">
             {answerHint}
           </AppText>
         )}
