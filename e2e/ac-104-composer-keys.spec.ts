@@ -187,28 +187,35 @@ test("AC-4 ⌘. with a steer draft typed still stops the turn and keeps the text
   await page.screenshot({ path: `${SHOTS}/ac-4-stopped-keeps-draft.png` });
 });
 
-test("AC-5 ↑ recalls the last sent message — thread, then home composer", async ({
-  page,
-}) => {
-  test.setTimeout(180_000);
-  await dmDefault(stackA, page);
+/* AC-5's flow, parameterised by stack so AC-700 can rerun it on a
+   summaries-delayed stack (#700). Every composer interaction is pinned to
+   its surface: the panel's reply box vs the home feed's new-thread box —
+   positional `textarea.last()/first()` is what flaked, landing a thread
+   send in the home composer while openConv hadn't mounted yet. */
+async function ac5Recall(stack: Stack, page: Page, shots: string) {
+  await dmDefault(stack, page);
   await send(page, "first root: pick a color");
-  await expect(page.getByText("first root: pick a color").first()).toBeVisible({
-    timeout: 30_000,
-  });
-  /* The root preview lands in the home feed before the send's async navigate
-     commits — wait for the thread URL so the next send hits the thread
-     composer, not a second top-level message (same race as ac-28, #103). */
-  await expect(page).toHaveURL(/\/dm\/[^/]+\/conv_/, { timeout: 10_000 });
+  /* The send navigates to the thread URL as soon as conversations.open
+     answers — but openConv (and so the panel's composer) mounts only when
+     the scoped summaries fetch lands. Gate on the panel itself so the
+     reply can't fall into the mount gap. */
+  const panel = page.locator("[data-thread-panel]");
+  await expect(panel).toBeVisible({ timeout: 30_000 });
+  await expect(panel.getByText("first root: pick a color").first()).toBeVisible(
+    { timeout: 30_000 },
+  );
   // ↑ recall reads the last message Oscar SENT — it must not depend on
-  // whether the running turn has finished (a steer counts too).
-  await send(page, "second reply: make it blue");
+  // whether the running turn has finished (a steer counts too). The
+  // composer placeholder names the state — idle, running or waiting —
+  // and never the home composer's "New thread with…".
+  const box = panel.getByPlaceholder(/Reply to |is working|is waiting/);
+  await box.fill("second reply: make it blue");
+  await box.press("Enter");
   await expect(
-    page.getByText("second reply: make it blue").first(),
+    panel.getByText("second reply: make it blue").first(),
   ).toBeVisible({ timeout: 30_000 });
 
   // Thread composer: ↑ fills with the last reply Oscar sent, caret at end.
-  const box = page.locator("textarea").last();
   await box.click();
   await page.keyboard.press("ArrowUp");
   await expect(box).toHaveValue("second reply: make it blue");
@@ -216,7 +223,7 @@ test("AC-5 ↑ recalls the last sent message — thread, then home composer", as
     (el: HTMLTextAreaElement) => el.selectionStart,
   );
   expect(caret).toBe("second reply: make it blue".length);
-  await page.screenshot({ path: `${SHOTS}/ac-5-recalled.png` });
+  await page.screenshot({ path: `${SHOTS}/${shots}-recalled.png` });
 
   // ↑ with a draft is the usual caret move — text is never replaced.
   await box.fill("draft in progress");
@@ -224,12 +231,52 @@ test("AC-5 ↑ recalls the last sent message — thread, then home composer", as
   await expect(box).toHaveValue("draft in progress");
 
   // Home composer recalls the last TOP-LEVEL message = this session's root.
-  await page.goto(`${stackA.webUrl}/dm/${employeeIdFromUrl(page)}`);
-  const home = page.locator("textarea").first();
+  await page.goto(`${stack.webUrl}/dm/${employeeIdFromUrl(page)}`);
+  /* ↑ recall is a one-shot read of the summaries snapshot — gate on the
+     feed row so the snapshot (possibly held by LILOS_SUMMARY_DELAY_MS) has
+     landed first. */
+  await expect(page.getByText("first root: pick a color").first()).toBeVisible({
+    timeout: 30_000,
+  });
+  const home = page.getByPlaceholder(/New thread with/);
   await home.click();
   await page.keyboard.press("ArrowUp");
   await expect(home).toHaveValue("first root: pick a color");
-  await page.screenshot({ path: `${SHOTS}/ac-5-home-recalled.png` });
+  await page.screenshot({ path: `${SHOTS}/${shots}-home-recalled.png` });
+}
+
+test("AC-5 ↑ recalls the last sent message — thread, then home composer", async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await ac5Recall(stackA, page, "ac-5");
+});
+
+/* #700: AC-5's flake was a positional-send race, not a recall mix-up. The
+   first send resolves `conversations.open` → navigates to the thread URL —
+   but `openConv` (and so the panel's reply composer) only exists once the
+   scoped `conversations.summaries` answer lands. In that gap the only
+   textarea on the page is the HOME composer, so `send()`'s
+   `textarea.last()` filled it and minted a second top-level conversation:
+   "second reply" became its own root, and the home ↑ rightly recalled the
+   newest top-level message — conv2's root (CI job 112651194005 received
+   exactly that). LILOS_SUMMARY_DELAY_MS holds every summaries answer so
+   the mount gap stays open for the whole second send — the same knob
+   AC-660 used for its openConv window. Re-running AC-5's flow through it
+   is the sentinel: the pinned locators ride out the window, while any
+   return to positional sends falls into it deterministically. */
+test("AC-700 ↑ recall stays per-composer while the thread's summary is held back", async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  const stack = await bootStack("keysd", await pickPorts(), {
+    LILOS_SUMMARY_DELAY_MS: "2000",
+  });
+  try {
+    await ac5Recall(stack, page, "ac-700");
+  } finally {
+    await stack.stop();
+  }
 });
 
 test("AC-6 the Stop button's label names the real shortcut — ⌘.", async ({
