@@ -142,6 +142,18 @@ const COMPACT_ORDER: WbTab[] = [
   "changes",
 ];
 
+/* e2e/dev knob — `?wbPrSigMark=1`: every signal-driven `forge.pr` decision
+   taken inside the failure window (a landed `error` answer) bumps
+   `data-pr-sig-mark` on the PR tabpanel — once the scheduled read has
+   committed its swap pre-fix, or at the hold post-fix — so a spec can press
+   Retry strictly after a scheduled `forge.pr` decision: the deterministic
+   form of #720's land-vs-press race. Inert when unset; read once at module
+   load like `?stubHydrateMs=`. */
+const WB_PR_SIG_MARK = (() => {
+  if (typeof window === "undefined") return false;
+  return new URLSearchParams(window.location.search).has("wbPrSigMark");
+})();
+
 /* Right-hand workbench of Focus, derived from the session's steps, or — when the session
    runs in a real folder on this machine (work.path) and host accessors are wired — from the
    live fs/git host API: Files = fs.tree, Changes = git.diff, file view = fs.read.
@@ -308,6 +320,9 @@ export function Workbench({
   });
   const landedCwd = useRef(liveCwd);
   const nullStreak = useRef<Partial<Record<keyof WbProbeData, number>>>({});
+  /* `?wbPrSigMark` reproducer state (#720): counts the signal-driven
+     `forge.pr` decisions made inside a failure window. */
+  const [prSigMark, setPrSigMark] = useState(0);
   const [firstSettled, setFirstSettled] = useState(restored != null);
   const [revalidating, setRevalidating] = useState(restored != null);
   /* Open-in-editor affordances (issue #110): editors detected on this host
@@ -327,17 +342,23 @@ export function Workbench({
     };
   }, [liveCwd, editorsProp]);
   const editors = editorsProp ?? hostEditors;
+  /* A `forge.pr` answer landed by a user action (Retry, comment, merge) —
+     the same probe/cache write `merge` does for poll lands, plus the
+     `landedProbe` truth that gates scheduled re-reads (#720). */
+  const landPr = (r: NonNullable<WbProbeData["pr"]>) => {
+    if (!host || !liveCwd) return;
+    if (landedCwd.current === liveCwd) landedProbe.current.pr = r;
+    patchWbCache(host, liveCwd, (e) => ({
+      ...e,
+      probe: { ...e.probe, pr: r },
+      updatedAt: Date.now(),
+    }));
+    setProbe((p) => (p ? { ...p, pr: r } : p));
+  };
   const reloadPr = async () => {
     if (!host?.pr || !liveCwd) return;
     const r = await host.pr(liveCwd).catch(() => null);
-    if (r) {
-      patchWbCache(host, liveCwd, (e) => ({
-        ...e,
-        probe: { ...e.probe, pr: r },
-        updatedAt: Date.now(),
-      }));
-      setProbe((p) => (p ? { ...p, pr: r } : p));
-    }
+    if (r) landPr(r);
   };
   /* Which host methods exist — the ship bar's controls render only for the
      ones in this set (D-#19, AC-6); null while host.describe hasn't answered. */
@@ -456,12 +477,30 @@ export function Workbench({
         land("branches", host.branches?.(cwd)),
         land("log", host.log?.(cwd)),
       ]);
-    const updatePr = () =>
-      host.pr?.(cwd)?.then((r) => {
+    const updatePr = () => {
+      /* #720: while the landed `forge.pr` answer is a failure, scheduled
+         re-reads (the tab-shown trailing fire, an OS-window focus, a
+         `running` flip, the keep-alive) hold — the failure copy's
+         prescribed next step is the user's own Retry, and a `{pr}` land
+         here swaps `PrFailure` → `PrPanel`, detaching the button under an
+         in-flight press (ac-114's CI flake: "element is not stable" →
+         "element was detached from the DOM"). The no-PR state keeps
+         re-reading — it has no control a press could target. */
+      if (landedProbe.current.pr?.error) {
+        if (WB_PR_SIG_MARK && !off) setPrSigMark((c) => c + 1);
+        return;
+      }
+      return host.pr?.(cwd)?.then((r) => {
         /* An unanswered `forge.pr` (outer null — unreachable, not "no
            PR") keeps the last known answer. */
-        if (r) merge({ pr: r });
+        if (!r) return;
+        /* The mark lands after the merge commits: a spec that waited on
+           `data-pr-sig-mark` knows any subtree swap is already done. */
+        const duringFailure = landedProbe.current.pr?.error != null;
+        merge({ pr: r });
+        if (WB_PR_SIG_MARK && !off && duringFailure) setPrSigMark((c) => c + 1);
       });
+    };
     const poll = createPrPoll(() => updatePr());
     prPoll.current = poll;
     updateProbe.current = () => {
@@ -1074,14 +1113,7 @@ export function Workbench({
       ? async (m: MergeMethod) => {
           try {
             const pr = await host.prMerge?.(liveCwd, m);
-            if (pr) {
-              patchWbCache(host, liveCwd, (e) => ({
-                ...e,
-                probe: { ...e.probe, pr: { pr } },
-                updatedAt: Date.now(),
-              }));
-              setProbe((p) => (p ? { ...p, pr: { pr } } : p));
-            }
+            if (pr) landPr({ pr });
             if (pr?.status === "merged")
               say?.(
                 `Merged #${pr.number} into ${pr.base} · gh pr merge --${m}`,
@@ -1886,7 +1918,11 @@ export function Workbench({
       )}
 
       {prOn && (
-        <TabsContent value="pr" className="min-h-0 flex-1">
+        <TabsContent
+          value="pr"
+          className="min-h-0 flex-1"
+          data-pr-sig-mark={WB_PR_SIG_MARK ? prSigMark : undefined}
+        >
           {prShown ? (
             <PrPanel
               pr={prShown}

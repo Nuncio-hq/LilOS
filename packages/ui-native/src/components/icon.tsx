@@ -5,6 +5,7 @@ export type IconTone =
   | "foreground"
   | "muted-foreground"
   | "primary-foreground"
+  | "accent-text"
   | "destructive"
   | "success"
   | "warning"
