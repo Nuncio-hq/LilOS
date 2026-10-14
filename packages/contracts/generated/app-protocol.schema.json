@@ -2230,7 +2230,7 @@
               },
               "mimeType": {
                 "type": "string",
-                "pattern": "^image\\/"
+                "minLength": 1
               },
               "dataBase64": {
                 "type": "string",
@@ -3649,7 +3649,7 @@
               },
               "mimeType": {
                 "type": "string",
-                "pattern": "^image\\/"
+                "minLength": 1
               },
               "dataBase64": {
                 "type": "string",
@@ -4030,7 +4030,7 @@
         },
         "mimeType": {
           "type": "string",
-          "pattern": "^image\\/"
+          "minLength": 1
         },
         "dataBase64": {
           "type": "string",
