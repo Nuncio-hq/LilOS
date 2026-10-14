@@ -269,6 +269,12 @@ PR does not exist.
   "Engine error:". Not: classifying failures by matching error text, or
   asserting on adapter diagnostics the harness only sometimes forwards.
   — #521
+- **D-#560 The engine owns compaction; LilOS exposes it as the `compact`
+  capability (`session.compact`) plus a typed `session.compacted` event
+  carrying before/after tokens.** The meter's Compact now rides the app
+  passthrough; the thread note is a persisted system message so it replays.
+  Not: inferring compaction from `session.ref.changed` (it also fires for
+  `session.info`), or matching Hermes' notification text. — #560
 - **D-#548 LilOS's `hermes serve` runs `--isolated`; a host multiplex
   attach/refusal is a fatal verdict, not a crash.** Hermes runs one
   machine-level backend per OS user: a `serve` without the flag attaches to

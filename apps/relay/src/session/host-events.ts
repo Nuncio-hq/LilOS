@@ -83,7 +83,8 @@ export async function handleHostEvents(
            replay failure entirely. Best-effort like the push fan-out:
            a persist hiccup must not drop the event's ack. */
         const usage =
-          parsed.data.event.type === "turn.completed"
+          parsed.data.event.type === "turn.completed" ||
+          parsed.data.event.type === "session.compacted"
             ? parsed.data.event.payload.usage
             : undefined;
         if (usage) {

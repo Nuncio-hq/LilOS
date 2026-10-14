@@ -842,6 +842,96 @@ export const REWIND_SCENARIOS: Scenario[] = [
   },
 ];
 
+/**
+ * `compact` capability (#560): `session.compact` summarizes older turns in
+ * place — the billed context drops and the result lands once as a typed
+ * `session.compacted` event carrying before/after tokens (the same event
+ * an automatic compaction emits). A turn running at compact time refuses
+ * INVALID_STATE, the same gate `session.rewind` uses.
+ */
+export const COMPACT_SCENARIOS: Scenario[] = [
+  {
+    id: "describe wires session.compact under the compact capability",
+    async run(h) {
+      const r = (await h.request("describe")) as {
+        capabilities: { id: string; methods?: string[] }[];
+      };
+      const cap = r.capabilities.find((c) => c.id === "compact");
+      assert(cap, "compact suite runs only against engines declaring compact");
+      assert(
+        cap?.methods?.includes("session.compact") === true,
+        "the compact descriptor names session.compact",
+      );
+    },
+  },
+  {
+    id: "session.compact drops the billed context and emits session.compacted once",
+    async run(h) {
+      const { sessionId } = (await h.request("session.start", {
+        agent: "builder",
+        cwd: "/tmp/lilos-fake",
+      })) as StartResult;
+      await h.request(
+        "prompt",
+        textPrompt(sessionId, "remember the codeword LILOS_COMPACT"),
+      );
+      const before = h.events.length;
+      const r = (await h.request("session.compact", { sessionId })) as {
+        status: string;
+        beforeTokens?: number;
+        afterTokens?: number;
+      };
+      /* A session with nothing billed may answer `skipped` — only a real
+         compression owes the event. */
+      if (r.status !== "compressed") return;
+      const compacted = h.events
+        .slice(before)
+        .filter(
+          (e): e is Extract<EngineEvent, { type: "session.compacted" }> =>
+            e.type === "session.compacted" && e.sessionId === sessionId,
+        );
+      assert(
+        compacted.length === 1,
+        `exactly one session.compacted event, got ${compacted.length}`,
+      );
+      const p = compacted[0].payload;
+      assert(
+        p.beforeTokens === undefined ||
+          p.afterTokens === undefined ||
+          p.afterTokens < p.beforeTokens,
+        `after tokens drop below before, got ${JSON.stringify(p)}`,
+      );
+    },
+  },
+  {
+    id: "session.compact refuses INVALID_STATE while a turn runs",
+    async run(h) {
+      const { sessionId } = (await h.request("session.start", {
+        agent: "builder",
+        cwd: "/tmp/lilos-fake",
+      })) as StartResult;
+      const pending = h.request(
+        "prompt",
+        textPrompt(sessionId, EDIT_PROMPT),
+      ) as Promise<PromptResult>;
+      await h.waitEvent(
+        h.forSession(
+          sessionId,
+          (e) => e.type === "request.opened" || e.type === "tool.started",
+        ),
+      );
+      const code = await errorCode(h, "session.compact", { sessionId });
+      assert(
+        code === -32003,
+        `compact mid-turn must fail INVALID_STATE (-32003), got ${code}`,
+      );
+      await answerAsks(h, sessionId, "once");
+      const res = await pending;
+      assert(res.stopReason === "end_turn", "the turn completes after asks");
+    },
+  },
+];
+
 /** Capability suites beyond core. Only scenarios for capabilities engine-fake declares are implemented. */
 export const STEER_SCENARIOS: Scenario[] = [
   {
@@ -2924,6 +3014,7 @@ export const SUITES: {
   { capability: "usage", implemented: false, scenarios: [] },
   { capability: "plan", implemented: true, scenarios: PLAN_SCENARIOS },
   { capability: "rewind", implemented: true, scenarios: REWIND_SCENARIOS },
+  { capability: "compact", implemented: true, scenarios: COMPACT_SCENARIOS },
   {
     capability: "workspace_move",
     implemented: true,

@@ -308,9 +308,11 @@ export type PullRequest = {
   comments: PrComment[];
 };
 /* A designed failure/notice attached to a session (model error, sleep interrupt, …).
-   retry:true means the session can be re-prompted in place. */
+   retry:true means the session can be re-prompted in place. "context" =
+   the turn died on the context window — the row offers Compact now / a
+   fresh session instead of a bare retry (retrying re-fails the same way). */
 export type SessionAlert = {
-  kind: "model" | "sleep" | "generic";
+  kind: "model" | "sleep" | "generic" | "context";
   text: string;
   retry?: boolean;
 };

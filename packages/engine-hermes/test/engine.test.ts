@@ -502,6 +502,71 @@ describe("engine-hermes AC-3: ref rotation on compression", () => {
   });
 });
 
+describe("engine-hermes #560: session.compact → session.compacted", () => {
+  test("a real fold emits session.compacted once with the gateway's counts", async () => {
+    const { gw, h } = setup();
+    const { sessionId } = await start(h);
+    const r = (await h.request("session.compact", { sessionId })) as {
+      status: string;
+      beforeTokens: number;
+      afterTokens: number;
+    };
+    expect(r.status).toBe("compressed");
+    expect(r.beforeTokens).toBe(90_000);
+    expect(r.afterTokens).toBe(34_000);
+    const compacted = h.events.filter((x) => x.type === "session.compacted");
+    expect(compacted.length).toBe(1);
+    const p = compacted[0]?.payload as Record<string, unknown>;
+    expect(p.beforeTokens).toBe(90_000);
+    expect(p.afterTokens).toBe(34_000);
+    expect(p.beforeMessages).toBe(64);
+    expect(p.afterMessages).toBe(11);
+    expect(p.summary).toBe("folded the first 53 turns");
+  });
+
+  test("a compressed ack that folded nothing is skipped — no event", async () => {
+    const { gw, h } = setup();
+    const { sessionId } = await start(h);
+    gw.compressResult = {
+      status: "compressed",
+      before_tokens: 16_915,
+      after_tokens: 16_915,
+      before_messages: 6,
+      after_messages: 6,
+      summary: { headline: "No changes from compression: 6" },
+    };
+    const r = (await h.request("session.compact", { sessionId })) as {
+      status: string;
+    };
+    expect(r.status).toBe("skipped");
+    expect(h.events.filter((x) => x.type === "session.compacted").length).toBe(
+      0,
+    );
+  });
+
+  test("mid-turn compact answers INVALID_STATE", async () => {
+    const { gw, h } = setup();
+    const { sessionId } = await start(h);
+    const turn = promptAsync(h, sessionId);
+    await expect(h.request("session.compact", { sessionId })).rejects.toThrow(
+      /running turn/,
+    );
+    gw.complete(gw.lastSid);
+    await turn;
+  });
+
+  test("automatic compaction rides the status.update compacted edge", async () => {
+    const { gw, h } = setup();
+    await start(h);
+    gw.emit(gw.lastSid, "status.update", { kind: "compressing" });
+    gw.emit(gw.lastSid, "status.update", { kind: "compacted" });
+    await h.waitEvent((x) => x.type === "session.compacted");
+    expect(h.events.filter((x) => x.type === "session.compacted").length).toBe(
+      1,
+    );
+  });
+});
+
 describe("engine-hermes #137: auto titles map to session.titled", () => {
   test("AC-1 session.title event -> session.titled (derived then llm)", async () => {
     const { gw, h } = setup();
