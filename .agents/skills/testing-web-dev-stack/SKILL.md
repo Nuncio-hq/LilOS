@@ -76,3 +76,17 @@ running/streaming window prefer a `slow[:ms]` prompt prefix, e.g.
 ## Devin Secrets Needed
 
 None — engine-fake is deterministic and local.
+
+## Employee profile card (settings on the employee record)
+
+- Open: DM header's "Profile" icon button (aria-label="Profile", a user icon
+  next to the Panel toggle) → DmProfileCard dialog → EmployeeCard rows:
+  Engine / Profile / Model / Now / Notifications + INSTRUCTIONS (SOUL.MD).
+- Employee-record fields set here persist on the relay's `employees` row —
+  verify in `$LILOS_HOME/relay.sqlite`:
+  `SELECT id,name,<col> FROM employees` (e.g. `muted` INTEGER 0/1, migration v24).
+- Esc or the dialog ✕ closes it; `setProfileOpen` toggles, so a second click
+  on the Profile icon closes it too.
+- Toggles here go through `relay.updateEmployee(id, patch)` → relay
+  `employees.update` → broadcast `employee.upserted` — the UI state should
+  always match the sqlite row; a mismatch means the write never landed.

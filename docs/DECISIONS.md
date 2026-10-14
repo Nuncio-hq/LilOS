@@ -481,6 +481,13 @@ PR does not exist.
   pairing, tied to the device id.** Not: a LilOS cloud relay; direct APNs
   with an Apple key on the Mac; silent/background pre-sync pushes. A
   sleeping Mac sends nothing (accepted). — #161 · PR #283
+- **D-#561 Notifications route to where the human is: the desktop reports
+  presence (`presence.report`, app scope, idle < 5 min and unlocked) and a
+  fresh report makes the fan-out skip every phone push — Mac banners carry
+  it all, reply excerpt included. `Employee.muted` is relay state both apps
+  honour.** Not: presence on device scope (a paired phone could silence
+  itself); persisted presence (a relay restart resumes pushes until the
+  next heartbeat); the phone deciding routing per kind. — #561 · PR #732
 - **D-#259 Mobile markdown stays bespoke — fences and GFM tables are
   `Prose` block types; fences highlight via `lowlight`.** Not: RN
   markdown libs (no tables, highlighting, or streaming states). — #259 · PR #316
