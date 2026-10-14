@@ -659,9 +659,9 @@ export class SessionSurfaces implements ViewerScope {
   scheduleList() {
     return this.tracked("schedule_list", "", async () => {
       const ops = this.requireAppOps();
-      return {
-        tasks: await ops.scheduledTasks(this.binding?.employeeId ?? ""),
-      };
+      const employeeId = this.binding?.employeeId;
+      if (!employeeId) throw new Error("not bound to an employee's DM");
+      return { tasks: await ops.scheduledTasks(employeeId) };
     });
   }
 

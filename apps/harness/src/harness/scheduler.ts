@@ -111,7 +111,9 @@ export async function fireScheduledTask(
     channelId: channel.id,
     text: task.prompt,
     /* Runs read like a session the user titled (AC-3): "Name · Thu 2 Oct". */
-    title: runTitle(task.name, new Date(due.at)),
+    /* The title dates the run itself — a coalesced wake run fires today,
+       not on the slot it missed. */
+    title: runTitle(task.name, new Date()),
     ...(task.folder !== undefined ? { cwd: task.folder } : {}),
     access: task.access,
     dedupeKey: `sched:${task.id}:${due.key}`,

@@ -63,6 +63,13 @@ export class TaskScheduler {
     this.tasks.set(task.id, task);
   }
 
+  /** Employee gone → its tasks go too (the relay cascade-deletes them
+      without per-task broadcasts). */
+  removeEmployeeTasks(employeeId: string): void {
+    for (const task of this.tasks.values())
+      if (task.employeeId === employeeId) this.tasks.delete(task.id);
+  }
+
   removeTask(taskId: string): void {
     this.tasks.delete(taskId);
   }
@@ -77,11 +84,13 @@ export class TaskScheduler {
     this.ticking = true;
     try {
       for (const task of this.tasks.values()) {
-        if (task.paused) continue;
-        if (this.firing.has(task.id)) continue;
         const requested =
           task.requestedAt !== undefined &&
           task.requestedAt > (task.lastFiredAt ?? 0);
+        /* Run now is an explicit manual fire — it bypasses `paused` rather
+           than being stamped and silently deferred to a resume. */
+        if (task.paused && !requested) continue;
+        if (this.firing.has(task.id)) continue;
         const anchor = task.lastFiredAt ?? task.createdAt;
         const dueAt = nextRunAt(task.schedule, new Date(anchor))?.getTime();
         const due = requested
@@ -103,10 +112,11 @@ export class TaskScheduler {
             });
           } else {
             await this.opts.fire(task, due);
-            /* The relay's own update re-anchors the row — mirror it on the
-               local copy now so a tick landing inside that round-trip can't
-               re-fire the same slot (its dedupeKey would save it anyway). */
-            task.lastFiredAt = due.at;
+            /* The relay's own update stamps `lastFiredAt = Date.now()` —
+               mirror THAT, not the slot time, so a dropped upsert echo can't
+               re-anchor early and surface another missed slot as a second
+               real run (the burst AC-2 forbids). */
+            task.lastFiredAt = Date.now();
             if (requested) task.requestedAt = undefined;
             this.opts.log.info("scheduled run fired", {
               taskId: task.id,

@@ -190,8 +190,12 @@ export const validCron = (cron: string) => !!parseCron(cron);
 
 export const validSchedule = (s: TaskSchedule) => {
   if (s.kind === "cron") return validCron(s.cron ?? "");
-  if (!/^\d{1,2}:\d{2}$/.test(s.time)) return false;
-  if (s.kind === "once") return !!s.date;
+  /* Bounds, not just shape — "25:00"/"9:99" would overflow through
+     setHours/setMinutes and fire at a wrong wall time. */
+  const tm = /^(\d{1,2}):(\d{2})$/.exec(s.time);
+  if (!tm || Number(tm[1]) > 23 || Number(tm[2]) > 59) return false;
+  if (s.kind === "once")
+    return !!s.date && !Number.isNaN(new Date(`${s.date}T00:00`).getTime());
   return true;
 };
 

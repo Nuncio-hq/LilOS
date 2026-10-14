@@ -60,6 +60,14 @@ export function onRelayEvent(
       const parsed = EmployeeRemovedEvent.safeParse(params);
       if (parsed.success) {
         this.opts.connect?.employeeRemoved(parsed.data.employeeId);
+        /* The relay cascade-deleted the employee's tasks without per-task
+           events — drop them here or they fire `channels.openDm` on a dead
+           employee every tick until restart. */
+        this.scheduler.removeEmployeeTasks(parsed.data.employeeId);
+        for (const [taskId, convId] of this.scheduledRunsInFlight) {
+          if (this.scheduler.getTask(taskId) === undefined)
+            this.scheduledRunsInFlight.delete(taskId);
+        }
         void this.opts.connect?.reconcile();
       }
       break;

@@ -2132,18 +2132,26 @@ export function DmPage() {
           onClose={() => setTaskEdit(null)}
           onSave={(d: TaskDraft) => {
             setTaskEdit(null);
+            /* Update sends `folder: null` to CLEAR a folder — create just
+               omits it. */
             const input = {
               name: d.name,
               prompt: d.prompt,
-              ...(d.folder !== undefined ? { folder: d.folder } : {}),
               schedule: d.schedule,
               access: d.access,
             };
             toastOnFail(
               "Couldn't save the task",
               taskEdit.task
-                ? updateScheduledTask(taskEdit.task.id, input)
-                : createScheduledTask({ employeeId, ...input }),
+                ? updateScheduledTask(taskEdit.task.id, {
+                    ...input,
+                    folder: d.folder ?? null,
+                  })
+                : createScheduledTask({
+                    employeeId,
+                    ...input,
+                    ...(d.folder !== undefined ? { folder: d.folder } : {}),
+                  }),
             );
           }}
         />

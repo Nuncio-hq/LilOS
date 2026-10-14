@@ -102,6 +102,9 @@ export async function handleConversations(
         const { conversation, rootMessage, created } =
           await store.openConversation({
             ...parsed.data,
+            /* The scheduled marker is host-authored — a client-supplied
+               one would fake a task's run and hijack its lastRun stamps. */
+            scheduled: isHost(peer) ? parsed.data.scheduled : undefined,
             access,
             attachments,
             /* #137: a title given at open is user-chosen from a client,
