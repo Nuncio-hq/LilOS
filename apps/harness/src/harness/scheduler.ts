@@ -30,12 +30,19 @@ export function wireScheduler(this: HarnessCtx): void {
    host was down, and the first tick then picks up every slept-through
    slot at once (coalesced to one run per task). */
 export async function syncScheduledTasks(this: HarnessCtx): Promise<void> {
-  const { tasks } = await this.opts.relay.request<{ tasks: ScheduledTask[] }>(
-    "schedules.list",
-    {},
-  );
-  this.scheduler.setTasks(tasks);
-  await this.scheduler.tick();
+  try {
+    const { tasks } = await this.opts.relay.request<{
+      tasks: ScheduledTask[];
+    }>("schedules.list", {});
+    this.scheduler.setTasks(tasks);
+    await this.scheduler.tick();
+  } catch (error) {
+    /* A close racing the list (harness stopping, relay restarting) must not
+       surface as an unhandled rejection — the next ready re-syncs anyway. */
+    this.opts.log.warn("scheduled-task sync failed", {
+      error: String(error),
+    });
+  }
 }
 
 export async function onScheduleUpserted(
