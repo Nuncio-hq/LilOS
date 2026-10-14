@@ -108,7 +108,13 @@ async function captureView(app: ElectronApplication, file: string) {
         if (!w) return null;
         /* Older tabs stay attached but hidden — hidden views throw on
            capturePage, so try each child until one paints. */
-        for (const k of w.contentView.children as { webContents?: any }[]) {
+        const kids = w.contentView.children as {
+          webContents?: {
+            getURL(): string;
+            capturePage(): Promise<{ toPNG(): Buffer }>;
+          };
+        }[];
+        for (const k of kids) {
           if (!k.webContents?.getURL()) continue;
           try {
             return (await k.webContents.capturePage())
@@ -123,20 +129,31 @@ async function captureView(app: ElectronApplication, file: string) {
       return png;
     })
     .toBeTruthy();
-  await writeFile(file, Buffer.from(png!, "base64"));
+  if (!png) throw new Error("no visible WebContentsView painted");
+  await writeFile(file, Buffer.from(png, "base64"));
 }
 
 /** Newest WebContentsView webContents in the first window. */
 const viewContents = (app: ElectronApplication) =>
   app.evaluate(({ BrowserWindow }) => {
     const w = BrowserWindow.getAllWindows()[0];
-    const kids = (w?.contentView.children ?? []) as { webContents?: any }[];
+    const kids = (w?.contentView.children ?? []) as {
+      webContents?: { getURL(): string; getZoomFactor(): number };
+    }[];
     const v = kids[kids.length - 1]?.webContents;
     return v ? { url: v.getURL(), zoom: v.getZoomFactor() } : null;
   });
 
 const browserCmd = (win: Page, cmd: unknown) =>
-  win.evaluate((c) => (window as any).lilos.browser.command(c), cmd);
+  win.evaluate(
+    (c) =>
+      (
+        window as Window & {
+          lilos?: { browser: { command: (x: unknown) => unknown } };
+        }
+      ).lilos?.browser.command(c),
+    cmd,
+  );
 
 test.describe.configure({ mode: "serial" });
 test.setTimeout(300_000);
@@ -205,14 +222,10 @@ test("AC-1/AC-3: panel renders real pages; pop-out window; find, zoom, print, do
       return !!bw;
     })
     .toBe(true);
-  const bwin = bw!;
-  await expect(bwin.locator("[data-browser='window']")).toBeVisible();
-  await electronScreenshot(
-    app,
-    bwin,
-    path.join(SHOTS, "ac1-popout-window.png"),
-  );
-  await bwin.locator("[data-browser-mode-toggle]").click(); // back to panel
+  if (!bw) throw new Error("pop-out browser window never appeared");
+  await expect(bw.locator("[data-browser='window']")).toBeVisible();
+  await electronScreenshot(app, bw, path.join(SHOTS, "ac1-popout-window.png"));
+  await bw.locator("[data-browser-mode-toggle]").click(); // back to panel
   await expect(dock).toBeVisible({ timeout: 15_000 });
 
   /* AC-3 find: ⌘F opens the drawn find bar; typing runs findInPage on the
@@ -234,10 +247,11 @@ test("AC-1/AC-3: panel renders real pages; pop-out window; find, zoom, print, do
      wired (the sheet itself is OS modal — untestable headless). */
   const pdf = await app.evaluate(async ({ BrowserWindow }) => {
     const w = BrowserWindow.getAllWindows()[0];
-    const v = (w?.contentView.children ?? []).find(
-      (k: any) => k.webContents,
-    ) as any;
-    return v ? (await v.webContents.printToPDF({})).length > 1000 : false;
+    const kids = (w?.contentView.children ?? []) as {
+      webContents?: { printToPDF(o: object): Promise<Uint8Array> };
+    }[];
+    const v = kids.find((k) => k.webContents)?.webContents;
+    return v ? (await v.printToPDF({})).length > 1000 : false;
   });
   expect(pdf).toBe(true);
 
@@ -246,10 +260,11 @@ test("AC-1/AC-3: panel renders real pages; pop-out window; find, zoom, print, do
      browser's library. */
   await app.evaluate(async ({ BrowserWindow }, url) => {
     const w = BrowserWindow.getAllWindows()[0];
-    const v = (w?.contentView.children ?? []).find(
-      (k: any) => k.webContents,
-    ) as any;
-    v.webContents.downloadURL(url);
+    const kids = (w?.contentView.children ?? []) as {
+      webContents?: { downloadURL(u: string): void };
+    }[];
+    const v = kids.find((k) => k.webContents);
+    v?.webContents?.downloadURL(url);
   }, DOWNLOAD_URL);
   await expect
     .poll(
