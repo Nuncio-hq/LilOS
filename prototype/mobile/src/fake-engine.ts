@@ -170,9 +170,9 @@ export const $sessionGroups = computed(
         when: t.when,
       };
       if (t.state === "needs-you") {
-        const ask = t.entries.find(
-          (e) => e.kind === "agent" && e.approval,
-        ) as AgentEntry | undefined;
+        const ask = t.entries.find((e) => e.kind === "agent" && e.approval) as
+          | AgentEntry
+          | undefined;
         needsYou.push({
           ...base,
           state: "needs-you",

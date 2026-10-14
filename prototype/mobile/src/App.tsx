@@ -75,8 +75,8 @@ import {
   $approvals,
   $employees,
   $projects,
-  $threads,
   $sessionGroups,
+  $threads,
   answerAsk,
   approve,
   approvePlan,
@@ -394,6 +394,7 @@ function Home() {
   const projects = useStore($projects);
   const link = useStore($link);
   const attempt = useStore($attempt);
+  const sessionGroups = useStore($sessionGroups);
 
   // The team starts working the first time Home shows.
   useEffect(() => startLife(), []);
@@ -438,7 +439,7 @@ function Home() {
       onOpenEmployee={(id) => nav.navigate("Dm", { employeeId: id })}
       onOpenChannel={() => soon("Channels")}
       sessions={{
-        count: useStore($sessionGroups).needsYou.length || undefined,
+        count: sessionGroups.needsYou.length || undefined,
         onOpen: () => nav.navigate("Sessions"),
       }}
     />
