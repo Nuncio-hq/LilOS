@@ -364,8 +364,17 @@ test("AC-2 thread: the Workbench Browser tab shows this thread's tabs", async ()
 });
 
 test("AC-4: no browser control in the web build", async ({ page }) => {
-  await page.goto(stack.webUrl);
+  const grown = await growDmThread(stack, ["web build has no browser UI"]);
+  await page.goto(
+    `${stack.webUrl}/dm/${grown.employeeId}/${grown.conversationId}/focus?tab=browser`,
+  );
   await expect(page.locator("[data-browser-dock]")).toHaveCount(0);
   await expect(page.locator("[data-browser-open]")).toHaveCount(0);
+  /* ?tab=browser is dropped on the floor — a web build has no Browser tab
+     to land on. */
   await expect(page.locator("[data-wb-browser]")).toHaveCount(0);
+  await page.screenshot({
+    path: path.join(SHOTS, "ac4-web-no-browser.png"),
+    fullPage: true,
+  });
 });

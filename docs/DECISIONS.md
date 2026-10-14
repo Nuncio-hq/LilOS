@@ -182,6 +182,18 @@ PR does not exist.
   framed window, or a frameless window with custom-drawn
   traffic lights (misses native drag/zoom/full-screen for free). — #232,
   #301
+- **D-#215 The LilOS Browser's pages live in the main process: one
+  `WebContentsView` per tab on `persist:lilos-browser`, renderers are pure
+  chrome.** Chrome draws the strip / omnibox / find / library and reports
+  each page slot's rect; the host positions views and pushes one full
+  state snapshot (tabs, slots, downloads, find) to both chrome renderers.
+  Pop-out is a second window running the same chrome; a Workbench Browser
+  tab is a `thread:<conv>` slot that may only adopt or open tabs carrying
+  that thread's group. Tabs + the partition's sign-ins persist through
+  `browser-state.json` and a `will-quit` cookie flush. Not: `<webview>`
+  (its state lives in the guest, untestable), a BrowserWindow per tab,
+  browser state through the relay, or an agent-facing AppMethod (lands
+  separately). — #215 · PR #735
 
 ## Testing
 - **D-#3 CI (GitHub Actions, setup-bun) runs with `engine-fake`; never a
