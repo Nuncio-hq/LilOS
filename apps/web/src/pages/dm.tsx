@@ -36,7 +36,10 @@ import {
   MainPane,
   NO_WS,
   type PlanAction,
+  ScheduledTasks,
   StatusBanner,
+  TaskDialog,
+  type TaskDraft,
   ThreadView,
   useDraft,
 } from "@lilos/ui";
@@ -64,6 +67,7 @@ import {
   useParams,
   useRouterState,
 } from "@tanstack/react-router";
+import { XIcon } from "lucide-react";
 import { atom } from "nanostores";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -156,6 +160,16 @@ import {
   sessionWatched,
   workbenchRequests,
 } from "../lib/runtime";
+import {
+  $scheduledTasks,
+  createScheduledTask,
+  deleteScheduledTask,
+  refreshScheduledTasks,
+  runScheduledTaskNow,
+  toUiTask,
+  updateScheduledTask,
+  watchSchedules,
+} from "../lib/schedules";
 import { sendKeyDoneForSend, sendKeyForSend } from "../lib/send-key";
 import { say, sayError, sayNotice } from "../lib/toast";
 import { defaultAccess } from "../settings/state";
@@ -381,6 +395,31 @@ export function DmPage() {
     return () => window.clearTimeout(timer);
   }, [focusNudge, conversationId]);
   const [addFolderOpen, setAddFolderOpen] = useState(false);
+  /* #136: the Scheduled panel — the header button and a session row's
+     chip both open it; a thread open replaces it. `taskFlash` is the
+     chip's target (scroll + flash). */
+  const scheduledTasks = useAtom($scheduledTasks);
+  const [scheduledOpen, setScheduledOpen] = useState(false);
+  const [taskFlash, setTaskFlash] = useState<string | null>(null);
+  const [taskEdit, setTaskEdit] = useState<{
+    task?: (typeof scheduledTasks)[number];
+  } | null>(null);
+  const openScheduled = (taskId?: string) => {
+    setScheduledOpen(true);
+    if (taskId) {
+      setTaskFlash(taskId);
+      setTimeout(() => setTaskFlash((f) => (f === taskId ? null : f)), 2000);
+    }
+  };
+  useEffect(() => {
+    toastOnFail("Couldn't load scheduled tasks", refreshScheduledTasks());
+    watchSchedules();
+  }, []);
+  /* Any route naming a conversation closes the panel — covers deep links
+     and the feed's own navigation, not only `openThread`. */
+  useEffect(() => {
+    if (conversationId) setScheduledOpen(false);
+  }, [conversationId]);
   /* #581 AC-2: "Add a folder" on a folder-less thread opens the same
      dialog — but picks a MOVE target for that session, not a recents
      entry for the next send. */
@@ -487,6 +526,15 @@ export function DmPage() {
   const allConvs = useAtom(relay.conversations);
   const openConv = allConvs.find(
     (c) => c.id === conversationId && c.channelId === channel?.id,
+  );
+  /* Contract rows -> panel rows (#136): the run's `conversationId` becomes
+     the DM row's rootId; `folder` is already the path-id the dialog uses. */
+  const myTasks = useMemo(
+    () =>
+      scheduledTasks
+        .filter((t) => t.employeeId === employeeId)
+        .map((t) => toUiTask(t, convs)),
+    [scheduledTasks, employeeId, convs],
   );
 
   /* #340 AC-2b: the session's `workbench_open` opens the Workbench — Focus
@@ -1199,6 +1247,8 @@ export function DmPage() {
   /* Clicking a session opens the thread panel beside the feed — the quick
      peek (#195 AC-1); the panel's ↗ is the way into Focus. */
   const openThread = (id: string) => {
+    /* A thread open always replaces the Scheduled panel (#136). */
+    setScheduledOpen(false);
     const conv = convs.find((c) => c.rootMessageId === id);
     if (conv)
       void navigate({
@@ -2123,6 +2173,11 @@ export function DmPage() {
           onNav={() => navOpen.set(true)}
           onProfile={() => setProfileOpen((v) => !v)}
           onOpen={openThread}
+          scheduled={{
+            count: myTasks.length,
+            onOpen: () => openScheduled(),
+            onOpenTask: openScheduled,
+          }}
           onSend={send}
           draft={homeDraft}
           onDraftChange={setHomeDraft}
@@ -2224,7 +2279,83 @@ export function DmPage() {
           }}
         />
       </MainPane>
-      {threadEl}
+      {scheduledOpen ? (
+        <div
+          data-scheduled-panel
+          className="relative flex min-h-0 w-[420px] shrink-0 flex-col border-l bg-background xl:w-[460px]"
+        >
+          <button
+            type="button"
+            aria-label="Close scheduled tasks"
+            onClick={() => setScheduledOpen(false)}
+            className="absolute top-3 right-3 z-10 rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+          >
+            <XIcon className="size-4" />
+          </button>
+          <ScheduledTasks
+            employeeName={employee.name}
+            tasks={myTasks}
+            folders={folderRows}
+            highlight={taskFlash}
+            onNew={() => setTaskEdit({})}
+            onEdit={(task) => {
+              const row = scheduledTasks.find((t) => t.id === task.id);
+              if (row) setTaskEdit({ task: row });
+            }}
+            onRunNow={(id) =>
+              toastOnFail("Couldn't start the run", runScheduledTaskNow(id))
+            }
+            onPause={(id, paused) =>
+              toastOnFail(
+                paused ? "Couldn't pause the task" : "Couldn't resume the task",
+                updateScheduledTask(id, { paused }),
+              )
+            }
+            onDelete={(id) =>
+              toastOnFail("Couldn't delete the task", deleteScheduledTask(id))
+            }
+            onOpenRun={(rootId) => {
+              setScheduledOpen(false);
+              openThread(rootId);
+            }}
+          />
+        </div>
+      ) : (
+        threadEl
+      )}
+      {taskEdit && (
+        <TaskDialog
+          task={taskEdit.task ? toUiTask(taskEdit.task, convs) : undefined}
+          employeeName={employee.name}
+          folders={folderRows}
+          defaultFolder={pick.folder ?? folderRows[0]?.id}
+          onClose={() => setTaskEdit(null)}
+          onSave={(d: TaskDraft) => {
+            setTaskEdit(null);
+            /* Update sends `folder: null` to CLEAR a folder — create just
+               omits it. */
+            const input = {
+              name: d.name,
+              prompt: d.prompt,
+              schedule: d.schedule,
+              access: d.access,
+            };
+            toastOnFail(
+              "Couldn't save the task",
+              taskEdit.task
+                ? updateScheduledTask(taskEdit.task.id, {
+                    ...input,
+                    folder: d.folder ?? null,
+                  })
+                : createScheduledTask({
+                    employeeId,
+                    ...input,
+                    ...(d.folder !== undefined ? { folder: d.folder } : {}),
+                  }),
+            );
+          }}
+        />
+      )}
       {addFolderOpen && (
         <AddFolderDialog
           folders={folderRows}

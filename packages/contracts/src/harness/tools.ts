@@ -5,6 +5,7 @@ import {
   EmployeeStatus,
   WorkbenchOpenTarget,
 } from "../app/domain.js";
+import { ScheduledTask, TaskSchedule } from "../app/schedule.js";
 import { MessageSearchHit, StatusComponent } from "../app/wire.js";
 import { ConversationAccess } from "../engine/approvals.js";
 import { ForgePrListItem } from "../host/forge.js";
@@ -36,6 +37,7 @@ export const TOOL_AREAS = [
   "workbench",
   "browser",
   "terminal",
+  "schedule",
 ] as const;
 export type ToolArea = (typeof TOOL_AREAS)[number];
 
@@ -448,6 +450,45 @@ export const ThreadStartResult = z.object({
 });
 export type ThreadStartResult = z.infer<typeof ThreadStartResult>;
 
+/* --------------------------------- schedule ------------------------------- */
+
+/** `schedule_list` — this employee's scheduled tasks (#136). */
+export const ScheduleListParams = z.strictObject({});
+export type ScheduleListParams = z.infer<typeof ScheduleListParams>;
+export const ScheduleListResult = z.object({
+  tasks: z.array(ScheduledTask),
+});
+export type ScheduleListResult = z.infer<typeof ScheduleListResult>;
+
+/* The write tools propose a company change; each opens an ask card and
+   nothing is written until the user approves (`access: "approval"`). The
+   employee comes from the session binding — an agent can only ever task
+   itself. */
+export const ScheduleCreateParams = z.strictObject({
+  name: z.string().min(1),
+  prompt: z.string().min(1),
+  folder: z.string().min(1).optional(),
+  schedule: TaskSchedule,
+  access: ConversationAccess,
+});
+export type ScheduleCreateParams = z.infer<typeof ScheduleCreateParams>;
+export const ScheduleUpdateParams = z.strictObject({
+  id: z.string().min(1),
+  name: z.string().min(1).optional(),
+  prompt: z.string().min(1).optional(),
+  folder: z.string().min(1).nullable().optional(),
+  schedule: TaskSchedule.optional(),
+  access: ConversationAccess.optional(),
+  paused: z.boolean().optional(),
+});
+export type ScheduleUpdateParams = z.infer<typeof ScheduleUpdateParams>;
+export const ScheduleTaskRef = z.strictObject({ id: z.string().min(1) });
+export type ScheduleTaskRef = z.infer<typeof ScheduleTaskRef>;
+export const ScheduleTaskResult = z.object({ task: ScheduledTask });
+export type ScheduleTaskResult = z.infer<typeof ScheduleTaskResult>;
+export const ScheduleDeletedResult = z.object({ deleted: z.literal(true) });
+export type ScheduleDeletedResult = z.infer<typeof ScheduleDeletedResult>;
+
 /* -------------------------------- registry -------------------------------- */
 
 export interface LilosToolContract {
@@ -600,6 +641,7 @@ export const LILOS_TOOLS: Record<string, LilosToolContract> = {
     area: "thread",
     access: "read",
   },
+
   thread_start: {
     params: ThreadStartParams,
     result: ThreadStartResult,
@@ -626,6 +668,41 @@ export const LILOS_TOOLS: Record<string, LilosToolContract> = {
     result: FolderAddResult,
     doc: "Ask the user to add a folder to the recent-folders list so it can be picked for a session. Waits for approval.",
     area: "folder",
+    access: "approval",
+  },
+  schedule_list: {
+    params: ScheduleListParams,
+    result: ScheduleListResult,
+    doc: "This employee's scheduled tasks — name, schedule, access level, last run.",
+    area: "schedule",
+    access: "read",
+  },
+  schedule_create: {
+    params: ScheduleCreateParams,
+    result: ScheduleTaskResult,
+    doc: "Create a scheduled task for yourself — name, schedule, prompt, optional folder. Asks the user to approve.",
+    area: "schedule",
+    access: "approval",
+  },
+  schedule_update: {
+    params: ScheduleUpdateParams,
+    result: ScheduleTaskResult,
+    doc: "Edit one of your scheduled tasks — only the fields given change; folder: null clears it. Asks the user to approve.",
+    area: "schedule",
+    access: "approval",
+  },
+  schedule_delete: {
+    params: ScheduleTaskRef,
+    result: ScheduleDeletedResult,
+    doc: "Delete one of your scheduled tasks — its future runs stop. Asks the user to approve.",
+    area: "schedule",
+    access: "approval",
+  },
+  schedule_run_now: {
+    params: ScheduleTaskRef,
+    result: ScheduleTaskResult,
+    doc: "Fire one of your scheduled tasks now — a session opens in this DM at once. Asks the user to approve.",
+    area: "schedule",
     access: "approval",
   },
 };

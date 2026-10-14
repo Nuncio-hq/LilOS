@@ -145,7 +145,20 @@ const appOps: AppOps = {
   }),
   profile: async () => ({ userName: "Oscar", companyName: "LilOS" }),
   openWorkbench: async () => {},
+  scheduledTasks: async () => [],
   startThread: async () => {
+    throw new Error("not exercised in this script");
+  },
+  scheduleCreate: async () => {
+    throw new Error("not exercised in this script");
+  },
+  scheduleUpdate: async () => {
+    throw new Error("not exercised in this script");
+  },
+  scheduleDelete: async () => {
+    throw new Error("not exercised in this script");
+  },
+  scheduleRunNow: async () => {
     throw new Error("not exercised in this script");
   },
   hireEmployee: async () => {

@@ -47,6 +47,11 @@ export const AGENT_METHOD_TOOLS: Record<string, string> = {
   "folders.detail": "context",
   "folders.add": "folder_add",
   "workbench.open": "workbench_open",
+  "schedules.list": "schedule_list",
+  "schedules.create": "schedule_create",
+  "schedules.update": "schedule_update",
+  "schedules.delete": "schedule_delete",
+  "schedules.runNow": "schedule_run_now",
 } as const;
 
 /**

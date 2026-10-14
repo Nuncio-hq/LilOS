@@ -12,6 +12,12 @@ import type {
   GuideParams,
   GuideResult,
   PreviewTarget,
+  ScheduleCreateParams,
+  ScheduleDeletedResult,
+  ScheduleListResult,
+  ScheduleTaskRef,
+  ScheduleTaskResult,
+  ScheduleUpdateParams,
   SessionBinding,
   TeamHireParams,
   TeamHireResult,
@@ -69,9 +75,15 @@ export interface SurfaceBackend {
   context(): Promise<ContextResult>;
   guide(p: GuideParams): Promise<GuideResult>;
   teamList(): Promise<TeamListResult>;
+  scheduleList(): Promise<ScheduleListResult>;
+  scheduleCreate(p: ScheduleCreateParams): Promise<ScheduleTaskResult>;
+  scheduleUpdate(p: ScheduleUpdateParams): Promise<ScheduleTaskResult>;
+  scheduleDelete(p: ScheduleTaskRef): Promise<ScheduleDeletedResult>;
+  scheduleRunNow(p: ScheduleTaskRef): Promise<ScheduleTaskResult>;
   teamHire(p: TeamHireParams): Promise<TeamHireResult>;
   teamUpdate(p: TeamUpdateParams): Promise<TeamUpdateResult>;
   folderAdd(p: FolderAddParams): Promise<FolderAddResult>;
+
   threadPost(p: { text: string }): Promise<ThreadPostResult>;
   threadRead(p: ThreadReadParams): Promise<ThreadReadResult>;
   threadList(): Promise<ThreadListResult>;

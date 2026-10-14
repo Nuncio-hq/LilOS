@@ -230,6 +230,13 @@ export const Conversation = z.object({
    * `finishedSeq > readSeq`, so it survives restart and reconnect.
    */
   finishedSeq: z.int().min(0).default(0),
+  /**
+   * Set on a session a scheduled task opened (#136): the DM marks it and
+   * the chip opens the task. Host-stamped at `conversations.open`.
+   */
+  scheduled: z
+    .object({ taskId: z.string().min(1), name: z.string() })
+    .optional(),
   createdAt: Timestamp,
 });
 export type Conversation = z.infer<typeof Conversation>;

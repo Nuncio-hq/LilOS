@@ -6,9 +6,12 @@ import type {
   Conversation,
   Employee,
   RecentFolder,
+  ScheduledTask,
 } from "@lilos/contracts/app";
 import type { AgentDescriptor } from "@lilos/contracts/engine";
 import type {
+  ScheduleCreateParams,
+  ScheduleUpdateParams,
   SessionBinding,
   TeamHireParams,
   TeamUpdateParams,
@@ -85,7 +88,17 @@ function waitForResolution(relay: RelayClient, initial: Ask): Promise<Ask> {
 
 export function createGatewayApprovalOps(
   deps: GatewayApprovalDeps,
-): Pick<AppOps, "startThread" | "hireEmployee" | "updateSelf" | "addFolder"> {
+): Pick<
+  AppOps,
+  | "startThread"
+  | "hireEmployee"
+  | "updateSelf"
+  | "addFolder"
+  | "scheduleCreate"
+  | "scheduleUpdate"
+  | "scheduleDelete"
+  | "scheduleRunNow"
+> {
   const { relay, runningTurnId, binding } = deps;
 
   /** Post the ask card and wait for the answer; resolves on approve, throws
@@ -249,6 +262,54 @@ export function createGatewayApprovalOps(
         path,
       });
       return r.folder;
+    },
+
+    scheduleCreate: async (p: ScheduleCreateParams) => {
+      await gate({
+        command: `schedule_create ${p.name}`,
+        description: `Add a scheduled task "${p.name}" (${p.schedule.kind}) running "${p.prompt}"${p.folder ? ` in ${p.folder}` : ""} at ${p.access} access.`,
+      });
+      const r = await relay.request<{ task: ScheduledTask }>(
+        "schedules.create",
+        { ...p, employeeId: binding.employeeId },
+      );
+      return r.task;
+    },
+
+    scheduleUpdate: async (p: ScheduleUpdateParams) => {
+      const fields = Object.entries(p)
+        .filter(([k]) => k !== "id")
+        .map(([k, v]) => `${k}: ${String(v)}`)
+        .join(", ");
+      await gate({
+        command: `schedule_update ${fields}`,
+        description: `Edit scheduled task ${p.id} — ${fields}.`,
+      });
+      const r = await relay.request<{ task: ScheduledTask }>(
+        "schedules.update",
+        p,
+      );
+      return r.task;
+    },
+
+    scheduleDelete: async (id: string) => {
+      await gate({
+        command: `schedule_delete ${id}`,
+        description: `Delete scheduled task ${id} — its future runs stop.`,
+      });
+      await relay.request("schedules.delete", { id });
+    },
+
+    scheduleRunNow: async (id: string) => {
+      await gate({
+        command: `schedule_run_now ${id}`,
+        description: `Run scheduled task ${id} now — a session opens in this DM at once.`,
+      });
+      const r = await relay.request<{ task: ScheduledTask }>(
+        "schedules.runNow",
+        { id },
+      );
+      return r.task;
     },
   };
 }

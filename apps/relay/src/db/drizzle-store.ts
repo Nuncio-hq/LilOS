@@ -12,6 +12,9 @@ import type {
   ProfileSettings,
   PushPrefs,
   RecentFolder,
+  ScheduledRunRecord,
+  ScheduledTask,
+  TaskSchedule,
   TurnFailure,
   WorkspaceIntent,
 } from "@lilos/contracts/app";
@@ -54,9 +57,11 @@ import type {
   ListMessagesQuery,
   NewAsk,
   NewPairedDevice,
+  NewScheduledTask,
   OpenConversationInput,
   RelayStore,
   ResolveAskInput,
+  ScheduledTaskPatch,
 } from "../store";
 import {
   NO_FOLDER_DEDUPE_LIKE,
@@ -106,8 +111,31 @@ const rowToConversation = (row: ConversationRow): Conversation => {
       : undefined,
     turnStopped: row.turnStopped ?? undefined,
     bgJobs: row.bgJobs ?? undefined,
+    /* JSON {taskId, name} — set on sessions a scheduled task opened. */
+    scheduled: row.scheduled
+      ? (JSON.parse(row.scheduled) as Conversation["scheduled"])
+      : undefined,
   };
 };
+
+type ScheduledTaskRow = typeof schema.scheduledTasks.$inferSelect;
+const rowToScheduledTask = (row: ScheduledTaskRow): ScheduledTask => ({
+  id: row.id,
+  employeeId: row.employeeId,
+  name: row.name,
+  prompt: row.prompt,
+  folder: row.folder ?? undefined,
+  schedule: JSON.parse(row.schedule) as TaskSchedule,
+  access: row.access,
+  paused: row.paused || undefined,
+  lastFiredAt: row.lastFiredAt ?? undefined,
+  requestedAt: row.requestedAt ?? undefined,
+  lastRun: row.lastRun
+    ? (JSON.parse(row.lastRun) as ScheduledRunRecord)
+    : undefined,
+  skippedAt: row.skippedAt ?? undefined,
+  createdAt: row.createdAt,
+});
 
 type MessageRow = typeof schema.messages.$inferSelect;
 /** Rows carry attachment refs as JSON text; the domain object unpacks them. */
@@ -316,6 +344,11 @@ export function createDrizzleStore(db: Db): RelayStore {
             .run();
           tx.delete(schema.asks)
             .where(inArray(schema.asks.channelId, channelIds))
+            .run();
+          /* An employee's tasks die with it — the DM sessions they opened
+             keep the `scheduled` marker like any other leftover row. */
+          tx.delete(schema.scheduledTasks)
+            .where(eq(schema.scheduledTasks.employeeId, id))
             .run();
           tx.delete(schema.conversations)
             .where(inArray(schema.conversations.channelId, channelIds))
@@ -589,6 +622,82 @@ export function createDrizzleStore(db: Db): RelayStore {
       }
       return summaries;
     },
+    async listScheduledTasks(employeeId?: string): Promise<ScheduledTask[]> {
+      const rows = employeeId
+        ? db
+            .select()
+            .from(schema.scheduledTasks)
+            .where(eq(schema.scheduledTasks.employeeId, employeeId))
+            .all()
+        : db.select().from(schema.scheduledTasks).all();
+      return rows
+        .map(rowToScheduledTask)
+        .sort((a, b) => a.createdAt - b.createdAt);
+    },
+    async getScheduledTask(id: string): Promise<ScheduledTask | null> {
+      const row = db
+        .select()
+        .from(schema.scheduledTasks)
+        .where(eq(schema.scheduledTasks.id, id))
+        .get();
+      return row ? rowToScheduledTask(row) : null;
+    },
+    async createScheduledTask(input: NewScheduledTask) {
+      const task: ScheduledTask = {
+        id: newId("task"),
+        employeeId: input.employeeId,
+        name: input.name,
+        prompt: input.prompt,
+        ...(input.folder !== undefined ? { folder: input.folder } : {}),
+        schedule: input.schedule,
+        access: input.access,
+        createdAt: now(),
+      };
+      db.insert(schema.scheduledTasks)
+        .values({
+          id: task.id,
+          employeeId: task.employeeId,
+          name: task.name,
+          prompt: task.prompt,
+          folder: task.folder ?? null,
+          schedule: JSON.stringify(task.schedule),
+          access: task.access,
+          createdAt: task.createdAt,
+        })
+        .run();
+      return task;
+    },
+    async updateScheduledTask(id: string, patch: ScheduledTaskPatch) {
+      const sets: Record<string, unknown> = {};
+      if (patch.name !== undefined) sets.name = patch.name;
+      if (patch.prompt !== undefined) sets.prompt = patch.prompt;
+      if (patch.folder !== undefined) sets.folder = patch.folder;
+      if (patch.schedule !== undefined)
+        sets.schedule = JSON.stringify(patch.schedule);
+      if (patch.access !== undefined) sets.access = patch.access;
+      if (patch.paused !== undefined) sets.paused = patch.paused;
+      if (patch.lastRun !== undefined)
+        sets.lastRun = patch.lastRun ? JSON.stringify(patch.lastRun) : null;
+      if (patch.skippedAt !== undefined) sets.skippedAt = patch.skippedAt;
+      if (patch.lastFiredAt !== undefined) sets.lastFiredAt = patch.lastFiredAt;
+      if (patch.requestedAt !== undefined) sets.requestedAt = patch.requestedAt;
+      if (Object.keys(sets).length === 0) return this.getScheduledTask(id);
+      const row = db
+        .update(schema.scheduledTasks)
+        .set(sets)
+        .where(eq(schema.scheduledTasks.id, id))
+        .returning()
+        .get();
+      return row ? rowToScheduledTask(row) : null;
+    },
+    async deleteScheduledTask(id: string) {
+      const row = db
+        .delete(schema.scheduledTasks)
+        .where(eq(schema.scheduledTasks.id, id))
+        .returning()
+        .get();
+      return row ? rowToScheduledTask(row) : null;
+    },
     async listRecentFolders(): Promise<RecentFolder[]> {
       return db
         .select()
@@ -714,10 +823,16 @@ export function createDrizzleStore(db: Db): RelayStore {
           ...(input.provider !== undefined ? { provider: input.provider } : {}),
           ...(input.effort !== undefined ? { effort: input.effort } : {}),
           ...(input.fast !== undefined ? { fast: input.fast } : {}),
+          ...(input.scheduled !== undefined
+            ? { scheduled: input.scheduled }
+            : {}),
         };
         tx.insert(schema.conversations)
           .values({
             ...conversation,
+            scheduled: conversation.scheduled
+              ? JSON.stringify(conversation.scheduled)
+              : null,
             workspace: conversation.workspace
               ? JSON.stringify(conversation.workspace)
               : null,

@@ -61,10 +61,12 @@ describe("relay migrations", () => {
     // v21 adds #571's (conversation_id, seq) index and retires the
     // conversation_id-only one it's a strict prefix of; v22 adds #583's
     // turn_stopped word; v23 adds #583's bg_jobs count; v24 adds #563's
+    // turn_stopped word; v23 adds #583's bg_jobs count; v24 adds #563's
     // read watermark + finish stamp (and their store-internal fence);
     // v25 adds the asks' hire-draft column; v26 adds #561's muted flag
-    // on employees.
-    expect(out.version).toBe(26);
+    // on employees; v27 adds #136's scheduled_tasks table + the
+    // conversation's scheduled marker.
+    expect(out.version).toBe(27);
     expect(out.askCols).toContain("hire");
     expect(out.msgCols).toContain("dropped");
     expect(out.msgCols).toContain("removed");
