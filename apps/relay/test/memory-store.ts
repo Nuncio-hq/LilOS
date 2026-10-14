@@ -375,26 +375,32 @@ export function createMemoryStore(): RelayStore {
       turnUsageMarks.set(conversationId, { sessionId, seq });
       conversation.usage = usage;
     },
-    async recordConversationFinish({
-      conversationId,
-      sessionId,
-      eventSeq,
-      channelSeq,
-    }) {
+    async recordConversationFinish({ conversationId, sessionId, eventSeq }) {
       const conversation = conversations.get(conversationId);
       if (!conversation) return;
       const mark = finishMarks.get(conversationId);
       if (mark && mark.sessionId === sessionId && eventSeq <= mark.seq) return;
-      if (channelSeq <= conversation.finishedSeq) return;
+      /* Same stamp rule as the real store (#563): strictly past every mark
+         seen — the finish's own channel writes land after its engine
+         event, so `lastSeq` alone could equal `readSeq` and miss. */
+      const stamp =
+        Math.max(
+          channels.get(conversation.channelId)?.lastSeq ?? 0,
+          conversation.readSeq,
+        ) + 1;
+      if (stamp <= conversation.finishedSeq) return;
       finishMarks.set(conversationId, { sessionId, seq: eventSeq });
-      conversation.finishedSeq = channelSeq;
+      conversation.finishedSeq = stamp;
     },
     async markConversationRead(conversationId) {
       const conversation = conversations.get(conversationId);
       if (!conversation) return null;
       const channel = channels.get(conversation.channelId);
       if (!channel) return null;
-      conversation.readSeq = channel.lastSeq;
+      conversation.readSeq = Math.max(
+        channel.lastSeq,
+        conversation.finishedSeq,
+      );
       return conversation;
     },
     async listMessages(

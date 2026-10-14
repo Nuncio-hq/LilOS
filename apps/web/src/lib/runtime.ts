@@ -158,6 +158,7 @@ export async function bootRuntime(cfg: LilosConfig): Promise<void> {
   initConnect();
   /* #563: the read watermark rides the relay — start stamping on open. */
   watchReadWatermark();
+  watchDmChannels();
 }
 
 /**
@@ -394,6 +395,22 @@ function watchReadWatermark(): void {
   };
   openConversation.subscribe(stamp);
   relay.conversations.subscribe(stamp);
+}
+
+let dmSubWatchStarted = false;
+/* #563: `conversation.updated` — the dot's finish stamp AND its clear —
+   rides the channel subscription only, and the DM page subscribes just
+   the open channel. Subscribing every DM channel at boot keeps the
+   sidebar's dots live off the feed (a finish lands while Home or another
+   DM is on screen, and a markRead on another client clears here too) —
+   the same thing the phone's `ensureChannelSubscriptions` does.
+   `channelMessages` is idempotent and its intent survives reconnects. */
+function watchDmChannels(): void {
+  if (dmSubWatchStarted) return;
+  dmSubWatchStarted = true;
+  relay.channels.subscribe((channels) => {
+    for (const c of channels) if (c.kind === "dm") relay.channelMessages(c.id);
+  });
 }
 
 /* #427: the sidebar badge map as a computed store — `sessionModels`

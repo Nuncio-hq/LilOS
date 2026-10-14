@@ -1,10 +1,13 @@
 /** #563 on the REAL (drizzle/sqlite) store: `recordConversationFinish`
-    stamps the channel's seq at the turn's end (`finishedSeq`) and
-    `markConversationRead` lifts `readSeq` to the channel's `lastSeq`, so
-    `finishedSeq > readSeq` is the client's "finished, not seen yet" dot —
-    no stored boolean to desync. The (sessionId, eventSeq) fence keeps a
-    replayed finish from the same session from re-stamping an older turn
-    end at a newer channel seq; a rebound session writes freely. Runs under
+    stamps a seq strictly past every mark the relay has seen —
+    max(channel.lastSeq, readSeq) + 1 — and `markConversationRead` lifts
+    `readSeq` to max(channel.lastSeq, finishedSeq), so
+    `finishedSeq > readSeq` is the client's "finished, not seen yet" dot.
+    The stamp must exceed what a markRead could already have covered
+    because the finish's own channel writes land AFTER its engine event —
+    a finish on a channel quiet since the last read has to dot too. The
+    (sessionId, eventSeq) fence keeps a replayed finish from the same
+    session from re-stamping; a rebound session writes freely. Runs under
     bun:sqlite via a subprocess (vitest itself is Node). */
 import { spawnSync } from "node:child_process";
 import { mkdtempSync } from "node:fs";
@@ -43,44 +46,45 @@ const state = async () => {
   const c = await s.getConversation(conv.id);
   return { readSeq: c?.readSeq, finishedSeq: c?.finishedSeq, dot: (c?.finishedSeq ?? 0) > (c?.readSeq ?? 0) };
 };
-const finish = (sessionId: string, eventSeq: number, channelSeq: number) =>
-  s.recordConversationFinish({
-    conversationId: conv.id, sessionId, eventSeq, channelSeq,
-  });
+const finish = (sessionId: string, eventSeq: number) =>
+  s.recordConversationFinish({ conversationId: conv.id, sessionId, eventSeq });
 console.log("fresh:", JSON.stringify(await state()));
 
-/* A turn end at the channel's current lastSeq dots the unopened thread. */
-const m1 = await post("turn one done");
-await finish("s-live", 10, m1.seq);
+/* A turn end dots the unopened thread. */
+await post("turn one done");
+await finish("s-live", 10);
 console.log("finished:", JSON.stringify(await state()));
 
-/* Opening the thread marks it read at the channel's current lastSeq. */
+/* Opening the thread clears the dot. */
 console.log(
   "marked:",
   JSON.stringify((await s.markConversationRead(conv.id))?.readSeq),
 );
 console.log("cleared:", JSON.stringify(await state()));
 
-/* A stale replay from the same session (older event seq, newer channel
-   seq) can't re-stamp: the dot stays cleared once read. */
-const m2 = await post("turn two done");
-await finish("s-live", 9, m2.seq);
+/* A finish on a channel quiet since the read — no new message, lastSeq
+   already covered — still dots: the stamp lands past the watermark, not
+   at the (unchanged) channel seq. */
+await finish("s-live", 11);
+console.log("quiet-finish:", JSON.stringify(await state()));
+
+/* A stale replay from the same session (older event seq) can't re-stamp:
+   it changes nothing the newer finish already recorded. */
+await finish("s-live", 9);
 console.log("after-stale:", JSON.stringify(await state()));
 
-/* A newer finish from the same session moves the stamp forward — a second
-   turn ended after the thread was read, so the dot comes back. */
-await finish("s-live", 11, m2.seq);
-console.log("refinished:", JSON.stringify(await state()));
+/* Reading again clears that quiet-finish dot — readSeq lifts to
+   finishedSeq even though the channel never moved. */
+console.log(
+  "marked2:",
+  JSON.stringify((await s.markConversationRead(conv.id))?.readSeq),
+);
+console.log("cleared2:", JSON.stringify(await state()));
 
-/* An even newer channel seq for the same turn end is ignored: the stamp
-   recorded when the finish first landed stands. */
-await finish("s-live", 11, m2.seq + 99);
-console.log("same-finish-later-seq:", JSON.stringify(await state()));
-
-/* A rebound session's first finish writes at whatever channel seq it sees
-   (event seqs restart per session). */
-const m3 = await post("rebound turn done");
-await finish("s-fresh", 2, m3.seq);
+/* A rebound session's first finish writes freely (event seqs restart per
+   session). */
+await post("rebound turn done");
+await finish("s-fresh", 2);
 console.log("rebound:", JSON.stringify(await state()));
 
 /* Fresh store on the same file — the watermark survives a relay restart. */
@@ -113,30 +117,36 @@ describe("conversation read watermark on the real store (#563)", () => {
         }),
     );
     expect(lines.fresh).toEqual({ readSeq: 0, finishedSeq: 0, dot: false });
-    expect(lines.finished).toEqual({
-      readSeq: 0,
-      finishedSeq: lines.marked,
-      dot: true,
-    });
+    /* The stamp lands strictly past the channel's lastSeq — it must out-
+       live a markRead that only reads lastSeq. */
+    const stamped = (lines.finished as { finishedSeq: number }).finishedSeq;
+    expect(stamped).toBeGreaterThan(0);
+    expect((lines.finished as { dot: boolean }).dot).toBe(true);
     expect(lines.cleared).toEqual({
       readSeq: lines.marked,
-      finishedSeq: lines.marked,
+      finishedSeq: stamped,
       dot: false,
     });
-    expect(lines["after-stale"]).toEqual({
+    expect((lines.marked as number) >= stamped).toBe(true);
+    /* The quiet-channel finish (nothing posted between read and finish)
+       still dots — the stamp moved past readSeq, not just lastSeq. */
+    expect(lines["quiet-finish"]).toEqual({
       readSeq: lines.marked,
-      finishedSeq: lines.marked,
+      finishedSeq: stamped + 1,
+      dot: true,
+    });
+    /* The stale replay changed nothing. */
+    expect(lines["after-stale"]).toEqual(lines["quiet-finish"]);
+    /* markRead lifts readSeq to finishedSeq on an unmoved channel. */
+    expect(lines.marked2).toBe(stamped + 1);
+    expect(lines["cleared2"]).toEqual({
+      readSeq: stamped + 1,
+      finishedSeq: stamped + 1,
       dot: false,
     });
-    expect((lines.refinished as { finishedSeq: number }).finishedSeq).toBe(
-      (lines["after-stale"] as { readSeq: number }).readSeq + 1,
-    );
-    expect((lines.refinished as { dot: boolean }).dot).toBe(true);
-    /* The newer channel seq for the same turn end was ignored. */
-    expect(lines["same-finish-later-seq"]).toEqual(lines.refinished);
     expect((lines.rebound as { dot: boolean }).dot).toBe(true);
     expect(lines.reopened).toEqual({
-      readSeq: (lines.cleared as { readSeq: number }).readSeq,
+      readSeq: (lines.cleared2 as { readSeq: number }).readSeq,
       finishedSeq: (lines.rebound as { finishedSeq: number }).finishedSeq,
     });
     expect(lines.missing).toBeNull();

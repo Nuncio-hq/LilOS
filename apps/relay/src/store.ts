@@ -316,25 +316,27 @@ export interface RelayStore {
   }): Promise<void>;
 
   /**
-   * Stamp a turn end on the conversation (#563): `finishedSeq` becomes the
-   * channel's current seq — the "finished, not seen" watermark the dot
-   * compares `readSeq` against. `sessionId`/`eventSeq` are the freshness
-   * fence (same rule as `recordTurnUsage`): a replayed older finish from
-   * the same session can't regress the stamp; a rebound session writes
-   * freely. The stamp only ever moves forward.
+   * Stamp a turn end on the conversation (#563): `finishedSeq` becomes a
+   * stamp strictly past every mark the relay has seen —
+   * `max(channel.lastSeq, readSeq) + 1` — so the "finished, not seen" dot
+   * (`finishedSeq > readSeq`) always fires, even on a channel quiet since
+   * the last read (the finish's own channel writes arrive after the
+   * engine event that stamps it). `sessionId`/`eventSeq` are the
+   * freshness fence (same rule as `recordTurnUsage`): a replayed older
+   * finish from the same session can't rewrite; a rebound session writes
+   * freely.
    */
   recordConversationFinish(input: {
     conversationId: string;
     sessionId: string;
     eventSeq: number;
-    channelSeq: number;
   }): Promise<void>;
 
   /**
-   * The user's read watermark (#563): set `readSeq` to the conversation
-   * channel's current `lastSeq`, so every finish stamped up to now counts
-   * as seen — on every device at once. Returns the updated row, or null
-   * for an unknown conversation.
+   * The user's read watermark (#563): set `readSeq` past every finish the
+   * relay has stamped — `max(channel.lastSeq, finishedSeq)` — so opening
+   * the thread counts every finish up to now as seen, on every device at
+   * once. Returns the updated row, or null for an unknown conversation.
    */
   markConversationRead(conversationId: string): Promise<Conversation | null>;
 

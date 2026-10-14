@@ -97,37 +97,35 @@ export async function handleHostEvents(
             .catch((error) => log(`usage persist failed: ${error}`));
         }
         /* #563: the "finished, not seen" stamp — a turn end bumps
-           `finishedSeq` to the channel's current seq, so a thread the user
-           never opened dots its card + the employee on every device. The
-           store's (sessionId, eventSeq) fence drops replays the same way
-           `usage` does. A cancelled turn doesn't stamp: the user stopped it
-           himself, so it was seen (the same exclusion push fan-out
-           makes). Best-effort like the usage persist — a hiccup must not
-           drop the event's ack. */
+           `finishedSeq` past every mark the relay has seen, so a thread
+           the user never opened dots its card + the employee on every
+           device. The store's (sessionId, eventSeq) fence drops replays
+           the same way `usage` does. A cancelled turn doesn't stamp: the
+           user stopped it themselves, so it was seen (the same exclusion
+           push fan-out makes). Best-effort like the usage persist — a
+           hiccup must not drop the event's ack. */
         const event = parsed.data.event;
         const finished =
           (event.type === "turn.completed" &&
             event.payload.stopReason !== "cancelled") ||
           (event.type === "session.state" && event.payload.state === "error");
         if (finished) {
+          /* Snapshotted before the write: the compare below must see the
+             pre-stamp value — stores that mutate in place would otherwise
+             make "stamp landed" undetectable. */
+          const before = conversation.finishedSeq;
           store
-            .getChannel(conversation.channelId)
-            .then((channel) =>
-              channel
-                ? store.recordConversationFinish({
-                    conversationId: conversation.id,
-                    sessionId: parsed.data.sessionId,
-                    eventSeq: event.seq,
-                    channelSeq: channel.lastSeq,
-                  })
-                : null,
-            )
+            .recordConversationFinish({
+              conversationId: conversation.id,
+              sessionId: parsed.data.sessionId,
+              eventSeq: event.seq,
+            })
             .then(() =>
               store.getConversation(conversation.id).then((stamped) => {
                 /* Re-emit only when the stamp actually landed (the fence
                    may refuse a stale replay) — subscribers see the new
                    `finishedSeq` on the plain `conversation.updated` feed. */
-                if (stamped && stamped.finishedSeq !== conversation.finishedSeq)
+                if (stamped && stamped.finishedSeq !== before)
                   emitConversation(conversation.channelId, stamped);
               }),
             )

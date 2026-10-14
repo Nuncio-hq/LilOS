@@ -31,7 +31,9 @@ export function employeeBadges(
     let unseen = false;
     for (const c of conversations) {
       if (c.channelId !== ch.id) continue;
-      if (c.finishedSeq > c.readSeq) unseen = true;
+      /* Archived threads don't dot the employee — same rule the phone's
+         home row applies. */
+      if (!c.archived && c.finishedSeq > c.readSeq) unseen = true;
       if (!c.engineRef) continue;
       const m = models[c.engineRef];
       const sig = signals[c.engineRef];

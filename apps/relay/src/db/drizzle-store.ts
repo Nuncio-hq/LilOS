@@ -790,27 +790,39 @@ export function createDrizzleStore(db: Db): RelayStore {
         .get();
       return updated ? rowToConversation(updated) : null;
     },
-    async recordConversationFinish({
-      conversationId,
-      sessionId,
-      eventSeq,
-      channelSeq,
-    }) {
-      /* One conditional UPDATE = the freshness fence + the write, same
-         rule as `recordTurnUsage`: a replayed finish from the same session
-         only wins past the stored event seq; a rebound session always
-         writes. `finished_seq` is a channel watermark, so the stamp only
-         ever moves forward too. */
+    async recordConversationFinish({ conversationId, sessionId, eventSeq }) {
+      /* The stamp must clear every mark the relay has seen —
+         max(channel.lastSeq, readSeq) + 1 — because the finish's own
+         channel writes land AFTER the engine event that calls this: at
+         `lastSeq` a quiet-channel finish would equal `readSeq` and the
+         dot would silently miss. The conditional UPDATE keeps the
+         freshness fence atomic, same rule as `recordTurnUsage`: a
+         replayed finish from the same session only wins past the stored
+         event seq; a rebound session always writes. */
+      const row = db
+        .select({
+          lastSeq: schema.channels.lastSeq,
+          readSeq: schema.conversations.readSeq,
+        })
+        .from(schema.conversations)
+        .innerJoin(
+          schema.channels,
+          eq(schema.conversations.channelId, schema.channels.id),
+        )
+        .where(eq(schema.conversations.id, conversationId))
+        .get();
+      if (!row) return;
+      const stamp = Math.max(row.lastSeq, row.readSeq) + 1;
       db.update(schema.conversations)
         .set({
-          finishedSeq: channelSeq,
+          finishedSeq: stamp,
           finishedSessionId: sessionId,
           finishedEventSeq: eventSeq,
         })
         .where(
           and(
             eq(schema.conversations.id, conversationId),
-            lt(schema.conversations.finishedSeq, channelSeq),
+            lt(schema.conversations.finishedSeq, stamp),
             or(
               isNull(schema.conversations.finishedSessionId),
               ne(schema.conversations.finishedSessionId, sessionId),
@@ -821,12 +833,14 @@ export function createDrizzleStore(db: Db): RelayStore {
         .run();
     },
     async markConversationRead(conversationId) {
-      /* The user's read watermark (#563): the channel's current `lastSeq`, so
-         a finish the relay already stamped stays behind the mark. */
+      /* The user's read watermark (#563): past every finish stamped so
+         far — max(channel.lastSeq, finishedSeq), since a quiet-channel
+         finish can sit ahead of lastSeq. */
       const row = db
         .select({
           channelId: schema.conversations.channelId,
           lastSeq: schema.channels.lastSeq,
+          finishedSeq: schema.conversations.finishedSeq,
         })
         .from(schema.conversations)
         .innerJoin(
@@ -838,7 +852,7 @@ export function createDrizzleStore(db: Db): RelayStore {
       if (!row) return null;
       const updated = db
         .update(schema.conversations)
-        .set({ readSeq: row.lastSeq })
+        .set({ readSeq: Math.max(row.lastSeq, row.finishedSeq) })
         .where(eq(schema.conversations.id, conversationId))
         .returning()
         .get();

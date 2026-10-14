@@ -87,8 +87,13 @@ test("finish while unopened dots card + employee; opening clears on both clients
   await expect(page).toHaveURL(new RegExp(`/dm/${empId}$`));
 
   /* The finish lands unopened: the dot shows on Default's sidebar row on
-     BOTH clients — its appearance is the completion signal. */
-  await dmDefault(pageB);
+     BOTH clients — its appearance is the completion signal. Client B
+     stays on Home, never touching Default's channel: its dot must arrive
+     over the boot-wide DM subscriptions, not the open-DM feed. */
+  await pageB.goto(`${stack.webUrl}/`);
+  await expect(
+    pageB.locator("aside").getByRole("button", { name: /default/i }),
+  ).toBeVisible({ timeout: 30_000 });
   await expect(sideDot(page)).toBeVisible({ timeout: 90_000 });
   await expect(sideDot(pageB)).toBeVisible({ timeout: 90_000 });
   await page.screenshot({ path: `${SHOTS}/dot-sidebar.png` });
