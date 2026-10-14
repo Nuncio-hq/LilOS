@@ -17,6 +17,12 @@ import {
   SessionSetAccessResult,
 } from "./approvals.js";
 import { Capability } from "./capabilities.js";
+import {
+  CommandsExecParams,
+  CommandsExecResult,
+  CommandsListParams,
+  CommandsListResult,
+} from "./commands.js";
 import { ContentBlock } from "./content.js";
 import {
   EngineEvent,
@@ -487,6 +493,18 @@ export const ENGINE_METHODS: Record<string, EngineMethodContract> = {
     result: SessionSetAccessResult,
     doc: "Push the conversation's access level onto a live session (#106) — a hint the engine maps where it can (WS yolo / ACP session/set_mode); the harness enforces `full` itself either way.",
     capability: "approval_policy",
+  },
+  "commands.list": {
+    params: CommandsListParams,
+    result: CommandsListResult,
+    doc: "The composer's `/` menu: slash commands and skills this engine offers, filtered by `query`. No capability → no menu and `/` stays plain text (D-#19).",
+    capability: "commands",
+  },
+  "commands.exec": {
+    params: CommandsExecParams,
+    result: CommandsExecResult,
+    doc: 'Run a picked command in the session. `outcome:"output"` posts the engine\'s reply in the thread; `outcome:"prompt"` (skills) expands to the prompt the harness sends as the next turn.',
+    capability: "commands",
   },
 };
 export type EngineMethodName = keyof typeof ENGINE_METHODS;

@@ -41,6 +41,7 @@ export const KNOWN_CAPABILITIES = [
   "approval_policy",
   "side_prompt",
   "workspace_move",
+  "commands",
 ] as const;
 export type KnownCapability = (typeof KNOWN_CAPABILITIES)[number];
 
@@ -201,4 +202,19 @@ export const WORKSPACE_MOVE_CAPABILITY: Capability = {
   description:
     "session.moveWorkspace re-homes the session's working folder; the next turn runs there.",
   methods: ["session.moveWorkspace"],
+};
+
+/**
+ * The canonical `commands` descriptor: the engine offers slash commands and
+ * skills the composer lists (`commands.list`) and runs (`commands.exec`) like
+ * the TUI's `/` palette. `commands.exec` either returns engine-owned output to
+ * show in the thread, or expands a skill into the prompt the next turn runs.
+ * Engines without it declare nothing and `/` stays plain text (D-#19).
+ */
+export const COMMANDS_CAPABILITY: Capability = {
+  id: "commands",
+  name: "Slash commands & skills",
+  description:
+    "commands.list feeds the composer's `/` menu; commands.exec runs a command or expands a skill into a prompt.",
+  methods: ["commands.list", "commands.exec"],
 };

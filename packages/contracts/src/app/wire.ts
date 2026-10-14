@@ -10,6 +10,7 @@ import {
   ConversationAccess,
 } from "../engine/approvals";
 import { Capability } from "../engine/capabilities";
+import { CommandsListParams } from "../engine/commands";
 import { EngineEvent } from "../engine/events";
 import {
   JobsListParams,
@@ -240,6 +241,9 @@ export const AppMethod = z.enum([
   /* One-shot side ask (#584): the Workbench's commit-message "Suggest" —
      forwarded to the engine's session.ask. */
   "session.ask",
+  /* The composer's `/` menu — the engine's slash commands + skills list,
+     filtered as Oscar types. */
+  "commands.list",
   /* Phone pairing (#153): minting a grant is the opt-in that also binds the
      Tailscale listener; devices.list/revoke manage what the grant exchange
      created. `pairing.disable` turns phone access off again. */
@@ -288,6 +292,7 @@ export const ENGINE_PASSTHROUGH_METHODS = [
   "jobs.stop",
   "approvals.setPolicy",
   "session.ask",
+  "commands.list",
 ] as const;
 export type EnginePassthroughMethod =
   (typeof ENGINE_PASSTHROUGH_METHODS)[number];
@@ -303,6 +308,7 @@ export const ENGINE_PASSTHROUGH_PARAMS = {
   "jobs.stop": JobsStopParams,
   "approvals.setPolicy": ApprovalsSetPolicyParams,
   "session.ask": SessionAskParams,
+  "commands.list": CommandsListParams,
 } as const satisfies Record<EnginePassthroughMethod, z.ZodType>;
 
 const HelloClient = z

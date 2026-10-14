@@ -114,6 +114,15 @@ export type AttachedFile = {
   mediaType: string;
   url?: string;
 };
+/* The engine's `/` menu row (wire shape: commands.list in
+   packages/contracts/src/engine/commands.ts): a command the engine runs
+   itself, or a skill it expands into the turn's prompt. */
+export type SlashItem = {
+  name: string;
+  description: string;
+  kind: "command" | "skill";
+  argsHint?: string;
+};
 /* #420: the engine's `question` ask, as the card shows it (wire shape:
    packages/contracts/src/engine/requests.ts — options carry the id the
    client returns as the answer; `freeText` allows a typed answer besides

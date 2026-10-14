@@ -72,6 +72,24 @@ describe("issue #576 Esc layer stack", () => {
     expect(dialog).toHaveBeenCalledTimes(2);
   });
 
+  test("AC-576-2b an overlay INSIDE a registered dialog (cmdk listbox) is owned, not foreign", () => {
+    // cmdk's Command.List renders role="listbox", which matches OPEN_OVERLAY:
+    // without the contains() check the layer stack would read the switcher's
+    // own inner listbox as a foreign overlay and swallow Esc forever.
+    function SwitcherLike({ onEscape }: { onEscape: () => void }) {
+      const ref = useUiLayerEl<HTMLDivElement>({ onEscape });
+      return (
+        <div role="dialog" aria-modal="true" ref={ref}>
+          <div role="listbox" />
+        </div>
+      );
+    }
+    const dialog = vi.fn();
+    render(<SwitcherLike onEscape={dialog} />);
+    esc();
+    expect(dialog).toHaveBeenCalledTimes(1);
+  });
+
   test("AC-576-3 an open popover/menu owns Esc — the layer under it stays put", () => {
     const onEscape = vi.fn();
     render(<PlainLayer onEscape={onEscape} />);

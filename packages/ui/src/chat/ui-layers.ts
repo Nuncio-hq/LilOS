@@ -32,7 +32,7 @@ function foreignOverlayOpen(): boolean {
   for (const el of document.querySelectorAll(OPEN_OVERLAY))
     if (
       (el as HTMLElement).checkVisibility({ checkVisibilityCSS: true }) &&
-      !stack.some((l) => l.el === el)
+      !stack.some((l) => l.el === el || l.el?.contains(el))
     )
       return true;
   return false;
@@ -101,7 +101,8 @@ export function useUiLayer(handlers: UiLayerHandlers): void {
 /**
  * A layer bound to its dialog root element. Attach the returned ref to the
  * element carrying `role="dialog"` so the overlay check never treats the
- * dialog's own root as foreign (which would swallow its Esc forever).
+ * dialog's own root — or an overlay rendered inside it, like a cmdk listbox —
+ * as foreign (which would swallow its Esc forever).
  */
 export function useUiLayerEl<T extends HTMLElement = HTMLElement>(
   handlers: UiLayerHandlers,

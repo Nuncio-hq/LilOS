@@ -3,7 +3,7 @@
    (missing / git branches). One atom feeds the composer picker; cwdInfo
    feeds the thread header badge. */
 
-import type { Folder, FsDir, Workspace } from "@lilos/ui/types";
+import type { Folder, FsDir, Workspace, WsPick } from "@lilos/ui/types";
 import { atom } from "nanostores";
 import {
   hostBranches,
@@ -21,6 +21,19 @@ export const folders = atom<Folder[]>([]);
    last-session pick must not stamp "No folder" while the recents probe is
    still in flight). */
 export const foldersLoaded = atom(false);
+
+/** Per-employee workspace pick, keyed by employee id — a store, not page
+   state, so the ⌘K switcher's folder pick and ⌘N can seed a new session's
+   pick before its DM has mounted. */
+export const wsPicks = atom<Record<string, WsPick>>({});
+
+/** Bump to ask the new-session composer for focus (⌘N, a switcher folder
+   pick). The DM home consumes the change and focuses its textarea. */
+export const composerFocus = atom(0);
+
+export function focusComposer(): void {
+  composerFocus.set(composerFocus.get() + 1);
+}
 
 /** Dir listings the AddFolderDialog browses (keyed by requested path). */
 export const fsRows = atom<Record<string, FsDir>>({});

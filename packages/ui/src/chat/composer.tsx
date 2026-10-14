@@ -1,6 +1,12 @@
 import { useControllableState } from "@radix-ui/react-use-controllable-state";
 import type { ChatStatus } from "ai";
-import { FileIcon, FolderIcon, PaperclipIcon, SquareIcon } from "lucide-react";
+import {
+  FileIcon,
+  FolderIcon,
+  PaperclipIcon,
+  SquareIcon,
+  TerminalIcon,
+} from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   PromptInput,
@@ -16,13 +22,14 @@ import {
 } from "../components/ai-elements/prompt-input";
 import { cn } from "../lib/utils";
 import { HermesAvatar } from "../shell/avatars";
-import type { AttachedFile, Employee, FileMention } from "../types";
+import type { AttachedFile, Employee, FileMention, SlashItem } from "../types";
 import { composerKeyDown } from "./composer-keys";
 import {
   insertMention,
   mentionBeforeCaret,
   mentionQuery,
 } from "./composer-mentions";
+import { insertSlash, parseSlashDraft, slashQuery } from "./composer-slash";
 
 /* The paperclip opens the file dialog through PromptInput's attachments context. */
 function AttachButton() {
@@ -112,6 +119,8 @@ export function Composer({
   maxFiles,
   onAttachError,
   onSearchFiles,
+  onSearchCommands,
+  onCommand,
   draft: draftProp,
   onDraftChange,
   seedFiles,
@@ -133,6 +142,15 @@ export function Composer({
      typed after `@`, returns matching files/dirs of the session's folder.
      Absent → no Files section (D-#19: no folder context, no control). */
   onSearchFiles?: (query: string) => Promise<FileMention[]>;
+  /* Command search for the `/` menu: called with the text typed after the
+     leading `/`, returns the engine's commands + skills. Absent → `/` stays
+     plain text (D-#19: the engine declares no commands, the menu never
+     opens). */
+  onSearchCommands?: (query: string) => Promise<SlashItem[]>;
+  /* A `/name args` send passes through here first: returning true claims
+     it (the app owns that command — the model picker, rewind); false lets
+     it post so the engine runs it. */
+  onCommand?: (name: string, args: string) => boolean;
   /* What the host accepts as attachments (e.g. "image/*"). Without it the paperclip
      and chips don't render — the control needs its enabling prop. */
   accept?: string;
@@ -179,6 +197,47 @@ export function Composer({
   const fragmentQuery = fragment?.query ?? null;
   const [fileHits, setFileHits] = useState<FileMention[] | null>(null);
   const searchSeq = useRef(0);
+  /* The `/` menu's rows — same fetch-per-keystroke shape as the file hits.
+     `null` = a search is in flight or the menu never applied. */
+  const slashQ = slashQuery(draft);
+  const [slashHits, setSlashHits] = useState<SlashItem[] | null>(null);
+  const slashSeq = useRef(0);
+  const [slashDismissed, setSlashDismissed] = useState(false);
+  useEffect(() => {
+    if (!onSearchCommands || slashQ === null) {
+      setSlashHits(null);
+      return;
+    }
+    const seq = ++slashSeq.current;
+    let live = true;
+    void onSearchCommands(slashQ).then(
+      (hits) => {
+        if (live && seq === slashSeq.current) setSlashHits(hits);
+      },
+      () => {
+        if (live && seq === slashSeq.current) setSlashHits([]);
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [onSearchCommands, slashQ]);
+  const [slashActive, setSlashActive] = useState(0);
+  const [slashNav, setSlashNav] = useState<{
+    query: string | null;
+    hits: SlashItem[] | null;
+  }>({ query: slashQ, hits: slashHits });
+  if (slashNav.query !== slashQ || slashNav.hits !== slashHits) {
+    setSlashNav({ query: slashQ, hits: slashHits });
+    setSlashActive(0);
+  }
+  const slashOpen = !slashDismissed && slashQ !== null && !!onSearchCommands;
+  const slashRows = slashHits ?? [];
+  const pickSlash = (item: SlashItem) => {
+    const next = insertSlash(item.name);
+    caretRef.current = next.length;
+    setDraft(next);
+  };
   useEffect(() => {
     if (!onSearchFiles || fragmentQuery === null) {
       setFileHits(null);
@@ -262,6 +321,56 @@ export function Composer({
       className="relative m-2 mt-1 shrink-0 sm:m-3 sm:mt-2"
     >
       {queued}
+      {slashOpen && (
+        <div
+          role="listbox"
+          aria-label="Commands"
+          className="absolute bottom-full left-2 z-10 mb-2 max-h-64 w-80 max-w-[calc(100%-1rem)] overflow-y-auto rounded-lg border bg-popover p-1 shadow-lg"
+        >
+          <div className="px-2 pt-1 pb-0.5 font-medium text-[11px] text-muted-foreground uppercase tracking-wide">
+            Commands
+          </div>
+          {slashHits === null ? (
+            <div className="px-2 py-1.5 text-muted-foreground text-xs">
+              Searching…
+            </div>
+          ) : slashRows.length === 0 ? (
+            <div className="px-2 py-1.5 text-muted-foreground text-xs">
+              No matches
+            </div>
+          ) : (
+            slashRows.map((c, i) => (
+              <button
+                key={c.name}
+                type="button"
+                role="option"
+                aria-selected={slashActive === i}
+                data-slash-command={c.name}
+                data-kind={c.kind}
+                onClick={() => pickSlash(c)}
+                className={cn(
+                  "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left",
+                  slashActive === i ? "bg-muted" : "hover:bg-muted",
+                )}
+              >
+                <TerminalIcon className="size-4 shrink-0 text-muted-foreground" />
+                <span className="truncate font-mono text-xs">
+                  /{c.name}
+                  {c.argsHint ? (
+                    <span className="text-muted-foreground"> {c.argsHint}</span>
+                  ) : null}
+                </span>
+                <span className="ml-auto truncate text-muted-foreground text-xs">
+                  {c.description}
+                </span>
+                <span className="shrink-0 rounded-sm border px-1 text-[10px] text-muted-foreground uppercase">
+                  {c.kind}
+                </span>
+              </button>
+            ))
+          )}
+        </div>
+      )}
       {mentionOpen && (
         <div
           role="listbox"
@@ -362,6 +471,13 @@ export function Composer({
           if (sendRef.current) return sendRef.current;
           const t = text.trim() || draft.trim();
           if (!t && files.length === 0) return;
+          /* An app-owned `/command` never posts — the host routed it
+             (opens its picker/feature) and the box clears like a send. */
+          const cmd = files.length === 0 ? parseSlashDraft(t) : null;
+          if (cmd && onCommand?.(cmd.name, cmd.args)) {
+            if (draftRef.current.trim() === t) setDraft("");
+            return;
+          }
           const done = onSend?.(
             t,
             files.map((f) => ({
@@ -402,8 +518,40 @@ export function Composer({
             onChange={(e) => {
               setDraft(e.target.value);
               setMentionDismissed(false);
+              setSlashDismissed(false);
             }}
             onKeyDown={(e) => {
+              if (
+                slashOpen &&
+                (e.key === "ArrowDown" ||
+                  e.key === "ArrowUp" ||
+                  e.key === "Enter" ||
+                  e.key === "Tab")
+              ) {
+                /* "No matches" doesn't own Enter/Tab — the full `/cmd`
+                   draft still submits so the engine (or an app-owned
+                   command) sees it. */
+                if (
+                  slashRows.length === 0 &&
+                  e.key !== "ArrowDown" &&
+                  e.key !== "ArrowUp"
+                )
+                  return;
+                e.preventDefault();
+                if (slashRows.length === 0) return;
+                if (e.key === "ArrowDown") {
+                  setSlashActive((a) => (a + 1) % slashRows.length);
+                } else if (e.key === "ArrowUp") {
+                  setSlashActive(
+                    (a) => (a - 1 + slashRows.length) % slashRows.length,
+                  );
+                } else {
+                  pickSlash(
+                    slashRows[Math.min(slashActive, slashRows.length - 1)],
+                  );
+                }
+                return;
+              }
               if (
                 mentionOpen &&
                 (e.key === "ArrowDown" ||
@@ -445,9 +593,11 @@ export function Composer({
                 onStop,
                 lastSent,
                 setDraft,
-                onDismissOverlay: mentionOpen
-                  ? () => setMentionDismissed(true)
-                  : undefined,
+                onDismissOverlay: slashOpen
+                  ? () => setSlashDismissed(true)
+                  : mentionOpen
+                    ? () => setMentionDismissed(true)
+                    : undefined,
               })(e);
             }}
             placeholder={placeholder}
