@@ -103,8 +103,8 @@ export class SessionSurfaces implements ViewerScope {
       "root",
       // browser_* only when a real browser can attach — never advertised otherwise.
       ...(opts.createBrowser ? (["browser"] as const) : []),
-      // thread_* / team_* only when the session is bound to a DM.
-      ...(opts.appOps ? (["thread", "team"] as const) : []),
+      // thread_* / team_* / schedule_* only when the session is bound to a DM.
+      ...(opts.appOps ? (["thread", "team", "schedule"] as const) : []),
     ]);
     this.cols = opts.cols ?? 110;
     this.rows = opts.rows ?? 28;

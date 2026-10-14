@@ -7,6 +7,7 @@ const LOG = {
   warn: () => {},
   error: () => {},
   debug: () => {},
+  close: async () => {},
 };
 
 const task = (over: Partial<ScheduledTask> = {}): ScheduledTask => ({

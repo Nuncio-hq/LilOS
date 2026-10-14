@@ -85,7 +85,7 @@ export async function fireScheduledTask(
   due: { at: number; key: string },
 ): Promise<void> {
   /* The task opens on the employee's DM; the channel may not exist yet if
-     Oscar has never opened the DM — create it like `channels.openDm`. */
+     the human has never opened the DM — create it like `channels.openDm`. */
   let channel = this.opts.relay.channels
     .get()
     .find(

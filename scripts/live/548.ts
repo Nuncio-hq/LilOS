@@ -146,6 +146,7 @@ const appOps: AppOps = {
   }),
   profile: async () => ({ userName: "Oscar", companyName: "LilOS" }),
   openWorkbench: async () => {},
+  scheduledTasks: async () => [],
 };
 const surfaces = await serveSurfaces(0, {
   appOps: (_session, binding) => (binding ? appOps : undefined),

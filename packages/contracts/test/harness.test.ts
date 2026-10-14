@@ -23,6 +23,7 @@ describe("AC-2 tool surface contracts", () => {
       "browser_type",
       "context",
       "guide",
+      "schedule_list",
       "team_list",
       "terminal_read",
       "terminal_run",

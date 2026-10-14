@@ -58,8 +58,9 @@ describe("relay migrations", () => {
     // turn_failure card on conversations; v20 adds #346's life column;
     // v21 adds #571's (conversation_id, seq) index and retires the
     // conversation_id-only one it's a strict prefix of; v22 adds #583's
-    // turn_stopped word; v23 adds #583's bg_jobs count.
-    expect(out.version).toBe(23);
+    // turn_stopped word; v23 adds #583's bg_jobs count; v24 adds #136's
+    // scheduled_tasks table + the conversation's scheduled marker.
+    expect(out.version).toBe(24);
     expect(out.msgCols).toContain("dropped");
     expect(out.msgCols).toContain("removed");
     expect(out.msgCols).toContain("claimed");

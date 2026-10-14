@@ -24,6 +24,7 @@ describe("AC-5 relay stores no engine transcript", () => {
       "pairingGrants",
       "profile",
       "recentFolders",
+      "scheduledTasks",
       "settings",
     ]);
     for (const [name, table] of Object.entries(schema)) {
