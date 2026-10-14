@@ -232,13 +232,11 @@ test("AC-3 over-cap file → plain error, draft kept, nothing sent", async ({
   await dmDefault(page, stack);
   const big = Buffer.alloc(10 * 1024 * 1024 + 1, 0x63);
   await page.locator("main textarea").fill("keep this draft");
-  await page
-    .locator('main input[type="file"]')
-    .setInputFiles({
-      name: "huge.bin",
-      mimeType: "application/octet-stream",
-      buffer: big,
-    });
+  await page.locator('main input[type="file"]').setInputFiles({
+    name: "huge.bin",
+    mimeType: "application/octet-stream",
+    buffer: big,
+  });
   await expect(page.locator(TOAST)).toContainText("too large", {
     timeout: 10_000,
   });

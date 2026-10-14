@@ -202,7 +202,9 @@ test("AC-1b without image_prompt attaching still works — as files, not image b
      the same file goes through the session-folder path like any other. */
   await expect(page.locator('main [aria-label="Attach files"]')).toBeVisible();
   await attach(page, "drop", "dropped.png");
-  await expect(page.locator("main form").getByText("dropped.png")).toBeVisible();
+  await expect(
+    page.locator("main form").getByText("dropped.png"),
+  ).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac1b-file-attach.png` });
 });
 
