@@ -3089,6 +3089,121 @@
         ],
         "additionalProperties": false
       }
+    },
+    "commands.list": {
+      "doc": "The composer's `/` menu: slash commands and skills this engine offers, filtered by `query`. No capability → no menu and `/` stays plain text (D-#19).",
+      "capability": "commands",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          },
+          "query": {
+            "type": "string"
+          },
+          "agent": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": {
+              "default": "",
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "command",
+                "skill"
+              ]
+            },
+            "argsHint": {
+              "type": "string"
+            },
+            "detail": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            }
+          },
+          "required": [
+            "name",
+            "description",
+            "kind"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "commands.exec": {
+      "doc": "Run a picked command in the session. `outcome:\"output\"` posts the engine's reply in the thread; `outcome:\"prompt\"` (skills) expands to the prompt the harness sends as the next turn.",
+      "capability": "commands",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "args": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId",
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "output",
+              "prompt"
+            ]
+          },
+          "output": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "notice": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "outcome"
+        ],
+        "additionalProperties": false
+      }
     }
   },
   "notifications": {

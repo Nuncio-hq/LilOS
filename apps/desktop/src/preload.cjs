@@ -86,6 +86,14 @@ contextBridge.exposeInMainWorld("lilos", {
     ipcRenderer.on("lilos:find", listener);
     return () => ipcRenderer.removeListener("lilos:find", listener);
   },
+  /* Menu accelerators arrive here — the app menu owns ⌘N/⌘1–9 and forwards
+     every navigation chord over lilos:shortcut, so the renderer's one
+     dispatch handles both web keydowns and desktop menu clicks. */
+  onShortcut: (cb) => {
+    const listener = (_e, action) => cb(action);
+    ipcRenderer.on("lilos:shortcut", listener);
+    return () => ipcRenderer.removeListener("lilos:shortcut", listener);
+  },
   /* LilOS Browser: main owns the WebContentsView tree + state; this facade
      only ferries commands and the pushed snapshot. Channel names mirror
      DESKTOP_BROWSER_* in contracts/app/browser.ts. Absent on plain web —

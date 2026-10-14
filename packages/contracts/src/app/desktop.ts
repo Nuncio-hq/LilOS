@@ -40,6 +40,24 @@ export const DESKTOP_FIND_CHANNEL = "lilos:find" as const;
 /** What the Edit menu's Find items ask the renderer to do (#554). */
 export type DesktopFindAction = "open" | "next" | "prev";
 
+/** IPC channel: main → renderer, a menu accelerator the renderer executes.
+ *  The chords a browser reserves — ⌘N, ⌘1–9 — only ever reach the app
+ *  this way; the rest double as menu items so every bound shortcut is
+ *  discoverable in the app menu. */
+export const DESKTOP_SHORTCUT_CHANNEL = "lilos:shortcut" as const;
+
+/** A keyboard-navigation action the desktop menu asks the renderer to run:
+ *  the File/Go items' accelerators plus the digit jumps. The renderer's
+ *  own keydown map runs the same handlers for the chords a browser doesn't
+ *  reserve, so web and desktop share one dispatch. */
+export type DesktopShortcutAction =
+  | "quick-switcher"
+  | "new-session"
+  | "back"
+  | "forward"
+  | "shortcuts"
+  | `employee-${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9}`;
+
 /** The app's stored theme — the window's appearance must match it or the
  * sidebar vibrancy material turns unreadable (dark text on dark vibrancy). */
 export type ThemeSource = "light" | "dark" | "system";
@@ -140,6 +158,11 @@ export interface DesktopBridge {
    *  plain web, where the browser's own find bar owns the chord. Returns
    *  an unsubscribe function. */
   onFind?: (cb: (action: DesktopFindAction) => void) => () => void;
+  /** Subscribe to menu-delivered shortcuts: ⌘N, ⌘1–9, ⌘K, ⌘[, ⌘] and
+   *  ⌘/ arrive here because Electron's accelerators consume the keypress
+   *  before the page sees it. Absent on plain web — the browser-reserved
+   *  chords are simply unbound there. Returns an unsubscribe function. */
+  onShortcut?: (cb: (action: DesktopShortcutAction) => void) => () => void;
   /** LilOS Browser shell bridge (WebContentsView host in main; wire shapes
    *  in `./browser`). Absent on plain web — every browser control is
    *  gated on this existing, which is what keeps the feature off web

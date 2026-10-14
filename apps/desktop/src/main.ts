@@ -15,8 +15,10 @@ import {
   DESKTOP_ONLINE_CHANNEL,
   DESKTOP_OPEN_CONVERSATION_CHANNEL,
   DESKTOP_OPEN_SETTINGS_CHANNEL,
+  DESKTOP_SHORTCUT_CHANNEL,
   DESKTOP_THEME_CHANNEL,
   type DesktopFindAction,
+  type DesktopShortcutAction,
   type DesktopUpdateOutcome,
 } from "@lilos/contracts/app";
 import {
@@ -467,6 +469,14 @@ function sendFind(action: DesktopFindAction): void {
   mainWindow?.webContents.send(DESKTOP_FIND_CHANNEL, action);
 }
 
+/* Menu accelerators land here once the chord is consumed: the app window
+   runs the same handler its own keydown map does, so ⌘N/⌘1–9 behave
+   identically to the chords the page could bind itself. With no app
+   window yet the items are inert — same convention as the Find menu. */
+function sendShortcut(action: DesktopShortcutAction): void {
+  mainWindow?.webContents.send(DESKTOP_SHORTCUT_CHANNEL, action);
+}
+
 function openConversation(conversationId: string): void {
   const win = mainWindow;
   if (!win) return;
@@ -664,8 +674,12 @@ app.whenReady().then(async () => {
   // status window stays one click away on its own item, no accelerator.
   Menu.setApplicationMenu(
     Menu.buildFromTemplate(
-      appMenuTemplate(openAppSettings, createStatusWindow, sendFind, () =>
-        browserHost?.toggle(),
+      appMenuTemplate(
+        openAppSettings,
+        createStatusWindow,
+        sendFind,
+        sendShortcut,
+        () => browserHost?.toggle(),
       ),
     ),
   );

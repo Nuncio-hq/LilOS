@@ -79,6 +79,8 @@ import {
   approve,
   approvePlan,
   deny,
+  ENGINE_COMMANDS,
+  execCommand,
   playOnOpen,
   rejectPlan,
   removeNotSent,
@@ -579,6 +581,14 @@ function Dm({ navigation, route }: Props<"Dm">) {
       }}
       onPickFolder={() => navigation.navigate("FolderPicker")}
       onPickModel={() => navigation.navigate("ModelPicker", {})}
+      commands={ENGINE_COMMANDS}
+      /* `/model` opens the sheet the DM already owns — the same claim
+         the web composer makes; it never starts a session. */
+      onCommand={(name) => {
+        if (name !== "model") return false;
+        navigation.navigate("ModelPicker", {});
+        return true;
+      }}
       onSearchMessages={(q) => searchDm(employee.id, q)}
       onOpenHit={(h) =>
         navigation.navigate("Thread", {
@@ -661,7 +671,23 @@ function Thread({ navigation, route }: Props<"Thread">) {
         );
         answerAsk(id, a);
       }}
-      onSend={(text) => reply(t.id, text)}
+      onSend={(text) => {
+        /* A `/` send (issue #109): the fake engine execs it — commands
+           answer with canned output, a skill expands into the turn's
+           prompt. */
+        const m = /^\/([A-Za-z][\w.-]*)(?:\s+([\s\S]*))?$/.exec(text);
+        const item =
+          m && ENGINE_COMMANDS.find((c) => c.name === m[1]!.toLowerCase());
+        if (m && item) execCommand(t.id, item.name, m[2]?.trim() ?? "");
+        else if (m) execCommand(t.id, m[1]!.toLowerCase(), m[2]?.trim() ?? "");
+        else reply(t.id, text);
+      }}
+      commands={ENGINE_COMMANDS}
+      onCommand={(name) => {
+        if (name !== "model") return false;
+        navigation.navigate("ModelPicker", { thread: t.id });
+        return true;
+      }}
       onStop={() => {
         void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
         stop(t.id);

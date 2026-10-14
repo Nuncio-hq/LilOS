@@ -50,6 +50,9 @@ function visibleConversationId(): string | null {
 
 let reported: string | null = null;
 let reportedSent = false;
+/* #563: the last conversation this device stamped read + the watermark it
+   cleared — a fresh `finishedSeq` on the thread on screen re-stamps. */
+let lastMarked: { id: string; finished: number } | null = null;
 
 const report = (conversationId: string | null) => {
   if (conversationId === reported && reportedSent) return;
@@ -65,6 +68,29 @@ const report = (conversationId: string | null) => {
   client.request("push.visibility", { conversationId }).catch(() => {
     /* Lost between request and receipt — re-report on the next trigger. */
     reportedSent = false;
+  });
+};
+
+/* #563: opening a thread stamps the relay's read watermark
+   (`conversations.markRead`) — the dot clears on every device off the
+   `conversation.updated` that follows. A finish landing while the thread
+   is on screen re-stamps: the user is looking at it, so the new
+   `finishedSeq` clears itself instead of dotting an open row. Called from
+   the same nav/AppState/reconnect triggers as the visibility report. */
+const stampRead = () => {
+  const id = visibleConversationId();
+  if (!id) {
+    lastMarked = null;
+    return;
+  }
+  const client = $client.get();
+  if (!client || $link.get() !== "online" || $demo.get()) return;
+  const conv = client.conversations.get().find((c) => c.id === id);
+  if (!conv || conv.finishedSeq <= conv.readSeq) return;
+  if (lastMarked?.id === id && lastMarked.finished === conv.finishedSeq) return;
+  lastMarked = { id, finished: conv.finishedSeq };
+  client.request("conversations.markRead", { conversationId: id }).catch(() => {
+    lastMarked = null;
   });
 };
 
@@ -86,4 +112,15 @@ export function startVisibilityReporting(): void {
       recompute();
     }
   });
+  /* #563: the read watermark rides the same triggers — nav puts a thread
+     on screen, a finish lands in the conversations list, a reconnect
+     re-stamps what the socket missed. */
+  const restamp = () => stampRead();
+  nav.addListener("state", restamp);
+  AppState.addEventListener("change", restamp);
+  $client.listen((client) => {
+    client?.conversations.subscribe(restamp);
+    restamp();
+  });
+  $link.listen(restamp);
 }

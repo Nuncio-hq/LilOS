@@ -124,6 +124,7 @@ export const $employees = computed($threads, (threads): EmployeeRow[] =>
       state,
       ticket: state === "idle" ? undefined : e.ticket,
       when: ask ? ask.age : live || fresh ? "now" : e.when,
+      unseen: mine.some((t) => t.unseen) || undefined,
       // Several threads waiting: the count is what sends you into the DM.
       now: ask
         ? asks.length > 1
@@ -185,6 +186,7 @@ export function turnsOf(threads: ThreadDetail[], employeeId: string) {
         live: liveLine(t),
         approval: agents.find((a) => a.approval)?.approval,
         prs: t.prs,
+        unseen: t.unseen,
       };
     });
 }
@@ -810,6 +812,87 @@ export function reply(tid: string, text: string) {
     ],
   }));
   if (!busy) void run(tid, followUp(text, t));
+}
+
+/* The fake engine's `/` list (issue #109) — what commands.list returns:
+   commands answer with their output; skills expand into a prompt turn. */
+export const ENGINE_COMMANDS: {
+  name: string;
+  description: string;
+  kind: "command" | "skill";
+  argsHint?: string;
+}[] = [
+  {
+    name: "help",
+    description: "Show the engine's command list",
+    kind: "command",
+  },
+  {
+    name: "compact",
+    description: "Summarize the transcript into a compact note",
+    kind: "command",
+  },
+  {
+    name: "usage",
+    description: "Token usage for this session",
+    kind: "command",
+  },
+  { name: "model", description: "Pick the session's model", kind: "command" },
+  {
+    name: "review",
+    description: "Review the turn's diff like a reviewer",
+    kind: "skill",
+    argsHint: "[scope]",
+  },
+] as const;
+
+const COMMAND_OUT: Record<string, string> = {
+  usage: "in 128.4k · out 9.1k · cache 52k · ctx 137.5k",
+  compact: "Session compacted — transcript summarized into a compact note.",
+};
+
+/** A `/command` send (issue #109): the engine execs it — commands answer
+    with canned output, a skill expands into the next prompt (the wire's
+    prompt outcome). Mid-turn it queues like any send. */
+export function execCommand(tid: string, name: string, args: string) {
+  const t = $threads.get().find((x) => x.id === tid);
+  if (!t) return;
+  const busy = t.state === "working";
+  mapThread(tid, (x) => ({
+    ...x,
+    entries: [
+      ...x.entries,
+      {
+        kind: "user",
+        id: `u-${uid()}`,
+        time: now(),
+        text: `/${name}${args ? ` ${args}` : ""}`,
+        queued: busy,
+      },
+    ],
+  }));
+  const item = ENGINE_COMMANDS.find((c) => c.name === name);
+  const out = !item
+    ? `/${name}: unknown command`
+    : item.kind === "skill"
+      ? undefined
+      : (COMMAND_OUT[name] ??
+        `Commands: ${ENGINE_COMMANDS.map((c) => `/${c.name}`).join("  ")}`);
+  if (busy) return;
+  if (out !== undefined) {
+    mapThread(tid, (x) => ({
+      ...x,
+      entries: [
+        ...x.entries,
+        { kind: "agent", id: `g-${uid()}`, time: now(), text: out },
+      ],
+    }));
+    return;
+  }
+  void run(
+    tid,
+    followUp(`Run the ${name} skill${args ? ` with: ${args}` : ""}`, t),
+  );
 }
 
 // ── Plans (issue #175) ──────────────────────────────────────────────────────

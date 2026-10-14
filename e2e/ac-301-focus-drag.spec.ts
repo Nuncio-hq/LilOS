@@ -8,7 +8,12 @@ import {
   type Page,
   test,
 } from "@playwright/test";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  panelIntoFocus,
+  pickPorts,
+  type Stack,
+} from "./helpers/stack";
 
 /**
  * Issue #301 — the Focus expand/collapse button lands dead on first click:
@@ -123,11 +128,7 @@ test("#301 Focus toggle stays clickable across the panel ⇄ Focus header swap",
     await box.fill("check in");
     await box.press("Enter");
     await expect(win).toHaveURL(PANEL_URL, { timeout: 30_000 });
-    await win
-      .locator("[data-thread-panel]")
-      .getByTitle("Focus", { exact: true })
-      .click();
-    await expect(win).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+    await panelIntoFocus(win);
     await win.getByTitle("Back to DM", { exact: true }).click();
     await expect(win).toHaveURL(PANEL_URL, { timeout: 30_000 });
 

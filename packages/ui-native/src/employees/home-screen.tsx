@@ -359,6 +359,9 @@ function EmployeeItem({
           </View>
         </View>
         <View className="mb-5 flex-row items-center gap-1.5 self-center pl-2">
+          {/* #563: a thread finished unseen — the dot clears everywhere
+              once its thread is opened. */}
+          {e.unseen && <View className="size-2 rounded-full bg-primary" />}
           <AppText tone="muted" className="text-[15px]">
             {e.when}
           </AppText>

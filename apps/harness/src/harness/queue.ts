@@ -54,11 +54,15 @@ export function enqueueOrPrompt(
     // message runs as that next prompt on the new model instead of
     // steering the old turn (#92).
     const conn = this.engine;
+    /* A `/` send is never a steer: injecting the command's text into the
+       running turn would corrupt it. It queues and execs when the lane
+       frees — engines without `commands` send it as a normal prompt. */
     if (
       conn &&
       this.hasCapability("steer") &&
       !message.attachments?.length &&
-      !binding.heldPick
+      !binding.heldPick &&
+      !(this.hasCapability("commands") && this.slashFor(message))
     ) {
       void this.stampCheckpoint(binding, message)
         .then(() =>
