@@ -732,7 +732,8 @@ export class FakeGateway implements GatewayLike {
         this.slashCommands.push(`dispatch:${name}`);
         if (name === "review")
           return Promise.resolve({
-            type: "send",
+            type: "skill",
+            name: "review",
             message: "expanded review prompt",
           });
         return Promise.resolve({ type: "exec", output: `ran ${name}` });

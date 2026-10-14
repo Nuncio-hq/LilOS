@@ -638,16 +638,31 @@ export function Thread({
       onSend={send}
       onStop={stop}
       commands={commandRows.length ? commandRows : undefined}
-      /* `/model` opens the sheet the thread already owns — the same
-         claim the web composer makes; anything else sends to the
-         engine. */
+      /* `/model` opens the sheet the thread already owns; `/rewind`/`/undo`
+         run LilOS's real rewind — letting them reach the engine would drop
+         the engine's transcript while these rows stayed visible. Anything
+         else sends to the engine. */
       onCommand={(name) => {
-        if (name !== "model" || !catalog.models.length) return false;
-        navigation.navigate("ModelPicker", {
-          employeeId: detail.employee.id,
-          conversationId,
-        });
-        return true;
+        if (name === "model") {
+          if (!catalog.models.length) return false;
+          navigation.navigate("ModelPicker", {
+            employeeId: detail.employee.id,
+            conversationId,
+          });
+          return true;
+        }
+        if ((name === "rewind" || name === "undo") && client) {
+          const lastUser = [...messages]
+            .reverse()
+            .find((m) => m.authorKind === "user");
+          if (lastUser)
+            void client.request("conversations.rewind", {
+              conversationId,
+              messageId: lastUser.id,
+            });
+          return true;
+        }
+        return false;
       }}
       unreachableNote={mac ? unreachableNoteFor(link, mac.name) : undefined}
       /* #556 AC-2: this thread's draft persists device-local. */

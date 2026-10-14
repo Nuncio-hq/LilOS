@@ -740,11 +740,13 @@ export class FakeEngine {
   private commandsExec(p: CommandsExecParams) {
     const s = this.require(p.sessionId);
     const cmd = FAKE_COMMANDS.find((c) => c.name === p.name);
+    /* An unknown name is command output, not a protocol error — real
+       engines answer it in-band the same way. */
     if (!cmd)
-      throw new RpcError(
-        RPC_ERRORS.INVALID_PARAMS,
-        `unknown command: ${p.name}`,
-      );
+      return {
+        outcome: "output" as const,
+        output: `Unknown command /${p.name} — nothing was sent.`,
+      };
     if (cmd.kind === "skill") {
       /* A skill expands to the prompt the next turn runs — the harness
          sends it verbatim, same as the TUI's skill template. */

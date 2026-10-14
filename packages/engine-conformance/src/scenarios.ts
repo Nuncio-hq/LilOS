@@ -2864,19 +2864,22 @@ export const COMMANDS_SCENARIOS: Scenario[] = [
     },
   },
   {
-    id: "commands.exec on an unknown name is a protocol error",
+    id: "commands.exec on an unknown name answers in-band, not a protocol error",
     async run(h) {
       const { sessionId } = (await h.request("session.start", {
         agent: "builder",
         cwd: "/tmp/lilos-fake",
       })) as StartResult;
-      const code = await errorCode(h, "commands.exec", {
+      /* Engines refuse unknown slashes in-band ("Unknown command /x —
+         nothing was sent"), never an RPC error — a client that relied on
+         an error code would leave the send hanging instead. */
+      const r = (await h.request("commands.exec", {
         sessionId,
         name: "definitely-not-a-command",
-      });
+      })) as { outcome?: string; output?: string; notice?: string };
       assert(
-        code === -32602,
-        `unknown command must fail INVALID_PARAMS (-32602), got ${code}`,
+        r.outcome === "output" || r.notice !== undefined,
+        `unknown command answers output/notice, got ${JSON.stringify(r)}`,
       );
     },
   },

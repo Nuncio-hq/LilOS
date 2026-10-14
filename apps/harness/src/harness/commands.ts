@@ -46,6 +46,14 @@ export async function execSlashCommand(
       },
       0,
     );
+    /* `send`-directive results carry a notice too (skill scaffold hints,
+       "sent as next turn") — surface it even when a prompt expansion wins. */
+    if (res.notice && res.outcome === "prompt" && res.prompt)
+      await this.postSystem(
+        binding,
+        res.notice,
+        `sys:${binding.conversationId}:${message.id}:cmd-notice`,
+      );
     if (res.outcome === "prompt" && res.prompt)
       return { kind: "prompt", text: res.prompt };
     if (res.notice)

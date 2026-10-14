@@ -868,6 +868,10 @@ export class HermesEngine {
       this.sessions.set(id, s);
       this.byRuntimeSid.set(s.runtimeSid, s);
       this.persistSession(s);
+      /* The first `complete.slash` call pays the profile+project skill scan
+         (~300ms cold); warm it at open so the composer's first `/` answers
+         in interactive time. Fire-and-forget: a refused call loses nothing. */
+      void this.commandsList({ sessionId: id }).catch(() => {});
       /* #106: a conversation on Full access gets the session yolo hint — a
          round-trip saver only, the harness still auto-answers approvals
          itself, so a refused/absent hint changes nothing. */
@@ -1532,12 +1536,18 @@ export class HermesEngine {
      draft. */
   private async commandsList(p: CommandsListParams): Promise<CommandItem[]> {
     const s = p.sessionId ? this.sessions.get(p.sessionId) : undefined;
-    const r = (await this.gw("complete.slash", {
+    /* `cwd`/`cwd_explicit` scope folder-local skills on session-less calls,
+       but older gateways' contracts forbid them — retry without on a 4000
+       invalid-params refusal rather than losing the menu. */
+    const slashParams = {
       text: `/${p.query ?? ""}`,
       ...(s ? { session_id: s.runtimeSid } : {}),
       ...(p.agent ? { profile: p.agent } : {}),
-      ...(p.cwd || s?.cwd ? { cwd: p.cwd ?? s?.cwd } : {}),
-    })) as {
+      /* session_id already binds the session's cwd — only a session-less
+         draft sends its picked folder explicitly. */
+      ...(p.cwd ? { cwd: p.cwd, cwd_explicit: true } : {}),
+    };
+    let r: {
       items?: {
         text?: unknown;
         display?: unknown;
@@ -1545,6 +1555,13 @@ export class HermesEngine {
         kind?: unknown;
       }[];
     };
+    try {
+      r = (await this.gw("complete.slash", slashParams)) as typeof r;
+    } catch (e) {
+      if (!(e instanceof RpcError && e.code === 4000)) throw e;
+      const { cwd: _cwd, cwd_explicit: _cwde, ...rest } = slashParams;
+      r = (await this.gw("complete.slash", rest)) as typeof r;
+    }
     const seen = new Set<string>();
     const items: CommandItem[] = [];
     for (const it of r.items ?? []) {
@@ -1610,7 +1627,9 @@ export class HermesEngine {
 
   private slashResult(r: Record<string, unknown>) {
     const type = r?.type;
-    if (type === "send" && typeof r.message === "string")
+    /* "send" and "skill" both carry `message` — the expanded text the next
+       turn submits; `display` is only the UI's compact echo of it. */
+    if ((type === "send" || type === "skill") && typeof r.message === "string")
       return {
         outcome: "prompt" as const,
         prompt: r.message,
