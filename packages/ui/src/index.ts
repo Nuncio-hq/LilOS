@@ -73,6 +73,11 @@ export { WorkspacePicker, wsHint } from "./dialogs/workspace-picker";
 // employees
 export { EditEmployeeDialog } from "./employee/employee-edit";
 export { EmployeeCard, EmployeeHome } from "./employee/employee-home";
+export {
+  type SessionGroups,
+  type SessionRowVm,
+  SessionsHome,
+} from "./employee/sessions-home";
 export { HireCardInline } from "./feed/hire-card";
 // channel feed
 export { Body, EventRow, FeedList, Row, Who } from "./feed/row";
