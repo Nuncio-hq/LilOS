@@ -132,6 +132,11 @@ PR does not exist.
   across sleep or engine restart ends `interrupted` with a Retry note.**
   Not: a spinner that never settles, or silently dropping the turn. — #34 ·
   PR #57
+- **D-#136 Scheduled tasks: the relay owns the records; the harness's
+  `TaskScheduler` fires `conversations.open`, and slots slept through while
+  the Mac was down coalesce to one run on wake (the due anchor is
+  `lastFiredAt`).** Not: relay- or engine-side timers, or a catch-up burst
+  per missed slot. — #136 · PR #734
 - **D-#35 Ad-hoc (dev) bundles register agents via `launchctl bootstrap` +
   `~/Library/LaunchAgents` plists; Developer ID bundles keep
   `SMAppService.agent`.** SMAppService's launch constraint is keyed to the
