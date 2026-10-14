@@ -193,6 +193,9 @@ export interface HarnessCtx {
   readonly requestByAsk: Map<string, { sessionId: string; requestId: string }>;
   readonly delivered: Set<string>;
   readonly early: Map<string, AppMessage[]>;
+  /** Bounded re-bind retries for sends parked on a bind failure. */
+  readonly earlyFlushTimers: Map<string, ReturnType<typeof setTimeout>>;
+  readonly earlyFlushAttempts: Map<string, number>;
   nowClock: number;
   readonly nowWritten: Map<string, string>;
   readonly dismissed: Set<string>;
@@ -246,6 +249,8 @@ export interface HarnessCtx {
   deliver(message: AppMessage): Promise<void>;
   deliverOrdered(message: AppMessage): Promise<void>;
   flushEarly(convId: string): Promise<void>;
+  scheduleEarlyFlush(convId: string): void;
+  dropEarlyWithError(convId: string): Promise<void>;
   flushEarlyOrdered(convId: string): Promise<void>;
   enqueueOrPrompt(binding: SessionBinding, message: AppMessage): void;
   liveBinding(binding: SessionBinding): SessionBinding;
