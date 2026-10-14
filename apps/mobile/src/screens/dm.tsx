@@ -16,6 +16,7 @@ import {
   modelLabel,
   type OrbState,
   pickLabel,
+  type SlashItem,
   type WorkspacePick,
 } from "@lilos/ui-native";
 import { useStore } from "@nanostores/react";
@@ -284,13 +285,40 @@ export function Dm({
     if (pick) $modelPicks.set({ ...$modelPicks.get(), [employeeId]: pick });
   }, [employee, employeeId, modelPicks, catalog, welcome]);
 
-  if (!employee) return null;
-
+  /* The engine's `/` command list for the draft composer (issue #109):
+     no session yet, so the agent's profile + the picked folder scope it
+     (folder-local skills). No capability → no rows → `/` stays text. */
   const wsPick = wsPicks[employeeId] ?? {
     folder: null,
     base: "",
     mode: "direct" as const,
   };
+  const commandsCapable =
+    welcome?.engineHost?.capabilities?.some((c) => c.id === "commands") ??
+    false;
+  const draftCwd =
+    folderOptions.find((f) => f.id === wsPick.folder)?.path ?? null;
+  const [commandRows, setCommandRows] = useState<SlashItem[]>([]);
+  useEffect(() => {
+    setCommandRows([]);
+    if (!client || !commandsCapable || !employee) return;
+    let dead = false;
+    client
+      .request<SlashItem[]>("commands.list", {
+        agent: employee.profile,
+        ...(draftCwd ? { cwd: draftCwd } : {}),
+      })
+      .then((r) => {
+        if (!dead) setCommandRows(r);
+      })
+      .catch(() => {});
+    return () => {
+      dead = true;
+    };
+  }, [client, commandsCapable, employee, draftCwd]);
+
+  if (!employee) return null;
+
   const modelPick = modelPicks[employeeId];
   /* Provider-aware row (an id can exist under two providers) — its
      provider row carries the models.dev logo slug for the chip. */
@@ -399,6 +427,13 @@ export function Dm({
       initialDraft={draftFor(`dm:${employeeId}`)}
       onDraftChange={(text) => setDraft(`dm:${employeeId}`, text)}
       onPickFolder={() => navigation.navigate("FolderPicker", { employeeId })}
+      commands={commandRows.length ? commandRows : undefined}
+      /* `/model` opens the sheet the DM already owns — never a session. */
+      onCommand={(name) => {
+        if (name !== "model" || !catalog.models.length) return false;
+        navigation.navigate("ModelPicker", { employeeId });
+        return true;
+      }}
       {...(catalog.models.length
         ? {
             onPickModel: () =>

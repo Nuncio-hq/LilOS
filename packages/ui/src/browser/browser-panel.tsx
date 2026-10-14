@@ -87,6 +87,13 @@ export type BrowserPanelProps = {
   onClearHistory?: () => void;
   onRemoveBookmark?: (url: string) => void;
   onShowDownload?: (id: string) => void;
+  /** The window chrome is the real OS title bar (Electron's hiddenInset
+   *  lights), not the strip's drawn dots — set in the popped-out LilOS
+   *  Browser window. Also makes the strip the window drag region. */
+  osWindow?: boolean;
+  /** Fires when the library sheet opens/closes — it covers the page slot,
+   *  so a native-page host has to hide the page view while it's up. */
+  onLibraryChange?: (tab: BrowserLibraryTab | null) => void;
   className?: string;
   style?: React.CSSProperties;
 };
@@ -102,7 +109,14 @@ const stepZoom = (z: number, dir: 1 | -1) => {
    callbacks out; the app owns pages, history and downloads. An agent's tab
    shows who drives it and what it's doing, with Take control one click away. */
 export function BrowserPanel(p: BrowserPanelProps) {
-  const [library, setLibrary] = useState<BrowserLibraryTab | null>(null);
+  const [libraryTab, setLibraryTab] = useState<BrowserLibraryTab | null>(null);
+  /* The library sheet covers the page slot entirely; the shell hides the
+     native page view while it's open, so it must see every transition. */
+  const setLibrary = (t: BrowserLibraryTab | null) => {
+    setLibraryTab(t);
+    p.onLibraryChange?.(t);
+  };
+  const library = libraryTab;
   const [focusKey, setFocusKey] = useState(0);
   const tab = p.tabs.find((t) => t.id === p.activeId) ?? p.tabs[0];
   const agent = tab?.agent;
@@ -168,6 +182,7 @@ export function BrowserPanel(p: BrowserPanelProps) {
         onNewTab={newTab}
         onMode={p.onMode}
         onClose={p.onClose}
+        osWindow={p.osWindow}
       />
 
       <div className="flex h-11 shrink-0 items-center gap-1 border-b px-2">

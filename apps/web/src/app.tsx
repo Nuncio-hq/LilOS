@@ -5,12 +5,16 @@ import {
 } from "@lilos/client-runtime";
 import {
   type EngineProfile,
+  folderLabel,
   HireDialog,
   type HireDraft,
   PairPhoneDialog,
   type PairPhoneState,
+  QuickSwitcher,
+  ShortcutsDialog,
   Sidebar,
   StatusDialog,
+  type SwitcherItem,
   useTheme,
 } from "@lilos/ui";
 import {
@@ -23,7 +27,14 @@ import {
   useNavigate,
   useRouterState,
 } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { sessionBadge } from "./lib/badges";
+import {
+  BrowserDock,
+  BrowserWindowApp,
+  useBrowserContextPush,
+  useBrowserState,
+} from "./lib/browser";
 import { buildLabel } from "./lib/build-label";
 import { connectApproved, requestConnect } from "./lib/connect";
 import {
@@ -32,8 +43,10 @@ import {
   listHirableProfiles,
 } from "./lib/employees";
 import { parseFocusTab } from "./lib/focus-search";
+import { focusComposer, folders, refreshFolders, wsPicks } from "./lib/folders";
 import { appFrameClass } from "./lib/frame";
 import { useAtom } from "./lib/hooks";
+import { bindAppShortcuts, type ShortcutHandlers } from "./lib/keys";
 import { toUiEmployee } from "./lib/mapping";
 import { currentCompany, currentMe, osFullName, profile } from "./lib/me";
 import {
@@ -134,6 +147,15 @@ function AppShell() {
 
   const statusPoll = useAtom(relay.status);
   const fatal = useAtom(relay.fatal);
+  // LilOS Browser (desktop): relay roster -> host, dock state -> 3rd column.
+  useBrowserContextPush();
+  const browserState = useBrowserState();
+  const browserPanelOn =
+    !!window.lilos?.browser &&
+    browserState?.open === true &&
+    browserState.mode === "panel";
+  const openBrowser = () =>
+    void window.lilos?.browser?.command({ op: "setOpen", open: true });
   // Real system.status legs (poll keeps them fresh); falls back to socket
   // states while the relay is unreachable (#53, #85).
   const comps = useMemo(
@@ -158,6 +180,149 @@ function AppShell() {
      #427: a computed store — the value only changes when a count moves, so
      the shell no longer re-renders on every streamed word. */
   const badges = useAtom(employeeBadgeMap());
+
+  /* ⌘K quick switcher + ⌘/ shortcut list: the web-safe chords bind on
+     keydown here; ⌘N/⌘1–9 arrive over lilos:shortcut inside the Electron
+     shell, where the menu owns them. Both land on the same handlers. */
+  const [switcherOpen, setSwitcherOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const summaries = useAtom(relay.conversationSummaries);
+  const channels = useAtom(relay.channels);
+  const folderRows = useAtom(folders);
+  const models = useAtom(sessionModels);
+  const signals = useAtom(sessionSignals);
+  const switcherItems = useMemo<SwitcherItem[]>(() => {
+    const chanById = new Map(channels.map((c) => [c.id, c]));
+    const empName = (conv: { channelId: string }) => {
+      const emp = chanById.get(conv.channelId)?.employeeId;
+      return employees.find((e) => e.id === emp)?.name;
+    };
+    return [
+      ...uiEmployees.map((e) => ({
+        kind: "employee" as const,
+        id: e.id,
+        title: e.name,
+        subtitle: e.role,
+        running: (badges[e.id]?.running ?? 0) > 0,
+        needsYou: (badges[e.id]?.approvals ?? 0) > 0,
+      })),
+      ...summaries.map((s) => {
+        const title = s.conversation.title || s.root.text;
+        const b = sessionBadge(s.conversation, models, signals);
+        const emp = empName(s.conversation);
+        return {
+          kind: "session" as const,
+          id: s.conversation.id,
+          title: title || "Untitled session",
+          /* The root message doubles as the subtitle and the match text —
+             the spec's "title + first message" surface. */
+          subtitle: [emp, s.root.text !== title ? s.root.text : ""]
+            .filter(Boolean)
+            .join(" · "),
+          match: s.root.text,
+          archived: s.conversation.archived,
+          running: b.running,
+          needsYou: b.needsYou,
+        };
+      }),
+      ...folderRows.map((f) => ({
+        kind: "folder" as const,
+        id: f.path,
+        title: folderLabel(f, folderRows),
+        subtitle: f.path,
+      })),
+    ];
+  }, [
+    uiEmployees,
+    summaries,
+    channels,
+    employees,
+    models,
+    signals,
+    folderRows,
+    badges,
+  ]);
+
+  const goEmployee = useCallback(
+    (id: string) =>
+      void navigate({ to: "/dm/$employeeId", params: { employeeId: id } }),
+    [navigate],
+  );
+  /* "Current employee" = the DM on screen, else the sidebar's first —
+     what ⌘N and a switcher folder pick aim at. */
+  const currentEmployee = useCallback(() => {
+    const m = /^\/dm\/([^/]+)/.exec(router.state.location.pathname);
+    return (m ? decodeURIComponent(m[1]) : undefined) ?? uiEmployees[0]?.id;
+  }, [uiEmployees]);
+
+  const pickSwitcher = useCallback(
+    (item: SwitcherItem) => {
+      setSwitcherOpen(false);
+      if (item.kind === "employee") {
+        goEmployee(item.id);
+        return;
+      }
+      if (item.kind === "session") {
+        const params = routeForConversation(item.id, {
+          conversations: relay.conversations.get(),
+          channels: relay.channels.get(),
+        });
+        if (params) {
+          void navigate({
+            to: "/dm/$employeeId/$conversationId",
+            params,
+          });
+        }
+        return;
+      }
+      /* A folder pick opens a new session in that folder with the current
+         employee — the pick lands in the new-session composer, focused. */
+      const emp = currentEmployee();
+      if (!emp) return;
+      const f = folders.get().find((x) => x.path === item.id);
+      wsPicks.set({
+        ...wsPicks.get(),
+        [emp]: { folder: item.id, base: f?.branches[0] ?? "", mode: "direct" },
+      });
+      goEmployee(emp);
+      focusComposer();
+    },
+    [goEmployee, navigate, currentEmployee],
+  );
+
+  useEffect(() => {
+    const digit = (n: number) => () => {
+      const id = uiEmployees[n - 1]?.id;
+      if (id) goEmployee(id);
+    };
+    const handlers: ShortcutHandlers = {
+      "quick-switcher": () => {
+        /* The recents probe stays background — a failed refetch keeps the
+           rows the last good pull left. */
+        void refreshFolders().catch(() => {});
+        setSwitcherOpen((o) => !o);
+      },
+      "new-session": () => {
+        const emp = currentEmployee();
+        if (!emp) return;
+        goEmployee(emp);
+        focusComposer();
+      },
+      back: () => router.history.back(),
+      forward: () => router.history.forward(),
+      shortcuts: () => setShortcutsOpen((o) => !o),
+      "employee-1": digit(1),
+      "employee-2": digit(2),
+      "employee-3": digit(3),
+      "employee-4": digit(4),
+      "employee-5": digit(5),
+      "employee-6": digit(6),
+      "employee-7": digit(7),
+      "employee-8": digit(8),
+      "employee-9": digit(9),
+    };
+    return bindAppShortcuts(handlers, window.lilos);
+  }, [uiEmployees, goEmployee, currentEmployee]);
 
   /* #115 hire flow: the + affordance exists only while the engine declares
      the `agents` capability (D-#19). The model list + default come from
@@ -361,6 +526,7 @@ function AppShell() {
       className={appFrameClass({
         desktop: window.lilos?.isDesktop === true,
         focus,
+        browserPanel: browserPanelOn,
       })}
     >
       {/* The sidebar's dim backdrop: narrow windows in every view, and at
@@ -413,8 +579,10 @@ function AppShell() {
         onOpenStatus={() => setStatusOpen(true)}
         onOpenSettings={() => setSettingsOpen(true)}
         onPairPhone={openPairPhone}
+        onOpenBrowser={window.lilos?.browser ? openBrowser : undefined}
       />
       <Outlet />
+      <BrowserDock />
       {hireOpen && (
         <HireDialog
           initial={hireTemplates[0]}
@@ -453,6 +621,19 @@ function AppShell() {
         />
       )}
       {settingsOpen && <SettingsPane onClose={() => setSettingsOpen(false)} />}
+      {switcherOpen && (
+        <QuickSwitcher
+          items={switcherItems}
+          onPick={pickSwitcher}
+          onClose={() => setSwitcherOpen(false)}
+        />
+      )}
+      {shortcutsOpen && (
+        <ShortcutsDialog
+          desktop={window.lilos?.isDesktop === true}
+          onClose={() => setShortcutsOpen(false)}
+        />
+      )}
       {statusOpen && (
         <StatusDialog
           components={comps}
@@ -553,5 +734,9 @@ declare module "@tanstack/react-router" {
 }
 
 export function App() {
+  /* The popped-out LilOS Browser window loads this same bundle behind a
+     preload flag — it is browser chrome over a native page slot, not the
+     app shell (no router, no relay). */
+  if (window.lilos?.browser?.isBrowserWindow) return <BrowserWindowApp />;
   return <BootScreen />;
 }

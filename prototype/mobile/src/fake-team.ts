@@ -289,6 +289,9 @@ export const THREADS: ThreadDetail[] = [
     id: "s-gap",
     title: "First harness connection",
     state: "done",
+    /* #563: finished while the thread was unopened — the card and
+       Builder's home row carry the "not seen yet" dot. */
+    unseen: true,
     employee: BUILDER,
     when: "Mon",
     started: "Mon 16:40",

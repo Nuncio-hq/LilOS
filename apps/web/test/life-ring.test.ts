@@ -20,6 +20,8 @@ const conv = (over: Partial<Conversation>): Conversation => ({
   archived: false,
   access: "ask",
   deliveredSeq: 1,
+  readSeq: 0,
+  finishedSeq: 0,
   createdAt: 0,
   ...over,
 });

@@ -1,3 +1,4 @@
+import type { DesktopShortcutAction } from "@lilos/contracts/app";
 import type { MenuItemConstructorOptions } from "electron";
 
 /**
@@ -19,7 +20,18 @@ export function appMenuTemplate(
   openSettings: () => void,
   openStatus: () => void,
   onFind: (action: FindMenuAction) => void,
+  onShortcut: (action: DesktopShortcutAction) => void,
+  onBrowser: () => void,
 ): MenuItemConstructorOptions[] {
+  const item = (
+    label: string,
+    accelerator: string,
+    action: DesktopShortcutAction,
+  ): MenuItemConstructorOptions => ({
+    label,
+    accelerator,
+    click: () => onShortcut(action),
+  });
   return [
     {
       label: "LilOS",
@@ -38,6 +50,14 @@ export function appMenuTemplate(
         },
         { type: "separator" },
         { role: "quit" },
+      ],
+    },
+    {
+      label: "File",
+      submenu: [
+        item("New Session", "CmdOrCtrl+N", "new-session"),
+        { type: "separator" },
+        { role: "close" },
       ],
     },
     {
@@ -75,6 +95,47 @@ export function appMenuTemplate(
         },
       ],
     },
-    { label: "View", role: "viewMenu" },
+    {
+      /* The accelerators consume the chord before the page sees it, so the
+         renderer only ever hears the shortcut action — the same handlers
+         the browser-reserved chords can't bind on web. */
+      label: "Go",
+      submenu: [
+        item("Quick Switcher", "CmdOrCtrl+K", "quick-switcher"),
+        item("Back", "CmdOrCtrl+[", "back"),
+        item("Forward", "CmdOrCtrl+]", "forward"),
+        { type: "separator" },
+        ...([1, 2, 3, 4, 5, 6, 7, 8, 9] as const).map((n) =>
+          item(
+            `Employee ${n}`,
+            `CmdOrCtrl+${n}`,
+            `employee-${n}` as DesktopShortcutAction,
+          ),
+        ),
+        { type: "separator" },
+        item("Keyboard Shortcuts", "CmdOrCtrl+/", "shortcuts"),
+      ],
+    },
+    {
+      label: "View",
+      /* Written out instead of `role: "viewMenu"` so the browser toggle
+         can live here: ⌘⇧B opens/closes the LilOS Browser. Its click runs
+         in main (the host owns the open state), so it also fires while a
+         page's view has focus. Zoom/devtools roles stay out on purpose:
+         their accelerators would consume ⌘+/⌘-/⌘0/⌥⌘I before a focused
+         page's view sees them, bypassing the host's zoom state. */
+      submenu: [
+        {
+          id: "browser",
+          label: "LilOS Browser",
+          accelerator: "CmdOrCtrl+Shift+B",
+          click: onBrowser,
+        },
+        { type: "separator" },
+        { role: "reload" },
+        { type: "separator" },
+        { role: "togglefullscreen" },
+      ],
+    },
   ];
 }

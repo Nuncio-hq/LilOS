@@ -430,6 +430,7 @@
         "jobs.stop",
         "approvals.setPolicy",
         "session.ask",
+        "commands.list",
         "pairing.offer",
         "pairing.disable",
         "devices.list",
@@ -438,7 +439,8 @@
         "push.register",
         "push.unregister",
         "push.visibility",
-        "workbench.open"
+        "workbench.open",
+        "conversations.markRead"
       ]
     },
     "AppEventMethod": {
@@ -1861,6 +1863,18 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "readSeq": {
+          "default": 0,
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "finishedSeq": {
+          "default": 0,
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
         "createdAt": {
           "type": "integer",
           "minimum": 0,
@@ -2171,6 +2185,18 @@
                 "type": "boolean"
               },
               "bgJobs": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "readSeq": {
+                "default": 0,
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "finishedSeq": {
+                "default": 0,
                 "type": "integer",
                 "minimum": 0,
                 "maximum": 9007199254740991
@@ -2545,6 +2571,18 @@
               "type": "boolean"
             },
             "bgJobs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "readSeq": {
+              "default": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "finishedSeq": {
+              "default": 0,
               "type": "integer",
               "minimum": 0,
               "maximum": 9007199254740991
@@ -3085,6 +3123,18 @@
               "type": "boolean"
             },
             "bgJobs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "readSeq": {
+              "default": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "finishedSeq": {
+              "default": 0,
               "type": "integer",
               "minimum": 0,
               "maximum": 9007199254740991
@@ -4311,6 +4361,37 @@
             }
           ]
         },
+        "hire": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "role": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "instructions": {
+              "type": "string"
+            },
+            "provider": {
+              "type": "string"
+            },
+            "profile": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "role",
+            "model",
+            "instructions"
+          ],
+          "additionalProperties": false
+        },
         "state": {
           "type": "string",
           "enum": [
@@ -4577,6 +4658,18 @@
               "type": "boolean"
             },
             "bgJobs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "readSeq": {
+              "default": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "finishedSeq": {
+              "default": 0,
               "type": "integer",
               "minimum": 0,
               "maximum": 9007199254740991
@@ -5271,6 +5364,18 @@
                     "type": "boolean"
                   },
                   "bgJobs": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "readSeq": {
+                    "default": 0,
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "finishedSeq": {
+                    "default": 0,
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 9007199254740991
@@ -6498,6 +6603,37 @@
               "additionalProperties": false
             }
           ]
+        },
+        "hire": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "role": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "instructions": {
+              "type": "string"
+            },
+            "provider": {
+              "type": "string"
+            },
+            "profile": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "role",
+            "model",
+            "instructions"
+          ],
+          "additionalProperties": false
         }
       },
       "required": [
@@ -6635,6 +6771,37 @@
                   "additionalProperties": false
                 }
               ]
+            },
+            "hire": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "role": {
+                  "type": "string"
+                },
+                "model": {
+                  "type": "string"
+                },
+                "instructions": {
+                  "type": "string"
+                },
+                "provider": {
+                  "type": "string"
+                },
+                "profile": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "role",
+                "model",
+                "instructions"
+              ],
+              "additionalProperties": false
             },
             "state": {
               "type": "string",
@@ -6868,6 +7035,37 @@
                     "additionalProperties": false
                   }
                 ]
+              },
+              "hire": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "role": {
+                    "type": "string"
+                  },
+                  "model": {
+                    "type": "string"
+                  },
+                  "instructions": {
+                    "type": "string"
+                  },
+                  "provider": {
+                    "type": "string"
+                  },
+                  "profile": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "role",
+                  "model",
+                  "instructions"
+                ],
+                "additionalProperties": false
               },
               "state": {
                 "type": "string",
@@ -7631,6 +7829,18 @@
               "minimum": 0,
               "maximum": 9007199254740991
             },
+            "readSeq": {
+              "default": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "finishedSeq": {
+              "default": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
             "createdAt": {
               "type": "integer",
               "minimum": 0,
@@ -7831,6 +8041,37 @@
                 }
               ]
             },
+            "hire": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "role": {
+                  "type": "string"
+                },
+                "model": {
+                  "type": "string"
+                },
+                "instructions": {
+                  "type": "string"
+                },
+                "provider": {
+                  "type": "string"
+                },
+                "profile": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "role",
+                "model",
+                "instructions"
+              ],
+              "additionalProperties": false
+            },
             "state": {
               "type": "string",
               "enum": [
@@ -8014,6 +8255,37 @@
                   "additionalProperties": false
                 }
               ]
+            },
+            "hire": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "role": {
+                  "type": "string"
+                },
+                "model": {
+                  "type": "string"
+                },
+                "instructions": {
+                  "type": "string"
+                },
+                "provider": {
+                  "type": "string"
+                },
+                "profile": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "role",
+                "model",
+                "instructions"
+              ],
+              "additionalProperties": false
             },
             "state": {
               "type": "string",
@@ -9064,6 +9336,62 @@
       "required": [
         "policy"
       ]
+    },
+    "CommandsListParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "query": {
+          "type": "string"
+        },
+        "agent": {
+          "type": "string"
+        },
+        "cwd": {
+          "type": "string"
+        }
+      }
+    },
+    "CommandsListResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "default": "",
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "command",
+              "skill"
+            ]
+          },
+          "argsHint": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "name",
+          "kind"
+        ]
+      }
     },
     "WorkbenchOpenTarget": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",

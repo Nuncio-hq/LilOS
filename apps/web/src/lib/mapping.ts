@@ -218,6 +218,9 @@ export function liveTurnReply(
           /* #106 AC-4: the card's buttons follow the options the engine
              offered, not a fixed set. */
           options: shown.request.options,
+          /* A gateway `team_hire` ask carries its draft so the card is the
+             real hire card, not a command echo. */
+          ...(shown.hire ? { hire: shown.hire } : {}),
         }
       : undefined;
   const qShown = questions.find((a) => a.state === "open") ?? questions.at(-1);
@@ -811,6 +814,9 @@ export function toFeed(
       /* #583 AC-3: the relay-stamped running-job count — the row's badge
          renders before the session feed lands. */
       ...(conv.bgJobs ? { bgJobs: conv.bgJobs } : {}),
+      /* #563: a turn end stamped past the user's read watermark dots the
+         card — opening the thread stamps `readSeq` and it clears. */
+      ...(conv.finishedSeq > conv.readSeq ? { unseen: true } : {}),
       ...(ws ? { ws } : {}),
       ...(jobs?.length ? { jobs } : {}),
     },

@@ -1,9 +1,13 @@
 import type { Conversation, WorkbenchOpenTarget } from "@lilos/contracts/app";
 import {
+  type FolderAddParams,
   HOST_POLICY_VERSION,
   type SessionBinding,
+  type TeamHireParams,
+  type TeamUpdateParams,
   type ThreadReadParams,
   type ThreadSetTitleResult,
+  type ThreadStartParams,
   type ToolArea,
   type ViewerBrowserInputEvent,
 } from "@lilos/contracts/harness";
@@ -103,8 +107,8 @@ export class SessionSurfaces implements ViewerScope {
       "root",
       // browser_* only when a real browser can attach — never advertised otherwise.
       ...(opts.createBrowser ? (["browser"] as const) : []),
-      // thread_* / team_* only when the session is bound to a DM.
-      ...(opts.appOps ? (["thread", "team"] as const) : []),
+      // thread_* / team_* / folder_* only when the session is bound to a DM.
+      ...(opts.appOps ? (["thread", "team", "folder"] as const) : []),
     ]);
     this.cols = opts.cols ?? 110;
     this.rows = opts.rows ?? 28;
@@ -529,6 +533,67 @@ export class SessionSurfaces implements ViewerScope {
       const ops = this.requireAppOps();
       const conv = await this.resolveThread();
       return { prs: await ops.threadPrs(conv.id) };
+    });
+  }
+
+  /* ------------------------- approval-gated writes ------------------------- */
+
+  /* The company writes: each appOps call opens the ask card and resolves
+     only after the user answers — a `declined` outcome surfaces as
+     SurfaceError("declined") so the agent reads a clean refusal. */
+
+  threadStart(p: ThreadStartParams) {
+    return this.tracked("thread_start", p.text.slice(0, 60), async () => {
+      const ops = this.requireAppOps();
+      const { conversation, message } = await ops.startThread({
+        text: p.text,
+        ...(p.title !== undefined ? { title: p.title } : {}),
+      });
+      return {
+        conversation: { id: conversation.id, title: conversation.title },
+        message,
+      };
+    });
+  }
+
+  teamHire(p: TeamHireParams) {
+    return this.tracked("team_hire", `${p.name} (${p.role})`, async () => {
+      const ops = this.requireAppOps();
+      const e = await ops.hireEmployee(p);
+      return {
+        employee: {
+          id: e.id,
+          name: e.name,
+          role: e.role,
+          profile: e.profile,
+          model: e.model,
+        },
+      };
+    });
+  }
+
+  teamUpdate(p: TeamUpdateParams) {
+    const changed = Object.keys(p).join(", ");
+    return this.tracked("team_update", changed, async () => {
+      const ops = this.requireAppOps();
+      const e = await ops.updateSelf(p);
+      return {
+        employee: {
+          id: e.id,
+          name: e.name,
+          role: e.role,
+          model: e.model,
+          instructions: e.instructions,
+        },
+      };
+    });
+  }
+
+  folderAdd(p: FolderAddParams) {
+    return this.tracked("folder_add", p.path, async () => {
+      const ops = this.requireAppOps();
+      const folder = await ops.addFolder(p.path);
+      return { folder };
     });
   }
 

@@ -104,9 +104,6 @@ test.afterAll(async () => {
 });
 test.describe.configure({ mode: "serial" });
 
-const FOCUS_URL = /\/dm\/[^/]+\/[^/]+\/focus$/;
-const PANEL_URL = /\/dm\/[^/]+\/conv_[^/]+$/;
-
 /* #685 AC-1: the whole spec rides the relay-beats-feed reorder — the
    client holds the feed's `turn.completed` while the turn's relay answer
    post lands first and mergeTurns claims it mid-live. Inert knob; the
@@ -294,12 +291,7 @@ test("AC-1/2/4: reopen shows last-known rows on the first frame, no Reading hold
      #547 AC-1: the picked tab (Files) survives the Focus remount, not
      only a panel toggle. */
   await page.keyboard.press("Escape");
-  await expect(page).toHaveURL(PANEL_URL, { timeout: 30_000 });
-  await page
-    .locator("[data-thread-panel]")
-    .getByTitle("Focus", { exact: true })
-    .click();
-  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  await panelIntoFocus(page);
   expect(page.locator("[data-wb-probing]")).toHaveCount(0);
   await expect(tab(page, "Files")).toHaveAttribute("aria-selected", "true");
   await page.screenshot({ path: `${SHOTS}/ac-1-refocus.png` });
@@ -400,11 +392,14 @@ test("AC-6 #606 pick-hold: a Files pick while the turn starts survives its first
   await expect(tab(page, "Files")).toBeVisible({ timeout: 30_000 });
   await tab(page, "Files").click();
   await expect(rows(page).first()).toBeVisible({ timeout: 30_000 });
-  /* The turn's live row + steps land ~5 s in — long after the pick. The
-     reply text ("Short answer") marks turn end; the pick must still hold. */
-  await expect(page.getByText("Short answer").first()).toBeVisible({
-    timeout: 30_000,
-  });
+  /* The turn's live row + steps land ~5 s in — long after the pick. Turn
+     end is marked by the turn card's settled footer — the stable anchor
+     every turn (done, stopped, or failed) renders — not by waiting for
+     reply text, which makes this wait depend on the client feed landing
+     rather than on the turn actually finishing. */
+  await expect(
+    page.locator("[data-msg] [data-agentturn] [data-turnsettled]").last(),
+  ).toBeVisible({ timeout: 30_000 });
   await expect(tab(page, "Files")).toHaveAttribute("aria-selected", "true");
   await expect(rows(page).first()).toBeVisible();
 });

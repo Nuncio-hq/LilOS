@@ -22,6 +22,7 @@ import type {
 } from "../types";
 import { FileSeeder } from "./composer";
 import { composerKeyDown } from "./composer-keys";
+import { parseSlashDraft } from "./composer-slash";
 import { choiceFor, ModelPicker } from "./model-picker";
 
 /* Same attach UX as the main composer: the paperclip opens PromptInput's file dialog. */
@@ -57,6 +58,9 @@ export function FocusComposer({
   onDraftChange,
   seedFiles,
   onSeededFiles,
+  onCommand,
+  modelOpen,
+  onModelOpen,
   tools,
 }: {
   running: boolean;
@@ -88,6 +92,13 @@ export function FocusComposer({
   /* AC-4 (#134): a rewound message's images re-entering the composer. */
   seedFiles?: AttachedFile[];
   onSeededFiles?: () => void;
+  /* A `/name args` send passes through here first: returning true claims it
+     (the app owns that command — the model picker, rewind); false lets it
+     post so the engine runs it. */
+  onCommand?: (name: string, args: string) => boolean;
+  /* Controlled open on the model picker — `/model` opens it. */
+  modelOpen?: boolean;
+  onModelOpen?: (open: boolean) => void;
   /* Extra pills next to the attach button (e.g. #106's AccessPill). */
   tools?: React.ReactNode;
 }) {
@@ -135,6 +146,13 @@ export function FocusComposer({
           if (sendRef.current) return sendRef.current;
           const t = text.trim() || draft.trim();
           if (!t && files.length === 0) return;
+          /* An app-owned `/command` never posts — the host routed it and
+             the box clears like a send. */
+          const cmd = files.length === 0 ? parseSlashDraft(t) : null;
+          if (cmd && onCommand?.(cmd.name, cmd.args)) {
+            if (draftRef.current.trim() === t) setDraft("");
+            return;
+          }
           const done = onSend(
             t,
             files.map((f) => ({
@@ -189,6 +207,8 @@ export function FocusComposer({
                 value={choice ?? choiceFor(models[0].id, models)}
                 models={models}
                 onChoice={onModel}
+                open={modelOpen}
+                onOpenChange={onModelOpen}
                 {...picker}
               />
             ) : null}

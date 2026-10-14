@@ -1573,6 +1573,400 @@
         "lilos/area": "thread",
         "lilos/access": "read"
       }
+    },
+    {
+      "name": "thread_start",
+      "description": "Ask the user to start a new thread in this DM with `text` as its first message (optional `title`). Waits for approval; company changes always ask.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "conversation": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "title"
+            ],
+            "additionalProperties": false
+          },
+          "message": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "channelId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "authorId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "text": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "createdAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "conversationId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "authorKind": {
+                "type": "string",
+                "enum": [
+                  "user",
+                  "employee",
+                  "system"
+                ]
+              },
+              "attachments": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "mimeType": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "sizeBytes": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "mimeType",
+                    "sizeBytes"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "model": {
+                "type": "string",
+                "minLength": 1
+              },
+              "provider": {
+                "type": "string"
+              },
+              "effort": {
+                "type": "string"
+              },
+              "fast": {
+                "type": "boolean"
+              },
+              "rewound": {
+                "default": false,
+                "type": "boolean"
+              },
+              "dropped": {
+                "default": false,
+                "type": "boolean"
+              },
+              "removed": {
+                "default": false,
+                "type": "boolean"
+              },
+              "claimed": {
+                "default": false,
+                "type": "boolean"
+              },
+              "checkpoint": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "channelId",
+              "authorId",
+              "text",
+              "seq",
+              "createdAt",
+              "conversationId",
+              "authorKind",
+              "rewound",
+              "dropped",
+              "removed",
+              "claimed"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "conversation",
+          "message"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "_meta": {
+        "lilos/area": "thread",
+        "lilos/access": "approval"
+      }
+    },
+    {
+      "name": "team_hire",
+      "description": "Ask the user to hire an employee (name, role, model, instructions; `profile` reuses an existing engine profile). Waits for approval; returns the new employee record.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "role": {
+            "type": "string",
+            "minLength": 1
+          },
+          "model": {
+            "type": "string",
+            "minLength": 1
+          },
+          "instructions": {
+            "type": "string",
+            "minLength": 1
+          },
+          "profile": {
+            "type": "string",
+            "minLength": 1
+          },
+          "provider": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "name",
+          "role",
+          "model",
+          "instructions"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "employee": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "role": {
+                "type": "string"
+              },
+              "profile": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "role",
+              "profile",
+              "model"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "employee"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "_meta": {
+        "lilos/area": "team",
+        "lilos/access": "approval"
+      }
+    },
+    {
+      "name": "team_update",
+      "description": "Ask the user to update your own employee record — name, role, model or instructions. Never edits another employee. Waits for approval.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "role": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "instructions": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "employee": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "role": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              },
+              "instructions": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "role",
+              "model",
+              "instructions"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "employee"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "_meta": {
+        "lilos/area": "team",
+        "lilos/access": "approval"
+      }
+    },
+    {
+      "name": "folder_add",
+      "description": "Ask the user to add a folder to the recent-folders list so it can be picked for a session. Waits for approval.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "folder": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "lastUsedAt": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "path",
+              "lastUsedAt"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "folder"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "_meta": {
+        "lilos/area": "folder",
+        "lilos/access": "approval"
+      }
     }
   ]
 }

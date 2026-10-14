@@ -41,6 +41,7 @@ import {
   suspendBinding,
   writeLife,
 } from "./harness/bind";
+import { execSlashCommand, slashFor } from "./harness/commands";
 import {
   conversationFromAtom,
   employeeIdFor,
@@ -53,9 +54,11 @@ import type { SessionBinding } from "./harness/ctx";
 import {
   deliver,
   deliverOrdered,
+  dropEarlyWithError,
   flushEarly,
   flushEarlyOrdered,
   ordered,
+  scheduleEarlyFlush,
 } from "./harness/delivery";
 import {
   dispatchPrompt,
@@ -309,6 +312,14 @@ export class Harness {
   /** Messages that arrived while the engine was down; drained on attach. */
   private readonly early = new Map<string, AppMessage[]>();
 
+  /** Bounded re-bind retries for sends parked in `early` on a bind
+      failure (`scheduleEarlyFlush`). */
+  private readonly earlyFlushTimers = new Map<
+    string,
+    ReturnType<typeof setTimeout>
+  >();
+  private readonly earlyFlushAttempts = new Map<string, number>();
+
   /** #422: monotonic clock — per-binding now-line freshness. */
   private nowClock = 0;
 
@@ -374,6 +385,12 @@ export class Harness {
     return this.conversationBySession.size;
   }
 
+  /** The turn a conversation's engine is running right now — the gateway's
+      approval asks bind to it so the card renders inside the live feed. */
+  runningTurnFor(conversationId: string): string | undefined {
+    return this.bindings.get(conversationId)?.runningTurnId;
+  }
+
   /* The Mac user's home this harness serves — `~` on the wire means this
      directory (device-scope folder reads stay under it). */
   private readonly home: string;
@@ -426,6 +443,8 @@ export class Harness {
 
   async stop(): Promise<void> {
     this.reaper.stop();
+    for (const t of this.earlyFlushTimers.values()) clearTimeout(t);
+    this.earlyFlushTimers.clear();
     for (const unsub of this.unsubs.splice(0)) unsub();
     this.opts.relay.close();
     this.engine = undefined;
@@ -537,6 +556,8 @@ export class Harness {
   /* ------------------------- message -> engine -------------------------- */
 
   declare private flushEarly: (convId: string) => Promise<void>;
+  declare private scheduleEarlyFlush: (convId: string) => void;
+  declare private dropEarlyWithError: (convId: string) => Promise<void>;
 
   /* ------------------------- #346 idle reaper ------------------------- */
 
@@ -592,6 +613,7 @@ Object.assign(Harness.prototype, {
   dropParkedInterruptIfOrphaned,
   dropStopped,
   employeeIdFor,
+  execSlashCommand,
   employeeNowLine,
   enqueueOrPrompt,
   ensureAgent,
@@ -599,8 +621,10 @@ Object.assign(Harness.prototype, {
   exemptFromCurrentStop,
   findConversation,
   finishTurn,
+  dropEarlyWithError,
   flushEarly,
   flushEarlyOrdered,
+  scheduleEarlyFlush,
   flushOutbox,
   folderBrowse,
   folderDetail,
@@ -642,6 +666,7 @@ Object.assign(Harness.prototype, {
   sessionHasOpenAsk,
   sessionParams,
   setSessionModel,
+  slashFor,
   stampCheckpoint,
   stopOwns,
   surfaceBackendDown,

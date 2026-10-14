@@ -207,6 +207,23 @@ export const Conversation = z.object({
    * session feed it keeps alive — survive a released session.
    */
   bgJobs: z.number().int().nonnegative().optional(),
+  /**
+   * The user's read watermark (#563): how far he has opened this thread.
+   * `conversations.markRead` stamps `max(channel.lastSeq, finishedSeq)`
+   * — every finish the relay has seen counts as read. A thread whose
+   * `finishedSeq` sits past it shows the "finished, not seen yet" dot.
+   */
+  readSeq: z.int().min(0).default(0),
+  /**
+   * The last turn end the relay observed (#563): a `turn.completed` (a
+   * user-stopped turn doesn't stamp — the user who stopped it was
+   * watching) or a `session.state` error. Stamped by the relay, never
+   * client-written, at `max(channel.lastSeq, readSeq) + 1` — strictly
+   * past every mark seen so far, since the finish's own channel writes
+   * land after its engine event. The "finished, not seen" dot is
+   * `finishedSeq > readSeq`, so it survives restart and reconnect.
+   */
+  finishedSeq: z.int().min(0).default(0),
   createdAt: Timestamp,
 });
 export type Conversation = z.infer<typeof Conversation>;
@@ -400,6 +417,23 @@ export function toSummaryPreview(m: AppMessage): SummaryMessage {
 export const AskState = z.enum(["open", "resolved"]);
 export type AskState = z.infer<typeof AskState>;
 
+/**
+ * The hire draft a gateway `team_hire` ask carries so the card can render
+ * the real hire proposal instead of text. Host-produced only — an
+ * engine ask never sets it.
+ */
+export const AskHireProposal = z.strictObject({
+  name: z.string().min(1),
+  role: z.string(),
+  model: z.string(),
+  instructions: z.string(),
+  provider: z.string().optional(),
+  /* Reusing an existing engine profile instead of minting one is a
+     different action — the card has to say so. */
+  profile: z.string().optional(),
+});
+export type AskHireProposal = z.infer<typeof AskHireProposal>;
+
 export const Ask = z.object({
   id: z.string().min(1),
   channelId: z.string().min(1),
@@ -409,6 +443,8 @@ export const Ask = z.object({
   /** Engine request id the harness echoes back in `request.respond`. */
   requestId: z.string().min(1),
   request: EngineRequest,
+  /** Structured hire draft when the ask proposes a hire. */
+  hire: AskHireProposal.optional(),
   state: AskState,
   outcome: ApprovalOutcome.optional(),
   answer: z.string().optional(),

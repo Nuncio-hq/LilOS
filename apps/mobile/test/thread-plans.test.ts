@@ -62,6 +62,8 @@ const conv = (over: Partial<Conversation> = {}): Conversation => ({
   access: "ask",
   archived: false,
   deliveredSeq: 1,
+  readSeq: 0,
+  finishedSeq: 0,
   createdAt: T0 - 60_000,
   ...over,
 });
@@ -82,6 +84,8 @@ const ada: Employee = {
 const OPTS = {
   conversationId: "conv-1",
   deliveredSeq: 1,
+  readSeq: 0,
+  finishedSeq: 0,
   asks: [] as Ask[],
   employeeId: ada.id,
   employeeName: ada.name,

@@ -3,6 +3,7 @@ import type {
   AppChannel,
   AppMessage,
   Ask,
+  AskHireProposal,
   AskState,
   AuthorKind,
   Conversation,
@@ -219,6 +220,8 @@ export interface NewAsk {
   turnId: string;
   requestId: string;
   request: EngineRequest;
+  /** Gateway `team_hire` ask's hire draft. */
+  hire?: AskHireProposal;
 }
 
 export interface ResolveAskInput {
@@ -314,6 +317,31 @@ export interface RelayStore {
     seq: number;
     usage: Usage;
   }): Promise<void>;
+
+  /**
+   * Stamp a turn end on the conversation (#563): `finishedSeq` becomes a
+   * stamp strictly past every mark the relay has seen —
+   * `max(channel.lastSeq, readSeq) + 1` — so the "finished, not seen" dot
+   * (`finishedSeq > readSeq`) always fires, even on a channel quiet since
+   * the last read (the finish's own channel writes arrive after the
+   * engine event that stamps it). `sessionId`/`eventSeq` are the
+   * freshness fence (same rule as `recordTurnUsage`): a replayed older
+   * finish from the same session can't rewrite; a rebound session writes
+   * freely.
+   */
+  recordConversationFinish(input: {
+    conversationId: string;
+    sessionId: string;
+    eventSeq: number;
+  }): Promise<void>;
+
+  /**
+   * The user's read watermark (#563): set `readSeq` past every finish the
+   * relay has stamped — `max(channel.lastSeq, finishedSeq)` — so opening
+   * the thread counts every finish up to now as seen, on every device at
+   * once. Returns the updated row, or null for an unknown conversation.
+   */
+  markConversationRead(conversationId: string): Promise<Conversation | null>;
 
   listMessages(
     channelId: string,

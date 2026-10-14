@@ -6,6 +6,7 @@ import type { WbTab } from "@lilos/ui/types";
    tab is dropped on the floor. */
 
 const WB_TABS: readonly string[] = [
+  "browser",
   "changes",
   "files",
   "terminal",

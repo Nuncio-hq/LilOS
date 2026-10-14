@@ -84,9 +84,33 @@ export async function dispatchPrompt(
     this.insertQueued(binding, message);
     return true;
   }
+  /* The `/` menu's send: on a `commands` engine the message execs the
+     command rather than prompting — output posts as the employee's reply;
+     a skill expands into the prompt this dispatch then runs. */
+  let promptText = message.text;
+  const slash = this.slashFor(message);
+  if (slash && this.hasCapability("commands")) {
+    const outcome = await this.execSlashCommand(binding, message, slash);
+    if (outcome.kind === "settled") return false;
+    if (outcome.kind === "requeued") return true;
+    promptText = outcome.text;
+  }
   // A pick held while the last turn ran lands now, before this prompt —
   // the session is idle so setModel applies straight away (#92).
   await this.applyHeldPick(binding);
+  /* A Remove/drop/rewind that landed during the conn/slash/held-pick
+     awaits means nothing should be fetched or decoded — bail before the
+     attachment loop writes files nobody asked for; the post-fetch check
+     below still covers the rest of the window. */
+  if (
+    this.dismissed.has(message.id) ||
+    message.removed ||
+    message.dropped ||
+    message.rewound
+  ) {
+    binding.consumed.delete(message.id);
+    return false;
+  }
   // Attachment bytes never ride the message row — the harness fetches each
   // ref via `attachments.get` (issue #31). Images go to the engine as
   // ACP-shaped image blocks, but only when it declares `image_prompt`;
@@ -137,15 +161,21 @@ export async function dispatchPrompt(
      `git status` — one `info/exclude` line covers the whole dir. */
   if (savedToFolder) await excludeFromGit(binding.cwd);
   /* The prompt names every saved path — the engine's file tools take it
-     from there. Appended to the user's text so a file-only message still
-     prompts with a text block. */
-  let text = message.text;
+     from there. Appended to the send's prompt (a slash expansion's
+     `promptText`, not the raw `/name` the user typed) so a file-only
+     message still prompts with a text block. */
+  let text = promptText;
   if (files.length) {
     const lines = files.map((f) => `- ${f.path} (${humanBytes(f.sizeBytes)})`);
+    /* Only a folder-bound session's save lands inside the session folder —
+       folder-less goes to the harness state dir. */
+    const where = binding.hasFolder
+      ? "saved into the session folder"
+      : "saved on the session machine";
     const note =
       files.length === 1
-        ? `The user attached a file — saved into the session folder, read it with your normal file tools:\n${lines[0]}`
-        : `The user attached ${files.length} files — saved into the session folder, read them with your normal file tools:\n${lines.join("\n")}`;
+        ? `The user attached a file — ${where}, read it with your normal file tools:\n${lines[0]}`
+        : `The user attached ${files.length} files — ${where}, read them with your normal file tools:\n${lines.join("\n")}`;
     text = text ? `${text}\n\n${note}` : note;
   }
   // Text block only when there is text — an image-only message prompts

@@ -166,8 +166,7 @@ export function HireDialog({
               </button>
             </>
           )}
-          {/* #588 AC-1: the chat-hire hint is dropped — the hire card path
-              doesn't exist yet (it returns with #341). */}
+          {/* #588 AC-1: the chat-hire hint is dropped. */}
         </div>
         <div className="flex min-h-0 flex-col">
           <div className="flex items-center gap-3 border-b p-4">

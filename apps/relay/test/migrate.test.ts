@@ -26,10 +26,11 @@ describe("relay migrations", () => {
       const msgCols = db.query("PRAGMA table_info(messages)").all().map((c) => c.name);
       const tables = db.query("SELECT name FROM sqlite_master WHERE type='table'").all().map((t) => t.name);
       const msgIdx = db.query("PRAGMA index_list(messages)").all().map((x) => x.name);
+      const askCols = db.query("PRAGMA table_info(asks)").all().map((c) => c.name);
       console.log(JSON.stringify({
         versionBefore,
         version: db.query("PRAGMA user_version").get().user_version,
-        colsAt6, colsAt7, msgCols, tables, tablesAt6, msgIdx,
+        colsAt6, colsAt7, msgCols, tables, tablesAt6, msgIdx, askCols,
       }));
     `;
     const res = spawnSync(BUN, ["-e", script], {
@@ -58,8 +59,11 @@ describe("relay migrations", () => {
     // turn_failure card on conversations; v20 adds #346's life column;
     // v21 adds #571's (conversation_id, seq) index and retires the
     // conversation_id-only one it's a strict prefix of; v22 adds #583's
-    // turn_stopped word; v23 adds #583's bg_jobs count.
-    expect(out.version).toBe(23);
+    // turn_stopped word; v23 adds #583's bg_jobs count; v24 adds #563's
+    // read watermark + finish stamp (and their store-internal fence);
+    // v25 adds the asks' hire-draft column.
+    expect(out.version).toBe(25);
+    expect(out.askCols).toContain("hire");
     expect(out.msgCols).toContain("dropped");
     expect(out.msgCols).toContain("removed");
     expect(out.msgCols).toContain("claimed");
@@ -75,6 +79,8 @@ describe("relay migrations", () => {
     expect(out.colsAt7).toContain("life");
     expect(out.colsAt7).toContain("turn_stopped");
     expect(out.colsAt7).toContain("bg_jobs");
+    expect(out.colsAt7).toContain("read_seq");
+    expect(out.colsAt7).toContain("finished_seq");
     expect(out.tables).toContain("settings");
     expect(out.tables).toContain("profile");
     expect(out.tables).toContain("messages_fts");

@@ -15,7 +15,11 @@ import type {
   TurnFailure,
   WorkspaceIntent,
 } from "@lilos/contracts/app";
-import { toSummaryMessage, toSummaryPreview } from "@lilos/contracts/app";
+import {
+  AskHireProposal,
+  toSummaryMessage,
+  toSummaryPreview,
+} from "@lilos/contracts/app";
 import { equalSecret } from "@lilos/contracts/auth";
 import {
   ApprovalOutcome,
@@ -75,7 +79,13 @@ type ConversationRow = typeof schema.conversations.$inferSelect;
    nullable — fold null to absent at the boundary. The (sessionId, seq)
    usage fence columns are store-internal (#300) — never on the wire. */
 const rowToConversation = (row: ConversationRow): Conversation => {
-  const { usageSessionId: _sid, usageSeq: _seq, ...rest } = row;
+  const {
+    usageSessionId: _sid,
+    usageSeq: _seq,
+    finishedSessionId: _fsid,
+    finishedEventSeq: _fseq,
+    ...rest
+  } = row;
   return {
     ...rest,
     model: row.model ?? undefined,
@@ -127,6 +137,9 @@ const rowToAsk = (row: AskRow): Ask => ({
   turnId: row.turnId,
   requestId: row.requestId,
   request: EngineRequest.parse(JSON.parse(row.request)),
+  hire: AskHireProposal.optional().parse(
+    row.hire ? JSON.parse(row.hire) : undefined,
+  ),
   state: row.state,
   outcome: ApprovalOutcome.optional().parse(row.outcome ?? undefined),
   answer: row.answer ?? undefined,
@@ -436,6 +449,9 @@ export function createDrizzleStore(db: Db): RelayStore {
         usage, usage_session_id AS usageSessionId, usage_seq AS usageSeq,
         life, turn_failure AS turnFailure,
         turn_stopped AS turnStopped, bg_jobs AS bgJobs,
+        read_seq AS readSeq, finished_seq AS finishedSeq,
+        finished_session_id AS finishedSessionId,
+        finished_event_seq AS finishedEventSeq,
         created_at AS createdAt`;
       const convWhere: string[] = [];
       const convParams: (string | number)[] = [];
@@ -691,6 +707,8 @@ export function createDrizzleStore(db: Db): RelayStore {
             : {}),
           archived: false,
           deliveredSeq: 0,
+          readSeq: 0,
+          finishedSeq: 0,
           createdAt: now(),
           ...(input.model !== undefined ? { model: input.model } : {}),
           ...(input.provider !== undefined ? { provider: input.provider } : {}),
@@ -775,6 +793,74 @@ export function createDrizzleStore(db: Db): RelayStore {
             : {}),
         })
         .where(eq(schema.conversations.id, id))
+        .returning()
+        .get();
+      return updated ? rowToConversation(updated) : null;
+    },
+    async recordConversationFinish({ conversationId, sessionId, eventSeq }) {
+      /* The stamp must clear every mark the relay has seen —
+         max(channel.lastSeq, readSeq) + 1 — because the finish's own
+         channel writes land AFTER the engine event that calls this: at
+         `lastSeq` a quiet-channel finish would equal `readSeq` and the
+         dot would silently miss. The conditional UPDATE keeps the
+         freshness fence atomic, same rule as `recordTurnUsage`: a
+         replayed finish from the same session only wins past the stored
+         event seq; a rebound session always writes. */
+      const row = db
+        .select({
+          lastSeq: schema.channels.lastSeq,
+          readSeq: schema.conversations.readSeq,
+        })
+        .from(schema.conversations)
+        .innerJoin(
+          schema.channels,
+          eq(schema.conversations.channelId, schema.channels.id),
+        )
+        .where(eq(schema.conversations.id, conversationId))
+        .get();
+      if (!row) return;
+      const stamp = Math.max(row.lastSeq, row.readSeq) + 1;
+      db.update(schema.conversations)
+        .set({
+          finishedSeq: stamp,
+          finishedSessionId: sessionId,
+          finishedEventSeq: eventSeq,
+        })
+        .where(
+          and(
+            eq(schema.conversations.id, conversationId),
+            lt(schema.conversations.finishedSeq, stamp),
+            or(
+              isNull(schema.conversations.finishedSessionId),
+              ne(schema.conversations.finishedSessionId, sessionId),
+              lt(schema.conversations.finishedEventSeq, eventSeq),
+            ),
+          ),
+        )
+        .run();
+    },
+    async markConversationRead(conversationId) {
+      /* The user's read watermark (#563): past every finish stamped so
+         far — max(channel.lastSeq, finishedSeq), since a quiet-channel
+         finish can sit ahead of lastSeq. */
+      const row = db
+        .select({
+          channelId: schema.conversations.channelId,
+          lastSeq: schema.channels.lastSeq,
+          finishedSeq: schema.conversations.finishedSeq,
+        })
+        .from(schema.conversations)
+        .innerJoin(
+          schema.channels,
+          eq(schema.conversations.channelId, schema.channels.id),
+        )
+        .where(eq(schema.conversations.id, conversationId))
+        .get();
+      if (!row) return null;
+      const updated = db
+        .update(schema.conversations)
+        .set({ readSeq: Math.max(row.lastSeq, row.finishedSeq) })
+        .where(eq(schema.conversations.id, conversationId))
         .returning()
         .get();
       return updated ? rowToConversation(updated) : null;
@@ -985,6 +1071,7 @@ export function createDrizzleStore(db: Db): RelayStore {
         turnId: input.turnId,
         requestId: input.requestId,
         request: JSON.stringify(input.request),
+        hire: input.hire ? JSON.stringify(input.hire) : null,
         state: "open",
         outcome: null,
         answer: null,

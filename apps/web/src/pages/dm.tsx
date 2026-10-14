@@ -51,6 +51,7 @@ import type {
   ModelPickerExtras,
   Msg,
   PullRequest,
+  SlashItem,
   Thread,
   TranscriptNote,
   WbTab,
@@ -90,6 +91,7 @@ import {
   hydrateAttachments,
   toAttachedFiles,
 } from "../lib/attachments";
+import { ThreadBrowser } from "../lib/browser";
 import { requestConnect } from "../lib/connect";
 import { FoldCache, type FoldInputs } from "../lib/conv-fold";
 import { DesktopFindBar } from "../lib/desktop-find";
@@ -101,6 +103,7 @@ import {
 import { parseFocusTab } from "../lib/focus-search";
 import {
   addFolder,
+  composerFocus,
   cwdInfo,
   discovered,
   folders,
@@ -110,6 +113,7 @@ import {
   loadDiscovered,
   refreshFolders,
   sameFolder,
+  wsPicks,
 } from "../lib/folders";
 import { useAtom } from "../lib/hooks";
 import {
@@ -348,7 +352,34 @@ export function DmPage() {
   const fsListing = useAtom(fsRows);
   const discoveredRows = useAtom(discovered);
   const cwdBranches = useAtom(cwdInfo);
-  const [wsPicks, setWsPicks] = useState<Record<string, WsPick>>({});
+  const picks = useAtom(wsPicks);
+  /* ⌘N / a ⌘K folder pick asks for the composer: on the new-session
+     surface (no open thread) its textarea takes focus. The nudge stays
+     pending until this surface is actually showing — a bump on a thread
+     route fires once the navigation back to the DM home lands. */
+  const focusNudge = useAtom(composerFocus);
+  const nudgeSeen = useRef(focusNudge);
+  useEffect(() => {
+    if (conversationId) return;
+    if (focusNudge === nudgeSeen.current) return;
+    nudgeSeen.current = focusNudge;
+    /* The composer can lag a first mount (channel still loading) — retry
+       briefly before giving up. */
+    let tries = 0;
+    let timer = 0;
+    const tick = () => {
+      const el = document.querySelector<HTMLTextAreaElement>(
+        "[data-composer] textarea",
+      );
+      if (el) {
+        el.focus();
+        return;
+      }
+      if (++tries < 20) timer = window.setTimeout(tick, 50);
+    };
+    timer = window.setTimeout(tick, 0);
+    return () => window.clearTimeout(timer);
+  }, [focusNudge, conversationId]);
   const [addFolderOpen, setAddFolderOpen] = useState(false);
   /* #581 AC-2: "Add a folder" on a folder-less thread opens the same
      dialog — but picks a MOVE target for that session, not a recents
@@ -895,7 +926,7 @@ export function DmPage() {
      resolves (the stamp is once-only). */
   const recentsReady = useAtom(foldersLoaded);
   useEffect(() => {
-    if (wsPicks[employeeId] !== undefined) return;
+    if (picks[employeeId] !== undefined) return;
     const last = convs.at(-1);
     if (!last) return;
     const pickForLast = (): WsPick | undefined => {
@@ -908,10 +939,12 @@ export function DmPage() {
     };
     const pick = pickForLast();
     if (pick === undefined) return;
-    setWsPicks((w) =>
-      w[employeeId] !== undefined ? w : { ...w, [employeeId]: pick },
+    wsPicks.set(
+      picks[employeeId] !== undefined
+        ? picks
+        : { ...picks, [employeeId]: pick },
     );
-  }, [employeeId, convs, folderRows, recentsReady, wsPicks]);
+  }, [employeeId, convs, folderRows, recentsReady, picks]);
 
   const feedAttached = useAtom(sessionFeedAttached);
   const watched = useAtom(sessionWatched);
@@ -1057,6 +1090,12 @@ export function DmPage() {
   const fileSearchers = useRef(
     new Map<string, (q: string) => Promise<FileMention[]>>(),
   );
+  const commandSearchers = useRef(
+    new Map<string, (q: string) => Promise<SlashItem[]>>(),
+  );
+  /* Which surface's model picker `/model` opened (conv.id | "draft") —
+     routed commands claim the send, they never reach the engine. */
+  const [modelPickerOpen, setModelPickerOpen] = useState<string | null>(null);
 
   if (!employee || !uiEmp) {
     /* #189: a settled directory that has no such employee is a not-found
@@ -1114,8 +1153,8 @@ export function DmPage() {
     openThread(h.rootId);
   };
 
-  const pick = wsPicks[employeeId] ?? NO_WS;
-  const setPick = (p: WsPick) => setWsPicks((w) => ({ ...w, [employeeId]: p }));
+  const pick = picks[employeeId] ?? NO_WS;
+  const setPick = (p: WsPick) => wsPicks.set({ ...picks, [employeeId]: p });
 
   const fileSearch = (folderPath: string | null | undefined) => {
     if (!folderPath) return undefined;
@@ -1129,6 +1168,68 @@ export function DmPage() {
   const pickedFolderPath = pick.folder
     ? (folderRows.find((f) => f.id === pick.folder && !f.missing)?.path ?? null)
     : null;
+
+  /* The `/` menu's provider (issue #109): the engine's own command list,
+     session-scoped once a conversation exists (folder-local skills ride
+     the session's cwd), agent+cwd scoped on the draft composer. Engines
+     without the `commands` capability get no provider → no menu (D-#19). */
+  const commandsSearch = (engineRef: string | null | undefined) => {
+    if (!engineRef || !hasCapability("commands")) return undefined;
+    let f = commandSearchers.current.get(engineRef);
+    if (!f) {
+      f = (q: string) =>
+        relay.request<SlashItem[]>("commands.list", {
+          sessionId: engineRef,
+          query: q,
+        });
+      commandSearchers.current.set(engineRef, f);
+    }
+    return f;
+  };
+  const commandsSearchDraft = () => {
+    if (!hasCapability("commands")) return undefined;
+    /* Cached by scope — a fresh fetcher identity per render would re-fire
+       the composer's search effect on every keystroke. */
+    const key = `draft:${employee.profile}:${pickedFolderPath ?? ""}`;
+    let f = commandSearchers.current.get(key);
+    if (!f) {
+      const cwd = pickedFolderPath;
+      f = (q: string) =>
+        relay.request<SlashItem[]>("commands.list", {
+          agent: employee.profile,
+          ...(cwd ? { cwd } : {}),
+          query: q,
+        });
+      commandSearchers.current.set(key, f);
+    }
+    return f;
+  };
+  /* The host-owned commands (issue #109): `/model` opens the picker the
+     surface already owns; `/rewind`/`/undo` rewind the last user message.
+     Everything else returns false — the send posts and the engine runs it
+     (compact rides the engine's own handler until its surface lands). */
+  const slashCommand = (conv: Conversation | null, pickerReady: boolean) => {
+    return (name: string, args: string): boolean => {
+      if (name === "model") {
+        if (!pickerReady) return false;
+        setModelPickerOpen(conv?.id ?? "draft");
+        return true;
+      }
+      if (name === "rewind" || name === "undo") {
+        if (!conv?.engineRef) return false;
+        const last = threadPool
+          .filter(
+            (m) => m.conversationId === conv.id && m.authorKind === "user",
+          )
+          .at(-1);
+        if (!last) return false;
+        rewindTo(conv, last.id);
+        return true;
+      }
+      void args;
+      return false;
+    };
+  };
 
   /* Add folder (#208): LilOS's own dialog on every surface — plain web and
      the packaged desktop app alike; no OS open panel anywhere. */
@@ -1640,6 +1741,9 @@ export function DmPage() {
                   setConversationModel(conv.id, c),
                 )
               }
+              onCommand={slashCommand(conv, catalog.length > 0)}
+              modelOpen={modelPickerOpen === conv.id}
+              onModelOpen={(o) => setModelPickerOpen(o ? conv.id : null)}
               banner={historyNotice}
               models={catalog.length ? catalog : undefined}
               /* Focus is a picker surface too — the same Refresh / Edit models…
@@ -1664,6 +1768,16 @@ export function DmPage() {
              rides unconditionally; the Workbench gates its folder-bound
              tabs on `work?.path` itself. */
               host={hostAccessors}
+              /* LilOS Browser in thread mode — this thread's tab group,
+                 desktop only (web has no native page host). */
+              browser={
+                window.lilos?.browser ? (
+                  <ThreadBrowser
+                    conversationId={conv.id}
+                    employeeId={employeeId}
+                  />
+                ) : undefined
+              }
               transcriptNote={transcriptNote}
               scrollTo={scrollTo ?? undefined}
               onScrolled={() => setScrollTo(null)}
@@ -1828,6 +1942,9 @@ export function DmPage() {
               : undefined
           }
           picker={picker}
+          onCommand={slashCommand(conv, catalog.length > 0)}
+          modelOpen={modelPickerOpen === conv.id}
+          onModelOpen={(o) => setModelPickerOpen(o ? conv.id : null)}
           access={conv.access}
           onAccess={(a) =>
             toastOnFail(
@@ -1899,6 +2016,7 @@ export function DmPage() {
           }
           mentionables={mentionables}
           onSearchFiles={fileSearch(conv.cwd)}
+          onSearchCommands={commandsSearch(conv.engineRef)}
           scrollTo={scrollTo ?? undefined}
           onScrolled={() => setScrollTo(null)}
           work={null}
@@ -1966,6 +2084,10 @@ export function DmPage() {
           composerNote={composerNote}
           mentionables={mentionables}
           onSearchFiles={fileSearch(pickedFolderPath)}
+          onSearchCommands={commandsSearchDraft()}
+          onCommand={slashCommand(null, catalog.length > 0)}
+          modelOpen={modelPickerOpen === "draft"}
+          onModelOpen={(o) => setModelPickerOpen(o ? "draft" : null)}
           onSearchMessages={searchMessages}
           onOpenHit={onOpenHit}
           /* #339: the employee's connect row off system.status — the notice

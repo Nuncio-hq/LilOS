@@ -278,6 +278,15 @@ export function Sidebar({
                       {b.running}
                     </span>
                   )}
+                  {/* #563: a thread finished unseen — the dot opens its
+                      thread on tap like the row itself does. */}
+                  {b?.unseen && (
+                    <span
+                      data-badge-unseen
+                      title="Finished — not seen yet"
+                      className="size-2 shrink-0 rounded-full bg-primary"
+                    />
+                  )}
                 </span>
               </button>
             );

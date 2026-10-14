@@ -14,7 +14,7 @@ import { Icon, useThemeColor } from "../components/icon";
 import { Orb, type OrbState, type OrbTone } from "../components/orb";
 import { Pulse, plain } from "../components/prose";
 import { whatLine } from "./approval-copy";
-import { Composer } from "./composer";
+import { Composer, type SlashItem } from "./composer";
 import { DM_GROUPS } from "./dm-groups";
 import { LifePill } from "./life-pill";
 import { PrLine } from "./pr-badges";
@@ -44,6 +44,8 @@ export function EmployeeDmScreen({
   onSend,
   onPickFolder,
   onPickModel,
+  commands,
+  onCommand,
   onSearchMessages,
   onOpenHit,
   prefill,
@@ -68,6 +70,10 @@ export function EmployeeDmScreen({
   onSend: (text: string) => void;
   onPickFolder: () => void;
   onPickModel?: () => void;
+  /** The engine's `/` command list (issue #109); absent → `/` plain text. */
+  commands?: SlashItem[];
+  /** App-owned `/command` claim — model sheet, rewind. */
+  onCommand?: (name: string, args: string) => boolean;
   /** #555: full-text message search behind the same filter box (web:
      `onSearchMessages`, #138) — the field renders only when this exists. */
   onSearchMessages?: (query: string) => DmMessageHit[];
@@ -243,6 +249,8 @@ export function EmployeeDmScreen({
             onRemoveFile={onRemoveFile}
             onPickFolder={onPickFolder}
             {...(onPickModel ? { onPickModel } : {})}
+            commands={commands}
+            onCommand={onCommand}
             onLayoutHeight={setComposerHeight}
             prefill={prefill}
             initialDraft={initialDraft}
@@ -304,6 +312,11 @@ function ThreadRow({
           >
             {t.title}
           </AppText>
+          {/* #563: finished while unseen — the Mail-style blue dot; the
+              tap that opens this row marks the thread read. */}
+          {t.unseen && (
+            <View className="size-2 self-center rounded-full bg-primary" />
+          )}
           <AppText tone="muted" className="text-[15px]">
             {t.when}
           </AppText>

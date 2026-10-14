@@ -333,6 +333,52 @@ ${tail}`,
             output: "",
           });
           break;
+        /* Approval-gated writes — `surfaces:` drives them the same way so
+           the e2e covers the real tool call (ask opens → answer → result). */
+        case "thread-start": {
+          /* `title | text` — title optional. */
+          const [first, ...rest2] = arg.split("|").map((s) => s.trim());
+          const input = rest2.length
+            ? { title: first, text: rest2.join("|") }
+            : { text: first };
+          steps.push({ tool: tool("thread_start"), input, output: "" });
+          break;
+        }
+        case "hire": {
+          /* `name | role | model | instructions` — last part optional. */
+          const [name, role, model, ...instr] = arg
+            .split("|")
+            .map((s) => s.trim());
+          steps.push({
+            tool: tool("team_hire"),
+            input: {
+              name,
+              role,
+              model,
+              instructions: instr.join("|") || `${name} instructions`,
+            },
+            output: "",
+          });
+          break;
+        }
+        case "update-self": {
+          /* `field=value` pairs, `|` separated — e.g. `name=Zed|role=Ops`. */
+          const input: Record<string, string> = {};
+          for (const pair of arg.split("|")) {
+            const i = pair.indexOf("=");
+            if (i > 0)
+              input[pair.slice(0, i).trim()] = pair.slice(i + 1).trim();
+          }
+          steps.push({ tool: tool("team_update"), input, output: "" });
+          break;
+        }
+        case "folder-add":
+          steps.push({
+            tool: tool("folder_add"),
+            input: { path: arg },
+            output: "",
+          });
+          break;
         case "context":
           steps.push({ tool: tool("context"), input: {}, output: "" });
           break;

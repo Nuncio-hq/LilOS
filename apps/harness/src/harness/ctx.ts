@@ -27,6 +27,7 @@ import type { EngineConnection } from "../engine/client";
 import type { EngineHostState } from "../engine/supervisor";
 import type { HarnessOptions } from "../harness";
 import type { ReaperCandidate, SessionReaper } from "../reaper";
+import type { SlashOutcome } from "./commands";
 
 /**
  * The shared surface the moved `harness/*.ts` functions close over (#441):
@@ -193,6 +194,9 @@ export interface HarnessCtx {
   readonly requestByAsk: Map<string, { sessionId: string; requestId: string }>;
   readonly delivered: Set<string>;
   readonly early: Map<string, AppMessage[]>;
+  /** Bounded re-bind retries for sends parked on a bind failure. */
+  readonly earlyFlushTimers: Map<string, ReturnType<typeof setTimeout>>;
+  readonly earlyFlushAttempts: Map<string, number>;
   nowClock: number;
   readonly nowWritten: Map<string, string>;
   readonly dismissed: Set<string>;
@@ -247,6 +251,8 @@ export interface HarnessCtx {
   deliver(message: AppMessage): Promise<void>;
   deliverOrdered(message: AppMessage): Promise<void>;
   flushEarly(convId: string): Promise<void>;
+  scheduleEarlyFlush(convId: string): void;
+  dropEarlyWithError(convId: string): Promise<void>;
   flushEarlyOrdered(convId: string): Promise<void>;
   enqueueOrPrompt(binding: SessionBinding, message: AppMessage): void;
   liveBinding(binding: SessionBinding): SessionBinding;
@@ -260,6 +266,12 @@ export interface HarnessCtx {
     promptOnWire: () => void,
   ): Promise<boolean>;
   stampCheckpoint(binding: SessionBinding, message: AppMessage): Promise<void>;
+  slashFor(message: AppMessage): { name: string; args: string } | null;
+  execSlashCommand(
+    binding: SessionBinding,
+    message: AppMessage,
+    cmd: { name: string; args: string },
+  ): Promise<SlashOutcome>;
   rewindConversation(
     params: ConversationsRewindHostParams,
   ): Promise<ConversationsRewindHostResult>;

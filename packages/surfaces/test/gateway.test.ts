@@ -593,6 +593,8 @@ const otherConv = (channelId: string): Conversation => ({
   access: "ask",
   archived: false,
   deliveredSeq: 0,
+  readSeq: 0,
+  finishedSeq: 0,
   createdAt: 2,
 });
 

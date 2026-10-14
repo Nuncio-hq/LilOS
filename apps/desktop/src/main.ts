@@ -15,8 +15,10 @@ import {
   DESKTOP_ONLINE_CHANNEL,
   DESKTOP_OPEN_CONVERSATION_CHANNEL,
   DESKTOP_OPEN_SETTINGS_CHANNEL,
+  DESKTOP_SHORTCUT_CHANNEL,
   DESKTOP_THEME_CHANNEL,
   type DesktopFindAction,
+  type DesktopShortcutAction,
   type DesktopUpdateOutcome,
 } from "@lilos/contracts/app";
 import {
@@ -30,6 +32,7 @@ import {
   powerMonitor,
   shell,
 } from "electron";
+import { BrowserHost, registerBrowserSchemes } from "./browser";
 import { diskVersionStore, helperServiceControl } from "./control";
 import { appMenuTemplate } from "./menu";
 import { appDocumentUrl, guardWindow } from "./navigation-guard";
@@ -83,6 +86,12 @@ const bundleHelper = join(dirname(process.execPath), "lilos-svc");
 const stateDir =
   process.env.LILOS_STATE_DIR ??
   join(homedir(), "Library", "Application Support", "LilOS");
+
+/* With an explicit state dir (tests), the browser profile's persisted
+   partition data must live there too — Chromium derives it from userData.
+   Without the override, default Electron userData is already
+   Application Support/LilOS. */
+if (process.env.LILOS_STATE_DIR) app.setPath("userData", stateDir);
 
 const paths = {
   helper: existsSync(bundleHelper)
@@ -415,6 +424,11 @@ function appUrl(): { file: string } | { url: string } | undefined {
 }
 
 let mainWindow: BrowserWindow | undefined;
+let browserHost: BrowserHost | undefined;
+
+// Privileged lilos: scheme for the browser's new-tab page; must register
+// before app ready.
+registerBrowserSchemes();
 
 /* #565: rendered links (agent markdown can carry any scheme) only leave the
    app through this path — the scheme filter lives in navigation-guard. */
@@ -453,6 +467,14 @@ function openAppSettings(): void {
    as TextEdit's Find menu. */
 function sendFind(action: DesktopFindAction): void {
   mainWindow?.webContents.send(DESKTOP_FIND_CHANNEL, action);
+}
+
+/* Menu accelerators land here once the chord is consumed: the app window
+   runs the same handler its own keydown map does, so ⌘N/⌘1–9 behave
+   identically to the chords the page could bind itself. With no app
+   window yet the items are inert — same convention as the Find menu. */
+function sendShortcut(action: DesktopShortcutAction): void {
+  mainWindow?.webContents.send(DESKTOP_SHORTCUT_CHANNEL, action);
 }
 
 function openConversation(conversationId: string): void {
@@ -507,6 +529,7 @@ function createAppWindow(): void {
     },
   });
   watchWindowChrome(win);
+  browserHost?.attachAppWindow(win);
   mainWindow = win;
   win.on("closed", () => {
     if (mainWindow === win) mainWindow = undefined;
@@ -637,11 +660,27 @@ app.whenReady().then(async () => {
 
   await ensureServices();
   connectRelay();
+  // The browser host owns the WebContentsView tree + window; constructed
+  // here because session APIs need app ready. The View menu's ⌘⇧B item
+  // and the renderer's sidebar/keys both funnel into it.
+  browserHost = new BrowserHost({
+    stateDir,
+    windowTarget: appUrl,
+    windowPreload: () => join(UI_DIR, "preload.cjs"),
+    /* Tests point this at a scratch dir; unset it defaults to ~/Downloads. */
+    downloadsDir: process.env.LILOS_BROWSER_DOWNLOADS_DIR,
+  });
   // The LilOS menu (#132): ⌘, opens Settings in the app window; the #34
   // status window stays one click away on its own item, no accelerator.
   Menu.setApplicationMenu(
     Menu.buildFromTemplate(
-      appMenuTemplate(openAppSettings, createStatusWindow, sendFind),
+      appMenuTemplate(
+        openAppSettings,
+        createStatusWindow,
+        sendFind,
+        sendShortcut,
+        () => browserHost?.toggle(),
+      ),
     ),
   );
   wireNotifications();
