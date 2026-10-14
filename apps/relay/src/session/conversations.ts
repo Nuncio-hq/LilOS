@@ -105,8 +105,11 @@ export async function handleConversations(
             access,
             attachments,
             /* #137: a title given at open is user-chosen from a client,
-               engine-owned ("auto") from the host; empty → placeholder. */
-            titleSource: isHost(peer) ? "auto" : "user",
+               engine-owned ("auto") from the host; empty → placeholder.
+               A scheduled run's title is the user's own task name — stamp
+               it "user" or the engine's auto-title would overwrite it. */
+            titleSource:
+              isHost(peer) && !parsed.data.scheduled ? "auto" : "user",
           });
         /* #552: a dedupe hit answers the stored thread and announces
            nothing again — the retry's attachment blobs are dropped

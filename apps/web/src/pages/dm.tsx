@@ -66,6 +66,7 @@ import {
   useParams,
   useRouterState,
 } from "@tanstack/react-router";
+import { XIcon } from "lucide-react";
 import { atom } from "nanostores";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -383,6 +384,11 @@ export function DmPage() {
     toastOnFail("Couldn't load scheduled tasks", refreshScheduledTasks());
     watchSchedules();
   }, []);
+  /* Any route naming a conversation closes the panel — covers deep links
+     and the feed's own navigation, not only `openThread`. */
+  useEffect(() => {
+    if (conversationId) setScheduledOpen(false);
+  }, [conversationId]);
   /* #581 AC-2: "Add a folder" on a folder-less thread opens the same
      dialog — but picks a MOVE target for that session, not a recents
      entry for the next send. */
@@ -1142,6 +1148,8 @@ export function DmPage() {
   /* Clicking a session opens the thread panel beside the feed — the quick
      peek (#195 AC-1); the panel's ↗ is the way into Focus. */
   const openThread = (id: string) => {
+    /* A thread open always replaces the Scheduled panel (#136). */
+    setScheduledOpen(false);
     const conv = convs.find((c) => c.rootMessageId === id);
     if (conv)
       void navigate({
@@ -2074,8 +2082,16 @@ export function DmPage() {
       {scheduledOpen ? (
         <div
           data-scheduled-panel
-          className="flex min-h-0 w-[420px] shrink-0 flex-col border-l bg-background xl:w-[460px]"
+          className="relative flex min-h-0 w-[420px] shrink-0 flex-col border-l bg-background xl:w-[460px]"
         >
+          <button
+            type="button"
+            aria-label="Close scheduled tasks"
+            onClick={() => setScheduledOpen(false)}
+            className="absolute top-3 right-3 z-10 rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+          >
+            <XIcon className="size-4" />
+          </button>
           <ScheduledTasks
             employeeName={employee.name}
             tasks={myTasks}
