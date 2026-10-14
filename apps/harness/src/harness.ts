@@ -55,9 +55,11 @@ import type { SessionBinding } from "./harness/ctx";
 import {
   deliver,
   deliverOrdered,
+  dropEarlyWithError,
   flushEarly,
   flushEarlyOrdered,
   ordered,
+  scheduleEarlyFlush,
 } from "./harness/delivery";
 import {
   dispatchPrompt,
@@ -319,6 +321,14 @@ export class Harness {
   /** Messages that arrived while the engine was down; drained on attach. */
   private readonly early = new Map<string, AppMessage[]>();
 
+  /** Bounded re-bind retries for sends parked in `early` on a bind
+      failure (`scheduleEarlyFlush`). */
+  private readonly earlyFlushTimers = new Map<
+    string,
+    ReturnType<typeof setTimeout>
+  >();
+  private readonly earlyFlushAttempts = new Map<string, number>();
+
   /** #422: monotonic clock — per-binding now-line freshness. */
   private nowClock = 0;
 
@@ -454,6 +464,8 @@ export class Harness {
   async stop(): Promise<void> {
     this.reaper.stop();
     this.scheduler?.stop();
+    for (const t of this.earlyFlushTimers.values()) clearTimeout(t);
+    this.earlyFlushTimers.clear();
     for (const unsub of this.unsubs.splice(0)) unsub();
     this.opts.relay.close();
     this.engine = undefined;
@@ -565,6 +577,8 @@ export class Harness {
   /* ------------------------- message -> engine -------------------------- */
 
   declare private flushEarly: (convId: string) => Promise<void>;
+  declare private scheduleEarlyFlush: (convId: string) => void;
+  declare private dropEarlyWithError: (convId: string) => Promise<void>;
 
   /* ------------------------- #346 idle reaper ------------------------- */
 
@@ -628,8 +642,10 @@ Object.assign(Harness.prototype, {
   exemptFromCurrentStop,
   findConversation,
   finishTurn,
+  dropEarlyWithError,
   flushEarly,
   flushEarlyOrdered,
+  scheduleEarlyFlush,
   flushOutbox,
   folderBrowse,
   folderDetail,

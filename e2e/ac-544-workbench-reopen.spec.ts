@@ -392,11 +392,14 @@ test("AC-6 #606 pick-hold: a Files pick while the turn starts survives its first
   await expect(tab(page, "Files")).toBeVisible({ timeout: 30_000 });
   await tab(page, "Files").click();
   await expect(rows(page).first()).toBeVisible({ timeout: 30_000 });
-  /* The turn's live row + steps land ~5 s in — long after the pick. The
-     reply text ("Short answer") marks turn end; the pick must still hold. */
-  await expect(page.getByText("Short answer").first()).toBeVisible({
-    timeout: 30_000,
-  });
+  /* The turn's live row + steps land ~5 s in — long after the pick. Turn
+     end is marked by the turn card's settled footer — the stable anchor
+     every turn (done, stopped, or failed) renders — not by waiting for
+     reply text, which makes this wait depend on the client feed landing
+     rather than on the turn actually finishing. */
+  await expect(
+    page.locator("[data-msg] [data-agentturn] [data-turnsettled]").last(),
+  ).toBeVisible({ timeout: 30_000 });
   await expect(tab(page, "Files")).toHaveAttribute("aria-selected", "true");
   await expect(rows(page).first()).toBeVisible();
 });

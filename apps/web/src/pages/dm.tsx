@@ -106,6 +106,7 @@ import {
 import { parseFocusTab } from "../lib/focus-search";
 import {
   addFolder,
+  composerFocus,
   cwdInfo,
   discovered,
   folders,
@@ -115,6 +116,7 @@ import {
   loadDiscovered,
   refreshFolders,
   sameFolder,
+  wsPicks,
 } from "../lib/folders";
 import { useAtom } from "../lib/hooks";
 import {
@@ -363,7 +365,34 @@ export function DmPage() {
   const fsListing = useAtom(fsRows);
   const discoveredRows = useAtom(discovered);
   const cwdBranches = useAtom(cwdInfo);
-  const [wsPicks, setWsPicks] = useState<Record<string, WsPick>>({});
+  const picks = useAtom(wsPicks);
+  /* ⌘N / a ⌘K folder pick asks for the composer: on the new-session
+     surface (no open thread) its textarea takes focus. The nudge stays
+     pending until this surface is actually showing — a bump on a thread
+     route fires once the navigation back to the DM home lands. */
+  const focusNudge = useAtom(composerFocus);
+  const nudgeSeen = useRef(focusNudge);
+  useEffect(() => {
+    if (conversationId) return;
+    if (focusNudge === nudgeSeen.current) return;
+    nudgeSeen.current = focusNudge;
+    /* The composer can lag a first mount (channel still loading) — retry
+       briefly before giving up. */
+    let tries = 0;
+    let timer = 0;
+    const tick = () => {
+      const el = document.querySelector<HTMLTextAreaElement>(
+        "[data-composer] textarea",
+      );
+      if (el) {
+        el.focus();
+        return;
+      }
+      if (++tries < 20) timer = window.setTimeout(tick, 50);
+    };
+    timer = window.setTimeout(tick, 0);
+    return () => window.clearTimeout(timer);
+  }, [focusNudge, conversationId]);
   const [addFolderOpen, setAddFolderOpen] = useState(false);
   /* #136: the Scheduled panel — the header button and a session row's
      chip both open it; a thread open replaces it. `taskFlash` is the
@@ -944,7 +973,7 @@ export function DmPage() {
      resolves (the stamp is once-only). */
   const recentsReady = useAtom(foldersLoaded);
   useEffect(() => {
-    if (wsPicks[employeeId] !== undefined) return;
+    if (picks[employeeId] !== undefined) return;
     const last = convs.at(-1);
     if (!last) return;
     const pickForLast = (): WsPick | undefined => {
@@ -957,10 +986,12 @@ export function DmPage() {
     };
     const pick = pickForLast();
     if (pick === undefined) return;
-    setWsPicks((w) =>
-      w[employeeId] !== undefined ? w : { ...w, [employeeId]: pick },
+    wsPicks.set(
+      picks[employeeId] !== undefined
+        ? picks
+        : { ...picks, [employeeId]: pick },
     );
-  }, [employeeId, convs, folderRows, recentsReady, wsPicks]);
+  }, [employeeId, convs, folderRows, recentsReady, picks]);
 
   const feedAttached = useAtom(sessionFeedAttached);
   const watched = useAtom(sessionWatched);
@@ -1171,8 +1202,8 @@ export function DmPage() {
     openThread(h.rootId);
   };
 
-  const pick = wsPicks[employeeId] ?? NO_WS;
-  const setPick = (p: WsPick) => setWsPicks((w) => ({ ...w, [employeeId]: p }));
+  const pick = picks[employeeId] ?? NO_WS;
+  const setPick = (p: WsPick) => wsPicks.set({ ...picks, [employeeId]: p });
 
   const fileSearch = (folderPath: string | null | undefined) => {
     if (!folderPath) return undefined;

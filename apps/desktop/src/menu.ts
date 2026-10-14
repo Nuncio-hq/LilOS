@@ -1,3 +1,4 @@
+import type { DesktopShortcutAction } from "@lilos/contracts/app";
 import type { MenuItemConstructorOptions } from "electron";
 
 /**
@@ -19,7 +20,17 @@ export function appMenuTemplate(
   openSettings: () => void,
   openStatus: () => void,
   onFind: (action: FindMenuAction) => void,
+  onShortcut: (action: DesktopShortcutAction) => void,
 ): MenuItemConstructorOptions[] {
+  const item = (
+    label: string,
+    accelerator: string,
+    action: DesktopShortcutAction,
+  ): MenuItemConstructorOptions => ({
+    label,
+    accelerator,
+    click: () => onShortcut(action),
+  });
   return [
     {
       label: "LilOS",
@@ -38,6 +49,14 @@ export function appMenuTemplate(
         },
         { type: "separator" },
         { role: "quit" },
+      ],
+    },
+    {
+      label: "File",
+      submenu: [
+        item("New Session", "CmdOrCtrl+N", "new-session"),
+        { type: "separator" },
+        { role: "close" },
       ],
     },
     {
@@ -73,6 +92,27 @@ export function appMenuTemplate(
           accelerator: "Shift+CmdOrCtrl+G",
           click: () => onFind("prev"),
         },
+      ],
+    },
+    {
+      /* The accelerators consume the chord before the page sees it, so the
+         renderer only ever hears the shortcut action — the same handlers
+         the browser-reserved chords can't bind on web. */
+      label: "Go",
+      submenu: [
+        item("Quick Switcher", "CmdOrCtrl+K", "quick-switcher"),
+        item("Back", "CmdOrCtrl+[", "back"),
+        item("Forward", "CmdOrCtrl+]", "forward"),
+        { type: "separator" },
+        ...([1, 2, 3, 4, 5, 6, 7, 8, 9] as const).map((n) =>
+          item(
+            `Employee ${n}`,
+            `CmdOrCtrl+${n}`,
+            `employee-${n}` as DesktopShortcutAction,
+          ),
+        ),
+        { type: "separator" },
+        item("Keyboard Shortcuts", "CmdOrCtrl+/", "shortcuts"),
       ],
     },
     { label: "View", role: "viewMenu" },
