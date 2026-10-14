@@ -139,7 +139,7 @@ describe("conversation read watermark on the real store (#563)", () => {
     expect(lines["after-stale"]).toEqual(lines["quiet-finish"]);
     /* markRead lifts readSeq to finishedSeq on an unmoved channel. */
     expect(lines.marked2).toBe(stamped + 1);
-    expect(lines["cleared2"]).toEqual({
+    expect(lines.cleared2).toEqual({
       readSeq: stamped + 1,
       finishedSeq: stamped + 1,
       dot: false,
