@@ -84,9 +84,45 @@ None — engine-fake is deterministic and local.
   Engine / Profile / Model / Now / Notifications + INSTRUCTIONS (SOUL.MD).
 - Employee-record fields set here persist on the relay's `employees` row —
   verify in `$LILOS_HOME/relay.sqlite`:
-  `SELECT id,name,<col> FROM employees` (e.g. `muted` INTEGER 0/1, migration v24).
+  `SELECT id,name,<col> FROM employees` (e.g. `muted` INTEGER 0/1, migration v25).
 - Esc or the dialog ✕ closes it; `setProfileOpen` toggles, so a second click
   on the Profile icon closes it too.
 - Toggles here go through `relay.updateEmployee(id, patch)` → relay
   `employees.update` → broadcast `employee.upserted` — the UI state should
   always match the sqlite row; a mismatch means the write never landed.
+
+## Proving what prompt text the engine actually received
+
+When a feature transforms the user's text before it reaches the engine
+(a `/skill` that expands into a prompt, a rewrite, an injected prefix),
+the rendered reply may not echo the transformed text. Two persistent proofs:
+
+- Send `recall:` in the same thread — engine-fake answers
+  `I remember N earlier turn(s): 1. <verbatim user turn>` from
+  `session.userTurns`, i.e. exactly what reached the engine.
+- The conversation title: the fake's two-stage auto-title emits a derived
+  title (verbatim first line) while the first turn runs, then an llm title
+  as it settles — `conversations.title` encodes the prompt's first clause.
+
+## Chrome on this VM has no CDP
+
+`browser_console` / `computer` inspect·query·act fail ("Could not connect
+to Chrome via CDP"). Drive by coordinates + screenshots, and verify state
+in `$LILOS_HOME/relay.sqlite` instead:
+`SELECT author_kind, substr(text,1,80) FROM messages ORDER BY created_at`
+(author_kind: user|employee|system).
+
+## Composer editing on macOS
+
+`ctrl+a` in the textarea is move-to-line-start, NOT select-all — use
+`cmd+a` + Backspace to clear a draft.
+
+## Slash menu landmarks
+
+- `role=listbox aria-label="Commands"`, rows `[data-slash-command="<name>"]`
+  with `data-kind="command|skill"`; empty state reads `No matches`.
+- The menu only opens while the draft is a `/fragment` at position 0 with
+  no whitespace — after a space (args) it closes by design.
+- App-owned sends never post: `/model` (picker), `/rewind`,`/undo`
+  (rewind last user msg). Unknown `/x` posts raw and the engine refusal
+  lands as a `system` note `/x: unknown command: x`.

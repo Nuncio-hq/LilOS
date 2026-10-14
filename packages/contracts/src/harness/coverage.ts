@@ -109,6 +109,8 @@ export const NOT_AGENT_FACING: Record<string, string> = {
   "session.ask":
     "the Workbench's 'Suggest' side request is a user control — the agent answers it, it never sends it (#584)",
   "models.list": "the model pick list is the user's",
+  "commands.list":
+    "slash commands are Oscar's composer input — the agent types prompts, it never opens the `/` menu",
   /* app wire — user and device admin */
   "settings.get": "user settings, not agent scope",
   "settings.set": "user settings, not agent scope",

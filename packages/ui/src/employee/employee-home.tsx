@@ -53,6 +53,7 @@ import type {
   ModelOption,
   ModelPickerExtras,
   Msg,
+  SlashItem,
   WsPick,
 } from "../types";
 import { SessionRow } from "./session-row";
@@ -121,6 +122,10 @@ export function EmployeeHome({
   composerNote,
   mentionables,
   onSearchFiles,
+  onSearchCommands,
+  onCommand,
+  modelOpen,
+  onModelOpen,
   onSearchMessages,
   onOpenHit,
   connection,
@@ -195,6 +200,13 @@ export function EmployeeHome({
      section. Both omitted → bare composer like before. */
   mentionables?: Employee[];
   onSearchFiles?: (query: string) => Promise<FileMention[]>;
+  /* The `/` menu's provider (engine commands + skills) and the host's claim
+     hook for app-owned command sends; modelOpen controls the picker the
+     `/model` send opens. */
+  onSearchCommands?: (query: string) => Promise<SlashItem[]>;
+  onCommand?: (name: string, args: string) => boolean;
+  modelOpen?: boolean;
+  onModelOpen?: (open: boolean) => void;
   /* Full-text message search behind the same session filter (issue #138):
      omit → the box matches titles and first messages only. */
   onSearchMessages?: (query: string) => Promise<MessageHit[]>;
@@ -588,6 +600,8 @@ export function EmployeeHome({
         }
         employees={mentionables ?? []}
         onSearchFiles={onSearchFiles}
+        onSearchCommands={onSearchCommands}
+        onCommand={onCommand}
         hint={wsHint(pickedFolder, pick, !onWorktree)}
         onSend={(t, files) => onSend(t, pick, files)}
         draft={composerDraft}
@@ -630,6 +644,8 @@ export function EmployeeHome({
                 value={modelChoice ?? choiceFor(e.model, models)}
                 models={models}
                 onChoice={onModel}
+                open={modelOpen}
+                onOpenChange={onModelOpen}
                 {...picker}
               />
             ) : null}

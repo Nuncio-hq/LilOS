@@ -430,6 +430,7 @@
         "jobs.stop",
         "approvals.setPolicy",
         "session.ask",
+        "commands.list",
         "pairing.offer",
         "pairing.disable",
         "devices.list",
@@ -9168,6 +9169,62 @@
       "required": [
         "policy"
       ]
+    },
+    "CommandsListParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "query": {
+          "type": "string"
+        },
+        "agent": {
+          "type": "string"
+        },
+        "cwd": {
+          "type": "string"
+        }
+      }
+    },
+    "CommandsListResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "default": "",
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "command",
+              "skill"
+            ]
+          },
+          "argsHint": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "name",
+          "kind"
+        ]
+      }
     },
     "WorkbenchOpenTarget": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",

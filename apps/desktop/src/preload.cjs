@@ -97,6 +97,14 @@ contextBridge.exposeInMainWorld("lilos", {
     ipcRenderer.on("lilos:find", listener);
     return () => ipcRenderer.removeListener("lilos:find", listener);
   },
+  /* Menu accelerators arrive here — the app menu owns ⌘N/⌘1–9 and forwards
+     every navigation chord over lilos:shortcut, so the renderer's one
+     dispatch handles both web keydowns and desktop menu clicks. */
+  onShortcut: (cb) => {
+    const listener = (_e, action) => cb(action);
+    ipcRenderer.on("lilos:shortcut", listener);
+    return () => ipcRenderer.removeListener("lilos:shortcut", listener);
+  },
 });
 
 /* #674 AC-2: the renderer's `online` event is the "network came back"
