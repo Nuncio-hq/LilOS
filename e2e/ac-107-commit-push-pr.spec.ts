@@ -215,7 +215,6 @@ const sendTurn = async (page: Page, text: string) => {
   return turn;
 };
 
-const FOCUS_URL = /\/dm\/[^/]+\/[^/]+\/focus$/;
 const PANEL_URL = /\/dm\/[^/]+\/conv_[^/]+$/;
 const tab = (page: Page, name: RegExp | string) =>
   page.getByRole("tab", { name });
@@ -227,12 +226,7 @@ const openFocus = async (page: Page, hasText?: string) => {
     ? page.locator("[data-session]", { hasText })
     : page.locator("[data-session]").last();
   await row.getByRole("button", { name: /repl(y|ies)/ }).click();
-  await expect(page).toHaveURL(PANEL_URL, { timeout: 30_000 });
-  await page
-    .locator("[data-thread-panel]")
-    .getByTitle("Focus", { exact: true })
-    .click();
-  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  await panelIntoFocus(page);
 };
 
 const stageCheck = (page: Page, diffPath: string) =>
