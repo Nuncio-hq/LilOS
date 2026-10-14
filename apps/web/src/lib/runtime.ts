@@ -488,15 +488,6 @@ export function watchSessionFeeds(): void {
     attached: sessionFeedAttached,
     previouslyRunning: prevRunning,
   }).start();
-  /* Opening a thread stamps its read watermark through the relay — the
-     "finished since you last looked" mark every device derives off
-     readSeq/finishedSeq, cleared the same way everywhere. */
-  openConversation.subscribe((id) => {
-    if (!id) return;
-    void relay
-      .request("conversations.markRead", { conversationId: id })
-      .catch(() => {});
-  });
   sessionSignals.subscribe((sigs) => {
     try {
       sessionStorage.setItem(
