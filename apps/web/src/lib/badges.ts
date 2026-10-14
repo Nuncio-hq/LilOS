@@ -25,8 +25,14 @@ export function employeeBadges(
     if (ch.kind !== "dm") continue;
     let running = 0;
     let approvals = 0;
+    /* #563: any of this DM's threads finished past Oscar's read
+       watermark dots the employee — cleared by opening the thread
+       (`conversations.markRead`), on every device at once. */
+    let unseen = false;
     for (const c of conversations) {
-      if (c.channelId !== ch.id || !c.engineRef) continue;
+      if (c.channelId !== ch.id) continue;
+      if (c.finishedSeq > c.readSeq) unseen = true;
+      if (!c.engineRef) continue;
       const m = models[c.engineRef];
       const sig = signals[c.engineRef];
       /* The broadcast-folded signal is always authoritative-or-equal:
@@ -48,10 +54,11 @@ export function employeeBadges(
       if (run) running += 1;
       approvals += asks;
     }
-    if (running || approvals) {
+    if (running || approvals || unseen) {
       out[ch.employeeId] = {
         running: running || undefined,
         approvals: approvals || undefined,
+        unseen: unseen || undefined,
       };
     }
   }
@@ -75,7 +82,8 @@ const sameBadges = (
       return (
         y !== undefined &&
         x.running === y.running &&
-        x.approvals === y.approvals
+        x.approvals === y.approvals &&
+        x.unseen === y.unseen
       );
     })
   );

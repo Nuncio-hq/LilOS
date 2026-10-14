@@ -156,6 +156,8 @@ export async function bootRuntime(cfg: LilosConfig): Promise<void> {
   });
   // #339: the Connect approval flag + its settings.changed follow-up.
   initConnect();
+  /* #563: the read watermark rides the relay — start stamping on open. */
+  watchReadWatermark();
 }
 
 /**
@@ -359,6 +361,40 @@ export const sessionWatched = atom<Record<string, boolean>>({});
 
 /** The conversation open in the thread panel — SessionWatch's scope head. */
 export const openConversation = atom<string | undefined>(undefined);
+
+let readWatchStarted = false;
+/* #563: opening a thread stamps the relay's read watermark
+   (`conversations.markRead`) — the dot clears on every device off the
+   `conversation.updated` that follows. While the thread stays open a new
+   finish re-stamps: Oscar is looking at it, so `finishedSeq` landing past
+   `readSeq` clears itself instead of dotting a card he's reading. One
+   call per (conversation, finish): `lastMarked` drops the repeats a
+   conversation.updated stream would otherwise send. */
+function watchReadWatermark(): void {
+  if (readWatchStarted) return;
+  readWatchStarted = true;
+  let lastMarked: { id: string; finished: number } | undefined;
+  const stamp = () => {
+    const id = openConversation.get();
+    if (!id) {
+      lastMarked = undefined;
+      return;
+    }
+    const conv = relay.conversations.get().find((c) => c.id === id);
+    if (!conv || conv.finishedSeq <= conv.readSeq) return;
+    if (lastMarked?.id === id && lastMarked.finished === conv.finishedSeq)
+      return;
+    lastMarked = { id, finished: conv.finishedSeq };
+    relay.request("conversations.markRead", { conversationId: id }).catch(
+      () => {
+        /* Lost between request and receipt — the next change re-stamps. */
+        lastMarked = undefined;
+      },
+    );
+  };
+  openConversation.subscribe(stamp);
+  relay.conversations.subscribe(stamp);
+}
 
 /* #427: the sidebar badge map as a computed store — `sessionModels`
    rebuilds on every engine event, but the badge counts almost never move.

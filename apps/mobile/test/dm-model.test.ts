@@ -53,6 +53,8 @@ const conv = (id: string, over: Partial<Conversation> = {}): Conversation => ({
   access: "ask",
   archived: false,
   deliveredSeq: 0,
+  readSeq: 0,
+  finishedSeq: 0,
   createdAt: T0,
   ...over,
 });
