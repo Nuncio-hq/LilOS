@@ -1031,6 +1031,8 @@ describe("asks read model (#155)", () => {
           titleSource: "auto",
           archived: false,
           deliveredSeq: 1,
+          readSeq: 0,
+          finishedSeq: 0,
           createdAt: 2,
         },
       ],
@@ -1192,6 +1194,8 @@ describe("#571 incremental conversation summaries", () => {
       titleSource: "auto",
       archived: false,
       deliveredSeq: 0,
+      readSeq: 0,
+      finishedSeq: 0,
       createdAt: 1,
     },
     root: mkMsg({
@@ -1424,6 +1428,8 @@ describe("#571 incremental conversation summaries", () => {
       titleSource: "auto",
       archived: false,
       deliveredSeq: 0,
+      readSeq: 0,
+      finishedSeq: 0,
       createdAt: 1,
     };
     const freshConv = {

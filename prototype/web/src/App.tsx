@@ -400,7 +400,9 @@ const DM_FEEDS: Record<string, Msg[]> = {
     {
       kind: "msg", id: "du1", from: "oscar", time: "09:12", text: "The dev bundle booted the fake engine again — where does it pick that up?",
       thread: {
-        session: "ses_9d04", usage: { input: 8200, output: 510, reasoning: 140, cache: 3000, context: 8710 },
+        // #563: the turn finished while the thread was unopened — the
+        // card and Builder's sidebar row carry the "not seen yet" dot.
+        session: "ses_9d04", unseen: true, usage: { input: 8200, output: 510, reasoning: 140, cache: 3000, context: 8710 },
         replies: [
           {
             id: "du1r1", from: "builder", time: "09:14", thought: 3, reasoning: "Engine selection lives in the launch env; check what stamps it.",
@@ -1209,10 +1211,14 @@ export default function App() {
   }
 
   // Per-employee sidebar badges: a blue count for live turns, amber for turns waiting on approval.
+  // #563: a `dm-<emp>` feed with a finished-but-unseen thread dots the employee too.
   const badges = useMemo(() => {
     const b: Record<string, EmpBadge> = {}
-    for (const msgs of Object.values(feeds))
-      for (const m of msgs)
+    for (const [key, msgs] of Object.entries(feeds)) {
+      const empId = key.startsWith("dm-") ? key.slice(3) : undefined
+      for (const m of msgs) {
+        if (m.kind === "msg" && m.thread?.unseen && empId)
+          b[empId] = { ...b[empId], unseen: true }
         if (m.kind === "msg" && m.thread)
           for (const r of m.thread.replies) {
             const e = employees.find((x) => x.id === r.from)
@@ -1222,6 +1228,8 @@ export default function App() {
             if (r.approval && !resolved[r.approval.id]) cur.approvals = (cur.approvals ?? 0) + 1
             b[e.id] = cur
           }
+      }
+    }
     return b
   }, [feeds, employees, resolved])
 
