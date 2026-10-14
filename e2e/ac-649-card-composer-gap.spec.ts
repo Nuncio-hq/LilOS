@@ -46,8 +46,19 @@ const THEMES = ["light", "dark"] as const;
 
 /** Sample the geometry the AC pins: card bottom vs composer top, card fully
     inside the scroller, ↓/gutter state for diagnosis. Runs in the page —
-    passed to page.evaluate by reference. */
-function measureCard(args: { portSel: string; cardSel: string }) {
+    passed to page.evaluate by reference. `settleFrames` waits that many
+    animation frames before measuring: the app's re-pin rides a
+    ResizeObserver + rAF, so a sample taken right after a viewport change
+    can freeze a pre-realign layout that looks wall-clock-stable — a full
+    frame boundary between samples is what makes "identical" mean settled. */
+async function measureCard(args: {
+  portSel: string;
+  cardSel: string;
+  settleFrames?: number;
+}) {
+  for (let i = args.settleFrames ?? 0; i > 0; i--) {
+    await new Promise<void>((r) => requestAnimationFrame(() => r()));
+  }
   /* A selector can match several mounts (sidebar + thread panel) — the
      port under test is always the last one in DOM order. */
   const port = [...document.querySelectorAll(args.portSel)].at(-1);
@@ -110,13 +121,17 @@ async function expectCardClearance(
   shot: string,
   pinned: boolean,
 ) {
-  type M = Exclude<ReturnType<typeof measureCard>, { error: string }>;
-  let prev: ReturnType<typeof measureCard> | null = null;
-  let last: ReturnType<typeof measureCard> | null = null;
+  type M = Exclude<Awaited<ReturnType<typeof measureCard>>, { error: string }>;
+  let prev: Awaited<ReturnType<typeof measureCard>> | null = null;
+  let last: Awaited<ReturnType<typeof measureCard>> | null = null;
   try {
     await expect
       .poll(async () => {
-        const m = await page.evaluate(measureCard, { portSel, cardSel });
+        const m = await page.evaluate(measureCard, {
+          portSel,
+          cardSel,
+          settleFrames: 2,
+        });
         last = m;
         const ok =
           !("error" in m) &&

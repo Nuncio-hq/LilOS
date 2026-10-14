@@ -19,6 +19,9 @@ export type EmployeeRow = {
   ticket?: string;
   /** Right-hand time: "now", "6m", "10:12". */
   when: string;
+  /** One of this employee's threads finished unseen (#563): the row's
+     dot until the thread is opened. */
+  unseen?: boolean;
 };
 
 export type ChannelRow = {
@@ -146,6 +149,9 @@ export type SessionTurn = {
   /** #592: set when the last turn failed — the row's body is the reason,
       not the preview. */
   failure?: TurnFailure;
+  /** Finished past Oscar's read watermark (#563): the row's dot until he
+     opens it. */
+  unseen?: boolean;
 };
 
 /** A helper a turn spun off (web: Subagent): its own subagent, with its
@@ -333,6 +339,8 @@ export type ThreadDetail = {
   id: string;
   title: string;
   state: SessionState;
+  /** #563: finished while unseen — the DM card + home row carry the dot. */
+  unseen?: boolean;
   /** #592: the last turn's failure — the header chip reads amber
       "Mac went to sleep" for sleep interrupts. */
   failure?: TurnFailure;

@@ -121,3 +121,44 @@ export const REFRESH_MODEL: FakeModel = {
 };
 
 export const DEFAULT_MODEL = "fake-large";
+
+/**
+ * The fake engine's fixed `/` menu — a small command + skill list so the
+ * composer, conformance, and e2e have deterministic rows to list, filter,
+ * and run. `exec` output strings are asserted on by name in tests.
+ */
+export interface FakeCommand {
+  name: string;
+  description: string;
+  kind: "command" | "skill";
+  argsHint?: string;
+}
+
+export const FAKE_COMMANDS: FakeCommand[] = [
+  {
+    name: "help",
+    description: "List the fake engine's commands",
+    kind: "command",
+  },
+  {
+    name: "compact",
+    description: "Compact the session's context",
+    kind: "command",
+  },
+  {
+    name: "usage",
+    description: "Show token usage for the session",
+    kind: "command",
+  },
+  {
+    name: "review",
+    description: "Review the current diff",
+    kind: "skill",
+    argsHint: "[scope]",
+  },
+  {
+    name: "brainstorm",
+    description: "Expand an idea into a plan",
+    kind: "skill",
+  },
+];

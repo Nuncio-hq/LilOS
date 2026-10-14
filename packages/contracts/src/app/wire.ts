@@ -10,6 +10,7 @@ import {
   ConversationAccess,
 } from "../engine/approvals";
 import { Capability } from "../engine/capabilities";
+import { CommandsListParams } from "../engine/commands";
 import { EngineEvent } from "../engine/events";
 import {
   JobsListParams,
@@ -239,6 +240,9 @@ export const AppMethod = z.enum([
   /* One-shot side ask (#584): the Workbench's commit-message "Suggest" —
      forwarded to the engine's session.ask. */
   "session.ask",
+  /* The composer's `/` menu — the engine's slash commands + skills list,
+     filtered as Oscar types. */
+  "commands.list",
   /* Phone pairing (#153): minting a grant is the opt-in that also binds the
      Tailscale listener; devices.list/revoke manage what the grant exchange
      created. `pairing.disable` turns phone access off again. */
@@ -262,6 +266,10 @@ export const AppMethod = z.enum([
      engine event stream: a synthesized event seq would poison `events.since`
      replay and the push watermark. */
   "workbench.open",
+  /* The user's own read watermark (#563): opening a thread stamps
+     `readSeq` at the channel's current seq, clearing the "finished, not
+     seen" dot on every device. */
+  "conversations.markRead",
 ]);
 export type AppMethod = z.infer<typeof AppMethod>;
 
@@ -283,6 +291,7 @@ export const ENGINE_PASSTHROUGH_METHODS = [
   "jobs.stop",
   "approvals.setPolicy",
   "session.ask",
+  "commands.list",
 ] as const;
 export type EnginePassthroughMethod =
   (typeof ENGINE_PASSTHROUGH_METHODS)[number];
@@ -298,6 +307,7 @@ export const ENGINE_PASSTHROUGH_PARAMS = {
   "jobs.stop": JobsStopParams,
   "approvals.setPolicy": ApprovalsSetPolicyParams,
   "session.ask": SessionAskParams,
+  "commands.list": CommandsListParams,
 } as const satisfies Record<EnginePassthroughMethod, z.ZodType>;
 
 const HelloClient = z
@@ -548,6 +558,20 @@ export type ConversationsUpdateParams = z.infer<
   typeof ConversationsUpdateParams
 >;
 export const ConversationResult = z.object({ conversation: Conversation });
+
+/**
+ * `conversations.markRead {conversationId}` (#563): stamps the thread's
+ * `readSeq` at the channel's current `lastSeq` — "Oscar has seen this" —
+ * and returns the updated row. Any client may call it (the phone clears
+ * the same watermark the Mac sets); the relay owns the seq, so a client
+ * can never backdate the mark.
+ */
+export const ConversationsMarkReadParams = z
+  .object({ conversationId: z.string().min(1) })
+  .strict();
+export type ConversationsMarkReadParams = z.infer<
+  typeof ConversationsMarkReadParams
+>;
 
 /**
  * History read. Without `afterSeq` returns the channel's messages (the last

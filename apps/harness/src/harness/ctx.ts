@@ -27,6 +27,7 @@ import type { EngineConnection } from "../engine/client";
 import type { EngineHostState } from "../engine/supervisor";
 import type { HarnessOptions } from "../harness";
 import type { ReaperCandidate, SessionReaper } from "../reaper";
+import type { SlashOutcome } from "./commands";
 
 /**
  * The shared surface the moved `harness/*.ts` functions close over (#441):
@@ -264,6 +265,12 @@ export interface HarnessCtx {
     promptOnWire: () => void,
   ): Promise<boolean>;
   stampCheckpoint(binding: SessionBinding, message: AppMessage): Promise<void>;
+  slashFor(message: AppMessage): { name: string; args: string } | null;
+  execSlashCommand(
+    binding: SessionBinding,
+    message: AppMessage,
+    cmd: { name: string; args: string },
+  ): Promise<SlashOutcome>;
   rewindConversation(
     params: ConversationsRewindHostParams,
   ): Promise<ConversationsRewindHostResult>;

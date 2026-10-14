@@ -114,6 +114,15 @@ export type AttachedFile = {
   mediaType: string;
   url?: string;
 };
+/* The engine's `/` menu row (wire shape: commands.list in
+   packages/contracts/src/engine/commands.ts): a command the engine runs
+   itself, or a skill it expands into the turn's prompt. */
+export type SlashItem = {
+  name: string;
+  description: string;
+  kind: "command" | "skill";
+  argsHint?: string;
+};
 /* #420: the engine's `question` ask, as the card shows it (wire shape:
    packages/contracts/src/engine/requests.ts — options carry the id the
    client returns as the answer; `freeText` allows a typed answer besides
@@ -334,6 +343,9 @@ export type Thread = {
   /* Set on a session a scheduled task started (#136): the DM marks it and
      the chip opens the task. */
   scheduled?: { task: string; name: string };
+  /* The relay stamped a turn end past the user's read watermark (#563):
+     finished, not seen yet — the card's dot until he opens it. */
+  unseen?: boolean;
   replies: Reply[];
   usage?: Usage;
   todos?: Todo[];
@@ -526,7 +538,13 @@ export type StatusComponent = {
 };
 
 /* Sidebar badge per employee: running turns (blue) / turns waiting on the user (amber). */
-export type EmpBadge = { running?: number; approvals?: number };
+export type EmpBadge = {
+  running?: number;
+  approvals?: number;
+  /* One of this employee's threads finished unseen (#563) — a dot beside
+     the badges; clears everywhere when the thread is opened. */
+  unseen?: boolean;
+};
 
 /* People (non-employee) as display metadata for avatars/names. Passed IN from the app.
    `image` is an optional avatar image URL; without it the avatar falls back to

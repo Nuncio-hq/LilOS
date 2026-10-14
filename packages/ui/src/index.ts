@@ -17,6 +17,11 @@ export { AccessPill } from "./chat/access-pill";
 // shared agent-chat pieces (steer rows, not-sent tray, composer running state)
 export * from "./chat/agent-chat";
 export { Composer } from "./chat/composer";
+export {
+  insertSlash,
+  parseSlashDraft,
+  slashQuery,
+} from "./chat/composer-slash";
 export { FocusComposer } from "./chat/focus-composer";
 export {
   choiceFor,
@@ -96,6 +101,11 @@ export {
   useDraft,
 } from "./lib/drafts";
 export * from "./lib/helpers";
+export {
+  type SwitcherItem,
+  type SwitcherKind,
+  searchSwitcher,
+} from "./lib/switcher";
 // scheduled tasks (issue #136)
 export * from "./schedule/schedule-text";
 export { ScheduledTasks } from "./schedule/scheduled-tasks";
@@ -112,7 +122,13 @@ export {
   PrototypePreviewMenu,
   SCENARIOS,
 } from "./shell/preview-menu";
+export { QuickSwitcher } from "./shell/quick-switcher";
 export { type PanelTab, RightPanel, TicketsList } from "./shell/right-panel";
+export {
+  SHORTCUTS,
+  type ShortcutRow,
+  ShortcutsDialog,
+} from "./shell/shortcuts-dialog";
 export { Sidebar } from "./shell/sidebar";
 export {
   StatusDialog,
