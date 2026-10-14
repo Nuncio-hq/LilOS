@@ -9,6 +9,8 @@ import {
   BACKGROUND_JOBS_CAPABILITY,
   type Capability,
   COMMANDS_CAPABILITY,
+  COMPACT_CAPABILITY,
+  CONTEXT_LIMIT_TEXT,
   type CommandItem,
   type CommandsExecParams,
   type CommandsListParams,
@@ -32,6 +34,7 @@ import {
   type RequestRespondParams,
   RPC_ERRORS,
   type SessionAskParams,
+  type SessionCompactParams,
   type SessionMoveWorkspaceParams,
   type SessionRewindParams,
   type SessionSetAccessParams,
@@ -605,6 +608,8 @@ export class HermesEngine {
         );
       case "session.ask":
         return this.sessionAsk(parsed.data as SessionAskParams);
+      case "session.compact":
+        return this.sessionCompact(parsed.data as SessionCompactParams);
       case "agents.list":
         return listAgents(this.gwView);
       case "agents.describe":
@@ -766,6 +771,12 @@ export class HermesEngine {
       description:
         "commands.list maps to hermes `complete.slash` (profile commands + folder-local skills); commands.exec runs slash.exec / command.dispatch — WS sessions only.",
     });
+    /* #560: `session.compact` maps to the gateway's `session.compress` —
+       WS only; ACP sessions answer the per-session refusal like rewind
+       (`opts.acp` is the driver's config, not the session's transport).
+       The `session.compacted` event fires for automatic compaction too —
+       the gateway's `status.update` kind:"compacted" terminal edge. */
+    capabilities.push(COMPACT_CAPABILITY);
     /* #106: the global approval policy — `approvals.setPolicy` writes
        `approvals.mode`; `current` reports the live value when a `config.get`
        read or a setPolicy this run knows it (omitted otherwise). */
@@ -1485,6 +1496,109 @@ export class HermesEngine {
    * re-home — they answer METHOD_NOT_FOUND so the app applies the folder
    * as a pick on the next session instead.
    */
+  /**
+   * `session.compact` (#560) — Hermes `session.compress` on the live WS
+   * session. The compacted result is emitted here from the exact
+   * before/after counts the gateway returns: the `status.update`
+   * kind:"compacted" edge is suppressed while this call is in flight so
+   * a compaction never posts two events (automatic compaction still
+   * rides that edge — see the status.update case).
+   */
+  private async sessionCompact(p: SessionCompactParams) {
+    const s = this.require(p.sessionId);
+    if (s.state === "closed")
+      throw new RpcError(RPC_ERRORS.INVALID_STATE, `session ${s.id} is closed`);
+    if (s.backendDead) await this.ensureLive(s);
+    if (s.turn)
+      throw new RpcError(
+        RPC_ERRORS.INVALID_STATE,
+        `session ${s.id} has a running turn — interrupt it first`,
+      );
+    if (s.driver !== "ws")
+      throw new RpcError(
+        RPC_ERRORS.METHOD_NOT_FOUND,
+        "session.compact needs the WS transport — ACP exposes no compression",
+      );
+    s.manualCompact = true;
+    try {
+      const r = (await this.gw("session.compress", {
+        session_id: s.runtimeSid,
+      })) as Record<string, unknown> | undefined;
+      const status = r && typeof r.status === "string" ? r.status : undefined;
+      /* The ack's session.info/usage carries the post-fold context —
+         mirror it so the emitted usage drops the meter immediately. */
+      const info = r?.info;
+      this.mirrorUsageContext(
+        s,
+        info && typeof info === "object"
+          ? (info as Record<string, unknown>).usage
+          : r?.usage,
+      );
+      if (!r || status !== "compressed") {
+        /* `aborted` means the fold produced nothing (or refused to grow);
+           `pending` (compute host) keeps running in the background — the
+           compacted edge lands when it finishes, so no event here. */
+        return { status: status === "pending" ? "pending" : "skipped" };
+      }
+      /* A "compressed" ack with nothing folded (hermes declines to shrink a
+         small session) is a no-op — a note claiming turns were summarized
+         would be a lie, so the event only reports a real fold. */
+      const folded =
+        (typeof r.before_messages === "number" &&
+          typeof r.after_messages === "number" &&
+          r.after_messages < r.before_messages) ||
+        (typeof r.before_tokens === "number" &&
+          typeof r.after_tokens === "number" &&
+          r.after_tokens < r.before_tokens);
+      if (
+        !folded &&
+        (typeof r.before_messages === "number" ||
+          typeof r.before_tokens === "number")
+      )
+        return { status: "skipped" };
+      const payload: Record<string, unknown> = {
+        ...(typeof r.before_tokens === "number"
+          ? { beforeTokens: r.before_tokens }
+          : {}),
+        ...(typeof r.after_tokens === "number"
+          ? { afterTokens: r.after_tokens }
+          : {}),
+        ...(typeof r.before_messages === "number"
+          ? { beforeMessages: r.before_messages }
+          : {}),
+        ...(typeof r.after_messages === "number"
+          ? { afterMessages: r.after_messages }
+          : {}),
+        ...(s.usage ? { usage: s.usage } : {}),
+      };
+      const summary = r.summary;
+      if (
+        summary &&
+        typeof summary === "object" &&
+        typeof (summary as Record<string, unknown>).headline === "string"
+      )
+        payload.summary = (summary as Record<string, unknown>).headline;
+      s.emit("session.compacted", payload);
+      return {
+        status: "compressed",
+        ...(payload.beforeTokens !== undefined
+          ? { beforeTokens: payload.beforeTokens }
+          : {}),
+        ...(payload.afterTokens !== undefined
+          ? { afterTokens: payload.afterTokens }
+          : {}),
+        ...(payload.beforeMessages !== undefined
+          ? { beforeMessages: payload.beforeMessages }
+          : {}),
+        ...(payload.afterMessages !== undefined
+          ? { afterMessages: payload.afterMessages }
+          : {}),
+      };
+    } finally {
+      s.manualCompact = false;
+    }
+  }
+
   private async sessionMoveWorkspace(p: SessionMoveWorkspaceParams) {
     const s = this.sessions.get(p.sessionId);
     const rec = s ? undefined : this.sessionRegistry?.get(p.sessionId);
@@ -2453,7 +2567,32 @@ export class HermesEngine {
          (kind:"process", notify_on_complete delivery). Reconcile the
          registry rows so the job row lands job.exited (#179). */
       case "status.update": {
-        if (p.kind === "process") void this.syncJobs(s);
+        if (p.kind === "process") {
+          void this.syncJobs(s);
+          break;
+        }
+        /* #560: the gateway's compaction lifecycle — a compressing/
+           compacting progress edge snapshots the pre-fold occupancy;
+           the `compacted` terminal edge emits session.compacted once
+           (automatic compaction — manual calls emit from their result
+           and suppress this edge via `manualCompact`). */
+        if (p.kind === "compressing" || p.kind === "compacting") {
+          if (s.usage?.context !== undefined) s.compactBefore = s.usage.context;
+          break;
+        }
+        if (p.kind === "compacted") {
+          if (s.manualCompact) break;
+          s.emit("session.compacted", {
+            ...(s.compactBefore !== undefined
+              ? { beforeTokens: s.compactBefore }
+              : {}),
+            ...(s.usage?.context !== undefined
+              ? { afterTokens: s.usage.context }
+              : {}),
+            ...(s.usage ? { usage: s.usage } : {}),
+          });
+          s.compactBefore = undefined;
+        }
         break;
       }
       case "terminal.close": {
@@ -2615,11 +2754,21 @@ export class HermesEngine {
       s.usage = usage;
     }
     const errText = typeof p.error === "string" ? p.error : undefined;
+    /* #560: a turn that died on the context window gets the typed code —
+       the thread offers Compact now / a fresh session instead of a bare
+       retry. Provider texts vary; the matcher lives in contracts next to
+       the code so the harness reads the same surface untyped engines
+       leave. */
+    const errCode =
+      errText && CONTEXT_LIMIT_TEXT.test(errText)
+        ? RPC_ERRORS.CONTEXT_LIMIT
+        : undefined;
     s.emit("turn.completed", {
       turnId: completedId,
       stopReason,
       ...(usage ? { usage } : {}),
       ...(errText ? { error: errText } : {}),
+      ...(errCode !== undefined ? { errorCode: errCode } : {}),
     });
     s.turn = undefined;
     s.legTurnId = undefined;

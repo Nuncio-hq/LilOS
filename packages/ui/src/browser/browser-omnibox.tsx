@@ -20,7 +20,9 @@ const SEARCH = "https://www.google.com/search?q=";
    address (http for localhost), anything else searches. */
 export function resolveInput(text: string): string {
   const t = text.trim();
-  if (/^[a-z]+:\/\//i.test(t)) return t;
+  /* Any explicit scheme (http, https, data:, lilos:, file:) goes through as
+     typed — scheme-less text is the only thing resolved here. */
+  if (/^[a-z][a-z0-9+.-]*:/i.test(t)) return t;
   if (/^(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i.test(t)) return `http://${t}`;
   if (!/\s/.test(t) && /^[^/]+\.[a-z]{2,}(:\d+)?(\/.*)?$/i.test(t))
     return `https://${t}`;

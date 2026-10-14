@@ -30,6 +30,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../components/ui/select";
+import { Switch } from "../components/ui/switch";
 import { NotConnectedNotice } from "../connect/not-connected-notice";
 import { WorkspacePicker, wsHint } from "../dialogs/workspace-picker";
 import { folderLabel } from "../lib/helpers";
@@ -110,6 +111,8 @@ export function EmployeeHome({
   onRename,
   onArchive,
   onRetrySession,
+  onCompactSession,
+  onContinueSession,
   accept,
   maxFileSize,
   maxFiles,
@@ -174,6 +177,10 @@ export function EmployeeHome({
   onRename?: (id: string, title: string) => void;
   onArchive?: (id: string, archived: boolean) => void;
   onRetrySession?: (root: Extract<Msg, { kind: "msg" }>) => void;
+  /* #560: the context-full session alert's two outs — compact in place,
+     or continue in a fresh session on the same folder with a recap. */
+  onCompactSession?: (root: Extract<Msg, { kind: "msg" }>) => void;
+  onContinueSession?: (root: Extract<Msg, { kind: "msg" }>) => void;
   /* Composer attachment types the host accepts; absent = no attach UI. */
   accept?: string;
   /* Attachment byte cap + count cap + where rejections surface (issue #31). */
@@ -290,6 +297,8 @@ export function EmployeeHome({
     onRename,
     onArchive,
     onRetrySession,
+    onCompactSession,
+    onContinueSession,
     onOpenTask: scheduled?.onOpenTask,
   });
   rowCb.current = {
@@ -297,6 +306,8 @@ export function EmployeeHome({
     onRename,
     onArchive,
     onRetrySession,
+    onCompactSession,
+    onContinueSession,
     onOpenTask: scheduled?.onOpenTask,
   };
   const row = useMemo(
@@ -308,6 +319,10 @@ export function EmployeeHome({
         rowCb.current.onArchive?.(id, archivedFlag),
       retry: (root: Extract<Msg, { kind: "msg" }>) =>
         rowCb.current.onRetrySession?.(root),
+      compact: (root: Extract<Msg, { kind: "msg" }>) =>
+        rowCb.current.onCompactSession?.(root),
+      cont: (root: Extract<Msg, { kind: "msg" }>) =>
+        rowCb.current.onContinueSession?.(root),
       openTask: (taskId: string) => rowCb.current.onOpenTask?.(taskId),
     }),
     [],
@@ -333,6 +348,8 @@ export function EmployeeHome({
       onArchive={onArchive ? row.archive : undefined}
       onOpen={row.open}
       onRetrySession={onRetrySession ? row.retry : undefined}
+      onCompactSession={onCompactSession ? row.compact : undefined}
+      onContinueSession={onContinueSession ? row.cont : undefined}
     />
   );
 
@@ -669,6 +686,7 @@ export function EmployeeCard({
   onDM,
   onEdit,
   onSwitchProfile,
+  onToggleMute,
 }: {
   e: Employee;
   profiles: EngineProfile[];
@@ -681,6 +699,9 @@ export function EmployeeCard({
   onDM: () => void;
   onEdit?: () => void;
   onSwitchProfile?: (profileId: string) => void;
+  /** Per-employee notification mute (#561 AC-3) — rendered only when the
+      host wires the relay write. */
+  onToggleMute?: (muted: boolean) => void;
 }) {
   const missing = !profiles.some((p) => p.id === e.profile);
   return (
@@ -724,6 +745,24 @@ export function EmployeeCard({
               <span className="text-muted-foreground">Idle</span>
             )}
           </dd>
+          {onToggleMute && (
+            <>
+              <dt className="text-muted-foreground">Notifications</dt>
+              <dd>
+                <span className="inline-flex items-center gap-2">
+                  <Switch
+                    size="sm"
+                    aria-label={`Notifications for ${e.name}`}
+                    checked={e.muted !== true}
+                    onCheckedChange={(on) => onToggleMute(!on)}
+                  />
+                  <span className="text-muted-foreground">
+                    {e.muted === true ? "Muted" : "On"}
+                  </span>
+                </span>
+              </dd>
+            </>
+          )}
         </dl>
         {missing && (
           <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-900 text-xs">

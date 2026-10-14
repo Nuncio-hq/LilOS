@@ -16,6 +16,7 @@ import {
   JobsListParams,
   JobsStopParams,
   SessionAskParams,
+  SessionCompactParams,
 } from "../engine/methods";
 import { ModelOption, ModelProvider, ModelsListParams } from "../engine/models";
 import { ApprovalOutcome, EngineRequest } from "../engine/requests";
@@ -244,6 +245,9 @@ export const AppMethod = z.enum([
   /* The composer's `/` menu — the engine's slash commands + skills list,
      filtered as Oscar types. */
   "commands.list",
+  /* Compact now (#560): the context meter's button — forwarded to the
+     engine's session.compact. */
+  "session.compact",
   /* Phone pairing (#153): minting a grant is the opt-in that also binds the
      Tailscale listener; devices.list/revoke manage what the grant exchange
      created. `pairing.disable` turns phone access off again. */
@@ -261,6 +265,11 @@ export const AppMethod = z.enum([
   "push.register",
   "push.unregister",
   "push.visibility",
+  /* Presence (#561): the desktop app reports the human at the Mac — the
+     relay's push fan-out stays silent while a report is fresh, and the
+     Mac's own banners carry the attention instead. App scope only; a
+     paired phone calling it would just mute its own pushes. */
+  "presence.report",
   /* Host-only (#340): the session's `workbench_open` tool asks the app to
      open the conversation's Workbench on a target — the relay fans
      `workbench.opened` out on the channel. It rides the app wire, never the
@@ -302,6 +311,7 @@ export const ENGINE_PASSTHROUGH_METHODS = [
   "approvals.setPolicy",
   "session.ask",
   "commands.list",
+  "session.compact",
 ] as const;
 export type EnginePassthroughMethod =
   (typeof ENGINE_PASSTHROUGH_METHODS)[number];
@@ -318,6 +328,7 @@ export const ENGINE_PASSTHROUGH_PARAMS = {
   "approvals.setPolicy": ApprovalsSetPolicyParams,
   "session.ask": SessionAskParams,
   "commands.list": CommandsListParams,
+  "session.compact": SessionCompactParams,
 } as const satisfies Record<EnginePassthroughMethod, z.ZodType>;
 
 const HelloClient = z
@@ -381,6 +392,9 @@ export const EmployeePatch = z.object({
   now: z.string().optional(),
   instructions: z.string().optional(),
   respondTo: RespondTo.optional(),
+  /* Per-employee notification mute (#561 AC-3) — relay-stored, honoured by
+     pushes and Mac banners alike. */
+  muted: z.boolean().optional(),
 });
 export type EmployeePatch = z.infer<typeof EmployeePatch>;
 
@@ -1723,5 +1737,16 @@ export const PushVisibilityParams = z.strictObject({
   conversationId: z.string().nullable(),
 });
 export type PushVisibilityParams = z.infer<typeof PushVisibilityParams>;
+
+/**
+ * #561: `presence.report` — the desktop's heartbeat while the human is at
+ * the Mac (user input recently, screen unlocked). `active: true` refreshes
+ * the relay's presence window; `false` (idle/locked) clears it early so
+ * phone pushes resume without waiting the window out.
+ */
+export const PresenceReportParams = z.strictObject({
+  active: z.boolean(),
+});
+export type PresenceReportParams = z.infer<typeof PresenceReportParams>;
 
 export { APP_PROTOCOL_VERSION };

@@ -95,6 +95,7 @@ import {
   hydrateAttachments,
   toAttachedFiles,
 } from "../lib/attachments";
+import { ThreadBrowser } from "../lib/browser";
 import { requestConnect } from "../lib/connect";
 import { FoldCache, type FoldInputs } from "../lib/conv-fold";
 import { DesktopFindBar } from "../lib/desktop-find";
@@ -870,6 +871,66 @@ export function DmPage() {
   /* AC-3 follow-up: a fresh session on the same folder, seeded with the
      surviving transcript as quoted context + the rewound message's text
      (the composer's current draft — the user may have edited it). */
+  /* #560 AC-3: the meter's Compact now — the engine's `session.compact`,
+     gated on the declared capability (no capability → no button). A
+     refused call reads as a plain toast like every other action. */
+  const compactCap = hasCapability("compact");
+  const compactConv = (conv: Conversation) => {
+    if (!conv.engineRef) return;
+    toastOnFail(
+      "Couldn't compact the session",
+      relay.request("session.compact", { sessionId: conv.engineRef }),
+    );
+  };
+
+  /* #560 AC-4: fresh session on the same folder, first message carries a
+     recap of the thread — the old session's context died full, so the
+     quote is all the new one knows. History comes from the relay (the
+     open thread's pool only covers the open conversation — the session
+     list's rows need their own page). */
+  const continueInNewSession = async (conv: Conversation) => {
+    const { messages } = await loadThreadHistory(
+      (method, params) => relay.request(method, params),
+      conv.channelId,
+      conv.id,
+    );
+    const kept = messages.slice(-20);
+    const quote = kept
+      .map((m) => {
+        const who =
+          m.authorKind === "user"
+            ? currentName()
+            : m.authorKind === "employee"
+              ? (employee?.name ?? "Agent")
+              : "note";
+        return `> ${who}: ${m.text.replaceAll("\n", "\n> ")}`;
+      })
+      .join("\n");
+    const text =
+      "Picking up mid-thread — the previous session's context filled up and was closed. Earlier transcript:\n\n" +
+      `${quote}\n\n—`;
+    const key = sendKeyFor(`cont:${conv.id}`, text);
+    void sendDm(
+      employeeId,
+      text,
+      undefined,
+      conv.model
+        ? {
+            model: conv.model,
+            provider: conv.provider,
+            effort: conv.effort,
+            fast: conv.fast,
+          }
+        : undefined,
+      undefined,
+      key,
+      conv.cwd,
+    ).then((c) => {
+      if (!c) return;
+      sendKeyDone(`cont:${conv.id}`, text);
+    });
+  };
+
   const startFreshFrom = (conv: Conversation, target: AppMessage) => {
     const kept = threadPool.filter((m) => m.seq < target.seq).slice(-20);
     const quote = kept
@@ -1767,6 +1828,12 @@ export function DmPage() {
               running={running}
               onSend={sendInThread}
               onPlan={planCap ? onPlan : undefined}
+              onCompact={
+                compactCap && conv.engineRef
+                  ? () => compactConv(conv)
+                  : undefined
+              }
+              onContinue={() => void continueInNewSession(conv)}
               onStop={
                 running
                   ? () =>
@@ -1817,6 +1884,16 @@ export function DmPage() {
              rides unconditionally; the Workbench gates its folder-bound
              tabs on `work?.path` itself. */
               host={hostAccessors}
+              /* LilOS Browser in thread mode — this thread's tab group,
+                 desktop only (web has no native page host). */
+              browser={
+                window.lilos?.browser ? (
+                  <ThreadBrowser
+                    conversationId={conv.id}
+                    employeeId={employeeId}
+                  />
+                ) : undefined
+              }
               transcriptNote={transcriptNote}
               scrollTo={scrollTo ?? undefined}
               onScrolled={() => setScrollTo(null)}
@@ -1995,6 +2072,10 @@ export function DmPage() {
           defaultProvider={defaultProvider}
           onSend={sendInThread}
           onPlan={planCap ? onPlan : undefined}
+          onCompact={
+            compactCap && conv.engineRef ? () => compactConv(conv) : undefined
+          }
+          onContinue={() => void continueInNewSession(conv)}
           pending={pendingItems}
           reconnecting={reconnecting}
           onRemovePending={onRemovePending}
@@ -2188,6 +2269,14 @@ export function DmPage() {
             const conv = convs.find((c) => c.rootMessageId === m.id);
             if (conv) retryConv(conv);
           }}
+          onCompactSession={(m) => {
+            const conv = convs.find((c) => c.rootMessageId === m.id);
+            if (conv && compactCap && conv.engineRef) compactConv(conv);
+          }}
+          onContinueSession={(m) => {
+            const conv = convs.find((c) => c.rootMessageId === m.id);
+            if (conv) void continueInNewSession(conv);
+          }}
         />
       </MainPane>
       {scheduledOpen ? (
@@ -2319,6 +2408,15 @@ export function DmPage() {
           onSwitchProfile={(p) =>
             void relay
               .updateEmployee(employee.id, { profile: p })
+              .catch((err) =>
+                say(err instanceof Error ? err.message : String(err)),
+              )
+          }
+          /* #561 AC-3: the mute lives on the relay's employee row, so the
+             phone's pushes and this app's banners both honour it. */
+          onToggleMute={(muted) =>
+            void relay
+              .updateEmployee(employee.id, { muted })
               .catch((err) =>
                 say(err instanceof Error ? err.message : String(err)),
               )

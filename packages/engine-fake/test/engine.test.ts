@@ -90,6 +90,7 @@ describe("engine-fake", () => {
       "side_prompt",
       "workspace_move",
       "commands",
+      "compact",
       "approval_policy",
     ]);
     c.close();

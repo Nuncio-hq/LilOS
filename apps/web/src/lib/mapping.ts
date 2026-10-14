@@ -49,6 +49,7 @@ export function toUiEmployee(e: Employee, engineDown = false): UiEmployee {
     now: e.now,
     instructions: e.instructions,
     respondTo: e.respondTo,
+    muted: e.muted,
   };
 }
 
@@ -758,7 +759,7 @@ export function threadUsage(
   model: SessionModel | undefined,
   conv: Conversation,
 ): Thread["usage"] {
-  return model?.turns.at(-1)?.usage ?? conv.usage;
+  return model?.usage ?? model?.turns.at(-1)?.usage ?? conv.usage;
 }
 
 /**

@@ -16,6 +16,7 @@ export function DmProfileCard({
   models,
   onEdit,
   onSwitchProfile,
+  onToggleMute,
   onClose,
 }: {
   e: Employee;
@@ -25,6 +26,8 @@ export function DmProfileCard({
   models?: ModelOption[];
   onEdit?: () => void;
   onSwitchProfile?: (profileId: string) => void;
+  /** Per-employee notification mute (#561 AC-3). */
+  onToggleMute?: (muted: boolean) => void;
   onClose: () => void;
 }) {
   /* #576: Esc closes this dialog while it is the top-most layer — the
@@ -62,6 +65,7 @@ export function DmProfileCard({
             onDM={onClose}
             onEdit={onEdit}
             onSwitchProfile={onSwitchProfile}
+            onToggleMute={onToggleMute}
           />
         )}
         {/* #504: the visible close — a real button hung on the dialog's

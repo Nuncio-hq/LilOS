@@ -187,6 +187,18 @@ PR does not exist.
   framed window, or a frameless window with custom-drawn
   traffic lights (misses native drag/zoom/full-screen for free). — #232,
   #301
+- **D-#215 The LilOS Browser's pages live in the main process: one
+  `WebContentsView` per tab on `persist:lilos-browser`, renderers are pure
+  chrome.** Chrome draws the strip / omnibox / find / library and reports
+  each page slot's rect; the host positions views and pushes one full
+  state snapshot (tabs, slots, downloads, find) to both chrome renderers.
+  Pop-out is a second window running the same chrome; a Workbench Browser
+  tab is a `thread:<conv>` slot that may only adopt or open tabs carrying
+  that thread's group. Tabs + the partition's sign-ins persist through
+  `browser-state.json` and a `will-quit` cookie flush. Not: `<webview>`
+  (its state lives in the guest, untestable), a BrowserWindow per tab,
+  browser state through the relay, or an agent-facing AppMethod (lands
+  separately). — #215 · PR #735
 
 ## Testing
 - **D-#3 CI (GitHub Actions, setup-bun) runs with `engine-fake`; never a
@@ -262,6 +274,12 @@ PR does not exist.
   "Engine error:". Not: classifying failures by matching error text, or
   asserting on adapter diagnostics the harness only sometimes forwards.
   — #521
+- **D-#560 The engine owns compaction; LilOS exposes it as the `compact`
+  capability (`session.compact`) plus a typed `session.compacted` event
+  carrying before/after tokens.** The meter's Compact now rides the app
+  passthrough; the thread note is a persisted system message so it replays.
+  Not: inferring compaction from `session.ref.changed` (it also fires for
+  `session.info`), or matching Hermes' notification text. — #560
 - **D-#548 LilOS's `hermes serve` runs `--isolated`; a host multiplex
   attach/refusal is a fatal verdict, not a crash.** Hermes runs one
   machine-level backend per OS user: a `serve` without the flag attaches to
@@ -519,6 +537,13 @@ PR does not exist.
   pairing, tied to the device id.** Not: a LilOS cloud relay; direct APNs
   with an Apple key on the Mac; silent/background pre-sync pushes. A
   sleeping Mac sends nothing (accepted). — #161 · PR #283
+- **D-#561 Notifications route to where the human is: the desktop reports
+  presence (`presence.report`, app scope, idle < 5 min and unlocked) and a
+  fresh report makes the fan-out skip every phone push — Mac banners carry
+  it all, reply excerpt included. `Employee.muted` is relay state both apps
+  honour.** Not: presence on device scope (a paired phone could silence
+  itself); persisted presence (a relay restart resumes pushes until the
+  next heartbeat); the phone deciding routing per kind. — #561 · PR #732
 - **D-#259 Mobile markdown stays bespoke — fences and GFM tables are
   `Prose` block types; fences highlight via `lowlight`.** Not: RN
   markdown libs (no tables, highlighting, or streaming states). — #259 · PR #316

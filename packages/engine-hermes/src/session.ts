@@ -229,6 +229,14 @@ export class Session {
       that the session reopened (its old background processes are gone). */
   resumed = false;
 
+  /** #560: a `session.compact` call is in flight — the `status.update`
+      compacted edge is suppressed because the method emits the event
+      itself with the gateway's exact before/after counts. */
+  manualCompact = false;
+  /** Pre-fold context occupancy snapshot from the compressing/compacting
+      progress edge — the automatic-compaction event's beforeTokens. */
+  compactBefore: number | undefined;
+
   /* #137 AC-1: mirror a persisted engine title into `session.titled`.
      Hermes drops the stage on the wire — `session.title` events carry only
      `{session_id, title}` (prompt_turn.py) and `session.info` carries the

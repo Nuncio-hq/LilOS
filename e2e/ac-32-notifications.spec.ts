@@ -67,6 +67,12 @@ async function injectBridge(page: Page) {
         w.__lilosOpenConv = cb;
         return () => {};
       },
+      /* #561: the shell's at-the-Mac reading — an active, unlocked Mac
+         (the relay's presence gate isn't under test here; a fake phone
+         would be). */
+      presence: {
+        current: () => Promise.resolve({ idleSeconds: 0, locked: false }),
+      },
     };
   });
 }
@@ -219,6 +225,12 @@ test("AC-1/AC-2/AC-3 (engine-fake): notify only when not in view, click opens th
     timeout: 60_000,
   });
   await waitForPost(page, convC.conversationId, "done");
+  // #561 AC-2: the banner carries the reply's own words — engine-fake's
+  // canned answer starts "Short answer:" — not the thread's title.
+  const donePost = (await posts(page)).find(
+    (n) => n.conversationId === convC.conversationId,
+  );
+  expect(donePost?.body).toContain("Short answer:");
 
   // ── conv D: fails out of view → failed notification ──────────────────
   await page.goto(`${stack.webUrl}/dm/${convA.employeeId}`);

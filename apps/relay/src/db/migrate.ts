@@ -351,10 +351,18 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
     statements: [`ALTER TABLE asks ADD COLUMN hire TEXT`],
   },
   {
+    /* #561 AC-3: the employee's notification mute — phone pushes and Mac
+       banners both read it; stored here so every surface agrees. */
+    version: 26,
+    statements: [
+      `ALTER TABLE employees ADD COLUMN muted INTEGER NOT NULL DEFAULT 0`,
+    ],
+  },
+  {
     /* #136: scheduled tasks — relay-owned records the host's clock fires
        as `conversations.open`; `conversations.scheduled` marks a run's
        session so the DM shows where it came from. */
-    version: 26,
+    version: 27,
     statements: [
       `CREATE TABLE scheduled_tasks (
         id TEXT PRIMARY KEY,

@@ -70,6 +70,17 @@ contextBridge.exposeInMainWorld("lilos", {
   notifications: {
     post: (notification) => ipcRenderer.send("lilos:notify", notification),
   },
+  /* #561 presence: the renderer polls the shell's idle/lock reading and
+     reports it to the relay; main pushes transitions over lilos:presence
+     so a lock clears the quiet-phone window without waiting a tick. */
+  presence: {
+    current: () => ipcRenderer.invoke("lilos:presence"),
+    onChange: (cb) => {
+      const listener = (_e, p) => cb(p);
+      ipcRenderer.on("lilos:presence", listener);
+      return () => ipcRenderer.removeListener("lilos:presence", listener);
+    },
+  },
   onOpenConversation: (cb) => {
     const listener = (_e, id) => {
       if (typeof id === "string") cb(id);
@@ -93,6 +104,25 @@ contextBridge.exposeInMainWorld("lilos", {
     const listener = (_e, action) => cb(action);
     ipcRenderer.on("lilos:shortcut", listener);
     return () => ipcRenderer.removeListener("lilos:shortcut", listener);
+  },
+  /* LilOS Browser: main owns the WebContentsView tree + state; this facade
+     only ferries commands and the pushed snapshot. Channel names mirror
+     DESKTOP_BROWSER_* in contracts/app/browser.ts. Absent on plain web —
+     the renderer gates every browser control on `lilos.browser`. */
+  browser: {
+    isBrowserWindow: arg("browser-window") === "1",
+    command: (cmd) => ipcRenderer.invoke("lilos:browser", cmd),
+    reportSlot: (r) => ipcRenderer.send("lilos:browser-slot", r),
+    onState: (cb) => {
+      const listener = (_e, s) => cb(s);
+      ipcRenderer.on("lilos:browser-state", listener);
+      return () => ipcRenderer.removeListener("lilos:browser-state", listener);
+    },
+    onKey: (cb) => {
+      const listener = (_e, m) => cb(m.key, m.slotId);
+      ipcRenderer.on("lilos:browser-key", listener);
+      return () => ipcRenderer.removeListener("lilos:browser-key", listener);
+    },
   },
 });
 

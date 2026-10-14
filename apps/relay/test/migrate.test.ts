@@ -26,11 +26,12 @@ describe("relay migrations", () => {
       const msgCols = db.query("PRAGMA table_info(messages)").all().map((c) => c.name);
       const tables = db.query("SELECT name FROM sqlite_master WHERE type='table'").all().map((t) => t.name);
       const msgIdx = db.query("PRAGMA index_list(messages)").all().map((x) => x.name);
+      const empCols = db.query("PRAGMA table_info(employees)").all().map((c) => c.name);
       const askCols = db.query("PRAGMA table_info(asks)").all().map((c) => c.name);
       console.log(JSON.stringify({
         versionBefore,
         version: db.query("PRAGMA user_version").get().user_version,
-        colsAt6, colsAt7, msgCols, tables, tablesAt6, msgIdx, askCols,
+        colsAt6, colsAt7, msgCols, tables, tablesAt6, msgIdx, empCols, askCols,
       }));
     `;
     const res = spawnSync(BUN, ["-e", script], {
@@ -62,9 +63,11 @@ describe("relay migrations", () => {
     // turn_stopped word; v23 adds #583's bg_jobs count; v24 adds #563's
     // turn_stopped word; v23 adds #583's bg_jobs count; v24 adds #563's
     // read watermark + finish stamp (and their store-internal fence);
-    // v25 adds #738's hire draft on asks; v26 adds #136's
-    // scheduled_tasks table + the conversation's scheduled marker.
-    expect(out.version).toBe(26);
+    // v25 adds the asks' hire-draft column; v26 adds #561's muted flag
+    // on employees; v27 adds #136's scheduled_tasks table + the
+    // conversation's scheduled marker.
+    expect(out.version).toBe(27);
+    expect(out.askCols).toContain("hire");
     expect(out.msgCols).toContain("dropped");
     expect(out.msgCols).toContain("removed");
     expect(out.msgCols).toContain("claimed");
@@ -89,6 +92,7 @@ describe("relay migrations", () => {
     expect(out.tables).toContain("paired_devices");
     expect(out.tables).toContain("device_push");
     expect(out.tables).toContain("engine_event_marks");
+    expect(out.empCols).toContain("muted");
     expect(out.msgIdx).toContain("messages_conversation_seq");
     expect(out.msgIdx).not.toContain("messages_conversation");
     // …and keeps everything v6 shipped.
