@@ -23,6 +23,13 @@ export interface NotifyContext {
   conversations: readonly Conversation[];
   channels: readonly AppChannel[];
   employees: readonly Employee[];
+  /**
+   * The text a turn streamed, looked up from the session's event feed
+   * (`turn.delta` text + `turn.recap`) — gives the done banner the reply
+   * excerpt (#561 AC-2). Absent → done banners fall back to the thread
+   * title as before.
+   */
+  turnText?: (sessionId: string, turnId: string) => string | undefined;
 }
 
 const conversationOf = (
@@ -31,11 +38,45 @@ const conversationOf = (
 ): Conversation | undefined =>
   ctx.conversations.find((c) => c.engineRef === sessionId);
 
-const employeeName = (conv: Conversation, ctx: NotifyContext): string => {
+const employeeOf = (
+  conv: Conversation,
+  ctx: NotifyContext,
+): Employee | undefined => {
   const ch = ctx.channels.find((c) => c.id === conv.channelId);
-  const emp = ch && ctx.employees.find((e) => e.id === ch.employeeId);
-  return emp?.name ?? "An employee";
+  return ch ? ctx.employees.find((e) => e.id === ch.employeeId) : undefined;
 };
+
+const employeeName = (conv: Conversation, ctx: NotifyContext): string =>
+  employeeOf(conv, ctx)?.name ?? "An employee";
+
+/** Long text is cut at a word boundary so the banner stays a one-liner —
+    mirrors `apps/relay/src/push.ts truncateBody` (#561). */
+const truncateBody = (text: string, max = 120): string => {
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (clean.length <= max) return clean;
+  const cut = clean.slice(0, max - 1);
+  const boundary = cut.lastIndexOf(" ");
+  return `${boundary > 0 ? cut.slice(0, boundary) : cut}…`;
+};
+
+/** The reply as one line of plain text — markdown flattened, code fences
+    dropped. Mirrors `apps/relay/src/push.ts replyExcerpt` (#561). */
+const replyExcerpt = (text: string): string =>
+  text
+    .replace(/```[\s\S]*?(```|$)/g, " ")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/^\s{0,3}#{1,6}\s+/gm, "")
+    .replace(/^\s{0,3}>\s?/gm, "")
+    .replace(/^\s*[-*+]\s+/gm, "")
+    .replace(/^\s*\d+\.\s+/gm, "")
+    .replace(/^\s*([-*_]\s*){3,}$/gm, "")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/__([^_]+)__/g, "$1")
+    .replace(/\b_([^_]+)_\b/g, "$1")
+    .replace(/~~([^~]+)~~/g, "$1");
 
 const askNotification = (
   sessionId: string,
@@ -44,6 +85,8 @@ const askNotification = (
 ): DesktopNotification | null => {
   const c = conversationOf(sessionId, ctx);
   if (!c) return null;
+  /* #561 AC-3: a muted employee notifies nowhere — banner or push. */
+  if (employeeOf(c, ctx)?.muted) return null;
   const name = employeeName(c, ctx);
   switch (request.kind) {
     case "question":
@@ -67,7 +110,9 @@ const askNotification = (
         conversationId: c.id,
         kind: "ask",
         title: `${name} needs your approval`,
-        body: request.command,
+        /* What's needed (#561 AC-2) — the description when the engine
+           gave one, else the raw command (the relay's askBody agrees). */
+        body: request.description ?? request.command,
       };
   }
 };
@@ -85,6 +130,8 @@ export function notificationForEvent(
       if (stopReason === "cancelled") return null;
       const c = conversationOf(e.sessionId, ctx);
       if (!c) return null;
+      /* #561 AC-3: a muted employee notifies nowhere. */
+      if (employeeOf(c, ctx)?.muted) return null;
       const name = employeeName(c, ctx);
       if (error || stopReason === "refusal") {
         return {
@@ -94,17 +141,25 @@ export function notificationForEvent(
           body: error ?? `Stopped: ${stopReason}`,
         };
       }
+      /* #561 AC-2: the banner says what the employee said — the reply
+         excerpt from the feed's turn text — with the thread title as the
+         fallback when the turn streamed nothing (the relay's push body
+         does the same). */
+      const excerpt = replyExcerpt(
+        ctx.turnText?.(e.sessionId, e.payload.turnId) ?? "",
+      ).trim();
       return {
         conversationId: c.id,
         kind: "done",
         title: `${name} finished`,
-        body: c.title || "Turn complete",
+        body: truncateBody(excerpt || c.title || "Turn complete"),
       };
     }
     case "session.state": {
       if (e.payload.state !== "error") return null;
       const c = conversationOf(e.sessionId, ctx);
       if (!c) return null;
+      if (employeeOf(c, ctx)?.muted) return null;
       const name = employeeName(c, ctx);
       return {
         conversationId: c.id,
@@ -243,6 +298,42 @@ export function watchNotifications(opts: WatchNotificationsOpts): () => void {
   const failureDedupeMs = opts.failureDedupeMs ?? 1500;
   const pending = new Map<string, ReturnType<typeof setTimeout>>();
   const lastFailedAt = new Map<string, number>();
+  /* #561 AC-2: the done banner's reply excerpt — turn text folded from
+     the same frames the classifier sees (live deltas and replayed
+     recaps alike), the relay's push excerpt fold mirrored. Feeds only
+     exist for watched sessions, so the off-view conversations that
+     actually notify can't be read back — accumulate instead. */
+  const turnTexts = new Map<string, string>();
+  /* Replays re-emit the same seqs every check — fold each frame once or
+     an appended delta would double its text. */
+  const foldedSeqs = new Set<string>();
+  const foldTurnText = (e: EngineEvent): void => {
+    if (e.type !== "turn.delta" && e.type !== "turn.recap") return;
+    const seqKey = `${e.sessionId}:${e.seq}`;
+    if (foldedSeqs.has(seqKey)) return;
+    foldedSeqs.add(seqKey);
+    if (e.type === "turn.delta") {
+      if (e.payload.stream !== "text") return;
+      const key = `${e.sessionId}:${e.payload.turnId}`;
+      turnTexts.set(key, (turnTexts.get(key) ?? "") + e.payload.delta);
+    } else if (e.type === "turn.recap") {
+      turnTexts.set(`${e.sessionId}:${e.payload.turnId}`, e.payload.text);
+    } else return;
+    /* Bounded: a watched session streams thousands of turns over a long
+       uptime — keep the newest half once past a generous cap. */
+    if (turnTexts.size > 4096) {
+      const drop = [...turnTexts.keys()].slice(0, 2048);
+      for (const k of drop) turnTexts.delete(k);
+    }
+  };
+  /* The context plus the fold — a supplied `turnText` (tests, a caller
+     with its own source) stands when the fold never saw the turn. */
+  const ctxFor = (): NotifyContext => ({
+    ...opts.context(),
+    turnText: (sessionId, turnId) =>
+      turnTexts.get(`${sessionId}:${turnId}`) ??
+      opts.context().turnText?.(sessionId, turnId),
+  });
   // Asks already posted, keyed by requestId — dedupes the live fast-path
   // against the state-driven check below.
   const postedAsks = new Set<string>();
@@ -283,10 +374,9 @@ export function watchNotifications(opts: WatchNotificationsOpts): () => void {
    */
   const checkAsks = (): void => {
     if (!opts.openAsks) return;
-    const ctx = opts.context();
     for (const a of opts.openAsks()) {
       if (postedAsks.has(a.requestId)) continue;
-      const n = askNotification(a.sessionId, a.request, ctx);
+      const n = askNotification(a.sessionId, a.request, ctxFor());
       if (!n || inView(n.conversationId)) continue;
       postedAsks.add(a.requestId);
       opts.post(n);
@@ -304,9 +394,9 @@ export function watchNotifications(opts: WatchNotificationsOpts): () => void {
    */
   const checkCompletions = (): void => {
     if (!opts.completionEvents) return;
-    const ctx = opts.context();
     for (const { sessionId, events } of opts.completionEvents()) {
       if (!seeded(sessionId)) {
+        for (const e of events) foldTurnText(e);
         seed(
           sessionId,
           events.map((e) => e.seq),
@@ -314,8 +404,11 @@ export function watchNotifications(opts: WatchNotificationsOpts): () => void {
         continue;
       }
       for (const e of events) {
+        /* Fold even a seen seq — the replay carries recap text the done
+           event's excerpt needs, and a live mount may have missed it. */
+        foldTurnText(e);
         if (seqSeen(sessionId, e.seq)) continue;
-        const n = notificationForEvent(e, ctx);
+        const n = notificationForEvent(e, ctxFor());
         if (!n) {
           /* Cancelled turns are terminal-quiet — account them so they never
              re-evaluate. Any other null is an unmapped conversation: the
@@ -359,14 +452,16 @@ export function watchNotifications(opts: WatchNotificationsOpts): () => void {
     (e.type === "session.state" && e.payload.state === "error");
 
   const deliver = (e: EngineEvent): void => {
+    /* Fold before the notifyable gate — deltas aren't attention-worthy
+       but the done banner's excerpt is built from them (#561). */
+    foldTurnText(e);
     if (!notifyable(e)) return;
-    const ctx = opts.context();
-    const n = notificationForEvent(e, ctx);
+    const n = notificationForEvent(e, ctxFor());
     if (!n) {
       // A mapped conversation means the event classified as uninteresting
       // (e.g. cancelled turn) — only an unmapped one is worth retrying, since
       // the relay write may land just behind a fast engine's events.
-      if (conversationOf(e.sessionId, ctx)) return;
+      if (conversationOf(e.sessionId, opts.context())) return;
       const key = `${e.sessionId}:${e.seq}`;
       if (!pending.has(key)) {
         pending.set(
@@ -380,7 +475,7 @@ export function watchNotifications(opts: WatchNotificationsOpts): () => void {
               !opts.isRequestOpen(e.payload.requestId)
             )
               return;
-            const retry = notificationForEvent(e, opts.context());
+            const retry = notificationForEvent(e, ctxFor());
             if (!retry) return;
             if (inView(retry.conversationId)) return; // checkAsks owns asks
             if (

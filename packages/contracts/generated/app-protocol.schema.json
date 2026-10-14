@@ -438,6 +438,7 @@
         "push.register",
         "push.unregister",
         "push.visibility",
+        "presence.report",
         "workbench.open"
       ]
     },
@@ -734,6 +735,9 @@
             "anyone"
           ]
         },
+        "muted": {
+          "type": "boolean"
+        },
         "createdAt": {
           "type": "integer",
           "minimum": 0,
@@ -809,6 +813,9 @@
             "selected",
             "anyone"
           ]
+        },
+        "muted": {
+          "type": "boolean"
         }
       }
     },
@@ -865,6 +872,9 @@
                   "selected",
                   "anyone"
                 ]
+              },
+              "muted": {
+                "type": "boolean"
               },
               "createdAt": {
                 "type": "integer",
@@ -984,6 +994,9 @@
             "selected",
             "anyone"
           ]
+        },
+        "muted": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -1048,6 +1061,9 @@
                 "selected",
                 "anyone"
               ]
+            },
+            "muted": {
+              "type": "boolean"
             },
             "createdAt": {
               "type": "integer",
@@ -8149,6 +8165,9 @@
                 "selected",
                 "anyone"
               ]
+            },
+            "muted": {
+              "type": "boolean"
             },
             "createdAt": {
               "type": "integer",

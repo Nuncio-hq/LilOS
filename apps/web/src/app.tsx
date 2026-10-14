@@ -41,6 +41,7 @@ import {
   routeForConversation,
   watchNotifications,
 } from "./lib/notify";
+import { watchPresence } from "./lib/presence";
 import {
   bootError,
   booted,
@@ -307,6 +308,8 @@ function AppShell() {
                   events: feed.events.filter(
                     (e) =>
                       e.type === "turn.completed" ||
+                      e.type === "turn.delta" ||
+                      e.type === "turn.recap" ||
                       (e.type === "session.state" &&
                         e.payload.state === "error"),
                   ),
@@ -330,6 +333,16 @@ function AppShell() {
             };
           },
           post: (n) => bridge.notifications?.post(n),
+        }),
+      );
+    }
+    /* #561 AC-1: while the human is at this Mac the relay silences the
+       phone — the heartbeat runs whenever the shell can report presence. */
+    if (bridge.presence) {
+      unsubs.push(
+        watchPresence({
+          bridge: bridge.presence,
+          report: (active) => relay.request("presence.report", { active }),
         }),
       );
     }

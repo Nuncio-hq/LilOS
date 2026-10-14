@@ -34,6 +34,10 @@ export const Employee = z.object({
   now: z.string(),
   instructions: z.string(),
   respondTo: RespondTo,
+  /* A muted employee notifies nowhere (#561): the relay skips its pushes
+     and the Mac posts no banners. Optional so pre-#561 rows and fixtures
+     read as unmuted. */
+  muted: z.boolean().optional(),
   createdAt: Timestamp,
 });
 export type Employee = z.infer<typeof Employee>;

@@ -118,6 +118,8 @@ export const NOT_AGENT_FACING: Record<string, string> = {
   "push.register": "device push registration is the user's",
   "push.unregister": "device push registration is the user's",
   "push.visibility": "device push reporting is the user's",
+  "presence.report":
+    "the desktop's at-the-Mac signal is a transport heartbeat, not agent data — the relay's push fan-out consumes it (#561)",
   "employees.remove": "only Oscar removes an employee",
   /* app wire — covered by `context`, the prompt, or the engine's own tools (D-#179) */
   "channels.list": "channel roster comes through `context`, not a tool",

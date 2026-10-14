@@ -37,6 +37,22 @@ export const DESKTOP_ONLINE_CHANNEL = "lilos:online" as const;
  * IME composition stay out of it, unlike `webContents.findInPage`. */
 export const DESKTOP_FIND_CHANNEL = "lilos:find" as const;
 
+/** IPC channel (both directions) for at-the-Mac presence (#561): the
+ *  renderer invokes it for the current reading; main pushes the same
+ *  shape on lock/unlock/resume transitions so the report lands promptly. */
+export const DESKTOP_PRESENCE_CHANNEL = "lilos:presence" as const;
+
+/** Whether the human is at the Mac right now, as the shell measures it
+ *  (`powerMonitor`): seconds since the last input in ANY app — the Mac is
+ *  where Oscar is, whatever window has focus — plus the tracked lock state.
+ *  The app reports `presence.report` to the relay while this reads active. */
+export interface DesktopPresence {
+  /** Seconds since the last keyboard/mouse input system-wide. */
+  idleSeconds: number;
+  /** Screen locked (main tracks lock-screen/unlock-screen events). */
+  locked: boolean;
+}
+
 /** What the Edit menu's Find items ask the renderer to do (#554). */
 export type DesktopFindAction = "open" | "next" | "prev";
 
@@ -119,6 +135,14 @@ export interface DesktopBridge {
   openStatus?: () => Promise<void>;
   notifications?: {
     post(notification: DesktopNotification): void;
+  };
+  /** At-the-Mac presence (#561): the renderer polls `current` on a
+   * heartbeat and reports to the relay; `onChange` delivers lock/unlock
+   * transitions so a lock ends suppression promptly. Absent on plain web
+   * — no reports, pushes behave as before. */
+  presence?: {
+    current(): Promise<DesktopPresence>;
+    onChange?(cb: (presence: DesktopPresence) => void): () => void;
   };
   /** Subscribe to "open this conversation" requests (notification clicks).
    * Returns an unsubscribe function. */

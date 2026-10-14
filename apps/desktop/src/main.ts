@@ -15,8 +15,10 @@ import {
   DESKTOP_ONLINE_CHANNEL,
   DESKTOP_OPEN_CONVERSATION_CHANNEL,
   DESKTOP_OPEN_SETTINGS_CHANNEL,
+  DESKTOP_PRESENCE_CHANNEL,
   DESKTOP_THEME_CHANNEL,
   type DesktopFindAction,
+  type DesktopPresence,
   type DesktopUpdateOutcome,
 } from "@lilos/contracts/app";
 import {
@@ -482,6 +484,35 @@ function wireNotifications(): void {
   });
 }
 
+/* #561 at-the-Mac presence: `powerMonitor` is the shell's only read on
+   whether the human is around — system-wide idle time covers input in any
+   app, and lock/unlock events carry the screen-lock edge. The renderer
+   polls `current()` on a heartbeat and reports to the relay; the pushed
+   transitions land the lock/unlock change without waiting a tick. */
+let screenLocked = false;
+
+const currentPresence = (): DesktopPresence => ({
+  idleSeconds: powerMonitor.getSystemIdleTime(),
+  locked: screenLocked,
+});
+
+function wirePresence(): void {
+  ipcMain.handle(DESKTOP_PRESENCE_CHANNEL, () => currentPresence());
+  const push = () =>
+    mainWindow?.webContents.send(DESKTOP_PRESENCE_CHANNEL, currentPresence());
+  powerMonitor.on("lock-screen", () => {
+    screenLocked = true;
+    push();
+  });
+  powerMonitor.on("unlock-screen", () => {
+    screenLocked = false;
+    push();
+  });
+  /* A wake's presence is whatever the power state says — suspend drops the
+     relay socket anyway, so this just gets the next report out early. */
+  powerMonitor.on("resume", push);
+}
+
 function createAppWindow(): void {
   const target = appUrl();
   if (!target) return; // no web surface in this bundle — status window stays
@@ -645,6 +676,7 @@ app.whenReady().then(async () => {
     ),
   );
   wireNotifications();
+  wirePresence();
 
   const snap = await statusWithLiveAgents();
   const needsApproval = snap.agents.some(

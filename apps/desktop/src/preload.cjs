@@ -70,6 +70,17 @@ contextBridge.exposeInMainWorld("lilos", {
   notifications: {
     post: (notification) => ipcRenderer.send("lilos:notify", notification),
   },
+  /* #561 presence: the renderer polls the shell's idle/lock reading and
+     reports it to the relay; main pushes transitions over lilos:presence
+     so a lock clears the quiet-phone window without waiting a tick. */
+  presence: {
+    current: () => ipcRenderer.invoke("lilos:presence"),
+    onChange: (cb) => {
+      const listener = (_e, p) => cb(p);
+      ipcRenderer.on("lilos:presence", listener);
+      return () => ipcRenderer.removeListener("lilos:presence", listener);
+    },
+  },
   onOpenConversation: (cb) => {
     const listener = (_e, id) => {
       if (typeof id === "string") cb(id);
