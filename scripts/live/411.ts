@@ -153,6 +153,18 @@ const appOps: AppOps = {
   }),
   profile: async () => ({ userName: "Oscar", companyName: "LilOS" }),
   openWorkbench: async () => {},
+  startThread: async () => {
+    throw new Error("not exercised in this script");
+  },
+  hireEmployee: async () => {
+    throw new Error("not exercised in this script");
+  },
+  updateSelf: async () => {
+    throw new Error("not exercised in this script");
+  },
+  addFolder: async () => {
+    throw new Error("not exercised in this script");
+  },
 };
 const surfaces = await serveSurfaces(0, {
   appOps: (_session, binding) => (binding ? appOps : undefined),
