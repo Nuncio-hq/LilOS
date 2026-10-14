@@ -180,7 +180,6 @@ const appOps: AppOps = {
   addFolder: async () => {
     throw new Error("not exercised in this script");
   },
-
 };
 const surfaces = await serveSurfaces(0, {
   appOps: (_session, binding) => (binding ? appOps : undefined),
