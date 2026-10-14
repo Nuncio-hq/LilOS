@@ -7,18 +7,24 @@ export function NavItem({
   label,
   count,
   tone,
+  active,
   onClick,
 }: {
   icon: React.ReactNode;
   label: string;
   count?: number;
   tone?: "amber";
+  active?: boolean;
   onClick?: () => void;
 }) {
   return (
     <button
       onClick={onClick}
-      className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-[13.5px] hover:bg-sidebar-accent [&_svg]:size-4 [&_svg]:text-primary"
+      className={cn(
+        "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-[13.5px] hover:bg-sidebar-accent [&_svg]:size-4 [&_svg]:text-primary",
+        active &&
+          "bg-primary/12 font-medium text-tint-text hover:bg-primary/15",
+      )}
     >
       {icon}
       {label}

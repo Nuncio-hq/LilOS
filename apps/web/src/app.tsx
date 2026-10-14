@@ -73,6 +73,7 @@ import { say, sayError, toast } from "./lib/toast";
 import { ToastView } from "./lib/toast-view";
 import { DmPage } from "./pages/dm";
 import { IndexPage } from "./pages/index";
+import { SessionsPage } from "./pages/sessions";
 import { SettingsPane } from "./settings/pane";
 import { isSettingsShortcut } from "./settings/state";
 
@@ -587,6 +588,18 @@ function AppShell() {
         onAddFolder={() => {}}
         onHire={canHire ? openHire : undefined}
         badges={badges}
+        sessions={{
+          /* The same needs-you total the employee badges carry — one sum,
+             never a second derivation. */
+          count:
+            Object.values(badges).reduce((n, b) => n + (b.approvals ?? 0), 0) ||
+            undefined,
+          active: pathname === "/sessions",
+          onOpen: () => {
+            navOpen.set(false);
+            void navigate({ to: "/sessions" });
+          },
+        }}
         status={comps}
         buildLabel={label}
         onOpenStatus={() => setStatusOpen(true)}
@@ -703,6 +716,11 @@ const indexRoute = createRoute({
   path: "/",
   component: IndexPage,
 });
+const sessionsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sessions",
+  component: SessionsPage,
+});
 const dmRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/dm/$employeeId",
@@ -726,6 +744,7 @@ const focusRoute = createRoute({
 });
 const routeTree = rootRoute.addChildren([
   indexRoute,
+  sessionsRoute,
   dmRoute,
   threadRoute,
   focusRoute,

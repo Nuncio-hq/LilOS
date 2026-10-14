@@ -59,6 +59,7 @@ export {
   QuestionCard,
 } from "./employees/question-card";
 export { waitingOnQuestion } from "./employees/question-gate";
+export { SessionsScreen } from "./employees/sessions-screen";
 export {
   SubagentSheet,
   SubagentsCard,
@@ -86,6 +87,8 @@ export type {
   ProjectGroup,
   PullRequestRef,
   QuestionOption,
+  SessionListGroups,
+  SessionListRow,
   SessionState,
   SessionTurn,
   SubagentRow,

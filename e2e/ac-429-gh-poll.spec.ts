@@ -32,7 +32,6 @@ import {
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
 const repo = path.resolve(here, "..");
-const webDir = path.join(repo, "apps", "web");
 const fakeGh = path.join(repo, "packages", "host", "test", "fake-gh");
 
 const SHOTS = path.join(repo, "test-results", "ac-429");

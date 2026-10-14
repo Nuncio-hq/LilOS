@@ -81,6 +81,7 @@ import { nav, type Props, type Routes, type TabRoutes } from "./routes";
 import { BrowseMac } from "./screens/browse-mac";
 import { Dm, FolderPicker, ModelPicker } from "./screens/dm";
 import { Activity, Home, NeedsYouSlot, useHomeWire } from "./screens/home";
+import { Sessions } from "./screens/sessions";
 import {
   Background,
   Plan,
@@ -774,6 +775,11 @@ export default function App() {
                   name="Tabs"
                   component={Tabs}
                   options={{ headerShown: false }}
+                />
+                <Stack.Screen
+                  name="Sessions"
+                  component={Sessions}
+                  options={{ title: "Sessions" }}
                 />
                 <Stack.Screen name="Dm" component={Dm} options={CHAT_HEADER} />
                 <Stack.Screen

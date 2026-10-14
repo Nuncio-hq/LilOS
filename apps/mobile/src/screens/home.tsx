@@ -83,7 +83,7 @@ export function useHomeWire(): {
 
 /** Ages re-render every 30s so "4m" keeps ticking without a pull-to-refresh. */
 const AGE_TICK_MS = 30_000;
-function useNowMs(): number {
+export function useNowMs(): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const tick = setInterval(() => setNow(Date.now()), AGE_TICK_MS);
@@ -135,6 +135,11 @@ export function Home() {
       onOpenMac={() => nav.navigate("Mac")}
       onOpenEmployee={(employeeId) => nav.navigate("Dm", { employeeId })}
       onOpenChannel={() => soon("Channels")}
+      sessions={{
+        /* The same needs-you total the employee rows carry. */
+        count: openAsks(wire.asks).length || undefined,
+        onOpen: () => nav.navigate("Sessions"),
+      }}
     />
   );
 }

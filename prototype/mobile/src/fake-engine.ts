@@ -6,6 +6,8 @@ import type {
   OrbState,
   ProjectGroup,
   PullRequestRef,
+  SessionListGroups,
+  SessionListRow,
   SessionTurn,
   SubagentRow,
   ThreadDetail,
@@ -137,6 +139,58 @@ export const $employees = computed($threads, (threads): EmployeeRow[] =>
             : (IDLE_NOW[e.id] ?? ""),
     };
   }),
+);
+
+/* The Sessions screen's read mark: thread ids Oscar has opened — a
+   finished thread never opened is "done since you last looked" (the
+   web list's readSeq/finishedSeq watermark). */
+const readThreads = atom<ReadonlySet<string>>(new Set());
+export function markThreadRead(id: string) {
+  const s = readThreads.get();
+  if (!s.has(id)) readThreads.set(new Set(s).add(id));
+}
+
+/* Every thread across employees in one list — the same split the web
+   Sessions view makes: needs you / working / recently finished with
+   never-opened threads first. */
+export const $sessionGroups = computed(
+  [$threads, readThreads],
+  (threads, read): SessionListGroups => {
+    const needsYou: SessionListRow[] = [];
+    const running: SessionListRow[] = [];
+    const finished: SessionListRow[] = [];
+    for (const t of threads) {
+      const base = {
+        id: t.id,
+        employeeId: t.employee.id,
+        employeeName: t.employee.name,
+        tone: t.employee.tone,
+        title: t.title,
+        folder: t.folder?.name,
+        when: t.when,
+      };
+      if (t.state === "needs-you") {
+        const ask = t.entries.find((e) => e.kind === "agent" && e.approval) as
+          | AgentEntry
+          | undefined;
+        needsYou.push({
+          ...base,
+          state: "needs-you",
+          live: ask?.approval
+            ? `Approve: ${ask.approval.command ?? ask.approval.reason ?? ""}`
+            : undefined,
+        });
+      } else if (t.state === "working") {
+        running.push({ ...base, state: "working", live: liveLine(t) });
+      } else {
+        finished.push({ ...base, state: t.state, unread: !read.has(t.id) });
+      }
+    }
+    finished.sort(
+      (a, b) => Number(b.unread ?? false) - Number(a.unread ?? false),
+    );
+    return { needsYou, running, finished };
+  },
 );
 
 /** #engineering shows Builder's orb + dots only while Builder is at work. */
