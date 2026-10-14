@@ -108,6 +108,8 @@ export const NOT_AGENT_FACING: Record<string, string> = {
     "the engine's approval policy is the user's global Setting — an agent must never lower its own approval bar (#106)",
   "session.ask":
     "the Workbench's 'Suggest' side request is a user control — the agent answers it, it never sends it (#584)",
+  "session.compact":
+    "agents compact through their own engine — the button is the user's (#560)",
   "models.list": "the model pick list is the user's",
   "commands.list":
     "slash commands are Oscar's composer input — the agent types prompts, it never opens the `/` menu",

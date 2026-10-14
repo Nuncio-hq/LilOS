@@ -16,6 +16,7 @@ import {
   JobsListParams,
   JobsStopParams,
   SessionAskParams,
+  SessionCompactParams,
 } from "../engine/methods";
 import { ModelOption, ModelProvider, ModelsListParams } from "../engine/models";
 import { ApprovalOutcome, EngineRequest } from "../engine/requests";
@@ -243,6 +244,9 @@ export const AppMethod = z.enum([
   /* The composer's `/` menu — the engine's slash commands + skills list,
      filtered as Oscar types. */
   "commands.list",
+  /* Compact now (#560): the context meter's button — forwarded to the
+     engine's session.compact. */
+  "session.compact",
   /* Phone pairing (#153): minting a grant is the opt-in that also binds the
      Tailscale listener; devices.list/revoke manage what the grant exchange
      created. `pairing.disable` turns phone access off again. */
@@ -292,6 +296,7 @@ export const ENGINE_PASSTHROUGH_METHODS = [
   "approvals.setPolicy",
   "session.ask",
   "commands.list",
+  "session.compact",
 ] as const;
 export type EnginePassthroughMethod =
   (typeof ENGINE_PASSTHROUGH_METHODS)[number];
@@ -308,6 +313,7 @@ export const ENGINE_PASSTHROUGH_PARAMS = {
   "approvals.setPolicy": ApprovalsSetPolicyParams,
   "session.ask": SessionAskParams,
   "commands.list": CommandsListParams,
+  "session.compact": SessionCompactParams,
 } as const satisfies Record<EnginePassthroughMethod, z.ZodType>;
 
 const HelloClient = z

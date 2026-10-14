@@ -112,10 +112,12 @@ export type WorkspaceIntent = z.infer<typeof WorkspaceIntent>;
  * turn itself — it lives here until the next `turn.started` clears it.
  * `kind` mirrors the ui `SessionAlert` kinds: "sleep" = the Mac slept or
  * the engine restarted (amber), "model"/"generic" = the turn ended on
- * `turn.completed.error` / the prompt never dispatched (red).
+ * `turn.completed.error` / the prompt never dispatched (red), "context" =
+ * the context window was full (#560 — offers Compact now / a new session
+ * instead of a bare retry).
  */
 export const TurnFailure = z.strictObject({
-  kind: z.enum(["model", "sleep", "generic"]),
+  kind: z.enum(["model", "sleep", "generic", "context"]),
   /** The user-facing failure line (the engine's error text or the
       interrupt reason). */
   text: z.string().min(1),

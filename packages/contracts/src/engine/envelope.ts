@@ -77,8 +77,28 @@ export const RPC_ERRORS = {
      well-formed and may succeed once the backend is back (retryable,
      user-visible as the app-code `engine_unavailable`). */
   BACKEND_DOWN: -32006,
+  /* The turn's prompt could not be served because the session's context
+     window is full/exhausted (#560) — the caller can compact or start a
+     fresh session; retrying the same prompt fails the same way. */
+  CONTEXT_LIMIT: -32007,
 } as const;
 export type RpcErrorCode = (typeof RPC_ERRORS)[keyof typeof RPC_ERRORS];
+
+/** Provider error text that means the context window was exhausted (#560)
+    — engines stamp turn.completed.errorCode CONTEXT_LIMIT on a match; the
+    harness falls back to this when an engine reports no typed code. */
+export const CONTEXT_LIMIT_TEXT =
+  /context.{0,40}(length|limit|window|exceed|too (long|large|big)|full)|maximum context|prompt is too long|context_length_exceeded|tokens.{0,20}(exceed|limit)|out of (context|token) (room|space|budget)/i;
+
+/** Compact token count for the compaction note — 245k / 38.2k / 900. */
+export const fmtTokens = (n: number): string =>
+  n >= 100_000
+    ? `${Math.round(n / 1000)}k`
+    : n >= 10_000
+      ? `${(Math.round(n / 100) / 10).toFixed(1)}k`
+      : n >= 1000
+        ? `${(Math.round(n / 100) / 10).toFixed(1)}k`.replace(/\.0k$/, "k")
+        : `${n}`;
 
 export const rpcError = (
   code: RpcErrorCode,

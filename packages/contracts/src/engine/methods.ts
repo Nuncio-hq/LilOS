@@ -274,6 +274,31 @@ export const SessionRewindResult = z.object({
 });
 export type SessionRewindResult = z.infer<typeof SessionRewindResult>;
 
+// ── session.compact (capability: compact) ───────────────────────────────────
+/**
+ * Compact the session's context in place (issue #560): the engine summarizes
+ * older turns so the context meter drops — the session keeps its ref,
+ * transcript and working state. The result lands as a `session.compacted`
+ * event (the same event automatic compaction emits), so this method returns
+ * only whether the request committed; counts come with the event.
+ */
+export const SessionCompactParams = z.strictObject({
+  sessionId: SessionId,
+});
+export type SessionCompactParams = z.infer<typeof SessionCompactParams>;
+export const SessionCompactResult = z.object({
+  /** `compressed` when older turns were summarized now, `skipped` when the
+      engine decided the context was already small enough to keep,
+      `pending` when the engine accepted but still compacts in the
+      background — its `session.compacted` event lands when it finishes. */
+  status: z.enum(["compressed", "skipped", "pending"]),
+  beforeTokens: z.number().optional(),
+  afterTokens: z.number().optional(),
+  beforeMessages: z.number().optional(),
+  afterMessages: z.number().optional(),
+});
+export type SessionCompactResult = z.infer<typeof SessionCompactResult>;
+
 // ── session.moveWorkspace (capability: workspace_move, #581) ────────────────
 /**
  * Re-home the session's working folder (issue #581): the engine moves the
@@ -457,6 +482,12 @@ export const ENGINE_METHODS: Record<string, EngineMethodContract> = {
     result: SessionRewindResult,
     doc: "Drop all user turns after `toTurn` from the session's context (issue #134). Refuses INVALID_STATE while a turn runs. Engines on transports without history rewind (ACP today) don't declare the capability.",
     capability: "rewind",
+  },
+  "session.compact": {
+    params: SessionCompactParams,
+    result: SessionCompactResult,
+    doc: "Summarize the session's older turns in place so the context meter drops (issue #560). Refuses INVALID_STATE while a turn runs; the compacted result also lands as a `session.compacted` event. Engines that can't compact don't declare the capability.",
+    capability: "compact",
   },
   "session.moveWorkspace": {
     params: SessionMoveWorkspaceParams,

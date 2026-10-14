@@ -22,6 +22,7 @@ import {
   coalesceTurnDeltas,
   ENGINE_METHODS,
   ENGINE_PROTOCOL,
+  COMPACT_CAPABILITY,
   type EngineEvent,
   type EngineEventType,
   EVENT_LOG_CAP,
@@ -42,6 +43,7 @@ import {
   RPC_ERRORS,
   SESSION_META_CAPABILITY,
   type SessionAskParams,
+  type SessionCompactParams,
   type SessionMoveWorkspaceParams,
   type SessionRewindParams,
   type SessionSetAccessParams,
@@ -391,6 +393,8 @@ export class FakeEngine {
         return this.sessionSteer(parsed.data as SessionSteerParams);
       case "session.rewind":
         return this.sessionRewind(parsed.data as SessionRewindParams);
+      case "session.compact":
+        return this.sessionCompact(parsed.data as SessionCompactParams);
       case "session.moveWorkspace":
         return this.sessionMoveWorkspace(
           parsed.data as SessionMoveWorkspaceParams,
@@ -486,6 +490,7 @@ export class FakeEngine {
       ...(this.capOn("side_prompt") ? [SIDE_PROMPT_CAPABILITY] : []),
       ...(this.capOn("workspace_move") ? [WORKSPACE_MOVE_CAPABILITY] : []),
       ...(this.capOn("commands") ? [COMMANDS_CAPABILITY] : []),
+      ...(this.capOn("compact") ? [COMPACT_CAPABILITY] : []),
       /* #106: the policy the Settings Approvals section writes via
          approvals.setPolicy — `current` reports the live value. */
       ...(this.capOn("approval_policy")
@@ -951,6 +956,59 @@ export class FakeEngine {
       s.steers.length = 0;
     }
     return { removed };
+  }
+
+  /**
+   * `session.compact` (#560): summarize older turns in place — the billed
+   * context drops to a compacted share and the stored ref rotates like a
+   * real compressor's rewrite. The result lands as a `session.compacted`
+   * event (the same event the fake's own preflight compaction raises) so
+   * the thread gets exactly one note either way.
+   */
+  private sessionCompact(p: SessionCompactParams) {
+    const s = this.require(p.sessionId);
+    if (s.state === "closed")
+      throw new RpcError(
+        RPC_ERRORS.INVALID_STATE,
+        `session ${s.id} is closed`,
+      );
+    if (s.turn)
+      throw new RpcError(
+        RPC_ERRORS.INVALID_STATE,
+        `session ${s.id} has a running turn — interrupt it first`,
+      );
+    const r = this.compactNow(s);
+    if (!r) return { status: "skipped" as const };
+    return {
+      status: "compressed" as const,
+      beforeTokens: r.before,
+      afterTokens: r.after,
+      beforeMessages: r.beforeMessages,
+      afterMessages: r.afterMessages,
+    };
+  }
+
+  /** One compaction, manual or preflight: rotate the ref, drop the billed
+      context to ~12% and emit the typed event once. Nothing worth
+      compressing (no measured context yet) skips without an event. */
+  private compactNow(s: FakeSession) {
+    const before = s.usage.context ?? 0;
+    if (before <= 0) return undefined;
+    const after = Math.max(1, Math.floor(before * 0.12));
+    const beforeMessages = s.userTurns.length * 2;
+    const afterMessages = 1;
+    s.usage = { ...s.usage, context: after };
+    /* A real compressor re-keys the stored session — the ref rotation is
+       part of the compaction, not a separate event the app must coalesce. */
+    this.rotateSessionRef(s.id);
+    this.emit(s, "session.compacted", {
+      beforeTokens: before,
+      afterTokens: after,
+      beforeMessages,
+      afterMessages,
+      usage: s.usage,
+    });
+    return { before, after, beforeMessages, afterMessages };
   }
 
   /**
@@ -1420,6 +1478,47 @@ export class FakeEngine {
         await new Promise<void>((resolve) => {
           s.holdTurn = resolve;
         });
+      /* #560: the fake's preflight compaction — a prompt arriving with the
+         context already at the window compacts first like a real engine
+         does, so the note lands inside the transcript ahead of this turn's
+         answer. The meter reads Full between turns (the Full-state offer is
+         testable) and drops when the next turn commits. */
+      if (
+        this.capOn("compact") &&
+        (s.usage.contextWindow ?? 0) > 0 &&
+        (s.usage.context ?? 0) >= (s.usage.contextWindow ?? 0)
+      ) {
+        this.compactNow(s);
+      }
+      /* #560 AC-4 probe: a prompt starting with "contextfull" fails the
+         turn on the context limit — the meter pins Full and the failure
+         surfaces the compact/new-session offer instead of a bare retry. */
+      if (/^\s*contextfull\b/i.test(scripted)) {
+        for (const w of words(
+          "Reading the workspace to find the right files. The request needs more room than this session's context window has left. ",
+        )) {
+          await this.sleep(s);
+          this.emit(s, "turn.delta", {
+            turnId,
+            stream: "reasoning",
+            delta: w,
+          });
+        }
+        const error =
+          "context window exceeded: the session's context is full";
+        if (s.usage.contextWindow)
+          s.usage = { ...s.usage, context: s.usage.contextWindow };
+        this.emit(s, "turn.completed", {
+          turnId,
+          stopReason: "refusal",
+          error,
+          errorCode: RPC_ERRORS.CONTEXT_LIMIT,
+        });
+        if (s.state !== "closed") this.setState(s, "idle");
+        s.turn = undefined;
+        this.pumpSteers(s);
+        return { turnId, stopReason: "refusal" as const };
+      }
       // Deterministic failure path (#32): a prompt starting with "fail" ends
       // the turn as a refusal with an error, so failure surfaces are testable.
       // Reasoning is paced over ~2s like a real turn — an instant failure
