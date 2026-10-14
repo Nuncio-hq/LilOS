@@ -12,6 +12,7 @@ import {
   ApprovalsSetPolicyParams,
   ApprovalsSetPolicyResult,
 } from "../engine/approvals";
+import { CommandsListParams, CommandsListResult } from "../engine/commands";
 import { ModelsListParams, ModelsListResult } from "../engine/models";
 import { ForgePrListItem } from "../host/forge";
 import { ChannelMessage } from "../index";
@@ -314,6 +315,8 @@ export const appProtocolSchemas = {
   ModelsListResult,
   ApprovalsSetPolicyParams,
   ApprovalsSetPolicyResult,
+  CommandsListParams,
+  CommandsListResult,
   /* workbench_open's engine->app event (#340) */
   WorkbenchOpenTarget,
   WorkbenchOpenParams,

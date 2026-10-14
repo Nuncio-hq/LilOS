@@ -8,6 +8,10 @@ import {
   type ApprovalsSetPolicyParams,
   BACKGROUND_JOBS_CAPABILITY,
   type Capability,
+  COMMANDS_CAPABILITY,
+  type CommandItem,
+  type CommandsExecParams,
+  type CommandsListParams,
   type ContentBlock,
   ENGINE_METHODS,
   ENGINE_PROTOCOL,
@@ -636,6 +640,10 @@ export class HermesEngine {
         return this.jobsList(parsed.data as JobsListParams);
       case "jobs.stop":
         return this.jobsStop(parsed.data as JobsStopParams);
+      case "commands.list":
+        return this.commandsList(parsed.data as CommandsListParams);
+      case "commands.exec":
+        return this.commandsExec(parsed.data as CommandsExecParams);
       default:
         throw new RpcError(
           RPC_ERRORS.METHOD_NOT_FOUND,
@@ -750,6 +758,14 @@ export class HermesEngine {
     /* #584: `session.ask` runs a hidden throwaway gateway session —
        supported wherever `session.create`/`prompt.submit` are (WS). */
     capabilities.push(SIDE_PROMPT_CAPABILITY);
+    /* The composer's `/` menu — `complete.slash` lists profile + project
+       skills for any session (or session-less with profile+cwd); exec is
+       WS-only and refuses per-session on ACP like rewind/moveWorkspace. */
+    capabilities.push({
+      ...COMMANDS_CAPABILITY,
+      description:
+        "commands.list maps to hermes `complete.slash` (profile commands + folder-local skills); commands.exec runs slash.exec / command.dispatch — WS sessions only.",
+    });
     /* #106: the global approval policy — `approvals.setPolicy` writes
        `approvals.mode`; `current` reports the live value when a `config.get`
        read or a setPolicy this run knows it (omitted otherwise). */
@@ -852,6 +868,10 @@ export class HermesEngine {
       this.sessions.set(id, s);
       this.byRuntimeSid.set(s.runtimeSid, s);
       this.persistSession(s);
+      /* The first `complete.slash` call pays the profile+project skill scan
+         (~300ms cold); warm it at open so the composer's first `/` answers
+         in interactive time. Fire-and-forget: a refused call loses nothing. */
+      void this.commandsList({ sessionId: id }).catch(() => {});
       /* #106: a conversation on Full access gets the session yolo hint — a
          round-trip saver only, the harness still auto-answers approvals
          itself, so a refused/absent hint changes nothing. */
@@ -1507,6 +1527,129 @@ export class HermesEngine {
       this.sessionRegistry?.put(p.sessionId, { ...rec, cwd });
     }
     return { cwd };
+  }
+
+  /* `/` commands & skills — the composer's slash menu. `complete.slash`
+     (tui_gateway/methods_complete.py) is scoped to the session's profile
+     home + cwd so project-local skills list; a session-less call (home
+     composer) passes profile + cwd explicitly, same as the TUI's new-chat
+     draft. */
+  private async commandsList(p: CommandsListParams): Promise<CommandItem[]> {
+    const s = p.sessionId ? this.sessions.get(p.sessionId) : undefined;
+    /* `cwd`/`cwd_explicit` scope folder-local skills on session-less calls,
+       but older gateways' contracts forbid them — retry without on a 4000
+       invalid-params refusal rather than losing the menu. */
+    const slashParams = {
+      text: `/${p.query ?? ""}`,
+      ...(s ? { session_id: s.runtimeSid } : {}),
+      ...(p.agent ? { profile: p.agent } : {}),
+      /* session_id already binds the session's cwd — only a session-less
+         draft sends its picked folder explicitly. */
+      ...(p.cwd ? { cwd: p.cwd, cwd_explicit: true } : {}),
+    };
+    let r: {
+      items?: {
+        text?: unknown;
+        display?: unknown;
+        meta?: unknown;
+        kind?: unknown;
+      }[];
+    };
+    try {
+      r = (await this.gw("complete.slash", slashParams)) as typeof r;
+    } catch (e) {
+      if (!(e instanceof RpcError && e.code === 4000)) throw e;
+      const { cwd: _cwd, cwd_explicit: _cwde, ...rest } = slashParams;
+      r = (await this.gw("complete.slash", rest)) as typeof r;
+    }
+    const seen = new Set<string>();
+    const items: CommandItem[] = [];
+    for (const it of r.items ?? []) {
+      const name = String(it.text ?? "").replace(/^\/+/, "");
+      if (!name || seen.has(name)) continue;
+      seen.add(name);
+      items.push({
+        name,
+        description: typeof it.meta === "string" ? it.meta : "",
+        kind: it.kind === "skill" ? "skill" : "command",
+      });
+    }
+    return items;
+  }
+
+  /* Running a picked command mirrors the TUI: `slash.exec` for built-ins
+     (its own router already forwards pending-input commands and bundles to
+     `command.dispatch`, and answers 4018 for skills) — a 4018 retries via
+     `command.dispatch`, which is the only path skills can take. A `send`
+     directive expands to the prompt the next turn runs; everything else is
+     output text for the thread. */
+  private async commandsExec(p: CommandsExecParams) {
+    const s = this.require(p.sessionId);
+    if (s.state === "closed")
+      throw new RpcError(RPC_ERRORS.INVALID_STATE, `session ${s.id} is closed`);
+    if (s.driver !== "ws")
+      throw new RpcError(
+        RPC_ERRORS.METHOD_NOT_FOUND,
+        "commands.exec needs the WS transport — ACP exposes no slash commands",
+      );
+    if (s.backendDead) await this.ensureLive(s);
+    const command = `/${p.name}${p.args ? ` ${p.args}` : ""}`;
+    let r: Record<string, unknown>;
+    try {
+      r = (await this.gw("slash.exec", {
+        command,
+        session_id: s.runtimeSid,
+      })) as Record<string, unknown>;
+    } catch (e) {
+      /* 4018 = the gateway's "route through command.dispatch" answer. */
+      if (!(e instanceof RpcError && e.code === 4018)) throw e;
+      r = await this.dispatchSlashCommand(s.runtimeSid, p.name, p.args ?? "");
+    }
+    return this.slashResult(r);
+  }
+
+  private async dispatchSlashCommand(
+    runtimeSid: string,
+    name: string,
+    arg: string,
+  ): Promise<Record<string, unknown>> {
+    const r = (await this.gw("command.dispatch", {
+      name,
+      arg,
+      session_id: runtimeSid,
+    })) as Record<string, unknown>;
+    /* A quick-command alias names the command it forwards to — run the
+       target instead of reporting the alias itself. */
+    if (r?.type === "alias" && typeof r.target === "string" && r.target)
+      return this.dispatchSlashCommand(runtimeSid, r.target, arg);
+    return r;
+  }
+
+  private slashResult(r: Record<string, unknown>) {
+    const type = r?.type;
+    /* "send" and "skill" both carry `message` — the expanded text the next
+       turn submits; `display` is only the UI's compact echo of it. */
+    if ((type === "send" || type === "skill") && typeof r.message === "string")
+      return {
+        outcome: "prompt" as const,
+        prompt: r.message,
+        ...(typeof r.notice === "string" && r.notice
+          ? { notice: r.notice }
+          : {}),
+      };
+    const output =
+      typeof r?.output === "string"
+        ? r.output
+        : typeof r?.display === "string"
+          ? r.display
+          : "(no output)";
+    return {
+      outcome: "output" as const,
+      output,
+      ...(typeof r?.warning === "string" && r.warning
+        ? { notice: r.warning }
+        : {}),
+    };
   }
 
   /* #584: `session.ask` — a one-shot side question answered by a HIDDEN

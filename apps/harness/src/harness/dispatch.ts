@@ -83,6 +83,17 @@ export async function dispatchPrompt(
     this.insertQueued(binding, message);
     return true;
   }
+  /* The `/` menu's send: on a `commands` engine the message execs the
+     command rather than prompting — output posts as the employee's reply;
+     a skill expands into the prompt this dispatch then runs. */
+  let promptText = message.text;
+  const slash = this.slashFor(message);
+  if (slash && this.hasCapability("commands")) {
+    const outcome = await this.execSlashCommand(binding, message, slash);
+    if (outcome.kind === "settled") return false;
+    if (outcome.kind === "requeued") return true;
+    promptText = outcome.text;
+  }
   // A pick held while the last turn ran lands now, before this prompt —
   // the session is idle so setModel applies straight away (#92).
   await this.applyHeldPick(binding);
@@ -113,8 +124,8 @@ export async function dispatchPrompt(
   }
   // Text block only when there is text — an image-only message prompts
   // with just image blocks rather than an empty text block (#112).
-  const content: ContentBlock[] = message.text
-    ? [{ type: "text", text: message.text }, ...images]
+  const content: ContentBlock[] = promptText
+    ? [{ type: "text", text: promptText }, ...images]
     : images;
   if (!content.length) {
     // Every attachment failed to load and no text was typed — nothing to

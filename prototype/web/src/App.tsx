@@ -36,8 +36,10 @@ import {
   type ModelOption,
   type ModelProvider,
   type ModelVisibility,
+  type SlashItem,
   choiceFor,
   effortLabel,
+  parseSlashDraft,
   type Human,
   type HumanFn,
   type MessageHit,
@@ -218,6 +220,23 @@ const MOCK_PROFILES: EngineProfile[] = [
   { id: "research", model: MODELS[0].id, soul: "Deep research with cited sources.", skills: 11 },
   { id: "ops", model: MODELS[3].id, soul: "Runs dev_server and HPC chores.", skills: 14 },
 ]
+
+/* The built-in engine's `/` list (issue #109) — what commands.list returns:
+   commands answer with their output; skills expand into a prompt turn. */
+const PROTOTYPE_COMMANDS: SlashItem[] = [
+  { name: "help", description: "Show the engine's command list", kind: "command" },
+  { name: "compact", description: "Summarize the transcript into a compact note", kind: "command" },
+  { name: "usage", description: "Token usage for this session", kind: "command" },
+  { name: "model", description: "Pick the session's model", kind: "command" },
+  { name: "rewind", description: "Rewind to the last message", kind: "command" },
+  { name: "review", description: "Review the turn's diff like a reviewer", kind: "skill", argsHint: "[scope]" },
+  { name: "brainstorm", description: "Structured idea generation", kind: "skill", argsHint: "[topic]" },
+]
+/* Canned exec output for the commands whose behavior isn't a LilOS surface. */
+const COMMAND_OUT: Record<string, string> = {
+  usage: "in 128.4k · out 9.1k · cache 52k · ctx 137.5k",
+  compact: "Session compacted — transcript summarized into a compact note.",
+}
 
 const COMPANY_CHANNELS: Channel[] = [{ id: "announcements", name: "announcements", employees: [] }]
 const PROJECTS: Project[] = [
@@ -1741,6 +1760,38 @@ export default function App() {
   }, [folders])
   const fileMentions = (folderId: string | null | undefined) =>
     folderId ? fileMentionSearch.get(folderId) : undefined
+  /* The `/` menu (issue #109): the built-in engine's fixed command list —
+     over the wire these come back from commands.list. */
+  const commandsSearch = useMemo(
+    () => (q: string) =>
+      Promise.resolve(PROTOTYPE_COMMANDS.filter((c) => c.name.includes(q.toLowerCase()))),
+    [],
+  )
+  /* Which surface's model picker `/model` opened (thread id | "draft"). */
+  const [modelPickerOpen, setModelPickerOpen] = useState<string | null>(null)
+  /* `/rewind`/`/undo` target: the last user message — the root when the
+     user hasn't replied yet. */
+  const lastUserId = (root: Extract<Msg, { kind: "msg" }>) => {
+    const rows = (root.thread?.replies ?? []).map((r, i) => ({ r, id: r.id ?? `p-${i}` }))
+    return rows.filter((x) => x.r.from === "oscar").at(-1)?.id ?? root.id
+  }
+  /* The host-owned commands: `/model` opens the surface's own picker,
+     `/rewind`/`/undo` rewind the last user message; anything else posts
+     and the engine runs it. */
+  const slashCommand = (key: string, pickerReady: boolean, root?: Extract<Msg, { kind: "msg" }>) =>
+    (name: string): boolean => {
+      if (name === "model") {
+        if (!pickerReady) return false
+        setModelPickerOpen(key)
+        return true
+      }
+      if (name === "rewind" || name === "undo") {
+        if (!root) return false
+        rewindTo(root, lastUserId(root))
+        return true
+      }
+      return false
+    }
   const sendTop = (text: string, pick?: WsPick, files?: AttachedFile[]) => {
     const target = view.kind === "dm" ? view.id : mentionIn(text)?.id
     const id = `s-${Date.now()}`
@@ -1749,7 +1800,22 @@ export default function App() {
     const msg: Msg = { kind: "msg", id, from: "oscar", time: nowTime(), text: bold(text), attachments: files?.length ? files : undefined, ...(target && pickFor ? { thread: { session: newSession(), replies: [], model: pickFor.model, provider: pickFor.provider, effort: pickFor.effort, fast: pickFor.fast, ws } } : {}) }
     if (target) setDraftPick(({ [target]: _, ...rest }) => rest)
     setFeeds((fs) => ({ ...fs, [feedKey]: [...(fs[feedKey] ?? []), msg] }))
-    if (target) { showThread(id); runTurn(feedKey, id, target, text, ws, files) }
+    if (target) {
+      showThread(id)
+      /* A `/`-command first message (issue #109): the send lands, the
+         engine binds, the command execs — canned output for commands,
+         a prompt-expansion turn for skills. */
+      const cmd = parseSlashDraft(text)
+      const item = cmd && PROTOTYPE_COMMANDS.find((c) => c.name === cmd.name)
+      if (cmd && item?.kind === "skill") {
+        runTurn(feedKey, id, target, `Run the ${item.name} skill${cmd.args ? ` with: ${cmd.args}` : ""}`, ws, files)
+      } else if (cmd && item) {
+        const out = COMMAND_OUT[cmd.name] ?? `Commands: ${PROTOTYPE_COMMANDS.map((c) => `/${c.name}`).join("  ")}`
+        setTimeout(() => mapRoot(feedKey, id, (t) => ({ ...t, replies: [...(t.replies ?? []), { from: target, time: nowTime(), text: out }] })), 600)
+      } else {
+        runTurn(feedKey, id, target, text, ws, files)
+      }
+    }
   }
   // Reply inside a thread = same Hermes session. While a turn runs, Enter buffers into steerBuf: an
   // engine with session.steer lands it at the next tool boundary; one without queues it (queued tray)
@@ -1768,7 +1834,24 @@ export default function App() {
       return
     }
     const lead = view.kind === "dm" ? view.id : mentionIn(text)?.id ?? root.thread?.replies.find((r) => emp(r.from))?.from ?? mentionIn(root.text)?.id
-    if (lead) runTurn(feedKey, root.id, lead, text, undefined, files)
+    if (lead) {
+      /* A `/` send (issue #109): commands answer with the exec's output —
+         the canned lines a real engine returns; a skill expands into the
+         turn's prompt — so the user's `/name` row stays verbatim and the
+         turn reads the expansion, like the wire's prompt outcome. */
+      const cmd = parseSlashDraft(text)
+      const item = cmd && PROTOTYPE_COMMANDS.find((c) => c.name === cmd.name)
+      if (cmd && item?.kind === "skill") {
+        runTurn(feedKey, root.id, lead, `Run the ${item.name} skill${cmd.args ? ` with: ${cmd.args}` : ""}`, undefined, files)
+      } else if (cmd) {
+        const out = item
+          ? (COMMAND_OUT[cmd.name] ?? `Commands: ${PROTOTYPE_COMMANDS.map((c) => `/${c.name}`).join("  ")}`)
+          : `/${cmd.name}: unknown command`
+        setTimeout(() => mapRoot(feedKey, root.id, (t) => ({ ...t, replies: [...t.replies, { from: lead, time: nowTime(), text: out }] })), 600)
+      } else {
+        runTurn(feedKey, root.id, lead, text, undefined, files)
+      }
+    }
   }
   const unqueue = (root: Extract<Msg, { kind: "msg" }>, i: number) =>
     mapRoot(feedKey, root.id, (t) => ({ ...t, queue: (t.queue ?? []).filter((_, j) => j !== i) }))
@@ -2108,6 +2191,8 @@ export default function App() {
       draft={threadDraft} onDraftChange={setThreadDraft}
       onRewind={(id) => rewindTo(openThread, id)}
       mentionables={employees} onSearchFiles={fileMentions(openThread.thread.ws?.folder)}
+      onSearchCommands={commandsSearch} onCommand={slashCommand(openThread.id, canModels, openThread)}
+      modelOpen={modelPickerOpen === openThread.id} onModelOpen={(o) => setModelPickerOpen(o ? openThread.id : null)}
       transcriptNote={transcriptNoteOf(openThread.thread)}
       lastSent={lastSentIn(openThread)}
       onRetry={(e) => retry(openThread, e)} onUnqueue={(i) => unqueue(openThread, i)} onSendQueued={(i) => sendQueuedNow(openThread, i)}
@@ -2172,6 +2257,8 @@ export default function App() {
           lastSent={lastSentIn(openThread)}
           onRetry={(e) => retry(openThread, e)} onUnqueue={(i) => unqueue(openThread, i)} onSendQueued={(i) => sendQueuedNow(openThread, i)}
           onRewind={(id) => rewindTo(openThread, id)} onModel={canModels ? (m) => setModel(openThread, m) : undefined} say={say}
+          onCommand={slashCommand(`focus-${openThread.id}`, canModels, openThread)}
+          modelOpen={modelPickerOpen === `focus-${openThread.id}`} onModelOpen={(o) => setModelPickerOpen(o ? `focus-${openThread.id}` : null)}
           draft={threadDraft} onDraftChange={setThreadDraft}
           surfaces={realSurfaces ?? fakeSurfaces}
           models={canModels ? MODEL_OPTS : undefined} picker={pickerExtras} repoFiles={REPO_FILES} host={hostAccessors}
@@ -2216,6 +2303,8 @@ export default function App() {
               }}
               draft={dmDraft} onDraftChange={setDmDraft}
               mentionables={employees} onSearchFiles={fileMentions((wsPicks[view.id] ?? NO_WS).folder)}
+              onSearchCommands={commandsSearch} onCommand={slashCommand(`draft-${view.id}`, canModels)}
+              modelOpen={modelPickerOpen === `draft-${view.id}`} onModelOpen={(o) => setModelPickerOpen(o ? `draft-${view.id}` : null)}
               onRetrySession={(m) => { setAlertOff((n) => n + 1); retry(m, view.id); say(`Retrying thread ${m.thread?.session}`) }}
               onSearchMessages={searchDmMessages}
               onOpenHit={(h) => { setScrollTo(h.messageId); showThread(h.rootId) }}

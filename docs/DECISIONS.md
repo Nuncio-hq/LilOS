@@ -345,6 +345,14 @@ PR does not exist.
   "still remembers" note and Start a new session.
   Not: engine-owned file checkpoints (opt-in, transport-dependent),
   deleting messages, or the engine owning the folder snapshot. — #134
+- **D-#109 Slash commands and skills are engine offerings behind the
+  `commands` capability: `commands.list` fills the composer `/` menu and
+  `commands.exec` runs the pick inside the session.** Commands LilOS owns a
+  button for (`model`, rewind) route to that feature instead of the engine.
+  Not: a LilOS-owned command table, a menu when the capability is absent
+  (`/` stays plain text, D-#19), or app-side Hermes specifics — the
+  `complete.slash`/`command.dispatch` mapping lives in engine-hermes only.
+  — #109
 - **D-#106 Access levels are LilOS data on the conversation; Full access
   is enforced by the harness auto-answering approvals (`once`), engine-neutral —
   the engine's own approval policy stays a separate `approval_policy`

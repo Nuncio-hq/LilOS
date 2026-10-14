@@ -12,6 +12,10 @@ import {
   type ApprovalsSetPolicyParams,
   BACKGROUND_JOBS_CAPABILITY,
   type Capability,
+  COMMANDS_CAPABILITY,
+  type CommandItem,
+  type CommandsExecParams,
+  type CommandsListParams,
   type ContentBlock,
   type ConversationAccess,
   capEventLog,
@@ -57,7 +61,9 @@ import {
 } from "@lilos/contracts/engine";
 import {
   DEFAULT_MODEL,
+  FAKE_COMMANDS,
   type FakeAgent,
+  type FakeCommand,
   type FakeModel,
   MODEL_CATALOG,
   REFRESH_MODEL,
@@ -416,6 +422,10 @@ export class FakeEngine {
         return this.approvalsSetPolicy(parsed.data as ApprovalsSetPolicyParams);
       case "session.setAccess":
         return this.sessionSetAccess(parsed.data as SessionSetAccessParams);
+      case "commands.list":
+        return this.commandsList(parsed.data as CommandsListParams);
+      case "commands.exec":
+        return this.commandsExec(parsed.data as CommandsExecParams);
       default:
         throw new RpcError(
           RPC_ERRORS.METHOD_NOT_FOUND,
@@ -475,6 +485,7 @@ export class FakeEngine {
       ...(this.capOn("background_jobs") ? [BACKGROUND_JOBS_CAPABILITY] : []),
       ...(this.capOn("side_prompt") ? [SIDE_PROMPT_CAPABILITY] : []),
       ...(this.capOn("workspace_move") ? [WORKSPACE_MOVE_CAPABILITY] : []),
+      ...(this.capOn("commands") ? [COMMANDS_CAPABILITY] : []),
       /* #106: the policy the Settings Approvals section writes via
          approvals.setPolicy — `current` reports the live value. */
       ...(this.capOn("approval_policy")
@@ -715,6 +726,54 @@ export class FakeEngine {
     const s = this.require(p.sessionId);
     s.access = p.access;
     return { access: s.access };
+  }
+
+  /* ── `/` commands & skills ──────────────────────────────────────────── */
+
+  private commandsList(p: CommandsListParams): CommandItem[] {
+    const q = (p.query ?? "").toLowerCase();
+    return FAKE_COMMANDS.filter(
+      (c) => !q || c.name.toLowerCase().includes(q),
+    ).map((c) => ({ ...c }));
+  }
+
+  private commandsExec(p: CommandsExecParams) {
+    const s = this.require(p.sessionId);
+    const cmd = FAKE_COMMANDS.find((c) => c.name === p.name);
+    /* An unknown name is command output, not a protocol error — real
+       engines answer it in-band the same way. */
+    if (!cmd)
+      return {
+        outcome: "output" as const,
+        output: `Unknown command /${p.name} — nothing was sent.`,
+      };
+    if (cmd.kind === "skill") {
+      /* A skill expands to the prompt the next turn runs — the harness
+         sends it verbatim, same as the TUI's skill template. */
+      return {
+        outcome: "prompt" as const,
+        prompt: `Run the ${cmd.name} skill${p.args ? ` with: ${p.args}` : ""}`,
+      };
+    }
+    if (cmd.name === "compact") {
+      /* Real engines rotate the stored ref when they compact in place —
+         the fake mirrors that so clients exercise session.ref.changed. */
+      this.rotateSessionRef(s.id);
+      return {
+        outcome: "output" as const,
+        output: `Context compacted (session now ${s.ref}).`,
+      };
+    }
+    if (cmd.name === "usage")
+      return {
+        outcome: "output" as const,
+        output: `Usage: in ${s.usage.input} / out ${s.usage.output} / cache ${s.usage.cache} across ${s.turnCount} turn(s).`,
+      };
+    /* help and friends: a deterministic answer naming the menu itself. */
+    return {
+      outcome: "output" as const,
+      output: `Commands: ${FAKE_COMMANDS.map((c) => `/${c.name} (${c.kind})`).join(", ")}`,
+    };
   }
 
   private eventsSince(p: EventsSinceParams) {

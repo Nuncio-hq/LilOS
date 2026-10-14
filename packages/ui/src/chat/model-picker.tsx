@@ -235,12 +235,20 @@ export function ModelPicker({
   visibility,
   onVisibility,
   onRefresh,
+  open: openProp,
+  onOpenChange,
 }: {
   value: ModelChoice;
   models: ModelOption[];
   onChoice: (c: ModelChoice) => void;
+  /* Controlled open: the host's `/model` command opens the same picker a
+     click would. Undefined falls back to the popover's own state. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 } & ModelPickerExtras) {
-  const [open, setOpen] = useState(false);
+  const [ownOpen, setOwnOpen] = useState(false);
+  const open = openProp ?? ownOpen;
+  const setOpen = onOpenChange ?? setOwnOpen;
   const [view, setView] = useState<"main" | "models">("main");
   const [editing, setEditing] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
