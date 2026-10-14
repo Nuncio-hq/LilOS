@@ -1,5 +1,5 @@
-import type { EngineConnection } from "../src/engine/client";
 import { describe, expect, it } from "vitest";
+import type { EngineConnection } from "../src/engine/client";
 import { openDmConversation, setupWorld, waitFor } from "./helpers";
 
 /* A bind-path failure (here: session.start rejecting once) must not eat
@@ -41,13 +41,12 @@ describe("early retry on bind failure", () => {
         "second session.start",
       );
       await waitFor(
-        () =>
-          w.engineCalls.find((c) => c.method === "prompt") ?? undefined,
+        () => w.engineCalls.find((c) => c.method === "prompt") ?? undefined,
         "prompt call",
       );
-      expect(
-        w.engineCalls.filter((c) => c.method === "prompt"),
-      ).toHaveLength(1);
+      expect(w.engineCalls.filter((c) => c.method === "prompt")).toHaveLength(
+        1,
+      );
       expect(conversation.id).toBeTruthy();
     } finally {
       await w.cleanup();
@@ -86,8 +85,7 @@ describe("early retry on bind failure", () => {
         conversations: { id: string; turnFailure?: { text: string } }[];
       }>("conversations.list", {});
       expect(
-        conversations.find((c) => c.id === conversation.id)?.turnFailure
-          ?.text,
+        conversations.find((c) => c.id === conversation.id)?.turnFailure?.text,
       ).toContain("Engine error");
     } finally {
       await w.cleanup();
