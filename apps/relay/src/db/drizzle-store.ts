@@ -75,7 +75,13 @@ type ConversationRow = typeof schema.conversations.$inferSelect;
    nullable — fold null to absent at the boundary. The (sessionId, seq)
    usage fence columns are store-internal (#300) — never on the wire. */
 const rowToConversation = (row: ConversationRow): Conversation => {
-  const { usageSessionId: _sid, usageSeq: _seq, ...rest } = row;
+  const {
+    usageSessionId: _sid,
+    usageSeq: _seq,
+    finishedSessionId: _fsid,
+    finishedEventSeq: _fseq,
+    ...rest
+  } = row;
   return {
     ...rest,
     model: row.model ?? undefined,
@@ -436,6 +442,9 @@ export function createDrizzleStore(db: Db): RelayStore {
         usage, usage_session_id AS usageSessionId, usage_seq AS usageSeq,
         life, turn_failure AS turnFailure,
         turn_stopped AS turnStopped, bg_jobs AS bgJobs,
+        read_seq AS readSeq, finished_seq AS finishedSeq,
+        finished_session_id AS finishedSessionId,
+        finished_event_seq AS finishedEventSeq,
         created_at AS createdAt`;
       const convWhere: string[] = [];
       const convParams: (string | number)[] = [];
@@ -691,6 +700,8 @@ export function createDrizzleStore(db: Db): RelayStore {
             : {}),
           archived: false,
           deliveredSeq: 0,
+          readSeq: 0,
+          finishedSeq: 0,
           createdAt: now(),
           ...(input.model !== undefined ? { model: input.model } : {}),
           ...(input.provider !== undefined ? { provider: input.provider } : {}),
@@ -775,6 +786,60 @@ export function createDrizzleStore(db: Db): RelayStore {
             : {}),
         })
         .where(eq(schema.conversations.id, id))
+        .returning()
+        .get();
+      return updated ? rowToConversation(updated) : null;
+    },
+    async recordConversationFinish({
+      conversationId,
+      sessionId,
+      eventSeq,
+      channelSeq,
+    }) {
+      /* One conditional UPDATE = the freshness fence + the write, same
+         rule as `recordTurnUsage`: a replayed finish from the same session
+         only wins past the stored event seq; a rebound session always
+         writes. `finished_seq` is a channel watermark, so the stamp only
+         ever moves forward too. */
+      db.update(schema.conversations)
+        .set({
+          finishedSeq: channelSeq,
+          finishedSessionId: sessionId,
+          finishedEventSeq: eventSeq,
+        })
+        .where(
+          and(
+            eq(schema.conversations.id, conversationId),
+            lt(schema.conversations.finishedSeq, channelSeq),
+            or(
+              isNull(schema.conversations.finishedSessionId),
+              ne(schema.conversations.finishedSessionId, sessionId),
+              lt(schema.conversations.finishedEventSeq, eventSeq),
+            ),
+          ),
+        )
+        .run();
+    },
+    async markConversationRead(conversationId) {
+      /* Oscar's read watermark (#563): the channel's current `lastSeq`, so
+         a finish the relay already stamped stays behind the mark. */
+      const row = db
+        .select({
+          channelId: schema.conversations.channelId,
+          lastSeq: schema.channels.lastSeq,
+        })
+        .from(schema.conversations)
+        .innerJoin(
+          schema.channels,
+          eq(schema.conversations.channelId, schema.channels.id),
+        )
+        .where(eq(schema.conversations.id, conversationId))
+        .get();
+      if (!row) return null;
+      const updated = db
+        .update(schema.conversations)
+        .set({ readSeq: row.lastSeq })
+        .where(eq(schema.conversations.id, conversationId))
         .returning()
         .get();
       return updated ? rowToConversation(updated) : null;

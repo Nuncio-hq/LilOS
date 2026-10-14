@@ -70,6 +70,7 @@ export function createMemoryStore(): RelayStore {
   /** (sessionId, seq) of the turn.completed that wrote each conversation's
       `usage` — the write fence (#300). */
   const turnUsageMarks = new Map<string, { sessionId: string; seq: number }>();
+  const finishMarks = new Map<string, { sessionId: string; seq: number }>();
 
   /** Strictly increasing recents tick — survives same-ms calls in tests. */
   const folderTick = () =>
@@ -309,6 +310,8 @@ export function createMemoryStore(): RelayStore {
         ...openTitle(input),
         archived: false,
         deliveredSeq: 0,
+        readSeq: 0,
+        finishedSeq: 0,
         access: input.access ?? "ask",
         createdAt: now(),
         ...(input.model !== undefined ? { model: input.model } : {}),
@@ -371,6 +374,29 @@ export function createMemoryStore(): RelayStore {
       if (mark && mark.sessionId === sessionId && seq <= mark.seq) return;
       turnUsageMarks.set(conversationId, { sessionId, seq });
       conversation.usage = usage;
+    },
+    async recordConversationFinish({
+      conversationId,
+      sessionId,
+      eventSeq,
+      channelSeq,
+    }) {
+      const conversation = conversations.get(conversationId);
+      if (!conversation) return;
+      const mark = finishMarks.get(conversationId);
+      if (mark && mark.sessionId === sessionId && eventSeq <= mark.seq)
+        return;
+      if (channelSeq <= conversation.finishedSeq) return;
+      finishMarks.set(conversationId, { sessionId, seq: eventSeq });
+      conversation.finishedSeq = channelSeq;
+    },
+    async markConversationRead(conversationId) {
+      const conversation = conversations.get(conversationId);
+      if (!conversation) return null;
+      const channel = channels.get(conversation.channelId);
+      if (!channel) return null;
+      conversation.readSeq = channel.lastSeq;
+      return conversation;
     },
     async listMessages(
       channelId,

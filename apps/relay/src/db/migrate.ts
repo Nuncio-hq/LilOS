@@ -335,6 +335,15 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
     version: 23,
     statements: [`ALTER TABLE conversations ADD COLUMN bg_jobs INTEGER`],
   },
+  {
+    version: 24,
+    statements: [
+      `ALTER TABLE conversations ADD COLUMN read_seq INTEGER NOT NULL DEFAULT 0`,
+      `ALTER TABLE conversations ADD COLUMN finished_seq INTEGER NOT NULL DEFAULT 0`,
+      `ALTER TABLE conversations ADD COLUMN finished_session_id TEXT`,
+      `ALTER TABLE conversations ADD COLUMN finished_event_seq INTEGER NOT NULL DEFAULT 0`,
+    ],
+  },
 ];
 
 /**
