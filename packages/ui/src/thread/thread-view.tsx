@@ -129,6 +129,8 @@ export function ThreadView({
   onOpenSession,
   onAddFolder,
   onPlan,
+  onCompact,
+  onContinue,
   onAnswer,
   onCancel,
   access,
@@ -238,6 +240,11 @@ export function ThreadView({
   /* #581: a folder-less DM thread can pick a real folder — the host moves
      the session there (the pick is only offered where the engine can move). */
   onAddFolder?: () => void;
+  /* #560: the meter's Compact now — passed only when the engine declares
+     `compact`; disabled while a turn runs. Continue opens a fresh session
+     on the same folder (offered only when the meter reads Full). */
+  onCompact?: () => void;
+  onContinue?: () => void;
   /* Plan card decisions (issue #175). */
   onPlan?: (a: PlanAction, planId: string) => void;
   /* #420: question-ask answer/cancel — passed, the handler owns the
@@ -456,6 +463,9 @@ export function ThreadView({
                 defaultProvider,
               )}
               models={models}
+              onCompact={onCompact}
+              compactDisabled={running}
+              onContinue={onContinue}
             />
           )}
           {!work && !isDM && onStart && (

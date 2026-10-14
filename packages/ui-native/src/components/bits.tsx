@@ -154,7 +154,7 @@ export function StateChip({
   state: keyof typeof CHIP;
   /** #592: the wire's turnFailure.kind — "sleep" swaps the red Failed chip
       for the amber slept one. */
-  failureKind?: "model" | "sleep" | "generic";
+  failureKind?: "model" | "sleep" | "generic" | "context";
 }) {
   const c =
     state === "failed" && failureKind === "sleep" ? CHIP.slept : CHIP[state];

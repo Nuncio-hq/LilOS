@@ -25,6 +25,7 @@ const TOOL_AREA_ORDER: readonly ToolArea[] = [
   "browser",
   "workbench",
   "folder",
+  "schedule",
 ];
 
 const AREA_LINES: Record<ToolArea, string> = {
@@ -34,6 +35,8 @@ const AREA_LINES: Record<ToolArea, string> = {
   team: "- `team_*`: the company roster — `team_list` to look around; `team_hire` and `team_update` (your own record only) ask the user to approve the change.",
   folder:
     "- `folder_*`: `folder_add` asks the user to bind a folder you name to the session-picking recents.",
+  schedule:
+    "- `schedule_*`: your scheduled tasks — `schedule_list` reads; writes ask the user to approve.",
   workbench:
     "- `workbench_*`: the user's Workbench for this session — `workbench_previews` lists your preview servers, `workbench_open` puts the panel on the Files/Changes/PR/Preview tab you name (it never opens an editor on the Mac).",
   browser:

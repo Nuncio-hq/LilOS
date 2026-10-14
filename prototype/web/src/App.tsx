@@ -2020,6 +2020,45 @@ export default function App() {
       }
     }
   }
+  // Compact now (meter + the context-full session card): the fake engine
+  // folds older turns — context drops to ~12% and one system note posts.
+  const fmtTok = (x: number) => (x >= 10_000 ? `${Math.round(x / 1000)}k` : x >= 1000 ? `${(x / 1000).toFixed(1)}k` : `${x}`)
+  const compactNow = (root: Extract<Msg, { kind: "msg" }>) => {
+    mapRoot(feedKey, root.id, (t) => {
+      const before = t.usage?.context ?? t.usage?.input ?? 0
+      const after = Math.max(1, Math.floor(before * 0.12))
+      return {
+        ...t,
+        usage: t.usage ? { ...t.usage, context: after } : t.usage,
+        replies: [
+          ...t.replies,
+          {
+            from: "",
+            system: true,
+            time: "",
+            text: `Context compacted: older turns summarized (${fmtTok(before)} → ${fmtTok(after)})`,
+          },
+        ],
+      }
+    })
+  }
+  // Continue in a new session (Full state): a fresh thread on the same
+  // folder, first message carrying the last-20 recap like the real app's
+  // conversations.open — the dead session's memory resets, so the quote
+  // is all the new one knows.
+  const continueNew = (root: Extract<Msg, { kind: "msg" }>) => {
+    const t = root.thread
+    if (!t) return
+    const kept = t.replies.filter((r) => !r.system).slice(-19)
+    const quote = [
+      `> Oscar: ${root.text.replaceAll("\n", "\n> ")}`,
+      ...kept.map((r) => `> ${emp(r.from)?.name ?? "Agent"}: ${r.text.replaceAll("\n", "\n> ")}`),
+    ].join("\n")
+    const text =
+      "Picking up mid-thread — the previous session's context filled up and was closed. Earlier transcript:\n\n" +
+      `${quote}\n\n—`
+    sendTop(text, undefined, undefined)
+  }
   const unqueue = (root: Extract<Msg, { kind: "msg" }>, i: number) =>
     mapRoot(feedKey, root.id, (t) => ({ ...t, queue: (t.queue ?? []).filter((_, j) => j !== i) }))
   // Queued tray's remove (steer absent): drop the mid-turn send before it runs as the next prompt.
@@ -2368,6 +2407,7 @@ export default function App() {
       access={access} onAccess={setAccess}
       scrollTo={scrollTo ?? undefined} onScrolled={() => setScrollTo(null)}
       editors={openEditors ?? undefined} onOpenSession={openSession} onPlan={(a, id) => planAction(openThread, a, id)}
+      onCompact={() => compactNow(openThread)} onContinue={() => continueNew(openThread)}
       onAnswer={answerQuestion} onCancel={cancelQuestion}
       onOpenPath={openWsCwd && openEditors !== null
         ? (path, app, line) => void hostAccessors.osOpen(openWsCwd, path, app, line).catch((e) => say(`Open failed — ${e instanceof Error ? e.message : String(e)}`))
@@ -2437,6 +2477,7 @@ export default function App() {
           access={access} onAccess={setAccess}
           onPrComment={(t) => prComment(openThread, t)} onPrMerge={(m) => prMerge(openThread, m)}
           onOpenSession={openSession} onStopJob={(id) => stopJobIn(openThread, id)} onPlan={(a, id) => planAction(openThread, a, id)}
+          onCompact={() => compactNow(openThread)} onContinue={() => continueNew(openThread)}
           onAnswer={answerQuestion} onCancel={cancelQuestion}
           // A real harness attach (?surfaces=…) keeps its live Preview tab; the
           // LilOS Browser (#214) replaces it only in the mock prototype.
@@ -2492,6 +2533,7 @@ export default function App() {
               onSearchCommands={commandsSearch} onCommand={slashCommand(`draft-${view.id}`, canModels)}
               modelOpen={modelPickerOpen === `draft-${view.id}`} onModelOpen={(o) => setModelPickerOpen(o ? `draft-${view.id}` : null)}
               onRetrySession={(m) => { setAlertOff((n) => n + 1); retry(m, view.id); say(`Retrying thread ${m.thread?.session}`) }}
+              onCompactSession={compactNow} onContinueSession={continueNew}
               onSearchMessages={searchDmMessages}
               onOpenHit={(h) => { setScrollTo(h.messageId); showThread(h.rootId) }}
               accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say}

@@ -21,6 +21,7 @@ export function appMenuTemplate(
   openStatus: () => void,
   onFind: (action: FindMenuAction) => void,
   onShortcut: (action: DesktopShortcutAction) => void,
+  onBrowser: () => void,
 ): MenuItemConstructorOptions[] {
   const item = (
     label: string,
@@ -115,6 +116,26 @@ export function appMenuTemplate(
         item("Keyboard Shortcuts", "CmdOrCtrl+/", "shortcuts"),
       ],
     },
-    { label: "View", role: "viewMenu" },
+    {
+      label: "View",
+      /* Written out instead of `role: "viewMenu"` so the browser toggle
+         can live here: ⌘⇧B opens/closes the LilOS Browser. Its click runs
+         in main (the host owns the open state), so it also fires while a
+         page's view has focus. Zoom/devtools roles stay out on purpose:
+         their accelerators would consume ⌘+/⌘-/⌘0/⌥⌘I before a focused
+         page's view sees them, bypassing the host's zoom state. */
+      submenu: [
+        {
+          id: "browser",
+          label: "LilOS Browser",
+          accelerator: "CmdOrCtrl+Shift+B",
+          click: onBrowser,
+        },
+        { type: "separator" },
+        { role: "reload" },
+        { type: "separator" },
+        { role: "togglefullscreen" },
+      ],
+    },
   ];
 }

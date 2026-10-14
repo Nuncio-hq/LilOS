@@ -1358,6 +1358,94 @@
                     },
                     "type": {
                       "type": "string",
+                      "const": "session.compacted"
+                    },
+                    "payload": {
+                      "type": "object",
+                      "properties": {
+                        "beforeTokens": {
+                          "type": "number"
+                        },
+                        "afterTokens": {
+                          "type": "number"
+                        },
+                        "beforeMessages": {
+                          "type": "number"
+                        },
+                        "afterMessages": {
+                          "type": "number"
+                        },
+                        "summary": {
+                          "type": "string"
+                        },
+                        "usage": {
+                          "type": "object",
+                          "properties": {
+                            "input": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "output": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "reasoning": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "cache": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "context": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "contextWindow": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "input",
+                            "output",
+                            "reasoning",
+                            "cache"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "seq",
+                    "sessionId",
+                    "type",
+                    "payload"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "seq": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "sessionId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "type": {
+                      "type": "string",
                       "const": "turn.steered"
                     },
                     "payload": {
@@ -2809,6 +2897,54 @@
         "additionalProperties": false
       }
     },
+    "session.compact": {
+      "doc": "Summarize the session's older turns in place so the context meter drops (issue #560). Refuses INVALID_STATE while a turn runs; the compacted result also lands as a `session.compacted` event. Engines that can't compact don't declare the capability.",
+      "capability": "compact",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "sessionId"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "compressed",
+              "skipped",
+              "pending"
+            ]
+          },
+          "beforeTokens": {
+            "type": "number"
+          },
+          "afterTokens": {
+            "type": "number"
+          },
+          "beforeMessages": {
+            "type": "number"
+          },
+          "afterMessages": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "additionalProperties": false
+      }
+    },
     "session.moveWorkspace": {
       "doc": "Re-home the session's working folder (issue #581) — memory and transcript untouched; the next turn runs in `cwd`. Engines that can't re-home (ACP today) don't declare the capability.",
       "capability": "workspace_move",
@@ -3998,6 +4134,94 @@
                   "ref",
                   "previousRef"
                 ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "seq",
+              "sessionId",
+              "type",
+              "payload"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "sessionId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "type": {
+                "type": "string",
+                "const": "session.compacted"
+              },
+              "payload": {
+                "type": "object",
+                "properties": {
+                  "beforeTokens": {
+                    "type": "number"
+                  },
+                  "afterTokens": {
+                    "type": "number"
+                  },
+                  "beforeMessages": {
+                    "type": "number"
+                  },
+                  "afterMessages": {
+                    "type": "number"
+                  },
+                  "summary": {
+                    "type": "string"
+                  },
+                  "usage": {
+                    "type": "object",
+                    "properties": {
+                      "input": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "output": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "reasoning": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "cache": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "context": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "contextWindow": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": [
+                      "input",
+                      "output",
+                      "reasoning",
+                      "cache"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
                 "additionalProperties": false
               }
             },

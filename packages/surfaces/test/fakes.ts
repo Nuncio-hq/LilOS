@@ -7,10 +7,13 @@ import type {
   Employee,
   MessageSearchHit,
   ProfileSettings,
+  ScheduledTask,
   SystemStatusResult,
   WorkbenchOpenTarget,
 } from "@lilos/contracts/app";
 import type {
+  ScheduleCreateParams,
+  ScheduleUpdateParams,
   TeamHireParams,
   TeamUpdateParams,
   ViewerBrowserInputEvent,
@@ -165,6 +168,8 @@ export function fakeAppOps(
     usage?: Conversation["usage"];
     status?: SystemStatusResult;
     profile?: ProfileSettings;
+    /** `schedule_list` answers (#136). */
+    scheduledTasks?: ScheduledTask[];
     /** `"decline"` makes every approval op throw `declined` — nothing applies. */
     approve?: "once" | "decline";
   } = {},
@@ -294,6 +299,11 @@ export function fakeAppOps(
     async employees() {
       return employees;
     },
+    async scheduledTasks(employeeId: string) {
+      return (opts.scheduledTasks ?? []).filter(
+        (t) => t.employeeId === employeeId,
+      );
+    },
     async threadPrs(conversationId: string) {
       return opts.prs?.[conversationId] ?? [];
     },
@@ -385,6 +395,43 @@ export function fakeAppOps(
       if (p.model !== undefined) self.model = p.model;
       if (p.instructions !== undefined) self.instructions = p.instructions;
       return self;
+    },
+    async scheduleCreate(p: ScheduleCreateParams) {
+      gate(`schedule_create ${p.name}`);
+      const task: ScheduledTask = {
+        id: `task-${(opts.scheduledTasks ?? []).length + 1}`,
+        employeeId: "emp-fake",
+        name: p.name,
+        prompt: p.prompt,
+        schedule: p.schedule,
+        access: p.access,
+        paused: false,
+        createdAt: Date.now(),
+        ...(p.folder !== undefined ? { folder: p.folder } : {}),
+      };
+      return task;
+    },
+    async scheduleUpdate(p: ScheduleUpdateParams) {
+      gate(`schedule_update ${p.id}`);
+      const task = (opts.scheduledTasks ?? []).find((t) => t.id === p.id);
+      if (!task) throw new Error(`unknown scheduled task ${p.id}`);
+      if (p.name !== undefined) task.name = p.name;
+      if (p.prompt !== undefined) task.prompt = p.prompt;
+      if (p.folder !== undefined)
+        task.folder = p.folder === null ? undefined : p.folder;
+      if (p.schedule !== undefined) task.schedule = p.schedule;
+      if (p.access !== undefined) task.access = p.access;
+      if (p.paused !== undefined) task.paused = p.paused;
+      return task;
+    },
+    async scheduleDelete(id: string) {
+      gate(`schedule_delete ${id}`);
+    },
+    async scheduleRunNow(id: string) {
+      gate(`schedule_run_now ${id}`);
+      const task = (opts.scheduledTasks ?? []).find((t) => t.id === id);
+      if (!task) throw new Error(`unknown scheduled task ${id}`);
+      return task;
     },
     async addFolder(path: string) {
       gate(`folder_add ${path}`);

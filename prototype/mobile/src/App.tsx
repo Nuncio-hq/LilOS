@@ -80,6 +80,8 @@ import {
   answerAsk,
   approve,
   approvePlan,
+  compactSession,
+  continueSession,
   deny,
   ENGINE_COMMANDS,
   execCommand,
@@ -754,7 +756,17 @@ function Thread({ navigation, route }: Props<"Thread">) {
 function ThreadInfo({ navigation, route }: Props<"ThreadInfo">) {
   const t = useStore($threads).find((x) => x.id === route.params.id);
   if (!t) return null;
-  return <ThreadInfoSheet t={t} onDone={() => navigation.goBack()} />;
+  return (
+    <ThreadInfoSheet
+      t={t}
+      onDone={() => navigation.goBack()}
+      onCompact={() => compactSession(t.id)}
+      onContinue={() => {
+        continueSession(t.id);
+        navigation.goBack();
+      }}
+    />
+  );
 }
 
 /* Every helper the thread's turns spun off — Running first, then Finished

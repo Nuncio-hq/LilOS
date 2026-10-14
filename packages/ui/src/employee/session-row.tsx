@@ -82,11 +82,18 @@ function SessionMenu({
 function SessionAlertRow({
   alert,
   onRetry,
+  onCompact,
+  onContinue,
 }: {
   alert: SessionAlert;
   onRetry?: () => void;
+  /* Context-full death — compact in place or continue in a fresh
+     session on the same folder; either unblocks the thread. */
+  onCompact?: () => void;
+  onContinue?: () => void;
 }) {
   const warm = alert.kind === "sleep";
+  const context = alert.kind === "context";
   return (
     <div
       data-session-alert
@@ -103,7 +110,27 @@ function SessionAlertRow({
         <TriangleAlertIcon className="size-3.5 shrink-0" />
       )}
       <span className="min-w-0 flex-1">{alert.text}</span>
-      {alert.retry && onRetry && (
+      {context && onCompact && (
+        <button
+          type="button"
+          data-compact-now
+          onClick={onCompact}
+          className="shrink-0 rounded-md bg-foreground px-2 py-0.5 font-medium text-background hover:opacity-90"
+        >
+          Compact now
+        </button>
+      )}
+      {context && onContinue && (
+        <button
+          type="button"
+          data-continue-new-session
+          onClick={onContinue}
+          className="shrink-0 rounded-md border px-2 py-0.5 font-medium hover:bg-muted"
+        >
+          New session
+        </button>
+      )}
+      {!context && alert.retry && onRetry && (
         <button
           type="button"
           onClick={onRetry}
@@ -145,6 +172,8 @@ export const SessionRow = memo(function SessionRow({
   onArchive,
   onOpen,
   onRetrySession,
+  onCompactSession,
+  onContinueSession,
 }: {
   m: SessionMsg;
   archived?: boolean;
@@ -165,6 +194,10 @@ export const SessionRow = memo(function SessionRow({
   onArchive?: (id: string, archived: boolean) => void;
   onOpen: (id: string) => void;
   onRetrySession?: (m: SessionMsg) => void;
+  /* #560: the context-full alert's two outs — compact in place, or a
+     fresh session on the same folder carrying the recap. */
+  onCompactSession?: (m: SessionMsg) => void;
+  onContinueSession?: (m: SessionMsg) => void;
 }) {
   const t = m.thread;
   if (!t) return null;
@@ -250,6 +283,10 @@ export const SessionRow = memo(function SessionRow({
           <SessionAlertRow
             alert={t.alert}
             onRetry={onRetrySession ? () => onRetrySession(m) : undefined}
+            onCompact={onCompactSession ? () => onCompactSession(m) : undefined}
+            onContinue={
+              onContinueSession ? () => onContinueSession(m) : undefined
+            }
           />
         )}
         <button

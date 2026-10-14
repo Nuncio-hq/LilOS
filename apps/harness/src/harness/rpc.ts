@@ -16,6 +16,10 @@ export const ENGINE_UNAVAILABLE = -32005;
 /** The engine's backend died under the call — restart surface, not a
     generic engine error (#521). */
 export const BACKEND_DOWN = -32006;
+/** The turn died on the context window (#560) — the thread offers Compact
+    now / a fresh session instead of a bare retry. */
+export const CONTEXT_LIMIT = -32007;
+export { CONTEXT_LIMIT_TEXT } from "@lilos/contracts/engine";
 /* #482: forwarded engine calls get their own deadline — a wedged adapter
    (or one whose backend died) must fail the caller fast typed instead of
    riding the transport's 15 s default. Longer than the probe's deadline so

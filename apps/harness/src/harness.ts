@@ -5,8 +5,10 @@ import { homedir } from "node:os";
 import type { RelayClient } from "@lilos/client-runtime";
 import type {
   AppMessage,
+  Conversation,
   Employee,
   ProfileConnection,
+  ScheduledTask,
 } from "@lilos/contracts/app";
 import type {
   DescribeResult,
@@ -117,6 +119,16 @@ import {
   rewindConversation,
 } from "./harness/relay-requests";
 import {
+  fireScheduledTask,
+  onScheduledConversationUpdate,
+  onScheduleRemoved,
+  onScheduleUpserted,
+  scheduledRunStillGoing,
+  skipScheduledRun,
+  syncScheduledTasks,
+  wireScheduler,
+} from "./harness/scheduler";
+import {
   dropStopped,
   exemptFromCurrentStop,
   onInterruptRequested,
@@ -132,6 +144,7 @@ import {
 } from "./harness/turns";
 import type { Logger } from "./log";
 import { type ReaperCandidate, SessionReaper } from "./reaper";
+import type { TaskScheduler } from "./scheduler";
 import type { SleepGuard } from "./sleep";
 
 /**
@@ -292,6 +305,9 @@ export class Harness {
       marker for "a turn is coming". */
   private readonly inFlightDeliveries = new Map<string, number>();
 
+  /* #136: run convs opened but not yet bound — AC-4's overlap window. */
+  private readonly scheduledRunsInFlight = new Map<string, string>();
+
   /** engine requestId -> relay ask id (per session). */
   private readonly askByRequest = new Map<string, string>();
 
@@ -426,12 +442,34 @@ export class Harness {
       engineHost: welcome.engineHost,
     });
     this.reaper.start();
+    this.wireScheduler();
   }
 
   declare private onRelayReady: () => Promise<void>;
 
+  /* #136 moved members (harness/scheduler.ts) — Object.assign below binds
+     them; `scheduler` itself is created in `wireScheduler` at start. */
+  declare scheduler: TaskScheduler;
+  declare private wireScheduler: () => void;
+  declare private syncScheduledTasks: () => Promise<void>;
+  declare private onScheduleUpserted: (task: ScheduledTask) => Promise<void>;
+  declare private onScheduleRemoved: (taskId: string) => void;
+  declare private scheduledRunStillGoing: (task: ScheduledTask) => boolean;
+  declare private fireScheduledTask: (
+    task: ScheduledTask,
+    due: { at: number; key: string },
+  ) => Promise<void>;
+  declare private skipScheduledRun: (
+    task: ScheduledTask,
+    at: number,
+  ) => Promise<void>;
+  declare private onScheduledConversationUpdate: (
+    conversation: Conversation,
+  ) => Promise<void>;
+
   async stop(): Promise<void> {
     this.reaper.stop();
+    this.scheduler?.stop();
     for (const t of this.earlyFlushTimers.values()) clearTimeout(t);
     this.earlyFlushTimers.clear();
     for (const unsub of this.unsubs.splice(0)) unsub();
@@ -643,6 +681,14 @@ Object.assign(Harness.prototype, {
   reaperCandidates,
   rebindConversation,
   rebuildHeldPick,
+  scheduledRunStillGoing,
+  fireScheduledTask,
+  skipScheduledRun,
+  onScheduleUpserted,
+  onScheduleRemoved,
+  onScheduledConversationUpdate,
+  syncScheduledTasks,
+  wireScheduler,
   reconcileAsks,
   relayWrite,
   resolveEmployee,

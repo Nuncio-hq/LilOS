@@ -102,7 +102,7 @@ export type SessionState =
     `sleep` interrupts read amber ("Mac went to sleep"); `model`/`generic`
     errors read red. */
 export type TurnFailure = {
-  kind: "model" | "sleep" | "generic";
+  kind: "model" | "sleep" | "generic" | "context";
   text: string;
 };
 

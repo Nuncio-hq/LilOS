@@ -49,6 +49,7 @@ export function toUiEmployee(e: Employee, engineDown = false): UiEmployee {
     now: e.now,
     instructions: e.instructions,
     respondTo: e.respondTo,
+    muted: e.muted,
   };
 }
 
@@ -758,7 +759,7 @@ export function threadUsage(
   model: SessionModel | undefined,
   conv: Conversation,
 ): Thread["usage"] {
-  return model?.turns.at(-1)?.usage ?? conv.usage;
+  return model?.usage ?? model?.turns.at(-1)?.usage ?? conv.usage;
 }
 
 /**
@@ -817,6 +818,16 @@ export function toFeed(
       /* #563: a turn end stamped past the user's read watermark dots the
          card — opening the thread stamps `readSeq` and it clears. */
       ...(conv.finishedSeq > conv.readSeq ? { unseen: true } : {}),
+      /* #136: a scheduled task opened this session — the row's chip names
+         it and opens the task. */
+      ...(conv.scheduled
+        ? {
+            scheduled: {
+              task: conv.scheduled.taskId,
+              name: conv.scheduled.name,
+            },
+          }
+        : {}),
       ...(ws ? { ws } : {}),
       ...(jobs?.length ? { jobs } : {}),
     },
