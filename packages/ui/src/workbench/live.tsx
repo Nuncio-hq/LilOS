@@ -150,6 +150,9 @@ export function LiveTerminal({
         role="textbox"
         aria-label="Terminal input — click to type into the thread's shell"
         tabIndex={0}
+        /* The app-level keymap yields while focus is inside a terminal —
+           ⌘K/⌘[/⌘] are readline keys the shell must see first. */
+        data-lilos-terminal
         className="flex min-h-0 flex-1 cursor-text flex-col outline-none focus:ring-1 focus:ring-emerald-600"
         onKeyDown={(e) => {
           const data = keyToInput(e);

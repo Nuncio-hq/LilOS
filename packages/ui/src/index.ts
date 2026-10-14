@@ -101,6 +101,11 @@ export {
   useDraft,
 } from "./lib/drafts";
 export * from "./lib/helpers";
+export {
+  type SwitcherItem,
+  type SwitcherKind,
+  searchSwitcher,
+} from "./lib/switcher";
 // scheduled tasks (issue #136)
 export * from "./schedule/schedule-text";
 export { ScheduledTasks } from "./schedule/scheduled-tasks";
@@ -117,7 +122,13 @@ export {
   PrototypePreviewMenu,
   SCENARIOS,
 } from "./shell/preview-menu";
+export { QuickSwitcher } from "./shell/quick-switcher";
 export { type PanelTab, RightPanel, TicketsList } from "./shell/right-panel";
+export {
+  SHORTCUTS,
+  type ShortcutRow,
+  ShortcutsDialog,
+} from "./shell/shortcuts-dialog";
 export { Sidebar } from "./shell/sidebar";
 export {
   StatusDialog,
