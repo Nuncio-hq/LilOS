@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type ElectronApplication, expect, type Page } from "@playwright/test";
@@ -12,9 +12,18 @@ import { type ElectronApplication, expect, type Page } from "@playwright/test";
  */
 export async function ensureDesktopPayload(desktopDir: string): Promise<void> {
   const appDir = join(desktopDir, "build", "app");
-  const inputs = ["src/main.ts", "src/preload.cjs", "src/index.html"].map((p) =>
-    join(desktopDir, p),
-  );
+  const srcDir = join(desktopDir, "src");
+  /* Any change under src/ (imports included) needs a rebuild — a fixed file
+     list once left a stale bundle running while the spec tested new code. */
+  const inputs = (function walk(dir: string): string[] {
+    try {
+      return readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+        e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)],
+      );
+    } catch {
+      return [];
+    }
+  })(srcDir);
   const outputs = ["main.cjs", "preload.cjs", "index.html", "package.json"].map(
     (p) => join(appDir, p),
   );

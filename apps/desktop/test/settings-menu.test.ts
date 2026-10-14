@@ -16,6 +16,7 @@ const menus = () => {
     () => calls.push("status"),
     (action) => calls.push(`find:${action}`),
     (action) => calls.push(`shortcut:${action}`),
+    () => calls.push("browser"),
   );
   const appMenu = items.find((i) => i.label === "LilOS");
   const fileMenu = items.find((i) => i.label === "File");

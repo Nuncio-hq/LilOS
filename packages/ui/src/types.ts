@@ -631,6 +631,7 @@ export type WbTab =
   | "files"
   | "terminal"
   | "preview"
+  | "browser"
   | "background"
   | "subagents"
   | "plan"
