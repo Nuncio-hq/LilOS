@@ -438,7 +438,12 @@
         "push.register",
         "push.unregister",
         "push.visibility",
-        "workbench.open"
+        "workbench.open",
+        "schedules.list",
+        "schedules.create",
+        "schedules.update",
+        "schedules.delete",
+        "schedules.runNow"
       ]
     },
     "AppEventMethod": {
@@ -465,7 +470,9 @@
         "host.changed",
         "connect.changed",
         "engine.event",
-        "workbench.opened"
+        "workbench.opened",
+        "schedule.upserted",
+        "schedule.removed"
       ]
     },
     "HelloParams": {
@@ -1861,6 +1868,22 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "scheduled": {
+          "type": "object",
+          "properties": {
+            "taskId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "taskId",
+            "name"
+          ]
+        },
         "createdAt": {
           "type": "integer",
           "minimum": 0,
@@ -2175,6 +2198,22 @@
                 "minimum": 0,
                 "maximum": 9007199254740991
               },
+              "scheduled": {
+                "type": "object",
+                "properties": {
+                  "taskId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "taskId",
+                  "name"
+                ]
+              },
               "createdAt": {
                 "type": "integer",
                 "minimum": 0,
@@ -2326,6 +2365,22 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 200
+        },
+        "scheduled": {
+          "type": "object",
+          "properties": {
+            "taskId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "taskId",
+            "name"
+          ]
         }
       },
       "required": [
@@ -2548,6 +2603,22 @@
               "type": "integer",
               "minimum": 0,
               "maximum": 9007199254740991
+            },
+            "scheduled": {
+              "type": "object",
+              "properties": {
+                "taskId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "taskId",
+                "name"
+              ]
             },
             "createdAt": {
               "type": "integer",
@@ -3088,6 +3159,22 @@
               "type": "integer",
               "minimum": 0,
               "maximum": 9007199254740991
+            },
+            "scheduled": {
+              "type": "object",
+              "properties": {
+                "taskId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "taskId",
+                "name"
+              ]
             },
             "createdAt": {
               "type": "integer",
@@ -4581,6 +4668,22 @@
               "minimum": 0,
               "maximum": 9007199254740991
             },
+            "scheduled": {
+              "type": "object",
+              "properties": {
+                "taskId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "taskId",
+                "name"
+              ]
+            },
             "createdAt": {
               "type": "integer",
               "minimum": 0,
@@ -5274,6 +5377,22 @@
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 9007199254740991
+                  },
+                  "scheduled": {
+                    "type": "object",
+                    "properties": {
+                      "taskId": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "name": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "taskId",
+                      "name"
+                    ]
                   },
                   "createdAt": {
                     "type": "integer",
@@ -7630,6 +7749,22 @@
               "type": "integer",
               "minimum": 0,
               "maximum": 9007199254740991
+            },
+            "scheduled": {
+              "type": "object",
+              "properties": {
+                "taskId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "taskId",
+                "name"
+              ]
             },
             "createdAt": {
               "type": "integer",

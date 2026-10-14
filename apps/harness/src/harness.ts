@@ -102,16 +102,6 @@ import {
 } from "./harness/rebind";
 import { onRelayReady } from "./harness/register";
 import {
-  fireScheduledTask,
-  onScheduleRemoved,
-  onScheduleUpserted,
-  onScheduledConversationUpdate,
-  scheduledRunStillGoing,
-  skipScheduledRun,
-  syncScheduledTasks,
-  wireScheduler,
-} from "./harness/scheduler";
-import {
   onChannelRemoved,
   onRelayEvent,
   watchChannel,
@@ -125,6 +115,16 @@ import {
   onRelayRequest,
   rewindConversation,
 } from "./harness/relay-requests";
+import {
+  fireScheduledTask,
+  onScheduledConversationUpdate,
+  onScheduleRemoved,
+  onScheduleUpserted,
+  scheduledRunStillGoing,
+  skipScheduledRun,
+  syncScheduledTasks,
+  wireScheduler,
+} from "./harness/scheduler";
 import {
   dropStopped,
   exemptFromCurrentStop,

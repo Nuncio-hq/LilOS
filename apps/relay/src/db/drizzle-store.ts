@@ -663,12 +663,9 @@ export function createDrizzleStore(db: Db): RelayStore {
       if (patch.lastRun !== undefined)
         sets.lastRun = patch.lastRun ? JSON.stringify(patch.lastRun) : null;
       if (patch.skippedAt !== undefined) sets.skippedAt = patch.skippedAt;
-      if (patch.lastFiredAt !== undefined)
-        sets.lastFiredAt = patch.lastFiredAt;
-      if (patch.requestedAt !== undefined)
-        sets.requestedAt = patch.requestedAt;
-      if (Object.keys(sets).length === 0)
-        return this.getScheduledTask(id);
+      if (patch.lastFiredAt !== undefined) sets.lastFiredAt = patch.lastFiredAt;
+      if (patch.requestedAt !== undefined) sets.requestedAt = patch.requestedAt;
+      if (Object.keys(sets).length === 0) return this.getScheduledTask(id);
       const row = db
         .update(schema.scheduledTasks)
         .set(sets)

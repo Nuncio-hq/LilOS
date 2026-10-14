@@ -262,7 +262,13 @@ export function createMemoryStore(): RelayStore {
     async updateScheduledTask(id, patch) {
       const task = scheduledTasks.get(id);
       if (!task) return null;
-      for (const k of ["folder", "lastRun", "skippedAt", "lastFiredAt", "requestedAt"] as const) {
+      for (const k of [
+        "folder",
+        "lastRun",
+        "skippedAt",
+        "lastFiredAt",
+        "requestedAt",
+      ] as const) {
         if (patch[k] === null) {
           delete (task as Record<string, unknown>)[k];
           patch = { ...patch, [k]: undefined };

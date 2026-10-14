@@ -5,6 +5,7 @@ import type {
   Employee,
   MessageSearchHit,
   ProfileSettings,
+  ScheduledTask,
   SystemStatusResult,
   WorkbenchOpenTarget,
 } from "@lilos/contracts/app";
@@ -12,7 +13,6 @@ import type {
   SessionBinding,
   ViewerBrowserInputEvent,
 } from "@lilos/contracts/harness";
-import type { ScheduledTask } from "@lilos/contracts/app";
 import type { ForgePrListItem } from "@lilos/contracts/host";
 
 /**
