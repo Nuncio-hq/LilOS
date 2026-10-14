@@ -59,6 +59,7 @@ import type {
   OsApp,
   OsEditor,
   QuestionAsk,
+  SlashItem,
   Thread,
   TranscriptNote,
   WbTab,
@@ -110,6 +111,10 @@ export function ThreadView({
   defaultProvider,
   transcriptNote,
   mentionables,
+  onSearchCommands,
+  onCommand,
+  modelOpen,
+  onModelOpen,
   onSearchFiles,
   scrollTo,
   onScrolled,
@@ -204,6 +209,13 @@ export function ThreadView({
      the Files section — passed only when the session has a folder (cwd). */
   mentionables?: Employee[];
   onSearchFiles?: (query: string) => Promise<FileMention[]>;
+  /* The `/` menu's provider (engine commands + skills) and the host's claim
+     hook for app-owned command sends; modelOpen controls the picker the
+     `/model` send opens. */
+  onSearchCommands?: (query: string) => Promise<SlashItem[]>;
+  onCommand?: (name: string, args: string) => boolean;
+  modelOpen?: boolean;
+  onModelOpen?: (open: boolean) => void;
   /* A message id to bring into view — set when the user opens a search hit
      (issue #138 AC-3): scrolls the message center into view and flashes it
      briefly. Retried while replies stream in. */
@@ -656,6 +668,8 @@ export function ThreadView({
         }
         employees={mentionables ?? []}
         onSearchFiles={onSearchFiles}
+        onSearchCommands={onSearchCommands}
+        onCommand={onCommand}
         hint={
           running
             ? parkedOnQuestion
@@ -703,6 +717,8 @@ export function ThreadView({
                 )}
                 models={models}
                 onChoice={onModel}
+                open={modelOpen}
+                onOpenChange={onModelOpen}
                 {...picker}
               />
             ) : undefined}

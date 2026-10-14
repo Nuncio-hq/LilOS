@@ -17,6 +17,11 @@ export { AccessPill } from "./chat/access-pill";
 // shared agent-chat pieces (steer rows, not-sent tray, composer running state)
 export * from "./chat/agent-chat";
 export { Composer } from "./chat/composer";
+export {
+  insertSlash,
+  parseSlashDraft,
+  slashQuery,
+} from "./chat/composer-slash";
 export { FocusComposer } from "./chat/focus-composer";
 export {
   choiceFor,

@@ -13,7 +13,7 @@ import type {
   Employee,
 } from "@lilos/contracts/app";
 import type { Job } from "@lilos/contracts/engine";
-import type { ModelPick, PlanAction } from "@lilos/ui-native";
+import type { ModelPick, PlanAction, SlashItem } from "@lilos/ui-native";
 import {
   BackgroundSheet,
   Button,
@@ -117,6 +117,7 @@ function useThread(conversationId: string) {
   const planCapable = hasCap("plan");
   const subagentsCapable = hasCap("subagents");
   const jobsCapable = hasCap("background_jobs");
+  const commandsCapable = hasCap("commands");
   const conversations = useStore(client?.conversations ?? $noConversations);
   const employees = useStore(client?.employees ?? $noEmployees);
   const channels = useStore(client?.channels ?? $noChannels);
@@ -178,6 +179,24 @@ function useThread(conversationId: string) {
       dead = true;
     };
   }, [client, jobsCapable, engineRef, feed.synced]);
+  /* The engine's `/` command list (issue #109): fetched once the feed
+     synced — the composer's menu opens on it; no capability → no rows
+     and `/` stays plain text (D-#19). */
+  const [commandRows, setCommandRows] = useState<SlashItem[]>([]);
+  useEffect(() => {
+    setCommandRows([]);
+    if (!client || !commandsCapable || !engineRef || !feed.synced) return;
+    let dead = false;
+    client
+      .request<SlashItem[]>("commands.list", { sessionId: engineRef })
+      .then((r) => {
+        if (!dead) setCommandRows(r);
+      })
+      .catch(() => {});
+    return () => {
+      dead = true;
+    };
+  }, [client, commandsCapable, engineRef, feed.synced]);
   /* #134 live: a rewind while this screen is open strips the tail from
      chanState but not from the fetched history — dropRewound applies the
      same cut here (removedIds for files-only rewinds, seq for the tail). */
@@ -373,6 +392,8 @@ function useThread(conversationId: string) {
     planCapable,
     subagentsCapable,
     jobsCapable,
+    commandRows,
+    messages,
     channels,
     conversations,
   };
@@ -399,6 +420,8 @@ export function Thread({
     planCapable,
     subagentsCapable,
     jobsCapable,
+    commandRows,
+    messages,
   } = useThread(conversationId);
   const spinner = useThemeColor("muted-foreground");
   const welcome = useStore($welcome);
@@ -616,6 +639,33 @@ export function Thread({
       }}
       onSend={send}
       onStop={stop}
+      commands={commandRows.length ? commandRows : undefined}
+      /* `/model` opens the sheet the thread already owns; `/rewind`/`/undo`
+         run LilOS's real rewind — letting them reach the engine would drop
+         the engine's transcript while these rows stayed visible. Anything
+         else sends to the engine. */
+      onCommand={(name) => {
+        if (name === "model") {
+          if (!catalog.models.length) return false;
+          navigation.navigate("ModelPicker", {
+            employeeId: detail.employee.id,
+            conversationId,
+          });
+          return true;
+        }
+        if ((name === "rewind" || name === "undo") && client) {
+          const lastUser = [...messages]
+            .reverse()
+            .find((m) => m.authorKind === "user");
+          if (lastUser)
+            void client.request("conversations.rewind", {
+              conversationId,
+              messageId: lastUser.id,
+            });
+          return true;
+        }
+        return false;
+      }}
       unreachableNote={mac ? unreachableNoteFor(link, mac.name) : undefined}
       /* #556 AC-2: this thread's draft persists device-local. */
       initialDraft={draftFor(`thread:${conversationId}`)}

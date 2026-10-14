@@ -51,6 +51,7 @@ import type {
   ModelPickerExtras,
   Msg,
   PullRequest,
+  SlashItem,
   Thread,
   TranscriptNote,
   WbTab,
@@ -1088,6 +1089,12 @@ export function DmPage() {
   const fileSearchers = useRef(
     new Map<string, (q: string) => Promise<FileMention[]>>(),
   );
+  const commandSearchers = useRef(
+    new Map<string, (q: string) => Promise<SlashItem[]>>(),
+  );
+  /* Which surface's model picker `/model` opened (conv.id | "draft") —
+     routed commands claim the send, they never reach the engine. */
+  const [modelPickerOpen, setModelPickerOpen] = useState<string | null>(null);
 
   if (!employee || !uiEmp) {
     /* #189: a settled directory that has no such employee is a not-found
@@ -1160,6 +1167,68 @@ export function DmPage() {
   const pickedFolderPath = pick.folder
     ? (folderRows.find((f) => f.id === pick.folder && !f.missing)?.path ?? null)
     : null;
+
+  /* The `/` menu's provider (issue #109): the engine's own command list,
+     session-scoped once a conversation exists (folder-local skills ride
+     the session's cwd), agent+cwd scoped on the draft composer. Engines
+     without the `commands` capability get no provider → no menu (D-#19). */
+  const commandsSearch = (engineRef: string | null | undefined) => {
+    if (!engineRef || !hasCapability("commands")) return undefined;
+    let f = commandSearchers.current.get(engineRef);
+    if (!f) {
+      f = (q: string) =>
+        relay.request<SlashItem[]>("commands.list", {
+          sessionId: engineRef,
+          query: q,
+        });
+      commandSearchers.current.set(engineRef, f);
+    }
+    return f;
+  };
+  const commandsSearchDraft = () => {
+    if (!hasCapability("commands")) return undefined;
+    /* Cached by scope — a fresh fetcher identity per render would re-fire
+       the composer's search effect on every keystroke. */
+    const key = `draft:${employee.profile}:${pickedFolderPath ?? ""}`;
+    let f = commandSearchers.current.get(key);
+    if (!f) {
+      const cwd = pickedFolderPath;
+      f = (q: string) =>
+        relay.request<SlashItem[]>("commands.list", {
+          agent: employee.profile,
+          ...(cwd ? { cwd } : {}),
+          query: q,
+        });
+      commandSearchers.current.set(key, f);
+    }
+    return f;
+  };
+  /* The host-owned commands (issue #109): `/model` opens the picker the
+     surface already owns; `/rewind`/`/undo` rewind the last user message.
+     Everything else returns false — the send posts and the engine runs it
+     (compact rides the engine's own handler until its surface lands). */
+  const slashCommand = (conv: Conversation | null, pickerReady: boolean) => {
+    return (name: string, args: string): boolean => {
+      if (name === "model") {
+        if (!pickerReady) return false;
+        setModelPickerOpen(conv?.id ?? "draft");
+        return true;
+      }
+      if (name === "rewind" || name === "undo") {
+        if (!conv?.engineRef) return false;
+        const last = threadPool
+          .filter(
+            (m) => m.conversationId === conv.id && m.authorKind === "user",
+          )
+          .at(-1);
+        if (!last) return false;
+        rewindTo(conv, last.id);
+        return true;
+      }
+      void args;
+      return false;
+    };
+  };
 
   /* Add folder (#208): LilOS's own dialog on every surface — plain web and
      the packaged desktop app alike; no OS open panel anywhere. */
@@ -1671,6 +1740,9 @@ export function DmPage() {
                   setConversationModel(conv.id, c),
                 )
               }
+              onCommand={slashCommand(conv, catalog.length > 0)}
+              modelOpen={modelPickerOpen === conv.id}
+              onModelOpen={(o) => setModelPickerOpen(o ? conv.id : null)}
               banner={historyNotice}
               models={catalog.length ? catalog : undefined}
               /* Focus is a picker surface too — the same Refresh / Edit models…
@@ -1859,6 +1931,9 @@ export function DmPage() {
               : undefined
           }
           picker={picker}
+          onCommand={slashCommand(conv, catalog.length > 0)}
+          modelOpen={modelPickerOpen === conv.id}
+          onModelOpen={(o) => setModelPickerOpen(o ? conv.id : null)}
           access={conv.access}
           onAccess={(a) =>
             toastOnFail(
@@ -1930,6 +2005,7 @@ export function DmPage() {
           }
           mentionables={mentionables}
           onSearchFiles={fileSearch(conv.cwd)}
+          onSearchCommands={commandsSearch(conv.engineRef)}
           scrollTo={scrollTo ?? undefined}
           onScrolled={() => setScrollTo(null)}
           work={null}
@@ -1997,6 +2073,10 @@ export function DmPage() {
           composerNote={composerNote}
           mentionables={mentionables}
           onSearchFiles={fileSearch(pickedFolderPath)}
+          onSearchCommands={commandsSearchDraft()}
+          onCommand={slashCommand(null, catalog.length > 0)}
+          modelOpen={modelPickerOpen === "draft"}
+          onModelOpen={(o) => setModelPickerOpen(o ? "draft" : null)}
           onSearchMessages={searchMessages}
           onOpenHit={onOpenHit}
           /* #339: the employee's connect row off system.status — the notice
