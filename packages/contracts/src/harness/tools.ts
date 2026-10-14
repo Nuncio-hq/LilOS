@@ -32,6 +32,7 @@ export const TOOL_AREAS = [
   "root",
   "thread",
   "team",
+  "folder",
   "workbench",
   "browser",
   "terminal",
@@ -39,7 +40,7 @@ export const TOOL_AREAS = [
 export type ToolArea = (typeof TOOL_AREAS)[number];
 
 /** `read` never mutates; `write` mutates this session's own surfaces;
- *  `approval` needs the user's yes (slice D wires the gate). */
+ *  `approval` changes the company — always asks the user first. */
 export const TOOL_ACCESS = ["read", "write", "approval"] as const;
 export type ToolAccess = (typeof TOOL_ACCESS)[number];
 
@@ -270,6 +271,74 @@ export const TeamListResult = z.object({
 });
 export type TeamListResult = z.infer<typeof TeamListResult>;
 
+/**
+ * `team_hire` — propose a hire; the ask card carries the draft and
+ * nothing is written until the user approves. `profile` names an existing
+ * engine profile to reuse — omitted, the apply creates one from the draft
+ * (`agents.create`) the way the hire dialog does.
+ */
+export const TeamHireParams = z.strictObject({
+  name: z.string().min(1),
+  role: z.string().min(1),
+  model: z.string().min(1),
+  instructions: z.string().min(1),
+  profile: z.string().min(1).optional(),
+  provider: z.string().min(1).optional(),
+});
+export type TeamHireParams = z.infer<typeof TeamHireParams>;
+export const TeamHireResult = z.object({
+  employee: z.object({
+    id: z.string().min(1),
+    name: z.string().min(1),
+    role: z.string(),
+    profile: z.string(),
+    model: z.string(),
+  }),
+});
+export type TeamHireResult = z.infer<typeof TeamHireResult>;
+
+/**
+ * `team_update` — edit the calling employee's own record (name, role,
+ * model, instructions). The employee id comes from the session binding,
+ * never from a param: an agent cannot edit a colleague.
+ */
+export const TeamUpdateParams = z
+  .strictObject({
+    name: z.string().min(1).optional(),
+    role: z.string().optional(),
+    model: z.string().optional(),
+    instructions: z.string().optional(),
+  })
+  .refine((p) => Object.values(p).some((v) => v !== undefined), {
+    message: "at least one field to change",
+  });
+export type TeamUpdateParams = z.infer<typeof TeamUpdateParams>;
+export const TeamUpdateResult = z.object({
+  employee: z.object({
+    id: z.string().min(1),
+    name: z.string().min(1),
+    role: z.string(),
+    model: z.string(),
+    instructions: z.string(),
+  }),
+});
+export type TeamUpdateResult = z.infer<typeof TeamUpdateResult>;
+
+/* ---------------------------------- folder -------------------------------- */
+
+/** `folder_add` — propose binding a repo folder the user can pick. */
+export const FolderAddParams = z.strictObject({
+  path: z.string().min(1),
+});
+export type FolderAddParams = z.infer<typeof FolderAddParams>;
+export const FolderAddResult = z.object({
+  folder: z.object({
+    path: z.string(),
+    lastUsedAt: z.number(),
+  }),
+});
+export type FolderAddResult = z.infer<typeof FolderAddResult>;
+
 /* ---------------------------------- thread -------------------------------- */
 
 /**
@@ -359,6 +428,25 @@ export const ThreadPrsResult = z.object({
   prs: z.array(ForgePrListItem),
 });
 export type ThreadPrsResult = z.infer<typeof ThreadPrsResult>;
+
+/**
+ * `thread_start` — open a new thread in this DM with a first message
+ * from the employee. The ask names the title and the opening text; on
+ * approval the relay runs `conversations.open` scoped to the bound channel.
+ */
+export const ThreadStartParams = z.strictObject({
+  text: z.string().min(1),
+  title: z.string().min(1).optional(),
+});
+export type ThreadStartParams = z.infer<typeof ThreadStartParams>;
+export const ThreadStartResult = z.object({
+  conversation: z.object({
+    id: z.string().min(1),
+    title: z.string(),
+  }),
+  message: AppMessage,
+});
+export type ThreadStartResult = z.infer<typeof ThreadStartResult>;
 
 /* -------------------------------- registry -------------------------------- */
 
@@ -511,6 +599,34 @@ export const LILOS_TOOLS: Record<string, LilosToolContract> = {
     doc: "Pull requests linked to this session's thread.",
     area: "thread",
     access: "read",
+  },
+  thread_start: {
+    params: ThreadStartParams,
+    result: ThreadStartResult,
+    doc: "Ask the user to start a new thread in this DM with `text` as its first message (optional `title`). Waits for approval; company changes always ask.",
+    area: "thread",
+    access: "approval",
+  },
+  team_hire: {
+    params: TeamHireParams,
+    result: TeamHireResult,
+    doc: "Ask the user to hire an employee (name, role, model, instructions; `profile` reuses an existing engine profile). Waits for approval; returns the new employee record.",
+    area: "team",
+    access: "approval",
+  },
+  team_update: {
+    params: TeamUpdateParams,
+    result: TeamUpdateResult,
+    doc: "Ask the user to update your own employee record — name, role, model or instructions. Never edits another employee. Waits for approval.",
+    area: "team",
+    access: "approval",
+  },
+  folder_add: {
+    params: FolderAddParams,
+    result: FolderAddResult,
+    doc: "Ask the user to add a folder to the recent-folders list so it can be picked for a session. Waits for approval.",
+    area: "folder",
+    access: "approval",
   },
 };
 export type LilosToolName = keyof typeof LILOS_TOOLS & string;

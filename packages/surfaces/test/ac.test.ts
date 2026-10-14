@@ -240,6 +240,65 @@ describe("AC-2 one op set: dispatch, HTTP tool API, client", () => {
   });
 });
 
+describe("approval-gated tools: dispatch + areas + declined over HTTP", () => {
+  it("the four ops round-trip when the gate approves; `folder` is an area", async () => {
+    const appOps = fakeAppOps();
+    const { scope } = makeScope({ appOps });
+    expect(scope.areas.has("folder")).toBe(true);
+    const gw = await serveGateway({ sessions: [{ scope, token: "tok" }] });
+    const client = toolBackend({
+      baseUrl: gw.baseUrl,
+      token: "tok",
+      session: "s1",
+    });
+    try {
+      const t = await client.threadStart({ title: "T", text: "hi" });
+      expect(t.conversation.title).toBe("T");
+      const h = await client.teamHire({
+        name: "Bea",
+        role: "designer",
+        model: "m",
+        instructions: "i",
+      });
+      expect(h.employee.name).toBe("Bea");
+      const u = await client.teamUpdate({ role: "lead" });
+      expect(u.employee.role).toBe("lead");
+      const f = await client.folderAdd({ path: "~/x" });
+      expect(f.folder.path).toBe("~/x");
+      expect(appOps.asks).toEqual([
+        "thread_start T",
+        "team_hire Bea (designer)",
+        "team_update role",
+        "folder_add ~/x",
+      ]);
+    } finally {
+      gw.server.close();
+      await scope.close();
+    }
+  });
+
+  it("a decline surfaces as `declined` (HTTP 403) and applies nothing", async () => {
+    const appOps = fakeAppOps([], { approve: "decline" });
+    const { scope } = makeScope({ appOps });
+    const gw = await serveGateway({ sessions: [{ scope, token: "tok" }] });
+    const client = toolBackend({
+      baseUrl: gw.baseUrl,
+      token: "tok",
+      session: "s1",
+    });
+    try {
+      await expect(client.folderAdd({ path: "~/x" })).rejects.toThrow(/403/);
+      expect(appOps.asks.length).toBe(1);
+      // Decline changed nothing — the fake's only thread is still the seed.
+      const convs = await client.threadList();
+      expect(convs.threads.length).toBe(1);
+    } finally {
+      gw.server.close();
+      await scope.close();
+    }
+  });
+});
+
 describe("callTool contract guards", () => {
   it("rejects unknown tools and non-conforming params/results", async () => {
     const { scope } = makeScope({});

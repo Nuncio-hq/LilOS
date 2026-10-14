@@ -17,8 +17,11 @@ What Oscar sees:
 - A decided ask stays in the thread as a receipt ("Approved once by Oscar").
 
 Tools that apply:
-- Approval-gated write tools land with the gateway's approval gate (slice D,
-  issue #341) — they are not part of this toolset yet.
-- Today the session reads its context with \`context\`, \`thread_read\` and
-  \`thread_list\`, and can still answer Oscar plainly via \`thread_post\`.`,
+- \`thread_start\`, \`team_hire\`, \`team_update\` and \`folder_add\` are
+  approval tools: calling one posts the ask card here and the call waits —
+  Approve applies the change and returns its result; Decline returns a
+  declined error the agent can read. Company changes always ask, even when
+  the thread's access is Full.
+- The session reads its context with \`context\`, \`thread_read\` and
+  \`thread_list\`, and answers Oscar plainly via \`thread_post\`.`,
 };
