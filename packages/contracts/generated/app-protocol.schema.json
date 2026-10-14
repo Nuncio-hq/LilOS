@@ -430,7 +430,7 @@
         "jobs.stop",
         "approvals.setPolicy",
         "session.ask",
-        "commands.list",
+        "session.compact",
         "pairing.offer",
         "pairing.disable",
         "devices.list",
@@ -439,8 +439,7 @@
         "push.register",
         "push.unregister",
         "push.visibility",
-        "workbench.open",
-        "conversations.markRead"
+        "workbench.open"
       ]
     },
     "AppEventMethod": {
@@ -1841,7 +1840,8 @@
               "enum": [
                 "model",
                 "sleep",
-                "generic"
+                "generic",
+                "context"
               ]
             },
             "text": {
@@ -1859,18 +1859,6 @@
           "type": "boolean"
         },
         "bgJobs": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 9007199254740991
-        },
-        "readSeq": {
-          "default": 0,
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 9007199254740991
-        },
-        "finishedSeq": {
-          "default": 0,
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991
@@ -2167,7 +2155,8 @@
                     "enum": [
                       "model",
                       "sleep",
-                      "generic"
+                      "generic",
+                      "context"
                     ]
                   },
                   "text": {
@@ -2185,18 +2174,6 @@
                 "type": "boolean"
               },
               "bgJobs": {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 9007199254740991
-              },
-              "readSeq": {
-                "default": 0,
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 9007199254740991
-              },
-              "finishedSeq": {
-                "default": 0,
                 "type": "integer",
                 "minimum": 0,
                 "maximum": 9007199254740991
@@ -2553,7 +2530,8 @@
                   "enum": [
                     "model",
                     "sleep",
-                    "generic"
+                    "generic",
+                    "context"
                   ]
                 },
                 "text": {
@@ -2571,18 +2549,6 @@
               "type": "boolean"
             },
             "bgJobs": {
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 9007199254740991
-            },
-            "readSeq": {
-              "default": 0,
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 9007199254740991
-            },
-            "finishedSeq": {
-              "default": 0,
               "type": "integer",
               "minimum": 0,
               "maximum": 9007199254740991
@@ -2869,7 +2835,8 @@
                   "enum": [
                     "model",
                     "sleep",
-                    "generic"
+                    "generic",
+                    "context"
                   ]
                 },
                 "text": {
@@ -3105,7 +3072,8 @@
                   "enum": [
                     "model",
                     "sleep",
-                    "generic"
+                    "generic",
+                    "context"
                   ]
                 },
                 "text": {
@@ -3123,18 +3091,6 @@
               "type": "boolean"
             },
             "bgJobs": {
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 9007199254740991
-            },
-            "readSeq": {
-              "default": 0,
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 9007199254740991
-            },
-            "finishedSeq": {
-              "default": 0,
               "type": "integer",
               "minimum": 0,
               "maximum": 9007199254740991
@@ -4609,7 +4565,8 @@
                   "enum": [
                     "model",
                     "sleep",
-                    "generic"
+                    "generic",
+                    "context"
                   ]
                 },
                 "text": {
@@ -4627,18 +4584,6 @@
               "type": "boolean"
             },
             "bgJobs": {
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 9007199254740991
-            },
-            "readSeq": {
-              "default": 0,
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 9007199254740991
-            },
-            "finishedSeq": {
-              "default": 0,
               "type": "integer",
               "minimum": 0,
               "maximum": 9007199254740991
@@ -5315,7 +5260,8 @@
                         "enum": [
                           "model",
                           "sleep",
-                          "generic"
+                          "generic",
+                          "context"
                         ]
                       },
                       "text": {
@@ -5333,18 +5279,6 @@
                     "type": "boolean"
                   },
                   "bgJobs": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": 9007199254740991
-                  },
-                  "readSeq": {
-                    "default": 0,
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": 9007199254740991
-                  },
-                  "finishedSeq": {
-                    "default": 0,
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 9007199254740991
@@ -7683,7 +7617,8 @@
                   "enum": [
                     "model",
                     "sleep",
-                    "generic"
+                    "generic",
+                    "context"
                   ]
                 },
                 "text": {
@@ -7701,18 +7636,6 @@
               "type": "boolean"
             },
             "bgJobs": {
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 9007199254740991
-            },
-            "readSeq": {
-              "default": 0,
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 9007199254740991
-            },
-            "finishedSeq": {
-              "default": 0,
               "type": "integer",
               "minimum": 0,
               "maximum": 9007199254740991
@@ -9150,62 +9073,6 @@
       "required": [
         "policy"
       ]
-    },
-    "CommandsListParams": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "type": "object",
-      "properties": {
-        "sessionId": {
-          "type": "string"
-        },
-        "query": {
-          "type": "string"
-        },
-        "agent": {
-          "type": "string"
-        },
-        "cwd": {
-          "type": "string"
-        }
-      }
-    },
-    "CommandsListResult": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string",
-            "minLength": 1
-          },
-          "description": {
-            "default": "",
-            "type": "string"
-          },
-          "kind": {
-            "type": "string",
-            "enum": [
-              "command",
-              "skill"
-            ]
-          },
-          "argsHint": {
-            "type": "string"
-          },
-          "detail": {
-            "type": "object",
-            "propertyNames": {
-              "type": "string"
-            },
-            "additionalProperties": {}
-          }
-        },
-        "required": [
-          "name",
-          "kind"
-        ]
-      }
     },
     "WorkbenchOpenTarget": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
