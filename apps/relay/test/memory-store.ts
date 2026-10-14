@@ -384,8 +384,7 @@ export function createMemoryStore(): RelayStore {
       const conversation = conversations.get(conversationId);
       if (!conversation) return;
       const mark = finishMarks.get(conversationId);
-      if (mark && mark.sessionId === sessionId && eventSeq <= mark.seq)
-        return;
+      if (mark && mark.sessionId === sessionId && eventSeq <= mark.seq) return;
       if (channelSeq <= conversation.finishedSeq) return;
       finishMarks.set(conversationId, { sessionId, seq: eventSeq });
       conversation.finishedSeq = channelSeq;
