@@ -308,16 +308,18 @@ export function watchNotifications(opts: WatchNotificationsOpts): () => void {
      an appended delta would double its text. */
   const foldedSeqs = new Set<string>();
   const foldTurnText = (e: EngineEvent): void => {
-    if (e.type !== "turn.delta" && e.type !== "turn.recap") return;
-    const seqKey = `${e.sessionId}:${e.seq}`;
-    if (foldedSeqs.has(seqKey)) return;
-    foldedSeqs.add(seqKey);
-    if (e.type === "turn.delta") {
+    /* A recap re-stamps the whole stream at the delta run's anchor seq —
+       the feed merge lets it replace a held delta at that seq, so it folds
+       unconditionally (re-applying is a no-op); only deltas dedup by seq. */
+    if (e.type === "turn.recap") {
+      turnTexts.set(`${e.sessionId}:${e.payload.turnId}`, e.payload.text);
+    } else if (e.type === "turn.delta") {
+      const seqKey = `${e.sessionId}:${e.seq}`;
+      if (foldedSeqs.has(seqKey)) return;
+      foldedSeqs.add(seqKey);
       if (e.payload.stream !== "text") return;
       const key = `${e.sessionId}:${e.payload.turnId}`;
       turnTexts.set(key, (turnTexts.get(key) ?? "") + e.payload.delta);
-    } else if (e.type === "turn.recap") {
-      turnTexts.set(`${e.sessionId}:${e.payload.turnId}`, e.payload.text);
     } else return;
     /* Bounded: a watched session streams thousands of turns over a long
        uptime — keep the newest half once past a generous cap. */
@@ -383,6 +385,14 @@ export function watchNotifications(opts: WatchNotificationsOpts): () => void {
     }
   };
 
+  /* Seq high-water per session: a check scans every feed event, and delta
+     frames now ride the same list — rescanning a streamed turn on every
+     model update grows quadratically. Frames at or under the mark folded
+     already, so only a recap re-stamping inside the range or a still-
+     unaccounted notifyable (unmapped conversation, retried below) is
+     worth a revisit. */
+  const scannedSeqs = new Map<string, number>();
+
   /**
    * Post every completion that is new and not in view. Driven by feed
    * state (not the live stream) so a done/failed that missed its frame —
@@ -396,28 +406,48 @@ export function watchNotifications(opts: WatchNotificationsOpts): () => void {
     if (!opts.completionEvents) return;
     for (const { sessionId, events } of opts.completionEvents()) {
       if (!seeded(sessionId)) {
-        for (const e of events) foldTurnText(e);
+        for (const e of events) {
+          foldTurnText(e);
+          scannedSeqs.set(sessionId, e.seq);
+        }
         seed(
           sessionId,
           events.map((e) => e.seq),
         );
         continue;
       }
+      const through = scannedSeqs.get(sessionId) ?? 0;
       for (const e of events) {
-        /* Fold even a seen seq — the replay carries recap text the done
-           event's excerpt needs, and a live mount may have missed it. */
-        foldTurnText(e);
-        if (seqSeen(sessionId, e.seq)) continue;
+        if (e.seq <= through) {
+          if (e.type === "turn.recap") foldTurnText(e);
+          if (!notifyable(e) || seqSeen(sessionId, e.seq)) continue;
+        } else {
+          /* Fold even a seen seq — the replay carries recap text the done
+             event's excerpt needs, and a live mount may have missed it. */
+          foldTurnText(e);
+          scannedSeqs.set(sessionId, e.seq);
+          if (seqSeen(sessionId, e.seq)) continue;
+        }
         const n = notificationForEvent(e, ctxFor());
         if (!n) {
-          /* Cancelled turns are terminal-quiet — account them so they never
-             re-evaluate. Any other null is an unmapped conversation: the
-             engineRef write can still land, so leave it for the next check. */
+          /* Terminal-quiet events account once: cancelled turns, and any
+             notifyable from an employee muted at check time — the moment
+             was intentionally silent, so unmuting must not replay the
+             past. Any other null is an unmapped conversation: the
+             engineRef write can still land, so leave it for the next
+             check. */
           if (
             e.type === "turn.completed" &&
             e.payload.stopReason === "cancelled"
-          )
+          ) {
             recordSeq(sessionId, e.seq);
+            continue;
+          }
+          if (notifyable(e)) {
+            const ctx = ctxFor();
+            const c = conversationOf(e.sessionId, ctx);
+            if (c && employeeOf(c, ctx)?.muted) recordSeq(sessionId, e.seq);
+          }
           continue;
         }
         /* In view right now: the thread renders the finished turn, so the
@@ -461,7 +491,15 @@ export function watchNotifications(opts: WatchNotificationsOpts): () => void {
       // A mapped conversation means the event classified as uninteresting
       // (e.g. cancelled turn) — only an unmapped one is worth retrying, since
       // the relay write may land just behind a fast engine's events.
-      if (conversationOf(e.sessionId, opts.context())) return;
+      const c = conversationOf(e.sessionId, opts.context());
+      if (c) {
+        /* Muted at delivery time — the moment stays silent for good, so the
+           state check never reposts it after an unmute. An open ask stays
+           owed instead: it still needs an answer once unmuted. */
+        if (e.type !== "request.opened" && employeeOf(c, opts.context())?.muted)
+          recordSeq(e.sessionId, e.seq);
+        return;
+      }
       const key = `${e.sessionId}:${e.seq}`;
       if (!pending.has(key)) {
         pending.set(

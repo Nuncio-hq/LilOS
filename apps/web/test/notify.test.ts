@@ -371,6 +371,7 @@ describe("AC-1 watchNotifications — only when the conversation is not in view"
       foreground: true,
       open: [{ sessionId: "s1", requestId: "r1", request: approval }],
       convs: [conv("c1", "s1"), conv("c2", "s2")],
+      employee,
       feeds: {} as Record<string, EngineEvent[]>,
     };
     watchNotifications({
@@ -393,7 +394,7 @@ describe("AC-1 watchNotifications — only when the conversation is not in view"
           events,
         })),
       completionSeqs: store,
-      context: () => ctx(...state.convs),
+      context: () => ({ ...ctx(...state.convs), employees: [state.employee] }),
       openConversationId: () => state.openConv,
       inForeground: () => state.foreground,
       isRequestOpen: (id) => state.open.some((r) => r.requestId === id),
@@ -637,6 +638,35 @@ describe("AC-1 watchNotifications — only when the conversation is not in view"
     third.state.openConv = "c1";
     third.asksChanged();
     expect(third.posted).toEqual([]);
+  });
+
+  it("a completion that arrived while muted never posts after unmuting (#561)", () => {
+    const { posted, state, feeds, asksChanged } = stateHarness();
+    state.open = []; // no asks — completions only
+    // Seed s1 with a delta so the completed turn below counts as new.
+    feeds.s1 = [
+      {
+        ...ev("turn.delta", "s1", {
+          turnId: "t1",
+          stream: "text",
+          delta: "hello",
+        }),
+        seq: 6,
+      },
+    ];
+    asksChanged();
+    state.employee = { ...employee, muted: true };
+    feeds.s1.push({
+      ...ev("turn.completed", "s1", { turnId: "t1", stopReason: "end_turn" }),
+      seq: 7,
+    });
+    asksChanged();
+    expect(posted).toEqual([]);
+    // Unmuting is not a replay: the moment was intentionally silent.
+    state.employee = employee;
+    asksChanged();
+    asksChanged();
+    expect(posted).toEqual([]);
   });
 });
 
