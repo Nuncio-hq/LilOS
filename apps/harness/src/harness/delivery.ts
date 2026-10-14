@@ -1,5 +1,5 @@
 import type { AppMessage } from "@lilos/contracts/app";
-import type { HarnessCtx } from "./ctx";
+import type { HarnessCtx, SessionBinding } from "./ctx";
 
 /**
  * message -> engine, in arrival order: per-conversation
@@ -104,7 +104,30 @@ export async function deliverOrdered(
       this.dropParkedInterruptIfOrphaned(conv.id);
       return;
     }
-    const binding = await this.bindingFor(conv, message.channelId);
+    let binding: SessionBinding | undefined;
+    try {
+      binding = await this.bindingFor(conv, message.channelId);
+    } catch (error) {
+      /* A bind failure (a session.start timeout, an engine hiccup) is
+         transient like an unattached engine — but the `delivered` claim
+         is already made, so the send must land in a tracked resting
+         place with a retry or it is silently eaten: every later delivery
+         path dedupes on the claim and no turn ever runs. `early` holds
+         it (the reaper reads it as turn-pending) while a bounded flush
+         re-attempts the bind; past the cap the send surfaces as an
+         engine error like a failed prompt. */
+      this.opts.log.warn("bind failed; message held for retry", {
+        conversationId: conv.id,
+        messageId: message.id,
+        error: String(error),
+      });
+      const waiting = this.early.get(conv.id) ?? [];
+      waiting.push(message);
+      this.early.set(conv.id, waiting);
+      if (isRedeliver) this.redeliver.add(message.id);
+      this.scheduleEarlyFlush(conv.id);
+      return;
+    }
     if (!binding) {
       // Engine still starting/restarting: hold the message; attachEngine
       // flushes this queue once a connection exists (the dedupe set above
@@ -180,4 +203,75 @@ export async function flushEarlyOrdered(
       continue;
     this.enqueueOrPrompt(binding, message);
   }
+}
+
+/** Retries for a send parked in `early` on a bind failure — short enough
+    that a transient session.start stall costs one poll, capped so a
+    dead engine surfaces the send as an engine error instead of parking
+    it forever. */
+const EARLY_FLUSH_RETRY_MS = 1_500;
+const EARLY_FLUSH_RETRY_MAX = 5;
+
+/**
+ * Bounded re-attempt of the `early` flush for a send whose bind threw.
+ * `attachEngine` already flushes on (re)connect; this covers the engine
+ * staying attached while one bind RPC failed — a case nothing else
+ * re-arms. At the cap the parked batch is dropped with the same surface
+ * a failed prompt gets (system note + turnFailure → Retry), so the send
+ * is never silent. */
+export function scheduleEarlyFlush(this: HarnessCtx, convId: string): void {
+  if (this.earlyFlushTimers.has(convId)) return;
+  const attempts = (this.earlyFlushAttempts.get(convId) ?? 0) + 1;
+  this.earlyFlushAttempts.set(convId, attempts);
+  const timer = setTimeout(() => {
+    this.earlyFlushTimers.delete(convId);
+    void this.flushEarly(convId)
+      .then(() => {
+        /* Drained (or the conv went away): reset the budget. Still
+           parked — the flush could not bind yet; retry again. */
+        if (!this.early.get(convId)?.length)
+          this.earlyFlushAttempts.delete(convId);
+        else this.scheduleEarlyFlush(convId);
+      })
+      .catch((error) => {
+        this.opts.log.warn("early flush retry failed", {
+          conversationId: convId,
+          attempt: attempts,
+          error: String(error),
+        });
+        if (attempts >= EARLY_FLUSH_RETRY_MAX) {
+          void this.dropEarlyWithError(convId).catch(() => {});
+          return;
+        }
+        this.scheduleEarlyFlush(convId);
+      });
+  }, EARLY_FLUSH_RETRY_MS);
+  this.earlyFlushTimers.set(convId, timer);
+}
+
+/** Retry budget spent: surface the parked batch as an engine error and
+    stop holding it (the send keeps its `delivered` claim — it is settled
+    like a failed prompt, not owed a later redelivery). */
+export async function dropEarlyWithError(
+  this: HarnessCtx,
+  convId: string,
+): Promise<void> {
+  const waiting = this.early.get(convId);
+  if (!waiting?.length) return;
+  this.early.delete(convId);
+  this.earlyFlushAttempts.delete(convId);
+  const message = waiting[0];
+  const detail = "session could not be bound after several attempts";
+  this.opts.log.error("dropping held messages: bind retries exhausted", {
+    conversationId: convId,
+    count: waiting.length,
+  });
+  await this.postSystem(
+    { channelId: message.channelId, conversationId: convId },
+    `Engine error: ${detail}`,
+    `sys:${convId}:${message.id}:engine-error`,
+  );
+  await this.updateConversation(convId, {
+    turnFailure: { kind: "generic", text: `Engine error: ${detail}` },
+  });
 }

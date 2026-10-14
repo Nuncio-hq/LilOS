@@ -25,6 +25,7 @@ import {
   AppChannel,
   AppMessage,
   Ask,
+  AskHireProposal,
   AskState,
   AuthorKind,
   Conversation,
@@ -1071,6 +1072,8 @@ export const AsksOpenParams = z.object({
   turnId: z.string().min(1),
   requestId: z.string().min(1),
   request: EngineRequest,
+  /** Gateway `team_hire` ask: the hire draft the card renders. */
+  hire: AskHireProposal.optional(),
 });
 export type AsksOpenParams = z.infer<typeof AsksOpenParams>;
 export const AskResult = z.object({ ask: Ask });

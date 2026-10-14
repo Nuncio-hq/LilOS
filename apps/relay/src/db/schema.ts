@@ -199,6 +199,7 @@ export const asks = sqliteTable(
     turnId: text("turn_id").notNull(),
     requestId: text("request_id").notNull(),
     request: text("request").notNull(),
+    hire: text("hire"),
     state: text("state", { enum: ["open", "resolved"] })
       .notNull()
       .default("open"),

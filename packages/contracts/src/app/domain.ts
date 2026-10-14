@@ -419,6 +419,23 @@ export function toSummaryPreview(m: AppMessage): SummaryMessage {
 export const AskState = z.enum(["open", "resolved"]);
 export type AskState = z.infer<typeof AskState>;
 
+/**
+ * The hire draft a gateway `team_hire` ask carries so the card can render
+ * the real hire proposal instead of text. Host-produced only — an
+ * engine ask never sets it.
+ */
+export const AskHireProposal = z.strictObject({
+  name: z.string().min(1),
+  role: z.string(),
+  model: z.string(),
+  instructions: z.string(),
+  provider: z.string().optional(),
+  /* Reusing an existing engine profile instead of minting one is a
+     different action — the card has to say so. */
+  profile: z.string().optional(),
+});
+export type AskHireProposal = z.infer<typeof AskHireProposal>;
+
 export const Ask = z.object({
   id: z.string().min(1),
   channelId: z.string().min(1),
@@ -428,6 +445,8 @@ export const Ask = z.object({
   /** Engine request id the harness echoes back in `request.respond`. */
   requestId: z.string().min(1),
   request: EngineRequest,
+  /** Structured hire draft when the ask proposes a hire. */
+  hire: AskHireProposal.optional(),
   state: AskState,
   outcome: ApprovalOutcome.optional(),
   answer: z.string().optional(),

@@ -181,6 +181,8 @@ function surfaceErrorStatus(code: SurfaceError["code"]): number {
       return 503;
     case "user_control":
       return 409;
+    case "declined":
+      return 403;
     default:
       return 500;
   }

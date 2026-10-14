@@ -13,7 +13,7 @@ import { LILOS_TOOLS } from "./tools.js";
  * Tool names the coverage map may point at that are not implemented yet —
  * declared here so the catalog's canonical names are reserved once and the
  * slices that implement them drop the name into LILOS_TOOLS as-is. Empty
- * since #340 landed slice C; slice D (#341) may reserve the approval tools.
+ * since #340 landed slice C; slice D may reserve the approval tools.
  */
 export const PLANNED_TOOL_NAMES = [] as const;
 export type PlannedToolName = (typeof PLANNED_TOOL_NAMES)[number];
@@ -36,33 +36,25 @@ export const AGENT_METHOD_TOOLS: Record<string, string> = {
   "conversations.summaries": "thread_list",
   "conversations.update": "thread_set_title",
   "conversations.prs": "thread_prs",
+  "conversations.open": "thread_start",
   "employees.list": "team_list",
+  "employees.create": "team_hire",
+  "employees.update": "team_update",
+  "agents.create": "team_hire",
+  "agents.update": "team_update",
   "system.status": "context",
   "profile.get": "context",
   "folders.detail": "context",
+  "folders.add": "folder_add",
   "workbench.open": "workbench_open",
 } as const;
 
 /**
  * Methods that ARE agent-facing but only through an approval — the tool
- * lands with the slice-D approval gate (#341). Named here so the coverage
- * test holds the seat.
+ * lands with the slice that wires its gate. Empty since slice D:
+ * every company write an agent can propose has its approval tool.
  */
-export const APPROVAL_GATED_METHODS: Record<string, string> = {
-  "conversations.open":
-    "start a thread — approval tool lands with the gate (slice D)",
-  "employees.create":
-    "hire an employee — approval tool lands with the gate (slice D)",
-  "employees.update":
-    "edit an employee — approval tool lands with the gate (slice D)",
-  "agents.list":
-    "the agent roster surfaces through `context`; changing it is approval-gated (slice D)",
-  "agents.describe":
-    "agent profile detail surfaces through `context`; changing it is approval-gated (slice D)",
-  "agents.create": "create an engine agent profile — approval-gated (slice D)",
-  "agents.update": "update an engine agent profile — approval-gated (slice D)",
-  "folders.add": "bind a repo folder — approval-gated (slice D)",
-} as const;
+export const APPROVAL_GATED_METHODS: Record<string, string> = {} as const;
 
 /**
  * Everything else: each entry names why the agent never gets a tool for it.
@@ -127,8 +119,12 @@ export const NOT_AGENT_FACING: Record<string, string> = {
   "employees.remove": "only Oscar removes an employee",
   /* app wire — covered by `context`, the prompt, or the engine's own tools (D-#179) */
   "channels.list": "channel roster comes through `context`, not a tool",
+  "agents.list":
+    "the engine profile roster feeds the user's hire dialog; the caller's own profile surfaces through `context`",
+  "agents.describe":
+    "agent profile detail feeds the user's hire/edit dialogs; the caller's own profile surfaces through `context`",
   "channels.openDm":
-    "opening a DM is a company change — the user does it, or an approval tool (slice D)",
+    "opening a DM is a company change — the user does it, or it rides inside team_hire's approved apply",
   "attachments.get": "media bytes for the app renderer, not the agent",
   "jobs.list": "the engine's own job tools report its background work",
   "jobs.stop": "the engine's own job tools stop its background work",
@@ -162,8 +158,7 @@ export const NOT_AGENT_FACING: Record<string, string> = {
   "forge.comment": "the engine uses `gh` itself",
   "forge.create":
     "the engine uses `gh` itself; host create is Oscar's bar (#107)",
-  "forge.merge":
-    "only Oscar merges — an approval tool may land with the gate (#341)",
+  "forge.merge": "only Oscar merges — an approval tool may land with the gate",
   "os.editors": "the editor list opens for the user on the Mac",
   "os.open":
     "opening apps happens for the user on the Mac; the agent's surface is `workbench_previews`",

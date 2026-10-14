@@ -137,6 +137,7 @@ const COMPACT_ORDER: WbTab[] = [
   "plan",
   "pr",
   "preview",
+  "browser",
   "files",
   "terminal",
   "changes",
@@ -983,7 +984,10 @@ export function Workbench({
   const changesOn = liveMode ? probe?.diffs != null : !folderless;
   const filesOn = liveMode ? probe?.files != null : !folderless;
   const surfacesOn = live != null || (!liveMode && !folderless);
-  const previewOn = surfacesOn || !!browser;
+  const previewOn = surfacesOn;
+  /* The thread's own browser sits on its own tab (next to Preview), not in
+     place of it — the dev-server preview stays reachable on desktop. */
+  const browserOn = !!browser;
   const prOn = liveMode ? probe?.pr != null : !folderless;
   const bgOn =
     (caps ? !!caps.background : !folderless || !!emp || onStopJob != null) ||
@@ -1000,6 +1004,7 @@ export function Workbench({
     files: filesOn,
     terminal: surfacesOn,
     preview: previewOn,
+    browser: browserOn,
     background: bgOn,
     subagents: subOn,
     plan: planOn,
@@ -1028,6 +1033,7 @@ export function Workbench({
           "pr",
           "terminal",
           "preview",
+          "browser",
           "subagents",
           "background",
           "plan",
@@ -1357,13 +1363,19 @@ export function Workbench({
             </TabsTrigger>
           )}
           {previewOn && (
+            <TabsTrigger value="preview" {...wbTab("preview", "Preview")}>
+              <GlobeIcon />
+              {wbLabel("Preview")}
+            </TabsTrigger>
+          )}
+          {browserOn && (
             <TabsTrigger
-              value="preview"
-              data-wb-browser={!!browser || undefined}
-              {...wbTab("preview", browser ? "Browser" : "Preview")}
+              value="browser"
+              data-wb-browser
+              {...wbTab("browser", "Browser")}
             >
               <GlobeIcon />
-              {wbLabel(browser ? "Browser" : "Preview")}
+              {wbLabel("Browser")}
             </TabsTrigger>
           )}
           {planOn && (
@@ -1849,9 +1861,7 @@ export function Workbench({
       </TabsContent>
 
       <TabsContent value="preview" className="flex min-h-0 flex-1 flex-col">
-        {browser ? (
-          browser
-        ) : live ? (
+        {live ? (
           <LivePreview live={live} />
         ) : (
           <WebPreview
@@ -1892,6 +1902,11 @@ export function Workbench({
           </WebPreview>
         )}
       </TabsContent>
+      {browserOn && (
+        <TabsContent value="browser" className="flex min-h-0 flex-1 flex-col">
+          {browser}
+        </TabsContent>
+      )}
 
       {plan && (
         <TabsContent value="plan" className="min-h-0 flex-1">

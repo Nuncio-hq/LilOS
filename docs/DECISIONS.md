@@ -182,6 +182,18 @@ PR does not exist.
   framed window, or a frameless window with custom-drawn
   traffic lights (misses native drag/zoom/full-screen for free). — #232,
   #301
+- **D-#215 The LilOS Browser's pages live in the main process: one
+  `WebContentsView` per tab on `persist:lilos-browser`, renderers are pure
+  chrome.** Chrome draws the strip / omnibox / find / library and reports
+  each page slot's rect; the host positions views and pushes one full
+  state snapshot (tabs, slots, downloads, find) to both chrome renderers.
+  Pop-out is a second window running the same chrome; a Workbench Browser
+  tab is a `thread:<conv>` slot that may only adopt or open tabs carrying
+  that thread's group. Tabs + the partition's sign-ins persist through
+  `browser-state.json` and a `will-quit` cookie flush. Not: `<webview>`
+  (its state lives in the guest, untestable), a BrowserWindow per tab,
+  browser state through the relay, or an agent-facing AppMethod (lands
+  separately). — #215 · PR #735
 
 ## Testing
 - **D-#3 CI (GitHub Actions, setup-bun) runs with `engine-fake`; never a
@@ -296,6 +308,15 @@ PR does not exist.
   their own tool list. Not: attaching MCP only through ACP, or
   engine-specific UI toolsets (Hermes `desktop_ui` / `drive_preview` /
   `read_terminal`, was #36). — #36, #337 · PR #54
+- **D-#341 Company writes from agents reuse the user's own ask.** An
+  `access:"approval"` tool posts `kind:"approval"` (`once`/`deny`) on the
+  bound conversation through the relay asks seam and waits for it; the
+  engine's approval path (and a thread's `access:"full"`) never bypasses
+  it, and nothing is written before "once". `team_hire` carries its draft
+  in `Ask.hire` so the thread renders the same hire card Oscar sees. Not:
+  a parallel gateway-ask flow (the engine's `requestByAsk` path can't reach
+  it — unknown ask ids no-op there), auto-approve for gateway asks, or
+  write-first-ask-later. — #341
 - **D-#308 Every leg is a turn.** A post-turn leg mints its own turn id —
   `ref` echoes the prompting message, `initiatedBy:"agent"` marks
   engine-opened work. Not: stamping legs on the settled turn id, or the

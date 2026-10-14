@@ -37,6 +37,8 @@ export function HireCardInline({
               <div className="font-semibold">{draft.name}</div>
               <div className="text-muted-foreground text-xs">
                 {draft.role} · {draft.model}
+                {draft.provider ? ` · ${draft.provider}` : ""}
+                {draft.profile ? ` · reusing profile ${draft.profile}` : ""}
               </div>
             </div>
           </div>

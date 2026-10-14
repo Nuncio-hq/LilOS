@@ -91,6 +91,7 @@ import {
   hydrateAttachments,
   toAttachedFiles,
 } from "../lib/attachments";
+import { ThreadBrowser } from "../lib/browser";
 import { requestConnect } from "../lib/connect";
 import { FoldCache, type FoldInputs } from "../lib/conv-fold";
 import { DesktopFindBar } from "../lib/desktop-find";
@@ -1833,6 +1834,16 @@ export function DmPage() {
              rides unconditionally; the Workbench gates its folder-bound
              tabs on `work?.path` itself. */
               host={hostAccessors}
+              /* LilOS Browser in thread mode — this thread's tab group,
+                 desktop only (web has no native page host). */
+              browser={
+                window.lilos?.browser ? (
+                  <ThreadBrowser
+                    conversationId={conv.id}
+                    employeeId={employeeId}
+                  />
+                ) : undefined
+              }
               transcriptNote={transcriptNote}
               scrollTo={scrollTo ?? undefined}
               onScrolled={() => setScrollTo(null)}
