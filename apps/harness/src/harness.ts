@@ -40,6 +40,7 @@ import {
   suspendBinding,
   writeLife,
 } from "./harness/bind";
+import { execSlashCommand, slashFor } from "./harness/commands";
 import {
   conversationFromAtom,
   employeeIdFor,
@@ -581,6 +582,7 @@ Object.assign(Harness.prototype, {
   dropParkedInterruptIfOrphaned,
   dropStopped,
   employeeIdFor,
+  execSlashCommand,
   employeeNowLine,
   enqueueOrPrompt,
   ensureAgent,
@@ -631,6 +633,7 @@ Object.assign(Harness.prototype, {
   sessionHasOpenAsk,
   sessionParams,
   setSessionModel,
+  slashFor,
   stampCheckpoint,
   stopOwns,
   surfaceBackendDown,

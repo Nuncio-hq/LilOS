@@ -76,3 +76,39 @@ running/streaming window prefer a `slow[:ms]` prompt prefix, e.g.
 ## Devin Secrets Needed
 
 None — engine-fake is deterministic and local.
+
+## Proving what prompt text the engine actually received
+
+When a feature transforms the user's text before it reaches the engine
+(a `/skill` that expands into a prompt, a rewrite, an injected prefix),
+the rendered reply may not echo the transformed text. Two persistent proofs:
+
+- Send `recall:` in the same thread — engine-fake answers
+  `I remember N earlier turn(s): 1. <verbatim user turn>` from
+  `session.userTurns`, i.e. exactly what reached the engine.
+- The conversation title: the fake's two-stage auto-title emits a derived
+  title (verbatim first line) while the first turn runs, then an llm title
+  as it settles — `conversations.title` encodes the prompt's first clause.
+
+## Chrome on this VM has no CDP
+
+`browser_console` / `computer` inspect·query·act fail ("Could not connect
+to Chrome via CDP"). Drive by coordinates + screenshots, and verify state
+in `$LILOS_HOME/relay.sqlite` instead:
+`SELECT author_kind, substr(text,1,80) FROM messages ORDER BY created_at`
+(author_kind: user|employee|system).
+
+## Composer editing on macOS
+
+`ctrl+a` in the textarea is move-to-line-start, NOT select-all — use
+`cmd+a` + Backspace to clear a draft.
+
+## Slash menu landmarks
+
+- `role=listbox aria-label="Commands"`, rows `[data-slash-command="<name>"]`
+  with `data-kind="command|skill"`; empty state reads `No matches`.
+- The menu only opens while the draft is a `/fragment` at position 0 with
+  no whitespace — after a space (args) it closes by design.
+- App-owned sends never post: `/model` (picker), `/rewind`,`/undo`
+  (rewind last user msg). Unknown `/x` posts raw and the engine refusal
+  lands as a `system` note `/x: unknown command: x`.
