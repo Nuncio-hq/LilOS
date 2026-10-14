@@ -657,6 +657,8 @@ app.whenReady().then(async () => {
     stateDir,
     windowTarget: appUrl,
     windowPreload: () => join(UI_DIR, "preload.cjs"),
+    /* Tests point this at a scratch dir; unset it defaults to ~/Downloads. */
+    downloadsDir: process.env.LILOS_BROWSER_DOWNLOADS_DIR,
   });
   // The LilOS menu (#132): ⌘, opens Settings in the app window; the #34
   // status window stays one click away on its own item, no accelerator.

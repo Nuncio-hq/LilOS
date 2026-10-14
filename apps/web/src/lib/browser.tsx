@@ -148,12 +148,14 @@ const KEY_CHORDS: Partial<Record<DesktopBrowserKey, string>> = {
  */
 function PageSlot({
   slotId,
+  group,
   covered,
   insetTop,
   elsewhere,
   onBringHere,
 }: {
   slotId: string;
+  group?: DesktopBrowserTabGroup;
   covered: boolean;
   insetTop: number;
   elsewhere: boolean;
@@ -162,8 +164,10 @@ function PageSlot({
   const ref = useRef<HTMLDivElement>(null);
   const coveredRef = useRef(covered);
   const insetRef = useRef(insetTop);
+  const groupRef = useRef(group);
   coveredRef.current = covered;
   insetRef.current = insetTop;
+  groupRef.current = group;
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -183,7 +187,7 @@ function PageSlot({
         : "hidden";
       if (key === last) return;
       last = key;
-      bridge()?.reportSlot({ slotId, rect });
+      bridge()?.reportSlot({ slotId, rect, group: groupRef.current });
     };
     report();
     const ro = new ResizeObserver(report);
@@ -313,6 +317,7 @@ export function BrowserSlotView({
         page={
           <PageSlot
             slotId={slotId}
+            group={group}
             covered={covered}
             insetTop={findOpen ? FIND_INSET : 0}
             elsewhere={!!active && slot?.visibleTabId !== activeId}

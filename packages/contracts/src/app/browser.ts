@@ -183,6 +183,9 @@ export type DesktopBrowserCommand = z.infer<typeof DesktopBrowserCommand>;
 /** A slot's reported geometry, in the window's content-view coordinates. */
 export const DesktopBrowserSlotReport = z.strictObject({
   slotId: z.string().min(1),
+  /** The thread group this slot owns: the host can only adopt or open tabs
+      carrying it, or the thread surface would show a tab it filters out. */
+  group: DesktopBrowserTabGroup.optional(),
   rect: z
     .strictObject({
       x: z.number(),

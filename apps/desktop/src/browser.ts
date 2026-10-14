@@ -134,6 +134,7 @@ export class BrowserHost {
   private appWindow: BrowserWindow | undefined;
   private browserWindow: BrowserWindow | undefined;
   private seq = 0;
+  private cookiesFlushed = false;
 
   constructor(opts: {
     stateDir: string;
@@ -143,12 +144,7 @@ export class BrowserHost {
     windowPreload: () => string;
   }) {
     this.stateFile = join(opts.stateDir, "browser-state.json");
-    this.downloadsDir =
-      opts.downloadsDir ??
-      process.env.LILOS_DOWNLOADS_DIR ??
-      app.getPath("downloads");
-    this.windowTarget = opts.windowTarget;
-    this.windowPreload = opts.windowPreload;
+    this.downloadsDir = opts.downloadsDir ?? app.getPath("downloads");
     this.windowTarget = opts.windowTarget;
     this.windowPreload = opts.windowPreload;
     this.ses = session.fromPartition(BROWSER_PARTITION);
@@ -182,6 +178,20 @@ export class BrowserHost {
     });
     this.restore();
     this.wireIpc();
+    app.on("before-quit", () => this.persistNow());
+    /* Partition cookie writes are buffered in memory; the flush must
+       finish before the process exits or sign-ins don't survive restart. */
+    app.on("will-quit", (e) => {
+      if (this.cookiesFlushed) return;
+      e.preventDefault();
+      this.ses.cookies
+        .flushStore()
+        .catch(() => {})
+        .then(() => {
+          this.cookiesFlushed = true;
+          app.quit();
+        });
+    });
   }
 
   private readonly windowTarget: () =>
@@ -451,18 +461,21 @@ export class BrowserHost {
     } else {
       this.slots.set(r.slotId, { id: r.slotId, win, rect });
       // A freshly-registered slot gets the remembered selection back, or a
-      // new tab when it had none.
+      // new tab when it had none. A thread slot may only adopt tabs of its
+      // own group — anything else is invisible to its filtered strip.
       const remembered = this.persistedSlots[r.slotId]?.activeTabId;
       const slot = this.slots.get(r.slotId);
       if (slot) {
         if (remembered && this.tabs.has(remembered)) {
           this.assign(r.slotId, remembered);
         } else if (!slot.activeTabId) {
-          const reuse = [...this.tabs.keys()].find(
-            (t) => this.slotOf(t) === undefined,
+          const reuse = [...this.tabs.values()].find(
+            (rec) =>
+              this.slotOf(rec.tab.id) === undefined &&
+              (!r.group || rec.tab.group?.threadId === r.group.threadId),
           );
-          if (reuse) this.assign(r.slotId, reuse);
-          else this.newTab(r.slotId, sender, undefined, undefined);
+          if (reuse) this.assign(r.slotId, reuse.tab.id);
+          else this.newTab(r.slotId, sender, undefined, r.group);
         }
       }
     }
@@ -559,6 +572,31 @@ export class BrowserHost {
       index: find.index,
       count: prev?.count ?? 0,
     });
+    /* found-in-page replies are unreliable on a view that has been
+       detached and re-attached (some arrive, many never emit). The match
+       count the bar shows can't wait on that channel — count directly in
+       the page instead. */
+    void rec.view.webContents
+      .executeJavaScript(
+        `(() => {
+          try {
+            const q = ${JSON.stringify(find.query)}.toLowerCase();
+            const t = (document.body?.innerText || "").toLowerCase();
+            let i = -1, n = 0;
+            while ((i = t.indexOf(q, i + 1)) !== -1) n++;
+            return n;
+          } catch { return 0; }
+        })()`,
+        true,
+      )
+      .then((n) => {
+        const cur = this.find.get(slotId);
+        if (cur && cur.query === find.query) {
+          this.find.set(slotId, { ...cur, count: n });
+          this.push();
+        }
+      })
+      .catch(() => {});
   }
 
   /* --------------------------- pop-out --------------------------------- */
@@ -587,9 +625,13 @@ export class BrowserHost {
       if (this.browserWindow === win) this.browserWindow = undefined;
       for (const [id, s] of [...this.slots])
         if (s.win === win) this.unregisterSlot(id);
-      // Closing the pop-out window closes the browser, matching the panel's
-      // close affordance; reopening restores the same mode + tabs.
-      this.open = false;
+      // Closing the pop-out while it is the browser's home closes the
+      // browser (like the panel's close affordance). A close caused by the
+      // mode toggle back to "panel" is not a close: the dock takes over.
+      if (this.mode === "window") {
+        this.mode = "panel";
+        this.open = false;
+      }
       this.push();
       this.persistSoon();
     });
@@ -607,6 +649,12 @@ export class BrowserHost {
   private persistSoon(): void {
     if (this.persistTimer) clearTimeout(this.persistTimer);
     this.persistTimer = setTimeout(() => this.persist(), 300);
+  }
+
+  /** Quit is too late for the debounce — flush synchronously. */
+  private persistNow(): void {
+    if (this.persistTimer) clearTimeout(this.persistTimer);
+    this.persist();
   }
 
   private persist(): void {
