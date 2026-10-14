@@ -122,12 +122,16 @@ test("⌘[ / ⌘] walk the navigation history", async ({ page }) => {
   test.setTimeout(120_000);
   await dmDefault(page);
   const dmUrl = page.url();
-  await page.goto(`${stack.webUrl}/`);
-  await expect(page).toHaveURL(/\/$/);
+  /* A send opens the thread route — two distinct history entries to walk. */
+  const box = page.locator("textarea").last();
+  await box.fill("history sentinel");
+  await box.press("Enter");
+  await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+/, { timeout: 15_000 });
+  const threadUrl = page.url();
   await page.keyboard.press("Meta+[");
   await expect(page).toHaveURL(dmUrl, { timeout: 15_000 });
   await page.keyboard.press("Meta+]");
-  await expect(page).toHaveURL(/\/$/, { timeout: 15_000 });
+  await expect(page).toHaveURL(threadUrl, { timeout: 15_000 });
 });
 
 /* ---- the prototype (UI source of truth) shows the same switcher ---- */
