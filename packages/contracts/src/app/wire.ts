@@ -414,14 +414,18 @@ export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 export const MAX_ATTACHMENTS_PER_MESSAGE = 10;
 
 /**
- * A file the client uploads inline with a message. Scope is images only
- * (#31) — other mime types are `invalid_params`, an oversized decoded body
+ * A file the client uploads inline with a message. Any mime type within
+ * `MAX_ATTACHMENT_BYTES` — images also ride the prompt as image blocks
+ * when the engine declares `image_prompt`, everything else lands in the
+ * session folder for the agent's file tools. An oversized decoded body
  * is the typed `attachment_too_large`. The relay stores the blob and puts
  * only display refs on the message; bytes come back via `attachments.get`.
  */
 export const AttachmentInput = z.object({
   name: z.string().default(""),
-  mimeType: z.string().regex(/^image\//),
+  /* `min(1)` not a mime allowlist — clients send `application/octet-stream`
+     when the platform can't name a type. */
+  mimeType: z.string().min(1),
   /** Base64-encoded bytes. */
   dataBase64: z.string().min(1),
 });

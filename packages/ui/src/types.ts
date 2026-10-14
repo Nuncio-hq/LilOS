@@ -113,6 +113,8 @@ export type AttachedFile = {
   name: string;
   mediaType: string;
   url?: string;
+  /** Decoded bytes — the chip's size label; absent on composer-only files. */
+  sizeBytes?: number;
 };
 /* #420: the engine's `question` ask, as the card shows it (wire shape:
    packages/contracts/src/engine/requests.ts — options carry the id the

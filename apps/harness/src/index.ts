@@ -229,6 +229,9 @@ const harness = new Harness({
   relay,
   sleep: createSleepGuard(process.platform, log),
   workdir: config.workdir,
+  /* Harness-owned state root — folder-less sessions' attachment files
+     land under it. */
+  stateDir: config.homeDir,
   log,
   hideCaps: config.hideCaps,
   /* #134: per-folder shadow-git checkpoints, snapshotted before each turn. */

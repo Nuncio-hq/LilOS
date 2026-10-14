@@ -2,6 +2,7 @@
 // harness/*.ts functions read/write these fields through the `this: HarnessCtx`
 // receiver type; the class body itself only touches a few of them (#441).
 import { homedir } from "node:os";
+import { join } from "node:path";
 import type { RelayClient } from "@lilos/client-runtime";
 import type {
   AppMessage,
@@ -204,6 +205,12 @@ export interface HarnessOptions {
    * tests).
    */
   homeDir?: string;
+  /**
+   * Where harness-owned state lives (LILOS_HARNESS_HOME). File attachments
+   * to folder-less sessions decode under it — they have no session folder
+   * to land in but the agent still needs a readable path.
+   */
+  stateDir?: string;
   /** #339 Connect reconciler: reconciles the lilos plugin per employee
      profile after approval, reports the rows on `harness.report`.
      Undefined on engines without Connect support (#413: hermes, and
@@ -370,9 +377,13 @@ export class Harness {
   /* The Mac user's home this harness serves — `~` on the wire means this
      directory (device-scope folder reads stay under it). */
   private readonly home: string;
+  /* Harness-owned state root — folder-less sessions' attachment files
+     live under it (`stateDir/attachments`). */
+  private readonly stateDir: string;
 
   constructor(private readonly opts: HarnessOptions) {
     this.home = opts.homeDir ?? homedir();
+    this.stateDir = opts.stateDir ?? join(homedir(), ".lilos", "harness");
     this.reaper = new SessionReaper({
       idleMs: opts.sessionIdleMs ?? 0,
       intervalMs: opts.reaperIntervalMs ?? 60_000,

@@ -142,9 +142,9 @@ export async function sendDm(
 export function describeSendError(e: unknown): string {
   if (e instanceof RelayError) {
     if (e.code === "attachment_too_large")
-      return "That image is too large to attach (10 MB max per file).";
+      return "That file is too large to attach (10 MB max per file).";
     if (e.code === "invalid_params") {
-      // Only map attachment validation failures to the images line —
+      // Only map attachment validation failures to the files line —
       // unrelated invalid_params errors deserve the generic message.
       const issues = (e.data as { issues?: { path?: unknown[] }[] } | undefined)
         ?.issues;
@@ -154,7 +154,7 @@ export function describeSendError(e: unknown): string {
           (i) => Array.isArray(i?.path) && i.path.includes("attachments"),
         )
       ) {
-        return `Only images, up to ${MAX_ATTACHMENTS_PER_MESSAGE} at once.`;
+        return `Up to ${MAX_ATTACHMENTS_PER_MESSAGE} files per message.`;
       }
       return "Couldn't send that. Try again.";
     }

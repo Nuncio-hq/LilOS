@@ -214,6 +214,7 @@ export interface HarnessCtx {
   readonly reaper: SessionReaper;
   deliveryChains: Map<string, Promise<void>>;
   readonly home: string;
+  readonly stateDir: string;
   readonly opts: HarnessOptions;
   readonly liveSessionCount: number;
 
