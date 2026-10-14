@@ -17,6 +17,7 @@ import type {
   Employee,
   MessageSearchHit,
   ProfileSettings,
+  ScheduledTask,
   SystemStatusResult,
 } from "@lilos/contracts/app";
 import type { ForgePrListItem } from "@lilos/contracts/host";
@@ -115,6 +116,15 @@ const surfaces = await serveSurfaces(0, {
           {},
         );
         return r.employees;
+      },
+      /* #136 `schedule_list`: scope supplies the employee — an agent
+         reads its own schedule, never another's. */
+      scheduledTasks: async (employeeId) => {
+        const r = await relay.request<{ tasks: ScheduledTask[] }>(
+          "schedules.list",
+          { employeeId },
+        );
+        return r.tasks;
       },
       threadPrs: async (conversationId) => {
         const r = await relay.request<{ prs: ForgePrListItem[] }>(
@@ -303,6 +313,9 @@ const wakeWatch = watchWake({
   onWake: (gapMs) => {
     log.info("woke from sleep", { gapMs });
     supervisor.notifyWake();
+    /* Slept-through schedule slots surface on the next tick anyway — this
+       just makes them land on wake, not up to 30s later. */
+    void harness.scheduler?.tick();
   },
 });
 

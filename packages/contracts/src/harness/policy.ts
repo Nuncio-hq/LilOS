@@ -21,6 +21,7 @@ const TOOL_AREA_ORDER: readonly ToolArea[] = [
   "root",
   "thread",
   "team",
+  "schedule",
   "terminal",
   "browser",
   "workbench",
@@ -31,6 +32,8 @@ const AREA_LINES: Record<ToolArea, string> = {
   thread:
     "- `thread_*`: the threads in your DM with the user — `thread_read`/`thread_search`/`thread_list`/`thread_prs` to look around, `thread_post` to answer, `thread_set_title` to retitle your own thread while its title is auto. Posting lands a real message; it is always allowed here and never possible in anyone else's thread.",
   team: "- `team_*`: the company roster — who else works here.",
+  schedule:
+    "- `schedule_*`: this employee's scheduled tasks — when and with what prompt they run.",
   workbench:
     "- `workbench_*`: the user's Workbench for this session — `workbench_previews` lists your preview servers, `workbench_open` puts the panel on the Files/Changes/PR/Preview tab you name (it never opens an editor on the Mac).",
   browser:

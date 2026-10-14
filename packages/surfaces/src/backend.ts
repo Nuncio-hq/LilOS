@@ -11,6 +11,7 @@ import type {
   GuideResult,
   PreviewTarget,
   SessionBinding,
+  ScheduleListResult,
   TeamListResult,
   TerminalReadResult,
   TerminalRunResult,
@@ -61,6 +62,7 @@ export interface SurfaceBackend {
   context(): Promise<ContextResult>;
   guide(p: GuideParams): Promise<GuideResult>;
   teamList(): Promise<TeamListResult>;
+  scheduleList(): Promise<ScheduleListResult>;
   threadPost(p: { text: string }): Promise<ThreadPostResult>;
   threadRead(p: ThreadReadParams): Promise<ThreadReadResult>;
   threadList(): Promise<ThreadListResult>;

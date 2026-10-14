@@ -20,6 +20,9 @@ import type {
   PushPrefs,
   RecentFolder,
   RespondTo,
+  ScheduledRunRecord,
+  ScheduledTask,
+  TaskSchedule,
   TurnFailure,
   WorkspaceIntent,
 } from "@lilos/contracts/app";
@@ -119,6 +122,33 @@ export interface OpenConversationInput {
       message's (channelId, key) slot — the same index `appendMessage`
       dedupes on — so a resend answers the stored thread. */
   dedupeKey?: string;
+  /** Host-only (#136): the scheduled task the run was fired for — the
+      DM marks the session and the chip opens the task. */
+  scheduled?: { taskId: string; name: string };
+}
+
+/* Scheduled tasks (#136): the store keeps the row the host's scheduler
+   reads; run bookkeeping fields come from the host only. */
+export interface NewScheduledTask {
+  employeeId: string;
+  name: string;
+  prompt: string;
+  folder?: string;
+  schedule: TaskSchedule;
+  access: ConversationAccess;
+}
+
+export interface ScheduledTaskPatch {
+  name?: string;
+  prompt?: string;
+  folder?: string | null;
+  schedule?: TaskSchedule;
+  access?: ConversationAccess;
+  paused?: boolean;
+  lastRun?: ScheduledRunRecord | null;
+  skippedAt?: number | null;
+  lastFiredAt?: number | null;
+  requestedAt?: number | null;
 }
 
 export interface AppendMessageInput {
@@ -261,6 +291,18 @@ export interface RelayStore {
   openDmChannel(
     employeeId: string,
   ): Promise<{ channel: AppChannel; created: boolean }>;
+
+  /* --------------------- scheduled tasks (#136) ---------------------- */
+  /** Every task, or one employee's — the host reads all, the app its DM's. */
+  listScheduledTasks(employeeId?: string): Promise<ScheduledTask[]>;
+  getScheduledTask(id: string): Promise<ScheduledTask | null>;
+  createScheduledTask(input: NewScheduledTask): Promise<ScheduledTask>;
+  updateScheduledTask(
+    id: string,
+    patch: ScheduledTaskPatch,
+  ): Promise<ScheduledTask | null>;
+  /** Returns the removed task so subscribers can be told, null when unknown. */
+  deleteScheduledTask(id: string): Promise<ScheduledTask | null>;
 
   listConversations(query: ListConversationsQuery): Promise<Conversation[]>;
   /**

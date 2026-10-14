@@ -89,6 +89,9 @@ export async function callTool(
     case "team_list":
       result = await backend.teamList();
       break;
+    case "schedule_list":
+      result = await backend.scheduleList();
+      break;
     case "thread_post":
       result = await backend.threadPost(p as ThreadPostParams);
       break;

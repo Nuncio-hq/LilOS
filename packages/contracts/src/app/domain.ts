@@ -207,6 +207,13 @@ export const Conversation = z.object({
    * session feed it keeps alive — survive a released session.
    */
   bgJobs: z.number().int().nonnegative().optional(),
+  /**
+   * Set on a session a scheduled task opened (#136): the DM marks it and
+   * the chip opens the task. Host-stamped at `conversations.open`.
+   */
+  scheduled: z
+    .object({ taskId: z.string().min(1), name: z.string() })
+    .optional(),
   createdAt: Timestamp,
 });
 export type Conversation = z.infer<typeof Conversation>;

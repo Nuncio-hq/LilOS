@@ -112,9 +112,48 @@ export const conversations = sqliteTable(
     /** Running background-job count (#583): the DM session row's
         "N in background" badge; same host-written lifecycle. */
     bgJobs: integer("bg_jobs"),
+    /** Set on a session a scheduled task opened (#136): JSON
+        `{taskId, name}` — host-stamped at `conversations.open`. */
+    scheduled: text("scheduled"),
     createdAt: integer("created_at").notNull(),
   },
   (t) => [index("conversations_channel").on(t.channelId)],
+);
+
+/**
+ * Scheduled tasks (#136): one row per employee task — a prompt that opens a
+ * new DM session on a schedule. The relay owns the record (D-#25); the
+ * engine host owns the clock: `last_fired_at` is its "runs after this"
+ * anchor and `requested_at` carries Run-now clicks, so a slept-through slot
+ * lands once on the next tick and a click while the host was down still
+ * fires. `schedule`/`last_run` are JSON (`TaskSchedule`/`ScheduledRunRecord`).
+ */
+export const scheduledTasks = sqliteTable(
+  "scheduled_tasks",
+  {
+    id: text("id").primaryKey(),
+    employeeId: text("employee_id")
+      .notNull()
+      .references(() => employees.id),
+    name: text("name").notNull(),
+    prompt: text("prompt").notNull(),
+    /** Folder the run's session opens in; null = harness default dir. */
+    folder: text("folder"),
+    /** JSON `TaskSchedule`. */
+    schedule: text("schedule").notNull(),
+    access: text("access", { enum: ["ask", "full"] })
+      .notNull()
+      .default("ask"),
+    paused: integer("paused", { mode: "boolean" }).notNull().default(false),
+    lastFiredAt: integer("last_fired_at"),
+    requestedAt: integer("requested_at"),
+    /** JSON `ScheduledRunRecord` — the latest run's DM session + outcome. */
+    lastRun: text("last_run"),
+    /** Epoch ms a run was skipped: the previous run was still going (AC-4). */
+    skippedAt: integer("skipped_at"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [index("scheduled_tasks_employee").on(t.employeeId)],
 );
 
 export const messages = sqliteTable(

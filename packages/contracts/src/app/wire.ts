@@ -262,6 +262,15 @@ export const AppMethod = z.enum([
      engine event stream: a synthesized event seq would poison `events.since`
      replay and the push watermark. */
   "workbench.open",
+  /* Scheduled tasks (#136): the relay owns the records (D-#25); the host
+     reads them all and fires runs as `conversations.open`. `runNow`
+     stamps `requestedAt` — a click while the host was down still fires
+     on its next tick, never silently. */
+  "schedules.list",
+  "schedules.create",
+  "schedules.update",
+  "schedules.delete",
+  "schedules.runNow",
 ]);
 export type AppMethod = z.infer<typeof AppMethod>;
 
@@ -498,6 +507,11 @@ export const ConversationsOpenParams = z
      * slot `messages.post` dedupes on.
      */
     dedupeKey: z.string().min(1).max(200).optional(),
+    /** Host-only (#136): the scheduled task this run was fired for — the
+        DM marks the session and the chip opens the task. */
+    scheduled: z
+      .object({ taskId: z.string().min(1), name: z.string() })
+      .optional(),
   })
   .refine(
     (p) => p.text.length > 0 || (p.attachments?.length ?? 0) > 0,
@@ -1340,6 +1354,10 @@ export const AppEventMethod = z.enum([
   "connect.changed",
   "engine.event",
   "workbench.opened",
+  /* Broadcast on every scheduled-task write so the host's scheduler and
+     every client's task list refresh live (#136). */
+  "schedule.upserted",
+  "schedule.removed",
 ]);
 export type AppEventMethod = z.infer<typeof AppEventMethod>;
 

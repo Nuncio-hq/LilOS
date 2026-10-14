@@ -7,6 +7,7 @@ import type {
   Employee,
   MessageSearchHit,
   ProfileSettings,
+  ScheduledTask,
   SystemStatusResult,
   WorkbenchOpenTarget,
 } from "@lilos/contracts/app";
@@ -160,6 +161,8 @@ export function fakeAppOps(
     usage?: Conversation["usage"];
     status?: SystemStatusResult;
     profile?: ProfileSettings;
+    /** `schedule_list` answers (#136). */
+    scheduledTasks?: ScheduledTask[];
   } = {},
 ): AppOps & {
   posted: string[];
@@ -273,6 +276,11 @@ export function fakeAppOps(
     },
     async employees() {
       return employees;
+    },
+    async scheduledTasks(employeeId: string) {
+      return (opts.scheduledTasks ?? []).filter(
+        (t) => t.employeeId === employeeId,
+      );
     },
     async threadPrs(conversationId: string) {
       return opts.prs?.[conversationId] ?? [];

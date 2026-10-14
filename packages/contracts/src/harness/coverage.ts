@@ -41,6 +41,7 @@ export const AGENT_METHOD_TOOLS: Record<string, string> = {
   "profile.get": "context",
   "folders.detail": "context",
   "workbench.open": "workbench_open",
+  "schedules.list": "schedule_list",
 } as const;
 
 /**
@@ -62,6 +63,14 @@ export const APPROVAL_GATED_METHODS: Record<string, string> = {
   "agents.create": "create an engine agent profile — approval-gated (slice D)",
   "agents.update": "update an engine agent profile — approval-gated (slice D)",
   "folders.add": "bind a repo folder — approval-gated (slice D)",
+  "schedules.create":
+    "create a scheduled task — approval tool lands with the gate (slice D)",
+  "schedules.update":
+    "edit/pause a scheduled task — approval tool lands with the gate (slice D)",
+  "schedules.delete":
+    "delete a scheduled task — approval tool lands with the gate (slice D)",
+  "schedules.runNow":
+    "start a run outside its schedule — approval tool lands with the gate (slice D)",
 } as const;
 
 /**

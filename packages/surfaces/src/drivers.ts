@@ -12,6 +12,7 @@ import type {
   SessionBinding,
   ViewerBrowserInputEvent,
 } from "@lilos/contracts/harness";
+import type { ScheduledTask } from "@lilos/contracts/app";
 import type { ForgePrListItem } from "@lilos/contracts/host";
 
 /**
@@ -87,6 +88,8 @@ export interface AppOps {
   threadSummaries(): Promise<ConversationSummary[]>;
   /** The company roster (`employees.list`). */
   employees(): Promise<Employee[]>;
+  /** The bound employee's scheduled tasks (`schedules.list`). */
+  scheduledTasks(employeeId: string): Promise<ScheduledTask[]>;
   /** PRs linked to a thread of the bound DM (`conversations.prs`). */
   threadPrs(conversationId: string): Promise<ForgePrListItem[]>;
   /** FTS search inside the bound DM (`messages.search`). */

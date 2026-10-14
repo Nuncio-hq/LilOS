@@ -7,6 +7,7 @@ import {
 } from "../app/domain.js";
 import { MessageSearchHit, StatusComponent } from "../app/wire.js";
 import { ConversationAccess } from "../engine/approvals.js";
+import { ScheduledTask } from "../app/schedule.js";
 import { ForgePrListItem } from "../host/forge.js";
 
 /**
@@ -35,6 +36,7 @@ export const TOOL_AREAS = [
   "workbench",
   "browser",
   "terminal",
+  "schedule",
 ] as const;
 export type ToolArea = (typeof TOOL_AREAS)[number];
 
@@ -360,6 +362,16 @@ export const ThreadPrsResult = z.object({
 });
 export type ThreadPrsResult = z.infer<typeof ThreadPrsResult>;
 
+/* --------------------------------- schedule ------------------------------- */
+
+/** `schedule_list` — this employee's scheduled tasks (#136). */
+export const ScheduleListParams = z.strictObject({});
+export type ScheduleListParams = z.infer<typeof ScheduleListParams>;
+export const ScheduleListResult = z.object({
+  tasks: z.array(ScheduledTask),
+});
+export type ScheduleListResult = z.infer<typeof ScheduleListResult>;
+
 /* -------------------------------- registry -------------------------------- */
 
 export interface LilosToolContract {
@@ -510,6 +522,13 @@ export const LILOS_TOOLS: Record<string, LilosToolContract> = {
     result: ThreadPrsResult,
     doc: "Pull requests linked to this session's thread.",
     area: "thread",
+    access: "read",
+  },
+  schedule_list: {
+    params: ScheduleListParams,
+    result: ScheduleListResult,
+    doc: "This employee's scheduled tasks — name, schedule, access level, last run.",
+    area: "schedule",
     access: "read",
   },
 };

@@ -651,6 +651,20 @@ export class SessionSurfaces implements ViewerScope {
     });
   }
 
+  /* ----------------------------- schedule ops ------------------------------- */
+
+  /** `schedule_list` (#136): the bound employee's scheduled tasks — an
+      agent reads its own schedule, never another employee's, because the
+      scope's binding supplies the employee id. */
+  scheduleList() {
+    return this.tracked("schedule_list", "", async () => {
+      const ops = this.requireAppOps();
+      return {
+        tasks: await ops.scheduledTasks(this.binding?.employeeId ?? ""),
+      };
+    });
+  }
+
   /* ---------------------------- workbench open ------------------------------ */
 
   workbenchOpen(p: WorkbenchOpenTarget) {

@@ -811,6 +811,16 @@ export function toFeed(
       /* #583 AC-3: the relay-stamped running-job count — the row's badge
          renders before the session feed lands. */
       ...(conv.bgJobs ? { bgJobs: conv.bgJobs } : {}),
+      /* #136: a scheduled task opened this session — the row's chip names
+         it and opens the task. */
+      ...(conv.scheduled
+        ? {
+            scheduled: {
+              task: conv.scheduled.taskId,
+              name: conv.scheduled.name,
+            },
+          }
+        : {}),
       ...(ws ? { ws } : {}),
       ...(jobs?.length ? { jobs } : {}),
     },

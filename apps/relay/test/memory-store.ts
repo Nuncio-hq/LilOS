@@ -10,6 +10,7 @@ import type {
   PendingTurn,
   ProfileSettings,
   RecentFolder,
+  ScheduledTask,
 } from "@lilos/contracts/app";
 import { toSummaryMessage, toSummaryPreview } from "@lilos/contracts/app";
 import { equalSecret } from "@lilos/contracts/auth";
@@ -52,6 +53,7 @@ export function createMemoryStore(): RelayStore {
   const asks = new Map<string, Ask>();
   const folders = new Map<string, RecentFolder>();
   const settings = new Map<string, unknown>();
+  const scheduledTasks = new Map<string, ScheduledTask>();
   let profile: ProfileSettings = {};
   const grants = new Map<
     string,
@@ -197,6 +199,11 @@ export function createMemoryStore(): RelayStore {
         if (channelIds.has(conversation.channelId)) conversations.delete(cid);
       }
       for (const cid of channelIds) channels.delete(cid);
+      /* An employee's tasks die with it; the runs they opened keep
+         their `scheduled` marker like any other leftover row. */
+      for (const [tid, task] of scheduledTasks) {
+        if (task.employeeId === id) scheduledTasks.delete(tid);
+      }
       employees.delete(id);
       return { employee, channelIds: [...channelIds] };
     },
@@ -229,6 +236,46 @@ export function createMemoryStore(): RelayStore {
         .filter((c) => (conversationId ? c.id === conversationId : true))
         .filter((c) => (includeArchived ? true : !c.archived))
         .sort((a, b) => a.createdAt - b.createdAt);
+    },
+    async listScheduledTasks(employeeId) {
+      return [...scheduledTasks.values()]
+        .filter((t) => (employeeId ? t.employeeId === employeeId : true))
+        .sort((a, b) => a.createdAt - b.createdAt);
+    },
+    async getScheduledTask(id) {
+      return scheduledTasks.get(id) ?? null;
+    },
+    async createScheduledTask(input) {
+      const task: ScheduledTask = {
+        id: newId("task"),
+        employeeId: input.employeeId,
+        name: input.name,
+        prompt: input.prompt,
+        ...(input.folder !== undefined ? { folder: input.folder } : {}),
+        schedule: input.schedule,
+        access: input.access,
+        createdAt: now(),
+      };
+      scheduledTasks.set(task.id, task);
+      return task;
+    },
+    async updateScheduledTask(id, patch) {
+      const task = scheduledTasks.get(id);
+      if (!task) return null;
+      for (const k of ["folder", "lastRun", "skippedAt", "lastFiredAt", "requestedAt"] as const) {
+        if (patch[k] === null) {
+          delete (task as Record<string, unknown>)[k];
+          patch = { ...patch, [k]: undefined };
+        }
+      }
+      Object.assign(task, patch);
+      return task;
+    },
+    async deleteScheduledTask(id) {
+      const task = scheduledTasks.get(id);
+      if (!task) return null;
+      scheduledTasks.delete(id);
+      return task;
     },
     async listRecentFolders() {
       return [...folders.values()].sort((a, b) => b.lastUsedAt - a.lastUsedAt);
@@ -315,6 +362,9 @@ export function createMemoryStore(): RelayStore {
         ...(input.provider !== undefined ? { provider: input.provider } : {}),
         ...(input.effort !== undefined ? { effort: input.effort } : {}),
         ...(input.fast !== undefined ? { fast: input.fast } : {}),
+        ...(input.scheduled !== undefined
+          ? { scheduled: input.scheduled }
+          : {}),
       };
       conversations.set(conversation.id, conversation);
       /* The picker's folder bumps recents — a `.lilos/wt/*` run dir never

@@ -8,6 +8,8 @@ import {
   ConversationUpdatedEvent,
   EmployeeRemovedEvent,
   MessageChangedEvent,
+  ScheduleRemovedEvent,
+  ScheduleUpsertedEvent,
   TurnInterruptRequestedEvent,
 } from "@lilos/contracts/app";
 import { CONNECT_APPROVAL_KEY } from "../connect";
@@ -74,6 +76,16 @@ export function onRelayEvent(
       }
       break;
     }
+    case "schedule.upserted": {
+      const parsed = ScheduleUpsertedEvent.safeParse(params);
+      if (parsed.success) void this.onScheduleUpserted(parsed.data.task);
+      break;
+    }
+    case "schedule.removed": {
+      const parsed = ScheduleRemovedEvent.safeParse(params);
+      if (parsed.success) this.onScheduleRemoved(parsed.data.taskId);
+      break;
+    }
     case "conversation.updated": {
       // User-initiated rename/archive (host writes only touch
       // engineRef/state/deliveredSeq): mirror onto the engine session when
@@ -81,6 +93,7 @@ export function onRelayEvent(
       const parsed = ConversationUpdatedEvent.safeParse(params);
       if (!parsed.success) break;
       const conv = parsed.data.conversation;
+      void this.onScheduledConversationUpdate(conv);
       const seen = this.metaSeen.get(conv.id);
       const binding = this.bindings.get(conv.id);
       /* #106 AC-1: a pill switch lands mid-turn — the very next

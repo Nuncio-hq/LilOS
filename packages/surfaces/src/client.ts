@@ -8,6 +8,7 @@ import {
   type ContextResult,
   type GuideResult,
   LILOS_TOOLS,
+  type ScheduleListResult,
   type TeamListResult,
   type TerminalReadResult,
   type TerminalRunResult,
@@ -100,6 +101,8 @@ export function toolBackend(opts: ToolClientOptions): SurfaceBackend {
     context: () => call("context", {}) as Promise<ContextResult>,
     guide: (p) => call("guide", p) as Promise<GuideResult>,
     teamList: () => call("team_list", {}) as Promise<TeamListResult>,
+    scheduleList: () =>
+      call("schedule_list", {}) as Promise<ScheduleListResult>,
     threadList: () => call("thread_list", {}) as Promise<ThreadListResult>,
     threadSearch: (p) =>
       call("thread_search", p) as Promise<ThreadSearchResult>,
