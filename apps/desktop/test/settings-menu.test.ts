@@ -15,6 +15,7 @@ const menus = () => {
     () => calls.push("settings"),
     () => calls.push("status"),
     (action) => calls.push(`find:${action}`),
+    () => calls.push("browser"),
   );
   const appMenu = items.find((i) => i.label === "LilOS");
   const editMenu = items.find((i) => i.label === "Edit");

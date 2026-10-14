@@ -24,6 +24,12 @@ import {
   useRouterState,
 } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  BrowserDock,
+  BrowserWindowApp,
+  useBrowserContextPush,
+  useBrowserState,
+} from "./lib/browser";
 import { buildLabel } from "./lib/build-label";
 import { connectApproved, requestConnect } from "./lib/connect";
 import {
@@ -134,6 +140,15 @@ function AppShell() {
 
   const statusPoll = useAtom(relay.status);
   const fatal = useAtom(relay.fatal);
+  // LilOS Browser (desktop): relay roster -> host, dock state -> 3rd column.
+  useBrowserContextPush();
+  const browserState = useBrowserState();
+  const browserPanelOn =
+    !!window.lilos?.browser &&
+    browserState?.open === true &&
+    browserState.mode === "panel";
+  const openBrowser = () =>
+    void window.lilos?.browser?.command({ op: "setOpen", open: true });
   // Real system.status legs (poll keeps them fresh); falls back to socket
   // states while the relay is unreachable (#53, #85).
   const comps = useMemo(
@@ -361,6 +376,7 @@ function AppShell() {
       className={appFrameClass({
         desktop: window.lilos?.isDesktop === true,
         focus,
+        browserPanel: browserPanelOn,
       })}
     >
       {/* The sidebar's dim backdrop: narrow windows in every view, and at
@@ -413,8 +429,10 @@ function AppShell() {
         onOpenStatus={() => setStatusOpen(true)}
         onOpenSettings={() => setSettingsOpen(true)}
         onPairPhone={openPairPhone}
+        onOpenBrowser={window.lilos?.browser ? openBrowser : undefined}
       />
       <Outlet />
+      <BrowserDock />
       {hireOpen && (
         <HireDialog
           initial={hireTemplates[0]}
@@ -553,5 +571,9 @@ declare module "@tanstack/react-router" {
 }
 
 export function App() {
+  /* The popped-out LilOS Browser window loads this same bundle behind a
+     preload flag — it is browser chrome over a native page slot, not the
+     app shell (no router, no relay). */
+  if (window.lilos?.browser?.isBrowserWindow) return <BrowserWindowApp />;
   return <BootScreen />;
 }

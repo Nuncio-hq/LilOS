@@ -6,7 +6,7 @@ import {
   PlusIcon,
   XIcon,
 } from "lucide-react";
-import { Fragment, useState } from "react";
+import { type CSSProperties, Fragment, useState } from "react";
 import { Button } from "../components/ui/button";
 import { cn } from "../lib/utils";
 import { HermesAvatar } from "../shell/avatars";
@@ -46,6 +46,7 @@ export function BrowserTabStrip({
   onNewTab,
   onMode,
   onClose,
+  osWindow,
 }: {
   tabs: BrowserTab[];
   activeId: string;
@@ -57,6 +58,9 @@ export function BrowserTabStrip({
   onNewTab: () => void;
   onMode?: (m: BrowserMode) => void;
   onClose?: () => void;
+  /** Real OS window chrome (hiddenInset traffic lights): skip the drawn
+      dots, reserve their space, and make the strip the drag region. */
+  osWindow?: boolean;
 }) {
   const [open, setOpen] = useState<Set<string>>(() => new Set());
   const grouped = mode !== "thread";
@@ -88,8 +92,13 @@ export function BrowserTabStrip({
   );
 
   return (
-    <div className="flex h-10 shrink-0 items-end gap-1 bg-muted/60 px-2 pt-1.5">
-      {mode === "window" && (
+    <div
+      className="flex h-10 shrink-0 items-end gap-1 bg-muted/60 px-2 pt-1.5"
+      style={
+        osWindow ? ({ WebkitAppRegion: "drag" } as CSSProperties) : undefined
+      }
+    >
+      {mode === "window" && !osWindow && (
         <div className="mr-2 flex h-7 items-center gap-2 self-center pl-1">
           <button
             aria-label="Close window"
@@ -100,7 +109,15 @@ export function BrowserTabStrip({
           <span className="size-3 rounded-full bg-[#28c840]" />
         </div>
       )}
-      <div className="no-scrollbar flex min-w-0 flex-1 items-end gap-0.5 overflow-x-auto [mask-image:linear-gradient(to_right,#000_calc(100%-24px),transparent)]">
+      {osWindow && <div className="w-[76px] shrink-0 self-stretch" />}
+      <div
+        className="no-scrollbar flex min-w-0 flex-1 items-end gap-0.5 overflow-x-auto [mask-image:linear-gradient(to_right,#000_calc(100%-24px),transparent)]"
+        style={
+          osWindow
+            ? ({ WebkitAppRegion: "no-drag" } as CSSProperties)
+            : undefined
+        }
+      >
         {own.map(tab)}
         <Button
           variant="ghost"
@@ -153,7 +170,14 @@ export function BrowserTabStrip({
           );
         })}
       </div>
-      <div className="mb-0.5 flex shrink-0 items-center">
+      <div
+        className="mb-0.5 flex shrink-0 items-center"
+        style={
+          osWindow
+            ? ({ WebkitAppRegion: "no-drag" } as CSSProperties)
+            : undefined
+        }
+      >
         {onMode && mode !== "thread" && (
           <Button
             variant="ghost"

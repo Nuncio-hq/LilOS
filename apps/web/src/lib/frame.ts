@@ -13,14 +13,21 @@
 export function appFrameClass({
   desktop,
   focus,
+  browserPanel,
 }: {
   desktop: boolean;
   focus: boolean;
+  /** The ⌘⇧B browser is docked as a third column (desktop only). */
+  browserPanel?: boolean;
 }): string {
   return [
     "lilos-desktop grid h-dvh grid-cols-1 overflow-hidden text-sm",
     desktop ? "" : "lilos-float",
-    focus ? "lilos-focus" : "lg:grid-cols-[264px_minmax(0,1fr)]",
+    focus
+      ? `lilos-focus ${browserPanel ? "lg:grid-cols-[minmax(0,1fr)_auto]" : ""}`
+      : browserPanel
+        ? "lg:grid-cols-[264px_minmax(0,1fr)_auto]"
+        : "lg:grid-cols-[264px_minmax(0,1fr)]",
   ]
     .filter(Boolean)
     .join(" ");

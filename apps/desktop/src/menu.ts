@@ -19,6 +19,7 @@ export function appMenuTemplate(
   openSettings: () => void,
   openStatus: () => void,
   onFind: (action: FindMenuAction) => void,
+  onBrowser: () => void,
 ): MenuItemConstructorOptions[] {
   return [
     {
@@ -75,6 +76,23 @@ export function appMenuTemplate(
         },
       ],
     },
-    { label: "View", role: "viewMenu" },
+    {
+      label: "View",
+      /* Written out so the browser toggle can live here: ⌘⇧B opens/closes
+         the LilOS Browser. Its click runs in main (the host owns the
+         open state), so it also fires while a page's view has focus. */
+      submenu: [
+        {
+          id: "browser",
+          label: "LilOS Browser",
+          accelerator: "CmdOrCtrl+Shift+B",
+          click: onBrowser,
+        },
+        { type: "separator" },
+        { role: "reload" },
+        { type: "separator" },
+        { role: "togglefullscreen" },
+      ],
+    },
   ];
 }
