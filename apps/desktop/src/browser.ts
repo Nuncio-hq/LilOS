@@ -14,6 +14,7 @@ import {
   type DesktopBrowserSlotReport,
   type DesktopBrowserState,
   type DesktopBrowserTab,
+  type DesktopBrowserTabGroup,
   type DesktopBrowserThread,
 } from "@lilos/contracts/app";
 import {
@@ -81,6 +82,9 @@ interface Slot {
   id: string;
   win: BrowserWindow;
   rect: { x: number; y: number; width: number; height: number } | null;
+  /* A thread slot's group: which tabs it may adopt/open — its strip is
+     filtered to these, so anything else would be invisible. */
+  group?: DesktopBrowserTabGroup;
   activeTabId?: string;
   visibleTabId?: string;
 }
@@ -149,7 +153,21 @@ export class BrowserHost {
     this.windowPreload = opts.windowPreload;
     this.ses = session.fromPartition(BROWSER_PARTITION);
     this.ses.protocol.handle("lilos", () => newtabPage());
-    this.ses.setPermissionRequestHandler((_wc, _perm, cb) => cb(true));
+    /* Sign-in flows legitimately need storage access and clipboard; device
+       permissions (camera/mic/geo/HID…) are denied outright — there's no
+       prompt UI yet, and silently granting them would make any page a
+       recorder. Add a prompt surface before allowing more. */
+    const safePerms = new Set([
+      "clipboard-read",
+      "clipboard-sanitized-write",
+      "storage-access",
+      "top-level-storage-access",
+      "fullscreen",
+      "window-management",
+    ]);
+    this.ses.setPermissionRequestHandler((_wc, perm, cb) =>
+      cb(safePerms.has(perm)),
+    );
     this.ses.on("will-download", (_e, item) => {
       const name = this.claimDownloadName(item.getFilename() || "download");
       const savePath = join(this.downloadsDir, name);
@@ -391,14 +409,19 @@ export class BrowserHost {
         slotId,
       });
     });
-    // OAuth/sign-in popups open as real child windows on the same profile.
-    wc.setWindowOpenHandler(() => ({
-      action: "allow",
-      overrideBrowserWindowOptions: {
-        autoHideMenuBar: true,
-        webPreferences: { partition: BROWSER_PARTITION, sandbox: true },
-      },
-    }));
+    /* OAuth/sign-in popups open as real child windows on the same profile,
+       but only for document URLs — javascript:/data:/file: popups are a
+       script-injection vector and get nothing. */
+    wc.setWindowOpenHandler(({ url }) => {
+      if (!/^(https?|lilos):/i.test(url)) return { action: "deny" };
+      return {
+        action: "allow",
+        overrideBrowserWindowOptions: {
+          autoHideMenuBar: true,
+          webPreferences: { partition: BROWSER_PARTITION, sandbox: true },
+        },
+      };
+    });
   }
 
   private closeTab(tabId: string): void {
@@ -412,13 +435,17 @@ export class BrowserHost {
     for (const [id, s] of this.slots) {
       if (s.visibleTabId === tabId) s.visibleTabId = undefined;
       if (s.activeTabId === tabId) {
-        const next = this.tabs.keys().next().value;
+        /* The refill must respect the slot's group — a thread strip can't
+           show another thread's (or the user's) tabs. */
+        const next = [...this.tabs.values()].find(
+          (r) => !s.group || r.tab.group?.threadId === s.group.threadId,
+        )?.tab.id;
         if (next) this.assign(id, next);
         else {
           s.activeTabId = undefined;
           // An emptied slot gets a fresh tab, like a browser whose last
           // tab you close — the chrome stays usable without a dead pane.
-          this.newTab(id, s.win.webContents, undefined, undefined);
+          this.newTab(id, s.win.webContents, undefined, s.group);
         }
       }
     }
@@ -459,7 +486,7 @@ export class BrowserHost {
     if (existing) {
       existing.rect = rect;
     } else {
-      this.slots.set(r.slotId, { id: r.slotId, win, rect });
+      this.slots.set(r.slotId, { id: r.slotId, win, rect, group: r.group });
       // A freshly-registered slot gets the remembered selection back, or a
       // new tab when it had none. A thread slot may only adopt tabs of its
       // own group — anything else is invisible to its filtered strip.
@@ -502,6 +529,9 @@ export class BrowserHost {
     const s = this.slots.get(slotId);
     const rec = this.tabs.get(tabId);
     if (!s || !rec) return;
+    /* A thread slot can never paint a tab outside its group — its strip is
+       filtered to the group, so it would hold an invisible active tab. */
+    if (s.group && rec.tab.group?.threadId !== s.group.threadId) return;
     // The view moves to wherever the tab is now selected: detach from any
     // previous parent and hand it to this slot's window.
     const prevSlot = this.slotOf(tabId);

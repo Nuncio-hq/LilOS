@@ -243,8 +243,29 @@ test("AC-1/AC-3: panel renders real pages; pop-out window; find, zoom, print, do
     .poll(async () => (await viewContents(app))?.zoom, { timeout: 10_000 })
     .toBeCloseTo(1.5);
 
-  /* AC-3 print: printToPDF on the view's webContents proves print is
-     wired (the sheet itself is OS modal — untestable headless). */
+  /* AC-3 print: the `print` op must reach the view's webContents — spy on
+     the instance method first, then printToPDF proves the render path
+     (the sheet itself is OS modal — untestable headless). */
+  await app.evaluate(({ BrowserWindow }) => {
+    const w = BrowserWindow.getAllWindows()[0];
+    const kids = (w?.contentView.children ?? []) as {
+      webContents?: { print(o: object): void };
+    }[];
+    const wc = kids.find((k) => k.webContents)?.webContents;
+    if (!wc) return;
+    (globalThis as Record<string, number>).__printCalls = 0;
+    wc.print = () => {
+      globalThis.__printCalls += 1;
+    };
+  });
+  await browserCmd(win, { op: "print", slotId: "panel" });
+  await expect
+    .poll(async () =>
+      app.evaluate(
+        () => (globalThis as Record<string, number>).__printCalls ?? 0,
+      ),
+    )
+    .toBe(1);
   const pdf = await app.evaluate(async ({ BrowserWindow }) => {
     const w = BrowserWindow.getAllWindows()[0];
     const kids = (w?.contentView.children ?? []) as {
