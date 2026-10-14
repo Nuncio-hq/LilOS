@@ -12,11 +12,11 @@ import {
   type CommandItem,
   type CommandsExecParams,
   type CommandsListParams,
+  COMPACT_CAPABILITY,
+  CONTEXT_LIMIT_TEXT,
   type ContentBlock,
   ENGINE_METHODS,
   ENGINE_PROTOCOL,
-  COMPACT_CAPABILITY,
-  CONTEXT_LIMIT_TEXT,
   type EngineEvent,
   type EngineRequest,
   EVENT_LOG_CAP,
@@ -1534,7 +1534,7 @@ export class HermesEngine {
           ? (info as Record<string, unknown>).usage
           : r?.usage,
       );
-      if (status !== "compressed") {
+      if (!r || status !== "compressed") {
         /* `aborted` means the fold produced nothing (or refused to grow);
            `pending` (compute host) keeps running in the background — the
            compacted edge lands when it finishes, so no event here. */
@@ -2561,8 +2561,7 @@ export class HermesEngine {
            (automatic compaction — manual calls emit from their result
            and suppress this edge via `manualCompact`). */
         if (p.kind === "compressing" || p.kind === "compacting") {
-          if (s.usage?.context !== undefined)
-            s.compactBefore = s.usage.context;
+          if (s.usage?.context !== undefined) s.compactBefore = s.usage.context;
           break;
         }
         if (p.kind === "compacted") {

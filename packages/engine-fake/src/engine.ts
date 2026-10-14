@@ -16,13 +16,13 @@ import {
   type CommandItem,
   type CommandsExecParams,
   type CommandsListParams,
+  COMPACT_CAPABILITY,
   type ContentBlock,
   type ConversationAccess,
   capEventLog,
   coalesceTurnDeltas,
   ENGINE_METHODS,
   ENGINE_PROTOCOL,
-  COMPACT_CAPABILITY,
   type EngineEvent,
   type EngineEventType,
   EVENT_LOG_CAP,
@@ -968,10 +968,7 @@ export class FakeEngine {
   private sessionCompact(p: SessionCompactParams) {
     const s = this.require(p.sessionId);
     if (s.state === "closed")
-      throw new RpcError(
-        RPC_ERRORS.INVALID_STATE,
-        `session ${s.id} is closed`,
-      );
+      throw new RpcError(RPC_ERRORS.INVALID_STATE, `session ${s.id} is closed`);
     if (s.turn)
       throw new RpcError(
         RPC_ERRORS.INVALID_STATE,
@@ -1504,8 +1501,7 @@ export class FakeEngine {
             delta: w,
           });
         }
-        const error =
-          "context window exceeded: the session's context is full";
+        const error = "context window exceeded: the session's context is full";
         if (s.usage.contextWindow)
           s.usage = { ...s.usage, context: s.usage.contextWindow };
         this.emit(s, "turn.completed", {

@@ -1,11 +1,7 @@
 import type { Conversation, Employee } from "@lilos/contracts/app";
 import type { EngineEvent, McpServer } from "@lilos/contracts/engine";
 import type { HarnessCtx, SessionBinding } from "./ctx";
-import {
-  BACKEND_DOWN,
-  CONTEXT_LIMIT,
-  CONTEXT_LIMIT_TEXT,
-} from "./rpc";
+import { BACKEND_DOWN, CONTEXT_LIMIT, CONTEXT_LIMIT_TEXT } from "./rpc";
 
 /**
  * Turn completion: the answer post + dedupe, the Stop park
