@@ -143,12 +143,14 @@ export {
 } from "./shell/status";
 export { ThemeToggle } from "./shell/theme-toggle";
 export { useTheme } from "./shell/use-theme";
-
 // sidebar
 export { ChannelItem, NavItem, Section } from "./sidebar/nav";
 // thread panel
 export { ThreadView } from "./thread/thread-view";
 export * from "./types";
+// UX v2 prototype: threads by project, agent as a per-thread picker
+export { V2Shell } from "./v2/v2-shell";
+export type * from "./v2/v2-types";
 export type { TreeNode } from "./workbench/artifacts";
 export { buildTree, sessionArtifacts, turnSteps } from "./workbench/artifacts";
 export { BackgroundPanel } from "./workbench/background-panel";
