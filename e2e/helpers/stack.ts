@@ -387,6 +387,25 @@ export async function bootStack(
 }
 
 /**
+ * Deterministic mount signal for the peek panel: `[data-thread-panel]`
+ * mounts as an empty shell while the conversation resolves async, so a
+ * click waiting only on the shell can outrun the header's render under
+ * load (the Focus click's own actionability window then expires first).
+ * The session-title row mounts in the same pass as the Focus button —
+ * once it's up, the ↗ is there too.
+ */
+export async function panelFocusReady(
+  page: import("@playwright/test").Page,
+): Promise<void> {
+  const { expect } = playwright;
+  const panel = page.locator("[data-thread-panel]");
+  await expect(panel).toBeVisible({ timeout: 30_000 });
+  await expect(panel.locator("[data-session-title]")).toBeVisible({
+    timeout: 30_000,
+  });
+}
+
+/**
  * #577 navigation helper: a send lands on the DM list with the thread open
  * in the side panel (`/dm/:e/:c`); Focus opens only from the panel's ↗
  * button. Specs that need Focus after a send call this — it waits for the
@@ -400,12 +419,10 @@ export async function panelIntoFocus(
   await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+$/, { timeout: 30_000 });
   // The URL lands before the panel mounts (the conv resolves async under
   // load) — wait for the surface, then the button.
-  await expect(page.locator("[data-thread-panel]")).toBeVisible({
-    timeout: 30_000,
-  });
+  await panelFocusReady(page);
   await page
     .locator("[data-thread-panel]")
     .getByTitle("Focus", { exact: true })
-    .click({ timeout: 15_000 });
+    .click();
   await expect(page).toHaveURL(focusUrl, { timeout: 30_000 });
 }
