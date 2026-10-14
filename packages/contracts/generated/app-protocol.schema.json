@@ -4329,6 +4329,9 @@
             },
             "provider": {
               "type": "string"
+            },
+            "profile": {
+              "type": "string"
             }
           },
           "required": [
@@ -6545,6 +6548,9 @@
             },
             "provider": {
               "type": "string"
+            },
+            "profile": {
+              "type": "string"
             }
           },
           "required": [
@@ -6709,6 +6715,9 @@
                   "type": "string"
                 },
                 "provider": {
+                  "type": "string"
+                },
+                "profile": {
                   "type": "string"
                 }
               },
@@ -6970,6 +6979,9 @@
                     "type": "string"
                   },
                   "provider": {
+                    "type": "string"
+                  },
+                  "profile": {
                     "type": "string"
                   }
                 },
@@ -7961,6 +7973,9 @@
                 },
                 "provider": {
                   "type": "string"
+                },
+                "profile": {
+                  "type": "string"
                 }
               },
               "required": [
@@ -8172,6 +8187,9 @@
                   "type": "string"
                 },
                 "provider": {
+                  "type": "string"
+                },
+                "profile": {
                   "type": "string"
                 }
               },

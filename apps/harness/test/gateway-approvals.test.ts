@@ -197,8 +197,11 @@ describe("approval-gated gateway tools", () => {
         (e) => e.id === v.binding.employeeId,
       );
       expect(me?.role).toBe("lead engineer");
-      /* Only the caller changed — no other employee exists to have moved. */
-      expect((await v.employees()).length).toBe((await v.employees()).length);
+      /* A stray id in params can't point the edit at someone else —
+         strict params reject it before the gate even opens. */
+      await expect(
+        v.client.teamUpdate({ id: "emp-other", role: "x" } as never),
+      ).rejects.toThrow();
 
       const call2 = v.client.teamUpdate({ name: "Ada II" });
       const ask2 = await v.nextAsk(seen);
@@ -209,6 +212,19 @@ describe("approval-gated gateway tools", () => {
         (e) => e.id === v.binding.employeeId,
       );
       expect(after?.name).toBe(meBefore?.name);
+
+      /* The engine-write leg: a model change goes through agents.update
+         on the calling profile before the employee record moves. */
+      const call3 = v.client.teamUpdate({ model: "fake-large" });
+      const ask3 = await v.nextAsk(seen);
+      seen.add(ask3.id);
+      /* The card states the value being approved, not just the field. */
+      expect(ask3.request.kind).toBe("approval");
+      if (ask3.request.kind !== "approval") throw new Error("not approval");
+      expect(ask3.request.description ?? "").toContain("fake-large");
+      await v.answer(ask3.id, "once");
+      const res3 = await call3;
+      expect(res3.employee.model).toBe("fake-large");
     } finally {
       v.gw.server.close();
       await v.scope.close();

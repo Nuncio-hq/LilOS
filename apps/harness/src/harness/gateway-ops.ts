@@ -152,6 +152,7 @@ export function createGatewayApprovalOps(
           model: p.model,
           instructions: p.instructions,
           ...(p.provider ? { provider: p.provider } : {}),
+          ...(p.profile ? { profile: p.profile } : {}),
         },
       );
       let profileId = p.profile;
@@ -185,10 +186,14 @@ export function createGatewayApprovalOps(
     },
 
     updateSelf: async (p: TeamUpdateParams) => {
-      const fields = Object.keys(p).join(", ");
+      /* The card states the values, not just the fields — a rename to
+         "CEO" must not read the same as one to "junior". */
+      const fields = Object.entries(p)
+        .map(([k, v]) => `${k}: ${String(v)}`)
+        .join(", ");
       await gate({
         command: `team_update ${fields}`,
-        description: `Update your own employee record: ${fields}.`,
+        description: `Update your own employee record — ${fields}.`,
       });
       /* The employee id comes from the session binding — an agent can only
          ever edit itself. The engine profile write lands first and mirrors

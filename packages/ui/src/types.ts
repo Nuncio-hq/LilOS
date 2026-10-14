@@ -415,6 +415,8 @@ export type HireDraft = {
   model: string;
   /** The model's provider — ids are unique only per provider. */
   provider?: string;
+  /** Reuse an existing engine profile instead of minting one. */
+  profile?: string;
 };
 /**
  * What the Edit employee dialog hands back on Save (#123). Engine fields are

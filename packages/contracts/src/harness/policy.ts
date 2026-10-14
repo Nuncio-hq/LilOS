@@ -11,7 +11,7 @@ import type { ToolArea } from "./tools.js";
  * stale prompt is diagnosable. Kept under 2000 chars: it rides in every
  * engine context.
  */
-export const HOST_POLICY_VERSION = 3;
+export const HOST_POLICY_VERSION = 4;
 export const HOST_POLICY_MAX_CHARS = 2000;
 export const HOST_POLICY_MARKER = `[LilOS host policy v${HOST_POLICY_VERSION}]`;
 
@@ -24,6 +24,7 @@ const TOOL_AREA_ORDER: readonly ToolArea[] = [
   "terminal",
   "browser",
   "workbench",
+  "folder",
 ];
 
 const AREA_LINES: Record<ToolArea, string> = {

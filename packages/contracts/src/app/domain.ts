@@ -411,6 +411,9 @@ export const AskHireProposal = z.strictObject({
   model: z.string(),
   instructions: z.string(),
   provider: z.string().optional(),
+  /* Reusing an existing engine profile instead of minting one is a
+     different action — the card has to say so. */
+  profile: z.string().optional(),
 });
 export type AskHireProposal = z.infer<typeof AskHireProposal>;
 
