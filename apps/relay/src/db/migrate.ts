@@ -344,6 +344,12 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
       `ALTER TABLE conversations ADD COLUMN finished_event_seq INTEGER NOT NULL DEFAULT 0`,
     ],
   },
+  {
+    /* Gateway `team_hire` asks carry the hire draft JSON so the card
+       renders the real proposal; NULL on every engine ask. */
+    version: 25,
+    statements: [`ALTER TABLE asks ADD COLUMN hire TEXT`],
+  },
 ];
 
 /**

@@ -302,6 +302,15 @@ PR does not exist.
   their own tool list. Not: attaching MCP only through ACP, or
   engine-specific UI toolsets (Hermes `desktop_ui` / `drive_preview` /
   `read_terminal`, was #36). — #36, #337 · PR #54
+- **D-#341 Company writes from agents reuse the user's own ask.** An
+  `access:"approval"` tool posts `kind:"approval"` (`once`/`deny`) on the
+  bound conversation through the relay asks seam and waits for it; the
+  engine's approval path (and a thread's `access:"full"`) never bypasses
+  it, and nothing is written before "once". `team_hire` carries its draft
+  in `Ask.hire` so the thread renders the same hire card Oscar sees. Not:
+  a parallel gateway-ask flow (the engine's `requestByAsk` path can't reach
+  it — unknown ask ids no-op there), auto-approve for gateway asks, or
+  write-first-ask-later. — #341
 - **D-#308 Every leg is a turn.** A post-turn leg mints its own turn id —
   `ref` echoes the prompting message, `initiatedBy:"agent"` marks
   engine-opened work. Not: stamping legs on the settled turn id, or the

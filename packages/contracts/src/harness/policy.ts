@@ -11,7 +11,7 @@ import type { ToolArea } from "./tools.js";
  * stale prompt is diagnosable. Kept under 2000 chars: it rides in every
  * engine context.
  */
-export const HOST_POLICY_VERSION = 3;
+export const HOST_POLICY_VERSION = 4;
 export const HOST_POLICY_MAX_CHARS = 2000;
 export const HOST_POLICY_MARKER = `[LilOS host policy v${HOST_POLICY_VERSION}]`;
 
@@ -24,13 +24,16 @@ const TOOL_AREA_ORDER: readonly ToolArea[] = [
   "terminal",
   "browser",
   "workbench",
+  "folder",
 ];
 
 const AREA_LINES: Record<ToolArea, string> = {
   root: "- `context`/`guide`: who and where this session is, and how LilOS works — read them first.",
   thread:
-    "- `thread_*`: the threads in your DM with the user — `thread_read`/`thread_search`/`thread_list`/`thread_prs` to look around, `thread_post` to answer, `thread_set_title` to retitle your own thread while its title is auto. Posting lands a real message; it is always allowed here and never possible in anyone else's thread.",
-  team: "- `team_*`: the company roster — who else works here.",
+    "- `thread_*`: the threads in your DM with the user — `thread_read`/`thread_search`/`thread_list`/`thread_prs` to look around, `thread_post` to answer, `thread_set_title` to retitle your own thread while its title is auto, `thread_start` to ask for a new thread. Posting lands a real message; it is always allowed here and never possible in anyone else's thread.",
+  team: "- `team_*`: the company roster — `team_list` to look around; `team_hire` and `team_update` (your own record only) ask the user to approve the change.",
+  folder:
+    "- `folder_*`: `folder_add` asks the user to bind a folder you name to the session-picking recents.",
   workbench:
     "- `workbench_*`: the user's Workbench for this session — `workbench_previews` lists your preview servers, `workbench_open` puts the panel on the Files/Changes/PR/Preview tab you name (it never opens an editor on the Mac).",
   browser:
