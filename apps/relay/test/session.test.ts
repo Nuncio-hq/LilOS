@@ -376,7 +376,7 @@ describe("relay session", () => {
     // Nothing was parked: the store stays empty.
     await expect(store.get("att_anything")).resolves.toBeNull();
 
-    // A non-image mime is rejected by the schema (invalid_params).
+    // Any mime type attaches now — a pdf stores like an image does.
     await connection.receive(
       req("messages.post", {
         channelId: channel.id,
@@ -386,7 +386,10 @@ describe("relay session", () => {
         ],
       }),
     );
-    expect(errorOf(frames, `t${nextId - 1}`).data?.code).toBe("invalid_params");
+    const posted = resultOf(frames, `t${nextId - 1}`).result as {
+      message?: { attachments?: { name: string; mimeType: string }[] };
+    };
+    expect(posted.message?.attachments?.[0]?.name).toBe("a.pdf");
 
     // Corrupt base64 is invalid_params too.
     await connection.receive(

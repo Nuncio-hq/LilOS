@@ -154,7 +154,16 @@ export function describeSendError(e: unknown): string {
           (i) => Array.isArray(i?.path) && i.path.includes("attachments"),
         )
       ) {
-        return `Up to ${MAX_ATTACHMENTS_PER_MESSAGE} files per message.`;
+        /* The bare `attachments` path is the array itself — that only
+           fails the count; an item's field means a bad file. */
+        return issues.some(
+          (i) =>
+            Array.isArray(i?.path) &&
+            i.path.length === 1 &&
+            i.path[0] === "attachments",
+        )
+          ? `Up to ${MAX_ATTACHMENTS_PER_MESSAGE} files per message.`
+          : "One of those files couldn't be attached — check it and try again.";
       }
       return "Couldn't send that. Try again.";
     }

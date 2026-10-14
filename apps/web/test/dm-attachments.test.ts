@@ -81,8 +81,18 @@ describe("toAttachedFiles", () => {
     ];
     attachmentUrls.set({ a2: PNG_URL });
     expect(toAttachedFiles(refs)).toEqual([
-      { name: "shot.png", mediaType: "image/png", url: undefined },
-      { name: "other.png", mediaType: "image/png", url: PNG_URL },
+      {
+        name: "shot.png",
+        mediaType: "image/png",
+        url: undefined,
+        sizeBytes: 9,
+      },
+      {
+        name: "other.png",
+        mediaType: "image/png",
+        url: PNG_URL,
+        sizeBytes: 9,
+      },
     ]);
     attachmentUrls.set({});
   });
@@ -123,15 +133,23 @@ describe("describeSendError (AC-4)", () => {
     ).toContain("too large");
   });
 
-  test("invalid_params names the image-only rule only for attachments", () => {
-    // Attachment validation failures carry issues on the `attachments` path.
+  test("invalid_params names the count rule on the array, a bad file on an item", () => {
+    // A field-level failure on an attachment item is that file's problem.
     expect(
       describeSendError(
         new RelayError("invalid params", "invalid_params", {
           issues: [{ path: ["attachments", 0, "mimeType"] }],
         }),
       ),
-    ).toContain("images");
+    ).toContain("couldn't be attached");
+    // The bare array path is the files-per-message cap.
+    expect(
+      describeSendError(
+        new RelayError("invalid params", "invalid_params", {
+          issues: [{ path: ["attachments"] }],
+        }),
+      ),
+    ).toContain("files per message");
     // Any other bad params get the generic line, not a misleading one.
     expect(
       describeSendError(
