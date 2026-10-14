@@ -97,10 +97,10 @@ export async function handleHostEvents(
             .catch((error) => log(`usage persist failed: ${error}`));
         }
         /* #563: the "finished, not seen" stamp — a turn end bumps
-           `finishedSeq` to the channel's current seq, so a thread Oscar
+           `finishedSeq` to the channel's current seq, so a thread the user
            never opened dots its card + the employee on every device. The
            store's (sessionId, eventSeq) fence drops replays the same way
-           `usage` does. A cancelled turn doesn't stamp: Oscar stopped it
+           `usage` does. A cancelled turn doesn't stamp: the user stopped it
            himself, so it was seen (the same exclusion push fan-out
            makes). Best-effort like the usage persist — a hiccup must not
            drop the event's ack. */

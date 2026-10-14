@@ -112,7 +112,7 @@ export const conversations = sqliteTable(
     /** Running background-job count (#583): the DM session row's
         "N in background" badge; same host-written lifecycle. */
     bgJobs: integer("bg_jobs"),
-    /** Oscar's read watermark (#563): the channel seq up to which he has
+    /** The user's read watermark (#563): the channel seq up to which they have
         opened this thread. `conversations.markRead` stamps the channel's
         current `lastSeq`; compared against `finishedSeq` for the dot. */
     readSeq: integer("read_seq").notNull().default(0),

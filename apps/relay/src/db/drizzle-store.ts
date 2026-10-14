@@ -821,7 +821,7 @@ export function createDrizzleStore(db: Db): RelayStore {
         .run();
     },
     async markConversationRead(conversationId) {
-      /* Oscar's read watermark (#563): the channel's current `lastSeq`, so
+      /* The user's read watermark (#563): the channel's current `lastSeq`, so
          a finish the relay already stamped stays behind the mark. */
       const row = db
         .select({

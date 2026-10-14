@@ -25,7 +25,7 @@ export function employeeBadges(
     if (ch.kind !== "dm") continue;
     let running = 0;
     let approvals = 0;
-    /* #563: any of this DM's threads finished past Oscar's read
+    /* #563: any of this DM's threads finished past the user's read
        watermark dots the employee — cleared by opening the thread
        (`conversations.markRead`), on every device at once. */
     let unseen = false;

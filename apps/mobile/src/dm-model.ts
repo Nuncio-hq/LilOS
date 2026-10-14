@@ -194,7 +194,7 @@ function toSessionTurn(s: ConversationSummary, ctx: DmCtx): SessionTurn {
     /* #592: the row body reads the failure reason (amber for a sleep
        interrupt), not the last preview. */
     ...(conv.turnFailure ? { failure: conv.turnFailure } : {}),
-    /* #563: a turn end stamped past Oscar's read watermark dots the row —
+    /* #563: a turn end stamped past the user's read watermark dots the row —
        opening the thread clears it on every device. */
     ...(conv.finishedSeq > conv.readSeq ? { unseen: true } : {}),
     ...(ask

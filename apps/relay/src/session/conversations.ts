@@ -402,7 +402,7 @@ export async function handleConversations(
       return;
     }
     case "conversations.markRead": {
-      /* #563: Oscar's read watermark — "I've seen this thread". Any
+      /* #563: the user's read watermark — "I've seen this thread". Any
          client may set it (the phone clears the same mark the Mac
          stamps); the relay writes the channel's current `lastSeq`, so
          a client can never backdate the mark, and `conversation.updated`

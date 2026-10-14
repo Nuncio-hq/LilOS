@@ -366,7 +366,7 @@ let readWatchStarted = false;
 /* #563: opening a thread stamps the relay's read watermark
    (`conversations.markRead`) — the dot clears on every device off the
    `conversation.updated` that follows. While the thread stays open a new
-   finish re-stamps: Oscar is looking at it, so `finishedSeq` landing past
+   finish re-stamps: the user is looking at it, so `finishedSeq` landing past
    `readSeq` clears itself instead of dotting a card he's reading. One
    call per (conversation, finish): `lastMarked` drops the repeats a
    conversation.updated stream would otherwise send. */
@@ -385,12 +385,12 @@ function watchReadWatermark(): void {
     if (lastMarked?.id === id && lastMarked.finished === conv.finishedSeq)
       return;
     lastMarked = { id, finished: conv.finishedSeq };
-    relay.request("conversations.markRead", { conversationId: id }).catch(
-      () => {
+    relay
+      .request("conversations.markRead", { conversationId: id })
+      .catch(() => {
         /* Lost between request and receipt — the next change re-stamps. */
         lastMarked = undefined;
-      },
-    );
+      });
   };
   openConversation.subscribe(stamp);
   relay.conversations.subscribe(stamp);

@@ -334,7 +334,7 @@ export type Thread = {
   /* Set on a session a scheduled task started (#136): the DM marks it and
      the chip opens the task. */
   scheduled?: { task: string; name: string };
-  /* The relay stamped a turn end past Oscar's read watermark (#563):
+  /* The relay stamped a turn end past the user's read watermark (#563):
      finished, not seen yet — the card's dot until he opens it. */
   unseen?: boolean;
   replies: Reply[];

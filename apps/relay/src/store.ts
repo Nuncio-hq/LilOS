@@ -331,7 +331,7 @@ export interface RelayStore {
   }): Promise<void>;
 
   /**
-   * Oscar's read watermark (#563): set `readSeq` to the conversation
+   * The user's read watermark (#563): set `readSeq` to the conversation
    * channel's current `lastSeq`, so every finish stamped up to now counts
    * as seen — on every device at once. Returns the updated row, or null
    * for an unknown conversation.
