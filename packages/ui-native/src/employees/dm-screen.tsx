@@ -296,6 +296,11 @@ function ThreadRow({
           >
             {t.title}
           </AppText>
+          {/* #563: finished while unseen — the Mail-style blue dot; the
+              tap that opens this row marks the thread read. */}
+          {t.unseen && (
+            <View className="size-2 self-center rounded-full bg-primary" />
+          )}
           <AppText tone="muted" className="text-[15px]">
             {t.when}
           </AppText>

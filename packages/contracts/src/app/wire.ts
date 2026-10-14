@@ -266,6 +266,10 @@ export const AppMethod = z.enum([
      engine event stream: a synthesized event seq would poison `events.since`
      replay and the push watermark. */
   "workbench.open",
+  /* The user's own read watermark (#563): opening a thread stamps
+     `readSeq` at the channel's current seq, clearing the "finished, not
+     seen" dot on every device. */
+  "conversations.markRead",
 ]);
 export type AppMethod = z.infer<typeof AppMethod>;
 
@@ -554,6 +558,20 @@ export type ConversationsUpdateParams = z.infer<
   typeof ConversationsUpdateParams
 >;
 export const ConversationResult = z.object({ conversation: Conversation });
+
+/**
+ * `conversations.markRead {conversationId}` (#563): stamps the thread's
+ * `readSeq` at the channel's current `lastSeq` — "Oscar has seen this" —
+ * and returns the updated row. Any client may call it (the phone clears
+ * the same watermark the Mac sets); the relay owns the seq, so a client
+ * can never backdate the mark.
+ */
+export const ConversationsMarkReadParams = z
+  .object({ conversationId: z.string().min(1) })
+  .strict();
+export type ConversationsMarkReadParams = z.infer<
+  typeof ConversationsMarkReadParams
+>;
 
 /**
  * History read. Without `afterSeq` returns the channel's messages (the last

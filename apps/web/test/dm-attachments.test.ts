@@ -39,6 +39,8 @@ const conv = {
   access: "ask" as const,
   archived: false,
   deliveredSeq: 0,
+  readSeq: 0,
+  finishedSeq: 0,
   createdAt: 0,
 };
 
