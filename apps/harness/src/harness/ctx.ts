@@ -28,12 +28,8 @@ import type { EngineConnection } from "../engine/client";
 import type { EngineHostState } from "../engine/supervisor";
 import type { HarnessOptions } from "../harness";
 import type { ReaperCandidate, SessionReaper } from "../reaper";
-<<<<<<< HEAD
 import type { TaskScheduler } from "../scheduler";
-||||||| 9c0212e
-=======
 import type { SlashOutcome } from "./commands";
->>>>>>> origin/main
 
 /**
  * The shared surface the moved `harness/*.ts` functions close over (#441):
