@@ -226,6 +226,7 @@ export interface HarnessCtx {
   readonly scheduledRunsInFlight: Map<string, string>;
   deliveryChains: Map<string, Promise<void>>;
   readonly home: string;
+  readonly stateDir: string;
   readonly opts: HarnessOptions;
   readonly liveSessionCount: number;
 

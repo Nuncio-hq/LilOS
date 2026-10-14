@@ -1,5 +1,9 @@
 import { PairingExchangeFailed, RelayError } from "@lilos/client-runtime";
-import { type AppChannel, ProtocolVersionMismatch } from "@lilos/contracts/app";
+import {
+  type AppChannel,
+  MAX_ATTACHMENT_BYTES,
+  ProtocolVersionMismatch,
+} from "@lilos/contracts/app";
 import type {
   ChannelRow,
   ConnectingState,
@@ -117,5 +121,9 @@ export function describeError(e: unknown): string {
     (e.code === "not_connected" || e.code === "timeout")
   )
     return "Can't reach your Mac — try again.";
+  /* The relay also enforces the attachment cap (a file whose size was
+     unknown picker-side only fails here) — keep the same plain line. */
+  if (e instanceof RelayError && e.code === "attachment_too_large")
+    return `That file is too large to attach (${Math.round(MAX_ATTACHMENT_BYTES / 1024 / 1024)} MB max per file).`;
   return "Something went wrong on your Mac — try again.";
 }

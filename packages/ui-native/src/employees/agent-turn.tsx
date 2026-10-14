@@ -2,7 +2,7 @@ import { type ReactNode, useState } from "react";
 import { LayoutAnimation, Pressable, Text, View } from "react-native";
 import { AppText } from "../components/app-text";
 import { Card, CommandLine, nonBreaking, Pill } from "../components/bits";
-import { Icon } from "../components/icon";
+import { attachmentIcon, Icon } from "../components/icon";
 import { Orb, type OrbTone } from "../components/orb";
 import { Prose, Pulse } from "../components/prose";
 import {
@@ -12,7 +12,7 @@ import {
   GRANT_LABEL,
   grantPills,
 } from "./approval-copy";
-
+import { formatBytes } from "./composer";
 import { grantRows } from "./grant-rows";
 import { type PlanAction, PlanCard } from "./plan-card";
 import { PrCard } from "./pr-badges";
@@ -24,6 +24,7 @@ import { SubagentsCard, SubagentsLink } from "./subagents";
 import type {
   AgentEntry,
   Approval,
+  AttachmentChip,
   GrantOption,
   SubagentRow,
   ToolStep,
@@ -87,21 +88,53 @@ export function UserBubble({
   text,
   time,
   mark,
+  files,
 }: {
   text: string;
   time?: string;
   mark?: string;
+  /** Files attached to the message — chips under the bubble. */
+  files?: AttachmentChip[];
 }) {
   return (
     <View className="items-end gap-1 pl-14">
-      <View
-        className="rounded-[20px] rounded-br-[6px] bg-primary px-3.5 py-2"
-        style={{ borderCurve: "continuous" }}
-      >
-        <AppText tone="inverse" className="text-[17px] leading-[22px]">
-          {markSpans(text, mark)}
-        </AppText>
-      </View>
+      {!!text && (
+        <View
+          className="rounded-[20px] rounded-br-[6px] bg-primary px-3.5 py-2"
+          style={{ borderCurve: "continuous" }}
+        >
+          <AppText tone="inverse" className="text-[17px] leading-[22px]">
+            {markSpans(text, mark)}
+          </AppText>
+        </View>
+      )}
+      {!!files?.length && (
+        <View className="flex-row flex-wrap justify-end gap-1.5">
+          {files.map((f) => (
+            <View
+              key={`${f.name}:${f.sizeBytes}:${f.mimeType}`}
+              className="flex-row items-center gap-1.5 rounded-lg bg-fill px-2 py-1"
+            >
+              <Icon
+                name={attachmentIcon(f.mimeType)}
+                size={11}
+                tone="subtle-foreground"
+              />
+              <Text
+                numberOfLines={1}
+                className="max-w-[160px] shrink text-[12px] font-medium text-subtle-foreground"
+              >
+                {f.name}
+              </Text>
+              {f.sizeBytes > 0 && (
+                <Text className="text-[11px] text-muted-foreground">
+                  {formatBytes(f.sizeBytes)}
+                </Text>
+              )}
+            </View>
+          ))}
+        </View>
+      )}
       {time && (
         <AppText size="xs" tone="muted" className="pr-1">
           {time.startsWith("Queued") || time.startsWith("Waiting")

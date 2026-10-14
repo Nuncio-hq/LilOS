@@ -26,6 +26,7 @@ import * as Haptics from "expo-haptics";
 import { atom } from "nanostores";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Alert } from "react-native";
+import { type PickedFile, pickFiles } from "../attachments";
 import { $demo, DEMO_MAC } from "../demo/lifecycle";
 import {
   defaultModelPick,
@@ -124,6 +125,9 @@ export function Dm({
     [recents, details],
   );
   const [prefill, setPrefill] = useState<{ text: string } | undefined>();
+  /* Staged files for the next send — cleared only on success so a
+     failed send keeps them like it keeps the draft text. */
+  const [files, setFiles] = useState<PickedFile[]>([]);
   const opening = useRef(false);
 
   /* Seed asks/recents/models once per client; resubscribe the DM channel.
@@ -331,16 +335,24 @@ export function Dm({
       ? "Models unavailable"
       : undefined;
 
+  const fileStamp = (fs: PickedFile[]) =>
+    fs.map((f) => `${f.name}:${f.sizeBytes}`).join("|");
   const send = (text: string) => {
     const c = client;
     if (!c) return;
+    const outgoing = files;
     /* #600: the draft clears on send — show the row at once instead of
        leaving an empty beat until conversations.open answers. */
     markSending(employeeId, text);
     /* #552: the open's key belongs to the draft — the failure path
        refills the composer with the same text, so the resend repeats the
-       key and the relay answers the thread it already stored. */
-    const dedupeKey = sendKeyFor(`dm:${employeeId}`, text);
+       key and the relay answers the thread it already stored. The file
+       list rides the key too: same text + different files is a
+       different send. */
+    const dedupeKey = sendKeyFor(
+      `dm:${employeeId}`,
+      `${text}\n${fileStamp(outgoing)}`,
+    );
     void (async () => {
       try {
         const ch =
@@ -357,6 +369,15 @@ export function Dm({
           channelId: ch.id,
           text,
           dedupeKey,
+          ...(outgoing.length
+            ? {
+                attachments: outgoing.map(({ name, mimeType, dataBase64 }) => ({
+                  name,
+                  mimeType,
+                  dataBase64,
+                })),
+              }
+            : {}),
           ...openConversationParams({
             workspace: wsPick,
             folders: folderOptions,
@@ -365,7 +386,10 @@ export function Dm({
             text,
           }),
         });
-        sendKeyDone(`dm:${employeeId}`, text);
+        sendKeyDone(`dm:${employeeId}`, `${text}\n${fileStamp(outgoing)}`);
+        /* Drop only the files this send carried — files staged while it
+           was in flight belong to the NEXT send. */
+        setFiles((fs) => fs.filter((f) => !outgoing.includes(f)));
         markPending(res.conversation, res.rootMessage);
         navigation.navigate("Thread", {
           conversationId: res.conversation.id,
@@ -393,6 +417,13 @@ export function Dm({
         navigation.navigate("Thread", { conversationId: id, employeeId })
       }
       onSend={send}
+      files={files}
+      onAttach={() =>
+        void pickFiles(files.length).then((more) =>
+          setFiles((fs) => [...fs, ...more]),
+        )
+      }
+      onRemoveFile={(i) => setFiles((fs) => fs.filter((_, j) => j !== i))}
       unreachableNote={mac ? unreachableNoteFor(link, mac.name) : undefined}
       /* #556 AC-2: the employee's new-thread draft persists device-local. */
       initialDraft={draftFor(`dm:${employeeId}`)}

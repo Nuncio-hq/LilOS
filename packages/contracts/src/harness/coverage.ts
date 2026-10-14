@@ -132,7 +132,10 @@ export const NOT_AGENT_FACING: Record<string, string> = {
     "agent profile detail feeds the user's hire/edit dialogs; the caller's own profile surfaces through `context`",
   "channels.openDm":
     "opening a DM is a company change — the user does it, or it rides inside team_hire's approved apply",
-  "attachments.get": "media bytes for the app renderer, not the agent",
+  /* Non-image bytes land in the session folder and the prompt names their
+     paths — the agent reads them with its normal file tools, so it never
+     needs this method itself. */
+  "attachments.get": "copied into the session folder; read with file tools",
   "jobs.list": "the engine's own job tools report its background work",
   "jobs.stop": "the engine's own job tools stop its background work",
   "folders.list": "the user's recent folders, not the agent's",

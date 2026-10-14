@@ -242,10 +242,10 @@ export function createRelay(options: RelayOptions): Relay {
   const attachmentStore = options.attachments ?? createMemoryAttachmentStore();
 
   /**
-   * Validate inline attachments and park their bytes (issue #31): the decoded
-   * body must be clean base64, image/* (schema already enforced), and under
-   * MAX_ATTACHMENT_BYTES — oversize is the typed `attachment_too_large`. All
-   * inputs validate before any blob lands so a bad batch stores nothing.
+   * Validate inline attachments and park their bytes: the decoded body must
+   * be clean base64 and under MAX_ATTACHMENT_BYTES — oversize is the typed
+   * `attachment_too_large`. All inputs validate before any blob lands so a
+   * bad batch stores nothing.
    */
   const storeAttachments = async (
     inputs: AttachmentInput[] | undefined,
@@ -265,7 +265,7 @@ export function createRelay(options: RelayOptions): Relay {
         throw new RpcError(
           JsonRpcCode.attachmentTooLarge,
           "attachment_too_large",
-          `attachment "${input.name || "image"}" is ${bytes.length} bytes — the cap is ${MAX_ATTACHMENT_BYTES}`,
+          `attachment "${input.name || "file"}" is ${bytes.length} bytes — the cap is ${MAX_ATTACHMENT_BYTES}`,
           {
             limit: MAX_ATTACHMENT_BYTES,
             sizeBytes: bytes.length,

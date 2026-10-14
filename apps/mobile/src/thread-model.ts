@@ -366,6 +366,17 @@ export function mergeThreadEntries(
           id: m.id,
           time: clock(m.createdAt),
           text: m.text,
+          /* Attachment refs ride the message — chips under the bubble
+             (name + size now; the phone doesn't fetch the bytes). */
+          ...(m.attachments?.length
+            ? {
+                attachments: m.attachments.map((a) => ({
+                  name: a.name || "attachment",
+                  sizeBytes: a.sizeBytes,
+                  mimeType: a.mimeType,
+                })),
+              }
+            : {}),
           /* #425: `claimed` rows keep the bubble but lose the caption — the
              harness committed the send to the engine pipeline (#377), so it
              is mid-dispatch, never queued. Same rule as the Mac, where a

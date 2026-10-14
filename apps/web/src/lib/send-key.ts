@@ -11,7 +11,9 @@ import type { AttachedFile } from "@lilos/ui/types";
    Those get a session-scoped (scope, content) binding instead; files ride
    the tag so two file-only sends never collide. */
 const contentTag = (text: string, files?: AttachedFile[]): string =>
-  files?.length ? `${text}files:${files.map((f) => f.name).join("")}` : text;
+  files?.length
+    ? `${text}files:${files.map((f) => `${f.name}:${f.sizeBytes}`).join("|")}`
+    : text;
 
 /** The key for a send of `text` (+files) on `scope`; `draftStorageKey` is
     the draft the send may have come from — used only when its stored text

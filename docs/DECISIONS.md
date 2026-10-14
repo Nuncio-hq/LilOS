@@ -100,6 +100,13 @@ PR does not exist.
   failure; `turn.started` clears it. The fold still marks the turn `failed`
   (vs `done`/`stopped`). Not: deriving failure from turn replay — an
   interrupted turn orphans with the dead session's event log. — #419 · PR #486
+- **D-#562 Any file type attaches to a message (10 MB cap); non-image
+  bytes land in `<cwd>/.lilos/attachments/`** (folder-less sessions: the
+  harness state dir) with `-1` collision suffixes and a `.git/info/exclude`
+  line, and the prompt names each path so the agent reads them with file
+  tools. Not: a mime allowlist on the wire, attachments.get as the agent
+  read path (it's NOT_AGENT_FACING — copied files are), or `.gitignore`
+  (touches the user's diff). — #562 · PR #730
 
 ## Web
 - **D-#3 Web: React 19 + Vite + Tailwind v4 + shadcn (base-nova) + AI

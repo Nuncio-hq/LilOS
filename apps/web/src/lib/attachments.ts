@@ -49,6 +49,7 @@ export function toAttachedFiles(
     name: r.name || "attachment",
     mediaType: r.mimeType,
     url: urls[r.id],
+    sizeBytes: r.sizeBytes,
   }));
 }
 
@@ -72,6 +73,7 @@ export async function hydrateAttachments(
             name: r.name || "attachment",
             mediaType: r.mimeType,
             url: `data:${res.attachment.mimeType};base64,${res.dataBase64}`,
+            sizeBytes: r.sizeBytes,
           }))
           .catch(() => null),
     ),
@@ -96,7 +98,10 @@ export function toAttachmentInputs(
     if (!data || !head.endsWith(";base64")) continue;
     out.push({
       name: f.name,
-      mimeType: f.mediaType || head.slice(0, -";base64".length),
+      mimeType:
+        f.mediaType ||
+        head.slice(0, -";base64".length) ||
+        "application/octet-stream",
       dataBase64: data,
     });
   }

@@ -552,6 +552,58 @@ reseeds a new world and invalidates already-woken helper sessions).
   message in that employee's DM first — `session.start` only fires on the
   first message, and mentions resolve against the newest live session.
 
+## Staging a file into the iOS document picker ("On My iPhone")
+
+`expo-document-picker` browses the Files app's locations; a fresh sim has
+none. Files CAN be staged straight into the sim's on-disk "On My iPhone"
+store — no Safari/share-sheet dance needed:
+
+```sh
+D=<udid>
+# Launch Files once so the AppGroup dirs exist, then find the LOCAL store:
+xcrun simctl launch $D com.apple.DocumentsApp
+for g in ~/Library/Developer/CoreSimulator/Devices/$D/data/Containers/Shared/AppGroup/*/; do
+  plutil -p "$g/.com.apple.mobile_container_manager.metadata.plist" 2>/dev/null \
+    | grep -q 'group.com.apple.FileProvider.LocalStorage' && echo "$g"
+done
+# Drop the file in; it appears under Files → Browse → On My iPhone instantly:
+cp /tmp/my-test.txt "$g/File Provider Storage/"
+```
+
+(`group.com.apple.iCloudDrive` is the other candidate — do NOT use it; the
+LocalStorage one is "On My iPhone".)
+
+## Pairing the phone to a plain `bun dev/stack.ts` dev stack
+
+One stack can serve BOTH the web app and the phone — boot it with the
+tailscale stand-in IP so `pairing.offer` can bind the phone listener:
+
+```sh
+LILOS_HOME=/tmp/lilos-run LILOS_RELAY_TAILSCALE_IP=172.16.4.2 \
+  bun dev/stack.ts   # web + relay + harness on engine-fake
+bun /tmp/mint-offer.ts $LILOS_HOME   # offer JSON → lilos://pair link
+xcrun simctl openurl $D 'lilos://pair?host=<offer.host>&name=<n>#code=<code>'
+# → Allow local-network prompt → "Open in LilOS?" → You're connected → Continue
+```
+
+The offer's `host` is the 172.x IP; the sim reaches it over the host's
+network. Web DMs and phone DMs then share one relay — sends on one surface
+appear live on the other (nice for cross-surface evidence in one frame).
+
+## Driving the attach flow (any-file leg)
+
+- Composer paperclip a11y label: **"Attach a file"** → opens the real
+  iOS document picker sheet. Tap **Browse** tab → **On My iPhone** → tap the
+  file (it gets a checkmark) → tap **Open**.
+- Staged chip a11y: label `<name>` + label `<size>` (e.g. "31 B") +
+  button "Remove <name>". Send a11y: button "Send".
+- The sent user bubble shows the same paperclip + name + size chip;
+  engine-fake replies `Got your file — <abs path> (<size>)` naming where the
+  bytes landed (`$LILOS_HOME/harness/attachments/` for folder-less sessions).
+- iOS a11y @refs from `inspect`/`query` expire BETWEEN separate computer
+  calls on this VM — press them inside the same call or fall back to
+  coordinates (send arrow ≈ devX 643, devY 637 at 1024×768 logical).
+
 ## Devin Secrets Needed
 
 - `GITHUB_API_KEY` — read GitHub issues/PRs (gh CLI is not authenticated

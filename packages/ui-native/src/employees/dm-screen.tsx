@@ -18,7 +18,12 @@ import { Composer, type SlashItem } from "./composer";
 import { DM_GROUPS } from "./dm-groups";
 import { LifePill } from "./life-pill";
 import { PrLine } from "./pr-badges";
-import type { DmMessageHit, SessionState, SessionTurn } from "./types";
+import type {
+  AttachmentChip,
+  DmMessageHit,
+  SessionState,
+  SessionTurn,
+} from "./types";
 
 /* A DM with one employee, as a Mail-style list of its threads: each message
    you send opens a thread, and the threads group by what they need from
@@ -47,6 +52,9 @@ export function EmployeeDmScreen({
   unreachableNote,
   initialDraft,
   onDraftChange,
+  files,
+  onAttach,
+  onRemoveFile,
 }: {
   name: string;
   tone: OrbTone;
@@ -79,6 +87,11 @@ export function EmployeeDmScreen({
   /** #556: draft persistence — the employee's saved draft + its writer. */
   initialDraft?: string;
   onDraftChange?: (text: string) => void;
+  /** Composer attachments — see Composer; the screen owns picking and
+      clearing them. */
+  files?: AttachmentChip[];
+  onAttach?: () => void;
+  onRemoveFile?: (index: number) => void;
 }) {
   const insets = useSafeAreaInsets();
   const muted = useThemeColor("muted-foreground");
@@ -231,6 +244,9 @@ export function EmployeeDmScreen({
             modelUnavailable={modelUnavailable}
             insetBottom={insets.bottom}
             onSend={onSend}
+            files={files}
+            onAttach={onAttach}
+            onRemoveFile={onRemoveFile}
             onPickFolder={onPickFolder}
             {...(onPickModel ? { onPickModel } : {})}
             commands={commands}

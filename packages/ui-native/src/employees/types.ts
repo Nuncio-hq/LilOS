@@ -315,12 +315,22 @@ export type WbCardEntry = {
   target: WbCardTarget;
 };
 
+/** A file attached to a message or staged in the composer — name, size and
+    mime for the chip; bytes travel as AttachmentInput on the wire. */
+export type AttachmentChip = {
+  name: string;
+  sizeBytes: number;
+  mimeType: string;
+};
+
 export type ThreadEntry =
   | {
       kind: "user";
       id: string;
       time: string;
       text: string;
+      /** Files sent with the message — chips under the bubble. */
+      attachments?: AttachmentChip[];
       /** Sent while the employee was mid-turn; runs when it finishes. */
       queued?: boolean;
       /** Queued behind a conversation that is blocked on an open ask — the

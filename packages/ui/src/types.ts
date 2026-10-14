@@ -116,6 +116,8 @@ export type AttachedFile = {
   name: string;
   mediaType: string;
   url?: string;
+  /** Decoded bytes — the chip's size label; absent on composer-only files. */
+  sizeBytes?: number;
 };
 /* The engine's `/` menu row (wire shape: commands.list in
    packages/contracts/src/engine/commands.ts): a command the engine runs

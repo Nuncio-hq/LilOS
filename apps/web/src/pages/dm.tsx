@@ -428,11 +428,11 @@ export function DmPage() {
     toastOnFail("Couldn't load folders", refreshFolders());
   }, []);
 
-  /* Image attachments (#112): the composers offer pick/drop/paste only when
-     the engine declares `image_prompt` (D-#19); thumbnails resolve lazily
-     from the relay store, so subscribe to the resolved-URL cache. */
-  const canAttachImages =
-    description?.capabilities.some((c) => c.id === "image_prompt") ?? false;
+  /* Attachments: any file type rides the wire — images additionally reach
+     the engine as prompt blocks when it declares `image_prompt`, the rest
+     land in the session folder. So pick/drop/paste accepts all types now.
+     Thumbnails resolve lazily from the relay store, so subscribe to the
+     resolved-URL cache. */
   /* Profile fields the engine lets LilOS write (#123): the `agents`
      capability's `detail.updatable` list — the Edit dialog renders exactly
      these engine fields (D-#19). */
@@ -1540,8 +1540,17 @@ export function DmPage() {
       const t = text.trimStart();
       if (openPlanAsk && t.startsWith(PLAN_CHANGE_PREFIX)) {
         const answer = t.slice(PLAN_CHANGE_PREFIX.length).trim();
+        /* An ask answer carries no attachments — reject the send so the
+           composer keeps the chips staged for the next real send
+           (a resolved send would clear them silently). */
         return respondToRequest(openPlanAsk.id, "change", answer).then(() => {
           clearDraftIfSent(draftKey.thread(conv.id), text);
+          if (files?.length) {
+            say(
+              "Your reply went to the plan — attached files can't ride it and stayed staged below.",
+            );
+            throw new Error("plan answer carries no attachments");
+          }
           return conv;
         });
       }
@@ -1875,7 +1884,7 @@ export function DmPage() {
                   setConversationAccess(conv.id, a),
                 )
               }
-              accept={canAttachImages ? "image/*" : undefined}
+              accept="*/*"
               maxFileSize={MAX_ATTACHMENT_BYTES}
               onAttachError={sayError}
               say={sayNotice}
@@ -2083,7 +2092,7 @@ export function DmPage() {
           onSendQueued={onSendQueued}
           draft={threadDraft}
           onDraftChange={setThreadDraft}
-          accept={canAttachImages ? "image/*" : undefined}
+          accept="*/*"
           maxFileSize={MAX_ATTACHMENT_BYTES}
           maxFiles={MAX_ATTACHMENTS_PER_MESSAGE}
           onAttachError={sayError}
@@ -2181,7 +2190,7 @@ export function DmPage() {
           onSend={send}
           draft={homeDraft}
           onDraftChange={setHomeDraft}
-          accept={canAttachImages ? "image/*" : undefined}
+          accept="*/*"
           maxFileSize={MAX_ATTACHMENT_BYTES}
           maxFiles={MAX_ATTACHMENTS_PER_MESSAGE}
           onAttachError={sayError}

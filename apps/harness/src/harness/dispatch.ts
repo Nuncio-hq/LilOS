@@ -1,6 +1,7 @@
 import type { AppMessage, AttachmentsGetResult } from "@lilos/contracts/app";
 import type { ContentBlock } from "@lilos/contracts/engine";
 import { engineErrorCode, SESSION_NOT_FOUND } from "../engine/client";
+import { excludeFromGit, humanBytes, saveAttachment } from "./attachments";
 import type { HarnessCtx, SessionBinding } from "./ctx";
 import { BACKEND_DOWN, INVALID_STATE } from "./rpc";
 
@@ -97,20 +98,54 @@ export async function dispatchPrompt(
   // A pick held while the last turn ran lands now, before this prompt —
   // the session is idle so setModel applies straight away (#92).
   await this.applyHeldPick(binding);
+  /* A Remove/drop/rewind that landed during the conn/slash/held-pick
+     awaits means nothing should be fetched or decoded — bail before the
+     attachment loop writes files nobody asked for; the post-fetch check
+     below still covers the rest of the window. */
+  if (
+    this.dismissed.has(message.id) ||
+    message.removed ||
+    message.dropped ||
+    message.rewound
+  ) {
+    binding.consumed.delete(message.id);
+    return false;
+  }
   // Attachment bytes never ride the message row — the harness fetches each
-  // ref via `attachments.get` and sends ACP-shaped image blocks (issue #31).
+  // ref via `attachments.get` (issue #31). Images go to the engine as
+  // ACP-shaped image blocks, but only when it declares `image_prompt`;
+  // every other file is decoded into the session folder and the prompt
+  // names its path — the agent reads it with its normal file tools.
   const images: ContentBlock[] = [];
+  const files: { path: string; sizeBytes: number }[] = [];
+  let savedToFolder = false;
   for (const ref of message.attachments ?? []) {
     try {
       const stored = await this.opts.relay.request<AttachmentsGetResult>(
         "attachments.get",
         { id: ref.id },
       );
-      images.push({
-        type: "image",
-        data: stored.dataBase64,
-        mimeType: stored.attachment.mimeType,
+      const att = stored.attachment;
+      if (
+        att.mimeType.startsWith("image/") &&
+        this.hasCapability("image_prompt")
+      ) {
+        images.push({
+          type: "image",
+          data: stored.dataBase64,
+          mimeType: att.mimeType,
+        });
+        continue;
+      }
+      const saved = saveAttachment({
+        cwd: binding.cwd,
+        hasFolder: binding.hasFolder,
+        stateDir: this.stateDir,
+        name: att.name,
+        dataBase64: stored.dataBase64,
       });
+      savedToFolder ||= binding.hasFolder;
+      files.push({ path: saved.path, sizeBytes: att.sizeBytes });
     } catch (error) {
       this.opts.log.error("attachment fetch failed", {
         attachmentId: ref.id,
@@ -122,10 +157,31 @@ export async function dispatchPrompt(
       );
     }
   }
+  /* Files written into the session folder must not litter the folder's own
+     `git status` — one `info/exclude` line covers the whole dir. */
+  if (savedToFolder) await excludeFromGit(binding.cwd);
+  /* The prompt names every saved path — the engine's file tools take it
+     from there. Appended to the send's prompt (a slash expansion's
+     `promptText`, not the raw `/name` the user typed) so a file-only
+     message still prompts with a text block. */
+  let text = promptText;
+  if (files.length) {
+    const lines = files.map((f) => `- ${f.path} (${humanBytes(f.sizeBytes)})`);
+    /* Only a folder-bound session's save lands inside the session folder —
+       folder-less goes to the harness state dir. */
+    const where = binding.hasFolder
+      ? "saved into the session folder"
+      : "saved on the session machine";
+    const note =
+      files.length === 1
+        ? `The user attached a file — ${where}, read it with your normal file tools:\n${lines[0]}`
+        : `The user attached ${files.length} files — ${where}, read them with your normal file tools:\n${lines.join("\n")}`;
+    text = text ? `${text}\n\n${note}` : note;
+  }
   // Text block only when there is text — an image-only message prompts
   // with just image blocks rather than an empty text block (#112).
-  const content: ContentBlock[] = promptText
-    ? [{ type: "text", text: promptText }, ...images]
+  const content: ContentBlock[] = text
+    ? [{ type: "text", text }, ...images]
     : images;
   if (!content.length) {
     // Every attachment failed to load and no text was typed — nothing to

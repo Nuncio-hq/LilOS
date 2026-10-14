@@ -2402,7 +2402,7 @@ export default function App() {
       transcriptNote={transcriptNoteOf(openThread.thread)}
       lastSent={lastSentIn(openThread)}
       onRetry={(e) => retry(openThread, e)} onUnqueue={(i) => unqueue(openThread, i)} onSendQueued={(i) => sendQueuedNow(openThread, i)}
-      pending={pendingSteers[openThread.id] ?? []} reconnecting={relayReconnecting} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
+      pending={pendingSteers[openThread.id] ?? []} reconnecting={relayReconnecting} accept="*/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
       models={canModels ? MODEL_OPTS : undefined} onModel={canModels ? (m) => setModel(openThread, m) : undefined} picker={pickerExtras}
       access={access} onAccess={setAccess}
       scrollTo={scrollTo ?? undefined} onScrolled={() => setScrollTo(null)}
@@ -2483,7 +2483,7 @@ export default function App() {
           // LilOS Browser (#214) replaces it only in the mock prototype.
           browser={realSurfaces ? undefined : threadBrowser(openThread.id)}
           initialTab={focusTab}
-          pending={pendingSteers[openThread.id] ?? []} reconnecting={relayReconnecting} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
+          pending={pendingSteers[openThread.id] ?? []} reconnecting={relayReconnecting} accept="*/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} steer={canSteer} onRemovePending={(i) => removePending(openThread.id, i)}
           ship={shipFor(openThread)}
           /* The built-in engine declares all three workbench caps (#587):
              fixed tab membership, empty tabs greyed. */
@@ -2536,7 +2536,7 @@ export default function App() {
               onCompactSession={compactNow} onContinueSession={continueNew}
               onSearchMessages={searchDmMessages}
               onOpenHit={(h) => { setScrollTo(h.messageId); showThread(h.rootId) }}
-              accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say}
+              accept="*/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say}
               models={canModels ? MODEL_OPTS : undefined}
               modelChoice={draftPick[view.id] ?? choiceFor(emp(view.id)?.model ?? "", MODEL_OPTS)}
               onModel={canModels ? (c) => setDraftPick((d) => ({ ...d, [view.id]: c })) : undefined}
@@ -2565,7 +2565,7 @@ export default function App() {
               <ConversationScrollButton />
             </Conversation>
 
-            <Composer placeholder={`Message #${channel.name}. @ an employee to start a thread`} employees={employees.filter((e) => channel.employees.includes(e.id))} hint="An @mention opens a thread = one Hermes session" onSend={(t, files) => sendTop(t, undefined, files)} lastSent={lastSentTop} accept="image/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} />
+            <Composer placeholder={`Message #${channel.name}. @ an employee to start a thread`} employees={employees.filter((e) => channel.employees.includes(e.id))} hint="An @mention opens a thread = one Hermes session" onSend={(t, files) => sendTop(t, undefined, files)} lastSent={lastSentTop} accept="*/*" maxFileSize={MAX_ATTACHMENT_BYTES} onAttachError={say} />
           </main>
           )}
 

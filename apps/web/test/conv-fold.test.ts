@@ -339,7 +339,7 @@ describe("AC-427 FoldCache", () => {
       {
         text: "and this one?",
         removable: true,
-        files: [{ name: "reply.png", mediaType: "image/png" }],
+        files: [{ name: "reply.png", mediaType: "image/png", sizeBytes: 4 }],
       },
     ]);
     /* The thumbnail lands when the blob resolves — the same urls keying

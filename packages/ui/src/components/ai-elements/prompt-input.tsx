@@ -74,6 +74,22 @@ import {
 // Provider Context & Types
 // ============================================================================
 
+/* `1.2 MB`-style label for the chip + hovercard (vendored UI ships no size
+   formatter; the wire's sizeBytes lands on the FileUIPart via add/addLocal). */
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KB", "MB", "GB"];
+  let size = bytes;
+  let unit = "B";
+  for (const u of units) {
+    if (size < 1024) break;
+    size /= 1024;
+    unit = u;
+  }
+  return `${size >= 100 ? Math.round(size) : size.toFixed(1)} ${unit}`;
+}
+
 export type AttachmentsContext = {
   files: (FileUIPart & { id: string })[];
   add: (files: File[] | FileList) => void;
@@ -170,6 +186,7 @@ export function PromptInputProvider({
           url: URL.createObjectURL(file),
           mediaType: file.type,
           filename: file.name,
+          sizeBytes: file.size,
         }))
       )
     );
@@ -277,7 +294,7 @@ export const usePromptInputAttachments = () => {
 };
 
 export type PromptInputAttachmentProps = HTMLAttributes<HTMLDivElement> & {
-  data: FileUIPart & { id: string };
+  data: FileUIPart & { id: string; sizeBytes?: number };
   className?: string;
 };
 
@@ -330,7 +347,12 @@ export function PromptInputAttachment({
                         <XIcon />
                         <span className="sr-only">Remove</span>
                       </Button>
-                    </div><span className="flex-1 truncate">{attachmentLabel}</span></HoverCardTrigger>
+                    </div><span className="flex-1 truncate">{attachmentLabel}</span>
+                    {typeof data.sizeBytes === "number" && (
+                      <span className="shrink-0 text-muted-foreground text-xs">
+                        {formatBytes(data.sizeBytes)}
+                      </span>
+                    )}</HoverCardTrigger>
       <PromptInputHoverCardContent className="w-auto p-2">
         <div className="w-auto space-y-3">
           {isImage && (
@@ -352,6 +374,9 @@ export function PromptInputAttachment({
               {data.mediaType && (
                 <p className="truncate font-mono text-muted-foreground text-xs">
                   {data.mediaType}
+                  {typeof data.sizeBytes === "number"
+                    ? ` · ${formatBytes(data.sizeBytes)}`
+                    : ""}
                 </p>
               )}
             </div>
@@ -490,6 +515,9 @@ export const PromptInput = ({
         .filter(Boolean);
 
       return patterns.some((pattern) => {
+        // "*/*" is the any-file wildcard — without this the "*" prefix
+        // branch below would compare a literal "*" mime.
+        if (pattern === "*/*") return true;
         if (pattern.endsWith("/*")) {
           const prefix = pattern.slice(0, -1); // e.g: image/* -> image/
           return f.type.startsWith(prefix);
@@ -520,7 +548,9 @@ export const PromptInput = ({
       if (accepted.length > 0 && sized.length === 0) {
         onError?.({
           code: "max_file_size",
-          message: "All files exceed the maximum size.",
+          message: maxFileSize
+            ? `That file is too large to attach (${formatBytes(maxFileSize)} max per file).`
+            : "All files exceed the maximum size.",
         });
         return;
       }
@@ -529,7 +559,9 @@ export const PromptInput = ({
       if (sized.length < accepted.length) {
         onError?.({
           code: "max_file_size",
-          message: "Some files exceed the maximum size and were not added.",
+          message: maxFileSize
+            ? `Some files were too large to attach (${formatBytes(maxFileSize)} max per file) and were left out.`
+            : "Some files exceed the maximum size and were not added.",
         });
       }
 
@@ -546,7 +578,8 @@ export const PromptInput = ({
             message: "Too many files. Some were not added.",
           });
         }
-        const next: (FileUIPart & { id: string })[] = [];
+        const next: (FileUIPart & { id: string; sizeBytes?: number })[] =
+          [];
         for (const file of capped) {
           next.push({
             id: nanoid(),
@@ -554,6 +587,7 @@ export const PromptInput = ({
             url: URL.createObjectURL(file),
             mediaType: file.type,
             filename: file.name,
+            sizeBytes: file.size,
           });
         }
         return prev.concat(next);
