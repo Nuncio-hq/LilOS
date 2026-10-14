@@ -150,7 +150,7 @@ import type { SleepGuard } from "./sleep";
 
 /**
  * The workspace harness: the ONLY component that talks to the engine
- * (docs/DECISIONS D-#26). It connects to the relay, registers as the engine
+ * (docs/index.html#d-26). It connects to the relay, registers as the engine
  * host, binds each DM conversation to one engine session, forwards user
  * messages as prompts, surfaces engine asks (approvals/questions) on the
  * relay, posts final answers back, and holds the sleep assertion while a

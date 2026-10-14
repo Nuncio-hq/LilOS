@@ -3,7 +3,7 @@ import { z } from "zod";
 /**
  * Every type that crosses a boundary (web <-> relay, relay <-> harness,
  * harness <-> engine) is a Zod schema defined here and only here.
- * See AGENTS.md "Stack & Structure".
+ * See docs/index.html#map (structure rules).
  */
 
 /**

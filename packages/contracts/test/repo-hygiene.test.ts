@@ -52,8 +52,8 @@ describe("AC-1 Elastic License 2.0", () => {
     expect(workspacePackageJsons().length).toBeGreaterThan(5);
   });
 
-  it("docs/DECISIONS.md records D-#172", () => {
-    expect(read("docs/DECISIONS.md")).toContain("D-#172");
+  it("docs/index.html records D-#172", () => {
+    expect(read("docs/index.html")).toContain('id="d-172"');
   });
 });
 

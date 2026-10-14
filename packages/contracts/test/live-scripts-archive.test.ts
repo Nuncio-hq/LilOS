@@ -55,9 +55,11 @@ describe("AC-2 no live script for a closed issue remains", () => {
     }
   });
 
-  it("the shared openai-stub helper and the dir README stay", () => {
+  it("the shared openai-stub helper stays and the live-check rules are documented", () => {
     expect(has("scripts/live/openai-stub.ts")).toBe(true);
-    expect(has("scripts/live/README.md")).toBe(true);
+    expect(readFileSync(join(ROOT, "docs/index.html"), "utf8")).toContain(
+      'id="live-checks"',
+    );
   });
 });
 

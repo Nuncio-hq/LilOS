@@ -52,7 +52,7 @@ import { APP_PROTOCOL_VERSION } from "./version";
 
 /**
  * Wire framing: JSON-RPC 2.0 over one WebSocket endpoint (`/ws`), the same
- * shape the reference desktop app (AGENTS.md "Learn from these projects")
+ * shape the reference desktop app (docs/index.html#learn)
  * uses between renderer and engine
  * (`apps/shared/src/json-rpc-gateway.ts`). The first frame on a socket must
  * be a `session.hello` request carrying the protocol version and the

@@ -1,200 +1,42 @@
 # LilOS — Agent Guide
 
-Every coding agent follows this file. `CLAUDE.md` is a symlink to it;
-edit `AGENTS.md`, never the link.
+Every coding agent follows this file. `CLAUDE.md` is a symlink to it; edit
+`AGENTS.md`, never the link.
 
-## What LilOS is
+**Read `docs/index.html` first.** It is the one document: what LilOS is, the
+AI-company direction, the repo map and stack, how the pieces fit, how work
+happens (issues, verify tiers, the 7 steps), every decision in force
+(`#d-<issue>` anchors) and the runbooks. Open it in a browser or read the
+source; read only the sections you need.
 
-A Slack-style "CompanyOS" where the employees are AI agents. One sidebar:
-company channels → projects (each with channels, e.g. `#engineering` bound
-to a repo) → employees. An @mention or DM opens a thread = one engine
-session. Engines plug in through a generic engine protocol (Hermes first,
-never glued in). The engine owns sessions, memory, skills, profiles; LilOS
-owns only its domain objects: company, channels, messages, tickets,
-employee records.
+## Hard rules
 
-Stage: **prototype**. `prototype/` is the UI/UX source of truth: a UI change
-lands in `packages/ui` (`ui-native` for mobile) in the prototype first.
-Mock data is not a contract.
-
-## Repo map
-
-| Path | What |
-|---|---|
-| `prototype/web`, `prototype/mobile` | UX prototypes (UI source of truth): mock data + fake engine/Mac + wiring in `src/App.tsx` |
-| `apps/mobile` | Real phone app (Expo, iOS): `ui-native` screens + `client-runtime` supervisor/cache over the relay |
-| `packages/ui/` | `@lilos/ui`: every UI component (shadcn, AI Elements, LilOS surfaces); props in, callbacks out |
-| `packages/contracts/` | Zod schemas for everything crossing a boundary |
-| `packages/host/` | `@lilos/host`: fs + git reads on the session machine, served by the harness (runtime-neutral) |
-| `e2e/` | Playwright E2E |
-| `docs/DECISIONS.md` | Decisions in force now (see Decisions) |
-| `IDEA.md` | One-line origin note |
-
-Setup: `bun install` (Bun per `.bun-version`). Prototype: `bun run
-prototype:dev`. Verify all: `bun run verify` (biome, typecheck, vitest,
-prototype build, e2e). Try the real app on a Mac:
-`bun run app:local`.
-
-## Stack & Structure
-
-Runtime/PM **Bun** (workspaces; pinned `packageManager` + `.bun-version`);
-server **Hono** on Bun; DB SQLite (`bun:sqlite`) via Drizzle; web React 19 +
-Vite + Tailwind v4 + shadcn (base-nova) + AI Elements (mandatory) + TanStack
-Router + nanostores; desktop Electron (later); lint/format Biome; tests
-Vitest + Playwright; CI GitHub Actions → `bun run verify`.
-
-```
-apps/web apps/relay apps/harness apps/desktop   (created by the slice needing them)
-packages/contracts packages/ui packages/client-runtime packages/host packages/engine-*
-prototype/web prototype/mobile   packages/ui(-native) + mock data
-```
-
-- One-way deps: `apps/*` import `packages/*`, never the reverse. Engine
-  packages depend only on `contracts`.
-- The web app never talks to an engine directly; only through relay/harness.
-- Types that cross a boundary are defined only in `packages/contracts`.
-- Bun-only APIs (`bun:sqlite`, `Bun.serve`) only at app entry points;
-  `packages/*` stay runtime-neutral.
-- Organize code by feature folder; split a file past ~400 lines.
-- Biome lints/formats all but `prototype/web/src`, `site/`, assets, and
-  vendored shadcn/AI Elements in `packages/ui` (typecheck + build still
-  cover them).
-- CI never calls a real LLM; `engine-fake` is the deterministic engine.
-- CI retries a failed E2E test once; open an issue for any test the
-  Playwright summary lists as flaky.
-
-## Agent Gateway: every feature ships its agent tools
-
-Employees must be able to use whatever Oscar can, so a feature is done only
-when agents can use it too (#336; map in `docs/ARCHITECTURE.md`).
-
-- Tools are declared once in `packages/contracts/src/harness/tools.ts`;
-  MCP, the `lilos` CLI, the Hermes plugin and the host policy render from
-  it. Names: `<area>_<action>` (`thread`, `team`, `browser`, `terminal`,
-  `workbench`; root `context`, `guide`), shown as `lilos_thread_read`.
-- A PR adding or changing an `AppMethod` or a user-visible action adds its
-  tool in the same PR, or lists it in `NOT_AGENT_FACING` with a reason (a
-  coverage test enforces this once #337 lands).
-- Changing the company is an `approval` tool (opens an ask). Scope comes
-  from the session, never from an id the agent passes. In LilOS, agents
-  use LilOS surfaces, not the engine's browser.
-- Feature issues have an **Agent tools** section; PRs show one real agent
-  call per new tool.
-
-## Learn from these projects
-
-Before you design a seam, read how these solve it and cite the files in the
-issue. All MIT: port ideas/code with an attribution comment, never their
-frameworks (T3/Synara use Effect-TS).
-
-| Project | Borrow | Start at |
-|---|---|---|
-| T3 Code `pingdotgg/t3code` | client/server split, seq sync (snapshot + replay), provider adapter + capabilities, `contracts`/`client-runtime` split | `docs/internals/`, `packages/contracts/src/providerRuntime.ts`, `apps/server/src/provider/Services/ProviderAdapter.ts` |
-| Synara `Emanuele-web04/synara` | ACP adapter, adapter conformance tests, mock agents, agent gateway (per-engine MCP injection, versioned host policy) | `apps/server/src/provider/acp/`, `apps/server/src/provider/providerAdapterConformance.ts`, `apps/server/src/agentGateway/` |
-| Hermes Desktop `NousResearch/hermes-agent` | renderer over a headless engine, JSON-RPC client with reconnect replay, wire contract declared once and generated for TS | `apps/shared/src/json-rpc-gateway.ts`, `tui_gateway/contracts/`, `scripts/gen_gateway_contracts.py` |
-
-## Who you work for
-
-Oscar is the **client**, not a reviewer: he doesn't write code and rarely
-reads diffs; he accepts or rejects the *product* he can see and try.
-
-- You own correctness end to end: implementation, tests, review, docs.
-- "Done" means Oscar can try it without reading code, with evidence it works.
-- Talk to him in plain product language: what changed, how to try it.
-- Oscar chats in Vietnamese. Everything in the repo (code, docs, issues,
-  PRs, commits) is in English.
-
-## Work tracking: GitHub issues are the source of truth
-
-Repo: `Nuncio-hq/LilOS`. Use the `gh` CLI.
-
-- **Feature** = parent issue describing a product outcome; sub-issues are
-  vertical slices.
-- **Labels** (only these): `agent-ready` (acceptance criteria + verify
-  plan; any agent may take it), `later` (parked; don't take it),
-  `needs-human` (blocked on Oscar: decision or local test).
-- **What to work on next**: open `agent-ready` slices with no open PR
-  (`label:agent-ready -linked:pr`). No priority order; finish slices inside
-  a feature before starting a new one.
-- **Now**: when you take a slice, remove `agent-ready`, assign it, and open
-  a **draft** PR with `Closes #N` early; mark it ready once your tier's
-  checks pass (Normal: `bun run verify`); CI runs E2E only on ready PRs.
-  One slice at a time. Stuck → `needs-human`.
-  Keep **one** comment titled `Status` on the issue and edit it in place
-  (Now / Next / Blocked); no log-comment series.
-  Commits need DCO sign-off (`git commit -s`, bots too).
-- **Done**: the slice closes with its merged PR (hand-off note there); when
-  the last slice closes, close the feature.
-- **Board** (org project "LilOS"): cards move to Done on close/merge, but
-  the automation never backfills. After you close or merge, check the card;
-  if it isn't in Done, move it (`gh project item-edit`).
-- Work outside the slice? Open a new issue; don't widen your PR.
-
-## Verify loop
-
-### Pick a tier yourself, and state it in the PR
-
-| Tier | Examples | Steps |
-|---|---|---|
-| **Small** | typo, copy text, docs-only, comment, config that doesn't change behavior | Make the change → build if code was touched → PR with a one-line note. An issue is optional. |
-| **Prototype** | UX in `prototype/*` + the `ui`/`ui-native` parts it shows, mock data | Issue → build → typecheck + lint → look at it (browser/simulator) → PR with screenshots. No tests, no `verify`: it only has to look right; tests come with the real implementation. |
-| **Normal** | anything a user can see or any behavior change | All 7 steps below |
-
-If you are unsure, pick **Normal**. Anything that touches the engine/protocol
-seam (Hermes RPC, sessions, worktrees) is always Normal.
-
-### The 7 steps (Normal tier)
-
-1. **Understand**: read the issue. Acceptance criteria describe what a user
-   sees ("open DM → send → reply shows in the thread"). Sharpen vague ones on
-   the issue first; ask Oscar only when genuinely ambiguous.
-2. **Plan**: write the plan in the issue's `Status` comment; split slices that
-   are too big for one PR into more sub-issues.
-3. **Implement**: tests with the code; show a failing test turning green.
-4. **Verify**: run `bun run verify`; one screenshot per acceptance criterion,
-   plus one real agent call for each new or changed gateway tool.
-5. **Review**: a second agent with fresh context reviews against the criteria
-   (product behavior first, then code). Fix what it finds.
-6. **Document**: fix docs the change makes stale; add/update the
-   `docs/DECISIONS.md` entry for any architectural decision.
-7. **Hand off**: a PR note Oscar can act on without reading code: how to try
-   it, what changed, criteria checklist with screenshots, what's not done,
-   `Closes #N`.
-
-Oscar only does step 7: he tries it and accepts or sends it back. A criteria
-checklist plus screenshots is enough evidence.
-
-## Decisions
-
-**A decision is real only if it has an issue and a merged PR.** One agreed in
-chat, a brainstorm, or an old doc without both was never implemented; don't
-build on it — open an issue. Discussion and evidence live in the **issue**;
-`docs/DECISIONS.md` is the **one** index of decisions in force, not a
-history log.
-
-- Each entry is 1–3 lines, ID = issue number, e.g. `- **D-#12 Hermes owns
-  sessions/transcripts.** Not: own session DB (drift). — #12 · PR #15`.
-  Say what was rejected so nobody proposes it again.
-
-- Group entries by area (`Engine`, `Data`, `Stack`, `UX`, ...); read that
-  area's section before touching it.
-- Add/change an entry only in the **same PR** that implements the decision.
-  Proposed or undecided ideas stay in the issue.
-- Record only decisions a later agent could undo by accident (architecture,
-  protocol, data ownership, stack), not choices inside one slice.
-- Superseding: rewrite the entry in place, move the old choice to
-  `Not: ... (was #old)`. Keep the file under ~4k characters.
-
-## Docs
-
-The repo keeps only knowledge that outlives an issue; plans, logs and
-research notes go in issues/PRs.
-
-- Permanent docs: `AGENTS.md` (rules, auto-loaded), `docs/DECISIONS.md`
-  (in force), and `docs/ARCHITECTURE.md` (how pieces fit; once real code
-  exists outside `prototype/`). Read in that order, only as deep as needed;
-  open an issue only when you need the *why*.
-- Update an existing doc before creating one; create one only when two issues
-  need the same knowledge. A PR that makes a doc wrong fixes it in the same
-  PR; delete docs that are no longer true.
-- Keep this file under ~8.5k characters; move detail out and link it.
+- **Product.** A Slack-style CompanyOS whose employees are AI agents. The
+  engine owns sessions, memory, skills and profiles; LilOS owns only company,
+  channels, messages, tickets and employee records. Stage: prototype —
+  `prototype/` is the UI source of truth; UI lands in `packages/ui`
+  (`ui-native` for mobile) in the prototype first.
+- **Oscar is the client.** He accepts or rejects the product he can try, not
+  diffs. "Done" means he can try it without reading code, with evidence. He
+  chats in Vietnamese; everything in the repo is English.
+- **Issues are the source of truth** (`Nuncio-hq/LilOS`, `gh`). Labels:
+  `agent-ready`, `later`, `needs-human`. Take open `agent-ready` slices with
+  no open PR; open a draft PR with `Closes #N` early; one slice at a time;
+  one `Status` comment edited in place; DCO sign-off (`git commit -s`).
+- **Verify.** Pick a tier (Small / Prototype / Normal) and state it in the
+  PR; when unsure, Normal. Normal = `bun run verify`, one screenshot per
+  acceptance criterion, a fresh-context review, then a hand-off note Oscar
+  can act on. The engine/protocol seam is always Normal.
+- **Structure.** `apps/*` → `packages/*`, never back; engine packages depend
+  only on `contracts`; boundary types live only in `packages/contracts`;
+  Bun-only APIs only at app entry points; CI never calls a real LLM.
+- **Agent tools.** Every feature ships its tools in
+  `packages/contracts/src/harness/tools.ts`, or lists the method in
+  `NOT_AGENT_FACING` with a reason. Company changes are `approval` tools;
+  scope comes from the session, never an agent-passed id.
+- **Decisions** are real only with an issue and a merged PR. Record them in
+  the decisions section of `docs/index.html` in the same PR that implements
+  them; say what was rejected (`Not:`).
+- **Docs.** Two documents: this file and `docs/index.html`. No new Markdown
+  docs; plans, logs and research go in issues/PRs. A PR that makes
+  `docs/index.html` wrong fixes it in the same PR.
