@@ -218,12 +218,7 @@ const sessionRow = (page: Page) => page.locator("[data-session] button").last();
    on into Focus — every session-open in these tests goes through both. */
 const openFocus = async (page: Page) => {
   await sessionRow(page).click();
-  await expect(page).toHaveURL(PANEL_URL, { timeout: 30_000 });
-  await page
-    .locator("[data-thread-panel]")
-    .getByTitle("Focus", { exact: true })
-    .click();
-  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  await panelIntoFocus(page);
 };
 
 const FOCUS_URL = /\/dm\/[^/]+\/[^/]+\/focus$/;
