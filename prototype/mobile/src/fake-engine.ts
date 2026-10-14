@@ -834,7 +834,9 @@ export function continueSession(tid: string) {
   const t = $threads.get().find((x) => x.id === tid);
   if (!t) return;
   const kept = t.entries
-    .filter((e): e is Extract<ThreadEntry, { kind: "user" }> => e.kind === "user")
+    .filter(
+      (e): e is Extract<ThreadEntry, { kind: "user" }> => e.kind === "user",
+    )
     .slice(-19)
     .map((e) => `> ${e.text.replaceAll("\n", "\n> ")}`)
     .join("\n");
