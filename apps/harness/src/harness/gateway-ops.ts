@@ -19,7 +19,7 @@ import type { Logger } from "../log";
 
 /**
  * Approval-gated company writes behind the gateway tools. Each op posts the
- * ask card itself — nothing is written before Oscar answers, whatever the
+ * ask card itself — nothing is written before the user answers, whatever the
  * thread's access level — then applies the change through the same relay
  * methods the app uses. A decline surfaces as `SurfaceError("declined")` so
  * the agent reads a clean refusal instead of a hang or a fake success.
