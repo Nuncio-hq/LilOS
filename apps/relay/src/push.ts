@@ -66,6 +66,10 @@ export interface PushFanout {
   setVisibility(deviceId: string, conversationId: string | null): void;
   /** Socket closed or device revoked — forget its visibility report. */
   deviceGone(deviceId: string): void;
+  /** The desktop's presence heartbeat (#561): `active` stamps "the human
+      is at the Mac" so pushes stay off the phone; `false` (idle/locked)
+      clears it early instead of waiting the presence window out. */
+  setMacPresence(active: boolean): void;
 }
 
 /** Ask reason as the push body — mirrors `dm-model.ts askReason` (AC-3). */
@@ -138,11 +142,20 @@ export function createPushFanout(options: {
   /** Min gap between failure pushes for one conversation (default 1500ms —
       the same collapse `apps/web` applies to error+state error pairs). */
   failureCollapseMs?: number;
+  /** How fresh a `presence.report` must be to keep the phone silent
+      (#561's N — default 5 min): long enough that a missed heartbeat
+      never buzzes the human's pocket mid-flow, short enough that a crashed
+      desktop or a walked-away Mac hands notifications back quickly. */
+  presenceWindowMs?: number;
 }): PushFanout {
   const store = options.store;
   const now = options.now ?? (() => Date.now());
   const log = options.log ?? (() => {});
   const collapseMs = options.failureCollapseMs ?? 1500;
+  const presenceWindowMs = options.presenceWindowMs ?? 5 * 60_000;
+  /** Latest desktop at-the-Mac report — in-memory like `visibleThread`: a
+      relay restart just falls back to pushing until the next heartbeat. */
+  let macActiveAt: number | undefined;
   /** Device's latest foreground report — cleared on disconnect/revoke. */
   const visibleThread = new Map<string, string>();
   /** Last failure push per conversation — the collapse window. */
@@ -166,17 +179,24 @@ export function createPushFanout(options: {
     conversation: Conversation,
     body: string,
   ): Promise<void> => {
+    /* #561 AC-1: at the Mac, every kind stays off the phone — finished,
+       needs-you and failed alike; the Mac's own banners cover them. A
+       stale report ages out (idle/quit), an `active: false` clears early. */
+    if (macActiveAt !== undefined && now() - macActiveAt < presenceWindowMs)
+      return;
     if (kind === "failed") {
       const last = failureSentAt.get(conversation.id);
       if (last !== undefined && now() - last < collapseMs) return;
     }
+    const employee = await employeeFor(conversation.channelId);
+    /* #561 AC-3: a muted employee pushes nowhere. */
+    if (employee?.muted) return;
     const targets = (await store.listDevicePush()).filter(
       (target) =>
         prefFor(target.prefs, kind) &&
         visibleThread.get(target.deviceId) !== conversation.id,
     );
     if (targets.length === 0) return;
-    const employee = await employeeFor(conversation.channelId);
     const title = employee?.name ?? "LilOS";
     const subtitle = truncateBody(conversation.title);
     const messages = targets.map((target) => ({
@@ -302,6 +322,10 @@ export function createPushFanout(options: {
 
     deviceGone(deviceId) {
       visibleThread.delete(deviceId);
+    },
+
+    setMacPresence(active) {
+      macActiveAt = active ? now() : undefined;
     },
   };
 }

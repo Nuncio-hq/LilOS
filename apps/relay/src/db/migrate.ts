@@ -350,6 +350,14 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
     version: 25,
     statements: [`ALTER TABLE asks ADD COLUMN hire TEXT`],
   },
+  {
+    /* #561 AC-3: the employee's notification mute — phone pushes and Mac
+       banners both read it; stored here so every surface agrees. */
+    version: 26,
+    statements: [
+      `ALTER TABLE employees ADD COLUMN muted INTEGER NOT NULL DEFAULT 0`,
+    ],
+  },
 ];
 
 /**

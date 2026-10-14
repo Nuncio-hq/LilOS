@@ -2281,6 +2281,15 @@ export function DmPage() {
                 say(err instanceof Error ? err.message : String(err)),
               )
           }
+          /* #561 AC-3: the mute lives on the relay's employee row, so the
+             phone's pushes and this app's banners both honour it. */
+          onToggleMute={(muted) =>
+            void relay
+              .updateEmployee(employee.id, { muted })
+              .catch((err) =>
+                say(err instanceof Error ? err.message : String(err)),
+              )
+          }
           onClose={() => setProfileOpen(false)}
         />
       )}

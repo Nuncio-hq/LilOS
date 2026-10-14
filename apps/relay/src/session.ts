@@ -204,6 +204,7 @@ const METHOD_HANDLERS: ReadonlyMap<
   ["push.register", handlePairing],
   ["push.unregister", handlePairing],
   ["push.visibility", handlePairing],
+  ["presence.report", handlePairing],
 ]);
 
 /**

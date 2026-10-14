@@ -16,6 +16,9 @@ export type Employee = {
   now: string;
   instructions: string;
   respondTo: RespondTo;
+  /* Per-employee notification mute (#561) — a relay-stored flag the card
+     renders as a Notifications switch. */
+  muted?: boolean;
 };
 export type Channel = {
   id: string;

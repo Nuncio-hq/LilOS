@@ -49,6 +49,7 @@ export function toUiEmployee(e: Employee, engineDown = false): UiEmployee {
     now: e.now,
     instructions: e.instructions,
     respondTo: e.respondTo,
+    muted: e.muted,
   };
 }
 

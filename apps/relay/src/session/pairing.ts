@@ -1,5 +1,6 @@
 import {
   DevicesRevokeParams,
+  PresenceReportParams,
   PushRegisterParams,
   PushUnregisterParams,
   PushVisibilityParams,
@@ -132,6 +133,25 @@ export async function handlePairing(c: RelayCtx): Promise<false | undefined> {
       const parsed = PushVisibilityParams.safeParse(params);
       if (!parsed.success) throw badParams(parsed.error.issues);
       options.push?.setVisibility(deviceId, parsed.data.conversationId);
+      respond(peer, id, { ok: true });
+      return;
+    }
+    case "presence.report": {
+      /* The desktop's at-the-Mac heartbeat (#561): `active` keeps the
+         fan-out silent (the Mac's banners cover everything), `false`
+         ends suppression the moment the screen locks or the human goes
+         idle. App scope only — a paired phone reporting presence would
+         just mute pushes meant for itself. */
+      if (devicePeers.get(peer)) {
+        throw new RpcError(
+          JsonRpcCode.forbidden,
+          "forbidden",
+          "presence reporting is for the desktop app",
+        );
+      }
+      const parsed = PresenceReportParams.safeParse(params);
+      if (!parsed.success) throw badParams(parsed.error.issues);
+      options.push?.setMacPresence(parsed.data.active);
       respond(peer, id, { ok: true });
       return;
     }

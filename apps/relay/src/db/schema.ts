@@ -26,6 +26,9 @@ export const employees = sqliteTable("employees", {
   respondTo: text("respond_to", { enum: ["me", "selected", "anyone"] })
     .notNull()
     .default("me"),
+  /** #561 AC-3: per-employee notification mute — relay-owned, read by the
+      push fan-out and broadcast to the apps. */
+  muted: integer("muted", { mode: "boolean" }).notNull().default(false),
   createdAt: integer("created_at").notNull(),
 });
 

@@ -265,6 +265,11 @@ export const AppMethod = z.enum([
   "push.register",
   "push.unregister",
   "push.visibility",
+  /* Presence (#561): the desktop app reports the human at the Mac — the
+     relay's push fan-out stays silent while a report is fresh, and the
+     Mac's own banners carry the attention instead. App scope only; a
+     paired phone calling it would just mute its own pushes. */
+  "presence.report",
   /* Host-only (#340): the session's `workbench_open` tool asks the app to
      open the conversation's Workbench on a target — the relay fans
      `workbench.opened` out on the channel. It rides the app wire, never the
@@ -378,6 +383,9 @@ export const EmployeePatch = z.object({
   now: z.string().optional(),
   instructions: z.string().optional(),
   respondTo: RespondTo.optional(),
+  /* Per-employee notification mute (#561 AC-3) — relay-stored, honoured by
+     pushes and Mac banners alike. */
+  muted: z.boolean().optional(),
 });
 export type EmployeePatch = z.infer<typeof EmployeePatch>;
 
@@ -1711,5 +1719,16 @@ export const PushVisibilityParams = z.strictObject({
   conversationId: z.string().nullable(),
 });
 export type PushVisibilityParams = z.infer<typeof PushVisibilityParams>;
+
+/**
+ * #561: `presence.report` — the desktop's heartbeat while the human is at
+ * the Mac (user input recently, screen unlocked). `active: true` refreshes
+ * the relay's presence window; `false` (idle/locked) clears it early so
+ * phone pushes resume without waiting the window out.
+ */
+export const PresenceReportParams = z.strictObject({
+  active: z.boolean(),
+});
+export type PresenceReportParams = z.infer<typeof PresenceReportParams>;
 
 export { APP_PROTOCOL_VERSION };

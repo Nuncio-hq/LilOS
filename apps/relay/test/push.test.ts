@@ -832,3 +832,156 @@ describe("push fan-out — transition → push decision (#161)", () => {
     expect(sent).toHaveLength(0);
   });
 });
+
+describe("presence window — quiet phone at the Mac (#561 AC-1)", () => {
+  const presence = (
+    mac: Awaited<ReturnType<typeof helloedToken>>,
+    active: boolean,
+  ) => mac.connection.receive(req("presence.report", { active }));
+
+  it("active → every kind suppressed; idle-aged report → delivered", async () => {
+    let t = 1_000_000;
+    const { relay, pairing, sent } = newWorld({ now: () => t });
+    const host = await registeredHost(relay);
+    const { channel, conversation } = await setupConversation(host);
+    const phone = await helloedDevice(pairing, relay);
+    await registerPush(phone);
+    const mac = await helloedToken(relay);
+
+    await presence(mac, true);
+    expect(resultOf(mac.frames, lastId()).result).toEqual({ ok: true });
+
+    // needs_you, completed and failed all stay off the phone at the Mac.
+    await openAsk(host, channel, conversation, {
+      kind: "question",
+      question: "which one?",
+    });
+    await engineEvent(
+      host,
+      conversation,
+      turnCompleted(1, { turnId: "turn-1", stopReason: "end_turn" }),
+    );
+    await engineEvent(host, conversation, {
+      seq: 2,
+      sessionId: "fake:sess-1",
+      type: "session.state",
+      payload: { state: "error", reason: "blew up" },
+    });
+    expect(sent).toHaveLength(0);
+
+    // The report ages out — idle for the whole window → pushes resume.
+    t += 6 * 60_000;
+    await openAsk(
+      host,
+      channel,
+      conversation,
+      { kind: "question", question: "back?" },
+      "req-2",
+    );
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.body).toBe("back?");
+  });
+
+  it("locked → an inactive report ends suppression early", async () => {
+    const { relay, pairing, sent } = newWorld();
+    const host = await registeredHost(relay);
+    const { channel, conversation } = await setupConversation(host);
+    const phone = await helloedDevice(pairing, relay);
+    await registerPush(phone);
+    const mac = await helloedToken(relay);
+
+    await presence(mac, true);
+    await openAsk(host, channel, conversation, {
+      kind: "question",
+      question: "suppressed?",
+    });
+    expect(sent).toHaveLength(0);
+
+    await presence(mac, false);
+    await openAsk(
+      host,
+      channel,
+      conversation,
+      { kind: "question", question: "unlocked?" },
+      "req-2",
+    );
+    expect(sent).toHaveLength(1);
+  });
+
+  it("a fresh heartbeat keeps the window open", async () => {
+    let t = 1_000_000;
+    const { relay, pairing, sent } = newWorld({ now: () => t });
+    const host = await registeredHost(relay);
+    const { channel, conversation } = await setupConversation(host);
+    const phone = await helloedDevice(pairing, relay);
+    await registerPush(phone);
+    const mac = await helloedToken(relay);
+
+    await presence(mac, true);
+    for (let i = 0; i < 10; i++) {
+      t += 60_000;
+      await presence(mac, true);
+    }
+    await openAsk(host, channel, conversation, {
+      kind: "question",
+      question: "still there?",
+    });
+    expect(sent).toHaveLength(0);
+  });
+
+  it("presence.report is app scope — a paired phone is refused", async () => {
+    const { relay, pairing } = newWorld();
+    const phone = await helloedDevice(pairing, relay);
+    await phone.connection.receive(req("presence.report", { active: true }));
+    expect(errorData(phone.frames, lastId())).toBe("forbidden");
+  });
+});
+
+describe("per-employee mute (#561 AC-3)", () => {
+  const mute = (
+    mac: Awaited<ReturnType<typeof helloedToken>>,
+    employeeId: string,
+    muted: boolean,
+  ) =>
+    mac.connection.receive(req("employees.update", { id: employeeId, muted }));
+
+  it("a muted employee pushes nothing — asks, completions, failures", async () => {
+    const { relay, pairing, sent } = newWorld();
+    const host = await registeredHost(relay);
+    const { employee, channel, conversation } = await setupConversation(host);
+    const phone = await helloedDevice(pairing, relay);
+    await registerPush(phone);
+
+    await mute(host, employee.id, true);
+    expect(resultOf(host.frames, lastId()).result).toHaveProperty("employee");
+
+    await openAsk(host, channel, conversation, {
+      kind: "question",
+      question: "can you hear me?",
+    });
+    await engineEvent(host, conversation, turnDelta(1, "turn-1", "hi"));
+    await engineEvent(
+      host,
+      conversation,
+      turnCompleted(2, { turnId: "turn-1", stopReason: "end_turn" }),
+    );
+    await engineEvent(host, conversation, {
+      seq: 3,
+      sessionId: "fake:sess-1",
+      type: "session.state",
+      payload: { state: "error", reason: "blew up" },
+    });
+    expect(sent).toHaveLength(0);
+
+    // Unmute restores delivery — the flag lives on the stored employee.
+    await mute(host, employee.id, false);
+    await openAsk(
+      host,
+      channel,
+      conversation,
+      { kind: "question", question: "unmuted?" },
+      "req-2",
+    );
+    expect(sent).toHaveLength(1);
+  });
+});

@@ -373,6 +373,7 @@ describe("AC-1 watchNotifications — only when the conversation is not in view"
       foreground: true,
       open: [{ sessionId: "s1", requestId: "r1", request: approval }],
       convs: [conv("c1", "s1"), conv("c2", "s2")],
+      employee,
       feeds: {} as Record<string, EngineEvent[]>,
     };
     watchNotifications({
@@ -395,7 +396,7 @@ describe("AC-1 watchNotifications — only when the conversation is not in view"
           events,
         })),
       completionSeqs: store,
-      context: () => ctx(...state.convs),
+      context: () => ({ ...ctx(...state.convs), employees: [state.employee] }),
       openConversationId: () => state.openConv,
       inForeground: () => state.foreground,
       isRequestOpen: (id) => state.open.some((r) => r.requestId === id),
@@ -640,6 +641,35 @@ describe("AC-1 watchNotifications — only when the conversation is not in view"
     third.asksChanged();
     expect(third.posted).toEqual([]);
   });
+
+  it("a completion that arrived while muted never posts after unmuting (#561)", () => {
+    const { posted, state, feeds, asksChanged } = stateHarness();
+    state.open = []; // no asks — completions only
+    // Seed s1 with a delta so the completed turn below counts as new.
+    feeds.s1 = [
+      {
+        ...ev("turn.delta", "s1", {
+          turnId: "t1",
+          stream: "text",
+          delta: "hello",
+        }),
+        seq: 6,
+      },
+    ];
+    asksChanged();
+    state.employee = { ...employee, muted: true };
+    feeds.s1.push({
+      ...ev("turn.completed", "s1", { turnId: "t1", stopReason: "end_turn" }),
+      seq: 7,
+    });
+    asksChanged();
+    expect(posted).toEqual([]);
+    // Unmuting is not a replay: the moment was intentionally silent.
+    state.employee = employee;
+    asksChanged();
+    asksChanged();
+    expect(posted).toEqual([]);
+  });
 });
 
 describe("AC-2 open the exact conversation", () => {
@@ -655,5 +685,89 @@ describe("AC-2 open the exact conversation", () => {
     expect(openConversationFromPath("/dm/e1/c1")).toBe("c1");
     expect(openConversationFromPath("/dm/e1")).toBeNull();
     expect(openConversationFromPath("/")).toBeNull();
+  });
+});
+
+describe("#561 AC-2 banner bodies", () => {
+  it("done body is the reply excerpt, not the thread title", () => {
+    const c = {
+      ...ctx(conv("c1", "s1")),
+      turnText: () => "Patched `push.ts` — **4 tests** green.",
+    };
+    const n = notificationForEvent(
+      ev("turn.completed", "s1", {
+        turnId: "t1",
+        stopReason: "end_turn",
+      }),
+      c,
+    );
+    expect(n?.body).toBe("Patched push.ts — 4 tests green.");
+  });
+
+  it("done body falls back to the thread title without turn text", () => {
+    const n = notificationForEvent(
+      ev("turn.completed", "s1", {
+        turnId: "t1",
+        stopReason: "end_turn",
+      }),
+      ctx(conv("c1", "s1")),
+    );
+    expect(n?.body).toBe("Ship the thing");
+  });
+
+  it("an approval body is the description when the engine gave one", () => {
+    const n = notificationForEvent(
+      ev("request.opened", "s1", {
+        requestId: "r1",
+        turnId: "t1",
+        request: {
+          kind: "approval",
+          command: "git push origin main",
+          description: "Push the release branch",
+          options: ["once", "deny"],
+        },
+      }),
+      ctx(conv("c1", "s1")),
+    );
+    expect(n?.body).toBe("Push the release branch");
+  });
+});
+
+describe("#561 AC-3 a muted employee notifies nowhere", () => {
+  const mutedCtx = (...convs: Conversation[]) => ({
+    conversations: convs,
+    channels: [channel],
+    employees: [{ ...employee, muted: true }],
+  });
+
+  it("asks are suppressed", () => {
+    const n = notificationForEvent(
+      ev("request.opened", "s1", {
+        turnId: "t1",
+        requestId: "r1",
+        request: question,
+      }),
+      mutedCtx(conv("c1", "s1")),
+    );
+    expect(n).toBeNull();
+  });
+
+  it("completions are suppressed", () => {
+    const n = notificationForEvent(
+      ev("turn.completed", "s1", {
+        turnId: "t1",
+        stopReason: "end_turn",
+      }),
+      mutedCtx(conv("c1", "s1")),
+    );
+    expect(n).toBeNull();
+  });
+
+  it("session errors are suppressed", () => {
+    const n = notificationForEvent(
+      ev("session.state", "s1", { state: "error", reason: "blew up" }),
+      mutedCtx(conv("c1", "s1")),
+    );
+    expect(n).toBeNull();
   });
 });
