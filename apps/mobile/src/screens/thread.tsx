@@ -393,6 +393,7 @@ function useThread(conversationId: string) {
     subagentsCapable,
     jobsCapable,
     commandRows,
+    messages,
     channels,
     conversations,
   };
@@ -420,6 +421,7 @@ export function Thread({
     subagentsCapable,
     jobsCapable,
     commandRows,
+    messages,
   } = useThread(conversationId);
   const spinner = useThemeColor("muted-foreground");
   const welcome = useStore($welcome);
