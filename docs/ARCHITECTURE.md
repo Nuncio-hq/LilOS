@@ -57,8 +57,17 @@ it.` (#95).
 
 How employees see and use LilOS. The catalog covers root tools
 (`context`, `guide`), `team_*` and `thread_*` DM tools plus `workbench_open`
-(#340), and the `browser_*` / `terminal_*` surfaces from D-#36; approvals
-(#341) and channels (#342) are next.
+(#340), the `browser_*` / `terminal_*` surfaces from D-#36, and the
+approval-gated writes `thread_start`, `team_hire`, `team_update`,
+`folder_add` (#341); channels (#342) are next.
+
+An approval tool posts the user's own ask (`kind:"approval"`,
+`once`/`deny`) on the bound conversation and waits for it — the agent's
+thread shows exactly what will change before anything is written. The
+gate runs on the relay asks seam (`harness/gateway-ops.ts`), never through
+the engine's own approval path, so Full access can't bypass it; a `team_hire`
+ask carries the hire draft in `Ask.hire`, which the thread renders with the
+same hire card the web app uses.
 
 ```
 Relay (company, channels, threads, messages)

@@ -147,7 +147,14 @@ export type Reply = {
   /** #106: `options` = the outcome ids the engine offered on the card
       (e.g. ["once","session","always","deny"]) — the buttons follow it;
       absent on old stored asks → the default once/always/deny set. */
-  approval?: { id: string; command: string; note: string; options?: string[] };
+  approval?: {
+    id: string;
+    command: string;
+    note: string;
+    options?: string[];
+    /** Gateway `team_hire` ask: the hire draft the card renders. */
+    hire?: HireDraft;
+  };
   /** #420: the turn's open `question` ask — the card under the reply
       collects the answer (option id or free text). */
   question?: QuestionAsk;

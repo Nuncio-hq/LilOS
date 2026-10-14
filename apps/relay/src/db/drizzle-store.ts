@@ -15,7 +15,11 @@ import type {
   TurnFailure,
   WorkspaceIntent,
 } from "@lilos/contracts/app";
-import { toSummaryMessage, toSummaryPreview } from "@lilos/contracts/app";
+import {
+  AskHireProposal,
+  toSummaryMessage,
+  toSummaryPreview,
+} from "@lilos/contracts/app";
 import { equalSecret } from "@lilos/contracts/auth";
 import {
   ApprovalOutcome,
@@ -127,6 +131,9 @@ const rowToAsk = (row: AskRow): Ask => ({
   turnId: row.turnId,
   requestId: row.requestId,
   request: EngineRequest.parse(JSON.parse(row.request)),
+  hire: AskHireProposal.optional().parse(
+    row.hire ? JSON.parse(row.hire) : undefined,
+  ),
   state: row.state,
   outcome: ApprovalOutcome.optional().parse(row.outcome ?? undefined),
   answer: row.answer ?? undefined,
@@ -985,6 +992,7 @@ export function createDrizzleStore(db: Db): RelayStore {
         turnId: input.turnId,
         requestId: input.requestId,
         request: JSON.stringify(input.request),
+        hire: input.hire ? JSON.stringify(input.hire) : null,
         state: "open",
         outcome: null,
         answer: null,

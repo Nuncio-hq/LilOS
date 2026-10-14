@@ -465,6 +465,7 @@ export function createMemoryStore(): RelayStore {
         turnId: input.turnId,
         requestId: input.requestId,
         request: input.request,
+        ...(input.hire ? { hire: input.hire } : {}),
         state: "open",
         createdAt: now(),
       };

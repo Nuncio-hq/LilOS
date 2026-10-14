@@ -218,6 +218,9 @@ export function liveTurnReply(
           /* #106 AC-4: the card's buttons follow the options the engine
              offered, not a fixed set. */
           options: shown.request.options,
+          /* A gateway `team_hire` ask carries its draft so the card is the
+             real hire card, not a command echo. */
+          ...(shown.hire ? { hire: shown.hire } : {}),
         }
       : undefined;
   const qShown = questions.find((a) => a.state === "open") ?? questions.at(-1);

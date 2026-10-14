@@ -335,6 +335,12 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
     version: 23,
     statements: [`ALTER TABLE conversations ADD COLUMN bg_jobs INTEGER`],
   },
+  {
+    /* Gateway `team_hire` asks carry the hire draft JSON so the card
+       renders the real proposal; NULL on every engine ask. */
+    version: 24,
+    statements: [`ALTER TABLE asks ADD COLUMN hire TEXT`],
+  },
 ];
 
 /**
