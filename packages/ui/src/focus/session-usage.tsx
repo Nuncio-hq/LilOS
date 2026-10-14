@@ -31,8 +31,20 @@ export function SessionUsage({
   usage,
   model,
   models,
+  onCompact,
+  compactDisabled,
+  onContinue,
 }: {
   usage: Usage;
+  /* Engine declared `compact` — the meter's Compact now action. Absent =
+     no button at all (no capability → no affordance). */
+  onCompact?: () => void;
+  /** True while a turn runs — compaction answers INVALID_STATE mid-turn,
+     so the button parks instead of failing on purpose. */
+  compactDisabled?: boolean;
+  /* Full-state "Continue in a new session" — fresh session, same folder,
+     first message carries the recap. Only offered when full. */
+  onContinue?: () => void;
   /** The session's model id — resolved by `sessionModelId` at the call site
       so every surface reads the same model for the same session (#294). */
   model?: string;
@@ -187,6 +199,36 @@ export function SessionUsage({
           <span className="text-muted-foreground">Model</span>
           <span className="truncate font-medium">{name ?? "—"}</span>
         </div>
+        {(onCompact || (full && onContinue)) && (
+          <div className="flex items-center gap-2 border-t px-4 py-2.5">
+            {onCompact && (
+              <button
+                type="button"
+                data-compact-now
+                disabled={compactDisabled}
+                title={
+                  compactDisabled
+                    ? "Available once the current turn ends"
+                    : "Summarize older turns in place"
+                }
+                onClick={onCompact}
+                className="rounded-md bg-foreground px-2.5 py-1 font-medium text-[12px] text-background transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Compact now
+              </button>
+            )}
+            {full && onContinue && (
+              <button
+                type="button"
+                data-continue-new-session
+                onClick={onContinue}
+                className="rounded-md border px-2.5 py-1 font-medium text-[12px] transition-colors hover:bg-muted"
+              >
+                Continue in a new session
+              </button>
+            )}
+          </div>
+        )}
       </ContextContent>
     </Context>
   );

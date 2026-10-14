@@ -111,6 +111,8 @@ export function EmployeeHome({
   onRename,
   onArchive,
   onRetrySession,
+  onCompactSession,
+  onContinueSession,
   accept,
   maxFileSize,
   maxFiles,
@@ -175,6 +177,10 @@ export function EmployeeHome({
   onRename?: (id: string, title: string) => void;
   onArchive?: (id: string, archived: boolean) => void;
   onRetrySession?: (root: Extract<Msg, { kind: "msg" }>) => void;
+  /* #560: the context-full session alert's two outs — compact in place,
+     or continue in a fresh session on the same folder with a recap. */
+  onCompactSession?: (root: Extract<Msg, { kind: "msg" }>) => void;
+  onContinueSession?: (root: Extract<Msg, { kind: "msg" }>) => void;
   /* Composer attachment types the host accepts; absent = no attach UI. */
   accept?: string;
   /* Attachment byte cap + count cap + where rejections surface (issue #31). */
@@ -291,6 +297,8 @@ export function EmployeeHome({
     onRename,
     onArchive,
     onRetrySession,
+    onCompactSession,
+    onContinueSession,
     onOpenTask: scheduled?.onOpenTask,
   });
   rowCb.current = {
@@ -298,6 +306,8 @@ export function EmployeeHome({
     onRename,
     onArchive,
     onRetrySession,
+    onCompactSession,
+    onContinueSession,
     onOpenTask: scheduled?.onOpenTask,
   };
   const row = useMemo(
@@ -309,6 +319,10 @@ export function EmployeeHome({
         rowCb.current.onArchive?.(id, archivedFlag),
       retry: (root: Extract<Msg, { kind: "msg" }>) =>
         rowCb.current.onRetrySession?.(root),
+      compact: (root: Extract<Msg, { kind: "msg" }>) =>
+        rowCb.current.onCompactSession?.(root),
+      cont: (root: Extract<Msg, { kind: "msg" }>) =>
+        rowCb.current.onContinueSession?.(root),
       openTask: (taskId: string) => rowCb.current.onOpenTask?.(taskId),
     }),
     [],
@@ -334,6 +348,8 @@ export function EmployeeHome({
       onArchive={onArchive ? row.archive : undefined}
       onOpen={row.open}
       onRetrySession={onRetrySession ? row.retry : undefined}
+      onCompactSession={onCompactSession ? row.compact : undefined}
+      onContinueSession={onContinueSession ? row.cont : undefined}
     />
   );
 

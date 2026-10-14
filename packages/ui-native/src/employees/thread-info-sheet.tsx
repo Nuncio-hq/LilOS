@@ -22,9 +22,18 @@ const openUrl = (url: string | undefined) => {
 export function ThreadInfoSheet({
   t,
   onDone,
+  onCompact,
+  compactDisabled,
+  onContinue,
 }: {
   t: ThreadDetail;
   onDone: () => void;
+  /* #560: engine declared `compact` → Compact now on the meter card
+     (disabled mid-turn); the Full-state offer opens a fresh session on
+     the same folder with a recap. Both omitted → no buttons (D-#19). */
+  onCompact?: () => void;
+  compactDisabled?: boolean;
+  onContinue?: () => void;
 }) {
   const insets = useSafeAreaInsets();
   return (
@@ -142,7 +151,15 @@ export function ThreadInfoSheet({
         </Group>
       )}
 
-      {t.context && <ContextMeter c={t.context} model={t.model} />}
+      {t.context && (
+        <ContextMeter
+          c={t.context}
+          model={t.model}
+          onCompact={onCompact}
+          compactDisabled={compactDisabled}
+          onContinue={onContinue}
+        />
+      )}
 
       <Group title="Thread">
         <Fact icon="calendar" label="Started" value={t.started} first />

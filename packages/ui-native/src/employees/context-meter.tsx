@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Animated, Easing, View } from "react-native";
+import { Animated, Easing, Pressable, View } from "react-native";
 import Svg, { Circle } from "react-native-svg";
 import { AppText } from "../components/app-text";
 import { useThemeColor } from "../components/icon";
@@ -118,7 +118,23 @@ function Segment({
   );
 }
 
-export function ContextMeter({ c, model }: { c: ContextUsage; model: string }) {
+export function ContextMeter({
+  c,
+  model,
+  onCompact,
+  compactDisabled,
+  onContinue,
+}: {
+  c: ContextUsage;
+  model: string;
+  /* #560: the engine declared `compact` — Compact now; absent → no
+     button (D-#19). Disabled while a turn runs. */
+  onCompact?: () => void;
+  compactDisabled?: boolean;
+  /* Full-state "Continue in a new session" — fresh session, same folder,
+     recap in the first message. Only offered when full. */
+  onContinue?: () => void;
+}) {
   const ps = parts(c);
   const free = Math.max(0, c.max - used(c));
   return (
@@ -199,6 +215,34 @@ export function ContextMeter({ c, model }: { c: ContextUsage; model: string }) {
           </AppText>
           <AppText className="text-[13px]">{model}</AppText>
         </View>
+        {(onCompact || (contextFull(used(c), c.max) && onContinue)) && (
+          <View className="flex-row gap-2.5">
+            {onCompact && (
+              <Pressable
+                testID="compact-now"
+                disabled={compactDisabled}
+                onPress={onCompact}
+                className="rounded-lg bg-foreground px-3 py-1.5"
+                style={{ opacity: compactDisabled ? 0.4 : 1 }}
+              >
+                <AppText className="text-[13px] font-medium text-background">
+                  Compact now
+                </AppText>
+              </Pressable>
+            )}
+            {contextFull(used(c), c.max) && onContinue && (
+              <Pressable
+                testID="continue-new-session"
+                onPress={onContinue}
+                className="rounded-lg border border-border px-3 py-1.5"
+              >
+                <AppText className="text-[13px] font-medium">
+                  Continue in a new session
+                </AppText>
+              </Pressable>
+            )}
+          </View>
+        )}
       </View>
     </View>
   );

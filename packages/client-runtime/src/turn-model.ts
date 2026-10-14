@@ -154,6 +154,11 @@ export interface SessionModel {
   provider?: string;
   effort?: string;
   fast?: boolean;
+  /* #560: the session's latest usage snapshot — turn.completed OR
+     session.compacted (a standalone compaction carries no turnId, so it
+     can't ride a turn's row). The context meter prefers this over the
+     last turn's usage: the older turn still reads pre-fold numbers. */
+  usage?: Usage;
 }
 
 /** The attach-snapshot slice the reducer reads (the feed's
@@ -205,6 +210,7 @@ export class SessionReducer {
   private provider: string | undefined;
   private effort: string | undefined;
   private fast: boolean | undefined;
+  private usage: Usage | undefined;
   private snapshot: ReduceSnapshot | undefined;
   /* Latched once an event runs past the snapshot's atSeq — the #327
      stale check, computed while applying instead of re-scanned. */
@@ -368,6 +374,12 @@ export class SessionReducer {
         this.fast = e.payload.fast ?? this.fast;
         break;
       }
+      case "session.compacted":
+        /* #560: a standalone compaction's usage snapshot — session-level
+           like turn.completed's, so the meter drops off model.usage even
+           though no turn owns the event. */
+        this.usage = e.payload.usage ?? this.usage;
+        break;
       case "session.state": {
         this.state = e.payload.state;
         break;
@@ -671,6 +683,7 @@ export class SessionReducer {
         t.stopReason = e.payload.stopReason;
         t.error = e.payload.error;
         t.usage = e.payload.usage;
+        this.usage = e.payload.usage ?? this.usage;
         /* Stopped mid-list (#180 AC-2): engines don't re-emit a cancelled
            snapshot on interrupt, so unfinished items derive it here — the
            card reads "Stopped · n/m" from the steps alone. */
@@ -813,6 +826,7 @@ export class SessionReducer {
       provider: this.provider,
       effort: this.effort,
       fast: this.fast,
+      usage: this.usage,
     };
   }
 }

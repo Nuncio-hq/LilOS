@@ -431,6 +431,7 @@
         "approvals.setPolicy",
         "session.ask",
         "commands.list",
+        "session.compact",
         "pairing.offer",
         "pairing.disable",
         "devices.list",
@@ -1857,7 +1858,8 @@
               "enum": [
                 "model",
                 "sleep",
-                "generic"
+                "generic",
+                "context"
               ]
             },
             "text": {
@@ -2183,7 +2185,8 @@
                     "enum": [
                       "model",
                       "sleep",
-                      "generic"
+                      "generic",
+                      "context"
                     ]
                   },
                   "text": {
@@ -2569,7 +2572,8 @@
                   "enum": [
                     "model",
                     "sleep",
-                    "generic"
+                    "generic",
+                    "context"
                   ]
                 },
                 "text": {
@@ -2885,7 +2889,8 @@
                   "enum": [
                     "model",
                     "sleep",
-                    "generic"
+                    "generic",
+                    "context"
                   ]
                 },
                 "text": {
@@ -3121,7 +3126,8 @@
                   "enum": [
                     "model",
                     "sleep",
-                    "generic"
+                    "generic",
+                    "context"
                   ]
                 },
                 "text": {
@@ -4656,7 +4662,8 @@
                   "enum": [
                     "model",
                     "sleep",
-                    "generic"
+                    "generic",
+                    "context"
                   ]
                 },
                 "text": {
@@ -5362,7 +5369,8 @@
                         "enum": [
                           "model",
                           "sleep",
-                          "generic"
+                          "generic",
+                          "context"
                         ]
                       },
                       "text": {
@@ -7823,7 +7831,8 @@
                   "enum": [
                     "model",
                     "sleep",
-                    "generic"
+                    "generic",
+                    "context"
                   ]
                 },
                 "text": {

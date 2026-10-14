@@ -187,4 +187,27 @@ export interface DesktopBridge {
    *  before the page sees it. Absent on plain web — the browser-reserved
    *  chords are simply unbound there. Returns an unsubscribe function. */
   onShortcut?: (cb: (action: DesktopShortcutAction) => void) => () => void;
+  /** LilOS Browser shell bridge (WebContentsView host in main; wire shapes
+   *  in `./browser`). Absent on plain web — every browser control is
+   *  gated on this existing, which is what keeps the feature off web
+   *  builds (D-#19). */
+  browser?: {
+    /** True only in the popped-out browser window (its argv carries
+     *  `--lilos-browser-window`). */
+    isBrowserWindow?: boolean;
+    /** Send a command to the host; `getState` returns the snapshot. */
+    command(
+      cmd: import("./browser").DesktopBrowserCommand,
+    ): Promise<import("./browser").DesktopBrowserState | undefined>;
+    /** Report the page slot's bounds (or null when the slot unmounts). */
+    reportSlot(report: import("./browser").DesktopBrowserSlotReport): void;
+    /** Subscribe to the full-state push. Returns an unsubscribe. */
+    onState(
+      cb: (state: import("./browser").DesktopBrowserState) => void,
+    ): () => void;
+    /** Subscribe to ⌘ chords intercepted inside a page's view. */
+    onKey(
+      cb: (key: import("./browser").DesktopBrowserKey, slotId: string) => void,
+    ): () => void;
+  };
 }

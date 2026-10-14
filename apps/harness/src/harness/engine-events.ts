@@ -1,4 +1,4 @@
-import type { EngineEvent } from "@lilos/contracts/engine";
+import { type EngineEvent, fmtTokens } from "@lilos/contracts/engine";
 import type { HarnessCtx } from "./ctx";
 
 /**
@@ -329,6 +329,25 @@ export function onEngineEvent(this: HarnessCtx, event: EngineEvent) {
           sessionId: event.sessionId,
           ref: event.payload.ref,
         });
+      }
+      break;
+    case "session.compacted":
+      /* #560: exactly one note per compaction — manual or automatic —
+         with the before→after token drop when the engine measured it.
+         Deduped by seq AND session like session.note: a rebound session
+         restarts its seq at 1. `session.info` ref bumps and idle resumes
+         never fire this event, so the note can't appear spuriously. */
+      if (binding) {
+        const { beforeTokens, afterTokens } = event.payload;
+        const drop =
+          beforeTokens !== undefined && afterTokens !== undefined
+            ? ` (${fmtTokens(beforeTokens)} → ${fmtTokens(afterTokens)})`
+            : "";
+        this.postSystem(
+          binding,
+          `Context compacted: older turns summarized${drop}`,
+          `sys:${binding.conversationId}:compacted:${event.sessionId}:${event.seq}`,
+        ).catch(() => {});
       }
       break;
     case "turn.steered":
