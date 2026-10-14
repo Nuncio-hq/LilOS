@@ -58,10 +58,12 @@ test("⌘K opens the switcher, typing filters, Enter opens the session", async (
   await dmDefault(page);
 
   /* Seed a session so the Sessions section has a row with first-message
-     match text. */
+     match text — and wait for the thread route so the switcher's session
+     list provably holds it before ⌘K opens. */
   const box = page.locator("textarea").last();
   await box.fill("Keyboard nav sentinel session");
   await box.press("Enter");
+  await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+/, { timeout: 15_000 });
 
   await page.keyboard.press("Meta+k");
   await expect(switcher(page)).toBeVisible();
@@ -141,6 +143,10 @@ test("prototype: ⌘K filters the seeded employees/sessions, Enter picks", async
 }) => {
   test.setTimeout(90_000);
   await page.goto("/");
+  /* Hydration gates the keybinding — wait for the app chrome before ⌘K. */
+  await expect(page.getByRole("button", { name: "Inbox" })).toBeVisible({
+    timeout: 30_000,
+  });
   await page.keyboard.press("Meta+k");
   const sw = switcher(page);
   await expect(sw).toBeVisible();
