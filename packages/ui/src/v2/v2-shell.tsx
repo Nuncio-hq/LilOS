@@ -1,12 +1,15 @@
 import { useState } from "react";
+import { V2Agents, V2CompanyHome } from "./v2-company";
 import { V2NeedsYou } from "./v2-needs-you";
 import { V2Sidebar } from "./v2-sidebar";
 import { V2NewThread, V2ThreadView } from "./v2-thread";
-import type { V2Agent, V2Project, V2Thread } from "./v2-types";
+import type { V2Activity, V2Agent, V2Project, V2Thread } from "./v2-types";
 
 type View =
   | { kind: "thread"; id: string }
+  | { kind: "home" }
   | { kind: "needs" }
+  | { kind: "agents" }
   | { kind: "new" };
 
 /* UX v2 prototype shell: sidebar + one main column. Owns only view state
@@ -18,6 +21,7 @@ export function V2Shell({
   models,
   initialThreads,
   initialThreadId,
+  activity,
   onToast,
 }: {
   company: string;
@@ -25,14 +29,17 @@ export function V2Shell({
   agents: V2Agent[];
   models: string[];
   initialThreads: V2Thread[];
-  initialThreadId: string;
+  /** Absent = open on Company home. */
+  initialThreadId?: string;
+  activity: V2Activity[];
   onToast?: (text: string) => void;
 }) {
   const [threads, setThreads] = useState(initialThreads);
-  const [view, setView] = useState<View>({
-    kind: "thread",
-    id: initialThreadId,
-  });
+  const [view, setView] = useState<View>(
+    initialThreadId
+      ? { kind: "thread", id: initialThreadId }
+      : { kind: "home" },
+  );
   const [draft, setDraft] = useState({
     projectId: projects[0]?.id ?? "",
     agentId: agents[0]?.id ?? "",
@@ -50,7 +57,25 @@ export function V2Shell({
     view.kind === "thread" ? threads.find((t) => t.id === view.id) : undefined;
 
   const main =
-    view.kind === "needs" ? (
+    view.kind === "home" ? (
+      <V2CompanyHome
+        company={company}
+        threads={threads}
+        agents={agents}
+        projects={projects}
+        activity={activity}
+        onOpen={open}
+        onNeedsYou={() => setView({ kind: "needs" })}
+        onAgents={() => setView({ kind: "agents" })}
+      />
+    ) : view.kind === "agents" ? (
+      <V2Agents
+        agents={agents}
+        threads={threads}
+        projects={projects}
+        onOpen={open}
+      />
+    ) : view.kind === "needs" ? (
       <V2NeedsYou
         threads={threads}
         agents={agents}
@@ -151,17 +176,20 @@ export function V2Shell({
         threads={threads}
         agents={agents}
         current={view.kind === "thread" ? view.id : null}
-        needsYouOpen={view.kind === "needs"}
+        page={
+          view.kind === "home" ||
+          view.kind === "needs" ||
+          view.kind === "agents"
+            ? view.kind
+            : null
+        }
         onOpen={open}
         onNew={(projectId) => {
           if (projectId) setDraft((d) => ({ ...d, projectId }));
           setView({ kind: "new" });
         }}
-        onNeedsYou={() => setView({ kind: "needs" })}
+        onPage={(kind) => setView({ kind })}
         onSearch={() => onToast?.("⌘K searches every thread, settled ones too")}
-        onAgents={() =>
-          onToast?.("Agents page: hire, edit, see each agent's threads")
-        }
       />
       {main}
     </div>

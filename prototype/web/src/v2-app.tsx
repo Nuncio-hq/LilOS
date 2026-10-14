@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react"
 import { useTheme, V2Shell } from "@lilos/ui"
-import { V2_AGENTS, V2_MODELS, V2_PROJECTS, v2Threads } from "./fake-v2"
+import { V2_ACTIVITY, V2_AGENTS, V2_MODELS, V2_PROJECTS, v2Threads } from "./fake-v2"
 
 /* ?v2 entry: the UX v2 prototype on its own, so the current app stays
    untouched while Oscar judges the new layout. ?v2&n=300 loads more history;
-   ?v2&theme=dark|light pins the theme. */
+   ?v2&theme=dark|light pins the theme; &thread=<id> opens a thread. */
 export default function V2App() {
   const params = new URLSearchParams(location.search)
   const total = Math.max(15, Number(params.get("n") ?? 60))
@@ -22,7 +22,8 @@ export default function V2App() {
         agents={V2_AGENTS}
         models={V2_MODELS}
         initialThreads={v2Threads(total)}
-        initialThreadId="t-748"
+        initialThreadId={params.get("thread") ?? undefined}
+        activity={V2_ACTIVITY}
         onToast={(text) => {
           setToast(text)
           window.setTimeout(() => setToast((t) => (t === text ? null : t)), 2400)

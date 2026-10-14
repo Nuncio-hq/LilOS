@@ -1,5 +1,6 @@
 import {
   ChevronRightIcon,
+  LayoutDashboardIcon,
   PenSquareIcon,
   PinIcon,
   PlusIcon,
@@ -225,32 +226,68 @@ function ProjectBlock({
    "Needs you" row, then projects. Each project lists only what came back to
    you and recent quiet threads; running threads fold into one line and old
    threads settle out of the list on their own. */
+export type V2Page = "home" | "needs" | "agents" | null;
+
+function NavRow({
+  icon,
+  label,
+  active,
+  onClick,
+  trailing,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  active: boolean;
+  onClick: () => void;
+  trailing?: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        "flex h-8 w-full items-center gap-2.5 rounded-lg px-3 text-[13px] transition-colors",
+        active
+          ? "bg-foreground/[0.07] text-foreground"
+          : "text-foreground/85 hover:bg-foreground/[0.04]",
+      )}
+    >
+      <span className="grid w-3.5 place-items-center text-muted-foreground [&_svg]:size-3.5">
+        {icon}
+      </span>
+      <span className="flex-1 text-left font-medium">{label}</span>
+      {trailing}
+    </button>
+  );
+}
+
 export function V2Sidebar({
   company,
   projects,
   threads,
   agents,
   current,
-  needsYouOpen,
+  page,
   onOpen,
   onNew,
-  onNeedsYou,
+  onPage,
   onSearch,
-  onAgents,
 }: {
   company: string;
   projects: V2Project[];
   threads: V2Thread[];
   agents: V2Agent[];
   current: string | null;
-  needsYouOpen: boolean;
+  page: V2Page;
   onOpen: (id: string) => void;
   onNew: (projectId?: string) => void;
-  onNeedsYou: () => void;
+  onPage: (p: Exclude<V2Page, null>) => void;
   onSearch: () => void;
-  onAgents: () => void;
 }) {
   const needs = threads.filter((t) => V2_ATTENTION.includes(t.state)).length;
+  const working = threads.filter((t) => t.state === "working").length;
+  const live = agents.filter((a) => !a.soon);
   return (
     <aside className="lilos-v2-side flex min-h-0 w-[272px] shrink-0 flex-col">
       <div className="lilos-drag flex h-[52px] shrink-0 items-center gap-2 pr-2 pl-4">
@@ -287,31 +324,54 @@ export function V2Sidebar({
             ⌘K
           </kbd>
         </button>
-        <button
-          type="button"
-          onClick={onNeedsYou}
-          aria-current={needsYouOpen ? "page" : undefined}
-          className={cn(
-            "flex h-8 w-full items-center gap-2.5 rounded-lg px-3 text-[13px] transition-colors",
-            needsYouOpen
-              ? "bg-foreground/[0.07] text-foreground"
-              : "text-foreground/85 hover:bg-foreground/[0.04]",
-          )}
-        >
-          <span className="grid w-3.5 place-items-center">
-            <StateDot state="needs" />
-          </span>
-          <span className="flex-1 text-left font-medium">Needs you</span>
-          {needs > 0 && (
-            <span className="min-w-5 rounded-full bg-amber-500/15 px-1.5 text-center font-semibold text-[11px] text-amber-700 tabular-nums dark:text-amber-300">
-              {needs}
+        <NavRow
+          icon={<LayoutDashboardIcon />}
+          label="Home"
+          active={page === "home"}
+          onClick={() => onPage("home")}
+          trailing={
+            working > 0 && (
+              <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground tabular-nums">
+                <StateDot state="working" />
+                {working}
+              </span>
+            )
+          }
+        />
+        <NavRow
+          icon={<StateDot state="needs" />}
+          label="Needs you"
+          active={page === "needs"}
+          onClick={() => onPage("needs")}
+          trailing={
+            needs > 0 && (
+              <span className="min-w-5 rounded-full bg-amber-500/15 px-1.5 text-center font-semibold text-[11px] text-amber-700 tabular-nums dark:text-amber-300">
+                {needs}
+              </span>
+            )
+          }
+        />
+        <NavRow
+          icon={<UsersIcon />}
+          label="Agents"
+          active={page === "agents"}
+          onClick={() => onPage("agents")}
+          trailing={
+            <span className="flex -space-x-1.5">
+              {live.slice(0, 4).map((a) => (
+                <HermesAvatar
+                  key={a.id}
+                  name={a.name}
+                  className="size-4 ring-2 ring-[var(--v2-side)]"
+                />
+              ))}
             </span>
-          )}
-        </button>
+          }
+        />
       </div>
       <nav
         aria-label="Projects"
-        className="min-h-0 flex-1 overflow-y-auto px-2 pb-4 [scrollbar-width:thin]"
+        className="mt-3 min-h-0 flex-1 overflow-y-auto border-foreground/[0.06] border-t px-2 pb-4 [scrollbar-width:thin]"
       >
         {projects.map((p) => {
           const mine = threads.filter((t) => t.projectId === p.id);
@@ -330,26 +390,10 @@ export function V2Sidebar({
         })}
       </nav>
       <div className="flex h-12 shrink-0 items-center gap-1 border-foreground/[0.06] border-t px-2">
-        <button
-          type="button"
-          onClick={onAgents}
-          className="flex h-8 flex-1 items-center gap-2.5 rounded-lg px-3 text-[13px] text-foreground/85 hover:bg-foreground/[0.04]"
-        >
-          <UsersIcon className="size-3.5 text-muted-foreground" />
-          Agents
-          <span className="ml-auto flex -space-x-1.5">
-            {agents
-              .filter((a) => !a.soon)
-              .slice(0, 4)
-              .map((a) => (
-                <HermesAvatar
-                  key={a.id}
-                  name={a.name}
-                  className="size-4 ring-2 ring-[var(--v2-side)]"
-                />
-              ))}
-          </span>
-        </button>
+        <div className="flex h-8 flex-1 items-center gap-2.5 px-3 text-[12px] text-muted-foreground">
+          <span className="size-1.5 rounded-full bg-[#34c759]" />
+          Hermes connected
+        </div>
         <button
           type="button"
           aria-label="Settings"

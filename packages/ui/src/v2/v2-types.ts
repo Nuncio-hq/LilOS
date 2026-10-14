@@ -23,6 +23,10 @@ export type V2Agent = {
   name: string;
   role: string;
   engine: string;
+  /** Default model for new threads. */
+  model?: string;
+  /** Skills installed on the profile. */
+  skills?: number;
   /** Not usable yet (shown greyed in the picker). */
   soon?: boolean;
 };
@@ -34,12 +38,32 @@ export type V2Project = {
   path?: string;
 };
 
+/** One tool call, shown the way a coding agent shows its work. */
+export type V2Step = {
+  kind: "read" | "edit" | "bash" | "search" | "web" | "task";
+  /** File path, command, query or URL. */
+  target: string;
+  /** Lines added / removed (edits). */
+  add?: number;
+  del?: number;
+  /** Short trailing fact: "exit 0", "12 matches", "3 results". */
+  meta?: string;
+  /** The call failed. */
+  failed?: boolean;
+};
+
+/** A few diff lines from one changed file, for the end-of-turn card. */
+export type V2DiffLine = { kind: "add" | "del" | "ctx"; text: string };
+
 export type V2Msg = {
   from: "you" | "agent";
   time: string;
   text: string;
-  /** Steps the agent ran for this reply, as one summary line. */
-  steps?: string;
+  /** The tool calls behind this reply, in order. */
+  work?: V2Step[];
+  /** Files this reply changed, with a short preview of the first one. */
+  changes?: { path: string; add: number; del: number }[];
+  preview?: { path: string; lines: V2DiffLine[] };
 };
 
 export type V2Ask = {
@@ -49,6 +73,13 @@ export type V2Ask = {
   detail?: string;
   /** Question: answer choices. */
   options?: string[];
+};
+
+/** The step a running thread is on, with the last lines of its output. */
+export type V2Live = {
+  step: V2Step;
+  elapsed: string;
+  tail?: string[];
 };
 
 export type V2Thread = {
@@ -66,7 +97,21 @@ export type V2Thread = {
   /** "Until Mon 9:00" for snoozed threads. */
   until?: string;
   ask?: V2Ask;
+  live?: V2Live;
   messages: V2Msg[];
+};
+
+/** One line in the company activity feed. */
+export type V2Activity = {
+  id: string;
+  agentId: string;
+  /** "opened", "finished", "asked to run", "settled". */
+  verb: string;
+  /** What it acted on: "PR #747", "Fix the flaky ac-544 e2e test". */
+  object: string;
+  threadId?: string;
+  projectId?: string;
+  ago: number;
 };
 
 export const V2_ATTENTION: V2State[] = ["needs", "failed", "unseen"];

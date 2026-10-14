@@ -13,6 +13,7 @@ import { HermesAvatar } from "../shell/avatars";
 import { AgentPicker, ProjectPicker } from "./v2-agent-picker";
 import { STATE_WORD, StateDot } from "./v2-bits";
 import type { V2Agent, V2Project, V2Thread } from "./v2-types";
+import { ChangesCard, LiveStep, WorkLog } from "./v2-worklog";
 
 const headerBtn =
   "flex h-7 items-center gap-1.5 rounded-lg px-2 text-[12px] text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground";
@@ -179,26 +180,28 @@ export function V2ThreadView({
                   <span className="font-medium">{agent?.name}</span>
                   <span className="text-muted-foreground">{m.time}</span>
                 </div>
-                {m.steps && (
-                  <div className="flex w-fit items-center gap-1.5 text-[12px] text-muted-foreground">
-                    <ChevronDownIcon className="size-3 -rotate-90" />
-                    {m.steps}
-                  </div>
-                )}
-                <p className="text-[14.5px] leading-[1.65] text-foreground/90">
+                {m.work && <WorkLog steps={m.work} />}
+                <p className="text-[14.5px] text-foreground/90 leading-[1.65]">
                   {m.text}
                 </p>
+                <ChangesCard msg={m} />
               </div>
             ),
           )}
           {t.state === "working" && (
-            <div className="flex items-center gap-2 text-[13px] text-muted-foreground">
-              <HermesAvatar
-                name={agent?.name}
-                status="busy"
-                className="size-5"
-              />
-              <Shimmer duration={1.4}>{t.line ?? "Working…"}</Shimmer>
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-2 text-[12.5px]">
+                <HermesAvatar
+                  name={agent?.name}
+                  status="busy"
+                  className="size-5"
+                />
+                <span className="font-medium">{agent?.name}</span>
+                <Shimmer as="span" duration={1.4} className="text-[12.5px]">
+                  {t.line ?? "Working…"}
+                </Shimmer>
+              </div>
+              {t.live && <LiveStep live={t.live} />}
             </div>
           )}
         </div>
