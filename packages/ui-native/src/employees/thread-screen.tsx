@@ -22,6 +22,7 @@ import { waitingOnQuestion } from "./question-gate";
 import { threadBottomInset } from "./thread-layout";
 import { transcriptItems } from "./transcript-items";
 import type {
+  AttachmentChip,
   ContextUsage,
   GrantOption,
   PullRequestRef,
@@ -85,6 +86,9 @@ export function ThreadScreen({
   answerHint,
   initialDraft,
   onDraftChange,
+  files,
+  onAttach,
+  onRemoveFile,
 }: {
   t: ThreadDetail;
   /** Omit when the engine reports no models — the composer's chip hides. */
@@ -137,6 +141,11 @@ export function ThreadScreen({
   /** #556: draft persistence — this thread's saved draft + its writer. */
   initialDraft?: string;
   onDraftChange?: (text: string) => void;
+  /** Composer attachments — see Composer; the screen owns picking and
+      clearing them. */
+  files?: AttachmentChip[];
+  onAttach?: () => void;
+  onRemoveFile?: (index: number) => void;
   /** #591: a thin line directly above the composer while the Mac is
       unreachable ("Can't reach <Mac>") — the cached thread stays
       readable, the hint explains why nothing new lands. */
@@ -393,6 +402,7 @@ export function ThreadScreen({
                 ) : e.kind === "user" ? (
                   <UserBubble
                     text={e.text}
+                    files={e.attachments}
                     mark={e.id === scrollToEntry ? hitQuery : undefined}
                     time={
                       e.queued
@@ -517,6 +527,9 @@ export function ThreadScreen({
             modelUnavailable={modelUnavailable}
             insetBottom={insets.bottom}
             onSend={onSend}
+            files={files}
+            onAttach={onAttach}
+            onRemoveFile={onRemoveFile}
             /* #591: stale keeps the ■ visible but disabled — hiding it
                would pretend the thread was never mid-turn. */
             onStop={t.state === "working" ? onStop : undefined}

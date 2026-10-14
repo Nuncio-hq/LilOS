@@ -46,6 +46,7 @@ import {
   planChangeSend,
   primaryOutcome,
 } from "../asks";
+import { type PickedFile, pickFiles } from "../attachments";
 import { messageCache } from "../cache";
 import { $demo, DEMO_MAC } from "../demo/lifecycle";
 import { defaultModelPick } from "../dm-model";
@@ -444,11 +445,19 @@ export function Thread({
       ? "Models unavailable"
       : undefined;
 
+  /* Staged files for the next send — cleared only on success so a
+     failed send keeps them like it keeps the draft text. */
+  const [files, setFiles] = useState<PickedFile[]>([]);
+  const fileStamp = (fs: PickedFile[]) =>
+    fs.map((f) => `${f.name}:${f.sizeBytes}`).join("|");
   const send = (text: string) => {
     const c = client;
     if (!c || !channelId) return;
+    const outgoing = files;
     /* A draft still carrying the change prefix answers the open plan ask
-       (outcome "change") instead of posting to the thread — web rule. */
+       (outcome "change") instead of posting to the thread — web rule.
+       Files stage but can't ride an ask answer — the plan path never
+       carries attachments (it echoes the answer only). */
     const change = planChangeSend(text, $asks.get(), conversationId);
     if (change) {
       void answerPlanChange(c, change.askId, change.answer);
@@ -456,16 +465,31 @@ export function Thread({
     }
     /* #552: the key belongs to the draft, not the tap — the failure path
        refills the composer with the same text, so the resend repeats the
-       key and the relay dedupes a stored-but-unanswered first attempt. */
-    const dedupeKey = sendKeyFor(`conv:${conversationId}`, text);
+       key and the relay dedupes a stored-but-unanswered first attempt.
+       The file list rides the key too: same text + different files is a
+       different send. */
+    const keySeed = `${text}\n${fileStamp(outgoing)}`;
+    const dedupeKey = sendKeyFor(`conv:${conversationId}`, keySeed);
     void c
       .request("messages.post", {
         channelId,
         conversationId,
         text,
         dedupeKey,
+        ...(outgoing.length
+          ? {
+              attachments: outgoing.map(({ name, mimeType, dataBase64 }) => ({
+                name,
+                mimeType,
+                dataBase64,
+              })),
+            }
+          : {}),
       })
-      .then(() => sendKeyDone(`conv:${conversationId}`, text))
+      .then(() => {
+        sendKeyDone(`conv:${conversationId}`, keySeed);
+        setFiles([]);
+      })
       .catch((e) => {
         Alert.alert("Couldn't send", describeError(e));
         setPrefill({ text });
@@ -615,6 +639,13 @@ export function Thread({
         if (client) void answerQuestion(client, id, a.value);
       }}
       onSend={send}
+      files={files}
+      onAttach={() =>
+        void pickFiles(files.length).then((more) =>
+          setFiles((fs) => [...fs, ...more]),
+        )
+      }
+      onRemoveFile={(i) => setFiles((fs) => fs.filter((_, j) => j !== i))}
       onStop={stop}
       unreachableNote={mac ? unreachableNoteFor(link, mac.name) : undefined}
       /* #556 AC-2: this thread's draft persists device-local. */

@@ -141,9 +141,7 @@ export async function dispatchPrompt(
      prompts with a text block. */
   let text = message.text;
   if (files.length) {
-    const lines = files.map(
-      (f) => `- ${f.path} (${humanBytes(f.sizeBytes)})`,
-    );
+    const lines = files.map((f) => `- ${f.path} (${humanBytes(f.sizeBytes)})`);
     const note =
       files.length === 1
         ? `The user attached a file — saved into the session folder, read it with your normal file tools:\n${lines[0]}`

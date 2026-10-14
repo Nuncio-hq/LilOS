@@ -70,6 +70,7 @@ export { ThreadHeaderTitle, ThreadScreen } from "./employees/thread-screen";
 export type {
   AgentEntry,
   Approval,
+  AttachmentChip,
   BackgroundJobRow,
   ChannelRow,
   ContextUsage,

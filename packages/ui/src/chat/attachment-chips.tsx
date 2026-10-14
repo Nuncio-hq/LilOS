@@ -31,11 +31,8 @@ function iconFor(mediaType: string) {
   if (mime.startsWith("image/")) return ICONS.image;
   if (mime.startsWith("audio/")) return ICONS.audio;
   if (mime.startsWith("video/")) return ICONS.video;
-  if (/zip|tar|gzip|7z|rar|archive|compressed/.test(mime))
-    return ICONS.archive;
-  if (
-    /json|javascript|typescript|xml|yaml|x-sh|sql|graphql|wasm/.test(mime)
-  )
+  if (/zip|tar|gzip|7z|rar|archive|compressed/.test(mime)) return ICONS.archive;
+  if (/json|javascript|typescript|xml|yaml|x-sh|sql|graphql|wasm/.test(mime))
     return ICONS.code;
   if (/csv|excel|spreadsheet/.test(mime)) return ICONS.sheet;
   if (mime.startsWith("text/") || /pdf|document|msword|rtf/.test(mime))

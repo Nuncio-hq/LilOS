@@ -3,6 +3,7 @@ import { Pressable, Text, TextInput, View } from "react-native";
 import { Glass } from "../components/glass";
 import { Icon, useThemeColor } from "../components/icon";
 import { ProviderLogo } from "../components/provider-logo";
+import type { AttachmentChip } from "./types";
 
 /* The conversation's composer: one Liquid Glass capsule floating over the
    bottom of the chat (content scrolls on under it), input on top and the
@@ -24,6 +25,9 @@ export function Composer({
   prefill,
   initialDraft,
   onDraftChange,
+  files,
+  onAttach,
+  onRemoveFile,
 }: {
   placeholder: string;
   /** Omit in a thread: the session already runs somewhere. */
@@ -57,6 +61,13 @@ export function Composer({
       caller can persist it (guarded — fires only when the text differs
       from the last notification). */
   onDraftChange?: (text: string) => void;
+  /** Files staged for the send — chips above the context row. The screen
+      owns the list (the picker needs expo); cleared there on success so a
+      failed send keeps the files like it keeps the draft. */
+  files?: AttachmentChip[];
+  /** Opens the document picker; its presence is the attach affordance. */
+  onAttach?: () => void;
+  onRemoveFile?: (index: number) => void;
 }) {
   const [draft, setDraft] = useState(initialDraft ?? "");
   const lastNotified = useRef(initialDraft ?? "");
@@ -77,10 +88,12 @@ export function Composer({
     input.current?.focus();
   }, [prefill]);
   const muted = useThemeColor("muted-foreground");
-  const ready = !!draft.trim();
+  /* A file-only send is legal (the wire carries attachments without
+     text), so Send stays armed while files are staged. */
+  const ready = !!draft.trim() || !!files?.length;
   const send = () => {
     const t = draft.trim();
-    if (!t) return;
+    if (!t && !files?.length) return;
     onSend(t);
     change("");
   };
@@ -103,7 +116,33 @@ export function Composer({
           multiline
           className="max-h-32 min-h-6 px-0.5 text-[17px] leading-[22px] text-foreground"
         />
+        {!!files?.length && (
+          <View className="mt-2 flex-row flex-wrap gap-1.5">
+            {files.map((f, i) => (
+              <FileChip
+                key={`${f.name}:${f.sizeBytes}:${f.mimeType}`}
+                file={f}
+                onRemove={onRemoveFile ? () => onRemoveFile(i) : undefined}
+              />
+            ))}
+          </View>
+        )}
         <View className="mt-2 flex-row items-center gap-1.5">
+          {onAttach && (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Attach a file"
+              onPress={onAttach}
+              className="size-[30px] items-center justify-center rounded-full bg-fill active:opacity-60"
+            >
+              <Icon
+                name="paperclip"
+                size={13}
+                tone="subtle-foreground"
+                weight="medium"
+              />
+            </Pressable>
+          )}
           {folder !== undefined && onPickFolder && (
             <Chip icon="folder" label={folder} onPress={onPickFolder} />
           )}
@@ -154,6 +193,59 @@ export function Composer({
       </Glass>
     </View>
   );
+}
+
+/** A staged file in the composer — paperclip, name, size, × to remove.
+    Same shape the sent bubble shows under its text. */
+function FileChip({
+  file,
+  onRemove,
+}: {
+  file: AttachmentChip;
+  onRemove?: () => void;
+}) {
+  return (
+    <View className="h-7 flex-row items-center gap-1.5 rounded-md bg-fill pr-1.5 pl-2">
+      <Icon name="paperclip" size={11} tone="subtle-foreground" />
+      <Text
+        numberOfLines={1}
+        className="max-w-[140px] shrink font-medium text-[12px] text-subtle-foreground"
+      >
+        {file.name}
+      </Text>
+      {file.sizeBytes > 0 && (
+        <Text className="text-[11px] text-muted-foreground">
+          {formatBytes(file.sizeBytes)}
+        </Text>
+      )}
+      {onRemove && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Remove ${file.name}`}
+          onPress={onRemove}
+          hitSlop={6}
+          className="active:opacity-50"
+        >
+          <Icon name="xmark" size={10} tone="muted-foreground" weight="bold" />
+        </Pressable>
+      )}
+    </View>
+  );
+}
+
+/** `1.2 MB`-style label for file chips. */
+export function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KB", "MB", "GB"];
+  let size = bytes;
+  let unit = "B";
+  for (const u of units) {
+    if (size < 1024) break;
+    size /= 1024;
+    unit = u;
+  }
+  return `${size >= 100 ? Math.round(size) : size.toFixed(1)} ${unit}`;
 }
 
 function Chip({

@@ -28,7 +28,9 @@ export function attachmentDir(
   hasFolder: boolean,
   stateDir: string,
 ): string {
-  return hasFolder ? join(cwd, ATTACHMENT_DIR_NAME) : join(stateDir, "attachments");
+  return hasFolder
+    ? join(cwd, ATTACHMENT_DIR_NAME)
+    : join(stateDir, "attachments");
 }
 
 /** Decode one attachment into the session's attachment dir; returns the
@@ -84,7 +86,10 @@ function safeName(raw: string): string {
     // biome-ignore lint/suspicious/noControlCharactersInRegex: stripping path-unfriendly control bytes is the point.
     .replace(/[\u0000-\u001f]/g, "_")
     .trim();
-  const name = cleaned === "" || cleaned === "." || cleaned === ".." ? "attachment" : cleaned;
+  const name =
+    cleaned === "" || cleaned === "." || cleaned === ".."
+      ? "attachment"
+      : cleaned;
   return name.length > 100 ? name.slice(0, 100) : name;
 }
 
