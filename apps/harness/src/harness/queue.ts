@@ -96,9 +96,7 @@ export function enqueueOrPrompt(
              the text in `steerLanded` before the response resolved, so a
              matched steer is already inside the turn: delivered, never a
              wait the Stop-drop below can park. */
-          const landedIdx = binding.steerLanded.findIndex(
-            (t) => t === message.text,
-          );
+          const landedIdx = binding.steerLanded.indexOf(message.text);
           if (landedIdx >= 0) {
             binding.steerLanded.splice(landedIdx, 1);
             this.markDelivered(binding, message);
@@ -159,9 +157,7 @@ export function enqueueOrPrompt(
              after `turn.steered` but before the response) means the
              engine already applied it — deliver, don't re-prompt. */
           if (live === binding) {
-            const landedIdx = binding.steerLanded.findIndex(
-              (t) => t === message.text,
-            );
+            const landedIdx = binding.steerLanded.indexOf(message.text);
             if (landedIdx >= 0) {
               binding.steerLanded.splice(landedIdx, 1);
               this.markDelivered(binding, message);
