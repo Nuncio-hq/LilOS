@@ -171,6 +171,16 @@ export class FakeGateway implements GatewayLike {
   refreshCount = 0;
   /** When set, session.steer resolves with this status instead of "queued". */
   steerStatus: "queued" | "rejected" = "queued";
+  /** #560: session.compress's ack — set to shape the fold (equal
+      before/after counts = the gateway declined to shrink, a no-op). */
+  compressResult: Record<string, unknown> = {
+    status: "compressed",
+    before_tokens: 90_000,
+    after_tokens: 34_000,
+    before_messages: 64,
+    after_messages: 11,
+    summary: { headline: "folded the first 53 turns" },
+  };
   /** When set, session.steer rejects with this error code (e.g. 4010 build window). */
   steerError?: number;
   /** #549: `tools.list` rows, mirroring `_toolset_rows` ({name, description,
@@ -393,6 +403,8 @@ export class FakeGateway implements GatewayLike {
       }
       case "session.interrupt":
         return Promise.resolve({ status: "interrupted" });
+      case "session.compress":
+        return Promise.resolve(this.compressResult);
       case "session.steer":
         if (this.steerError)
           return Promise.reject(

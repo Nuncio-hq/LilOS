@@ -1540,6 +1540,22 @@ export class HermesEngine {
            compacted edge lands when it finishes, so no event here. */
         return { status: status === "pending" ? "pending" : "skipped" };
       }
+      /* A "compressed" ack with nothing folded (hermes declines to shrink a
+         small session) is a no-op — a note claiming turns were summarized
+         would be a lie, so the event only reports a real fold. */
+      const folded =
+        (typeof r.before_messages === "number" &&
+          typeof r.after_messages === "number" &&
+          r.after_messages < r.before_messages) ||
+        (typeof r.before_tokens === "number" &&
+          typeof r.after_tokens === "number" &&
+          r.after_tokens < r.before_tokens);
+      if (
+        !folded &&
+        (typeof r.before_messages === "number" ||
+          typeof r.before_tokens === "number")
+      )
+        return { status: "skipped" };
       const payload: Record<string, unknown> = {
         ...(typeof r.before_tokens === "number"
           ? { beforeTokens: r.before_tokens }
