@@ -334,6 +334,9 @@ export type Thread = {
   /* Set on a session a scheduled task started (#136): the DM marks it and
      the chip opens the task. */
   scheduled?: { task: string; name: string };
+  /* The relay stamped a turn end past the user's read watermark (#563):
+     finished, not seen yet — the card's dot until he opens it. */
+  unseen?: boolean;
   replies: Reply[];
   usage?: Usage;
   todos?: Todo[];
@@ -526,7 +529,13 @@ export type StatusComponent = {
 };
 
 /* Sidebar badge per employee: running turns (blue) / turns waiting on the user (amber). */
-export type EmpBadge = { running?: number; approvals?: number };
+export type EmpBadge = {
+  running?: number;
+  approvals?: number;
+  /* One of this employee's threads finished unseen (#563) — a dot beside
+     the badges; clears everywhere when the thread is opened. */
+  unseen?: boolean;
+};
 
 /* People (non-employee) as display metadata for avatars/names. Passed IN from the app.
    `image` is an optional avatar image URL; without it the avatar falls back to

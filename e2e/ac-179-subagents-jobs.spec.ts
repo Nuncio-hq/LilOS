@@ -67,19 +67,13 @@ test.afterAll(async () => {
 
 test.describe.configure({ mode: "serial" });
 
-const FOCUS_URL = /\/dm\/[^/]+\/[^/]+\/focus$/;
 const PANEL_URL = /\/dm\/[^/]+\/conv_[^/]+$/;
 
 /* #195: a feed row opens the peek panel, not Focus; the panel's ↗ carries
    on into Focus. */
 async function openSessionFocus(page: Page) {
   await sessionRow(page).click();
-  await expect(page).toHaveURL(PANEL_URL, { timeout: 30_000 });
-  await page
-    .locator("[data-thread-panel]")
-    .getByTitle("Focus", { exact: true })
-    .click();
-  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  await panelIntoFocus(page);
 }
 
 /** Open the app past first-run, landed on the auto-hired Default's DM. */

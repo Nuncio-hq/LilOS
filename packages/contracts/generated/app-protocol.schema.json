@@ -439,6 +439,7 @@
         "push.unregister",
         "push.visibility",
         "workbench.open",
+        "conversations.markRead",
         "schedules.list",
         "schedules.create",
         "schedules.update",
@@ -1868,6 +1869,18 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
+        "readSeq": {
+          "default": 0,
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "finishedSeq": {
+          "default": 0,
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
         "scheduled": {
           "type": "object",
           "properties": {
@@ -2194,6 +2207,18 @@
                 "type": "boolean"
               },
               "bgJobs": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "readSeq": {
+                "default": 0,
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "finishedSeq": {
+                "default": 0,
                 "type": "integer",
                 "minimum": 0,
                 "maximum": 9007199254740991
@@ -2600,6 +2625,18 @@
               "type": "boolean"
             },
             "bgJobs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "readSeq": {
+              "default": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "finishedSeq": {
+              "default": 0,
               "type": "integer",
               "minimum": 0,
               "maximum": 9007199254740991
@@ -3156,6 +3193,18 @@
               "type": "boolean"
             },
             "bgJobs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "readSeq": {
+              "default": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "finishedSeq": {
+              "default": 0,
               "type": "integer",
               "minimum": 0,
               "maximum": 9007199254740991
@@ -4668,6 +4717,18 @@
               "minimum": 0,
               "maximum": 9007199254740991
             },
+            "readSeq": {
+              "default": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "finishedSeq": {
+              "default": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
             "scheduled": {
               "type": "object",
               "properties": {
@@ -5374,6 +5435,18 @@
                     "type": "boolean"
                   },
                   "bgJobs": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "readSeq": {
+                    "default": 0,
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "finishedSeq": {
+                    "default": 0,
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 9007199254740991
@@ -7746,6 +7819,18 @@
               "type": "boolean"
             },
             "bgJobs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "readSeq": {
+              "default": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "finishedSeq": {
+              "default": 0,
               "type": "integer",
               "minimum": 0,
               "maximum": 9007199254740991

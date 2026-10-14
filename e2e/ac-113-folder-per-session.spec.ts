@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  panelIntoFocus,
+  pickPorts,
+  type Stack,
+} from "./helpers/stack";
 
 /**
  * Issue #113 — pick a folder per DM session, end to end on the real stack
@@ -283,11 +288,7 @@ test("AC-6 the employee pre-selects its last folder; a no-folder session is a pl
   await expect(page.getByText(/Reply to .*…/).first()).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-6-no-folder-panel.png` });
   // Focus shows the same no-folder session (↗ on the panel).
-  await page
-    .locator("[data-thread-panel]")
-    .getByTitle("Focus", { exact: true })
-    .click();
-  await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+\/focus/);
+  await panelIntoFocus(page, /\/dm\/[^/]+\/[^/]+\/focus/);
   const focusBox = page.getByRole("textbox", { name: /Reply to/ });
   await expect(focusBox).toBeVisible({ timeout: 15_000 });
   await expect(page.locator("[data-wsbadge]")).toHaveCount(0);

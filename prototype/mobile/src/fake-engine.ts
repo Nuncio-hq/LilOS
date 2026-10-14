@@ -124,6 +124,7 @@ export const $employees = computed($threads, (threads): EmployeeRow[] =>
       state,
       ticket: state === "idle" ? undefined : e.ticket,
       when: ask ? ask.age : live || fresh ? "now" : e.when,
+      unseen: mine.some((t) => t.unseen) || undefined,
       // Several threads waiting: the count is what sends you into the DM.
       now: ask
         ? asks.length > 1
@@ -185,6 +186,7 @@ export function turnsOf(threads: ThreadDetail[], employeeId: string) {
         live: liveLine(t),
         approval: agents.find((a) => a.approval)?.approval,
         prs: t.prs,
+        unseen: t.unseen,
       };
     });
 }

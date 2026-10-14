@@ -116,6 +116,8 @@ const CONV = {
   titleSource: "auto",
   archived: false,
   deliveredSeq: 1,
+  readSeq: 0,
+  finishedSeq: 0,
   createdAt: 0,
 };
 
@@ -332,6 +334,8 @@ describe("AC-1 sessionFeed — conversation-scoped engine feed (#157)", () => {
           titleSource: "auto",
           archived: false,
           deliveredSeq: 1,
+          readSeq: 0,
+          finishedSeq: 0,
           createdAt: 0,
         },
       },

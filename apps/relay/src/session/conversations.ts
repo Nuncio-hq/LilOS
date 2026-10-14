@@ -1,5 +1,6 @@
 import {
   ConversationsListParams,
+  ConversationsMarkReadParams,
   type ConversationsMoveFolderHostParams,
   type ConversationsMoveFolderHostResult,
   ConversationsMoveFolderParams,
@@ -394,6 +395,28 @@ export async function handleConversations(
       const conversation = await store.updateConversation(
         parsed.data.conversationId,
         { access: parsed.data.access },
+      );
+      if (!conversation) {
+        throw new RpcError(
+          JsonRpcCode.notFound,
+          "not_found",
+          "conversation not found",
+        );
+      }
+      emitConversation(conversation.channelId, conversation);
+      respond(peer, id, { conversation });
+      return;
+    }
+    case "conversations.markRead": {
+      /* #563: the user's read watermark — "I've seen this thread". Any
+         client may set it (the phone clears the same mark the Mac
+         stamps); the relay writes the channel's current `lastSeq`, so
+         a client can never backdate the mark, and `conversation.updated`
+         carries the new `readSeq` to every device at once. */
+      const parsed = ConversationsMarkReadParams.safeParse(params);
+      if (!parsed.success) throw badParams(parsed.error.issues);
+      const conversation = await store.markConversationRead(
+        parsed.data.conversationId,
       );
       if (!conversation) {
         throw new RpcError(

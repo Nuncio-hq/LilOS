@@ -336,10 +336,19 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
     statements: [`ALTER TABLE conversations ADD COLUMN bg_jobs INTEGER`],
   },
   {
+    version: 24,
+    statements: [
+      `ALTER TABLE conversations ADD COLUMN read_seq INTEGER NOT NULL DEFAULT 0`,
+      `ALTER TABLE conversations ADD COLUMN finished_seq INTEGER NOT NULL DEFAULT 0`,
+      `ALTER TABLE conversations ADD COLUMN finished_session_id TEXT`,
+      `ALTER TABLE conversations ADD COLUMN finished_event_seq INTEGER NOT NULL DEFAULT 0`,
+    ],
+  },
+  {
     /* #136: scheduled tasks — relay-owned records the host's clock fires
        as `conversations.open`; `conversations.scheduled` marks a run's
        session so the DM shows where it came from. */
-    version: 24,
+    version: 25,
     statements: [
       `CREATE TABLE scheduled_tasks (
         id TEXT PRIMARY KEY,

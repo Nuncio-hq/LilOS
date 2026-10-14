@@ -173,6 +173,7 @@ const METHOD_HANDLERS: ReadonlyMap<
   ["conversations.moveFolder", handleConversations],
   ["conversations.setModel", handleConversations],
   ["conversations.setAccess", handleConversations],
+  ["conversations.markRead", handleConversations],
   ["conversations.prs", handleConversations],
   ["messages.setCheckpoint", handleMessages],
   ["messages.list", handleMessages],
