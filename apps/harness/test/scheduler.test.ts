@@ -20,7 +20,9 @@ const task = (over: Partial<ScheduledTask> = {}): ScheduledTask => ({
   ...over,
 });
 
-const make = (over: Partial<Parameters<typeof TaskScheduler>[0]> = {}) => {
+const make = (
+  over: Partial<ConstructorParameters<typeof TaskScheduler>[0]> = {},
+) => {
   const fired: { task: ScheduledTask; due: { at: number; key: string } }[] = [];
   const skipped: ScheduledTask[] = [];
   const scheduler = new TaskScheduler({
