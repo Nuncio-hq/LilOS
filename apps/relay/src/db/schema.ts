@@ -115,6 +115,20 @@ export const conversations = sqliteTable(
     /** Running background-job count (#583): the DM session row's
         "N in background" badge; same host-written lifecycle. */
     bgJobs: integer("bg_jobs"),
+    /** The user's read watermark (#563): the channel seq up to which they have
+        opened this thread. `conversations.markRead` stamps the channel's
+        current `lastSeq`; compared against `finishedSeq` for the dot. */
+    readSeq: integer("read_seq").notNull().default(0),
+    /** The "finished, not seen" watermark (#563): channel seq when the
+        relay last observed a turn end (turn.completed, or session.state
+        error) for this conversation. */
+    finishedSeq: integer("finished_seq").notNull().default(0),
+    /** Freshness fence for `finishedSeq` writes (#563), same rule as
+        `usage_session_id`/`usage_seq`: a replayed older finish from the
+        same session can't regress the stamp; a rebound session writes
+        freely. Store-internal — never on the wire. */
+    finishedSessionId: text("finished_session_id"),
+    finishedEventSeq: integer("finished_event_seq").notNull().default(0),
     createdAt: integer("created_at").notNull(),
   },
   (t) => [index("conversations_channel").on(t.channelId)],

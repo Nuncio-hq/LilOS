@@ -158,7 +158,23 @@ export function toEmployeeRow(
   const live = wire.conversations.find(
     (c) => c.state === "active" && !c.archived && c.channelId === channel?.id,
   );
-  const base = { id: e.id, name: e.name, role: e.role, tone: toneOf(e.id) };
+  const base = {
+    id: e.id,
+    name: e.name,
+    role: e.role,
+    tone: toneOf(e.id),
+    /* #563: any of this DM's threads finished past the read watermark dots
+       the employee — opening the thread clears it on every device. */
+    unseen:
+      (channel !== undefined &&
+        wire.conversations.some(
+          (c) =>
+            c.channelId === channel.id &&
+            !c.archived &&
+            c.finishedSeq > c.readSeq,
+        )) ||
+      undefined,
+  };
   /* #591 AC-2: live-looking states read "Last known · …" — the marker
      FIRST, so truncation can never cut it off — and the row carries
      `lastKnown` so the screen dims the live tint (no teal line, no

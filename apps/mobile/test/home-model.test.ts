@@ -65,6 +65,8 @@ const conv = (
   titleSource: "auto",
   access: "ask",
   deliveredSeq: 0,
+  readSeq: 0,
+  finishedSeq: 0,
   archived: false,
   createdAt: 1,
   ...over,
