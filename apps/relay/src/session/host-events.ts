@@ -26,6 +26,7 @@ export async function handleHostEvents(
     requireHost,
     forwardToHost,
     respond,
+    emitConversation,
   } = c;
   switch (method) {
     case "session.events": {
@@ -94,6 +95,41 @@ export async function handleHostEvents(
               usage,
             })
             .catch((error) => log(`usage persist failed: ${error}`));
+        }
+        /* #563: the "finished, not seen" stamp — a turn end bumps
+           `finishedSeq` past every mark the relay has seen, so a thread
+           the user never opened dots its card + the employee on every
+           device. The store's (sessionId, eventSeq) fence drops replays
+           the same way `usage` does. A cancelled turn doesn't stamp: the
+           user stopped it themselves, so it was seen (the same exclusion
+           push fan-out makes). Best-effort like the usage persist — a
+           hiccup must not drop the event's ack. */
+        const event = parsed.data.event;
+        const finished =
+          (event.type === "turn.completed" &&
+            event.payload.stopReason !== "cancelled") ||
+          (event.type === "session.state" && event.payload.state === "error");
+        if (finished) {
+          /* Snapshotted before the write: the compare below must see the
+             pre-stamp value — stores that mutate in place would otherwise
+             make "stamp landed" undetectable. */
+          const before = conversation.finishedSeq;
+          store
+            .recordConversationFinish({
+              conversationId: conversation.id,
+              sessionId: parsed.data.sessionId,
+              eventSeq: event.seq,
+            })
+            .then(() =>
+              store.getConversation(conversation.id).then((stamped) => {
+                /* Re-emit only when the stamp actually landed (the fence
+                   may refuse a stale replay) — subscribers see the new
+                   `finishedSeq` on the plain `conversation.updated` feed. */
+                if (stamped && stamped.finishedSeq !== before)
+                  emitConversation(conversation.channelId, stamped);
+              }),
+            )
+            .catch((error) => log(`finish stamp failed: ${error}`));
         }
         /* #161: turn.completed / session.state-error transitions push;
            the fan-out's seq watermark drops replays. */

@@ -814,6 +814,9 @@ export function toFeed(
       /* #583 AC-3: the relay-stamped running-job count — the row's badge
          renders before the session feed lands. */
       ...(conv.bgJobs ? { bgJobs: conv.bgJobs } : {}),
+      /* #563: a turn end stamped past the user's read watermark dots the
+         card — opening the thread stamps `readSeq` and it clears. */
+      ...(conv.finishedSeq > conv.readSeq ? { unseen: true } : {}),
       ...(ws ? { ws } : {}),
       ...(jobs?.length ? { jobs } : {}),
     },

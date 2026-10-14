@@ -200,6 +200,8 @@ export function fakeAppOps(
     access: "ask",
     archived: false,
     deliveredSeq: 0,
+    readSeq: 0,
+    finishedSeq: 0,
     createdAt: 1,
     ...(opts.usage ? { usage: opts.usage } : {}),
   };

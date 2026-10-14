@@ -207,6 +207,23 @@ export const Conversation = z.object({
    * session feed it keeps alive — survive a released session.
    */
   bgJobs: z.number().int().nonnegative().optional(),
+  /**
+   * The user's read watermark (#563): how far he has opened this thread.
+   * `conversations.markRead` stamps `max(channel.lastSeq, finishedSeq)`
+   * — every finish the relay has seen counts as read. A thread whose
+   * `finishedSeq` sits past it shows the "finished, not seen yet" dot.
+   */
+  readSeq: z.int().min(0).default(0),
+  /**
+   * The last turn end the relay observed (#563): a `turn.completed` (a
+   * user-stopped turn doesn't stamp — the user who stopped it was
+   * watching) or a `session.state` error. Stamped by the relay, never
+   * client-written, at `max(channel.lastSeq, readSeq) + 1` — strictly
+   * past every mark seen so far, since the finish's own channel writes
+   * land after its engine event. The "finished, not seen" dot is
+   * `finishedSeq > readSeq`, so it survives restart and reconnect.
+   */
+  finishedSeq: z.int().min(0).default(0),
   createdAt: Timestamp,
 });
 export type Conversation = z.infer<typeof Conversation>;

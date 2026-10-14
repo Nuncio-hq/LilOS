@@ -91,6 +91,8 @@ export const NOT_AGENT_FACING: Record<string, string> = {
   "conversations.rewind": "the user rewinds a conversation",
   "conversations.moveFolder":
     "the user moves a thread's working folder (#581) — like folders.add/folders.browse, picking is the user's",
+  "conversations.markRead":
+    "the read watermark is Oscar's own — an agent never marks a thread seen for him (#563)",
   "conversations.setModel": "the user picks the session's model",
   "conversations.setAccess":
     "the composer pill is the user's — an agent must never grant itself Full access (#106)",

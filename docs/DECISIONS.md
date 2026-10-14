@@ -383,6 +383,22 @@ PR does not exist.
   "Queued" means past the watermark AND no `turn.started` ref — the
   client reads the ref, the wire stays as-is. Not: advancing the mark at
   turn.started. — #258
+- **D-#563 The "finished, not seen yet" dot derives from two relay-stored
+  seqs, never a flag.** `Conversation.readSeq` is the read watermark —
+  `conversations.markRead` stamps `max(channel.lastSeq, finishedSeq)`
+  (relay-owned, unbackdatable); `Conversation.finishedSeq` stamps a turn
+  end (non-cancelled `turn.completed` or `session.state` error) at
+  `max(channel.lastSeq, readSeq) + 1` — strictly past every mark seen so
+  far, since the finish's own channel writes land after its engine
+  event — fenced by (sessionId, eventSeq) like #300's usage so a replay
+  can't re-stamp. The dot is `finishedSeq > readSeq` computed
+  client-side; opening the thread marks it read and
+  `conversation.updated` clears every device. Not: a stored
+  `unseen`/`read` boolean (desyncs on restart/replay), client-computed
+  read stamps (clock skew across Mac and phone), per-device read state
+  (the phone must clear the mark the Mac set), or stamping `finishedSeq`
+  at `channel.lastSeq` (a quiet-channel finish equals `readSeq` and
+  silently misses). — #563
 - **D-#334 The reasoning stream is `reasoning.delta` only.** Hermes'
   `reasoning.available` is a per-message preview of the assistant text
   (≤500 chars, tags stripped — `tool.progress` upstream), never a delta;

@@ -296,6 +296,16 @@ export const SessionRow = memo(function SessionRow({
               {state.word}
             </span>
           )}
+          {/* #563: finished while unseen — the dot lives inside the open
+              pill so tapping it opens the thread (which marks it read on
+              every device). */}
+          {t.unseen && (
+            <span
+              data-thread-unseen
+              title="Finished — not seen yet"
+              className="size-2 rounded-full bg-primary"
+            />
+          )}
           {bgJobs > 0 && (
             <span
               data-bg-jobs
