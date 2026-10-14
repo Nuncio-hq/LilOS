@@ -15,8 +15,8 @@ import {
  * non-image → chip (name, size, icon) in composer + sent message; AC-2 the
  * bytes land in the session folder (`<cwd>/.lilos/attachments/`, kept out
  * of git via info/exclude) and the prompt names the path — engine-fake
- * echoes it back; AC-3 over-cap → plain error and the draft is kept; AC-4
- * a folder-less session still stores the file (harness state dir).
+ * echoes it back; AC-3 a folder-less session still stores the file
+ * (harness state dir); AC-4 over-cap → plain error and the draft is kept.
  *
  * Real stack (relay + harness + engine-fake + vite dev), same pattern as
  * ac-112 (image attachments) and ac-113 (folder picking).
@@ -220,7 +220,7 @@ test("AC-2b a resend with the same name collides, not clobbers", async ({
   expect(readFileSync(path.join(dir, "spec.pdf"))).toEqual(PDF);
 });
 
-test("AC-3 over-cap file → plain error, draft kept, nothing sent", async ({
+test("AC-4 over-cap file → plain error, draft kept, nothing sent", async ({
   page,
 }) => {
   await dmDefault(page, stack);
@@ -241,7 +241,7 @@ test("AC-3 over-cap file → plain error, draft kept, nothing sent", async ({
   await page.locator("main textarea").fill("");
 });
 
-test("AC-4 a folder-less session still stores the attachment", async ({
+test("AC-3 a folder-less session still stores the attachment", async ({
   page,
 }) => {
   await dmDefault(page, stack);

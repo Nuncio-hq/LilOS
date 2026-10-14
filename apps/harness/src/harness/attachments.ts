@@ -45,8 +45,20 @@ export function saveAttachment(opts: {
 }): { path: string } {
   const dir = attachmentDir(opts.cwd, opts.hasFolder, opts.stateDir);
   mkdirSync(dir, { recursive: true });
+  const bytes = Buffer.from(opts.dataBase64, "base64");
   const path = uniquePath(dir, safeName(opts.name));
-  writeFileSync(path, Buffer.from(opts.dataBase64, "base64"));
+  /* A re-dispatched send (transport re-queue) decodes the same bytes
+     again — reuse an identical earlier copy instead of littering
+     stem-1, stem-2, … for files nobody new read. */
+  const name = basename(path);
+  const ext = extname(name);
+  const stem = name.slice(0, name.length - ext.length) || "attachment";
+  for (let i = 0; ; i++) {
+    const candidate = join(dir, i === 0 ? name : `${stem}-${i}${ext}`);
+    if (!existsSync(candidate)) break;
+    if (readFileSync(candidate).equals(bytes)) return { path: candidate };
+  }
+  writeFileSync(path, bytes);
   return { path };
 }
 
@@ -68,7 +80,9 @@ export async function excludeFromGit(cwd: string): Promise<void> {
   if (!commonDir) return;
   try {
     const exclude = join(resolve(cwd, commonDir), "info", "exclude");
-    const line = `${ATTACHMENT_DIR_NAME}/`;
+    /* Leading slash anchors the pattern to the repo root — without it the
+       line would also shadow a user's own same-named dir at any depth. */
+    const line = `/${ATTACHMENT_DIR_NAME}/`;
     const current = existsSync(exclude) ? readFileSync(exclude, "utf8") : "";
     if (current.split("\n").includes(line)) return;
     mkdirSync(dirname(exclude), { recursive: true });

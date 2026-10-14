@@ -258,7 +258,7 @@ export function createRelay(options: RelayOptions): Relay {
         throw new RpcError(
           JsonRpcCode.attachmentTooLarge,
           "attachment_too_large",
-          `attachment "${input.name || "image"}" is ${bytes.length} bytes — the cap is ${MAX_ATTACHMENT_BYTES}`,
+          `attachment "${input.name || "file"}" is ${bytes.length} bytes — the cap is ${MAX_ATTACHMENT_BYTES}`,
           {
             limit: MAX_ATTACHMENT_BYTES,
             sizeBytes: bytes.length,

@@ -34,7 +34,7 @@ export async function pickFiles(current: number): Promise<PickedFile[]> {
     const size = asset.size ?? 0;
     if (size > MAX_ATTACHMENT_BYTES) {
       Alert.alert(
-        "That file is too large to attach (10 MB max per file).",
+        `That file is too large to attach (${Math.round(MAX_ATTACHMENT_BYTES / 1024 / 1024)} MB max per file).`,
         asset.name,
       );
       continue;

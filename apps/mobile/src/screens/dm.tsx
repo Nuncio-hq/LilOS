@@ -387,7 +387,9 @@ export function Dm({
           }),
         });
         sendKeyDone(`dm:${employeeId}`, `${text}\n${fileStamp(outgoing)}`);
-        setFiles([]);
+        /* Drop only the files this send carried — files staged while it
+           was in flight belong to the NEXT send. */
+        setFiles((fs) => fs.filter((f) => !outgoing.includes(f)));
         markPending(res.conversation, res.rootMessage);
         navigation.navigate("Thread", {
           conversationId: res.conversation.id,

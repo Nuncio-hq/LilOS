@@ -415,13 +415,14 @@ ${tail}`,
   }
 
   /* Non-image attachments reach the prompt as plain text — the harness
-     copies the bytes into the session folder and names each path after
-     "saved into the session folder". Echo the paths back so a test can
-     prove the agent got a readable path, like the image echo above. */
+     copies the bytes somewhere readable and names each path before "read
+     it with your normal file tools" (the clause is identical for
+     folder-bound and folder-less saves). Echo the paths back so a test
+     can prove the agent got a readable path, like the image echo above. */
   const attachedFiles = [
     ...prompt.matchAll(/^- (.+ \(\d+(?:\.\d+)? \w+\))$/gm),
   ].map((m) => m[1]);
-  if (/saved into the session folder/.test(prompt) && attachedFiles.length) {
+  if (/normal file tools/.test(prompt) && attachedFiles.length) {
     const list = attachedFiles.join(", ");
     return {
       reasoning: `Oscar attached ${attachedFiles.length === 1 ? "a file" : `${attachedFiles.length} files`}: ${list}. The harness saved the bytes into the session folder and named each path in the prompt; answer about ${q ? `"${q}"` : "them"} citing what arrived.`,

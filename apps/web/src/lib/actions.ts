@@ -3,6 +3,7 @@ import {
   type AppChannel,
   type AppMessage,
   type Conversation,
+  MAX_ATTACHMENT_BYTES,
   MAX_ATTACHMENTS_PER_MESSAGE,
 } from "@lilos/contracts/app";
 import type {
@@ -42,7 +43,7 @@ export async function openDmChannel(employeeId: string): Promise<AppChannel> {
  * a fresh one (conversations.open); with one it's a thread reply — and while
  * that conversation's engine turn is running the harness steers it
  * (capability `steer`) or queues it as the next prompt. `files` are the
- * composer's attached images — they ride the same call's `attachments`
+ * composer's staged files — they ride the same call's `attachments`
  * (base64) so the relay stores them before the turn starts (#112).
  *
  * A send made while the socket is down (the "Reconnecting…" line is up)
@@ -73,9 +74,9 @@ export async function sendDm(
   try {
     const attachments = toAttachmentInputs(files);
     // A file whose blob → data conversion failed can't cross the wire —
-    // refuse the send rather than post the message missing its image.
+    // refuse the send rather than post the message missing its file.
     if (files?.length && (attachments?.length ?? 0) < files.length) {
-      sayError("An image couldn't be read — nothing was sent. Re-attach it.");
+      sayError("A file couldn't be read — nothing was sent. Re-attach it.");
       return undefined;
     }
     const deadline = Date.now() + SEND_BUDGET_MS;
@@ -142,7 +143,7 @@ export async function sendDm(
 export function describeSendError(e: unknown): string {
   if (e instanceof RelayError) {
     if (e.code === "attachment_too_large")
-      return "That file is too large to attach (10 MB max per file).";
+      return `That file is too large to attach (${Math.round(MAX_ATTACHMENT_BYTES / 1024 / 1024)} MB max per file).`;
     if (e.code === "invalid_params") {
       // Only map attachment validation failures to the files line —
       // unrelated invalid_params errors deserve the generic message.

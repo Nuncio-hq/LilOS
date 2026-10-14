@@ -14,6 +14,22 @@ export type IconTone =
   | "work"
   | "merged";
 
+/* The attachment chip's type glyph — mirrors the web chip's iconFor so a
+   PDF vs a zip reads differently at a glance; paperclip is the catch-all. */
+export function attachmentIcon(mimeType: string): SFSymbol {
+  const mime = mimeType.toLowerCase();
+  if (mime.startsWith("image/")) return "photo";
+  if (mime.startsWith("audio/")) return "waveform";
+  if (mime.startsWith("video/")) return "film";
+  if (/zip|tar|gzip|7z|rar|archive|compressed/.test(mime)) return "doc.zipper";
+  if (/json|javascript|typescript|xml|yaml|x-sh|sql|graphql|wasm/.test(mime))
+    return "chevron.left.forwardslash.chevron.right";
+  if (/csv|excel|spreadsheet/.test(mime)) return "tablecells";
+  if (mime.startsWith("text/") || /pdf|document|msword|rtf/.test(mime))
+    return "doc.text";
+  return "paperclip";
+}
+
 /* SF Symbols tinted from the theme's CSS variables (light/dark aware). */
 export function Icon({
   name,

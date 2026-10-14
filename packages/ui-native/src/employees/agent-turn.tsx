@@ -2,7 +2,7 @@ import { type ReactNode, useState } from "react";
 import { LayoutAnimation, Pressable, Text, View } from "react-native";
 import { AppText } from "../components/app-text";
 import { Card, CommandLine, nonBreaking, Pill } from "../components/bits";
-import { Icon } from "../components/icon";
+import { attachmentIcon, Icon } from "../components/icon";
 import { Orb, type OrbTone } from "../components/orb";
 import { Prose, Pulse } from "../components/prose";
 import {
@@ -115,7 +115,11 @@ export function UserBubble({
               key={`${f.name}:${f.sizeBytes}:${f.mimeType}`}
               className="flex-row items-center gap-1.5 rounded-lg bg-fill px-2 py-1"
             >
-              <Icon name="paperclip" size={11} tone="subtle-foreground" />
+              <Icon
+                name={attachmentIcon(f.mimeType)}
+                size={11}
+                tone="subtle-foreground"
+              />
               <Text
                 numberOfLines={1}
                 className="max-w-[160px] shrink text-[12px] font-medium text-subtle-foreground"

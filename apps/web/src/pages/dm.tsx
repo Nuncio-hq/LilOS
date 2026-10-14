@@ -1430,8 +1430,17 @@ export function DmPage() {
       const t = text.trimStart();
       if (openPlanAsk && t.startsWith(PLAN_CHANGE_PREFIX)) {
         const answer = t.slice(PLAN_CHANGE_PREFIX.length).trim();
+        /* An ask answer carries no attachments — reject the send so the
+           composer keeps the chips staged for the next real send
+           (a resolved send would clear them silently). */
         return respondToRequest(openPlanAsk.id, "change", answer).then(() => {
           clearDraftIfSent(draftKey.thread(conv.id), text);
+          if (files?.length) {
+            say(
+              "Your reply went to the plan — attached files can't ride it and stayed staged below.",
+            );
+            throw new Error("plan answer carries no attachments");
+          }
           return conv;
         });
       }

@@ -511,7 +511,9 @@ export function Thread({
       })
       .then(() => {
         sendKeyDone(`conv:${conversationId}`, keySeed);
-        setFiles([]);
+        /* Drop only the files this send carried — files staged while it
+           was in flight belong to the NEXT send. */
+        setFiles((fs) => fs.filter((f) => !outgoing.includes(f)));
       })
       .catch((e) => {
         Alert.alert("Couldn't send", describeError(e));
