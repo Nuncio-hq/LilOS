@@ -37,6 +37,9 @@ export {
 } from "./chat/model-visibility-dialog";
 // Esc/key ownership by surface — menu → dialog → panel → Focus (#576)
 export { useUiLayer, useUiLayerEl } from "./chat/ui-layers";
+// company (#746): a CEO employee runs always-on bots through tickets
+export type * from "./company/company-types";
+export { CompanyView } from "./company/company-view";
 // connect to LilOS (issue #338): first-run step, DM notice, shared state badge
 export { ConnectBadge } from "./connect/connect-badge";
 export { ConnectStep } from "./connect/connect-step";
