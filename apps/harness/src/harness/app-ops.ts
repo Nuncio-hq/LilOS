@@ -6,6 +6,7 @@ import type {
   Employee,
   MessageSearchHit,
   ProfileSettings,
+  ScheduledTask,
   SystemStatusResult,
 } from "@lilos/contracts/app";
 import type { SessionBinding } from "@lilos/contracts/harness";
@@ -109,6 +110,13 @@ export function createAppOps(deps: {
         return r.conversation.titleSource === "user"
           ? { outcome: "user_title" as const, title: r.conversation.title }
           : { outcome: "set" as const, title: r.conversation.title };
+      },
+      scheduledTasks: async (employeeId) => {
+        const r = await relay.request<{ tasks: ScheduledTask[] }>(
+          "schedules.list",
+          { employeeId },
+        );
+        return r.tasks;
       },
       status: () =>
         relay.request<SystemStatusResult>("system.status", { logLines: 0 }),

@@ -5,6 +5,7 @@ import {
   FolderIcon,
   GlobeIcon,
   InboxIcon,
+  ListTodoIcon,
   SettingsIcon,
   ShieldAlertIcon,
   SmartphoneIcon,
@@ -74,6 +75,7 @@ export function Sidebar({
   realApp,
   preview,
   buildLabel,
+  sessions,
 }: {
   navOpen: boolean;
   hiddenWhenClosed: boolean;
@@ -86,7 +88,9 @@ export function Sidebar({
   projects: Project[];
   folders: import("../types").Folder[];
   employees: Employee[];
-  view: { kind: "channel" | "dm"; id: string };
+  /* What the shell shows right now — channel / dm ids, or a named view
+     ("sessions") that no channel list highlights. */
+  view: { kind: string; id: string };
   theme: Theme;
   onSetTheme: (t: Theme) => void;
   isProjectDefaultOpen: (p: Project) => boolean;
@@ -115,6 +119,11 @@ export function Sidebar({
   /* "dev · fake engine" on builds that boot the deterministic engine (#85,
      AC-4) — a dev bundle must never look like a signed release. */
   buildLabel?: string;
+  /* The cross-employee session list — pinned at the top of the sidebar in
+     both modes. `count` is the needs-you total (same derivation as the
+     per-employee badges); omitted entirely hides the entry (prototype
+     surfaces that don't wire it). */
+  sessions?: { count?: number; active?: boolean; onOpen: () => void };
 }) {
   return (
     <aside
@@ -161,6 +170,18 @@ export function Sidebar({
         </Button>
       </div>
       <ScrollArea className="min-h-0 flex-1">
+        {sessions && (
+          <nav className="space-y-0.5 p-2 pb-0">
+            <NavItem
+              icon={<ListTodoIcon />}
+              label="Sessions"
+              count={sessions.count}
+              tone="amber"
+              active={sessions.active}
+              onClick={sessions.onOpen}
+            />
+          </nav>
+        )}
         {!realApp && (
           <>
             <nav className="space-y-0.5 p-2">

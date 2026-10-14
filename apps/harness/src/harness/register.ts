@@ -39,6 +39,7 @@ export async function onRelayReady(this: HarnessCtx): Promise<void> {
       await this.flushOutbox();
       await this.reconcileAsks();
       await this.sweepNow();
+      await this.syncScheduledTasks();
       for (const channel of this.opts.relay.channels.get()) {
         this.watchChannel(channel.id);
       }

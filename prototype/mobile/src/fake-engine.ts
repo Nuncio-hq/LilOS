@@ -6,6 +6,8 @@ import type {
   OrbState,
   ProjectGroup,
   PullRequestRef,
+  SessionListGroups,
+  SessionListRow,
   SessionTurn,
   SubagentRow,
   ThreadDetail,
@@ -137,6 +139,58 @@ export const $employees = computed($threads, (threads): EmployeeRow[] =>
             : (IDLE_NOW[e.id] ?? ""),
     };
   }),
+);
+
+/* The Sessions screen's read mark: thread ids Oscar has opened — a
+   finished thread never opened is "done since you last looked" (the
+   web list's readSeq/finishedSeq watermark). */
+const readThreads = atom<ReadonlySet<string>>(new Set());
+export function markThreadRead(id: string) {
+  const s = readThreads.get();
+  if (!s.has(id)) readThreads.set(new Set(s).add(id));
+}
+
+/* Every thread across employees in one list — the same split the web
+   Sessions view makes: needs you / working / recently finished with
+   never-opened threads first. */
+export const $sessionGroups = computed(
+  [$threads, readThreads],
+  (threads, read): SessionListGroups => {
+    const needsYou: SessionListRow[] = [];
+    const running: SessionListRow[] = [];
+    const finished: SessionListRow[] = [];
+    for (const t of threads) {
+      const base = {
+        id: t.id,
+        employeeId: t.employee.id,
+        employeeName: t.employee.name,
+        tone: t.employee.tone,
+        title: t.title,
+        folder: t.folder?.name,
+        when: t.when,
+      };
+      if (t.state === "needs-you") {
+        const ask = t.entries.find((e) => e.kind === "agent" && e.approval) as
+          | AgentEntry
+          | undefined;
+        needsYou.push({
+          ...base,
+          state: "needs-you",
+          live: ask?.approval
+            ? `Approve: ${ask.approval.command ?? ask.approval.reason ?? ""}`
+            : undefined,
+        });
+      } else if (t.state === "working") {
+        running.push({ ...base, state: "working", live: liveLine(t) });
+      } else {
+        finished.push({ ...base, state: t.state, unread: !read.has(t.id) });
+      }
+    }
+    finished.sort(
+      (a, b) => Number(b.unread ?? false) - Number(a.unread ?? false),
+    );
+    return { needsYou, running, finished };
+  },
 );
 
 /** #engineering shows Builder's orb + dots only while Builder is at work. */
@@ -796,6 +850,63 @@ export function startSession(
   ]);
   void run(id, firstTurn(text, f?.path, branch, ws));
   return id;
+}
+
+const fmtTok = (x: number) =>
+  x >= 10_000
+    ? `${Math.round(x / 1000)}k`
+    : x >= 1000
+      ? `${(x / 1000).toFixed(1)}k`
+      : `${x}`;
+
+/** Compact now: the fake engine folds older turns — context drops to
+   ~12% and the thread posts one "Context compacted" system note. */
+export function compactSession(tid: string) {
+  mapThread(tid, (t) => {
+    const before = t.context?.context ?? 0;
+    const after = Math.max(1, Math.floor(before * 0.12));
+    return {
+      ...t,
+      context: t.context ? { ...t.context, context: after } : t.context,
+      entries: [
+        ...t.entries,
+        {
+          kind: "agent",
+          id: `c-${uid()}`,
+          time: now(),
+          text: `⚠ Context compacted: older turns summarized (${fmtTok(before)} → ${fmtTok(after)})`,
+        },
+      ],
+    };
+  });
+}
+
+/** Continue in a new session (Full state): a fresh thread on the same
+   folder whose first message quotes the last turns — the dead session's
+   memory resets, so the recap is all the new one knows. */
+export function continueSession(tid: string) {
+  const t = $threads.get().find((x) => x.id === tid);
+  if (!t) return;
+  const kept = t.entries
+    .filter(
+      (e): e is Extract<ThreadEntry, { kind: "user" }> => e.kind === "user",
+    )
+    .slice(-19)
+    .map((e) => `> ${e.text.replaceAll("\n", "\n> ")}`)
+    .join("\n");
+  void startSession(
+    t.employee.id,
+    "Picking up mid-thread — the previous session's context filled up and was closed. Earlier transcript:\n\n" +
+      `${kept}\n\n—`,
+    t.model,
+    {
+      folder: t.folder
+        ? ($folders.get().find((x) => x.path === t.folder?.path)?.id ?? null)
+        : null,
+      mode: "direct",
+      base: "main",
+    },
+  );
 }
 
 /** Reply in a session. Mid-turn it queues and runs when this turn ends. */

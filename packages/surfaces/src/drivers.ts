@@ -6,10 +6,13 @@ import type {
   MessageSearchHit,
   ProfileSettings,
   RecentFolder,
+  ScheduledTask,
   SystemStatusResult,
   WorkbenchOpenTarget,
 } from "@lilos/contracts/app";
 import type {
+  ScheduleCreateParams,
+  ScheduleUpdateParams,
   SessionBinding,
   TeamHireParams,
   TeamUpdateParams,
@@ -90,6 +93,8 @@ export interface AppOps {
   threadSummaries(): Promise<ConversationSummary[]>;
   /** The company roster (`employees.list`). */
   employees(): Promise<Employee[]>;
+  /** The bound employee's scheduled tasks (`schedules.list`). */
+  scheduledTasks(employeeId: string): Promise<ScheduledTask[]>;
   /** PRs linked to a thread of the bound DM (`conversations.prs`). */
   threadPrs(conversationId: string): Promise<ForgePrListItem[]>;
   /** FTS search inside the bound DM (`messages.search`). */
@@ -121,6 +126,14 @@ export interface AppOps {
   updateSelf(p: TeamUpdateParams): Promise<Employee>;
   /** Add a folder to recent folders (`folders.add` on approve). */
   addFolder(path: string): Promise<RecentFolder>;
+  /** Create a scheduled task for the bound employee (`schedules.create` on approve). */
+  scheduleCreate(p: ScheduleCreateParams): Promise<ScheduledTask>;
+  /** Edit a scheduled task (`schedules.update` on approve). */
+  scheduleUpdate(p: ScheduleUpdateParams): Promise<ScheduledTask>;
+  /** Delete a scheduled task (`schedules.delete` on approve). */
+  scheduleDelete(id: string): Promise<void>;
+  /** Fire a scheduled task now (`schedules.runNow` on approve). */
+  scheduleRunNow(id: string): Promise<ScheduledTask>;
 }
 
 export interface SurfaceScopeOptions {

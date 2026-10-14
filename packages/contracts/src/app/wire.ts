@@ -16,6 +16,7 @@ import {
   JobsListParams,
   JobsStopParams,
   SessionAskParams,
+  SessionCompactParams,
 } from "../engine/methods";
 import { ModelOption, ModelProvider, ModelsListParams } from "../engine/models";
 import { ApprovalOutcome, EngineRequest } from "../engine/requests";
@@ -244,6 +245,9 @@ export const AppMethod = z.enum([
   /* The composer's `/` menu — the engine's slash commands + skills list,
      filtered as Oscar types. */
   "commands.list",
+  /* Compact now (#560): the context meter's button — forwarded to the
+     engine's session.compact. */
+  "session.compact",
   /* Phone pairing (#153): minting a grant is the opt-in that also binds the
      Tailscale listener; devices.list/revoke manage what the grant exchange
      created. `pairing.disable` turns phone access off again. */
@@ -261,6 +265,11 @@ export const AppMethod = z.enum([
   "push.register",
   "push.unregister",
   "push.visibility",
+  /* Presence (#561): the desktop app reports the human at the Mac — the
+     relay's push fan-out stays silent while a report is fresh, and the
+     Mac's own banners carry the attention instead. App scope only; a
+     paired phone calling it would just mute its own pushes. */
+  "presence.report",
   /* Host-only (#340): the session's `workbench_open` tool asks the app to
      open the conversation's Workbench on a target — the relay fans
      `workbench.opened` out on the channel. It rides the app wire, never the
@@ -271,6 +280,15 @@ export const AppMethod = z.enum([
      `readSeq` at the channel's current seq, clearing the "finished, not
      seen" dot on every device. */
   "conversations.markRead",
+  /* Scheduled tasks (#136): the relay owns the records (D-#25); the host
+     reads them all and fires runs as `conversations.open`. `runNow`
+     stamps `requestedAt` — a click while the host was down still fires
+     on its next tick, never silently. */
+  "schedules.list",
+  "schedules.create",
+  "schedules.update",
+  "schedules.delete",
+  "schedules.runNow",
 ]);
 export type AppMethod = z.infer<typeof AppMethod>;
 
@@ -293,6 +311,7 @@ export const ENGINE_PASSTHROUGH_METHODS = [
   "approvals.setPolicy",
   "session.ask",
   "commands.list",
+  "session.compact",
 ] as const;
 export type EnginePassthroughMethod =
   (typeof ENGINE_PASSTHROUGH_METHODS)[number];
@@ -309,6 +328,7 @@ export const ENGINE_PASSTHROUGH_PARAMS = {
   "approvals.setPolicy": ApprovalsSetPolicyParams,
   "session.ask": SessionAskParams,
   "commands.list": CommandsListParams,
+  "session.compact": SessionCompactParams,
 } as const satisfies Record<EnginePassthroughMethod, z.ZodType>;
 
 const HelloClient = z
@@ -372,6 +392,9 @@ export const EmployeePatch = z.object({
   now: z.string().optional(),
   instructions: z.string().optional(),
   respondTo: RespondTo.optional(),
+  /* Per-employee notification mute (#561 AC-3) — relay-stored, honoured by
+     pushes and Mac banners alike. */
+  muted: z.boolean().optional(),
 });
 export type EmployeePatch = z.infer<typeof EmployeePatch>;
 
@@ -513,6 +536,11 @@ export const ConversationsOpenParams = z
      * slot `messages.post` dedupes on.
      */
     dedupeKey: z.string().min(1).max(200).optional(),
+    /** Host-only (#136): the scheduled task this run was fired for — the
+        DM marks the session and the chip opens the task. */
+    scheduled: z
+      .object({ taskId: z.string().min(1), name: z.string() })
+      .optional(),
   })
   .refine(
     (p) => p.text.length > 0 || (p.attachments?.length ?? 0) > 0,
@@ -1371,6 +1399,10 @@ export const AppEventMethod = z.enum([
   "connect.changed",
   "engine.event",
   "workbench.opened",
+  /* Broadcast on every scheduled-task write so the host's scheduler and
+     every client's task list refresh live (#136). */
+  "schedule.upserted",
+  "schedule.removed",
 ]);
 export type AppEventMethod = z.infer<typeof AppEventMethod>;
 
@@ -1709,5 +1741,16 @@ export const PushVisibilityParams = z.strictObject({
   conversationId: z.string().nullable(),
 });
 export type PushVisibilityParams = z.infer<typeof PushVisibilityParams>;
+
+/**
+ * #561: `presence.report` — the desktop's heartbeat while the human is at
+ * the Mac (user input recently, screen unlocked). `active: true` refreshes
+ * the relay's presence window; `false` (idle/locked) clears it early so
+ * phone pushes resume without waiting the window out.
+ */
+export const PresenceReportParams = z.strictObject({
+  active: z.boolean(),
+});
+export type PresenceReportParams = z.infer<typeof PresenceReportParams>;
 
 export { APP_PROTOCOL_VERSION };

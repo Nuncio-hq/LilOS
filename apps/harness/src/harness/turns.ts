@@ -1,7 +1,7 @@
 import type { Conversation, Employee } from "@lilos/contracts/app";
 import type { EngineEvent, McpServer } from "@lilos/contracts/engine";
 import type { HarnessCtx, SessionBinding } from "./ctx";
-import { BACKEND_DOWN } from "./rpc";
+import { BACKEND_DOWN, CONTEXT_LIMIT, CONTEXT_LIMIT_TEXT } from "./rpc";
 
 /**
  * Turn completion: the answer post + dedupe, the Stop park
@@ -88,7 +88,15 @@ export async function finishTurn(
     ...(event.payload.error && event.payload.errorCode !== BACKEND_DOWN
       ? {
           turnFailure: {
-            kind: "model" as const,
+            /* #560: a context-window death reads "context" — the thread
+               swaps the bare retry for Compact now / a fresh session.
+               Typed errorCode first; untyped engines still match on the
+               provider's error text. */
+            kind:
+              event.payload.errorCode === CONTEXT_LIMIT ||
+              CONTEXT_LIMIT_TEXT.test(event.payload.error)
+                ? ("context" as const)
+                : ("model" as const),
             text: event.payload.error,
           },
         }

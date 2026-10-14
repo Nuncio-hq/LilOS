@@ -175,6 +175,8 @@ export function FocusView({
   onOpenSession,
   onStopJob,
   onPlan,
+  onCompact,
+  onContinue,
   onAnswer,
   onCancel,
   browser,
@@ -293,6 +295,10 @@ export function FocusView({
   onStopJob?: (id: string) => void;
   /* Plan card decisions (issue #175). */
   onPlan?: (a: PlanAction, planId: string) => void;
+  /* #560: the meter's Compact now (capability-gated by the host; disabled
+     while a turn runs) + the Full-state fresh-session offer. */
+  onCompact?: () => void;
+  onContinue?: () => void;
   /* #420: question-ask answer/cancel — passed, the handler owns the
      resolved write (the card locks as "Sending…" until it lands). */
   onAnswer?: (q: QuestionAsk, a: QuestionAnswer) => void;
@@ -941,7 +947,14 @@ export function FocusView({
             </span>
           )}
           {thread.usage && (
-            <SessionUsage usage={thread.usage} model={model} models={models} />
+            <SessionUsage
+              usage={thread.usage}
+              model={model}
+              models={models}
+              onCompact={onCompact}
+              compactDisabled={running}
+              onContinue={onContinue}
+            />
           )}
           {!work && !isDM && onStart && (
             // Same rule as the thread panel (issue #15): while the request card in the conversation

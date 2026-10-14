@@ -2,6 +2,9 @@ import type { Conversation, WorkbenchOpenTarget } from "@lilos/contracts/app";
 import {
   type FolderAddParams,
   HOST_POLICY_VERSION,
+  type ScheduleCreateParams,
+  type ScheduleTaskRef,
+  type ScheduleUpdateParams,
   type SessionBinding,
   type TeamHireParams,
   type TeamUpdateParams,
@@ -107,8 +110,11 @@ export class SessionSurfaces implements ViewerScope {
       "root",
       // browser_* only when a real browser can attach — never advertised otherwise.
       ...(opts.createBrowser ? (["browser"] as const) : []),
-      // thread_* / team_* / folder_* only when the session is bound to a DM.
-      ...(opts.appOps ? (["thread", "team", "folder"] as const) : []),
+      // thread_* / team_* / folder_* / schedule_* only when the session
+      // is bound to a DM.
+      ...(opts.appOps
+        ? (["thread", "team", "folder", "schedule"] as const)
+        : []),
     ]);
     this.cols = opts.cols ?? 110;
     this.rows = opts.rows ?? 28;
@@ -713,6 +719,49 @@ export class SessionSurfaces implements ViewerScope {
           model: e.model,
         })),
       };
+    });
+  }
+
+  /* ----------------------------- schedule ops ------------------------------- */
+
+  /** `schedule_list` (#136): the bound employee's scheduled tasks — an
+      agent reads its own schedule, never another employee's, because the
+      scope's binding supplies the employee id. */
+  scheduleList() {
+    return this.tracked("schedule_list", "", async () => {
+      const ops = this.requireAppOps();
+      const employeeId = this.binding?.employeeId;
+      if (!employeeId) throw new Error("not bound to an employee's DM");
+      return { tasks: await ops.scheduledTasks(employeeId) };
+    });
+  }
+
+  scheduleCreate(p: ScheduleCreateParams) {
+    return this.tracked("schedule_create", p.name, async () => {
+      const ops = this.requireAppOps();
+      return { task: await ops.scheduleCreate(p) };
+    });
+  }
+
+  scheduleUpdate(p: ScheduleUpdateParams) {
+    return this.tracked("schedule_update", p.id, async () => {
+      const ops = this.requireAppOps();
+      return { task: await ops.scheduleUpdate(p) };
+    });
+  }
+
+  scheduleDelete(p: ScheduleTaskRef) {
+    return this.tracked("schedule_delete", p.id, async () => {
+      const ops = this.requireAppOps();
+      await ops.scheduleDelete(p.id);
+      return { deleted: true as const };
+    });
+  }
+
+  scheduleRunNow(p: ScheduleTaskRef) {
+    return this.tracked("schedule_run_now", p.id, async () => {
+      const ops = this.requireAppOps();
+      return { task: await ops.scheduleRunNow(p.id) };
     });
   }
 

@@ -47,6 +47,11 @@ export const AGENT_METHOD_TOOLS: Record<string, string> = {
   "folders.detail": "context",
   "folders.add": "folder_add",
   "workbench.open": "workbench_open",
+  "schedules.list": "schedule_list",
+  "schedules.create": "schedule_create",
+  "schedules.update": "schedule_update",
+  "schedules.delete": "schedule_delete",
+  "schedules.runNow": "schedule_run_now",
 } as const;
 
 /**
@@ -100,6 +105,8 @@ export const NOT_AGENT_FACING: Record<string, string> = {
     "the engine's approval policy is the user's global Setting — an agent must never lower its own approval bar (#106)",
   "session.ask":
     "the Workbench's 'Suggest' side request is a user control — the agent answers it, it never sends it (#584)",
+  "session.compact":
+    "agents compact through their own engine — the button is the user's (#560)",
   "models.list": "the model pick list is the user's",
   "commands.list":
     "slash commands are Oscar's composer input — the agent types prompts, it never opens the `/` menu",
@@ -114,6 +121,8 @@ export const NOT_AGENT_FACING: Record<string, string> = {
   "push.register": "device push registration is the user's",
   "push.unregister": "device push registration is the user's",
   "push.visibility": "device push reporting is the user's",
+  "presence.report":
+    "the desktop's at-the-Mac signal is a transport heartbeat, not agent data — the relay's push fan-out consumes it (#561)",
   "employees.remove": "only Oscar removes an employee",
   /* app wire — covered by `context`, the prompt, or the engine's own tools (D-#179) */
   "channels.list": "channel roster comes through `context`, not a tool",

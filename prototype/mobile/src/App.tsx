@@ -27,6 +27,7 @@ import {
   pickLabel,
   ScanScreen,
   Section,
+  SessionsScreen,
   SettingsScreen,
   SubagentSheet,
   SubagentsSheet,
@@ -74,13 +75,17 @@ import {
   $approvals,
   $employees,
   $projects,
+  $sessionGroups,
   $threads,
   answerAsk,
   approve,
   approvePlan,
+  compactSession,
+  continueSession,
   deny,
   ENGINE_COMMANDS,
   execCommand,
+  markThreadRead,
   playOnOpen,
   rejectPlan,
   removeNotSent,
@@ -146,6 +151,9 @@ type Routes = {
   Connected: undefined;
   Tabs: NavigatorScreenParams<TabRoutes>;
   Dm: { employeeId: string };
+  /* Every session across employees — pushed over Home like web's
+     /sessions view over the DM pane. */
+  Sessions: undefined;
   Thread: { id: string; scrollTo?: string; hitQuery?: string };
   ThreadInfo: { id: string };
   /** A subagent of a turn in that thread (issue #170). */
@@ -388,6 +396,7 @@ function Home() {
   const projects = useStore($projects);
   const link = useStore($link);
   const attempt = useStore($attempt);
+  const sessionGroups = useStore($sessionGroups);
 
   // The team starts working the first time Home shows.
   useEffect(() => startLife(), []);
@@ -431,6 +440,25 @@ function Home() {
       onOpenMac={() => nav.navigate("Mac")}
       onOpenEmployee={(id) => nav.navigate("Dm", { employeeId: id })}
       onOpenChannel={() => soon("Channels")}
+      sessions={{
+        count: sessionGroups.needsYou.length || undefined,
+        onOpen: () => nav.navigate("Sessions"),
+      }}
+    />
+  );
+}
+
+/* Every session across employees — the web Sessions view's phone twin. */
+function Sessions({ navigation }: Props<"Sessions">) {
+  const groups = useStore($sessionGroups);
+  return (
+    <SessionsScreen
+      groups={groups}
+      onOpen={(r) => {
+        markThreadRead(r.id);
+        navigation.navigate("Dm", { employeeId: r.employeeId });
+        navigation.navigate("Thread", { id: r.id });
+      }}
     />
   );
 }
@@ -728,7 +756,17 @@ function Thread({ navigation, route }: Props<"Thread">) {
 function ThreadInfo({ navigation, route }: Props<"ThreadInfo">) {
   const t = useStore($threads).find((x) => x.id === route.params.id);
   if (!t) return null;
-  return <ThreadInfoSheet t={t} onDone={() => navigation.goBack()} />;
+  return (
+    <ThreadInfoSheet
+      t={t}
+      onDone={() => navigation.goBack()}
+      onCompact={() => compactSession(t.id)}
+      onContinue={() => {
+        continueSession(t.id);
+        navigation.goBack();
+      }}
+    />
+  );
 }
 
 /* Every helper the thread's turns spun off — Running first, then Finished
@@ -1184,6 +1222,11 @@ export default function App() {
                 name="Tabs"
                 component={Tabs}
                 options={{ headerShown: false }}
+              />
+              <Stack.Screen
+                name="Sessions"
+                component={Sessions}
+                options={{ title: "Sessions" }}
               />
               <Stack.Screen name="Dm" component={Dm} options={CHAT_HEADER} />
               <Stack.Screen

@@ -35,6 +35,7 @@ import {
   JsonRpcCode,
   RpcError,
 } from "./session/rpc";
+import { handleSchedules } from "./session/schedules";
 import { handleSettings } from "./session/settings";
 import { handleTurns } from "./session/turns";
 import type { RejectedHandshake } from "./status";
@@ -193,6 +194,11 @@ const METHOD_HANDLERS: ReadonlyMap<
   ["asks.list", handleAsks],
   ["settings.get", handleSettings],
   ["settings.set", handleSettings],
+  ["schedules.list", handleSchedules],
+  ["schedules.create", handleSchedules],
+  ["schedules.update", handleSchedules],
+  ["schedules.delete", handleSchedules],
+  ["schedules.runNow", handleSchedules],
   ["turns.interrupt", handleTurns],
   ["session.events", handleHostEvents],
   ["engine.event", handleHostEvents],
@@ -204,6 +210,7 @@ const METHOD_HANDLERS: ReadonlyMap<
   ["push.register", handlePairing],
   ["push.unregister", handlePairing],
   ["push.visibility", handlePairing],
+  ["presence.report", handlePairing],
 ]);
 
 /**

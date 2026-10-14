@@ -571,7 +571,7 @@ export function ThreadHeaderTitle({
       so the title alone renders. */
   state?: SessionState;
   /** #592: "sleep" failures read amber "Mac went to sleep" in the chip. */
-  failureKind?: "model" | "sleep" | "generic";
+  failureKind?: "model" | "sleep" | "generic" | "context";
   prs?: PullRequestRef[];
   /** Adds the context gauge beside the state. */
   context?: ContextUsage;

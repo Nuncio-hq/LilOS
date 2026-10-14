@@ -42,6 +42,7 @@ export const KNOWN_CAPABILITIES = [
   "side_prompt",
   "workspace_move",
   "commands",
+  "compact",
 ] as const;
 export type KnownCapability = (typeof KNOWN_CAPABILITIES)[number];
 
@@ -217,4 +218,19 @@ export const COMMANDS_CAPABILITY: Capability = {
   description:
     "commands.list feeds the composer's `/` menu; commands.exec runs a command or expands a skill into a prompt.",
   methods: ["commands.list", "commands.exec"],
+};
+
+/**
+ * The canonical `compact` descriptor (issue #560): `session.compact` asks
+ * the engine to summarize older turns in place so the context meter drops.
+ * The compacted result lands as a `session.compacted` event (manual or
+ * automatic alike) carrying before/after tokens; engines that can't
+ * compact don't declare it and the app hides Compact now (D-#19).
+ */
+export const COMPACT_CAPABILITY: Capability = {
+  id: "compact",
+  name: "Context compaction",
+  description:
+    "session.compact summarizes older turns in place; the result lands as a session.compacted event with before/after tokens.",
+  methods: ["session.compact"],
 };

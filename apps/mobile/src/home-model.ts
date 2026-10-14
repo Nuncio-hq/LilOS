@@ -5,7 +5,11 @@ import type {
   ConversationSummary,
   Employee,
 } from "@lilos/contracts/app";
-import type { Approval, EmployeeRow } from "@lilos/ui-native";
+import type {
+  Approval,
+  EmployeeRow,
+  SessionListGroups,
+} from "@lilos/ui-native";
 import { toneOf } from "./mapping";
 
 /**
@@ -229,4 +233,78 @@ export function ensureChannelSubscriptions(
   channels: AppChannel[],
 ): void {
   for (const channel of channels) client.channelMessages(channel.id);
+}
+
+/* The cross-employee Sessions screen (web: sessions.ts / SessionsHome):
+   every non-archived DM conversation in one list — open asks first ("needs
+   you"), then active sessions ("working"), then the rest, with the unread
+   watermark (finishedSeq > readSeq) leading "recently finished". The group
+   split follows the same rules `toEmployeeRow` applies per employee, so the
+   needs-you count is the sum of the employee ask rows. */
+export function toSessionGroups(
+  wire: HomeWire,
+  nowMs: number,
+): SessionListGroups {
+  const asksByConv = new Map<string, Ask[]>();
+  for (const a of openAsks(wire.asks)) {
+    const list = asksByConv.get(a.conversationId) ?? [];
+    list.push(a);
+    asksByConv.set(a.conversationId, list);
+  }
+  const empByChannel = new Map(
+    wire.channels
+      .filter((c) => c.kind === "dm")
+      .map((c) => [c.id, c.employeeId] as const),
+  );
+  const empById = new Map(wire.employees.map((e) => [e.id, e] as const));
+  const lastOf = (id: string) =>
+    wire.summaries.find((s) => s.conversation.id === id)?.last.createdAt ?? 0;
+  const out: SessionListGroups = { needsYou: [], running: [], finished: [] };
+  for (const c of wire.conversations) {
+    if (c.archived) continue;
+    const employeeId = empByChannel.get(c.channelId);
+    const employee = employeeId ? empById.get(employeeId) : undefined;
+    if (!employee) continue;
+    const ask = asksByConv.get(c.id)?.[0];
+    const base = {
+      id: c.id,
+      employeeId: employee.id,
+      employeeName: employee.name,
+      tone: toneOf(employee.id),
+      title: sessionLabel(c.id, wire),
+      folder: c.cwd,
+      when: ageLabel(lastOf(c.id) || c.createdAt, nowMs),
+      unread: c.finishedSeq > c.readSeq,
+    };
+    if (ask) {
+      const req = ask.request;
+      out.needsYou.push({
+        ...base,
+        state: "needs-you",
+        live:
+          req.kind === "question"
+            ? `Question: ${req.question ?? ""}`
+            : req.kind === "plan"
+              ? "Plan review"
+              : `Approve${req.command ? `: ${req.command}` : ""}`,
+        unread: false,
+      });
+    } else if (c.state === "active") {
+      out.running.push({
+        ...base,
+        state: "working",
+        live: employee.now || undefined,
+        unread: false,
+      });
+    } else {
+      out.finished.push({
+        ...base,
+        state: c.turnFailure ? "failed" : c.turnStopped ? "stopped" : "done",
+      });
+    }
+  }
+  out.finished.sort(
+    (a, b) => Number(b.unread ?? false) - Number(a.unread ?? false),
+  );
+  return out;
 }

@@ -34,6 +34,10 @@ export const Employee = z.object({
   now: z.string(),
   instructions: z.string(),
   respondTo: RespondTo,
+  /* A muted employee notifies nowhere (#561): the relay skips its pushes
+     and the Mac posts no banners. Optional so pre-#561 rows and fixtures
+     read as unmuted. */
+  muted: z.boolean().optional(),
   createdAt: Timestamp,
 });
 export type Employee = z.infer<typeof Employee>;
@@ -112,10 +116,12 @@ export type WorkspaceIntent = z.infer<typeof WorkspaceIntent>;
  * turn itself — it lives here until the next `turn.started` clears it.
  * `kind` mirrors the ui `SessionAlert` kinds: "sleep" = the Mac slept or
  * the engine restarted (amber), "model"/"generic" = the turn ended on
- * `turn.completed.error` / the prompt never dispatched (red).
+ * `turn.completed.error` / the prompt never dispatched (red), "context" =
+ * the context window was full (#560 — offers Compact now / a new session
+ * instead of a bare retry).
  */
 export const TurnFailure = z.strictObject({
-  kind: z.enum(["model", "sleep", "generic"]),
+  kind: z.enum(["model", "sleep", "generic", "context"]),
   /** The user-facing failure line (the engine's error text or the
       interrupt reason). */
   text: z.string().min(1),
@@ -224,6 +230,13 @@ export const Conversation = z.object({
    * `finishedSeq > readSeq`, so it survives restart and reconnect.
    */
   finishedSeq: z.int().min(0).default(0),
+  /**
+   * Set on a session a scheduled task opened (#136): the DM marks it and
+   * the chip opens the task. Host-stamped at `conversations.open`.
+   */
+  scheduled: z
+    .object({ taskId: z.string().min(1), name: z.string() })
+    .optional(),
   createdAt: Timestamp,
 });
 export type Conversation = z.infer<typeof Conversation>;

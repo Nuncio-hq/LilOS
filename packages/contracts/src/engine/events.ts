@@ -270,6 +270,27 @@ export const SessionRefChangedPayload = z.strictObject({
   previousRef: z.string().min(1),
 });
 
+/**
+ * The engine compacted a session's context (issue #560): older turns were
+ * summarized so the context meter drops. Fires once per compaction — manual
+ * (`session.compact`) or automatic alike — and NEVER on a plain `session.info`
+ * ref bump or an idle resume, which is why it carries its own type instead of
+ * riding `session.ref.changed`. Counts are what the engine measured; a
+ * compaction that ran without a before snapshot may omit `before*`.
+ */
+export const SessionCompactedPayload = z.strictObject({
+  beforeTokens: z.number().optional(),
+  afterTokens: z.number().optional(),
+  beforeMessages: z.number().optional(),
+  afterMessages: z.number().optional(),
+  /** Engine's own recap of what was summarized, when it produced one. */
+  summary: z.string().optional(),
+  /** Post-compaction usage snapshot — the meter drops off this, so a
+      standalone compaction (no turn.completed follows) still lands a fresh
+      `context` on the conversation row and in replaying session models. */
+  usage: Usage.optional(),
+});
+
 /** A steer that landed at a tool boundary inside the running turn. */
 export const TurnSteeredPayload = z.strictObject({
   turnId: TurnId,
@@ -400,6 +421,12 @@ export const EngineEvent = z.discriminatedUnion("type", [
     sessionId: SessionId,
     type: z.literal("session.ref.changed"),
     payload: SessionRefChangedPayload,
+  }),
+  z.strictObject({
+    seq: Seq,
+    sessionId: SessionId,
+    type: z.literal("session.compacted"),
+    payload: SessionCompactedPayload,
   }),
   z.strictObject({
     seq: Seq,

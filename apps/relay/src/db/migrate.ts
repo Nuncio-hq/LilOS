@@ -350,6 +350,40 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
     version: 25,
     statements: [`ALTER TABLE asks ADD COLUMN hire TEXT`],
   },
+  {
+    /* #561 AC-3: the employee's notification mute — phone pushes and Mac
+       banners both read it; stored here so every surface agrees. */
+    version: 26,
+    statements: [
+      `ALTER TABLE employees ADD COLUMN muted INTEGER NOT NULL DEFAULT 0`,
+    ],
+  },
+  {
+    /* #136: scheduled tasks — relay-owned records the host's clock fires
+       as `conversations.open`; `conversations.scheduled` marks a run's
+       session so the DM shows where it came from. */
+    version: 27,
+    statements: [
+      `CREATE TABLE scheduled_tasks (
+        id TEXT PRIMARY KEY,
+        employee_id TEXT NOT NULL REFERENCES employees(id),
+        name TEXT NOT NULL,
+        prompt TEXT NOT NULL,
+        folder TEXT,
+        schedule TEXT NOT NULL,
+        access TEXT NOT NULL DEFAULT 'ask',
+        paused INTEGER NOT NULL DEFAULT 0,
+        last_fired_at INTEGER,
+        requested_at INTEGER,
+        last_run TEXT,
+        skipped_at INTEGER,
+        created_at INTEGER NOT NULL
+      )`,
+      `CREATE INDEX scheduled_tasks_employee
+        ON scheduled_tasks(employee_id)`,
+      `ALTER TABLE conversations ADD COLUMN scheduled TEXT`,
+    ],
+  },
 ];
 
 /**

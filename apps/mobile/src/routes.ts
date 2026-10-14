@@ -23,6 +23,9 @@ export type Routes = {
   Mac: undefined;
   /** An employee's DM; `{ employeeId }` selects whose. */
   Dm: { employeeId: string };
+  /* Every session across employees — pushed over Home like the web's
+     /sessions view over the DM pane. */
+  Sessions: undefined;
   /* The DM slice's stack routes (#156); #157 adds ThreadInfo + the
      thread-scoped model pick (conversationId present = thread scope).
      `employeeId` is the employee the push/ask resolved this thread to —

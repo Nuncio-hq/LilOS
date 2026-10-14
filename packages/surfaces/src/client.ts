@@ -9,6 +9,12 @@ import {
   type FolderAddResult,
   type GuideResult,
   LILOS_TOOLS,
+  type ScheduleCreateParams,
+  type ScheduleDeletedResult,
+  type ScheduleListResult,
+  type ScheduleTaskRef,
+  type ScheduleTaskResult,
+  type ScheduleUpdateParams,
   type TeamHireResult,
   type TeamListResult,
   type TeamUpdateResult,
@@ -104,6 +110,16 @@ export function toolBackend(opts: ToolClientOptions): SurfaceBackend {
     context: () => call("context", {}) as Promise<ContextResult>,
     guide: (p) => call("guide", p) as Promise<GuideResult>,
     teamList: () => call("team_list", {}) as Promise<TeamListResult>,
+    scheduleList: () =>
+      call("schedule_list", {}) as Promise<ScheduleListResult>,
+    scheduleCreate: (p) =>
+      call("schedule_create", p) as Promise<ScheduleTaskResult>,
+    scheduleUpdate: (p) =>
+      call("schedule_update", p) as Promise<ScheduleTaskResult>,
+    scheduleDelete: (p) =>
+      call("schedule_delete", p) as Promise<ScheduleDeletedResult>,
+    scheduleRunNow: (p) =>
+      call("schedule_run_now", p) as Promise<ScheduleTaskResult>,
     threadList: () => call("thread_list", {}) as Promise<ThreadListResult>,
     threadSearch: (p) =>
       call("thread_search", p) as Promise<ThreadSearchResult>,

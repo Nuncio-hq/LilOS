@@ -54,6 +54,7 @@ import {
   routeForConversation,
   watchNotifications,
 } from "./lib/notify";
+import { watchPresence } from "./lib/presence";
 import {
   bootError,
   booted,
@@ -72,6 +73,7 @@ import { say, sayError, toast } from "./lib/toast";
 import { ToastView } from "./lib/toast-view";
 import { DmPage } from "./pages/dm";
 import { IndexPage } from "./pages/index";
+import { SessionsPage } from "./pages/sessions";
 import { SettingsPane } from "./settings/pane";
 import { isSettingsShortcut } from "./settings/state";
 
@@ -472,6 +474,8 @@ function AppShell() {
                   events: feed.events.filter(
                     (e) =>
                       e.type === "turn.completed" ||
+                      e.type === "turn.delta" ||
+                      e.type === "turn.recap" ||
                       (e.type === "session.state" &&
                         e.payload.state === "error"),
                   ),
@@ -495,6 +499,16 @@ function AppShell() {
             };
           },
           post: (n) => bridge.notifications?.post(n),
+        }),
+      );
+    }
+    /* #561 AC-1: while the human is at this Mac the relay silences the
+       phone — the heartbeat runs whenever the shell can report presence. */
+    if (bridge.presence) {
+      unsubs.push(
+        watchPresence({
+          bridge: bridge.presence,
+          report: (active) => relay.request("presence.report", { active }),
         }),
       );
     }
@@ -574,6 +588,18 @@ function AppShell() {
         onAddFolder={() => {}}
         onHire={canHire ? openHire : undefined}
         badges={badges}
+        sessions={{
+          /* The same needs-you total the employee badges carry — one sum,
+             never a second derivation. */
+          count:
+            Object.values(badges).reduce((n, b) => n + (b.approvals ?? 0), 0) ||
+            undefined,
+          active: pathname === "/sessions",
+          onOpen: () => {
+            navOpen.set(false);
+            void navigate({ to: "/sessions" });
+          },
+        }}
         status={comps}
         buildLabel={label}
         onOpenStatus={() => setStatusOpen(true)}
@@ -690,6 +716,11 @@ const indexRoute = createRoute({
   path: "/",
   component: IndexPage,
 });
+const sessionsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sessions",
+  component: SessionsPage,
+});
 const dmRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/dm/$employeeId",
@@ -713,6 +744,7 @@ const focusRoute = createRoute({
 });
 const routeTree = rootRoute.addChildren([
   indexRoute,
+  sessionsRoute,
   dmRoute,
   threadRoute,
   focusRoute,

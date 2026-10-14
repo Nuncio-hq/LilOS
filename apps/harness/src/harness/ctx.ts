@@ -13,6 +13,7 @@ import type {
   FoldersDetailParams,
   FoldersDetailResult,
   FoldersDiscoverResult,
+  ScheduledTask,
   TurnFailure,
 } from "@lilos/contracts/app";
 import type {
@@ -27,6 +28,7 @@ import type { EngineConnection } from "../engine/client";
 import type { EngineHostState } from "../engine/supervisor";
 import type { HarnessOptions } from "../harness";
 import type { ReaperCandidate, SessionReaper } from "../reaper";
+import type { TaskScheduler } from "../scheduler";
 import type { SlashOutcome } from "./commands";
 
 /**
@@ -216,6 +218,12 @@ export interface HarnessCtx {
   readonly feedListeners: Set<(event: EngineEvent) => void>;
   hired: boolean;
   readonly reaper: SessionReaper;
+  /** #136: the scheduled-task clock — tasks mirrored from the relay,
+      fired via `conversations.open`. */
+  scheduler: TaskScheduler;
+  /** Run conversations opened but not yet bound — AC-4's overlap window
+      between `conversations.open` returning and the first turn binding. */
+  readonly scheduledRunsInFlight: Map<string, string>;
   deliveryChains: Map<string, Promise<void>>;
   readonly home: string;
   readonly stateDir: string;
@@ -281,6 +289,17 @@ export interface HarnessCtx {
   markDelivered(binding: SessionBinding, message: AppMessage): void;
   writeLife(conversationId: string, life: ConversationLife): void;
   reaperCandidates(): ReaperCandidate[];
+  wireScheduler(): void;
+  syncScheduledTasks(): Promise<void>;
+  onScheduleUpserted(task: ScheduledTask): Promise<void>;
+  onScheduleRemoved(taskId: string): void;
+  scheduledRunStillGoing(task: ScheduledTask): boolean;
+  fireScheduledTask(
+    task: ScheduledTask,
+    due: { at: number; key: string },
+  ): Promise<void>;
+  skipScheduledRun(task: ScheduledTask, at: number): Promise<void>;
+  onScheduledConversationUpdate(conversation: Conversation): Promise<void>;
   sessionHasOpenAsk(sessionId: string): boolean;
   suspendBinding(sessionId: string): Promise<void>;
   onReaperSuspended(conversationId: string, sessionId: string): void;

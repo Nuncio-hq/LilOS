@@ -1967,6 +1967,801 @@
         "lilos/area": "folder",
         "lilos/access": "approval"
       }
+    },
+    {
+      "name": "schedule_list",
+      "description": "This employee's scheduled tasks — name, schedule, access level, last run.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "tasks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "employeeId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "prompt": {
+                  "type": "string"
+                },
+                "folder": {
+                  "type": "string"
+                },
+                "schedule": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "hourly",
+                        "daily",
+                        "weekdays",
+                        "weekly",
+                        "once",
+                        "cron"
+                      ]
+                    },
+                    "time": {
+                      "type": "string"
+                    },
+                    "day": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 6
+                    },
+                    "date": {
+                      "type": "string"
+                    },
+                    "cron": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "time"
+                  ],
+                  "additionalProperties": false
+                },
+                "access": {
+                  "type": "string",
+                  "enum": [
+                    "ask",
+                    "full"
+                  ]
+                },
+                "paused": {
+                  "type": "boolean"
+                },
+                "lastFiredAt": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "requestedAt": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "lastRun": {
+                  "type": "object",
+                  "properties": {
+                    "at": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "result": {
+                      "type": "string",
+                      "enum": [
+                        "running",
+                        "finished",
+                        "failed"
+                      ]
+                    },
+                    "conversationId": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "at",
+                    "result",
+                    "conversationId"
+                  ],
+                  "additionalProperties": false
+                },
+                "skippedAt": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "createdAt": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "id",
+                "employeeId",
+                "name",
+                "prompt",
+                "schedule",
+                "access",
+                "createdAt"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "tasks"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "_meta": {
+        "lilos/area": "schedule",
+        "lilos/access": "read"
+      }
+    },
+    {
+      "name": "schedule_create",
+      "description": "Create a scheduled task for yourself — name, schedule, prompt, optional folder. Asks the user to approve.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "prompt": {
+            "type": "string",
+            "minLength": 1
+          },
+          "folder": {
+            "type": "string",
+            "minLength": 1
+          },
+          "schedule": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "hourly",
+                  "daily",
+                  "weekdays",
+                  "weekly",
+                  "once",
+                  "cron"
+                ]
+              },
+              "time": {
+                "type": "string"
+              },
+              "day": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 6
+              },
+              "date": {
+                "type": "string"
+              },
+              "cron": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "time"
+            ],
+            "additionalProperties": false
+          },
+          "access": {
+            "type": "string",
+            "enum": [
+              "ask",
+              "full"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "prompt",
+          "schedule",
+          "access"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "task": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "employeeId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "folder": {
+                "type": "string"
+              },
+              "schedule": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "hourly",
+                      "daily",
+                      "weekdays",
+                      "weekly",
+                      "once",
+                      "cron"
+                    ]
+                  },
+                  "time": {
+                    "type": "string"
+                  },
+                  "day": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 6
+                  },
+                  "date": {
+                    "type": "string"
+                  },
+                  "cron": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "time"
+                ],
+                "additionalProperties": false
+              },
+              "access": {
+                "type": "string",
+                "enum": [
+                  "ask",
+                  "full"
+                ]
+              },
+              "paused": {
+                "type": "boolean"
+              },
+              "lastFiredAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "requestedAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "lastRun": {
+                "type": "object",
+                "properties": {
+                  "at": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "result": {
+                    "type": "string",
+                    "enum": [
+                      "running",
+                      "finished",
+                      "failed"
+                    ]
+                  },
+                  "conversationId": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "at",
+                  "result",
+                  "conversationId"
+                ],
+                "additionalProperties": false
+              },
+              "skippedAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "createdAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "id",
+              "employeeId",
+              "name",
+              "prompt",
+              "schedule",
+              "access",
+              "createdAt"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "task"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "_meta": {
+        "lilos/area": "schedule",
+        "lilos/access": "approval"
+      }
+    },
+    {
+      "name": "schedule_update",
+      "description": "Edit one of your scheduled tasks — only the fields given change; folder: null clears it. Asks the user to approve.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "prompt": {
+            "type": "string",
+            "minLength": 1
+          },
+          "folder": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "schedule": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "hourly",
+                  "daily",
+                  "weekdays",
+                  "weekly",
+                  "once",
+                  "cron"
+                ]
+              },
+              "time": {
+                "type": "string"
+              },
+              "day": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 6
+              },
+              "date": {
+                "type": "string"
+              },
+              "cron": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "time"
+            ],
+            "additionalProperties": false
+          },
+          "access": {
+            "type": "string",
+            "enum": [
+              "ask",
+              "full"
+            ]
+          },
+          "paused": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "task": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "employeeId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "folder": {
+                "type": "string"
+              },
+              "schedule": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "hourly",
+                      "daily",
+                      "weekdays",
+                      "weekly",
+                      "once",
+                      "cron"
+                    ]
+                  },
+                  "time": {
+                    "type": "string"
+                  },
+                  "day": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 6
+                  },
+                  "date": {
+                    "type": "string"
+                  },
+                  "cron": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "time"
+                ],
+                "additionalProperties": false
+              },
+              "access": {
+                "type": "string",
+                "enum": [
+                  "ask",
+                  "full"
+                ]
+              },
+              "paused": {
+                "type": "boolean"
+              },
+              "lastFiredAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "requestedAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "lastRun": {
+                "type": "object",
+                "properties": {
+                  "at": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "result": {
+                    "type": "string",
+                    "enum": [
+                      "running",
+                      "finished",
+                      "failed"
+                    ]
+                  },
+                  "conversationId": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "at",
+                  "result",
+                  "conversationId"
+                ],
+                "additionalProperties": false
+              },
+              "skippedAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "createdAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "id",
+              "employeeId",
+              "name",
+              "prompt",
+              "schedule",
+              "access",
+              "createdAt"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "task"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "_meta": {
+        "lilos/area": "schedule",
+        "lilos/access": "approval"
+      }
+    },
+    {
+      "name": "schedule_delete",
+      "description": "Delete one of your scheduled tasks — its future runs stop. Asks the user to approve.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "deleted": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "deleted"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "_meta": {
+        "lilos/area": "schedule",
+        "lilos/access": "approval"
+      }
+    },
+    {
+      "name": "schedule_run_now",
+      "description": "Fire one of your scheduled tasks now — a session opens in this DM at once. Asks the user to approve.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "task": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "employeeId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "folder": {
+                "type": "string"
+              },
+              "schedule": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "hourly",
+                      "daily",
+                      "weekdays",
+                      "weekly",
+                      "once",
+                      "cron"
+                    ]
+                  },
+                  "time": {
+                    "type": "string"
+                  },
+                  "day": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 6
+                  },
+                  "date": {
+                    "type": "string"
+                  },
+                  "cron": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "time"
+                ],
+                "additionalProperties": false
+              },
+              "access": {
+                "type": "string",
+                "enum": [
+                  "ask",
+                  "full"
+                ]
+              },
+              "paused": {
+                "type": "boolean"
+              },
+              "lastFiredAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "requestedAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "lastRun": {
+                "type": "object",
+                "properties": {
+                  "at": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "result": {
+                    "type": "string",
+                    "enum": [
+                      "running",
+                      "finished",
+                      "failed"
+                    ]
+                  },
+                  "conversationId": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "at",
+                  "result",
+                  "conversationId"
+                ],
+                "additionalProperties": false
+              },
+              "skippedAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "createdAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "id",
+              "employeeId",
+              "name",
+              "prompt",
+              "schedule",
+              "access",
+              "createdAt"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "task"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "_meta": {
+        "lilos/area": "schedule",
+        "lilos/access": "approval"
+      }
     }
   ]
 }

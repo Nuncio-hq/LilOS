@@ -397,6 +397,9 @@ function useThread(conversationId: string) {
     messages,
     channels,
     conversations,
+    /* #560: the meter's Compact now — button only under the declared
+       capability (D-#19). */
+    compactCapable: hasCap("compact"),
   };
 }
 
@@ -944,7 +947,72 @@ export function ThreadInfo({
   route: RouteProp<DmRoutes, "ThreadInfo">;
 }) {
   const { conversationId } = route.params;
-  const { detail } = useThread(conversationId);
+  const {
+    client,
+    conv,
+    channelId,
+    channels,
+    employee,
+    detail,
+    messages,
+    compactCapable,
+  } = useThread(conversationId);
+  /* #560 AC-3: Compact now — the engine's session.compact on the live
+     binding. A refused call alerts plainly like every other action. */
+  const onCompact =
+    compactCapable && conv?.engineRef && client
+      ? () => {
+          void client
+            .request("session.compact", { sessionId: conv.engineRef })
+            .catch((e) => Alert.alert("Couldn't compact", describeError(e)));
+        }
+      : undefined;
+  /* #560 AC-4: fresh session on the same folder, first message carrying
+     the transcript recap — the context-full session's memory resets, so
+     the quote is all the new one knows. */
+  const onContinue =
+    client && conv && channelId
+      ? () => {
+          void (async () => {
+            try {
+              const quote = messages
+                .slice(-20)
+                .map(
+                  (m) =>
+                    `> ${m.authorKind === "user" ? "You" : (employee?.name ?? "Agent")}: ${m.text.replaceAll("\n", "\n> ")}`,
+                )
+                .join("\n");
+              const text =
+                "Picking up mid-thread — the previous session's context filled up and was closed. Earlier transcript:\n\n" +
+                `${quote}\n\n—`;
+              const res = await client.request<{
+                conversation: Conversation;
+              }>("conversations.open", {
+                channelId,
+                text,
+                dedupeKey: sendKeyFor(`cont:${conv.id}`, text),
+                ...(conv.cwd ? { cwd: conv.cwd } : {}),
+              });
+              sendKeyDone(`cont:${conv.id}`, text);
+              navigation.replace("Thread", {
+                conversationId: res.conversation.id,
+                employeeId:
+                  channels.find((c) => c.id === channelId)?.employeeId ?? "",
+              });
+            } catch (e) {
+              Alert.alert("Couldn't continue", describeError(e));
+            }
+          })();
+        }
+      : undefined;
   if (!detail) return <View className="flex-1 bg-background" />;
-  return <ThreadInfoSheet t={detail} onDone={() => navigation.goBack()} />;
+  return (
+    <ThreadInfoSheet
+      t={detail}
+      onDone={() => navigation.goBack()}
+      onCompact={onCompact}
+      compactDisabled={detail.state === "working"}
+      onContinue={onContinue}
+    />
+  );
 }
