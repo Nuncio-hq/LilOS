@@ -134,8 +134,10 @@ export function Composer({
     const t = draft.trim();
     if (!t && !files?.length) return;
     /* An app-owned `/command` never sends — the host routed it (opens
-       its sheet/feature) and the box clears like a send. */
-    const cmd = parseSlashDraft(t);
+       its sheet/feature) and the box clears like a send. Staged files
+       mean it isn't a command send — the harness keeps `/`+files a
+       plain prompt too. */
+    const cmd = files?.length ? null : parseSlashDraft(t);
     if (cmd && onCommand?.(cmd.name, cmd.args)) {
       change("");
       return;
