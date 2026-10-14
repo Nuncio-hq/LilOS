@@ -1,9 +1,16 @@
 import type { Conversation, WorkbenchOpenTarget } from "@lilos/contracts/app";
 import {
+  type FolderAddParams,
   HOST_POLICY_VERSION,
+  type ScheduleCreateParams,
+  type ScheduleTaskRef,
+  type ScheduleUpdateParams,
   type SessionBinding,
+  type TeamHireParams,
+  type TeamUpdateParams,
   type ThreadReadParams,
   type ThreadSetTitleResult,
+  type ThreadStartParams,
   type ToolArea,
   type ViewerBrowserInputEvent,
 } from "@lilos/contracts/harness";
@@ -103,8 +110,11 @@ export class SessionSurfaces implements ViewerScope {
       "root",
       // browser_* only when a real browser can attach — never advertised otherwise.
       ...(opts.createBrowser ? (["browser"] as const) : []),
-      // thread_* / team_* / schedule_* only when the session is bound to a DM.
-      ...(opts.appOps ? (["thread", "team", "schedule"] as const) : []),
+      // thread_* / team_* / folder_* / schedule_* only when the session
+      // is bound to a DM.
+      ...(opts.appOps
+        ? (["thread", "team", "folder", "schedule"] as const)
+        : []),
     ]);
     this.cols = opts.cols ?? 110;
     this.rows = opts.rows ?? 28;
@@ -532,6 +542,67 @@ export class SessionSurfaces implements ViewerScope {
     });
   }
 
+  /* ------------------------- approval-gated writes ------------------------- */
+
+  /* The company writes: each appOps call opens the ask card and resolves
+     only after the user answers — a `declined` outcome surfaces as
+     SurfaceError("declined") so the agent reads a clean refusal. */
+
+  threadStart(p: ThreadStartParams) {
+    return this.tracked("thread_start", p.text.slice(0, 60), async () => {
+      const ops = this.requireAppOps();
+      const { conversation, message } = await ops.startThread({
+        text: p.text,
+        ...(p.title !== undefined ? { title: p.title } : {}),
+      });
+      return {
+        conversation: { id: conversation.id, title: conversation.title },
+        message,
+      };
+    });
+  }
+
+  teamHire(p: TeamHireParams) {
+    return this.tracked("team_hire", `${p.name} (${p.role})`, async () => {
+      const ops = this.requireAppOps();
+      const e = await ops.hireEmployee(p);
+      return {
+        employee: {
+          id: e.id,
+          name: e.name,
+          role: e.role,
+          profile: e.profile,
+          model: e.model,
+        },
+      };
+    });
+  }
+
+  teamUpdate(p: TeamUpdateParams) {
+    const changed = Object.keys(p).join(", ");
+    return this.tracked("team_update", changed, async () => {
+      const ops = this.requireAppOps();
+      const e = await ops.updateSelf(p);
+      return {
+        employee: {
+          id: e.id,
+          name: e.name,
+          role: e.role,
+          model: e.model,
+          instructions: e.instructions,
+        },
+      };
+    });
+  }
+
+  folderAdd(p: FolderAddParams) {
+    return this.tracked("folder_add", p.path, async () => {
+      const ops = this.requireAppOps();
+      const folder = await ops.addFolder(p.path);
+      return { folder };
+    });
+  }
+
   /* ------------------------------ root ops ---------------------------------- */
 
   context() {
@@ -662,6 +733,35 @@ export class SessionSurfaces implements ViewerScope {
       const employeeId = this.binding?.employeeId;
       if (!employeeId) throw new Error("not bound to an employee's DM");
       return { tasks: await ops.scheduledTasks(employeeId) };
+    });
+  }
+
+  scheduleCreate(p: ScheduleCreateParams) {
+    return this.tracked("schedule_create", p.name, async () => {
+      const ops = this.requireAppOps();
+      return { task: await ops.scheduleCreate(p) };
+    });
+  }
+
+  scheduleUpdate(p: ScheduleUpdateParams) {
+    return this.tracked("schedule_update", p.id, async () => {
+      const ops = this.requireAppOps();
+      return { task: await ops.scheduleUpdate(p) };
+    });
+  }
+
+  scheduleDelete(p: ScheduleTaskRef) {
+    return this.tracked("schedule_delete", p.id, async () => {
+      const ops = this.requireAppOps();
+      await ops.scheduleDelete(p.id);
+      return { deleted: true as const };
+    });
+  }
+
+  scheduleRunNow(p: ScheduleTaskRef) {
+    return this.tracked("schedule_run_now", p.id, async () => {
+      const ops = this.requireAppOps();
+      return { task: await ops.scheduleRunNow(p.id) };
     });
   }
 

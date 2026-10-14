@@ -6,10 +6,18 @@ import {
   type BrowserScrollResult,
   type BrowserTypeResult,
   type ContextResult,
+  type FolderAddResult,
   type GuideResult,
   LILOS_TOOLS,
+  type ScheduleCreateParams,
+  type ScheduleDeletedResult,
   type ScheduleListResult,
+  type ScheduleTaskRef,
+  type ScheduleTaskResult,
+  type ScheduleUpdateParams,
+  type TeamHireResult,
   type TeamListResult,
+  type TeamUpdateResult,
   type TerminalReadResult,
   type TerminalRunResult,
   type TerminalWriteResult,
@@ -19,6 +27,7 @@ import {
   type ThreadReadResult,
   type ThreadSearchResult,
   type ThreadSetTitleResult,
+  type ThreadStartResult,
   TOOL_PATH_PREFIX,
   type ViewerClientMsg,
   ViewerServerMsg,
@@ -103,12 +112,24 @@ export function toolBackend(opts: ToolClientOptions): SurfaceBackend {
     teamList: () => call("team_list", {}) as Promise<TeamListResult>,
     scheduleList: () =>
       call("schedule_list", {}) as Promise<ScheduleListResult>,
+    scheduleCreate: (p) =>
+      call("schedule_create", p) as Promise<ScheduleTaskResult>,
+    scheduleUpdate: (p) =>
+      call("schedule_update", p) as Promise<ScheduleTaskResult>,
+    scheduleDelete: (p) =>
+      call("schedule_delete", p) as Promise<ScheduleDeletedResult>,
+    scheduleRunNow: (p) =>
+      call("schedule_run_now", p) as Promise<ScheduleTaskResult>,
     threadList: () => call("thread_list", {}) as Promise<ThreadListResult>,
     threadSearch: (p) =>
       call("thread_search", p) as Promise<ThreadSearchResult>,
     threadSetTitle: (p) =>
       call("thread_set_title", p) as Promise<ThreadSetTitleResult>,
     threadPrs: () => call("thread_prs", {}) as Promise<ThreadPrsResult>,
+    threadStart: (p) => call("thread_start", p) as Promise<ThreadStartResult>,
+    teamHire: (p) => call("team_hire", p) as Promise<TeamHireResult>,
+    teamUpdate: (p) => call("team_update", p) as Promise<TeamUpdateResult>,
+    folderAdd: (p) => call("folder_add", p) as Promise<FolderAddResult>,
   };
 }
 

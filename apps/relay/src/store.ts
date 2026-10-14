@@ -3,6 +3,7 @@ import type {
   AppChannel,
   AppMessage,
   Ask,
+  AskHireProposal,
   AskState,
   AuthorKind,
   Conversation,
@@ -249,6 +250,8 @@ export interface NewAsk {
   turnId: string;
   requestId: string;
   request: EngineRequest;
+  /** Gateway `team_hire` ask's hire draft. */
+  hire?: AskHireProposal;
 }
 
 export interface ResolveAskInput {

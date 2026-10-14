@@ -11,7 +11,13 @@ import type {
   SystemStatusResult,
   WorkbenchOpenTarget,
 } from "@lilos/contracts/app";
-import type { ViewerBrowserInputEvent } from "@lilos/contracts/harness";
+import type {
+  ScheduleCreateParams,
+  ScheduleUpdateParams,
+  TeamHireParams,
+  TeamUpdateParams,
+  ViewerBrowserInputEvent,
+} from "@lilos/contracts/harness";
 import type { ForgePrListItem } from "@lilos/contracts/host";
 import type {
   AppOps,
@@ -20,6 +26,7 @@ import type {
   PtySpawner,
   PtySpawnOptions,
 } from "../src/index.js";
+import { SurfaceError } from "../src/index.js";
 
 export class FakePty implements PtyHandle {
   written: string[] = [];
@@ -163,15 +170,27 @@ export function fakeAppOps(
     profile?: ProfileSettings;
     /** `schedule_list` answers (#136). */
     scheduledTasks?: ScheduledTask[];
+    /** `"decline"` makes every approval op throw `declined` — nothing applies. */
+    approve?: "once" | "decline";
   } = {},
 ): AppOps & {
   posted: string[];
   titled: string[];
   opened: WorkbenchOpenTarget[];
+  asks: string[];
 } {
   const posted: string[] = [];
   const titled: string[] = [];
   const opened: WorkbenchOpenTarget[] = [];
+  const asks: string[] = [];
+  /* The fake's gate: the real impl posts an ask and waits; here the
+     recorded command stands in for the card and `approve` answers it. */
+  const gate = (command: string) => {
+    asks.push(command);
+    if (opts.approve === "decline") {
+      throw new SurfaceError("declined", `the user declined: ${command}`);
+    }
+  };
   const messages = [...initial];
   const convId = opts.conversationId ?? "conv1";
   const channelId = opts.channelId ?? "c1";
@@ -222,6 +241,7 @@ export function fakeAppOps(
     posted,
     titled,
     opened,
+    asks,
     async postMessage(text: string) {
       posted.push(text);
       const msg = {
@@ -321,6 +341,101 @@ export function fakeAppOps(
     },
     async openWorkbench(target: WorkbenchOpenTarget) {
       opened.push(target);
+    },
+    /* Approval-gated writes: recorded on `asks`, applied only when the
+       fake approves. */
+    async startThread(p: { text: string; title?: string }) {
+      gate(`thread_start ${p.title ?? p.text.slice(0, 60)}`);
+      const conversation: Conversation = {
+        ...bound,
+        id: `conv${convs.length + 1}`,
+        title: p.title ?? `Thread conv${convs.length + 1}`,
+        titleSource: "auto",
+      };
+      convs.push(conversation);
+      const message = {
+        id: `m${messages.length + 1}`,
+        channelId,
+        conversationId: conversation.id,
+        seq: messages.length + 1,
+        authorId: "emp-fake",
+        authorKind: "employee" as const,
+        text: p.text,
+        rewound: false,
+        dropped: false,
+        removed: false,
+        claimed: false,
+        createdAt: Date.now(),
+      } satisfies AppMessage;
+      messages.push(message);
+      return { conversation, message };
+    },
+    async hireEmployee(p: TeamHireParams) {
+      gate(`team_hire ${p.name} (${p.role})`);
+      const employee: Employee = {
+        id: `emp-${employees.length + 1}`,
+        name: p.name,
+        role: p.role,
+        status: "online",
+        profile: p.profile ?? `prof-${p.name.toLowerCase()}`,
+        model: p.model,
+        now: "",
+        instructions: p.instructions,
+        respondTo: "me",
+        createdAt: Date.now(),
+      };
+      employees.push(employee);
+      return employee;
+    },
+    async updateSelf(p: TeamUpdateParams) {
+      gate(`team_update ${Object.keys(p).join(", ")}`);
+      const self = employees[0];
+      if (p.name !== undefined) self.name = p.name;
+      if (p.role !== undefined) self.role = p.role;
+      if (p.model !== undefined) self.model = p.model;
+      if (p.instructions !== undefined) self.instructions = p.instructions;
+      return self;
+    },
+    async scheduleCreate(p: ScheduleCreateParams) {
+      gate(`schedule_create ${p.name}`);
+      const task: ScheduledTask = {
+        id: `task-${(opts.scheduledTasks ?? []).length + 1}`,
+        employeeId: "emp-fake",
+        name: p.name,
+        prompt: p.prompt,
+        schedule: p.schedule,
+        access: p.access,
+        paused: false,
+        createdAt: Date.now(),
+        ...(p.folder !== undefined ? { folder: p.folder } : {}),
+      };
+      return task;
+    },
+    async scheduleUpdate(p: ScheduleUpdateParams) {
+      gate(`schedule_update ${p.id}`);
+      const task = (opts.scheduledTasks ?? []).find((t) => t.id === p.id);
+      if (!task) throw new Error(`unknown scheduled task ${p.id}`);
+      if (p.name !== undefined) task.name = p.name;
+      if (p.prompt !== undefined) task.prompt = p.prompt;
+      if (p.folder !== undefined)
+        task.folder = p.folder === null ? undefined : p.folder;
+      if (p.schedule !== undefined) task.schedule = p.schedule;
+      if (p.access !== undefined) task.access = p.access;
+      if (p.paused !== undefined) task.paused = p.paused;
+      return task;
+    },
+    async scheduleDelete(id: string) {
+      gate(`schedule_delete ${id}`);
+    },
+    async scheduleRunNow(id: string) {
+      gate(`schedule_run_now ${id}`);
+      const task = (opts.scheduledTasks ?? []).find((t) => t.id === id);
+      if (!task) throw new Error(`unknown scheduled task ${id}`);
+      return task;
+    },
+    async addFolder(path: string) {
+      gate(`folder_add ${path}`);
+      return { path, lastUsedAt: Date.now() };
     },
   };
 }

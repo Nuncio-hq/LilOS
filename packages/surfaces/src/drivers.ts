@@ -5,12 +5,17 @@ import type {
   Employee,
   MessageSearchHit,
   ProfileSettings,
+  RecentFolder,
   ScheduledTask,
   SystemStatusResult,
   WorkbenchOpenTarget,
 } from "@lilos/contracts/app";
 import type {
+  ScheduleCreateParams,
+  ScheduleUpdateParams,
   SessionBinding,
+  TeamHireParams,
+  TeamUpdateParams,
   ViewerBrowserInputEvent,
 } from "@lilos/contracts/harness";
 import type { ForgePrListItem } from "@lilos/contracts/host";
@@ -104,6 +109,31 @@ export interface AppOps {
   profile(): Promise<ProfileSettings>;
   /** Emit `workbench.opened` on the bound DM (`workbench.open`). */
   openWorkbench(target: WorkbenchOpenTarget): Promise<void>;
+  /**
+   * Approval-gated company writes: each op posts the ask card itself
+   * and applies its change only after the user approves — the surfaces
+   * layer never sees an unapproved write. A `declined` outcome throws
+   * `SurfaceError("declined", …)`.
+   */
+  /** Start a new thread in the bound DM (`conversations.open` on approve). */
+  startThread(p: {
+    text: string;
+    title?: string;
+  }): Promise<{ conversation: Conversation; message: AppMessage }>;
+  /** Hire an employee (`agents.create`? + `employees.create` + `channels.openDm` on approve). */
+  hireEmployee(p: TeamHireParams): Promise<Employee>;
+  /** Edit the calling employee's own record (`employees.update` + `agents.update` on approve). */
+  updateSelf(p: TeamUpdateParams): Promise<Employee>;
+  /** Add a folder to recent folders (`folders.add` on approve). */
+  addFolder(path: string): Promise<RecentFolder>;
+  /** Create a scheduled task for the bound employee (`schedules.create` on approve). */
+  scheduleCreate(p: ScheduleCreateParams): Promise<ScheduledTask>;
+  /** Edit a scheduled task (`schedules.update` on approve). */
+  scheduleUpdate(p: ScheduleUpdateParams): Promise<ScheduledTask>;
+  /** Delete a scheduled task (`schedules.delete` on approve). */
+  scheduleDelete(id: string): Promise<void>;
+  /** Fire a scheduled task now (`schedules.runNow` on approve). */
+  scheduleRunNow(id: string): Promise<ScheduledTask>;
 }
 
 export interface SurfaceScopeOptions {

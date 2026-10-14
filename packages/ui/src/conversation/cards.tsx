@@ -10,6 +10,7 @@ import {
   ConfirmationTitle,
 } from "../components/ai-elements/confirmation";
 import { Button } from "../components/ui/button";
+import { HireCardInline } from "../feed/hire-card";
 import { cn } from "../lib/utils";
 import type {
   EmpFn,
@@ -249,18 +250,34 @@ export function ReplyCards({
                 </ConfirmationRejected>
               </ConfirmationTitle>
               <ConfirmationRequest>
-                <CodeBlock
-                  code={a.command}
-                  language="bash"
-                  className="text-xs [&_pre]:whitespace-pre-wrap [&_pre]:break-all"
-                />
-                {/* The caption must say what the command DOES — when the
-                    engine just echoes the command it adds nothing. */}
-                {a.note.trim() && a.note.trim() !== a.command.trim() ? (
-                  <p className="text-muted-foreground text-xs">{a.note}</p>
-                ) : null}
+                {a.hire ? (
+                  /* A hire proposal is the draft itself, not a command
+                     echo — the same card a channel hire renders. */
+                  <HireCardInline
+                    draft={a.hire}
+                    by={r.from}
+                    emp={emp}
+                    me={viewer}
+                    done={done}
+                    onReview={() => answer(`Allowed once by ${viewer}`)}
+                    onReject={() => answer(`Denied by ${viewer}`)}
+                  />
+                ) : (
+                  <>
+                    <CodeBlock
+                      code={a.command}
+                      language="bash"
+                      className="text-xs [&_pre]:whitespace-pre-wrap [&_pre]:break-all"
+                    />
+                    {/* The caption must say what the command DOES — when the
+                        engine just echoes the command it adds nothing. */}
+                    {a.note.trim() && a.note.trim() !== a.command.trim() ? (
+                      <p className="text-muted-foreground text-xs">{a.note}</p>
+                    ) : null}
+                  </>
+                )}
               </ConfirmationRequest>
-              {setResolved && (
+              {setResolved && !a.hire && (
                 <ConfirmationActions className="flex-wrap self-start">
                   {actions.map((opt, i) => {
                     const meta = actionMeta[opt];

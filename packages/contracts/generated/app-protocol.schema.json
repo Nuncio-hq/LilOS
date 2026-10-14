@@ -4448,6 +4448,37 @@
             }
           ]
         },
+        "hire": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "role": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "instructions": {
+              "type": "string"
+            },
+            "provider": {
+              "type": "string"
+            },
+            "profile": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "role",
+            "model",
+            "instructions"
+          ],
+          "additionalProperties": false
+        },
         "state": {
           "type": "string",
           "enum": [
@@ -6691,6 +6722,37 @@
               "additionalProperties": false
             }
           ]
+        },
+        "hire": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "role": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "instructions": {
+              "type": "string"
+            },
+            "provider": {
+              "type": "string"
+            },
+            "profile": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "role",
+            "model",
+            "instructions"
+          ],
+          "additionalProperties": false
         }
       },
       "required": [
@@ -6828,6 +6890,37 @@
                   "additionalProperties": false
                 }
               ]
+            },
+            "hire": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "role": {
+                  "type": "string"
+                },
+                "model": {
+                  "type": "string"
+                },
+                "instructions": {
+                  "type": "string"
+                },
+                "provider": {
+                  "type": "string"
+                },
+                "profile": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "role",
+                "model",
+                "instructions"
+              ],
+              "additionalProperties": false
             },
             "state": {
               "type": "string",
@@ -7061,6 +7154,37 @@
                     "additionalProperties": false
                   }
                 ]
+              },
+              "hire": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "role": {
+                    "type": "string"
+                  },
+                  "model": {
+                    "type": "string"
+                  },
+                  "instructions": {
+                    "type": "string"
+                  },
+                  "provider": {
+                    "type": "string"
+                  },
+                  "profile": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "role",
+                  "model",
+                  "instructions"
+                ],
+                "additionalProperties": false
               },
               "state": {
                 "type": "string",
@@ -8052,6 +8176,37 @@
                 }
               ]
             },
+            "hire": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "role": {
+                  "type": "string"
+                },
+                "model": {
+                  "type": "string"
+                },
+                "instructions": {
+                  "type": "string"
+                },
+                "provider": {
+                  "type": "string"
+                },
+                "profile": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "role",
+                "model",
+                "instructions"
+              ],
+              "additionalProperties": false
+            },
             "state": {
               "type": "string",
               "enum": [
@@ -8235,6 +8390,37 @@
                   "additionalProperties": false
                 }
               ]
+            },
+            "hire": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "role": {
+                  "type": "string"
+                },
+                "model": {
+                  "type": "string"
+                },
+                "instructions": {
+                  "type": "string"
+                },
+                "provider": {
+                  "type": "string"
+                },
+                "profile": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "role",
+                "model",
+                "instructions"
+              ],
+              "additionalProperties": false
             },
             "state": {
               "type": "string",

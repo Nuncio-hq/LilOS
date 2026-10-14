@@ -345,10 +345,16 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
     ],
   },
   {
+    /* Gateway `team_hire` asks carry the hire draft JSON so the card
+       renders the real proposal; NULL on every engine ask. */
+    version: 25,
+    statements: [`ALTER TABLE asks ADD COLUMN hire TEXT`],
+  },
+  {
     /* #136: scheduled tasks — relay-owned records the host's clock fires
        as `conversations.open`; `conversations.scheduled` marks a run's
        session so the DM shows where it came from. */
-    version: 25,
+    version: 26,
     statements: [
       `CREATE TABLE scheduled_tasks (
         id TEXT PRIMARY KEY,

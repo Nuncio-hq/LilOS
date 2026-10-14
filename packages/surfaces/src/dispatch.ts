@@ -5,8 +5,14 @@ import {
   type BrowserOpenParams,
   type BrowserScrollParams,
   type BrowserTypeParams,
+  type FolderAddParams,
   type GuideParams,
   LILOS_TOOLS,
+  type ScheduleCreateParams,
+  type ScheduleTaskRef,
+  type ScheduleUpdateParams,
+  type TeamHireParams,
+  type TeamUpdateParams,
   type TerminalReadParams,
   type TerminalRunParams,
   type TerminalWriteParams,
@@ -14,6 +20,7 @@ import {
   type ThreadReadParams,
   type ThreadSearchParams,
   type ThreadSetTitleParams,
+  type ThreadStartParams,
 } from "@lilos/contracts/harness";
 import { z } from "zod";
 import { type SurfaceBackend, SurfaceError } from "./backend.js";
@@ -92,6 +99,28 @@ export async function callTool(
     case "schedule_list":
       result = await backend.scheduleList();
       break;
+    case "schedule_create":
+      result = await backend.scheduleCreate(p as ScheduleCreateParams);
+      break;
+    case "schedule_update":
+      result = await backend.scheduleUpdate(p as ScheduleUpdateParams);
+      break;
+    case "schedule_delete":
+      result = await backend.scheduleDelete(p as ScheduleTaskRef);
+      break;
+    case "schedule_run_now":
+      result = await backend.scheduleRunNow(p as ScheduleTaskRef);
+      break;
+    case "team_hire":
+      result = await backend.teamHire(p as TeamHireParams);
+      break;
+    case "team_update":
+      result = await backend.teamUpdate(p as TeamUpdateParams);
+      break;
+    case "folder_add":
+      result = await backend.folderAdd(p as FolderAddParams);
+      break;
+
     case "thread_post":
       result = await backend.threadPost(p as ThreadPostParams);
       break;
@@ -109,6 +138,9 @@ export async function callTool(
       break;
     case "thread_prs":
       result = await backend.threadPrs();
+      break;
+    case "thread_start":
+      result = await backend.threadStart(p as ThreadStartParams);
       break;
     default:
       throw new SurfaceError("not_found", `unhandled tool: ${name}`);

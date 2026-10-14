@@ -394,6 +394,12 @@ export class Harness {
     return this.conversationBySession.size;
   }
 
+  /** The turn a conversation's engine is running right now — the gateway's
+      approval asks bind to it so the card renders inside the live feed. */
+  runningTurnFor(conversationId: string): string | undefined {
+    return this.bindings.get(conversationId)?.runningTurnId;
+  }
+
   /* The Mac user's home this harness serves — `~` on the wire means this
      directory (device-scope folder reads stay under it). */
   private readonly home: string;
