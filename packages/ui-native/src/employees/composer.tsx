@@ -1,8 +1,31 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import { Pressable, Text, TextInput, View } from "react-native";
+import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { Glass } from "../components/glass";
 import { Icon, useThemeColor } from "../components/icon";
 import { ProviderLogo } from "../components/provider-logo";
+
+/* The engine's `/` menu row (wire shape: commands.list in
+   packages/contracts/src/engine/commands.ts). ui-native carries no
+   contracts dep — the host maps the wire rows into this shape. */
+export type SlashItem = {
+  name: string;
+  description: string;
+  kind: "command" | "skill";
+  argsHint?: string;
+};
+
+/* `/` menu fragment: the draft IS a fragment only while it's `/token` at
+   position 0 with no whitespace — the same gate web's composer-slash.ts. */
+function slashQuery(draft: string): string | null {
+  const m = /^\/([\w.-]*)$/.exec(draft);
+  return m ? (m[1] ?? "") : null;
+}
+
+function parseSlashDraft(text: string): { name: string; args: string } | null {
+  const m = /^\/([A-Za-z][\w.-]*)(?:[ \t]+([\s\S]*))?$/.exec(text);
+  if (!m?.[1]) return null;
+  return { name: m[1].toLowerCase(), args: m[2]?.trim() ?? "" };
+}
 
 /* The conversation's composer: one Liquid Glass capsule floating over the
    bottom of the chat (content scrolls on under it), input on top and the
@@ -20,6 +43,8 @@ export function Composer({
   stopHint,
   onPickFolder,
   onPickModel,
+  commands,
+  onCommand,
   onLayoutHeight,
   prefill,
   initialDraft,
@@ -46,6 +71,14 @@ export function Composer({
   stopHint?: string;
   onPickFolder?: () => void;
   onPickModel?: () => void;
+  /** The engine's command list (issue #109): typing `/` at position 0
+      opens the menu above the capsule; absent → `/` stays plain text
+      (D-#19: no capability, no menu). */
+  commands?: SlashItem[];
+  /** A `/name args` send passes through here first: returning true claims
+      it (the host owns that command — the model sheet, rewind); false
+      lets it send so the engine runs it. */
+  onCommand?: (name: string, args: string) => boolean;
   /** Floating callers pad their scroll content by this. */
   onLayoutHeight?: (h: number) => void;
   /** Put this text in the box and focus it — a new object each time (plan "Change…"). */
@@ -78,9 +111,22 @@ export function Composer({
   }, [prefill]);
   const muted = useThemeColor("muted-foreground");
   const ready = !!draft.trim();
+  const slashQ = slashQuery(draft);
+  const slashRows =
+    commands && slashQ !== null
+      ? commands.filter((c) => c.name.includes(slashQ.toLowerCase()))
+      : undefined;
+  const pickSlash = (item: SlashItem) => change(`/${item.name} `);
   const send = () => {
     const t = draft.trim();
     if (!t) return;
+    /* An app-owned `/command` never sends — the host routed it (opens
+       its sheet/feature) and the box clears like a send. */
+    const cmd = parseSlashDraft(t);
+    if (cmd && onCommand?.(cmd.name, cmd.args)) {
+      change("");
+      return;
+    }
     onSend(t);
     change("");
   };
@@ -90,6 +136,53 @@ export function Composer({
       style={{ paddingBottom: Math.max(insetBottom - 12, 10) }}
       onLayout={(e) => onLayoutHeight?.(e.nativeEvent.layout.height)}
     >
+      {slashRows !== undefined && (
+        <Glass
+          className="mb-2"
+          style={{ borderRadius: 20, borderCurve: "continuous" }}
+        >
+          <ScrollView style={{ maxHeight: 224 }}>
+            {slashRows.length === 0 ? (
+              <Text className="px-4 py-3 text-muted-foreground text-[13px]">
+                No matches
+              </Text>
+            ) : (
+              slashRows.map((c) => (
+                <Pressable
+                  key={c.name}
+                  accessibilityRole="button"
+                  onPress={() => pickSlash(c)}
+                  className="flex-row items-center gap-2 px-4 py-2.5 active:opacity-60"
+                >
+                  <Icon
+                    name="terminal"
+                    size={13}
+                    tone="muted-foreground"
+                  />
+                  <Text className="font-mono text-[13px] text-foreground">
+                    /{c.name}
+                    {c.argsHint ? (
+                      <Text className="text-muted-foreground">
+                        {" "}
+                        {c.argsHint}
+                      </Text>
+                    ) : null}
+                  </Text>
+                  <Text
+                    numberOfLines={1}
+                    className="shrink text-muted-foreground text-[12px]"
+                  >
+                    {c.description}
+                  </Text>
+                  <Text className="rounded border border-muted-foreground/40 px-1 text-[9px] text-muted-foreground uppercase">
+                    {c.kind}
+                  </Text>
+                </Pressable>
+              ))
+            )}
+          </ScrollView>
+        </Glass>
+      )}
       <Glass
         className="px-4 pt-3 pb-2.5"
         style={{ borderRadius: 26, borderCurve: "continuous" }}

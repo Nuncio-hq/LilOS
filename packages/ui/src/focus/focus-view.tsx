@@ -142,6 +142,9 @@ export function FocusView({
   seedFiles,
   onSeededFiles,
   onModel,
+  onCommand,
+  modelOpen,
+  onModelOpen,
   picker,
   defaultModel,
   defaultProvider,
@@ -224,6 +227,11 @@ export function FocusView({
   seedFiles?: AttachedFile[];
   onSeededFiles?: () => void;
   onModel?: (c: ModelChoice) => void;
+  /* App-owned `/command` claim (composer → host) + the picker's controlled
+     open that `/model` drives. */
+  onCommand?: (name: string, args: string) => boolean;
+  modelOpen?: boolean;
+  onModelOpen?: (open: boolean) => void;
   /* Refresh / Edit models… / provider names — each renders only with its handler. */
   picker?: ModelPickerExtras;
   /* The engine's `models.list.default` — the unpinned-employee pick (#92 AC-5). */
@@ -1207,6 +1215,9 @@ export function FocusView({
               }
               models={models}
               onModel={onModel}
+              onCommand={onCommand}
+              modelOpen={modelOpen}
+              onModelOpen={onModelOpen}
               picker={picker}
               tools={
                 access !== undefined && onAccess ? (

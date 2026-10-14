@@ -22,6 +22,7 @@ export {
 export { Screen } from "./components/screen";
 export { Mono, StateBlock } from "./components/state-block";
 export { ApprovalsSheet } from "./employees/approvals-sheet";
+export { type SlashItem } from "./employees/composer";
 export {
   BackgroundPill,
   BackgroundSheet,

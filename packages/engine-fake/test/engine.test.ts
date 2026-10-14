@@ -89,6 +89,7 @@ describe("engine-fake", () => {
       "background_jobs",
       "side_prompt",
       "workspace_move",
+      "commands",
       "approval_policy",
     ]);
     c.close();

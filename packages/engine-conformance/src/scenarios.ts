@@ -2778,6 +2778,107 @@ export const WORKSPACE_MOVE_SCENARIOS: Scenario[] = [
  * `describe` adds its suite. Pending suites are registered so engines (and CI)
  * can list them; they are intentionally empty until the capability lands.
  */
+export const COMMANDS_SCENARIOS: Scenario[] = [
+  {
+    id: "describe wires commands.list + commands.exec under the commands capability",
+    async run(h) {
+      const r = (await h.request("describe")) as {
+        capabilities: { id: string; methods?: string[] }[];
+      };
+      const cap = r.capabilities.find((c) => c.id === "commands");
+      assert(cap, "commands suite runs only against engines declaring commands");
+      for (const m of ["commands.list", "commands.exec"])
+        assert(
+          cap?.methods?.includes(m) === true,
+          `the commands descriptor names ${m}`,
+        );
+    },
+  },
+  {
+    id: "commands.list returns commands and skills, filtered by query",
+    async run(h) {
+      const { sessionId } = (await h.request("session.start", {
+        agent: "builder",
+        cwd: "/tmp/lilos-fake",
+      })) as StartResult;
+      const all = (await h.request("commands.list", {
+        sessionId,
+      })) as { name: string; description: string; kind: string }[];
+      assert(
+        Array.isArray(all) && all.length >= 2,
+        `commands.list returns a non-empty menu, got ${JSON.stringify(all)}`,
+      );
+      for (const c of all) {
+        assert(c.name.length > 0, "every row names the command");
+        assert(
+          c.kind === "command" || c.kind === "skill",
+          `kind is command|skill, got ${c.kind}`,
+        );
+      }
+      const query = all[0]!.name.slice(0, 3);
+      const filtered = (await h.request("commands.list", {
+        sessionId,
+        query,
+      })) as { name: string }[];
+      assert(
+        filtered.length > 0 &&
+          filtered.length <= all.length &&
+          filtered.every((c) => c.name.includes(query)),
+        `query '${query}' narrows the list, got ${JSON.stringify(filtered.map((c) => c.name))}`,
+      );
+    },
+  },
+  {
+    id: "commands.exec returns engine output or a skill prompt",
+    async run(h) {
+      const { sessionId } = (await h.request("session.start", {
+        agent: "builder",
+        cwd: "/tmp/lilos-fake",
+      })) as StartResult;
+      const menu = (await h.request("commands.list", {
+        sessionId,
+      })) as { name: string; kind: string }[];
+      const command = menu.find((c) => c.kind === "command");
+      const skill = menu.find((c) => c.kind === "skill");
+      assert(command && skill, "the menu needs both a command and a skill");
+      const ran = (await h.request("commands.exec", {
+        sessionId,
+        name: command!.name,
+      })) as { outcome: string; output?: string; prompt?: string };
+      assert(
+        ran.outcome === "output" && (ran.output?.length ?? 0) > 0,
+        `a command resolves to output text, got ${JSON.stringify(ran)}`,
+      );
+      const expanded = (await h.request("commands.exec", {
+        sessionId,
+        name: skill!.name,
+        args: "the diff",
+      })) as { outcome: string; output?: string; prompt?: string };
+      assert(
+        expanded.outcome === "prompt" && (expanded.prompt?.length ?? 0) > 0,
+        `a skill resolves to the prompt the next turn runs, got ${JSON.stringify(expanded)}`,
+      );
+    },
+  },
+  {
+    id: "commands.exec on an unknown name is a protocol error",
+    async run(h) {
+      const { sessionId } = (await h.request("session.start", {
+        agent: "builder",
+        cwd: "/tmp/lilos-fake",
+      })) as StartResult;
+      const code = await errorCode(h, "commands.exec", {
+        sessionId,
+        name: "definitely-not-a-command",
+      });
+      assert(
+        code === -32602,
+        `unknown command must fail INVALID_PARAMS (-32602), got ${code}`,
+      );
+    },
+  },
+];
+
 export const SUITES: {
   capability: string;
   implemented: boolean;
@@ -2822,4 +2923,5 @@ export const SUITES: {
     implemented: true,
     scenarios: WORKSPACE_MOVE_SCENARIOS,
   },
+  { capability: "commands", implemented: true, scenarios: COMMANDS_SCENARIOS },
 ];

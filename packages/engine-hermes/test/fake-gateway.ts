@@ -699,9 +699,52 @@ export class FakeGateway implements GatewayLike {
           return Promise.resolve({ key, value: this.approvalsMode });
         return Promise.reject(new RpcError(4002, `unknown config key: ${key}`));
       }
+      case "complete.slash": {
+        /* A fixed menu — the adapter maps text/meta/kind verbatim. */
+        const rows = [
+          {
+            text: "/compact",
+            display: "/compact",
+            meta: "Compact the session",
+            kind: "command",
+          },
+          {
+            text: "/usage",
+            display: "/usage",
+            meta: "Show token usage",
+            kind: "command",
+          },
+          {
+            text: "/review",
+            display: "/review",
+            meta: "Review the diff",
+            kind: "skill",
+          },
+        ];
+        const q = String(p.text ?? "").replace(/^\//, "");
+        return Promise.resolve({
+          items: rows.filter((r) => r.text.slice(1).startsWith(q)),
+          replace_from: 1,
+        });
+      }
+      case "command.dispatch": {
+        const name = String(p.name ?? "");
+        this.slashCommands.push(`dispatch:${name}`);
+        if (name === "review")
+          return Promise.resolve({
+            type: "send",
+            message: "expanded review prompt",
+          });
+        return Promise.resolve({ type: "exec", output: `ran ${name}` });
+      }
       case "slash.exec": {
         const command = String(p.command ?? "");
         this.slashCommands.push(command);
+        /* The real gateway refuses skills here so callers dispatch them. */
+        if (/^\/review\b/.test(command))
+          return Promise.reject(
+            new RpcError(4018, "skill command: use command.dispatch"),
+          );
         const m = /^\/model\s+(\S+)/.exec(command);
         if (m) {
           const want = m[1].includes("/")

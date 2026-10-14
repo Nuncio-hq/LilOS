@@ -12,7 +12,7 @@ import { Icon } from "../components/icon";
 import { Rise } from "../components/rise";
 import { AgentTurn, UserBubble } from "./agent-turn";
 import { BackgroundPill } from "./background-sheet";
-import { Composer } from "./composer";
+import { Composer, type SlashItem } from "./composer";
 import { ContextRing } from "./context-meter";
 import { NotSentTray } from "./not-sent-tray";
 import type { PlanAction } from "./plan-card";
@@ -66,6 +66,8 @@ export function ThreadScreen({
   onSend,
   onStop,
   onPickModel,
+  commands,
+  onCommand,
   onOpenSubagent,
   onOpenSubagents,
   onOpenBackground,
@@ -103,6 +105,10 @@ export function ThreadScreen({
   onSend: (text: string) => void;
   onStop: () => void;
   onPickModel?: () => void;
+  /** The engine's `/` command list (issue #109); absent → `/` plain text. */
+  commands?: SlashItem[];
+  /** App-owned `/command` claim — model sheet, rewind. */
+  onCommand?: (name: string, args: string) => boolean;
   /** A subagent row → its sheet (issue #170). */
   onOpenSubagent?: (a: SubagentRow) => void;
   /** The turn's "N subagents · Open" line → the session's Subagents sheet
@@ -522,6 +528,8 @@ export function ThreadScreen({
             onStop={t.state === "working" ? onStop : undefined}
             stopHint={stale ? "Stop works once the Mac is back" : undefined}
             {...(onPickModel ? { onPickModel } : {})}
+            commands={commands}
+            onCommand={onCommand}
             onLayoutHeight={setComposerHeight}
             prefill={prefill}
             initialDraft={initialDraft}
