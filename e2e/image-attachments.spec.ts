@@ -96,7 +96,7 @@ test("AC-1 an image over the size cap is rejected with a toast and no chip", asy
     );
   });
 
-  await expect(page.getByText(/exceed the maximum size/)).toBeVisible();
+  await expect(page.getByText(/too large/)).toBeVisible();
   await expect(main.locator("form").getByText("huge.png")).toHaveCount(0);
   expect(errors).toEqual([]);
 });
