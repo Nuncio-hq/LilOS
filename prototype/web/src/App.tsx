@@ -91,7 +91,12 @@ import {
   type QuestionAsk,
   type ScheduledTask,
   ScheduledTasks,
+  type SessionGroups,
+  type SessionRowVm,
+  SessionsHome,
   TaskDialog,
+  preview,
+  threadState,
   VIEWER_ID,
 } from "@lilos/ui"
 import { cn } from "@lilos/ui/lib/utils"
@@ -919,7 +924,14 @@ const FOLDER_FILES: Record<string, FileMention[]> = {
   ],
 }
 
-type View = { kind: "channel"; id: string } | { kind: "dm"; id: string }
+type View = { kind: "channel"; id: string } | { kind: "dm"; id: string } | { kind: "sessions"; id: "sessions" }
+
+/* A step's one-liner for the running rows — tool + the arg worth showing. */
+const stepLine = (s: Step) => {
+  const arg = (s.input.path ?? s.input.command ?? s.input.query ?? s.input.url) as string | undefined
+  const head = arg ? `${s.tool} ${arg}` : s.tool
+  return head.length > 80 ? `${head.slice(0, 79)}…` : head
+}
 
 export default function App() {
   const [employees, setEmployees] = useState<Employee[]>(SEED_EMPLOYEES)
@@ -939,6 +951,11 @@ export default function App() {
   const [resolved, setResolved] = useState<Record<string, string>>({
     "q-land": "Answered “Merge to main” by Oscar",
   })
+  /* The Sessions view's read mark: thread root ids Oscar has opened — a
+     finished session never opened is "done since you last looked". */
+  const [readThreads, setReadThreads] = useState<ReadonlySet<string>>(new Set())
+  const markThreadRead = (id: string) =>
+    setReadThreads((s) => (s.has(id) ? s : new Set(s).add(id)))
   const [hireOpen, setHireOpen] = useState<HireDraft | null>(null)
   const [theme, setTheme] = useTheme()
   const [toast, setToast] = useState<{ text: string; action?: { label: string; run: () => void } } | null>(null)
@@ -1256,12 +1273,60 @@ export default function App() {
     return b
   }, [feeds, employees, resolved])
 
+  /* The Sessions view's rows: every DM thread across employees, grouped by
+     the same rules the employee badges use — a waiting turn is "needs you",
+     a live one "running", the rest "recently finished" with never-opened
+     threads first (the read mark). Archived threads are hidden. */
+  const sessionGroups: SessionGroups = useMemo(() => {
+    const needsYou: SessionRowVm[] = []
+    const running: SessionRowVm[] = []
+    const finished: SessionRowVm[] = []
+    for (const e of employees)
+      for (const m of feeds[`dm-${e.id}`] ?? []) {
+        if (m.kind !== "msg" || !m.thread || m.thread.archived) continue
+        const t = m.thread
+        const st = threadState(t)
+        const lastReply = t.replies.at(-1)
+        const waiting = [...t.replies].reverse().find((r) => r.phase === "waiting")
+        const liveReply = [...t.replies].reverse().find((r) => r.live)
+        const liveStep = liveReply?.steps?.findLast?.((s) => s.running) ?? liveReply?.steps?.at(-1)
+        const ask = waiting?.approval ?? lastReply?.approval
+        const row: SessionRowVm = {
+          id: m.id,
+          employeeId: e.id,
+          employeeName: e.name,
+          title: t.title || preview(m.text) || "Untitled",
+          folder: t.ws?.project,
+          state: st?.word ?? "done",
+          when: lastReply?.time ?? m.time,
+        }
+        if (st?.word === "needs you") {
+          needsYou.push({
+            ...row,
+            state: "needs you",
+            live: ask ? `Approve: ${ask.command}` : undefined,
+          })
+        } else if (st?.word === "running") {
+          running.push({
+            ...row,
+            state: "running",
+            live: liveStep ? stepLine(liveStep) : undefined,
+          })
+        } else {
+          finished.push({ ...row, unread: !readThreads.has(m.id) })
+        }
+      }
+    finished.sort((a, b) => Number(b.unread) - Number(a.unread))
+    return { needsYou, running, finished }
+  }, [feeds, employees, resolved, readThreads])
 
 
+  /* Sessions is a list view over every DM, not a channel — fall back to
+     general for the channel-derived values below (never rendered). */
   const channel: Channel =
     view.kind === "dm"
       ? { id: `dm-${view.id}`, name: emp(view.id)?.name ?? "", employees: [view.id], dm: true }
-      : [...PROJECTS.flatMap((p) => p.channels), ...COMPANY_CHANNELS].find((c) => c.id === view.id)!
+      : [...PROJECTS.flatMap((p) => p.channels), ...COMPANY_CHANNELS].find((c) => c.id === view.id) ?? COMPANY_CHANNELS[0]
   const project = PROJECTS.find((p) => p.channels.some((c) => c.id === channel.id))
   const feedKey = channel.id
   const feed: Msg[] = feeds[feedKey] ?? []
@@ -1391,6 +1456,7 @@ export default function App() {
     setView({ kind: "dm", id }); setThreadId(last?.id ?? null); setPanelTab("thread"); setPanelOpen(window.innerWidth >= 1280); setFocus(false); setNavOpen(false)
   }
   const showThread = (id: string) => { setThreadId(id); setPanelTab("thread"); setPanelOpen(true) }
+  const goSessions = () => { setView({ kind: "sessions", id: "sessions" }); setThreadId(null); setFocus(false); setNavOpen(false) }
 
   /* ---- Scheduled tasks (prototype #366 for #136). Real app: tasks live on the relay, the harness
      owns the clock and a run is conversations.open with the task's prompt + folder. Here only
@@ -2328,6 +2394,11 @@ export default function App() {
         onPairPhone={() => setPairPhone({ kind: "ready", offer: pairOffer(300) })}
         onOpenBrowser={() => setBrowserOpen((o) => !o)}
         realApp={realApp || scenario === "first-run"}
+        sessions={{
+          count: sessionGroups.needsYou.length || undefined,
+          active: view.kind === "sessions",
+          onOpen: goSessions,
+        }}
         preview={<PrototypePreviewMenu scenario={scenario} realApp={realApp} onScenario={pickScenario} onRealApp={setRealApp} />}
         isProjectDefaultOpen={(p) => p.id === "lilos" || newProjects.includes(p)}
         onSetTheme={setTheme}
@@ -2384,7 +2455,21 @@ export default function App() {
       ) : (
         <div className={cn("grid min-h-0 min-w-0 grid-cols-1 lg:gap-[10px]", panelOpen && "xl:grid-cols-[minmax(0,1fr)_420px]")}>
           {banner && <div className="col-span-full">{banner}</div>}
-          {channel.dm && emp(view.id) ? (
+          {view.kind === "sessions" ? (
+            <SessionsHome
+              groups={sessionGroups}
+              activeId={threadId ?? undefined}
+              onNav={() => setNavOpen(true)}
+              onOpen={(row) => {
+                markThreadRead(row.id)
+                setView({ kind: "dm", id: row.employeeId })
+                setPanelTab("thread")
+                setPanelOpen(true)
+                showThread(row.id)
+              }}
+              loading={scenario === "loading"}
+            />
+          ) : channel.dm && emp(view.id) ? (
             <EmployeeHome
               e={emp(view.id)!} feed={shownFeed} threadId={threadId} emp={emp} human={human}
               connection={connOf(emp(view.id)?.profile)}

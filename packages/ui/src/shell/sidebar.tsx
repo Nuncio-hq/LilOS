@@ -88,7 +88,9 @@ export function Sidebar({
   projects: Project[];
   folders: import("../types").Folder[];
   employees: Employee[];
-  view: { kind: "channel" | "dm"; id: string };
+  /* What the shell shows right now — channel / dm ids, or a named view
+     ("sessions") that no channel list highlights. */
+  view: { kind: string; id: string };
   theme: Theme;
   onSetTheme: (t: Theme) => void;
   isProjectDefaultOpen: (p: Project) => boolean;

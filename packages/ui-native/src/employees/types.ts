@@ -453,3 +453,31 @@ export type DmMessageHit = {
   /** The matched term — the thread bolds it on the row the hit opens. */
   query?: string;
 };
+
+/** One row in the cross-employee Sessions list (web: SessionRowVm). The
+    `tone` is the employee's orb tone — the avatar is the employee's. */
+export type SessionListRow = {
+  /** The conversation the row opens. */
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  tone: OrbTone;
+  title: string;
+  /** Project folder the session works in; absent = just chat. */
+  folder?: string;
+  state: SessionState;
+  /** The live line for in-flight rows: the current step for working
+      sessions, the open ask for needs-you rows. */
+  live?: string;
+  /** Last activity age — "2m", "1h". */
+  when: string;
+  /** Finished since the watermark last moved — the unread dot. */
+  unread?: boolean;
+};
+
+/** The Sessions screen's three groups — same split as web's SessionsHome. */
+export type SessionListGroups = {
+  needsYou: SessionListRow[];
+  running: SessionListRow[];
+  finished: SessionListRow[];
+};

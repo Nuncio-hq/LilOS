@@ -27,6 +27,7 @@ import {
   pickLabel,
   ScanScreen,
   Section,
+  SessionsScreen,
   SettingsScreen,
   SubagentSheet,
   SubagentsSheet,
@@ -75,12 +76,14 @@ import {
   $employees,
   $projects,
   $threads,
+  $sessionGroups,
   answerAsk,
   approve,
   approvePlan,
   deny,
   ENGINE_COMMANDS,
   execCommand,
+  markThreadRead,
   playOnOpen,
   rejectPlan,
   removeNotSent,
@@ -146,6 +149,9 @@ type Routes = {
   Connected: undefined;
   Tabs: NavigatorScreenParams<TabRoutes>;
   Dm: { employeeId: string };
+  /* Every session across employees — pushed over Home like web's
+     /sessions view over the DM pane. */
+  Sessions: undefined;
   Thread: { id: string; scrollTo?: string; hitQuery?: string };
   ThreadInfo: { id: string };
   /** A subagent of a turn in that thread (issue #170). */
@@ -431,6 +437,25 @@ function Home() {
       onOpenMac={() => nav.navigate("Mac")}
       onOpenEmployee={(id) => nav.navigate("Dm", { employeeId: id })}
       onOpenChannel={() => soon("Channels")}
+      sessions={{
+        count: useStore($sessionGroups).needsYou.length || undefined,
+        onOpen: () => nav.navigate("Sessions"),
+      }}
+    />
+  );
+}
+
+/* Every session across employees — the web Sessions view's phone twin. */
+function Sessions({ navigation }: Props<"Sessions">) {
+  const groups = useStore($sessionGroups);
+  return (
+    <SessionsScreen
+      groups={groups}
+      onOpen={(r) => {
+        markThreadRead(r.id);
+        navigation.navigate("Dm", { employeeId: r.employeeId });
+        navigation.navigate("Thread", { id: r.id });
+      }}
     />
   );
 }
@@ -1184,6 +1209,11 @@ export default function App() {
                 name="Tabs"
                 component={Tabs}
                 options={{ headerShown: false }}
+              />
+              <Stack.Screen
+                name="Sessions"
+                component={Sessions}
+                options={{ title: "Sessions" }}
               />
               <Stack.Screen name="Dm" component={Dm} options={CHAT_HEADER} />
               <Stack.Screen
