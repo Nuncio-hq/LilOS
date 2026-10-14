@@ -22,11 +22,11 @@ export {
 export { Screen } from "./components/screen";
 export { Mono, StateBlock } from "./components/state-block";
 export { ApprovalsSheet } from "./employees/approvals-sheet";
-export { type SlashItem } from "./employees/composer";
 export {
   BackgroundPill,
   BackgroundSheet,
 } from "./employees/background-sheet";
+export type { SlashItem } from "./employees/composer";
 export { DmHeaderTitle, EmployeeDmScreen } from "./employees/dm-screen";
 export { FolderPickerSheet, pickLabel } from "./employees/folder-picker";
 export {

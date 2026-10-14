@@ -154,11 +154,7 @@ export function Composer({
                   onPress={() => pickSlash(c)}
                   className="flex-row items-center gap-2 px-4 py-2.5 active:opacity-60"
                 >
-                  <Icon
-                    name="terminal"
-                    size={13}
-                    tone="muted-foreground"
-                  />
+                  <Icon name="terminal" size={13} tone="muted-foreground" />
                   <Text className="font-mono text-[13px] text-foreground">
                     /{c.name}
                     {c.argsHint ? (

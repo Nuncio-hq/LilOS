@@ -503,7 +503,7 @@ export const ENGINE_METHODS: Record<string, EngineMethodContract> = {
   "commands.exec": {
     params: CommandsExecParams,
     result: CommandsExecResult,
-    doc: "Run a picked command in the session. `outcome:\"output\"` posts the engine's reply in the thread; `outcome:\"prompt\"` (skills) expands to the prompt the harness sends as the next turn.",
+    doc: 'Run a picked command in the session. `outcome:"output"` posts the engine\'s reply in the thread; `outcome:"prompt"` (skills) expands to the prompt the harness sends as the next turn.',
     capability: "commands",
   },
 };

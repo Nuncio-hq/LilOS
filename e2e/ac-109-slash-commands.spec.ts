@@ -50,8 +50,7 @@ async function dmDefault(page: Page) {
 }
 
 const box = (page: Page) => page.locator("textarea").first();
-const menu = (page: Page) =>
-  page.getByRole("listbox", { name: "Commands" });
+const menu = (page: Page) => page.getByRole("listbox", { name: "Commands" });
 const rows = (page: Page) => page.locator("[data-slash-command]");
 
 async function sendDraft(page: Page, text: string) {
@@ -101,9 +100,9 @@ test("AC Enter inserts and sending execs the command in the engine", async ({
   /* Sending runs commands.exec: the fake's canned output lands as the
      employee's reply in the thread. */
   await page.keyboard.press("Enter");
-  await expect(
-    page.getByText(/Usage: in \d+ \/ out \d+/).last(),
-  ).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/Usage: in \d+ \/ out \d+/).last()).toBeVisible({
+    timeout: 30_000,
+  });
   await page.screenshot({ path: `${SHOTS}/ac-exec-output.png` });
 });
 
@@ -126,7 +125,9 @@ test("AC /model opens the picker the surface already owns", async ({
   await dmDefault(page);
   await sendDraft(page, "/model");
   await expect(
-    page.getByRole("dialog").or(page.locator('[aria-label="Model and reasoning"]')),
+    page
+      .getByRole("dialog")
+      .or(page.locator('[aria-label="Model and reasoning"]')),
   ).toBeVisible({ timeout: 15_000 });
   await page.screenshot({ path: `${SHOTS}/ac-model-picker.png` });
 });

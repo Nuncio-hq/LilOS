@@ -2786,7 +2786,10 @@ export const COMMANDS_SCENARIOS: Scenario[] = [
         capabilities: { id: string; methods?: string[] }[];
       };
       const cap = r.capabilities.find((c) => c.id === "commands");
-      assert(cap, "commands suite runs only against engines declaring commands");
+      assert(
+        cap,
+        "commands suite runs only against engines declaring commands",
+      );
       for (const m of ["commands.list", "commands.exec"])
         assert(
           cap?.methods?.includes(m) === true,
