@@ -563,10 +563,8 @@ function AppShell() {
           /* The same needs-you total the employee badges carry — one sum,
              never a second derivation. */
           count:
-            Object.values(badges).reduce(
-              (n, b) => n + (b.approvals ?? 0),
-              0,
-            ) || undefined,
+            Object.values(badges).reduce((n, b) => n + (b.approvals ?? 0), 0) ||
+            undefined,
           active: pathname === "/sessions",
           onOpen: () => {
             navOpen.set(false);

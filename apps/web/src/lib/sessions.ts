@@ -44,9 +44,9 @@ function stepLine(s: TurnStep): string {
 function liveStep(m: SessionModel | undefined): string | undefined {
   const steps = m?.live?.steps;
   if (!steps?.length) return undefined;
-  return stepLine(
-    steps.findLast((s) => s.status === "running") ?? steps.at(-1)!,
-  );
+  const step =
+    [...steps].reverse().find((s) => s.status === "running") ?? steps.at(-1);
+  return step ? stepLine(step) : undefined;
 }
 
 /* What a needs-you row is waiting on — the first open request, phrased like
@@ -141,8 +141,7 @@ export function sessionRows(args: {
   needsYou.sort((a, b) => a.last - b.last);
   running.sort((a, b) => b.last - a.last);
   finished.sort(
-    (a, b) =>
-      Number(b.row.unread) - Number(a.row.unread) || b.last - a.last,
+    (a, b) => Number(b.row.unread) - Number(a.row.unread) || b.last - a.last,
   );
   return {
     needsYou: needsYou.map((i) => i.row),

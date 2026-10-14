@@ -1,4 +1,4 @@
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { Pressable, ScrollView, View } from "react-native";
 import { AppText } from "../components/app-text";
 import { LargeTitle, SectionTitle } from "../components/bits";
 import { Icon } from "../components/icon";
@@ -27,7 +27,7 @@ function SessionItem({
         <View className="flex-row items-baseline gap-2">
           <AppText
             size="sm"
-            weight={r.unread ? "bold" : "semibold"}
+            weight="semibold"
             numberOfLines={1}
             className="flex-1 text-[14px] leading-[18px]"
           >
@@ -40,9 +40,7 @@ function SessionItem({
         <View className="flex-row items-center gap-1">
           {r.unread && <View className="size-2 rounded-full bg-primary" />}
           <AppText size="xs" tone="muted" numberOfLines={1} className="flex-1">
-            {[r.employeeName, r.folder, r.state]
-              .filter(Boolean)
-              .join(" · ")}
+            {[r.employeeName, r.folder, r.state].filter(Boolean).join(" · ")}
           </AppText>
         </View>
         {r.live ? (
@@ -57,7 +55,7 @@ function SessionItem({
           </AppText>
         ) : null}
       </View>
-      <Icon name="chevron.right" size={12} tone="muted" />
+      <Icon name="chevron.right" size={12} tone="muted-foreground" />
     </Pressable>
   );
 }
@@ -93,7 +91,9 @@ export function SessionsScreen({
   onOpen: (r: SessionListRow) => void;
 }) {
   const empty =
-    !groups.needsYou.length && !groups.running.length && !groups.finished.length;
+    !groups.needsYou.length &&
+    !groups.running.length &&
+    !groups.finished.length;
   return (
     <ScrollView
       className="flex-1"
@@ -103,7 +103,7 @@ export function SessionsScreen({
       <LargeTitle title="Sessions" />
       {empty ? (
         <View className="items-center gap-2 px-8 pt-20">
-          <Icon name="checklist" size={34} tone="muted" />
+          <Icon name="checklist" size={34} tone="muted-foreground" />
           <AppText weight="semibold">No sessions yet</AppText>
           <AppText size="sm" tone="muted" className="text-center">
             DM an employee to start a session — working, waiting and finished

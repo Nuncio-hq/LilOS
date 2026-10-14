@@ -1289,7 +1289,10 @@ export default function App() {
         const lastReply = t.replies.at(-1)
         const waiting = [...t.replies].reverse().find((r) => r.phase === "waiting")
         const liveReply = [...t.replies].reverse().find((r) => r.live)
-        const liveStep = liveReply?.steps?.findLast?.((s) => s.running) ?? liveReply?.steps?.at(-1)
+        const liveSteps = liveReply?.steps ?? []
+        const liveStep =
+          [...liveSteps].reverse().find((s) => s.running) ??
+          liveSteps.at(-1)
         const ask = waiting?.approval ?? lastReply?.approval
         const row: SessionRowVm = {
           id: m.id,

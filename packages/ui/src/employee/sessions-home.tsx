@@ -97,6 +97,7 @@ function SessionListRow({
           <span className="ml-auto flex shrink-0 items-center gap-1.5">
             {row.unread && (
               <span
+                role="img"
                 title="Finished since you last looked"
                 aria-label="Unread"
                 className="size-2 rounded-full bg-primary"
@@ -149,7 +150,6 @@ export function SessionsHome({
   activeId,
   onNav,
   onOpen,
-  onSearchMessages,
   loading,
 }: {
   groups: SessionGroups;
@@ -164,7 +164,9 @@ export function SessionsHome({
   const q = filter.trim().toLowerCase();
   const match = (r: SessionRowVm) =>
     !q ||
-    `${r.title}\n${r.employeeName}\n${r.folder ?? ""}`.toLowerCase().includes(q);
+    `${r.title}\n${r.employeeName}\n${r.folder ?? ""}`
+      .toLowerCase()
+      .includes(q);
   const needsYou = groups.needsYou.filter(match);
   const running = groups.running.filter(match);
   const finished = groups.finished.filter(match);

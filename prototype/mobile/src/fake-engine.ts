@@ -177,7 +177,7 @@ export const $sessionGroups = computed(
           ...base,
           state: "needs-you",
           live: ask?.approval
-            ? `Approve: ${ask.approval.command ?? ask.approval.what ?? ""}`
+            ? `Approve: ${ask.approval.command ?? ask.approval.reason ?? ""}`
             : undefined,
         });
       } else if (t.state === "working") {

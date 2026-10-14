@@ -113,12 +113,12 @@ export function EmployeesHomeScreen({
           </AppText>
           {sessions.count ? (
             <View className="min-w-5 items-center rounded-full bg-primary px-1.5 py-0.5">
-              <AppText size="xs" weight="bold" tone="inverse">
+              <AppText size="xs" weight="semibold" tone="inverse">
                 {sessions.count}
               </AppText>
             </View>
           ) : null}
-          <Icon name="chevron.right" size={12} tone="muted" />
+          <Icon name="chevron.right" size={12} tone="muted-foreground" />
         </Pressable>
       )}
 

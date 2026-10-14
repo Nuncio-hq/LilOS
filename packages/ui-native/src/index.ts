@@ -33,7 +33,6 @@ export {
   EmployeesHomeScreen,
   NeedsYouAccessory,
 } from "./employees/home-screen";
-export { SessionsScreen } from "./employees/sessions-screen";
 export { MacFolderBrowser } from "./employees/mac-folder-browser";
 export { type MacDetail, MacSheet } from "./employees/mac-sheet";
 export {
@@ -60,6 +59,7 @@ export {
   QuestionCard,
 } from "./employees/question-card";
 export { waitingOnQuestion } from "./employees/question-gate";
+export { SessionsScreen } from "./employees/sessions-screen";
 export {
   SubagentSheet,
   SubagentsCard,
