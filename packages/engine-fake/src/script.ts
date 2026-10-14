@@ -368,6 +368,28 @@ ${tail}`,
     };
   }
 
+  /* Non-image attachments reach the prompt as plain text — the harness
+     copies the bytes into the session folder and names each path after
+     "saved into the session folder". Echo the paths back so a test can
+     prove the agent got a readable path, like the image echo above. */
+  const attachedFiles = [
+    ...prompt.matchAll(/^- (.+ \(\d+(?:\.\d+)? \w+\))$/gm),
+  ].map((m) => m[1]);
+  if (/saved into the session folder/.test(prompt) && attachedFiles.length) {
+    const list = attachedFiles.join(", ");
+    return {
+      reasoning: `Oscar attached ${attachedFiles.length === 1 ? "a file" : `${attachedFiles.length} files`}: ${list}. The harness saved the bytes into the session folder and named each path in the prompt; answer about ${q ? `"${q}"` : "them"} citing what arrived.`,
+      steps: [
+        {
+          tool: "read_file",
+          input: { paths: attachedFiles },
+          output: `read ${list}`,
+        },
+      ],
+      text: `Got your file${attachedFiles.length > 1 ? "s" : ""} — ${list}. ${attachedFiles.length === 1 ? "It" : "They"} landed in the session folder and the prompt named ${attachedFiles.length === 1 ? "its" : "their"} path${attachedFiles.length > 1 ? "s" : ""}; a real engine reads ${attachedFiles.length === 1 ? "it" : "them"} with file tools — this fake proves the hand-off.`,
+    };
+  }
+
   /* #179: delegation — three helpers, the middle one fails; an @mention of
      another employee tags that helper as an employee-helper (the engine
      links it to their live session when one exists). `LILOS_DELEGATE` is

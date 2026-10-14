@@ -548,7 +548,9 @@ export const PromptInput = ({
       if (accepted.length > 0 && sized.length === 0) {
         onError?.({
           code: "max_file_size",
-          message: "All files exceed the maximum size.",
+          message: maxFileSize
+            ? `That file is too large to attach (${formatBytes(maxFileSize)} max per file).`
+            : "All files exceed the maximum size.",
         });
         return;
       }
@@ -557,7 +559,9 @@ export const PromptInput = ({
       if (sized.length < accepted.length) {
         onError?.({
           code: "max_file_size",
-          message: "Some files exceed the maximum size and were not added.",
+          message: maxFileSize
+            ? `Some files were too large to attach (${formatBytes(maxFileSize)} max per file) and were left out.`
+            : "Some files exceed the maximum size and were not added.",
         });
       }
 

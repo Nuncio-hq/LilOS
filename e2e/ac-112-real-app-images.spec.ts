@@ -158,7 +158,7 @@ test("AC-1 attach button + pick/drop/paste chips in both composers", async ({
   await expect(page.locator('main input[type="file"]')).toHaveCount(1);
   await expect(page.locator('main input[type="file"]')).toHaveAttribute(
     "accept",
-    "image/*",
+    "*/*",
   );
   await expect(page.locator('main [aria-label="Attach files"]')).toBeVisible();
 
@@ -189,7 +189,7 @@ test("AC-1 attach button + pick/drop/paste chips in both composers", async ({
   await page.screenshot({ path: `${SHOTS}/ac1-thread.png` });
 });
 
-test("AC-1b without image_prompt no attach affordance renders", async ({
+test("AC-1b without image_prompt attaching still works — as files, not image blocks", async ({
   page,
 }) => {
   stack2 = await bootStack("ac112b", await pickPorts(), {
@@ -197,17 +197,13 @@ test("AC-1b without image_prompt no attach affordance renders", async ({
     LILOS_HIDE_CAPS: "image_prompt",
   });
   await dmDefault(page, stack2.webUrl);
-  await expect(page.locator('[aria-label="Attach files"]')).toHaveCount(0);
-  await expect(page.locator('main input[type="file"]')).not.toHaveAttribute(
-    "accept",
-    /.+/,
-  );
-  // A dropped file is ignored entirely — no chip, nothing to send.
+  /* Attach is no longer gated on image_prompt — that capability only
+     decides whether image/* arrives as image content blocks; without it
+     the same file goes through the session-folder path like any other. */
+  await expect(page.locator('main [aria-label="Attach files"]')).toBeVisible();
   await attach(page, "drop", "dropped.png");
-  await expect(page.locator("main form").getByText("dropped.png")).toHaveCount(
-    0,
-  );
-  await page.screenshot({ path: `${SHOTS}/ac1b-no-cap.png` });
+  await expect(page.locator("main form").getByText("dropped.png")).toBeVisible();
+  await page.screenshot({ path: `${SHOTS}/ac1b-file-attach.png` });
 });
 
 test("AC-2 sends attachments over conversations.open and messages.post", async ({
@@ -356,7 +352,7 @@ test("AC-4 oversize and too many files toast and send nothing", async ({
       new DragEvent("drop", { dataTransfer: dt, bubbles: true }),
     );
   });
-  await expect(page.locator(TOAST)).toContainText(/exceed the maximum size/);
+  await expect(page.locator(TOAST)).toContainText(/too large/);
   await expect(formOf(page, "home").getByText("huge.png")).toHaveCount(0);
   expect(await sessions()).toBe(sessionsBefore);
   await page.screenshot({ path: `${SHOTS}/ac4-oversize.png` });
