@@ -396,7 +396,6 @@ function useThread(conversationId: string) {
     messages,
     channels,
     conversations,
-    messages,
     /* #560: the meter's Compact now — button only under the declared
        capability (D-#19). */
     compactCapable: hasCap("compact"),
