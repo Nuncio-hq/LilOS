@@ -345,9 +345,15 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
     ],
   },
   {
+    /* Gateway `team_hire` asks carry the hire draft JSON so the card
+       renders the real proposal; NULL on every engine ask. */
+    version: 25,
+    statements: [`ALTER TABLE asks ADD COLUMN hire TEXT`],
+  },
+  {
     /* #561 AC-3: the employee's notification mute — phone pushes and Mac
        banners both read it; stored here so every surface agrees. */
-    version: 25,
+    version: 26,
     statements: [
       `ALTER TABLE employees ADD COLUMN muted INTEGER NOT NULL DEFAULT 0`,
     ],
