@@ -231,8 +231,7 @@ export function Composer({
     setSlashNav({ query: slashQ, hits: slashHits });
     setSlashActive(0);
   }
-  const slashOpen =
-    !slashDismissed && slashQ !== null && !!onSearchCommands;
+  const slashOpen = !slashDismissed && slashQ !== null && !!onSearchCommands;
   const slashRows = slashHits ?? [];
   const pickSlash = (item: SlashItem) => {
     const next = insertSlash(item.name);
@@ -529,6 +528,15 @@ export function Composer({
                   e.key === "Enter" ||
                   e.key === "Tab")
               ) {
+                /* "No matches" doesn't own Enter/Tab — the full `/cmd`
+                   draft still submits so the engine (or an app-owned
+                   command) sees it. */
+                if (
+                  slashRows.length === 0 &&
+                  e.key !== "ArrowDown" &&
+                  e.key !== "ArrowUp"
+                )
+                  return;
                 e.preventDefault();
                 if (slashRows.length === 0) return;
                 if (e.key === "ArrowDown") {
