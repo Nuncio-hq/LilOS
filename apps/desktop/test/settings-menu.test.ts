@@ -15,13 +15,18 @@ const menus = () => {
     () => calls.push("settings"),
     () => calls.push("status"),
     (action) => calls.push(`find:${action}`),
+    (action) => calls.push(`shortcut:${action}`),
   );
   const appMenu = items.find((i) => i.label === "LilOS");
+  const fileMenu = items.find((i) => i.label === "File");
   const editMenu = items.find((i) => i.label === "Edit");
+  const goMenu = items.find((i) => i.label === "Go");
   return {
     calls,
     sub: (appMenu?.submenu ?? []) as MenuItemConstructorOptions[],
+    file: (fileMenu?.submenu ?? []) as MenuItemConstructorOptions[],
     edit: (editMenu?.submenu ?? []) as MenuItemConstructorOptions[],
+    go: (goMenu?.submenu ?? []) as MenuItemConstructorOptions[],
   };
 };
 
@@ -59,5 +64,39 @@ describe("AC-2 (#554) Find is listed in the Edit menu", () => {
       item?.click?.(item as never, undefined as never, {} as never);
     }
     expect(calls).toEqual(["find:open", "find:next", "find:prev"]);
+  });
+});
+
+describe("keyboard navigation in the app menu", () => {
+  it("File → New Session ⌘N routes into the window", () => {
+    const { calls, file } = menus();
+    const item = file.find((i) => i.label === "New Session");
+    expect(item?.accelerator).toBe("CmdOrCtrl+N");
+    item?.click?.(item as never, undefined as never, {} as never);
+    expect(calls).toEqual(["shortcut:new-session"]);
+  });
+
+  it("Go lists every navigation chord and the digit jumps", () => {
+    const { calls, go } = menus();
+    const byLabel = Object.fromEntries(
+      go.filter((i) => i.label).map((i) => [i.label, i]),
+    );
+    expect(byLabel["Quick Switcher"]?.accelerator).toBe("CmdOrCtrl+K");
+    expect(byLabel.Back?.accelerator).toBe("CmdOrCtrl+[");
+    expect(byLabel.Forward?.accelerator).toBe("CmdOrCtrl+]");
+    expect(byLabel["Keyboard Shortcuts"]?.accelerator).toBe("CmdOrCtrl+/");
+    for (let n = 1; n <= 9; n++) {
+      expect(byLabel[`Employee ${n}`]?.accelerator).toBe(`CmdOrCtrl+${n}`);
+    }
+    for (const item of go.filter((i) => i.click)) {
+      item.click?.(item as never, undefined as never, {} as never);
+    }
+    expect(calls).toEqual([
+      "shortcut:quick-switcher",
+      "shortcut:back",
+      "shortcut:forward",
+      ...Array.from({ length: 9 }, (_, i) => `shortcut:employee-${i + 1}`),
+      "shortcut:shortcuts",
+    ]);
   });
 });

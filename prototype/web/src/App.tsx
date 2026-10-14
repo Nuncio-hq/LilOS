@@ -17,9 +17,11 @@ import {
   PairPhoneDialog,
   type PairPhoneState,
   type PreviewScenario,
+  QuickSwitcher,
   PrototypePreviewMenu,
   StatusBanner,
   StatusDialog,
+  ShortcutsDialog,
   type Folder,
   type AttachedFile,
   type Channel,
@@ -52,6 +54,7 @@ import {
   type PullRequest,
   type ProfileConnection,
   type Thread,
+  type SwitcherItem,
   type TicketRow,
   type TranscriptNote,
   type Work,
@@ -74,6 +77,7 @@ import {
   baseName,
   folderLabel,
   plain,
+  sessionLife,
   slugOf,
   useTheme,
   draftKey,
@@ -1234,6 +1238,7 @@ export default function App() {
   }, [feeds, employees, resolved])
 
 
+
   const channel: Channel =
     view.kind === "dm"
       ? { id: `dm-${view.id}`, name: emp(view.id)?.name ?? "", employees: [view.id], dm: true }
@@ -1640,6 +1645,99 @@ export default function App() {
   const [folders, setFolders] = useState<Folder[]>(FOLDERS)
   // Last folder/branch pick per employee DM, so it survives navigating away (like an IDE's open project).
   const [wsPicks, setWsPicks] = useState<Record<string, WsPick>>({})
+
+  /* ⌘K quick switcher + ⌘/ shortcut list. The prototype binds only the
+     web-safe chords — ⌘N and ⌘1–9 are browser-reserved, so they exist
+     only as Electron menu accelerators in the real shell. */
+  const [switcherOpen, setSwitcherOpen] = useState(false)
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  const switcherItems = useMemo<SwitcherItem[]>(() => [
+    ...employees.map((e) => ({
+      kind: "employee" as const,
+      id: e.id,
+      title: e.name,
+      subtitle: e.role,
+      running: (badges[e.id]?.running ?? 0) > 0,
+      needsYou: (badges[e.id]?.approvals ?? 0) > 0,
+    })),
+    ...employees.flatMap((e) =>
+      (feeds[`dm-${e.id}`] ?? []).flatMap((m) => {
+        if (m.kind !== "msg" || !m.thread) return []
+        const t = m.thread
+        const first = m.text.split("\n")[0]
+        return [{
+          kind: "session" as const,
+          id: `${e.id}:${m.id}`,
+          title: t.title || first,
+          subtitle: `${e.name} · ${first}`,
+          match: m.text,
+          archived: t.archived,
+          running: sessionLife(t) === "running",
+          needsYou: t.replies.some((r) => r.approval && !resolved[r.approval.id]),
+        }]
+      }),
+    ),
+    ...folders.map((f) => ({
+      kind: "folder" as const,
+      id: f.id,
+      title: folderLabel(f, folders),
+      subtitle: f.path,
+    })),
+  ], [employees, feeds, folders, badges, resolved])
+  /* The DM home's new-session surface: the session list with the composer
+     (workspace picker included) — no thread open. */
+  const dmHome = (id: string) => {
+    setView({ kind: "dm", id })
+    setThreadId(null)
+    setPanelTab("thread")
+    setFocus(false)
+    setNavOpen(false)
+  }
+  const pickSwitcher = (item: SwitcherItem) => {
+    setSwitcherOpen(false)
+    if (item.kind === "employee") {
+      goDM(item.id)
+      return
+    }
+    if (item.kind === "session") {
+      const [empId, msgId] = item.id.split(":")
+      setView({ kind: "dm", id: empId })
+      setThreadId(msgId)
+      setPanelTab("thread")
+      setPanelOpen(true)
+      setFocus(false)
+      setNavOpen(false)
+      return
+    }
+    /* A folder pick opens a new session in it with the current employee. */
+    const emp = view.kind === "dm" ? view.id : selectedEmp || employees[0]?.id
+    if (!emp) return
+    const f = folders.find((x) => x.id === item.id)
+    setWsPicks((w) => ({
+      ...w,
+      [emp]: { folder: item.id, base: f?.branches[0] ?? "", mode: "direct" },
+    }))
+    dmHome(emp)
+  }
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      /* IME composition and the terminal view own their keys. */
+      if (e.isComposing) return
+      const el = e.target as HTMLElement | null
+      if (el?.closest?.("[data-lilos-terminal]")) return
+      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return
+      const k = e.key.toLowerCase()
+      if (k === "k") {
+        e.preventDefault()
+        setSwitcherOpen((o) => !o)
+      } else if (k === "/") {
+        e.preventDefault()
+        setShortcutsOpen((o) => !o)
+      }
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [])
   const [newProjects, setNewProjects] = useState<Project[]>([])
   const [addFolderOpen, setAddFolderOpen] = useState(false)
   /* #581 AC-2: "Add a folder" on a folder-less thread moves the session
@@ -2349,6 +2447,16 @@ export default function App() {
           onClose={() => setStatusOpen(false)}
           onCopied={() => say("Diagnostics copied")}
         />
+      )}
+      {switcherOpen && (
+        <QuickSwitcher
+          items={switcherItems}
+          onPick={pickSwitcher}
+          onClose={() => setSwitcherOpen(false)}
+        />
+      )}
+      {shortcutsOpen && (
+        <ShortcutsDialog desktop onClose={() => setShortcutsOpen(false)} />
       )}
       {pairPhone && (
         <PairPhoneDialog
