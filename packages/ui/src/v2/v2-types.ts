@@ -22,7 +22,7 @@ export type V2Agent = {
   id: string;
   name: string;
   role: string;
-  engine: string;
+  runtime: import("./v2-runtime").V2Runtime;
   /** Default model for new threads. */
   model?: string;
   /** Skills installed on the profile. */

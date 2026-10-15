@@ -1,13 +1,70 @@
-import { ArrowRightIcon } from "lucide-react";
+import {
+  CheckCircle2Icon,
+  CircleAlertIcon,
+  CircleDotIcon,
+  FlagIcon,
+  MessageCircleQuestionIcon,
+  PlayIcon,
+  PlusIcon,
+  SparklesIcon,
+  UsersIcon,
+  XCircleIcon,
+} from "lucide-react";
 import { cn } from "../lib/utils";
 import { HermesAvatar } from "../shell/avatars";
 import { ago, StateDot } from "./v2-bits";
+import { RuntimeIcon } from "./v2-runtime";
 import type { V2Activity, V2Agent, V2Project, V2Thread } from "./v2-types";
 import { V2_ATTENTION } from "./v2-types";
+import { IconStat, ProjectChip, StateBar } from "./v2-viz";
+import { LiveStepIcon } from "./v2-worklog";
 
-/* Company home: the board-level view. What the company is doing, who is
-   doing it, what needs you. Numbers first, then the people at work, then
-   what happened. Every row opens the thread behind it. */
+/* What an activity verb looks like: an icon, not a word. */
+const VERB_ICON: Record<string, { icon: typeof PlayIcon; cls: string }> = {
+  started: { icon: PlayIcon, cls: "text-work" },
+  "is running": { icon: CircleDotIcon, cls: "text-work" },
+  "asked to run": { icon: FlagIcon, cls: "text-amber-500" },
+  asked: { icon: MessageCircleQuestionIcon, cls: "text-amber-500" },
+  finished: { icon: CheckCircle2Icon, cls: "text-emerald-500" },
+  "failed on": { icon: XCircleIcon, cls: "text-red-500" },
+};
+
+function Card({
+  title,
+  icon,
+  count,
+  action,
+  children,
+  className,
+}: {
+  title: string;
+  icon: React.ReactNode;
+  count?: number;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <section
+      className={cn("rounded-2xl p-4 ring-1 ring-foreground/[0.07]", className)}
+    >
+      <div className="mb-3 flex h-6 items-center gap-2">
+        <span className="text-muted-foreground [&_svg]:size-4">{icon}</span>
+        <h2 className="font-semibold text-[13px]">{title}</h2>
+        {count !== undefined && (
+          <span className="text-[12px] text-muted-foreground tabular-nums">
+            {count}
+          </span>
+        )}
+        <span className="ml-auto">{action}</span>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+/* Company home: the board at a glance. Numbers as big figures, work as
+   bars and rows of icons, words only where a name is needed. */
 export function V2CompanyHome({
   company,
   threads,
@@ -33,32 +90,44 @@ export function V2CompanyHome({
     (a) => a.verb === "finished" && a.ago < 1440,
   ).length;
   const live = agents.filter((a) => !a.soon);
-  const busy = new Set(working.map((t) => t.agentId));
   const agent = (id: string) => agents.find((a) => a.id === id);
-  const project = (id?: string) => projects.find((p) => p.id === id);
+  const pIndex = (id?: string) => projects.findIndex((p) => p.id === id);
+  const pName = (id?: string) =>
+    projects.find((p) => p.id === id)?.name ?? "No project";
+  const open = threads.filter(
+    (t) => t.state !== "settled" && t.state !== "snoozed",
+  );
+  const countsFor = (ts: V2Thread[]) =>
+    ts.reduce<Partial<Record<V2Thread["state"], number>>>((m, t) => {
+      m[t.state] = (m[t.state] ?? 0) + 1;
+      return m;
+    }, {});
 
-  const stats: {
-    value: number;
-    label: string;
-    hint: string;
-    onClick?: () => void;
-  }[] = [
+  const stats = [
     {
       value: working.length,
-      label: "Working now",
-      hint: `${busy.size} of ${live.length} agents busy`,
+      label: "Working",
+      icon: <CircleDotIcon />,
+      cls: "text-work",
     },
     {
       value: needs.length,
       label: "Need you",
-      hint: "Decide, fix or look",
+      icon: <CircleAlertIcon />,
+      cls: "text-amber-500",
       onClick: onNeedsYou,
     },
-    { value: doneToday, label: "Finished today", hint: "Across all projects" },
+    {
+      value: doneToday,
+      label: "Done today",
+      icon: <CheckCircle2Icon />,
+      cls: "text-emerald-500",
+    },
     {
       value: live.length,
       label: "Agents",
-      hint: "Hermes profiles",
+      icon: <UsersIcon />,
+      cls: "text-muted-foreground",
       onClick: onAgents,
     },
   ];
@@ -69,109 +138,147 @@ export function V2CompanyHome({
         <h1 className="font-semibold text-[14px]">{company}</h1>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-[60rem] px-8 pt-6 pb-12">
-          <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl bg-foreground/[0.07] ring-1 ring-foreground/[0.07] lg:grid-cols-4">
+        <div className="mx-auto flex w-full max-w-[64rem] flex-col gap-4 px-8 pt-4 pb-12">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             {stats.map((s) => (
               <button
                 key={s.label}
                 type="button"
                 disabled={!s.onClick}
                 onClick={s.onClick}
-                className="bg-[var(--v2-main)] px-5 py-4 text-left transition-colors enabled:hover:bg-foreground/[0.02]"
+                className="flex items-center gap-3 rounded-2xl px-4 py-3.5 text-left ring-1 ring-foreground/[0.07] transition-colors enabled:hover:bg-foreground/[0.02]"
               >
-                <div className="font-semibold text-[28px] tracking-tight tabular-nums leading-none">
+                <span className={cn("[&_svg]:size-5", s.cls)}>{s.icon}</span>
+                <span className="font-semibold text-[26px] tracking-tight tabular-nums leading-none">
                   {s.value}
-                </div>
-                <div className="mt-2 font-medium text-[13px]">{s.label}</div>
-                <div className="mt-0.5 text-[12px] text-muted-foreground">
-                  {s.hint}
-                </div>
+                </span>
+                <span className="ml-auto text-[12px] text-muted-foreground">
+                  {s.label}
+                </span>
               </button>
             ))}
           </div>
 
-          <div className="mt-10 grid gap-10 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
-            <section>
-              <div className="mb-3 flex items-baseline justify-between">
-                <h2 className="font-semibold text-[13px]">At work</h2>
-                <span className="text-[12px] text-muted-foreground">
-                  {working.length} running
-                </span>
-              </div>
-              <div className="flex flex-col gap-2">
-                {working.map((t) => {
-                  const a = agent(t.agentId);
-                  return (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => onOpen(t.id)}
-                      className="group rounded-xl px-3.5 py-3 text-left ring-1 ring-foreground/[0.07] transition-colors hover:bg-foreground/[0.02]"
-                    >
-                      <div className="flex items-center gap-2.5">
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+            <div className="flex flex-col gap-4">
+              <Card
+                title="At work"
+                icon={<SparklesIcon />}
+                count={working.length}
+              >
+                <div className="flex flex-col gap-1.5">
+                  {working.map((t) => {
+                    const a = agent(t.agentId);
+                    return (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => onOpen(t.id)}
+                        className="flex items-center gap-3 rounded-xl px-2 py-2 text-left transition-colors hover:bg-foreground/[0.03]"
+                      >
                         <HermesAvatar
                           name={a?.name}
                           status="busy"
-                          className="size-7"
+                          className="size-8"
                         />
                         <div className="min-w-0 flex-1">
                           <div className="truncate font-medium text-[13.5px]">
                             {t.title}
                           </div>
-                          <div className="truncate text-[12px] text-muted-foreground">
-                            {a?.name} · {project(t.projectId)?.name}
-                          </div>
+                          {t.live && (
+                            <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[11.5px] text-muted-foreground">
+                              <LiveStepIcon kind={t.live.step.kind} />
+                              <span className="min-w-0 truncate font-mono">
+                                {t.live.step.target}
+                              </span>
+                            </div>
+                          )}
                         </div>
-                        <ArrowRightIcon className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
-                      </div>
-                      {t.live && (
-                        <div className="mt-2.5 flex items-center gap-2 rounded-lg bg-foreground/[0.035] px-2.5 py-1.5 font-mono text-[11.5px] text-foreground/75">
-                          <span className="lilos-v2-breathe inline-block size-1.5 shrink-0 rounded-full border border-work" />
-                          <span className="min-w-0 flex-1 truncate">
-                            {t.live.step.target}
-                          </span>
-                          <span className="shrink-0 text-muted-foreground tabular-nums">
-                            {t.live.elapsed}
-                          </span>
-                        </div>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
+                        <ProjectChip
+                          name={pName(t.projectId)}
+                          index={pIndex(t.projectId)}
+                        />
+                        <span className="w-12 shrink-0 text-right text-[11.5px] text-muted-foreground tabular-nums">
+                          {t.live?.elapsed}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </Card>
 
+              <Card
+                title="Projects"
+                icon={<FlagIcon />}
+                count={projects.length}
+              >
+                <div className="flex flex-col gap-3">
+                  {projects.map((p, i) => {
+                    const mine = open.filter((t) => t.projectId === p.id);
+                    if (mine.length === 0) return null;
+                    const ppl = Array.from(new Set(mine.map((t) => t.agentId)));
+                    return (
+                      <div key={p.id} className="flex items-center gap-3">
+                        <ProjectChip
+                          name={p.name}
+                          index={i}
+                          className="size-6 text-[10px]"
+                        />
+                        <div className="w-24 shrink-0 truncate font-medium text-[13px]">
+                          {p.name}
+                        </div>
+                        <StateBar counts={countsFor(mine)} className="flex-1" />
+                        <span className="flex -space-x-1.5">
+                          {ppl.slice(0, 3).map((id) => (
+                            <HermesAvatar
+                              key={id}
+                              name={agent(id)?.name}
+                              className="size-5 ring-2 ring-[var(--v2-main)]"
+                            />
+                          ))}
+                        </span>
+                      </div>
+                    );
+                  })}
+                  <div className="flex flex-wrap gap-x-3 gap-y-1 pt-1 text-[11px] text-muted-foreground">
+                    <Legend cls="bg-amber-500" label="Needs you" />
+                    <Legend cls="bg-red-500" label="Failed" />
+                    <Legend cls="bg-work" label="Working" />
+                    <Legend cls="bg-primary" label="New" />
+                    <Legend cls="bg-foreground/15" label="Idle" />
+                  </div>
+                </div>
+              </Card>
+            </div>
+
+            <div className="flex flex-col gap-4">
               {needs.length > 0 && (
-                <>
-                  <div className="mt-8 mb-3 flex items-baseline justify-between">
-                    <h2 className="font-semibold text-[13px]">Needs you</h2>
+                <Card
+                  title="Needs you"
+                  icon={<CircleAlertIcon />}
+                  count={needs.length}
+                  action={
                     <button
                       type="button"
                       onClick={onNeedsYou}
                       className="text-[12px] text-muted-foreground hover:text-foreground"
                     >
-                      See all
+                      All
                     </button>
-                  </div>
-                  <div className="overflow-hidden rounded-xl ring-1 ring-foreground/[0.07]">
-                    {needs.slice(0, 4).map((t, i) => (
+                  }
+                >
+                  <div className="flex flex-col">
+                    {needs.slice(0, 4).map((t) => (
                       <button
                         key={t.id}
                         type="button"
                         onClick={() => onOpen(t.id)}
-                        className={cn(
-                          "flex w-full items-center gap-3 px-3.5 py-2.5 text-left transition-colors hover:bg-foreground/[0.02]",
-                          i > 0 && "border-foreground/[0.06] border-t",
-                        )}
+                        className="flex h-9 items-center gap-2.5 rounded-lg px-2 text-left transition-colors hover:bg-foreground/[0.03]"
                       >
                         <StateDot state={t.state} />
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate font-medium text-[13px]">
-                            {t.title}
-                          </div>
-                          <div className="truncate text-[12px] text-muted-foreground">
-                            {t.ask?.text ?? t.line}
-                          </div>
-                        </div>
+                        <span className="min-w-0 flex-1 truncate text-[13px]">
+                          {t.title}
+                        </span>
                         <HermesAvatar
                           name={agent(t.agentId)?.name}
                           className="size-5"
@@ -179,48 +286,47 @@ export function V2CompanyHome({
                       </button>
                     ))}
                   </div>
-                </>
+                </Card>
               )}
-            </section>
 
-            <section>
-              <div className="mb-3 flex items-baseline justify-between">
-                <h2 className="font-semibold text-[13px]">Activity</h2>
-                <span className="text-[12px] text-muted-foreground">Today</span>
-              </div>
-              <ol className="relative">
-                {activity.map((e, i) => {
-                  const a = agent(e.agentId);
-                  return (
-                    <li key={e.id} className="relative flex gap-3 pb-4">
-                      {i < activity.length - 1 && (
-                        <span className="absolute top-6 bottom-0 left-[9.5px] w-px bg-foreground/[0.08]" />
-                      )}
-                      <HermesAvatar
-                        name={a?.name}
-                        className="relative size-5 shrink-0"
-                      />
-                      <button
-                        type="button"
-                        disabled={!e.threadId}
-                        onClick={() => e.threadId && onOpen(e.threadId)}
-                        className="min-w-0 flex-1 text-left text-[12.5px] leading-snug enabled:hover:[&_.obj]:underline"
-                      >
-                        <span className="font-medium">{a?.name}</span>{" "}
-                        <span className="text-muted-foreground">{e.verb}</span>{" "}
-                        <span className="obj underline-offset-2">
-                          {e.object}
-                        </span>
-                        <span className="mt-0.5 block text-[11.5px] text-muted-foreground">
-                          {project(e.projectId)?.name ?? "No project"} ·{" "}
-                          {ago(e.ago)} ago
-                        </span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ol>
-            </section>
+              <Card title="Activity" icon={<CircleDotIcon />}>
+                <ol className="flex flex-col">
+                  {activity.slice(0, 8).map((e) => {
+                    const a = agent(e.agentId);
+                    const v = VERB_ICON[e.verb] ?? VERB_ICON.started;
+                    const Icon = v.icon;
+                    return (
+                      <li key={e.id}>
+                        <button
+                          type="button"
+                          disabled={!e.threadId}
+                          onClick={() => e.threadId && onOpen(e.threadId)}
+                          title={`${a?.name} ${e.verb} ${e.object}`}
+                          className="flex h-9 w-full items-center gap-2.5 rounded-lg px-2 text-left transition-colors enabled:hover:bg-foreground/[0.03]"
+                        >
+                          <span className="relative">
+                            <HermesAvatar name={a?.name} className="size-6" />
+                            <Icon
+                              className={cn(
+                                "absolute -right-1 -bottom-1 size-3.5 rounded-full bg-[var(--v2-main)]",
+                                v.cls,
+                              )}
+                            />
+                          </span>
+                          <span className="min-w-0 flex-1 truncate text-[12.5px]">
+                            {threads.find((t) => t.id === e.threadId)?.title ??
+                              e.object}
+                          </span>
+                          <span className="w-8 shrink-0 text-right text-[11px] text-muted-foreground tabular-nums">
+                            {ago(e.ago)}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ol>
+              </Card>
+            </div>
           </div>
         </div>
       </div>
@@ -228,18 +334,30 @@ export function V2CompanyHome({
   );
 }
 
-/* Agents: the roster. Each profile with its role, default model, what it is
-   doing now and how much it has on. Like an org chart's people page. */
+function Legend({ cls, label }: { cls: string; label: string }) {
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span className={cn("size-1.5 rounded-full", cls)} />
+      {label}
+    </span>
+  );
+}
+
+/* Agents: the roster as cards you can read in a second. Avatar, name,
+   runtime as its logo, then icons with numbers: open threads, need you,
+   skills, and a bar of what its threads are doing. */
 export function V2Agents({
   agents,
   threads,
   projects,
   onOpen,
+  onHire,
 }: {
   agents: V2Agent[];
   threads: V2Thread[];
   projects: V2Project[];
   onOpen: (id: string) => void;
+  onHire: () => void;
 }) {
   const live = agents.filter((a) => !a.soon);
   const later = agents.filter((a) => a.soon);
@@ -252,76 +370,96 @@ export function V2Agents({
         </span>
         <button
           type="button"
-          className="ml-auto h-7 rounded-full bg-foreground px-3 font-medium text-[12px] text-background active:scale-[0.97]"
+          onClick={onHire}
+          className="ml-auto flex h-7 items-center gap-1 rounded-full bg-foreground pr-3 pl-2.5 font-medium text-[12px] text-background active:scale-[0.97]"
         >
+          <PlusIcon className="size-3.5" />
           Hire
         </button>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto grid w-full max-w-[60rem] gap-3 px-8 pt-6 pb-12 sm:grid-cols-2">
+        <div className="mx-auto grid w-full max-w-[64rem] gap-3 px-8 pt-4 pb-12 sm:grid-cols-2 xl:grid-cols-3">
           {live.map((a) => {
-            const mine = threads.filter((t) => t.agentId === a.id);
+            const mine = threads.filter(
+              (t) => t.agentId === a.id && t.state !== "settled",
+            );
             const run = mine.find((t) => t.state === "working");
             const needs = mine.filter((t) =>
               V2_ATTENTION.includes(t.state),
             ).length;
-            const active = mine.filter((t) => t.state !== "settled").length;
-            const where = Array.from(
-              new Set(
-                mine
-                  .filter((t) => t.state !== "settled")
-                  .map((t) => projects.find((p) => p.id === t.projectId)?.name)
-                  .filter(Boolean),
-              ),
-            );
+            const counts = mine.reduce<
+              Partial<Record<V2Thread["state"], number>>
+            >((m, t) => {
+              m[t.state] = (m[t.state] ?? 0) + 1;
+              return m;
+            }, {});
+            const where = Array.from(new Set(mine.map((t) => t.projectId)));
             return (
               <div
                 key={a.id}
-                className="rounded-2xl p-4 ring-1 ring-foreground/[0.07]"
+                className="flex flex-col gap-3 rounded-2xl p-4 ring-1 ring-foreground/[0.07]"
               >
-                <div className="flex items-start gap-3">
+                <div className="flex items-center gap-3">
                   <HermesAvatar
                     name={a.name}
                     status={run ? "busy" : "online"}
                     className="size-10"
                   />
                   <div className="min-w-0 flex-1">
-                    <div className="font-semibold text-[14px]">{a.name}</div>
-                    <div className="text-[12.5px] text-muted-foreground">
-                      {a.role}
+                    <div className="truncate font-semibold text-[14px]">
+                      {a.name}
+                    </div>
+                    <div className="truncate text-[12px] text-muted-foreground">
+                      {a.model}
                     </div>
                   </div>
-                  {needs > 0 && (
-                    <span className="rounded-full bg-amber-500/15 px-2 py-0.5 font-medium text-[11px] text-amber-700 dark:text-amber-300">
-                      {needs} need you
-                    </span>
-                  )}
+                  <RuntimeIcon
+                    runtime={a.runtime}
+                    className="size-7 rounded-lg"
+                  />
                 </div>
-                <dl className="mt-4 grid grid-cols-3 gap-2 text-[12px]">
-                  <div>
-                    <dt className="text-muted-foreground">Runs on</dt>
-                    <dd className="mt-0.5 truncate font-medium">{a.engine}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-muted-foreground">Model</dt>
-                    <dd className="mt-0.5 truncate font-medium">{a.model}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-muted-foreground">Skills</dt>
-                    <dd className="mt-0.5 font-medium tabular-nums">
-                      {a.skills}
-                    </dd>
-                  </div>
-                </dl>
+                <StateBar counts={counts} />
+                <div className="flex items-center gap-3">
+                  <IconStat
+                    icon={<CircleDotIcon />}
+                    value={mine.length}
+                    label="Open threads"
+                  />
+                  {needs > 0 && (
+                    <IconStat
+                      icon={<CircleAlertIcon />}
+                      value={needs}
+                      label="Need you"
+                      tone="amber"
+                    />
+                  )}
+                  <IconStat
+                    icon={<SparklesIcon />}
+                    value={a.skills ?? 0}
+                    label="Skills"
+                  />
+                  <span className="ml-auto flex gap-1">
+                    {where.map((pid) => {
+                      const i = projects.findIndex((p) => p.id === pid);
+                      return (
+                        <ProjectChip
+                          key={pid}
+                          name={projects[i]?.name ?? "No project"}
+                          index={i}
+                        />
+                      );
+                    })}
+                  </span>
+                </div>
                 <button
                   type="button"
                   disabled={!run}
                   onClick={() => run && onOpen(run.id)}
-                  className="mt-4 flex w-full items-center gap-2 rounded-lg bg-foreground/[0.035] px-2.5 py-2 text-left text-[12px] enabled:hover:bg-foreground/[0.06]"
+                  className="flex h-8 items-center gap-2 rounded-lg bg-foreground/[0.035] px-2.5 text-left text-[12px] enabled:hover:bg-foreground/[0.06]"
                 >
                   {run ? (
                     <>
-                      <span className="lilos-v2-breathe inline-block size-1.5 shrink-0 rounded-full border border-work" />
+                      <StateDot state="working" />
                       <span className="min-w-0 flex-1 truncate">
                         {run.title}
                       </span>
@@ -330,26 +468,23 @@ export function V2Agents({
                     <span className="text-muted-foreground">Idle</span>
                   )}
                 </button>
-                <div className="mt-2 text-[11.5px] text-muted-foreground">
-                  {active} open {active === 1 ? "thread" : "threads"}
-                  {where.length > 0 && ` · ${where.join(", ")}`}
-                </div>
               </div>
             );
           })}
           {later.map((a) => (
             <div
               key={a.id}
-              className="flex items-center gap-3 rounded-2xl border border-foreground/15 border-dashed p-4 text-muted-foreground"
+              className="flex items-center gap-3 rounded-2xl border border-foreground/15 border-dashed p-4"
             >
-              <HermesAvatar name={a.name} className="size-10 opacity-50" />
-              <div>
+              <RuntimeIcon
+                runtime={a.runtime}
+                className="size-10 rounded-xl opacity-70"
+              />
+              <div className="min-w-0 flex-1">
                 <div className="font-medium text-[14px] text-foreground/70">
                   {a.name}
                 </div>
-                <div className="text-[12.5px]">
-                  Coming later as an agent runtime
-                </div>
+                <div className="text-[12px] text-muted-foreground">Soon</div>
               </div>
             </div>
           ))}

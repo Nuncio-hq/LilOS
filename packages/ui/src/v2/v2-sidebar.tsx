@@ -12,6 +12,7 @@ import { useState } from "react";
 import { cn } from "../lib/utils";
 import { HermesAvatar } from "../shell/avatars";
 import { ago, StateDot } from "./v2-bits";
+import { RuntimeIcon } from "./v2-runtime";
 import type { V2Agent, V2Project, V2Thread } from "./v2-types";
 import { V2_ATTENTION } from "./v2-types";
 
@@ -226,7 +227,7 @@ function ProjectBlock({
    "Needs you" row, then projects. Each project lists only what came back to
    you and recent quiet threads; running threads fold into one line and old
    threads settle out of the list on their own. */
-export type V2Page = "home" | "needs" | "agents" | null;
+export type V2Page = "home" | "needs" | "agents" | "settings" | null;
 
 function NavRow({
   icon,
@@ -390,14 +391,30 @@ export function V2Sidebar({
         })}
       </nav>
       <div className="flex h-12 shrink-0 items-center gap-1 border-foreground/[0.06] border-t px-2">
-        <div className="flex h-8 flex-1 items-center gap-2.5 px-3 text-[12px] text-muted-foreground">
-          <span className="size-1.5 rounded-full bg-[#34c759]" />
-          Hermes connected
-        </div>
+        <button
+          type="button"
+          onClick={() => onPage("settings")}
+          title="Hermes connected"
+          className="flex h-8 flex-1 items-center gap-2 rounded-lg px-2.5 text-[12px] text-muted-foreground hover:bg-foreground/[0.04]"
+        >
+          <span className="relative inline-flex">
+            <RuntimeIcon runtime="hermes" className="size-4 rounded-[4px]" />
+            <span className="absolute -right-0.5 -bottom-0.5 size-1.5 rounded-full bg-[#34c759] ring-2 ring-[var(--v2-side)]" />
+          </span>
+          Hermes
+        </button>
         <button
           type="button"
           aria-label="Settings"
-          className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground"
+          title="Settings  ⌘,"
+          aria-current={page === "settings" ? "page" : undefined}
+          onClick={() => onPage("settings")}
+          className={cn(
+            "grid size-8 place-items-center rounded-lg hover:bg-foreground/[0.06] hover:text-foreground",
+            page === "settings"
+              ? "bg-foreground/[0.07] text-foreground"
+              : "text-muted-foreground",
+          )}
         >
           <SettingsIcon className="size-4" />
         </button>

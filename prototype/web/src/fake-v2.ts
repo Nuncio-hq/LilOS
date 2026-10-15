@@ -11,13 +11,15 @@ export const V2_PROJECTS: V2Project[] = [
 ]
 
 export const V2_AGENTS: V2Agent[] = [
-  { id: "builder", name: "Builder", role: "Full-stack engineer", engine: "Hermes", model: "Claude Opus 5.5", skills: 18 },
-  { id: "reviewer", name: "Reviewer", role: "Reviews diffs and tests", engine: "Hermes", model: "Claude Sonnet 5", skills: 9 },
-  { id: "marketer", name: "Marketer", role: "Copy and launch plans", engine: "Hermes", model: "GPT-6 Astra", skills: 6 },
-  { id: "research", name: "Research", role: "Deep research with sources", engine: "Hermes", model: "GPT-6 Astra", skills: 11 },
-  { id: "default", name: "Default", role: "Your main Hermes profile", engine: "Hermes", model: "Claude Opus 5.5", skills: 42 },
-  { id: "claude-code", name: "Claude Code", role: "", engine: "Claude Code", soon: true },
-  { id: "codex", name: "Codex", role: "", engine: "Codex", soon: true },
+  { id: "builder", name: "Builder", role: "Full-stack engineer", runtime: "hermes", model: "Claude Opus 5.5", skills: 18 },
+  { id: "reviewer", name: "Reviewer", role: "Reviews diffs and tests", runtime: "hermes", model: "Claude Sonnet 5", skills: 9 },
+  { id: "marketer", name: "Marketer", role: "Copy and launch plans", runtime: "hermes", model: "GPT-6 Astra", skills: 6 },
+  { id: "research", name: "Research", role: "Deep research with sources", runtime: "hermes", model: "GPT-6 Astra", skills: 11 },
+  { id: "default", name: "Default", role: "Your main Hermes profile", runtime: "hermes", model: "Claude Opus 5.5", skills: 42 },
+  { id: "claude-code", name: "Claude Code", role: "", runtime: "claude-code", soon: true },
+  { id: "codex", name: "Codex", role: "", runtime: "codex", soon: true },
+  { id: "grok-bot", name: "Grok Bot", role: "", runtime: "grok-bot", soon: true },
+  { id: "muse", name: "Muse", role: "", runtime: "muse", soon: true },
 ]
 
 const DOCS_WORK: V2Step[] = [

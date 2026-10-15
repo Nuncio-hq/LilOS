@@ -37,6 +37,12 @@ const PHRASE: Record<V2Step["kind"], [string, string, string]> = {
   task: ["delegated", "task", "tasks"],
 };
 
+/** The icon for one kind of tool call, sized for inline use. */
+export function LiveStepIcon({ kind }: { kind: V2Step["kind"] }) {
+  const Icon = ICON[kind];
+  return <Icon className="size-3 shrink-0" />;
+}
+
 /* "Edited 3 files, ran 2 commands and 4 other steps": the two most telling
    kinds lead (edits and commands beat reads), the rest are counted. */
 export function summarize(steps: V2Step[]): string {

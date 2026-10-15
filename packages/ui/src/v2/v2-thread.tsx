@@ -2,6 +2,7 @@ import {
   ArrowUpIcon,
   CheckCheckIcon,
   ChevronDownIcon,
+  FolderIcon,
   MoonIcon,
   PinIcon,
   RotateCcwIcon,
@@ -350,9 +351,12 @@ export function V2NewThread({
         <h1 className="mt-4 text-balance text-center font-semibold text-[22px] tracking-tight">
           What should {agent?.name} work on?
         </h1>
-        <p className="mt-1.5 text-center text-[13px] text-muted-foreground">
-          {project?.path ? `In ${project.path}` : "Not tied to a project"}
-        </p>
+        {project?.path && (
+          <p className="mt-1.5 flex items-center gap-1.5 font-mono text-[12px] text-muted-foreground">
+            <FolderIcon className="size-3.5" />
+            {project.path}
+          </p>
+        )}
       </div>
       <Composer
         placeholder="Describe the task"

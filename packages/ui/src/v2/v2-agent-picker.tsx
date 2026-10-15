@@ -7,6 +7,7 @@ import {
 } from "../components/ui/popover";
 import { cn } from "../lib/utils";
 import { HermesAvatar } from "../shell/avatars";
+import { RuntimeIcon } from "./v2-runtime";
 import type { V2Agent, V2Project } from "./v2-types";
 
 const triggerCls =
@@ -25,7 +26,6 @@ export function AgentPicker({
 }) {
   const [open, setOpen] = useState(false);
   const cur = agents.find((a) => a.id === value);
-  const engines = Array.from(new Set(agents.map((a) => a.engine)));
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
@@ -37,47 +37,40 @@ export function AgentPicker({
         <span className="max-w-32 truncate">{cur?.name}</span>
         <ChevronDownIcon className="size-3 text-muted-foreground" />
       </PopoverTrigger>
-      <PopoverContent side="top" align="start" className="w-72 gap-0 p-1.5">
-        {engines.map((eng) => (
-          <div key={eng} className="py-1">
-            <div className="px-2 pt-1 pb-1 text-[11px] text-muted-foreground">
-              {eng}
-            </div>
-            {agents
-              .filter((a) => a.engine === eng)
-              .map((a) => (
-                <button
-                  key={a.id}
-                  type="button"
-                  disabled={a.soon}
-                  onClick={() => {
-                    onPick(a.id);
-                    setOpen(false);
-                  }}
-                  className={cn(
-                    "flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-[13px]",
-                    a.soon
-                      ? "cursor-not-allowed opacity-45"
-                      : "hover:bg-foreground/[0.05]",
-                  )}
-                >
-                  <HermesAvatar name={a.name} className="size-6" />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate font-medium">{a.name}</span>
-                    <span className="block truncate text-[11.5px] text-muted-foreground">
-                      {a.soon ? "Coming later" : a.role}
-                    </span>
-                  </span>
-                  {a.id === value && (
-                    <CheckIcon className="size-3.5 text-primary" />
-                  )}
-                </button>
-              ))}
-          </div>
+      <PopoverContent side="top" align="start" className="w-64 gap-0 p-1.5">
+        {agents.map((a) => (
+          <button
+            key={a.id}
+            type="button"
+            disabled={a.soon}
+            onClick={() => {
+              onPick(a.id);
+              setOpen(false);
+            }}
+            className={cn(
+              "flex h-10 w-full items-center gap-2.5 rounded-md px-2 text-left text-[13px]",
+              a.soon
+                ? "cursor-not-allowed opacity-40"
+                : "hover:bg-foreground/[0.05]",
+            )}
+          >
+            <span className="relative">
+              <HermesAvatar name={a.name} className="size-6" />
+              <RuntimeIcon
+                runtime={a.runtime}
+                className="absolute -right-1 -bottom-1 size-3.5 rounded-[4px]"
+              />
+            </span>
+            <span className="min-w-0 flex-1 truncate font-medium">
+              {a.name}
+            </span>
+            {a.soon ? (
+              <span className="text-[11px] text-muted-foreground">Soon</span>
+            ) : (
+              a.id === value && <CheckIcon className="size-3.5 text-primary" />
+            )}
+          </button>
         ))}
-        <p className="border-foreground/[0.06] border-t px-2 pt-2 pb-1 text-[11.5px] text-muted-foreground leading-snug">
-          Each agent keeps its own memory and skills across projects.
-        </p>
       </PopoverContent>
     </Popover>
   );

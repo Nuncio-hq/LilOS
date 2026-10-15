@@ -1,6 +1,9 @@
 import { useState } from "react";
+import { useTheme } from "../shell/use-theme";
 import { V2Agents, V2CompanyHome } from "./v2-company";
+import { V2HireDialog } from "./v2-hire";
 import { V2NeedsYou } from "./v2-needs-you";
+import { V2Settings } from "./v2-settings";
 import { V2Sidebar } from "./v2-sidebar";
 import { V2NewThread, V2ThreadView } from "./v2-thread";
 import type { V2Activity, V2Agent, V2Project, V2Thread } from "./v2-types";
@@ -10,6 +13,7 @@ type View =
   | { kind: "home" }
   | { kind: "needs" }
   | { kind: "agents" }
+  | { kind: "settings" }
   | { kind: "new" };
 
 /* UX v2 prototype shell: sidebar + one main column. Owns only view state
@@ -35,6 +39,9 @@ export function V2Shell({
   onToast?: (text: string) => void;
 }) {
   const [threads, setThreads] = useState(initialThreads);
+  const [team, setTeam] = useState(agents);
+  const [hiring, setHiring] = useState(false);
+  const [theme, setTheme] = useTheme();
   const [view, setView] = useState<View>(
     initialThreadId
       ? { kind: "thread", id: initialThreadId }
@@ -61,7 +68,7 @@ export function V2Shell({
       <V2CompanyHome
         company={company}
         threads={threads}
-        agents={agents}
+        agents={team}
         projects={projects}
         activity={activity}
         onOpen={open}
@@ -70,21 +77,24 @@ export function V2Shell({
       />
     ) : view.kind === "agents" ? (
       <V2Agents
-        agents={agents}
+        agents={team}
         threads={threads}
         projects={projects}
         onOpen={open}
+        onHire={() => setHiring(true)}
       />
+    ) : view.kind === "settings" ? (
+      <V2Settings name="Oscar" theme={theme} onTheme={setTheme} />
     ) : view.kind === "needs" ? (
       <V2NeedsYou
         threads={threads}
-        agents={agents}
+        agents={team}
         projects={projects}
         onOpen={open}
       />
     ) : view.kind === "new" ? (
       <V2NewThread
-        agents={agents}
+        agents={team}
         projects={projects}
         models={models}
         {...draft}
@@ -114,7 +124,7 @@ export function V2Shell({
       <V2ThreadView
         key={current.id}
         t={current}
-        agents={agents}
+        agents={team}
         projects={projects}
         models={models}
         onAgent={(agentId) => {
@@ -174,12 +184,13 @@ export function V2Shell({
         company={company}
         projects={projects}
         threads={threads}
-        agents={agents}
+        agents={team}
         current={view.kind === "thread" ? view.id : null}
         page={
           view.kind === "home" ||
           view.kind === "needs" ||
-          view.kind === "agents"
+          view.kind === "agents" ||
+          view.kind === "settings"
             ? view.kind
             : null
         }
@@ -192,6 +203,29 @@ export function V2Shell({
         onSearch={() => onToast?.("⌘K searches every thread, settled ones too")}
       />
       {main}
+      {hiring && (
+        <V2HireDialog
+          models={models}
+          onClose={() => setHiring(false)}
+          onHire={(d) => {
+            setTeam((ts) => [
+              ...ts.filter((a) => !a.soon),
+              {
+                id: `hired-${Date.now()}`,
+                name: d.name.trim(),
+                role: d.role,
+                runtime: d.runtime,
+                model: d.model,
+                skills: 0,
+              },
+              ...ts.filter((a) => a.soon),
+            ]);
+            setHiring(false);
+            setView({ kind: "agents" });
+            onToast?.(`${d.name.trim()} joined the team`);
+          }}
+        />
+      )}
     </div>
   );
 }
