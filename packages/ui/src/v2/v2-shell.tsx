@@ -35,6 +35,7 @@ type Sheet = "agents" | "hire" | "needs" | "working" | "settings" | null;
    the prototype hands it; no wire calls. */
 export function V2Shell({
   company,
+  me,
   projects: initialProjects,
   agents,
   modelKit,
@@ -47,6 +48,8 @@ export function V2Shell({
   onToast,
 }: {
   company: string;
+  /** The signed-in person's display name. */
+  me: string;
   projects: V2Project[];
   agents: V2Agent[];
   modelKit: V2ModelKit;
@@ -250,6 +253,7 @@ export function V2Shell({
           agentName={
             team.find((a) => a.id === current.agentId)?.name ?? "Agent"
           }
+          me={me}
           open={wbOpen}
           onClose={() => setWbOpen(false)}
           onSend={(text) =>
@@ -401,7 +405,7 @@ export function V2Shell({
           width="w-[min(720px,100vw)]"
           onClose={() => setSheet(null)}
         >
-          <V2Settings name="Oscar" theme={theme} onTheme={setTheme} />
+          <V2Settings name={me} theme={theme} onTheme={setTheme} />
         </V2Sheet>
       )}
       {adding && (

@@ -34,7 +34,7 @@ export type V2Agent = {
 export type V2Project = {
   id: string;
   name: string;
-  /** Short folder label ("~/Desktop/Oscar/LilOS"); absent = No project. */
+  /** Short folder label ("~/Code/LilOS"); absent = No project. */
   path?: string;
   /** Git branches, default first; empty = not a repo. */
   branches?: string[];

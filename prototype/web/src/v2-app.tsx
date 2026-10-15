@@ -34,6 +34,7 @@ export default function V2App() {
     <>
       <V2Shell
         company="Oscar Co"
+        me="Oscar"
         projects={V2_PROJECTS}
         agents={V2_AGENTS}
         modelKit={{ models: V2_MODEL_OPTIONS, providers: V2_PROVIDERS, visibility, onVisibility: setVisibility }}

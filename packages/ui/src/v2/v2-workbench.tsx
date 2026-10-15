@@ -138,11 +138,6 @@ export function toSession(t: V2Thread, agentName: string): Thread {
   };
 }
 
-const HUMANS: Record<string, Human> = {
-  user: { name: "Oscar", color: "#0a84ff" },
-  agent: { name: "Agent", color: "#af52de" },
-};
-
 const REPO_FILES = [
   "AGENTS.md",
   "README.md",
@@ -161,6 +156,7 @@ export function V2WorkbenchPanel({
   t,
   project,
   agentName,
+  me,
   open,
   onClose,
   onSend,
@@ -169,6 +165,8 @@ export function V2WorkbenchPanel({
   t: V2Thread;
   project?: V2Project;
   agentName: string;
+  /** The signed-in person's display name (PR author lines, comments). */
+  me: string;
   open: boolean;
   onClose: () => void;
   onSend: (text: string) => void;
@@ -203,7 +201,11 @@ export function V2WorkbenchPanel({
         onSend={onSend}
         say={say}
         repoFiles={REPO_FILES}
-        human={(id) => HUMANS[id] ?? { name: agentName, color: "#af52de" }}
+        human={(id): Human =>
+          id === "user"
+            ? { name: me, color: "#0a84ff" }
+            : { name: agentName, color: "#af52de" }
+        }
         running={t.state === "working"}
       />
     </aside>
