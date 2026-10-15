@@ -99,13 +99,15 @@ describe("MDM kill-by-name guard (#141)", () => {
 });
 
 describe("AC-5 (#85) the decision is on record", () => {
-  const doc = readFileSync(join(REPO, "docs", "DECISIONS.md"), "utf8");
+  const doc = readFileSync(join(REPO, "docs", "index.html"), "utf8");
+  // The D-#85 entry in docs/index.html is one `<li id="d-85">` line.
+  const entry = doc.match(/<li id="d-85">[^\n]*/)?.[0] ?? "";
 
-  it("DECISIONS.md records release=real engine, fake=test/dev", () => {
-    expect(doc).toMatch(/\*\*D-#85[^\n]*real engine[^\n]*fake[^\n]*/i);
+  it("docs/index.html records release=real engine, fake=test/dev", () => {
+    expect(entry).toMatch(/real engine[\s\S]*fake/i);
   });
 
   it("…with the rejected alternative (a fake default in release)", () => {
-    expect(doc).toMatch(/D-#85[\s\S]*?Not:[^\n]*fake[^\n]*release/i);
+    expect(entry).toMatch(/Not:[\s\S]*fake[\s\S]*release/i);
   });
 });

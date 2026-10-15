@@ -58,7 +58,7 @@ describe("AC-4 docs-only diffs skip E2E, anything else runs it", () => {
   it.each([
     "AGENTS.md\n",
     "README.md\n.agents/skills/x/SKILL.md\n",
-    "site/index.html\ndocs/DECISIONS.md\n",
+    "site/index.html\ndocs/index.html\n",
     ".github/ISSUE_TEMPLATE/bug.yml\n",
   ])("docs-only: %j", (paths) => {
     expect(docsOnly(paths)).toBe(true);

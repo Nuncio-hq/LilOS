@@ -64,5 +64,6 @@ licensed. If you fork, ship your fork under your own name — not as "LilOS".
   (`git commit -s`); contributing grants Nuncio relicense rights.
 - [SECURITY.md](SECURITY.md) — report vulnerabilities privately via GitHub
   Security Advisories.
-- `AGENTS.md` — the repo's rules for coding agents; `docs/DECISIONS.md` —
-  decisions in force.
+- [`docs/index.html`](docs/index.html) — the one document: architecture,
+  how work happens, decisions in force, runbooks. `AGENTS.md` — the short
+  rule list for coding agents.

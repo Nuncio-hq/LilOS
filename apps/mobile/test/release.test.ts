@@ -95,10 +95,11 @@ describe("AC-3 Settings shows LilOS <version> (build N) from the real bundle", (
   });
 });
 
-describe("AC-4 the mobile README documents shipping a TestFlight build", () => {
-  it("apps/mobile/README.md has the Ship a TestFlight build section", () => {
-    expect(has("apps/mobile/README.md")).toBe(true);
-    const text = read("apps/mobile/README.md");
+describe("AC-4 the docs document shipping a TestFlight build", () => {
+  it("docs/index.html has the Ship a TestFlight build section", () => {
+    expect(has("docs/index.html")).toBe(true);
+    const text = read("docs/index.html");
+    expect(text).toContain('id="mobile-release"');
     expect(text).toContain("Ship a TestFlight build");
     expect(text).toContain("bun run mobile:release");
     expect(/TestFlight/i.test(text)).toBe(true);

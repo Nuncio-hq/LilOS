@@ -2,7 +2,7 @@ name: mobile-release
 
 # Issue #250 AC-2 (optional): `git tag mobile-v*` ships a TestFlight build
 # through EAS instead of `bun run mobile:release` on Oscar's Mac.
-# needs-human before this works (documented in apps/mobile/README.md):
+# needs-human before this works (documented in docs/index.html#mobile-release):
 #   1) `bunx eas-cli login` + `bunx eas-cli init` in apps/mobile (one-time,
 #      mints the EAS project id)
 #   2) repo secret EXPO_TOKEN (an Expo access token from
