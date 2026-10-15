@@ -98,6 +98,8 @@ export type V2Thread = {
   title: string;
   /** Tickets this CEO session opened or was asked about. */
   ticketIds?: string[];
+  /** The goal this CEO session is about (the session where it was set). */
+  goalId?: string;
   projectId: string;
   agentId: string;
   model: string;

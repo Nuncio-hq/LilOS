@@ -63,8 +63,8 @@ export const V2_CONNECTORS: V2Connector[] = [
 ]
 
 export const V2_GOALS: V2Goal[] = [
-  { id: "g-conv", title: "Grow HeardBack's paywall conversion", projectId: "heardback" },
-  { id: "g-health", title: "Keep grokbot-cli healthy", projectId: "lilos" },
+  { id: "g-conv", title: "Grow HeardBack's paywall conversion", projectId: "heardback", threadId: "t-ceo" },
+  { id: "g-health", title: "Keep grokbot-cli healthy", projectId: "lilos", threadId: "t-ceo-health" },
 ]
 
 const out = (name: string, connectorId: string) => ({ kind: "outside" as const, name, connectorId })
@@ -146,7 +146,7 @@ export const V2_TICKETS: V2Ticket[] = [
 /* The CEO's own thread: Oscar hands off a goal, the CEO answers with its
    plan and the tickets it opened. */
 export const V2_CEO_THREAD: V2Thread = {
-  id: "t-ceo", title: "Grow HeardBack's paywall conversion", projectId: "heardback", agentId: "ceo",
+  id: "t-ceo", title: "Grow conversion for HeardBack", projectId: "heardback", agentId: "ceo", goalId: "g-conv",
   ticketIds: ["HB-9", "HB-10", "HB-11", "HB-12"],
   model: "Claude Opus 5.5", state: "working", ago: 1,
   line: "Following 4 tickets",
@@ -168,7 +168,7 @@ export const V2_CEO_THREAD: V2Thread = {
 
 /* An older CEO session, so the dock's session picker has something to pick. */
 export const V2_CEO_THREAD_OLD: V2Thread = {
-  id: "t-ceo-health", title: "Keep grokbot-cli healthy", projectId: "lilos", agentId: "ceo",
+  id: "t-ceo-health", title: "Is grokbot-cli healthy?", projectId: "lilos", agentId: "ceo", goalId: "g-health",
   ticketIds: ["LIL-1", "LIL-2", "HB-9"],
   model: "Claude Opus 5.5", state: "unseen", ago: 38,
   line: "2 tickets done, both checked",

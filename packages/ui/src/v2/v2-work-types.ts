@@ -84,10 +84,14 @@ export type V2Ticket = {
   threadId?: string;
 };
 
+/** What the owner wants, in their words. The owner sets it by telling the
+    CEO; the CEO writes it down here and splits it into tickets. */
 export type V2Goal = {
   id: string;
   title: string;
   projectId: string;
+  /** The CEO session where the owner asked for it. */
+  threadId?: string;
 };
 
 /** A brand mark as one SVG path. */

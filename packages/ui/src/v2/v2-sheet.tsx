@@ -15,6 +15,7 @@ export function V2Sheet({
   onBack,
   width = "w-[min(560px,100vw)]",
   inset,
+  fill,
   children,
 }: {
   title: string;
@@ -27,6 +28,8 @@ export function V2Sheet({
   /** Keeps a docked panel on the right uncovered (e.g. the CEO chat):
       classes that pull the sheet's right edge in. */
   inset?: string;
+  /** The body manages its own scrolling (e.g. a pinned chat at the bottom). */
+  fill?: boolean;
   children: React.ReactNode;
 }) {
   const [closing, setClosing] = useState(false);
@@ -102,7 +105,14 @@ export function V2Sheet({
             </button>
           </span>
         </header>
-        <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+        <div
+          className={cn(
+            "min-h-0 flex-1",
+            fill ? "flex flex-col overflow-hidden" : "overflow-y-auto",
+          )}
+        >
+          {children}
+        </div>
       </div>
     </div>
   );

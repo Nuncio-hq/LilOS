@@ -22,7 +22,7 @@ import { V2Settings, type V2SettingsSection } from "./v2-settings";
 import { V2Sheet } from "./v2-sheet";
 import { V2Sidebar } from "./v2-sidebar";
 import { V2NewThread, V2ThreadView } from "./v2-thread";
-import { V2TicketDetail } from "./v2-ticket";
+import { TicketCeoChat, V2TicketDetail } from "./v2-ticket";
 import type { V2Activity, V2Agent, V2Project, V2Thread } from "./v2-types";
 import { V2_ATTENTION } from "./v2-types";
 import { V2Work } from "./v2-work";
@@ -114,6 +114,12 @@ export function V2Shell({
   const [ceoSession, setCeoSession] = useState<string | undefined>(undefined);
   /* The ticket the next CEO message is about (set from a ticket sheet). */
   const [ceoAbout, setCeoAbout] = useState<string | null>(null);
+  /* Highlight the picked CEO session's goal on the board (on by default). */
+  const [goalHighlight, setGoalHighlight] = useState(true);
+  /* The CEO conversation a ticket sheet shows, per ticket. */
+  const [ticketSession, setTicketSession] = useState<
+    Record<string, string | undefined>
+  >({});
   const work = useV2Work({
     tickets: initialTickets,
     connectors: initialConnectors,
@@ -136,16 +142,58 @@ export function V2Shell({
     ceoSessions.filter(
       (s) => s.id === openedBy || s.ticketIds?.includes(ticketId),
     );
-  /* Ask the CEO about a ticket: continue a session (id) or start a new one
-     (null). The board stays; the dock opens with the ticket attached. */
-  const askCeo = (ticketId: string, sessionId: string | null) => {
-    setCeoSession(sessionId ?? "");
-    setCeoAbout(ticketId);
-    setSheet(null);
-    setView({ kind: "work" });
-    setCeoOpen(true);
-  };
   const aboutTicket = work.tickets.find((t) => t.id === ceoAbout);
+  const pickedGoal = goals.find(
+    (g) => g.id === threads.find((t) => t.id === ceoThreadId)?.goalId,
+  );
+  const highlightGoal =
+    ceoOpen && goalHighlight && view.kind === "work" ? pickedGoal?.id : null;
+  /* One send path for every CEO surface: into a conversation (sessionId) or
+     a new one ("" / undefined), optionally about a ticket. Returns the
+     conversation it landed in. */
+  const sendToCeo = (
+    text: string,
+    sessionId: string | undefined,
+    about?: string,
+  ): string => {
+    const ticketOf = work.tickets.find((t) => t.id === about);
+    const msg = { from: "you" as const, time: now(), text, ticketId: about };
+    const cur = threads.find((t) => t.id === sessionId);
+    if (cur) {
+      patch(cur.id, {
+        state: "working",
+        ago: 0,
+        line: about ? `Looking into ${about}` : "Planning",
+        ticketIds:
+          about && !cur.ticketIds?.includes(about)
+            ? [...(cur.ticketIds ?? []), about]
+            : cur.ticketIds,
+        messages: [...cur.messages, msg],
+      });
+      return cur.id;
+    }
+    const id = `ceo-${Date.now()}`;
+    setThreads((ts) => [
+      {
+        id,
+        title: about
+          ? `${about}: ${ticketOf?.title ?? ""}`
+          : text.length > 48
+            ? `${text.slice(0, 46).trimEnd()}…`
+            : text,
+        ticketIds: about ? [about] : undefined,
+        projectId: ticketOf?.projectId ?? workProject ?? "none",
+        agentId: work.ceo?.id ?? "",
+        model: work.ceo?.model ?? "",
+        state: "working",
+        ago: 0,
+        line: about ? `Looking into ${about}` : "Planning",
+        messages: [msg],
+      },
+      ...ts,
+    ]);
+    return id;
+  };
   const firstModel = modelKit.models[0]?.id ?? "";
   const [draft, setDraft] = useState<{
     pick: WsPick;
@@ -217,6 +265,7 @@ export function V2Shell({
         ceo={work.ceo}
         project={workProject}
         worker={workWho}
+        highlightGoal={highlightGoal}
         activeTicket={openTicket}
         ceoOpen={ceoOpen}
         onProject={setWorkProject}
@@ -228,8 +277,14 @@ export function V2Shell({
             <V2CeoDock
               ceo={work.ceo}
               sessions={ceoSessions}
+              goals={goals}
               sessionId={ceoThreadId}
               ticketIds={work.tickets.map((t) => t.id)}
+              goalTickets={
+                work.tickets.filter((t) => t.goalId === pickedGoal?.id).length
+              }
+              highlight={goalHighlight}
+              onHighlight={setGoalHighlight}
               about={
                 aboutTicket
                   ? { id: aboutTicket.id, title: aboutTicket.title }
@@ -243,48 +298,8 @@ export function V2Shell({
               onClose={() => setCeoOpen(false)}
               onSend={(text) => {
                 const about = ceoAbout ?? undefined;
-                const msg = {
-                  from: "you" as const,
-                  time: now(),
-                  text,
-                  ticketId: about,
-                };
                 setCeoAbout(null);
-                const cur = threads.find((t) => t.id === ceoThreadId);
-                if (cur) {
-                  patch(cur.id, {
-                    state: "working",
-                    ago: 0,
-                    line: about ? `Looking into ${about}` : "Planning",
-                    ticketIds:
-                      about && !cur.ticketIds?.includes(about)
-                        ? [...(cur.ticketIds ?? []), about]
-                        : cur.ticketIds,
-                    messages: [...cur.messages, msg],
-                  });
-                  return;
-                }
-                const id = `ceo-${Date.now()}`;
-                setThreads((ts) => [
-                  {
-                    id,
-                    title: about
-                      ? `${about}: ${aboutTicket?.title ?? ""}`
-                      : text.length > 48
-                        ? `${text.slice(0, 46).trimEnd()}…`
-                        : text,
-                    ticketIds: about ? [about] : undefined,
-                    projectId: aboutTicket?.projectId ?? workProject ?? "none",
-                    agentId: work.ceo?.id ?? "",
-                    model: work.ceo?.model ?? "",
-                    state: "working",
-                    ago: 0,
-                    line: about ? `Looking into ${about}` : "Planning",
-                    messages: [msg],
-                  },
-                  ...ts,
-                ]);
-                setCeoSession(id);
+                setCeoSession(sendToCeo(text, ceoThreadId, about));
               }}
             />
           )
@@ -592,6 +607,7 @@ export function V2Shell({
         <V2Sheet
           key={`ticket-${ticket.id}`}
           title={ticket.id}
+          fill
           inset={
             ceoOpen && view.kind === "work"
               ? "lg:right-[388px] xl:right-[428px]"
@@ -600,17 +616,53 @@ export function V2Shell({
           icon={<KanbanSquareIcon />}
           onClose={() => setSheet(null)}
         >
-          <V2TicketDetail
-            t={ticket}
-            goal={goals.find((g) => g.id === ticket.goalId)}
-            agents={team}
-            connectors={work.connectors}
-            projects={projects}
-            onApprove={() => work.approve(ticket.id)}
-            onDeny={() => work.deny(ticket.id)}
-            sessions={sessionsAbout(ticket.id, ticket.threadId)}
-            onAskCeo={work.ceo ? (sid) => askCeo(ticket.id, sid) : undefined}
-          />
+          <div className="flex h-full min-h-0 flex-col">
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <V2TicketDetail
+                t={ticket}
+                goal={goals.find((g) => g.id === ticket.goalId)}
+                agents={team}
+                connectors={work.connectors}
+                projects={projects}
+                onApprove={() => work.approve(ticket.id)}
+                onDeny={() => work.deny(ticket.id)}
+              />
+            </div>
+            {work.ceo &&
+              (() => {
+                const about = sessionsAbout(ticket.id, ticket.threadId);
+                const rest = ceoSessions.filter((s) => !about.includes(s));
+                const picked =
+                  ticket.id in ticketSession
+                    ? ticketSession[ticket.id]
+                    : about[0]?.id;
+                return (
+                  <TicketCeoChat
+                    key={`ceo-${ticket.id}`}
+                    ticketId={ticket.id}
+                    ceo={work.ceo}
+                    sessions={[...about, ...rest]}
+                    goals={goals}
+                    sessionId={picked}
+                    ticketIds={work.tickets.map((t) => t.id)}
+                    onSession={(id) =>
+                      setTicketSession((m) => ({ ...m, [ticket.id]: id }))
+                    }
+                    onNewSession={() =>
+                      setTicketSession((m) => ({
+                        ...m,
+                        [ticket.id]: undefined,
+                      }))
+                    }
+                    onTicket={(id) => setSheet({ ticket: id })}
+                    onSend={(text) => {
+                      const id = sendToCeo(text, picked, ticket.id);
+                      setTicketSession((m) => ({ ...m, [ticket.id]: id }));
+                    }}
+                  />
+                );
+              })()}
+          </div>
         </V2Sheet>
       )}
       {adding && (

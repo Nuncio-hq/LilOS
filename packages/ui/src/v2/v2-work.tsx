@@ -34,12 +34,18 @@ function TicketCard({
   who,
   projects,
   active,
+  dim,
+  lit,
   onOpen,
 }: {
   t: V2Ticket;
   who: WorkerIdentity;
   projects: V2Project[];
   active: boolean;
+  /** Another goal is highlighted: fade this card back. */
+  dim?: boolean;
+  /** This card's goal is highlighted. */
+  lit?: boolean;
   onOpen: () => void;
 }) {
   const pi = projects.findIndex((p) => p.id === t.projectId);
@@ -55,6 +61,9 @@ function TicketCard({
       className={cn(
         "relative flex w-full flex-col gap-2.5 overflow-hidden rounded-xl bg-background/90 p-3 pl-3.5 text-left ring-1 ring-foreground/[0.08] transition-shadow hover:ring-foreground/25 dark:bg-white/[0.035]",
         t.state === "needs" && "ring-amber-500/50",
+        lit &&
+          "ring-amber-500/40 shadow-[0_0_0_3px_color-mix(in_oklch,var(--color-amber-500)_12%,transparent)]",
+        dim && "opacity-35 saturate-50 hover:opacity-100 hover:saturate-100",
         active && "ring-2 ring-foreground/60",
       )}
     >
@@ -118,6 +127,7 @@ export function V2Work({
   ceo,
   project,
   worker,
+  highlightGoal,
   activeTicket,
   ceoOpen,
   dock,
@@ -136,6 +146,8 @@ export function V2Work({
   project: string | null;
   /** Filter by worker group key (see groupsFor). */
   worker: string | null;
+  /** A goal whose tickets stand out (the CEO conversation picked is that goal's). */
+  highlightGoal?: string | null;
   activeTicket?: string | null;
   ceoOpen: boolean;
   /** The CEO panel, rendered beside the board when open. */
@@ -216,10 +228,24 @@ export function V2Work({
                   return (
                     <div
                       key={g.id}
-                      className="flex flex-col gap-2 rounded-xl px-3 py-2.5 ring-1 ring-foreground/[0.07]"
+                      data-v2-goal={g.id}
+                      aria-current={highlightGoal === g.id ? "true" : undefined}
+                      className={cn(
+                        "flex flex-col gap-2 rounded-xl px-3 py-2.5 ring-1 ring-foreground/[0.07] transition-opacity",
+                        highlightGoal === g.id &&
+                          "bg-amber-500/[0.06] ring-amber-500/40",
+                        highlightGoal && highlightGoal !== g.id && "opacity-45",
+                      )}
                     >
                       <div className="flex items-center gap-2">
-                        <TargetIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                        <TargetIcon
+                          className={cn(
+                            "size-3.5 shrink-0",
+                            highlightGoal === g.id
+                              ? "text-amber-600 dark:text-amber-400"
+                              : "text-muted-foreground",
+                          )}
+                        />
                         <span className="min-w-0 flex-1 truncate font-medium text-[13px]">
                           {g.title}
                         </span>
@@ -286,6 +312,8 @@ export function V2Work({
                           who={ident(t)}
                           projects={projects}
                           active={activeTicket === t.id}
+                          lit={!!highlightGoal && t.goalId === highlightGoal}
+                          dim={!!highlightGoal && t.goalId !== highlightGoal}
                           onOpen={() => onOpenTicket(t.id)}
                         />
                       ))}
