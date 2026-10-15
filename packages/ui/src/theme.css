@@ -1254,3 +1254,110 @@ form:has(textarea:not(:placeholder-shown), [aria-label="Stop (⌘.)"])
     background: rgb(30 30 34 / 0.92) !important;
   }
 }
+
+/* ---- UX v2 prototype (threads by project) ----
+   One quiet window: a tinted sidebar sheet and a white reading column that
+   share one frame, no floating glass panels, no colour field. Colour is
+   reserved for state dots; everything else is ink on neutral. */
+.lilos-v2 {
+  --v2-side: oklch(0.975 0.004 250);
+  --v2-main: oklch(1 0 0);
+  background: var(--v2-side);
+}
+.dark .lilos-v2 {
+  --v2-side: oklch(0.19 0.006 260);
+  --v2-main: oklch(0.225 0.006 260);
+}
+.lilos-v2-side {
+  background: var(--v2-side);
+}
+.lilos-v2-main {
+  background: var(--v2-main);
+  border-left: 1px solid color-mix(in oklch, var(--foreground) 7%, transparent);
+}
+@media (min-width: 1024px) {
+  .lilos-v2 {
+    padding: 8px 8px 8px 0;
+  }
+  .lilos-v2-main {
+    border: 1px solid color-mix(in oklch, var(--foreground) 7%, transparent);
+    border-radius: 14px;
+    box-shadow:
+      0 1px 2px oklch(0.3 0.02 260 / 0.04),
+      0 12px 32px -16px oklch(0.3 0.02 260 / 0.12);
+  }
+  .dark .lilos-v2-main {
+    box-shadow: none;
+  }
+}
+@keyframes lilos-v2-breathe {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.82);
+  }
+}
+.lilos-v2-breathe {
+  animation: lilos-v2-breathe 1.8s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+/* Side sheets and the workbench slide in from the right instead of the
+   page changing under you; a page pushed inside a sheet nudges in. */
+@keyframes lilos-v2-sheet-in {
+  from {
+    transform: translateX(104%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+@keyframes lilos-v2-sheet-out {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(104%);
+  }
+}
+@keyframes lilos-v2-push {
+  from {
+    opacity: 0;
+    transform: translateX(28px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+@keyframes lilos-v2-dim {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.lilos-v2-sheet {
+  animation: lilos-v2-sheet-in 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.lilos-v2-sheet[data-closing] {
+  animation: lilos-v2-sheet-out 0.2s cubic-bezier(0.4, 0, 1, 1) both;
+}
+.lilos-v2-push {
+  animation: lilos-v2-push 0.24s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.lilos-v2-dim {
+  animation: lilos-v2-dim 0.2s ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lilos-v2-breathe,
+  .lilos-v2-sheet,
+  .lilos-v2-sheet[data-closing],
+  .lilos-v2-push,
+  .lilos-v2-dim {
+    animation: none;
+  }
+}
