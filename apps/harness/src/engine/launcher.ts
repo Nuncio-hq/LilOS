@@ -100,7 +100,7 @@ export interface CommandLauncherOptions {
  * Launch an engine from a child process: waits for `readyPattern` on stdout,
  * then exposes the printed ws url plus kill/exited for supervision. Any
  * engine behind `serve`-style CLIs (engine-fake, engine-hermes' serve script,
- * a Codex adapter) works through this one launcher.
+ * a later ACP runtime adapter, #111) works through this one launcher.
  */
 export function commandLauncher(
   options: CommandLauncherOptions,

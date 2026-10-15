@@ -28,9 +28,9 @@ import { ForgePrListItem } from "../host/forge.js";
  * never address another session's browser/terminal/thread. The engine's own
  * session id is only an alias for that scope, never an argument.
  *
- * Per-engine adapters (an in-process engine plugin today; app-server or SDK
- * bridges later — #342, under #111) only attach this catalog — they never
- * grow a tool list of their own. Not: attaching MCP only through ACP, or
+ * Per-engine adapters (an in-process engine plugin today; later runtimes
+ * through ACP `mcpServers` at `session/new`, #111) only attach this catalog —
+ * they never grow a tool list of their own. Not: attaching MCP only through ACP, or
  * engine-specific UI toolsets (`desktop_ui` / `drive_preview` /
  * `read_terminal`, the first #36 design).
  */
