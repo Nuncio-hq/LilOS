@@ -1,5 +1,7 @@
 import {
   ChevronRightIcon,
+  FolderPlusIcon,
+  HandIcon,
   LayoutDashboardIcon,
   PenSquareIcon,
   PinIcon,
@@ -12,7 +14,6 @@ import { useState } from "react";
 import { cn } from "../lib/utils";
 import { HermesAvatar } from "../shell/avatars";
 import { ago, StateDot } from "./v2-bits";
-import { RuntimeIcon } from "./v2-runtime";
 import type { V2Agent, V2Project, V2Thread } from "./v2-types";
 import { V2_ATTENTION } from "./v2-types";
 
@@ -160,6 +161,16 @@ function ProjectBlock({
           <PlusIcon className="size-3.5" />
         </button>
       </div>
+      {threads.length === 0 && (
+        <button
+          type="button"
+          onClick={onNew}
+          className="flex h-8 w-full items-center gap-2.5 rounded-lg pl-3 text-[13px] text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"
+        >
+          <PlusIcon className="size-3.5" />
+          New thread
+        </button>
+      )}
       {top.map((t) => (
         <Row
           key={t.id}
@@ -274,6 +285,7 @@ export function V2Sidebar({
   onNew,
   onPage,
   onSearch,
+  onAddProject,
 }: {
   company: string;
   projects: V2Project[];
@@ -285,10 +297,10 @@ export function V2Sidebar({
   onNew: (projectId?: string) => void;
   onPage: (p: Exclude<V2Page, null>) => void;
   onSearch: () => void;
+  onAddProject: () => void;
 }) {
   const needs = threads.filter((t) => V2_ATTENTION.includes(t.state)).length;
   const working = threads.filter((t) => t.state === "working").length;
-  const live = agents.filter((a) => !a.soon);
   return (
     <aside className="lilos-v2-side flex min-h-0 w-[272px] shrink-0 flex-col">
       <div className="lilos-drag flex h-[52px] shrink-0 items-center gap-2 pr-2 pl-4">
@@ -340,7 +352,11 @@ export function V2Sidebar({
           }
         />
         <NavRow
-          icon={<StateDot state="needs" />}
+          icon={
+            <HandIcon
+              className={cn(needs > 0 && "text-amber-500 dark:text-amber-400")}
+            />
+          }
           label="Needs you"
           active={page === "needs"}
           onClick={() => onPage("needs")}
@@ -357,26 +373,30 @@ export function V2Sidebar({
           label="Agents"
           active={page === "agents"}
           onClick={() => onPage("agents")}
-          trailing={
-            <span className="flex -space-x-1.5">
-              {live.slice(0, 4).map((a) => (
-                <HermesAvatar
-                  key={a.id}
-                  name={a.name}
-                  className="size-4 ring-2 ring-[var(--v2-side)]"
-                />
-              ))}
-            </span>
-          }
         />
       </div>
       <nav
         aria-label="Projects"
         className="mt-3 min-h-0 flex-1 overflow-y-auto border-foreground/[0.06] border-t px-2 pb-4 [scrollbar-width:thin]"
       >
+        <div className="flex h-9 items-center pr-1 pl-3">
+          <span className="flex-1 font-semibold text-[11px] text-muted-foreground/80 uppercase tracking-[0.06em]">
+            Projects
+          </span>
+          <button
+            type="button"
+            onClick={onAddProject}
+            aria-label="Add project"
+            title="Add project"
+            data-v2-add-project
+            className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground"
+          >
+            <FolderPlusIcon className="size-3.5" />
+          </button>
+        </div>
         {projects.map((p) => {
           const mine = threads.filter((t) => t.projectId === p.id);
-          if (mine.length === 0) return null;
+          if (mine.length === 0 && !p.path) return null;
           return (
             <ProjectBlock
               key={p.id}
@@ -393,30 +413,19 @@ export function V2Sidebar({
       <div className="flex h-12 shrink-0 items-center gap-1 border-foreground/[0.06] border-t px-2">
         <button
           type="button"
-          onClick={() => onPage("settings")}
-          title="Hermes connected"
-          className="flex h-8 flex-1 items-center gap-2 rounded-lg px-2.5 text-[12px] text-muted-foreground hover:bg-foreground/[0.04]"
-        >
-          <span className="relative inline-flex">
-            <RuntimeIcon runtime="hermes" className="size-4 rounded-[4px]" />
-            <span className="absolute -right-0.5 -bottom-0.5 size-1.5 rounded-full bg-[#34c759] ring-2 ring-[var(--v2-side)]" />
-          </span>
-          Hermes
-        </button>
-        <button
-          type="button"
           aria-label="Settings"
           title="Settings  ⌘,"
           aria-current={page === "settings" ? "page" : undefined}
           onClick={() => onPage("settings")}
           className={cn(
-            "grid size-8 place-items-center rounded-lg hover:bg-foreground/[0.06] hover:text-foreground",
+            "flex h-8 items-center gap-2.5 rounded-lg px-3 text-[13px] hover:bg-foreground/[0.04] hover:text-foreground",
             page === "settings"
               ? "bg-foreground/[0.07] text-foreground"
               : "text-muted-foreground",
           )}
         >
-          <SettingsIcon className="size-4" />
+          <SettingsIcon className="size-3.5" />
+          Settings
         </button>
       </div>
     </aside>

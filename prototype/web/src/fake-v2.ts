@@ -1,13 +1,48 @@
-import type { V2Activity, V2Agent, V2Project, V2Step, V2Thread } from "@lilos/ui"
+import type { FsDir, ModelOption, ModelProvider, V2Activity, V2Agent, V2Project, V2Step, V2Thread } from "@lilos/ui"
 
 /* Mock data for the UX v2 prototype (?v2): threads by project, the agent
    is a per-thread pick. Not a contract. */
 
 export const V2_PROJECTS: V2Project[] = [
-  { id: "lilos", name: "LilOS", path: "~/Desktop/Oscar/LilOS" },
-  { id: "heardback", name: "HeardBack", path: "~/Desktop/Oscar/heardback" },
-  { id: "qrit", name: "QRit", path: "~/Desktop/Oscar/QRit" },
+  { id: "lilos", name: "LilOS", path: "~/Desktop/Oscar/LilOS", branches: ["main", "release/0.1"],
+    workstreams: [{ branch: "lil-3-monorepo", path: ".lilos/wt/lil-3", from: "main" }] },
+  { id: "heardback", name: "HeardBack", path: "~/Desktop/Oscar/heardback", branches: ["main", "develop"], workstreams: [] },
+  { id: "qrit", name: "QRit", path: "~/Desktop/Oscar/QRit", branches: ["main", "develop"],
+    workstreams: [{ branch: "qr-7-paywall", path: ".lilos/wt/qr-7", from: "develop" }] },
   { id: "none", name: "No project" },
+]
+
+/* The machine's folders, for Add project (same shape the v1 prototype uses). */
+export const V2_FS: Record<string, FsDir> = {
+  "~": { children: ["Desktop", "Developer"] },
+  "~/Desktop": { children: ["Oscar"] },
+  "~/Desktop/Oscar": { children: ["LilOS", "heardback", "QRit", "crew", "muse-lab"] },
+  "~/Desktop/Oscar/LilOS": { git: { branches: ["main", "release/0.1"], remote: "Nuncio-hq/LilOS" }, children: ["apps", "docs", "packages"] },
+  "~/Desktop/Oscar/heardback": { git: { branches: ["main", "develop"] }, children: ["src"] },
+  "~/Desktop/Oscar/QRit": { git: { branches: ["main", "develop"] }, children: ["ios", "web"] },
+  "~/Desktop/Oscar/crew": { git: { branches: ["main", "next"], remote: "Nuncio-hq/crew" }, children: ["src", "docs"] },
+  "~/Desktop/Oscar/muse-lab": { children: ["notes"] },
+  "~/Desktop/Oscar/muse-lab/notes": { children: [] },
+  "~/Developer": { children: ["hermes-agent", "grokbot-cli"] },
+  "~/Developer/hermes-agent": { git: { branches: ["main"], remote: "NousResearch/hermes-agent" }, children: ["tui_gateway"] },
+  "~/Developer/grokbot-cli": { git: { branches: ["main"], remote: "Nuncio-hq/grokbot-cli" }, children: ["packages"] },
+}
+export const V2_DISCOVERED = ["~/Desktop/Oscar/crew", "~/Developer/grokbot-cli", "~/Developer/hermes-agent"]
+
+/* What Hermes reports via models.list (same shape as the v1 prototype). */
+const LADDER = ["minimal", "low", "medium", "high", "xhigh", "max"]
+export const V2_PROVIDERS: ModelProvider[] = [
+  { id: "anthropic", name: "Anthropic", logo: "anthropic" },
+  { id: "openai-codex", name: "ChatGPT or Codex Subscription", logo: "openai" },
+  { id: "xai-oauth", name: "xAI Grok OAuth", logo: "xai" },
+  { id: "hpc", name: "HPC", logo: "alibaba" },
+]
+export const V2_MODEL_OPTIONS: ModelOption[] = [
+  { id: "Claude Opus 5.5", name: "Claude Opus 5.5", provider: "anthropic", efforts: LADDER, defaultEffort: "high", fast: true },
+  { id: "Claude Sonnet 5", name: "Claude Sonnet 5", provider: "anthropic", efforts: LADDER, defaultEffort: "medium" },
+  { id: "GPT-6 Astra", name: "GPT-6 Astra", provider: "openai-codex", efforts: ["low", "medium", "high", "xhigh"], defaultEffort: "medium", fast: true },
+  { id: "Grok 4.6", name: "Grok 4.6", provider: "xai-oauth", efforts: ["low", "medium", "high"], defaultEffort: "medium", fast: true },
+  { id: "Qwen 3.8 Flash-Next", name: "Qwen 3.8 Flash-Next", provider: "hpc", efforts: LADDER, defaultEffort: "medium" },
 ]
 
 export const V2_AGENTS: V2Agent[] = [
@@ -75,7 +110,7 @@ export const V2_ACTIVITY: V2Activity[] = [
   { id: "a10", agentId: "research", verb: "finished", object: "Onboarding funnel audit", threadId: "t-funnel", projectId: "heardback", ago: 300 },
 ]
 
-export const V2_MODELS = ["Claude Opus 5.5", "Claude Sonnet 5", "GPT-6 Astra", "Qwen 3.8 Flash-Next", "Grok 4.6"]
+const V2_MODELS = ["Claude Opus 5.5", "Claude Sonnet 5", "GPT-6 Astra", "Qwen 3.8 Flash-Next", "Grok 4.6"]
 
 const OPUS = V2_MODELS[0]
 const SONNET = V2_MODELS[1]

@@ -1,9 +1,10 @@
 import {
   ArrowUpIcon,
   CheckCheckIcon,
-  ChevronDownIcon,
   FolderIcon,
+  GitBranchIcon,
   MoonIcon,
+  PanelRightIcon,
   PinIcon,
   RotateCcwIcon,
 } from "lucide-react";
@@ -11,13 +12,20 @@ import { useState } from "react";
 import { Shimmer } from "../components/ai-elements/shimmer";
 import { cn } from "../lib/utils";
 import { HermesAvatar } from "../shell/avatars";
-import { AgentPicker, ProjectPicker } from "./v2-agent-picker";
+import type { ModelChoice, WsPick } from "../types";
+import { AgentPicker } from "./v2-agent-picker";
 import { STATE_WORD, StateDot } from "./v2-bits";
+import {
+  type V2ModelKit,
+  V2ModelPicker,
+  V2WorkspacePicker,
+} from "./v2-pickers";
 import type { V2Agent, V2Project, V2Thread } from "./v2-types";
+import { ProjectChip } from "./v2-viz";
 import { ChangesCard, LiveStep, WorkLog } from "./v2-worklog";
 
-const headerBtn =
-  "flex h-7 items-center gap-1.5 rounded-lg px-2 text-[12px] text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground";
+const iconBtn =
+  "grid size-8 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground aria-pressed:bg-foreground/[0.07] aria-pressed:text-foreground [&_svg]:size-4";
 
 /* What is waiting on you, in the conversation's own column, right above the
    composer. One card at a time, one obvious action. */
@@ -97,7 +105,9 @@ export function V2ThreadView({
   t,
   agents,
   projects,
-  models,
+  modelKit,
+  wbOpen,
+  onWorkbench,
   onAgent,
   onModel,
   onAnswer,
@@ -109,9 +119,12 @@ export function V2ThreadView({
   t: V2Thread;
   agents: V2Agent[];
   projects: V2Project[];
-  models: string[];
+  modelKit: V2ModelKit;
+  /** The Workbench panel is open beside the thread. */
+  wbOpen: boolean;
+  onWorkbench: () => void;
   onAgent: (id: string) => void;
-  onModel: (m: string) => void;
+  onModel: (c: ModelChoice) => void;
   onAnswer: (answer: string) => void;
   onSend: (text: string) => void;
   onSettle: () => void;
@@ -119,48 +132,72 @@ export function V2ThreadView({
   onPin: () => void;
 }) {
   const agent = agents.find((a) => a.id === t.agentId);
-  const project = projects.find((p) => p.id === t.projectId);
+  const pIndex = projects.findIndex((p) => p.id === t.projectId);
+  const project = projects[pIndex];
   return (
-    <main className="lilos-v2-main flex min-h-0 min-w-0 flex-1 flex-col">
-      <header className="lilos-drag flex h-[52px] shrink-0 items-center gap-3 px-5">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <h1 className="min-w-0 truncate font-semibold text-[14px]">
-              {t.title}
-            </h1>
-            {t.state !== "idle" && (
-              <span className="flex shrink-0 items-center gap-1.5 text-[11.5px] text-muted-foreground">
-                <StateDot state={t.state} />
-                {STATE_WORD[t.state]}
-              </span>
-            )}
-          </div>
-          <div className="truncate text-[11.5px] text-muted-foreground">
-            {project?.name ?? "No project"}
-            {project?.path && <span> · {project.path}</span>}
-          </div>
-        </div>
-        <div className="flex shrink-0 items-center">
-          <button type="button" onClick={onPin} className={headerBtn}>
-            <PinIcon
-              className={cn(
-                "size-3.5",
-                t.pinned && "fill-current text-foreground",
-              )}
-            />
-            {t.pinned ? "Pinned" : "Pin"}
+    <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <header className="lilos-drag flex h-[52px] shrink-0 items-center gap-2.5 pr-2 pl-5">
+        <ProjectChip
+          name={project?.path ? project.name : "No project"}
+          index={project?.path ? pIndex : -1}
+        />
+        <h1 className="min-w-0 truncate font-semibold text-[14px]">
+          {t.title}
+        </h1>
+        {t.state !== "idle" && (
+          <span title={STATE_WORD[t.state]} className="flex shrink-0">
+            <StateDot state={t.state} />
+          </span>
+        )}
+        {project?.path && (
+          <span
+            title={project.path}
+            className="hidden min-w-0 shrink items-center gap-1 font-mono text-[11.5px] text-muted-foreground xl:flex"
+          >
+            <GitBranchIcon className="size-3 shrink-0" />
+            <span className="truncate">lilos/{t.id}</span>
+          </span>
+        )}
+        <div className="ml-auto flex shrink-0 items-center">
+          <button
+            type="button"
+            onClick={onPin}
+            aria-pressed={!!t.pinned}
+            aria-label={t.pinned ? "Unpin" : "Pin"}
+            title={t.pinned ? "Unpin" : "Pin"}
+            className={iconBtn}
+          >
+            <PinIcon className={cn(t.pinned && "fill-current")} />
           </button>
-          <button type="button" onClick={onSnooze} className={headerBtn}>
-            <MoonIcon className="size-3.5" />
-            Snooze
+          <button
+            type="button"
+            onClick={onSnooze}
+            aria-label="Snooze"
+            title="Snooze until tomorrow"
+            className={iconBtn}
+          >
+            <MoonIcon />
           </button>
-          <button type="button" onClick={onSettle} className={headerBtn}>
-            {t.state === "settled" ? (
-              <RotateCcwIcon className="size-3.5" />
-            ) : (
-              <CheckCheckIcon className="size-3.5" />
-            )}
-            {t.state === "settled" ? "Bring back" : "Settle"}
+          <button
+            type="button"
+            onClick={onSettle}
+            aria-label={t.state === "settled" ? "Bring back" : "Settle"}
+            title={t.state === "settled" ? "Bring back" : "Settle"}
+            className={iconBtn}
+          >
+            {t.state === "settled" ? <RotateCcwIcon /> : <CheckCheckIcon />}
+          </button>
+          <span className="mx-1 h-4 w-px bg-foreground/10" />
+          <button
+            type="button"
+            onClick={onWorkbench}
+            aria-pressed={wbOpen}
+            aria-label="Workbench"
+            title="Workbench  ⌘B"
+            data-v2-wb-toggle
+            className={iconBtn}
+          >
+            <PanelRightIcon />
           </button>
         </div>
       </header>
@@ -219,40 +256,15 @@ export function V2ThreadView({
         tools={
           <>
             <AgentPicker agents={agents} value={t.agentId} onPick={onAgent} />
-            <ModelSelect models={models} value={t.model} onPick={onModel} />
+            <V2ModelPicker
+              kit={modelKit}
+              value={t.choice ?? { model: t.model }}
+              onChoice={onModel}
+            />
           </>
         }
       />
     </main>
-  );
-}
-
-export function ModelSelect({
-  models,
-  value,
-  onPick,
-}: {
-  models: string[];
-  value: string;
-  onPick: (m: string) => void;
-}) {
-  return (
-    <label className="relative flex h-7 min-w-0 items-center rounded-full text-[12px] text-foreground/80 hover:bg-foreground/[0.06]">
-      <span className="pointer-events-none flex items-center gap-1.5 px-2.5">
-        <span className="max-w-36 truncate">{value}</span>
-        <ChevronDownIcon className="size-3 text-muted-foreground" />
-      </span>
-      <select
-        aria-label="Model"
-        value={value}
-        onChange={(e) => onPick(e.target.value)}
-        className="absolute inset-0 cursor-pointer opacity-0"
-      >
-        {models.map((m) => (
-          <option key={m}>{m}</option>
-        ))}
-      </select>
-    </label>
   );
 }
 
@@ -321,30 +333,32 @@ export function Composer({
 export function V2NewThread({
   agents,
   projects,
-  models,
-  projectId,
+  modelKit,
+  pick,
   agentId,
-  model,
-  onProject,
+  choice,
+  onPick,
   onAgent,
   onModel,
+  onAddProject,
   onSend,
 }: {
   agents: V2Agent[];
   projects: V2Project[];
-  models: string[];
-  projectId: string;
+  modelKit: V2ModelKit;
+  pick: WsPick;
   agentId: string;
-  model: string;
-  onProject: (id: string) => void;
+  choice: ModelChoice;
+  onPick: (p: WsPick) => void;
   onAgent: (id: string) => void;
-  onModel: (m: string) => void;
+  onModel: (c: ModelChoice) => void;
+  onAddProject: () => void;
   onSend: (text: string) => void;
 }) {
   const agent = agents.find((a) => a.id === agentId);
-  const project = projects.find((p) => p.id === projectId);
+  const project = projects.find((p) => p.id === pick.folder);
   return (
-    <main className="lilos-v2-main flex min-h-0 min-w-0 flex-1 flex-col">
+    <main className="flex min-h-0 min-w-0 flex-1 flex-col">
       <header className="lilos-drag h-[52px] shrink-0" />
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 pb-10">
         <HermesAvatar name={agent?.name} className="size-12" />
@@ -364,13 +378,14 @@ export function V2NewThread({
         autoFocus
         tools={
           <>
-            <ProjectPicker
+            <V2WorkspacePicker
               projects={projects}
-              value={projectId}
-              onPick={onProject}
+              pick={pick}
+              setPick={onPick}
+              onAddProject={onAddProject}
             />
             <AgentPicker agents={agents} value={agentId} onPick={onAgent} />
-            <ModelSelect models={models} value={model} onPick={onModel} />
+            <V2ModelPicker kit={modelKit} value={choice} onChoice={onModel} />
           </>
         }
       />

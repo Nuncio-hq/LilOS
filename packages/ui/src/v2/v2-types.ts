@@ -36,6 +36,10 @@ export type V2Project = {
   name: string;
   /** Short folder label ("~/Desktop/Oscar/LilOS"); absent = No project. */
   path?: string;
+  /** Git branches, default first; empty = not a repo. */
+  branches?: string[];
+  /** Existing worktrees a new thread can continue in. */
+  workstreams?: { branch: string; path: string; from: string }[];
 };
 
 /** One tool call, shown the way a coding agent shows its work. */
@@ -88,6 +92,8 @@ export type V2Thread = {
   projectId: string;
   agentId: string;
   model: string;
+  /** The full model pick (reasoning effort, fast) once the user changes it. */
+  choice?: import("../types").ModelChoice;
   state: V2State;
   /** Minutes since the last activity. */
   ago: number;

@@ -1304,8 +1304,60 @@ form:has(textarea:not(:placeholder-shown), [aria-label="Stop (⌘.)"])
 .lilos-v2-breathe {
   animation: lilos-v2-breathe 1.8s cubic-bezier(0.45, 0, 0.55, 1) infinite;
 }
+/* Side sheets and the workbench slide in from the right instead of the
+   page changing under you; a page pushed inside a sheet nudges in. */
+@keyframes lilos-v2-sheet-in {
+  from {
+    transform: translateX(104%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+@keyframes lilos-v2-sheet-out {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(104%);
+  }
+}
+@keyframes lilos-v2-push {
+  from {
+    opacity: 0;
+    transform: translateX(28px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+@keyframes lilos-v2-dim {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.lilos-v2-sheet {
+  animation: lilos-v2-sheet-in 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.lilos-v2-sheet[data-closing] {
+  animation: lilos-v2-sheet-out 0.2s cubic-bezier(0.4, 0, 1, 1) both;
+}
+.lilos-v2-push {
+  animation: lilos-v2-push 0.24s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.lilos-v2-dim {
+  animation: lilos-v2-dim 0.2s ease-out both;
+}
 @media (prefers-reduced-motion: reduce) {
-  .lilos-v2-breathe {
+  .lilos-v2-breathe,
+  .lilos-v2-sheet,
+  .lilos-v2-sheet[data-closing],
+  .lilos-v2-push,
+  .lilos-v2-dim {
     animation: none;
   }
 }

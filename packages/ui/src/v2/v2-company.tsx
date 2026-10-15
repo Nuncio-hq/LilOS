@@ -1,11 +1,10 @@
 import {
   CheckCircle2Icon,
-  CircleAlertIcon,
   CircleDotIcon,
   FlagIcon,
+  HandIcon,
   MessageCircleQuestionIcon,
   PlayIcon,
-  PlusIcon,
   SparklesIcon,
   UsersIcon,
   XCircleIcon,
@@ -13,10 +12,9 @@ import {
 import { cn } from "../lib/utils";
 import { HermesAvatar } from "../shell/avatars";
 import { ago, StateDot } from "./v2-bits";
-import { RuntimeIcon } from "./v2-runtime";
 import type { V2Activity, V2Agent, V2Project, V2Thread } from "./v2-types";
 import { V2_ATTENTION } from "./v2-types";
-import { IconStat, ProjectChip, StateBar } from "./v2-viz";
+import { ProjectChip, StateBar } from "./v2-viz";
 import { LiveStepIcon } from "./v2-worklog";
 
 /* What an activity verb looks like: an icon, not a word. */
@@ -74,6 +72,7 @@ export function V2CompanyHome({
   onOpen,
   onNeedsYou,
   onAgents,
+  onWorking,
 }: {
   company: string;
   threads: V2Thread[];
@@ -83,6 +82,7 @@ export function V2CompanyHome({
   onOpen: (id: string) => void;
   onNeedsYou: () => void;
   onAgents: () => void;
+  onWorking: () => void;
 }) {
   const working = threads.filter((t) => t.state === "working");
   const needs = threads.filter((t) => V2_ATTENTION.includes(t.state));
@@ -109,11 +109,12 @@ export function V2CompanyHome({
       label: "Working",
       icon: <CircleDotIcon />,
       cls: "text-work",
+      onClick: onWorking,
     },
     {
       value: needs.length,
       label: "Need you",
-      icon: <CircleAlertIcon />,
+      icon: <HandIcon />,
       cls: "text-amber-500",
       onClick: onNeedsYou,
     },
@@ -165,6 +166,15 @@ export function V2CompanyHome({
                 title="At work"
                 icon={<SparklesIcon />}
                 count={working.length}
+                action={
+                  <button
+                    type="button"
+                    onClick={onWorking}
+                    className="text-[12px] text-muted-foreground hover:text-foreground"
+                  >
+                    All
+                  </button>
+                }
               >
                 <div className="flex flex-col gap-1.5">
                   {working.map((t) => {
@@ -255,7 +265,7 @@ export function V2CompanyHome({
               {needs.length > 0 && (
                 <Card
                   title="Needs you"
-                  icon={<CircleAlertIcon />}
+                  icon={<HandIcon />}
                   count={needs.length}
                   action={
                     <button
@@ -340,156 +350,5 @@ function Legend({ cls, label }: { cls: string; label: string }) {
       <span className={cn("size-1.5 rounded-full", cls)} />
       {label}
     </span>
-  );
-}
-
-/* Agents: the roster as cards you can read in a second. Avatar, name,
-   runtime as its logo, then icons with numbers: open threads, need you,
-   skills, and a bar of what its threads are doing. */
-export function V2Agents({
-  agents,
-  threads,
-  projects,
-  onOpen,
-  onHire,
-}: {
-  agents: V2Agent[];
-  threads: V2Thread[];
-  projects: V2Project[];
-  onOpen: (id: string) => void;
-  onHire: () => void;
-}) {
-  const live = agents.filter((a) => !a.soon);
-  const later = agents.filter((a) => a.soon);
-  return (
-    <main className="lilos-v2-main flex min-h-0 min-w-0 flex-1 flex-col">
-      <header className="lilos-drag flex h-[52px] shrink-0 items-center gap-2 px-6">
-        <h1 className="font-semibold text-[14px]">Agents</h1>
-        <span className="text-[12px] text-muted-foreground tabular-nums">
-          {live.length}
-        </span>
-        <button
-          type="button"
-          onClick={onHire}
-          className="ml-auto flex h-7 items-center gap-1 rounded-full bg-foreground pr-3 pl-2.5 font-medium text-[12px] text-background active:scale-[0.97]"
-        >
-          <PlusIcon className="size-3.5" />
-          Hire
-        </button>
-      </header>
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto grid w-full max-w-[64rem] gap-3 px-8 pt-4 pb-12 sm:grid-cols-2 xl:grid-cols-3">
-          {live.map((a) => {
-            const mine = threads.filter(
-              (t) => t.agentId === a.id && t.state !== "settled",
-            );
-            const run = mine.find((t) => t.state === "working");
-            const needs = mine.filter((t) =>
-              V2_ATTENTION.includes(t.state),
-            ).length;
-            const counts = mine.reduce<
-              Partial<Record<V2Thread["state"], number>>
-            >((m, t) => {
-              m[t.state] = (m[t.state] ?? 0) + 1;
-              return m;
-            }, {});
-            const where = Array.from(new Set(mine.map((t) => t.projectId)));
-            return (
-              <div
-                key={a.id}
-                className="flex flex-col gap-3 rounded-2xl p-4 ring-1 ring-foreground/[0.07]"
-              >
-                <div className="flex items-center gap-3">
-                  <HermesAvatar
-                    name={a.name}
-                    status={run ? "busy" : "online"}
-                    className="size-10"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate font-semibold text-[14px]">
-                      {a.name}
-                    </div>
-                    <div className="truncate text-[12px] text-muted-foreground">
-                      {a.model}
-                    </div>
-                  </div>
-                  <RuntimeIcon
-                    runtime={a.runtime}
-                    className="size-7 rounded-lg"
-                  />
-                </div>
-                <StateBar counts={counts} />
-                <div className="flex items-center gap-3">
-                  <IconStat
-                    icon={<CircleDotIcon />}
-                    value={mine.length}
-                    label="Open threads"
-                  />
-                  {needs > 0 && (
-                    <IconStat
-                      icon={<CircleAlertIcon />}
-                      value={needs}
-                      label="Need you"
-                      tone="amber"
-                    />
-                  )}
-                  <IconStat
-                    icon={<SparklesIcon />}
-                    value={a.skills ?? 0}
-                    label="Skills"
-                  />
-                  <span className="ml-auto flex gap-1">
-                    {where.map((pid) => {
-                      const i = projects.findIndex((p) => p.id === pid);
-                      return (
-                        <ProjectChip
-                          key={pid}
-                          name={projects[i]?.name ?? "No project"}
-                          index={i}
-                        />
-                      );
-                    })}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  disabled={!run}
-                  onClick={() => run && onOpen(run.id)}
-                  className="flex h-8 items-center gap-2 rounded-lg bg-foreground/[0.035] px-2.5 text-left text-[12px] enabled:hover:bg-foreground/[0.06]"
-                >
-                  {run ? (
-                    <>
-                      <StateDot state="working" />
-                      <span className="min-w-0 flex-1 truncate">
-                        {run.title}
-                      </span>
-                    </>
-                  ) : (
-                    <span className="text-muted-foreground">Idle</span>
-                  )}
-                </button>
-              </div>
-            );
-          })}
-          {later.map((a) => (
-            <div
-              key={a.id}
-              className="flex items-center gap-3 rounded-2xl border border-foreground/15 border-dashed p-4"
-            >
-              <RuntimeIcon
-                runtime={a.runtime}
-                className="size-10 rounded-xl opacity-70"
-              />
-              <div className="min-w-0 flex-1">
-                <div className="font-medium text-[14px] text-foreground/70">
-                  {a.name}
-                </div>
-                <div className="text-[12px] text-muted-foreground">Soon</div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </main>
   );
 }
