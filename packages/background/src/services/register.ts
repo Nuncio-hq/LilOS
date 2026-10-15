@@ -5,6 +5,12 @@ import { type LaunchAgentSpec, plistFileName } from "./launchd.js";
  * SMAppService itself lives behind the `lilos-svc` helper binary in the app
  * bundle, injected here as `ServiceControl`.
  *
+ * D-#34: relay + harness run as launchd agents
+ * (`SMAppService.agent(plistName:)`, bundled helper binaries) so they
+ * survive app quit and reboot; the user's only step is the Login Items
+ * approval. Not: user-facing `launchctl` steps, LaunchDaemons (root), or
+ * app-process children that die on quit.
+ *
  * SP1 finding baked in: when the bundle version changes, a plain `register()`
  * leaves launchd pinned to the old copy — update requires
  * `unregister()` → `register()`. The last-registered bundle version is
@@ -125,10 +131,12 @@ export async function ensureLaunchAgents(opts: {
       const versionChanged =
         (await opts.versions.read(agent.label)) !== opts.bundleVersion;
       const smaOwned = before !== "notFound" && before !== "notRegistered";
-      // launchd can hold a job SMAppService doesn't own — an ad-hoc build's
-      // `launchctl bootstrap` leftover, or a stale program from another
-      // bundle ("foreign"). Registering over it keeps the OLD binary running
-      // and pins the version store so nothing ever repairs it (#206).
+      // D-#206: launchd can hold a job SMAppService doesn't own — an ad-hoc
+      // build's `launchctl bootstrap` leftover, or a stale program from
+      // another bundle ("foreign"). `status` is blind to those, so launchd
+      // is asked too: registering over one keeps the OLD binary running and
+      // pins the version store so nothing ever repairs it. Not: trusting
+      // `status` alone.
       const stateBefore = await launchdState(opts.control, plist);
       const foreign =
         stateBefore === "foreign" || (!smaOwned && jobLoaded(stateBefore));
@@ -142,8 +150,8 @@ export async function ensureLaunchAgents(opts: {
             unregistered = true;
           } catch (e) {
             // "Requestor lacks required entitlement": the record exists but
-            // the live job isn't ours — clean it via bootout below (#206).
-            // Also recoverable when nothing owns the label afterwards or the
+            // the live job isn't ours — clean it via bootout below (D-#206);
+            // failing here would roll back working installs. Also recoverable when nothing owns the label afterwards or the
             // survivor is a foreign job. A genuinely owned job that fails to
             // unregister still fails — rollback is not weakened.
             const still = await launchdState(opts.control, plist);

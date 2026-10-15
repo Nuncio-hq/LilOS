@@ -145,12 +145,12 @@ export function applyReplay(
       title: snapshotTitle,
     }).catch(() => {});
   }
-  // AC-4: a turn that vanished across sleep/restart must end as
-  // `interrupted` with Retry — never a spinner. Lost iff the replay shows
-  // it neither still running nor terminated by a replayed turn.completed.
-  // A truncated replay can't prove either (#431): the completed may be
-  // cap-dropped, so the inference stays silent rather than stamping a
-  // healthy turn interrupted.
+  // D-#34 AC-4: a turn that vanished across sleep/restart must end as
+  // `interrupted` with Retry — never a spinner, never silently dropped.
+  // Lost iff the replay shows it neither still running nor terminated by a
+  // replayed turn.completed. A truncated replay can't prove either (#431):
+  // the completed may be cap-dropped, so the inference stays silent rather
+  // than stamping a healthy turn interrupted.
   const finishedInReplay = replay.events.some(
     (e) => e.type === "turn.completed" && e.payload.turnId === watchedTurnId,
   );
@@ -179,7 +179,7 @@ export async function markTurnInterrupted(
     binding.nowStep = undefined;
     binding.nowWaits.clear();
     this.noteNow(binding);
-    /* #419: the lost turn's event log orphans with this session (the
+    /* D-#419: the lost turn's event log orphans with this session (the
        rebind swaps engineRef), so the failure card can't ride the turn
        — stamp it on the conversation; the next turn.started clears it. */
     await this.updateConversation(binding.conversationId, {
@@ -203,10 +203,14 @@ export async function markTurnInterrupted(
 }
 
 /**
- * #521: a turn killed by the backend dying gets the same surface the
- * lost-turn path posts — interrupted note + the sleep failure card —
- * deduped on the prompting message: the prompt's own rejection AND the
- * turn's turn.completed can both carry -32006, and only one note posts.
+ * D-#521: engine failure surfaces are typed end to end — the harness picks
+ * this one from the code (-32006 BACKEND_DOWN on the prompt's rejection, or
+ * the optional `turn.completed.errorCode`), never from the error text. A
+ * turn killed by the backend dying gets the same surface the lost-turn path
+ * posts — interrupted note + the sleep failure card, never a generic
+ * "Engine error:" line — deduped on the prompting message: the prompt's own
+ * rejection AND the turn's turn.completed can both carry -32006, and only
+ * one note posts. Not: classifying failures by matching error text.
  */
 export async function surfaceBackendDown(
   this: HarnessCtx,

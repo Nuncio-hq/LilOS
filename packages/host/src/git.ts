@@ -733,10 +733,11 @@ export async function gitWorktrees(params: {
 }
 
 /**
- * `git worktree add <dir> -b <branch> <base>` — LilOS's one mutating git op
+ * `git worktree add <dir> -b <branch> <base>` — the workstream git write
  * (#156's "new workstream" mode): it only ever ADDS a worktree+branch, never
- * removes/checks out. Called by the harness in-process; deliberately not on
- * the loopback HTTP surface, which stays read-only (D-#11). When `dir` sits
+ * removes/checks out. Called by the harness in-process; deliberately not a
+ * host method on the loopback `/host` surface (D-#11) — unlike the
+ * Workbench's commit/push/pull writes (#107). When `dir` sits
  * inside the repo's `.lilos/` we write `.lilos/.gitignore = *` first — the
  * dir then renders no untracked entries in the parent checkout's `git
  * status`, without touching `.git/info/exclude` or the user's .gitignore.

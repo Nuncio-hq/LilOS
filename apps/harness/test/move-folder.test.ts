@@ -14,7 +14,7 @@ import {
 } from "./helpers";
 
 /**
- * Issue #581 harness leg: `conversations.moveFolder` re-homes the session's
+ * D-#581 harness leg: `conversations.moveFolder` re-homes the session's
  * working folder through the engine (`session.moveWorkspace`, capability
  * `workspace_move`), stamps the landed cwd on the conversation row, and
  * posts the honest system note — the running session moved, or the next

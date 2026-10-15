@@ -4,12 +4,19 @@ One small adapter, three jobs:
 
 1. Register the LilOS gateway's catalog as ``lilos_<name>`` tools — the tool
    list lives in the LilOS contracts package; this plugin renders the
-   ``catalog.json`` snapshot shipped next to this file (rendered by the same
-   contract renderer the gateway's ``GET /tools`` uses). ``register()`` never
-   touches the network: a fetch inside plugin load can outlive Hermes' 10 s
-   plugin-load deadline while the harness event loop is blocked (#411), and
-   the abandoned load drops every tool. Every tool call carries the Hermes
-   session id so the gateway resolves the session's own scope.
+   ``catalog.json`` snapshot shipped next to this file, generated from the
+   same ``toolListAll`` the gateway's ``GET /tools`` serves
+   (``scripts/gen-plugin-catalog.ts``; ``bun run schema:gen`` keeps it
+   fresh, ``schema:check`` fails CI when stale). D-#411: ``register()``
+   never touches the network: a fetch inside plugin load can outlive
+   Hermes' ~10 s plugin-load deadline while the harness event loop (which
+   serves the gateway) is blocked in a spawnSync, and the abandoned load
+   drops every tool for the session. Only tool CALLS hit the gateway. Not:
+   fetching ``GET /tools`` inside ``register()``, a hand-written tool list
+   in Python, or leaving Hermes tool search on — it defers every plugin
+   tool behind ``tool_search`` (apps/harness connect.ts turns it off).
+   Every tool call carries the Hermes session id so the gateway resolves
+   the session's own scope.
 2. Inject the versioned LilOS host policy into each LilOS session's system
    prompt (``register_system_prompt_section`` — rendered once per session
    and frozen, so it is cache-safe by construction).

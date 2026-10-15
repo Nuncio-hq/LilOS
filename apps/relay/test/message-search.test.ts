@@ -186,6 +186,8 @@ describe("messages.search over the session wire (memory store)", () => {
   });
 });
 
+/* D-#138: hits come only from the relay's stored message text (FTS5,
+   migration v9); the index follows every write, edit and delete. */
 describe("messages.search over real SQLite FTS5 (bun fixture)", () => {
   /* The fixture runs the scenario under bun:sqlite and prints one JSON line
      per step; this block replays each line as an assertion (vitest/Node has

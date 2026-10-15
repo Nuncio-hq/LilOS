@@ -1,10 +1,14 @@
 /**
- * Native macOS window chrome (issue #232): every LilOS window uses the
+ * Native macOS window chrome (D-#232): every LilOS window uses the
  * `hiddenInset` title-bar style — no separate title bar, the traffic lights
  * are inset into the sidebar's 56px header row — plus sidebar vibrancy so
  * the sidebar shows the desktop through the window's left column. The
- * renderer owns the drag regions (`-webkit-app-region`), so these options
- * are identical for the app and the status window.
+ * renderer owns the drag regions (`-webkit-app-region`: `lilos-drag` header
+ * strips, interactive children no-drag — apps/web/src/index.css), so these
+ * options are identical for the app and the status window. It also pushes
+ * its theme to `nativeTheme.themeSource` (main.ts) so the vibrancy material
+ * matches the app tokens. Not: a default framed window, or a frameless one
+ * with custom-drawn traffic lights (loses native drag/zoom/full-screen).
  */
 
 import { DESKTOP_FULLSCREEN_CHANNEL } from "@lilos/contracts/app";

@@ -6,6 +6,14 @@ import type { HarnessCtx, SessionBinding } from "./ctx";
  * parked sends, and the interrupt handler (was the stop cluster of
  * `../harness.ts`).
  *
+ * D-#403: a Stop's scope is causal, not temporal. The relay stamps
+ * `turn.interruptRequested` with `afterSeq` (the channel seq it follows);
+ * every send at or below it parks in the not-sent tray wherever it
+ * surfaces (queue, steer, a late `deliver`, a failed prompt). The event
+ * bus and `channelMessages` are unordered paths, so a pre-Stop send can
+ * land after the Stop's drain. Not: ordering the bus against the store,
+ * or snapshotting which rows were visible at Stop time.
+ *
  * Moved verbatim out of `../harness.ts` (#441) — bodies byte-identical except each signature gained
  * `export function` + a `this: HarnessCtx` first parameter — `this` is
  * still the Harness: these functions sit on `Harness.prototype` via the

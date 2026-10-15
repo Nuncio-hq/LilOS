@@ -237,7 +237,7 @@ describe("AC-3 /pair/exchange throttle", () => {
       retryAfterMs: 60_000,
     });
 
-    // The documented cooldown (SECURITY.md: 60s) lifts the lock.
+    // The cooldown (PAIRING_EXCHANGE_COOLDOWN_MS: 60s) lifts the lock.
     clock += 60_000;
     const ok = await pairing.exchangeGrant({ code: grant.code });
     expect("device" in ok).toBe(true);

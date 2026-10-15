@@ -94,8 +94,11 @@ export function sessionParams(
   const provider = conv?.provider ?? base.provider;
   const effort = conv?.effort ?? base.effort;
   const fast = conv?.fast ?? base.fast;
-  // The session's folder is owned by the conversation (#113); absent → the
-  // harness default workdir, as before.
+  // D-#113: the session's folder is owned by the conversation —
+  // `conversations.open { cwd }`, stored nullable on the relay row — and the
+  // engine gets it as `cwd` on `session.start`; absent → the harness default
+  // workdir. A live move goes through `session.moveWorkspace` (D-#581).
+  // Not: a per-employee fixed workdir — one employee works many folders.
   const cwd = expandPath(conv?.cwd ?? this.opts.workdir, this.home);
   return {
     ...base,

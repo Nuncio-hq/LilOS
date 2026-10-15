@@ -5,9 +5,10 @@ import { atom } from "nanostores";
 /* The signed-in human (this build is single-user). `USER_ID` is the author id
    the relay puts on that person's messages; every surface renders it as one
    identity, never an anonymous "You" (issue #80, AC-1).
-   Issue #118: the identity itself is relay-owned domain data — `profile`
+   D-#118: the identity itself is relay-owned domain data — `profile`
    mirrors `relay.profile`; when the store is empty (an install predating
-   profile settings, AC-4) the OS user's full name prefills it. */
+   profile settings, AC-4) the OS user's full name prefills it. Nothing
+   here is hardcoded (ac-118-no-hardcoded.test.ts greps for it). */
 export const USER_ID = "user";
 
 /** The relay-stored profile, bound to `relay.profile` in runtime.ts. */

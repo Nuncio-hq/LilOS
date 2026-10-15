@@ -14,10 +14,11 @@ import { createAppOps } from "../src/harness/app-ops";
 import { openDmConversation, setupWorld, waitFor } from "./helpers";
 
 /**
- * The approval-gated gateway tools end to end: a tool call posts an ask on
- * the bound conversation, NOTHING is written before the user answers,
+ * The approval-gated gateway tools end to end (D-#341): a tool call posts an
+ * ask on the bound conversation, NOTHING is written before the user answers,
  * approve applies through the real relay methods, and decline returns the
- * declined error — across the real HTTP gateway the engines talk to.
+ * declined error — across the real HTTP gateway the engines talk to. Full
+ * access never skips the card.
  */
 describe("approval-gated gateway tools", () => {
   async function world() {

@@ -2,6 +2,10 @@
  * Protocol identity for the LilOS host API. The host answers questions about
  * the machine a session runs on (its filesystem, git checkouts and forge);
  * it is implemented by the harness (apps/harness, #26), never by an engine.
+ * D-#11: one implementation (packages/host); the real app reaches it as
+ * `POST /host` on the harness's loopback feed port, behind the install
+ * token (#113). Not: fs/git tools on the engine protocol, or a per-app
+ * reimplementation of the calls.
  */
 export const HOST_API = { name: "lilos-host", version: 1 } as const;
 

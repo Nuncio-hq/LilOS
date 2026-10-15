@@ -21,17 +21,27 @@ import { SurfaceError } from "@lilos/surfaces";
 import type { Logger } from "../log";
 
 /**
- * Approval-gated company writes behind the gateway tools. Each op posts the
- * ask card itself — nothing is written before the user answers, whatever the
- * thread's access level — then applies the change through the same relay
- * methods the app uses. A decline surfaces as `SurfaceError("declined")` so
- * the agent reads a clean refusal instead of a hang or a fake success.
+ * Approval-gated company writes behind the gateway tools (D-#341: they
+ * reuse the user's own ask). Each `access: "approval"` op posts a
+ * `kind: "approval"` (once/deny) ask on the bound conversation through the
+ * relay asks seam (`asks.open`) and waits for it — nothing is written before
+ * "once", whatever the thread's access level: neither the engine's approval
+ * path nor a thread's `access: "full"` auto-approve (asks.ts) can bypass it.
+ * It then applies the change through the same relay methods the app uses.
+ * `team_hire` carries its draft in `Ask.hire`, so the thread renders the
+ * same hire card a channel hire shows. A decline surfaces as
+ * `SurfaceError("declined")` so the agent reads a clean refusal instead of
+ * a hang or a fake success.
  *
  * Asks here never touch the engine ask seam (`askByRequest`/`requestByAsk`)
  * — there is no engine request to answer, so the wait happens locally on
  * `ask.resolved` plus a slow `asks.list` poll (the event is fire-and-forget
  * and a mid-reconnect answer would otherwise be missed, the same gap the
  * reconcile pass covers for engine asks).
+ *
+ * Not: a parallel gateway-ask flow (the engine's `requestByAsk` path can't
+ * reach it — unknown ask ids no-op there), auto-approve for gateway asks,
+ * or write-first-ask-later.
  */
 
 const POLL_MS = 2_000;

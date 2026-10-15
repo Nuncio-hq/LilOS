@@ -63,6 +63,11 @@ export async function handleDirectory(c: RelayCtx): Promise<false | undefined> {
       return;
     }
     case "employees.remove": {
+      /* D-#29: LilOS never deletes an engine profile — an employee is only
+         the LilOS record pointing at engine runtime state. Remove from
+         company drops the record + its DM channel/conversations/messages
+         (`store.removeEmployee`) and never calls the engine; `agents.*`
+         has no delete method at all. Not: delete the profile on remove. */
       const parsed = EmployeesRemoveParams.safeParse(params);
       if (!parsed.success) throw badParams(parsed.error.issues);
       const removed = await store.removeEmployee(parsed.data.id);
@@ -97,7 +102,7 @@ export async function handleDirectory(c: RelayCtx): Promise<false | undefined> {
       let path = parsed.data.path;
       if (devicePeers.has(peer)) {
         /* The phone may add only what its browser could have listed —
-           a real folder under the Mac's home (#238). The stored path
+           a real folder under the Mac's home (D-#238). The stored path
            is the canonical `~/x` form of the resolved one. */
         const abs = resolveUnderHome(path, homeDir);
         if (!abs) {

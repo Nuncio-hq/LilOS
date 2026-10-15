@@ -22,9 +22,12 @@ export interface WakeDetector {
 }
 
 /**
- * Sleep detector: a heartbeat timer that compares scheduled time against the
- * wall clock. Works in the headless harness daemon (no AppKit runloop) and
- * doubles as the SIGSTOP/SIGCONT sleep simulation signal on the VM.
+ * Sleep detector (D-#34 wake recovery): a heartbeat timer that compares
+ * scheduled time against the wall clock. Works in the headless harness daemon
+ * (no AppKit runloop) and doubles as the SIGSTOP/SIGCONT sleep simulation
+ * signal on the VM. On a wake the harness drops the presumed-dead engine
+ * socket and resyncs, so a turn lost across the gap ends interrupted
+ * (apps/harness/src/harness/engine-attach.ts) instead of spinning forever.
  */
 export function watchWake(opts: WakeDetectorOptions): WakeDetector {
   let stopped = false;

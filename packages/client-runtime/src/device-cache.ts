@@ -10,7 +10,7 @@ import {
 import { z } from "zod";
 
 /**
- * On-device directory cache (#154): the phone renders Home from this before
+ * On-device directory cache (D-#154): the phone renders Home from this before
  * the socket opens, then reconnects catch up via `afterSeq` replay on the
  * stored watermarks. Ported from T3 Code
  * `apps/mobile/src/connection/environment-cache-store.ts` (MIT) — a

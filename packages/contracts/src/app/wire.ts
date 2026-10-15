@@ -277,8 +277,8 @@ export const AppMethod = z.enum([
      replay and the push watermark. */
   "workbench.open",
   /* The user's own read watermark (#563): opening a thread stamps
-     `readSeq` at the channel's current seq, clearing the "finished, not
-     seen" dot on every device. */
+     `readSeq` past every finish the relay has seen, clearing the
+     "finished, not seen" dot on every device. */
   "conversations.markRead",
   /* Scheduled tasks (#136): the relay owns the records (D-#25); the host
      reads them all and fires runs as `conversations.open`. `runNow`
@@ -457,8 +457,9 @@ export const MAX_ATTACHMENTS_PER_MESSAGE = 10;
  */
 export const AttachmentInput = z.object({
   name: z.string().default(""),
-  /* `min(1)` not a mime allowlist — clients send `application/octet-stream`
-     when the platform can't name a type. */
+  /* D-#562: `min(1)` not a mime allowlist — any file type attaches;
+     clients send `application/octet-stream` when the platform can't name
+     a type. */
   mimeType: z.string().min(1),
   /** Base64-encoded bytes. */
   dataBase64: z.string().min(1),
@@ -594,10 +595,10 @@ export const ConversationResult = z.object({ conversation: Conversation });
 
 /**
  * `conversations.markRead {conversationId}` (#563): stamps the thread's
- * `readSeq` at the channel's current `lastSeq` — "Oscar has seen this" —
- * and returns the updated row. Any client may call it (the phone clears
- * the same watermark the Mac sets); the relay owns the seq, so a client
- * can never backdate the mark.
+ * `readSeq` at max(channel `lastSeq`, `finishedSeq`) — "Oscar has seen
+ * this" — and returns the updated row. Any client may call it (the phone
+ * clears the same watermark the Mac sets); the relay owns the seq, so a
+ * client can never backdate the mark.
  */
 export const ConversationsMarkReadParams = z
   .object({ conversationId: z.string().min(1) })

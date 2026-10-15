@@ -17,7 +17,7 @@ import { type BlockedUpdate, blockedUpdateFor } from "./mapping";
 import { type PairedMac, removedByMac, touchMac } from "./paired-macs";
 
 /**
- * The real-relay link (#154): one RelayClient, one ConnectionSupervisor —
+ * The real-relay link (D-#154): one RelayClient, one ConnectionSupervisor —
  * nothing else ever dials. RN glue stays in this file: AppState feeds
  * `appForegrounded(backgroundedMs)`, NetInfo feeds `setOnline`, and the
  * supervisor's state atom maps onto the UI's three-word MacLink.

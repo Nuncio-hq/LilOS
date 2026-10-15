@@ -24,7 +24,7 @@ export function watchDesktopChrome(): () => void {
   };
 }
 
-/* Issue #301: the OS keeps its own draggable-region map for the frameless
+/* D-#232 (#301): the OS keeps its own draggable-region map for the frameless
    window, rebuilt only when the renderer re-pushes the `-webkit-app-region`
    rects. A `.lilos-drag` header that mounts (or gains/moves controls) while
    the cursor is already over it — the thread panel ⇄ Focus swap puts the

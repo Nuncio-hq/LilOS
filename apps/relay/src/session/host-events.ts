@@ -30,11 +30,15 @@ export async function handleHostEvents(
   } = c;
   switch (method) {
     case "session.events": {
-      /* Engine-event replay scoped to one conversation (#157): the phone
+      /* Engine-event replay scoped to one conversation (D-#157): the phone
          (device scope) replays the turn stream through the relay — the
          conversation's `engineRef` maps the call onto the host's
          `events.since`. No engine session bound yet = nothing to
-         replay; the client treats `not_found` as an empty feed. */
+         replay; the client treats `not_found` as an empty feed. Live
+         frames arrive as `engine.event` below. Not: an engine socket on
+         the phone, an `events.since` passthrough keyed by raw session id,
+         or device access to raw host methods (same scoping as
+         `folders.detail`, #156). */
       const parsed = SessionEventsParams.safeParse(params);
       if (!parsed.success) throw badParams(parsed.error.issues);
       const conversation = await store.getConversation(
@@ -54,7 +58,7 @@ export async function handleHostEvents(
       return;
     }
     case "engine.event": {
-      /* Host-only (#157): every engine event of a conversation-bound
+      /* Host-only (D-#157): every engine event of a conversation-bound
          session is re-published here so channel subscribers — the
          phone — see the live turn. Unknown conversations drop silently:
          a push can land before its `conversation.updated` bind did. */
@@ -78,10 +82,13 @@ export async function handleHostEvents(
           // The host pushed it — no need to send its own stream back.
           host?.peer,
         );
-        /* #300: the context meter's usage lives on the row, not the
-           stream — persist each turn.completed's usage so it survives
-           replay failure entirely. Best-effort like the push fan-out:
-           a persist hiccup must not drop the event's ack. */
+        /* D-#300: the context meter's usage lives on the row, not the
+           stream — persist each turn.completed's usage (+ contextWindow)
+           so it survives replay failure entirely; `usage_session_id`/
+           `usage_seq` fence stale replays (`store.recordTurnUsage`).
+           Best-effort like the push fan-out: a persist hiccup must not
+           drop the event's ack. Not: a meter rebuilt from replayed
+           events only — a dead session took the meter with it. */
         const usage =
           parsed.data.event.type === "turn.completed" ||
           parsed.data.event.type === "session.compacted"

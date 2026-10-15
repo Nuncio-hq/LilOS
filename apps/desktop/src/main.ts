@@ -60,6 +60,11 @@ import { nativeWindowChrome, watchWindowChrome } from "./window-chrome";
  * reconnects to the relay on every launch (AC-2/#34), then opens the app
  * window — apps/web, talking to that relay and the harness feed (#27).
  *
+ * Electron (D-#3): the shell is Chromium, so apps/web renders exactly as in
+ * a browser tab, and Playwright's `_electron` drives it in e2e (ac-27 AC-8).
+ * Not: Tauri — its WKWebView drifts from Chromium and has no macOS
+ * WebDriver.
+ *
  * Release/update (#35): app + relay + harness share one stamped version; a
  * background feed check swaps the whole bundle via a detached applier and a
  * failed post-update handshake rolls the previous version back.

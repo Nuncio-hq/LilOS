@@ -23,7 +23,7 @@ export async function handleTurns(c: RelayCtx): Promise<false | undefined> {
           "conversation not found",
         );
       }
-      /* #403: stamp the channel seq this interrupt logically follows —
+      /* D-#403: stamp the channel seq this interrupt logically follows —
          every send committed at or below it predates the Stop. Sends
          and bus events travel different paths to the host, so without
          the stamp a pre-Stop send whose row is still in transit can

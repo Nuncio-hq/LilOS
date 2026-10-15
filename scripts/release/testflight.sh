@@ -1,10 +1,24 @@
 #!/usr/bin/env bash
 # testflight.sh — one command ships a TestFlight build (#250, hardened #268):
 #
-#   bun run mobile:release            # the whole thing
+#   bun run mobile:release            # the whole thing (from the repo root)
 #   scripts/release/testflight.sh --dry-run   # plan + preflight, nothing builds
 #
 # Legs: derive build number -> prebuild -> archive -> export .ipa -> upload.
+# The build lands in App Store Connect -> LilOS -> TestFlight -> Internal
+# Testing after ~5-30 min of processing; internal testers (Oscar's iPhone)
+# get it automatically.
+#
+# Needs on this Mac — on a bare machine --dry-run lists every missing piece
+# with its exact fix (bun, a full clone, `bun install`, Xcode, pods, ASC key):
+#   - Xcode 26.x: preflight refuses an iOS 27+ SDK, whose archives crash on
+#     launch until UIScene lifecycle adoption lands (#275). On a multi-Xcode
+#     Mac pick 26.x with `sudo xcode-select -s` or
+#     DEVELOPER_DIR=/Applications/Xcode-26.x.app/Contents/Developer.
+#   - CocoaPods for `expo prebuild`: auto-installed (`brew install
+#     cocoapods`) when `pod` is missing, so brew must be there.
+#   - The ASC API key in env (Env below) — the org secret, the same key the
+#     desktop notarization uses.
 #
 # Why Apple-native and not `eas build`/`eas submit`: eas-cli requires an Expo
 # login for every command (verified: `eas build --local` and `eas submit
@@ -15,10 +29,13 @@
 # the EAS path for when Oscar adds an EXPO_TOKEN.
 #
 # Build number: App Store Connect is the one counter that can never collide —
-# the script reads the app's newest build via the ASC API
+# the script reads the newest build of com.nuncio.lilos.mobile via the ASC API
 # (scripts/release/asc-build-number.ts) and writes latest+1 into
 # apps/mobile/app.json expo.ios.buildNumber before prebuild. app.json is left
 # bumped (git diff shows it; nothing to hand-edit).
+#
+# Flags: --dry-run (preflight + build-number check only), --skip-upload
+# (= LILOS_SKIP_UPLOAD=1), -h/--help (this header).
 #
 # Env:
 #   ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8   App Store Connect API key (required)
@@ -35,6 +52,11 @@
 # over auth). The .p8 is written to a chmod-600 temp file and trap-cleaned.
 # For a manual-signing run pass the pieces through LILOS_XCARGS, e.g.
 #   LILOS_XCARGS="CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY='iPhone Distribution: X' PROVISIONING_PROFILE_SPECIFIER=uuid"
+#
+# Optional instead: tag a release. Pushing a mobile-v* tag runs the EAS cloud
+# path in .github/workflows/mobile-release.yml (`eas build --auto-submit`);
+# its header lists the one-time Expo setup, then:
+#   git tag mobile-v0.1.0-<n> && git push --tags
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 export PATH="$HOME/.bun/bin:$HOME/.local/bin:$PATH"
@@ -52,7 +74,7 @@ for arg in "$@"; do
   case "$arg" in
     --dry-run) DRY_RUN=1 ;;
     --skip-upload) LILOS_SKIP_UPLOAD=1 ;;
-    -h|--help) sed -n '2,38p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,59p' "$0"; exit 0 ;;
     *) echo "unknown arg: $arg" >&2; exit 2 ;;
   esac
 done

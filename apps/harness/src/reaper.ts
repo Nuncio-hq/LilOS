@@ -1,8 +1,9 @@
 import type { Logger } from "./log";
 
 /**
- * #346 AC-3 — the idle-session reaper. Once a minute it suspends every
- * bound engine session that has been quiet for `idleMs` (`0` = never).
+ * D-#346 (AC-3) — the idle-session reaper. Once a minute it suspends every
+ * bound engine session that has been quiet for `idleMs`
+ * (`LILOS_SESSION_IDLE_MINUTES`, default 30, `0` = never; config.ts).
  * Suspend, never stop: the session keeps its registry row, so the next
  * user message reopens it through `session.resume` (#288) before the
  * turn runs — "sending a message brings it back".
@@ -13,6 +14,15 @@ import type { Logger } from "./log";
  * state); the reaper owns the clock and the `session.suspend` call.
  * Background jobs do NOT block it — that is the point: a `sleep` left
  * running dies with the suspend.
+ *
+ * `session.suspend` closes the live engine session but keeps what resume
+ * needs (`session.stop` still means "end for good", D-#573); the resumed
+ * turn hears once that it was reopened. The conversation's `life` closes
+ * on suspend; `running|open|closed` is derived client-side by the ui
+ * `sessionLife` (mobile ports it in dm-model.ts), so the ring renders
+ * real state. Not: `session.stop` for idle cleanup (kills the session's
+ * memory; sends to it looped on INVALID_STATE re-queues), a second life
+ * derivation outside `sessionLife`, or LilOS-owned session memory.
  */
 
 /** What the reaper needs per bound session; the harness derives it. */

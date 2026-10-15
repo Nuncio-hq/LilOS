@@ -15,10 +15,15 @@ import { expandPath } from "./paths.js";
 /** How the editor's bundled CLI expresses "open at line". */
 type LineSyntax = "-g" | "colon" | "none";
 
-/** Editors LilOS can open, in default-preference order (first found is the
-   default until the #132 picker). Detection is by bundle id: a `.app` counts
-   when its `Contents/Info.plist` declares this CFBundleIdentifier — read as
-   raw bytes, which holds for both XML and binary plists. */
+/** Editors LilOS can open, in default-preference order (D-#110: the app's
+   default is the Settings pick, relay `settings.defaultEditor` since #132,
+   which leads every detected list; first found is only the fallback).
+   Detection is by bundle id in /Applications + ~/Applications: a `.app`
+   counts when its `Contents/Info.plist` declares this CFBundleIdentifier —
+   read as raw bytes, which holds for both XML and binary plists. `os.open`
+   is argv exec (never a shell) and refuses targets outside the session
+   folder. Not: `open -a <name>` guessed by name — openPlan's fallback
+   passes the detected bundle's path. */
 export const EDITOR_CATALOG: {
   id: OsEditorId;
   name: string;

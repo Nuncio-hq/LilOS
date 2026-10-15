@@ -27,7 +27,7 @@ export interface WaitingResult {
 }
 
 /**
- * Which user messages in a conversation are waiting right now (#315) —
+ * Which user messages in a conversation are waiting right now (D-#315) —
  * relay truth, so a reload shows the same tray (deliveredSeq) plus what the
  * running turn already claimed (model refs + landed steers):
  *

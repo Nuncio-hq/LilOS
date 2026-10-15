@@ -283,7 +283,7 @@ if (existsSync(PLUGIN_SRC)) {
     recursive: true,
   });
 }
-/* #539: the harness loads playwright lazily through createRequire and needs
+/* D-#539: the harness loads playwright lazily through createRequire and needs
    the packages as real files — playwright-core reads its own package.json +
    browsers.json through computed absolute paths, which a bun-compiled
    binary resolves to the CI checkout (the 1.0.33..1.0.40 startup crash).

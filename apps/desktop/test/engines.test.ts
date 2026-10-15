@@ -9,7 +9,7 @@ import {
 } from "../scripts/engines";
 
 /**
- * Issue #85 — what the DMG ships. `sign-local.sh`/`release.yml` pass a
+ * D-#85 — what the DMG ships. `sign-local.sh`/`release.yml` pass a
  * signing identity for release builds and `-` for ad-hoc dev builds; the
  * engine plan is derived from that one input.
  */

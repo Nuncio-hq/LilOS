@@ -155,7 +155,7 @@ export const BACKGROUND_JOBS_CAPABILITY: Capability = {
 };
 
 /**
- * The canonical `approval_policy` descriptor (issue #106): the engine's
+ * The canonical `approval_policy` descriptor (D-#106): the engine's
  * global approval policy (its own `approvals.mode`-style setting) is
  * read/written via `approvals.setPolicy`; `session.setAccess` lets the app push the
  * conversation's access level onto a live session as a hint (WS yolo /
@@ -206,11 +206,16 @@ export const WORKSPACE_MOVE_CAPABILITY: Capability = {
 };
 
 /**
- * The canonical `commands` descriptor: the engine offers slash commands and
- * skills the composer lists (`commands.list`) and runs (`commands.exec`) like
- * the TUI's `/` palette. `commands.exec` either returns engine-owned output to
- * show in the thread, or expands a skill into the prompt the next turn runs.
- * Engines without it declare nothing and `/` stays plain text (D-#19).
+ * The canonical `commands` descriptor (D-#109): the engine offers slash
+ * commands and skills the composer lists (`commands.list`) and runs inside
+ * the session (`commands.exec`) like the TUI's `/` palette. `commands.exec`
+ * either returns engine-owned output to show in the thread, or expands a
+ * skill into the prompt the next turn runs. Engines without it declare
+ * nothing and `/` stays plain text (D-#19). Commands LilOS owns a control
+ * for (`/model`, `/rewind`) open that feature instead of reaching the
+ * engine. Not: a LilOS-owned command table, or vendor command names on this
+ * side of the seam — the mapping onto the vendor engine's own slash calls
+ * lives in its adapter only.
  */
 export const COMMANDS_CAPABILITY: Capability = {
   id: "commands",
@@ -221,11 +226,16 @@ export const COMMANDS_CAPABILITY: Capability = {
 };
 
 /**
- * The canonical `compact` descriptor (issue #560): `session.compact` asks
+ * The canonical `compact` descriptor (D-#560): `session.compact` asks
  * the engine to summarize older turns in place so the context meter drops.
  * The compacted result lands as a `session.compacted` event (manual or
  * automatic alike) carrying before/after tokens; engines that can't
- * compact don't declare it and the app hides Compact now (D-#19).
+ * compact don't declare it and the app hides Compact now (D-#19). The
+ * engine owns compaction: the meter's Compact now rides the app passthrough,
+ * and the harness posts the thread note as a persisted system message so
+ * it replays. Not: inferring compaction from `session.ref.changed` (it also
+ * fires for `session.info`), or matching the vendor engine's notification
+ * text.
  */
 export const COMPACT_CAPABILITY: Capability = {
   id: "compact",

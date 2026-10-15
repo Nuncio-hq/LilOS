@@ -199,12 +199,16 @@ function findModel(models: ModelOption[], c: ModelChoice) {
   );
 }
 
-/* The picker's effective list (#140 AC-1): the engine's catalog plus the
+/* D-#140 — the picker's effective list (AC-1): the engine's catalog plus the
    session's own pick when the catalog omits it — the picker always shows the
    model the session actually runs, marked `notInList` so its row can carry
    the "Not in list" hint. Only the session's pick is ever added; the engine's
    reported rows are passed through untouched (LilOS invents no models — the
-   path back to the catalog is Refresh, not a merge). */
+   path back to the catalog is Refresh, `models.list {refresh:true}`, the
+   engine's live catalog). Not: merging configured or preset models into
+   `models.list` — that re-advertises what the engine hides on purpose
+   (Hermes' account-gated models), so picks would fail — or engine-specific
+   picker branches. */
 export function withSessionModel(
   models: ModelOption[],
   pick: ModelChoice,

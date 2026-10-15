@@ -13,6 +13,15 @@
  *                      running engine so this bundle is not labeled.
  *   release + `--engine=fake`: an error — a signed build never ships the
  *                      fake engine (AC-4).
+ *
+ * D-#85: release builds run the real engine; engine-fake is for `bun run
+ * verify`, CI and dev stacks (`LILOS_ENGINE=fake`). LilOS stores no
+ * provider/model default — Hermes' own config decides. The harness finds
+ * Hermes without PATH and a missing engine is a plain status reason, never
+ * a silent fake (apps/harness/src/engine/discover.ts). Not: a fake default
+ * in release, hand-editing installed launch-agent plists to pick an engine
+ * (lost on every rebuild — `--engine=` stamps it), or asking for an MDM
+ * exception (BUNDLE_EXECUTABLES below).
  */
 
 interface EngineBinary {

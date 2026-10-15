@@ -1,5 +1,5 @@
 /**
- * Spawn-boundary env contract (#412, widened by #507): the LILOS_* names a
+ * Spawn-boundary env contract (D-#412, widened by #507): the LILOS_* names a
  * spawned process may see. One allow-list guards every harness-owned child —
  * the engine spawn, the surfaces PTY and workbench browser, the host
  * package's exec calls (`git`/`gh`/`id`/`open` — repo hooks and editor CLIs
@@ -18,6 +18,13 @@
  * and `packages/*` can only see packages (`apps/*` is off-limits by the
  * one-way-deps rule). The names mirror `SURFACES_ENV` in `@lilos/surfaces`;
  * a harness test binds the two so they can't drift.
+ *
+ * Same decision: a session with no folder runs in `~`, and the harness's
+ * `hasFolder` gates checkpoints/rewind so home is never snapshotted or
+ * restored. Not: passing the whole harness env (hands `LILOS_RELAY_TOKEN`
+ * and state dirs to agent shells, repo hooks and engine plugin code), a
+ * per-session temp folder (rejected 2026-10-04), or Workbench/rewind
+ * treating `~` as a session folder.
  */
 export const LILOS_ENV_ALLOW_LIST: readonly string[] = [
   "LILOS_SURFACES_URL", // surfaces.baseUrl — gateway URL the lilos plugin reads

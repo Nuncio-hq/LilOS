@@ -13,7 +13,8 @@ change)
 **Acceptance criteria** (optional but helpful — how would you see it works?)
 
 **Agent tools** (which `lilos_*` tools let an employee use this; or why it's
-not agent-facing — see "Agent Gateway" in `AGENTS.md`)
+not agent-facing — see "Every feature ships its agent tools" in
+`docs/index.html`)
 
 **For agent slices**: a feature is split into vertical slices; each slice
 with acceptance criteria + a verify plan gets the `agent-ready` label at

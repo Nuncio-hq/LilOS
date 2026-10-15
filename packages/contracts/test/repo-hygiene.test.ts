@@ -8,6 +8,17 @@ import { describe, expect, it } from "vitest";
  * Issue #172 repo-hygiene ACs: the license, notices, contributor docs, the
  * moved-in site, its Pages workflow, and the pre-publication scrub are all
  * repo state — so they get repo tests, run by `bun run verify` like any other.
+ *
+ * D-#172: LilOS is source-available under the Elastic License 2.0 (licensor
+ * Nuncio; SPDX `Elastic-2.0` on every package): free to use, fork, modify and
+ * self-host, at work too — never resold as a hosted service. Not: PolyForm
+ * NC (bans use at work), BSL (auto-converts), MIT (allows resale as a
+ * service).
+ * D-#329: outside contributors work from forks; only Oscar triages and
+ * merges. `main` takes PRs only, requires `verify` + the DCO `check`, allows
+ * no force-push or deletion and needs 0 approvals (GitHub ruleset). Not:
+ * write access for collaborators (a `v*` tag runs the signed release), or
+ * required CODEOWNERS approval (Oscar can't approve his own PRs).
  */
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");

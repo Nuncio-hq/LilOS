@@ -23,8 +23,9 @@ all in one place: **Inbox → Ready → In progress → In review → Done**, pl
   and the DCO check (`check`), and only the maintainer merges. A first-time
   contributor's CI run may wait until the maintainer approves it.
 
-Read `AGENTS.md` first — it is the repo's rule book (structure, verify loop,
-decisions log).
+Read [`docs/index.html`](docs/index.html) first — the repo's one document
+(structure, how work happens, verify tiers, decisions in force); `AGENTS.md`
+is its short rule list for coding agents.
 
 ## Sign-off (DCO) — required on every commit
 

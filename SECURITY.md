@@ -30,41 +30,19 @@ LilOS is a prototype: source code, CI workflows, and the public site in
 `site/`. The app runs against engines and machines you operate; findings
 about third-party engines (e.g. Hermes) belong to their own projects.
 
-## Relay hardening notes
+## Relay hardening in force
 
 The relay binds loopback (plus an opt-in Tailscale listener for phone
 pairing) and is the only thing holding the per-install token
-(`~/.lilos/relay-token`, 0600). Current hardening in force:
+(`~/.lilos/relay-token`, 0600). Each guard is documented where it is
+implemented:
 
-- **Constant-time secret compares.** `session.hello`'s install token, the
-  paired-device credential, the harness `/host` bearer, the feed `/ws`
-  upgrade, the surfaces `/view` socket and the agent gateway's
-  session/engine bearers are checked with `timingSafeEqual` over SHA-256
-  digests (`@lilos/contracts/auth` `equalSecret`), so response timing
-  can't reveal a matching prefix.
-- **WebSocket Origin gate.** `/ws` upgrades carrying an `Origin` header
-  are refused unless the origin is loopback (`localhost`/`*.localhost`,
-  127.0.0.0/8, `[::1]`, any port), `file://`, `null` under an Electron
-  `User-Agent` (the packaged desktop app — a bare `null` is what a foreign
-  page's sandboxed iframe sends, so it's refused), or the request's own
-  `Host`. Non-browser clients send no `Origin` and pass. This is
-  defense-in-depth: the token still does the real auth.
-- **Pairing exchange throttle.** `POST /pair/exchange` spends one-time,
-  5-minute grants. After **5 consecutive `unknown` codes** the endpoint
-  answers **`429 {error:"throttled"}` for 60 seconds** — every exchange,
-  valid codes included. `used`/`expired` replies never count against the
-  budget (they prove the caller already held a real code), and a
-  successful exchange resets it. The budget is shared across callers;
-  pairing is rare, so a lockout only delays a real attempt by a minute.
-- **Pre-upgrade credential check + hello deadline.** `/ws` upgrades carry
-  a credential in the query — `?token=` for install-token clients,
-  `?deviceId=&credential=` for paired phones — checked **before**
-  `server.upgrade` (`apps/relay/src/auth.ts` `authorizeRelayUpgrade`, the
-  #564 feed-gate pattern; the token compare stays constant-time via
-  `equalSecret`). A refused handshake answers `401` and never attaches, so
-  an unauthenticated peer can't hold a socket whose frame buffer may reach
-  `MAX_FRAME_BYTES` (160 MiB). An attached socket that hasn't completed
-  `session.hello` within **10 s** (`HELLO_DEADLINE_MS`) is closed
-  `4408`, so a stalled peer can't linger pre-auth either. `session.hello`
-  still authenticates the same credential on the socket — the gate bounds
-  what runs before it, it doesn't replace it.
+- **Constant-time secret compares** for every token and credential —
+  `packages/contracts/src/auth.ts` (`equalSecret`).
+- **WebSocket Origin gate**: foreign browser origins are refused before the
+  upgrade — `apps/relay/src/origin.ts`.
+- **Credential check before the upgrade, plus a 10 s hello deadline** —
+  `apps/relay/src/auth.ts` (`authorizeRelayUpgrade`) and
+  `apps/relay/src/session.ts` (`HELLO_DEADLINE_MS`).
+- **Pairing exchange throttle**: 5 consecutive unknown codes lock
+  `POST /pair/exchange` (429) for 60 seconds — `apps/relay/src/pairing.ts`.

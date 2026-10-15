@@ -2,15 +2,17 @@ import { nextRunAt, type ScheduledTask } from "@lilos/contracts/app";
 import type { Logger } from "./log";
 
 /**
- * The scheduled-task clock (#136): the relay owns the records, this class
+ * The scheduled-task clock (D-#136): the relay owns the records, this class
  * owns when they fire. It ticks on an interval plus on every task change
  * (`schedule.upserted` also means "check now" — that's what makes Run now
- * instant) and fires each due task exactly once.
+ * instant) and fires each due task exactly once, as a `conversations.open`.
+ * The harness hosts it because it is the launchd agent that already
+ * survives quit and reboot (D-#34). Not: a relay- or engine-side timer.
  *
  * Missed runs coalesce by construction: the due test is
  * `nextRunAt(schedule, lastFiredAt) <= now`, so a Mac that slept through
  * many slots surfaces exactly ONE due time on wake — the oldest missed —
- * never a burst.
+ * never a burst. Not: a catch-up run per missed slot.
  *
  * Re-entrancy: `ticking` guards overlapping ticks; `firing` guards a task
  * whose `conversations.open` is still in flight so a second tick can't

@@ -66,12 +66,18 @@ export async function openAsk(
 }
 
 /**
- * #106 — Full access: answer an `approval` request ourselves with
+ * D-#106 — Full access: answer an `approval` request ourselves with
  * `once` (the narrowest grant — no silent widening), never touching the
  * asks seam: no card, no push, no badge. The grant lands on the turn
  * feed as a system note so the action still reads as approved, not
  * vanished (AC-2). Deny-only cards (hardline blocks) answer their only
  * option — Full access can't bypass what the engine refuses to offer.
+ * The level is LilOS data on the conversation (`access`, written by
+ * `conversations.setAccess` from the composer pill), so this works the same
+ * on every engine; the engine's own policy is the separate
+ * `approval_policy` capability and `session.setAccess` is only a hint.
+ * Not: an engine-specific yolo as the only mechanism, or the level living
+ * in engine session state.
  */
 export async function autoApprove(
   this: HarnessCtx,

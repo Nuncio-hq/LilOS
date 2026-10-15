@@ -110,9 +110,14 @@ export async function handleMessages(c: RelayCtx): Promise<false | undefined> {
       }
       return;
     }
-    /* #315 waiting-tray actions. All three broadcast `message.changed`
-       so every subscribed surface (and the host's own queue) sees the
-       flag flip — no `message.created`, the seq is unchanged. */
+    /* D-#315 waiting-tray actions: wait-state lives on the message row
+       (`dropped`/`removed`/`claimed`), not the client. Each of these
+       broadcasts `message.changed` so every subscribed surface (and the
+       host's own queue) sees the flag flip — no `message.created`, the seq
+       is unchanged. The harness owns the semantics: it drops a stranded
+       accepted steer and claims a send committed to dispatch (#377), so
+       the tray's Remove boundary is claim, not delivery. Not: tray state
+       kept in component memory — a reload must show the same tray. */
     case "messages.remove": {
       const parsed = MessagesRemoveParams.safeParse(params);
       if (!parsed.success) throw badParams(parsed.error.issues);

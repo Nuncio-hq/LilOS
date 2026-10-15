@@ -1,6 +1,13 @@
 /* Domain types for the LilOS UI surfaces. Presentational props speak these; the prototype's mock data
    (and, later, the relay wire types in packages/contracts) produce them. Wire types are NOT defined here —
-   this file is the UI contract only (issue #12; wire schemas live in packages/contracts). */
+   this file is the UI contract only (issue #12; wire schemas live in packages/contracts).
+
+   D-#582 — one word per thing in UI copy (web and phone): a chat with an employee is a **thread**
+   ("session" stays backend/runtime and never appears in user-facing text); a turn parked on an open
+   card is **needs you**; stopping a turn is **stop** (⌘.; Esc only closes surfaces); approval scopes
+   are **Once / This thread / Always / Deny**; the folder picker's empty pick is **No folder**; the
+   model list is **Edit models…**. Not: "session", "working" for a waiting turn, wire/method names in
+   strings, or record ids (`emp_…`) as @handles. */
 
 import type { ReactNode } from "react";
 

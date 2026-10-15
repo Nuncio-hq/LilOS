@@ -2,7 +2,8 @@
    (lilos://pair?...) or typed by hand. The URL is the wire format — the code
    is a real one-time grant (5-min TTL, single use) minted by the relay, and it
    always rides the URL fragment so proxies/logs never see it:
-   `lilos://pair?host=<tailscale-host>:<port>#code=<grant>` (#153, D-#153). */
+   `lilos://pair?host=<tailscale-host>:<port>#code=<grant>` (#153, D-#153).
+   Not: the secret in the query string. */
 
 export type PairingOffer = {
   /** Where the relay is reachable, e.g. a Tailscale name `mac.tail0000.ts.net`. */

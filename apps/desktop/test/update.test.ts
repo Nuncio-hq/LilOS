@@ -227,6 +227,7 @@ describe("boot settle", () => {
     expect(existsSync(updatePaths(dir).bootOkFile)).toBe(false);
   });
 
+  // D-#35: a failed release is skipped, never auto-retried.
   test("AC-4 rolled-back old app marks the bad build skipped", async () => {
     const dir = mkdtempSync(join(tmpdir(), "lilos-settle-"));
     mkdirSync(updatePaths(dir).root, { recursive: true });

@@ -54,6 +54,12 @@ const component = (
  * answering (relay), the host socket is or isn't held (harness), and whatever
  * the host last reported (engine, model). A fresh heartbeat keeps harness ok;
  * a stale one degrades it rather than guessing the process is gone.
+ *
+ * D-#33: each leg is `{state, reason}` and the reason stays raw — the
+ * diagnostics bundle needs the real error; plain language is mapped once in
+ * packages/client-runtime (`toStatusComponents`). `blocked` (#53) = down only
+ * because an upstream leg is down — neutral, never counted as an issue. Not:
+ * friendly strings composed here or in UI components.
  */
 export function buildSystemStatus(input: StatusInput): SystemStatusResult {
   const {

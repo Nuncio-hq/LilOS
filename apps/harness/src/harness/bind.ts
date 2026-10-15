@@ -151,6 +151,9 @@ export async function bindingFor(
   return pending;
 }
 
+/** D-#25: one conversation = one engine session. The harness alone writes
+    `engineRef` (the relay refuses it from any other peer) — reattach the
+    stored ref, else `session.start` a new one and stamp it. */
 export async function bindConversation(
   this: HarnessCtx,
   conv: Conversation,

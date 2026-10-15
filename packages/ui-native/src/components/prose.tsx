@@ -15,7 +15,10 @@ import {
    blocks — the slice of markdown the engine actually sends in short
    replies. The web renders full markdown (streamdown); mobile keeps a
    bespoke renderer (D-#259) so streaming states stay ours: an unclosed
-   fence is a code block in progress, never raw backticks. */
+   fence is a code block in progress, never raw backticks. Fences and GFM
+   tables are `ProseBlock` kinds (prose-blocks.ts); fences highlight via
+   lowlight (code-highlight.ts). Not: an RN markdown library — none had
+   tables, highlighting, or streaming states. */
 export function Prose({
   text,
   size = "base",

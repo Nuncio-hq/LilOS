@@ -64,6 +64,8 @@ describe("TaskScheduler (#136)", () => {
     expect(fired).toHaveLength(0);
   });
 
+  /* D-#136: slots missed while the Mac was down coalesce to one run on wake,
+     anchored on lastFiredAt — never a catch-up burst. */
   it("coalesces slept-through slots to one run (AC-2)", async () => {
     const { scheduler, fired } = make();
     /* Last fired Monday; the Mac wakes Friday — 4 missed slots, 1 run,

@@ -6,6 +6,8 @@ import { z } from "zod";
  * signed-in user's own GitHub auth applies and LilOS stores no token
  * (D-#37). `path` is a folder on the host machine; the PR is the one for that
  * checkout's current branch unless `number` pins an explicit PR.
+ * `forge.merge` answers the re-read PR state, never gh's stdout. Not: a
+ * GitHub token stored by LilOS, or forge ops on the engine protocol.
  */
 
 const Path = z.string().min(1);

@@ -982,7 +982,7 @@ export class RelayClient {
       : this.request<{ devices: PairedDevice[] }>("devices.list", {}).catch(
           () => undefined,
         );
-    /* #645: `conversations.summaries` is the enrichment layer (root text,
+    /* D-#645: `conversations.summaries` is the enrichment layer (root text,
        previews, counts) — `conversations.list` already carries the rows
        themselves, so a slow or failed summaries fetch must not hold the
        whole directory at "Loading…". Per-conversation refreshes on live

@@ -40,10 +40,11 @@ interface PlainReason {
 }
 
 /**
- * The ONE place raw wire reasons become plain language (issue #53): every row
+ * The ONE place raw wire reasons become plain language (D-#33, #53): every row
  * — from `system.status` or synthesized when the relay is unreachable — goes
  * through `toPlainRow`, first matching rule wins. `detail` keeps the raw text
- * so the dialog's collapsed line and Copy diagnostics lose nothing.
+ * so the dialog's collapsed line and Copy diagnostics lose nothing. Not:
+ * friendly strings composed in the relay or in UI components.
  */
 const PLAIN_RULES: {
   match: RegExp;
@@ -261,6 +262,9 @@ function wireComponents(input: {
  * Wire result → the four rows the status UI renders (`packages/ui` shares the
  * shape plus `hint`/`detail`). With no result — socket down, handshake fatal —
  * the rows are synthesized so the user always sees all four legs with a reason.
+ * The engine row is the end of the start-failure chain (harness supervisor
+ * detail → `harness.report` → `system.status` → here): the status dialog and
+ * the DM composer note (web dm.tsx) both render it.
  */
 export function toStatusComponents(input: {
   result?: SystemStatusResult;

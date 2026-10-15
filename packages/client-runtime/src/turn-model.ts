@@ -726,8 +726,9 @@ export class SessionReducer {
        that replay a closed log pass no `atSeq`, so it always applies). */
     const state = snapshot && !this.snapshotStale ? snapshot.state : this.state;
 
-    /* #327: a turn can't stay live once its session is no longer running —
-       engines emit `session.state` idle at every turn end and closed on
+    /* D-#327: a turn can't stay live once its session is no longer running
+       (idle → done, closed/error → stopped, superseded → done) — engines
+       emit `session.state` idle at every turn end and closed on
        close, so a still-open phase under either means its turn.completed
        was lost to a truncated or degraded replay (#300). A later turn in
        the log proves the same with no state event at all (engines run one
@@ -738,7 +739,11 @@ export class SessionReducer {
        under closed/error — an async subagent legitimately runs through
        the idle gap between turns (#309), and an ACP-mode row the wire can
        never close is settled by the adapter where dead is provable
-       (engine-hermes acp.ts), not guessed here. */
+       (engine-hermes acp.ts marks it untracked; Session.setState emits it
+       stopped once the session leaves running), not guessed here. The
+       settle lives here, in reduceSessionEvents, so every client gets the
+       same replay-safe answer. Not: settling helpers on idle, or per-UI
+       guesses. */
     const settle =
       state === "closed" || state === "error"
         ? ("stopped" as const)

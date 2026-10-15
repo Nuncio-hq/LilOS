@@ -161,6 +161,7 @@ function lanAddress(): string | undefined {
 }
 
 describe("relay e2e (real Bun process + bun:sqlite)", () => {
+  /* D-#25: local first — loopback by default; remote is an address change. */
   it("AC-6 binds 127.0.0.1 by default; LILOS_RELAY_HOST is configuration only", async () => {
     const relay = await startRelay();
     expect(relay.host).toBe("127.0.0.1");

@@ -13,6 +13,12 @@ import {
   watchWorkbenchOpens,
 } from "./lib/runtime";
 
+/* The real app's entry. D-#3 web stack: React 19 + Vite + Tailwind v4 +
+   shadcn (base-nova) + AI Elements (mandatory) + TanStack Router +
+   nanostores. Not: Next.js. Its screens come from packages/ui, accepted in
+   prototype/ first (D-#3: the prototype is the UI source of truth; a UI
+   change lands there, the owner accepts it, then it is wired here). Not: UI
+   hand-copied into this app. */
 async function main() {
   const el = document.getElementById("root");
   if (!el) throw new Error("no #root");

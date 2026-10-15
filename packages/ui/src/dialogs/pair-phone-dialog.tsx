@@ -50,7 +50,7 @@ export type PairPhoneState =
 export function pairingUrl(o: PairPhoneOffer): string {
   const q = new URLSearchParams({ host: o.host, name: o.name });
   // The grant is the secret — it rides the URL fragment, never the query
-  // (#153: `lilos://pair?host=…#code=…`).
+  // (D-#153: `lilos://pair?host=…#code=…`; fragments stay out of logs).
   return `lilos://pair?${q.toString()}#code=${o.code}`;
 }
 

@@ -122,6 +122,7 @@ describe("AC-1 service registration via lilos-svc", () => {
     }
   });
 
+  // D-#206: SMAppService.status is blind to bootstrapped jobs — boot them out.
   it("AC-3 foreign bootstrap jobs get booted out before register (#206)", async () => {
     // Signed path over an ad-hoc install: SMAppService has no record
     // (notFound) but launchd holds bootstrapped jobs (spawned = foreign).

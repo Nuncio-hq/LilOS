@@ -113,7 +113,7 @@ async function gitOr(
 }
 
 /**
- * Session-folder checkpoints (issue #134): a per-folder *shadow* git dir
+ * Session-folder checkpoints (D-#134): a per-folder *shadow* git dir
  * under `~/.lilos/checkpoints/<folder-hash>` that snapshots the worktree at
  * each turn start and restores it on rewind. The user's own `.git`, index,
  * stash and HEAD are never touched — every command runs with GIT_DIR /
@@ -123,6 +123,15 @@ async function gitOr(
  * unrelated per-checkpoint refs (no parent chain, so pruning is just ref
  * deletion + gc) and a restore that also unlinks files created after the
  * checkpoint.
+ *
+ * Rewind = harness-owned file checkpoints + the engine's `rewind`
+ * capability for conversation memory. The harness snapshots before each
+ * user turn and stamps the id on that user message (`stampCheckpoint`); a
+ * rewind restores it whatever the transport, so engines that can't rewind
+ * their memory (ACP today) still get the files back. Not: engine-owned
+ * file checkpoints (opt-in, transport-dependent), the engine owning the
+ * folder snapshot, or deleting messages (the relay marks the dropped tail
+ * `rewound`: hidden, kept for audit).
  */
 export interface CheckpointStore {
   /** Snapshot `cwd`; returns the checkpoint id (commit sha). Idempotent —

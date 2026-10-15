@@ -1,5 +1,9 @@
 /**
- * #549 — the `lilos` plugin's tools reaching a LilOS session on OUR backend.
+ * D-#549 — the `lilos` plugin's tools reaching a LilOS session on OUR
+ * backend: the engine activates the plugin on its own backend itself.
+ * Not: relying on the record-routed `plugins enable` nudge (below). The
+ * other half — Hermes' `browser` toolset kept out of the offer — lives in
+ * apps/harness/src/connect.ts (`browserToolset`).
  *
  * `hermes -p <p> plugins enable lilos` performs two writes: it persists the
  * profile's `plugins.enabled` entry AND nudges the running backend to load

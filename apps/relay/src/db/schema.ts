@@ -8,9 +8,12 @@ import {
 } from "drizzle-orm/sqlite-core";
 
 /**
- * Relay storage: LilOS domain objects only (issue #25). The relay owns
+ * Relay storage: LilOS domain objects only (D-#25). The relay owns
  * employees, DM channels, conversations, and visible messages — it does NOT
  * store engine transcripts (tools, reasoning); the engine owns those.
+ * Not: a transcript copy in LilOS — it would drift from the engine's, and
+ * sensitive reasoning data would sit at rest here. `schema.test.ts` fails
+ * on any transcript-shaped column.
  */
 export const employees = sqliteTable("employees", {
   id: text("id").primaryKey(),
@@ -116,8 +119,9 @@ export const conversations = sqliteTable(
         "N in background" badge; same host-written lifecycle. */
     bgJobs: integer("bg_jobs"),
     /** The user's read watermark (#563): the channel seq up to which they have
-        opened this thread. `conversations.markRead` stamps the channel's
-        current `lastSeq`; compared against `finishedSeq` for the dot. */
+        opened this thread. `conversations.markRead` stamps
+        max(channel lastSeq, finishedSeq); compared against `finishedSeq`
+        for the dot. */
     readSeq: integer("read_seq").notNull().default(0),
     /** The "finished, not seen" watermark (#563): channel seq when the
         relay last observed a turn end (turn.completed, or session.state
@@ -277,9 +281,12 @@ export const settings = sqliteTable("settings", {
 });
 
 /**
- * The signed-in human's profile (#118): one row (`id` = 1) of relay-owned
- * identity — name, company name, avatar colour. Columns stay NULL until the
- * user sets them; the app prefills from the OS on an untouched install.
+ * The signed-in human's profile (D-#118): one row (`id` = 1) of relay-owned
+ * identity — name, company name, avatar colour — behind `profile.get`/
+ * `profile.update` (`settings.*` is #92's KV namespace). Columns stay NULL
+ * until the user sets them; the app prefills from `host.user` (the OS full
+ * name) on an untouched install. Not: a hardcoded `ME` constant in the web
+ * app, or identity fields on the employee record.
  */
 export const profile = sqliteTable("profile", {
   id: integer("id").primaryKey(),

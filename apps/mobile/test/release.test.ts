@@ -95,14 +95,24 @@ describe("AC-3 Settings shows LilOS <version> (build N) from the real bundle", (
   });
 });
 
-describe("AC-4 the docs document shipping a TestFlight build", () => {
-  it("docs/index.html has the Ship a TestFlight build section", () => {
-    expect(has("docs/index.html")).toBe(true);
-    const text = read("docs/index.html");
-    expect(text).toContain('id="mobile-release"');
-    expect(text).toContain("Ship a TestFlight build");
-    expect(text).toContain("bun run mobile:release");
-    expect(/TestFlight/i.test(text)).toBe(true);
+describe("AC-4 the release script's header documents shipping a TestFlight build", () => {
+  it("testflight.sh --help prints the runbook: the command, --dry-run, TestFlight", () => {
+    const r = spawnSync(
+      "bash",
+      [join(ROOT, "scripts/release/testflight.sh"), "--help"],
+      {
+        encoding: "utf8",
+      },
+    );
+    expect(r.status).toBe(0);
+    const header = r.stdout;
+    expect(header).toContain("ships a TestFlight build");
+    expect(header).toContain("bun run mobile:release");
+    expect(header).toContain("--dry-run");
+    expect(header).toContain("TestFlight -> Internal");
+    // --help prints the whole header and nothing past it.
+    expect(header).toContain("git push --tags");
+    expect(header).not.toContain("set -euo pipefail");
   });
 });
 

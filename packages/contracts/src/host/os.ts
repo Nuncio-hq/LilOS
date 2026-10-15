@@ -11,8 +11,8 @@ import { z } from "zod";
 const Path = z.string().min(1);
 
 /** Editors LilOS knows how to open, in default-preference order — the first
- *  one found on the machine is the default until a settings picker lands
- *  (#132). */
+ *  one found on the machine is the fallback default; the Settings pick
+ *  (#132, D-#110) leads when set. */
 export const OS_EDITOR_IDS = ["vscode", "cursor", "zed", "xcode"] as const;
 export const OsEditorId = z.enum(OS_EDITOR_IDS);
 export type OsEditorId = z.infer<typeof OsEditorId>;

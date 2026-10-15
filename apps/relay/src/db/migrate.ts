@@ -157,11 +157,14 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
     ],
   },
   {
-    /* #138: full-text search over stored messages. A FTS5 external-content
-       index (content='messages' — text is not duplicated) backfilled from
-       existing rows and kept in sync by triggers on write/delete/text-edit.
-       Deliberately raw SQL, not a Drizzle table: drizzle can't model virtual
-       tables, and the schema test asserts the exact persisted table list. */
+    /* D-#138: full-text search over the relay's stored messages only. A
+       FTS5 external-content index (content='messages' — text is not
+       duplicated) backfilled from existing rows and kept in sync by
+       triggers on write/delete/text-edit. Engine transcripts, tool output
+       and attachments are never indexed (D-#25). Deliberately raw SQL, not
+       a Drizzle table: drizzle can't model virtual tables, and the schema
+       test asserts the exact persisted table list. Not: a separate search
+       service, or indexing transcripts. */
     version: 9,
     statements: [
       `CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(

@@ -12,6 +12,16 @@ import { z } from "zod";
  * `detail.updatable` — a list of `AgentDescriptor` field names like
  * `["soul", "model"]`; the Edit dialog renders only those controls (D-#19).
  * Engines reject a field they did not list with INVALID_PARAMS.
+ *
+ * D-#8: hiring, the model picker and persona edits all speak `agents.*` /
+ * `models.*` (models.ts). A model is `{provider?, id}` — the opaque id plus
+ * a separate provider slug, never a joined `provider/model` string — and
+ * carries the engine's per-model `efforts`/`fast`. The picker's hide/show
+ * list is LilOS-owned: one `modelVisibility` list for every employee, in
+ * the relay `settings` KV. Defaults are the engine's (#85). Not:
+ * `splitModelRef`-style splitting, a sticky last-used model for new
+ * sessions, a hide list in localStorage or engine state, LilOS-owned
+ * profile CRUD, a read-only persona wire, or a delete method "for cleanup".
  */
 export const AgentDescriptor = z.object({
   /** Stable engine-side id. */
@@ -90,7 +100,8 @@ export const AgentsUpdateParams = z.strictObject({
   /**
    * New default model id (from `models.list`) — applies to sessions started
    * AFTER this call; running sessions keep the model they started with.
-   * `provider/model` refs are allowed for multi-provider engines.
+   * Opaque — may itself contain `/`; never a joined `provider/model` ref
+   * (D-#8): the provider rides `provider`.
    */
   model: z.string().optional(),
   /** Provider slug for multi-provider engines, paired with `model`. */

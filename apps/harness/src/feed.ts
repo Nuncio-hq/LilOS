@@ -10,9 +10,15 @@ import type { Harness } from "./harness";
  *
  * Read-only by design — every write path (prompts, ask answers, interrupts,
  * hires) goes through the relay + harness driver. Read-only does NOT mean
- * unauthenticated (#564): live events carry tool output, file contents and
- * diffs, so the upgrade authenticates like `/host` — the install token,
- * plus an app-Origin check on the handshakes a browser sends.
+ * unauthenticated (D-#564: every LilOS listener authenticates): live events
+ * carry tool output, file contents and diffs, so the upgrade authenticates
+ * like `/host` — the install token, plus an app-Origin check on the
+ * handshakes a browser sends. Only `/healthz` stays open, and it answers
+ * just the readiness nonce `{ok, instanceId}` (#273). Not: an open feed
+ * because it "only reads", or a relay-minted feed token in `welcome` (the
+ * install token already reaches every feed client). Known gap: the engine
+ * adapters' own `/ws` (each engine package's scripts/serve.ts) binds every
+ * interface with no token yet — #752.
  *
  * Runtime-neutral: index.ts wires it to a Bun WebSocket server.
  */

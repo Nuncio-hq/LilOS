@@ -1,6 +1,6 @@
 /**
  * WebSocket entry point — the only place engine-hermes touches Bun APIs
- * (AGENTS.md: Bun-only APIs live at entry points, packages stay neutral).
+ * (D-#3: Bun-only APIs live at entry points, packages stay neutral).
  *
  *   bun packages/engine-hermes/scripts/serve.ts \
  *     [--port N] [--hermes-bin PATH] [--hermes-args "..."]

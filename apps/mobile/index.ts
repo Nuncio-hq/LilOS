@@ -1,3 +1,12 @@
+/**
+ * The real iPhone app: `ui-native` screens over `client-runtime`, talking to
+ * the relay on the paired Mac.
+ *
+ * Run it on a simulator: `bun install` at the repo root, then in apps/mobile
+ * `bunx expo run:ios` (builds the dev client once — needs Xcode + CocoaPods).
+ * Shipping a TestFlight build: `bun run mobile:release` from the repo root
+ * (scripts/release/testflight.sh --help).
+ */
 import { registerRootComponent } from "expo";
 
 import App from "./src/App";
