@@ -4,6 +4,7 @@ import {
   CrownIcon,
   Maximize2Icon,
   PlusIcon,
+  TicketIcon,
   XIcon,
 } from "lucide-react";
 import { useState } from "react";
@@ -101,11 +102,15 @@ function SessionPicker({
             </span>
             <span className="min-w-0 flex-1">
               <span className="block truncate">{s.title}</span>
-              {s.line && (
-                <span className="block truncate text-[11.5px] text-muted-foreground">
-                  {s.line}
-                </span>
-              )}
+              <span className="flex min-w-0 items-center gap-1.5 text-[11.5px] text-muted-foreground">
+                {s.ticketIds && s.ticketIds.length > 0 && (
+                  <span className="shrink-0 font-mono">
+                    {s.ticketIds.slice(0, 3).join(" ")}
+                    {s.ticketIds.length > 3 ? " …" : ""}
+                  </span>
+                )}
+                <span className="truncate">{s.line}</span>
+              </span>
             </span>
             <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">
               {ago(s.ago)}
@@ -140,6 +145,8 @@ export function V2CeoDock({
   sessions,
   sessionId,
   ticketIds,
+  about,
+  onClearAbout,
   onSession,
   onNewSession,
   onSend,
@@ -153,6 +160,9 @@ export function V2CeoDock({
   sessionId?: string;
   /** Ticket ids that exist, so mentions become chips. */
   ticketIds: string[];
+  /** The ticket the next message is about (opened from a ticket). */
+  about?: { id: string; title: string };
+  onClearAbout?: () => void;
   onSession: (id: string) => void;
   onNewSession: () => void;
   onSend: (text: string) => void;
@@ -232,7 +242,17 @@ export function V2CeoDock({
           )}
           {t?.messages.map((m, i) =>
             m.from === "you" ? (
-              <div key={i} className="flex justify-end">
+              <div key={i} className="flex flex-col items-end gap-1">
+                {m.ticketId && (
+                  <button
+                    type="button"
+                    onClick={() => onTicket(m.ticketId as string)}
+                    className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+                  >
+                    <TicketIcon className="size-3" />
+                    about <span className="font-mono">{m.ticketId}</span>
+                  </button>
+                )}
                 <div className="max-w-[85%] rounded-[18px] bg-foreground/[0.06] px-3.5 py-2 text-[13.5px] leading-relaxed">
                   {m.text}
                 </div>
@@ -264,8 +284,39 @@ export function V2CeoDock({
       </div>
       <div className={cn("shrink-0 [&>div]:px-3 [&>div]:pb-3")}>
         <Composer
-          placeholder={t ? `Message ${ceo.name}` : "Describe a goal"}
+          placeholder={
+            about
+              ? `Ask about ${about.id}…`
+              : t
+                ? `Message ${ceo.name}`
+                : "Describe a goal"
+          }
           onSend={onSend}
+          above={
+            about && (
+              <div className="mb-1 flex items-center gap-1.5 px-1.5 pt-0.5">
+                <span className="flex min-w-0 items-center gap-1.5 rounded-lg bg-foreground/[0.06] py-1 pr-1 pl-2 text-[12px]">
+                  <TicketIcon className="size-3 shrink-0 text-muted-foreground" />
+                  <span className="shrink-0 font-medium font-mono">
+                    {about.id}
+                  </span>
+                  <span className="min-w-0 truncate text-muted-foreground">
+                    {about.title}
+                  </span>
+                  {onClearAbout && (
+                    <button
+                      type="button"
+                      onClick={onClearAbout}
+                      aria-label={`Stop asking about ${about.id}`}
+                      className="grid size-5 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-foreground/[0.08] hover:text-foreground"
+                    >
+                      <XIcon className="size-3" />
+                    </button>
+                  )}
+                </span>
+              </div>
+            )
+          }
         />
       </div>
     </aside>

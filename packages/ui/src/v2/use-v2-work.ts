@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { V2Agent } from "./v2-types";
 import type { V2Connector, V2Ticket, V2TrailLine } from "./v2-work-types";
 
@@ -19,7 +19,20 @@ export function useV2Work({
   onToast?: (text: string) => void;
 }) {
   const [tickets, setTickets] = useState(initialTickets);
-  const [connectors, setConnectors] = useState(initialConnectors);
+  /* Only the per-agent switches are local state; a connector's name, mark
+     and colour always come from the props, so a fresher connector (or a hot
+     reload) never shows a stale look. */
+  const [enabled, setEnabled] = useState<Record<string, string[]>>(() =>
+    Object.fromEntries(initialConnectors.map((c) => [c.id, c.agentIds])),
+  );
+  const connectors = useMemo(
+    () =>
+      initialConnectors.map((c) => ({
+        ...c,
+        agentIds: enabled[c.id] ?? c.agentIds,
+      })),
+    [initialConnectors, enabled],
+  );
   const now = () => new Date().toTimeString().slice(0, 5);
   const ceo = agents.find((a) => a.position === "ceo");
 
@@ -74,18 +87,18 @@ export function useV2Work({
       onToast?.("Denied. The CEO will re-plan it.");
     },
     toggleConnector: (connectorId: string, agentId: string) =>
-      setConnectors((cs) =>
-        cs.map((c) =>
-          c.id !== connectorId
-            ? c
-            : {
-                ...c,
-                agentIds: c.agentIds.includes(agentId)
-                  ? c.agentIds.filter((x) => x !== agentId)
-                  : [...c.agentIds, agentId],
-              },
-        ),
-      ),
+      setEnabled((m) => {
+        const cur =
+          m[connectorId] ??
+          initialConnectors.find((c) => c.id === connectorId)?.agentIds ??
+          [];
+        return {
+          ...m,
+          [connectorId]: cur.includes(agentId)
+            ? cur.filter((x) => x !== agentId)
+            : [...cur, agentId],
+        };
+      }),
     makeCeo: (agentId: string) => {
       const name = agents.find((a) => a.id === agentId)?.name;
       setAgents((as) =>

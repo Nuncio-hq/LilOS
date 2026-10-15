@@ -71,11 +71,14 @@ export const V2_TICKETS: V2Ticket[] = [
     id: "HB-9", title: "Scrape competitor hooks on X", goalId: "g-conv", projectId: "heardback",
     assignee: out("HB Marketing", "grokbot"), state: "working", ago: 1, threadId: "t-ceo",
     line: "Reading the top 40 posts on its cloud browser",
+    ask: { text: "Only English posts, or other languages too?", ceoAnswer: "English only for now." },
     trail: [
       { kind: "handoff", who: "CEO", text: "Find the 20 best-performing journaling app hooks on X this month.", time: "09:15" },
       { kind: "note", who: "HB Marketing", text: "On it. Searching X for journaling apps with 5k+ likes.", time: "09:16" },
       { kind: "command", who: "HB Marketing", where: "Cloud · Linux", text: "x search 'journaling app' min_faves:5000 since:2026-09-15", meta: "212 posts", time: "09:18" },
       { kind: "output", who: "HB Marketing", text: "shared/hooks/x-scrape.csv", meta: "212 rows", time: "09:24" },
+      { kind: "ask", who: "HB Marketing", text: "Only English posts, or other languages too?", time: "09:26" },
+      { kind: "note", who: "CEO", text: "Answered: English only for now.", time: "09:26" },
       { kind: "note", who: "HB Marketing", where: "Cloud · Linux", text: "Reading the top 40 posts on its cloud browser", time: "09:31", live: true },
     ],
   },
@@ -141,6 +144,7 @@ export const V2_TICKETS: V2Ticket[] = [
    plan and the tickets it opened. */
 export const V2_CEO_THREAD: V2Thread = {
   id: "t-ceo", title: "Grow HeardBack's paywall conversion", projectId: "heardback", agentId: "ceo",
+  ticketIds: ["HB-9", "HB-10", "HB-11", "HB-12"],
   model: "Claude Opus 5.5", state: "working", ago: 1,
   line: "Following 4 tickets",
   messages: [
@@ -162,6 +166,7 @@ export const V2_CEO_THREAD: V2Thread = {
 /* An older CEO session, so the dock's session picker has something to pick. */
 export const V2_CEO_THREAD_OLD: V2Thread = {
   id: "t-ceo-health", title: "Keep grokbot-cli healthy", projectId: "lilos", agentId: "ceo",
+  ticketIds: ["LIL-1", "LIL-2", "HB-9"],
   model: "Claude Opus 5.5", state: "unseen", ago: 38,
   line: "2 tickets done, both checked",
   messages: [
@@ -174,5 +179,7 @@ export const V2_CEO_THREAD_OLD: V2Thread = {
       ],
       text: "Both done. LIL-1: a cloud agent on Linux counted 192 .ts files, which matches the checkout. LIL-2: your Mac runs macOS 26.5.2 on arm64. Nothing was changed.",
     },
+    { from: "you", time: "23:31", ticketId: "HB-9", text: "Is the X scrape bot running on the same cloud computer as the test bot?" },
+    { from: "agent", time: "23:32", text: "Yes. HB-9's bot and the test bot share one Grok Bot cloud computer, each with its own desktop and folder." },
   ],
 }

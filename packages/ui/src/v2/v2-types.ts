@@ -68,6 +68,8 @@ export type V2Msg = {
   from: "you" | "agent";
   time: string;
   text: string;
+  /** The ticket this message is about (sent from a ticket). */
+  ticketId?: string;
   /** The tool calls behind this reply, in order. */
   work?: V2Step[];
   /** Files this reply changed, with a short preview of the first one. */
@@ -94,6 +96,8 @@ export type V2Live = {
 export type V2Thread = {
   id: string;
   title: string;
+  /** Tickets this CEO session opened or was asked about. */
+  ticketIds?: string[];
   projectId: string;
   agentId: string;
   model: string;

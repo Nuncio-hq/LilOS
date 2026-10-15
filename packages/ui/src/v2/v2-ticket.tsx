@@ -1,7 +1,12 @@
-import { MessagesSquareIcon, TargetIcon } from "lucide-react";
-import { StateDot } from "./v2-bits";
+import {
+  CornerDownRightIcon,
+  MessageSquarePlusIcon,
+  MessagesSquareIcon,
+  TargetIcon,
+} from "lucide-react";
+import { ago, StateDot } from "./v2-bits";
 import { V2Trail } from "./v2-trail";
-import type { V2Agent, V2Project } from "./v2-types";
+import type { V2Agent, V2Project, V2Thread } from "./v2-types";
 import { ProjectChip } from "./v2-viz";
 import {
   TICKET_STATE,
@@ -20,7 +25,9 @@ const RISK: Record<NonNullable<V2Ticket["ask"]>["risk"] & string, string> = {
 /* One ticket, in the side sheet. First: who holds it, unmistakably (a LilOS
    agent with its runtime and model, or an outside bot with its provider's
    mark and name, and which connector its live steps come through). Then the
-   ask if one waits on the owner, then the live trail. */
+   ask if one waits on the owner, then the live trail. Last: talk to the CEO
+   about it, in the session that already discusses it or in a new one; the
+   message carries the ticket so the CEO knows what it is about. */
 export function V2TicketDetail({
   t,
   goal,
@@ -29,6 +36,7 @@ export function V2TicketDetail({
   projects,
   onApprove,
   onDeny,
+  sessions = [],
   onAskCeo,
 }: {
   t: V2Ticket;
@@ -38,8 +46,10 @@ export function V2TicketDetail({
   projects: V2Project[];
   onApprove: () => void;
   onDeny: () => void;
-  /** Open the CEO panel on this ticket's session. */
-  onAskCeo?: () => void;
+  /** CEO sessions that already talk about this ticket, newest first. */
+  sessions?: V2Thread[];
+  /** Ask the CEO about this ticket: in a session (id), or a new one (null). */
+  onAskCeo?: (sessionId: string | null) => void;
 }) {
   const pi = projects.findIndex((p) => p.id === t.projectId);
   const who = workerIdentity(t.assignee, agents, connectors);
@@ -148,14 +158,50 @@ export function V2TicketDetail({
       </section>
 
       {onAskCeo && (
-        <button
-          type="button"
-          onClick={onAskCeo}
-          className="flex h-9 items-center justify-center gap-2 rounded-xl text-[12.5px] ring-1 ring-foreground/10 hover:bg-foreground/[0.04]"
-        >
-          <MessagesSquareIcon className="size-3.5" />
-          Ask the CEO about {t.id}
-        </button>
+        <section className="flex flex-col gap-2 border-foreground/[0.07] border-t pt-4">
+          <h4 className="font-semibold text-[12px] text-muted-foreground uppercase tracking-[0.06em]">
+            Talk to the CEO about {t.id}
+          </h4>
+          {sessions.map((s, i) => (
+            <button
+              key={s.id}
+              type="button"
+              onClick={() => onAskCeo(s.id)}
+              className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-left ring-1 ring-foreground/10 hover:bg-foreground/[0.04]"
+            >
+              {i === 0 ? (
+                <CornerDownRightIcon className="size-3.5 shrink-0 text-muted-foreground" />
+              ) : (
+                <MessagesSquareIcon className="size-3.5 shrink-0 text-muted-foreground" />
+              )}
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[12.5px]">
+                  {i === 0 ? "Continue in " : ""}
+                  <span className="font-medium">{s.title}</span>
+                </span>
+                <span className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground">
+                  <StateDot state={s.state} />
+                  {s.line ?? "Session"} · {ago(s.ago)}
+                </span>
+              </span>
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => onAskCeo(null)}
+            className="flex h-9 items-center gap-2.5 rounded-xl border border-foreground/15 border-dashed px-3 text-[12.5px] text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"
+          >
+            <MessageSquarePlusIcon className="size-3.5" />
+            New session about {t.id}
+          </button>
+          {t.ask && !t.ask.risk && (
+            <p className="text-[11.5px] text-muted-foreground">
+              {t.ask.ceoAnswer
+                ? `The CEO already answered: "${t.ask.ceoAnswer}"`
+                : "The worker asked a routine question; the CEO answers it."}
+            </p>
+          )}
+        </section>
       )}
     </div>
   );
