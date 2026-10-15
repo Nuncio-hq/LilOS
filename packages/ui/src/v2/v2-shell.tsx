@@ -13,6 +13,7 @@ import type { FsDir, ModelChoice, WsPick } from "../types";
 import { useV2Work } from "./use-v2-work";
 import { V2AgentsList } from "./v2-agents";
 import { V2AtWork } from "./v2-at-work";
+import { V2CeoDock } from "./v2-ceo-dock";
 import { V2CompanyHome } from "./v2-company";
 import { V2HireForm } from "./v2-hire";
 import { V2NeedsYou } from "./v2-needs-you";
@@ -66,6 +67,7 @@ export function V2Shell({
   tickets: initialTickets = [],
   connectors: initialConnectors = [],
   initialView,
+  initialCeo,
   onToast,
 }: {
   company: string;
@@ -88,6 +90,8 @@ export function V2Shell({
   connectors?: V2Connector[];
   /** Open on the Work board instead of Home. */
   initialView?: "work";
+  /** Open the CEO panel beside the board. */
+  initialCeo?: boolean;
   onToast?: (text: string) => void;
 }) {
   const [threads, setThreads] = useState(initialThreads);
@@ -105,6 +109,9 @@ export function V2Shell({
         : { kind: "home" },
   );
   const [workProject, setWorkProject] = useState<string | null>(null);
+  const [workWho, setWorkWho] = useState<string | null>(null);
+  const [ceoOpen, setCeoOpen] = useState(!!initialCeo);
+  const [ceoSession, setCeoSession] = useState<string | undefined>(undefined);
   const work = useV2Work({
     tickets: initialTickets,
     connectors: initialConnectors,
@@ -115,6 +122,18 @@ export function V2Shell({
   const hasWork = initialTickets.length > 0;
   const openTicket = typeof sheet === "object" && sheet ? sheet.ticket : null;
   const ticket = work.tickets.find((t) => t.id === openTicket);
+  /* The CEO's sessions, newest first; the dock shows the picked one, else
+     the newest. "" = a new, empty session. */
+  const ceoSessions = threads
+    .filter((t) => t.agentId === work.ceo?.id && t.state !== "settled")
+    .sort((a, b) => a.ago - b.ago);
+  const ceoThreadId = ceoSession ?? ceoSessions[0]?.id;
+  const openCeo = (threadId?: string) => {
+    if (threadId) setCeoSession(threadId);
+    setSheet(null);
+    setView({ kind: "work" });
+    setCeoOpen(true);
+  };
   const firstModel = modelKit.models[0]?.id ?? "";
   const [draft, setDraft] = useState<{
     pick: WsPick;
@@ -185,12 +204,62 @@ export function V2Shell({
         projects={projects}
         ceo={work.ceo}
         project={workProject}
+        worker={workWho}
+        activeTicket={openTicket}
+        ceoOpen={ceoOpen}
         onProject={setWorkProject}
+        onWorker={setWorkWho}
         onOpenTicket={(id) => setSheet({ ticket: id })}
-        onOpenCeo={() => {
-          const t = threads.find((x) => x.agentId === work.ceo?.id);
-          if (t) open(t.id);
-        }}
+        onToggleCeo={work.ceo ? () => setCeoOpen((o) => !o) : undefined}
+        dock={
+          work.ceo && (
+            <V2CeoDock
+              ceo={work.ceo}
+              sessions={ceoSessions}
+              sessionId={ceoThreadId}
+              ticketIds={work.tickets.map((t) => t.id)}
+              onSession={setCeoSession}
+              onNewSession={() => setCeoSession("")}
+              onTicket={(id) => setSheet({ ticket: id })}
+              onExpand={() => ceoThreadId && open(ceoThreadId)}
+              onClose={() => setCeoOpen(false)}
+              onSend={(text) => {
+                const cur = threads.find((t) => t.id === ceoThreadId);
+                if (cur) {
+                  patch(cur.id, {
+                    state: "working",
+                    ago: 0,
+                    line: "Planning",
+                    messages: [
+                      ...cur.messages,
+                      { from: "you", time: now(), text },
+                    ],
+                  });
+                  return;
+                }
+                const id = `ceo-${Date.now()}`;
+                setThreads((ts) => [
+                  {
+                    id,
+                    title:
+                      text.length > 48
+                        ? `${text.slice(0, 46).trimEnd()}…`
+                        : text,
+                    projectId: workProject ?? "none",
+                    agentId: work.ceo?.id ?? "",
+                    model: work.ceo?.model ?? "",
+                    state: "working",
+                    ago: 0,
+                    line: "Planning",
+                    messages: [{ from: "you", time: now(), text }],
+                  },
+                  ...ts,
+                ]);
+                setCeoSession(id);
+              }}
+            />
+          )
+        }
       />
     ) : view.kind === "home" ? (
       <V2CompanyHome
@@ -447,6 +516,7 @@ export function V2Shell({
             agents={team}
             projects={projects}
             tickets={work.risky}
+            connectors={work.connectors}
             onOpen={open}
             onOpenTicket={(id) => setSheet({ ticket: id })}
           />
@@ -493,6 +563,11 @@ export function V2Shell({
         <V2Sheet
           key={`ticket-${ticket.id}`}
           title={ticket.id}
+          inset={
+            ceoOpen && view.kind === "work"
+              ? "lg:right-[388px] xl:right-[428px]"
+              : undefined
+          }
           icon={<KanbanSquareIcon />}
           onClose={() => setSheet(null)}
         >
@@ -504,11 +579,7 @@ export function V2Shell({
             projects={projects}
             onApprove={() => work.approve(ticket.id)}
             onDeny={() => work.deny(ticket.id)}
-            onOpenThread={
-              ticket.threadId
-                ? () => open(ticket.threadId as string)
-                : undefined
-            }
+            onAskCeo={work.ceo ? () => openCeo(ticket.threadId) : undefined}
           />
         </V2Sheet>
       )}

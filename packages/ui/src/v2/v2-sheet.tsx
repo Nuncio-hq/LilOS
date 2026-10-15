@@ -14,6 +14,7 @@ export function V2Sheet({
   onClose,
   onBack,
   width = "w-[min(560px,100vw)]",
+  inset,
   children,
 }: {
   title: string;
@@ -23,6 +24,9 @@ export function V2Sheet({
   onClose: () => void;
   onBack?: () => void;
   width?: string;
+  /** Keeps a docked panel on the right uncovered (e.g. the CEO chat):
+      classes that pull the sheet's right edge in. */
+  inset?: string;
   children: React.ReactNode;
 }) {
   const [closing, setClosing] = useState(false);
@@ -40,7 +44,7 @@ export function V2Sheet({
     onEscape: onBack ?? close,
   });
   return (
-    <div className="fixed inset-0 z-30">
+    <div className={cn("fixed inset-0 z-30", inset)}>
       <div
         aria-hidden
         onClick={close}

@@ -5,8 +5,8 @@ import { ago, StateDot } from "./v2-bits";
 import type { V2Agent, V2Project, V2Thread } from "./v2-types";
 import { V2_ATTENTION } from "./v2-types";
 import { ProjectChip } from "./v2-viz";
-import { AssigneeBadge, TicketStateIcon } from "./v2-work-bits";
-import type { V2Ticket } from "./v2-work-types";
+import { TicketStateIcon, WorkerAvatar, workerIdentity } from "./v2-work-bits";
+import type { V2Connector, V2Ticket } from "./v2-work-types";
 
 /* Everything that came back to you, across projects, in one calm list.
    Grouped by what you have to do: decide, fix, look. Risky asks on tickets
@@ -17,6 +17,7 @@ export function V2NeedsYou({
   agents,
   projects,
   tickets = [],
+  connectors = [],
   onOpen,
   onOpenTicket,
 }: {
@@ -25,6 +26,7 @@ export function V2NeedsYou({
   projects: V2Project[];
   /** Tickets with a risky ask waiting on you. */
   tickets?: V2Ticket[];
+  connectors?: V2Connector[];
   onOpen: (id: string) => void;
   onOpenTicket?: (id: string) => void;
 }) {
@@ -86,12 +88,9 @@ export function V2NeedsYou({
                   )}
                 >
                   <span className="mt-0.5">
-                    <AssigneeBadge
-                      a={k.assignee}
-                      agents={agents}
-                      connectors={[]}
+                    <WorkerAvatar
+                      who={workerIdentity(k.assignee, agents, connectors)}
                       size="md"
-                      showName={false}
                     />
                   </span>
                   <div className="min-w-0 flex-1">

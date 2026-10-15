@@ -90,13 +90,24 @@ export type V2Goal = {
   projectId: string;
 };
 
-/** An outside service an agent can use, reached through its own CLI or MCP. */
+/** A brand mark as one SVG path. */
+export type V2Mark = { viewBox: string; d: string };
+
+/** An outside service an agent can use, reached through its own CLI or MCP.
+    Its look (label, mark, colour) is data the connector supplies (an MCP
+    server's `serverInfo.icons`, or what the owner picks when adding a CLI), so
+    LilOS shows each provider distinctly without naming any in its code. */
 export type V2Connector = {
   id: string;
-  /** Display name ("grokbot"). Comes from the connector, not from LilOS code. */
+  /** The command's name ("acme"). */
   name: string;
+  /** The service's display name ("Acme Bot"). */
+  label: string;
+  mark?: V2Mark;
+  /** The service's colour, for its mark and tint. */
+  color?: string;
   kind: "cli" | "mcp";
-  /** The command LilOS runs or attaches ("grokbot", "npx -y grokbot-mcp"). */
+  /** The command LilOS runs or attaches ("acme", "npx -y acme-mcp"). */
   command: string;
   /** One line on what it gives an agent. */
   about: string;

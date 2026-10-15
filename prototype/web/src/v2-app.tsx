@@ -10,7 +10,7 @@ import {
   V2_PROVIDERS,
   v2Threads,
 } from "./fake-v2"
-import { V2_CEO_THREAD, V2_CONNECTORS, V2_GOALS, V2_TICKETS } from "./fake-v2-work"
+import { V2_CEO_THREAD, V2_CEO_THREAD_OLD, V2_CONNECTORS, V2_GOALS, V2_TICKETS } from "./fake-v2-work"
 
 const SHEETS = ["agents", "hire", "needs", "working", "settings", "connectors"] as const
 type SheetParam = (typeof SHEETS)[number]
@@ -19,7 +19,8 @@ type SheetParam = (typeof SHEETS)[number]
    untouched while Oscar judges the new layout. ?v2&n=300 loads more history;
    ?v2&theme=dark|light pins the theme; &thread=<id> opens a thread;
    &sheet=agents|hire|needs|working|settings|connectors opens a side sheet;
-   &view=work opens the Work board; &ticket=<id> opens a ticket's live trail. */
+   &view=work opens the Work board; &ceo opens the CEO beside it; &ticket=<id>
+   opens a ticket's live trail. */
 export default function V2App() {
   const params = new URLSearchParams(location.search)
   const total = Math.max(15, Number(params.get("n") ?? 60))
@@ -34,7 +35,7 @@ export default function V2App() {
   const [, setTheme] = useTheme()
   const [toast, setToast] = useState<string | null>(null)
   const [visibility, setVisibility] = useState<ModelVisibility>({ providers: [], models: [] })
-  const threads = useMemo(() => [V2_CEO_THREAD, ...v2Threads(total)], [total])
+  const threads = useMemo(() => [V2_CEO_THREAD, V2_CEO_THREAD_OLD, ...v2Threads(total)], [total])
   useEffect(() => {
     if (pinned === "dark" || pinned === "light") setTheme(pinned)
   }, [pinned, setTheme])
@@ -52,6 +53,7 @@ export default function V2App() {
         initialThreadId={params.get("thread") ?? undefined}
         initialSheet={sheet}
         initialView={params.get("view") === "work" || ticketParam ? "work" : undefined}
+        initialCeo={params.has("ceo")}
         activity={V2_ACTIVITY}
         goals={V2_GOALS}
         tickets={V2_TICKETS}
