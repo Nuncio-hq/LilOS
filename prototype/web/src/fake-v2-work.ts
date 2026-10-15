@@ -1,4 +1,5 @@
 import type { V2Connector, V2Goal, V2Mark, V2Ticket, V2Thread } from "@lilos/ui"
+import grokBotIcon from "./assets/grokbot-app-icon.png"
 
 /* Mock data for the AI company inside v2 (#746): goals, tickets with one
    assignee, connectors, and the CEO's thread. The outside workers are named
@@ -8,9 +9,10 @@ import type { V2Connector, V2Goal, V2Mark, V2Ticket, V2Thread } from "@lilos/ui"
    owner's Mac. Not a contract. */
 
 /* Each connector brings its own look: an MCP server publishes it in
-   serverInfo (title + icons), a CLI gets it when Oscar adds it. These marks
-   are that data (from models.dev); LilOS UI code never names a provider.
-   Brand marks are their owners' trademarks. */
+   serverInfo (title + icons), a CLI gets it when Oscar adds it. This is that
+   data; LilOS UI code never names a provider. Grok Bot's icon is the Grok Bot
+   desktop app's own app icon (not xAI's mark); Muse's mark is Meta's, from
+   models.dev. Brand marks are their owners' trademarks. */
 const GROK_MARK: V2Mark = {
   viewBox: "0 0 40 40",
   d: "M12.4579 15.6036L26.1529 35H20.0656L6.37059 15.6036H12.4579ZM12.4524 26.3764L15.4974 30.6909L12.4551 35H6.36377L12.4524 26.3764ZM33.6365 7.15727V35H28.647V14.2236L33.6365 7.15727ZM33.6365 5L20.0656 24.2205L17.0206 19.9073L27.5451 5H33.6365Z",
@@ -25,6 +27,7 @@ export const V2_CONNECTORS: V2Connector[] = [
     id: "grokbot",
     name: "grokbot",
     label: "Grok Bot",
+    icon: grokBotIcon,
     mark: GROK_MARK,
     kind: "mcp",
     command: "npx -y grokbot-mcp",

@@ -79,15 +79,32 @@ export function TicketStateIcon({
 /** A provider's mark on a tile in its colour; a plug when it has none. */
 export function ProviderMark({
   mark,
+  icon,
   color,
   label,
   className,
 }: {
   mark?: V2Mark;
+  /** The provider's own app icon; wins over the mark. */
+  icon?: string;
   color?: string;
   label: string;
   className?: string;
 }) {
+  if (icon)
+    return (
+      <span
+        role="img"
+        aria-label={label}
+        title={label}
+        className={cn(
+          "inline-block size-5 shrink-0 overflow-hidden rounded-[6px] ring-1 ring-foreground/10",
+          className,
+        )}
+      >
+        <img src={icon} alt="" className="size-full object-cover" />
+      </span>
+    );
   return (
     <span
       role="img"
@@ -172,6 +189,7 @@ export function WorkerAvatar({
       <span className="relative shrink-0">
         <ProviderMark
           mark={who.connector?.mark}
+          icon={who.connector?.icon}
           color={who.connector?.color}
           label={who.connector?.label ?? "Outside"}
           className={cn(box, "rounded-full")}

@@ -104,6 +104,9 @@ export type V2Connector = {
   /** The service's display name ("Acme Bot"). */
   label: string;
   mark?: V2Mark;
+  /** The service's own app icon (an image URL), shown instead of the mark
+      when present: what an MCP server publishes in `serverInfo.icons`. */
+  icon?: string;
   /** The service's colour, for its mark and tint. */
   color?: string;
   kind: "cli" | "mcp";

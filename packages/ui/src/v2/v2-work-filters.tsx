@@ -68,6 +68,7 @@ function GroupMark({ g, size }: { g: WorkerGroup; size: string }) {
   return g.outside ? (
     <ProviderMark
       mark={g.identity.connector?.mark}
+      icon={g.identity.connector?.icon}
       color={g.identity.connector?.color}
       label={g.label}
       className={cn(size, "rounded-full")}
