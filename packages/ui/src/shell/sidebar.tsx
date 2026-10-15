@@ -1,6 +1,7 @@
 import {
   BellIcon,
   ChevronRightIcon,
+  CrownIcon,
   FolderGit2Icon,
   FolderIcon,
   GlobeIcon,
@@ -72,6 +73,9 @@ export function Sidebar({
   onOpenSettings,
   onPairPhone,
   onOpenBrowser,
+  onOpenCompany,
+  companyActive,
+  companyNeedsYou,
   realApp,
   preview,
   buildLabel,
@@ -112,6 +116,11 @@ export function Sidebar({
   onPairPhone?: () => void;
   /* Toggles the LilOS Browser (⌘⇧B, issue #214). Omit to hide the row. */
   onOpenBrowser?: () => void;
+  /* Opens the AI company (CEO + always-on bots, #746). Omit to hide the row. */
+  onOpenCompany?: () => void;
+  companyActive?: boolean;
+  /* Risky bot asks waiting on the user, shown on the Company row. */
+  companyNeedsYou?: number;
   /* realApp = what the shipped app sidebar will show today: Employees + status only. */
   realApp?: boolean;
   /* Prototype-only slot (e.g. the Preview states menu); omitted in production wiring. */
@@ -185,6 +194,16 @@ export function Sidebar({
         {!realApp && (
           <>
             <nav className="space-y-0.5 p-2">
+              {onOpenCompany && (
+                <NavItem
+                  icon={<CrownIcon />}
+                  label="Company"
+                  count={companyNeedsYou || undefined}
+                  tone="amber"
+                  active={companyActive}
+                  onClick={onOpenCompany}
+                />
+              )}
               <NavItem icon={<InboxIcon />} label="Inbox" />
               <NavItem
                 icon={<ShieldAlertIcon />}

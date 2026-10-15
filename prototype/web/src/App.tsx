@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Conversation, ConversationContent, ConversationScrollButton } from "@lilos/ui/components/ai-elements/conversation"
 import {
   AddFolderDialog,
+  CompanyView,
   BrowserPanel,
   type BrowserMode,
   ChannelHeader,
@@ -116,6 +117,7 @@ import { approvePlan, pendingPlan, PLAN_DMS, rejectPlan, revisePlan, stopTasks, 
 import { useLiveStatus } from "./live-status"
 import { useFakeBrowser } from "./fake-browser"
 import { runTitle, SCHEDULED_RUNS, SEED_TASKS } from "./fake-schedules"
+import { ASKS, BOTS, CEO, CEO_TURNS, COMPANY_PROJECTS, COMPANY_TICKETS, GOALS } from "./fake-company"
 import { liveAttachFromLocation, useLiveSurfaces } from "./live-surfaces"
 
 /* Model: Company → Projects → Channels.
@@ -936,6 +938,11 @@ const stepLine = (s: Step) => {
 export default function App() {
   const [employees, setEmployees] = useState<Employee[]>(SEED_EMPLOYEES)
   const [view, setView] = useState<View>({ kind: "channel", id: "engineering" })
+  /* #746: the AI company screen (CEO + always-on bots) takes the main area. ?company opens it. */
+  const [companyOpen, setCompanyOpen] = useState(() => new URLSearchParams(location.search).has("company"))
+  const [companyAsks, setCompanyAsks] = useState(ASKS)
+  const [companyTickets, setCompanyTickets] = useState(COMPANY_TICKETS)
+  const [ceoTurns, setCeoTurns] = useState(CEO_TURNS)
   const [threadId, setThreadId] = useState<string | null>("m2")
   // #138 AC-3: search hit opened → thread scrolls to this message id, flashes it.
   const [scrollTo, setScrollTo] = useState<string | null>(null)
@@ -1453,13 +1460,14 @@ export default function App() {
     (c) => c.id === "relay" && c.state === "connecting",
   )
 
-  const goChannel = (id: string) => { setView({ kind: "channel", id }); setThreadId(null); setFocus(false); setNavOpen(false) }
+  const goChannel = (id: string) => { setCompanyOpen(false); setView({ kind: "channel", id }); setThreadId(null); setFocus(false); setNavOpen(false) }
   const goDM = (id: string) => {
+    setCompanyOpen(false)
     const last = [...(feeds[`dm-${id}`] ?? [])].reverse().find((m) => m.kind === "msg" && m.thread)
     setView({ kind: "dm", id }); setThreadId(last?.id ?? null); setPanelTab("thread"); setPanelOpen(window.innerWidth >= 1280); setFocus(false); setNavOpen(false)
   }
   const showThread = (id: string) => { setThreadId(id); setPanelTab("thread"); setPanelOpen(true) }
-  const goSessions = () => { setView({ kind: "sessions", id: "sessions" }); setThreadId(null); setFocus(false); setNavOpen(false) }
+  const goSessions = () => { setCompanyOpen(false); setView({ kind: "sessions", id: "sessions" }); setThreadId(null); setFocus(false); setNavOpen(false) }
 
   /* ---- Scheduled tasks (prototype #366 for #136). Real app: tasks live on the relay, the harness
      owns the clock and a run is conversations.open with the task's prompt + folder. Here only
@@ -2436,10 +2444,13 @@ export default function App() {
         onOpenSettings={() => setSettingsOpen(true)}
         onPairPhone={() => setPairPhone({ kind: "ready", offer: pairOffer(300) })}
         onOpenBrowser={() => setBrowserOpen((o) => !o)}
+        onOpenCompany={() => { setCompanyOpen(true); setFocus(false); setNavOpen(false) }}
+        companyActive={companyOpen}
+        companyNeedsYou={companyAsks.filter((a) => a.risk).length}
         realApp={realApp || scenario === "first-run"}
         sessions={{
           count: sessionGroups.needsYou.length || undefined,
-          active: view.kind === "sessions",
+          active: view.kind === "sessions" && !companyOpen,
           onOpen: goSessions,
         }}
         preview={<PrototypePreviewMenu scenario={scenario} realApp={realApp} onScenario={pickScenario} onRealApp={setRealApp} />}
@@ -2455,7 +2466,30 @@ export default function App() {
 
       <div className="flex min-h-0 min-w-0">
       <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1">
-      {focus && openThread?.thread ? (
+      {companyOpen ? (
+        <CompanyView
+          ceo={CEO} turns={ceoTurns} projects={COMPANY_PROJECTS} goals={GOALS}
+          tickets={companyTickets} bots={BOTS} asks={companyAsks}
+          onNav={() => setNavOpen(true)}
+          onSendToCeo={(text) => {
+            const time = new Date().toTimeString().slice(0, 5)
+            setCeoTurns((t) => [...t, { id: `o-${Date.now()}`, from: "oscar", time, text }])
+            setTimeout(() => setCeoTurns((t) => [...t, { id: `c-${Date.now()}`, from: "ceo", time, text: "Got it. I'll plan it, hand the work to the right bots and report back here. You'll only hear from me before anything risky." }]), 900)
+          }}
+          onApprove={(id) => {
+            const a = companyAsks.find((x) => x.id === id)
+            setCompanyAsks((xs) => xs.filter((x) => x.id !== id))
+            if (a) setCompanyTickets((ts) => ts.map((t) => t.id === a.ticketId ? { ...t, state: "working", update: "Approved by you, running", updatedAgo: "just now" } : t))
+            say("Approved. The bot carries on and the CEO reports back.")
+          }}
+          onDeny={(id) => {
+            const a = companyAsks.find((x) => x.id === id)
+            setCompanyAsks((xs) => xs.filter((x) => x.id !== id))
+            if (a) setCompanyTickets((ts) => ts.map((t) => t.id === a.ticketId ? { ...t, state: "needs-ceo", update: "You declined; the CEO is replanning", updatedAgo: "just now" } : t))
+            say("Declined. The CEO will find another way.")
+          }}
+        />
+      ) : focus && openThread?.thread ? (
         <FocusView
           /* Same positional reply ids as the panel thread — data-msg is the
              shared scroll/flash anchor (#138); Focus rows need it too. */
