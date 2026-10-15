@@ -58,23 +58,23 @@ input{width:100%;max-width:420px;padding:8px 12px;border-radius:8px;border:1px s
   <p><span class="tag">agreed with Oscar 2026-10-14, revised 2026-10-15 · prototypes merged · not decisions yet</span> Each becomes a decision only when the slice implementing it merges. Until then the decisions below stay in force.</p>
   <h3>UX v2: threads by project, no DMs (<a href="https://github.com/Nuncio-hq/LilOS/issues/749">#749</a>)</h3>
   <ul>
-    <li>Threads (= engine sessions) stay the unit and live under a <b>project</b> (or "No project"). DMs go away. Who works a thread is an <b>agent picker</b> next to the model: a Hermes profile today; Claude Code and Codex later (<a href="https://github.com/Nuncio-hq/LilOS/issues/111">#111</a>).</li>
+    <li>Threads (= engine sessions) stay the unit and live under a <b>project</b> (or "No project"). DMs go away. Who works a thread is an <b>agent picker</b> next to the model: a Hermes profile today; other runtimes later through ACP (<a href="https://github.com/Nuncio-hq/LilOS/issues/111">#111</a>).</li>
     <li>The list stays short: needs-you, failed and finished-not-seen float up; running threads fold into one "N working" line; quiet threads settle out. A company home shows who is at work, what needs you, and recent activity.</li>
     <li>Prototype: <code>packages/ui/src/v2</code> + <code>prototype/web/src/v2-app.tsx</code>, open <code>localhost:5173/?v2</code>. Its later slices rewrite <a href="#d-25-3">D-#25</a> (DM = one employee) and <a href="#d-113">D-#113</a> (DM owns the folder).</li>
   </ul>
   <h3>The AI company: a CEO runs the work through tickets (<a href="https://github.com/Nuncio-hq/LilOS/issues/746">#746</a>)</h3>
   <ul>
-    <li>Oscar is the <b>Chairman</b> and talks to one <b>CEO</b>: an ordinary agent with the CEO role (any runtime × any model). The CEO plans, splits the work into tickets, gives each to the right worker, checks the result and reports back. It acts on its own; only risky actions (spending money, sending anything outside, dangerous commands) ask Oscar.</li>
+    <li>Oscar is the <b>Chairman</b> and talks to one <b>CEO</b>, a position any agent can hold (Paperclip-style). Every agent has the same shape: role, reports-to, runtime + model, instructions, memory, skills, connectors. The CEO plans, splits the work into tickets, gives each to the right worker, checks the result and reports back. It acts on its own; only risky actions (spending money, sending anything outside, dangerous commands) ask Oscar.</li>
     <li>Lean tickets, Paperclip-style: goal → ticket → one assignee → status, owned by the relay and driven through gateway tools (<code>ticket_*</code>). An assignee is a LilOS agent or an outside worker the CEO names.</li>
-    <li><b>LilOS stays provider-neutral</b> (revised 2026-10-15). Runtimes (Hermes; Claude Code and Codex later) run threads in a folder. Outside always-on bots (Grok Bot, Muse, anything later) are <b>connectors</b>: their own CLI or MCP server, attached to an agent's sessions. LilOS never names a provider in contracts, relay, harness or UI types, never wraps a provider's API, never stores its credentials. Test: remove every connector and LilOS still builds and runs; a new provider needs only its CLI or MCP installed. <em>Not: a bot contract with one adapter per provider, or bots listed as runtimes (the 2026-10-14 plan).</em></li>
+    <li><b>LilOS stays provider-neutral</b> (revised 2026-10-15). Runtimes run threads in a folder: Hermes now; later ones only through ACP with one shared mapping, the way T3 Code runs ACP agents (contracts first, <a href="https://github.com/Nuncio-hq/LilOS/issues/764">#764</a>; Codex dropped). Outside always-on bots (Grok Bot, Muse, anything later) are <b>connectors</b>: their own CLI or MCP server, attached to an agent's sessions. LilOS never names a provider in contracts, relay, harness or UI types, never wraps a provider's API, never stores its credentials. Test: remove every connector and LilOS still builds and runs; a new provider needs only its CLI or MCP installed. <em>Not: a bot contract with one adapter per provider, or bots listed as runtimes (the 2026-10-14 plan).</em></li>
     <li>Prototype: <code>packages/ui/src/company</code>, open <code>localhost:5173/?company</code>. Paused, and it still names providers; it gets redone inside v2 without them.</li>
   </ul>
 <pre><code>Oscar (Chairman) ── talks to the CEO, approves risky actions
    │
 LilOS ── projects · threads · tickets · agent gateway (ticket_*)
    │
-   ├── runtimes (one session per thread): Hermes today · Claude Code, Codex (#111)
-   │      the CEO is an agent with the CEO role
+   ├── runtimes (one session per thread): Hermes now · later ones through ACP (#111)
+   │      the CEO is a position an agent holds
    └── connectors on an agent (CLI or MCP; LilOS never wraps their APIs)
          grokbot · muse · anything later</code></pre>
 </section>
@@ -131,6 +131,7 @@ packages/engine-*   adapter process owning the engine (hermes serve)</code></pre
   <h3 id="tracking">GitHub issues are the source of truth</h3>
   <ul>
     <li><code>Nuncio-hq/LilOS</code> via <code>gh</code>. A <b>feature</b> is a parent issue with a product outcome; its sub-issues are vertical slices.</li>
+    <li><b>Modules</b>: every open issue sits under one of five module issues, and its board card carries the same <b>Module</b> field. A new issue joins one (sub-issue + field). Each module is a slot that can be swapped or left empty while the rest still works: <a href="https://github.com/Nuncio-hq/LilOS/issues/756">Core</a> (company, projects, threads, agents, tickets, Needs you, <code>lilos_*</code> tools) · <a href="https://github.com/Nuncio-hq/LilOS/issues/757">Runtimes</a> (Hermes now, others through ACP; models per agent) · <a href="https://github.com/Nuncio-hq/LilOS/issues/758">Connectors</a> (outside services through CLI or MCP, zero or many) · <a href="https://github.com/Nuncio-hq/LilOS/issues/759">Mac tools</a> (browser, terminal, Workbench, checkpoints) · <a href="https://github.com/Nuncio-hq/LilOS/issues/760">Quality</a> (speed, flaky tests, refactors, a11y, iOS upkeep).</li>
     <li><b>Labels</b>, only these: <code>agent-ready</code> (criteria + verify plan; anyone may take it; a blocked slice gets it when its blocker merges), <code>later</code> (parked), <code>needs-human</code> (waiting on Oscar).</li>
     <li><b>Pick</b> open <code>agent-ready</code> slices with no PR (<code>label:agent-ready -linked:pr</code>); finish a feature's slices before starting another.</li>
     <li><b>Take it</b>: remove <code>agent-ready</code>, assign yourself, open a <b>draft</b> PR with <code>Closes #N</code> early; mark it ready when your tier's checks pass (E2E runs only on ready PRs). One slice at a time; stuck → <code>needs-human</code>. One <code>Status</code> comment on the issue (Now / Next / Blocked), edited in place. <code>git commit -s</code>.</li>
@@ -169,10 +170,10 @@ packages/engine-*   adapter process owning the engine (hermes serve)</code></pre
   <table>
     <thead><tr><th>Project</th><th>Borrow</th><th>Start at</th></tr></thead>
     <tbody>
-      <tr><td>T3 Code <code>pingdotgg/t3code</code></td><td>client/server split, seq sync (snapshot + replay), provider adapters + capabilities, thread sidebar (pin, settle, snooze)</td><td><code>docs/internals/</code>, <code>packages/contracts/src/providerRuntime.ts</code>, <code>apps/server/src/provider/Services/ProviderAdapter.ts</code>, <code>docs/user/thread-sidebar.md</code></td></tr>
+      <tr><td>T3 Code <code>pingdotgg/t3code</code></td><td>client/server split, seq sync (snapshot + replay), provider adapters + capabilities, thread sidebar (pin, settle, snooze), ACP: pinned generated schema, one shared ACP adapter, no per-agent branches</td><td><code>docs/internals/adding-a-provider.md</code>, <code>packages/contracts/src/providerRuntime.ts</code>, <code>packages/provider-core/src/server/ProviderAdapter.ts</code>, <code>docs/user/thread-sidebar.md</code>, <code>packages/effect-acp/</code>, <code>packages/provider-acp/src/server/adapter.ts</code></td></tr>
       <tr><td>Synara <code>Emanuele-web04/synara</code></td><td>ACP adapter, adapter conformance tests, mock agents, agent gateway (per-engine MCP injection, versioned host policy)</td><td><code>apps/server/src/provider/acp/</code>, <code>apps/server/src/provider/providerAdapterConformance.ts</code>, <code>apps/server/src/agentGateway/</code></td></tr>
       <tr><td>Hermes Desktop <code>NousResearch/hermes-agent</code></td><td>renderer over a headless engine, JSON-RPC client with reconnect replay, wire contract declared once</td><td><code>apps/shared/src/json-rpc-gateway.ts</code>, <code>tui_gateway/contracts/</code>, <code>scripts/gen_gateway_contracts.py</code></td></tr>
-      <tr><td>Paperclip <code>paperclipai/paperclip</code></td><td>company control plane: goals → tickets with one assignee, atomic checkout, heartbeats, one adapter per runtime</td><td><code>doc/SPEC.md</code> (§4 heartbeats, §5 tasks, §8 atomic checkout), <code>doc/GOAL.md</code>, <code>packages/adapters/</code></td></tr>
+      <tr><td>Paperclip <code>paperclipai/paperclip</code></td><td>company control plane: goals → tickets with one assignee, atomic checkout, heartbeats, one adapter per runtime; CEO as a position; company-owned agent files and skill library</td><td><code>doc/SPEC.md</code> (§3 org, §4 heartbeats, §5 tasks, §8 atomic checkout), <code>doc/GOAL.md</code>, <code>packages/adapters/</code>, <code>doc/agent-files.md</code>, <code>doc/memory-landscape.md</code></td></tr>
     </tbody>
   </table>
 </section>
