@@ -17,8 +17,8 @@ const COLUMNS: { title: string; states: TicketState[] }[] = [
 ];
 
 /* The work the CEO handed out: goals on top, then tickets by state. One
-   assignee per ticket (Paperclip-style). Read-only for Oscar — the CEO moves
-   tickets; Oscar opens one to see the detail. */
+   assignee per ticket (Paperclip-style). Read-only for the owner — the CEO moves
+   tickets; the owner opens one to see the detail. */
 export function TicketBoard({
   projects,
   projectId,

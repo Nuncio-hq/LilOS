@@ -4,7 +4,7 @@ import { Button } from "../components/ui/button";
 import { cn } from "../lib/utils";
 import type { CeoInfo, CeoTurn, CompanyTicket } from "./company-types";
 
-/* Oscar's one conversation: the CEO. He hands off a goal; the CEO answers
+/* The owner's one conversation: the CEO. He hands off a goal; the CEO answers
    with what it did (tickets created, bots picked). No per-ticket approval —
    the CEO acts on its own (#746). */
 export function CeoChat({

@@ -15,7 +15,7 @@ import { TicketBoard } from "./ticket-board";
 import { TicketDetail } from "./ticket-detail";
 import { WorkforcePanel } from "./workforce-panel";
 
-/* The AI company (#746): Oscar talks to one CEO; the CEO hands tickets to
+/* The AI company (#746): the owner talks to one CEO; the CEO hands tickets to
    always-on bots (Grok Bot, Muse…) and checks their work. Three columns:
    CEO chat · work (goals + tickets) · needs-you + bot teams. Props in,
    callbacks out; the prototype owns the mock data. */

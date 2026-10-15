@@ -15,7 +15,7 @@ const RISK: Record<NonNullable<BotAsk["risk"]>, string> = {
   "dangerous-command": "Dangerous command",
 };
 
-/* Right column: what needs Oscar (risky asks only), what the CEO answered
+/* Right column: what needs the owner (risky asks only), what the CEO answered
    for him, and the bot teams per project with each provider's strength. */
 export function WorkforcePanel({
   projects,

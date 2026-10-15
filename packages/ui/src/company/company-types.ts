@@ -43,13 +43,13 @@ export type CompanyTicket = {
   updatedAgo: string;
 };
 
-/** A question or approval a bot raised. Routine ones go to the CEO; risky ones to Oscar. */
+/** A question or approval a bot raised. Routine ones go to the CEO; risky ones to the owner. */
 export type BotAsk = {
   id: string;
   ticketId: string;
   bot: string;
   text: string;
-  /** Why it came to Oscar instead of the CEO. Present only on Oscar's asks. */
+  /** Why it came to the owner instead of the CEO. Present only on the owner's asks. */
   risk?: "spends-money" | "sends-outside" | "dangerous-command";
   /** The CEO's answer, once it answered a routine ask. */
   ceoAnswer?: string;
