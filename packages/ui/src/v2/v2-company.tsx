@@ -73,6 +73,7 @@ export function V2CompanyHome({
   onNeedsYou,
   onAgents,
   onWorking,
+  ticketAsks = 0,
 }: {
   company: string;
   threads: V2Thread[];
@@ -83,6 +84,8 @@ export function V2CompanyHome({
   onNeedsYou: () => void;
   onAgents: () => void;
   onWorking: () => void;
+  /** Risky ticket asks waiting on you; they count toward Need you. */
+  ticketAsks?: number;
 }) {
   const working = threads.filter((t) => t.state === "working");
   const needs = threads.filter((t) => V2_ATTENTION.includes(t.state));
@@ -112,7 +115,7 @@ export function V2CompanyHome({
       onClick: onWorking,
     },
     {
-      value: needs.length,
+      value: needs.length + ticketAsks,
       label: "Need you",
       icon: <HandIcon />,
       cls: "text-amber-500",

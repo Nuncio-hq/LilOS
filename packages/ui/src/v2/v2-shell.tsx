@@ -1,5 +1,6 @@
 import {
   HandIcon,
+  KanbanSquareIcon,
   PlusIcon,
   SettingsIcon,
   SparklesIcon,
@@ -9,25 +10,41 @@ import { useEffect, useState } from "react";
 import { AddFolderDialog } from "../dialogs/add-folder-dialog";
 import { useTheme } from "../shell/use-theme";
 import type { FsDir, ModelChoice, WsPick } from "../types";
+import { useV2Work } from "./use-v2-work";
 import { V2AgentsList } from "./v2-agents";
 import { V2AtWork } from "./v2-at-work";
 import { V2CompanyHome } from "./v2-company";
 import { V2HireForm } from "./v2-hire";
 import { V2NeedsYou } from "./v2-needs-you";
 import { pickFor, toFolders, type V2ModelKit } from "./v2-pickers";
-import { V2Settings } from "./v2-settings";
+import { V2Settings, type V2SettingsSection } from "./v2-settings";
 import { V2Sheet } from "./v2-sheet";
 import { V2Sidebar } from "./v2-sidebar";
 import { V2NewThread, V2ThreadView } from "./v2-thread";
+import { V2TicketDetail } from "./v2-ticket";
 import type { V2Activity, V2Agent, V2Project, V2Thread } from "./v2-types";
 import { V2_ATTENTION } from "./v2-types";
+import { V2Work } from "./v2-work";
+import type { V2Connector, V2Goal, V2Ticket } from "./v2-work-types";
 import { V2WorkbenchPanel } from "./v2-workbench";
 
 /** What fills the main column. Only Home, a thread and a new thread do. */
-type View = { kind: "thread"; id: string } | { kind: "home" } | { kind: "new" };
+type View =
+  | { kind: "thread"; id: string }
+  | { kind: "home" }
+  | { kind: "work" }
+  | { kind: "new" };
 
 /** What slides in from the right over the main column. */
-type Sheet = "agents" | "hire" | "needs" | "working" | "settings" | null;
+type Sheet =
+  | "agents"
+  | "hire"
+  | "needs"
+  | "working"
+  | "settings"
+  | "connectors"
+  | { ticket: string }
+  | null;
 
 /* UX v2 prototype shell: sidebar + one main column + right-side sheets.
    Lists you glance at (agents, needs you, at work, settings) slide over the
@@ -45,6 +62,10 @@ export function V2Shell({
   initialThreadId,
   initialSheet,
   activity,
+  goals = [],
+  tickets: initialTickets = [],
+  connectors: initialConnectors = [],
+  initialView,
   onToast,
 }: {
   company: string;
@@ -61,6 +82,12 @@ export function V2Shell({
   initialThreadId?: string;
   initialSheet?: Exclude<Sheet, null>;
   activity: V2Activity[];
+  /** The AI company (#746): goals, tickets and connectors. Empty = no Work row. */
+  goals?: V2Goal[];
+  tickets?: V2Ticket[];
+  connectors?: V2Connector[];
+  /** Open on the Work board instead of Home. */
+  initialView?: "work";
   onToast?: (text: string) => void;
 }) {
   const [threads, setThreads] = useState(initialThreads);
@@ -73,8 +100,21 @@ export function V2Shell({
   const [view, setView] = useState<View>(
     initialThreadId
       ? { kind: "thread", id: initialThreadId }
-      : { kind: "home" },
+      : initialView === "work"
+        ? { kind: "work" }
+        : { kind: "home" },
   );
+  const [workProject, setWorkProject] = useState<string | null>(null);
+  const work = useV2Work({
+    tickets: initialTickets,
+    connectors: initialConnectors,
+    agents: team,
+    setAgents: setTeam,
+    onToast,
+  });
+  const hasWork = initialTickets.length > 0;
+  const openTicket = typeof sheet === "object" && sheet ? sheet.ticket : null;
+  const ticket = work.tickets.find((t) => t.id === openTicket);
   const firstModel = modelKit.models[0]?.id ?? "";
   const [draft, setDraft] = useState<{
     pick: WsPick;
@@ -96,9 +136,9 @@ export function V2Shell({
   const now = () => new Date().toTimeString().slice(0, 5);
   const current =
     view.kind === "thread" ? threads.find((t) => t.id === view.id) : undefined;
-  const needsCount = threads.filter((t) =>
-    V2_ATTENTION.includes(t.state),
-  ).length;
+  const needsCount =
+    threads.filter((t) => V2_ATTENTION.includes(t.state)).length +
+    work.risky.length;
   const workingCount = threads.filter((t) => t.state === "working").length;
 
   /* ⌘B toggles the Workbench while a thread is open. */
@@ -136,7 +176,23 @@ export function V2Shell({
   };
 
   const main =
-    view.kind === "home" ? (
+    view.kind === "work" ? (
+      <V2Work
+        goals={goals}
+        tickets={work.tickets}
+        agents={team}
+        connectors={work.connectors}
+        projects={projects}
+        ceo={work.ceo}
+        project={workProject}
+        onProject={setWorkProject}
+        onOpenTicket={(id) => setSheet({ ticket: id })}
+        onOpenCeo={() => {
+          const t = threads.find((x) => x.agentId === work.ceo?.id);
+          if (t) open(t.id);
+        }}
+      />
+    ) : view.kind === "home" ? (
       <V2CompanyHome
         company={company}
         threads={threads}
@@ -147,6 +203,7 @@ export function V2Shell({
         onNeedsYou={() => setSheet("needs")}
         onAgents={() => setSheet("agents")}
         onWorking={() => setSheet("working")}
+        ticketAsks={work.risky.length}
       />
     ) : view.kind === "new" ? (
       <V2NewThread
@@ -285,7 +342,13 @@ export function V2Shell({
             ? "agents"
             : sheet === "working"
               ? "home"
-              : (sheet ?? (view.kind === "home" ? "home" : null))
+              : sheet === "connectors"
+                ? "settings"
+                : typeof sheet === "string"
+                  ? sheet
+                  : view.kind === "home" || view.kind === "work"
+                    ? view.kind
+                    : null
         }
         onOpen={open}
         onNew={(projectId) => {
@@ -298,11 +361,13 @@ export function V2Shell({
           setView({ kind: "new" });
         }}
         onPage={(kind) => {
-          if (kind === "home") {
+          if (kind === "home" || kind === "work") {
             setSheet(null);
-            setView({ kind: "home" });
+            setView({ kind });
           } else setSheet((s) => (s === kind ? null : kind));
         }}
+        openTickets={hasWork ? work.openTickets : undefined}
+        ticketAsks={work.risky.length}
         onSearch={() => onToast?.("⌘K searches every thread, settled ones too")}
         onAddProject={() => setAdding(true)}
       />
@@ -362,7 +427,9 @@ export function V2Shell({
                 agents={team}
                 threads={threads}
                 projects={projects}
+                connectors={work.connectors}
                 onOpen={open}
+                onMakeCeo={hasWork ? work.makeCeo : undefined}
               />
             </div>
           )}
@@ -379,7 +446,9 @@ export function V2Shell({
             threads={threads}
             agents={team}
             projects={projects}
+            tickets={work.risky}
             onOpen={open}
+            onOpenTicket={(id) => setSheet({ ticket: id })}
           />
         </V2Sheet>
       )}
@@ -398,14 +467,49 @@ export function V2Shell({
           />
         </V2Sheet>
       )}
-      {sheet === "settings" && (
+      {(sheet === "settings" || sheet === "connectors") && (
         <V2Sheet
           title="Settings"
           icon={<SettingsIcon />}
           width="w-[min(720px,100vw)]"
           onClose={() => setSheet(null)}
         >
-          <V2Settings name={me} theme={theme} onTheme={setTheme} />
+          <V2Settings
+            name={me}
+            theme={theme}
+            onTheme={setTheme}
+            connectors={work.connectors}
+            agents={team}
+            onConnector={work.toggleConnector}
+            initialSection={
+              sheet === "connectors"
+                ? ("connectors" satisfies V2SettingsSection)
+                : undefined
+            }
+          />
+        </V2Sheet>
+      )}
+      {ticket && (
+        <V2Sheet
+          key={`ticket-${ticket.id}`}
+          title={ticket.id}
+          icon={<KanbanSquareIcon />}
+          onClose={() => setSheet(null)}
+        >
+          <V2TicketDetail
+            t={ticket}
+            goal={goals.find((g) => g.id === ticket.goalId)}
+            agents={team}
+            connectors={work.connectors}
+            projects={projects}
+            onApprove={() => work.approve(ticket.id)}
+            onDeny={() => work.deny(ticket.id)}
+            onOpenThread={
+              ticket.threadId
+                ? () => open(ticket.threadId as string)
+                : undefined
+            }
+          />
         </V2Sheet>
       )}
       {adding && (

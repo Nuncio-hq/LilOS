@@ -17,11 +17,16 @@ export type V2State =
   /** Out of the list: accepted, merged, or quiet for 3 days. */
   | "settled";
 
-/** Who works a thread: a Hermes profile today; Claude Code, Codex, bots later. */
+/** Who works a thread: a Hermes profile today; other runtimes later through
+    ACP. Every agent has the same shape; the CEO is a position one holds. */
 export type V2Agent = {
   id: string;
   name: string;
   role: string;
+  /** A position in the company. "ceo" = the owner's entry point (#746). */
+  position?: "ceo";
+  /** The agent it reports to (the CEO, for most). */
+  reportsTo?: string;
   runtime: import("./v2-runtime").V2Runtime;
   /** Default model for new threads. */
   model?: string;

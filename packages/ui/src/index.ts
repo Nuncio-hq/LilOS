@@ -156,6 +156,7 @@ export * from "./types";
 // UX v2 prototype: threads by project, agent as a per-thread picker
 export { V2Shell } from "./v2/v2-shell";
 export type * from "./v2/v2-types";
+export type * from "./v2/v2-work-types";
 export type { TreeNode } from "./workbench/artifacts";
 export { buildTree, sessionArtifacts, turnSteps } from "./workbench/artifacts";
 export { BackgroundPanel } from "./workbench/background-panel";

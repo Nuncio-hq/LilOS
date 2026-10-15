@@ -1,21 +1,14 @@
 import hermesLogo from "../assets/hermes.svg";
 import { cn } from "../lib/utils";
-import { CLAUDE_MARK, META_MARK, OPENAI_MARK, XAI_MARK } from "./runtime-marks";
+import { CLAUDE_MARK } from "./runtime-marks";
 
-/** An agent runtime LilOS can run an employee on. */
-export type V2Runtime =
-  | "hermes"
-  | "claude-code"
-  | "codex"
-  | "grok-bot"
-  | "muse";
+/** An agent runtime LilOS can run an agent on: Hermes now; later ones only
+    through ACP (#111). Outside bots are connectors, never runtimes (#746). */
+export type V2Runtime = "hermes" | "claude-code";
 
 export const RUNTIME_NAME: Record<V2Runtime, string> = {
   hermes: "Hermes",
   "claude-code": "Claude Code",
-  codex: "Codex",
-  "grok-bot": "Grok Bot",
-  muse: "Muse",
 };
 
 const MARK: Record<
@@ -23,9 +16,6 @@ const MARK: Record<
   { viewBox: string; d: string; color?: string }
 > = {
   "claude-code": { ...CLAUDE_MARK, color: "#D97757" },
-  codex: OPENAI_MARK,
-  "grok-bot": XAI_MARK,
-  muse: { ...META_MARK, color: "#0866FF" },
 };
 
 /* A runtime's mark on a small rounded tile, so every runtime reads the same

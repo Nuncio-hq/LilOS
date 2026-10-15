@@ -4,6 +4,7 @@ import {
   KeyboardIcon,
   MonitorIcon,
   MoonIcon,
+  PlugIcon,
   ShieldCheckIcon,
   SmartphoneIcon,
   SunIcon,
@@ -13,13 +14,23 @@ import {
 import { useState } from "react";
 import { cn } from "../lib/utils";
 import type { Theme } from "../types";
+import { V2Connectors } from "./v2-connectors";
 import { RUNTIME_NAME, RuntimeIcon, type V2Runtime } from "./v2-runtime";
+import type { V2Agent } from "./v2-types";
+import type { V2Connector } from "./v2-work-types";
 
-type Section = "you" | "runtimes" | "access" | "alerts" | "keys";
+export type V2SettingsSection =
+  | "you"
+  | "runtimes"
+  | "connectors"
+  | "access"
+  | "alerts"
+  | "keys";
 
-const NAV: { id: Section; label: string; icon: typeof UserIcon }[] = [
+const NAV: { id: V2SettingsSection; label: string; icon: typeof UserIcon }[] = [
   { id: "you", label: "You", icon: UserIcon },
   { id: "runtimes", label: "Runtimes", icon: CpuIcon },
+  { id: "connectors", label: "Connectors", icon: PlugIcon },
   { id: "access", label: "Access", icon: ShieldCheckIcon },
   { id: "alerts", label: "Alerts", icon: BellIcon },
   { id: "keys", label: "Keys", icon: KeyboardIcon },
@@ -96,24 +107,32 @@ const RUNTIME_ROWS: {
   detail: string;
 }[] = [
   { id: "hermes", state: "on", detail: "v0.21.7 · 5 agents" },
-  { id: "claude-code", state: "soon", detail: "Agent SDK" },
-  { id: "codex", state: "soon", detail: "app-server" },
-  { id: "grok-bot", state: "soon", detail: "grokbot-core" },
-  { id: "muse", state: "soon", detail: "Muse SDK" },
+  { id: "claude-code", state: "soon", detail: "Through ACP" },
 ];
 
-/* v2 settings: five short sections, each a list of icon rows with one
-   control. Runtimes show as logos with a status dot. */
+/* v2 settings: six short sections, each a list of icon rows with one
+   control. Runtimes show as logos with a status dot; connectors are the
+   outside services agents reach through a CLI or MCP server. */
 export function V2Settings({
   name,
   theme,
   onTheme,
+  connectors,
+  agents,
+  onConnector,
+  initialSection,
 }: {
   name: string;
   theme: Theme;
   onTheme: (t: Theme) => void;
+  connectors: V2Connector[];
+  agents: V2Agent[];
+  onConnector: (connectorId: string, agentId: string) => void;
+  initialSection?: V2SettingsSection;
 }) {
-  const [section, setSection] = useState<Section>("you");
+  const [section, setSection] = useState<V2SettingsSection>(
+    initialSection ?? "you",
+  );
   const [flags, setFlags] = useState({
     askRisky: true,
     fullAccess: false,
@@ -215,6 +234,15 @@ export function V2Settings({
                 </div>
               ))}
             </Group>
+          )}
+
+          {section === "connectors" && (
+            <V2Connectors
+              connectors={connectors}
+              agents={agents}
+              onToggle={onConnector}
+              onAdd={() => {}}
+            />
           )}
 
           {section === "access" && (

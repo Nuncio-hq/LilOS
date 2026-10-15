@@ -38,12 +38,11 @@ const ROLES: {
   { id: "custom", label: "Custom", icon: WandSparklesIcon, name: "" },
 ];
 
+/* Hermes now; later runtimes come through ACP (#111). Outside bots are not
+   hired here: they are connectors an agent uses (#746). */
 const RUNTIMES: { id: V2Runtime; soon?: boolean }[] = [
   { id: "hermes" },
   { id: "claude-code", soon: true },
-  { id: "codex", soon: true },
-  { id: "grok-bot", soon: true },
-  { id: "muse", soon: true },
 ];
 
 function Step({ n, label }: { n: number; label: string }) {
@@ -91,7 +90,7 @@ export function V2HireForm({
       </div>
 
       <Step n={1} label="Runs on" />
-      <div className="mb-5 grid grid-cols-5 gap-2">
+      <div className="mb-5 grid grid-cols-3 gap-2">
         {RUNTIMES.map((r) => (
           <button
             key={r.id}
