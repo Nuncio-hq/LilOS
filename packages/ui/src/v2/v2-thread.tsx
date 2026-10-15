@@ -275,11 +275,14 @@ export function Composer({
   onSend,
   tools,
   autoFocus,
+  above,
 }: {
   placeholder: string;
   onSend: (text: string) => void;
   tools?: React.ReactNode;
   autoFocus?: boolean;
+  /** A context row inside the box, above the text (e.g. an attached ticket). */
+  above?: React.ReactNode;
 }) {
   const [text, setText] = useState("");
   const send = () => {
@@ -291,6 +294,7 @@ export function Composer({
   return (
     <div className="shrink-0 px-6 pb-5">
       <div className="mx-auto w-full max-w-[44rem] rounded-[22px] bg-background/80 p-2 shadow-[0_1px_2px_rgb(0_0_0/0.04),0_8px_24px_-12px_rgb(20_30_60/0.18)] ring-1 ring-foreground/[0.08] transition-shadow focus-within:ring-foreground/20 dark:bg-white/[0.04]">
+        {above}
         <textarea
           // biome-ignore lint/a11y/noAutofocus: the new-thread view exists to type into
           autoFocus={autoFocus}

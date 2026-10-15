@@ -45,16 +45,17 @@ export const V2_MODEL_OPTIONS: ModelOption[] = [
   { id: "Qwen 3.8 Flash-Next", name: "Qwen 3.8 Flash-Next", provider: "hpc", efforts: LADDER, defaultEffort: "medium" },
 ]
 
+/* Every agent has the same shape; "Chief" holds the CEO position (#746).
+   Outside bots are not agents here: they are workers behind connectors
+   (fake-v2-work.ts). */
 export const V2_AGENTS: V2Agent[] = [
-  { id: "builder", name: "Builder", role: "Full-stack engineer", runtime: "hermes", model: "Claude Opus 5.5", skills: 18 },
-  { id: "reviewer", name: "Reviewer", role: "Reviews diffs and tests", runtime: "hermes", model: "Claude Sonnet 5", skills: 9 },
-  { id: "marketer", name: "Marketer", role: "Copy and launch plans", runtime: "hermes", model: "GPT-6 Astra", skills: 6 },
-  { id: "research", name: "Research", role: "Deep research with sources", runtime: "hermes", model: "GPT-6 Astra", skills: 11 },
+  { id: "ceo", name: "Chief", role: "Plans, hands out tickets, checks results", position: "ceo", runtime: "hermes", model: "Claude Opus 5.5", skills: 24 },
+  { id: "builder", name: "Builder", role: "Full-stack engineer", reportsTo: "ceo", runtime: "hermes", model: "Claude Opus 5.5", skills: 18 },
+  { id: "reviewer", name: "Reviewer", role: "Reviews diffs and tests", reportsTo: "ceo", runtime: "hermes", model: "Claude Sonnet 5", skills: 9 },
+  { id: "marketer", name: "Marketer", role: "Copy and launch plans", reportsTo: "ceo", runtime: "hermes", model: "GPT-6 Astra", skills: 6 },
+  { id: "research", name: "Research", role: "Deep research with sources", reportsTo: "ceo", runtime: "hermes", model: "GPT-6 Astra", skills: 11 },
   { id: "default", name: "Default", role: "Your main Hermes profile", runtime: "hermes", model: "Claude Opus 5.5", skills: 42 },
   { id: "claude-code", name: "Claude Code", role: "", runtime: "claude-code", soon: true },
-  { id: "codex", name: "Codex", role: "", runtime: "codex", soon: true },
-  { id: "grok-bot", name: "Grok Bot", role: "", runtime: "grok-bot", soon: true },
-  { id: "muse", name: "Muse", role: "", runtime: "muse", soon: true },
 ]
 
 const DOCS_WORK: V2Step[] = [
@@ -168,10 +169,10 @@ const HAND: V2Thread[] = [
     ],
   },
   {
-    id: "t-contract", title: "Draft the bot contract", projectId: "lilos", agentId: "default", model: OPUS, state: "working", ago: 9,
-    line: "Writing job.events",
-    live: { step: { kind: "edit", target: "packages/contracts/src/bots/jobs.ts", add: 64, del: 0 }, elapsed: "48s" },
-    messages: [{ from: "you", time: "11:49", text: "Draft the bot contract for Grok Bot and Muse in packages/contracts." }],
+    id: "t-contract", title: "Pin the ACP version and map it once", projectId: "lilos", agentId: "default", model: OPUS, state: "working", ago: 9,
+    line: "Writing the shared ACP mapping",
+    live: { step: { kind: "edit", target: "packages/engine-acp/src/mapping.ts", add: 64, del: 0 }, elapsed: "48s" },
+    messages: [{ from: "you", time: "11:49", text: "Prepare the ACP contracts (#764): pin the version, one shared mapping, a fake ACP agent." }],
   },
   {
     id: "t-ux", title: "Plan the UX v2 sidebar", projectId: "lilos", agentId: "default", model: OPUS, state: "idle", ago: 4, pinned: true,
@@ -265,7 +266,7 @@ export function v2Threads(total: number): V2Thread[] {
       id: `old-${n}`,
       title: OLD[Math.floor(rand() * OLD.length)],
       projectId,
-      agentId: V2_AGENTS[Math.floor(rand() * 5)].id,
+      agentId: V2_AGENTS[1 + Math.floor(rand() * 5)].id,
       model: V2_MODELS[Math.floor(rand() * V2_MODELS.length)],
       state: "settled",
       ago: 3 * 1440 + Math.floor(rand() * 60 * 1440),

@@ -53,6 +53,13 @@ mark reachable through models.dev) are **trademarks of their owners**. They
 are used only to identify the provider a model belongs to; ELv2 does not
 license those marks to anyone.
 
+## Grok Bot app icon (prototype mock data)
+
+`prototype/web/src/assets/grokbot-app-icon.png` is the app icon of the Grok
+Bot desktop app (Anysphere), resized, used only in the prototype's mock data to
+show a Grok Bot connector. It is Anysphere's trademark and is **not** licensed
+by LilOS; it is not shipped in `apps/*` or `packages/*`.
+
 ## LilOS's own marks
 
 "**LilOS**" and the LilOS logo (`assets/brand/`) are trademarks of Nuncio. The

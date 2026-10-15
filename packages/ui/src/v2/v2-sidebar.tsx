@@ -2,6 +2,7 @@ import {
   ChevronRightIcon,
   FolderPlusIcon,
   HandIcon,
+  KanbanSquareIcon,
   LayoutDashboardIcon,
   PenSquareIcon,
   PinIcon,
@@ -234,11 +235,11 @@ function ProjectBlock({
   );
 }
 
-/* The v2 sidebar: no channels, no DMs. Search and New at the top, one
-   "Needs you" row, then projects. Each project lists only what came back to
+/* The v2 sidebar: no channels, no DMs. Search and New at the top, Home,
+   one "Needs you" row, Work (tickets) and Agents, then projects. Each project lists only what came back to
    you and recent quiet threads; running threads fold into one line and old
    threads settle out of the list on their own. */
-export type V2Page = "home" | "needs" | "agents" | "settings" | null;
+export type V2Page = "home" | "needs" | "work" | "agents" | "settings" | null;
 
 function NavRow({
   icon,
@@ -286,6 +287,8 @@ export function V2Sidebar({
   onPage,
   onSearch,
   onAddProject,
+  openTickets,
+  ticketAsks = 0,
 }: {
   company: string;
   projects: V2Project[];
@@ -298,8 +301,13 @@ export function V2Sidebar({
   onPage: (p: Exclude<V2Page, null>) => void;
   onSearch: () => void;
   onAddProject: () => void;
+  /** Open tickets on the Work board; absent hides the Work row. */
+  openTickets?: number;
+  /** Risky ticket asks waiting on you; they count toward Needs you. */
+  ticketAsks?: number;
 }) {
-  const needs = threads.filter((t) => V2_ATTENTION.includes(t.state)).length;
+  const needs =
+    threads.filter((t) => V2_ATTENTION.includes(t.state)).length + ticketAsks;
   const working = threads.filter((t) => t.state === "working").length;
   return (
     <aside className="lilos-v2-side flex min-h-0 w-[272px] shrink-0 flex-col">
@@ -368,6 +376,21 @@ export function V2Sidebar({
             )
           }
         />
+        {openTickets !== undefined && (
+          <NavRow
+            icon={<KanbanSquareIcon />}
+            label="Work"
+            active={page === "work"}
+            onClick={() => onPage("work")}
+            trailing={
+              openTickets > 0 && (
+                <span className="text-[11px] text-muted-foreground tabular-nums">
+                  {openTickets}
+                </span>
+              )
+            }
+          />
+        )}
         <NavRow
           icon={<UsersIcon />}
           label="Agents"

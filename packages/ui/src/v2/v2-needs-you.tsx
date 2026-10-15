@@ -5,19 +5,30 @@ import { ago, StateDot } from "./v2-bits";
 import type { V2Agent, V2Project, V2Thread } from "./v2-types";
 import { V2_ATTENTION } from "./v2-types";
 import { ProjectChip } from "./v2-viz";
+import { TicketStateIcon, WorkerAvatar, workerIdentity } from "./v2-work-bits";
+import type { V2Connector, V2Ticket } from "./v2-work-types";
 
 /* Everything that came back to you, across projects, in one calm list.
-   Grouped by what you have to do: decide, fix, look. */
+   Grouped by what you have to do: decide, fix, look. Risky asks on tickets
+   (money, sending outside, dangerous commands) sit under Decide too; the CEO
+   answers the routine ones itself (#746). */
 export function V2NeedsYou({
   threads,
   agents,
   projects,
+  tickets = [],
+  connectors = [],
   onOpen,
+  onOpenTicket,
 }: {
   threads: V2Thread[];
   agents: V2Agent[];
   projects: V2Project[];
+  /** Tickets with a risky ask waiting on you. */
+  tickets?: V2Ticket[];
+  connectors?: V2Connector[];
   onOpen: (id: string) => void;
+  onOpenTicket?: (id: string) => void;
 }) {
   const rows = threads.filter((t) => V2_ATTENTION.includes(t.state));
   const groups: {
@@ -44,10 +55,12 @@ export function V2NeedsYou({
       cls: "text-primary",
       items: rows.filter((t) => t.state === "unseen"),
     },
-  ].filter((g) => g.items.length > 0);
+  ].filter(
+    (g) => g.items.length > 0 || (g.title === "Decide" && tickets.length > 0),
+  );
   return (
     <div className="px-4 pt-1 pb-6">
-      {groups.length === 0 && (
+      {groups.length === 0 && tickets.length === 0 && (
         <div className="grid place-items-center gap-3 pt-24 text-center">
           <CheckCheckIcon className="size-8 text-emerald-500" />
           <p className="font-medium text-[15px]">All caught up</p>
@@ -59,10 +72,45 @@ export function V2NeedsYou({
             <g.icon className={cn("size-4", g.cls)} />
             <h2 className="font-semibold text-[13px]">{g.title}</h2>
             <span className="text-[12px] text-muted-foreground tabular-nums">
-              {g.items.length}
+              {g.items.length + (g.title === "Decide" ? tickets.length : 0)}
             </span>
           </div>
           <div className="overflow-hidden rounded-2xl bg-background/70 ring-1 ring-foreground/[0.07] dark:bg-white/[0.03]">
+            {g.title === "Decide" &&
+              tickets.map((k, i) => (
+                <button
+                  key={k.id}
+                  type="button"
+                  onClick={() => onOpenTicket?.(k.id)}
+                  className={cn(
+                    "flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-foreground/[0.03]",
+                    i > 0 && "border-foreground/[0.06] border-t",
+                  )}
+                >
+                  <span className="mt-0.5">
+                    <WorkerAvatar
+                      who={workerIdentity(k.assignee, agents, connectors)}
+                      size="md"
+                    />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline gap-2">
+                      <span className="min-w-0 flex-1 truncate font-medium text-[13.5px]">
+                        {k.ask?.text}
+                      </span>
+                      <span className="shrink-0 text-[11.5px] text-muted-foreground tabular-nums">
+                        {ago(k.ago)}
+                      </span>
+                    </div>
+                    <div className="mt-0.5 truncate text-[12.5px] text-muted-foreground">
+                      {k.id} · {k.title}
+                    </div>
+                  </div>
+                  <span className="self-center">
+                    <TicketStateIcon state={k.state} />
+                  </span>
+                </button>
+              ))}
             {g.items.map((t, i) => {
               const agent = agents.find((a) => a.id === t.agentId);
               const project = projects.find((p) => p.id === t.projectId);
@@ -73,7 +121,8 @@ export function V2NeedsYou({
                   onClick={() => onOpen(t.id)}
                   className={cn(
                     "flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-foreground/[0.03]",
-                    i > 0 && "border-foreground/[0.06] border-t",
+                    (i > 0 || (g.title === "Decide" && tickets.length > 0)) &&
+                      "border-foreground/[0.06] border-t",
                   )}
                 >
                   <HermesAvatar name={agent?.name} className="mt-0.5 size-7" />
