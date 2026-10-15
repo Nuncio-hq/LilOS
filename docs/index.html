@@ -170,10 +170,10 @@ packages/engine-*   adapter process owning the engine (hermes serve)</code></pre
   <table>
     <thead><tr><th>Project</th><th>Borrow</th><th>Start at</th></tr></thead>
     <tbody>
-      <tr><td>T3 Code <code>pingdotgg/t3code</code></td><td>client/server split, seq sync (snapshot + replay), provider adapters + capabilities, thread sidebar (pin, settle, snooze)</td><td><code>docs/internals/</code>, <code>packages/contracts/src/providerRuntime.ts</code>, <code>docs/user/thread-sidebar.md</code></td></tr>
-      <tr><td>Synara <code>Emanuele-web04/synara</code></td><td>ACP adapter, adapter conformance tests, mock agents, agent gateway (per-engine MCP injection, versioned host policy)</td><td><code>apps/server/src/provider/acp/</code>, <code>apps/server/src/agentGateway/</code></td></tr>
-      <tr><td>Hermes Desktop <code>NousResearch/hermes-agent</code></td><td>renderer over a headless engine, JSON-RPC client with reconnect replay, wire contract declared once</td><td><code>apps/shared/src/json-rpc-gateway.ts</code>, <code>tui_gateway/contracts/</code></td></tr>
-      <tr><td>Paperclip <code>paperclipai/paperclip</code></td><td>company control plane: goals → tickets with one assignee, atomic checkout, heartbeats, one adapter per runtime</td><td><code>doc/SPEC.md</code>, <code>packages/adapters/</code></td></tr>
+      <tr><td>T3 Code <code>pingdotgg/t3code</code></td><td>client/server split, seq sync (snapshot + replay), provider adapters + capabilities, thread sidebar (pin, settle, snooze)</td><td><code>docs/internals/</code>, <code>packages/contracts/src/providerRuntime.ts</code>, <code>apps/server/src/provider/Services/ProviderAdapter.ts</code>, <code>docs/user/thread-sidebar.md</code></td></tr>
+      <tr><td>Synara <code>Emanuele-web04/synara</code></td><td>ACP adapter, adapter conformance tests, mock agents, agent gateway (per-engine MCP injection, versioned host policy)</td><td><code>apps/server/src/provider/acp/</code>, <code>apps/server/src/provider/providerAdapterConformance.ts</code>, <code>apps/server/src/agentGateway/</code></td></tr>
+      <tr><td>Hermes Desktop <code>NousResearch/hermes-agent</code></td><td>renderer over a headless engine, JSON-RPC client with reconnect replay, wire contract declared once</td><td><code>apps/shared/src/json-rpc-gateway.ts</code>, <code>tui_gateway/contracts/</code>, <code>scripts/gen_gateway_contracts.py</code></td></tr>
+      <tr><td>Paperclip <code>paperclipai/paperclip</code></td><td>company control plane: goals → tickets with one assignee, atomic checkout, heartbeats, one adapter per runtime</td><td><code>doc/SPEC.md</code> (§4 heartbeats, §5 tasks, §8 atomic checkout), <code>doc/GOAL.md</code>, <code>packages/adapters/</code></td></tr>
     </tbody>
   </table>
 </section>
