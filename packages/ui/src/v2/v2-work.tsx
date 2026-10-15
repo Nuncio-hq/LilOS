@@ -2,17 +2,21 @@ import { CrownIcon, TargetIcon } from "lucide-react";
 import { cn } from "../lib/utils";
 import { HermesAvatar } from "../shell/avatars";
 import { ago } from "./v2-bits";
-import { RuntimeIcon } from "./v2-runtime";
 import type { V2Agent, V2Project } from "./v2-types";
 import { ProjectChip } from "./v2-viz";
 import {
-  ProviderMark,
   TICKET_STATE,
   TicketStateIcon,
   type WorkerIdentity,
   WorkerLabel,
   workerIdentity,
 } from "./v2-work-bits";
+import {
+  groupKey,
+  groupsFor,
+  ProjectSegments,
+  WhoFilter,
+} from "./v2-work-filters";
 import type {
   V2Connector,
   V2Goal,
@@ -20,64 +24,6 @@ import type {
   V2TicketState,
 } from "./v2-work-types";
 import { V2_TICKET_STATES } from "./v2-work-types";
-
-/** Who is on the board, grouped the way the owner tells them apart: LilOS agents
-    (by runtime) and each outside provider. A key is a filter value. */
-type WorkerGroup = {
-  key: string;
-  label: string;
-  icon: React.ReactNode;
-  members: string[];
-  open: number;
-};
-
-function groupsFor(
-  tickets: V2Ticket[],
-  agents: V2Agent[],
-  connectors: V2Connector[],
-): WorkerGroup[] {
-  const groups = new Map<string, WorkerGroup>();
-  for (const t of tickets) {
-    const who = workerIdentity(t.assignee, agents, connectors);
-    const key = who.outside
-      ? `c:${who.connector?.id ?? "?"}`
-      : `r:${who.agent?.runtime ?? "hermes"}`;
-    const g =
-      groups.get(key) ??
-      ({
-        key,
-        label: who.outside
-          ? (who.connector?.label ?? "Outside")
-          : "LilOS agents",
-        icon: who.outside ? (
-          <ProviderMark
-            mark={who.connector?.mark}
-            color={who.connector?.color}
-            label={who.connector?.label ?? "Outside"}
-            className="size-5 rounded-full"
-          />
-        ) : (
-          <RuntimeIcon
-            runtime={who.agent?.runtime ?? "hermes"}
-            className="size-5 rounded-full"
-          />
-        ),
-        members: [] as string[],
-        open: 0,
-      } satisfies WorkerGroup);
-    if (!g.members.includes(who.name)) g.members.push(who.name);
-    if (t.state !== "done") g.open += 1;
-    groups.set(key, g);
-  }
-  return [...groups.values()].sort((a, b) =>
-    a.key.startsWith("r:") ? -1 : b.key.startsWith("r:") ? 1 : 0,
-  );
-}
-
-const groupKey = (who: WorkerIdentity) =>
-  who.outside
-    ? `c:${who.connector?.id ?? "?"}`
-    : `r:${who.agent?.runtime ?? "hermes"}`;
 
 /* One ticket card. Top: who holds it, unmistakably (agent orb + runtime, or
    the provider's mark + name). Then the title, then what is happening now
@@ -155,40 +101,11 @@ function TicketCard({
   );
 }
 
-function Pill({
-  on,
-  onClick,
-  children,
-  title,
-}: {
-  on: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-  title?: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={on}
-      title={title}
-      className={cn(
-        "flex h-7 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-[12px] transition-colors",
-        on
-          ? "bg-foreground text-background"
-          : "text-foreground/75 ring-1 ring-foreground/10 hover:bg-foreground/[0.04]",
-      )}
-    >
-      {children}
-    </button>
-  );
-}
-
 /* Work: the company's tickets as a board, with the CEO beside it.
-   - Header: the CEO button (opens the chat docked on the right, the board
-     stays), project filter.
-   - "Who's working": one chip per group (LilOS agents, then each outside
-     provider with its own mark and colour); a chip filters the board.
+   - Header: title, open count, the CEO button (opens the chat docked on
+     the right; the board stays).
+   - One filter toolbar: projects as a segmented control, Who as round
+     marks (LilOS agents, then each outside provider in its own colour).
    - Goals, then the five states: columns when the board is wide, stacked
      sections with a card grid when it is narrow (CEO panel open, small
      window). */
@@ -242,25 +159,11 @@ export function V2Work({
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="lilos-drag flex h-[52px] shrink-0 items-center gap-2 pr-3 pl-5">
-          <h1 className="font-semibold text-[14px]">Work</h1>
-          <span className="text-[12px] text-muted-foreground tabular-nums">
+        <header className="lilos-drag flex h-[52px] shrink-0 items-center gap-2.5 pr-3 pl-5">
+          <h1 className="font-semibold text-[15px] tracking-tight">Work</h1>
+          <span className="rounded-full bg-foreground/[0.06] px-2 py-0.5 font-medium text-[11.5px] text-muted-foreground tabular-nums">
             {shown.filter((t) => t.state !== "done").length} open
           </span>
-          <div className="ml-2 hidden min-w-0 items-center gap-1 overflow-x-auto sm:flex">
-            <Pill on={!project} onClick={() => onProject(null)}>
-              All projects
-            </Pill>
-            {used.map((p) => (
-              <Pill
-                key={p.id}
-                on={project === p.id}
-                onClick={() => onProject(project === p.id ? null : p.id)}
-              >
-                {p.name}
-              </Pill>
-            ))}
-          </div>
           {ceo && onToggleCeo && (
             <button
               type="button"
@@ -271,44 +174,33 @@ export function V2Work({
                 "ml-auto flex h-8 shrink-0 items-center gap-2 rounded-full pr-3 pl-1 text-[12.5px] transition-colors",
                 ceoOpen
                   ? "bg-foreground text-background"
-                  : "ring-1 ring-foreground/10 hover:bg-foreground/[0.04]",
+                  : "bg-amber-500/[0.08] ring-1 ring-amber-500/25 hover:bg-amber-500/[0.14]",
               )}
             >
               <span className="relative">
                 <HermesAvatar name={ceo.name} className="size-6" />
                 <CrownIcon className="absolute -top-1.5 -right-1 size-3 text-amber-500" />
               </span>
-              {ceo.name}
-              <span className="hidden opacity-70 md:inline">· CEO</span>
+              <span className="font-medium">{ceo.name}</span>
+              <span className="hidden opacity-60 md:inline">CEO</span>
             </button>
           )}
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto pb-6">
-          <section aria-label="Who's working" className="px-5 pb-3">
-            <div className="flex items-center gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">
-              <span className="shrink-0 text-[11px] text-muted-foreground uppercase tracking-[0.06em]">
-                Who
-              </span>
-              <Pill on={!worker} onClick={() => onWorker(null)}>
-                Everyone
-              </Pill>
-              {groups.map((g) => (
-                <Pill
-                  key={g.key}
-                  on={worker === g.key}
-                  onClick={() => onWorker(worker === g.key ? null : g.key)}
-                  title={g.members.join(", ")}
-                >
-                  {g.icon}
-                  <span className="font-medium">{g.label}</span>
-                  <span className="opacity-60">
-                    {g.members.length} · {g.open} open
-                  </span>
-                </Pill>
-              ))}
-            </div>
-          </section>
+          <div
+            role="toolbar"
+            aria-label="Filters"
+            className="flex flex-wrap items-center gap-x-3 gap-y-2 px-5 pb-4"
+          >
+            <ProjectSegments
+              projects={used}
+              value={project}
+              onChange={onProject}
+            />
+            <span className="ml-auto" />
+            <WhoFilter groups={groups} value={worker} onChange={onWorker} />
+          </div>
 
           {goals.some((g) => !project || g.projectId === project) && (
             <section
