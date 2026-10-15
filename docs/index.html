@@ -55,29 +55,28 @@ input{width:100%;max-width:420px;padding:8px 12px;border-radius:8px;border:1px s
 
 <section id="direction">
   <h2>Where it is going</h2>
-  <p><span class="tag">agreed with Oscar 2026-10-14 · prototypes merged · not decisions yet</span> Each becomes a decision only when the slice implementing it merges. Until then the decisions below stay in force.</p>
+  <p><span class="tag">agreed with Oscar 2026-10-14, revised 2026-10-15 · prototypes merged · not decisions yet</span> Each becomes a decision only when the slice implementing it merges. Until then the decisions below stay in force.</p>
   <h3>UX v2: threads by project, no DMs (<a href="https://github.com/Nuncio-hq/LilOS/issues/749">#749</a>)</h3>
   <ul>
     <li>Threads (= engine sessions) stay the unit and live under a <b>project</b> (or "No project"). DMs go away. Who works a thread is an <b>agent picker</b> next to the model: a Hermes profile today; Claude Code and Codex later (<a href="https://github.com/Nuncio-hq/LilOS/issues/111">#111</a>).</li>
     <li>The list stays short: needs-you, failed and finished-not-seen float up; running threads fold into one "N working" line; quiet threads settle out. A company home shows who is at work, what needs you, and recent activity.</li>
     <li>Prototype: <code>packages/ui/src/v2</code> + <code>prototype/web/src/v2-app.tsx</code>, open <code>localhost:5173/?v2</code>. Its later slices rewrite <a href="#d-25-3">D-#25</a> (DM = one employee) and <a href="#d-113">D-#113</a> (DM owns the folder).</li>
   </ul>
-  <h3>The AI company: a CEO runs always-on bots (<a href="https://github.com/Nuncio-hq/LilOS/issues/746">#746</a>)</h3>
+  <h3>The AI company: a CEO runs the work through tickets (<a href="https://github.com/Nuncio-hq/LilOS/issues/746">#746</a>)</h3>
   <ul>
-    <li>Oscar is the <b>Chairman</b> and talks to one <b>CEO</b>: any runtime × any model, itself a LilOS employee. The CEO plans, splits the work into tickets, gives each ticket to the right bot, checks the result and reports back. It acts on its own; only risky actions (spending money, sending anything outside, dangerous commands) ask Oscar.</li>
-    <li>The workforce is <b>always-on bots</b> from several providers, each with its own strength: <b>Grok Bot</b> (xAI, SDK <code>grokbot-core</code>) and <b>Muse</b> (Meta, SDK <code>muse-agent-core</code>) first. Bots sit behind the CEO, grouped per project or behind one primary bot; Oscar sees their tickets, state and asks but doesn't chat with them.</li>
-    <li>Lean tickets, Paperclip-style: goal → ticket → one assignee → status. LilOS owns tickets and rosters; the provider owns the bot's memory, transcripts, skills and credentials.</li>
-    <li>One <b>bot contract</b> in <code>packages/contracts</code>, one adapter per provider calling its SDK; the provider CLIs stay standalone and know nothing about LilOS. Same pattern as engines: contract + fake + conformance suite. The CEO drives bots through gateway tools (<code>ticket_*</code>, <code>bot_*</code>).</li>
-    <li>Prototype: <code>packages/ui/src/company</code>, open <code>localhost:5173/?company</code>. The screen is paused: it folds into the v2 layout.</li>
+    <li>Oscar is the <b>Chairman</b> and talks to one <b>CEO</b>: an ordinary agent with the CEO role (any runtime × any model). The CEO plans, splits the work into tickets, gives each to the right worker, checks the result and reports back. It acts on its own; only risky actions (spending money, sending anything outside, dangerous commands) ask Oscar.</li>
+    <li>Lean tickets, Paperclip-style: goal → ticket → one assignee → status, owned by the relay and driven through gateway tools (<code>ticket_*</code>). An assignee is a LilOS agent or an outside worker the CEO names.</li>
+    <li><b>LilOS stays provider-neutral</b> (revised 2026-10-15). Runtimes (Hermes; Claude Code and Codex later) run threads in a folder. Outside always-on bots (Grok Bot, Muse, anything later) are <b>connectors</b>: their own CLI or MCP server, attached to an agent's sessions. LilOS never names a provider in contracts, relay, harness or UI types, never wraps a provider's API, never stores its credentials. Test: remove every connector and LilOS still builds and runs; a new provider needs only its CLI or MCP installed. <em>Not: a bot contract with one adapter per provider, or bots listed as runtimes (the 2026-10-14 plan).</em></li>
+    <li>Prototype: <code>packages/ui/src/company</code>, open <code>localhost:5173/?company</code>. Paused, and it still names providers; it gets redone inside v2 without them.</li>
   </ul>
 <pre><code>Oscar (Chairman) ── talks to the CEO, approves risky actions
    │
-LilOS ── projects · threads · tickets · agent gateway (ticket_*, bot_*)
+LilOS ── projects · threads · tickets · agent gateway (ticket_*)
    │
-   ├── engines (one session per thread): Hermes today · Claude Code, Codex (#111)
-   └── bot contract + fake + conformance (#746)
-         ├── Grok Bot adapter → grokbot-core
-         └── Muse adapter     → muse-agent-core</code></pre>
+   ├── runtimes (one session per thread): Hermes today · Claude Code, Codex (#111)
+   │      the CEO is an agent with the CEO role
+   └── connectors on an agent (CLI or MCP; LilOS never wraps their APIs)
+         grokbot · muse · anything later</code></pre>
 </section>
 
 <section id="map">
