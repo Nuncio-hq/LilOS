@@ -144,10 +144,12 @@ export function commandLauncher(
         let out = "";
         let err = "";
         let readyMatched = false;
-        /* #521: the child's output mirrors into the harness log — the
-           adapter's `hermes backend down:`/`up` diagnostics live only on
-           this stream, so without forwarding they never reach
-           harness.log. `out` itself stops growing once ready matched. */
+        /* D-#521: every stdout/stderr line of the child mirrors into the
+           harness log — the adapter's `hermes backend down:`/`up`
+           diagnostics live only on this stream, so without forwarding they
+           never reach harness.log. Not: evidence that depends on adapter
+           diagnostics the harness only sometimes forwarded (inside an
+           error message). `out` itself stops growing once ready matched. */
         let outLine = "";
         let errLine = "";
         const mirrorLine = (line: string, into: "out" | "err") => {

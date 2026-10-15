@@ -85,6 +85,8 @@ describe("engine-hermes AC-1: live turn maps hermes events", () => {
   });
 });
 
+/* D-#334: the reasoning stream is reasoning.delta only — this pins the
+   adapter dropping reasoning.available (engine.ts applyEvent). */
 describe("engine-hermes #334: reasoning.available is a summary, not a delta", () => {
   test("the summary frame never reaches the reasoning stream", async () => {
     const { gw, h } = setup();

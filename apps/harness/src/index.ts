@@ -239,8 +239,9 @@ const feedServer = Bun.serve<FeedData>({
     // Identity for e2e readiness probes (#273) — mirrors the relay's /healthz.
     if (pathname === "/healthz") return Response.json({ ok: true, instanceId });
     if (pathname === "/ws") {
-      /* #564 AC-1: credential + app-origin gate BEFORE the socket upgrades —
-         a refused request never attaches, so no held/live frame reaches it. */
+      /* D-#564 AC-1: credential + app-origin gate BEFORE the socket
+         upgrades — a refused request never attaches, so no held/live frame
+         reaches it. */
       const denied = authorizeFeedUpgrade(req, config.relayToken);
       if (denied) return denied;
       if (server.upgrade(req, { data: { send: () => {} } })) {

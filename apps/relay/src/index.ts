@@ -2,6 +2,14 @@
  * Relay entry point — the only file in this app allowed to touch Bun APIs
  * (`bun:sqlite`, `Bun.serve`). Everything else is plain TS so the protocol
  * machine, stores' SQL, and Hono app stay testable under Node/vitest.
+ *
+ * The stack (D-#3): Bun runs and installs everything; the server is Hono on
+ * Bun (HTTP + WS); data is SQLite via `bun:sqlite` + Drizzle, so Postgres can
+ * come later through the same Drizzle schema. Bun-only APIs stay at entry
+ * points like this one; `packages/*` stay runtime-neutral.
+ * Not: pnpm/Node; raw `Bun.serve` or Elysia (a benchmark in #3 showed the
+ * framework isn't the bottleneck, and Elysia is Bun-locked); raw SQL or
+ * Postgres now; Bun APIs everywhere.
  */
 import { Database } from "bun:sqlite";
 import { mkdirSync, writeSync } from "node:fs";
@@ -157,10 +165,13 @@ const listen = async (bindHost: string) => {
 };
 
 /**
- * Opt-in Tailscale listener (#153): a second Bun.serve on this Mac's CGNAT
- * address. It only ever binds the tailnet IP — never loopback — so a QR can
- * never invite a phone to an address that doesn't reach it. `phoneAccess`
- * persists as a setting so a relay restart keeps the chosen mode.
+ * Opt-in Tailscale listener (D-#153): a second Bun.serve on this Mac's CGNAT
+ * address, bound only once the user turns on phone access (`pairing.offer`);
+ * until then the relay listens on loopback alone (D-#25). It only ever binds
+ * the tailnet IP — never loopback — so a QR can never invite a phone to an
+ * address that doesn't reach it. `phoneAccess` persists as a setting so a
+ * relay restart keeps the chosen mode. Not: always-on LAN/tailnet
+ * listeners, or a loopback address in a QR.
  */
 const probeTailscale = resolveTailscaleProbe();
 let tailscaleServer: Awaited<ReturnType<typeof listen>> | undefined;

@@ -1572,6 +1572,8 @@ export const AGENTS_SCENARIOS: Scenario[] = [
     },
   },
   {
+    /* D-#29: LilOS never deletes an engine profile; removing an employee
+       drops only the LilOS record. */
     id: "AC-4 the protocol has no profile delete",
     async run(h) {
       for (const m of ["agents.delete", "agents.remove", "agent.delete"])

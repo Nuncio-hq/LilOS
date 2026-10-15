@@ -205,6 +205,9 @@ describe("engine wire contract", () => {
   // The generated-schema stale checks moved to schema-gen.test.ts with the
   // unified generator (#42) — one check covers every registry.
 
+  /* D-#6: contracts, engine-fake and engine-conformance are the
+     vendor-neutral seam — they name "the vendor engine" generically, never
+     by brand, so every engine plugs in through the same protocol. */
   test("AC-4 the seam carries no vendor names", () => {
     const root = join(ENGINE_SRC, "..", "..", "..");
     const needle = /h[e]rmes/i; // self-excluding pattern — this file must pass too

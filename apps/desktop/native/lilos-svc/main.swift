@@ -10,7 +10,7 @@ import ServiceManagement
 //   lilos-svc spawned     <plistName>   (launchd job state: running/spawn failed/absent)
 //   lilos-svc open-settings
 //
-// Two backends, chosen by the enclosing bundle's signature:
+// Two backends, chosen by the enclosing bundle's signature (D-#35):
 //  - Developer ID (production): SMAppService — the plist registers as a real
 //    background item (System Settings approval, managed lifecycle).
 //  - ad-hoc ("unsigned (dev)"): ~/Library/LaunchAgents + `launchctl
@@ -20,6 +20,8 @@ import ServiceManagement
 //    Bootstrapping the same agent by absolute Program path has no constraint
 //    and survives swaps — correct semantics for dev builds, which never need
 //    the Background Items approval step anyway.
+// Not: SMAppService for dev builds, or bootstrap for signed ones (it loses
+// the Login Items approval item).
 //
 // Ported from spikes/21-smappservice (SP1); bootstrap fallback added for #35.
 
@@ -225,10 +227,10 @@ case "register":
     bootstrap(args[2])
     exit(0)
   }
-  // #206: remove launchd state SMAppService doesn't own first — a
+  // D-#206: remove launchd state SMAppService doesn't own first — a
   // `launchctl bootstrap` job an ad-hoc install left behind keeps its old
-  // binary running when we register over it, and its user plist would
-  // re-bootstrap it at the next login.
+  // binary running when we register over it (SMAppService.status can't see
+  // it), and its user plist would re-bootstrap it at the next login.
   let owned = service.status == .enabled || service.status == .requiresApproval
   if foreignStatePresent(args[2], smaOwned: owned) {
     if owned {

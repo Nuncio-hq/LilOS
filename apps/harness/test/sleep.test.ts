@@ -41,6 +41,7 @@ function fakeSpawn(): {
   return { spawn: spawn as unknown as typeof nodeSpawn, spawned };
 }
 
+/* D-#34: `caffeinate -i -w <harness pid>`, held only while a turn runs. */
 describe("AC-3 keep-awake (idle-sleep assertion)", () => {
   const log = createMemoryLogger();
 

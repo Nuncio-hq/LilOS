@@ -15,13 +15,18 @@ import type { Browser, BrowserContext, Page } from "playwright";
 const VIEWPORT = { width: 1280, height: 800 };
 const JPEG_QUALITY = 60;
 
-/* #539: playwright-core resolves its own package.json/browsers.json through
+/* D-#539: playwright-core resolves its own package.json/browsers.json through
    computed absolute paths at require time — inside `bun build --compile`
    those point at the CI checkout, and a static `import "playwright"` made
    every packaged harness since 1.0.33 crash at startup. The bundle ships
    playwright as real files under Contents/Resources/app/pw/node_modules
    (build.ts) and this loads it lazily on the first browser op, so a missing
-   or broken playwright fails only that call — never the harness boot. */
+   or broken playwright fails only that call — never the harness boot.
+   Browser binaries stay in the user's ms-playwright cache. Not: a
+   package.json shim (browsers.json is not an exportable subpath; the driver
+   is ~40 MB of real code), `--external playwright` (a bare require from the
+   compiled binary finds no package), or the browser cache in the DMG
+   (~500 MB). */
 const playwrightModules = (): string => {
   const bundled = join(
     dirname(process.execPath),

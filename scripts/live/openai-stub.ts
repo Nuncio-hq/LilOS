@@ -7,7 +7,9 @@
  * Every request returns the same canned assistant reply; the model name is
  * echoed back. This exists so `hermes serve` runs for real (real WS/ACP
  * protocol, real supervision) without a signed-in LLM — the reply text is
- * fixed, so the label is always `stub`, never a live model.
+ * fixed, so the label is always `stub`, never a live model. It is the one
+ * shared stub every live check spawns (`startStub` in lib/helpers.ts) —
+ * don't fork a copy per check.
  */
 const port = Number(process.argv[2] ?? "8399");
 const reply =

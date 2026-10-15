@@ -16,6 +16,8 @@ function setup(shellMode = true) {
   return { scope, spawner, browser, sent, peer };
 }
 
+/* D-#56: one terminal holder — a user keystroke takes it, agent writes then
+   fail `user_control` (409) until release or the last viewer leaves. */
 describe("AC-1 typing into the Terminal tab takes the terminal from the agent", () => {
   it("user keystrokes mark control; terminal_run/terminal_write get user_control until an explicit release", async () => {
     const { scope, spawner } = setup();

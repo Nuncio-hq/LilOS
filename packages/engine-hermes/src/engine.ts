@@ -91,16 +91,22 @@ import {
 
 /**
  * Oldest Hermes build the engine is verified against (#50 AC-4): v0.21.5 on
- * the 2026.9.24 release line — the build Oscar's Mac runs. Newer optional
- * `session.create` fields are negotiated per gateway, so a build between the
- * minimum and current keeps working; anything older is unverified.
+ * the 2026.9.24 release line — the build Oscar's Mac runs and the oldest
+ * one `bun run live:hermes` passes end to end. describe() reports it as the
+ * `hermes_gateway` capability's `detail.minVersion`. This is the display
+ * twin of version.ts `MIN_HERMES_VERSION` (the gate the launcher enforces):
+ * bump both together. Newer optional `session.create` fields are negotiated
+ * per gateway, so a build between the minimum and current keeps working;
+ * anything older is unverified.
  */
 const MIN_HERMES_VERSION = "v0.21.5 (2026.9.24)";
 
 /**
  * `session.create` params a gateway may not declare: its Params models are
  * `extra="forbid"` and answer JSON-RPC `4000` "invalid params for
- * session.create: <field>: Extra inputs are not permitted". Dropping these
+ * session.create: <field>: Extra inputs are not permitted". Negotiated, not
+ * version-gated: builds inside one release line differ (`cwd_explicit`
+ * exists on CI's build but not on the 2026.9.24 one). Dropping these
  * degrades metadata/precedence hints, not session semantics. Fields that
  * carry meaning — `profile`, `cwd`, `model`, `provider` — are never dropped:
  * a gateway refusing them fails the start instead of running a wrong one.
@@ -949,8 +955,10 @@ export class HermesEngine {
    * declared contract. A field the build doesn't declare answers a 4000
    * extra_forbidden rejection naming it; drop it when it's known-optional
    * and retry, remembering the drop for the life of this engine (the
-   * contract can't change under one `hermes serve` process). Also captures
-   * the gateway build from the result's `info` for describe().
+   * contract can't change under one `hermes serve` process). describe()
+   * lists the drops as `droppedCreateFields`, so a client can see what was
+   * negotiated away. Also captures the gateway build from the result's
+   * `info` for describe() (`gatewayVersion`, `releaseDate`).
    */
   private async createSessionCompat(params: Record<string, unknown>) {
     const send: Record<string, unknown> = { ...params };
@@ -1014,7 +1022,10 @@ export class HermesEngine {
        `session.steer` (it queues as the next leg), so `prompt` while a leg
        runs is the same misuse as prompting mid-turn. Without this the leg's
        frames would stamp on the prompt turn and its completion would
-       leave the leg open forever. */
+       leave the leg open forever. #482: a resumed backend may finish a
+       turn its death killed server-side — those frames are a leg too, so
+       `prompt` legitimately answers INVALID_STATE (-32003) until that
+       leg's `turn.completed` lands. */
     if (s.turn || s.legTurnId)
       throw new RpcError(
         RPC_ERRORS.INVALID_STATE,
@@ -1348,11 +1359,16 @@ export class HermesEngine {
       s.emit("turn.completed", { turnId: t.turnId, stopReason: "cancelled" });
       t.resolve({ turnId: t.turnId, stopReason: "cancelled" });
     }
-    /* #573 AC-1: the stopped session leaves the live maps for good — the
-       #346 suspend path evicts the same way. An explicit session.stop
-       ends the LilOS conversation, so the stored row goes too (resume
-       would resurrect a dead session); close()/shutdown and
-       session.suspend keep it so the session can resume (#288/#346). */
+    /* D-#573 (AC-1): session.stop forgets — the stopped session leaves the
+       live maps for good, its event log with it, and every later call
+       answers SESSION_NOT_FOUND. The #346 suspend path evicts the same way.
+       An explicit session.stop ends the LilOS conversation, so the stored
+       row goes too (resume would resurrect a dead session); close()/shutdown
+       and session.suspend keep it so the session can resume (#288/#346).
+       The harness still renders the thread closed off its own messages +
+       the not-found degradation (#300). Not: tombstones, a stopped-ids
+       list, or a replayable dead log (the per-session memory that grew
+       forever). */
     this.sessions.delete(s.id);
     this.byRuntimeSid.delete(s.runtimeSid);
     if (forget) this.sessionRegistry?.delete(s.id);
@@ -2347,7 +2363,7 @@ export class HermesEngine {
     const turnId = s.turn?.turnId ?? s.legTurnId ?? s.lastTurnId;
     switch (type) {
       case "message.start": {
-        /* #308: a leg the engine opened past turn end (queued-steer drain,
+        /* D-#308: a leg the engine opened past turn end (queued-steer drain,
            subagent-result delivery) arrives with NO turn.started — stamp
            frames on a minted leg id instead of resurrecting the settled
            turn (`s.turn?.turnId ?? s.lastTurnId` used to merge it in). A
@@ -2382,14 +2398,15 @@ export class HermesEngine {
         if (s.turn) s.turn.phase = "reasoning";
         break;
       }
-      /* `reasoning.available` is not a delta: upstream
+      /* D-#334: `reasoning.available` is not a delta: upstream
          (turn_response_intake._relay_thinking) emits it once per assistant
          message with the message's own text, tags stripped, ≤500 chars —
          a progress preview the OpenAI-compat API surfaces as
          `tool.progress`. The reasoning stream is `reasoning.delta` only
-         (also fired one-shot for non-streaming providers), so mapping it
-         here would inject the answer into the Reasoning card — and
-         double-append it after real thought (#334). */
+         (also fired one-shot for non-streaming providers), so the adapter
+         drops it here. Not: mapping it as append or replace on
+         turn.delta — that injects the answer into the Reasoning card and
+         double-appends it after real thought. */
       case "reasoning.available":
         break;
       case "message.delta": {

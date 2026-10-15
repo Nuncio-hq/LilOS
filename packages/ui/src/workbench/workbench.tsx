@@ -283,11 +283,15 @@ export function Workbench({
      fields mean "didn't answer" — fs unreachable, path not a repo, `gh`
      missing — never an unlucky mock fallback. */
   const liveMode = !!host && liveCwd != null;
-  /* #543: the Workbench exists for EVERY session — a DM session started
-     with no folder (`work` null) still gets the engine tabs; the
+  /* D-#114 (#543): the Workbench exists for EVERY session and lives only
+     in Focus; opening a session goes to the thread panel first, whose ↗
+     is the way into Focus. A DM session started with no folder (`work`
+     null) still gets the engine tabs (Subagents/Background/Plan); the
      folder-bound ones (Changes/Files/Terminal/Preview/PR) stay hidden
-     (D-#19 per tab). A channel thread (`isDM` false, read-only — the app
-     never Focuses one) keeps its mock tabs. */
+     (D-#19 per tab). Changes = uncommitted files vs HEAD, untracked
+     included. A channel thread (`isDM` false, read-only — the app never
+     Focuses one) keeps its mock tabs. Not: straight to Focus, a Workbench
+     only where a folder exists, or a Workbench in the thread panel. */
   const folderless = work == null && isDM;
   /* #544: the per-folder cache (host+cwd) keeps the last-known reads
      outside this component — a remount after a panel close, an Esc out of

@@ -406,6 +406,13 @@ export async function stampCheckpoint(
  * Advance the conversation's delivery watermark: this user message reached
  * the engine, so a re-registering harness must not owe it again. Queued
  * messages stay under the watermark until they actually send.
+ *
+ * D-#258: `deliveredSeq` is a crash-durability watermark, not "turn
+ * started" — callers advance it only once the turn's outcome is secured
+ * (the prompt call resolves at turn end), or a restarting harness can't
+ * rebind its orphan session. "Queued" means past the watermark AND no
+ * `turn.started` ref yet: the client reads the ref; the wire stays as is.
+ * Not: advancing the mark at `turn.started`.
  */
 export function markDelivered(
   this: HarnessCtx,

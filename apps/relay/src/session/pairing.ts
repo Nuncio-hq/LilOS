@@ -31,9 +31,11 @@ export async function handlePairing(c: RelayCtx): Promise<false | undefined> {
     /* ---------------- phone pairing (#153) ---------------- */
     case "pairing.offer": {
       /**
-       * The dialog's "turn on phone access": binds the Tailscale listener
-       * (opt-in — loopback never appears in a QR) and mints a fresh
-       * one-time grant for the code/QR it renders.
+       * The dialog's "turn on phone access" (D-#153): binds the Tailscale
+       * listener (opt-in — loopback never appears in a QR) and mints a
+       * fresh one-time grant for the code/QR it renders. No tailnet bind =
+       * `tailscale_unavailable` and no grant: an offer never falls back to
+       * an address the phone can't reach.
        */
       if (!options.pairing) {
         throw new RpcError(
@@ -137,11 +139,12 @@ export async function handlePairing(c: RelayCtx): Promise<false | undefined> {
       return;
     }
     case "presence.report": {
-      /* The desktop's at-the-Mac heartbeat (#561): `active` keeps the
+      /* The desktop's at-the-Mac heartbeat (D-#561): `active` keeps the
          fan-out silent (the Mac's banners cover everything), `false`
          ends suppression the moment the screen locks or the human goes
-         idle. App scope only — a paired phone reporting presence would
-         just mute pushes meant for itself. */
+         idle (< 5 min input, unlocked — apps/web/src/lib/presence.ts).
+         App scope only — a paired phone reporting presence would just
+         mute pushes meant for itself. Not: presence on device scope. */
       if (devicePeers.get(peer)) {
         throw new RpcError(
           JsonRpcCode.forbidden,

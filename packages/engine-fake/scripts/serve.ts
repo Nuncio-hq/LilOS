@@ -1,6 +1,6 @@
 /**
  * WebSocket entry point — the only place engine-fake touches Bun APIs
- * (AGENTS.md: Bun-only APIs live at entry points, packages stay neutral).
+ * (D-#3: Bun-only APIs live at entry points, packages stay neutral).
  *
  *   bun packages/engine-fake/scripts/serve.ts [--port N] [--tick MS] [--no-steer]
  *                                        [--watch-stdin] [--tag MARKER]

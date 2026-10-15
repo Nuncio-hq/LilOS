@@ -598,6 +598,8 @@ test("AC-7 real-app build: every visible control has a working handler", async (
 
 test("AC-8 `_electron` shell renders the same DM app", async () => {
   test.setTimeout(180_000);
+  // D-#3: the desktop shell is Electron so Playwright can drive it like the
+  // web tab (same Chromium) — the parity this test proves.
   // Build the Electron payload (main + preload + status page), then launch
   // against stackA — the shell points its app window at the dev server.
   await ensureDesktopPayload(desktopDir);

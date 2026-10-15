@@ -2,7 +2,7 @@ import type { EngineEvent } from "@lilos/contracts/engine";
 import { describe, expect, it } from "vitest";
 import { reduceSessionEvents } from "../src/turn-model";
 
-/* #327 — a turn can't outlive its session. Engines emit `session.state:
+/* D-#327 — a turn can't outlive its session. Engines emit `session.state:
    idle` at every turn end, closed/error when the session is gone, and a
    new turn.started once the previous ended: a turn still open under any
    of those proofs lost its turn.completed to a truncated or degraded

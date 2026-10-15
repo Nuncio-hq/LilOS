@@ -1,5 +1,5 @@
 /**
- * Replay compaction + log bounding (#431).
+ * Replay compaction + log bounding (D-#431).
  *
  * A session's event log is the replay source for `events.since` — and a
  * per-session allocation that grew with every streamed word. Two rules
@@ -18,7 +18,13 @@
  *   (the live turn's `turn.started` seq — a running turn's frames are
  *   never compacted or dropped). The caller keeps a `droppedSeq`
  *   watermark so `events.since` can answer `truncated` when the requested
- *   range lost data.
+ *   range lost data (`droppedSeq > after`: refetch, don't patch).
+ *
+ * Live streams never carry `turn.recap`; recap text/reasoning replace, not
+ * append. Not: snapshot+tail (the snapshot already exists — the fat was the
+ * middle of the log), unbounded per-session logs (the ~17 MB / 400-turn
+ * replay this kills), or a fresh seq for the recap (reusing the anchor's
+ * is what lets a partly-live fold dedupe it).
  */
 
 import type { EngineEvent } from "./events.js";

@@ -1,7 +1,9 @@
 /* LilOS theme — the single source of truth for the accepted prototype look
-   (issue #246): every web/desktop surface imports this file, so the real app
-   and the prototype cannot drift again. Only the entry files keep the
-   vendored imports (tailwindcss, shadcn, font) and the @source directive.
+   (D-#246): every web/desktop surface imports this file, so the real app
+   and the prototype cannot drift again (drift was the #230 regression
+   class). Only the entry files keep the vendored imports (tailwindcss,
+   shadcn, font) and the @source directive. Not: a second copy of the palette
+   in an app entry, or wallpaper inside the desktop window.
 
    Two frames hang off the app root:
    - `.lilos-desktop`  — one merged window: panels flow into each other,

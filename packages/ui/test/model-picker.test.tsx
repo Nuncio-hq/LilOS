@@ -549,6 +549,8 @@ describe("model choice rules", () => {
   });
 });
 
+/* D-#140: the picker shows the session's own model even when the catalog
+   omits it; Refresh is the path back. */
 describe("model picker #140: the session's own model missing from the catalog", () => {
   /* The Hermes/Astra case: the session runs gpt-6-astra while a normal
      models.list omits it (account-gated rows only show on refresh). */

@@ -2,7 +2,7 @@ import { atom, type WritableAtom } from "nanostores";
 import { RelayError } from "./client";
 
 /**
- * The one transport retry owner (#154) — ported from T3 Code
+ * The one transport retry owner (D-#154) — ported from T3 Code
  * `packages/client-runtime/src/connection/supervisor.ts` (MIT), minus the
  * Effect runtime. A signal-driven run loop owns every reconnect: nothing
  * outside it ever redials. The policy values are the mobile contract —
@@ -12,7 +12,10 @@ import { RelayError } from "./client";
  *
  * Runtime-neutral by construction: `connect`, `probe`, and the OS signals
  * (`setOnline`, `appForegrounded`) are injected — React Native's
- * AppState/NetInfo adapt in apps/mobile, a browser can adapt later.
+ * AppState/NetInfo adapt in apps/mobile, a browser can adapt later. The
+ * phone app (Expo dev client, iOS first) renders packages/ui-native over
+ * this package; RN glue (AppState/NetInfo/Keychain) lives only in
+ * apps/mobile. Not: per-app reconnect loops, or RN imports in here.
  */
 
 export const RETRY_DELAYS_MS = [3_000, 4_000, 8_000, 16_000] as const;

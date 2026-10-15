@@ -326,12 +326,14 @@ export class HermesConnect extends ConnectBase<ConnectDeps> {
   private browserAlreadyDisabled = new Set<string>();
   private browserDisabledByUs = new Set<string>();
 
-  /** #549: keep Hermes' own `browser` toolset (browser_exec,
+  /** D-#549: keep Hermes' own `browser` toolset (browser_exec,
       browser_vault_*) OUT of a LilOS profile's offer list. The plugin's
       pre_tool_call block is the call-time gate; `agent.disabled_toolsets`
       is Hermes' strict subtract-last suppression of the OFFER itself
       (toolsets.py + model_tools._select_tool_names) — so the model can
-      never see, let alone call, the engine's browser. The wire's
+      never see, let alone call, the engine's browser. Not: blocking only
+      at call time while the tools still sit in the model's list. The
+      plugin-activation half is engine-hermes `plugin-tools.ts`. The wire's
       `config.set` has a closed key table that can't reach it, so the CLI
       writes it, merged with whatever the user already disabled (and
       restored on disconnect, like tool_search). */
@@ -397,10 +399,11 @@ export class HermesConnect extends ConnectBase<ConnectDeps> {
      tool search defers every plugin-registered tool behind `tool_search`
      (`tools/tool_search.py` — plugin toolsets are never in its
      `_DIRECT_SURFACE_TOOLSETS`), so a LilOS profile with tool search on
-     offers `tool_search` instead of `lilos_context` (#411). The host policy
-     names the `lilos_*` tools outright — they must be offered, not
+     offers `tool_search` instead of `lilos_context` (D-#411). The host
+     policy names the `lilos_*` tools outright — they must be offered, not
      searched for. Profile-scoped `tools.tool_search.enabled` is the only
-     off switch upstream provides; restore the default on disconnect. */
+     off switch upstream provides; restore the default on disconnect.
+     Not: leaving tool search `auto` on a connected profile. */
   private toolSearch(profile: string, enabled: "off" | "auto"): boolean {
     const result = this.hermes([
       "-p",

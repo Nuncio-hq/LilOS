@@ -834,10 +834,12 @@ export class FakeEngine {
     }
     s.state = "closed";
     this.emit(s, "session.state", { state: "closed" });
-    /* #573 AC-1: the session leaves the map for good — its event log goes
-       with it, so engine memory stops tracking every session ever opened.
-       A later call on the id answers SESSION_NOT_FOUND like a never-seen
-       one (the harness degrades that to an empty closed transcript, #300). */
+    /* D-#573 (AC-1): stop is forget — the session leaves the map for good
+       and its event log goes with it, so engine memory stops tracking every
+       session ever opened. A later call on the id answers SESSION_NOT_FOUND
+       like a never-seen one (the harness degrades that to an empty closed
+       transcript, #300). Not: tombstones, a stopped-ids list, or a
+       replayable dead log. */
     this.sessions.delete(s.id);
     return { stopped: true };
   }

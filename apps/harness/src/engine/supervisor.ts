@@ -9,9 +9,10 @@ import {
 } from "./launcher";
 
 /**
- * Engine lifecycle supervision (AC-2): start the engine, restart it on crash
- * with bounded backoff, report state. Socket drops reconnect against the same
- * endpoint (the engine's orphan grace keeps sessions); process exits relaunch.
+ * Engine lifecycle supervision (D-#26, AC-2): start the engine, restart it
+ * on crash with bounded backoff, report state. Socket drops reconnect
+ * against the same endpoint (the engine's orphan grace keeps sessions);
+ * process exits relaunch.
  */
 
 const ENGINE_HOST_STATES = [
@@ -40,7 +41,7 @@ export interface EngineSupervisorOptions {
   stableAfterMs?: number;
   /** Consecutive fast crashes before the supervisor gives up. */
   maxConsecutiveCrashes?: number;
-  /* #482: liveness probe — a cheap `describe` every probeIntervalMs with
+  /* D-#482: liveness probe — a cheap `describe` every probeIntervalMs with
      probeTimeoutMs deadline. An adapter whose backend died answers with
      `backend.state` restarting/failed (mapped into host state — the
      adapter itself stays up and self-heals); an adapter that stops
@@ -86,6 +87,10 @@ export class EngineSupervisor {
     };
   }
 
+  /* Every transition leaves through onState → relay `harness.report`
+     (harness.ts) → `system.status` → client-runtime status.ts (plain rows)
+     → the status dialog and the DM composer note. `detail` is the user's
+     only explanation of a start failure, so it stays the verbatim reason. */
   private set(state: EngineHostState, detail?: string) {
     this.state.current = state;
     this.state.detail = detail;

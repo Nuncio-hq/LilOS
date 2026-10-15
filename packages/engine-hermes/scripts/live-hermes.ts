@@ -5,11 +5,15 @@
  * Modes:
  *   default (stub):  deterministic OpenAI-compatible stub provider is spawned
  *                    (scripts/openai_stub.py) under an isolated HERMES_HOME
- *                    (~/.hermes/profiles/lilos-stub). Clearly labelled STUB —
- *                    no real LLM.
- *   real:            HERMES_PROVIDER=openai-codex HERMES_MODEL=qwen3.8-flash-next
+ *                    (~/.hermes/profiles/lilos-stub) with a `lilos-stub`
+ *                    provider and a `builder` profile. Clearly labelled
+ *                    STUB — no real LLM.
+ *   real:            HERMES_PROVIDER=hpc HERMES_MODEL=qwen3.8-flash-next
  *                    bun run live:hermes  -> uses your signed-in default
  *                    Hermes profile; no stub, no alternate home.
+ *
+ * The oldest Hermes this passes on is the supported floor (version.ts
+ * MIN_HERMES_VERSION) — rerun it before lowering or raising that.
  *
  * Env: HERMES_BIN (default "hermes"), STUB_PORT (default 8377),
  *      LILOS_STUB_HOME, HERMES_PROVIDER, HERMES_MODEL.

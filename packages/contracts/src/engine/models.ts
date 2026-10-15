@@ -7,7 +7,8 @@ import { z } from "zod";
 export const ModelOption = z.object({
   /** Model id accepted by `session.start.model` and `session.setModel`. An id
       may itself contain `/` (e.g. `devin/claude-opus-5`) — it is opaque, never
-      split or rejoined into `provider/model`. */
+      split or rejoined into `provider/model` (D-#8: a model is
+      `{provider?, id}`; see agents.ts). */
   id: z.string().min(1),
   /** Display name, when the engine has a friendlier label than the id. */
   name: z.string().optional(),

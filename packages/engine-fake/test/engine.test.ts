@@ -873,6 +873,8 @@ describe("engine-fake #524: an interrupt inside the subagent-close drain leaks n
   });
 });
 
+/* D-#431: a finished turn replays as one log-only recap at the last delta's
+   seq, and the capped log reports `truncated` for ranges it dropped. */
 describe("engine-fake #431: compact replay + bounded log", () => {
   test("a finished turn's deltas replay as one turn.recap", async () => {
     const c = conn();

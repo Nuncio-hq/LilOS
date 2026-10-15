@@ -73,7 +73,12 @@ import { WorkspaceBadge, WsBadge } from "../workbench/ws-badges";
 
 /* The right-panel frame around the conversation — channel threads AND DM sessions (issue #19).
    The employee turns render through the shared AgentTurn (identical to Focus); human turns keep
-   the compact feed Row. DM-ness comes only from channel.dm — never the display name (AC-3). */
+   the compact feed Row. DM-ness comes only from channel.dm — never the display name (AC-3).
+   D-#19: a control renders only when its handler is passed, so the app shows only working
+   surfaces (no placeholder buttons). Conversation UI = shared pieces (AgentTurn, UserTurn,
+   cards, composers) + thin frames (ThreadView, FocusView); a frame-only feature is a piece the
+   frame adds, never a prop of AgentTurn. Not: variant/mode props inside AgentTurn, or a god
+   component accumulating optional props. */
 export function ThreadView({
   root,
   thread,

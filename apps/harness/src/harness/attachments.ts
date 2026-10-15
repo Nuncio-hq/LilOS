@@ -11,7 +11,11 @@ import { basename, dirname, extname, join, resolve } from "node:path";
 /**
  * Where non-image attachment bytes land so the agent reads them with its
  * normal file tools (images still ride the prompt as image blocks when
- * the engine declares `image_prompt`).
+ * the engine declares `image_prompt`). D-#562: any file type attaches
+ * (`MAX_ATTACHMENT_BYTES` cap) and the prompt names each saved path. Not:
+ * `attachments.get` as the agent's read path (it is NOT_AGENT_FACING —
+ * the copied file is what the agent reads), or a `.gitignore` line (it
+ * would land in the user's diff; `info/exclude` doesn't).
  *
  * Bound sessions decode into `<cwd>/.lilos/attachments/` — LilOS's own
  * in-folder namespace alongside `.lilos/wt` worktrees, already excluded

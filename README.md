@@ -1,13 +1,15 @@
 # LilOS
 
-A Slack-style "CompanyOS" where the employees are AI agents. One sidebar:
-company channels → projects (each channel bound to a repo) → employees. An
-@mention or a DM opens a thread, and each thread is one engine session — the
-employee does real work in a real checkout while you watch and steer.
+A "CompanyOS" where the employees are AI agents. You hire agents, hand them
+work in threads, and watch them do real work in a real checkout — stepping in
+only when they need you. Each thread is one engine session. Next: threads
+grouped by project, and a CEO agent that runs always-on bots (Grok Bot, Muse)
+through tickets.
 
 Engines plug in through a generic engine protocol (JSON-RPC). The engine owns
-sessions, memory, skills and profiles; LilOS owns the company, channels,
-messages and tickets. Hermes is the first engine — it is never glued in.
+sessions, memory, skills and profiles; LilOS owns the company, projects,
+channels, messages and tickets. Hermes is the first engine — it is never
+glued in.
 
 ![LilOS web prototype: company sidebar, #engineering channel and an employee thread](docs/img/prototype-web.png)
 
@@ -32,14 +34,15 @@ bun run prototype:dev   # web prototype with mock data — no engine needed
 
 Then open http://localhost:5173. Everything you see is interactive mock data:
 post to a channel, @mention an employee, steer a running turn, pair a phone.
+http://localhost:5173/?v2 opens the next layout (threads by project).
 
 More:
 
 - `bun run verify` — the whole check (Biome, typecheck, unit tests, prototype
   build, Playwright e2e).
 - `bun run prototype:mobile` — the mobile prototype (Expo).
-- `bun run app:local` — the real app on your machine with the fake engine
-  (lands with issue #141).
+- `bun run app:local` — build and run the real Mac app on your machine, on
+  real Hermes.
 
 ## License — source-available, free for most things
 
@@ -64,6 +67,7 @@ licensed. If you fork, ship your fork under your own name — not as "LilOS".
   (`git commit -s`); contributing grants Nuncio relicense rights.
 - [SECURITY.md](SECURITY.md) — report vulnerabilities privately via GitHub
   Security Advisories.
-- [`docs/index.html`](docs/index.html) — the one document: architecture,
-  how work happens, decisions in force, runbooks. `AGENTS.md` — the short
-  rule list for coding agents.
+- [`docs/index.html`](docs/index.html) — the one document: what LilOS is,
+  where it is going, the repo map, how work happens, and the decisions in
+  force (each points at the code that carries its details). `AGENTS.md` —
+  the short rule list for coding agents.

@@ -510,7 +510,7 @@ export function DmPage() {
         .sort((a, b) => a.createdAt - b.createdAt),
     [summaries, channel],
   );
-  /* #645: the open thread must not WAIT on the summaries fetch — it is the
+  /* D-#645: the open thread must not WAIT on the summaries fetch — it is the
      enrichment layer (root text, previews, counts), and under load it
      landed after the send that opened the conversation (or never, once
      every refresh outlasted the request timeout), so `openConv` resolved
@@ -522,7 +522,8 @@ export function DmPage() {
      mounted off the thread (ac-110's Open-in-editor). Summaries still
      qualify the feed's rows (and deliberately drop retired sys-notes);
      the open URL names a real conversation, so mount it the moment the
-     push feed carries it. */
+     push feed carries it. Not: resolving the open conversation from
+     summaries — a lagging fetch parked the composer on "working…". */
   const allConvs = useAtom(relay.conversations);
   const openConv = allConvs.find(
     (c) => c.id === conversationId && c.channelId === channel?.id,
@@ -1341,8 +1342,9 @@ export function DmPage() {
     };
   };
 
-  /* Add folder (#208): LilOS's own dialog on every surface — plain web and
-     the packaged desktop app alike; no OS open panel anywhere. */
+  /* Add folder (D-#113, #208): LilOS's own dialog (the prototype's) on
+     every surface — plain web and the packaged desktop app alike. Not: the
+     macOS open panel. */
   const onAddFolder = () => {
     setAddFolderOpen(true);
     toastOnFail("Couldn't scan for repos", loadDiscovered());

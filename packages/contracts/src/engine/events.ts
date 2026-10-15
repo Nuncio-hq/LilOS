@@ -85,6 +85,14 @@ export const SessionTitledPayload = z.strictObject({
   source: z.enum(["derived", "llm"]),
 });
 
+/**
+ * D-#308: every leg is a turn. Work the engine runs past a settled turn (a
+ * queued steer draining, a post-turn delivery) opens with its OWN
+ * `turn.started` and a freshly minted `turnId`: `ref` echoes the message
+ * that prompted it, `initiatedBy: "agent"` marks engine-opened work. Not:
+ * stamping a leg's frames on the settled turn's id, or the client mapping
+ * layer guessing which turn owns them.
+ */
 export const TurnStartedPayload = z.strictObject({
   turnId: TurnId,
   /** Model this turn runs on (engines with the models capability set it). */
@@ -271,7 +279,7 @@ export const SessionRefChangedPayload = z.strictObject({
 });
 
 /**
- * The engine compacted a session's context (issue #560): older turns were
+ * The engine compacted a session's context (D-#560): older turns were
  * summarized so the context meter drops. Fires once per compaction — manual
  * (`session.compact`) or automatic alike — and NEVER on a plain `session.info`
  * ref bump or an idle resume, which is why it carries its own type instead of
@@ -297,10 +305,14 @@ export const TurnSteeredPayload = z.strictObject({
   text: z.string(),
 });
 
-/* ── plans & task lists (#180) ───────────────────────────────────────────
+/* ── plans & task lists (D-#180) ─────────────────────────────────────────
    Plans and task lists are engine state (D-#25): the engine streams a FULL
-   snapshot on every change (`plan.updated`), and LilOS derives the UI from
-   the event stream only — no patch/delta protocol, no client-side store. */
+   snapshot on every change (`plan.updated`, keyed `planId`), and LilOS
+   derives the Tasks card / Plan card / Workbench Plan tab from the event
+   stream only. `kind: "tasks"` ticks without approval; `kind: "plan"` waits
+   on a `plan` EngineRequest answered approve / reject / change{text}. Not:
+   a LilOS-owned plan store, patch or delta plan events, or rendering these
+   without a declared `plan` capability (D-#19). */
 
 export const PlanStepStatus = z.enum([
   "pending",
@@ -342,7 +354,7 @@ export const TurnCompletedPayload = z.strictObject({
   stopReason: StopReason,
   usage: Usage.optional(),
   error: z.string().optional(),
-  /** #521: the JSON-RPC error code when the turn failed typed (e.g.
+  /** D-#521: the JSON-RPC error code when the turn failed typed (e.g.
       BACKEND_DOWN -32006) — lets the harness pick the typed failure
       surface instead of guessing from `error` text. */
   errorCode: z.number().optional(),

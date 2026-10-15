@@ -11,7 +11,7 @@ import { $phase } from "./paired-macs";
 import { nav } from "./routes";
 
 /**
- * Expo push on the phone (#161): the relay sends one push when a thread
+ * Expo push on the phone (D-#161): the relay sends one push when a thread
  * turns needs-you / done / failed; this module owns the phone's half —
  *
  * - `push.register`: after pairing and on every foreground while online,

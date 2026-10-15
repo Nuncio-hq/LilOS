@@ -1,8 +1,13 @@
-/* Issue #544: last-known Workbench reads per session folder, held in a
+/* D-#544: last-known Workbench reads per session folder, held in a
    module store — outside component state, so closing the panel or leaving
    Focus and coming back shows them on the first frame while fresh reads
-   revalidate behind (stale-while-revalidate). Same rationale as
-   lib/diff-comments.ts (D-#320): module stores outlive unmounts.
+   revalidate behind (stale-while-revalidate, an "updating…" cue). Same
+   rationale as lib/diff-comments.ts (D-#320): module stores outlive unmounts.
+   Reads land independently; `forge.pr` stays on its own funnel (#429) so
+   `gh` never gates the folder tabs. The entry also keeps the picked tab,
+   selection, open file view and per-tab scrollTop. Not: component state
+   (dies on unmount), persisted storage (stale forever), or one blocking
+   Promise.all that includes `gh`.
 
    Key = host + cwd: a WeakMap per host keeps entries for the app's run
    without leaking the host accessors themselves, and each host's map is

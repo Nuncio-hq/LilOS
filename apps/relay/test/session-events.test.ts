@@ -12,7 +12,7 @@ import {
   resultOf,
 } from "./helpers";
 
-/* `session.events` + `engine.event` (#157): the phone's live engine feed.
+/* `session.events` + `engine.event` (D-#157): the phone's live engine feed.
    A device-scope client never talks to an engine — the host pushes engine
    frames (`engine.event`, host-only) and the relay re-emits them on the
    conversation's channel; replay goes through `session.events`, gated on

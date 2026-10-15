@@ -1,5 +1,7 @@
-/* File `@`-mentions ride the wire as plain text `@relpath` (issue #105 — the
- * agent reads the path itself; nothing is inlined). For display they get the
+/* File `@`-mentions ride the wire as plain text `@relpath` (D-#105 — the
+ * agent reads the path itself; nothing is inlined, nothing engine-specific;
+ * one `@` menu lists Employees then Files. Not: inlining file contents, a
+ * second popover, or a `#` trigger). For display they get the
  * chip look: wrap a path-like token in backticks so MessageResponse renders an
  * inline-code lozenge. Employee mentions (`@Name` — no `/` or `.`) and tokens
  * already inside backticks stay untouched, so the transform is idempotent. */

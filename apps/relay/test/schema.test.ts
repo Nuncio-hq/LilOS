@@ -10,6 +10,7 @@ import * as schema from "../src/db/schema";
 
 const TRANSCRIPTISH = /transcript|reason|thought|tool(_|calls|_results)|steps/i;
 
+/* D-#25: the relay owns visible messages; the engine owns transcripts. */
 describe("AC-5 relay stores no engine transcript", () => {
   it("persists exactly the app tables, none with transcript fields", () => {
     expect(Object.keys(schema).sort()).toEqual([

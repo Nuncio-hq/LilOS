@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 /**
- * Issue #201: the Actions-minutes budget is repo state a later change could
+ * D-#201: the Actions-minutes budget is repo state a later change could
  * undo by accident (full E2E on every push, whole-job reruns for flakes, a
  * macOS build per PR), so it gets repo tests like the rest of the hygiene.
  */

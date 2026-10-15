@@ -2,9 +2,10 @@ import { type ChildProcess, spawn } from "node:child_process";
 import type { Logger } from "./log";
 
 /**
- * Idle-sleep assertion — the #22 verdict (`caffeinate -i`-style): the harness
- * holds the assertion only while a turn is running so the Mac doesn't fall
- * asleep mid-turn, then releases it so the machine can idle again.
+ * Idle-sleep assertion (D-#34) — the #22 verdict (`caffeinate -i`-style): the
+ * harness holds the assertion only while a turn is running so the Mac doesn't
+ * fall asleep mid-turn, then releases it so the machine can idle again.
+ * Not: a permanent assertion, or changing the user's `pmset` defaults.
  */
 export interface SleepGuard {
   /** Take the assertion (ref-counted). */

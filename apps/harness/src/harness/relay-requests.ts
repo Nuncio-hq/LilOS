@@ -50,10 +50,13 @@ import {
  */
 
 /**
- * `conversations.rewind` arrives as a relay-forwarded host call (#134):
+ * `conversations.rewind` arrives as a relay-forwarded host call (D-#134):
  * restore the folder to the checkpoint stamped on the target message, drop
  * queued user messages the rewind removes, and — when the session's engine
- * declares `rewind` — drop the turns from its context too. Throws (code
+ * declares `rewind` — drop the turns from its context too
+ * (`session.rewind {toTurn}`). An engine that can't rewind its memory (ACP
+ * today) still gets the file restore; the relay's note says the agent still
+ * remembers and the app offers "Start a new session from here". Throws (code
  * -32009 conflict) while a turn runs; throwing before the mark means the
  * relay leaves the thread untouched.
  */
@@ -139,12 +142,14 @@ export async function rewindConversation(
 }
 
 /**
- * `conversations.moveFolder` arrives as a relay-forwarded host call (#581):
+ * `conversations.moveFolder` arrives as a relay-forwarded host call (D-#581):
  * re-home the thread's working folder — the bound engine session moves too
  * (`session.moveWorkspace`, `workspace_move` capability) so the next turn
  * runs there; a thread with no engine session yet just takes the folder as
  * its pick. Refuses rather than fakes: an engine session that can't be
- * re-homed is an error, never a silent label-only write.
+ * re-homed is an error, never a silent label-only write. This is the app's
+ * only folder-move path. Not: a label-only `cwd` write, or an
+ * engine-specific move in the app.
  */
 export async function moveConversationFolder(
   this: HarnessCtx,
@@ -244,9 +249,12 @@ export function onRelayRequest(
   if (method === "folders.detail") {
     return this.folderDetail(FoldersDetailParams.parse(params));
   }
-  /* `folders.browse`/`folders.discover` (#238): the phone's folder
+  /* `folders.browse`/`folders.discover` (D-#238): the phone's folder
      browser — the home-folder boundary is enforced here, server-side,
-     because the caller is a remote device. */
+     because the caller is a remote device: realpath under home, dot-dir
+     segments refused (`resolveUnderHome`). The relay only forwards; it
+     gates a device's `folders.add` to the same boundary. Not: exposing
+     the host `fs.*` methods to the phone directly. */
   if (method === "folders.browse") {
     return this.folderBrowse(FoldersBrowseParams.parse(params));
   }

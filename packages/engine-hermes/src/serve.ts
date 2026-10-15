@@ -30,12 +30,18 @@ export interface HermesServeHandle {
 const READY_RE = /HERMES_BACKEND_READY port=(\d+)/;
 const HEALTH_TIMEOUT_MS = 4000;
 
-/* #548: since the host-backend multiplex rework, one `hermes serve` per OS
- * user owns the machine-level backend; another `serve` on the same user
+/* D-#548: since the host-backend multiplex rework, one `hermes serve` per
+ * OS user owns the machine-level backend; another `serve` on the same user
  * attaches to it and exits 0 printing this marker (or refuses with
  * `Refusing to start:` and exit 78 when the endpoint conflicts). LilOS must
  * own its backend, so the adapter passes `--isolated` when the binary
- * advertises it and names the owner when a build still attaches. */
+ * advertises it and names the owner when a build still attaches. That
+ * attach/refusal is a fatal verdict, not a crash: scripts/serve.ts exits
+ * the reserved HERMES_HOST_CONFLICT_EXIT_CODE (87; the launcher never
+ * retries it) and a supervisor relaunch hitting it goes `failed` at once
+ * (backend.ts; `kick()` re-arms). Not: counting the attach toward the
+ * crash budget, or pinning a Hermes version for a mid-line feature
+ * (`probeIsolated` asks `serve --help` instead). */
 const HOST_ATTACH_RE =
   /Hermes \w+ already running on this host: PID (\d+), port (\d+)/;
 const HOST_REFUSE_RE =
@@ -133,6 +139,9 @@ export async function startHermesServe(
   };
   // #548: dedicated backend for this app — without it a Hermes with the
   // host-backend multiplex attaches to whoever owns the host and exits 0.
+  // An isolated serve still binds its own port and keeps plugins, sessions
+  // and session.resume; it only skips publishing the host rendezvous record
+  // ("observe-only"), which matters only to other Hermes processes.
   const isolated =
     !(opts.args ?? []).includes("--isolated") &&
     (await supportsIsolated(opts.bin, env));

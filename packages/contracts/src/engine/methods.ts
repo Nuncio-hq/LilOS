@@ -48,6 +48,17 @@ import { ApprovalOutcome, OpenRequest } from "./requests.js";
  * here. Adding a method is: schema pair + one entry (+ a capability when it is
  * not core). Params are strict: unknown keys are the caller's bug and answer
  * INVALID_PARAMS (-32602).
+ *
+ * D-#6: the engine protocol is JSON-RPC 2.0 (envelope.ts) over an ACP-shaped
+ * core — session.start / prompt / interrupt / request.respond / events.since
+ * — declared once here in Zod and generated to JSON Schema for non-TS
+ * clients. Every event carries a per-session `seq` (events.ts); engine asks
+ * ride `request.opened` events so they replay after a reconnect; anything
+ * past the core is a capability descriptor (capabilities.ts) and the app
+ * renders from capabilities. Not: vendor-specific names or types in
+ * contracts / engine-fake / engine-conformance (test/engine.test.ts AC-4
+ * fails on them), `if engine == "..."` branches, or server-to-client request
+ * frames.
  */
 
 const SessionId = z.string().min(1);
@@ -339,6 +350,13 @@ export const SessionAskResult = z.object({
 export type SessionAskResult = z.infer<typeof SessionAskResult>;
 
 // ── jobs.list / jobs.stop (capability: background_jobs, #179) ───────────────
+/* D-#179: subagent runs and background jobs exist only as engine events
+   (`subagent.*`, `job.*`) and `jobs.*` answers — LilOS stores no job or
+   subagent state. A helper that is another employee surfaces as
+   `subagent.started.employee` + a session link in its DM (D-#25). Job output
+   lives in engine memory (a rolling tail); after a reconnect the list comes
+   from `jobs.list`, never a LilOS copy. Not: a LilOS-side jobs/subagents
+   table, or a copy of a helper's turns. */
 /** One row of `jobs.list` — the engine-owned truth a client re-reads after
     a reconnect (job.* events are the live stream, this is the snapshot). */
 export const Job = z.object({

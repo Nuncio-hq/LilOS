@@ -1,12 +1,17 @@
 name: mobile-release
 
 # Issue #250 AC-2 (optional): `git tag mobile-v*` ships a TestFlight build
-# through EAS instead of `bun run mobile:release` on Oscar's Mac.
-# needs-human before this works (documented in docs/index.html#mobile-release):
-#   1) `bunx eas-cli login` + `bunx eas-cli init` in apps/mobile (one-time,
-#      mints the EAS project id)
-#   2) repo secret EXPO_TOKEN (an Expo access token from
-#      https://expo.dev/settings/access-tokens)
+# through EAS (`eas build --auto-submit`, the production profile in
+# apps/mobile/eas.json) instead of `bun run mobile:release` on Oscar's Mac
+# (scripts/release/testflight.sh — its header is the default runbook).
+# needs-human, one-time, before this works:
+#   1) `bunx eas-cli login` (any Expo account), then
+#      `cd apps/mobile && bunx eas-cli init` — mints the EAS project id.
+#   2) `bunx eas-cli whoami`, create an access token at
+#      https://expo.dev/settings/access-tokens and save it as the repo
+#      secret EXPO_TOKEN. The submit reuses the ASC_KEY_ID / ASC_ISSUER_ID /
+#      ASC_KEY_P8 secrets release.yml signs the desktop app with.
+# Then ship with:  git tag mobile-v0.1.0-<n> && git push --tags
 
 on:
   push:

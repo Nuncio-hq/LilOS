@@ -17,6 +17,12 @@ import type { CancelTimer, Clock } from "./clock.js";
  *
  * Installed launchd daemons are safe: their parent is pid 1 from the start
  * and stays pid 1, so the watch never trips.
+ *
+ * D-#347: spawned dev/test processes die with their spawner — this watchdog
+ * in every long-lived entry point, plus Playwright's globalTeardown
+ * (e2e/leak-teardown.ts) sweeping only tags whose owning worker is dead.
+ * Not: runner-side `pkill`/afterAll as the only teardown (it dies with the
+ * runner), or stdin-EOF alone (detached spawns never see EOF).
  */
 
 /** `ps`-backed parent lookup; null when the pid is dead or `ps` cannot say. */

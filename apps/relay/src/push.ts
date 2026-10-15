@@ -9,9 +9,14 @@ import type { EngineEvent } from "@lilos/contracts/engine";
 import type { RelayStore } from "./store";
 
 /**
- * Expo push fan-out (#161): turns the two relay-visible transitions —
+ * Expo push fan-out (D-#161): turns the two relay-visible transitions —
  * `asks.open` creating an ask, `engine.event` reporting `turn.completed`
  * or `session.state` error — into one Expo push per registered phone.
+ * The path is this Mac's relay → Expo's push service (`./expo.ts`) → APNs;
+ * the phone registers its Expo token + per-kind prefs after pairing, tied
+ * to its device id. A sleeping Mac sends nothing (accepted). Not: a LilOS
+ * cloud relay, direct APNs with an Apple key on the Mac, or silent /
+ * background pre-sync pushes.
  *
  * The shape mirrors `apps/web/src/lib/notify.ts` (T3's aggregate-diff
  * model, ported): same classification (approval/plan → needs_approval,
@@ -153,8 +158,9 @@ export function createPushFanout(options: {
   const log = options.log ?? (() => {});
   const collapseMs = options.failureCollapseMs ?? 1500;
   const presenceWindowMs = options.presenceWindowMs ?? 5 * 60_000;
-  /** Latest desktop at-the-Mac report — in-memory like `visibleThread`: a
-      relay restart just falls back to pushing until the next heartbeat. */
+  /** Latest desktop at-the-Mac report — in-memory like `visibleThread`, never
+      persisted (D-#561): a relay restart just falls back to pushing until
+      the next heartbeat. */
   let macActiveAt: number | undefined;
   /** Device's latest foreground report — cleared on disconnect/revoke. */
   const visibleThread = new Map<string, string>();
@@ -179,9 +185,12 @@ export function createPushFanout(options: {
     conversation: Conversation,
     body: string,
   ): Promise<void> => {
-    /* #561 AC-1: at the Mac, every kind stays off the phone — finished,
-       needs-you and failed alike; the Mac's own banners cover them. A
-       stale report ages out (idle/quit), an `active: false` clears early. */
+    /* D-#561: notifications route to where the human is. At the Mac (a
+       fresh `presence.report`), every kind stays off the phone — finished,
+       needs-you and failed alike; the Mac's own banners carry them, reply
+       excerpt included. A stale report ages out (idle/quit), an
+       `active: false` clears early. Not: the phone deciding routing per
+       kind. */
     if (macActiveAt !== undefined && now() - macActiveAt < presenceWindowMs)
       return;
     if (kind === "failed") {
@@ -189,7 +198,8 @@ export function createPushFanout(options: {
       if (last !== undefined && now() - last < collapseMs) return;
     }
     const employee = await employeeFor(conversation.channelId);
-    /* #561 AC-3: a muted employee pushes nowhere. */
+    /* D-#561 (AC-3): a muted employee pushes nowhere — `Employee.muted` is
+       relay state, and the Mac's banners honour it too. */
     if (employee?.muted) return;
     const targets = (await store.listDevicePush()).filter(
       (target) =>

@@ -31,19 +31,25 @@ import {
 import { nativeWindowChrome } from "./window-chrome";
 
 /**
- * The LilOS Browser host: one tree of Electron `WebContentsView`s on the
- * shared `persist:lilos-browser` partition (a single profile, so a sign-in
- * in any tab or popup is the sign-in everywhere and survives quit). The
- * renderer(s) own the chrome — tab strip, omnibox, find bar, library — and
- * report where each page slot sits; this host is the single source of truth
- * for tabs, slot assignment, downloads and find state, and pushes the whole
- * snapshot on every change (the state is small and the renderers are thin).
+ * The LilOS Browser host (D-#215): pages live in the main process — one
+ * Electron `WebContentsView` per tab on the shared `persist:lilos-browser`
+ * partition (a single profile, so a sign-in in any tab or popup is the
+ * sign-in everywhere and survives quit). The renderer(s) are pure chrome —
+ * tab strip, omnibox, find bar, library — and report where each page slot
+ * sits; this host is the single source of truth for tabs, slot assignment,
+ * downloads and find state, and pushes the whole snapshot to both chrome
+ * renderers on every change (the state is small and the renderers are thin).
+ * Tabs persist in browser-state.json; sign-ins via the will-quit cookie
+ * flush. Not: `<webview>` (its state lives in the guest, untestable), a
+ * BrowserWindow per tab, browser state through the relay, or an
+ * agent-facing AppMethod (agent browser tools land separately).
  *
  * Slots: `panel` (the ⌘⇧B browser docked in the app window), `window` (the
- * popped-out browser window) and `thread:<conversationId>` (a thread's
- * Workbench Browser tab). A tab's view is attached to whichever slot paints
- * it — selecting a tab in another slot moves the view, leaving the old slot
- * to draw its "open elsewhere" affordance.
+ * popped-out browser window, running the same chrome) and
+ * `thread:<conversationId>` (a thread's Workbench Browser tab, which may only
+ * adopt or open tabs of that thread's group). A tab's view is attached to
+ * whichever slot paints it — selecting a tab in another slot moves the view,
+ * leaving the old slot to draw its "open elsewhere" affordance.
  */
 
 /** One partition = one browser profile across every tab, popup and window. */

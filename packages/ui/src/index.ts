@@ -1,6 +1,8 @@
-/* @lilos/ui — presentational surfaces extracted from the prototype (issue #12).
+/* @lilos/ui — presentational surfaces extracted from the prototype (D-#12).
    Props in, callbacks out: no mock data, no fake engine, no app state. The prototype composes
-   these with its mock data + fake engine. Vendored shadcn/AI Elements live under
+   these with its mock data + fake engine; apps/web imports the same components. UI domain
+   types live in ./types.ts. Not: copying prototype components into apps/web (they drift).
+   Vendored shadcn/AI Elements live under
    @lilos/ui/components/ui/* and @lilos/ui/components/ai-elements/* (subpath exports). */
 
 // browser (issue #214)

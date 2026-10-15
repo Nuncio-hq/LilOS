@@ -7,7 +7,7 @@ import { resetDmStore } from "./dm-store";
    list keyed by id so a second Mac is additive, not a migration. The list —
    including each Mac's device credential — lives in the Keychain via
    SecureStore: the credential is the phone's long-lived auth into the relay
-   (#153), and the Keychain survives app reinstalls only where the user
+   (D-#153), and the Keychain survives app reinstalls only where the user
    opted into that (kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly would
    pin it to this device; SecureStore's default already keeps it off
    backups into other phones). */
@@ -96,7 +96,7 @@ export function isOtherMacOffer(
 /**
  * The Mac revoked this phone (ws close 4403 / refused device credential):
  * the stored credential is dead, so teardown is Forget's — then a plain
- * notice on the pair screen instead of a reconnect loop (#154).
+ * notice on the pair screen instead of a reconnect loop (D-#153, #154).
  */
 export async function removedByMac(
   clearCache: () => Promise<void>,

@@ -1,5 +1,7 @@
 /**
- * #482: the adapter's `hermes serve` watchdog.
+ * D-#482: the adapter owns its `hermes serve` child's lifetime — this
+ * watchdog. The harness watches the adapter, never the child: it only
+ * probes `describe` (apps/harness/src/engine/supervisor.ts).
  *
  * Before this, the adapter spawned the backend once and never looked at it
  * again: the child could die (or its socket drop) while the adapter kept
@@ -7,13 +9,25 @@
  * 15-second hangs Oscar saw. This supervisor owns the whole lifecycle:
  *
  *   spawn `hermes serve` → connect the gateway → watch BOTH the child exit
- *   and the socket close → mark the engine down so calls fail fast typed →
- *   relaunch with backoff → swap in the new gateway (`setGateway`), leaving
- *   sessions to lazily `session.resume` their stored row on next touch.
+ *   and the socket close → mark the engine down so every in-flight and new
+ *   call fails fast with typed BACKEND_DOWN (-32006; the app sees
+ *   `engine_unavailable`) → relaunch with capped backoff → swap in the new
+ *   gateway (`setGateway`), leaving sessions to lazily `session.resume`
+ *   their stored row on next touch.
+ *
+ * A turn the death kills emits `turn.completed{refusal}` before its caller
+ * rejects; a turn the restarted backend finishes server-side arrives as a
+ * leg (D-#308). `describe()` reports `backend.{state,detail}` and keeps
+ * `restarting` visible briefly after a flap, so a sub-second restart still
+ * registers with the harness probe (every 2 s, 1.5 s deadline: any coded
+ * answer keeps the adapter; two dead-air misses restart the adapter).
  *
  * A backend that keeps crashing gives up after `maxAttempts` consecutive
  * failures (`failed`) — the adapter stays up, calls still fail typed, and a
  * later call `kick()`s the budget back open on demand.
+ *
+ * Not: the harness watching the hermes child itself, requests queueing on
+ * a dead socket, or per-request waits bounded by nothing.
  */
 import { unlinkSync, writeFileSync } from "node:fs";
 import { type GatewayLike, HermesGateway } from "./gateway.js";
@@ -260,7 +274,7 @@ export class HermesBackendSupervisor {
         this.failures += 1;
         const msg = e instanceof Error ? e.message.split("\n")[0] : String(e);
         this.log(`hermes backend relaunch failed (${msg ?? e})`);
-        /* #548: a host-owner conflict is a verdict, not a crash — the other
+        /* D-#548: a host-owner conflict is a verdict, not a crash — the other
            backend keeps owning this host until someone stops it, so fail
            now instead of burning the budget. It still counts as spent so
            `kick()` can re-arm once the owner is gone. */

@@ -790,10 +790,12 @@ export class SessionSurfaces implements ViewerScope {
   /* ------------------------------ viewer input ------------------------------ */
 
   /**
-   * Takeover (issue #56 AC-1): a keystroke into the Workbench terminal hands
-   * control to the user. The agent's next terminal_run/terminal_write gets a
-   * clear `user_control` result — never silent interleaving. Release is
-   * explicit (`term.release`) or automatic when the last viewer leaves.
+   * Takeover (D-#56, AC-1): the terminal has one holder. A keystroke into
+   * the Workbench terminal hands control to the user. The agent's next
+   * terminal_run/terminal_write gets a clear `user_control` result (HTTP 409
+   * on the gateway) — in-flight runs fail too. Release is explicit
+   * (`term.release`) or automatic when the last viewer leaves. Reads stay
+   * open. Not: silent interleaving, or a UI-only pause badge.
    */
   terminalInput(data: string) {
     if (data === "") return;

@@ -1,12 +1,16 @@
 name: CI
 
-# Minutes budget (#201): the fast checks run on every PR push; the Playwright
+# Minutes budget (D-#201): the fast checks run on every PR push; the Playwright
 # E2E runs only on main and on PRs that are ready for review and touch more
-# than docs. E2E shards across 8 matrix legs on separate runners (#433 —
+# than docs. A PR's newer push cancels its older run; a failed E2E test retries
+# once and is flagged flaky (playwright.config.ts); the macOS release build runs
+# on tags/dispatch only (release.yml). Not: full `verify` on every push, or
+# re-running the whole job for a flake. E2E shards across 8 matrix legs on separate runners (#433 —
 # workers on one runner starved every stack of CPU; #574 — Playwright shards
 # by test count and can't split a serial spec file, so smaller legs are the
 # only way to cut the dense ac-1xx block across legs), while `verify` stays
 # the required check by aggregating the shards so it always reports.
+# D-#3: CI runs on engine-fake (GitHub Actions + setup-bun); never a real LLM.
 
 on:
   push:

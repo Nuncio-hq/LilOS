@@ -28,10 +28,14 @@ execFileSync(
     join(REPO, "apps", "harness", "src", "index.ts"),
     "--compile",
     ...(hasTarget ? [] : ["--target=bun-darwin-arm64"]),
-    /* playwright-core lazily requires chromium-bidi inside init_bidiOverCdp —
-       the BiDi transport only; the browser surface drives Chromium over CDP
-       and never loads it. chromium-bidi isn't installed, so the bundler can't
-       resolve it: mark it external — the require never runs at runtime. */
+    /* D-#388: playwright-core lazily requires chromium-bidi inside
+       init_bidiOverCdp — the BiDi transport only; the browser surface drives
+       Chromium over CDP and never loads it. chromium-bidi isn't installed, so
+       the bundler can't resolve it: mark it external — the require never
+       runs at runtime. Not: installing chromium-bidi just for the bundler.
+       Since D-#539 playwright loads at runtime through createRequire, outside
+       the bundle graph, so this flag only guards against a static import
+       coming back. */
     "--external",
     "chromium-bidi",
     ...extra,

@@ -189,7 +189,8 @@ function surfaceErrorStatus(code: SurfaceError["code"]): number {
 }
 
 /** The rendered catalog rows one session sees — shared by `GET /tools` and
-    the MCP `tools/list`. Everything renders FROM `LILOS_TOOLS`. */
+    the MCP `tools/list`. Everything renders FROM `LILOS_TOOLS` (D-#36: one
+    gateway endpoint, one catalog, scope from the caller's binding). */
 function toolListFor(scope: ViewerScope) {
   return catalogRows(toolsForAreas(scope.areas));
 }

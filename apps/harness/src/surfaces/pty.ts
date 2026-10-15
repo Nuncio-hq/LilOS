@@ -4,7 +4,7 @@ import type { PtyHandle, PtySpawnOptions } from "@lilos/surfaces";
 /**
  * The harness-owned PTY (issue #36, AC-1): a login shell on Bun's native
  * `terminal` spawn option — survives viewers disconnecting; `SessionSurfaces`
- * respawns it on exit. Bun-only, so it lives at the app entry (AGENTS.md).
+ * respawns it on exit. Bun-only, so it lives at the app entry (D-#3).
  * Agents reach it through the `lilos_terminal_*` tools, so #412 hands it
  * the same allow-listed env the engine gets — never the harness's own.
  */

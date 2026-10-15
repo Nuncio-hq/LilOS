@@ -163,7 +163,11 @@ export const NO_WS: WsPick = { folder: null, base: "main", mode: "new" };
 /* #344: running while a turn works or any subagent still works (a session
    with live helpers is never idle-closed); a turn waiting on the user is
    open, not running (it never idle-closes either); otherwise the stored
-   life. */
+   life. D-#346: this is THE life derivation — the wire stores only the
+   host's open/closed bit (closed = idle-suspended); `running` is never
+   stored. Mobile can't import it and ports it in toSessionTurn
+   (apps/mobile/src/dm-model.ts) off conversation state, which carries no
+   subagent bit. Not: a second derivation with its own rule. */
 export const sessionLife = (t: Thread): SessionLife =>
   t.replies.some(
     (r) =>

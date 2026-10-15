@@ -48,7 +48,10 @@ export type ChannelKind = z.infer<typeof ChannelKind>;
 
 /**
  * A DM channel is the private channel between the user and one employee
- * (decision: DM = private channel with exactly one employee).
+ * (D-#25: DM = private channel with exactly one employee; the relay keeps
+ * one DM per employee via the `channels_dm_employee` unique index). Another
+ * employee joins a thread only as a helper in their own session — a link,
+ * never a member. Not: group DMs.
  */
 export const AppChannel = z.object({
   id: z.string().min(1),
@@ -63,8 +66,10 @@ export type AppChannel = z.infer<typeof AppChannel>;
 
 /**
  * A conversation is a thread inside a channel; each conversation maps to
- * exactly one engine session via `engineRef` (set by the harness once the
- * engine session exists — `null` until then).
+ * exactly one engine session via `engineRef` (D-#25; set by the harness
+ * once the engine session exists — `null` until then; a rebind swaps it
+ * for a fresh session, still one at a time). Not: threads detached from
+ * sessions.
  */
 export const ConversationState = z.enum(["idle", "active", "closed"]);
 export type ConversationState = z.infer<typeof ConversationState>;
@@ -110,10 +115,14 @@ export const WorkspaceIntent = z.discriminatedUnion("mode", [
 export type WorkspaceIntent = z.infer<typeof WorkspaceIntent>;
 
 /**
- * Why the conversation's last turn failed (#419). Host-written, persisted
+ * Why the conversation's last turn failed (D-#419). Host-written, persisted
  * on the row: an interrupted turn orphans with the dead session's event
  * log (a rebind swaps `engineRef`), so the failure card can't ride the
  * turn itself — it lives here until the next `turn.started` clears it.
+ * The harness stamps it on `turn.completed.error`, an interrupted turn
+ * (slept/restarted engine) and a terminal dispatch failure; the client
+ * fold still marks the turn `failed` (vs `done`/`stopped`). Not: deriving
+ * the failure from turn replay.
  * `kind` mirrors the ui `SessionAlert` kinds: "sleep" = the Mac slept or
  * the engine restarted (amber), "model"/"generic" = the turn ended on
  * `turn.completed.error` / the prompt never dispatched (red), "context" =
@@ -214,10 +223,15 @@ export const Conversation = z.object({
    */
   bgJobs: z.number().int().nonnegative().optional(),
   /**
-   * The user's read watermark (#563): how far he has opened this thread.
+   * The user's read watermark (D-#563): how far he has opened this thread.
    * `conversations.markRead` stamps `max(channel.lastSeq, finishedSeq)`
    * — every finish the relay has seen counts as read. A thread whose
-   * `finishedSeq` sits past it shows the "finished, not seen yet" dot.
+   * `finishedSeq` sits past it shows the "finished, not seen yet" dot,
+   * computed client-side; one relay-owned mark for every device, so
+   * opening the thread anywhere clears it everywhere (`conversation.updated`).
+   * Not: a stored unseen/read boolean (desyncs on restart/replay),
+   * client-computed stamps (clock skew across Mac and phone), or
+   * per-device read state (the phone must clear the mark the Mac set).
    */
   readSeq: z.int().min(0).default(0),
   /**

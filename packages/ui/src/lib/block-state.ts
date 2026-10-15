@@ -1,9 +1,12 @@
 import { useCallback, useState } from "react";
 
-/* #320: turn-block collapse state keyed by conv+turn ("c1:t1.steps" etc).
-   The web thread can remount a turn card when its live row claims the
-   relay row's id — React state alone then forgets the user's click. A
-   keyed store outlives the remount so open/collapse still wins. */
+/* D-#320: turn-block collapse state is user-owned, keyed by conv+turn+block
+   ("c1:t1.steps" etc). Auto-open is only a default while a turn runs. The
+   web thread can remount a turn card when its live row claims the relay
+   row's id — React state alone then forgets the user's click. A keyed store
+   outlives the remount so open/collapse still wins (web row keys use
+   `r.turnId`; dm.tsx stamps the conv id in). Not: auto-open as a lock, or
+   per-component `useState` only. */
 const store = new Map<string, unknown>();
 const CAP = 500;
 

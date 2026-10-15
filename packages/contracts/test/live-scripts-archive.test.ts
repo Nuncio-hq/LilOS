@@ -57,9 +57,22 @@ describe("AC-2 no live script for a closed issue remains", () => {
 
   it("the shared openai-stub helper stays and the live-check rules are documented", () => {
     expect(has("scripts/live/openai-stub.ts")).toBe(true);
-    expect(readFileSync(join(ROOT, "docs/index.html"), "utf8")).toContain(
-      'id="live-checks"',
+    // The rules live in the shared helper's header, next to the checks.
+    const rules = readFileSync(
+      join(ROOT, "scripts/live/lib/helpers.ts"),
+      "utf8",
     );
+    for (const rule of [
+      "`<issue>.sh`, `<issue>.ts` or",
+      "`issue-<issue>.sh`",
+      "`archive/live-scripts-*` tag",
+      "archive/live-scripts-2026-10",
+      "`git show <tag>:scripts/live/<file>`",
+    ]) {
+      expect(rules, `scripts/live/lib/helpers.ts must state ${rule}`).toContain(
+        rule,
+      );
+    }
   });
 });
 

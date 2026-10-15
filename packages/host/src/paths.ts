@@ -37,7 +37,7 @@ const realpathOr = (p: string): string | undefined => {
  * Resolve a caller path to a REAL absolute path under `home` — `undefined`
  * when it escapes: `..` above home, an absolute path outside home, a symlink
  * pointing outside, or a dot-dir segment anywhere below home (hidden folders
- * are never device-visible, #238). A non-existent tail resolves through its
+ * are never device-visible, D-#238). A non-existent tail resolves through its
  * nearest existing ancestor, so a not-yet-created folder still checks its
  * parents.
  */

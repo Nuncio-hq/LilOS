@@ -7,6 +7,24 @@
  * Lives under scripts/live because it exists for live legs; app scripts
  * import it by relative path (`../../../scripts/live/lib/helpers`) —
  * scripts/ is outside the workspaces, so @lilos/* specifiers don't apply.
+ * New checks import it instead of pasting their own copies; `bun run
+ * typecheck` covers it (scripts/live/tsconfig.json).
+ *
+ * The rules for live checks (scripts/live):
+ * - A live check is a small, issue-scoped script that runs the real stack
+ *   (real relay + harness, LILOS_ENGINE=hermes, a real phone or the
+ *   packaged app) when an issue's acceptance criteria can't be proven by
+ *   `bun run verify` alone. Its output is evidence for the issue's PR —
+ *   CI never runs it.
+ * - Name a check after its issue: `<issue>.sh`, `<issue>.ts` or
+ *   `issue-<issue>.sh`. One issue, one check, no framework.
+ * - When the issue closes, the script is deleted from main and archived
+ *   under an `archive/live-scripts-*` tag (archive/live-scripts-2026-10,
+ *   created in #443). Restore one with
+ *   `git show <tag>:scripts/live/<file>`.
+ * - Shared pieces: this file; scripts/live/openai-stub.ts (`startStub`
+ *   spawns it); lib/lilos-plugin.sh, the plugin connect a `.sh` leg
+ *   sources for its scratch HERMES_HOME.
  */
 import { type ChildProcess, spawn } from "node:child_process";
 import { readFileSync, rmSync } from "node:fs";

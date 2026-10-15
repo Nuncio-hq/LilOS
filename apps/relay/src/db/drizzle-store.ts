@@ -913,7 +913,7 @@ export function createDrizzleStore(db: Db): RelayStore {
       return updated ? rowToConversation(updated) : null;
     },
     async recordConversationFinish({ conversationId, sessionId, eventSeq }) {
-      /* The stamp must clear every mark the relay has seen —
+      /* D-#563: the stamp must clear every mark the relay has seen —
          max(channel.lastSeq, readSeq) + 1 — because the finish's own
          channel writes land AFTER the engine event that calls this: at
          `lastSeq` a quiet-channel finish would equal `readSeq` and the

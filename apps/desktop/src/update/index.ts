@@ -18,6 +18,15 @@ import {
  * + checksum + unpack → signature policy → write pending + detached applier.
  * The caller quits the app on `"apply-ready"`; the applier swaps, relaunches,
  * and the new build's `settlePendingUpdate` proves the handshake.
+ *
+ * D-#35: the unit of update is the whole .app — app + relay + harness share
+ * one stamped release version (scripts/build.ts), so one in-place swap moves
+ * all three. The new build re-registers its agents and must see relay and
+ * harness report its version before it writes boot-ok; otherwise the
+ * applier restores the parked bundle and the build is skipped
+ * (state.ts) until the user hits Retry on the rollback notice (#539).
+ * Not: per-component versions, in-place binary patches, or auto-retrying a
+ * failed release.
  */
 export interface UpdateEnv {
   /** `app.getVersion()` — the release version this build reports. */

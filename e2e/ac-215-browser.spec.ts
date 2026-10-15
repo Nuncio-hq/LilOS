@@ -15,7 +15,8 @@ import { growDmThread } from "./helpers/relay-thread";
 import { bootStack, pickPorts, type Stack } from "./helpers/stack";
 
 /**
- * Issue #215 — the LilOS Browser in the Mac app.
+ * Issue #215 — the LilOS Browser in the Mac app (D-#215: main-process
+ * WebContentsViews, renderers pure chrome).
  *
  *   AC-1 ⌘⇧B opens the docked panel AND the pop-out window; both render
  *        real Chromium pages (WebContentsView, persist:lilos-browser).

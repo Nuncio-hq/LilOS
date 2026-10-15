@@ -1,5 +1,5 @@
 /**
- * At-the-Mac presence (#561 AC-1): while the human is using this Mac the
+ * At-the-Mac presence (D-#561 AC-1): while the human is using this Mac the
  * phone stays silent — the relay's push fan-out suppresses every kind and
  * the Mac's own banners carry the attention. "At the Mac" is the shell's
  * reading: user input in ANY app within `PRESENCE_IDLE_MS`, screen unlocked.

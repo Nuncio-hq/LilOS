@@ -150,11 +150,17 @@ import type { SleepGuard } from "./sleep";
 
 /**
  * The workspace harness: the ONLY component that talks to the engine
- * (docs/index.html#d-26). It connects to the relay, registers as the engine
+ * (D-#26). It connects to the relay, registers as the engine
  * host, binds each DM conversation to one engine session, forwards user
  * messages as prompts, surfaces engine asks (approvals/questions) on the
  * relay, posts final answers back, and holds the sleep assertion while a
- * turn runs.
+ * turn runs. It also owns the engine's lifecycle: launch
+ * (`engine/launcher.ts` — the packages/engine-hermes adapter, which runs
+ * `hermes serve` on 127.0.0.1 with a generated token; D-#482) and crash
+ * restart with bounded backoff (`engine/supervisor.ts`). The app reads
+ * engine state only through the harness feed (`feed.ts`, read-only); the
+ * relay forwards its few engine calls here (`ENGINE_PASSTHROUGH_METHODS`).
+ * Not: the app or relay calling an engine directly.
  *
  * Engine-agnostic: everything goes through the engine protocol
  * (`@lilos/contracts/engine`); nothing Hermes-specific may live here.
@@ -552,11 +558,12 @@ export class Harness {
         after,
       });
     } catch (error) {
-      /* #300: a session the engine forgot — legacy bare ids (`s1`) with no
-         registry row, or any SESSION_NOT_FOUND — must not surface as a
+      /* D-#300: a session the engine forgot — legacy bare ids (`s1`) with
+         no registry row, or any SESSION_NOT_FOUND — must not surface as a
          replay error. The client degrades to "no live transcript": relay
          messages + the persisted context meter still render, and the write
-         path rebinds on `session.start` the same way a gateway 404 does. */
+         path rebinds on `session.start` the same way a gateway 404 does.
+         Not: rebinding here, on thread open — that mints sessions on view. */
       if (engineErrorCode(error) !== SESSION_NOT_FOUND) throw error;
       return {
         events: [],

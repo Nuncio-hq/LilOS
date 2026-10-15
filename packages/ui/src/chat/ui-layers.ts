@@ -1,13 +1,18 @@
 import { useCallback, useEffect, useRef } from "react";
 import { OPEN_OVERLAY } from "./composer-keys";
 
-/* Mount-ordered stack of UI surfaces that own keyboard input (issue #576).
+/* Mount-ordered stack of UI surfaces that own keyboard input (D-#576: Esc
+   only closes things — it never stops a turn and never answers a card).
    Esc dispatches to the top-most layer only — menu → dialog → panel → Focus
    by mount order — so it always closes something and can never leak through
    to a second surface or stop a turn. A surface with its own overlay element
    (a dialog) registers it so the overlay check can tell OUR dialogs apart
    from foreign overlays (Base UI popovers/menus/vendored dialogs), which keep
-   owning Esc themselves. */
+   owning Esc themselves. Stopping is ■ / ⌘. only; approval and plan cards
+   answer on ↵ (allow/approve once) and ⌫ (deny/reject), aimed at the newest
+   pending card and never while typing. Rewind applies visually first and
+   commits when its 10 s Undo toast expires (#578). Not: Esc → interrupt,
+   Esc → Deny, or a confirm dialog before rewind. */
 export interface UiLayerHandlers {
   /** Esc pressed while this layer is top-most — typically onClose/onBack. */
   onEscape?: () => void;

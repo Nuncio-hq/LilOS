@@ -3,12 +3,16 @@ import type { PairedDevice } from "@lilos/contracts/app";
 import { newId, type RelayStore } from "./store";
 
 /**
- * Phone pairing (#153): one-time grant → per-device credential, ported from
+ * Phone pairing (D-#153): one-time grant → per-device credential, ported from
  * T3 Code's `apps/server/src/auth/PairingGrantStore.ts` — same shape without
  * Effect: a short-lived single-use grant carries the pairing secret (in the
  * QR's URL fragment), and spending it mints a long-lived per-device
  * credential. Both secrets are stored only as SHA-256 hashes; the raw
- * credential exists once, in the exchange response.
+ * credential exists once, in the exchange response. The phone keeps it in
+ * the Keychain; the Mac lists and revokes devices, and a revoke closes the
+ * phone's live sockets with ws 4403 so it forgets the credential and lands
+ * back on pairing instead of a reconnect loop.
+ * Not: handing phones the install token (D-#25), a cloud relay, or DPoP.
  */
 
 /** Grants live 5 minutes and die on first spend. */
@@ -16,8 +20,9 @@ export const PAIRING_GRANT_TTL_MS = 5 * 60 * 1000;
 
 /**
  * Exchange throttle (#568): this many consecutive `unknown` misses lock
- * `exchangeGrant` for the cooldown. Both numbers are the documented budget
- * in SECURITY.md — online guessing at a 60-bit code must stay pointless.
+ * `exchangeGrant` for the cooldown — every exchange, valid codes included,
+ * answers 429 until it lifts. Online guessing at a 60-bit code must stay
+ * pointless; SECURITY.md points here for the budget.
  */
 export const PAIRING_EXCHANGE_MAX_FAILURES = 5;
 export const PAIRING_EXCHANGE_COOLDOWN_MS = 60_000;
@@ -90,7 +95,7 @@ export function createPairingService(options: {
   now?: () => number;
   /** Grant TTL override (e2e expiry runs); default 5 min. */
   grantTtlMs?: number;
-  /** Exchange throttle knobs (#568); defaults in SECURITY.md. */
+  /** Exchange throttle knobs (#568); defaults: the PAIRING_EXCHANGE_* consts. */
   exchangeMaxFailures?: number;
   exchangeCooldownMs?: number;
 }): PairingService {

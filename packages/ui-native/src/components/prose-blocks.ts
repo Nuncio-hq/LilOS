@@ -1,7 +1,8 @@
 /**
  * Block structure for `Prose` — the slice of markdown agent replies send
  * (see prose.tsx). Pure TS so vitest covers it; the RN component only
- * renders what this returns.
+ * renders what this returns. Bespoke on purpose (D-#259): fences and GFM
+ * tables are block kinds here, not an RN markdown library's output.
  */
 import type { PhrasingContent, RootContent } from "mdast";
 import { fromMarkdown } from "mdast-util-from-markdown";

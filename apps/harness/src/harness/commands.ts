@@ -6,7 +6,10 @@ import type { HarnessCtx, SessionBinding } from "./ctx";
 
 /**
  * A user send that parses as `/name args` runs the engine's command instead
- * of prompting — the same route the TUI's slash dispatch takes. Returns:
+ * of prompting — the same route the TUI's slash dispatch takes (D-#109:
+ * slash commands and skills are engine offerings behind the `commands`
+ * capability, run inside the session; LilOS keeps no command table and
+ * names no vendor calls). Returns:
  *  - "settled"  — the command ran; its output/notice is posted, the send is
  *    delivered, nothing prompts.
  *  - "prompt"   — a skill expanded into the prompt the caller runs as the

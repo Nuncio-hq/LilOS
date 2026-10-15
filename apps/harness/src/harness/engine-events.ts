@@ -21,7 +21,7 @@ export function onEngineEvent(this: HarnessCtx, event: EngineEvent) {
     }
   }
   const convId = this.conversationBySession.get(event.sessionId);
-  /* Live stream for paired phones (#157): every engine event of a
+  /* Live stream for paired phones (D-#157): every engine event of a
      conversation-bound session is re-published on the relay, which
      re-emits it on the conversation's channel. Errors are swallowed —
      the phone heals itself via `session.events` replay. */
@@ -272,7 +272,7 @@ export function onEngineEvent(this: HarnessCtx, event: EngineEvent) {
       break;
     case "request.opened":
       if (binding) {
-        /* #106 AC-2: Full access is enforced here, engine-neutral — the
+        /* D-#106 AC-2: Full access is enforced here, engine-neutral — the
            harness answers `approval` requests itself (`once`) and the
            card never reaches the user; other kinds still surface. */
         if (
@@ -332,11 +332,14 @@ export function onEngineEvent(this: HarnessCtx, event: EngineEvent) {
       }
       break;
     case "session.compacted":
-      /* #560: exactly one note per compaction — manual or automatic —
+      /* D-#560: exactly one note per compaction — manual or automatic —
          with the before→after token drop when the engine measured it.
          Deduped by seq AND session like session.note: a rebound session
          restarts its seq at 1. `session.info` ref bumps and idle resumes
-         never fire this event, so the note can't appear spuriously. */
+         never fire this event, so the note can't appear spuriously. The
+         note is a persisted system message, so it replays with the thread.
+         Not: inferring compaction from `session.ref.changed`, or matching
+         the engine's notification text. */
       if (binding) {
         const { beforeTokens, afterTokens } = event.payload;
         const drop =

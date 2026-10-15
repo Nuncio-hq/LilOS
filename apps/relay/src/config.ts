@@ -1,6 +1,13 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+/**
+ * D-#25: the relay is its own process (`apps/relay/src/index.ts`, its own
+ * launchd agent on the desktop), local first — it binds 127.0.0.1 and
+ * clients authenticate with the per-install token (`./auth.ts`). Going
+ * remote means changing the address here (`LILOS_RELAY_HOST`), not the code.
+ * Not: embedded in apps/web, or remote-first.
+ */
 export interface RelayConfig {
   /** Bind address. Local first: 127.0.0.1; remote later = change this. */
   host: string;

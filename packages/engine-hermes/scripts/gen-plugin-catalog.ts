@@ -1,6 +1,6 @@
 /**
  * Renders the `lilos` Hermes plugin's shipped tool catalog
- * (`plugin/lilos/catalog.json`) from the contract's `toolListAll` (#411).
+ * (`plugin/lilos/catalog.json`) from the contract's `toolListAll` (D-#411).
  * `register()` reads this snapshot instead of fetching `GET /tools`, so
  * plugin load can never block on the gateway. Generating from the SAME
  * tool list the surfaces gateway answers with keeps the snapshot

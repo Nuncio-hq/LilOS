@@ -125,7 +125,9 @@ export function removeSkippedBuild(baseDir: string, build: number): void {
  *   services re-registration + relay handshake + version convergence — and
  *   only then writes `boot-ok`, which releases the applier's watchdog.
  * - the OLD build (mismatch) knows it was rolled back: the failed build is
- *   skipped permanently and the leftover marker is cleared.
+ *   skipped and the leftover marker is cleared. D-#35: a failed release is
+ *   never auto-retried — only the rollback notice's Retry un-skips it, for
+ *   one attempt (`removeSkippedBuild`).
  */
 export async function settlePendingUpdate(
   baseDir: string,

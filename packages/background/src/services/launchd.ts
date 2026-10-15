@@ -1,8 +1,8 @@
 /**
- * Launch-agent model for LilOS's two background services (AC-1), per the SP1
- * spike (`spikes/21-smappservice`): SMAppService agents declared by plists in
- * `Contents/Library/LaunchAgents/`, each running a `BundleProgram` binary
- * inside `Contents/MacOS/`. launchd owns the processes — `RunAtLoad` starts
+ * Launch-agent model for LilOS's two background services (D-#34, AC-1), per
+ * the SP1 spike (`spikes/21-smappservice`): SMAppService agents declared by
+ * plists in `Contents/Library/LaunchAgents/`, each running a `BundleProgram`
+ * binary inside `Contents/MacOS/`. launchd owns the processes — `RunAtLoad` starts
  * them at login (reboot survival) and `KeepAlive` restarts them on crash and
  * keeps them up when the app quits.
  */

@@ -11,7 +11,7 @@ import { ConversationAccess } from "../engine/approvals.js";
 import { ForgePrListItem } from "../host/forge.js";
 
 /**
- * The one LilOS tool catalog (issues #36 + #337): every operation an engine
+ * The one LilOS tool catalog (D-#36, #337): every operation an engine
  * session can call through the Agent Gateway — the MCP streamable-HTTP
  * endpoint, the `lilos mcp` stdio server, and the `lilos` CLI all render from
  * this table, and so does the host policy. Nothing else hand-writes a tool
@@ -25,7 +25,14 @@ import { ForgePrListItem } from "../host/forge.js";
  *
  * Scope is ambient, not an argument: the gateway binds each caller to one
  * session via its per-session bearer (or `x-lilos-session`), so an agent can
- * never address another session's browser/terminal/thread.
+ * never address another session's browser/terminal/thread. The engine's own
+ * session id is only an alias for that scope, never an argument.
+ *
+ * Per-engine adapters (an in-process engine plugin today; app-server or SDK
+ * bridges later — #342, under #111) only attach this catalog — they never
+ * grow a tool list of their own. Not: attaching MCP only through ACP, or
+ * engine-specific UI toolsets (`desktop_ui` / `drive_preview` /
+ * `read_terminal`, the first #36 design).
  */
 
 /** Tool areas — the `tools/list` filter and the host policy speak in these. */
@@ -42,7 +49,8 @@ export const TOOL_AREAS = [
 export type ToolArea = (typeof TOOL_AREAS)[number];
 
 /** `read` never mutates; `write` mutates this session's own surfaces;
- *  `approval` changes the company — always asks the user first. */
+ *  `approval` changes the company — always asks the user first (the gate
+ *  lives in apps/harness/src/harness/gateway-ops.ts). */
 export const TOOL_ACCESS = ["read", "write", "approval"] as const;
 export type ToolAccess = (typeof TOOL_ACCESS)[number];
 

@@ -420,7 +420,7 @@ export async function forgeMerge(
     `--${params.method}`,
     ...(params.deleteBranch ? ["--delete-branch"] : []),
   ]);
-  // Report the re-read state, not gh's exit code.
+  // D-#37: report the re-read PR state, never gh's stdout or exit code.
   const after = await viewPr(root, before.number);
   return { merged: after?.state === "merged", pr: after ?? before };
 }
