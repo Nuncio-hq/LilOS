@@ -230,7 +230,7 @@ export function V3Needs({ data, go, act }: V3PageProps) {
     const rows: {
       key: string;
       title: string;
-      ticketId: string;
+      ticketId?: string;
       by: string;
       note: string;
       minutes: number;
@@ -239,8 +239,8 @@ export function V3Needs({ data, go, act }: V3PageProps) {
     }[] = [];
     const seenTickets = new Set<string>();
     for (const th of data.threads.filter((t) => t.unseen)) {
-      const t = ticketOf(data, th.ticketId);
-      seenTickets.add(th.ticketId);
+      const t = th.ticketId ? ticketOf(data, th.ticketId) : undefined;
+      if (th.ticketId) seenTickets.add(th.ticketId);
       rows.push({
         key: th.id,
         title: th.title,
@@ -420,11 +420,11 @@ export function V3Needs({ data, go, act }: V3PageProps) {
                   if (r.threadId) {
                     if (r.unseen) act.markSeen(r.threadId);
                     go({ page: "thread", id: r.threadId });
-                  } else go({ page: "ticket", id: r.ticketId });
+                  } else if (r.ticketId) go({ page: "ticket", id: r.ticketId });
                 }}
                 meta={
                   <>
-                    {r.ticketId} ·{" "}
+                    {r.ticketId ?? "Chat"} ·{" "}
                     <b className="font-medium text-foreground">
                       {agentOf(data, r.by).name}
                     </b>

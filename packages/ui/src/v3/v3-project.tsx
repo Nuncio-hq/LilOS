@@ -33,7 +33,10 @@ export function V3ProjectPage({ data, go, id }: V3PageProps & { id: string }) {
   const ticketIds = new Set(tickets.map((t) => t.id));
   const live = data.threads.filter(
     (t) =>
-      ticketIds.has(t.ticketId) && t.status !== "done" && t.status !== "idle",
+      (t.projectId === project.id ||
+        (t.ticketId !== undefined && ticketIds.has(t.ticketId))) &&
+      t.status !== "done" &&
+      t.status !== "idle",
   );
   const owners = [...new Set(open.map((t) => t.owner))].map((a) =>
     agentOf(data, a),

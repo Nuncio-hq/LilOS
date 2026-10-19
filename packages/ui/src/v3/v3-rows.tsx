@@ -77,7 +77,7 @@ export function ThreadRow({
   byAgent?: boolean;
 }) {
   const who = agentOf(data, thread.agentId);
-  const ticket = ticketOf(data, thread.ticketId);
+  const ticket = thread.ticketId ? ticketOf(data, thread.ticketId) : undefined;
   return (
     <RowButton
       onClick={() => go({ page: "thread", id: thread.id })}
@@ -93,7 +93,7 @@ export function ThreadRow({
       <span className="min-w-0 flex-1 truncate text-foreground">
         {thread.title}
         <span className="ml-2.5 text-[12.5px] text-muted-foreground/70">
-          {thread.ticketId}
+          {thread.ticketId ?? "Chat"}
           {ticket && ticket.title !== thread.title ? ` · ${ticket.title}` : ""}
         </span>
       </span>

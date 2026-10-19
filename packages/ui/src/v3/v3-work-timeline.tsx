@@ -28,7 +28,7 @@ type Bar = {
   key: string;
   start: number;
   end: number;
-  ticketId: string;
+  ticketId?: string;
   label: string;
   status: V3Status;
   planned: boolean;
@@ -58,7 +58,11 @@ export function TimelineView({ data, go, tickets }: WorkViewProps) {
   const visible = new Set(tickets.map((t) => t.id));
   const barsOf = (agentId: string): Bar[] => [
     ...data.threads
-      .filter((t) => t.agentId === agentId && visible.has(t.ticketId))
+      .filter(
+        (t) =>
+          t.agentId === agentId &&
+          (t.ticketId === undefined || visible.has(t.ticketId)),
+      )
       .flatMap((t) => {
         const start = toMin(t.startedAt);
         if (start === null) return [];
@@ -68,11 +72,11 @@ export function TimelineView({ data, go, tickets }: WorkViewProps) {
             start,
             end: start + Math.max(t.minutes, 1),
             ticketId: t.ticketId,
-            label: t.title,
+            label: t.ticketId ? t.title : `Chat · ${t.title}`,
             status: t.status,
             planned: false,
             open: () => go({ page: "thread", id: t.id }),
-            title: `${t.ticketId} · ${t.title} · ${span(t.minutes)}`,
+            title: `${t.ticketId ?? "Chat"} · ${t.title} · ${span(t.minutes)}`,
           },
         ];
       }),

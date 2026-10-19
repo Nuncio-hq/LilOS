@@ -134,23 +134,66 @@ export type V3Step = {
   running?: boolean;
 };
 
+/** Something a reply carries besides prose. */
+export type V3Attachment =
+  | {
+      kind: "pr";
+      num: number;
+      title: string;
+      branch: string;
+      add: number;
+      del: number;
+    }
+  | {
+      kind: "diff";
+      path: string;
+      add: number;
+      del: number;
+      lines: { kind: "add" | "del" | "ctx"; text: string }[];
+    }
+  | { kind: "image"; label: string }
+  | { kind: "sheet"; name: string; rows: number };
+
+/** One turn = one message in, the work it caused, one answer out. */
 export type V3Turn = {
   n: number;
   /** "asked by CEO at 11:52". */
   from: string;
   took: string;
+  /** The message that started the turn. `by` is an agent id or "you". */
+  prompt?: { by: string; at: string; text: string };
   /** Folded turns show this line instead of their steps. */
   summary?: string;
   facts?: string;
   steps?: V3Step[];
+  /** The agent's reply, markdown. */
+  answer?: string;
+  /** The answer is still being written. */
+  streaming?: boolean;
+  attachments?: V3Attachment[];
+  /** Messages sent while this turn ran; the agent reads them after the
+     current step. */
+  queued?: { at: string; text: string }[];
 };
 
-/** Thread = one agent session on one ticket, in one folder, with one model. */
+/** What the (fake) agent does with one message: the steps it takes, in
+   order (a run step may print output), then its answer. */
+export type V3Reply = {
+  steps: (V3Step & { output?: string[] })[];
+  answer: string;
+  attachments?: V3Attachment[];
+};
+
+/** Thread = one agent session in one folder with one model: a hand on a
+   ticket, or a plain chat (no ticket) that can be turned into one. */
 export type V3Thread = {
   id: string;
-  ticketId: string;
+  /** Absent = a chat, not tied to a ticket. */
+  ticketId?: string;
+  /** Chats: the project whose folder the agent works in. */
+  projectId?: string;
   agentId: string;
-  /** This hand's job on the ticket ("Build two variants"). */
+  /** This hand's job on the ticket ("Build two variants"), or the chat's topic. */
   title: string;
   status: V3Status;
   /** Finished since you last looked. */
@@ -257,7 +300,9 @@ export type V3Route =
   | { page: "people"; view?: "table" | "org" }
   | { page: "agent"; id: string }
   | { page: "hire" }
-  | { page: "guide" };
+  | { page: "guide" }
+  /** A new chat with an agent; `agentId` preselects who. */
+  | { page: "chat"; agentId?: string };
 
 /** Everything a page can change; the shell owns the state. */
 export type V3Actions = {
@@ -269,7 +314,16 @@ export type V3Actions = {
   acceptRule: (agentId: string) => void;
   dismissRule: (agentId: string) => void;
   comment: (ticketId: string, text: string) => void;
+  /** Sends a message into a thread. A finished thread starts a new turn and
+     the agent answers; a working one queues it until the current step ends. */
   message: (threadId: string, text: string) => void;
+  /** Opens a new chat thread with an agent in a project's folder. */
+  startChat: (chat: {
+    agentId: string;
+    projectId: string;
+    model: string;
+    text: string;
+  }) => void;
   markSeen: (threadId: string) => void;
   hire: (agent: { name: string; role: string; model: string }) => void;
   /** Opens the ⌘K palette, optionally prefilled. */

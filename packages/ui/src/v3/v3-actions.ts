@@ -1,3 +1,4 @@
+import { cancelTurn, nowClock, type ReplyFn, runTurn } from "./v3-chat-sim";
 import { agentOf } from "./v3-model";
 import type {
   V3Actions,
@@ -108,6 +109,8 @@ type SetData = (fn: (d: V3Data) => V3Data) => void;
    way the real relay would, so the next screen tells the truth. */
 export function makeActions(
   setData: SetData,
+  getData: () => V3Data,
+  reply: ReplyFn,
   toast: (t: string) => void,
   go: (r: V3Route) => void,
   setPalette: (seed: string) => void,
@@ -225,6 +228,7 @@ export function makeActions(
       toast(`Answered: ${option}`);
     },
     stop: (threadId) => {
+      cancelTurn(threadId);
       setData((d) => {
         const th = d.threads.find((t) => t.id === threadId);
         if (!th) return d;
@@ -381,27 +385,57 @@ export function makeActions(
       });
     },
     message: (threadId, text) => {
+      const th = getData().threads.find((t) => t.id === threadId);
+      if (!th) return;
+      if (th.status !== "working") {
+        runTurn(setData, getData, reply, th, text);
+        return;
+      }
+      /* Mid-turn: queue on the running turn; the agent reads it after the
+         current step (the simulator starts it when the turn ends). */
+      const newest = Math.max(...th.turns.map((u) => u.n));
       setData((d) => ({
         ...d,
         threads: d.threads.map((t) =>
           t.id === threadId
             ? {
                 ...t,
-                turns: [
-                  {
-                    n: (t.turns[0]?.n ?? 0) + 1,
-                    from: "you, just now",
-                    took: "queued",
-                    summary: text,
-                    facts: "Read after the current step",
-                  },
-                  ...t.turns,
-                ],
+                turns: t.turns.map((u) =>
+                  u.n === newest
+                    ? {
+                        ...u,
+                        queued: [...(u.queued ?? []), { at: nowClock(), text }],
+                      }
+                    : u,
+                ),
               }
             : t,
         ),
       }));
-      toast("Sent · read after the current step");
+      toast(
+        `Queued · ${agentOf(getData(), th.agentId).name} reads it after the current step`,
+      );
+    },
+    startChat: ({ agentId, projectId, model, text }) => {
+      const project = getData().projects.find((p) => p.id === projectId);
+      const chat: V3Thread = {
+        id: `t-chat-${Date.now().toString(36)}`,
+        projectId,
+        agentId,
+        title: text.length > 56 ? `${text.slice(0, 54).trimEnd()}…` : text,
+        status: "working",
+        startedAt: nowClock(),
+        minutes: 0,
+        step: 0,
+        context: 2,
+        model,
+        folder: project?.folder ?? "~",
+        changes: [],
+        turns: [],
+      };
+      setData((d) => ({ ...d, threads: [chat, ...d.threads] }));
+      go({ page: "thread", id: chat.id });
+      runTurn(setData, getData, reply, chat, text);
     },
     markSeen: (threadId) => {
       setData((d) => ({

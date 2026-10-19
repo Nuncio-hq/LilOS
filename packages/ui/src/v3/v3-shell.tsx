@@ -1,9 +1,18 @@
 import { SparklesIcon } from "lucide-react";
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useTheme } from "../shell/use-theme";
 import { makeActions, planRecords } from "./v3-actions";
 import { V3AgentPage } from "./v3-agent";
 import { Kbd } from "./v3-bits";
+import { V3ChatNew } from "./v3-chat-new";
+import type { ReplyFn } from "./v3-chat-sim";
 import { V3GoalPage, V3Goals } from "./v3-goals";
 import { V3Guide } from "./v3-guide";
 import { V3Hire } from "./v3-hire";
@@ -28,6 +37,8 @@ export type V3ShellProps = {
   onRoute: (route: V3Route) => void;
   /** The CEO behind ⌘K: a reply or a draft plan for one line. */
   draft: (text: string, data: V3Data) => V3Draft;
+  /** The agent behind a chat: its steps and answer for one message. */
+  reply: ReplyFn;
   onToast: (text: string) => void;
 };
 
@@ -39,9 +50,13 @@ export function V3Shell({
   route,
   onRoute,
   draft,
+  reply,
   onToast,
 }: V3ShellProps) {
   const [data, setData] = useState(initial);
+  /* Timers in the chat simulator read the latest data, not a stale closure. */
+  const dataRef = useRef(data);
+  dataRef.current = data;
   const [palette, setPalette] = useState<string | null>(null);
   const [theme, setTheme] = useTheme();
   const dark =
@@ -70,8 +85,16 @@ export function V3Shell({
   }, []);
 
   const act = useMemo<V3Actions>(
-    () => makeActions(setData, onToast, go, setPalette),
-    [onToast, go],
+    () =>
+      makeActions(
+        setData,
+        () => dataRef.current,
+        reply,
+        onToast,
+        go,
+        setPalette,
+      ),
+    [reply, onToast, go],
   );
 
   const startPlan = (
@@ -137,6 +160,9 @@ export function V3Shell({
           {route.page === "agent" && <V3AgentPage {...props} id={route.id} />}
           {route.page === "hire" && <V3Hire {...props} />}
           {route.page === "guide" && <V3Guide {...props} />}
+          {route.page === "chat" && (
+            <V3ChatNew {...props} agentId={route.agentId} />
+          )}
         </main>
       </div>
       {palette !== null && (
@@ -174,13 +200,18 @@ function Crumbs({
   if (t === "ticket")
     parts.push({ label: "Work", to: { page: "work" } }, { label: route.id });
   if (t === "threads") parts.push({ label: "Threads" });
+  if (t === "chat")
+    parts.push(
+      { label: "Threads", to: { page: "threads" } },
+      { label: "New chat" },
+    );
   if (t === "thread") {
     const th = data.threads.find((x) => x.id === route.id);
     parts.push(
       { label: "Threads", to: { page: "threads" } },
       {
         label: th
-          ? `${agentOf(data, th.agentId).name} · ${th.ticketId}`
+          ? `${agentOf(data, th.agentId).name} · ${th.ticketId ?? "Chat"}`
           : route.id,
       },
     );

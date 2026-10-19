@@ -167,7 +167,7 @@ export function ThreadCard({
             className="mr-1.5 inline-block size-[7px] rounded-full bg-sky-600 dark:bg-sky-400"
           />
         )}
-        <TicketId id={t.ticketId} className="mr-2 font-normal" />
+        <TicketId id={t.ticketId ?? "Chat"} className="mr-2 font-normal" />
         {t.title}
       </div>
 
@@ -212,9 +212,11 @@ export function ThreadCard({
             <Btn small onClick={() => act.stop(t.id)}>
               Stop
             </Btn>
-            <Btn small onClick={() => act.handOff(t.ticketId, handTo.id)}>
-              Hand to {handTo.name}
-            </Btn>
+            {t.ticketId && (
+              <Btn small onClick={() => act.handOff(t.ticketId!, handTo.id)}>
+                Hand to {handTo.name}
+              </Btn>
+            )}
           </Actions>
         </>
       )}

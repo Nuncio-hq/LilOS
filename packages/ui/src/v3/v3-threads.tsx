@@ -1,8 +1,9 @@
-import { LayoutGridIcon, ListIcon, TableIcon } from "lucide-react";
+import { LayoutGridIcon, ListIcon, PlusIcon, TableIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "../lib/utils";
 import {
   Avatar,
+  Btn,
   DOT,
   Meter,
   Page,
@@ -101,7 +102,7 @@ function Live(p: V3PageProps) {
               className="grid grid-cols-[minmax(0,1fr)_130px_minmax(0,170px)_70px] items-center gap-4 border-[var(--v3-line)] border-b py-2.5 text-[13.5px]"
             >
               <span className="truncate">
-                <TicketId id={t.ticketId} />
+                <TicketId id={t.ticketId ?? "Chat"} />
                 {t.title}
               </span>
               <span className="flex items-center gap-2">
@@ -152,7 +153,7 @@ function All({ data, go }: V3PageProps) {
             )}
           >
             <span className="truncate">
-              <TicketId id={t.ticketId} />
+              <TicketId id={t.ticketId ?? "Chat"} />
               {t.title}
             </span>
             <span className="flex items-center gap-2">
@@ -209,7 +210,7 @@ function ByAgent({ data, go }: V3PageProps) {
                   className="flex items-center gap-4 border-[var(--v3-line)] border-b py-2 text-[13.5px]"
                 >
                   <span className="min-w-0 flex-1 truncate">
-                    <TicketId id={t.ticketId} />
+                    <TicketId id={t.ticketId ?? "Chat"} />
                     {t.title}
                   </span>
                   <ThreadPill status={t.status} />
@@ -237,11 +238,16 @@ export function V3Threads(props: V3PageProps & { view: View }) {
       <p className="-mt-1 text-[15px] text-muted-foreground">
         Every agent session, live.
       </p>
-      <Tabs
-        tabs={TABS}
-        value={view}
-        onChange={(v) => go({ page: "threads", view: v })}
-      />
+      <div className="flex items-end justify-between gap-4">
+        <Tabs
+          tabs={TABS}
+          value={view}
+          onChange={(v) => go({ page: "threads", view: v })}
+        />
+        <Btn primary small onClick={() => go({ page: "chat" })}>
+          <PlusIcon /> New chat
+        </Btn>
+      </div>
       <Summary threads={data.threads} />
       {view === "live" && <Live {...props} />}
       {view === "all" && <All {...props} />}

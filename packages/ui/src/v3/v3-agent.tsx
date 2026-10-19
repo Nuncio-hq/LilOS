@@ -126,9 +126,12 @@ export function V3AgentPage({
             {agent.name}
           </Title>
         </div>
-        <Btn primary onClick={() => act.ask(`@${agent.name} `)}>
-          Give a ticket
-        </Btn>
+        <div className="flex shrink-0 items-center gap-2">
+          <Btn onClick={() => go({ page: "chat", agentId: id })}>Message</Btn>
+          <Btn primary onClick={() => act.ask(`@${agent.name} `)}>
+            Give a ticket
+          </Btn>
+        </div>
       </div>
 
       <div className="mt-3">

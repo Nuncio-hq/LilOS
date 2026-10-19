@@ -378,6 +378,11 @@ const THREADS: V3Data["threads"] = [
         n: 3,
         from: "asked by CEO at 11:52",
         took: "12m so far",
+        prompt: {
+          by: "ceo",
+          at: "11:52",
+          text: "Good find. Patch the restore so it waits for the first paint, then prove it: 15 green runs in a row before you open the PR.",
+        },
         steps: [
           { kind: "read", target: "e2e/ac-544-workbench-reopen.spec.ts", meta: "212 lines" },
           { kind: "search", target: "waitForScroll", meta: "4 matches" },
@@ -393,15 +398,46 @@ const THREADS: V3Data["threads"] = [
         n: 2,
         from: "11:20",
         took: "9m",
-        summary: "Found the race: the scroll restore runs before the cache paints.",
+        prompt: { by: "ceo", at: "11:20", text: "Where's the race? Don't patch yet, just tell me." },
         facts: "Read 9 files, ran 4 commands and 18 other steps",
+        answer:
+          "Found it. On reopen, `restoreScroll()` runs as soon as the cache **hydrates**, but the cached file list paints one frame later. When the paint is slow the restore targets a list that is still empty, so it lands at `0`.\n\n```ts\n// workbench.tsx, today\nuseEffect(() => {\n  if (cache.ready) restoreScroll(saved)\n}, [cache.ready])\n```\n\nThe fix is to wait for the first painted frame (`requestAnimationFrame` twice) before restoring. It only touches `workbench.tsx` and the probe cache.",
+        attachments: [
+          {
+            kind: "diff",
+            path: "packages/ui/src/workbench/workbench.tsx",
+            add: 6,
+            del: 1,
+            lines: [
+              { kind: "ctx", text: "useEffect(() => {" },
+              { kind: "del", text: "  if (cache.ready) restoreScroll(saved)" },
+              { kind: "add", text: "  if (!cache.ready) return" },
+              { kind: "add", text: "  // The list paints a frame after the cache hydrates." },
+              { kind: "add", text: "  const id = requestAnimationFrame(() =>" },
+              { kind: "add", text: "    requestAnimationFrame(() => restoreScroll(saved)))" },
+              { kind: "add", text: "  return () => cancelAnimationFrame(id)" },
+              { kind: "ctx", text: "}, [cache.ready])" },
+            ],
+          },
+        ],
       },
       {
         n: 1,
         from: "11:02",
         took: "6m",
-        summary: "Reproduced it: 3 of 20 runs fail on AC-6.",
+        prompt: {
+          by: "ceo",
+          at: "11:02",
+          text: "LIL-81: ac-544 fails on main about one run in seven (AC-6, scroll position). Reproduce it first and tell me how often it fails.",
+        },
         facts: "Ran 5 commands, read 6 files and 11 other steps",
+        steps: [
+          { kind: "read", target: "e2e/ac-544-workbench-reopen.spec.ts", meta: "212 lines" },
+          { kind: "run", target: "playwright test ac-544 --repeat-each=20", meta: "3 of 20 failed · 3m", failed: true },
+          { kind: "read", target: "test-results/ac-544-AC-6/trace.zip", meta: "3 traces" },
+        ],
+        answer:
+          "Reproduced: **3 of 20** runs fail, all on AC-6 (*restores the scroll position*). In every failing trace the list is scrolled to `0` instead of `1,840`. Nothing else in the spec fails.",
       },
     ],
   },
@@ -439,6 +475,7 @@ const THREADS: V3Data["threads"] = [
         n: 1,
         from: "woke on Reviewer's result at 12:00",
         took: "4m so far",
+        prompt: { by: "reviewer", at: "12:00", text: "Copy B reads better and both variants work on device. Ready for sign-off." },
         steps: [
           { kind: "read", target: "HB-12 · Reviewer's report", meta: "2 screenshots" },
           { kind: "run", target: "gh pr view 66 --json files", meta: "3 files" },
@@ -476,6 +513,10 @@ const THREADS: V3Data["threads"] = [
         n: 2,
         from: "11:10",
         took: "12m",
+        prompt: { by: "ceo", at: "11:10", text: "Go with hooks 2, 5 and 11. Budget is your call, but ask Oscar before anything is spent." },
+        answer:
+          "Three ads are ready, one per hook. **$40** over 3 days buys about 4,000 impressions per hook, which is enough to see a winner.\n\nI've asked Oscar to approve the spend. Nothing goes live until he does.",
+        attachments: [{ kind: "sheet", name: "Ad variants · hooks 2, 5, 11", rows: 3 }],
         steps: [
           { kind: "read", target: "hooks/scored.csv", meta: "50 rows" },
           { kind: "edit", target: "ads/meta-test.json", add: 48, del: 0 },
@@ -484,7 +525,14 @@ const THREADS: V3Data["threads"] = [
           { kind: "delegate", target: "Asked Oscar: approve $40", meta: "waiting 41m" },
         ],
       },
-      { n: 1, from: "asked by CEO at 10:40", took: "30m", summary: "Picked hooks 2, 5 and 11 and wrote three ads.", facts: "Read 3 files, browsed 6 pages" },
+      {
+        n: 1,
+        from: "asked by CEO at 10:40",
+        took: "30m",
+        prompt: { by: "ceo", at: "10:40", text: "HB-11: run a small paid test of the best hooks from HB-9. Pick the three you trust most." },
+        answer: "Picked hooks **2, 5 and 11**: they scored highest with readers and each makes a different promise (speed, memory, calm).",
+        facts: "Read 3 files, browsed 6 pages",
+      },
     ],
   },
   {
@@ -521,9 +569,9 @@ const THREADS: V3Data["threads"] = [
           { kind: "web", target: "search: journaling creators 5k–50k", meta: "running", running: true },
         ],
       },
-      { n: 3, from: "11:05", took: "15m", summary: "Found 7 creators; results started repeating.", facts: "Browsed 22 pages, edited 1 file" },
-      { n: 2, from: "10:56", took: "9m", summary: "Listed 12 search terms.", facts: "4 searches" },
-      { n: 1, from: "asked by CEO at 10:52", took: "4m", summary: "Read the brief and HB-9's hooks.", facts: "Read 2 files" },
+      { n: 3, from: "11:05", took: "15m", prompt: { by: "ceo", at: "11:05", text: "Start with the terms most likely to find mid-size creators." }, answer: "Found **7** creators so far (in the sheet). Results are starting to repeat.", facts: "Browsed 22 pages, edited 1 file", attachments: [{ kind: "sheet", name: "creators.csv", rows: 7 }] },
+      { n: 2, from: "10:56", took: "9m", answer: "Listed 12 search terms, from “journaling creator” to “bullet journal ASMR”.", facts: "4 searches" },
+      { n: 1, from: "asked by CEO at 10:52", took: "4m", prompt: { by: "ceo", at: "10:52", text: "HB-14: find 20 journaling creators with 5k–50k followers. Cite every one." }, answer: "Read the brief and HB-9's hooks. Starting with search terms.", facts: "Read 2 files" },
     ],
   },
   {
@@ -547,6 +595,12 @@ const THREADS: V3Data["threads"] = [
         n: 2,
         from: "11:30",
         took: "8m",
+        prompt: { by: "ceo", at: "11:30", text: "Run both variants on an iPhone SE and a 15 Pro. Screenshot each paywall." },
+        answer: "Copy B reads better and both variants work on device. Ready for sign-off.\n\nOne note: on the **SE**, variant A's headline wraps to three lines and pushes the price below the fold. B fits on two.",
+        attachments: [
+          { kind: "image", label: "Variant A · iPhone SE" },
+          { kind: "image", label: "Variant B · iPhone SE" },
+        ],
         steps: [
           { kind: "run", target: "xcrun simctl launch booted app.heardback", meta: "exit 0" },
           { kind: "web", target: "screenshot · Variant A", meta: "saved" },
@@ -554,7 +608,7 @@ const THREADS: V3Data["threads"] = [
           { kind: "think", target: "Both render; B's headline wraps cleanly on the SE screen, A's does not." },
         ],
       },
-      { n: 1, from: "asked by CEO at 11:20", took: "10m", summary: "Built the branch for the simulator.", facts: "Ran 3 commands" },
+      { n: 1, from: "asked by CEO at 11:20", took: "10m", prompt: { by: "ceo", at: "11:20", text: "HB-12: check PR #66 on a real device before I sign off." }, answer: "Built `paywall-copy-ab` for the simulator; booting both devices.", facts: "Ran 3 commands" },
     ],
   },
   {
@@ -576,8 +630,21 @@ const THREADS: V3Data["threads"] = [
       { path: "src/paywall/copy.ts", add: 14, del: 0 },
     ],
     turns: [
-      { n: 6, from: "11:02", took: "12m", summary: "Tests green after one retry; opened PR #66.", facts: "Ran 5 commands" },
-      { n: 5, from: "10:40", took: "22m", summary: "Wired the variant flag to the paywall.", facts: "Edited 3 files" },
+      {
+        n: 6,
+        from: "11:02",
+        took: "12m",
+        prompt: { by: "ceo", at: "11:02", text: "Tests first, then open the PR." },
+        steps: [
+          { kind: "run", target: "bun test src/paywall", meta: "1 failed · 22s", failed: true },
+          { kind: "edit", target: "src/paywall/variants.test.ts", add: 4, del: 2 },
+          { kind: "run", target: "bun test src/paywall", meta: "14 passed · 20s" },
+          { kind: "run", target: "gh pr create --fill", meta: "#66" },
+        ],
+        answer: "Tests are green after one retry: a snapshot still had the old headline. PR **#66** is open with both variants behind the `paywall_copy` flag.",
+        attachments: [{ kind: "pr", num: 66, title: "Paywall copy A/B test", branch: "paywall-copy-ab", add: 214, del: 38 }],
+      },
+      { n: 5, from: "10:40", took: "22m", prompt: { by: "ceo", at: "10:40", text: "Put the two headlines behind a flag, 50/50." }, answer: "Wired the variant flag to the paywall; assignment is sticky per user.", facts: "Edited 3 files" },
     ],
   },
   {
@@ -625,6 +692,44 @@ const THREADS: V3Data["threads"] = [
     summary: "Edited 12 files, ran 8 commands",
     changes: [{ path: "docs/index.html", add: 310, del: 1240 }],
     turns: [{ n: 1, from: "asked by CEO at 09:15", took: "47m", summary: "PR #64 merged.", facts: "Edited 12 files" }],
+  },
+  {
+    id: "t-chat-relay",
+    projectId: "lilos",
+    agentId: "builder",
+    title: "How does the relay store messages?",
+    status: "done",
+    startedAt: "10:20",
+    minutes: 6,
+    context: 14,
+    model: "Opus 5.5 · High",
+    folder: "~/Code/LilOS",
+    summary: "Answered from schema.ts and the decisions page",
+    changes: [],
+    turns: [
+      {
+        n: 1,
+        from: "you at 10:20",
+        took: "2m",
+        prompt: { by: "you", at: "10:20", text: "How does the relay store messages? Does it keep the agent's tool calls too?" },
+        steps: [
+          { kind: "search", target: "messages", meta: "14 matches" },
+          { kind: "read", target: "apps/relay/src/db/schema.ts", meta: "286 lines" },
+          { kind: "read", target: "docs/index.html#d-25", meta: "decision D-#25" },
+        ],
+        answer:
+          "Only what you see. The relay keeps **visible messages** and LilOS's own records (company, projects, tickets) in SQLite:\n\n```ts\nexport const messages = sqliteTable(\"messages\", {\n  id: text(\"id\").primaryKey(),\n  channelId: text(\"channel_id\").notNull(),\n  author: text(\"author\").notNull(),\n  body: text(\"body\").notNull(),\n  createdAt: integer(\"created_at\").notNull(),\n})\n```\n\nTool calls, reasoning and the full transcript stay in the **engine** (Hermes). That is decision D-#25: one copy of the transcript, so the two can't drift, and no reasoning sits at rest in LilOS.",
+      },
+      {
+        n: 2,
+        from: "you at 10:24",
+        took: "1m",
+        prompt: { by: "you", at: "10:24", text: "So if I delete a thread, the engine still has the transcript?" },
+        steps: [{ kind: "read", target: "apps/relay/src/session/directory.ts", meta: "118 lines" }],
+        answer:
+          "Yes. Removing a thread or an agent drops only the LilOS record. The engine profile and its sessions stay (D-#29), so nothing an agent learned is lost by accident.\n\nWant me to make this a ticket to add a real *Delete transcript* button?",
+      },
+    ],
   },
 ]
 

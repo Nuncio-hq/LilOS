@@ -94,7 +94,7 @@ export function V3Sidebar({
       <Item
         icon={<LayersIcon />}
         label="Threads"
-        on={on("threads") || on("thread")}
+        on={on("threads") || on("thread") || on("chat")}
         onClick={() => go({ page: "threads" })}
         right={<Count n={live} />}
       />

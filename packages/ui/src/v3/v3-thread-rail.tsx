@@ -1,8 +1,8 @@
 import { CheckIcon, WorkflowIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "../lib/utils";
-import { Avatar, Diff, Meter, span } from "./v3-bits";
-import type { V3Agent, V3PageProps, V3Thread } from "./v3-types";
+import { Avatar, Diff, Meter, ProjectMark, span } from "./v3-bits";
+import type { V3Agent, V3PageProps, V3Project, V3Thread } from "./v3-types";
 
 /* The thread's right rail: where it runs, the plan, what it changed. */
 
@@ -55,12 +55,16 @@ function PlanDot({ state }: { state: "done" | "current" | "todo" }) {
 export function ThreadRail({
   t,
   agent,
+  project,
   go,
 }: {
   t: V3Thread;
   agent: V3Agent;
+  /** A chat's project; a ticket thread shows its ticket instead. */
+  project?: V3Project;
   go: V3PageProps["go"];
 }) {
+  const ticketId = t.ticketId;
   const plan = t.plan ?? [];
   const changes = t.changes ?? [];
   const helpers = t.helpers ?? [];
@@ -78,15 +82,30 @@ export function ThreadRail({
           {agent.name}
         </button>
       </Kv>
-      <Kv k="Ticket">
-        <button
-          type="button"
-          onClick={() => go({ page: "ticket", id: t.ticketId })}
-          className={link}
-        >
-          {t.ticketId}
-        </button>
-      </Kv>
+      {ticketId ? (
+        <Kv k="Ticket">
+          <button
+            type="button"
+            onClick={() => go({ page: "ticket", id: ticketId })}
+            className={link}
+          >
+            {ticketId}
+          </button>
+        </Kv>
+      ) : (
+        project && (
+          <Kv k="Project">
+            <button
+              type="button"
+              onClick={() => go({ page: "project", id: project.id })}
+              className="flex items-center gap-1.5 hover:underline"
+            >
+              <ProjectMark name={project.name} tone={project.tone} />
+              {project.name}
+            </button>
+          </Kv>
+        )
+      )}
       <Kv k="Model">{t.model}</Kv>
       <Kv k="Folder">
         <span className="truncate font-mono text-[12px]">{t.folder}</span>
