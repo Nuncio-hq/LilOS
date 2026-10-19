@@ -304,6 +304,22 @@ export type V3Route =
   /** A new chat with an agent; `agentId` preselects who. */
   | { page: "chat"; agentId?: string };
 
+/** A record: something you open (a ticket, a thread, a person, a goal, a
+   project). Records open beside the page you are on, never instead of it. */
+export type V3RecordRoute = Extract<V3Route, { id: string }>;
+
+/** A page: somewhere you live (the sidebar's entries). */
+export type V3PageRoute = Exclude<V3Route, V3RecordRoute>;
+
+/** Where you are: one page, plus the records you opened from it, in order.
+   The last record shows in the side peek; the rest are its trail. `full`
+   widens the peek over the page without leaving it. */
+export type V3Nav = {
+  page: V3PageRoute;
+  peek: V3RecordRoute[];
+  full?: boolean;
+};
+
 /** Everything a page can change; the shell owns the state. */
 export type V3Actions = {
   approve: (askId: string, alwaysAllow?: boolean) => void;

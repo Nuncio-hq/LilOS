@@ -77,7 +77,9 @@ function Live(p: V3PageProps) {
 
   return (
     <>
-      <div className="mt-5 grid grid-cols-3 gap-3 max-[760px]:grid-cols-1">
+      {/* Cards reflow to the pane's width: three across alone, fewer when
+          a record is open beside the list. */}
+      <div className="mt-5 grid grid-cols-1 gap-3 @min-[560px]:grid-cols-2 @min-[860px]:grid-cols-3">
         {board.map((t) => (
           <ThreadCard key={t.id} t={t} {...p} />
         ))}
@@ -98,6 +100,7 @@ function Live(p: V3PageProps) {
           return (
             <RowButton
               key={t.id}
+              opens={{ page: "thread", id: t.id }}
               onClick={() => go({ page: "thread", id: t.id })}
               className="grid grid-cols-[minmax(0,1fr)_130px_minmax(0,170px)_70px] items-center gap-4 border-[var(--v3-line)] border-b py-2.5 text-[13.5px]"
             >
@@ -146,6 +149,7 @@ function All({ data, go }: V3PageProps) {
         return (
           <RowButton
             key={t.id}
+            opens={{ page: "thread", id: t.id }}
             onClick={() => go({ page: "thread", id: t.id })}
             className={cn(
               "grid items-center gap-4 border-[var(--v3-line)] border-b py-2.5",
@@ -206,6 +210,7 @@ function ByAgent({ data, go }: V3PageProps) {
               {mine.map((t) => (
                 <RowButton
                   key={t.id}
+                  opens={{ page: "thread", id: t.id }}
                   onClick={() => go({ page: "thread", id: t.id })}
                   className="flex items-center gap-4 border-[var(--v3-line)] border-b py-2 text-[13.5px]"
                 >

@@ -16,8 +16,11 @@ import type { V3Agent, V3Data, V3PageProps } from "./v3-types";
 /* People: the same six agents as a table (numbers) or as a tree (who reports
    to whom). Both open the agent's own page. */
 
+/* Beside an open record the table keeps who, status and what they're on;
+   model, week and spend come back when the pane is wide enough. */
 const GRID =
-  "grid grid-cols-[170px_104px_minmax(0,1fr)_132px_112px_150px] items-center gap-x-3";
+  "grid grid-cols-[150px_104px_minmax(0,1fr)] @min-[760px]:grid-cols-[170px_104px_minmax(0,1fr)_132px_112px_150px] items-center gap-x-3";
+const WIDE = "hidden @min-[760px]:block";
 
 /** What an agent is on right now, as a title plus the ticket it belongs to. */
 function nowOf(d: V3Data, a: V3Agent) {
@@ -44,15 +47,16 @@ function Table({ data, go }: Pick<V3PageProps, "data" | "go">) {
         <span>Agent</span>
         <span>Status</span>
         <span>Working on</span>
-        <span>Model</span>
-        <span>This week</span>
-        <span>Spend</span>
+        <span className={WIDE}>Model</span>
+        <span className={WIDE}>This week</span>
+        <span className={WIDE}>Spend</span>
       </div>
       {data.agents.map((a) => {
         const now = nowOf(data, a);
         return (
           <RowButton
             key={a.id}
+            opens={{ page: "agent", id: a.id }}
             onClick={() => go({ page: "agent", id: a.id })}
             className={cn(
               GRID,
@@ -87,10 +91,12 @@ function Table({ data, go }: Pick<V3PageProps, "data" | "go">) {
                 </span>
               )}
             </span>
-            <span className="truncate text-[13px] text-muted-foreground">
+            <span
+              className={cn(WIDE, "truncate text-[13px] text-muted-foreground")}
+            >
               {a.model}
             </span>
-            <span className="text-[13px] text-muted-foreground">
+            <span className={cn(WIDE, "text-[13px] text-muted-foreground")}>
               {a.week.done} done
               {a.week.stuck > 0 && (
                 <>
@@ -101,7 +107,7 @@ function Table({ data, go }: Pick<V3PageProps, "data" | "go">) {
                 </>
               )}
             </span>
-            <span className="flex items-center gap-2">
+            <span className="hidden items-center gap-2 @min-[760px]:flex">
               <Meter
                 value={(a.spend.used / a.spend.cap) * 100}
                 className="w-12"

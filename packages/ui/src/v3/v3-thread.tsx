@@ -66,7 +66,7 @@ function ThreadBody({ data, go, act, t }: V3PageProps & { t: V3Thread }) {
     ) +
     (ask ? 1 : 0) +
     (t.stuck ? 1 : 0);
-  const follow = useFollowBottom(grown);
+  const [anchor, follow] = useFollowBottom(grown);
 
   const { markSeen } = act;
   useEffect(() => {
@@ -128,7 +128,10 @@ function ThreadBody({ data, go, act, t }: V3PageProps & { t: V3Thread }) {
     !newest?.steps?.some((s) => s.running);
 
   return (
-    <div className="mx-auto flex min-h-full w-full max-w-[1064px] justify-center gap-12 px-8">
+    <div
+      ref={anchor}
+      className="mx-auto flex min-h-full w-full max-w-[1064px] justify-center gap-12 px-8"
+    >
       <div className="flex min-w-0 max-w-[720px] flex-1 flex-col">
         <header className="pt-8">
           <Title small kicker={kicker}>
@@ -214,9 +217,10 @@ function ThreadBody({ data, go, act, t }: V3PageProps & { t: V3Thread }) {
         </div>
       </div>
 
-      {/* The sidebar takes 236px, so from here the column keeps about 620px
-          next to the rail; below it the rail is left out. */}
-      <div className="hidden w-[232px] shrink-0 min-[1200px]:block">
+      {/* The rail needs about 980px of its pane (a column of ~620px beside
+          it); a side peek is narrower, so there it is left out unless the
+          peek is widened. */}
+      <div className="hidden w-[232px] shrink-0 @min-[980px]:block">
         <div className="no-scrollbar sticky top-0 max-h-[calc(100dvh-46px)] overflow-y-auto pt-8">
           <ThreadRail t={t} agent={agent} project={project} go={go} />
         </div>

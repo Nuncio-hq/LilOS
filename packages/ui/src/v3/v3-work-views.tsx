@@ -9,6 +9,7 @@ import {
   StatusDot,
   StatusPill,
   TicketId,
+  useOpenRecord,
 } from "./v3-bits";
 import { agentOf, projectOf } from "./v3-model";
 import type { V3Data, V3Route, V3Status, V3Ticket } from "./v3-types";
@@ -66,8 +67,11 @@ const Triangle = ({ open }: { open: boolean }) => (
 
 /* ───────────── Waiting on ───────────── */
 
+/* Beside an open record the table keeps the ticket, its status and how long;
+   owner and project come back when the pane is wide enough. */
 const COLS =
-  "grid grid-cols-[minmax(0,1fr)_132px_112px_118px_56px] items-center gap-x-3";
+  "grid grid-cols-[minmax(0,1fr)_118px_56px] @min-[680px]:grid-cols-[minmax(0,1fr)_132px_112px_118px_56px] items-center gap-x-3";
+const WIDE = "hidden @min-[680px]:block";
 
 type Group = {
   key: string;
@@ -179,8 +183,8 @@ export function WaitingView({ data, go, tickets }: WorkViewProps) {
         )}
       >
         <span>Ticket</span>
-        <span>Owner</span>
-        <span>Project</span>
+        <span className={WIDE}>Owner</span>
+        <span className={WIDE}>Project</span>
         <span>Status</span>
         <span className="text-right">Since</span>
       </div>
@@ -205,6 +209,7 @@ export function WaitingView({ data, go, tickets }: WorkViewProps) {
                 return (
                   <RowButton
                     key={t.id}
+                    opens={{ page: "ticket", id: t.id }}
                     onClick={() => go({ page: "ticket", id: t.id })}
                     className={cn(
                       COLS,
@@ -221,8 +226,12 @@ export function WaitingView({ data, go, tickets }: WorkViewProps) {
                         </span>
                       )}
                     </span>
-                    <Who data={data} id={t.owner} />
-                    <span className="truncate text-muted-foreground">
+                    <span className={WIDE}>
+                      <Who data={data} id={t.owner} />
+                    </span>
+                    <span
+                      className={cn(WIDE, "truncate text-muted-foreground")}
+                    >
                       {projectOf(data, t.projectId)?.name}
                     </span>
                     <StatusPill
@@ -270,6 +279,7 @@ const COLUMNS: {
 ];
 
 export function BoardView({ data, go, tickets }: WorkViewProps) {
+  const isOpen = useOpenRecord();
   return (
     <div className="mt-6 flex gap-3 overflow-x-auto pb-2">
       {COLUMNS.map((c) => {
@@ -291,7 +301,11 @@ export function BoardView({ data, go, tickets }: WorkViewProps) {
                     type="button"
                     key={t.id}
                     onClick={() => go({ page: "ticket", id: t.id })}
-                    className="flex flex-col gap-2 rounded-lg border border-[var(--v3-line)] p-2.5 text-left transition-colors hover:bg-[var(--v3-hover)]"
+                    className={cn(
+                      "flex flex-col gap-2 rounded-lg border border-[var(--v3-line)] p-2.5 text-left transition-colors hover:bg-[var(--v3-hover)]",
+                      isOpen("ticket", t.id) &&
+                        "border-foreground/45 bg-[var(--v3-hover)]",
+                    )}
                   >
                     <span className="text-[12px] text-muted-foreground/70">
                       {t.id}
@@ -344,7 +358,7 @@ const OPEN_ORDER: V3Status[] = [
   "planned",
 ];
 const PCOLS =
-  "grid grid-cols-[minmax(0,1fr)_132px_118px_56px] items-center gap-x-3";
+  "grid grid-cols-[minmax(0,1fr)_118px_56px] @min-[680px]:grid-cols-[minmax(0,1fr)_132px_118px_56px] items-center gap-x-3";
 
 export function ProjectView({ data, go, tickets }: WorkViewProps) {
   const [showDone, setShowDone] = useState<Record<string, boolean>>({});
@@ -367,6 +381,7 @@ export function ProjectView({ data, go, tickets }: WorkViewProps) {
         const row = (t: V3Ticket) => (
           <RowButton
             key={t.id}
+            opens={{ page: "ticket", id: t.id }}
             onClick={() => go({ page: "ticket", id: t.id })}
             className={cn(
               PCOLS,
@@ -389,7 +404,9 @@ export function ProjectView({ data, go, tickets }: WorkViewProps) {
                 </span>
               )}
             </span>
-            <Who data={data} id={t.owner} />
+            <span className={WIDE}>
+              <Who data={data} id={t.owner} />
+            </span>
             <StatusPill status={t.status} className="justify-self-start" />
             <Since t={t} />
           </RowButton>

@@ -1,7 +1,15 @@
 import { AlertCircleIcon, GlobeIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "../lib/utils";
-import { Avatar, Btn, Meter, Spinner, TicketId, useTick } from "./v3-bits";
+import {
+  Avatar,
+  Btn,
+  Meter,
+  Spinner,
+  TicketId,
+  useOpenRecord,
+  useTick,
+} from "./v3-bits";
 import { elapsedAt, streamTail, ThreadPill } from "./v3-live";
 import { agentOf } from "./v3-model";
 import type { V3Agent, V3PageProps, V3Thread } from "./v3-types";
@@ -36,9 +44,12 @@ function Actions({
 
 function Frame({
   onOpen,
+  selected,
   children,
 }: {
   onOpen: () => void;
+  /** Its thread is open in the side peek. */
+  selected?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -46,11 +57,15 @@ function Frame({
     <div
       role="button"
       tabIndex={0}
+      aria-current={selected || undefined}
       onClick={onOpen}
       onKeyDown={(e) => {
         if (e.key === "Enter" && e.target === e.currentTarget) onOpen();
       }}
-      className={shell}
+      className={cn(
+        shell,
+        selected && "border-foreground/45 bg-[var(--v3-hover)]",
+      )}
     >
       {children}
     </div>
@@ -149,6 +164,7 @@ export function ThreadCard({
   act,
 }: V3PageProps & { t: V3Thread }) {
   const agent = agentOf(data, t.agentId);
+  const isOpen = useOpenRecord();
   const open = () => {
     if (t.unseen) act.markSeen(t.id);
     go({ page: "thread", id: t.id });
@@ -158,7 +174,7 @@ export function ThreadCard({
   const handTo = agentOf(data, "marketer");
 
   return (
-    <Frame onOpen={open}>
+    <Frame onOpen={open} selected={isOpen("thread", t.id)}>
       <Head agent={agent} pill={<ThreadPill status={t.status} />} />
       <div className="font-semibold text-[14.5px] leading-[1.35]">
         {t.unseen && (

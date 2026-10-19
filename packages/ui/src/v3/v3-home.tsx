@@ -36,8 +36,11 @@ const COUNT_ORDER: { status: V3Status; word: string }[] = [
   { status: "idle", word: "idle" },
 ];
 
+/* Beside an open record the team table keeps who, status and what they're
+   on; since and waiting-on come back when the pane is wide enough. */
 const TEAM_GRID =
-  "grid grid-cols-[150px_128px_minmax(0,1fr)_64px_96px] items-center gap-x-3";
+  "grid grid-cols-[120px_110px_minmax(0,1fr)] @min-[660px]:grid-cols-[150px_128px_minmax(0,1fr)_64px_96px] items-center gap-x-3";
+const WIDE = "hidden @min-[660px]:block";
 
 /** One team row: what the agent is on, since when, and who it waits on. */
 function teamRow(d: V3Data, agentId: string) {
@@ -193,14 +196,15 @@ export function V3Home({ data, go, act }: V3PageProps) {
           <span>Agent</span>
           <span>Status</span>
           <span>Working on</span>
-          <span className="text-right">Since</span>
-          <span className="text-right">Waiting on</span>
+          <span className={cn(WIDE, "text-right")}>Since</span>
+          <span className={cn(WIDE, "text-right")}>Waiting on</span>
         </div>
         {data.agents.map((a) => {
           const r = teamRow(data, a.id);
           return (
             <RowButton
               key={a.id}
+              opens={{ page: "agent", id: a.id }}
               onClick={() => go({ page: "agent", id: a.id })}
               className={cn(
                 TEAM_GRID,
@@ -230,6 +234,7 @@ export function V3Home({ data, go, act }: V3PageProps) {
               </span>
               <span
                 className={cn(
+                  WIDE,
                   "text-right",
                   r.late
                     ? "font-semibold text-red-600 dark:text-red-300"
@@ -240,6 +245,7 @@ export function V3Home({ data, go, act }: V3PageProps) {
               </span>
               <span
                 className={cn(
+                  WIDE,
                   "text-right",
                   r.waiting === "—"
                     ? "text-muted-foreground/70"

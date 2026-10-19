@@ -7,9 +7,15 @@ import {
   SearchIcon,
   TerminalIcon,
 } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useContext,
+  useEffect,
+  useState,
+} from "react";
 import { cn } from "../lib/utils";
-import type { V3Status, V3StepKind, V3Tone } from "./v3-types";
+import type { V3RecordRoute, V3Status, V3StepKind, V3Tone } from "./v3-types";
 
 /* Shared marks for v3. One rule: colour belongs to status; avatars and
    project marks are soft pastels, everything else is ink on paper. */
@@ -348,14 +354,15 @@ export function Tabs<T extends string>({
   right?: ReactNode;
 }) {
   return (
-    <div className="mt-6 flex items-center gap-0.5 border-[var(--v3-line)] border-b text-[14px] text-muted-foreground">
+    // Tabs never wrap; a pane too narrow for them scrolls the row instead.
+    <div className="no-scrollbar mt-6 flex items-center gap-0.5 overflow-x-auto border-[var(--v3-line)] border-b text-[14px] text-muted-foreground">
       {tabs.map((t) => (
         <button
           type="button"
           key={t.id}
           onClick={() => onChange(t.id)}
           className={cn(
-            "relative flex items-center gap-1.5 px-2.5 pt-1.5 pb-2.5 hover:text-foreground [&_svg]:size-4",
+            "relative flex shrink-0 items-center gap-1.5 whitespace-nowrap px-2.5 pt-1.5 pb-2.5 hover:text-foreground [&_svg]:size-4",
             value === t.id &&
               "font-medium text-foreground after:absolute after:right-2.5 after:-bottom-px after:left-2.5 after:h-0.5 after:rounded-full after:bg-foreground",
           )}
@@ -365,7 +372,7 @@ export function Tabs<T extends string>({
         </button>
       ))}
       {right && (
-        <div className="ml-auto flex items-center gap-4 pb-1.5 text-[13.5px] text-muted-foreground/70">
+        <div className="ml-auto flex shrink-0 items-center gap-4 whitespace-nowrap pb-1.5 pl-4 text-[13.5px] text-muted-foreground/70">
           {right}
         </div>
       )}
@@ -512,21 +519,42 @@ export function useTick(ms = 1500) {
   return n;
 }
 
-/** A row that opens something: hover tint, no box. */
+/** The record open in the side peek. Lists mark its row, so the list you
+   came from always shows which item you are looking at. */
+export const OpenRecord = createContext<V3RecordRoute | undefined>(undefined);
+
+/** Whether `page:id` is the record open in the side peek. */
+export function useOpenRecord() {
+  const open = useContext(OpenRecord);
+  return (page: V3RecordRoute["page"], id: string) =>
+    open?.page === page && open.id === id;
+}
+
+/** The mark for an open row: a quiet tint and an ink bar on its left edge. */
+export const OPEN_ROW =
+  "bg-[var(--v3-hover)] shadow-[inset_2px_0_0_var(--foreground)]";
+
+/** A row that opens something: hover tint, no box. Given the record it
+   opens, it marks itself while that record is in the side peek. */
 export function RowButton({
   onClick,
   children,
   className,
+  opens,
 }: {
   onClick: () => void;
   children: ReactNode;
   className?: string;
+  opens?: V3RecordRoute;
 }) {
+  const open = useContext(OpenRecord);
+  const selected = !!opens && open?.page === opens.page && open.id === opens.id;
   return (
     // A row holds buttons of its own, so it cannot be a <button>.
     <div
       role="button"
       tabIndex={0}
+      aria-current={selected || undefined}
       onClick={onClick}
       onKeyDown={(e) => {
         if (e.key === "Enter" && e.target === e.currentTarget) onClick();
@@ -534,6 +562,7 @@ export function RowButton({
       className={cn(
         "-mx-2 cursor-pointer rounded-md px-2 outline-none transition-colors hover:bg-[var(--v3-hover)] focus-visible:bg-[var(--v3-hover)]",
         className,
+        selected && OPEN_ROW,
       )}
     >
       {children}

@@ -434,6 +434,8 @@ export function makeActions(
         turns: [],
       };
       setData((d) => ({ ...d, threads: [chat, ...d.threads] }));
+      // Land on Threads with the new chat open beside it, not on the form.
+      go({ page: "threads" });
       go({ page: "thread", id: chat.id });
       runTurn(setData, getData, reply, chat, text);
     },
@@ -474,6 +476,7 @@ export function makeActions(
         ],
       }));
       toast(`${name} hired`);
+      go({ page: "people" });
       go({ page: "agent", id });
     },
     ask: (text) => setPalette(text ?? ""),

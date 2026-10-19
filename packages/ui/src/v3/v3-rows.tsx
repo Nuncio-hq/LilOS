@@ -29,6 +29,7 @@ export function TicketRow({
   const who = agentOf(data, ticket.owner);
   return (
     <RowButton
+      opens={{ page: "ticket", id: ticket.id }}
       onClick={() => go({ page: "ticket", id: ticket.id })}
       className="flex min-h-[40px] items-center gap-3 border-[var(--v3-line)] border-b py-1.5 text-[14px]"
     >
@@ -80,6 +81,7 @@ export function ThreadRow({
   const ticket = thread.ticketId ? ticketOf(data, thread.ticketId) : undefined;
   return (
     <RowButton
+      opens={{ page: "thread", id: thread.id }}
       onClick={() => go({ page: "thread", id: thread.id })}
       className="flex min-h-[40px] items-center gap-3 border-[var(--v3-line)] border-b py-1.5 text-[14px]"
     >

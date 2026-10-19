@@ -15,21 +15,25 @@ import type { ReactNode } from "react";
 import { cn } from "../lib/utils";
 import { Avatar, Kbd, ProjectMark, StatusDot } from "./v3-bits";
 import { agentStatus } from "./v3-model";
-import type { V3Data, V3Route } from "./v3-types";
+import type { V3Data, V3PageRoute, V3RecordRoute, V3Route } from "./v3-types";
 
 /* The v3 sidebar is the company's table of contents: the three databases
    (Work, Threads, Goals), the projects, and the people, each person with the
    one status dot that says whether they need anything. */
 export function V3Sidebar({
   data,
-  route,
+  page,
+  open: opened,
   go,
   onSearch,
   dark,
   onTheme,
 }: {
   data: V3Data;
-  route: V3Route;
+  /** The page you are on: its entry stays lit while records open beside it. */
+  page: V3PageRoute;
+  /** The record in the side peek, if any: a project or person gets a mark. */
+  open?: V3RecordRoute;
   go: (r: V3Route) => void;
   onSearch: () => void;
   dark: boolean;
@@ -39,9 +43,8 @@ export function V3Sidebar({
   const live = data.threads.filter(
     (t) => t.status !== "done" && t.status !== "idle",
   ).length;
-  const on = (page: V3Route["page"], id?: string) =>
-    route.page === page &&
-    (id === undefined || ("id" in route && route.id === id));
+  const on = (p: V3Route["page"], id?: string) =>
+    id === undefined ? page.page === p : opened?.page === p && opened.id === id;
 
   return (
     <aside className="flex w-[236px] shrink-0 flex-col overflow-y-auto border-[var(--v3-line)] border-r bg-[var(--v3-side)] px-2 py-3 text-[14px] text-muted-foreground">
@@ -87,21 +90,21 @@ export function V3Sidebar({
       <Item
         icon={<SquareCheckIcon />}
         label="Work"
-        on={on("work") || on("ticket")}
+        on={on("work")}
         onClick={() => go({ page: "work" })}
         right={<Count n={open} />}
       />
       <Item
         icon={<LayersIcon />}
         label="Threads"
-        on={on("threads") || on("thread") || on("chat")}
+        on={on("threads") || on("chat")}
         onClick={() => go({ page: "threads" })}
         right={<Count n={live} />}
       />
       <Item
         icon={<TargetIcon />}
         label="Goals"
-        on={on("goals") || on("goal")}
+        on={on("goals")}
         onClick={() => go({ page: "goals" })}
         right={<Count n={data.goals.length} />}
       />
