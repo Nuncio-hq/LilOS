@@ -217,7 +217,11 @@ async function openPlain(page: Page, text: string, folder?: string) {
   if (folder) await startChatInFolder(page, stack, DEFAULT_AGENT, folder, text);
   else await startChat(page, stack.webUrl, DEFAULT_AGENT, text);
   await panelIntoFocus(page);
-  await expect(page.getByText(/Short answer/)).toBeVisible({
+  // The transcript, not the page: the Threads list behind the peek previews
+  // the same reply on a wide window.
+  await expect(
+    page.locator("[data-thread]").getByText(/Short answer/),
+  ).toBeVisible({
     timeout: 60_000,
   });
 }

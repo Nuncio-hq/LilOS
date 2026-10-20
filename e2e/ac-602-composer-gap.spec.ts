@@ -337,9 +337,13 @@ test.describe("AC-1/3 real app (engine-fake stack)", () => {
     await expect(page.locator(PORT).locator("[data-msg]").first()).toBeVisible({
       timeout: 30_000,
     });
+    /* The premise, not a speed claim (ac-431 measures speed): the grown
+       turns render progressively, so a loaded runner takes longer than the
+       default 5 s to reach full height. */
     await expect
       .poll(() => isScrollable(page), {
         message: "the grown thread must overflow the scroller",
+        timeout: 30_000,
       })
       .toBe(true);
   }
