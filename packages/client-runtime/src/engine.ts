@@ -38,9 +38,10 @@ export interface EngineClientOptions {
   /** ws:// or wss:// endpoint speaking the engine protocol (harness, engine-fake, …). */
   url: string;
   /**
-   * Feed credential (#564): appended to `url` as `?token=` on every
-   * (re)connect — the harness feed refuses the upgrade without it. Omit for
-   * unauthenticated endpoints (a raw engine-fake socket in tests).
+   * Loopback upgrade credential (D-#564, #752): appended to `url` as
+   * `?token=` on every (re)connect; both the harness feed and the engine
+   * adapters refuse the upgrade without it. Omit only with an in-memory
+   * `socketFactory` in unit tests.
    */
   token?: string;
   socketFactory?: SocketFactory;

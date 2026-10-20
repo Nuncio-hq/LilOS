@@ -3,10 +3,10 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { EngineLauncher } from "./engine/launcher";
 import {
-  commandLauncher,
   externalEngineLauncher,
   fakeEngineLauncher,
   hermesEngineLauncher,
+  startWithProtocolToken,
 } from "./engine/launcher";
 import type { Logger } from "./log";
 
@@ -176,14 +176,23 @@ export function launcherFor(
         env: engineEnv,
         log,
       });
-    case "command":
-      return commandLauncher({
-        name: config.engine.command[0] ?? "engine",
-        command: config.engine.command,
-        readyPattern: config.engine.readyPattern ?? /LISTENING (ws:\/\/\S+)/,
-        ...(config.engine.url ? { url: config.engine.url } : {}),
-        log,
-      });
+    case "command": {
+      // A command-launched adapter checks the same per-launch token as the
+      // built-in ones (D-#564): without it every /ws upgrade is refused.
+      const engine = config.engine;
+      const name = engine.command[0] ?? "engine";
+      return {
+        name,
+        start: () =>
+          startWithProtocolToken({
+            name,
+            command: engine.command,
+            readyPattern: engine.readyPattern ?? /LISTENING (ws:\/\/\S+)/,
+            ...(engine.url ? { url: engine.url } : {}),
+            log,
+          }),
+      };
+    }
     case "url":
       return externalEngineLauncher(config.engine.url);
   }

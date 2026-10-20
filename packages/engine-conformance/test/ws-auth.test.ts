@@ -154,7 +154,10 @@ describe.runIf(bunAvailable && wsAvailable)(
       const adapter = await startAdapter();
       try {
         const host = nonLoopbackIPv4();
-        expect(await tcpProbe(host, adapter.port)).toBe("ECONNREFUSED");
+        // Refused or silently dropped both mean unreachable: a firewall or a
+        // VPN interface drops instead of refusing. The bind itself is proven
+        // by the /proc check below (Linux, i.e. CI).
+        expect(await tcpProbe(host, adapter.port)).not.toBe("connected");
         expect(await tcpProbe("127.0.0.1", adapter.port)).toBe("connected");
         if (process.platform === "linux") {
           const bound = listeningHex(adapter.port);

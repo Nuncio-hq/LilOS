@@ -300,7 +300,7 @@ export function fakeServeCommand(options: {
 /** D-#564 (#752): mint the adapter's protocol credential, grant it on the
  *  spawn, and attach it to the url the supervisor connects with. The child
  *  prints LISTENING without the secret. */
-function startWithProtocolToken(
+export function startWithProtocolToken(
   options: CommandLauncherOptions,
 ): Promise<LaunchedEngine> {
   const token = randomBytes(16).toString("hex");
