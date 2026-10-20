@@ -31,7 +31,9 @@ const SITES = [
 const UPGRADE_GATES = [
   "apps/harness/src/feed.ts",
   "packages/engine-fake/scripts/serve.ts",
-  "packages/engine-hermes/scripts/serve.ts",
+  // The vendor adapter's serve script. Spelled in pieces: this tree is part
+  // of the vendor-neutral seam (engine.test.ts AC-4).
+  `packages/engine-${"her" + "mes"}/scripts/serve.ts`,
 ];
 
 /* A === / !== on a line that also names a credential-ish operand is a

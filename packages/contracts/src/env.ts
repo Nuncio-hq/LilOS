@@ -39,7 +39,7 @@ export const LILOS_ENV_ALLOW_LIST: readonly string[] = [
  * `LILOS_ENV_ALLOW_LIST`: that list is what agent-influenced code may see,
  * and this secret is what drives the protocol socket. The adapter reads it
  * once (`takeEngineProtocolToken`) and drops it before it spawns
- * `hermes serve`, ACP, or MCP, so those children never inherit it.
+ * the vendor engine, ACP, or MCP, so those children never inherit it.
  */
 export const ENGINE_PROTOCOL_TOKEN_ENV = "LILOS_ENGINE_PROTOCOL_TOKEN";
 

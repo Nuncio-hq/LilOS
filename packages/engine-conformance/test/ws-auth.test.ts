@@ -10,8 +10,8 @@ import { describe, expect, test } from "vitest";
 import { connectWs } from "../src/ws.js";
 
 /**
- * #752: engine-fake's protocol socket (the same Bun.serve shape as
- * engine-hermes) binds 127.0.0.1 only and refuses a `/ws` upgrade that
+ * #752: engine-fake's protocol socket (the same Bun.serve shape as the
+ * other adapter) binds 127.0.0.1 only and refuses a `/ws` upgrade that
  * does not present the per-launch token. A connect on a non-loopback
  * address is refused, and `/proc/net/tcp` shows the listener is not on
  * every interface.

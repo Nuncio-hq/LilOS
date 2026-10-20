@@ -329,7 +329,8 @@ export function fakeEngineLauncher(options: {
     name: "engine-fake",
     // Build argv inside start(): a bundle without the fake binary fails as a
     // supervised crash with a plain reason, not an opaque harness boot error.
-    start: () =>
+    // `async` so that throw rejects the start promise (AC-4).
+    start: async () =>
       startWithProtocolToken({
         name: "engine-fake",
         command: fakeServeCommand(options),
