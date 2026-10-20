@@ -173,6 +173,41 @@ describe("AC-1 rewind restores files; user git state untouched", () => {
   });
 });
 
+describe("generated trees that are never source (#742)", () => {
+  it("a Pods tree is neither snapshotted nor removed on restore", async () => {
+    /* ios/android/out hold real source in many apps, so they stay in the
+       snapshot. Only the generated Pods tree under ios/ is excluded. */
+    write("ios/AppDelegate.swift", "v1\n");
+    write("android/Main.kt", "v1\n");
+    write("out/page.html", "v1\n");
+    write("ios/Pods/React/React.podspec", "pod-v1\n");
+
+    const store = createCheckpointStore(root);
+    const cp = await store.snapshot(cwd);
+
+    // A Pods-only edit must not mint a checkpoint — the tree was never hashed.
+    write("ios/Pods/React/React.podspec", "pod-v2\n");
+    expect(await store.snapshot(cwd)).toBe(cp);
+
+    write("ios/AppDelegate.swift", "v2\n");
+    write("android/Main.kt", "v2\n");
+    write("out/page.html", "v2\n");
+    write("ios/Pods/NewPod/extra.txt", "created after the checkpoint\n");
+
+    const res = await store.restore(cwd, cp);
+    expect(read("ios/AppDelegate.swift")).toBe("v1\n");
+    expect(read("android/Main.kt")).toBe("v1\n");
+    expect(read("out/page.html")).toBe("v1\n");
+    expect(read("ios/Pods/React/React.podspec")).toBe("pod-v2\n");
+    expect(read("ios/Pods/NewPod/extra.txt")).toBe(
+      "created after the checkpoint\n",
+    );
+    expect(res.removed.filter((p) => p.split("/").includes("Pods"))).toEqual(
+      [],
+    );
+  });
+});
+
 describe("AC-6 snapshot cost and pruning", () => {
   it("incremental snapshot stays under 1s on a 50k-file tree", async () => {
     // 50k files across 200 dirs — hardlinks to one seed keep setup cheap.
