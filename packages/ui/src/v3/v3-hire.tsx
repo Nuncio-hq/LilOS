@@ -59,7 +59,7 @@ const ROLES: { role: string; icon: ReactNode; does: string; model: string }[] =
 
 const FIELD = "text-[13px] text-muted-foreground";
 
-export function V3Hire({ data, act }: V3PageProps) {
+export function V3Hire({ data, go, act }: V3PageProps) {
   const [picked, setPicked] = useState<number | null>(null);
   const [name, setName] = useState("");
   const [model, setModel] = useState(MODELS[1]);
@@ -73,6 +73,15 @@ export function V3Hire({ data, act }: V3PageProps) {
     setName((n) =>
       n === "" || ROLES.some((r) => r.role === n) ? ROLES[i].role : n,
     );
+  }
+
+  // Hiring lands on the new agent, opened beside People.
+  function submit() {
+    const trimmed = name.trim();
+    if (!tpl || !trimmed) return;
+    const id = act.hire({ name: trimmed, role: tpl.role, model });
+    go({ page: "people" });
+    go({ page: "agent", id });
   }
 
   return (
@@ -115,8 +124,7 @@ export function V3Hire({ data, act }: V3PageProps) {
           className="mt-8 max-w-[520px] space-y-4"
           onSubmit={(e) => {
             e.preventDefault();
-            const trimmed = name.trim();
-            if (trimmed) act.hire({ name: trimmed, role: tpl.role, model });
+            submit();
           }}
         >
           <label className="block">
@@ -178,13 +186,7 @@ export function V3Hire({ data, act }: V3PageProps) {
             </div>
           </div>
           <div className="pt-1">
-            <Btn
-              primary
-              onClick={() =>
-                name.trim() &&
-                act.hire({ name: name.trim(), role: tpl.role, model })
-              }
-            >
+            <Btn primary onClick={submit}>
               Hire
             </Btn>
           </div>

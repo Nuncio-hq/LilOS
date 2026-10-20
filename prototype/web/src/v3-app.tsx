@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { type V3Nav, type V3PageRoute, type V3RecordRoute, V3Shell } from "@lilos/ui"
 import { V3_DATA, v3Draft } from "./fake-v3"
 import { v3Reply } from "./fake-v3-reply"
+import { makeActions } from "./v3-engine/actions"
 
 const PAGES = [
   "home",
@@ -88,9 +89,16 @@ export default function V3App() {
     setToast(text)
     window.setTimeout(() => setToast((t) => (t === text ? null : t)), 2600)
   }, [])
+  /* The mock company lives here, beside its engine: the shell is controlled
+     (the real app gives it relay data instead). Timers in the chat
+     simulator read the latest data through the ref, not a stale closure. */
+  const [data, setData] = useState(V3_DATA)
+  const dataRef = useRef(data)
+  dataRef.current = data
+  const actions = useMemo(() => makeActions(setData, () => dataRef.current, v3Reply, onToast), [onToast])
   return (
     <>
-      <V3Shell initial={V3_DATA} nav={nav} onNav={setNav} draft={v3Draft} reply={v3Reply} onToast={onToast} />
+      <V3Shell data={data} actions={actions} nav={nav} onNav={setNav} draft={v3Draft} />
       {toast && (
         <div className="lilos-rise fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full bg-foreground px-4 py-2 text-[13px] text-background shadow-lg">
           {toast}

@@ -1,9 +1,7 @@
 import { SparklesIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTheme } from "../shell/use-theme";
-import { makeActions, planRecords } from "./v3-actions";
 import { Kbd, OpenRecord } from "./v3-bits";
-import type { ReplyFn } from "./v3-chat-sim";
 import { V3Goals } from "./v3-goals";
 import { V3Guide } from "./v3-guide";
 import { V3Hire } from "./v3-hire";
@@ -20,6 +18,7 @@ import { V3Threads } from "./v3-threads";
 import type {
   V3Actions,
   V3Data,
+  V3DataActions,
   V3Draft,
   V3Nav,
   V3PageRoute,
@@ -29,17 +28,18 @@ import { V3Welcome } from "./v3-welcome";
 import { V3Work } from "./v3-work";
 
 export type V3ShellProps = {
-  initial: V3Data;
+  /** The company as it is now; the app owns it (mock engine or relay). */
+  data: V3Data;
+  /** Every change goes through these; the shell adds only ⌘K. */
+  actions: V3DataActions;
   /** Where you are; the app owns it so the URL and Back/Forward work. Updates
      come as functions so two moves in one click (go to Threads, then open
      the new chat) both land. */
   nav: V3Nav;
   onNav: (update: (nav: V3Nav) => V3Nav) => void;
-  /** The CEO behind ⌘K: a reply or a draft plan for one line. */
-  draft: (text: string, data: V3Data) => V3Draft;
-  /** The agent behind a chat: its steps and answer for one message. */
-  reply: ReplyFn;
-  onToast: (text: string) => void;
+  /** The CEO behind ⌘K: a reply or a draft plan for one line. Without it,
+     ⌘K only searches and jumps. */
+  draft?: (text: string, data: V3Data) => V3Draft;
 };
 
 const PAGE_NAME: Record<V3PageRoute["page"], string> = {
@@ -56,23 +56,11 @@ const PAGE_NAME: Record<V3PageRoute["page"], string> = {
   welcome: "Welcome",
 };
 
-/* The v3 shell owns the company state for the prototype: pages read `data`
-   and change it only through `act`, so every screen stays consistent after a
-   click (approve on Home and Needs you, Threads and Work all agree). It also
-   owns movement: a page on the left, what you opened from it in the side
-   peek on the right (see v3-nav.ts). */
-export function V3Shell({
-  initial,
-  nav,
-  onNav,
-  draft,
-  reply,
-  onToast,
-}: V3ShellProps) {
-  const [data, setData] = useState(initial);
-  /* Timers in the chat simulator read the latest data, not a stale closure. */
-  const dataRef = useRef(data);
-  dataRef.current = data;
+/* The v3 shell: pages read `data` and change it only through `actions`, so
+   every screen stays consistent after a click (approve on Home and Needs
+   you, Threads and Work all agree). It owns movement: a page on the left,
+   what you opened from it in the side peek on the right (see v3-nav.ts). */
+export function V3Shell({ data, actions, nav, onNav, draft }: V3ShellProps) {
   const [palette, setPalette] = useState<string | null>(null);
   const [theme, setTheme] = useTheme();
   const dark =
@@ -118,27 +106,15 @@ export function V3Shell({
   }, [palette, closePeek, onNav]);
 
   const act = useMemo<V3Actions>(
-    () =>
-      makeActions(
-        setData,
-        () => dataRef.current,
-        reply,
-        onToast,
-        goFromPage,
-        setPalette,
-      ),
-    [reply, onToast, goFromPage],
+    () => ({ ...actions, ask: (text) => setPalette(text ?? "") }),
+    [actions],
   );
 
   const startPlan = (
     plan: Extract<V3Draft, { kind: "plan" }>,
     text: string,
   ) => {
-    setData((d) => planRecords(d, plan, text));
-    const started = plan.tickets.filter((t) => !t.after && !t.asksYou).length;
-    onToast(
-      `${plan.tickets.length} tickets created · ${started} ${started === 1 ? "agent" : "agents"} started`,
-    );
+    actions.startPlan(plan, text);
     goFromPage({ page: "work", view: "waiting" });
   };
 

@@ -497,7 +497,10 @@ export type V3Actions = {
     text: string;
   }) => string;
   markSeen: (threadId: string) => void;
-  hire: (agent: { name: string; role: string; model: string }) => void;
+  /** Hires an agent and returns its id, so the Hire page can open it. */
+  hire: (agent: { name: string; role: string; model: string }) => string;
+  /** Starts a ⌘K draft plan: its tickets (and the threads that can start now). */
+  startPlan: (plan: Extract<V3Draft, { kind: "plan" }>, text: string) => void;
   /** Moves the CEO position to this agent; everyone else reports to it. */
   makeCeo: (agentId: string) => void;
   /** Turns a connector on or off for one agent's sessions. */
@@ -533,6 +536,11 @@ export type V3Actions = {
   /** Opens the ⌘K palette, optionally prefilled. */
   ask: (text?: string) => void;
 };
+
+/** What the app hands the shell: every action except opening ⌘K, which the
+   shell owns. The prototype backs these with its mock engine; the real app
+   with relay calls. */
+export type V3DataActions = Omit<V3Actions, "ask">;
 
 export type V3PageProps = {
   data: V3Data;

@@ -33,7 +33,8 @@ export function V3Palette({
 }: {
   data: V3Data;
   seed: string;
-  draft: (text: string, data: V3Data) => V3Draft;
+  /** The CEO behind it; absent, ⌘K only searches and jumps. */
+  draft?: (text: string, data: V3Data) => V3Draft;
   onStart: (plan: Plan, text: string) => void;
   onClose: () => void;
   go: (r: V3Route) => void;
@@ -102,12 +103,13 @@ export function V3Palette({
     ].slice(0, 6);
   }, [text, data]);
 
-  /* Row 0 asks the CEO (or, with nothing typed, the first suggestion);
-     the rest jump. */
-  const rows = text.trim() ? 1 + jumps.length : TRY.length + jumps.length;
+  /* With a CEO, the first rows ask it (the typed line, or the suggestions
+     when nothing is typed); the rest jump. Without one, every row jumps. */
+  const lead = draft ? (text.trim() ? 1 : TRY.length) : 0;
+  const rows = lead + jumps.length;
 
   const submit = (line: string) => {
-    if (!line.trim()) return;
+    if (!line.trim() || !draft) return;
     setText(line);
     setPhase("thinking");
     window.setTimeout(() => {
@@ -117,17 +119,14 @@ export function V3Palette({
   };
 
   const pick = (i: number) => {
-    if (text.trim()) {
-      if (i === 0) submit(text);
-      else {
-        go(jumps[i - 1].route);
-        onClose();
-      }
-    } else if (i < TRY.length) submit(TRY[i]);
-    else {
-      go(jumps[i - TRY.length].route);
-      onClose();
+    if (i < lead) {
+      submit(text.trim() ? text : TRY[i]);
+      return;
     }
+    const jump = jumps[i - lead];
+    if (!jump) return;
+    go(jump.route);
+    onClose();
   };
 
   const start = () => {
@@ -144,7 +143,7 @@ export function V3Palette({
     >
       <div
         role="dialog"
-        aria-label="Ask the CEO"
+        aria-label={draft ? "Ask the CEO" : "Search"}
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
           if (e.key === "Escape") onClose();
@@ -184,7 +183,11 @@ export function V3Palette({
                 pick(sel);
               }
             }}
-            placeholder="Ask the CEO anything, or give the company work…"
+            placeholder={
+              draft
+                ? "Ask the CEO anything, or give the company work…"
+                : "Search people, threads, projects…"
+            }
             className="min-w-0 flex-1 bg-transparent text-[16px] outline-none placeholder:text-muted-foreground/70"
           />
           <Kbd>{phase === "input" ? "↵" : "esc"}</Kbd>
@@ -192,7 +195,7 @@ export function V3Palette({
 
         {phase === "input" && (
           <div className="max-h-[52vh] overflow-y-auto p-2">
-            {text.trim() ? (
+            {!draft ? null : text.trim() ? (
               <Row
                 on={sel === 0}
                 onClick={() => pick(0)}
@@ -223,7 +226,7 @@ export function V3Palette({
             )}
             {jumps.length > 0 && <Group>Go to</Group>}
             {jumps.map((j, i) => {
-              const idx = (text.trim() ? 1 : TRY.length) + i;
+              const idx = lead + i;
               return (
                 <Row
                   key={j.label}

@@ -1,5 +1,4 @@
-import { agentOf } from "./v3-model";
-import type { V3Actions, V3Data, V3Route } from "./v3-types";
+import { agentOf, type V3DataActions, type V3Data } from "@lilos/ui"
 
 type SetData = (fn: (d: V3Data) => V3Data) => void;
 
@@ -10,9 +9,8 @@ export function toolActions(
   setData: SetData,
   getData: () => V3Data,
   toast: (t: string) => void,
-  go: (r: V3Route) => void,
 ): Pick<
-  V3Actions,
+  V3DataActions,
   | "rewind"
   | "scheduleSave"
   | "scheduleToggle"
@@ -213,7 +211,6 @@ export function toolActions(
             : a,
         ),
       }));
-      go({ page: "home" });
     },
   };
 }

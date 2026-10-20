@@ -28,7 +28,7 @@ const FOLDERS = [
   { path: "~/Code/qrit", note: "Git repository · used last month" },
 ];
 
-export function V3Welcome({ data, act }: V3PageProps) {
+export function V3Welcome({ data, go, act }: V3PageProps) {
   const { engine } = data.settings;
   const [step, setStep] = useState(0);
   const [me, setMe] = useState(data.me);
@@ -78,6 +78,7 @@ export function V3Welcome({ data, act }: V3PageProps) {
       ceoModel,
       folder,
     });
+    go({ page: "home" });
   };
 
   // Enter advances from anywhere except a control that Enter already presses.

@@ -1,5 +1,4 @@
-import { STEP_VERB } from "./v3-bits";
-import type { V3Data, V3Reply, V3Thread, V3Turn } from "./v3-types";
+import { STEP_VERB, type V3Data, type V3Reply, type V3Thread, type V3Turn } from "@lilos/ui"
 
 /* The prototype's stand-in for an engine turn: a message goes in, the
    agent's steps appear one by one (a run step streams its output into the

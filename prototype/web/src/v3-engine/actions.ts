@@ -1,14 +1,6 @@
-import { toolActions } from "./v3-actions-tools";
-import { cancelTurn, nowClock, type ReplyFn, runTurn } from "./v3-chat-sim";
-import { agentOf } from "./v3-model";
-import type {
-  V3Actions,
-  V3Data,
-  V3Draft,
-  V3Route,
-  V3Status,
-  V3Thread,
-} from "./v3-types";
+import { agentOf, type V3Data, type V3DataActions, type V3Draft, type V3Status, type V3Thread } from "@lilos/ui"
+import { cancelTurn, nowClock, type ReplyFn, runTurn } from "./chat-sim"
+import { toolActions } from "./tools"
 
 /* A started ⌘K plan becomes real records: tickets that can start now get a
    working thread at once; the rest wait on the ticket before them, and the
@@ -109,15 +101,14 @@ export function planRecords(
 type SetData = (fn: (d: V3Data) => V3Data) => void;
 
 /* The prototype's company engine: each action rewrites the mock records the
-   way the real relay would, so the next screen tells the truth. */
+   way the real relay would, so the next screen tells the truth. Actions never
+   navigate: the page that called one decides where to go next. */
 export function makeActions(
   setData: SetData,
   getData: () => V3Data,
   reply: ReplyFn,
   toast: (t: string) => void,
-  go: (r: V3Route) => void,
-  setPalette: (seed: string) => void,
-): V3Actions {
+): V3DataActions {
   const ticketPatch = (
     d: V3Data,
     id: string,
@@ -479,9 +470,8 @@ export function makeActions(
           },
         ],
       }));
-      toast(`${name} hired`);
-      go({ page: "people" });
-      go({ page: "agent", id });
+      toast(`${name} hired`)
+      return id
     },
     makeCeo: (agentId) => {
       setData((d) => {
@@ -539,7 +529,11 @@ export function makeActions(
       }));
       toast(`${label} added · turn it on for the agents that need it`);
     },
-    ...toolActions(setData, getData, toast, go),
-    ask: (text) => setPalette(text ?? ""),
-  };
+    startPlan: (plan, text) => {
+      setData((d) => planRecords(d, plan, text))
+      const started = plan.tickets.filter((t) => !t.after && !t.asksYou).length
+      toast(`${plan.tickets.length} tickets created · ${started} ${started === 1 ? "agent" : "agents"} started`)
+    },
+    ...toolActions(setData, getData, toast),
+  }
 }
