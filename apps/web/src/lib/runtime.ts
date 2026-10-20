@@ -19,10 +19,8 @@ import type {
   ModelsListResult,
 } from "@lilos/contracts/engine";
 import type { ModelVisibility } from "@lilos/ui";
-import type { EmpBadge } from "@lilos/ui/types";
 import { atom, computed, type ReadableAtom } from "nanostores";
 import { defaultAccess, defaultEditor } from "../settings/state";
-import { badgeStore } from "./badges";
 import type { LilosConfig } from "./config";
 import { initConnect } from "./connect";
 import { hostUser, initHost } from "./host";
@@ -31,9 +29,6 @@ import { type SessionSignal, SessionWatch } from "./session-watch";
 
 export const booted = atom(false);
 export const bootError = atom<string | null>(null);
-
-/** Sidebar drawer open state (mobile `lg:hidden` nav). */
-export const navOpen = atom(false);
 
 export let relay: RelayClient;
 export let engine: EngineClient;
@@ -411,22 +406,6 @@ function watchDmChannels(): void {
   relay.channels.subscribe((channels) => {
     for (const c of channels) if (c.kind === "dm") relay.channelMessages(c.id);
   });
-}
-
-/* #427: the sidebar badge map as a computed store — `sessionModels`
-   rebuilds on every engine event, but the badge counts almost never move.
-   `badgeStore` keeps the same record while counts are equal, so AppShell
-   re-renders on real badge changes only. `relay` binds at boot, so the
-   computed is built on first read (AppShell mounts post-boot). */
-let empBadges: ReadableAtom<Record<string, EmpBadge>> | undefined;
-export function employeeBadgeMap(): ReadableAtom<Record<string, EmpBadge>> {
-  empBadges ??= badgeStore(
-    relay.channels,
-    relay.conversations,
-    sessionModels,
-    sessionSignals,
-  );
-  return empBadges;
 }
 
 /**

@@ -28,6 +28,8 @@ export function ThreadPanel({
   onOpenThread,
   onClose,
   onSession,
+  scrollTo,
+  onScrolled,
 }: {
   conversationId: string;
   /** The session view (chat beside the Workbench) is showing. The host owns
@@ -43,6 +45,11 @@ export function ThreadPanel({
   onClose?: () => void;
   /** Enter (true) / leave (false) the session view. */
   onSession: (open: boolean) => void;
+  /** A message to bring into view (a search hit opened this thread); the
+      thread scrolls to it, flashes it, then calls `onScrolled`. Both views
+      honour it, so a widened thread jumps too. */
+  scrollTo?: string;
+  onScrolled?: () => void;
 }) {
   /* Keyed: another conversation starts with a fresh tab and composer state
      instead of carrying the last one's over. */
@@ -55,6 +62,8 @@ export function ThreadPanel({
       onOpenThread={onOpenThread}
       onClose={onClose}
       onSession={onSession}
+      scrollTo={scrollTo}
+      onScrolled={onScrolled}
     />
   );
 }
@@ -66,6 +75,8 @@ function PanelBody({
   onOpenThread,
   onClose,
   onSession,
+  scrollTo,
+  onScrolled,
 }: {
   conversationId: string;
   session: boolean;
@@ -73,6 +84,8 @@ function PanelBody({
   onOpenThread?: (conversationId: string, employeeId: string) => void;
   onClose?: () => void;
   onSession: (open: boolean) => void;
+  scrollTo?: string;
+  onScrolled?: () => void;
 }) {
   const allConvs = useAtom(relay.conversations);
   const channels = useAtom(relay.channels);
@@ -125,12 +138,16 @@ function PanelBody({
           onBack={() => onSession(false)}
           tab={tab}
           onTab={setTab}
+          scrollTo={scrollTo}
+          onScrolled={onScrolled}
         />
       ) : (
         <ThreadPane
           d={d}
           nav={nav}
           onClose={onClose}
+          scrollTo={scrollTo}
+          onScrolled={onScrolled}
           onFocus={() => onSession(true)}
           onOpenTab={(t) => {
             setTab(t);

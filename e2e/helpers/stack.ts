@@ -432,7 +432,10 @@ export async function panelIntoFocus(
   focusUrl: RegExp = /[#&]full=1(&|$)/,
 ): Promise<void> {
   const { expect } = playwright;
-  await expect(page).toHaveURL(/open=thread:[^&]+/, { timeout: 30_000 });
+  // The thread may sit anywhere in the trail (`open=agent:X,thread:Y`).
+  await expect(page).toHaveURL(/[?&]open=([^&]*,)?thread:[^&,]+/, {
+    timeout: 30_000,
+  });
   // The URL lands before the panel mounts (the conv resolves async under
   // load) — wait for the surface, then the button.
   await panelFocusReady(page);
@@ -441,4 +444,226 @@ export async function panelIntoFocus(
     .getByTitle("Widen over the page", { exact: true })
     .click();
   await expect(page).toHaveURL(focusUrl, { timeout: 30_000 });
+}
+
+/**
+ * Past first run: the shell shows Welcome until `lilos-onboarded` is set, so
+ * a spec that is not about first run lands on Home instead. Call before the
+ * first `page.goto`.
+ */
+export const skipFirstRun = async (page: playwright.Page): Promise<void> => {
+  await page.addInitScript(() => localStorage.setItem("lilos-onboarded", "1"));
+};
+
+/** The shell's own sidebar. The opened-record peek is an `<aside>` too, so a
+ *  bare `page.locator("aside")` is ambiguous the moment a record is open. */
+export const v3Sidebar = (page: playwright.Page): playwright.Locator =>
+  page.locator("aside:not([aria-label])");
+
+/** The side peek: whatever was opened (thread, person, new chat). */
+export const v3Peek = (page: playwright.Page): playwright.Locator =>
+  page.getByRole("complementary", { name: "Opened record" });
+
+/**
+ * Start a chat with `agent` the way a person does: the new-chat draft beside
+ * Threads, type, Send. Resolves once the draft has swapped for its thread
+ * (`#?page=threads&open=thread:<id>`, the shape `panelIntoFocus` expects) and
+ * returns that conversation's id.
+ */
+export async function startChat(
+  page: playwright.Page,
+  webUrl: string,
+  agent: { id: string; name: string },
+  text: string,
+): Promise<string> {
+  const { expect } = playwright;
+  await page.goto(
+    `${webUrl}/#?page=threads&open=newchat:${encodeURIComponent(agent.id)}`,
+  );
+  const box = v3Peek(page).getByPlaceholder(`Message ${agent.name}…`);
+  await expect(box).toBeVisible({ timeout: 30_000 });
+  await box.fill(text);
+  await v3Peek(page).getByRole("button", { name: "Send" }).click();
+  await expect(page).toHaveURL(/open=thread:[^&]+/, { timeout: 30_000 });
+  return decodeURIComponent(/open=thread:([^&,]+)/.exec(page.url())?.[1] ?? "");
+}
+
+/** One JSON-RPC call on the relay from inside the page (hello + request). */
+export async function relayRpc<T>(
+  page: playwright.Page,
+  stack: Pick<Stack, "relayWs" | "relayToken">,
+  method: string,
+  params: Record<string, unknown>,
+): Promise<T> {
+  return (await page.evaluate(
+    async ({ ws, token, method, params }) => {
+      const sock = new WebSocket(`${ws}?token=${encodeURIComponent(token)}`);
+      const rpc = (id: number, m: string, p: Record<string, unknown>) =>
+        sock.send(JSON.stringify({ jsonrpc: "2.0", id, method: m, params: p }));
+      return await new Promise((resolve, reject) => {
+        const fail = (e: unknown) => {
+          sock.close();
+          reject(e instanceof Error ? e : new Error(String(e)));
+        };
+        sock.onerror = () => fail(new Error("ws error"));
+        sock.onmessage = (ev) => {
+          const msg = JSON.parse(String(ev.data));
+          if (msg.error) return fail(new Error(msg.error.message));
+          if (msg.id === 1) rpc(2, method, params);
+          else if (msg.id === 2) {
+            sock.close();
+            resolve(msg.result);
+          }
+        };
+        sock.onopen = () =>
+          rpc(1, "session.hello", {
+            protocolVersion: 1,
+            token,
+            client: { name: "e2e" },
+          });
+      });
+    },
+    { ws: stack.relayWs, token: stack.relayToken, method, params },
+  )) as Promise<T>;
+}
+
+/**
+ * A new chat with the company's default agent, the way a person starts one:
+ * Threads → "New chat". Leaves the draft composer open in the peek and
+ * returns it (placeholder `Message <name>…`). Past first run.
+ */
+export async function openNewChat(
+  page: playwright.Page,
+  webUrl: string,
+): Promise<playwright.Locator> {
+  const { expect } = playwright;
+  await skipFirstRun(page);
+  await page.goto(`${webUrl}/#?page=threads`);
+  // The button exists once the directory has an agent to talk to.
+  await page
+    .getByRole("button", { name: "New chat" })
+    .click({ timeout: 60_000 });
+  const box = v3Peek(page).getByPlaceholder(/^Message /);
+  await expect(box).toBeVisible({ timeout: 30_000 });
+  return box;
+}
+
+/**
+ * `startChat` bound to `folder`: the draft's Folder chip picks among the
+ * app's recents, so the folder is added to them over the relay first and the
+ * page reloaded (the shell reads the recents when it mounts). Past first run;
+ * resolves once the draft has swapped for its thread and returns that
+ * conversation's id.
+ */
+export async function startChatInFolder(
+  page: playwright.Page,
+  stack: Stack,
+  agent: { id: string; name: string },
+  folder: string,
+  text: string,
+): Promise<string> {
+  const { expect } = playwright;
+  await skipFirstRun(page);
+  await page.goto(`${stack.webUrl}/`);
+  await relayRpc(page, stack, "folders.add", { path: folder });
+  await page.goto(
+    `${stack.webUrl}/#?page=threads&open=newchat:${encodeURIComponent(agent.id)}`,
+  );
+  await page.reload();
+  const peek = v3Peek(page);
+  const chip = peek.getByTitle(/^Folder · /);
+  await expect(chip).toBeVisible({ timeout: 30_000 });
+  const base = path.basename(folder);
+  await chip.click();
+  await peek.getByRole("menuitemradio", { name: new RegExp(base) }).click();
+  await expect(chip).toContainText(base, { timeout: 15_000 });
+  await peek.getByPlaceholder(`Message ${agent.name}…`).fill(text);
+  await peek.getByRole("button", { name: "Send" }).click();
+  await expect(page).toHaveURL(/open=thread:[^&]+/, { timeout: 30_000 });
+  return decodeURIComponent(/open=thread:([^&,]+)/.exec(page.url())?.[1] ?? "");
+}
+
+/**
+ * The company's first agent (the one the harness hires when the roster is
+ * empty): past first run, open its sidebar row and read the id off the hash
+ * the row opens (`#?open=agent:<id>`). The name is the row's own text, since
+ * it is "Default" on engine-fake and "default" on hermes. The agent's page is
+ * left open in the peek.
+ */
+export async function openDefaultAgent(
+  page: playwright.Page,
+  webUrl: string,
+  timeout = 30_000,
+): Promise<{ id: string; name: string }> {
+  const { expect } = playwright;
+  await skipFirstRun(page);
+  await page.goto(`${webUrl}/`);
+  const row = v3Sidebar(page).getByRole("button", { name: /default/i });
+  await expect(row).toBeVisible({ timeout });
+  const name = (await row.innerText())
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .pop() as string;
+  await row.click();
+  await expect(page).toHaveURL(/open=agent:[^&,]+/);
+  const id = decodeURIComponent(
+    /open=agent:([^&,]+)/.exec(page.url())?.[1] ?? "",
+  );
+  return { id, name };
+}
+
+/**
+ * Open an existing conversation as the session view (chat beside the
+ * Workbench) — what "open the session row, then Focus" used to be. Past first
+ * run; resolves once the thread's composer is up.
+ */
+export async function openSession(
+  page: playwright.Page,
+  webUrl: string,
+  conversationId: string,
+): Promise<void> {
+  const { expect } = playwright;
+  await skipFirstRun(page);
+  await page.goto(threadUrl(webUrl, conversationId, true));
+  await expect(
+    page
+      .locator("[data-thread-panel]")
+      .getByRole("textbox", { name: /Reply to/ }),
+  ).toBeVisible({ timeout: 45_000 });
+}
+
+/**
+ * A chat in NO folder. The new-chat draft always pre-picks the newest recent
+ * folder once the app has any (there is no "No folder" choice in it), so a
+ * session without a folder starts over the relay, exactly what a send does:
+ * `channels.openDm` + `conversations.open` with no `cwd`. Resolves with the
+ * new conversation's id; the page is left on `stack.webUrl` past first run.
+ */
+export async function startFolderlessChat(
+  page: playwright.Page,
+  stack: Stack,
+  text: string,
+): Promise<string> {
+  await skipFirstRun(page);
+  await page.goto(`${stack.webUrl}/`);
+  const { employees } = await relayRpc<{ employees: { id: string }[] }>(
+    page,
+    stack,
+    "employees.list",
+    {},
+  );
+  const { channel } = await relayRpc<{ channel: { id: string } }>(
+    page,
+    stack,
+    "channels.openDm",
+    { employeeId: employees[0].id },
+  );
+  const { conversation } = await relayRpc<{ conversation: { id: string } }>(
+    page,
+    stack,
+    "conversations.open",
+    { channelId: channel.id, authorId: "user", text },
+  );
+  return conversation.id;
 }

@@ -1,14 +1,31 @@
 import { threadStatus } from "@lilos/client-runtime";
-import type { Employee } from "@lilos/contracts/app";
+import {
+  type Employee,
+  MAX_ATTACHMENT_BYTES,
+  MAX_ATTACHMENTS_PER_MESSAGE,
+} from "@lilos/contracts/app";
+import type { AgentDescriptor, DescribeResult } from "@lilos/contracts/engine";
 import { folderLabel, type V3Agent, type V3Data, type V3Tone } from "@lilos/ui";
 import { atom, computed, onMount, type ReadableAtom } from "nanostores";
 import { folders } from "../lib/folders";
 import { currentCompany, currentName, osFullName, profile } from "../lib/me";
-import { asks, relay, sessionModels, sessionSignals } from "../lib/runtime";
+import {
+  asks,
+  engine as engineClient,
+  engineDefaultModel,
+  engineDefaultProvider,
+  engineModels,
+  engineProviders,
+  modelVisibility,
+  relay,
+  sessionModels,
+  sessionSignals,
+} from "../lib/runtime";
 import { browserTabs } from "./browser";
 import { modelLabel, modelRowStore } from "./models";
+import { profileStore } from "./profiles";
 import { v3SettingsSlice } from "./settings-data";
-import { v3Asks, v3Threads } from "./threads";
+import { lastChats, v3ArchivedThreads, v3Asks, v3Threads } from "./threads";
 
 /* The company as the relay knows it, in the shape the v3 pages read. A
    computed store: pages re-render when the company changes, not on every
@@ -34,7 +51,24 @@ function toneOf(name: string): V3Tone {
   return TONES[x % TONES.length];
 }
 
-function toAgent(e: Employee, runtime: string | undefined): V3Agent {
+/** The engine can re-read its model catalog: its `models` capability says
+    `refreshable` (no control without a handler, D-#19). */
+function canRefreshModels(description: DescribeResult | undefined): boolean {
+  const detail = description?.capabilities.find((c) => c.id === "models")
+    ?.detail as { refreshable?: boolean } | undefined;
+  return detail?.refreshable === true;
+}
+
+/** `profile`: what the engine says about the employee's profile, when it has
+    said. Its persona is the instructions (the record's copy is only the one
+    the harness seeds a new profile with), and its description the one line
+    the record has no field for. */
+function toAgent(
+  e: Employee,
+  runtime: string | undefined,
+  profile: AgentDescriptor | undefined,
+  lastChat: V3Agent["lastChat"],
+): V3Agent {
   return {
     id: e.id,
     name: e.name,
@@ -45,8 +79,13 @@ function toAgent(e: Employee, runtime: string | undefined): V3Agent {
       month: "short",
     }),
     ...(runtime ? { runtime } : {}),
+    ...(e.profile ? { profile: e.profile } : {}),
     model: modelLabel(e.model),
-    instructions: e.instructions
+    ...(e.model ? { modelId: e.model } : {}),
+    ...(lastChat ? { lastChat } : {}),
+    ...(profile?.description ? { description: profile.description } : {}),
+    ...(e.muted ? { muted: true } : {}),
+    instructions: (profile?.soul ?? e.instructions)
       .split(/\n{2,}/)
       .map((p) => p.trim())
       .filter(Boolean),
@@ -106,6 +145,13 @@ export function v3DataStore(): ReadableAtom<V3Data> {
       modelRowStore(),
       browserTabs,
       v3SettingsSlice,
+      profileStore(),
+      engineModels,
+      engineDefaultModel,
+      engineDefaultProvider,
+      engineProviders,
+      modelVisibility,
+      engineClient.description,
     ],
     (
       employees,
@@ -121,6 +167,13 @@ export function v3DataStore(): ReadableAtom<V3Data> {
       modelRows,
       tabs,
       settingsSlice,
+      profiles,
+      catalog,
+      defaultModel,
+      defaultProvider,
+      providers,
+      visibility,
+      description,
     ): V3Data => {
       const src = {
         now,
@@ -133,25 +186,62 @@ export function v3DataStore(): ReadableAtom<V3Data> {
         asks: askRows,
       };
       const reachable = folderRows.filter((f) => !f.missing);
+      const chats = lastChats(src);
       return {
         company: companyName,
         me,
         today: todayText(now),
-        agents: employees.map((e) => toAgent(e, engine || undefined)),
+        agents: employees.map((e) =>
+          toAgent(
+            e,
+            engine || undefined,
+            profiles.byProfile[e.profile],
+            chats.get(e.id),
+          ),
+        ),
         connectors: [],
         projects: [],
         goals: [],
         tickets: [],
         threads: v3Threads(src),
+        archivedThreads: v3ArchivedThreads(src),
         asks: v3Asks(src),
         updates: [],
         browser: { tabs, bookmarks: [] },
         modelChoices: modelRows.map((r) => r.label),
+        ...(catalog.length
+          ? {
+              modelCatalog: {
+                options: catalog,
+                ...(defaultModel ? { defaultModel } : {}),
+                ...(defaultProvider ? { defaultProvider } : {}),
+                ...(providers.length
+                  ? {
+                      providers: providers.map((p) => ({
+                        id: p.id,
+                        name: p.name ?? p.id,
+                      })),
+                    }
+                  : {}),
+                visibility,
+                ...(canRefreshModels(description) ? { refreshable: true } : {}),
+              },
+            }
+          : {}),
+        // A chat opens on the access you pick: Settings' default is the start.
+        chatAccess: true,
+        attachLimits: {
+          maxFileBytes: MAX_ATTACHMENT_BYTES,
+          maxFiles: MAX_ATTACHMENTS_PER_MESSAGE,
+        },
+        ...(profiles.fields.length ? { agentFields: profiles.fields } : {}),
         ...(reachable.length
           ? {
               folders: reachable.map((f) => ({
                 path: f.path,
                 label: folderLabel(f, folderRows),
+                // [] = probed, not a repo (the box says "direct · no git").
+                branch: f.branches.length ? f.branches[0] : null,
               })),
             }
           : {}),

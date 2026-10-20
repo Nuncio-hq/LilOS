@@ -3,13 +3,17 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "@playwright/test";
 import { engineTag, expectNoEngineLeak } from "./engine-leak";
 import {
   captureProc,
   killProc,
   pickPorts,
   type StackPorts,
+  skipFirstRun,
+  startChat,
+  threadUrl,
+  v3Sidebar,
   WORKER,
   waitForFeed,
   waitForHttp,
@@ -24,6 +28,12 @@ import {
  * Unlike ac-27 (one `bun run dev` umbrella), this spec spawns relay /
  * harness / vite as three processes: AC-2 kills the harness alone and AC-5
  * kills the relay alone — the point is watching the rest recover.
+ *
+ * v3: the session list is the Threads page and a conversation opens in the
+ * side peek. The session filter is the ⌘K palette (it searches thread titles
+ * and messages); a thread's rename / archive / unarchive are its row's ⋯ menu
+ * on Threads (and the header's), and an archived thread lives under
+ * Threads → All → Archived.
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
@@ -35,6 +45,7 @@ interface Procs {
   home: string;
   webUrl: string;
   relayToken: string;
+  relayWs: string;
   ports: { relay: number; feed: number; web: number };
   procs: Record<"relay" | "harness" | "web", ChildProcess | undefined>;
   /** Vite's captured output — the re-optimize reload line must never appear. */
@@ -140,6 +151,7 @@ async function boot(tag: string, home?: string): Promise<Procs> {
     home: base,
     webUrl: `http://127.0.0.1:${ports.web}`,
     relayToken,
+    relayWs: `ws://127.0.0.1:${ports.relay}/ws`,
     ports,
     procs,
     viteLog: () => viteOut,
@@ -162,8 +174,10 @@ async function boot(tag: string, home?: string): Promise<Procs> {
   };
 }
 
-/** Open the app, land on Default's DM home (dismissing the first-run card). */
-async function dmDefault(stack: Procs, page: Page) {
+/** Open the app past first run and land on Default's page (its sidebar row);
+ *  returns the agent, the way `startChat` wants it. */
+async function openApp(stack: Procs, page: Page) {
+  await skipFirstRun(page);
   // #84: a vite re-optimize mid-navigation sends a full reload that can
   // abort the in-flight page.goto (ERR_ABORTED on PR #87's CI). A reload
   // wipes the JS context but sessionStorage survives — count navigations.
@@ -196,29 +210,15 @@ async function dmDefault(stack: Procs, page: Page) {
     );
   }
   const nav0 = await navs();
-  const aside = page.locator("aside");
-  await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
+  const row = v3Sidebar(page).getByRole("button", { name: /default/i });
+  await expect(row).toBeVisible({
     timeout: 60_000, // the first run spawns the engine; suite runs are parallel
   });
-  /* #589: Open DM stays disabled while first-run checks fail (a dead
-     harness never goes green) — pick the first ENABLED match so "Set up
-     later" wins over the blocked Open DM. */
-  const dmBtn = page
-    .getByRole("button", {
-      name: /open dm|set up later|message/i,
-    })
-    .and(page.locator("button:not([disabled])"));
-  if (
-    await dmBtn
-      .first()
-      .isVisible()
-      .catch(() => false)
-  ) {
-    await dmBtn.first().click();
-  } else {
-    await aside.getByRole("button", { name: /default/i }).click();
-  }
-  await expect(page).toHaveURL(/\/dm\//);
+  await row.click();
+  await expect(page).toHaveURL(/open=agent:[^&,]+/);
+  const id = decodeURIComponent(
+    /open=agent:([^&,]+)/.exec(page.url())?.[1] ?? "",
+  );
   // Any mid-flight full reload bumps the count past what this goto saw —
   // and the navigation entry flips to "reload" even when goto survived it.
   const tail = stack.viteLog().slice(-2000);
@@ -240,13 +240,17 @@ async function dmDefault(stack: Procs, page: Page) {
     expect(stack.viteLog()).not.toContain("optimized dependencies changed");
     expect(stack.viteLog()).not.toContain("new dependencies optimized");
   }
+  return { id, name: "Default" };
 }
 
-const send = async (page: Page, text: string) => {
-  const box = page.locator("textarea").last();
-  await box.fill(text);
-  await box.press("Enter");
-};
+/** The Threads page, the session list. */
+const gotoThreads = (stack: Procs, page: Page) =>
+  page.goto(`${stack.webUrl}/#?page=threads`);
+
+/** A thread's row on the Threads page (the page is wide enough, with no peek
+ *  open, for the title column). */
+const listRow = (page: Page, text: RegExp | string) =>
+  page.locator("#v3-main").getByText(text).first();
 
 let stack: Procs;
 test.beforeAll(async () => {
@@ -269,28 +273,24 @@ test.describe.configure({ mode: "serial" });
 test.use({ trace: "retain-on-failure" });
 
 const ROOT_TEXT = "Summarize the repo layout in one line";
+/** Its row: the title is the first message until the engine rewrites it. */
+const ROOT_ROW = /Summarize.*repo layout/i;
 /** Carried across tests (each test gets a fresh page). */
-let convUrl = "";
+let convId = "";
 
-test("AC-1/4 restart keeps conversations listed; filter narrows them", async ({
+test("AC-1/4 restart keeps conversations listed; search narrows them", async ({
   page,
 }) => {
   test.setTimeout(120_000);
   // Turn 1 on stack A.
-  await dmDefault(stack, page);
-  await send(page, ROOT_TEXT);
+  const agent = await openApp(stack, page);
+  convId = await startChat(page, stack.webUrl, agent, ROOT_TEXT);
   await expect(
     page
-      .locator("main")
+      .locator("[data-thread-panel]")
       .getByText(/repo|layout|readme/i)
       .last(),
   ).toBeVisible({ timeout: 60_000 });
-  // The reply preview can land in the home feed before the send's async
-  // navigate commits — wait for the thread URL instead of racing it (#103).
-  await expect(page).toHaveURL(/\/dm\/[^/]+\/conv_/, { timeout: 10_000 });
-  // A send lands on /focus; the conversation URL the panel opens at is it
-  // without the /focus tail (#195 — a click re-opens the peek, not Focus).
-  convUrl = page.url().replace(/\/focus$/, "");
 
   // Full app restart — same LILOS_HOME, new processes. Detach the page
   // while vite is down: a stale vite ws client reloads on reconnect, and
@@ -298,25 +298,29 @@ test("AC-1/4 restart keeps conversations listed; filter narrows them", async ({
   await stack.kill();
   await page.goto("about:blank");
   stack = await boot("restart", stack.home);
-  await dmDefault(stack, page);
+  await openApp(stack, page);
 
   // AC-1: the past conversation is listed with its first message.
-  const row = page.getByText(ROOT_TEXT).first();
+  await gotoThreads(stack, page);
+  const row = listRow(page, ROOT_ROW);
   await expect(row).toBeVisible({ timeout: 30_000 });
   await page.screenshot({ path: `${SHOTS}/ac1-after-restart.png` });
 
-  // AC-4: filter by the first message text narrows the list.
-  await page.getByPlaceholder("Filter threads").fill("zzz-no-match");
-  await expect(row).toBeHidden();
-  await page.getByPlaceholder("Filter threads").fill("repo layout");
-  await expect(row).toBeVisible();
+  // AC-4: searching by the first message's text narrows to it (⌘K is the
+  // v3 filter: people and thread titles).
+  await page.keyboard.press("Meta+k");
+  const palette = page.getByRole("dialog", { name: "Search" });
+  const hit = palette.getByRole("button", { name: /· thread$/ });
+  await palette.locator("input").fill("zzz-no-match");
+  await expect(hit).toHaveCount(0);
+  await palette.locator("input").fill("repo layout");
+  await expect(hit).toHaveCount(1);
+  await page.keyboard.press("Escape");
+  await expect(palette).toHaveCount(0);
 
-  // Open it back up for the next leg — the row's replies button navigates.
-  await page
-    .getByRole("button", { name: /\d+ repl(y|ies)/ })
-    .first()
-    .click();
-  await expect(page).toHaveURL(convUrl);
+  // Open it back up for the next leg — the row opens it beside Threads.
+  await row.click();
+  await expect(page).toHaveURL(threadUrl(stack.webUrl, convId));
 });
 
 test("AC-2 opening a past conversation shows messages + transcript; harness down shows why", async ({
@@ -324,24 +328,22 @@ test("AC-2 opening a past conversation shows messages + transcript; harness down
 }) => {
   test.setTimeout(120_000);
   // Fresh page: open the stored thread URL — history loads via messages.list.
-  await page.goto(convUrl);
-  await expect(page.getByText(ROOT_TEXT).first()).toBeVisible({
-    timeout: 30_000,
-  });
+  await skipFirstRun(page);
+  await page.goto(threadUrl(stack.webUrl, convId));
+  await expect(
+    page.locator("[data-thread-panel]").getByText(ROOT_TEXT).first(),
+  ).toBeVisible({ timeout: 30_000 });
   await page.screenshot({ path: `${SHOTS}/ac2-thread-history.png` });
 
   // Kill only the harness: visible messages must still render, the working
   // transcript area must say why it's empty (AC-2 "says why").
   await stack.kill("harness");
   await page.reload();
-  await dmDefault(stack, page);
-  await page
-    .getByRole("button", { name: /\d+ repl(y|ies)/ })
-    .first()
-    .click();
-  await expect(page.getByText(ROOT_TEXT).first()).toBeVisible({
-    timeout: 30_000,
-  });
+  await openApp(stack, page);
+  await page.goto(threadUrl(stack.webUrl, convId));
+  await expect(
+    page.locator("[data-thread-panel]").getByText(ROOT_TEXT).first(),
+  ).toBeVisible({ timeout: 30_000 });
   await expect(page.locator("[data-transcript-note]")).toBeVisible({
     timeout: 30_000,
   });
@@ -351,24 +353,40 @@ test("AC-2 opening a past conversation shows messages + transcript; harness down
 
 test("AC-3 rename + archive persist across restart", async ({ page }) => {
   test.setTimeout(120_000);
-  await dmDefault(stack, page);
-  await expect(page.getByText(ROOT_TEXT).first()).toBeVisible({
-    timeout: 30_000,
-  });
+  const agent = await openApp(stack, page);
+  /* A second thread that is never archived: it is on the list once the list
+     has loaded, so "the archived one is not" means something. */
+  await startChat(page, stack.webUrl, agent, "Keeper thread");
+  await gotoThreads(stack, page);
+  await expect(listRow(page, ROOT_ROW)).toBeVisible({ timeout: 30_000 });
 
-  // Rename via the row's session menu -> inline input (only one session).
-  await page.getByRole("button", { name: "Thread actions" }).first().click();
+  // Rename it in place from its row's menu, then archive it.
+  await page.goto(`${stack.webUrl}/#?page=threads&view=all`);
+  const row = page.locator(`[data-thread="${convId}"]`);
+  await expect(row).toBeVisible({ timeout: 30_000 });
+  const menu = (r: Locator) =>
+    r.getByRole("button", { name: "Thread actions", exact: true });
+  await row.hover();
+  await menu(row).click();
   await page.getByRole("menuitem", { name: "Rename thread" }).click();
-  const input = page.getByLabel("Thread title");
+  const input = page.getByRole("textbox", { name: "Thread title" });
   await input.fill("Repo summary thread");
   await input.press("Enter");
-  await expect(page.getByText("Repo summary thread").first()).toBeVisible();
-
-  // Archive it — the row leaves the open list into the Archived section.
-  await page.getByRole("button", { name: "Thread actions" }).first().click();
+  await expect(listRow(page, "Repo summary thread")).toBeVisible({
+    timeout: 15_000,
+  });
+  await row.hover();
+  await menu(row).click();
   await page.getByRole("menuitem", { name: "Archive thread" }).click();
-  await page.getByText(/Archived/).click(); // expand the archived section
-  await expect(page.getByText("Repo summary thread").first()).toBeVisible();
+  // The archived thread leaves the list for the Archived section; the keeper
+  // stays where it was.
+  await expect(row).toHaveCount(0, { timeout: 15_000 });
+  await expect(listRow(page, "Keeper thread")).toBeVisible();
+  await page.getByRole("button", { name: /Archived \(1\)/ }).click();
+  const archived = page.locator(
+    `[data-archived-list] [data-thread="${convId}"]`,
+  );
+  await expect(archived).toContainText("Repo summary thread");
   await page.screenshot({ path: `${SHOTS}/ac3-archived.png` });
 
   // Restart: renamed title + archived placement survive. Same detach
@@ -376,11 +394,24 @@ test("AC-3 rename + archive persist across restart", async ({ page }) => {
   await stack.kill();
   await page.goto("about:blank");
   stack = await boot("restart2", stack.home);
-  await dmDefault(stack, page);
-  await page.getByText(/Archived/).click();
-  await expect(page.getByText("Repo summary thread").first()).toBeVisible({
+  await openApp(stack, page);
+  await page.goto(`${stack.webUrl}/#?page=threads&view=all`);
+  await expect(listRow(page, "Keeper thread")).toBeVisible({ timeout: 30_000 });
+  await expect(
+    page.locator(`[data-thread="${convId}"]:not([data-archived])`),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: /Archived \(1\)/ }).click();
+  await expect(archived).toContainText("Repo summary thread", {
     timeout: 30_000,
   });
+  // Unarchived from its menu, it is back in the list under the name it was
+  // given, and the keeper was never touched.
+  await menu(archived).click();
+  await page.getByRole("menuitem", { name: "Unarchive thread" }).click();
+  await expect(
+    page.locator(`[data-thread="${convId}"]:not([data-archived])`),
+  ).toContainText("Repo summary thread", { timeout: 30_000 });
+  await expect(listRow(page, "Keeper thread")).toBeVisible();
 });
 
 test("AC-5 kill the relay mid-turn, restore: output complete, no duplicates", async ({
@@ -388,8 +419,8 @@ test("AC-5 kill the relay mid-turn, restore: output complete, no duplicates", as
 }) => {
   test.setTimeout(120_000);
   // "Add a footer" pauses on an approval ask — a deterministic mid-turn hold.
-  await dmDefault(stack, page);
-  await send(page, "Add a footer to the page");
+  const agent = await openApp(stack, page);
+  await startChat(page, stack.webUrl, agent, "Add a footer to the page");
   const allow = page.getByRole("button", { name: "Once", exact: true }).first();
   await expect(allow).toBeVisible({ timeout: 60_000 });
 
@@ -400,7 +431,8 @@ test("AC-5 kill the relay mid-turn, restore: output complete, no duplicates", as
   // socket; keep retrying once the app reconnects until the turn completes.
   await allow.click().catch(() => {});
   await stack.restartRelay();
-  const done = page.locator("main").getByText("Done on").first();
+  const panel = page.locator("[data-thread-panel]");
+  const done = panel.getByText("Done on").first();
   const deadline = Date.now() + 90_000;
   while (Date.now() < deadline) {
     if (await done.isVisible().catch(() => false)) break;
@@ -413,7 +445,8 @@ test("AC-5 kill the relay mid-turn, restore: output complete, no duplicates", as
   }
   await expect(done).toBeVisible({ timeout: 10_000 });
   await page.waitForTimeout(1_500); // settle window for a stray duplicate
-  const count = await page.locator("main").getByText("Done on").count();
+  const count = await panel.getByText("Done on").count();
   expect(count).toBe(1);
   await page.screenshot({ path: `${SHOTS}/ac5-after-reconnect.png` });
+  await expect(page).toHaveURL(/open=thread:[^&]+/);
 });

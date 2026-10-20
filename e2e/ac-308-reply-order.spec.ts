@@ -7,6 +7,8 @@ import {
   panelIntoFocus,
   pickPorts,
   type Stack,
+  skipFirstRun,
+  startChat,
 } from "./helpers/stack";
 
 /**
@@ -38,26 +40,12 @@ test.afterAll(async () => {
 });
 test.describe.configure({ mode: "serial" });
 
-async function dmDefault(page: Page) {
-  await page.goto(`${stack.webUrl}/`);
-  const aside = page.locator("aside");
-  await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
-    timeout: 30_000,
-  });
-  const dmBtn = page.getByRole("button", {
-    name: /open dm|set up later|message/i,
-  });
-  if (
-    await dmBtn
-      .first()
-      .isVisible()
-      .catch(() => false)
-  ) {
-    await dmBtn.first().click();
-  } else {
-    await aside.getByRole("button", { name: /default/i }).click();
-  }
-  await expect(page).toHaveURL(/\/dm\//);
+/* A new chat with the seeded Default employee, the way a person starts one:
+   the draft beside Threads. An id that names nobody opens the draft on the
+   default agent, so the spec needs no employee lookup. */
+async function chatDefault(page: Page, text: string) {
+  await skipFirstRun(page);
+  await startChat(page, stack.webUrl, { id: "default", name: "Default" }, text);
 }
 
 const send = async (page: Page, text: string) => {
@@ -73,11 +61,10 @@ test("AC-2/AC-3 an engine leg keeps its own card above newer rows; its post is c
   page,
 }) => {
   test.setTimeout(240_000);
-  await dmDefault(page);
   /* `slowleg:` paces only the armed leg (default 300 ms — the pace the
      suite-wide tick used to give EVERY turn) so "meanwhile" still lands
      mid-leg; the arming turn and the queue drains run at engine tick. */
-  await send(page, "slowleg: leg:ZEBRA report delivered");
+  await chatDefault(page, "slowleg: leg:ZEBRA report delivered");
   /* #577: a send lands on the thread panel; [data-thread] asserts live in
      Focus — step in via the panel's ↗. */
   await panelIntoFocus(page);
@@ -141,9 +128,8 @@ test("AC-1/AC-5 queued replies anchor under their own prompt — even after relo
   page,
 }) => {
   test.setTimeout(240_000);
-  await dmDefault(page);
   // Hold the session open on an approval so both sends queue behind it.
-  await send(page, "Add a release note to the readme");
+  await chatDefault(page, "Add a release note to the readme");
   // #577: a send lands on the thread panel; [data-thread] lives in Focus.
   await panelIntoFocus(page);
   await expect(page.getByText("Approval needed").first()).toBeVisible({

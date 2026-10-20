@@ -7,7 +7,8 @@ import { toast } from "../lib/toast";
 import { ToastView } from "../lib/toast-view";
 import { ThreadPanel } from "../thread/thread-panel";
 import { makeV3Actions } from "./actions";
-import { StatusBanner } from "./banner";
+import { AddFolderHost } from "./add-folder";
+import { StatusBanner, StatusDetails } from "./banner";
 import { v3DataStore } from "./data";
 import { useShellEffects } from "./effects";
 import { moveNav, v3Nav } from "./nav";
@@ -33,10 +34,16 @@ function Company() {
   const nav = useAtom(v3Nav);
   const data = useAtom(v3DataStore());
   const description = useAtom(engine.description);
-  // #115/D-#19: Hire exists only while the engine can create agents.
-  const canHire =
-    description?.capabilities.some((c) => c.id === "agents") ?? false;
-  const actions = useMemo(() => makeV3Actions(canHire), [canHire]);
+  // #115/D-#19: Hire exists only while the engine can create agents; the new
+  // chat's `/` menu only while it lists commands.
+  const has = (id: string) =>
+    description?.capabilities.some((c) => c.id === id) ?? false;
+  const agents = has("agents");
+  const commands = has("commands");
+  const actions = useMemo(
+    () => makeV3Actions({ agents, commands }),
+    [agents, commands],
+  );
   const toastMsg = useAtom(toast);
   const [search, setSearch] = useState(0);
   const [shortcuts, setShortcuts] = useState(false);
@@ -56,9 +63,11 @@ function Company() {
           // The window's vibrancy follows the theme or the sidebar turns
           // unreadable (#232).
           onThemeChange={(theme) => window.lilos?.setThemeSource?.(theme)}
-          renderThread={({ id, go }) => (
+          renderThread={({ id, go, scrollTo, onScrolled }) => (
             <ThreadPanel
               conversationId={id}
+              scrollTo={scrollTo}
+              onScrolled={onScrolled}
               onOpenAgent={(employeeId) =>
                 go({ page: "agent", id: employeeId })
               }
@@ -78,6 +87,10 @@ function Company() {
           onClose={() => setShortcuts(false)}
         />
       )}
+      {/* The new chat's "Add a folder…" opens this. */}
+      <AddFolderHost />
+      {/* The banner's Details and first run's "See status" open this one. */}
+      <StatusDetails />
       {/* One-line notices (failed sends, the Undo of a rewind). */}
       {toastMsg && <ToastView toast={toastMsg} />}
     </div>

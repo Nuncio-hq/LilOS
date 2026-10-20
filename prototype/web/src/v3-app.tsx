@@ -4,20 +4,22 @@ import { V3_DATA, v3Draft } from "./fake-v3"
 import { v3Reply } from "./fake-v3-reply"
 import { makeActions } from "./v3-engine/actions"
 
-/* ?v3 entry: the calm-company prototype. The URL mirrors where you are, so
-   any screen can be linked, reloaded, or reached with Back/Forward:
-   ?v3&page=threads&open=thread:t-lil81,ticket:LIL-81 (a page, plus the trail
+/* The prototype's one screen: the calm company. The URL mirrors where you
+   are, so any screen can be linked, reloaded, or reached with Back/Forward:
+   /?page=threads&open=thread:t-lil81,ticket:LIL-81 (a page, plus the trail
    open in the side peek) · &full=1 widens the peek (a thread becomes a
-   session: chat left, its work right) · ?v3&page=work&view=board ·
-   ?v3&page=settings&view=phone · ?v3&page=welcome (first run) ·
-   ?v3&page=people&open=agent:scout,newchat:scout · &theme=dark|light. A bare record link
-   (?v3&page=ticket&id=HB-12) opens it over the page that lists it. The mock
-   company state lives in the shell and resets only on a full reload. */
+   session: chat left, its work right) · /?page=work&view=board ·
+   /?page=settings&view=phone · /?page=welcome (first run) ·
+   /?page=people&open=agent:scout,newchat:scout · &theme=dark|light. A bare record link
+   (/?page=ticket&id=HB-12) opens it over the page that lists it. A leading
+   `v3` flag (old links: ?v3&page=…) is the same screen and is kept as is.
+   The mock company state lives in the shell and resets only on a full reload. */
 const navFromUrl = (): V3Nav => navFromParams(new URLSearchParams(location.search))
 
-function urlFromNav(n: V3Nav) {
+/* The query string for a nav: empty at Home, so a bare `/` stays bare. */
+function searchFromNav(n: V3Nav) {
   const text = paramsText(paramsFromNav(n, new URLSearchParams(location.search)))
-  return `?${text.replace(/^v3=(&|$)/, "v3$1")}`
+  return text ? `?${text.replace(/(^|&)v3=(?=&|$)/, "$1v3")}` : ""
 }
 
 /* &theme= pins the theme before the shell's theme hook first reads it. */
@@ -29,8 +31,9 @@ export default function V3App() {
   const [nav, setNav] = useState(navFromUrl)
   // Every move becomes a history entry; Back/Forward read it back.
   useEffect(() => {
-    const url = urlFromNav(nav)
-    if (url !== location.search) history.pushState(null, "", url)
+    const search = searchFromNav(nav)
+    // An empty search has to name the path: pushState("") keeps the current query.
+    if (search !== location.search) history.pushState(null, "", search || location.pathname)
   }, [nav])
   useEffect(() => {
     const onPop = () => setNav(navFromUrl())

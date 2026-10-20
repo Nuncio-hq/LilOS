@@ -1,7 +1,9 @@
 import { Undo2Icon } from "lucide-react";
 import { useState } from "react";
+import { AttachmentChips } from "../chat/attachment-chips";
 import { MessageResponse } from "../components/ai-elements/message";
 import { cn } from "../lib/utils";
+import type { AttachedFile } from "../types";
 import { AgentAvatar, Btn } from "./v3-bits";
 import { Attachments } from "./v3-convo-attach";
 import { WorkBlock } from "./v3-convo-work";
@@ -46,10 +48,13 @@ type RewindProps = {
    there before undoing anything. */
 function YouBubble({
   text,
+  files,
   note,
   rewind,
 }: {
   text: string;
+  /** What you attached; a message of files alone has no bubble. */
+  files?: AttachedFile[];
   note: string;
   rewind?: RewindProps;
 }) {
@@ -58,7 +63,12 @@ function YouBubble({
   const confirming = asking && !rewind?.working;
   return (
     <div className="group/you flex flex-col items-end">
-      <div className={cn(BUBBLE, "max-w-[80%]")}>{text}</div>
+      {text && <div className={cn(BUBBLE, "max-w-[80%]")}>{text}</div>}
+      {!!files?.length && (
+        <div className="flex max-w-[80%] justify-end">
+          <AttachmentChips files={files} />
+        </div>
+      )}
       <div className="mt-1 flex items-center gap-3 text-[12px] text-muted-foreground/70">
         {rewind && !confirming && (
           // The wrapper carries the tooltip: a disabled button swallows pointer events.
@@ -176,7 +186,9 @@ function Prompt({
     );
   }
   if (p.by === "you")
-    return <YouBubble text={p.text} note={p.at} rewind={rewind} />;
+    return (
+      <YouBubble text={p.text} files={p.files} note={p.at} rewind={rewind} />
+    );
   return (
     <div>
       <Who data={data} agent={agentOf(data, p.by)} note={p.at} />

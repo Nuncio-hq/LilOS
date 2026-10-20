@@ -1,14 +1,14 @@
 // @vitest-environment happy-dom
-/* Issue #80, ui layer: AC-1 the user's messages carry the same avatar as the
-   sidebar footer (one Human identity, high-contrast fallback or image) and
+/* Issue #80, ui layer: AC-1 the user's messages carry the person's own avatar
+   (one Human identity, high-contrast fallback or image) and
    AC-2 a mid-stream reply renders markdown as it arrives, on the same code
-   path as the finished render. */
+   path as the finished render. (The sidebar-footer half of AC-1 went with
+   the old sidebar.) */
 import { cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test } from "vitest";
 import { AgentTurn } from "../src/conversation/turns";
 import { Row } from "../src/feed/row";
 import { HumanAvatar } from "../src/shell/avatars";
-import { Sidebar } from "../src/shell/sidebar";
 import type { Employee, Human } from "../src/types";
 
 if (typeof globalThis.ResizeObserver === "undefined") {
@@ -54,9 +54,9 @@ describe("issue #80", () => {
     expect(fb?.className).toContain("bg-blue-600");
   });
 
-  test("AC-1 a user message row wears the same avatar the sidebar footer shows", () => {
-    // A different identity than the shipped one proves the footer follows the
-    // app's `me`, not a hardcoded initial — on main this row/footer pair diverges.
+  test("AC-1 a user message row wears the person's own avatar", () => {
+    // A different identity than the shipped one proves the row follows the
+    // app's `me`, not a hardcoded initial.
     const who: Human = { name: "Minh", color: "bg-cyan-600" };
     const whoFor = (id: string) => (id === "user" ? who : undefined);
     const { container } = render(
@@ -68,37 +68,9 @@ describe("issue #80", () => {
     expect(rowFb?.textContent).toBe("M");
     expect(rowFb?.className).toContain("bg-cyan-600");
     cleanup();
-    const side = render(
-      <Sidebar
-        navOpen
-        hiddenWhenClosed={false}
-        me={who}
-        company="Minh Co"
-        companyChannels={[]}
-        projects={[]}
-        folders={[]}
-        employees={[]}
-        view={{ kind: "dm", id: "" }}
-        theme="light"
-        isProjectDefaultOpen={() => false}
-        onSetTheme={() => {}}
-        onCloseNav={() => {}}
-        onGoChannel={() => {}}
-        onGoDM={() => {}}
-        onOpenTickets={() => {}}
-        onAddFolder={() => {}}
-      />,
-    );
-    const sideFb = side.container.querySelector(
-      '[data-slot="avatar-fallback"]',
-    );
-    // Same initial + same colour classes on both fallbacks → same person.
-    expect(sideFb?.textContent).toBe(rowFb?.textContent);
-    expect(sideFb?.className).toContain("bg-cyan-600");
-    expect(side.container.textContent).toContain("Minh");
   });
 
-  test("AC-1 a human with an image renders it in the footer too", async () => {
+  test("AC-1 a human with an image renders it", async () => {
     // base-ui mounts <img> only once the image loads; happy-dom never fires
     // Image.onload, so stub it to complete on src assignment.
     const RealImage = window.Image;
@@ -114,33 +86,6 @@ describe("issue #80", () => {
     );
     await waitFor(() =>
       expect(container.querySelector("img")?.getAttribute("src")).toBe(
-        "/ada.png",
-      ),
-    );
-    cleanup();
-    const side = render(
-      <Sidebar
-        navOpen
-        hiddenWhenClosed={false}
-        me={{ ...ME, image: "/ada.png" }}
-        company="Ada Co"
-        companyChannels={[]}
-        projects={[]}
-        folders={[]}
-        employees={[]}
-        view={{ kind: "dm", id: "" }}
-        theme="light"
-        isProjectDefaultOpen={() => false}
-        onSetTheme={() => {}}
-        onCloseNav={() => {}}
-        onGoChannel={() => {}}
-        onGoDM={() => {}}
-        onOpenTickets={() => {}}
-        onAddFolder={() => {}}
-      />,
-    );
-    await waitFor(() =>
-      expect(side.container.querySelector("img")?.getAttribute("src")).toBe(
         "/ada.png",
       ),
     );

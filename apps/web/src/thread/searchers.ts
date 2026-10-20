@@ -38,20 +38,3 @@ export function sessionCommands(engineRef: string | null | undefined) {
   }
   return f;
 }
-
-/** The same menu for a session that doesn't exist yet: agent + cwd scoped. */
-export function draftCommands(profile: string, cwd: string | null) {
-  if (!hasCapability("commands")) return undefined;
-  const key = `draft:${profile}:${cwd ?? ""}`;
-  let f = commandSearchers.get(key);
-  if (!f) {
-    f = (q: string) =>
-      relay.request<SlashItem[]>("commands.list", {
-        agent: profile,
-        ...(cwd ? { cwd } : {}),
-        query: q,
-      });
-    commandSearchers.set(key, f);
-  }
-  return f;
-}

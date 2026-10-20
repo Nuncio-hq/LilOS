@@ -26,7 +26,9 @@ import type { V3Data, V3PageProps, V3RecordRoute } from "./v3-types";
 /** A record's name in the trail: short enough to fit four in a row. */
 function label(d: V3Data, r: V3RecordRoute) {
   if (r.page === "thread") {
-    const t = d.threads.find((x) => x.id === r.id);
+    const t =
+      d.threads.find((x) => x.id === r.id) ??
+      d.archivedThreads?.find((x) => x.id === r.id);
     return t
       ? `${agentNameOf(d, t.agentId)} · ${t.ticketId ?? "Chat"}`
       : "Thread";

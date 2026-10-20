@@ -35,27 +35,51 @@ export const threadsOf = (d: V3Data, ticketId: string): V3Thread[] =>
     .filter((t) => t.ticketId === ticketId)
     .sort((a, b) => a.startedAt.localeCompare(b.startedAt));
 
+/** How urgent a status is on a person, most urgent first: what needs you,
+   then what is stuck or running, then what ended. An agent wears its most
+   urgent thread's status. */
+const URGENCY: V3Status[] = [
+  "needs",
+  "stuck",
+  "working",
+  "waiting",
+  "failed",
+  "done",
+  "idle",
+];
+
+/** Where a status sits in `URGENCY`; one that is not listed sorts last. */
+const urgency = (s: V3Status): number => {
+  const i = URGENCY.indexOf(s);
+  return i < 0 ? URGENCY.length : i;
+};
+
 /** The thread an agent is on now: live first, else the newest. */
 export function agentThread(d: V3Data, agentId: string): V3Thread | undefined {
   const mine = d.threads.filter((t) => t.agentId === agentId);
-  const order: V3Status[] = [
-    "needs",
-    "stuck",
-    "working",
-    "waiting",
-    "failed",
-    "done",
-    "idle",
-  ];
-  return [...mine].sort(
-    (a, b) => order.indexOf(a.status) - order.indexOf(b.status),
-  )[0];
+  return [...mine].sort((a, b) => urgency(a.status) - urgency(b.status))[0];
 }
 /** An agent's status is its current thread's; a finished or absent thread
    means the agent is idle until it gets the next ticket. */
 export function agentStatus(d: V3Data, agentId: string): V3Status {
   const s = agentThread(d, agentId)?.status;
   return !s || s === "done" ? "idle" : s;
+}
+
+/** The one dot an agent wears in the sidebar: its most urgent thread's
+   status (needs > working > failed > unseen > idle). A thread that finished
+   past your read mark (D-#563) counts as `done`, its own colour, so
+   "something finished that you have not seen" shows on the person; once seen
+   it is idle again. Unlike `agentStatus`, which says what the agent is doing
+   now, this is what wants your eye. */
+export function agentDot(d: V3Data, agentId: string): V3Status {
+  let dot: V3Status = "idle";
+  for (const t of d.threads) {
+    if (t.agentId !== agentId) continue;
+    const s = t.status === "done" ? (t.unseen ? "done" : "idle") : t.status;
+    if (urgency(s) < urgency(dot)) dot = s;
+  }
+  return dot;
 }
 
 /** The ticket an agent holds now. */

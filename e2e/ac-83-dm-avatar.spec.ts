@@ -1,18 +1,32 @@
-import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { _electron, expect, type Page, test } from "@playwright/test";
-import { bootStack, pickPorts } from "./helpers/stack";
+import { expect, type Locator, type Page, test } from "@playwright/test";
+import { electronScreenshot, launchDesktop } from "./helpers/electron";
+import {
+  bootStack,
+  pickPorts,
+  skipFirstRun,
+  startChat,
+  v3Peek,
+} from "./helpers/stack";
 
 /**
- * Issue #83 — DM feed row avatar alignment. A session row's first content
- * line was the title/actions row, so the grid avatar top-aligned with it and
- * floated a line above the "Oscar · 07:20 PM" header. AC-2 measures the row's
- * avatar top edge against the name line's top edge in the live web app
- * (≤4px — happy-dom has no layout engine, so this must be real layout).
- * AC-1 checks the reply chip sits in the column right of the avatar and that
+ * Issue #83 — message row avatar alignment. A row's first content line was
+ * the title/actions row, so the grid avatar top-aligned with it and floated
+ * a line above the "Oscar · 07:20 PM" header. AC-2 measures the row's avatar
+ * top edge against the name line's top edge in the live web app (≤4px —
+ * happy-dom has no layout engine, so this must be real layout). AC-1 checks
+ * the row's text and controls sit in the column right of the avatar and that
  * hover doesn't shift anything; AC-3 repeats the check inside the Electron
  * desktop app and captures the row there.
+ *
+ * v3: the row is the thread panel's message row (the shared feed `Row`: a 36px
+ * avatar column + Who line + text), beside Threads in the side peek. The old
+ * "N replies" chip and the DM feed's `[data-session]` row existed only on the
+ * deleted DM home, so the "chip" half of AC-1 measures what the row still
+ * carries to the right of the avatar (its Who line, its text, its Rewind
+ * button), and the idle/selected states move to the Threads list row for the
+ * same thread (it is `aria-current` while its thread is open).
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
@@ -20,46 +34,159 @@ const repo = path.resolve(here, "..");
 // --repeat-each spreads a file's repeats across worker processes; each boots
 // the stack again, so ports are offset per worker or relays race one port (#84).
 
-const desktopDir = path.join(repo, "apps", "desktop");
-
 const SHOTS = path.join(repo, "test-results", "ac-83");
 const PROMPT = "What does the replay contract carry?"; // engine-fake script
+const AGENT = { id: "default", name: "Default" };
 
-/* The middle-pane session row: `[data-session]` wraps the `Row` grid. The
-   row's avatar is its grid column 1 (the reply chip's mini avatar also
-   matches [data-slot=avatar], so `.first()` keeps the row's), and the name
-   line's top is measured at the "Oscar" span — exact text, since the avatar
-   fallback "O" also carries `font-semibold`. */
-const feedRow = (page: Page) => page.locator("[data-session]").first();
-/* The name/time line is selected in-page (see tops()): the element at
-   ":scope > .grid > *:nth-child(2) > *:first-child". */
+/* The thread panel's first message row: `[data-msg]` wraps the `Row` grid. The
+   row's avatar is its grid column 1 and the name line's top is measured at the
+   "Oscar" span — exact text, since the avatar fallback "O" also carries
+   `font-semibold`. The name/time line is the grid's second child's first
+   child (see tops()). */
+const panelRow = (page: Page) =>
+  page.locator("[data-thread-panel] [data-msg] > div.group.grid").first();
 
-async function dmDefault(page: Page, webUrl: string) {
-  await page.goto(`${webUrl}/`);
-  const aside = page.locator("aside");
-  await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
-    timeout: 30_000,
+/* The same thread's row on the Threads page (an "Earlier today" row once its
+   turn is finished and seen): the agent's avatar and name in one flex line. */
+const listRow = (page: Page) =>
+  page
+    .locator("#v3-main")
+    .getByRole("button")
+    .filter({ hasText: /replay contract/i })
+    .first();
+
+// All boxes are sampled inside ONE evaluate so they always come from the same
+// rendered frame — separate boundingBox() calls can straddle a reflow and mix
+// frames (#84).
+const tops = (row: Locator) =>
+  row.evaluate((el) => {
+    const yOf = (n: Element | null | undefined) =>
+      n ? n.getBoundingClientRect().y : null;
+    const nameSpan = [...el.querySelectorAll("span")].find(
+      (n) => n.childElementCount === 0 && n.textContent?.trim() === "Oscar",
+    );
+    const avatarTop = yOf(el.querySelector("[data-slot='avatar']"));
+    const nameTop = yOf(nameSpan);
+    const lineTop = yOf(
+      el.querySelector(":scope > *:nth-child(2) > *:first-child"),
+    );
+    if (avatarTop === null || nameTop === null) {
+      throw new Error("row avatar or name line not laid out");
+    }
+    return { avatarTop, nameTop, lineTop };
   });
-  const dmBtn = page.getByRole("button", {
-    name: /open dm|set up later|message/i,
-  });
-  if (
-    await dmBtn
-      .first()
-      .isVisible()
-      .catch(() => false)
-  ) {
-    await dmBtn.first().click();
-  } else {
-    await aside.getByRole("button", { name: /default/i }).click();
+
+// Geometry asserts must sample the layout's fixed point: a reply lands a
+// feed-tick after the message and grows the thread, so a single read can
+// catch mid-reflow geometry (#84). Read until two consecutive samples are
+// pixel-stable.
+const settledTops = async (page: Page, row: Locator) => {
+  let prev = await tops(row);
+  for (let i = 0; i < 40; i++) {
+    await page.waitForTimeout(100);
+    const next = await tops(row);
+    if (
+      Math.abs(next.avatarTop - prev.avatarTop) < 0.5 &&
+      Math.abs(next.nameTop - prev.nameTop) < 0.5 &&
+      next.lineTop !== null &&
+      prev.lineTop !== null &&
+      Math.abs(next.lineTop - prev.lineTop) < 0.5
+    ) {
+      return next;
+    }
+    prev = next;
   }
-  await expect(page).toHaveURL(/\/dm\//);
-}
+  return prev;
+};
 
-const send = async (page: Page, text: string) => {
-  const box = page.locator("textarea").last();
-  await box.fill(text);
-  await box.press("Enter");
+// On failure, dump what was measured so CI (which can't upload artifacts)
+// still shows the real DOM + boxes.
+const dumpRow = async (row: Locator) => {
+  const d = await row.evaluate((el) => {
+    const box = (n: Element) => {
+      const r = n.getBoundingClientRect();
+      return {
+        x: +r.x.toFixed(1),
+        y: +r.y.toFixed(1),
+        w: +r.width.toFixed(1),
+        h: +r.height.toFixed(1),
+      };
+    };
+    const gridStyle = getComputedStyle(el);
+    return {
+      row: box(el),
+      grid: {
+        display: gridStyle.display,
+        templateColumns: gridStyle.gridTemplateColumns,
+      },
+      avatars: [...el.querySelectorAll("[data-slot='avatar']")].map((a) => ({
+        box: box(a),
+        cls: (a.getAttribute("class") ?? "").slice(0, 70),
+      })),
+      names: [...el.querySelectorAll("*")]
+        .filter(
+          (n) => n.childElementCount === 0 && n.textContent?.trim() === "Oscar",
+        )
+        .map((n) => ({
+          box: box(n),
+          tag: n.tagName,
+          cls: (n.getAttribute("class") ?? "").slice(0, 70),
+        })),
+      html: el.outerHTML.slice(0, 5000),
+    };
+  });
+  console.log(`[ac83-dump] ${JSON.stringify(d)}`);
+};
+
+// Assert the measured top-edge delta; on failure dump the row's DOM and all
+// avatar/name boxes so CI (no artifact upload) still shows cause.
+const expectAligned = async (page: Page, row: Locator, tag: string) => {
+  const { avatarTop, nameTop, lineTop } = await settledTops(page, row);
+  const delta = Math.abs(nameTop - avatarTop);
+  const lineDelta = lineTop === null ? null : Math.abs(lineTop - avatarTop);
+  if (delta > 4 || lineDelta === null || lineDelta > 4) {
+    await dumpRow(row);
+    console.log(
+      `[ac83] ${tag}: nameTop=${nameTop} avatarTop=${avatarTop} lineTop=${lineTop}`,
+    );
+  }
+  expect(delta, `${tag}: name span vs avatar`).toBeLessThanOrEqual(4);
+  expect(lineDelta, `${tag}: name line vs avatar`).not.toBeNull();
+  expect(lineDelta, `${tag}: name line vs avatar`).toBeLessThanOrEqual(4);
+};
+
+/* The Threads list row's own avatar/name pair (the agent's letter chip and its
+   name, one `items-center` line): same top-edge rule, one frame. */
+const listTops = (row: Locator) =>
+  row.evaluate((el) => {
+    const avatar = [...el.querySelectorAll("span[aria-hidden='true']")].find(
+      (n) => (n as HTMLElement).style.width !== "",
+    );
+    const name = avatar?.nextElementSibling;
+    if (!avatar || !name) throw new Error("list row avatar or name missing");
+    return {
+      avatarTop: avatar.getBoundingClientRect().y,
+      nameTop: name.getBoundingClientRect().y,
+    };
+  });
+
+const expectListAligned = async (page: Page, row: Locator, tag: string) => {
+  let prev = await listTops(row);
+  for (let i = 0; i < 40; i++) {
+    await page.waitForTimeout(100);
+    const next = await listTops(row);
+    if (
+      Math.abs(next.avatarTop - prev.avatarTop) < 0.5 &&
+      Math.abs(next.nameTop - prev.nameTop) < 0.5
+    )
+      break;
+    prev = next;
+  }
+  const { avatarTop, nameTop } = prev;
+  expect(
+    Math.abs(nameTop - avatarTop),
+    `${tag}: list row name vs avatar (${nameTop} vs ${avatarTop})`,
+  ).toBeLessThanOrEqual(4);
 };
 
 test.describe.configure({ mode: "serial" });
@@ -76,220 +203,103 @@ test("AC-1/AC-2 the avatar and name line share a top edge (≤4px)", async ({
     { LILOS_USER_NAME: "Oscar" },
   );
   try {
-    await dmDefault(page, stack.webUrl);
-    await send(page, PROMPT);
-    /* #577: the send stays on the DM feed — the row is already rendered. */
-    const row = feedRow(page);
+    await skipFirstRun(page);
+    await startChat(page, stack.webUrl, AGENT, PROMPT);
+    /* The send lands in the side peek: the message row is already rendered. */
+    const row = panelRow(page);
     await expect(row).toBeVisible({ timeout: 30_000 });
-    // Settled state: engine-fake's reply is in, the session chip is rendered.
-    await expect(row.getByText(/\d+ repl(y|ies)/)).toBeVisible({
+    // Settled state: engine-fake's reply is in and its turn is over.
+    await expect(
+      page.locator("[data-thread-panel]").getByText(/\d+ repl(y|ies)/),
+    ).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator("[data-turnsettled]")).toBeVisible({
       timeout: 60_000,
     });
-    // All three boxes are sampled inside ONE evaluate so they always come
-    // from the same rendered frame — separate boundingBox() calls can straddle
-    // a reflow and mix frames (#84).
-    const tops = async () =>
-      row.evaluate((el) => {
-        const yOf = (n: Element | null | undefined) =>
-          n ? n.getBoundingClientRect().y : null;
-        const nameSpan = [...el.querySelectorAll("span")].find(
-          (n) => n.childElementCount === 0 && n.textContent?.trim() === "Oscar",
-        );
-        const avatarTop = yOf(el.querySelector("[data-slot='avatar']"));
-        const nameTop = yOf(nameSpan);
-        const lineTop = yOf(
-          el.querySelector(":scope > .grid > *:nth-child(2) > *:first-child"),
-        );
-        if (avatarTop === null || nameTop === null) {
-          throw new Error("row avatar or name line not laid out");
-        }
-        return { avatarTop, nameTop, lineTop };
-      });
-    // Geometry asserts must sample the layout's fixed point: the
-    // reply-preview strip lands a feed-tick after the message and grows the
-    // row, so a single read can catch mid-reflow geometry (#84). Read until
-    // two consecutive samples are pixel-stable.
-    const settledTops = async () => {
-      let prev = await tops();
-      for (let i = 0; i < 40; i++) {
-        await page.waitForTimeout(100);
-        const next = await tops();
-        if (
-          Math.abs(next.avatarTop - prev.avatarTop) < 0.5 &&
-          Math.abs(next.nameTop - prev.nameTop) < 0.5 &&
-          next.lineTop !== null &&
-          prev.lineTop !== null &&
-          Math.abs(next.lineTop - prev.lineTop) < 0.5
-        ) {
-          return next;
-        }
-        prev = next;
-      }
-      return prev;
-    };
-    // On failure, dump what was measured so CI (which can't upload artifacts)
-    // still shows the real DOM + boxes.
-    const dumpRow = async () => {
-      const d = await row.evaluate((el) => {
-        const box = (n: Element) => {
-          const r = n.getBoundingClientRect();
-          return {
-            x: +r.x.toFixed(1),
-            y: +r.y.toFixed(1),
-            w: +r.width.toFixed(1),
-            h: +r.height.toFixed(1),
-          };
-        };
-        const grid = el.querySelector(":scope > .grid");
-        const gridStyle = grid ? getComputedStyle(grid) : null;
-        return {
-          row: box(el),
-          grid: grid
-            ? {
-                display: gridStyle?.display,
-                templateColumns: gridStyle?.gridTemplateColumns,
-                box: box(grid),
-              }
-            : null,
-          avatars: [...el.querySelectorAll("[data-slot='avatar']")].map(
-            (a) => ({
-              box: box(a),
-              cls: (a.getAttribute("class") ?? "").slice(0, 70),
-            }),
-          ),
-          oscars: [...el.querySelectorAll("*")]
-            .filter(
-              (n) =>
-                n.childElementCount === 0 && n.textContent?.trim() === "Oscar",
-            )
-            .map((n) => ({
-              box: box(n),
-              tag: n.tagName,
-              cls: (n.getAttribute("class") ?? "").slice(0, 70),
-            })),
-          html: el.outerHTML.slice(0, 5000),
-        };
-      });
-      console.log(`[ac83-dump] ${JSON.stringify(d)}`);
-    };
-    // Assert the measured top-edge delta; on failure dump the row's DOM and
-    // all avatar/name boxes so CI (no artifact upload) still shows cause.
-    const expectAligned = async (tag: string) => {
-      const { avatarTop, nameTop, lineTop } = await settledTops();
-      const delta = Math.abs(nameTop - avatarTop);
-      const lineDelta = lineTop === null ? null : Math.abs(lineTop - avatarTop);
-      if (delta > 4 || lineDelta === null || lineDelta > 4) {
-        await dumpRow();
-        console.log(
-          `[ac83] ${tag}: nameTop=${nameTop} avatarTop=${avatarTop} lineTop=${lineTop}`,
-        );
-      }
-      expect(delta, `${tag}: name span vs avatar`).toBeLessThanOrEqual(4);
-      expect(lineDelta, `${tag}: name line vs avatar`).not.toBeNull();
-      expect(lineDelta, `${tag}: name line vs avatar`).toBeLessThanOrEqual(4);
-    };
     await page.screenshot({ path: `${SHOTS}/ac-1-feed-row.png` });
-    await expectAligned("default viewport");
+    await expectAligned(page, row, "default viewport");
     // Same check at a narrow width — the name line must not wrap below the
     // avatar when fonts/window sizes differ (the Linux CI failure mode).
     await page.setViewportSize({ width: 900, height: 720 });
-    await expectAligned("900px viewport");
+    await expectAligned(page, row, "900px viewport");
     await page.setViewportSize({ width: 1280, height: 720 });
-    // AC-1: text + reply chip sit in the column to the RIGHT of the avatar.
-    // Same single-frame rule as tops(): separate boundingBox() calls can
-    // straddle a reflow and mix frames (#84 — CI hit a 7px false negative).
-    const { avatarBox, chipBox } = await row.evaluate((el) => {
-      const r = (n: Element | null | undefined) => {
+    // AC-1: the row's Who line, its text and its controls sit in the column
+    // to the RIGHT of the avatar. Same single-frame rule as tops(): separate
+    // boundingBox() calls can straddle a reflow and mix frames (#84 — CI hit
+    // a 7px false negative).
+    const { avatarRight, columns } = await row.evaluate((el) => {
+      const avatar = el.querySelector("[data-slot='avatar']");
+      const right = (n: Element | null | undefined) => {
         const b = n?.getBoundingClientRect();
-        return b ? { x: b.x, width: b.width } : null;
+        return b ? b.x : null;
       };
-      const buttons = el.querySelectorAll("button");
+      const a = avatar?.getBoundingClientRect();
       return {
-        avatarBox: r(el.querySelector("[data-slot='avatar']")),
-        chipBox: r(buttons[buttons.length - 1]),
+        avatarRight: a ? a.x + a.width : null,
+        columns: {
+          who: right(
+            el.querySelector(":scope > *:nth-child(2) > *:first-child"),
+          ),
+          text: right(el.querySelector(".lilos-prose")),
+          rewind: right(el.querySelector("[data-rewind]")),
+        },
       };
     });
-    if (!avatarBox || !chipBox) throw new Error("row boxes missing");
-    expect(chipBox.x).toBeGreaterThanOrEqual(avatarBox.x + avatarBox.width - 1);
+    if (avatarRight === null) throw new Error("row avatar missing");
+    for (const [name, x] of Object.entries(columns)) {
+      expect(x, `${name} is laid out`).not.toBeNull();
+      expect(x as number, `${name} right of the avatar`).toBeGreaterThanOrEqual(
+        avatarRight - 1,
+      );
+    }
     // AC-1: hover (and its background change) doesn't shift the row's layout.
     await row.hover();
-    await expectAligned("hovered");
-    // AC-1 selected state: the row is `active` while its session is open —
-    // drop to the plain DM view (idle) and back (selected) and re-measure.
-    const empId = /\/dm\/([^/]+)/.exec(page.url())?.[1];
-    if (!empId) throw new Error(`not on a DM route: ${page.url()}`);
-    await page.goto(`${stack.webUrl}/dm/${empId}`);
+    await expectAligned(page, row, "hovered");
+    // AC-1 states: the thread's Threads-list row is `aria-current` (selected)
+    // while its thread is open. Close the peek (idle: no open thread) and
+    // re-measure the list row's own avatar/name pair, reopen it from the row
+    // (selected) and measure again; the panel row is re-measured there too.
+    await v3Peek(page).getByTitle("Close (Esc)").click();
+    await expect(v3Peek(page)).toHaveCount(0);
+    const list = listRow(page);
+    await expect(list).toBeVisible({ timeout: 30_000 });
+    await expect(list).not.toHaveAttribute("aria-current", "true");
+    await expectListAligned(page, list, "idle (no open thread)");
+    await list.click(); // the row reopens the thread in the peek
+    await expect(page).toHaveURL(/open=thread:[^&]+$/);
+    await expect(list).toHaveAttribute("aria-current", "true");
     await expect(row).toBeVisible({ timeout: 30_000 });
-    await expectAligned("idle (no open session)");
-    await row.locator("button").last().click(); // chip reopens the session
-    // #195: the chip opens the peek panel — the feed row stays rendered
-    // beside it, so the selected state is measurable right here.
-    await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+$/);
-    await expect(row).toBeVisible({ timeout: 30_000 });
-    await expectAligned("selected (session open)");
+    await expectListAligned(page, list, "selected (thread open)");
+    await expectAligned(page, row, "selected (thread open)");
   } finally {
     await stack.stop();
   }
 });
 
-test("AC-3 desktop app: the DM feed row in Electron", async () => {
+test("AC-3 desktop app: the thread row in Electron", async () => {
   test.setTimeout(240_000);
   const stack = await bootStack("ac83b", await pickPorts(), {
     LILOS_USER_NAME: "Oscar",
   });
   try {
-    const build = spawn("bun", ["scripts/dev.ts", "--payload-only"], {
-      cwd: desktopDir,
-      env: { ...process.env },
-      stdio: "inherit",
-    });
-    await new Promise<void>((resolve, reject) => {
-      build.once("exit", (c) =>
-        c === 0 ? resolve() : reject(new Error(`desktop build exit ${c}`)),
-      );
-    });
-    const portOf = (ws: string) => new URL(ws).port;
-    const app = await _electron.launch({
-      args:
-        process.platform === "linux"
-          ? [desktopDir, "--no-sandbox"]
-          : [desktopDir],
-      env: {
-        ...process.env,
-        LILOS_RELAY_HOME: stack.home,
-        LILOS_RELAY_PORT: portOf(stack.relayWs),
-        LILOS_FEED_PORT: portOf(stack.feedWs),
-        LILOS_WEB_URL: stack.webUrl,
-      },
+    const { app, win } = await launchDesktop(stack, {
+      env: { LILOS_USER_NAME: "Oscar" },
     });
     try {
-      const win = await app.firstWindow();
-      await dmDefault(win, stack.webUrl);
-      await send(win, PROMPT);
-      // #577: the send stays on the feed — no back hop needed.
-      const row = feedRow(win);
+      await startChat(win, stack.webUrl, AGENT, PROMPT);
+      const row = panelRow(win);
       await expect(row).toBeVisible({ timeout: 30_000 });
-      await expect(row.getByText(/\d+ repl(y|ies)/)).toBeVisible({
+      await expect(
+        win.locator("[data-thread-panel]").getByText(/\d+ repl(y|ies)/),
+      ).toBeVisible({ timeout: 60_000 });
+      await expect(win.locator("[data-turnsettled]")).toBeVisible({
         timeout: 60_000,
       });
       // Screenshot first — the buggy run's shot is the "before" evidence.
-      await win.screenshot({ path: `${SHOTS}/ac-3-desktop-dm.png` });
+      await electronScreenshot(app, win, `${SHOTS}/ac-3-desktop-dm.png`);
       // One evaluate → one frame; Promise.all of two boundingBox() calls can
       // still straddle a reflow (#84).
-      const { a, n } = await row.evaluate((el) => {
-        const y = (e: Element | null | undefined) =>
-          e?.getBoundingClientRect().y ?? null;
-        const nameSpan = [...el.querySelectorAll("span")].find(
-          (s) => s.childElementCount === 0 && s.textContent?.trim() === "Oscar",
-        );
-        return {
-          a: y(el.querySelector("[data-slot='avatar']")),
-          n: y(nameSpan),
-        };
-      });
-      if (a === null || n === null)
-        throw new Error("row avatar or name line not laid out");
-      expect(Math.abs(n - a)).toBeLessThanOrEqual(4);
+      const { avatarTop, nameTop } = await settledTops(win, row);
+      expect(Math.abs(nameTop - avatarTop)).toBeLessThanOrEqual(4);
     } finally {
       await app.close();
     }

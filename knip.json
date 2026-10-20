@@ -27,9 +27,6 @@
     },
     "packages/engine-hermes": {
       "entry": ["scripts/*.ts"]
-    },
-    "prototype/web": {
-      "entry": ["engine-plugin.ts", "host-plugin.ts"]
     }
   },
   "ignoreDependencies": ["expo-updates", "expo-system-ui"],

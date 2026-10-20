@@ -1,6 +1,7 @@
 import { RelayError } from "@lilos/client-runtime";
 import { pairingUrl, type V3DataActions } from "@lilos/ui";
 import {
+  setApprovalPolicy,
   setDefaultAccess,
   setDefaultEditor,
   setModelVisibility,
@@ -107,6 +108,11 @@ export const v3SettingsActions: Mine = {
       toastOnFail(
         "Couldn't save that setting",
         setDefaultAccess(patch.approvals),
+      );
+    if (patch.enginePolicy)
+      toastOnFail(
+        "Couldn't update the approval policy",
+        setApprovalPolicy(patch.enginePolicy),
       );
     const editor = detectedEditors.get()?.find((e) => e.name === patch.editor);
     if (editor)

@@ -7,24 +7,17 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "../lib/utils";
-import {
-  AgentAvatar,
-  Btn,
-  DOT,
-  Meter,
-  Page,
-  RowButton,
-  Section,
-  span,
-  Tabs,
-  TicketId,
-  Title,
-} from "./v3-bits";
-import { ThreadPill } from "./v3-live";
-import { agentOf, defaultAgent } from "./v3-model";
-import { AgentName } from "./v3-rows";
+import { AgentAvatar, Btn, DOT, Page, Section, Tabs, Title } from "./v3-bits";
+import { defaultAgent } from "./v3-model";
 import { ScheduledView } from "./v3-schedules";
 import { IdleCard, ThreadCard } from "./v3-thread-card";
+import {
+  AgentThreadRow,
+  ALL_GRID,
+  AllRow,
+  Archived,
+  RecentRow,
+} from "./v3-threads-rows";
 import type { V3PageProps, V3Status, V3Thread } from "./v3-types";
 
 type View = "live" | "all" | "agent" | "scheduled";
@@ -111,96 +104,52 @@ function Live(p: V3PageProps) {
         onLink={() => go({ page: "threads", view: "all" })}
       />
       <div className="border-[var(--v3-line)] border-t">
-        {earlier.map((t) => {
-          const a = agentOf(data, t.agentId);
-          return (
-            <RowButton
-              key={t.id}
-              opens={{ page: "thread", id: t.id }}
-              onClick={() => go({ page: "thread", id: t.id })}
-              className="grid grid-cols-[minmax(0,1fr)_150px_minmax(0,170px)_70px] items-center gap-4 border-[var(--v3-line)] border-b py-2.5 text-[13.5px]"
-            >
-              <span className="truncate">
-                <TicketId id={t.ticketId ?? "Chat"} />
-                {t.title}
-              </span>
-              <AgentName data={data} agent={a} />
-              <span className="truncate text-muted-foreground">
-                {t.summary}
-              </span>
-              <span className="text-right text-muted-foreground">
-                {span(t.minutes)}
-              </span>
-            </RowButton>
-          );
-        })}
+        {earlier.map((t) => (
+          <RecentRow key={t.id} {...p} t={t} />
+        ))}
       </div>
     </>
   );
 }
 
-/** The Context column only exists when some thread reports its context. */
-const COLS = "grid-cols-[minmax(0,1fr)_150px_100px_70px_70px]";
-const COLS_CONTEXT = "grid-cols-[minmax(0,1fr)_150px_100px_70px_70px_100px]";
-
-function All({ data, go }: V3PageProps) {
-  const hasContext = data.threads.some((t) => t.context !== undefined);
-  const cols = hasContext ? COLS_CONTEXT : COLS;
+function All(p: V3PageProps) {
+  const { data } = p;
+  // The Context column only exists when some thread reports its context.
+  const hasContext = [...data.threads, ...(data.archivedThreads ?? [])].some(
+    (t) => t.context !== undefined,
+  );
   return (
     <div className="mt-5 text-[13.5px]">
       <div
         className={cn(
-          "grid gap-4 border-[var(--v3-line)] border-b pb-1.5 text-[12.5px] text-muted-foreground",
-          cols,
+          "grid border-[var(--v3-line)] border-b pb-1.5 text-[12.5px] text-muted-foreground",
+          hasContext ? ALL_GRID.context : ALL_GRID.plain,
         )}
       >
         <span>Thread</span>
         <span>Agent</span>
         <span>Status</span>
-        <span>Started</span>
-        <span>Took</span>
-        {hasContext && <span>Context</span>}
+        <span className="hidden @min-[700px]:block">Started</span>
+        <span className="hidden @min-[700px]:block">Took</span>
+        {hasContext && (
+          <span className="hidden @min-[700px]:block">Context</span>
+        )}
+        <span />
       </div>
-      {data.threads.map((t) => {
-        const a = agentOf(data, t.agentId);
-        return (
-          <RowButton
-            key={t.id}
-            opens={{ page: "thread", id: t.id }}
-            onClick={() => go({ page: "thread", id: t.id })}
-            className={cn(
-              "grid items-center gap-4 border-[var(--v3-line)] border-b py-2.5",
-              cols,
-            )}
-          >
-            <span className="truncate">
-              <TicketId id={t.ticketId ?? "Chat"} />
-              {t.title}
-            </span>
-            <AgentName data={data} agent={a} />
-            <span>
-              <ThreadPill status={t.status} />
-            </span>
-            <span className="text-muted-foreground">{t.startedAt}</span>
-            <span className="text-muted-foreground">{span(t.minutes)}</span>
-            {hasContext && (
-              <span className="flex items-center gap-2 text-muted-foreground">
-                {t.context !== undefined && (
-                  <>
-                    <Meter value={t.context} className="w-10" />
-                    {t.context}%
-                  </>
-                )}
-              </span>
-            )}
-          </RowButton>
-        );
-      })}
+      {data.threads.map((t) => (
+        <AllRow key={t.id} {...p} t={t} hasContext={hasContext} />
+      ))}
+      <Archived
+        {...p}
+        threads={data.archivedThreads ?? []}
+        hasContext={hasContext}
+      />
     </div>
   );
 }
 
-function ByAgent({ data, go }: V3PageProps) {
+function ByAgent(p: V3PageProps) {
+  const { data, go } = p;
   return (
     <>
       {data.agents.map((a) => {
@@ -229,24 +178,7 @@ function ByAgent({ data, go }: V3PageProps) {
                 </div>
               )}
               {mine.map((t) => (
-                <RowButton
-                  key={t.id}
-                  opens={{ page: "thread", id: t.id }}
-                  onClick={() => go({ page: "thread", id: t.id })}
-                  className="flex items-center gap-4 border-[var(--v3-line)] border-b py-2 text-[13.5px]"
-                >
-                  <span className="min-w-0 flex-1 truncate">
-                    <TicketId id={t.ticketId ?? "Chat"} />
-                    {t.title}
-                  </span>
-                  <ThreadPill status={t.status} />
-                  <span className="w-12 text-right text-muted-foreground">
-                    {span(t.minutes)}
-                  </span>
-                  <span className="w-20 text-right text-muted-foreground/70">
-                    {t.startedAt}
-                  </span>
-                </RowButton>
+                <AgentThreadRow key={t.id} {...p} t={t} />
               ))}
             </div>
           </div>

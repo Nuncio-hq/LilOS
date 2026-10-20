@@ -7,6 +7,8 @@ import {
   panelIntoFocus,
   pickPorts,
   type Stack,
+  skipFirstRun,
+  startChat,
 } from "./helpers/stack";
 
 /**
@@ -118,28 +120,6 @@ async function holdFeedSocket(page: Page, feedPort: number): Promise<FeedHold> {
   };
 }
 
-async function dmDefault(page: Page) {
-  await page.goto(`${stack.webUrl}/`);
-  const aside = page.locator("aside");
-  await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
-    timeout: 30_000,
-  });
-  const dmBtn = page.getByRole("button", {
-    name: /open dm|set up later|message/i,
-  });
-  if (
-    await dmBtn
-      .first()
-      .isVisible()
-      .catch(() => false)
-  ) {
-    await dmBtn.first().click();
-  } else {
-    await aside.getByRole("button", { name: /default/i }).click();
-  }
-  await expect(page).toHaveURL(/\/dm\//);
-}
-
 const send = async (page: Page, text: string) => {
   const box = page.locator("textarea").last();
   await box.fill(text);
@@ -167,12 +147,18 @@ test("AC-1 post-reload, no painted frame ever places a newer user row above an o
 }) => {
   test.setTimeout(240_000);
   await page.addInitScript(FRAME_RECORDER);
-  await dmDefault(page);
+  await skipFirstRun(page);
   // Hold the session on an approval so both sends queue behind it — their
   // posts land AFTER the later user rows, the raw order that breaks #308
   // when mergeTurns has no model yet.
-  await send(page, "Add a release note to the readme");
-  // #577: a send lands on the thread panel; [data-thread] lives in Focus.
+  await startChat(
+    page,
+    stack.webUrl,
+    { id: "default", name: "Default" },
+    "Add a release note to the readme",
+  );
+  // #577: a send lands on the thread in the peek; [data-thread] lives in the
+  // session view. `full=1` is in the URL, so the reload below lands there too.
   await panelIntoFocus(page);
   await expect(page.getByText("Approval needed").first()).toBeVisible({
     timeout: 120_000,

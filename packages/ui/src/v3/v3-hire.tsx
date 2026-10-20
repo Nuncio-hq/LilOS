@@ -9,55 +9,67 @@ import {
 import { type ReactNode, useRef, useState } from "react";
 import { cn } from "../lib/utils";
 import { AgentAvatar, Btn, CeoMark, Page, Title } from "./v3-bits";
+import { ExistingProfiles } from "./v3-hire-profiles";
 import type { V3PageProps } from "./v3-types";
 
 /* Hire: pick a role, check the three fields, done. With a CEO position the
    CEO writes the first instructions, so the form stays this short. The
    models on offer come from the app (`modelChoices`); a role only prefers
-   one of them by place, and falls back to the first when the list is short. */
+   one of them by place, and falls back to the first when the list is short.
+   Below it, quietly, a profile the engine already has can be brought in
+   instead (v3-hire-profiles.tsx). */
 
 const choiceAt = (choices: string[], i: number): string | undefined =>
   choices[i] ?? choices[0];
 
-const ROLES: { role: string; icon: ReactNode; does: string; model: number }[] =
-  [
-    {
-      role: "Researcher",
-      icon: <SearchIcon />,
-      does: "Finds people, numbers and sources, and returns a sheet.",
-      model: 1,
-    },
-    {
-      role: "Engineer",
-      icon: <CodeIcon />,
-      does: "Writes and fixes code, and opens a PR for every ticket.",
-      model: 0,
-    },
-    {
-      role: "Designer",
-      icon: <PaletteIcon />,
-      does: "Makes screens and store assets, always two options.",
-      model: 1,
-    },
-    {
-      role: "Growth",
-      icon: <TrendingUpIcon />,
-      does: "Writes copy and runs growth tests with a number behind each claim.",
-      model: 1,
-    },
-    {
-      role: "QA",
-      icon: <ShieldCheckIcon />,
-      does: "Checks every result on a real device before it is called done.",
-      model: 1,
-    },
-    {
-      role: "Support",
-      icon: <HeadsetIcon />,
-      does: "Answers users and files what it learns as tickets.",
-      model: 2,
-    },
-  ];
+/* `plain` is the blurb where there is no ticket backend yet (it names no
+   ticket); a role without one reads the same either way. */
+const ROLES: {
+  role: string;
+  icon: ReactNode;
+  does: string;
+  plain?: string;
+  model: number;
+}[] = [
+  {
+    role: "Researcher",
+    icon: <SearchIcon />,
+    does: "Finds people, numbers and sources, and returns a sheet.",
+    model: 1,
+  },
+  {
+    role: "Engineer",
+    icon: <CodeIcon />,
+    does: "Writes and fixes code, and opens a PR for every ticket.",
+    plain: "Writes and fixes code, and opens a PR for every change.",
+    model: 0,
+  },
+  {
+    role: "Designer",
+    icon: <PaletteIcon />,
+    does: "Makes screens and store assets, always two options.",
+    model: 1,
+  },
+  {
+    role: "Growth",
+    icon: <TrendingUpIcon />,
+    does: "Writes copy and runs growth tests with a number behind each claim.",
+    model: 1,
+  },
+  {
+    role: "QA",
+    icon: <ShieldCheckIcon />,
+    does: "Checks every result on a real device before it is called done.",
+    model: 1,
+  },
+  {
+    role: "Support",
+    icon: <HeadsetIcon />,
+    does: "Answers users and files what it learns as tickets.",
+    plain: "Answers users and passes on what it learns.",
+    model: 2,
+  },
+];
 
 const FIELD = "text-[13px] text-muted-foreground";
 
@@ -66,6 +78,8 @@ export function V3Hire({ data, go, act }: V3PageProps) {
   const [name, setName] = useState("");
   // Undefined follows the role's preferred model until you pick one.
   const [chosen, setChosen] = useState<string>();
+  // The existing profile whose form is open; never together with a role's.
+  const [profile, setProfile] = useState<string | null>(null);
   const hiring = useRef(false);
   const ceo = data.agents.find((a) => a.id === data.ceoId);
   const tpl = picked === null ? undefined : ROLES[picked];
@@ -77,6 +91,7 @@ export function V3Hire({ data, go, act }: V3PageProps) {
 
   function pick(i: number) {
     setPicked(i);
+    setProfile(null);
     setChosen(undefined);
     // A name is only suggested while the field is still untouched.
     setName((n) =>
@@ -140,7 +155,7 @@ export function V3Hire({ data, go, act }: V3PageProps) {
               {r.role}
             </span>
             <span className="text-[13px] text-muted-foreground leading-snug">
-              {r.does}
+              {data.features.tickets ? r.does : (r.plain ?? r.does)}
             </span>
             {choiceAt(choices, r.model) && (
               <span className="mt-auto pt-1 text-[12.5px] text-muted-foreground/70">
@@ -218,6 +233,17 @@ export function V3Hire({ data, go, act }: V3PageProps) {
           </div>
         </form>
       )}
+
+      <ExistingProfiles
+        data={data}
+        go={go}
+        act={act}
+        selected={profile}
+        onSelect={(id) => {
+          setProfile(id);
+          if (id !== null) setPicked(null);
+        }}
+      />
 
       <p className="mt-6 text-[13px] text-muted-foreground/70">
         {!data.features.tickets

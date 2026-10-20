@@ -1,5 +1,6 @@
 "use client";
 
+import { formatBytes, withinCount, withinSize } from "../../lib/attach-rules";
 import { Button } from "../ui/button";
 import {
   Command,
@@ -74,21 +75,8 @@ import {
 // Provider Context & Types
 // ============================================================================
 
-/* `1.2 MB`-style label for the chip + hovercard (vendored UI ships no size
-   formatter; the wire's sizeBytes lands on the FileUIPart via add/addLocal). */
-function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes < 0) return "";
-  if (bytes < 1024) return `${bytes} B`;
-  const units = ["KB", "MB", "GB"];
-  let size = bytes;
-  let unit = "B";
-  for (const u of units) {
-    if (size < 1024) break;
-    size /= 1024;
-    unit = u;
-  }
-  return `${size >= 100 ? Math.round(size) : size.toFixed(1)} ${unit}`;
-}
+// `1.2 MB`-style label for the chip + hovercard: the one formatter every
+// composer shares (the wire's sizeBytes lands on the FileUIPart via add/addLocal).
 
 export type AttachmentsContext = {
   files: (FileUIPart & { id: string })[];
@@ -542,41 +530,22 @@ export const PromptInput = ({
         });
         return;
       }
-      const withinSize = (f: File) =>
-        maxFileSize ? f.size <= maxFileSize : true;
-      const sized = accepted.filter(withinSize);
-      if (accepted.length > 0 && sized.length === 0) {
-        onError?.({
-          code: "max_file_size",
-          message: maxFileSize
-            ? `That file is too large to attach (${formatBytes(maxFileSize)} max per file).`
-            : "All files exceed the maximum size.",
-        });
-        return;
-      }
+      const { kept: sized, note: sizeNote } = withinSize(accepted, maxFileSize);
       // A mixed batch drops only the oversized files; still tell the host so
       // a lost attachment is never silent (issue #31 patch to AI Elements).
-      if (sized.length < accepted.length) {
-        onError?.({
-          code: "max_file_size",
-          message: maxFileSize
-            ? `Some files were too large to attach (${formatBytes(maxFileSize)} max per file) and were left out.`
-            : "Some files exceed the maximum size and were not added.",
-        });
+      if (sizeNote) {
+        onError?.({ code: "max_file_size", message: sizeNote });
       }
+      if (accepted.length > 0 && sized.length === 0) return;
 
       setItems((prev) => {
-        const capacity =
-          typeof maxFiles === "number"
-            ? Math.max(0, maxFiles - prev.length)
-            : undefined;
-        const capped =
-          typeof capacity === "number" ? sized.slice(0, capacity) : sized;
-        if (typeof capacity === "number" && sized.length > capacity) {
-          onError?.({
-            code: "max_files",
-            message: "Too many files. Some were not added.",
-          });
+        const { kept: capped, note: countNote } = withinCount(
+          sized,
+          prev.length,
+          maxFiles
+        );
+        if (countNote) {
+          onError?.({ code: "max_files", message: countNote });
         }
         const next: (FileUIPart & { id: string; sizeBytes?: number })[] =
           [];

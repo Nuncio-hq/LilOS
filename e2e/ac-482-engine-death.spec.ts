@@ -9,7 +9,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  agentUrl,
+  bootStack,
+  pickPorts,
+  type Stack,
+  skipFirstRun,
+} from "./helpers/stack";
 
 /**
  * Issue #482 — a dead `hermes serve` behind a live adapter must not leave the
@@ -27,8 +33,9 @@ import { bootStack, pickPorts, type Stack } from "./helpers/stack";
  *   AC-2: the adapter relaunches Hermes itself → `models.list` answers again
  *         and the SAME DM conversation answers via `session.resume`
  *         (state file's `resumes` proves the stored ref was reused).
- *   AC-3: System status dialog shows the outage while it lasts (driven by
- *         making the relaunched fake fail on demand via FAKE_SERVE_FAIL_FILE).
+ *   AC-3: the status banner shows the outage while it lasts and its Details
+ *         button opens the System status dialog (driven by making the
+ *         relaunched fake fail on demand via FAKE_SERVE_FAIL_FILE).
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
@@ -374,8 +381,18 @@ test("AC-1/2/3 (#482) killed hermes child → typed errors fast, outage shown, s
         (p as { engine?: { state?: string } }).engine?.state === "restarting",
       10_000,
     );
-    await page.goto(`${stack.webUrl}/dm/${employeeId}?statusPollMs=500`);
-    await page.getByRole("button", { name: "System status" }).click();
+    /* `statusPollMs` is a real query param, so it rides ahead of the hash. */
+    await skipFirstRun(page);
+    const outageUrl = agentUrl(stack.webUrl, employeeId).replace(
+      "/#",
+      "/?statusPollMs=500#",
+    );
+    await page.goto(outageUrl);
+    /* v3 draws the outage as the banner above the page; Details opens the
+       same System status dialog the old sidebar row did. */
+    const banner = page.getByRole("status").filter({ hasText: /Details/ });
+    await expect(banner).toBeVisible({ timeout: 30_000 });
+    await banner.getByRole("button", { name: "Details" }).click();
     const dialog = page.getByRole("dialog", { name: "System status" });
     const engineRow = dialog
       .locator("li, div, p")
@@ -386,10 +403,9 @@ test("AC-1/2/3 (#482) killed hermes child → typed errors fast, outage shown, s
     await page.screenshot({ path: `${SHOTS}/ac-3-status-outage.png` });
 
     // Let it heal again for the harness-log tail assertion.
-    await page.getByRole("button", { name: "System status" }).press("Escape");
-    await page
-      .goto(`${stack.webUrl}/dm/${employeeId}?statusPollMs=500`)
-      .catch(() => undefined);
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await page.goto(outageUrl).catch(() => undefined);
     const { unlinkSync } = await import("node:fs");
     unlinkSync(serveFailFile);
     await waitFor(

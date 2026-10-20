@@ -1,5 +1,10 @@
 import { MAX_ATTACHMENT_BYTES } from "@lilos/contracts/app";
-import { respondToRequest } from "../lib/actions";
+import {
+  archiveConversation,
+  renameConversation,
+  respondToRequest,
+  toastOnFail,
+} from "../lib/actions";
 import { humanFor } from "../lib/me";
 import { sayError } from "../lib/toast";
 import { outcomeFromLabel } from "./outcome";
@@ -44,6 +49,19 @@ export function sharedViewProps(d: ThreadData) {
     onModelOpen: d.setModelOpen,
     access: d.conv.access,
     onAccess: d.onAccess,
+    /* The header's ⋯ menu: rename in place, archive/unarchive. */
+    onRename: (title: string) =>
+      toastOnFail(
+        "Couldn't rename the thread",
+        renameConversation(d.conv.id, title),
+      ),
+    onArchive: (archived: boolean) =>
+      toastOnFail(
+        archived
+          ? "Couldn't archive the thread"
+          : "Couldn't unarchive the thread",
+        archiveConversation(d.conv.id, archived),
+      ),
     onSend: d.send,
     onPlan: d.planCap ? d.onPlan : undefined,
     onCompact: d.onCompact,

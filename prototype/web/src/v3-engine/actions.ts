@@ -1,4 +1,5 @@
 import { agentNameOf, agentOf, type V3Data, type V3DataActions, type V3Draft, type V3Status, type V3Thread } from "@lilos/ui"
+import { ENGINE_PROFILES } from "../fake-v3"
 import { cancelTurn, nowClock, type ReplyFn, runTurn } from "./chat-sim"
 import { toolActions } from "./tools"
 
@@ -414,25 +415,27 @@ export function makeActions(
         `Queued · ${agentNameOf(getData(), th.agentId)} reads it after the current step`,
       );
     },
-    startChat: ({ agentId, projectId, model, text }) => {
+    startChat: ({ agentId, projectId, folder, model, text, files }) => {
       const project = getData().projects.find((p) => p.id === projectId);
+      // A message of files alone is named by them.
+      const said = text || (files ?? []).map((f) => f.name).join(", ");
       const chat: V3Thread = {
         id: `t-chat-${Date.now().toString(36)}`,
         projectId,
         agentId,
-        title: text.length > 56 ? `${text.slice(0, 54).trimEnd()}…` : text,
+        title: said.length > 56 ? `${said.slice(0, 54).trimEnd()}…` : said,
         status: "working",
         startedAt: nowClock(),
         minutes: 0,
         step: 0,
         context: 2,
         model,
-        folder: project?.folder ?? "~",
+        folder: project?.folder ?? folder ?? "~",
         changes: [],
         turns: [],
       };
       setData((d) => ({ ...d, threads: [chat, ...d.threads] }));
-      runTurn(setData, getData, reply, chat, text);
+      runTurn(setData, getData, reply, chat, text, files);
       // The draft that sent it decides where the thread shows (it takes the
       // draft's place on the trail), so this does not navigate.
       return Promise.resolve(chat.id);
@@ -459,6 +462,7 @@ export function makeActions(
             reportsTo: d.ceoId,
             hired: "today",
             runtime: `Hermes · profile ${id}`,
+            profile: id,
             model,
             schedule: "When given a ticket",
             skills: [],
@@ -473,6 +477,43 @@ export function makeActions(
         ],
       }));
       toast(`${name} hired`)
+      return Promise.resolve(id)
+    },
+    listProfiles: () => Promise.resolve(ENGINE_PROFILES),
+    // The agent runs on the profile as it is: the profile's own model and
+    // persona come with it, nothing is written to the profile.
+    hireProfile: ({ profile, name, role }) => {
+      const p = ENGINE_PROFILES.find((x) => x.id === profile);
+      if (!p) return Promise.reject(new Error("That profile is not on the engine"));
+      const id = `${profile}-${getData().agents.length}`;
+      setData((d) => ({
+        ...d,
+        agents: [
+          ...d.agents,
+          {
+            id,
+            name,
+            tone: (["b", "r", "m", "s", "d", "c"] as const)[
+              d.agents.length % 6
+            ],
+            role,
+            reportsTo: d.ceoId,
+            hired: "today",
+            runtime: `Hermes · profile ${profile}`,
+            profile,
+            model: p.model ?? d.modelChoices[0],
+            description: p.description,
+            schedule: "When given a ticket",
+            skills: [],
+            spend: { used: 0, cap: 10, period: "week" },
+            instructions: p.soul ? [p.soul] : [],
+            memory: [],
+            week: { done: 0, typical: "—", stuck: 0, handed: 0 },
+            next: "Waiting for the CEO to give a first ticket",
+          },
+        ],
+      }));
+      toast(`${name} hired on the ${p.name} profile`)
       return Promise.resolve(id)
     },
     makeCeo: (agentId) => {
@@ -490,6 +531,52 @@ export function makeActions(
         };
       });
       toast(`${agentNameOf(getData(), agentId)} is now the CEO`);
+    },
+    updateAgent: (id, patch) => {
+      setData((d) => ({
+        ...d,
+        agents: d.agents.map((a) =>
+          a.id !== id
+            ? a
+            : {
+                ...a,
+                ...(patch.name !== undefined && { name: patch.name }),
+                ...(patch.role !== undefined && { role: patch.role }),
+                ...(patch.description !== undefined && {
+                  description: patch.description || undefined,
+                }),
+                ...(patch.model !== undefined && { model: patch.model }),
+                ...(patch.muted !== undefined && { muted: patch.muted }),
+                ...(patch.instructions !== undefined && {
+                  instructions: patch.instructions
+                    .split(/\n{2,}/)
+                    .map((p) => p.trim())
+                    .filter(Boolean),
+                }),
+              },
+        ),
+      }));
+      // Notifications flip silently: the switch is the confirmation.
+      if (patch.muted === undefined) toast(`${patch.name ?? agentNameOf(getData(), id)} saved`);
+      return Promise.resolve(undefined);
+    },
+    removeAgent: (id) => {
+      const gone = agentNameOf(getData(), id);
+      const threadIds = new Set(getData().threads.filter((t) => t.agentId === id).map((t) => t.id));
+      for (const t of threadIds) cancelTurn(t);
+      // The real relay deletes the agent's DMs and scheduled jobs with it;
+      // tickets it owned stay, and read "Former agent".
+      setData((d) => ({
+        ...d,
+        agents: d.agents.filter((a) => a.id !== id).map((a) => (a.reportsTo === id ? { ...a, reportsTo: d.ceoId } : a)),
+        threads: d.threads.filter((t) => !threadIds.has(t.id)),
+        schedules: d.schedules.filter((s) => s.agentId !== id),
+        asks: d.asks.filter((a) => a.threadId === undefined || !threadIds.has(a.threadId)),
+        connectors: d.connectors.map((c) => (c.agents.includes(id) ? { ...c, agents: c.agents.filter((a) => a !== id) } : c)),
+        browser: { ...d.browser, tabs: d.browser.tabs.filter((t) => t.by !== id) },
+      }));
+      toast(`${gone} removed from the company`);
+      return Promise.resolve();
     },
     toggleConnector: (connectorId, agentId) => {
       setData((d) => ({

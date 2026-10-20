@@ -9,7 +9,6 @@ import { fileURLToPath } from "node:url";
 import type { DesktopBridge } from "@lilos/contracts/app";
 import { afterEach, describe, expect, test } from "vitest";
 import { watchDesktopChrome } from "../src/lib/desktop";
-import { appFrameClass } from "../src/lib/frame";
 
 const css = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), "..", "src", "index.css"),
@@ -87,11 +86,8 @@ describe("desktop chrome stylesheet", () => {
   test("#295 the surface header takes the same reserve when the sidebar is hidden", () => {
     // One shared reserve — no second magic number.
     expect(css).toMatch(/--lilos-traffic-inset:\s*88px/);
-    // In Focus the sidebar is always hidden: the frame carries lilos-focus
-    // and the surface header reserves the strip at any width…
-    expect(appFrameClass({ desktop: true, focus: true })).toContain(
-      "lilos-focus",
-    );
+    // In Focus the sidebar is always hidden: a `lilos-focus` frame's surface
+    // header reserves the strip at any width…
     expect(css).toMatch(
       /\.lilos-focus\s+main\s*>\s*header\s*\{[^}]*padding-left:\s*var\(--lilos-traffic-inset\)/,
     );

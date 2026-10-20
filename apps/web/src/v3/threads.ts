@@ -129,9 +129,47 @@ export function v3Asks(src: ThreadSources): V3Ask[] {
     .sort((a, b) => b.waiting - a.waiting);
 }
 
+/** Each agent's newest chat by when it began (archived ones count: the old
+    home composer followed the last session whatever became of it): where it
+    ran, and, from the newest chat whose first message you wrote (a scheduled
+    run's was not), that message. The new-chat box starts in that folder (no
+    `cwd` is "No folder") and ↑ brings the message back (#104, #581). */
+export function lastChats(
+  src: ThreadSources,
+): Map<string, { folder?: string; opener?: string }> {
+  const summaries = new Map(src.summaries.map((s) => [s.conversation.id, s]));
+  const byAgent = new Map<string, Conversation[]>();
+  for (const c of src.conversations) {
+    const agentId = employeeOfConversation(c, src.channels);
+    if (agentId) byAgent.set(agentId, [...(byAgent.get(agentId) ?? []), c]);
+  }
+  const out = new Map<string, { folder?: string; opener?: string }>();
+  for (const [agentId, convs] of byAgent) {
+    convs.sort((a, b) => b.createdAt - a.createdAt);
+    const opener = convs
+      .map((c) => summaries.get(c.id)?.root)
+      .find((m) => m?.authorKind === "user" && m.text)?.text;
+    out.set(agentId, {
+      ...(convs[0].cwd ? { folder: convs[0].cwd } : {}),
+      ...(opener ? { opener } : {}),
+    });
+  }
+  return out;
+}
+
 /** The threads, newest activity first. Archived ones and ones whose employee
-    is gone stay out. */
+    is gone stay out; `v3ArchivedThreads` has the archived. */
 export function v3Threads(src: ThreadSources): V3Thread[] {
+  return threadRows(src, false);
+}
+
+/** The threads put away (`conversations.update {archived}`), newest first:
+    Threads → All → Archived, where they unarchive. */
+export function v3ArchivedThreads(src: ThreadSources): V3Thread[] {
+  return threadRows(src, true);
+}
+
+function threadRows(src: ThreadSources, archived: boolean): V3Thread[] {
   const summaries = new Map(src.summaries.map((s) => [s.conversation.id, s]));
   const openAsk = new Map<string, Ask>();
   for (const a of src.asks)
@@ -139,7 +177,7 @@ export function v3Threads(src: ThreadSources): V3Thread[] {
       openAsk.set(a.conversationId, a);
   const rows: { last: number; thread: V3Thread }[] = [];
   for (const c of src.conversations) {
-    if (c.archived) continue;
+    if (!!c.archived !== archived) continue;
     const agentId = employeeOfConversation(c, src.channels);
     if (!agentId) continue;
     const summary = summaries.get(c.id);

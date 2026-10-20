@@ -37,10 +37,15 @@ export function engineOf(
   result: SystemStatusResult | undefined,
 ): V3Settings["engine"] {
   const row = rows.find((r) => r.id === "engine");
-  const name = result?.engine?.name ?? "engine";
+  const given = result?.engine?.name;
+  const name = given ?? "engine";
   const shown = name.charAt(0).toUpperCase() + name.slice(1);
   const version = result?.engine?.version;
-  const base = { name: shown, ...(version ? { version } : {}) };
+  const base = {
+    name: shown,
+    ...(given ? {} : { unnamed: true as const }),
+    ...(version ? { version } : {}),
+  };
   if (!row || row.state === "connecting" || row.state === "blocked")
     return { ...base, state: "starting" };
   if (row.state === "ok") return { ...base, state: "ok" };

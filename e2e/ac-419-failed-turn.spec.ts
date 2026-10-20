@@ -1,14 +1,25 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  pickPorts,
+  type Stack,
+  skipFirstRun,
+  startChat,
+  v3Peek,
+} from "./helpers/stack";
 
 /**
  * Issue #419 — a failed turn (model error, Mac slept, engine restart) stops
- * reading `done`: the turn carries a `Failed · <error>` chip, its DM session
- * row carries the failure card with Retry, and Retry re-sends the last user
+ * reading `done`: the turn carries a `Failed · <error>` chip, its thread card
+ * on Threads reads Failed, and the turn's Retry re-sends the last user
  * message in the same session. engine-fake's `fail …` prompt is the
  * deterministic failure: ~2s of reasoning, then turn.completed{error}.
+ *
+ * v3 dropped the old session-row alert card (the red reason line with its own
+ * Retry): a failed thread's card on Threads shows the Failed pill and Open,
+ * nothing more, so that card and its Retry have no leg here any more.
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
@@ -27,22 +38,20 @@ test.afterAll(async () => {
 
 test.describe.configure({ mode: "serial" });
 
-/** Land on Default's DM without a first-run detour. */
-async function dmDefault(page: Page) {
-  await page.goto(`${stack.webUrl}/`);
-  await expect(page).toHaveURL(/\/dm\//, { timeout: 30_000 });
-}
+/** The thread composer in the peek — the new-chat draft has another box. */
+const threadBox = (page: Page) =>
+  v3Peek(page).locator("[data-thread-panel] textarea");
 
 const send = async (page: Page, text: string) => {
-  const box = page.locator("textarea").last();
+  const box = threadBox(page);
   await box.fill(text);
   await box.press("Enter");
 };
 
-const dmHome = async (page: Page) => {
-  const empId = decodeURIComponent(page.url().split("/dm/")[1].split("/")[0]);
-  await page.goto(`${stack.webUrl}/dm/${empId}`);
-};
+/** The thread's card on the Threads board (its title is the first message,
+    which the engine re-cases: "Say hi" → "Say Hi"). */
+const threadCard = (page: Page, title: string) =>
+  page.locator("main").getByRole("button", { name: new RegExp(title, "i") });
 
 /* Rows mount under `lilos-rise` (0.5s opacity+blur): a reload's screenshot
    mid-rise reads as a dim smear — wait out the animation on its own end
@@ -50,36 +59,32 @@ const dmHome = async (page: Page) => {
 const settled = (page: Page, sel: string) =>
   expect(page.locator(sel).last()).toHaveCSS("filter", /^(none|blur\(0px\))$/);
 
-/** The first session row → its "N replies" pill opens the thread. */
-const openSession = async (page: Page) => {
-  await page
-    .locator("[data-session]")
-    .first()
-    .getByRole("button", { name: /repl/i })
-    .click();
-};
-
-test("AC-1/AC-3 a turn.completed.error shows the failure chip on the turn and the alert card on the session row", async ({
+test("AC-1/AC-3 a turn.completed.error shows the failure chip on the turn and the Failed pill on its thread card", async ({
   page,
 }) => {
   test.setTimeout(180_000);
-  await page.addInitScript(() => localStorage.setItem("lilos-onboarded", "1"));
-  await dmDefault(page);
-  // A clean session first: the card is failure-only (AC-3), not permanent.
-  await send(page, "Say hi");
+  await skipFirstRun(page);
+  // A clean session first: the pill is failure-only (AC-3), not permanent.
+  await startChat(
+    page,
+    stack.webUrl,
+    { id: "default", name: "Default" },
+    "Say hi",
+  );
   await expect(page.locator("[data-agentturn]").last()).toContainText(
     /answer|envelope|Done/i,
     { timeout: 60_000 },
   );
-  await dmHome(page);
-  await expect(page.locator("[data-session]").first()).toBeVisible({
-    timeout: 30_000,
+  await expect(page.locator("[data-turnsettled]").last()).toBeVisible({
+    timeout: 60_000,
   });
-  await expect(page.locator("[data-session-alert]")).toHaveCount(0);
+  await page.goto(`${stack.webUrl}/#?page=threads`);
+  await expect(threadCard(page, "Say hi")).toBeVisible({ timeout: 30_000 });
+  await expect(threadCard(page, "Say hi")).not.toContainText("Failed");
 
   // The scripted failure: reasoning streams, then the turn ends with an error.
-  await openSession(page);
-  await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+/, { timeout: 30_000 });
+  await threadCard(page, "Say hi").click();
+  await expect(page).toHaveURL(/open=thread:[^&]+/, { timeout: 30_000 });
   await send(page, "fail the deploy script");
   const failed = page.locator("[data-agentturn]").last();
   await expect(failed.locator("[data-turn-failed]")).toBeVisible({
@@ -100,27 +105,22 @@ test("AC-1/AC-3 a turn.completed.error shows the failure chip on the turn and th
   await settled(page, "[data-agentturn]");
   await page.screenshot({ path: `${SHOTS}/ac-419-1-failed-turn-light.png` });
 
-  // The session row card: red model-error alert with its own Retry.
-  await dmHome(page);
-  const alert = page.locator("[data-session-alert]");
-  await expect(alert).toBeVisible({ timeout: 30_000 });
-  await expect(alert).toContainText(/engine-fake: scripted failure/);
-  await expect(alert.getByRole("button", { name: "Retry" })).toBeVisible();
-  await settled(page, "[data-session] .lilos-rise");
-  await page.screenshot({ path: `${SHOTS}/ac-419-1-session-alert-light.png` });
+  // The thread's card on the Threads board reads Failed.
+  await expect(threadCard(page, "Say hi")).toContainText("Failed", {
+    timeout: 30_000,
+  });
+  await page.screenshot({ path: `${SHOTS}/ac-419-1-thread-card-light.png` });
 
-  // AC-3 dark: the same card + chip in the persisted dark theme.
+  // AC-3 dark: the same chip in the persisted dark theme.
   await page.evaluate(() => localStorage.setItem("lilos-theme", "dark"));
   await page.reload();
-  await expect(alert).toBeVisible({ timeout: 30_000 });
-  await settled(page, "[data-session] .lilos-rise");
-  await page.screenshot({ path: `${SHOTS}/ac-419-3-session-alert-dark.png` });
-  await openSession(page);
   await expect(
     page.locator("[data-agentturn]").last().locator("[data-turn-failed]"),
   ).toBeVisible({ timeout: 30_000 });
   await settled(page, "[data-agentturn]");
   await page.screenshot({ path: `${SHOTS}/ac-419-3-failed-turn-dark.png` });
+  await expect(threadCard(page, "Say hi")).toContainText("Failed");
+  await page.screenshot({ path: `${SHOTS}/ac-419-3-thread-card-dark.png` });
   await page.evaluate(() => localStorage.setItem("lilos-theme", "light"));
 });
 
@@ -128,10 +128,10 @@ test("AC-2 the turn's hover Retry re-sends the last user message in the same ses
   page,
 }) => {
   test.setTimeout(180_000);
-  await page.addInitScript(() => localStorage.setItem("lilos-onboarded", "1"));
-  await dmDefault(page);
-  await openSession(page);
-  await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+/, { timeout: 30_000 });
+  await skipFirstRun(page);
+  await page.goto(`${stack.webUrl}/#?page=threads`);
+  await threadCard(page, "Say hi").click();
+  await expect(page).toHaveURL(/open=thread:[^&]+/, { timeout: 30_000 });
   const convUrl = page.url();
   // Count turns only once the thread has painted — otherwise `before`
   // races to 0 and the retry's index points at the old turn.
@@ -160,32 +160,4 @@ test("AC-2 the turn's hover Retry re-sends the last user message in the same ses
   );
   await settled(page, "[data-agentturn]");
   await page.screenshot({ path: `${SHOTS}/ac-419-2-hover-retry.png` });
-});
-
-test("AC-2 the session card's Retry does the same re-send from the DM home", async ({
-  page,
-}) => {
-  test.setTimeout(180_000);
-  await page.addInitScript(() => localStorage.setItem("lilos-onboarded", "1"));
-  await dmDefault(page);
-  const alert = page.locator("[data-session-alert]");
-  await expect(alert).toBeVisible({ timeout: 30_000 });
-  const convsBefore = await page.locator("[data-session]").count();
-  expect(convsBefore).toBeGreaterThan(0);
-
-  await alert.getByRole("button", { name: "Retry" }).click();
-
-  // Same session retried: no new session row appears; opening it shows the
-  // re-sent message and its fresh (again-failing) turn.
-  await expect(page.locator("[data-session]")).toHaveCount(convsBefore);
-  await openSession(page);
-  await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+/, { timeout: 30_000 });
-  await expect(
-    page.locator("[data-agentturn]").last().locator("[data-turn-failed]"),
-  ).toContainText(
-    /Failed · engine-fake: scripted failure for "fail the deploy script"/,
-    { timeout: 60_000 },
-  );
-  await settled(page, "[data-agentturn]");
-  await page.screenshot({ path: `${SHOTS}/ac-419-2-card-retry.png` });
 });

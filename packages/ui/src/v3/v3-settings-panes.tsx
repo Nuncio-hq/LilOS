@@ -20,6 +20,14 @@ const APPROVALS = [
   },
 ];
 
+/* The engine's own policy (`approvals.setPolicy`), under the default above:
+   what the engine does before it ever reaches LilOS's Ask / Full access. */
+const POLICIES = [
+  { id: "smart" as const, label: "Smart" },
+  { id: "manual" as const, label: "Manual" },
+  { id: "off" as const, label: "Off" },
+];
+
 const INPUT =
   "h-8 min-w-0 flex-1 rounded-[7px] border border-foreground/15 bg-background px-2.5 text-[14px] text-foreground outline-none focus:border-foreground/40";
 
@@ -125,7 +133,7 @@ export function Confirm({
 }
 
 export function GeneralPane({ data, go, act }: V3PageProps) {
-  const { approvals, editor, editors, about } = data.settings;
+  const { approvals, enginePolicy, editor, editors, about } = data.settings;
   // The CEO can rename things through ⌘K where the app has no way to do it
   // in place and the company has one.
   const askToRename = !act.saveProfile && !!data.ceoId;
@@ -182,6 +190,20 @@ export function GeneralPane({ data, go, act }: V3PageProps) {
             </li>
           ))}
         </ul>
+        {enginePolicy && (
+          <div className="mt-4">
+            <p className="mb-2 text-[13px] text-muted-foreground">
+              The engine’s own policy. Smart runs routine steps and asks for
+              risky ones. Manual asks every time. Off never asks.
+            </p>
+            <Segmented
+              label="Engine approval policy"
+              value={enginePolicy}
+              options={POLICIES}
+              onChange={(id) => act.saveSettings({ enginePolicy: id })}
+            />
+          </div>
+        )}
       </div>
 
       {editorChoices && editorChoices.length > 0 && editor && (

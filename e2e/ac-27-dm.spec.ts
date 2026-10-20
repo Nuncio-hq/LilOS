@@ -12,6 +12,10 @@ import {
   panelIntoFocus,
   pickPorts,
   type Stack,
+  skipFirstRun,
+  startChat,
+  v3Peek,
+  v3Sidebar,
   waitForHttp,
 } from "./helpers/stack";
 
@@ -21,6 +25,11 @@ import {
  * (engine-fake) + vite (apps/web dev; vite preview for the built app in AC-7;
  * Electron for AC-8). Ports are offset from the dev defaults so a local dev
  * stack can coexist.
+ *
+ * v3: a DM is a chat started from the new-chat draft beside Threads, and its
+ * thread opens in the side peek (`#?page=threads&open=thread:<id>`); the
+ * session view is that peek widened (`full=1`). The old "DM list shows each
+ * live phase" is the Threads board's cards, whose pill carries the phase.
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
@@ -50,65 +59,64 @@ test.afterAll(async () => {
 
 test.describe.configure({ mode: "serial" });
 
-/** Open the app, land on Default's DM (dismissing the first-run card). */
-async function dmDefault(stack: Stack, page: Page) {
-  await page.goto(`${stack.webUrl}/`);
-  const aside = page.locator("aside");
-  await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
-    timeout: 30_000,
-  });
-  const dmBtn = page.getByRole("button", {
-    name: /open dm|set up later|message/i,
-  });
-  if (
-    await dmBtn
-      .first()
-      .isVisible()
-      .catch(() => false)
-  ) {
-    await dmBtn.first().click();
-  } else {
-    await aside.getByRole("button", { name: /default/i }).click();
-  }
-  await expect(page).toHaveURL(/\/dm\//);
+const DEFAULT_AGENT = { id: "default", name: "Default" };
+
+/** A new chat with Default, past first run; resolves once its thread is open
+    in the peek. */
+async function chatDefault(stack: Stack, page: Page, text: string) {
+  await skipFirstRun(page);
+  return await startChat(page, stack.webUrl, DEFAULT_AGENT, text);
 }
 
+/** The thread composer in the peek (the new-chat draft's box is another
+    textarea, gone once the chat started). */
+const threadBox = (page: Page) =>
+  v3Peek(page).locator("[data-thread-panel] textarea");
+
 const send = async (page: Page, text: string) => {
-  const box = page.locator("textarea").last();
+  const box = threadBox(page);
   await box.fill(text);
   await box.press("Enter");
 };
 
-const employeeIdFromUrl = (page: Page) =>
-  decodeURIComponent(page.url().split("/dm/")[1].split("/")[0]);
+/** ■ — named by its exact label: a "stopped" thread card on the page behind
+    the peek also matches /stop/i. */
+const stopButton = (page: Page) =>
+  v3Peek(page).getByRole("button", { name: /^stop \(⌘\.\)$/i });
 
 test("AC-1 first run auto-hires the `default` engine profile", async ({
   page,
 }) => {
+  await skipFirstRun(page);
   await page.goto(`${stackA.webUrl}/`);
-  const aside = page.locator("aside");
-  await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
+  const sidebar = v3Sidebar(page);
+  await expect(sidebar.getByRole("button", { name: /default/i })).toBeVisible({
     timeout: 30_000,
   });
   // The hire affordance is wired (issue #115); first run hired `default`
   // without Oscar touching it.
   await expect(
-    aside.getByRole("button", { name: "Hire employee" }),
+    sidebar.getByRole("button", { name: "Hire an agent" }),
   ).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-1-first-employee.png` });
 });
 
-test("AC-2 sidebar shows Employees + status only (no channels/projects/tickets)", async ({
+test("AC-2 sidebar shows People + status only (no channels/projects/tickets)", async ({
   page,
 }) => {
+  await skipFirstRun(page);
   await page.goto(`${stackA.webUrl}/`);
-  const aside = page.locator("aside");
-  await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
+  const sidebar = v3Sidebar(page);
+  await expect(sidebar.getByRole("button", { name: /default/i })).toBeVisible({
     timeout: 30_000,
   });
-  await expect(aside.getByText("Employees")).toBeVisible();
-  for (const label of ["Inbox", "Tickets", "Company", "Projects"])
-    await expect(aside.getByText(label, { exact: true })).toHaveCount(0);
+  await expect(sidebar.getByText("People")).toBeVisible();
+  /* v3 names tickets "Work" and the inbox "Inbox"; both, Goals and Projects
+     stay out of the sidebar while the company has no tickets (M2). The old
+     sidebar's "Company" was a destination — in v3 it is the heading that
+     holds Threads, so it is not in this list any more. */
+  for (const label of ["Inbox", "Work", "Goals", "Projects"])
+    await expect(sidebar.getByText(label, { exact: true })).toHaveCount(0);
   await page.screenshot({ path: `${SHOTS}/ac-2-sidebar.png` });
 });
 
@@ -116,12 +124,11 @@ test("AC-3 DM message opens a session; reply streams with reasoning + tool steps
   page,
 }) => {
   test.setTimeout(120_000);
-  await dmDefault(stackA, page);
-  await send(page, "Say hello then list files");
-  // sendDm resolves messages.post then navigates to the conversation — the
-  // URL change is the wire signal that the session exists, so a relay that's
-  // slow under load can't race the first turn assert.
-  await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+/, { timeout: 30_000 });
+  // The draft's Send resolves conversations.open then swaps itself for the
+  // thread — the URL change is the wire signal that the session exists, so a
+  // relay that's slow under load can't race the first turn assert.
+  await chatDefault(stackA, page, "Say hello then list files");
+  await expect(page).toHaveURL(/open=thread:[^&]+/, { timeout: 30_000 });
   // The new session's live turn streams into the thread as one AgentTurn,
   // with a reasoning block and collapsed tool steps.
   const turn = page.locator("[data-agentturn]").first();
@@ -144,8 +151,7 @@ test("AC-4 approval card answers the engine; the turn continues", async ({
   page,
 }) => {
   test.setTimeout(120_000);
-  await dmDefault(stackA, page);
-  await send(page, "Add a release note to the readme");
+  await chatDefault(stackA, page, "Add a release note to the readme");
   await expect(page.getByText("Approval needed").first()).toBeVisible({
     timeout: 60_000,
   });
@@ -167,10 +173,9 @@ test("AC-5 typing mid-turn steers (capability `steer`); stop interrupts", async 
   page,
 }) => {
   test.setTimeout(180_000);
-  await dmDefault(stackA, page);
   // An edit-ask prompt holds the turn open on an approval — deterministic
   // running state for both legs.
-  await send(page, "Add a release note to the readme");
+  await chatDefault(stackA, page, "Add a release note to the readme");
   // Send the steer while the turn is parked on the approval — it is
   // provably running, so the steer lands inside it instead of racing
   // session creation and becoming a follow-up turn (which the fake's
@@ -194,12 +199,16 @@ test("AC-5 typing mid-turn steers (capability `steer`); stop interrupts", async 
   await page.screenshot({ path: `${SHOTS}/ac-5-steer.png` });
 
   // Stop: new conversation, then ■ while the turn runs.
-  await page.goto(`${stackA.webUrl}/dm/${employeeIdFromUrl(page)}`);
-  await send(page, "Add a docs note about steering");
+  await startChat(
+    page,
+    stackA.webUrl,
+    DEFAULT_AGENT,
+    "Add a docs note about steering",
+  );
   await expect(page.getByText("Enter steers · ⌘. stop")).toBeVisible({
     timeout: 30_000,
   });
-  await page.getByRole("button", { name: "Stop" }).click();
+  await stopButton(page).click();
   // Wait the turn-ended wire condition before asserting the footer chip
   // (turn.completed -> data-turnsettled), not a wall-clock guess (#257).
   const stopped = page.locator("[data-agentturn]").last();
@@ -216,8 +225,7 @@ test("AC-5b without the `steer` capability, mid-turn typing queues", async ({
     LILOS_HIDE_CAPS: "steer",
   });
   try {
-    await dmDefault(stackB, page);
-    await send(page, "Add a release note to the readme");
+    await chatDefault(stackB, page, "Add a release note to the readme");
     // The composer copy tells the truth: no steer → Enter queues.
     await expect(page.getByText("Enter queues · ⌘. stop")).toBeVisible({
       timeout: 30_000,
@@ -243,8 +251,7 @@ test("#315 AC-1/AC-2 a mid-turn send waits in the tray, then lands once inside t
   page,
 }) => {
   test.setTimeout(180_000);
-  await dmDefault(stackA, page);
-  await send(page, "Add a release note to the readme");
+  await chatDefault(stackA, page, "Add a release note to the readme");
   // The turn is parked on its approval — provably running, so the next send
   // is accepted as a steer but can't land until a step boundary.
   await expect(page.getByText("Approval needed").first()).toBeVisible({
@@ -280,10 +287,9 @@ test("#315 AC-5 Stop parks waiting sends in the not-sent tray; Send runs it late
   page,
 }) => {
   test.setTimeout(180_000);
-  await dmDefault(stackA, page);
-  await send(page, "Add a release note to the readme");
-  /* #577: a send lands on the thread panel — the queued-send tray and the
-     data-userturn markers this AC reads live in the thread/F Focus view. */
+  await chatDefault(stackA, page, "Add a release note to the readme");
+  /* #577: a send lands on the thread in the peek — the queued-send tray and
+     the data-userturn markers this AC reads live in the session view. */
   await panelIntoFocus(page);
   await expect(page.getByText("Approval needed").first()).toBeVisible({
     timeout: 60_000,
@@ -296,7 +302,7 @@ test("#315 AC-5 Stop parks waiting sends in the not-sent tray; Send runs it late
   await send(page, "second nudge");
   await expect(tray.getByText(/second nudge/)).toBeVisible();
 
-  await page.getByRole("button", { name: "Stop" }).click();
+  await stopButton(page).click();
 
   // Everything still waiting parks: nothing auto-runs after a stop.
   const parked = page.locator("[data-notsent]");
@@ -312,8 +318,9 @@ test("#315 AC-5 Stop parks waiting sends in the not-sent tray; Send runs it late
   await expect(page.locator("[data-agentturn]")).toHaveCount(1);
   await page.screenshot({ path: `${SHOTS}/ac-315-not-sent.png` });
 
-  /* AC-6: the not-sent tray is relay state too — a reload shows the same
-     parked sends, in order, ready to Send. */
+  /* AC-6: the not-sent tray is relay state too — a reload (the hash keeps
+     the session view open) shows the same parked sends, in order, ready to
+     Send. */
   await page.reload();
   const reparked = page.locator("[data-notsent]");
   await expect(reparked.getByText(/first nudge/)).toBeVisible({
@@ -338,8 +345,7 @@ test("#315 AC-6 a reload keeps the waiting tray and its order", async ({
   page,
 }) => {
   test.setTimeout(120_000);
-  await dmDefault(stackA, page);
-  await send(page, "Add a release note to the readme");
+  await chatDefault(stackA, page, "Add a release note to the readme");
   await expect(page.getByText("Approval needed").first()).toBeVisible({
     timeout: 60_000,
   });
@@ -385,13 +391,12 @@ test("#315 AC-3/AC-4 without `steer`: a queued send runs next, Remove drops it",
   try {
     // Remove first: the queued send leaves the tray and never reaches the
     // conversation or the engine.
-    await dmDefault(stackB, page);
-    await send(page, "Add a release note to the readme");
+    await chatDefault(stackB, page, "Add a release note to the readme");
     await expect(page.getByText("Enter queues · ⌘. stop")).toBeVisible({
       timeout: 30_000,
     });
-    /* #577: sends land on the thread panel — data-userturn markers exist
-       only on the Focus surface this AC asserts against. */
+    /* #577: sends land on the thread in the peek — data-userturn markers
+       exist only on the session view this AC asserts against. */
     await panelIntoFocus(page);
     await send(page, "never mind that");
     const tray = page.locator("[data-queued]");
@@ -430,7 +435,7 @@ test("#315 AC-3/AC-4 without `steer`: a queued send runs next, Remove drops it",
       .locator("[data-queued-edit]")
       .click();
     await expect(page.locator("[data-queued]")).toHaveCount(0);
-    const box = page.locator("textarea").last();
+    const box = threadBox(page);
     await expect(box).toHaveValue(/bananas are yellow/);
     await box.fill("also mention bananas");
     await box.press("Enter");
@@ -461,35 +466,35 @@ test("#315 AC-3/AC-4 without `steer`: a queued send runs next, Remove drops it",
   }
 });
 
-test("AC-6 two sessions run in parallel; the DM list shows each live phase", async ({
+test("AC-6 two sessions run in parallel; Threads shows each live phase", async ({
   page,
 }) => {
   test.setTimeout(180_000);
-  await dmDefault(stackA, page);
-  const empId = employeeIdFromUrl(page);
   // Edit-ask prompts hold each turn on an approval — both stay live long
-  // enough to observe them running in parallel in the session list.
-  await send(page, "Add a parallel-work note to the readme");
-  // Let the send land (its navigation proves messages.post resolved) before
-  // heading home — navigating early can abort the in-flight post.
-  await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+/, { timeout: 30_000 });
-  // Back to the DM home → second session → back home: both rows live.
-  await page.goto(`${stackA.webUrl}/dm/${empId}`);
-  await send(page, "Add a second note about parallel work");
-  await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+/, { timeout: 30_000 });
-  await page.goto(`${stackA.webUrl}/dm/${empId}`);
-  // A live session marks its row: a pulsing dot while it works, the `!`
-  // needs-you chip while it waits on an approval (#224 badge design).
-  const live = page.locator("[data-session]", {
-    has: page.locator('.animate-pulse, [title="Needs you"]'),
-  });
+  // enough to observe them running in parallel on the Threads board. Each
+  // chat's start (the draft swapping for its thread) proves messages.post
+  // resolved before the next page change can abort it.
+  await chatDefault(stackA, page, "Add a parallel-work note to the readme");
+  await startChat(
+    page,
+    stackA.webUrl,
+    DEFAULT_AGENT,
+    "Add a second note about parallel work",
+  );
+  await page.goto(`${stackA.webUrl}/#?page=threads`);
+  await expect(v3Peek(page)).toHaveCount(0);
+  /* A live thread's card carries its phase pill: "Working" while it runs,
+     "Needs you" while it waits on an approval (#224 badge design, #71 AC-4).
+     The cards on the Live board are the old DM list's session rows. */
+  const live = page
+    .locator("main")
+    .getByRole("button")
+    .filter({ hasText: /Working|Needs you/ });
   await expect(live).toHaveCount(2, { timeout: 60_000 });
-  // #71 AC-4: a turn parked on an approval reads `needs you`, a live phase.
+  // The sidebar counts the same two as live.
   await expect(
-    page
-      .locator("[data-session]")
-      .filter({ hasText: /working|thinking|replying|opening|needs you/ }),
-  ).toHaveCount(2, { timeout: 60_000 });
+    v3Sidebar(page).getByRole("button", { name: /^Threads\s*2$/ }),
+  ).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-6-parallel.png` });
 });
 
@@ -539,14 +544,17 @@ test("AC-7 real-app build: every visible control has a working handler", async (
   );
   try {
     await waitForHttp(`http://127.0.0.1:${port}`);
+    await skipFirstRun(page);
     await page.goto(`http://127.0.0.1:${port}/`);
-    const aside = page.locator("aside");
-    await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
-      timeout: 30_000,
-    });
+    const sidebar = v3Sidebar(page);
+    await expect(sidebar.getByRole("button", { name: /default/i })).toBeVisible(
+      {
+        timeout: 30_000,
+      },
+    );
     // Click every control on the surfaces a user can reach: sidebar buttons,
-    // status entry, DM view buttons, session menus. A control that throws or
-    // dead-ends fails the run via the page's console error listener.
+    // the page, the opened person. A control that throws or dead-ends fails
+    // the run via the page's console error listener.
     const errors: string[] = [];
     page.on("pageerror", (e) => errors.push(String(e)));
     page.on("console", (m) => {
@@ -572,20 +580,24 @@ test("AC-7 real-app build: every visible control has a working handler", async (
         await page.waitForTimeout(60);
       }
     };
-    await clickAll("aside");
-    // Navigate into the DM. If the sweep left the first-run card up (its
-    // buttons live outside aside), dismiss it with its own control.
-    const dismissFirstRun = page.getByRole("button", { name: /Set up later/ });
-    if (await dismissFirstRun.isVisible().catch(() => false)) {
-      await dismissFirstRun.click({ timeout: 5_000 });
-    }
-    await aside
+    await clickAll("aside:not([aria-label])");
+    // Open Default (the sweep may have left any page up) and sweep what it
+    // shows: the page behind and the person beside it.
+    await sidebar
       .getByRole("button", { name: /default/i })
       .click({ timeout: 10_000 });
-    await expect(page).toHaveURL(/\/dm\//);
+    await expect(page).toHaveURL(/open=agent:/);
     await clickAll("main");
-    // The app still works: the composer accepts a message.
-    await send(page, "health check after control sweep");
+    await clickAll('aside[aria-label="Opened record"]');
+    // The app still works: a new chat accepts a message and the agent
+    // answers it. (The sweep's clicks moved the hash around, so start from
+    // the new-chat route itself.)
+    await startChat(
+      page,
+      `http://127.0.0.1:${port}`,
+      DEFAULT_AGENT,
+      "health check after control sweep",
+    );
     await expect(page.locator("[data-agentturn]").first()).toBeVisible({
       timeout: 60_000,
     });
@@ -604,6 +616,10 @@ test("AC-8 `_electron` shell renders the same DM app", async () => {
   // against stackA — the shell points its app window at the dev server.
   await ensureDesktopPayload(desktopDir);
   const portOf = (ws: string) => new URL(ws).port;
+  /* A scratch state dir: the window's localStorage (the first-run flag) must
+     not be this Mac's real LilOS profile — a fresh one starts on Welcome, and
+     "Set up later" is that screen's own exit into the app. */
+  const stateDir = mkdtempSync(path.join(tmpdir(), "lilos-ac27-"));
   const app = await _electron.launch({
     // Linux CI has no suid chrome-sandbox helper; disable it there only.
     args:
@@ -616,12 +632,16 @@ test("AC-8 `_electron` shell renders the same DM app", async () => {
       LILOS_RELAY_PORT: portOf(stackA.relayWs),
       LILOS_FEED_PORT: portOf(stackA.feedWs),
       LILOS_WEB_URL: stackA.webUrl,
+      LILOS_STATE_DIR: stateDir,
     },
   });
   try {
     const win = await app.firstWindow();
+    await win.getByRole("button", { name: "Set up later" }).click({
+      timeout: 60_000,
+    });
     await expect(
-      win.locator("aside").getByRole("button", { name: /default/i }),
+      v3Sidebar(win).getByRole("button", { name: /default/i }),
     ).toBeVisible({ timeout: 60_000 });
     // Page.captureScreenshot intermittently fails on Electron under load
     // (CI: "Unable to capture screenshot") — wait for visible+painted and

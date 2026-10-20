@@ -32,7 +32,7 @@ import { relay } from "./runtime";
 const bridge = () => window.lilos?.browser;
 
 /** Latest pushed browser snapshot (undefined until the first one lands). */
-export function useBrowserState(): DesktopBrowserState | undefined {
+function useBrowserState(): DesktopBrowserState | undefined {
   const [state, setState] = useState<DesktopBrowserState>();
   useEffect(() => {
     const b = bridge();

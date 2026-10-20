@@ -264,7 +264,7 @@ function wireComponents(input: {
  * the rows are synthesized so the user always sees all four legs with a reason.
  * The engine row is the end of the start-failure chain (harness supervisor
  * detail → `harness.report` → `system.status` → here): the status dialog and
- * the DM composer note (web dm.tsx) both render it.
+ * the thread's composer note (web use-engine-status.ts) both render it.
  */
 export function toStatusComponents(input: {
   result?: SystemStatusResult;

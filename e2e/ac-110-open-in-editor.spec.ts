@@ -11,7 +11,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { bootStack, freePort, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  freePort,
+  type Stack,
+  startChatInFolder,
+} from "./helpers/stack";
 
 /**
  * Issue #110 — "Open in <editor>" / "Reveal in Finder" on the real stack
@@ -74,59 +79,17 @@ test.afterAll(async () => {
 
 test.describe.configure({ mode: "serial" });
 
-async function dmDefault(page: Page) {
-  await page.goto(`${stack.webUrl}/?roots=${ROOT}`);
-  const aside = page.locator("aside");
-  await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
-    timeout: 30_000,
-  });
-  const dmBtn = page.getByRole("button", {
-    name: /open dm|set up later|message/i,
-  });
-  if (
-    await dmBtn
-      .first()
-      .isVisible()
-      .catch(() => false)
-  ) {
-    await dmBtn.first().click();
-  } else {
-    await aside.getByRole("button", { name: /default/i }).click();
-  }
-  await expect(page).toHaveURL(/\/dm\//);
-}
-
-/** Add the fixture repo through the web dialog, then start a session on it.
-    Serial legs share recents, so pick the known row when it's already there. */
+/** Start a session on the fixture repo the way a person does: the new-chat
+    draft's folder chip, then Send. The thread opens beside Threads and its
+    header carries the folder badge. Serial legs share recents. */
 async function sessionOnRepo(page: Page) {
-  const picker = page.locator('[data-ws="folder"]');
-  await picker.click();
-  const menu = page
-    .locator('[role="menu"], [data-slot="dropdown-menu-content"]')
-    .last();
-  const known = menu.locator(`[data-wsfolder="${repoDir}"]`);
-  const hasKnown = await known
-    .waitFor({ state: "visible", timeout: 5_000 })
-    .then(() => true)
-    .catch(() => false);
-  if (hasKnown) {
-    await known.click();
-  } else {
-    await menu.getByText("Add a folder").click();
-    const dialog = page.locator("[data-addfolder]");
-    await expect(dialog).toBeVisible();
-    await dialog.locator("[data-pathinput]").fill(repoDir);
-    await expect(dialog.locator("[data-folderinfo]")).toContainText(
-      "Git repo",
-      { timeout: 15_000 },
-    );
-    await dialog.locator("[data-addbtn]").click();
-    await expect(dialog).toHaveCount(0);
-  }
-  await expect(picker).toContainText("lilos-repo-110");
-  await page.locator("textarea").first().fill("hello — give me a session");
-  await page.locator("textarea").first().press("Enter");
-  await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+/);
+  await startChatInFolder(
+    page,
+    stack,
+    { id: "default", name: "Default" },
+    repoDir,
+    "hello — give me a session",
+  );
   const badge = page.locator("[data-wsbadge]");
   await expect(badge).toContainText("lilos-repo-110", { timeout: 15_000 });
   return badge;
@@ -149,7 +112,6 @@ test.use({ viewport: { width: 1288, height: 700 } });
 test("AC-1 + AC-5 the folder badge is a menu listing the detected editors, default first", async ({
   page,
 }) => {
-  await dmDefault(page);
   const badge = await sessionOnRepo(page);
   // os.open exists on this host → the badge is a button that opens the menu.
   await expect(badge).toHaveRole("button", { timeout: 15_000 });
@@ -170,7 +132,6 @@ test("AC-1 + AC-5 the folder badge is a menu listing the detected editors, defau
 test("AC-2 + AC-4 Open in Zed runs the Zed CLI on the session folder (no shell)", async ({
   page,
 }) => {
-  await dmDefault(page);
   const badge = await sessionOnRepo(page);
   await expect(badge).toHaveRole("button", { timeout: 15_000 });
   await badge.click();
@@ -199,7 +160,6 @@ test("AC-2 + AC-4 Open in Zed runs the Zed CLI on the session folder (no shell)"
 test("AC-3 Reveal in Finder runs `open -R` on the session folder", async ({
   page,
 }) => {
-  await dmDefault(page);
   const badge = await sessionOnRepo(page);
   await expect(badge).toHaveRole("button", { timeout: 15_000 });
   await badge.click();
@@ -234,7 +194,6 @@ test("AC-5 without os.open the badge is a plain label; without editors the menu 
       });
     return route.continue();
   });
-  await dmDefault(page);
   const badge = await sessionOnRepo(page);
   await expect(badge).toContainText("lilos-repo-110");
   await expect(badge).not.toHaveRole("button");

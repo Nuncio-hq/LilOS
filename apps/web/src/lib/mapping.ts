@@ -805,7 +805,7 @@ export function toFeed(
       replies,
       /* #419: the session row's failure card — the harness stamps
          `turnFailure` when a turn dies on an error or a sleep/restart
-         interrupt; Retry re-sends the user's last message (dm.tsx). */
+         interrupt; Retry re-sends the user's last message (thread-actions.ts). */
       ...(conv.turnFailure
         ? { alert: { ...conv.turnFailure, retry: true } }
         : {}),

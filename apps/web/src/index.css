@@ -101,6 +101,13 @@ html[data-desktop]:not([data-fullscreen])
   padding-left: var(--lilos-traffic-inset);
 }
 
+/* First run has no sidebar: its own strip above Welcome (v3-shell.tsx) is
+   the lights' row and drags the window, so the window can be moved while
+   setting up. A browser tab gives it no height. */
+html[data-desktop] .lilos-v3 > .lilos-drag {
+  min-height: 56px;
+}
+
 /* #554 ⌘F: the DOM find paints matches through the Custom Highlight API —
    the same look Chromium's findInPage gave them (rest yellow, active
    orange), legible in both themes. */

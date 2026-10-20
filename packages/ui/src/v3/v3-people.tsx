@@ -359,9 +359,10 @@ export function V3People({
     <Page wide>
       <Title>People</Title>
       <p className="text-[14.5px] text-muted-foreground">
-        {agents} agents
-        {workers > 0 && ` and ${workers} outside workers`}.{" "}
-        {ceo && `${ceo.name} holds the CEO position. `}You are the Chairman.
+        {agents} {agents === 1 ? "agent" : "agents"}
+        {workers > 0 &&
+          ` and ${workers} outside ${workers === 1 ? "worker" : "workers"}`}
+        . {ceo && `${ceo.name} holds the CEO position. `}You are the Chairman.
       </p>
       <Tabs
         tabs={[

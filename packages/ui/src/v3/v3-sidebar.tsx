@@ -15,12 +15,13 @@ import {
 import type { ReactNode } from "react";
 import { cn } from "../lib/utils";
 import { AgentAvatar, CeoMark, Kbd, ProjectMark, StatusDot } from "./v3-bits";
-import { agentStatus } from "./v3-model";
+import { agentDot } from "./v3-model";
 import type { V3Data, V3PageRoute, V3RecordRoute, V3Route } from "./v3-types";
 
 /* The v3 sidebar is the company's table of contents: the three databases
    (Work, Threads, Goals), the projects, and the people, each person with the
-   one status dot that says whether they need anything. */
+   one status dot that says what wants your eye (needs you, working, failed,
+   finished and not seen yet). */
 export function V3Sidebar({
   data,
   page,
@@ -149,10 +150,7 @@ export function V3Sidebar({
           right={
             <>
               {a.id === data.ceoId && <CeoMark />}
-              <StatusDot
-                status={agentStatus(data, a.id)}
-                className="size-[7px]"
-              />
+              <StatusDot status={agentDot(data, a.id)} className="size-[7px]" />
             </>
           }
         />

@@ -10,6 +10,7 @@ import {
   panelIntoFocus,
   pickPorts,
   type Stack,
+  startChatInFolder,
 } from "./helpers/stack";
 
 /**
@@ -33,7 +34,8 @@ const repoDir = path.join(ROOT, "lilos-repo-a");
 const ghFakeDir = path.join(ROOT, "gh-fake");
 const ghLogFile = path.join(ghFakeDir, "gh.log");
 
-const FOCUS_URL = /\/dm\/[^/]+\/[^/]+\/focus$/;
+/* The session view: a thread widened over the page (what Focus was). */
+const FOCUS_URL = /[#&]full=1(&|$)/;
 mkdirSync(repoDir, { recursive: true });
 mkdirSync(ghFakeDir, { recursive: true });
 const git = (args: string[], cwd = repoDir) =>
@@ -60,64 +62,17 @@ test.afterAll(async () => {
 
 test.describe.configure({ mode: "serial" });
 
-async function dmDefault(page: Page) {
-  await page.goto(`${stack.webUrl}/?roots=${ROOT}`);
-  const aside = page.locator("aside");
-  await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
-    timeout: 30_000,
-  });
-  const dmBtn = page.getByRole("button", {
-    name: /open dm|set up later|message/i,
-  });
-  if (
-    await dmBtn
-      .first()
-      .isVisible()
-      .catch(() => false)
-  ) {
-    await dmBtn.first().click();
-  } else {
-    await aside.getByRole("button", { name: /default/i }).click();
-  }
-  await expect(page).toHaveURL(/\/dm\//);
-}
-
-const pickerButton = (page: Page) => page.locator('[data-ws="folder"]');
-
-/** Pick `dir` for the next session: recents menu when listed, else Add folder. */
-async function pickSessionFolder(page: Page, dir: string) {
-  const menu = await (async () => {
-    await pickerButton(page).click();
-    return page
-      .locator('[role="menu"], [data-slot="dropdown-menu-content"]')
-      .last();
-  })();
-  const recent = menu.locator(`[data-wsfolder="${dir}"]`);
-  /* Recents render async (relay list + live probe) — an immediate isVisible
-     reads false while they load and Add-folder then dead-ends on "Already
-     added". Give the row a beat to appear first. */
-  const recentVisible = await recent
-    .first()
-    .waitFor({ state: "visible", timeout: 3_000 })
-    .then(() => true)
-    .catch(() => false);
-  if (recentVisible) {
-    await recent.first().click();
-  } else {
-    await menu.getByText("Add a folder").click();
-    const dialog = page.locator("[data-addfolder]");
-    await expect(dialog).toBeVisible();
-    await dialog.locator("[data-pathinput]").fill(dir);
-    await expect(dialog.locator("[data-folderinfo]")).toBeVisible({
-      timeout: 15_000,
-    });
-    await dialog.locator("[data-addbtn]").click();
-    await expect(dialog).toHaveCount(0);
-  }
-  await expect(pickerButton(page)).toContainText(path.basename(dir), {
-    timeout: 15_000,
-  });
-}
+/* A new session in the repo, the way a person starts one: the new-chat
+   draft's folder chip, then Send. An id that names nobody opens the draft on
+   the default agent, so the spec needs no employee lookup. */
+const startSession = (page: Page, text: string) =>
+  startChatInFolder(
+    page,
+    stack,
+    { id: "default", name: "Default" },
+    repoDir,
+    text,
+  );
 
 const send = async (page: Page, text: string) => {
   const box = page.locator("textarea").last();
@@ -225,12 +180,11 @@ const openChanges = async (page: Page) => {
   await changes.click();
 };
 
-/* The folder picks are per-page; each test sets up its own session. */
+/* Each test sets up its own session. */
 async function freshSession(page: Page) {
-  await dmDefault(page);
-  await pickSessionFolder(page, repoDir);
-  await send(page, "check in");
-  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  await startSession(page, "check in");
+  /* A send lands on the thread beside Threads; widening it is the session
+     view (chat beside the Workbench). */
   await panelIntoFocus(page);
   /* #474/#496: hand each test an idle session. While the seeded turn is
      still dispatching, a send can slip in mid-turn (steer) and a
@@ -447,8 +401,7 @@ test("AC-3b a send landing mid-turn steers — the landing wait resolves the tur
   page,
 }) => {
   test.setTimeout(180_000);
-  await dmDefault(page);
-  await pickSessionFolder(page, repoDir);
+  await startSession(page, "slow:150 Add a readme note");
   /* #474: `slow:` paces the seeded turn and its edit-ask parks on the
      patch approval — a parked turn can't end, so the next send always
      lands mid-turn: claimed=0, `session.steer`, pairs into `turn.steers`.
@@ -457,8 +410,6 @@ test("AC-3b a send landing mid-turn steers — the landing wait resolves the tur
      makes the steer itself deterministic.) The wild flake hit exactly
      this when `sendTurn`'s count guard read the session as idle while the
      seeded turn was still dispatching. */
-  await send(page, "slow:150 Add a readme note");
-  /* #577: a send lands on the panel; Focus opens via its ↗. */
   await panelIntoFocus(page);
   /* The card mounts only after the harness has processed turn.started
      (runningTurnId set) — a send past this point provably steers. Send
@@ -510,5 +461,6 @@ test("Esc in the comment editor closes only the editor, then Focus", async ({
   await expect(diff(page, "a.txt")).toBeVisible();
 
   await page.keyboard.press("Escape");
-  await page.waitForURL(/\/dm\/[^/]+\/[^/]+$/);
+  await expect(page).not.toHaveURL(FOCUS_URL);
+  await expect(page).toHaveURL(/open=thread:[^&]+/);
 });

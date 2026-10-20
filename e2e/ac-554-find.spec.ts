@@ -1,15 +1,20 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  _electron,
   type ElectronApplication,
   expect,
   type Page,
   test,
 } from "@playwright/test";
-import { ensureDesktopPayload } from "./helpers/electron";
+import { launchDesktop } from "./helpers/electron";
 import { growDmThread } from "./helpers/relay-thread";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  panelIntoFocus,
+  pickPorts,
+  type Stack,
+  threadUrl,
+} from "./helpers/stack";
 
 /**
  * Issue #554 — the Mac app's ⌘F finds text inside the open thread.
@@ -29,7 +34,6 @@ import { bootStack, pickPorts, type Stack } from "./helpers/stack";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, "..");
-const desktopDir = path.join(repo, "apps", "desktop");
 const SHOTS = path.join(repo, "test-results", "ac-554");
 const isMac = process.platform === "darwin";
 
@@ -44,37 +48,6 @@ const VIET_NFC = "được";
 let stack: Stack;
 let app: ElectronApplication;
 let win: Page;
-
-async function launchDesktop(webUrl: string): Promise<ElectronApplication> {
-  await ensureDesktopPayload(desktopDir);
-  return _electron.launch({
-    args:
-      process.platform === "linux"
-        ? [desktopDir, "--no-sandbox"]
-        : [desktopDir],
-    env: {
-      ...process.env,
-      LILOS_RELAY_HOME: stack.home,
-      LILOS_RELAY_PORT: String(stack.ports.relay),
-      LILOS_FEED_PORT: String(stack.ports.feed),
-      LILOS_WEB_URL: webUrl,
-    },
-  });
-}
-
-async function dismissFirstRun(win: Page) {
-  const skip = win.getByRole("button", { name: /set up later/i });
-  if (
-    await skip
-      .first()
-      .isVisible()
-      .catch(() => false)
-  )
-    await skip.first().click();
-  await expect(win.locator("[data-first-run]")).toHaveCount(0, {
-    timeout: 10_000,
-  });
-}
 
 /** Click a real application-menu item — the renderer path the OS takes. */
 const clickMenuItem = (id: string) =>
@@ -185,11 +158,11 @@ test.beforeAll(async () => {
     `status check pass 59 ${PROBE}`,
     `status check pass 60 — hôm nay ${VIET_NFD} nghỉ`,
   ]);
-  app = await launchDesktop(
-    `${stack.webUrl}/dm/${grown.employeeId}/${grown.conversationId}`,
-  );
-  win = await app.firstWindow();
-  await dismissFirstRun(win);
+  /* The thread opens beside Threads from the launch URL's hash — the packaged
+     app loads from file:, where only the fragment navigates. */
+  ({ app, win } = await launchDesktop(stack, {
+    hash: threadUrl(stack.webUrl, grown.conversationId),
+  }));
   const panel = win.locator("[data-thread-panel]");
   await expect(panel).toBeVisible({ timeout: 60_000 });
   await expect
@@ -248,15 +221,50 @@ test("AC-2 (#554) the Edit menu lists Find… ⌘F, Find Next ⌘G, Find Previou
 
 test("AC-1 (#554) the thread panel paints its own surface — dark text never lands on the window's light backing", async () => {
   /* On the desktop app the body is transparent and every surface must paint
-     itself: the thread column used to paint nothing, so dark-mode text sat
-     on the window's permanently light backing (the vibrancy material never
-     darkens under Playwright's scheme emulation). The panel now resolves
-     --background like the right panel and the Focus thread pane. */
+     itself, or dark-mode text sits on the window's permanently light backing
+     (the vibrancy material never darkens under Playwright's scheme
+     emulation). In v3 the thread panel's own box paints nothing: the side
+     peek around it is the surface — so the nearest painted ancestor of the
+     panel must be opaque, dark, and the shell's `--v3-main` ground. */
   const panel = win.locator("[data-thread-panel]");
   await win.evaluate(() => document.documentElement.classList.add("dark"));
   await expect
-    .poll(() => panel.evaluate((el) => getComputedStyle(el).backgroundColor))
-    .toBe("rgb(28, 28, 30)"); // --background: #1c1c1e under .dark
+    .poll(
+      () =>
+        panel.evaluate((el) => {
+          /* A 1x1 canvas resolves any CSS colour (the v3 tokens are oklch)
+             to the sRGB pixel the compositor paints. */
+          const ctx = document
+            .createElement("canvas")
+            .getContext("2d", { willReadFrequently: true });
+          if (!ctx) return null;
+          const pixel = (css: string) => {
+            ctx.clearRect(0, 0, 1, 1);
+            ctx.fillStyle = css;
+            ctx.fillRect(0, 0, 1, 1);
+            return [...ctx.getImageData(0, 0, 1, 1).data];
+          };
+          const ground = pixel(
+            getComputedStyle(
+              document.querySelector(".lilos-v3") as Element,
+            ).getPropertyValue("--v3-main"),
+          );
+          for (let n: Element | null = el; n; n = n.parentElement) {
+            const px = pixel(getComputedStyle(n).backgroundColor);
+            if (px[3] === 0) continue;
+            // The first ancestor that paints: opaque, dark (every channel
+            // well below mid-grey) and the v3 ground itself.
+            return {
+              opaque: px[3] === 255,
+              dark: Math.max(px[0], px[1], px[2]) < 80,
+              ground: px.join() === ground.join(),
+            };
+          }
+          return null;
+        }),
+      { timeout: 15_000 },
+    )
+    .toEqual({ opaque: true, dark: true, ground: true });
   await win.evaluate(() => document.documentElement.classList.remove("dark"));
 });
 
@@ -401,11 +409,10 @@ test("AC-1/AC-3 (#554) ⌘F highlights + scrolls to a held early turn; ⌘G/⇧�
   await expect(bar).toHaveCount(0, { timeout: 15_000 });
   await expect(win.locator("[data-thread-panel]")).toBeVisible();
 
-  /* Focus — the same bar over the focus column. The URL's /focus route
-     renders the same conversation full-width. */
-  await win.goto(
-    win.url().endsWith("/focus") ? win.url() : `${win.url()}/focus`,
-  );
+  /* Focus — the same bar over the session view's chat column. Widening the
+     peek (`full=1`) swaps the thread panel for the session view, a fresh
+     mount of the same conversation with its own bar. */
+  await panelIntoFocus(win);
   await expect(win.locator("[data-find-bar]")).toHaveCount(0);
   const focusScope = "[data-thread]";
   await clickMenuItem("find");

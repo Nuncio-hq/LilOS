@@ -1,7 +1,13 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  pickPorts,
+  type Stack,
+  skipFirstRun,
+  startChat,
+} from "./helpers/stack";
 
 /**
  * Issue #106 — approval modes per conversation, real app (apps/web over
@@ -12,50 +18,54 @@ import { bootStack, pickPorts, type Stack } from "./helpers/stack";
  * default and never remember the last-used level; AC-4 cards offer
  * Once / This thread / Always / Deny; AC-9 the Settings Approvals copy
  * says what the level gates.
+ *
+ * v3 notes: the pill lives on the thread's composer (the new-chat draft has
+ * none), so every leg starts a chat first and reads/flips the pill on its
+ * thread. The engine's own approval policy (Smart/Manual/Off) sits under the
+ * default access in Settings → General, only while the engine declares
+ * `approval_policy`.
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
 const repo = path.resolve(here, "..");
 
 const SHOTS = path.join(repo, "test-results", "ac-106");
+/* The seeded employee. An id that names nobody opens the new-chat draft on
+   the default agent, which on this one-agent stack is Default. */
+const DEFAULT_AGENT = { id: "default", name: "Default" };
+
+/** The thread's access pill (the draft composer has none). */
 const pill = (page: Page) =>
-  // #577: home + thread pills coexist on /dm/e/c — the thread's is last.
-  page.locator('[data-slot="access-pill"]').last();
+  page.locator('[data-thread-panel] [data-slot="access-pill"]');
 const openCard = (page: Page) =>
   page.locator('[data-ask-id][data-ask-state="open"]');
 const settled = (page: Page) => page.locator("[data-turnsettled]").last();
 
-/** Land on the DM home composer of the seeded employee. */
-async function dmHome(stack: Stack, page: Page) {
-  await page.goto(`${stack.webUrl}/`);
-  const aside = page.locator("aside");
-  await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
-    timeout: 30_000,
-  });
-  const dmBtn = page.getByRole("button", {
-    name: /open dm|set up later|message/i,
-  });
-  if (
-    await dmBtn
-      .first()
-      .isVisible()
-      .catch(() => false)
-  ) {
-    await dmBtn.first().click();
-  } else {
-    await aside.getByRole("button", { name: /default/i }).click();
-  }
-  await expect(page).toHaveURL(/\/dm\//);
+/** A fresh chat with the seeded employee, landed on its thread in the side
+    peek, its opening turn over. `text` must not need an approval (it only
+    opens the thread). engine-fake steers a send made mid-turn into the
+    running turn, so the legs' own gated prompts only run as turns of their
+    own once this one has ended. */
+async function newThread(stack: Stack, page: Page, text = "Say hello once") {
+  await skipFirstRun(page);
+  await startChat(page, stack.webUrl, DEFAULT_AGENT, text);
+  await expect(pill(page)).toBeVisible({ timeout: 30_000 });
+  await expect(settled(page)).toBeVisible({ timeout: 90_000 });
 }
 
 const send = async (page: Page, text: string) => {
-  const box = page.locator("textarea").last();
+  const box = page.locator("[data-thread-panel] textarea").last();
   await box.fill(text);
   await box.press("Enter");
 };
 
-const settingsDialog = (page: Page) =>
-  page.getByRole("dialog", { name: "Settings" });
+/** Settings → General, where the approvals default lives. */
+async function openSettings(stack: Stack, page: Page) {
+  await page.goto(`${stack.webUrl}/#?page=settings&view=general`);
+  await expect(
+    page.getByRole("radiogroup", { name: "Approvals", exact: true }),
+  ).toBeVisible({ timeout: 30_000 });
+}
 
 test.describe.configure({ mode: "serial" });
 test.use({ video: "on" });
@@ -67,7 +77,7 @@ test("AC-1+AC-2+AC-4+AC-3 the pill drives the mode; cards offer the four options
   const stack = await bootStack("ac106", await pickPorts());
   try {
     /* ── New conversation starts on Ask (the factory default) ── */
-    await dmHome(stack, page);
+    await newThread(stack, page);
     await expect(pill(page)).toBeVisible();
     await expect(pill(page)).toHaveAttribute("data-access", "ask");
     await expect(pill(page)).toContainText("Ask");
@@ -113,7 +123,7 @@ test("AC-1+AC-2+AC-4+AC-3 the pill drives the mode; cards offer the four options
     await expect(page.getByText(/Auto-approved/).first()).toBeVisible();
 
     /* ── AC-3: a fresh conversation doesn't inherit the last-used level ── */
-    await dmHome(stack, page);
+    await newThread(stack, page);
     await expect(pill(page)).toHaveAttribute("data-access", "ask");
     await expect(pill(page)).toContainText("Ask");
   } finally {
@@ -127,64 +137,68 @@ test("AC-3+AC-9 Settings Approvals: policy pick, honest copy, and the default se
   test.setTimeout(180_000);
   const stack = await bootStack("ac106s", await pickPorts());
   try {
-    await dmHome(stack, page);
-    await page
-      .locator("aside")
-      .getByRole("button", { name: "Settings" })
-      .click();
-    await expect(settingsDialog(page)).toBeVisible();
-    await settingsDialog(page)
-      .getByRole("tab", { name: "Approvals", exact: true })
-      .click();
+    await skipFirstRun(page);
+    await openSettings(stack, page);
 
-    /* The engine declares approval_policy → the policy pick renders. */
-    const policy = settingsDialog(page).getByRole("radiogroup", {
+    /* AC-9: the access default names what it gates — no sandbox promise.
+       (v3's copy: "stops and asks you before anything that deletes,
+       publishes or spends" / "never stops to ask".) */
+    const policy = page.getByRole("radiogroup", {
+      name: "Approvals",
+      exact: true,
+    });
+    await expect(
+      policy.getByRole("radio", { name: "Ask before risky commands" }),
+    ).toBeVisible();
+    await expect(
+      page.getByText(/stops and asks you before anything that deletes/),
+    ).toBeVisible();
+    await expect(page.getByText(/never stops to ask/)).toBeVisible();
+    await expect(
+      page.getByText(/outside its folder|works anywhere/i),
+    ).toHaveCount(0);
+
+    /* The engine declares approval_policy → the policy pick renders, on
+       Smart (the engine's default). */
+    const enginePolicy = page.getByRole("radiogroup", {
       name: "Engine approval policy",
     });
-    await expect(policy).toBeVisible();
+    await expect(enginePolicy).toBeVisible();
     for (const name of ["Smart", "Manual", "Off"])
       await expect(
-        policy.getByRole("radio", { name, exact: true }),
+        enginePolicy.getByRole("radio", { name, exact: true }),
       ).toBeVisible();
-
-    /* AC-9: the access default names what it gates — no sandbox promise. */
     await expect(
-      settingsDialog(page).getByText(/asks before risky commands/),
-    ).toBeVisible();
-    await expect(
-      settingsDialog(page).getByText(/never stops to ask/),
-    ).toBeVisible();
-    await expect(
-      settingsDialog(page).getByText(/outside its folder|works anywhere/i),
-    ).toHaveCount(0);
+      enginePolicy.getByRole("radio", { name: "Smart", exact: true }),
+    ).toHaveAttribute("aria-checked", "true");
     await page.screenshot({ path: `${SHOTS}/ac-9-settings.png` });
 
     /* Default → Full access seeds the NEXT new conversation only. */
-    await settingsDialog(page)
-      .getByRole("radiogroup", { name: "Default access for new conversations" })
-      .getByRole("radio", { name: "Full access", exact: true })
-      .click();
-    await page.keyboard.press("Escape");
-    await dmHome(stack, page);
+    await policy.getByRole("radio", { name: "Full access" }).click();
+    await expect(
+      policy.getByRole("radio", { name: "Full access" }),
+    ).toHaveAttribute("aria-checked", "true");
+    await newThread(stack, page);
     await expect(pill(page)).toHaveAttribute("data-access", "full");
 
-    /* …and switching the engine policy lands on the engine (fake records it). */
-    await page
-      .locator("aside")
-      .getByRole("button", { name: "Settings" })
-      .click();
-    await settingsDialog(page)
-      .getByRole("tab", { name: "Approvals", exact: true })
-      .click();
-    await settingsDialog(page)
-      .getByRole("radiogroup", { name: "Engine approval policy" })
+    /* …and switching the engine policy lands on the engine: Manual is the
+       pick, and it is still the pick after leaving Settings and coming back
+       (the engine only echoes it on its next describe). */
+    await openSettings(stack, page);
+    await enginePolicy
       .getByRole("radio", { name: "Manual", exact: true })
       .click();
     await expect(
-      settingsDialog(page)
-        .getByRole("radiogroup", { name: "Engine approval policy" })
-        .getByRole("radio", { name: "Manual", exact: true }),
+      enginePolicy.getByRole("radio", { name: "Manual", exact: true }),
     ).toHaveAttribute("aria-checked", "true");
+    // A hash-only goto moves within the page (no reload): the pick must
+    // come from the app's own state, not a re-read of the engine.
+    await page.goto(`${stack.webUrl}/#?page=threads`);
+    await page.goto(`${stack.webUrl}/#?page=settings&view=general`);
+    await expect(
+      enginePolicy.getByRole("radio", { name: "Manual", exact: true }),
+    ).toHaveAttribute("aria-checked", "true");
+    await page.screenshot({ path: `${SHOTS}/ac-106-engine-policy.png` });
   } finally {
     await stack.stop();
   }
@@ -193,126 +207,130 @@ test("AC-3+AC-9 Settings Approvals: policy pick, honest copy, and the default se
 test("AC-1 the Full access pill actually paints orange, light and dark (#106)", async ({
   page,
 }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(180_000);
   /* The pill's full state must read ORANGE (Codex-style warning), not the
      neutral gray of the paperclip/model picker beside it. Read the real
-     computed colors in the prototype app — a bare text-orange-600 probe div
-     in the same sheet tells us whether the utility exists at all. */
-  await page.setViewportSize({ width: 1288, height: 700 });
-  const html = page.locator("html");
-  const hueOf = (r: number, g: number, b: number) => {
-    const max = Math.max(r, g, b);
-    const min = Math.min(r, g, b);
-    if (max === min) return 0;
-    const d = max - min;
-    const h =
-      max === r
-        ? (g - b) / d + (g < b ? 6 : 0)
-        : max === g
-          ? (b - r) / d + 2
-          : (r - g) / d + 4;
-    return { h: h * 60, s: d / max };
-  };
-  const ink = () =>
-    page.evaluate(() => {
-      const ctx = document
-        .createElement("canvas")
-        .getContext("2d", { willReadFrequently: true });
-      if (!ctx) throw new Error("no 2d context");
-      const parse = (s: string) => {
-        ctx.clearRect(0, 0, 1, 1);
-        ctx.fillStyle = "#f0f";
-        ctx.fillStyle = s;
-        if (ctx.fillStyle === "#ff00ff") return null;
-        ctx.fillRect(0, 0, 1, 1);
-        const d = ctx.getImageData(0, 0, 1, 1).data;
-        return { r: d[0], g: d[1], b: d[2] };
-      };
-      const pill = document.querySelector('[data-slot="access-pill"]');
-      if (!pill) throw new Error("access pill missing");
-      const svg = pill.querySelector("svg");
-      const label = pill.querySelector("span");
-      /* Probe: does .text-orange-600 exist in the compiled sheet at all? */
-      const probe = document.createElement("div");
-      probe.className = "text-orange-600";
-      pill.appendChild(probe);
-      const out = {
-        pillClass: pill.getAttribute("class") ?? "",
-        pill: parse(getComputedStyle(pill).color),
-        svg: svg ? parse(getComputedStyle(svg).color) : null,
-        svgFill: svg ? parse(getComputedStyle(svg).fill) : null,
-        label: label ? parse(getComputedStyle(label).color) : null,
-        probe: parse(getComputedStyle(probe).color),
-      };
-      probe.remove();
-      return out;
-    });
-  for (const scheme of ["light", "dark"] as const) {
-    await page.emulateMedia({ colorScheme: scheme });
-    await page.goto("/");
-    await expect(page.locator("aside").first()).toContainText("Employees", {
-      timeout: 30_000,
-    });
-    await page.addStyleTag({
-      content:
-        "*,*::before,*::after{transition:none!important;animation:none!important}",
-    });
-    if (scheme === "dark") {
-      await expect(html).toHaveClass(/dark/);
-    } else {
-      await expect(html).not.toHaveClass(/dark/);
-    }
-    const p = pill(page);
-    await expect(p).toBeVisible();
-    await p.click();
-    await expect(p).toHaveAttribute("data-access", "full");
-    const c = await ink();
-    console.log(`#106 pill ${scheme} hovered`, JSON.stringify(c));
-    /* The cursor rests on the pill after the click, so the first read is the
+     computed colors on the app's thread composer — a bare text-orange-600
+     probe div in the same sheet tells us whether the utility exists at all. */
+  const stack = await bootStack("ac106c", await pickPorts());
+  try {
+    await page.setViewportSize({ width: 1288, height: 700 });
+    const html = page.locator("html");
+    const hueOf = (r: number, g: number, b: number) => {
+      const max = Math.max(r, g, b);
+      const min = Math.min(r, g, b);
+      if (max === min) return 0;
+      const d = max - min;
+      const h =
+        max === r
+          ? (g - b) / d + (g < b ? 6 : 0)
+          : max === g
+            ? (b - r) / d + 2
+            : (r - g) / d + 4;
+      return { h: h * 60, s: d / max };
+    };
+    const ink = () =>
+      page.evaluate(() => {
+        const ctx = document
+          .createElement("canvas")
+          .getContext("2d", { willReadFrequently: true });
+        if (!ctx) throw new Error("no 2d context");
+        const parse = (s: string) => {
+          ctx.clearRect(0, 0, 1, 1);
+          ctx.fillStyle = "#f0f";
+          ctx.fillStyle = s;
+          if (ctx.fillStyle === "#ff00ff") return null;
+          ctx.fillRect(0, 0, 1, 1);
+          const d = ctx.getImageData(0, 0, 1, 1).data;
+          return { r: d[0], g: d[1], b: d[2] };
+        };
+        const pill = document.querySelector(
+          '[data-thread-panel] [data-slot="access-pill"]',
+        );
+        if (!pill) throw new Error("access pill missing");
+        const svg = pill.querySelector("svg");
+        const label = pill.querySelector("span");
+        /* Probe: does .text-orange-600 exist in the compiled sheet at all? */
+        const probe = document.createElement("div");
+        probe.className = "text-orange-600";
+        pill.appendChild(probe);
+        const out = {
+          pillClass: pill.getAttribute("class") ?? "",
+          pill: parse(getComputedStyle(pill).color),
+          svg: svg ? parse(getComputedStyle(svg).color) : null,
+          svgFill: svg ? parse(getComputedStyle(svg).fill) : null,
+          label: label ? parse(getComputedStyle(label).color) : null,
+          probe: parse(getComputedStyle(probe).color),
+        };
+        probe.remove();
+        return out;
+      });
+    for (const scheme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme: scheme });
+      await newThread(stack, page);
+      await page.addStyleTag({
+        content:
+          "*,*::before,*::after{transition:none!important;animation:none!important}",
+      });
+      if (scheme === "dark") {
+        await expect(html).toHaveClass(/dark/);
+      } else {
+        await expect(html).not.toHaveClass(/dark/);
+      }
+      const p = pill(page);
+      await expect(p).toBeVisible();
+      await p.click();
+      await expect(p).toHaveAttribute("data-access", "full");
+      const c = await ink();
+      console.log(`#106 pill ${scheme} hovered`, JSON.stringify(c));
+      /* The cursor rests on the pill after the click, so the first read is the
        hovered state; move away for the unhovered read — orange must hold in
        both (the bug was hover:text-foreground muting it). */
-    await page.mouse.move(20, 20);
-    const c2 = await ink();
-    console.log(`#106 pill ${scheme} unhovered`, JSON.stringify(c2));
-    const merged = {
-      ...c,
-      ...Object.fromEntries(
-        Object.entries(c2).map(([k, v]) => [`${k}Unhovered`, v]),
-      ),
-    };
-    for (const [what, px] of [
-      ["pillUnhovered", merged.pillUnhovered],
-      ["svgUnhovered", merged.svgUnhovered],
-      ["labelUnhovered", merged.labelUnhovered],
-      ["pill", c.pill],
-      ["svg", c.svg],
-      ["label", c.label],
-      ["probe", c.probe],
-    ] as const) {
-      if (!px) continue;
-      const { h, s } = hueOf(px.r, px.g, px.b);
-      expect(
-        { h, s, px },
-        `${what} must be orange (hue 20–50°), not gray — ${scheme} computed rgb(${px.r},${px.g},${px.b})`,
-      ).toEqual(
-        expect.objectContaining({
-          h: expect.any(Number),
-          s: expect.any(Number),
-        }),
-      );
-      expect(
-        s,
-        `${what} is gray in ${scheme} (rgb ${px.r},${px.g},${px.b}) — orange ink never applied`,
-      ).toBeGreaterThan(0.25);
-      expect(
-        h,
-        `${what} hue ${h.toFixed(0)}° in ${scheme} is not orange`,
-      ).toBeGreaterThanOrEqual(15);
-      expect(
-        h,
-        `${what} hue ${h.toFixed(0)}° in ${scheme} is not orange`,
-      ).toBeLessThanOrEqual(55);
+      await page.mouse.move(20, 20);
+      const c2 = await ink();
+      console.log(`#106 pill ${scheme} unhovered`, JSON.stringify(c2));
+      const merged = {
+        ...c,
+        ...Object.fromEntries(
+          Object.entries(c2).map(([k, v]) => [`${k}Unhovered`, v]),
+        ),
+      };
+      for (const [what, px] of [
+        ["pillUnhovered", merged.pillUnhovered],
+        ["svgUnhovered", merged.svgUnhovered],
+        ["labelUnhovered", merged.labelUnhovered],
+        ["pill", c.pill],
+        ["svg", c.svg],
+        ["label", c.label],
+        ["probe", c.probe],
+      ] as const) {
+        if (!px) continue;
+        const { h, s } = hueOf(px.r, px.g, px.b);
+        expect(
+          { h, s, px },
+          `${what} must be orange (hue 20–50°), not gray — ${scheme} computed rgb(${px.r},${px.g},${px.b})`,
+        ).toEqual(
+          expect.objectContaining({
+            h: expect.any(Number),
+            s: expect.any(Number),
+          }),
+        );
+        expect(
+          s,
+          `${what} is gray in ${scheme} (rgb ${px.r},${px.g},${px.b}) — orange ink never applied`,
+        ).toBeGreaterThan(0.25);
+        expect(
+          h,
+          `${what} hue ${h.toFixed(0)}° in ${scheme} is not orange`,
+        ).toBeGreaterThanOrEqual(15);
+        expect(
+          h,
+          `${what} hue ${h.toFixed(0)}° in ${scheme} is not orange`,
+        ).toBeLessThanOrEqual(55);
+      }
+      await page.screenshot({ path: `${SHOTS}/pill-orange-${scheme}.png` });
     }
-    await page.screenshot({ path: `${SHOTS}/pill-orange-${scheme}.png` });
+  } finally {
+    await stack.stop();
   }
 });

@@ -1,20 +1,36 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  pickPorts,
+  type Stack,
+  skipFirstRun,
+  v3Peek,
+  v3Sidebar,
+} from "./helpers/stack";
 
 /**
- * Issue #421 — the DM header opens the prototype's shared `EmployeeCard`
- * (engine, owner, profile, model, now rows + missing-profile switch); the
- * app-local `EmployeeProfileCard` modal is gone. AC-2 runs the switch end
- * to end on engine-fake: pick `builder`, the relay record re-points, the
- * next session's `session.started` names `builder` as its agent. AC-3 is
- * the side-by-side screenshot matrix vs the prototype's own card.
+ * Issue #421 — one shared employee card (engine, owner, profile, model, now
+ * rows + the missing-profile switch) instead of an app-local modal.
+ *
+ * v3: the card is the agent's page in the side peek (`v3-agent.tsx`), opened
+ * from its sidebar row. What that page shows of the old card: the engine
+ * ("Runs on"), the model, the "Now" row with its status, the role, the
+ * instructions, and a Message button. What it does NOT have (reported, not
+ * faked): the Profile row, the "owned by <you>" line, the "Instructions
+ * (SOUL.md)" label and its "No instructions yet" empty state (the page draws
+ * an Instructions section only when there is text), the footer note, and the
+ * missing-profile switch. AC-2's switch is therefore driven
+ * through the relay call the old combobox made (`employees.update {profile}`)
+ * and asserted end to end: the record re-points and the next session boots on
+ * the new profile. The prototype side-by-side leg (old AC-3, a composite
+ * against the prototype's own card on :5199) is dropped: that screen is the
+ * v3 shell now, and AC-3 (#504) below keeps the real-app matrix.
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
 const repo = path.resolve(here, "..");
-const SHOTS = path.join(repo, "test-results", "ac-421");
 
 const DIMS = [
   [1288, 700],
@@ -68,90 +84,62 @@ async function rpc(
   return out;
 }
 
-/** Open the app past first-run, landed on `name`'s DM (defaults to the
- *  auto-hired Default). `statusPollMs` shortens the engine-name poll so the
- *  card's Engine row reads `engine-fake` well inside the waits. */
-async function openApp(page: Page, name = "Default") {
-  await page.addInitScript(() => localStorage.setItem("lilos-onboarded", "1"));
-  await page.goto(`${stack.webUrl}/`);
-  await expect(page).toHaveURL(/\/dm\//, { timeout: 30_000 });
-  await page.goto(`${page.url()}?statusPollMs=500`);
-  /* AC-2/AC-504 leave extra employees on this shared stack, so `/` can land
-     on another DM. Always click through the named sidebar row. */
-  const row = page
-    .locator("aside")
-    .getByRole("button", { name: new RegExp(`^${name} `) });
+/** Open `name`'s page in the side peek from its sidebar row, past first run.
+ *  `statusPollMs` shortens the engine-name poll so the "Runs on" row reads
+ *  `engine-fake` well inside the waits. AC-2/AC-504 leave extra employees on
+ *  this shared stack, so always click through the named row. */
+async function openAgentPage(page: Page, name: string) {
+  await skipFirstRun(page);
+  await page.goto(`${stack.webUrl}/?statusPollMs=500`);
+  const row = v3Sidebar(page).getByRole("button", {
+    name: new RegExp(`${name}$`),
+  });
   await expect(row).toBeVisible({ timeout: 30_000 });
   await row.click();
-  await expect(
-    page.getByRole("textbox", { name: new RegExp(`New thread with ${name}`) }),
-  ).toBeVisible();
+  const peek = v3Peek(page);
+  await expect(peek.getByRole("heading", { level: 1, name })).toBeVisible();
+  return peek;
 }
 
-/** The header's profile card — the shared card in a dialog shell. */
-const card = (page: Page) =>
-  page.getByRole("dialog", { name: /Default profile/i });
+/** One labelled row of the agent page's property list. */
+const prop = (peek: ReturnType<typeof v3Peek>, label: string) =>
+  peek.locator("div.flex.min-h-9").filter({ hasText: new RegExp(`^${label}`) });
 
-test("AC-1 the DM header opens the shared EmployeeCard, app-local modal gone", async ({
+test("AC-1 the agent page carries the card's rows: engine, model, now; no old-modal Soul row", async ({
   page,
 }) => {
-  await openApp(page);
-  await page.getByRole("button", { name: /^Profile$/ }).click();
-  const dlg = card(page);
-  await expect(dlg).toBeVisible();
+  test.setTimeout(90_000);
+  const peek = await openAgentPage(page, "Default");
 
-  // The shared card's shape: avatar + "role · owned by Oscar", the
-  // Engine/Profile/Model/Now grid, the Instructions block, footer note —
-  // none of which the old modal had (it listed Profile/Model/Soul only).
-  await expect(dlg.getByText(/owned by Oscar/)).toBeVisible();
-  await expect(dlg.locator("dt", { hasText: "Engine" })).toBeVisible();
-  await expect(dlg.locator("dt", { hasText: "Profile" })).toBeVisible();
-  await expect(dlg.locator("dt", { hasText: "Model" })).toBeVisible();
-  await expect(dlg.locator("dt", { hasText: "Now" })).toBeVisible();
-  // engine.name lands on the harness's second status report (~10s); the
-  // card falls back to "engine" until the probe lands.
-  await expect(dlg.getByText("engine-fake")).toBeVisible({ timeout: 30_000 });
-  await expect(dlg.getByText("Instructions (SOUL.md)")).toBeVisible();
-  await expect(
-    dlg.getByText(/Persona, memory and skills live in the engine profile/),
-  ).toBeVisible();
-  await expect(dlg.getByRole("button", { name: "Message" })).toBeVisible();
-  // #504: two Edit affordances — the header button and the empty-state link.
-  await expect(dlg.getByRole("button", { name: "Edit" })).toHaveCount(2);
-  // The old modal's signature: a "Soul" row — gone. #504: the close
-  // affordance is the shell's visible ✕ inside the dialog.
-  expect(await dlg.locator("dt", { hasText: "Soul" }).count()).toBe(0);
-  await expect(dlg.getByRole("button", { name: "Close" })).toBeVisible();
-  // #504 empty states on the real stack: Default's record carries no
-  // SOUL.md and she sits idle — the card says so instead of bare labels.
-  await expect(dlg.getByText(/No instructions yet/)).toBeVisible();
-  await expect(dlg.getByText("Idle")).toBeVisible();
-
-  // Edit still routes into the engine-profile editor; closing it brings the
-  // card back (the shell stays mounted behind the dialog). Two Edit
-  // affordances exist now — the header button + the empty-state link (#504);
-  // the header one is first.
-  await dlg.getByRole("button", { name: "Edit" }).first().click();
-  const edit = page.locator("div.fixed.inset-0", { hasText: "Edit employee" });
-  await expect(edit).toBeVisible();
-  await expect(dlg).toHaveCount(0);
-  await edit.getByRole("button", { name: "Cancel" }).click();
-  await expect(dlg).toBeVisible();
-  // Message closes (you are already in the DM).
-  await dlg.getByRole("button", { name: "Message" }).click();
-  await expect(dlg).toHaveCount(0);
-  // #504: the visible ✕ closes too — reopen, click it, gone.
-  await page.getByRole("button", { name: /^Profile$/ }).click();
-  await expect(dlg).toBeVisible();
-  await dlg.getByRole("button", { name: "Close" }).click();
-  await expect(dlg).toHaveCount(0);
+  // The card's grid on the page: Engine → "Runs on", Model, Now (+ Idle).
+  // engine.name lands on the harness's second status report (~10s); the row
+  // is left out until the probe lands.
+  await expect(prop(peek, "Runs on")).toContainText("engine-fake", {
+    timeout: 30_000,
+  });
+  await expect(prop(peek, "Model")).toBeVisible();
+  await expect(prop(peek, "Now")).toContainText("Idle");
+  // The Instructions are the engine profile's own persona (the page reads
+  // `agents.describe`), so the stock Default shows engine-fake's soul text.
+  await expect(peek.getByText("Instructions", { exact: true })).toBeVisible();
+  await expect(peek.getByText(/You are the default employee/)).toBeVisible({
+    timeout: 30_000,
+  });
+  // The old modal's signature: a "Soul" row — gone.
+  await expect(peek.getByText("Soul", { exact: true })).toHaveCount(0);
+  // Message starts a chat with them (a new-chat draft beside the page).
+  await expect(peek.getByRole("button", { name: "Message" })).toBeVisible();
+  // The visible ✕ closes the peek.
+  await peek.getByRole("button", { name: /^Close/ }).click();
+  await expect(v3Peek(page)).toHaveCount(0);
 });
 
 test("AC-2 the missing-profile switch works end to end", async ({ page }) => {
   test.setTimeout(120_000);
-  // An employee whose engine profile is gone: the card must offer the
-  // switch, and the pick must re-point the relay record so the next
-  // session starts on the new profile.
+  // An employee whose engine profile is gone. v3's agent page has no
+  // missing-profile notice or switch (reported), so the pick is the relay
+  // call the old combobox made; the record must re-point and the next
+  // session must start on the new profile.
   const [created] = await rpc(stack.relayWs, stack.relayToken, [
     {
       method: "employees.create",
@@ -166,29 +154,17 @@ test("AC-2 the missing-profile switch works end to end", async ({ page }) => {
   const employeeId = (created.result as { employee: { id: string } }).employee
     .id;
 
-  await openApp(page);
-  await page
-    .locator("aside")
-    .getByRole("button", { name: /Switchy/ })
-    .click();
-  await expect(page).toHaveURL(new RegExp(`/dm/${employeeId}`));
+  const peek = await openAgentPage(page, "Switchy");
+  await expect(page).toHaveURL(new RegExp(`open=agent:${employeeId}`));
+  await expect(peek.getByText(/Deckhand/)).toBeVisible();
 
-  await page.getByRole("button", { name: /^Profile$/ }).click();
-  const dlg = page.getByRole("dialog", { name: /Switchy profile/i });
-  await expect(dlg).toBeVisible();
-  await expect(dlg.getByText(/Profile missing/)).toBeVisible();
-  await dlg.getByRole("combobox").click();
-  await page
-    .getByRole("option", { name: /\bbuilder\b/ })
-    .first()
-    .click();
-  await expect(dlg.getByText(/Profile missing/)).toHaveCount(0);
-
-  // Relay truth: the record re-pointed — no reload needed, the dialog's
-  // fresh row shows it too.
-  await expect(dlg.locator("dd", { hasText: "builder" })).toBeVisible({
-    timeout: 10_000,
-  });
+  await rpc(stack.relayWs, stack.relayToken, [
+    {
+      method: "employees.update",
+      params: { id: employeeId, profile: "builder" },
+    },
+  ]);
+  // Relay truth: the record re-pointed.
   const [listed] = await rpc(stack.relayWs, stack.relayToken, [
     { method: "employees.list", params: {} },
   ]);
@@ -199,17 +175,19 @@ test("AC-2 the missing-profile switch works end to end", async ({ page }) => {
   ).employees;
   expect(employees.find((e) => e.id === employeeId)?.profile).toBe("builder");
 
-  // The next session boots on the switched profile: send a DM, then read
-  // the conversation's engine replay for session.started.agent.
-  await page.getByRole("button", { name: "Message" }).click();
-  const composer = page.getByPlaceholder(/New thread with/);
-  await composer.fill("switch check");
-  await composer.press("Enter");
-  await expect(page).toHaveURL(new RegExp(`/dm/${employeeId}/[^/]+`), {
+  // The next session boots on the switched profile: Message → send, then
+  // read the conversation's engine replay for session.started.agent.
+  await peek.getByRole("button", { name: "Message" }).click();
+  const box = v3Peek(page).getByPlaceholder("Message Switchy…");
+  await box.fill("switch check");
+  await v3Peek(page).getByRole("button", { name: "Send" }).click();
+  await expect(page).toHaveURL(/[?&]open=([^&]*,)?thread:[^&,]+/, {
     timeout: 15_000,
   });
-  const conversationId = page.url().match(/\/dm\/[^/]+\/([^/]+)/)?.[1];
-  if (!conversationId) throw new Error("DM URL missing conversation id");
+  const conversationId = decodeURIComponent(
+    /thread:([^&,]+)/.exec(page.url())?.[1] ?? "",
+  );
+  if (!conversationId) throw new Error("URL missing the thread id");
   await expect(page.locator("[data-agentturn]").first()).toBeVisible({
     timeout: 60_000,
   });
@@ -229,89 +207,18 @@ test("AC-2 the missing-profile switch works end to end", async ({ page }) => {
   expect(started?.payload?.agent).toBe("builder");
 });
 
-test("AC-3 side-by-side vs the prototype card, 3 dims × light/dark", async ({
-  page,
-}) => {
-  test.setTimeout(180_000);
-  const html = page.locator("html");
-
-  const appCard = async () => {
-    await openApp(page);
-    await page.getByRole("button", { name: /^Profile$/ }).click();
-    await expect(card(page)).toBeVisible();
-    // Wait out the profiles fetch + the engine-name probe so the rows are
-    // the real data (engine.name lands on the harness's ~10s report).
-    await expect(card(page).getByText("engine-fake")).toBeVisible({
-      timeout: 30_000,
-    });
-  };
-  const protoCard = async () => {
-    await page.goto("/"); // prototype dev server (playwright webServer :5199)
-    await page
-      .locator("aside")
-      .first()
-      .getByRole("button", { name: /Builder/ })
-      .click();
-    await page.getByRole("button", { name: "Profile" }).click();
-    const panel = page.locator("aside").last();
-    await expect(panel.getByText(/owned by/)).toBeVisible();
-  };
-  /** Composite: app shot left, prototype shot right, one PNG. The viewport
-   * widens to both halves — an element screenshot clips to the view. */
-  const composite = async (
-    a: Buffer,
-    b: Buffer,
-    out: string,
-    w: number,
-    h: number,
-  ) => {
-    await page.setViewportSize({ width: w * 2, height: h });
-    await page.setContent(`<body style="margin:0;display:flex">
-      <img src="data:image/png;base64,${a.toString("base64")}">
-      <img src="data:image/png;base64,${b.toString("base64")}">
-    </body>`);
-    await page.screenshot({ path: out });
-  };
-
-  /* The theme check runs after each load — the composite page replaces the
-     document, so asserting .dark before navigation would inspect the wrong
-     page. */
-  const schemeIs = async (s: "light" | "dark") => {
-    if (s === "dark") await expect(html).toHaveClass(/dark/);
-    else await expect(html).not.toHaveClass(/dark/);
-  };
-
-  for (const scheme of ["light", "dark"] as const) {
-    await page.emulateMedia({ colorScheme: scheme });
-    for (const [w, h] of DIMS) {
-      await page.setViewportSize({ width: w, height: h });
-      await appCard();
-      await schemeIs(scheme);
-      const appShot = await page.screenshot();
-      await protoCard();
-      await schemeIs(scheme);
-      const protoShot = await page.screenshot();
-      await composite(
-        appShot,
-        protoShot,
-        `${SHOTS}/card-${w}x${h}-${scheme}.png`,
-        w,
-        h,
-      );
-    }
-  }
-});
-
 const SHOTS_504 = path.join(repo, "test-results", "ac-504");
 
-/* #504 AC-3: the polished card in the real app, one shot per
-   SOUL.md-state × dims × scheme. "Souly" carries `instructions` (the
-   hire-time mirror of a profile's soul); Default's record has none — the
-   first-run hire reads the soul-less `agents.list` row. Both stay idle, so
-   every shot also shows the muted "Idle" Now row and the single-frame
-   dialog with its ✕. CI uploads test-results/ac-504/ as an artifact; the
-   shots land in pr-assets/504/ from there. */
-test("AC-3 (#504) shots: with + without SOUL.md, 3 dims × light/dark", async ({
+/* #504 AC-3: the card in the real app, one shot per instructions-state ×
+   dims × scheme. "Souly" carries `instructions` (the record's copy of a
+   persona) and "Bare" carries none; both name a profile the engine does not
+   describe, so the page falls back to the record and the two states stay
+   exactly "text" and "no text" (Default's page shows the engine profile's
+   own soul now — AC-1). v3 draws an Instructions section only when there is
+   text, never an empty placeholder. Both stay idle, so every shot also shows
+   the muted "Idle" Now row. CI uploads test-results/ac-504/ as an artifact;
+   the shots land in pr-assets/504/ from there. */
+test("AC-3 (#504) shots: with + without instructions, 3 dims × light/dark", async ({
   page,
 }) => {
   test.setTimeout(180_000);
@@ -322,10 +229,20 @@ test("AC-3 (#504) shots: with + without SOUL.md, 3 dims × light/dark", async ({
         name: "Souly",
         role: "Reviewer",
         status: "online",
-        profile: "reviewer",
+        profile: "no-such-profile",
         model: "fake-small",
         instructions:
           "You review changes for correctness, tests and boundaries. Comment with file:line. Never push to main.",
+      },
+    },
+    {
+      method: "employees.create",
+      params: {
+        name: "Bare",
+        role: "Deckhand",
+        status: "online",
+        profile: "no-such-profile",
+        model: "fake-small",
       },
     },
   ]);
@@ -334,48 +251,35 @@ test("AC-3 (#504) shots: with + without SOUL.md, 3 dims × light/dark", async ({
     if (s === "dark") await expect(html).toHaveClass(/dark/);
     else await expect(html).not.toHaveClass(/dark/);
   };
-  /** Open `name`'s card from the sidebar row (openApp already landed us on a DM). */
-  const openCard = async (name: "Default" | "Souly") => {
-    await page
-      .locator("aside")
-      .getByRole("button", { name: new RegExp(`^${name} `) })
-      .click();
-    await expect(
-      page.getByRole("textbox", {
-        name: new RegExp(`New thread with ${name}`),
-      }),
-    ).toBeVisible();
-    await page.getByRole("button", { name: /^Profile$/ }).click();
-    const dlg = page.getByRole("dialog", {
-      name: new RegExp(`${name} profile`, "i"),
-    });
-    await expect(dlg).toBeVisible();
-    await expect(dlg.getByText("engine-fake")).toBeVisible({
-      timeout: 30_000,
-    });
-    return dlg;
-  };
   for (const scheme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme: scheme });
     for (const [w, h] of DIMS) {
       await page.setViewportSize({ width: w, height: h });
-      await openApp(page);
-      const noSoul = await openCard("Default");
+      const noSoul = await openAgentPage(page, "Bare");
       await schemeIs(scheme);
-      await expect(noSoul.getByText(/No instructions yet/)).toBeVisible();
+      await expect(prop(noSoul, "Runs on")).toContainText("engine-fake", {
+        timeout: 30_000,
+      });
+      await expect(
+        noSoul.getByText("Instructions", { exact: true }),
+      ).toHaveCount(0);
+      await expect(prop(noSoul, "Now")).toContainText("Idle");
       await page.screenshot({
         path: `${SHOTS_504}/card-nosoul-${w}x${h}-${scheme}.png`,
       });
-      await noSoul.getByRole("button", { name: "Close" }).click();
-      await expect(noSoul).toHaveCount(0);
-      const soul = await openCard("Souly");
+      const soul = await openAgentPage(page, "Souly");
       await schemeIs(scheme);
+      await expect(prop(soul, "Runs on")).toContainText("engine-fake", {
+        timeout: 30_000,
+      });
+      await expect(
+        soul.getByText("Instructions", { exact: true }),
+      ).toBeVisible();
       await expect(soul.getByText(/You review changes/)).toBeVisible();
+      await expect(prop(soul, "Now")).toContainText("Idle");
       await page.screenshot({
         path: `${SHOTS_504}/card-soul-${w}x${h}-${scheme}.png`,
       });
-      await soul.getByRole("button", { name: "Close" }).click();
-      await expect(soul).toHaveCount(0);
     }
   }
 });

@@ -1,55 +1,71 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  pickPorts,
+  type Stack,
+  skipFirstRun,
+  startChat,
+  v3Peek,
+} from "./helpers/stack";
 
 /**
  * Issue #583 — the app says what it's waiting for, real app (apps/web over
  * relay + harness on engine-fake). AC-1 while a turn waits on Oscar the
  * composer says so ("waiting for your approval…"), never "working"; AC-2
- * every DM row carries its state in words (running / needs you / failed /
- * stopped); AC-3 a thread with a live background job says so on its row and
- * in the thread panel. Issue #586 AC-1 rides along: the placeholder names
- * the employee, never an engine id.
+ * every thread row carries its state in words (Working / Needs you / Failed
+ * on the Threads page); AC-3 a thread with a live background job says so in
+ * the thread header. Issue #586 AC-1 rides along: the placeholder names the
+ * employee, never an engine id.
+ *
+ * v3 notes: the old DM-home row had a "stopped" word, a "N replies" count
+ * and a background-jobs badge. The v3 Threads rows carry none of those (a
+ * stopped thread reads Finished; the stopped word lives on the turn card
+ * inside the thread), so those row legs assert the surface that still says
+ * it.
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
 const repo = path.resolve(here, "..");
 const SHOTS = path.join(repo, "test-results", "ac-583");
 
-/** Land on the DM home composer of the seeded employee. */
-async function openApp(stack: Stack, page: Page) {
-  await page.addInitScript(() => localStorage.setItem("lilos-onboarded", "1"));
-  await page.goto(`${stack.webUrl}/`);
-  await expect(page).toHaveURL(/\/dm\//, { timeout: 30_000 });
-  await expect(
-    page.locator("aside").getByRole("button", { name: /Default/ }),
-  ).toBeVisible({ timeout: 30_000 });
-}
+/* The seeded employee. An id that names nobody opens the new-chat draft on
+   the default agent, which on this one-agent stack is Default. */
+const DEFAULT_AGENT = { id: "default", name: "Default" };
 
-const empId = (page: Page) =>
-  decodeURIComponent(page.url().split("/dm/")[1].split("/")[0]);
+/** A new chat's thread in the side peek (past first run). */
+const chat = async (stack: Stack, page: Page, text: string) => {
+  await skipFirstRun(page);
+  await startChat(page, stack.webUrl, DEFAULT_AGENT, text);
+};
 
-/** Back to the DM home rows (sends land in Focus). */
-async function dmHome(stack: Stack, page: Page) {
-  await page.goto(`${stack.webUrl}/dm/${empId(page)}`);
-  await expect(page.locator("[data-session]").first()).toBeVisible({
-    timeout: 30_000,
-  });
-}
+/** The thread panel's composer box. */
+const threadBox = (page: Page) =>
+  page.locator("[data-thread-panel] textarea").last();
 
 const send = async (page: Page, text: string) => {
-  const box = page.locator("textarea").last();
+  const box = threadBox(page);
   await box.fill(text);
   await box.press("Enter");
 };
 
+/** The Threads page's All list, where every thread is one row with its
+    state pill — the v3 home of what the DM feed's rows said. */
+async function threadsAll(stack: Stack, page: Page) {
+  await page.goto(`${stack.webUrl}/#?page=threads&view=all`);
+  await expect(page.getByText("Every agent session, live.")).toBeVisible({
+    timeout: 30_000,
+  });
+}
+
+/** The row for the thread titled like `title` (the fake engine Title-Cases
+    it, so match case-blind). */
+const rowFor = (page: Page, title: RegExp) =>
+  page.getByRole("button").filter({ hasText: title }).first();
+
 const openCard = (page: Page) =>
   page.locator('[data-ask-id][data-ask-state="open"]');
-/* Rows render in feed order (oldest first) — the newest thread is the
-   last [data-session] on the DM home. */
-const newestRow = (page: Page) => page.locator("[data-session]").last();
-
 /* The edit script raises one approval per mutating step (patch, write_file,
    git commit) — answer each open card until none remain so the turn can
    settle. */
@@ -78,16 +94,20 @@ test("AC-1+#586 the composer names the employee, then says it's waiting for Osca
   page,
 }) => {
   test.setTimeout(180_000);
-  await openApp(stack, page);
+  await skipFirstRun(page);
+  await page.goto(`${stack.webUrl}/#?page=threads&open=newchat:default`);
 
-  /* #586 AC-1: the idle placeholder names the employee ("New thread with
-     Default…" on the DM home, "Reply to Default…" inside a thread) — never
+  /* #586 AC-1: the idle placeholder names the employee ("Message Default…"
+     on the new-chat draft, "Reply to Default…" inside a thread) — never
      an engine ref like `20261006_…` or `emp_…`. */
-  const box = page.locator("textarea").last();
-  await expect(box).toHaveAttribute(
-    "placeholder",
-    /New thread with Default|Reply to Default/,
-  );
+  const draft = v3Peek(page).getByPlaceholder(/^Message /);
+  await expect(draft).toHaveAttribute("placeholder", /Message Default…/);
+  await expect(draft).not.toHaveAttribute("placeholder", /emp_|2026\d{4}/);
+  await chat(stack, page, "Say hello once");
+  const box = threadBox(page);
+  await expect(box).toHaveAttribute("placeholder", /Reply to Default/, {
+    timeout: 60_000,
+  });
   await expect(box).not.toHaveAttribute("placeholder", /emp_|2026\d{4}/);
 
   /* AC-1: a turn parked on an approval — the composer says it waits on
@@ -110,11 +130,10 @@ test("AC-1+#586 the composer names the employee, then says it's waiting for Osca
 
 test("AC-1 a waiting plan says the same", async ({ page }) => {
   test.setTimeout(120_000);
-  await openApp(stack, page);
-  await send(page, "plan: propose a release checklist");
+  await chat(stack, page, "plan: propose a release checklist");
   /* The plan ask opens a card of its own; the composer tells Oscar he's
      holding the turn up. */
-  const box = page.locator("textarea").last();
+  const box = threadBox(page);
   await expect(box).toHaveAttribute(
     "placeholder",
     /waiting for your approval/,
@@ -122,29 +141,31 @@ test("AC-1 a waiting plan says the same", async ({ page }) => {
   );
   await page.screenshot({ path: `${SHOTS}/ac-1-waiting-plan.png` });
   /* Approve the plan so the turn closes before the next test. */
-  const approve = page.getByRole("button", { name: /^Approve$/ });
+  /* Scoped to the thread: the Threads page's live card for this thread
+     carries its own Approve button beside it. */
+  const approve = page
+    .locator("[data-thread-panel]")
+    .getByRole("button", { name: /^Approve$/ });
   if (await approve.isVisible().catch(() => false)) await approve.click();
   await expect(page.locator("[data-turnsettled]").last()).toBeVisible({
     timeout: 90_000,
   });
 });
 
-test('AC-2 a DM row waiting on an approval says "needs you"', async ({
+test('AC-2 a thread row waiting on an approval says "Needs you"', async ({
   page,
 }) => {
   test.setTimeout(180_000);
-  await openApp(stack, page);
-  await send(page, "Change the header color");
+  await chat(stack, page, "Change the header color");
   await expect(openCard(page).first()).toBeVisible({ timeout: 60_000 });
-  await dmHome(stack, page);
-  /* The row itself says needs-you while Oscar hasn't answered. */
-  await expect(
-    newestRow(page).locator('[data-thread-state="needs you"]'),
-  ).toBeVisible({ timeout: 30_000 });
+  await threadsAll(stack, page);
+  /* The row itself says Needs you while Oscar hasn't answered. */
+  const row = rowFor(page, /header color/i);
+  await expect(row).toContainText("Needs you", { timeout: 30_000 });
   await page.screenshot({ path: `${SHOTS}/ac-2-row-needs-you.png` });
   /* Deny → turn ends; the state word clears with the open card. The card
      lives in the thread view — open the row first. */
-  await newestRow(page).locator("button").last().click();
+  await row.click();
   await openCard(page)
     .first()
     .getByRole("button", { name: "Deny", exact: true })
@@ -152,105 +173,98 @@ test('AC-2 a DM row waiting on an approval says "needs you"', async ({
   await expect(page.locator("[data-turnsettled]").last()).toBeVisible({
     timeout: 90_000,
   });
-  await dmHome(stack, page);
-  await expect(
-    newestRow(page).locator('[data-thread-state="needs you"]'),
-  ).toHaveCount(0);
+  await threadsAll(stack, page);
+  await expect(rowFor(page, /header color/i)).not.toContainText("Needs you");
 });
 
 test("AC-2 a running turn and a failed turn each say so", async ({ page }) => {
   test.setTimeout(240_000);
-  await openApp(stack, page);
-  await send(page, "slow:200 keep the pace for a while");
+  await chat(stack, page, "slow:200 keep the pace for a while");
   await expect(page.locator("[data-agentturn]").last()).toBeVisible({
     timeout: 30_000,
   });
-  await dmHome(stack, page);
-  await expect(
-    newestRow(page).locator('[data-thread-state="running"]'),
-  ).toBeVisible({ timeout: 30_000 });
+  await threadsAll(stack, page);
+  const running = rowFor(page, /keep the pace/i);
+  await expect(running).toContainText("Working", { timeout: 30_000 });
   await page.screenshot({ path: `${SHOTS}/ac-2-row-running.png` });
   /* The row's word clears once the turn ends. */
-  await expect(
-    newestRow(page).locator('[data-thread-state="running"]'),
-  ).toHaveCount(0, { timeout: 120_000 });
+  await expect(running).not.toContainText("Working", { timeout: 120_000 });
 
-  /* A turn that dies on an error reads "failed" on its row. */
+  /* A turn that dies on an error reads "Failed" on its row. */
+  await running.click();
   await send(page, "fail on purpose");
   await expect(page.locator("[data-turn-failed]").last()).toBeVisible({
     timeout: 90_000,
   });
-  await dmHome(stack, page);
-  await expect(
-    newestRow(page).locator('[data-thread-state="failed"]'),
-  ).toBeVisible({ timeout: 90_000 });
+  await threadsAll(stack, page);
+  await expect(rowFor(page, /keep the pace/i)).toContainText("Failed", {
+    timeout: 90_000,
+  });
   await page.screenshot({ path: `${SHOTS}/ac-2-row-failed.png` });
 });
 
 test('AC-2 a stopped turn says "stopped"', async ({ page }) => {
   test.setTimeout(120_000);
-  await openApp(stack, page);
-  await send(page, "slow:150 hold this turn while I stop it");
-  /* DM rows whose word is "stopped" also match /stop/i — name the
-     button by its exact aria-label. */
+  await chat(stack, page, "slow:150 hold this turn while I stop it");
   const stop = page.getByRole("button", { name: /^stop \(⌘\.\)$/i });
   await expect(stop).toBeVisible({ timeout: 30_000 });
   await stop.click();
   await expect(page.locator("[data-turnsettled]").last()).toBeVisible({
     timeout: 60_000,
   });
-  await dmHome(stack, page);
+  /* v3 rows have no "stopped" word (the thread reads Finished once nothing
+     runs); the turn card inside the thread says it. */
   await expect(
-    newestRow(page).locator('[data-thread-state="stopped"]'),
-  ).toBeVisible({ timeout: 30_000 });
+    page.locator("[data-thread-panel] [data-agentturn]").last(),
+  ).toContainText("Stopped");
+  await threadsAll(stack, page);
+  const row = rowFor(page, /hold this turn/i);
+  await expect(row).not.toContainText("Working", { timeout: 30_000 });
   await page.screenshot({ path: `${SHOTS}/ac-2-row-stopped.png` });
 });
 
 test("AC-2 the state words read in dark mode too", async ({ page }) => {
   test.setTimeout(120_000);
   await page.addInitScript(() => localStorage.setItem("lilos-theme", "dark"));
-  await openApp(stack, page);
-  await send(page, "fail again for the dark check");
-  await dmHome(stack, page);
-  await expect(
-    newestRow(page).locator('[data-thread-state="failed"]'),
-  ).toBeVisible({ timeout: 90_000 });
+  await chat(stack, page, "fail again for the dark check");
+  await threadsAll(stack, page);
+  await expect(rowFor(page, /dark check/i)).toContainText("Failed", {
+    timeout: 90_000,
+  });
   await expect(page.locator("html")).toHaveClass(/dark/);
   await page.screenshot({ path: `${SHOTS}/ac-2-row-failed-dark.png` });
 });
 
-test("AC-3 a live background job says so on the row and in the thread", async ({
-  page,
-}) => {
+test("AC-3 a live background job says so in the thread", async ({ page }) => {
   test.setTimeout(180_000);
-  await openApp(stack, page);
-  await send(page, "start a dev server");
+  await chat(stack, page, "start a dev server");
   await expect(page.locator("[data-turnsettled]").last()).toBeVisible({
     timeout: 90_000,
   });
-  /* The dev-server job stays running past the turn — the row says so… */
-  await dmHome(stack, page);
-  await expect(newestRow(page).locator("[data-bg-jobs]")).toContainText(
-    /in background/,
-    { timeout: 30_000 },
-  );
-  /* …and so does the open thread's header. */
-  await newestRow(page).locator("button").last().click();
+  /* The dev-server job stays running past the turn — the open thread's
+     header says so (v3's rows have no jobs badge of their own). */
   await expect(
     page.locator("[data-bg-jobs]").filter({ hasText: /running in background/ }),
   ).toBeVisible({ timeout: 30_000 });
   await page.screenshot({ path: `${SHOTS}/ac-3-background-job.png` });
 });
 
-test("AC-2 the reply count on the row matches the thread divider", async ({
+test("AC-2 the reply count on the thread divider skips system notes", async ({
   page,
 }) => {
   test.setTimeout(180_000);
-  await openApp(stack, page);
   /* Full access → the turn carries a LilOS note ("Auto-approved …") beside
-     the agent's reply — the row and the thread divider must report the
-     same reply count, skipping the note. */
-  const pill = page.locator('[data-slot="access-pill"]');
+     the agent's reply — the thread divider must count only the replies,
+     skipping the note. (The old row-vs-divider parity is gone with the row's
+     count: v3 rows carry none, so the divider is compared with the turns
+     actually rendered.) */
+  await chat(stack, page, "Say hello once");
+  /* The pill lives on the thread, so the chat opens first; let that turn
+     end or the next send would steer into it instead of starting its own. */
+  await expect(page.locator("[data-turnsettled]").last()).toBeVisible({
+    timeout: 90_000,
+  });
+  const pill = page.locator('[data-thread-panel] [data-slot="access-pill"]');
   await expect(pill).toBeVisible({ timeout: 30_000 });
   await pill.click();
   await expect(pill).toHaveAttribute("data-access", "full");
@@ -261,20 +275,7 @@ test("AC-2 the reply count on the row matches the thread divider", async ({
     page.locator("[data-agentturn]").last().locator("[data-turnsettled]"),
   ).toBeVisible({ timeout: 90_000 });
 
-  await dmHome(stack, page);
-  /* Grab OUR row by its title — an earlier test's row can sit last while
-     this session's summary is still filling in. */
-  const row = page
-    .locator("[data-session]")
-    .filter({ hasText: "Add a footer to the page" })
-    .last();
-  await expect(row).toContainText(/\d+ repl/, { timeout: 30_000 });
-  const cardText = await row.innerText();
-  const cardCount = Number(cardText.match(/(\d+) repl(?:y|ies)/)?.[1]);
-  expect(cardCount).toBeGreaterThan(0);
-  await row.locator("button").last().click();
-
-  /* The open thread holds system notes — parity must skip them. */
+  /* The open thread holds system notes — the count must skip them. */
   await expect(
     page.locator("[data-thread-panel] [data-sysnote]").first(),
   ).toBeVisible({ timeout: 30_000 });
@@ -290,5 +291,16 @@ test("AC-2 the reply count on the row matches the thread divider", async ({
   const dividerCount = Number(
     (await divider.first().innerText()).match(/(\d+)/)?.[1],
   );
-  expect(dividerCount).toBe(cardCount);
+  /* The rows under the divider, minus the opener and minus the system
+     notes: what "N replies" must equal. */
+  const replies = await page.evaluate(() => {
+    const rows = [
+      ...document.querySelectorAll(
+        "[data-thread-panel] [role='log'] [data-msg]",
+      ),
+    ];
+    const notes = rows.filter((r) => r.querySelector("[data-sysnote]")).length;
+    return rows.length - 1 - notes;
+  });
+  expect(dividerCount).toBe(replies);
 });

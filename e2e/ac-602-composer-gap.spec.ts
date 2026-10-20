@@ -1,9 +1,13 @@
 import { expect, type Page, test } from "@playwright/test";
+import { type GrownThread, growDmThread } from "./helpers/relay-thread";
 import {
   bootStack,
   panelIntoFocus,
   pickPorts,
   type Stack,
+  skipFirstRun,
+  startChat,
+  threadUrl,
 } from "./helpers/stack";
 
 /* Issue #602 — at rest (scrolled to the bottom) the gap between the last
@@ -12,10 +16,16 @@ import {
    with #515's composer-height pad (112px) left a ~176px dead band under the
    thread panel and ~76px under the DM feed.
    Bounding-box assertions need a real browser — happy-dom has no layout.
-   Prototype legs ride the seeded threads (ses_b71d scrolls at these sizes;
-   the reviewer DM's "v3" thread parks on a tall open question card — #515's
-   guarantee). The DM-feed and real-thread legs boot the dev stack on
-   engine-fake. */
+   Every leg boots the dev stack on engine-fake and measures the thread's
+   chat column (`[data-thread-panel]`): beside the Threads page in the side
+   peek, and widened over the page as the session view.
+
+   v3: the prototype legs (thread panel / Focus / channel feed / DM feed and
+   the AC-3 card legs on the seeded reviewer DM, all `page.goto("/")` on the
+   prototype dev server) are re-hosted on the real app; the channel feed and
+   the DM home feed have no v3 counterpart (there is no feed page — a
+   thread opens in the peek), so the band is measured on the thread
+   panel's composer instead. */
 
 const GAP_LIMIT = 24;
 
@@ -59,6 +69,44 @@ async function settleAtBottom(
     .toBe(true);
 }
 
+/** One reading of the chat column's bottom band — everything the convergence
+    check compares and everything a miss needs in its assertion message. */
+interface GapSample {
+  between: string[];
+  kids: string[];
+  portMB: string;
+  portTf: string;
+  portTfDone: boolean;
+  portAnim: string;
+  compTf: string;
+  compTfDone: boolean;
+  compAnim: string;
+  parGap: string;
+  parAfter: string;
+  compPar: string;
+  gap: number;
+  portPad: number;
+  scrollable: boolean;
+  atBottom: boolean;
+  btnMounted: boolean;
+  h: number;
+  ch: number;
+  top: number;
+  scBottom: number;
+  portBottom: number;
+  compTop: number;
+  compMT: string;
+  lastBottom: number;
+  lastTop: number;
+  sibBottom: number | undefined;
+  sibPos: string;
+  contentPadB: number;
+  lastRow: string;
+  lastText: string;
+  trailing: number;
+}
+type GapMeasure = GapSample | { error: string };
+
 /* The gap the user sees: the composer's top edge minus the bottom edge of
    the last rendered row, clipped to the scroller. The composer is the
    [data-composer] inside the port's own column (its margin-top counts as
@@ -66,7 +114,7 @@ async function settleAtBottom(
    decide convergence AND to diagnose a miss from the assertion message:
    the ↓ button's mount state (it drives the port gutter), the scroll
    target, and what the measured "last row" actually is. */
-function measureGap(page: Page, portSelector: string) {
+function measureGap(page: Page, portSelector: string): Promise<GapMeasure> {
   return page.evaluate((sel) => {
     const port = document.querySelector(sel);
     if (!port) return { error: `no port ${sel}` } as const;
@@ -176,15 +224,18 @@ function measureGap(page: Page, portSelector: string) {
   }, portSelector);
 }
 
-/* Below xl the right panel mounts as a fixed overlay and starts closed;
-   both main-area headers (channel + DM) end with the PanelRight icon
-   button (`{!panelOpen && <Button …>` — no aria-label, it's the last
-   button in the header). DM session rows instead open it via their
-   "N replies" pill (`onOpen` → setPanelOpen(true) at any width). */
-async function ensurePanelOpen(page: Page) {
-  if (await page.locator("aside [role='log']").count()) return;
-  await page.locator("main header button").last().click();
+/** The AC-3 reading: the open question card against the scroller and the
+    composer, plus the ↓ gutter state the convergence check waits on. */
+interface CardSample {
+  scBottom: number;
+  cardBottom: number;
+  skipBottom: number;
+  compTop: number;
+  portPad: number;
+  btnMounted: boolean;
+  top: number;
 }
+type CardMeasure = CardSample | { error: string };
 
 /* One convergent measurement, not settle-then-sample: the port must hold
    the same state twice in a row with the ↓ unmounted, the gutter released
@@ -193,7 +244,7 @@ async function ensurePanelOpen(page: Page) {
    but it cannot fake two identical converged samples back to back. On
    failure the last sample's full dump is in the assertion message. */
 async function expectGap(page: Page, portSelector: string, atBottom = true) {
-  type M = Awaited<ReturnType<typeof measureGap>>;
+  type M = GapMeasure;
   let prev: M | null = null;
   let last: M | null = null;
   try {
@@ -238,98 +289,154 @@ async function expectGap(page: Page, portSelector: string, atBottom = true) {
   ).toBe(0);
 }
 
-test.describe("AC-1 bottom gap at rest ≤ 24px (prototype surfaces)", () => {
+/* The surface under test: a thread's chat column, in the side peek or
+   widened into the session view — both mount the conversation inside
+   `[data-thread-panel]`, so one selector measures either. */
+const PORT = "[data-thread-panel] [role='log']";
+
+/* Tall `md: table` turns (ac-431) grown over relay RPC: the at-rest band is
+   only defined for a thread that scrolls, and four of them overflow the
+   scroller at every viewport below. */
+const FILLER = Array.from({ length: 4 }, (_, i) => `md: table — turn ${i + 1}`);
+
+const isScrollable = (page: Page) =>
+  page.evaluate((sel) => {
+    const sc = document.querySelector(sel)
+      ?.firstElementChild as HTMLElement | null;
+    return sc ? sc.scrollHeight - sc.clientHeight > 8 : false;
+  }, PORT);
+
+test.describe("AC-1/3 real app (engine-fake stack)", () => {
+  test.describe.configure({ mode: "serial" });
+  let stack: Stack;
+  /* One settled, scrolling thread shared by the AC-1 legs — each leg only
+     re-loads it at its own viewport. */
+  let grown: GrownThread;
+
+  test.beforeAll(async () => {
+    test.setTimeout(240_000);
+    stack = await bootStack("gap602", await pickPorts());
+    grown = await growDmThread(stack, FILLER);
+  });
+  test.afterAll(async () => {
+    await stack?.stop();
+  });
+
+  /* A conversation at `w`x`h`: in the side peek, or — `full` — widened over
+     the page as the session view. Resolves once its rows are up and the
+     thread scrolls (the premise of every measurement below). */
+  async function openThread(
+    page: Page,
+    conversationId: string,
+    { w, h }: { w: number; h: number },
+    full: boolean,
+  ) {
+    await page.setViewportSize({ width: w, height: h });
+    await skipFirstRun(page);
+    await page.goto(threadUrl(stack.webUrl, conversationId, full));
+    await expect(page.locator(PORT).locator("[data-msg]").first()).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect
+      .poll(() => isScrollable(page), {
+        message: "the grown thread must overflow the scroller",
+      })
+      .toBe(true);
+  }
+
   /* AC-1 names 1440 and 1024 wide; 700px is the short desktop height the
-     ac-535 spec also covers. */
+     ac-535 spec also covers. The old DM-home feed (a bottom-anchored list of
+     session rows) no longer exists in v3 — a thread is opened beside the
+     Threads page, so the panel's own composer is what the band is measured
+     against. */
   for (const { w, h } of [
     { w: 1440, h: 900 },
     { w: 1024, h: 700 },
   ]) {
-    test(`thread panel ${w}x${h}`, async ({ page }) => {
-      await page.setViewportSize({ width: w, height: h });
-      await page.goto("/");
-      /* The seeded ses_b71d thread is pre-selected (threadId=m2); ≥1280
-         opens the panel on its own, below that the header toggle does. */
-      await ensurePanelOpen(page);
-      const port = page.locator("aside").last().locator('[role="log"]');
-      await expect(port.locator("[data-msg]").first()).toBeVisible({
-        timeout: 15_000,
-      });
-      await expectGap(page, "aside [role='log']");
+    test(`AC-1 thread panel ${w}x${h}`, async ({ page }) => {
+      test.setTimeout(90_000);
+      await openThread(page, grown.conversationId, { w, h }, false);
+      await expectGap(page, PORT);
     });
 
-    test(`Focus ${w}x${h}`, async ({ page }) => {
-      await page.setViewportSize({ width: w, height: h });
-      await page.goto("/");
-      await ensurePanelOpen(page);
-      const panel = page.locator("aside").last();
-      await panel.getByRole("button", { name: "Focus", exact: true }).click();
-      const port = page.locator('main [role="log"]');
-      await expect(port.locator("[data-msg]").first()).toBeVisible({
-        timeout: 15_000,
-      });
-      await expectGap(page, "main [role='log']");
-    });
-
-    test(`channel feed ${w}x${h}`, async ({ page }) => {
-      await page.setViewportSize({ width: w, height: h });
-      await page.goto("/");
-      const port = page.locator('main [role="log"]');
-      await expect(port).toBeVisible({ timeout: 15_000 });
-      await expectGap(page, "main [role='log']");
-    });
-
-    test(`DM feed ${w}x${h}`, async ({ page }) => {
-      await page.setViewportSize({ width: w, height: h });
-      await page.goto("/");
-      // Reviewer DM = EmployeeHome — the real app's DM list component.
-      // (Accessible name also carries the sr-only "needs you" badge text.)
-      await page
-        .locator("aside")
-        .first()
-        .getByRole("button", { name: /Reviewer/ })
-        .click();
-      const port = page.locator('main [role="log"]');
-      await expect(port).toBeVisible({ timeout: 15_000 });
-      await expectGap(page, "main [role='log']");
+    test(`AC-1 session view ${w}x${h}`, async ({ page }) => {
+      test.setTimeout(90_000);
+      await openThread(page, grown.conversationId, { w, h }, true);
+      await expectGap(page, PORT);
     });
   }
-});
 
-test.describe("AC-3 an open question card stays fully visible", () => {
-  /* The reviewer DM's "v3" thread parks on a 5-option question + free text —
-     the tallest card; at a short viewport it reaches the scroller's bottom
-     edge, which is exactly where #515 needed the padding that stacked into
-     #602's band. The card (incl. its Skip row) must end above the composer
-     AND inside the scroller — no clip, no overlay. */
+  test("AC-1 thread panel + session view once the session fills", async ({
+    page,
+  }) => {
+    test.setTimeout(180_000);
+    /* A narrow+short viewport makes the new session scrollable after a
+       couple of turns — enough to measure the at-bottom band. */
+    await page.setViewportSize({ width: 1024, height: 600 });
+    await skipFirstRun(page);
+    const conversationId = await startChat(
+      page,
+      stack.webUrl,
+      { id: "default", name: "Default" },
+      "Say hello then list files",
+    );
+    // #577: a send lands on the peek; the session view opens only from its
+    // widen button.
+    await panelIntoFocus(page);
+    /* Send follow-ups until the session scroller overflows (cap 6) — the
+       engine-fake turn settles quickly; poll scrollHeight > clientHeight. */
+    for (let i = 0; i < 6 && !(await isScrollable(page)); i++) {
+      await page.waitForTimeout(1_500);
+      const fbox = page.locator("[data-thread-panel] textarea").last();
+      await fbox.fill(`Follow-up ${i + 1}: list three more details`);
+      await fbox.press("Enter");
+    }
+    await expectGap(page, PORT);
+    // The plain thread URL shows the same session in the side peek, mounted
+    // fresh by the reload.
+    await page.goto(threadUrl(stack.webUrl, conversationId));
+    await page.reload();
+    await expect(page).not.toHaveURL(/[#&]full=1(&|$)/);
+    await expect(page.locator(PORT).locator("[data-msg]").first()).toBeVisible({
+      timeout: 15_000,
+    });
+    await expectGap(page, PORT);
+  });
+
+  /* The question card (a 2-option ask plus free text — the shared
+     QuestionCard, the tallest card the app ships) parks a turn; at a short
+     viewport it reaches the scroller's bottom edge, which is exactly where
+     #515 needed the padding that stacked into #602's band. The card (incl.
+     its Skip row) must end above the composer AND inside the scroller — no
+     clip, no overlay. The old prototype leg rode the seeded reviewer DM's
+     "v3" thread; engine-fake's `question:` prompt opens the same card on
+     the real app. */
   for (const { w, h } of [
     { w: 1440, h: 700 },
     { w: 1024, h: 600 },
   ]) {
-    test(`thread panel ${w}x${h}`, async ({ page }) => {
-      await page.setViewportSize({ width: w, height: h });
-      await page.goto("/");
-      await page
-        .locator("aside")
-        .first()
-        .getByRole("button", { name: /Reviewer/ })
-        .click();
-      // The v3 session row's replies pill opens its thread at any width.
-      await page
-        .locator('[data-session="v3"]')
-        .getByRole("button", { name: /repl/ })
-        .click();
-      const port = page.locator("aside").last().locator('[role="log"]');
+    test(`AC-3 an open question card stays fully visible — thread panel ${w}x${h}`, async ({
+      page,
+    }) => {
+      test.setTimeout(180_000);
+      /* Its own thread: the ask stays open for the life of the stack, so a
+         shared one would hand the next leg a card it did not open. */
+      const thread = await growDmThread(stack, FILLER);
+      await openThread(page, thread.conversationId, { w, h }, false);
+      const box = page.locator("[data-thread-panel] textarea").last();
+      await box.fill("question: pick the ship target");
+      await box.press("Enter");
+      const port = page.locator(PORT);
       const card = port.locator('[data-question-card][data-ask-state="open"]');
-      await expect(card).toBeVisible({ timeout: 15_000 });
-      await settleAtBottom(page, "aside [role='log']", false);
+      await expect(card).toBeVisible({ timeout: 60_000 });
+      await settleAtBottom(page, PORT, false);
       /* Same convergence rule as expectGap: two identical samples with the
          ↓ unmounted and the gutter released — the open card's
          scroll-into-view parks short of true bottom on purpose, so only
          stability is required, not atBottom. */
-      const measure = () =>
-        page.evaluate(() => {
-          const port = document.querySelector("aside [role='log']");
+      const measure = (): Promise<CardMeasure> =>
+        page.evaluate((sel) => {
+          const port = document.querySelector(sel);
           if (!port) return { error: "no port" } as const;
           const sc = port.firstElementChild as HTMLElement;
           const card = port.querySelector<HTMLElement>(
@@ -349,9 +456,9 @@ test.describe("AC-3 an open question card stays fully visible", () => {
             btnMounted: !!port.querySelector(".lilos-scroll-btn"),
             top: sc.scrollTop,
           };
-        });
-      let prev: Awaited<ReturnType<typeof measure>> | null = null;
-      let m: Awaited<ReturnType<typeof measure>> | null = null;
+        }, PORT);
+      let prev: CardMeasure | null = null;
+      let m: CardMeasure | null = null;
       await expect
         .poll(async () => {
           const cur = await measure();
@@ -382,113 +489,7 @@ test.describe("AC-3 an open question card stays fully visible", () => {
       /* A live "waiting" line sits under the open card — the band check
          applies to the last rendered row, same as AC-1 (rest position
          only: the card's scroll-into-view parks short of true bottom). */
-      await expectGap(page, "aside [role='log']", false);
+      await expectGap(page, PORT, false);
     });
   }
-});
-
-test.describe("AC-1 real app (engine-fake stack)", () => {
-  test.describe.configure({ mode: "serial" });
-  let stack: Stack;
-
-  test.beforeAll(async () => {
-    test.setTimeout(120_000);
-    stack = await bootStack("gap602", await pickPorts());
-  });
-  test.afterAll(async () => {
-    await stack?.stop();
-  });
-
-  async function openDm(page: Page) {
-    await page.goto(`${stack.webUrl}/`);
-    const aside = page.locator("aside");
-    await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
-      timeout: 30_000,
-    });
-    const dmBtn = page.getByRole("button", {
-      name: /open dm|set up later|message/i,
-    });
-    if (
-      await dmBtn
-        .first()
-        .isVisible()
-        .catch(() => false)
-    ) {
-      await dmBtn.first().click();
-    } else {
-      await aside.getByRole("button", { name: /default/i }).click();
-    }
-    await expect(page).toHaveURL(/\/dm\//);
-  }
-
-  for (const { w, h } of [
-    { w: 1440, h: 900 },
-    { w: 1024, h: 700 },
-  ]) {
-    test(`DM feed ${w}x${h}`, async ({ page }) => {
-      test.setTimeout(90_000);
-      await page.setViewportSize({ width: w, height: h });
-      await openDm(page);
-      const port = page.locator('main [role="log"]');
-      await expect(port).toBeVisible({ timeout: 15_000 });
-      /* Seed one session on the first leg so the feed's last row is a real
-         message row (later legs see it through the shared stack). */
-      const hasRow = await port
-        .locator("[data-msg], [class*='grid-cols']")
-        .first()
-        .isVisible()
-        .catch(() => false);
-      if (!hasRow) {
-        const box = page.locator("textarea").last();
-        await box.fill("Say hello");
-        await box.press("Enter");
-        // #577: a send lands on the panel (conv URL), no jump to Focus.
-        await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+$/, {
-          timeout: 30_000,
-        });
-        const emp = page.url().split("/dm/")[1].split("/")[0];
-        await page.goto(`${stack.webUrl}/dm/${emp}`);
-        await expect(port).toBeVisible({ timeout: 15_000 });
-      }
-      /* EmployeeHome bottom-anchors its content (min-h-full justify-end),
-         so the last row always sits at the scroller's bottom edge. */
-      await expectGap(page, "main [role='log']");
-    });
-  }
-
-  test("thread panel + Focus once the session fills", async ({ page }) => {
-    test.setTimeout(180_000);
-    /* A narrow+short viewport makes the new session scrollable after a
-       couple of turns — enough to measure the at-bottom band. */
-    await page.setViewportSize({ width: 1024, height: 600 });
-    await openDm(page);
-    const box = page.locator("textarea").last();
-    await box.fill("Say hello then list files");
-    await box.press("Enter");
-    // #577: send lands on the panel; Focus opens only from its button.
-    await panelIntoFocus(page);
-    /* Send follow-ups until the Focus scroller overflows (cap 6) — the
-       engine-fake turn settles quickly; poll scrollHeight > clientHeight. */
-    const isScrollable = (sel: string) =>
-      page.evaluate((s) => {
-        const sc = document.querySelector(s)
-          ?.firstElementChild as HTMLElement | null;
-        return sc ? sc.scrollHeight - sc.clientHeight > 8 : false;
-      }, sel);
-    const focusSel = "main [role='log']";
-    for (let i = 0; i < 6 && !(await isScrollable(focusSel)); i++) {
-      await page.waitForTimeout(1_500);
-      const fbox = page.locator("textarea").last();
-      await fbox.fill(`Follow-up ${i + 1}: list three more details`);
-      await fbox.press("Enter");
-    }
-    await expectGap(page, focusSel);
-    // The plain thread URL shows the same session in the right panel.
-    await page.goto(page.url().replace(/\/focus$/, ""));
-    const port = page.locator("[data-thread-panel] [role='log']");
-    await expect(port.locator("[data-msg]").first()).toBeVisible({
-      timeout: 15_000,
-    });
-    await expectGap(page, "[data-thread-panel] [role='log']");
-  });
 });

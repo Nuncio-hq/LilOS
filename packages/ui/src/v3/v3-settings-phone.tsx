@@ -228,14 +228,27 @@ export function PhonePane({ data, act }: V3PageProps) {
     typeof pairing === "object" &&
     pairing.kind === "ready" &&
     devices.some((d) => !baseline.current.has(d.id));
+  /* An offer is spent once its phone has arrived. Unpairing that very phone
+     while "Paired" shows flips `paired` back to false, which would un-hide the
+     dead code: `spent` remembers it (set in render, so no frame draws the
+     code) and the effect then clears the offer, leaving the empty state. */
+  const [spent, setSpent] = useState(false);
+  if (paired && !spent) setSpent(true);
   useEffect(() => {
-    if (!paired) return;
+    if (!paired) {
+      if (spent) {
+        setSpent(false);
+        setPairing(undefined);
+      }
+      return;
+    }
     const t = window.setTimeout(() => setPairing(undefined), 2200);
     return () => window.clearTimeout(t);
-  }, [paired]);
+  }, [paired, spent]);
 
   const start = () => {
     baseline.current = new Set(devices.map((d) => d.id));
+    setSpent(false);
     setPairing("busy");
     // A rejection means the app has already said why; the card just goes.
     act.pairPhone().then(setPairing, () => setPairing(undefined));
@@ -304,23 +317,25 @@ export function PhonePane({ data, act }: V3PageProps) {
         {typeof pairing === "object" && pairing.kind === "no-remote" && (
           <NoRemote onClose={() => setPairing(undefined)} />
         )}
-        {typeof pairing === "object" && pairing.kind === "ready" && (
-          <PairCard
-            offer={pairing.offer}
-            paired={paired}
-            hasPush={!!push}
-            onClose={() => setPairing(undefined)}
-            onNewCode={start}
-            onTurnOff={
-              act.disablePhoneAccess
-                ? () => {
-                    act.disablePhoneAccess?.();
-                    setPairing(undefined);
-                  }
-                : undefined
-            }
-          />
-        )}
+        {typeof pairing === "object" &&
+          pairing.kind === "ready" &&
+          (paired || !spent) && (
+            <PairCard
+              offer={pairing.offer}
+              paired={paired}
+              hasPush={!!push}
+              onClose={() => setPairing(undefined)}
+              onNewCode={start}
+              onTurnOff={
+                act.disablePhoneAccess
+                  ? () => {
+                      act.disablePhoneAccess?.();
+                      setPairing(undefined);
+                    }
+                  : undefined
+              }
+            />
+          )}
       </div>
 
       {push && (

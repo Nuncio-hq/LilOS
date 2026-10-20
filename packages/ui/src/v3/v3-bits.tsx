@@ -108,10 +108,12 @@ export function StatusDot({
   return (
     <span
       aria-hidden
+      // Test hook: the sidebar dot is the per-person status signal (#32).
+      data-v3-status={status}
       className={cn(
         "inline-block size-1.5 shrink-0 rounded-full",
         DOT[status],
-        status === "working" && "lilos-v2-breathe",
+        status === "working" && "lilos-v3-breathe",
         className,
       )}
     />

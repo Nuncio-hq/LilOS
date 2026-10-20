@@ -3,7 +3,12 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { expect, type Locator, type Page, test } from "@playwright/test";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  pickPorts,
+  type Stack,
+  startChatInFolder,
+} from "./helpers/stack";
 
 /**
  * Issue #553 — a real `question` ask shows the shared card (options + free
@@ -36,63 +41,9 @@ test.afterAll(async () => {
 });
 test.describe.configure({ mode: "serial" });
 
-async function dmDefault(page: Page) {
-  await page.goto(`${stack.webUrl}/?roots=${ROOT}`);
-  const aside = page.locator("aside");
-  await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
-    timeout: 30_000,
-  });
-  const dmBtn = page.getByRole("button", {
-    name: /open dm|set up later|message/i,
-  });
-  if (
-    await dmBtn
-      .first()
-      .isVisible()
-      .catch(() => false)
-  ) {
-    await dmBtn.first().click();
-  } else {
-    await aside.getByRole("button", { name: /default/i }).click();
-  }
-  await expect(page).toHaveURL(/\/dm\//);
-}
-
-const pickerButton = (page: Page) => page.locator('[data-ws="folder"]');
-
-async function pickSessionFolder(page: Page, dir: string) {
-  const menu = await (async () => {
-    await pickerButton(page).click();
-    return page
-      .locator('[role="menu"], [data-slot="dropdown-menu-content"]')
-      .last();
-  })();
-  await expect(menu.locator("[data-wsfolder]").first())
-    .toBeVisible({ timeout: 15_000 })
-    .catch(() => {});
-  const recent = menu.locator(`[data-wsfolder="${dir}"]`);
-  if (
-    await recent
-      .first()
-      .isVisible()
-      .catch(() => false)
-  ) {
-    await recent.first().click();
-  } else {
-    await menu.getByText("Add a folder").click();
-    const dialog = page.locator("[data-addfolder]");
-    await expect(dialog).toBeVisible();
-    await dialog.locator("[data-pathinput]").fill(dir);
-    await expect(dialog.locator("[data-folderinfo]")).toBeVisible({
-      timeout: 15_000,
-    });
-    await dialog.locator("[data-addbtn]").click();
-    await expect(dialog).toHaveCount(0);
-  }
-  await expect(pickerButton(page)).toContainText(path.basename(dir), {
-    timeout: 15_000,
-  });
-}
+/* The seeded employee. An id that names nobody opens the new-chat draft on
+   the default agent, which on this one-agent stack is Default. */
+const DEFAULT_AGENT = { id: "default", name: "Default" };
 
 const send = async (page: Page, text: string) => {
   const box = page.locator("textarea").last();
@@ -119,10 +70,15 @@ test("AC-1/AC-2 #553: the shared card opens; an option tap resolves the ask and 
 }) => {
   test.setTimeout(120_000);
   await page.setViewportSize({ width: 1288, height: 700 });
-  await dmDefault(page);
-  await pickSessionFolder(page, repoDir);
-
-  await send(page, "question: pick the ship target");
+  /* The new-chat draft's folder chip picks the repo; the send lands on the
+     thread in the side peek, where the card renders. */
+  await startChatInFolder(
+    page,
+    stack,
+    DEFAULT_AGENT,
+    repoDir,
+    "question: pick the ship target",
+  );
 
   /* AC-1 — the shared card: the engine's question, its two options, and a
      free-text field (freeText ask), all inside data-question-card. */
@@ -160,10 +116,13 @@ test("AC-2 #553: a typed answer echoes and the turn continues; Skip cancels the 
 }) => {
   test.setTimeout(120_000);
   await page.setViewportSize({ width: 1288, height: 700 });
-  await dmDefault(page);
-  await pickSessionFolder(page, repoDir);
-
-  await send(page, "question: pick the ship target");
+  await startChatInFolder(
+    page,
+    stack,
+    DEFAULT_AGENT,
+    repoDir,
+    "question: pick the ship target",
+  );
   const card = openCard(page);
   await expect(card).toBeVisible({ timeout: 30_000 });
 

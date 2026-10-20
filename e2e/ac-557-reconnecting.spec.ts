@@ -11,6 +11,9 @@ import {
   panelIntoFocus,
   pickPorts,
   type StackPorts,
+  skipFirstRun,
+  startChat,
+  v3Peek,
   WORKER,
   waitForFeed,
   waitForHttp,
@@ -20,8 +23,8 @@ import {
 
 /**
  * AC-557: losing the relay shows a thin "Reconnecting…" line over the
- * composer — in the thread panel AND in Focus (the sidebar status row is
- * hidden there) — and it clears once the socket is back (AC-1). A send made
+ * composer — in the thread panel AND in the session view (a widened thread)
+ * — and it clears once the socket is back (AC-1). A send made
  * while the line is showing doesn't fail: the client waits out the
  * reconnect and re-sends with the same draft-scoped dedupe key, so the
  * message lands exactly once (AC-2).
@@ -157,46 +160,32 @@ async function boot(): Promise<Procs> {
   };
 }
 
-/** Open the app, land on Default's DM home (dismissing the first-run card). */
-async function dmDefault(page: Page, base: string) {
-  await page.goto(`${base}/`);
-  const aside = page.locator("aside").first();
-  await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
-    timeout: 60_000,
-  });
-  const firstRun = page.getByRole("button", { name: /open dm/i });
-  if (await firstRun.isVisible().catch(() => false)) {
-    await firstRun.click();
-  } else {
-    await aside.getByRole("button", { name: /default/i }).click();
-  }
-  await expect(page.locator("main form")).toBeVisible({ timeout: 15_000 });
-}
+/* The seeded employee. An id that names nobody opens the new-chat draft on
+   the default agent, which on this one-agent stack is Default. */
+const DEFAULT_AGENT = { id: "default", name: "Default" };
 
-/** The composer form on `scope` — "home" is main, "thread" is the panel. */
-const formOf = (page: Page, scope: "home" | "thread") =>
-  scope === "home" ? page.locator("main form") : page.locator("form").last();
-const boxOf = (page: Page, scope: "home" | "thread") =>
-  scope === "home"
-    ? page.locator("main textarea")
-    : page.locator("textarea").last();
+/** The thread panel's composer form and box — the same `[data-thread-panel]`
+    in the side peek and in the session view. */
+const form = (page: Page) => page.locator("[data-thread-panel] form");
+const box = (page: Page) => page.locator("[data-thread-panel] textarea");
 
-/** Open a session: the home composer's send lands on the thread panel
-   (#577); open Focus the way the user does — the panel's Focus button. */
-async function openSession(page: Page, text: string) {
-  await boxOf(page, "home").fill(text);
-  await formOf(page, "home").evaluate((f: HTMLFormElement) =>
-    f.requestSubmit(),
-  );
+/** Open a session the way a person does — a new chat — then widen it into the
+    session view (#577: a send lands on the thread in the side peek). Returns
+    the conversation's id. */
+async function openSession(page: Page, text: string): Promise<string> {
+  await skipFirstRun(page);
+  const conv = await startChat(page, stack.webUrl, DEFAULT_AGENT, text);
   await panelIntoFocus(page);
+  return conv;
 }
 
-/** Back to the thread panel — in-app nav keeps the loaded page state (a
-   reload while the relay is down would re-boot into the loading gate). */
+/** Back to the thread beside the page — in-app nav keeps the loaded page
+   state (a reload while the relay is down would re-boot into the loading
+   gate). */
 async function toThreadPanel(page: Page) {
-  await page.getByRole("button", { name: /back to dm/i }).click();
-  await page.waitForURL(/\/dm\/[^/]+\/[^/]+$/);
-  await expect(formOf(page, "thread")).toBeVisible();
+  await v3Peek(page).getByTitle("Narrow, back beside the page").click();
+  await expect(page).not.toHaveURL(/[#&]full=1(&|$)/);
+  await expect(form(page)).toBeVisible();
 }
 
 async function toFocus(page: Page) {
@@ -204,9 +193,9 @@ async function toFocus(page: Page) {
     .locator("[data-thread-panel]")
     .getByRole("button", { name: "Focus", exact: true })
     .click();
-  await page.waitForURL(/\/dm\/[^/]+\/[^/]+\/focus$/);
-  /* The route mounts a fresh FocusView — wait for its own chrome ("Back to
-     DM") so assertions/screenshots can't race the swap-in frame. */
+  await expect(page).toHaveURL(/[#&]full=1(&|$)/);
+  /* The session view mounts a fresh FocusView — wait for its own chrome
+     ("Back to DM") so assertions/screenshots can't race the swap-in frame. */
   await expect(page.getByRole("button", { name: /back to dm/i })).toBeVisible({
     timeout: 15_000,
   });
@@ -269,7 +258,6 @@ test.use({ video: "on" });
 test("AC-1 the Reconnecting line shows in Thread and Focus on relay loss and clears on restart", async ({
   page,
 }) => {
-  await dmDefault(page, stack.webUrl);
   await openSession(page, "a session for the reconnect line");
   await toThreadPanel(page);
 
@@ -279,7 +267,7 @@ test("AC-1 the Reconnecting line shows in Thread and Focus on relay loss and cle
   await expect(page.locator(LINE)).toContainText(/reconnecting/i);
   await page.screenshot({ path: `${SHOTS}/ac1-line-thread.png` });
 
-  // Focus: the sidebar status row is hidden here — the line covers it.
+  // Session view: the line covers it here too.
   await toFocus(page);
   await expect(page.locator(LINE)).toBeVisible({ timeout: 10_000 });
   await page.waitForTimeout(300);
@@ -295,20 +283,17 @@ test("AC-1 the Reconnecting line shows in Thread and Focus on relay loss and cle
 test("AC-2 a send made while reconnecting lands exactly once after the relay is back", async ({
   page,
 }) => {
-  await dmDefault(page, stack.webUrl);
-  await openSession(page, "a session for the outage send");
+  const conv = await openSession(page, "a session for the outage send");
   await toThreadPanel(page);
 
   const text = `sent during the outage ${Date.now()}`;
-  await boxOf(page, "thread").fill(text);
+  await box(page).fill(text);
 
   await relayDown(stack);
   await expect(page.locator(LINE)).toBeVisible({ timeout: 10_000 });
   // The send pends on the reconnect instead of failing — the draft stays in
   // the box until it lands.
-  await formOf(page, "thread").evaluate((f: HTMLFormElement) =>
-    f.requestSubmit(),
-  );
+  await form(page).evaluate((f: HTMLFormElement) => f.requestSubmit());
   await page.screenshot({ path: `${SHOTS}/ac2-send-pending.png` });
 
   await stack.restartRelay();
@@ -316,12 +301,14 @@ test("AC-2 a send made while reconnecting lands exactly once after the relay is 
   await expect(page.locator(`text=${text}`).last()).toBeVisible({
     timeout: 30_000,
   });
-  await expect(boxOf(page, "thread")).toHaveValue("");
+  await expect(box(page)).toHaveValue("");
   await page.screenshot({ path: `${SHOTS}/ac2-sent-once.png` });
 
   // Wire check: exactly one message with that text reached the relay.
-  const emp = page.url().match(/\/dm\/([^/]+)/)?.[1] ?? "default";
-  const conv = page.url().match(/\/dm\/[^/]+\/([^/]+?)(?:\/focus)?$/)?.[1];
+  const [people] = await rpc(stack.home, [
+    { method: "employees.list", params: {} },
+  ]);
+  const emp = (people as { employees: { id: string }[] }).employees[0].id;
   const r = await rpc(stack.home, [
     { method: "channels.openDm", params: { employeeId: emp } },
   ]);
@@ -356,13 +343,12 @@ test("shots — the line in Thread and Focus, light/dark, 1288x700 + 1288x900 + 
         localStorage.setItem("lilos-theme", t);
       }, theme);
       const page = await ctx.newPage();
-      await dmDefault(page, stack.webUrl);
+      await openSession(page, "a session for the reconnect line");
       if (theme === "dark") {
         await expect(page.locator("html")).toHaveClass(/dark/);
       } else {
         await expect(page.locator("html")).not.toHaveClass(/dark/);
       }
-      await openSession(page, "a session for the reconnect line");
       await toThreadPanel(page);
 
       await relayDown(stack);

@@ -16,6 +16,9 @@ import {
   panelIntoFocus,
   pickPorts,
   type Stack,
+  skipFirstRun,
+  startChatInFolder,
+  threadUrl,
 } from "./helpers/stack";
 
 /**
@@ -28,7 +31,8 @@ import {
  * A send in the same thread settles the window early.
  *
  * Same folder fixture as ac-134: a real git repo the shadow store must
- * never touch.
+ * never touch. (The old prototype leg, AC-578-5, went with the prototype's
+ * old default screen.)
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
@@ -73,71 +77,15 @@ test.afterAll(async () => {
 
 test.describe.configure({ mode: "serial" });
 
-async function dmDefault(stack: Stack, page: Page, roots = "") {
-  await page.goto(`${stack.webUrl}/${roots ? `?roots=${roots}` : ""}`);
-  const aside = page.locator("aside");
-  await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
-    timeout: 30_000,
-  });
-  const dmBtn = page.getByRole("button", {
-    name: /open dm|set up later|message/i,
-  });
-  if (
-    await dmBtn
-      .first()
-      .isVisible()
-      .catch(() => false)
-  ) {
-    await dmBtn.first().click();
-  } else {
-    await aside.getByRole("button", { name: /default/i }).click();
-  }
-  await expect(page).toHaveURL(/\/dm\//);
-}
+/* The seeded employee. An id that names nobody opens the new-chat draft on
+   the default agent, which on this one-agent stack is Default. */
+const DEFAULT_AGENT = { id: "default", name: "Default" };
 
 const send = async (page: Page, text: string) => {
   const box = page.locator("textarea").last();
   await box.fill(text);
   await box.press("Enter");
 };
-
-async function pickFolder(page: Page, dir: string) {
-  const chip = page.locator('[data-ws="folder"]');
-  const base = dir.split("/").pop() ?? dir;
-  await chip.click();
-  const menu = page
-    .locator('[role="menu"], [data-slot="dropdown-menu-content"]')
-    .last();
-  await expect(menu).toBeVisible({ timeout: 10_000 });
-  /* waitFor (not isVisible) — the folder rows only render once `folders`
-     has loaded, and a not-yet-open menu made a snapshot check read "not
-     attached" and fall into the dialog. The dialog's "Found on this Mac"
-     list filters attached repos out, so that path can never re-add an
-     already-attached dir — the menu row is the only correct route. */
-  const recent = menu.locator("[data-wsfolder]").filter({ hasText: dir });
-  const attached = await recent
-    .first()
-    .waitFor({ state: "visible", timeout: 8_000 })
-    .then(() => true)
-    .catch(() => false);
-  if (attached) {
-    await recent.first().click();
-    return;
-  }
-  await menu.getByText("Add a folder").click();
-  const dialog = page.locator("[data-addfolder]");
-  await expect(dialog).toBeVisible();
-  await expect(dialog.locator(`[data-discovered="${dir}"]`)).toBeVisible({
-    timeout: 15_000,
-  });
-  await dialog.locator(`[data-discovered="${dir}"]`).click();
-  await expect(dialog.locator("[data-folderinfo]")).toContainText("Git repo", {
-    timeout: 15_000,
-  });
-  await dialog.locator("[data-addbtn]").click();
-  await expect(dialog).toHaveCount(0);
-  await expect(chip).toContainText(base, { timeout: 10_000 });
-}
 
 /* Match text inside a user-turn row only — engine-fake echoes the user's
    words inside its scripted <li> reply, so a thread-wide getByText sees
@@ -150,18 +98,19 @@ const undoBtn = (page: Page) => page.locator("[data-toast-action]");
 const box = (page: Page) => page.locator("textarea").last();
 
 let convA = "";
-let empA = "";
 
 test("AC-578-1 the affordance lives on the message, revealed on hover — no line above every message", async ({
   page,
 }) => {
   test.setTimeout(180_000);
-  await dmDefault(stackA, page, ROOT);
-  await pickFolder(page, repoDir);
-  await send(page, "alpha marker one");
+  convA = await startChatInFolder(
+    page,
+    stackA,
+    DEFAULT_AGENT,
+    repoDir,
+    "alpha marker one",
+  );
   await panelIntoFocus(page);
-  convA = decodeURIComponent(page.url().split("/dm/")[1].split("/")[1]);
-  empA = decodeURIComponent(page.url().split("/dm/")[1].split("/")[0]);
   await expect(
     page.locator("[data-thread]").getByText("If you want me to change code"),
   ).toBeVisible({ timeout: 60_000 });
@@ -199,7 +148,8 @@ test("AC-578-2 Undo restores messages exactly — nothing committed yet", async 
   page,
 }) => {
   test.setTimeout(180_000);
-  await page.goto(`${stackA.webUrl}/dm/${empA}/${convA}/focus`);
+  await skipFirstRun(page);
+  await page.goto(threadUrl(stackA.webUrl, convA, true));
   const thread = page.locator("[data-thread]");
   await expect(rowText(thread, "beta marker two")).toBeVisible({
     timeout: 30_000,
@@ -248,7 +198,8 @@ test("AC-578-3 a send settles the window — the rewind commits for real", async
   page,
 }) => {
   test.setTimeout(180_000);
-  await page.goto(`${stackA.webUrl}/dm/${empA}/${convA}/focus`);
+  await skipFirstRun(page);
+  await page.goto(threadUrl(stackA.webUrl, convA, true));
   const thread = page.locator("[data-thread]");
   await expect(rowText(thread, "beta marker two")).toBeVisible({
     timeout: 30_000,
@@ -276,12 +227,14 @@ test("AC-578-4 after the window the files and the engine's memory follow", async
 }) => {
   test.setTimeout(240_000);
   /* Fresh conversation so the trigger ordering is deterministic: alpha,
-     then beta with an image — rewind lands on beta like the other legs.
-     Land on `/` with ?roots — the boot-time scan-roots override is read
-     there (a deep-link URL can drop the param before initHost runs). */
-  await dmDefault(stackA, page, ROOT);
-  await pickFolder(page, repoDir);
-  await send(page, "alpha in the timed session");
+     then beta with an image — rewind lands on beta like the other legs. */
+  await startChatInFolder(
+    page,
+    stackA,
+    DEFAULT_AGENT,
+    repoDir,
+    "alpha in the timed session",
+  );
   await panelIntoFocus(page);
   const thread = page.locator("[data-thread]");
   await expect(thread.getByText("If you want me to change code")).toBeVisible({
@@ -345,47 +298,4 @@ test("AC-578-4 after the window the files and the engine's memory follow", async
   await expect(thread.getByText("I remember 1 earlier turn")).toBeVisible({
     timeout: 60_000,
   });
-});
-
-test("AC-578-5 prototype: hover affordance + Undo toast restore the rows", async ({
-  page,
-}) => {
-  test.setTimeout(120_000);
-  await page.goto("/");
-  await page
-    .locator("aside")
-    .first()
-    .getByRole("button", { name: /Builder/ })
-    .click();
-  /* #582 renamed the placeholder's "session" to "thread" on Mac UI. */
-  const box = page.getByPlaceholder(/New thread with Builder/);
-  await box.fill("prototype alpha");
-  await box.press("Enter");
-  await expect(page.locator("[data-rewind]").nth(0)).toBeEnabled({
-    timeout: 60_000,
-  });
-  const thread = page.locator("textarea").last();
-  await thread.fill("prototype beta");
-  await thread.press("Enter");
-  await expect(page.locator("[data-rewind]").nth(1)).toBeEnabled({
-    timeout: 60_000,
-  });
-
-  await page
-    .getByText("prototype beta", { exact: true })
-    .first()
-    .hover({ force: true });
-  await page.locator("[data-rewind]").nth(1).click();
-  /* exact match = the user's own row (the scripted reply echoes the text
-     capitalized inside a list item); :not(textarea) excludes the composer,
-     which the rewind legitimately reseeds with the dropped text. */
-  const protoRow = page
-    .getByText("prototype beta", { exact: true })
-    .and(page.locator(":not(textarea)"));
-  await expect(protoRow).toHaveCount(0);
-  await expect(undoBtn(page)).toHaveText("Undo");
-  await page.screenshot({ path: `${SHOTS}/ac-5-proto-toast.png` });
-  await undoBtn(page).click();
-  await expect(protoRow).toBeVisible({ timeout: 15_000 });
-  await page.screenshot({ path: `${SHOTS}/ac-5-proto-restored.png` });
 });

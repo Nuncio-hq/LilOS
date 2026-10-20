@@ -70,7 +70,7 @@ function TabChip({
           className={cn(
             "absolute inset-x-2.5 bottom-px h-[2px] rounded-full",
             DOT[status],
-            status === "working" && "lilos-v2-breathe",
+            status === "working" && "lilos-v3-breathe",
           )}
         />
       )}

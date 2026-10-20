@@ -1,18 +1,26 @@
-import { spawn, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron, expect, type Page, test } from "@playwright/test";
-import { bootStack, pickPorts } from "./helpers/stack";
+import { electronScreenshot, ensureDesktopPayload } from "./helpers/electron";
+import { bootStack, pickPorts, skipFirstRun, v3Sidebar } from "./helpers/stack";
 
 /**
  * Issue #132 — Settings (⌘,): one place for profile, editors, models,
  * status, updates. AC-1 ⌘, opens Settings and Service Status stays its own
- * menu item; AC-2 the prototype's SettingsView renders General, Editors,
- * Models, Approvals, Status and About with real data (#106 landed the
- * Approvals section: Smart/Manual/Off policy + the default access).
- * #106); AC-3 edits apply live across open windows; AC-4 About shows real
- * versions and the update control only exists on the desktop build;
- * AC-5 the sidebar's gear entry point opens the same screen.
+ * menu item; AC-2 Settings renders the profile, approvals, editors, models,
+ * status and About with real data; AC-3 edits apply live across open
+ * windows; AC-4 About shows real versions and the update control only
+ * exists on the desktop build; AC-5 the sidebar's Settings entry opens the
+ * same screen.
+ *
+ * v3: Settings is a page, not a dialog — `#?page=settings&view=general|engine|phone`
+ * with tabs General (you + company, Approvals, "Open files in", About) and
+ * "Engine & models" (engine, Status, Models). So "Esc closes" has no
+ * counterpart (nothing to dismiss) and the old Approvals policy
+ * (Smart/Manual/Off) is now the Ask / Full access switch.
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
@@ -22,7 +30,7 @@ const FAKE_OS = path.join(here, "os-fake");
 const BUN = process.env.LILOS_BUN_BIN ?? "bun";
 
 /* Shared stack env (#118 pins the signed-in name; os.editors sees the
-   committed fake Cursor/Zed bundles for the Editors section). */
+   committed fake Cursor/Zed bundles for the "Open files in" choice). */
 const SETTINGS_ENV = {
   LILOS_USER_NAME: "Test User",
   LILOS_APP_DIRS: path.join(FAKE_OS, "Applications"),
@@ -48,54 +56,79 @@ function storedSetting(home: string, key: string): unknown {
   return JSON.parse(out.stdout.trim() || "null");
 }
 
-const settingsDialog = (page: Page) =>
-  page.getByRole("dialog", { name: "Settings" });
+const main = (page: Page) => page.locator("main");
+/** A Settings tab (they are plain buttons in the page's tab row). */
 const tab = (page: Page, name: string) =>
-  settingsDialog(page).getByRole("tab", { name, exact: true });
+  main(page).getByRole("button", { name, exact: true });
+/** The row of the General pane that holds `label` ("Your name", "Company"). */
+const fact = (page: Page, label: string) =>
+  main(page).getByText(label, { exact: true }).locator("xpath=..");
 
-const openSettings = async (page: Page) => {
-  await page.locator("aside").getByRole("button", { name: "Settings" }).click();
-  await expect(settingsDialog(page)).toBeVisible();
-};
+/** Past first run, then Settings through the sidebar, the way a person does. */
+async function openSettings(page: Page) {
+  await v3Sidebar(page).getByRole("button", { name: "Settings" }).click();
+  await expect(page).toHaveURL(/[#?&]page=settings(&|$)/);
+  await expect(
+    page.getByRole("heading", { name: "Settings", level: 1 }),
+  ).toBeVisible();
+}
+
+/** A stack opened on Home with the first-run gate skipped. */
+async function openApp(page: Page, webUrl: string) {
+  await skipFirstRun(page);
+  await page.goto(`${webUrl}/`);
+  await expect(
+    v3Sidebar(page).getByRole("button", { name: /Default/ }),
+  ).toBeVisible({ timeout: 30_000 });
+}
 
 test.describe.configure({ mode: "serial" });
 
-test("AC-1+AC-5 Settings opens via ⌘, and the sidebar gear; Approvals listed", async ({
+test("AC-1+AC-5 Settings opens via the sidebar and ⌘,; Approvals listed", async ({
   page,
 }) => {
   test.setTimeout(120_000);
   const stack = await bootStack("ac132a", await pickPorts(), SETTINGS_ENV);
   try {
-    await page.addInitScript(() =>
-      localStorage.setItem("lilos-onboarded", "1"),
-    );
-    await page.goto(`${stack.webUrl}/`);
-    await expect(page).toHaveURL(/\/dm\//, { timeout: 30_000 });
+    await openApp(page, stack.webUrl);
 
     // AC-5: the sidebar's entry point.
     await openSettings(page);
     await expect(tab(page, "General")).toBeVisible();
     await page.screenshot({ path: `${SHOTS}/ac-5-sidebar-entry.png` });
-    // Esc closes.
-    await page.keyboard.press("Escape");
-    await expect(settingsDialog(page)).toHaveCount(0);
 
-    // AC-1: the ⌘, shortcut (Control+, — the handler takes meta or ctrl).
+    // AC-1: the ⌘, shortcut (Control+, — the handler takes meta or ctrl),
+    // from another page: Threads → Settings.
+    await v3Sidebar(page).getByRole("button", { name: "Threads" }).click();
+    await expect(page).toHaveURL(/[#?&]page=threads(&|$)/);
+    await expect(
+      page.getByRole("heading", { name: "Settings", level: 1 }),
+    ).toHaveCount(0);
     await page.keyboard.press("Control+,");
-    await expect(settingsDialog(page)).toBeVisible();
+    await expect(page).toHaveURL(/[#?&]page=settings(&|$)/);
+    await expect(
+      page.getByRole("heading", { name: "Settings", level: 1 }),
+    ).toBeVisible();
 
-    // Every section with real data is listed — Approvals too since #106
-    // (the fake engine declares approval_policy).
-    for (const name of [
-      "General",
-      "Approvals",
-      "Editors",
-      "Models",
-      "Status",
-      "About",
-    ]) {
+    // Every pane with real data is listed — Approvals too since #106 (the
+    // fake engine declares approval_policy): General holds it, "Engine &
+    // models" holds Status and Models, Phone the paired phones.
+    for (const name of ["General", "Engine & models", "Phone"]) {
       await expect(tab(page, name)).toBeVisible();
     }
+    for (const name of [
+      "You and the company",
+      "Approvals",
+      "Open files in",
+      "About",
+    ]) {
+      await expect(
+        main(page).getByRole("heading", { name, level: 3 }),
+      ).toBeVisible();
+    }
+    await expect(
+      main(page).getByRole("radio", { name: "Ask before risky commands" }),
+    ).toHaveAttribute("aria-checked", "true");
     await page.screenshot({ path: `${SHOTS}/ac-1-sections.png` });
   } finally {
     await stack.stop();
@@ -106,23 +139,18 @@ test("AC-2 every section renders real data", async ({ page }) => {
   test.setTimeout(120_000);
   const stack = await bootStack("ac132b", await pickPorts(), SETTINGS_ENV);
   try {
-    await page.addInitScript(() =>
-      localStorage.setItem("lilos-onboarded", "1"),
-    );
-    await page.goto(`${stack.webUrl}/`);
-    await expect(page).toHaveURL(/\/dm\//, { timeout: 30_000 });
+    await openApp(page, stack.webUrl);
     await openSettings(page);
 
     // General: the OS-derived identity is prefilled.
     await tab(page, "General").click();
-    const panel = settingsDialog(page).getByRole("tabpanel");
-    await expect(panel.getByLabel("Your name")).toHaveValue("Test User");
-    await expect(panel.getByLabel("Company name")).toHaveValue("Test's Co");
+    await expect(fact(page, "Your name")).toContainText("Test User");
+    await expect(fact(page, "Company")).toContainText("Test's Co");
 
-    // Editors: the fake Cursor/Zed bundles are detected; the default leads.
-    await tab(page, "Editors").click();
-    const editorRows = panel.getByRole("radiogroup", {
-      name: "Default editor",
+    // Open files in: the fake Cursor/Zed bundles are detected; the default
+    // leads.
+    const editorRows = main(page).getByRole("radiogroup", {
+      name: "Open files in",
     });
     await expect(editorRows.getByRole("radio")).toHaveCount(2);
     await expect(editorRows).toContainText("Cursor");
@@ -132,26 +160,31 @@ test("AC-2 every section renders real data", async ({ page }) => {
     ).toHaveAttribute("aria-checked", "true");
     await page.screenshot({ path: `${SHOTS}/ac-2-editors.png` });
 
-    // Models: the fake engine's catalog shows up with the visibility count.
-    await tab(page, "Models").click();
-    await expect(panel).toContainText("models visible");
+    // About: real versions — the relay/harness report theirs.
+    await expect(main(page)).toContainText("LilOS");
+    await expect(main(page)).toContainText(/relay \d+\.\d+\.\d+/);
+    await page.screenshot({ path: `${SHOTS}/ac-4-about.png` });
+
+    // Engine & models: the fake engine's catalog shows up with the count of
+    // models that are on.
+    await tab(page, "Engine & models").click();
+    await expect(page).toHaveURL(/[#?&]view=engine(&|$)/);
     await expect(
-      panel.getByRole("button", { name: "Edit models…" }),
-    ).toBeVisible();
+      main(page).getByRole("heading", { name: /^Models/, level: 3 }),
+    ).toContainText(/\d+ on/);
+    await expect(
+      main(page).getByRole("switch", { name: / on$/ }).first(),
+    ).toHaveAttribute("aria-checked", "true");
 
     // Status: the real legs list.
-    await tab(page, "Status").click();
-    await expect(panel).toContainText("Relay");
     await expect(
-      panel.getByRole("button", { name: "Copy diagnostics" }),
+      main(page).getByRole("heading", { name: "Status", level: 3 }),
+    ).toBeVisible();
+    await expect(main(page)).toContainText("Local relay");
+    await expect(
+      main(page).getByRole("button", { name: "Copy diagnostics" }),
     ).toBeVisible();
     await page.screenshot({ path: `${SHOTS}/ac-2-status.png` });
-
-    // About: real versions — the relay/harness report theirs.
-    await tab(page, "About").click();
-    await expect(panel).toContainText("LilOS");
-    await expect(panel).toContainText(/relay \d+\.\d+\.\d+/);
-    await page.screenshot({ path: `${SHOTS}/ac-4-about.png` });
   } finally {
     await stack.stop();
   }
@@ -164,44 +197,41 @@ test("AC-3 edits in one window land live in another", async ({
   test.setTimeout(180_000);
   const stack = await bootStack("ac132c", await pickPorts(), SETTINGS_ENV);
   try {
-    await context.addInitScript(() =>
-      localStorage.setItem("lilos-onboarded", "1"),
-    );
-    await page.goto(`${stack.webUrl}/`);
-    await expect(page).toHaveURL(/\/dm\//, { timeout: 30_000 });
+    await openApp(page, stack.webUrl);
     const page2 = await context.newPage();
+    await skipFirstRun(page2);
     await page2.goto(`${stack.webUrl}/`);
-    await expect(page2).toHaveURL(/\/dm\//, { timeout: 30_000 });
+    await expect(
+      v3Sidebar(page2).getByRole("button", { name: /Default/ }),
+    ).toBeVisible({ timeout: 30_000 });
 
     await openSettings(page);
     await openSettings(page2);
 
-    // A name typed in window 1 lands in window 2's field and sidebar.
-    const name1 = settingsDialog(page)
-      .getByRole("tabpanel")
-      .getByLabel("Your name");
-    await name1.fill("Ada");
+    // A name typed in window 1 lands in window 2's field and on its Home.
+    await fact(page, "Your name")
+      .getByRole("button", { name: "Rename…" })
+      .click();
+    await main(page).getByLabel("Your name").fill("Ada");
+    await main(page).getByRole("button", { name: "Save" }).click();
+    await expect(fact(page2, "Your name")).toContainText("Ada", {
+      timeout: 15_000,
+    });
+    await v3Sidebar(page2).getByRole("button", { name: "Home" }).click();
     await expect(
-      settingsDialog(page2).getByRole("tabpanel").getByLabel("Your name"),
-    ).toHaveValue("Ada", { timeout: 15_000 });
-    await expect(page2.locator("aside")).toContainText("Ada");
+      page2.getByRole("heading", { name: /Good afternoon, Ada/, level: 1 }),
+    ).toBeVisible();
 
     // The default-editor pick lands in the relay KV and in window 2.
-    await tab(page, "Editors").click();
-    await settingsDialog(page)
-      .getByRole("tabpanel")
-      .getByRole("radio", { name: /Zed/ })
-      .click();
+    await v3Sidebar(page2).getByRole("button", { name: "Settings" }).click();
+    await main(page).getByRole("radio", { name: /Zed/ }).click();
     await expect
       .poll(() => storedSetting(stack.home, "defaultEditor"), {
         timeout: 10_000,
       })
       .toBe("zed");
-    await tab(page2, "Editors").click();
     await expect(
-      settingsDialog(page2)
-        .getByRole("tabpanel")
-        .getByRole("radio", { name: /Zed/ }),
+      main(page2).getByRole("radio", { name: /Zed/ }),
     ).toHaveAttribute("aria-checked", "true");
     await page.screenshot({ path: `${SHOTS}/ac-3-live-edit.png` });
   } finally {
@@ -216,13 +246,9 @@ test("screenshots: the AC matrix (light + dark, 1288 / 900 / 1440)", async ({
   const stack = await bootStack("ac132shots", await pickPorts(), SETTINGS_ENV);
   try {
     await page.setViewportSize({ width: 1288, height: 700 });
-    await page.addInitScript(() =>
-      localStorage.setItem("lilos-onboarded", "1"),
-    );
-    await page.goto(`${stack.webUrl}/`);
-    await expect(page).toHaveURL(/\/dm\//, { timeout: 30_000 });
+    await openApp(page, stack.webUrl);
     await openSettings(page);
-    await expect(tab(page, "Editors")).toBeVisible();
+    await expect(tab(page, "General")).toBeVisible();
     await page.screenshot({ path: `${SHOTS}/shot-1288-light.png` });
 
     await page.setViewportSize({ width: 900, height: 700 });
@@ -235,9 +261,11 @@ test("screenshots: the AC matrix (light + dark, 1288 / 900 / 1440)", async ({
     await page.evaluate(() => localStorage.setItem("lilos-theme", "dark"));
     await page.setViewportSize({ width: 1288, height: 700 });
     await page.reload();
-    await expect(page).toHaveURL(/\/dm\//, { timeout: 30_000 });
-    await openSettings(page);
-    await expect(tab(page, "Editors")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Settings", level: 1 }),
+    ).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator("html")).toHaveClass(/dark/);
+    await expect(tab(page, "General")).toBeVisible();
     await page.screenshot({ path: `${SHOTS}/shot-1288-dark.png` });
   } finally {
     await stack.stop();
@@ -250,17 +278,11 @@ test("AC-4 on plain web the update control does not render", async ({
   test.setTimeout(120_000);
   const stack = await bootStack("ac132d", await pickPorts(), SETTINGS_ENV);
   try {
-    await page.addInitScript(() =>
-      localStorage.setItem("lilos-onboarded", "1"),
-    );
-    await page.goto(`${stack.webUrl}/`);
-    await expect(page).toHaveURL(/\/dm\//, { timeout: 30_000 });
+    await openApp(page, stack.webUrl);
     await openSettings(page);
-    await tab(page, "About").click();
-    const panel = settingsDialog(page).getByRole("tabpanel");
-    await expect(panel).toContainText("LilOS");
+    await expect(main(page)).toContainText("LilOS");
     await expect(
-      panel.getByRole("button", { name: "Check for updates" }),
+      main(page).getByRole("button", { name: "Check for updates" }),
     ).toHaveCount(0);
   } finally {
     await stack.stop();
@@ -269,19 +291,15 @@ test("AC-4 on plain web the update control does not render", async ({
 
 test("AC-1 the desktop menu opens Settings on ⌘, and Service Status stays", async () => {
   test.setTimeout(180_000);
+  await ensureDesktopPayload(desktopDir);
   const stack = await bootStack("ac132e", await pickPorts(), SETTINGS_ENV);
+  // A scratch state dir: the window's localStorage (first-run flag, theme)
+  // must not be this Mac's real LilOS profile.
+  const stateDir = path.join(tmpdir(), `lilos-ac132-${process.pid}`);
+  rmSync(stateDir, { recursive: true, force: true });
+  mkdirSync(stateDir, { recursive: true });
   let app: Awaited<ReturnType<typeof _electron.launch>> | undefined;
   try {
-    const build = spawn("bun", ["scripts/dev.ts", "--payload-only"], {
-      cwd: desktopDir,
-      env: { ...process.env },
-      stdio: "inherit",
-    });
-    await new Promise<void>((resolve, reject) => {
-      build.once("exit", (c) =>
-        c === 0 ? resolve() : reject(new Error(`desktop build exit ${c}`)),
-      );
-    });
     app = await _electron.launch({
       args:
         process.platform === "linux"
@@ -293,10 +311,15 @@ test("AC-1 the desktop menu opens Settings on ⌘, and Service Status stays", as
         LILOS_RELAY_PORT: String(stack.ports.relay),
         LILOS_FEED_PORT: String(stack.ports.feed),
         LILOS_WEB_URL: stack.webUrl,
+        LILOS_STATE_DIR: stateDir,
       },
     });
     const win = await app.firstWindow();
-    await expect(win.locator("aside")).toBeVisible({ timeout: 60_000 });
+    // A fresh window starts on Welcome; "Set up later" is its own exit.
+    await win.getByRole("button", { name: "Set up later" }).click({
+      timeout: 60_000,
+    });
+    await expect(v3Sidebar(win)).toBeVisible({ timeout: 60_000 });
 
     // The menu carries Settings… on ⌘,; Service Status has none.
     const menu = await app.evaluate(({ Menu }) =>
@@ -322,10 +345,11 @@ test("AC-1 the desktop menu opens Settings on ⌘, and Service Status stays", as
     await app.evaluate(({ Menu }) =>
       Menu.getApplicationMenu()?.getMenuItemById("settings")?.click(),
     );
-    await expect(win.getByRole("dialog", { name: "Settings" })).toBeVisible({
-      timeout: 15_000,
-    });
-    await win.screenshot({ path: `${SHOTS}/ac-1-desktop-settings.png` });
+    await expect(win).toHaveURL(/[#?&]page=settings(&|$)/, { timeout: 15_000 });
+    await expect(
+      win.getByRole("heading", { name: "Settings", level: 1 }),
+    ).toBeVisible({ timeout: 15_000 });
+    await electronScreenshot(app, win, `${SHOTS}/ac-1-desktop-settings.png`);
 
     // Service Status still opens its own window.
     const secondWindow = app.waitForEvent("window", { timeout: 15_000 });
@@ -337,5 +361,6 @@ test("AC-1 the desktop menu opens Settings on ⌘, and Service Status stays", as
   } finally {
     await app?.close();
     await stack.stop();
+    rmSync(stateDir, { recursive: true, force: true });
   }
 });

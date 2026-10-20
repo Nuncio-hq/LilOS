@@ -13,9 +13,11 @@ import { expect, type Page, test } from "@playwright/test";
 import { allowAllWhile, expectSettled } from "./helpers/approvals";
 import {
   bootStack,
+  openSession,
   panelIntoFocus,
   pickPorts,
   type Stack,
+  startChatInFolder,
 } from "./helpers/stack";
 
 /**
@@ -98,61 +100,20 @@ test.afterAll(async () => {
 
 test.describe.configure({ mode: "serial" });
 
-async function dmDefault(page: Page) {
-  await page.goto(`${stack.webUrl}/?roots=${ROOT}`);
-  const aside = page.locator("aside");
-  await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
-    timeout: 30_000,
-  });
-  const dmBtn = page.getByRole("button", {
-    name: /open dm|set up later|message/i,
-  });
-  if (
-    await dmBtn
-      .first()
-      .isVisible()
-      .catch(() => false)
-  ) {
-    await dmBtn.first().click();
-  } else {
-    await aside.getByRole("button", { name: /default/i }).click();
-  }
-  await expect(page).toHaveURL(/\/dm\//);
-}
+/* The session AC-1 starts; AC-2 reopens it as the session view. */
+let ghConv: string;
 
-const pickerButton = (page: Page) => page.locator('[data-ws="folder"]');
-
-/** Pick `dir` for the next session: recents menu when listed, else Add folder. */
-async function pickSessionFolder(page: Page, dir: string) {
-  const menu = await (async () => {
-    await pickerButton(page).click();
-    return page
-      .locator('[role="menu"], [data-slot="dropdown-menu-content"]')
-      .last();
-  })();
-  const recent = menu.locator(`[data-wsfolder="${dir}"]`);
-  if (
-    await recent
-      .first()
-      .isVisible()
-      .catch(() => false)
-  ) {
-    await recent.first().click();
-  } else {
-    await menu.getByText("Add a folder").click();
-    const dialog = page.locator("[data-addfolder]");
-    await expect(dialog).toBeVisible();
-    await dialog.locator("[data-pathinput]").fill(dir);
-    await expect(dialog.locator("[data-folderinfo]")).toBeVisible({
-      timeout: 15_000,
-    });
-    await dialog.locator("[data-addbtn]").click();
-    await expect(dialog).toHaveCount(0);
-  }
-  await expect(pickerButton(page)).toContainText(path.basename(dir), {
-    timeout: 15_000,
-  });
-}
+/** A new session in the repo, the way a person starts one: the new-chat
+    draft's folder chip, then Send. An id that names nobody opens the draft
+    on the default agent, so the spec needs no employee lookup. */
+const startSession = (page: Page, text: string) =>
+  startChatInFolder(
+    page,
+    stack,
+    { id: "default", name: "Default" },
+    repoDir,
+    text,
+  );
 
 const send = async (page: Page, text: string) => {
   const box = page.locator("textarea").last();
@@ -185,13 +146,6 @@ const sendTurn = async (page: Page, text: string) => {
   return turn;
 };
 
-const sessionRow = (page: Page) => page.locator("[data-session] button").last();
-
-const openFocus = async (page: Page) => {
-  await sessionRow(page).click();
-  await panelIntoFocus(page);
-};
-
 const tab = (page: Page, name: RegExp | string) =>
   page.getByRole("tab", { name });
 
@@ -199,10 +153,9 @@ test("AC-1 a running turn makes at most one gh call per minute", async ({
   page,
 }) => {
   test.setTimeout(180_000);
-  await dmDefault(page);
-  await pickSessionFolder(page, repoDir);
-  await send(page, "check in");
-  // #577: the send lands on the panel — the PR tab lives in Focus's workbench.
+  ghConv = await startSession(page, "check in");
+  // A send lands on the thread beside Threads — the PR tab lives in the
+  // session view (widened) with the Workbench.
   await panelIntoFocus(page);
   /* The PR tab only exists once forge.pr has answered — its presence proves
      the probe's first `gh pr view` already logged. */
@@ -237,8 +190,7 @@ test("AC-2 the PR tab refreshes on turn end, tab focus and window focus", async 
   page,
 }) => {
   test.setTimeout(180_000);
-  await dmDefault(page);
-  await openFocus(page);
+  await openSession(page, stack.webUrl, ghConv);
 
   const prTab = tab(page, /PR/);
   await expect(prTab).toBeVisible({ timeout: 30_000 });

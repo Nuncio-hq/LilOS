@@ -15,6 +15,7 @@ import { ConvoTurn, RewoundLine } from "./v3-convo-turn";
 import { useFollowBottom } from "./v3-follow";
 import { ThreadPill, turnCount } from "./v3-live";
 import { agentOf, FORMER_AGENT, projectOf, ticketOf } from "./v3-model";
+import { useRenameMenu } from "./v3-thread-menu";
 import { WorkPanel, WorkStrip, workTabs } from "./v3-thread-work";
 import type { V3PageProps, V3Thread } from "./v3-types";
 import type { SessionTab } from "./v3-workbench-bits";
@@ -25,7 +26,9 @@ import type { SessionTab } from "./v3-workbench-bits";
    files, terminal…) on the right. */
 
 export function V3ThreadPage(props: V3PageProps & { id: string }) {
-  const t = props.data.threads.find((x) => x.id === props.id);
+  const live = props.data.threads.find((x) => x.id === props.id);
+  // A put-away thread still opens (from Threads → All → Archived).
+  const t = live ?? props.data.archivedThreads?.find((x) => x.id === props.id);
   if (!t) {
     return (
       <Page>
@@ -40,10 +43,16 @@ export function V3ThreadPage(props: V3PageProps & { id: string }) {
       </Page>
     );
   }
-  return <ThreadBody {...props} t={t} />;
+  return <ThreadBody {...props} t={t} archived={!live} />;
 }
 
-function ThreadBody({ data, go, act, t }: V3PageProps & { t: V3Thread }) {
+function ThreadBody({
+  data,
+  go,
+  act,
+  t,
+  archived,
+}: V3PageProps & { t: V3Thread; archived: boolean }) {
   const peek = useContext(PeekWidth);
   const tabs = workTabs(data, t, !!act.browserOpen);
   const [picked, setPicked] = useState<SessionTab>();
@@ -111,6 +120,7 @@ function ThreadBody({ data, go, act, t }: V3PageProps & { t: V3Thread }) {
     go,
     act,
     t,
+    archived,
     draft,
     onDraft: setDraft,
     composer,
@@ -156,9 +166,11 @@ function ChatColumn({
   composer,
   onRewind,
   session,
+  archived,
   children,
 }: V3PageProps & {
   t: V3Thread;
+  archived: boolean;
   draft: string;
   onDraft: (text: string) => void;
   composer: RefObject<HTMLTextAreaElement | null>;
@@ -243,6 +255,16 @@ function ChatColumn({
     !newest?.streaming &&
     !newest?.steps?.some((s) => s.running);
 
+  // Rename where the title shows; the same ⋯ menu the rows on Threads have.
+  const { renameThread, archiveThread } = act;
+  const { input: titleInput, menu: threadMenu } = useRenameMenu({
+    title: t.title,
+    archived,
+    inputClassName: session ? "h-9 [font-size:24px]" : "h-11 [font-size:28px]",
+    onRename: renameThread && ((title) => renameThread(t.id, title)),
+    onArchive: archiveThread && ((to) => archiveThread(t.id, to)),
+  });
+
   const header = (
     <header className="pt-7">
       {session ? (
@@ -250,9 +272,20 @@ function ChatColumn({
           <div className="mb-1.5 text-[13px] text-muted-foreground">
             {kicker}
           </div>
-          <h1 className="lilos-v3-serif mb-3 font-bold text-[24px] text-foreground leading-[1.2]">
-            {t.title}
-          </h1>
+          {titleInput ? (
+            <div className="mb-3 flex">{titleInput}</div>
+          ) : (
+            <h1 className="lilos-v3-serif mb-3 font-bold text-[24px] text-foreground leading-[1.2]">
+              {t.title}
+            </h1>
+          )}
+        </>
+      ) : titleInput ? (
+        <>
+          <div className="mb-2 text-[13.5px] text-muted-foreground">
+            {kicker}
+          </div>
+          <div className="mb-3.5 flex">{titleInput}</div>
         </>
       ) : (
         <Title small kicker={kicker}>
@@ -273,6 +306,7 @@ function ChatColumn({
           {span(t.minutes)}
         </span>
         <span className="ml-auto flex items-center gap-2">
+          {threadMenu}
           {working && (
             <Btn small onClick={() => act.stop(t.id)} title="Stop (⌘.)">
               <SquareIcon className="size-3 fill-current" />

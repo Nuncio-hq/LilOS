@@ -5,6 +5,7 @@ import { AccessPill } from "../chat/access-pill";
 import {
   ConversationKeepBottom,
   NotSentTray,
+  plain,
   QueuedTray,
   type QueuedTrayItem,
   queuedItemText,
@@ -66,6 +67,7 @@ import type {
   Work,
 } from "../types";
 import { VIEWER_ID } from "../types";
+import { useRenameMenu } from "../v3/v3-thread-menu";
 import { WorkspaceBadge, WsBadge } from "../workbench/ws-badges";
 
 /* #134/#430: the "Rewind to here" checkpoint lives in
@@ -140,6 +142,8 @@ export function ThreadView({
   onCancel,
   access,
   onAccess,
+  onRename,
+  onArchive,
   findBar,
 }: {
   root: Extract<Msg, { kind: "msg" }>;
@@ -260,6 +264,11 @@ export function ThreadView({
      Both or neither (D-#19: no access record, no control). */
   access?: ConversationAccess;
   onAccess?: (a: ConversationAccess) => void;
+  /* Rename the title in place / put the thread away (true) or back (false):
+     the header's ⋯ menu draws the items whose handler is passed, none → no
+     menu. `thread.archived` says which way Archive reads. */
+  onRename?: (title: string) => void;
+  onArchive?: (archived: boolean) => void;
   /* #554: the host's wired find bar, rendered as an overlay inside the
      conversation scrollport (desktop ⌘F); absent = no find UI. */
   findBar?: ReactNode;
@@ -267,6 +276,12 @@ export function ThreadView({
   const lead = thread.replies.find((r) => emp(r.from));
   const leadEmp = lead ? emp(lead.from) : undefined;
   const isDM = !!channel.dm;
+  const { input: titleInput, menu: threadMenu } = useRenameMenu({
+    title: thread.title || plain(root.text),
+    archived: thread.archived,
+    onRename,
+    onArchive,
+  });
   /* The panel is one UI layer: Esc closes it only while it is the top-most
      surface (an open dialog or menu above it keeps Esc, #576), and while
      top-most it owns the surface keys — ⌘. stops a running turn, ↵/⌫
@@ -395,9 +410,11 @@ export function ThreadView({
           <div className="flex items-center gap-1.5 font-semibold">
             {/* #137 AC-4: the session's title (placeholder → engine-written)
                 leads the header; untitled threads keep the kind label. */}
-            <span className="truncate" data-session-title>
-              {thread.title || "Thread"}
-            </span>
+            {titleInput ?? (
+              <span className="truncate" data-session-title>
+                {thread.title || "Thread"}
+              </span>
+            )}
             {work?.ticket && (
               <span className="shrink-0 font-mono text-muted-foreground text-xs">
                 · {work.ticket}
@@ -496,6 +513,7 @@ export function ThreadView({
               </Button>
             </span>
           )}
+          {threadMenu}
           {onFocus && (
             <Button
               variant="ghost"

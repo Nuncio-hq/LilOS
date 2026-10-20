@@ -10,6 +10,7 @@ import {
   panelIntoFocus,
   pickPorts,
   type Stack,
+  startChatInFolder,
 } from "./helpers/stack";
 
 /**
@@ -48,67 +49,18 @@ test.afterAll(async () => {
   rmSync(ROOT, { recursive: true, force: true });
 });
 
-async function dmDefault(page: Page) {
-  await page.goto(`${stack.webUrl}/?roots=${ROOT}`);
-  const aside = page.locator("aside");
-  await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
-    timeout: 30_000,
-  });
-  const dmBtn = page.getByRole("button", {
-    name: /open dm|set up later|message/i,
-  });
-  if (
-    await dmBtn
-      .first()
-      .isVisible()
-      .catch(() => false)
-  ) {
-    await dmBtn.first().click();
-  } else {
-    await aside.getByRole("button", { name: /default/i }).click();
-  }
-  await expect(page).toHaveURL(/\/dm\//);
+/* A session in `repoDir`, started the way a person starts one: the new-chat
+   draft's folder chip, then Send (the recents get the folder first). The
+   send lands on Threads with the thread open beside it. */
+async function startSession(page: Page, text: string) {
+  await startChatInFolder(
+    page,
+    stack,
+    { id: "default", name: "Default" },
+    repoDir,
+    text,
+  );
 }
-
-const pickerButton = (page: Page) => page.locator('[data-ws="folder"]');
-
-/** Pick `dir` for the next session: recents menu when listed, else Add folder. */
-async function pickSessionFolder(page: Page, dir: string) {
-  const menu = await (async () => {
-    await pickerButton(page).click();
-    return page
-      .locator('[role="menu"], [data-slot="dropdown-menu-content"]')
-      .last();
-  })();
-  const recent = menu.locator(`[data-wsfolder="${dir}"]`);
-  if (
-    await recent
-      .first()
-      .isVisible()
-      .catch(() => false)
-  ) {
-    await recent.first().click();
-  } else {
-    await menu.getByText("Add a folder").click();
-    const dialog = page.locator("[data-addfolder]");
-    await expect(dialog).toBeVisible();
-    await dialog.locator("[data-pathinput]").fill(dir);
-    await expect(dialog.locator("[data-folderinfo]")).toBeVisible({
-      timeout: 15_000,
-    });
-    await dialog.locator("[data-addbtn]").click();
-    await expect(dialog).toHaveCount(0);
-  }
-  await expect(pickerButton(page)).toContainText(path.basename(dir), {
-    timeout: 15_000,
-  });
-}
-
-const send = async (page: Page, text: string) => {
-  const box = page.locator("textarea").last();
-  await box.fill(text);
-  await box.press("Enter");
-};
 
 const turns = (page: Page) => page.locator("[data-agentturn]");
 
@@ -116,10 +68,9 @@ test('AC-2 create + edit in one turn → the footer reads "2 files changed"', as
   page,
 }) => {
   test.setTimeout(180_000);
-  await dmDefault(page);
-  await pickSessionFolder(page, repoDir);
-  await send(page, "Add a changelog note to the readme");
-  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  await startSession(page, "Add a changelog note to the readme");
+  /* A send lands on the thread beside Threads; the session view (chat beside
+     the Workbench) opens by widening it. */
   await panelIntoFocus(page);
 
   const turn = turns(page).last();

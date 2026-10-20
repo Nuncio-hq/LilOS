@@ -10,8 +10,8 @@ agent profile.
 What Oscar sees:
 - The sidebar roster: name, role line, status orb (online/busy/offline) and
   the model each employee runs on.
-- Hiring/editing happens in the app (Hire dialog, Edit employee): it writes
-  the LilOS record and the engine profile together.
+- Hiring/editing happens in the app (the Hire page, the Edit button on an
+  agent's page): it writes the LilOS record and the engine profile together.
 - Removing an employee deletes its DMs and record; the engine profile is
   never deleted by LilOS.
 

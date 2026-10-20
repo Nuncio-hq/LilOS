@@ -2,7 +2,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import { growDmThread } from "./helpers/relay-thread";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  pickPorts,
+  type Stack,
+  skipFirstRun,
+  threadUrl,
+} from "./helpers/stack";
 
 /**
  * Issue #431 — AC-2: reloading a long thread renders the identical
@@ -58,9 +64,8 @@ test("AC-2 reload of a long thread renders the identical transcript, faster", as
     stack,
     Array.from({ length: TURNS }, (_, i) => `md: table — turn ${i + 1}`),
   );
-  await page.goto(
-    `${stack.webUrl}/dm/${grown.employeeId}/${grown.conversationId}/focus`,
-  );
+  await skipFirstRun(page);
+  await page.goto(threadUrl(stack.webUrl, grown.conversationId, true));
   const turns = page.locator("[data-agentturn]");
   await expect(turns).toHaveCount(TURNS, { timeout: 60_000 });
   /* Settled, not mid-flight — the last turn's card shows its answer tail

@@ -11,6 +11,7 @@ import { connectApproved } from "../lib/connect";
 import { folders, refreshFolders } from "../lib/folders";
 import { hostEditors, type OsEditor } from "../lib/host";
 import {
+  engine as engineClient,
   engineModels,
   engineProviders,
   modelVisibility,
@@ -21,7 +22,13 @@ import {
   refreshScheduledTasks,
   watchSchedules,
 } from "../lib/schedules";
-import { aboutLines, defaultAccess, defaultEditor } from "../settings/state";
+import {
+  aboutLines,
+  defaultAccess,
+  defaultEditor,
+  enginePolicyOf,
+  enginePolicyPick,
+} from "../settings/state";
 import { modelLabel, modelRows } from "./models";
 import {
   deviceOf,
@@ -83,6 +90,14 @@ function build(): Slice {
     versions: status.result?.versions,
   });
 
+  /* The engine's own policy shows only while it declares `approval_policy`. */
+  const policy = enginePolicyOf(
+    engineClient.description
+      .get()
+      ?.capabilities.find((c) => c.id === "approval_policy"),
+    enginePolicyPick.get(),
+  );
+
   const connectRows = status.result?.connect;
   const connect =
     connectRows === undefined
@@ -118,6 +133,7 @@ function build(): Slice {
   return {
     settings: {
       approvals: defaultAccess.get(),
+      ...(policy ? { enginePolicy: policy } : {}),
       ...(editor && editors
         ? { editor: editor.name, editors: editors.map((e) => e.name) }
         : {}),
@@ -160,7 +176,7 @@ const INITIAL: Slice = {
   settings: {
     approvals: "ask",
     models: [],
-    engine: { name: "Engine", state: "starting" },
+    engine: { name: "Engine", unnamed: true, state: "starting" },
     relay: { state: "starting" },
   },
   devices: [],
@@ -182,6 +198,8 @@ onMount(slice, () => {
     $scheduledTasks,
     defaultAccess,
     defaultEditor,
+    enginePolicyPick,
+    engineClient.description,
     modelVisibility,
     engineModels,
     engineProviders,

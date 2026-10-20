@@ -2,6 +2,17 @@
    Work, Goals) in a calm, Notion-like layout. Every row answers who holds it,
    what state it is in, since when, and what it waits on. Not wire types. */
 
+import type {
+  AttachedFile,
+  ConversationAccess,
+  FileMention,
+  ModelChoice,
+  ModelOption,
+  ModelProvider,
+  ModelVisibility,
+  SlashItem,
+} from "../types";
+
 /** The one status vocabulary every screen shares. Colour is reserved for it. */
 export type V3Status =
   | "working"
@@ -56,7 +67,24 @@ export type V3Agent = {
      spend, memory, week) is absent, and the agent page hides that part
      instead of showing a made-up value. */
   runtime?: string;
+  /** The engine profile the agent runs on (its id on the engine), where the
+     app knows it. Persona, memory and skills live in that profile. */
+  profile?: string;
   model: string;
+  /** The model's id on the engine, where `model` (the label) names one: the
+     new-chat picker starts on it with its own effort. Absent: the engine's
+     default model. */
+  modelId?: string;
+  /** Your newest chat with this agent, by when it began: where it ran (absent
+     = in no folder) and the first message you wrote, as you wrote it. The new
+     chat starts in the same folder, and ↑ in its empty box brings the message
+     back. Absent: no chat yet. */
+  lastChat?: { folder?: string; opener?: string };
+  /** What the agent is for, in a line: the engine profile's description,
+     where the engine lets the app write one. Absent: none set. */
+  description?: string;
+  /** Notifications switched off for this agent (banners and pushes alike). */
+  muted?: boolean;
   schedule?: string;
   skills?: string[];
   /** Dollars spent this period, and the cap. */
@@ -68,6 +96,36 @@ export type V3Agent = {
   week?: { done: number; typical: string; stuck: number; handed: number };
   /** Idle agents: what wakes them next. */
   next?: string;
+};
+
+/** An edit to an agent: only the fields present are written. `muted` is
+   notifications switched off; `confirmModel` re-sends a model the engine held
+   back for a confirm. */
+export type V3AgentPatch = {
+  name?: string;
+  role?: string;
+  description?: string;
+  model?: string;
+  instructions?: string;
+  muted?: boolean;
+  confirmModel?: boolean;
+};
+
+/** An engine profile as the engine reports it: a persona with a model and
+   skills that exists on the engine whether or not anyone is hired on it. The
+   Hire page offers the ones no agent runs yet. */
+export type V3Profile = {
+  /** The profile's id on the engine; an agent's `profile` names it. */
+  id: string;
+  /** The name the engine shows for it. */
+  name: string;
+  /** What the engine says it is for, in a line, if it says. */
+  description?: string;
+  /** Its own model, as the pickers label it; absent when it sets none. */
+  model?: string;
+  skills: number;
+  /** Its persona text, if the engine describes it. */
+  soul?: string;
 };
 
 export type V3Project = {
@@ -187,8 +245,9 @@ export type V3Turn = {
   /** "asked by CEO at 11:52". */
   from: string;
   took: string;
-  /** The message that started the turn. `by` is an agent id or "you". */
-  prompt?: { by: string; at: string; text: string };
+  /** The message that started the turn. `by` is an agent id or "you";
+     `files` are what you attached to it (text may then be empty). */
+  prompt?: { by: string; at: string; text: string; files?: AttachedFile[] };
   /** Folded turns show this line instead of their steps. */
   summary?: string;
   facts?: string;
@@ -258,6 +317,19 @@ export type V3Thread = {
   workbench?: V3Workbench;
   /** The last Rewind on this thread, shown as a quiet line in the chat. */
   rewound?: { dropped: number; files: boolean };
+};
+
+/** One message that matched a ⌘K search. The thread's title and whether it
+   is archived come from `data.threads` / `data.archivedThreads`. */
+export type V3MessageHit = {
+  messageId: string;
+  threadId: string;
+  /** Who wrote it: an agent id, "you", or "system" (a note LilOS itself wrote). */
+  by: string;
+  at: string;
+  /** An excerpt with `<mark>` around the matched words. Parsed back into
+     elements, never set as HTML. */
+  snippet: string;
 };
 
 /** A thread's Workbench: the same folder the agent works in, seen from
@@ -391,6 +463,11 @@ export type V3Settings = {
   };
   /** Ask before risky commands, or let agents run anything. */
   approvals: "ask" | "full";
+  /** The engine's own approval policy, under the default above: smart runs
+     routine steps and asks for risky ones, manual asks every time, off never
+     asks. Absent: this engine has no such setting, so there is nothing to
+     choose. Written through `saveSettings({ enginePolicy })`. */
+  enginePolicy?: "smart" | "manual" | "off";
   /** Where "Open in editor" goes (its name). Absent: no editor found. */
   editor?: string;
   /** Editors this Mac has, by name; absent: nothing to choose. */
@@ -400,6 +477,9 @@ export type V3Settings = {
   models: { id: string; label: string; on: boolean; group?: string }[];
   engine: {
     name: string;
+    /** True while `name` is only a placeholder: the engine has not said who
+       it is yet. Absent: `name` is the engine's own. */
+    unnamed?: boolean;
     /** Absent until the engine has said. */
     version?: string;
     /** ok · missing: not installed · old: below the minimum version ·
@@ -504,6 +584,10 @@ export type V3Data = {
   goals: V3Goal[];
   tickets: V3Ticket[];
   threads: V3Thread[];
+  /** Threads put away, newest first. They are not in `threads`, so Live, the
+     sidebar and every agent's page forget them; Threads → All lists them
+     under "Archived", where they unarchive. Absent: the app has no archive. */
+  archivedThreads?: V3Thread[];
   asks: V3Ask[];
   updates: V3Update[];
   schedules: V3Schedule[];
@@ -515,12 +599,44 @@ export type V3Data = {
   /** Models the new-chat and hire pickers offer, as the picker shows them
      (the app turns a pick back into a real model when it acts on it). */
   modelChoices: string[];
+  /** What the app may write on an agent's page, beyond name, role and
+     notifications (which it always can when it can edit at all): the engine
+     lists the profile fields it accepts. Absent or empty: only those three. */
+  agentFields?: ("description" | "model" | "instructions")[];
   /** Openers a new chat offers as one-click prompts. Absent: none (the
      real app has no source for them yet). */
   starters?: string[];
   /** Folders a new chat can work in when the company has no projects yet:
-     the app's recent folders. Absent = no folder choice. */
-  folders?: { path: string; label: string }[];
+     the app's recent folders. Absent = no folder choice. Unreachable folders
+     are left out. The draft opens on the folder of the agent's `lastChat`,
+     or on "No folder" when that chat had none. */
+  folders?: {
+    path: string;
+    label: string;
+    /** The repo's checked-out branch; `null` = not a git repo (the box then
+       says "direct · no git"); absent = not known, nothing is said. */
+    branch?: string | null;
+  }[];
+  /** The model picker the new-chat box shows instead of the plain model menu:
+     the engine's whole catalog with each model's effort ladder and Fast tier,
+     what the engine runs by default, and what Edit models has hidden (the
+     picker applies it). Absent: the plain menu over `modelChoices`. */
+  modelCatalog?: {
+    options: ModelOption[];
+    defaultModel?: string;
+    defaultProvider?: string;
+    providers?: ModelProvider[];
+    visibility?: ModelVisibility;
+    /** The engine can re-read its catalog (`refreshModels`). */
+    refreshable?: boolean;
+  };
+  /** The app starts a chat on the access you pick (Ask / Full access): the
+     new-chat box shows the pill, starting on `settings.approvals`. Absent: no
+     pill; the chat opens on that default. */
+  chatAccess?: boolean;
+  /** What a message may carry (the wire's caps). Absent = the app sends no
+     files: the new-chat draft draws no attach control. */
+  attachLimits?: { maxFileBytes: number; maxFiles: number };
   settings: V3Settings;
   /** The company is set up; false shows the first-run welcome. */
   setUp: boolean;
@@ -585,14 +701,43 @@ export type V3Actions = {
   /** Opens a new chat thread with an agent and returns its id, so the caller
      can show it where the draft was. Resolves undefined when the chat could
      not start (the app has already said why); the draft stays. `folder` is a
-     path from `data.folders`, for a company without projects. */
+     path from `data.folders`, for a company without projects; absent when
+     "No folder" was chosen (a chat with no working folder). `files` are what
+     was attached (bytes as data URLs, like the chat composer's); `text` may
+     then be empty. */
   startChat: (chat: {
     agentId: string;
     projectId?: string;
     folder?: string;
     model: string;
+    /** What the model picker chose (model, provider, effort, Fast), when the
+       app offers one (`data.modelCatalog`); `model` is then only its label. */
+    pick?: ModelChoice;
+    /** The access level the chat opens on, when the app offers the pill. */
+    access?: ConversationAccess;
     text: string;
+    files?: AttachedFile[];
   }) => Promise<string | undefined>;
+  /** Files and folders of `folder` matching what follows an `@` in a new
+     chat's box. Absent: `@` offers people only. */
+  searchFiles?: (folder: string, query: string) => Promise<FileMention[]>;
+  /** The engine's commands and skills matching what follows a leading `/` in
+     a new chat's box, for this agent (and folder, if one is chosen). Absent:
+     `/` stays plain text. */
+  searchCommands?: (
+    scope: { agentId: string; folder?: string },
+    query: string,
+  ) => Promise<SlashItem[]>;
+  /** Writes the Edit models list the model picker offers (the app persists
+     it). Absent: the picker has no Edit models. */
+  setModelVisibility?: (v: ModelVisibility) => void;
+  /** Re-reads the engine's model catalog; rejects when it failed (the app has
+     already said why). Present only where `modelCatalog.refreshable`. */
+  refreshModels?: () => Promise<void>;
+  /** Opens the app's Add a folder dialog; once a folder is added (and is in
+     `data.folders`) `onAdded` gets its path. Closing the dialog says nothing.
+     Absent: the folder menu only offers the folders it has. */
+  addFolder?: (onAdded: (path: string) => void) => void;
   markSeen: (threadId: string) => void;
   /** Hires an agent and returns its id, so the Hire page can open it. Rejects
      when the hire failed (the app has already said why). Absent while the
@@ -602,10 +747,39 @@ export type V3Actions = {
     role: string;
     model: string;
   }) => Promise<string>;
+  /** The engine's profiles, read fresh each time the Hire page opens so one
+     made or freed elsewhere shows up. Absent where the engine cannot list
+     them: the Hire page then has no second section. */
+  listProfiles?: () => Promise<V3Profile[]>;
+  /** Hires an agent onto an engine profile that already exists: the agent
+     keeps the profile's own persona and model (the engine owns them) and the
+     profile is never changed. Resolves with the new agent's id; rejects when
+     the hire failed (the app has already said why). Absent while the engine
+     cannot create agents. */
+  hireProfile?: (agent: {
+    profile: string;
+    name: string;
+    role: string;
+  }) => Promise<string>;
   /** Starts a ⌘K draft plan: its tickets (and the threads that can start now). */
   startPlan?: (plan: Extract<V3Draft, { kind: "plan" }>, text: string) => void;
   /** Moves the CEO position to this agent; everyone else reports to it. */
   makeCeo?: (agentId: string) => void;
+  /** Saves what changed on an agent: only the fields in `patch` are written.
+     Resolves with `confirmModel` (the engine's words) when the engine held a
+     new model back until it is confirmed; everything else in the patch is
+     already saved then, and the model is sent again with `confirmModel: true`
+     once you agree. Rejects when nothing could be saved (the app has already
+     said why). Absent where the app cannot edit agents. */
+  updateAgent?: (
+    id: string,
+    patch: V3AgentPatch,
+  ) => Promise<{ confirmModel?: string } | undefined>;
+  /** Takes an agent off the team, and with it its threads and scheduled jobs;
+     tickets it owned stay and read "Former agent". The engine's own profile
+     is never touched. Rejects when it could not be removed (the app has
+     already said why). Absent where the app cannot. */
+  removeAgent?: (id: string) => Promise<void>;
   /** Turns a connector on or off for one agent's sessions. */
   toggleConnector?: (connectorId: string, agentId: string) => void;
   addConnector?: (c: {
@@ -642,6 +816,10 @@ export type V3Actions = {
   /** Re-reads the relay and engine; resolves when the answer is in
      `settings.relay` / `settings.engine`. Absent: no Check again. */
   checkEngine?: () => Promise<void>;
+  /** Opens the app's system status (relay → harness → engine → model, one
+     line each, with the diagnostics to copy) over whatever is on screen.
+     Absent where the app has no such view. */
+  showStatus?: () => void;
   /** Asks the shell's updater; resolves with what it found, in words.
      Absent where the app cannot update itself (the web build). */
   checkUpdates?: () => Promise<string>;
@@ -663,6 +841,16 @@ export type V3Actions = {
   /** Leaves first run for now (Settings can fix what blocked it). Absent in
      the prototype, where there is nothing to be stuck on. */
   skipSetup?: () => void;
+  /** Renames a thread in place (an empty title is not a rename). Absent: the
+     app cannot, and no title is editable. */
+  renameThread?: (threadId: string, title: string) => void;
+  /** Puts a thread away (`true`: it leaves Live and Recent for Threads →
+     All → Archived) or brings it back. Absent: no archive controls. */
+  archiveThread?: (threadId: string, archived: boolean) => void;
+  /** ⌘K's message search: what people and agents said, newest relevance
+     first. Rejects when the search failed (the app has already said why).
+     Absent: ⌘K finds people, threads and records only. */
+  searchMessages?: (query: string) => Promise<V3MessageHit[]>;
   /** Opens the ⌘K palette, optionally prefilled. */
   ask: (text?: string) => void;
 };

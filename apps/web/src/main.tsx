@@ -14,8 +14,9 @@ import {
 import { App } from "./v3/root";
 
 /* The real app's entry. D-#3 web stack: React 19 + Vite + Tailwind v4 +
-   shadcn (base-nova) + AI Elements (mandatory) + TanStack Router +
-   nanostores. Not: Next.js. Its screens come from packages/ui, accepted in
+   shadcn (base-nova) + AI Elements (mandatory) + nanostores; navigation is
+   the v3 hash nav (v3/nav.ts), no router library. Not: Next.js. Its screens
+   come from packages/ui, accepted in
    prototype/ first (D-#3: the prototype is the UI source of truth; a UI
    change lands there, the owner accepts it, then it is wired here). Not: UI
    hand-copied into this app. */

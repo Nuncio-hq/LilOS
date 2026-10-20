@@ -8,6 +8,10 @@ import {
   panelIntoFocus,
   pickPorts,
   type Stack,
+  skipFirstRun,
+  startChat,
+  startChatInFolder,
+  v3Sidebar,
 } from "./helpers/stack";
 
 /**
@@ -40,93 +44,28 @@ test.describe.configure({ mode: "serial" });
 
 /* ------------------------------------------------------------------ */
 
-async function dmDefault(page: Page) {
-  await page.goto(`${stack.webUrl}/`);
-  const aside = page.locator("aside");
-  await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
-    timeout: 30_000,
-  });
-  const dmBtn = page.getByRole("button", {
-    name: /open dm|set up later|message/i,
-  });
-  if (
-    await dmBtn
-      .first()
-      .isVisible()
-      .catch(() => false)
-  ) {
-    await dmBtn.first().click();
-  } else {
-    await aside.getByRole("button", { name: /default/i }).click();
-  }
-  await expect(page).toHaveURL(/\/dm\//);
-}
-
-const send = async (page: Page, text: string) => {
-  const box = page.locator("textarea").last();
-  await box.fill(text);
-  await box.press("Enter");
-};
+/* A new chat with the seeded Default employee: the draft beside Threads, then
+   the thread in the side peek. An id that names nobody opens the draft on the
+   default agent. */
+const DEFAULT_AGENT = { id: "default", name: "Default" };
 
 /** Every plan/tasks card in the thread (data-plan carries the planId). */
 const planCards = (page: Page) => page.locator("[data-plan]");
 const lastCard = (page: Page) => planCards(page).last();
 
-const pickerButton = (page: Page) => page.locator('[data-ws="folder"]');
-
-/** Pick `dir` for the next session (same helper as ac-114): the workbench
-   only exists when the conversation has a folder (D-#19). */
-async function pickFolder(page: Page, dir: string) {
-  const menu = await (async () => {
-    await pickerButton(page).click();
-    return page
-      .locator('[role="menu"], [data-slot="dropdown-menu-content"]')
-      .last();
-  })();
-  /* Recents fill async (folders.list + probe) — a plain isVisible() races
-     them and falls into the dialog, where re-adding a known path keeps the
-     button disabled forever. Wait for the row before deciding. */
-  const recent = menu.locator(`[data-wsfolder="${dir}"]`).first();
-  const hit = await recent
-    .waitFor({ state: "visible", timeout: 10_000 })
-    .then(() => true)
-    .catch(() => false);
-  if (hit) {
-    await recent.click();
-  } else {
-    await menu.getByText("Add a folder").click();
-    const dialog = page.locator("[data-addfolder]");
-    await expect(dialog).toBeVisible();
-    await dialog.locator("[data-pathinput]").fill(dir);
-    await expect(dialog.locator("[data-folderinfo]")).toBeVisible({
-      timeout: 15_000,
-    });
-    await dialog.locator("[data-addbtn]").click();
-    await expect(dialog).toHaveCount(0);
-  }
-  await expect(pickerButton(page)).toContainText(path.basename(dir), {
-    timeout: 15_000,
-  });
-}
-
-/** A fresh conversation carrying prompt `text`, opened into Focus. Pass
-   `folder` to bind the session's folder (workbench needs one). */
+/** A fresh conversation carrying prompt `text`, opened into the session view
+   (a widened thread). Pass `folder` to bind the session's folder (the
+   workbench needs one). */
 async function openSession(
   page: Page,
   text: string,
   folder?: string,
 ): Promise<Locator> {
-  await page.addInitScript(() => localStorage.setItem("lilos-onboarded", "1"));
-  await page.goto(`${stack.webUrl}/`);
-  await page
-    .getByRole("button", { name: /default/i })
-    .first()
-    .click();
-  if (folder) await pickFolder(page, folder);
-  await send(page, text);
-  /* #577: a send lands on the DM list with the thread in the panel; these
-     helpers assert Focus-era affordances, so step in via the panel's
-     button (the only way in). */
+  await skipFirstRun(page);
+  if (folder) await startChatInFolder(page, stack, DEFAULT_AGENT, folder, text);
+  else await startChat(page, stack.webUrl, DEFAULT_AGENT, text);
+  /* #577: a send lands on the thread in the side peek; these helpers assert
+     Focus-era affordances, so widen it into the session view. */
   await panelIntoFocus(page);
   const card = lastCard(page);
   await expect(card).toBeVisible({ timeout: 60_000 });
@@ -135,11 +74,16 @@ async function openSession(
 
 test("AC-1 a task list ticks live and reload restores it", async ({ page }) => {
   test.setTimeout(120_000);
-  await dmDefault(page);
+  await skipFirstRun(page);
   /* `plan: slow` (same script, ~1.5s/item) keeps an in_progress step
      observable — at the fast pace the list can complete before the card's
      first poll on a loaded runner. */
-  await send(page, "plan: slow — sweep the readme");
+  await startChat(
+    page,
+    stack.webUrl,
+    DEFAULT_AGENT,
+    "plan: slow — sweep the readme",
+  );
   const card = lastCard(page);
   await expect(card).toBeVisible({ timeout: 60_000 });
   await expect(card).toHaveAttribute("data-planstatus", "approved");
@@ -160,20 +104,24 @@ test("AC-1 a task list ticks live and reload restores it", async ({ page }) => {
 
 test("AC-2 stop mid-turn cancels the in-flight items", async ({ page }) => {
   test.setTimeout(120_000);
-  await dmDefault(page);
+  await skipFirstRun(page);
   /* `plan: slow` paces the same list with a ~1.5s hold per item — the
      interrupt lands mid-list deterministically (a fast `plan: tasks` can
      finish between the in_progress render and ⌘. on a loaded runner). */
-  await send(page, "plan: slow — a list to interrupt");
+  await startChat(
+    page,
+    stack.webUrl,
+    DEFAULT_AGENT,
+    "plan: slow — a list to interrupt",
+  );
   const card = lastCard(page);
   await expect(card).toBeVisible({ timeout: 60_000 });
   await expect(
     card.locator('[data-planstep="in_progress"]').first(),
   ).toBeVisible({ timeout: 30_000 });
   /* ⌘. in the session's composer interrupts the running turn (#576: Esc
-     is close-only). The send landed on the panel (#577): the home
-     composer's ⌘. is a no-op, the panel thread composer is the one wired
-     to stop. */
+     is close-only). The send landed in the peek's thread panel (#577): that
+     composer is the one wired to stop. */
   const box = page.locator("[data-thread-panel] textarea").last();
   await box.click();
   await page.keyboard.press("Meta+Period");
@@ -199,12 +147,12 @@ test("AC-3 a proposed plan asks Approve / Change… / Reject and counts in the s
   await expect(card.getByRole("button", { name: "Approve" })).toBeVisible();
   await expect(card.getByRole("button", { name: "Change…" })).toBeVisible();
   await expect(card.getByRole("button", { name: "Reject" })).toBeVisible();
-  // The session reads "needs you" in the sidebar like an approval (AC-3).
-  // Focus has no sidebar (#246) — back to the panel, which shows the card too.
-  await page.getByTitle("Back to DM").click();
-  await expect(page.locator("[data-badge-approvals]")).toBeVisible({
-    timeout: 30_000,
-  });
+  // The session reads "needs you" in the sidebar like an approval (AC-3):
+  // the v3 sidebar stays beside the session view and counts it on its
+  // "Needs you" row.
+  await expect(
+    v3Sidebar(page).getByRole("button", { name: /^Needs you\s*[1-9]\d*$/ }),
+  ).toBeVisible({ timeout: 30_000 });
   await page.screenshot({ path: `${SHOTS}/ac-3-plan-ask.png` });
   // Park it approved so the next serial test's session starts clean.
   await card.getByRole("button", { name: "Approve" }).click();
@@ -241,7 +189,7 @@ test("AC-4 approve ticks the steps; reject stops it; change yields v2 and folds 
   // v1 folds "Replaced by v2".
   const card = await openSession(page, "plan: propose — v1 change");
   await card.getByRole("button", { name: "Change…" }).click();
-  const box = page.locator("main textarea").last();
+  const box = page.locator("[data-thread-panel] textarea").last();
   await expect(box).toHaveValue("Change the plan: ", { timeout: 15_000 });
   await box.fill("Change the plan: skip the banner step");
   await box.press("Enter");
@@ -265,14 +213,9 @@ test("AC-4 approve ticks the steps; reject stops it; change yields v2 and folds 
 /** A fresh conversation without a plan expectation — waits for the turn to
    settle on the reply text, not for a card. */
 async function openPlain(page: Page, text: string, folder?: string) {
-  await page.addInitScript(() => localStorage.setItem("lilos-onboarded", "1"));
-  await page.goto(`${stack.webUrl}/`);
-  await page
-    .getByRole("button", { name: /default/i })
-    .first()
-    .click();
-  if (folder) await pickFolder(page, folder);
-  await send(page, text);
+  await skipFirstRun(page);
+  if (folder) await startChatInFolder(page, stack, DEFAULT_AGENT, folder, text);
+  else await startChat(page, stack.webUrl, DEFAULT_AGENT, text);
   await panelIntoFocus(page);
   await expect(page.getByText(/Short answer/)).toBeVisible({
     timeout: 60_000,
@@ -295,7 +238,7 @@ test("AC-5 the Workbench Plan tab shows the current plan and earlier versions; h
   // A change→v2 session lists v1 in the panel's earlier versions.
   const card = await openSession(page, "plan: propose — tab history", wbDir);
   await card.getByRole("button", { name: "Change…" }).click();
-  const box = page.locator("main textarea").last();
+  const box = page.locator("[data-thread-panel] textarea").last();
   await box.fill("Change the plan: tighten the retry cap");
   await box.press("Enter");
   const v2 = lastCard(page);

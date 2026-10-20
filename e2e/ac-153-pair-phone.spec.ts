@@ -3,12 +3,15 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { bootStack, pickPorts } from "./helpers/stack";
+import { bootStack, pickPorts, skipFirstRun, v3Sidebar } from "./helpers/stack";
 
 /**
  * Issue #153 — Pair phone in the real app (relay + harness + vite,
- * engine-fake). The Tailscale probe is env-seamed: the stack either points
- * LILOS_TAILSCALE_BIN at a missing binary (dialog must say Tailscale is off)
+ * engine-fake). v3: it lives in Settings → Phone (`#?page=settings&view=phone`):
+ * "Pair a phone" mints the offer and draws the QR + the code to type in the
+ * pane itself (no dialog); paired phones list below it. The Tailscale probe
+ * is env-seamed: the stack either points
+ * LILOS_TAILSCALE_BIN at a missing binary (pane must say Tailscale is off)
  * or pins a fake tailnet identity via LILOS_RELAY_TAILSCALE_* (a real second
  * bind on this machine's LAN address stands in for the CGNAT IP). The phone
  * leg is the real HTTP exchange endpoint — no fake scan. Screenshots land in
@@ -43,19 +46,28 @@ function watchConsole(page: Page) {
   return errors;
 }
 
-/** The app only offers the sidebar after onboarding — skip the gate. */
-async function openApp(page: Page, webUrl: string) {
-  await page.addInitScript(() => localStorage.setItem("lilos-onboarded", "1"));
+/** Past first run, then Settings → Phone the way a person gets there. */
+async function openPhonePane(page: Page, webUrl: string) {
+  await skipFirstRun(page);
   await page.goto(`${webUrl}/`);
-  await expect(
-    page.locator("aside").getByRole("button", { name: /Default/ }),
-  ).toBeVisible({ timeout: 30_000 });
+  await v3Sidebar(page)
+    .getByRole("button", { name: /Default/ })
+    .waitFor({ timeout: 30_000 });
+  await v3Sidebar(page).getByRole("button", { name: "Settings" }).click();
+  await page.getByRole("button", { name: "Phone", exact: true }).click();
+  await expect(page).toHaveURL(/[#?&]view=phone(&|$)/);
 }
 
-const openPairPhone = async (page: Page) => {
-  await page.locator("[data-pairphone-open]").click();
-  return page.locator("[data-pairphone]");
-};
+const pairButton = (page: Page) =>
+  page.getByRole("button", { name: "Pair a phone" });
+const qr = (page: Page) =>
+  page.getByRole("img", { name: "Pairing code to scan with your iPhone" });
+/** The value beside an "Address" / "Code" label in the pairing card. */
+const pairValue = (page: Page, label: "Address" | "Code") =>
+  page
+    .getByText(label, { exact: true })
+    .locator("xpath=following-sibling::span[1]");
+const expiry = (page: Page) => page.getByText(/Works once|code expired/);
 
 test.describe.configure({ timeout: 120_000 });
 
@@ -68,11 +80,10 @@ test("AC-1/AC-6 Tailscale down → Pair phone says so, no QR", async ({
   });
   try {
     const errors = watchConsole(page);
-    await openApp(page, stack.webUrl);
-    const dialog = await openPairPhone(page);
-    await expect(dialog).toHaveAttribute("data-pairphone", "no-remote");
+    await openPhonePane(page, stack.webUrl);
+    await pairButton(page).click();
     await expect(page.getByText("Turn on Tailscale first")).toBeVisible();
-    await expect(page.locator("[data-pairqr]")).toHaveCount(0);
+    await expect(qr(page)).toHaveCount(0);
     await page.screenshot({ path: path.join(SHOTS, "1-no-tailscale.png") });
     expect(errors).toEqual([]);
   } finally {
@@ -91,29 +102,25 @@ test("AC-2/AC-4/AC-6 grant shows a QR, exchange pairs, revoke drops it", async (
   });
   try {
     const errors = watchConsole(page);
-    await openApp(page, stack.webUrl);
-    const dialog = await openPairPhone(page);
-    await expect(dialog).toHaveAttribute("data-pairphone", "ready");
+    await openPhonePane(page, stack.webUrl);
+    await expect(page.getByText("No phone paired yet")).toBeVisible();
+    await pairButton(page).click();
 
     // QR encodes the fragment-carried grant; the offer rows show it chunked.
-    await expect(page.locator("[data-pairqr] svg")).toBeVisible();
-    const address = await page
-      .locator('[data-pair-value="Address"]')
-      .innerText();
-    const shownCode = await page
-      .locator('[data-pair-value="Code"]')
-      .innerText();
+    await expect(qr(page)).toBeVisible();
+    const address = await pairValue(page, "Address").innerText();
+    const shownCode = await pairValue(page, "Code").innerText();
     // The advertised port is the tailnet listener's — the same config port
     // the loopback listener took.
     expect(address).toBe(`mac.tailnet.test:${new URL(stack.relayWs).port}`);
     expect(shownCode).toMatch(
       /^[2-9A-HJ-NP-Z]{4}-[2-9A-HJ-NP-Z]{4}-[2-9A-HJ-NP-Z]{4}$/,
     );
-    await expect(page.locator("[data-expiry]")).toContainText("Works once");
+    await expect(expiry(page)).toContainText("Works once");
     await page.screenshot({ path: path.join(SHOTS, "2-qr-ready.png") });
 
     // The phone: real HTTP exchange against the tailnet listener, code read
-    // off the dialog exactly as scanned.
+    // off the pane exactly as scanned.
     const tsPort = Number(address.split(":")[1]);
     const exchanged = await fetch(`http://${lan}:${tsPort}/pair/exchange`, {
       method: "POST",
@@ -128,24 +135,31 @@ test("AC-2/AC-4/AC-6 grant shows a QR, exchange pairs, revoke drops it", async (
     );
     expect(exchanged.deviceId).toMatch(/^dev_/);
 
-    // devices.changed flips the open dialog to paired and lists the phone.
-    await expect(dialog).toHaveAttribute("data-pairphone", "paired");
-    await expect(page.getByText("E2E iPhone is paired")).toBeVisible();
-    const row = page.locator("[data-pairphone-device]");
-    await expect(row).toHaveCount(1);
-    await expect(row.first()).toContainText("E2E iPhone");
+    // devices.changed flips the open card to "Paired" and lists the phone.
+    await expect(page.getByText("Paired", { exact: true })).toBeVisible();
+    await expect(page.getByText("E2E iPhone")).toBeVisible();
+    await expect(page.getByText("No phone paired yet")).toHaveCount(0);
     await page.screenshot({ path: path.join(SHOTS, "3-paired.png") });
 
-    // AC-4: Remove → the row disappears and the credential dies.
-    await row.first().locator("[data-pairphone-revoke]").click();
-    await expect(row).toHaveCount(0);
+    // The card shows "Paired", then leaves on its own (a real state change,
+    // not a timer in the spec) — unpairing inside that window would bring the
+    // spent code's QR back (see report).
+    await expect(page.getByText("Paired", { exact: true })).toBeHidden({
+      timeout: 10_000,
+    });
+
+    // AC-4: Unpair (then confirm) → the row disappears and the credential dies.
+    await page.getByRole("button", { name: "Unpair", exact: true }).click();
+    await page.getByRole("button", { name: "Unpair", exact: true }).click();
+    await expect(page.getByText("E2E iPhone")).toHaveCount(0);
+    await expect(page.getByText("No phone paired yet")).toBeVisible();
     expect(errors).toEqual([]);
   } finally {
     await stack.stop();
   }
 });
 
-test("AC-2 dialog refreshes the code after expiry", async ({ page }) => {
+test("AC-2 the pane refreshes the code after expiry", async ({ page }) => {
   const lan = lanAddress();
   test.skip(!lan, "no LAN address for the tailnet-bind stand-in");
   const stack = await bootStack("153ttl", await pickPorts(), {
@@ -154,19 +168,17 @@ test("AC-2 dialog refreshes the code after expiry", async ({ page }) => {
     LILOS_PAIRING_TTL_MS: "2500",
   });
   try {
-    await openApp(page, stack.webUrl);
-    const dialog = await openPairPhone(page);
-    await expect(dialog).toHaveAttribute("data-pairphone", "ready");
-    const first = await page.locator('[data-pair-value="Code"]').innerText();
+    await openPhonePane(page, stack.webUrl);
+    await pairButton(page).click();
+    await expect(qr(page)).toBeVisible();
+    const first = await pairValue(page, "Code").innerText();
 
     // Expiry state: dimmed QR + "New code" — the grant is dead server-side.
-    await expect(page.locator("[data-expiry]")).toContainText("expired", {
-      timeout: 10_000,
-    });
+    await expect(expiry(page)).toContainText("expired", { timeout: 10_000 });
     await page.screenshot({ path: path.join(SHOTS, "4-expired.png") });
-    await page.locator("[data-newcode]").click();
-    await expect(page.locator("[data-expiry]")).toContainText("Works once");
-    const second = await page.locator('[data-pair-value="Code"]').innerText();
+    await page.getByRole("button", { name: "New code" }).click();
+    await expect(expiry(page)).toContainText("Works once");
+    const second = await pairValue(page, "Code").innerText();
     expect(second).not.toBe(first);
     await page.screenshot({ path: path.join(SHOTS, "5-new-code.png") });
   } finally {

@@ -3,11 +3,27 @@ import {
   ClockIcon,
   CoinsIcon,
   CpuIcon,
+  IdCardIcon,
   PlugIcon,
   SparklesIcon,
 } from "lucide-react";
 import { cn } from "../lib/utils";
 import { Connectors, PILL } from "./v3-agent-connectors";
+import {
+  DescriptionField,
+  EditButton,
+  EscLayer,
+  HeldModel,
+  InstructionsField,
+  ModelField,
+  NameField,
+  NotificationsRow,
+  RoleField,
+  SaveButtons,
+  useAgentEditor,
+} from "./v3-agent-edit";
+import { RemoveAgent } from "./v3-agent-remove";
+import { Memory, RuleSuggestion } from "./v3-agent-rules";
 import {
   AgentAvatar,
   Avatar,
@@ -25,15 +41,16 @@ import { agentOf, agentStatus, agentTicket } from "./v3-model";
 import { ThreadRow, TicketRow } from "./v3-rows";
 import { soonestNext } from "./v3-schedule-text";
 import { AgentSchedules } from "./v3-schedules";
-import type { V3ConnectorDef, V3PageProps } from "./v3-types";
+import type { V3Agent, V3ConnectorDef, V3PageProps } from "./v3-types";
 
 /* One agent, like a person's profile in Notion: what it does, what it runs
    on, what it has been plugged into, and how far to trust it this week. An
    outside worker gets the same page minus everything LilOS runs (runtime,
    model, skills, spend, instructions, memory): LilOS only watches it.
    What the app cannot tell (runtime, schedule, skills, spend, memory, week)
-   or cannot change (connectors, rules, the CEO position) is left out, never
-   shown as a made-up value or a dead control. */
+   or cannot change (connectors, rules, the CEO position, editing, removing)
+   is left out, never shown as a made-up value or a dead control. Editing
+   and removing live in v3-agent-edit / v3-agent-remove. */
 
 const STATE_WORD: Record<V3ConnectorDef["state"], string> = {
   ready: "Ready",
@@ -52,13 +69,8 @@ function Stat({ value, label }: { value: string | number; label: string }) {
   );
 }
 
-export function V3AgentPage({
-  data,
-  go,
-  act,
-  id,
-}: V3PageProps & { id: string }) {
-  const agent = agentOf(data, id);
+export function V3AgentPage(props: V3PageProps & { id: string }) {
+  const agent = agentOf(props.data, props.id);
   // The id outlived the agent (fired, or an old link): there is no record to
   // show, and no other agent's page to show in its place.
   if (!agent) {
@@ -70,6 +82,12 @@ export function V3AgentPage({
       </Page>
     );
   }
+  return <AgentView {...props} agent={agent} />;
+}
+
+function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
+  const ed = useAgentEditor(data, agent, act);
+  const draft = ed?.draft;
   const outside = agent.kind === "outside";
   const via = outside
     ? data.connectors.find((c) => c.id === agent.via)
@@ -98,39 +116,74 @@ export function V3AgentPage({
         <div className="min-w-0 flex-1">
           <Title
             kicker={
-              outside
-                ? `Outside worker · via ${via?.label ?? "a connector"}${reportsTo}`
-                : `${agent.role}${reportsTo} · hired ${agent.hired}`
+              outside ? (
+                `Outside worker · via ${via?.label ?? "a connector"}${reportsTo}`
+              ) : draft && ed ? (
+                <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+                  <RoleField ed={ed} draft={draft} />
+                  {`${reportsTo} · hired ${agent.hired}`}
+                </span>
+              ) : (
+                `${agent.role}${reportsTo} · hired ${agent.hired}`
+              )
             }
           >
-            {agent.name}
-            {holdsCeo && <CeoMark className="ml-2.5 align-middle" />}
+            {draft && ed ? (
+              <NameField ed={ed} draft={draft} />
+            ) : (
+              <>
+                {agent.name}
+                {holdsCeo && <CeoMark className="ml-2.5 align-middle" />}
+              </>
+            )}
           </Title>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {!outside && (
-            <Btn onClick={() => go({ page: "newchat", id: agent.id })}>
-              Message
-            </Btn>
-          )}
-          {/* A ticket is drafted through the CEO in ⌘K: tickets only. */}
-          {data.features.tickets && (
-            <Btn primary onClick={() => act.ask(`@${agent.name} `)}>
-              Give a ticket
-            </Btn>
-          )}
-          {!outside && ceo && !holdsCeo && act.makeCeo && (
-            <button
-              type="button"
-              title={`Move the CEO position to ${agent.name}`}
-              onClick={() => act.makeCeo?.(agent.id)}
-              className="h-7 rounded-[7px] px-2 text-[13px] text-muted-foreground transition-colors hover:bg-[var(--v3-hover)] hover:text-foreground"
-            >
-              Make CEO
-            </button>
+          {draft && ed ? (
+            <SaveButtons ed={ed} />
+          ) : (
+            <>
+              {!outside && (
+                <Btn onClick={() => go({ page: "newchat", id: agent.id })}>
+                  Message
+                </Btn>
+              )}
+              {/* A ticket is drafted through the CEO in ⌘K: tickets only. */}
+              {data.features.tickets && (
+                <Btn primary onClick={() => act.ask(`@${agent.name} `)}>
+                  Give a ticket
+                </Btn>
+              )}
+              {!outside && ceo && !holdsCeo && act.makeCeo && (
+                <button
+                  type="button"
+                  title={`Move the CEO position to ${agent.name}`}
+                  onClick={() => act.makeCeo?.(agent.id)}
+                  className="h-7 rounded-[7px] px-2 text-[13px] text-muted-foreground transition-colors hover:bg-[var(--v3-hover)] hover:text-foreground"
+                >
+                  Make CEO
+                </button>
+              )}
+              {ed && <EditButton onClick={ed.start} />}
+            </>
           )}
         </div>
       </div>
+      {/* Esc closes the editing, not the peek behind it. */}
+      {draft && ed && <EscLayer onEscape={ed.cancel} />}
+
+      {draft && ed?.canDescription ? (
+        <div className="mt-1">
+          <DescriptionField ed={ed} draft={draft} />
+        </div>
+      ) : (
+        agent.description && (
+          <p className="mb-1 text-[14.5px] text-muted-foreground leading-relaxed">
+            {agent.description}
+          </p>
+        )
+      )}
+      {ed && <HeldModel ed={ed} />}
 
       <div className="mt-3">
         <Prop icon={<ClockIcon />} label="Now">
@@ -177,8 +230,21 @@ export function V3AgentPage({
                 {agent.runtime}
               </Prop>
             )}
+            {/* Which engine profile the agent runs: its persona, memory and
+               skills live there, not in the company record. */}
+            {agent.profile && (
+              <Prop icon={<IdCardIcon />} label="Profile">
+                <span className="font-mono text-[13px] text-foreground">
+                  {agent.profile}
+                </span>
+              </Prop>
+            )}
             <Prop icon={<SparklesIcon />} label="Model">
-              {agent.model}
+              {draft && ed?.canModel ? (
+                <ModelField ed={ed} draft={draft} choices={data.modelChoices} />
+              ) : (
+                agent.model
+              )}
             </Prop>
           </>
         )}
@@ -226,6 +292,7 @@ export function V3AgentPage({
             )}
           </>
         )}
+        {!outside && <NotificationsRow agent={agent} act={act} />}
       </div>
 
       {outside && (
@@ -272,76 +339,31 @@ export function V3AgentPage({
 
       {!outside && (
         <>
-          {agent.instructions.length > 0 && (
-            <>
-              <Section title="Instructions" />
-              <div className="space-y-2.5 border-[var(--v3-line)] border-l-2 pl-4 text-[14.5px] leading-relaxed text-foreground">
-                {agent.instructions.map((p) => (
-                  <p key={p}>{p}</p>
-                ))}
-              </div>
-            </>
+          {draft && ed?.canInstructions ? (
+            <InstructionsField ed={ed} draft={draft} />
+          ) : (
+            agent.instructions.length > 0 && (
+              <>
+                <Section title="Instructions" />
+                <div className="space-y-2.5 border-[var(--v3-line)] border-l-2 pl-4 text-[14.5px] leading-relaxed text-foreground">
+                  {agent.instructions.map((p) => (
+                    <p key={p}>{p}</p>
+                  ))}
+                </div>
+              </>
+            )
           )}
           {agent.suggestion && ceo && (
-            <div
-              className={cn(
-                agent.instructions.length > 0 ? "mt-3" : "mt-10",
-                "flex items-start gap-2.5 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2.5 text-[13.5px] dark:border-sky-400/25 dark:bg-sky-400/10",
-              )}
-            >
-              <AgentAvatar data={data} agent={ceo} className="mt-px" />
-              <div className="min-w-0 flex-1">
-                <span className="font-semibold text-foreground">
-                  CEO suggests a rule
-                </span>{" "}
-                <span className="text-muted-foreground">
-                  · after {agent.suggestion.after} got stuck
-                </span>
-                <div className="mt-1">
-                  <span className="rounded-[3px] bg-emerald-100 px-1 text-emerald-800 dark:bg-emerald-400/20 dark:text-emerald-200">
-                    {agent.suggestion.text}
-                  </span>
-                </div>
-              </div>
-              {(act.dismissRule || act.acceptRule) && (
-                <div className="flex shrink-0 gap-2">
-                  {act.dismissRule && (
-                    <Btn small onClick={() => act.dismissRule?.(agent.id)}>
-                      Dismiss
-                    </Btn>
-                  )}
-                  {act.acceptRule && (
-                    <Btn
-                      small
-                      primary
-                      onClick={() => act.acceptRule?.(agent.id)}
-                    >
-                      Accept
-                    </Btn>
-                  )}
-                </div>
-              )}
-            </div>
+            <RuleSuggestion
+              data={data}
+              agent={agent}
+              ceo={ceo}
+              act={act}
+              gap={agent.instructions.length > 0 ? "mt-3" : "mt-10"}
+            />
           )}
 
-          {agent.memory && (
-            <>
-              <Section title="Remembers" count={agent.memory.length} />
-              <ul className="border-[var(--v3-line)] border-t text-[14px]">
-                {agent.memory.map((m) => (
-                  <li
-                    key={m.text}
-                    className="flex items-baseline gap-4 border-[var(--v3-line)] border-b py-2 text-foreground"
-                  >
-                    <span className="min-w-0 flex-1">{m.text}</span>
-                    <span className="shrink-0 text-[12.5px] text-muted-foreground/70">
-                      {m.source}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
+          {agent.memory && <Memory memory={agent.memory} />}
         </>
       )}
 
@@ -356,6 +378,12 @@ export function V3AgentPage({
           <ThreadRow key={t.id} data={data} thread={t} go={go} />
         ))}
       </div>
+
+      {/* Quiet and last: taking someone off the team is not what this page is
+          for. The CEO position holder stays until the position moves. */}
+      {!outside && !holdsCeo && (
+        <RemoveAgent data={data} go={go} act={act} agent={agent} />
+      )}
     </Page>
   );
 }

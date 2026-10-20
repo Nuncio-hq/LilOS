@@ -5,15 +5,26 @@ import { expect, type Page, test } from "@playwright/test";
 import {
   bootStack,
   pickPorts,
+  relayRpc,
   type Stack,
   type StackPorts,
+  skipFirstRun,
+  startChat,
+  v3Peek,
 } from "./helpers/stack";
 
 /**
- * Issue #103 — unsent DM drafts are kept per conversation. Each acceptance
+ * Issue #103 — unsent drafts are kept per conversation. Each acceptance
  * criterion is a named test; legs run against the real slice (apps/relay +
- * apps/harness with engine-fake + apps/web dev) on offset ports, plus one
- * AC-7 leg on the prototype webServer (baseURL).
+ * apps/harness with engine-fake + apps/web dev) on offset ports.
+ *
+ * v3: the thread composer in the peek keeps the draft (one key per
+ * conversation, `lilos:composer-draft:conv:<id>`) and so does the new-chat
+ * box beside Threads (one key per agent, `dm:<id>`, the old home composer's):
+ * AC-2 and AC-3 read both. AC-7 is dropped: the prototype's old default
+ * screen is gone.
+ * AC-6 archives from the thread header's ⋯ menu, which is what the pruning
+ * listens to (the `conversation.updated` it broadcasts).
  *
  * Serial: later legs reuse the sessions created earlier. AC-5 kills the
  * relay child to force a send failure, so it runs last among real-app legs.
@@ -38,90 +49,29 @@ test.afterAll(async () => {
 
 test.describe.configure({ mode: "serial" });
 
-const homeComposer = (page: Page) => page.getByPlaceholder(/New thread with/);
-/* The thread composer reads "Reply to …" on the panel and in Focus
-   (#114 lands a send in Focus). */
-const threadComposer = (page: Page) => page.getByPlaceholder(/Reply to /);
+const DEFAULT_AGENT = { id: "default", name: "Default" };
 
-/** Open the app, land on Default's DM (dismissing the first-run card). */
-async function dmDefault(page: Page) {
-  await page.goto(`${stack.webUrl}/`);
-  const aside = page.locator("aside");
-  await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
-    timeout: 30_000,
-  });
-  const dmBtn = page.getByRole("button", {
-    name: /open dm|set up later|message/i,
-  });
-  if (
-    await dmBtn
-      .first()
-      .isVisible()
-      .catch(() => false)
-  ) {
-    await dmBtn.first().click();
-  } else {
-    await aside.getByRole("button", { name: /default/i }).click();
-  }
-  await expect(page).toHaveURL(/\/dm\//);
+/* The thread's reply box in the peek. By textarea, not by placeholder: the
+   placeholder follows the turn ("Reply to…" idle, "…is working" mid-turn) and
+   a draft is typed whatever the turn is doing. */
+const threadComposer = (page: Page) =>
+  v3Peek(page).locator("[data-thread-panel] textarea");
+const newChatBox = (page: Page) =>
+  v3Peek(page).getByPlaceholder("Message Default…");
+
+/** Open a thread from its row on Threads (the page stays behind the peek).
+    Earlier serial legs leave other threads, so match on the title text — the
+    engine may re-case it ("session alpha" → "Session Alpha"). */
+async function openFromList(page: Page, title: RegExp, convId: string) {
+  await page.locator("main").getByRole("button", { name: title }).click();
+  await expect(page).toHaveURL(new RegExp(`open=thread:${convId}`));
+  await expect(threadComposer(page)).toBeVisible({ timeout: 30_000 });
 }
 
-/** Sidebar employee button → their DM home. Focus has no sidebar (#246) —
-    leave it first when the URL is a /focus one. */
-async function openDm(page: Page, name: RegExp | string) {
-  if (page.url().endsWith("/focus")) {
-    await page.getByTitle("Back to DM").click();
-  }
-  await page.locator("aside").getByRole("button", { name }).click();
-  await expect(page).toHaveURL(/\/dm\//);
-}
-
-/** The session row containing `text` — earlier serial legs leave extra
-    sessions, so never click rows positionally. */
-const sessionRowWith = (page: Page, text: string) =>
-  page.locator("[data-session]", { hasText: text });
-
-const convIdFromUrl = (page: Page) =>
-  decodeURIComponent(page.url().split("/dm/")[1].split("/")[1] ?? "");
-
-/** One JSON-RPC call on the relay from inside the page (hello + request). */
-async function relayRpc(
-  page: Page,
-  method: string,
-  params: Record<string, unknown>,
-): Promise<unknown> {
-  const ws = stack.relayWs;
-  const token = stack.relayToken;
-  return await page.evaluate(
-    async ({ ws, token, method, params }) => {
-      const sock = new WebSocket(`${ws}?token=${encodeURIComponent(token)}`);
-      const rpc = (id: number, m: string, p: Record<string, unknown>) =>
-        sock.send(JSON.stringify({ jsonrpc: "2.0", id, method: m, params: p }));
-      return await new Promise((resolve, reject) => {
-        const fail = (e: unknown) => {
-          sock.close();
-          reject(e instanceof Error ? e : new Error(String(e)));
-        };
-        sock.onerror = () => fail(new Error("ws error"));
-        sock.onmessage = (ev) => {
-          const msg = JSON.parse(String(ev.data));
-          if (msg.error) return fail(new Error(msg.error.message));
-          if (msg.id === 1) rpc(2, method, params);
-          else if (msg.id === 2) {
-            sock.close();
-            resolve(msg.result);
-          }
-        };
-        sock.onopen = () =>
-          rpc(1, "session.hello", {
-            protocolVersion: 1,
-            token,
-            client: { name: "e2e-103" },
-          });
-      });
-    },
-    { ws, token, method, params },
-  );
+/** Start a chat with Default; resolves to its conversation id. */
+async function chat(page: Page, text: string): Promise<string> {
+  await skipFirstRun(page);
+  return await startChat(page, stack.webUrl, DEFAULT_AGENT, text);
 }
 
 const draftKeys = (page: Page) =>
@@ -137,55 +87,50 @@ test("AC-1 draft survives switching sessions; each thread keeps its own", async 
   page,
 }) => {
   test.setTimeout(120_000);
-  await dmDefault(page);
-  await homeComposer(page).fill("session alpha");
-  await homeComposer(page).press("Enter");
-  await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+/);
-  const convA = convIdFromUrl(page);
-
+  const convA = await chat(page, "session alpha");
   await threadComposer(page).fill("draft in alpha");
 
   // A second session's composer shows its own draft (empty until typed).
-  await openDm(page, /default/i);
-  await homeComposer(page).fill("session beta");
-  await homeComposer(page).press("Enter");
-  await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+/);
-  const convB = convIdFromUrl(page);
+  const convB = await startChat(
+    page,
+    stack.webUrl,
+    DEFAULT_AGENT,
+    "session beta",
+  );
   expect(convB).not.toBe(convA);
   await expect(threadComposer(page)).toHaveValue("");
 
   await threadComposer(page).fill("draft in beta");
-  // Session rows live on the DM home — Focus replaces it (#114).
-  await openDm(page, /default/i);
-  await sessionRowWith(page, "session alpha")
-    .getByRole("button", { name: /\d+ repl(y|ies)/ })
-    .click();
-  await expect(page).toHaveURL(new RegExp(`/dm/[^/]+/${convA}`));
+  // The session rows live on Threads, beside the peek.
+  await openFromList(page, /session alpha/i, convA);
   await expect(threadComposer(page)).toHaveValue("draft in alpha");
   await page.screenshot({ path: `${SHOTS}/ac-1-draft-restored.png` });
 });
 
-test("AC-2 home composer keeps its own draft, separate from thread drafts", async ({
+test("AC-2 the new-chat box keeps its own draft, separate from thread drafts", async ({
   page,
 }) => {
   test.setTimeout(120_000);
-  await dmDefault(page);
-  await homeComposer(page).fill("home draft");
-  await homeComposer(page).press("Enter");
-  /* #577: the send stays on the DM list with the thread open beside it —
-     the home composer is back at the DM once the panel closes. */
-  await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+$/);
-
+  const conv = await chat(page, "home draft");
   await threadComposer(page).fill("thread draft");
-  await openDm(page, /default/i);
-  await homeComposer(page).fill("next top-level thought");
-  // Both drafts hold their own key — reopening the session restores it.
-  await sessionRowWith(page, "home draft")
-    .getByRole("button", { name: /\d+ repl(y|ies)/ })
-    .click();
-  await expect(threadComposer(page)).toHaveValue("thread draft");
-  await openDm(page, /default/i);
-  await expect(homeComposer(page)).toHaveValue("next top-level thought");
+
+  // The new-chat box has its own key (`dm:<agent>`): it opens empty — the
+  // thread's text does not leak into it — and keeps what is typed there.
+  await page.goto(`${stack.webUrl}/#?page=threads&open=newchat:default`);
+  await expect(newChatBox(page)).toBeVisible({ timeout: 30_000 });
+  await expect(newChatBox(page)).toHaveValue("");
+  await newChatBox(page).fill("next top-level thought");
+
+  // Both drafts hold their own key — reopening the thread restores its own…
+  await page.goto(`${stack.webUrl}/#?page=threads&open=thread:${conv}`);
+  await expect(threadComposer(page)).toHaveValue("thread draft", {
+    timeout: 30_000,
+  });
+  // …and the new chat is as it was left.
+  await page.goto(`${stack.webUrl}/#?page=threads&open=newchat:default`);
+  await expect(newChatBox(page)).toHaveValue("next top-level thought", {
+    timeout: 30_000,
+  });
   await page.screenshot({ path: `${SHOTS}/ac-2-home-vs-thread.png` });
 });
 
@@ -193,29 +138,64 @@ test("AC-3 switching employees keeps each employee's drafts", async ({
   page,
 }) => {
   test.setTimeout(120_000);
-  await dmDefault(page);
-  await relayRpc(page, "employees.create", { name: "Blanca" });
-  await expect(
-    page.locator("aside").getByRole("button", { name: /blanca/i }),
-  ).toBeVisible({ timeout: 15_000 });
+  const convDefault = await chat(page, "hello default");
+  await threadComposer(page).fill("draft for default");
 
-  await homeComposer(page).fill("draft for default");
-  await openDm(page, /blanca/i);
-  await expect(homeComposer(page)).toHaveValue("");
-  await homeComposer(page).fill("draft for blanca");
-  await openDm(page, /default/i);
-  await expect(homeComposer(page)).toHaveValue("draft for default");
-  await openDm(page, /blanca/i);
-  await expect(homeComposer(page)).toHaveValue("draft for blanca");
+  // A second employee's thread starts empty and keeps its own text.
+  const created = await relayRpc<{ employee: { id: string } }>(
+    page,
+    stack,
+    "employees.create",
+    { name: "Blanca" },
+  );
+  const convBlanca = await startChat(
+    page,
+    stack.webUrl,
+    { id: created.employee.id, name: "Blanca" },
+    "hello blanca",
+  );
+  await expect(threadComposer(page)).toHaveValue("");
+  await threadComposer(page).fill("draft for blanca");
+
+  // The new-chat box keeps one draft per employee: Default's text is not
+  // Blanca's, and each is where it was left.
+  const blancaBox = (p: Page) => v3Peek(p).getByPlaceholder("Message Blanca…");
+  await page.goto(`${stack.webUrl}/#?page=threads&open=newchat:default`);
+  await expect(newChatBox(page)).toBeVisible({ timeout: 30_000 });
+  await newChatBox(page).fill("new-chat draft for default");
+  await page.goto(
+    `${stack.webUrl}/#?page=threads&open=newchat:${created.employee.id}`,
+  );
+  await expect(blancaBox(page)).toBeVisible({ timeout: 30_000 });
+  await expect(blancaBox(page)).toHaveValue("");
+  await blancaBox(page).fill("new-chat draft for blanca");
+  await page.goto(`${stack.webUrl}/#?page=threads&open=newchat:default`);
+  await expect(newChatBox(page)).toHaveValue("new-chat draft for default", {
+    timeout: 30_000,
+  });
+  await page.goto(
+    `${stack.webUrl}/#?page=threads&open=newchat:${created.employee.id}`,
+  );
+  await expect(blancaBox(page)).toHaveValue("new-chat draft for blanca", {
+    timeout: 30_000,
+  });
+
+  // Back and forth across the two employees' threads: each text is where it
+  // was left.
+  await page.goto(`${stack.webUrl}/#?page=threads&open=thread:${convDefault}`);
+  await expect(threadComposer(page)).toHaveValue("draft for default", {
+    timeout: 30_000,
+  });
+  await page.goto(`${stack.webUrl}/#?page=threads&open=thread:${convBlanca}`);
+  await expect(threadComposer(page)).toHaveValue("draft for blanca", {
+    timeout: 30_000,
+  });
   await page.screenshot({ path: `${SHOTS}/ac-3-employee-drafts.png` });
 });
 
 test("AC-4 a draft survives a page reload", async ({ page }) => {
   test.setTimeout(120_000);
-  await dmDefault(page);
-  await homeComposer(page).fill("survives reload");
-  await homeComposer(page).press("Enter");
-  await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+/);
+  await chat(page, "survives reload");
   await threadComposer(page).fill("still here after reload");
   await page.reload();
   await expect(threadComposer(page)).toHaveValue("still here after reload", {
@@ -228,11 +208,7 @@ test("AC-6 clearing text drops the draft; archive + remove prune theirs", async 
   page,
 }) => {
   test.setTimeout(150_000);
-  await dmDefault(page);
-  await homeComposer(page).fill("session to archive");
-  await homeComposer(page).press("Enter");
-  await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+/);
-  const convA = convIdFromUrl(page);
+  const convA = await chat(page, "session to archive");
 
   // Delete-all removes the stored draft (no empty entries pile up).
   await threadComposer(page).fill("wip");
@@ -240,63 +216,65 @@ test("AC-6 clearing text drops the draft; archive + remove prune theirs", async 
   await page.waitForTimeout(300);
   expect(await draftKeys(page)).toEqual([]);
 
-  // Archiving a session drops its draft — scope to this leg's session row:
-  // earlier tests' sessions exist on the same serial stack.
+  // Archiving a session drops its draft: archive it from the thread's own
+  // menu; the pruning listens to the `conversation.updated` that broadcasts.
   await threadComposer(page).fill("draft to prune");
-  await openDm(page, /default/i); // the session rows live on the DM home
-  await sessionRowWith(page, "session to archive")
-    .getByRole("button", { name: "Thread actions" })
+  expect((await draftKeys(page)).some((k) => k.endsWith(convA))).toBe(true);
+  await page
+    .locator("[data-thread-panel]")
+    .getByRole("button", { name: "Thread actions", exact: true })
     .click();
   await page.getByRole("menuitem", { name: "Archive thread" }).click();
-  await page.waitForTimeout(500);
-  for (const k of await draftKeys(page)) expect(k.endsWith(convA)).toBe(false);
+  await expect
+    .poll(async () => (await draftKeys(page)).some((k) => k.endsWith(convA)), {
+      timeout: 15_000,
+    })
+    .toBe(false);
   await page.screenshot({ path: `${SHOTS}/ac-6-pruned.png` });
 
-  // Removing an employee drops its home draft (and its threads').
-  await relayRpc(page, "employees.create", { name: "Carmen" });
-  await expect(
-    page.locator("aside").getByRole("button", { name: /carmen/i }),
-  ).toBeVisible({ timeout: 15_000 });
-  await openDm(page, /carmen/i);
-  await homeComposer(page).fill("carmen draft");
-  expect((await draftKeys(page)).length).toBeGreaterThan(0);
-  const listed = (await relayRpc(page, "employees.list", {})) as {
-    employees?: { id: string; name: string }[];
-  };
-  const carmenId = listed.employees?.find((e) => e.name === "Carmen")?.id;
-  expect(carmenId).toBeTruthy();
-  await relayRpc(page, "employees.remove", { id: carmenId });
-  await page.waitForTimeout(500);
-  for (const k of await draftKeys(page))
-    expect(k.endsWith(`:${carmenId}`)).toBe(false);
+  // Removing an employee drops its new-chat draft (`dm:<id>`) and the drafts
+  // of its threads (channel.removed / employee.removed).
+  const created = await relayRpc<{ employee: { id: string } }>(
+    page,
+    stack,
+    "employees.create",
+    { name: "Carmen" },
+  );
+  const carmenId = created.employee.id;
+  const convC = await startChat(
+    page,
+    stack.webUrl,
+    { id: carmenId, name: "Carmen" },
+    "hello carmen",
+  );
+  await threadComposer(page).fill("carmen draft");
+  await page.goto(`${stack.webUrl}/#?page=threads&open=newchat:${carmenId}`);
+  const carmenBox = v3Peek(page).getByPlaceholder("Message Carmen…");
+  await expect(carmenBox).toBeVisible({ timeout: 30_000 });
+  await carmenBox.fill("carmen home draft");
+  const carmenKeys = async () =>
+    (await draftKeys(page)).filter(
+      (k) => k.endsWith(convC) || k.endsWith(`:${carmenId}`),
+    );
+  expect((await carmenKeys()).length).toBe(2);
+  await relayRpc(page, stack, "employees.remove", { id: carmenId });
+  await expect.poll(carmenKeys, { timeout: 15_000 }).toEqual([]);
 });
 
 test("AC-5 sending clears only that draft; a failed send keeps the text", async ({
   page,
 }) => {
   test.setTimeout(150_000);
-  await dmDefault(page);
   // Two sessions, one draft each.
-  await homeComposer(page).fill("session one");
-  await homeComposer(page).press("Enter");
-  await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+/);
-  const convA = convIdFromUrl(page);
+  const convA = await chat(page, "session one");
   await threadComposer(page).fill("alpha draft");
-  await openDm(page, /default/i);
-  await homeComposer(page).fill("session two");
-  await homeComposer(page).press("Enter");
-  await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+/);
-  const convB = convIdFromUrl(page);
+  await startChat(page, stack.webUrl, DEFAULT_AGENT, "session two");
   await threadComposer(page).fill("beta draft");
 
   // Send in B: B clears, A's draft untouched.
   await threadComposer(page).press("Enter");
   await expect(threadComposer(page)).toHaveValue("", { timeout: 30_000 });
-  await openDm(page, /default/i); // Focus → DM home, where the rows are
-  await sessionRowWith(page, "session one")
-    .getByRole("button", { name: /\d+ repl(y|ies)/ })
-    .click();
-  await expect(page).toHaveURL(new RegExp(`/dm/[^/]+/${convA}`));
+  await openFromList(page, /session one/i, convA);
   await expect(threadComposer(page)).toHaveValue("alpha draft");
 
   // A failed send keeps the text: SIGKILL the relay so the client's socket
@@ -312,36 +290,4 @@ test("AC-5 sending clears only that draft; a failed send keeps the text", async 
   await page.waitForTimeout(1_000);
   await expect(threadComposer(page)).toHaveValue("alpha draft");
   await page.screenshot({ path: `${SHOTS}/ac-5-failed-send-kept.png` });
-  void convB;
-});
-
-test("AC-7 prototype shows the same behaviour", async ({ page }) => {
-  await page.goto("/");
-  await page
-    .locator("aside")
-    .first()
-    .getByRole("button", { name: /Builder/ })
-    .click();
-  const home = page.getByPlaceholder(/New thread with Builder/);
-  const thread = page.getByPlaceholder(/Reply to .*…/);
-  await home.fill("prototype session");
-  await home.press("Enter");
-  await expect(thread).toBeVisible({ timeout: 15_000 });
-  await thread.fill("proto draft");
-  // Switch to another employee's DM and back — Builder's draft is still there.
-  await page
-    .locator("aside")
-    .first()
-    .getByRole("button", { name: /Reviewer/ })
-    .click();
-  await expect(page.getByPlaceholder(/New thread with Reviewer/)).toBeVisible({
-    timeout: 15_000,
-  });
-  await page
-    .locator("aside")
-    .first()
-    .getByRole("button", { name: /Builder/ })
-    .click();
-  await expect(thread).toHaveValue("proto draft", { timeout: 15_000 });
-  await page.screenshot({ path: `${SHOTS}/ac-7-prototype.png` });
 });

@@ -4,20 +4,34 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  pickPorts,
+  type Stack,
+  startChatInFolder,
+  startFolderlessChat,
+  threadUrl,
+  v3Peek,
+} from "./helpers/stack";
 
 /**
- * Issue #581 — folders: the new-session pick remembers the last choice
- * (including "No folder"), and a folder-less thread gets a real
- * "Add a folder" that MOVES the session there (same thread, same memory —
- * the engine's session.moveWorkspace runs for real).
+ * Issue #581 — folders: the new-chat folder follows the last session's
+ * choice, and a folder-less thread gets a real "Add a folder" that MOVES the
+ * session there (same thread, same memory — the engine's
+ * session.moveWorkspace runs for real).
  *
- *   AC-1 the new-session folder pick follows the last session's choice,
- *       "No folder" included (it used to silently reselect the repo).
+ *   AC-1 the new-chat Folder chip follows the last folder a session ran in
+ *       (a move counts), "No folder" included, across a reload, and a later
+ *       session in another folder takes over — the pick never sticks on an
+ *       older folder (nor does "No folder" stick once a folder session ran).
  *   AC-2 a folder-less thread shows "Add a folder"; picking one moves the
  *       session there — system note + the affordance is gone after.
  *   AC-3 the Add-folder dialog opens with nothing selected; no dev text,
  *       no promises of unbuilt features.
+ *
+ * v3: the new-chat draft's Folder chip carries the choice ("No folder · just
+ * chat" is its last menu entry); folder-less threads that need no draft
+ * start over the relay (startFolderlessChat).
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
@@ -26,9 +40,8 @@ const SHOTS = path.join(repo, "test-results", "ac-581");
 
 /* Fixture dirs, made once for the file:
    - ROOT/repoDir: a git repo the "Found on this Mac" chips can discover.
-     It sits under ~/repos — one of the picker's always-scanned roots —
-     because the `?roots=` override is captured at boot and loses the race
-     when the app redirects / → /dm before initHost reads location.search.
+     It sits under ~/repos — one of the scan's default roots — so no
+     `?roots=` override is needed.
    - moveDir: under the real $HOME on purpose — moving a live session is
      a host write, gated to inside the Mac's home folder. */
 mkdirSync(path.join(homedir(), "repos"), { recursive: true }); // ~/repos may not exist on a fresh CI runner
@@ -42,6 +55,9 @@ execSync(
 );
 const moveName = path.basename(moveDir);
 const moveShown = `~/${moveName}`;
+const otherDir = path.join(ROOT, "lilos-other-581");
+const otherName = path.basename(otherDir);
+mkdirSync(otherDir);
 /* Discovery answers with collapsePath — a repo under $HOME is the
    `~/x` form in the Found chips, not the absolute path. */
 const repoShown = `~/repos/${path.basename(ROOT)}/lilos-repo-581`;
@@ -59,61 +75,57 @@ test.afterAll(async () => {
 
 test.describe.configure({ mode: "serial" });
 
-async function dmDefault(page: Page) {
-  await page.addInitScript(() => localStorage.setItem("lilos-onboarded", "1"));
-  await page.goto(stack.webUrl);
-  const aside = page.locator("aside");
-  await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
+const panel = (page: Page) => page.locator("[data-thread-panel]");
+
+/** A folder-less thread open beside Threads, its header's "Add a folder"
+    showing. */
+async function openFolderless(page: Page, text: string) {
+  const conv = await startFolderlessChat(page, stack, text);
+  await page.goto(threadUrl(stack.webUrl, conv));
+  await expect(panel(page).locator("[data-add-folder]")).toBeVisible({
     timeout: 30_000,
   });
-  await aside
-    .getByRole("button", { name: /default/i })
-    .first()
-    .click();
-  await expect(page).toHaveURL(/\/dm\//, { timeout: 30_000 });
+  return conv;
 }
 
-const send = async (page: Page, text: string) => {
-  const box = page.locator("main textarea").first();
-  await box.fill(text);
-  await box.press("Enter");
-};
+/** The new-chat draft's Folder chip after a reload — the app reads the
+    recents when it mounts, so a reload is what proves the pick persisted. */
+async function draftFolderChip(page: Page) {
+  await page.goto(`${stack.webUrl}/#?page=threads&open=newchat:default`);
+  await page.reload();
+  const chip = v3Peek(page).getByTitle(/^Folder · /);
+  await expect(chip).toBeVisible({ timeout: 30_000 });
+  return chip;
+}
 
-const PANEL_URL = /\/dm\/[^/]+\/conv_[^/]+$/;
-const DM_URL = /\/dm\/[^/]+$/;
-const panel = (page: Page) => page.locator("[data-thread-panel]");
-const picker = (page: Page) => page.locator('[data-ws="folder"]');
+/** Start a chat from the draft with the Folder chip set to `choice` (a folder
+    name, or "No folder"); then the page is left on the thread. */
+async function chatFromDraft(page: Page, choice: RegExp, text: string) {
+  const chip = await draftFolderChip(page);
+  await chip.click();
+  await v3Peek(page).getByRole("menuitemradio", { name: choice }).click();
+  await expect(chip).toContainText(choice, { timeout: 15_000 });
+  await v3Peek(page).getByPlaceholder("Message Default…").fill(text);
+  await v3Peek(page).getByRole("button", { name: "Send" }).click();
+  await expect(page).toHaveURL(/open=thread:[^&]+/, { timeout: 30_000 });
+  /* The draft opens on the folder of the agent's newest thread by activity:
+     let this one's first turn finish so its answer cannot land after the
+     next chat starts and make an older thread the newest. */
+  await expect(panel(page).locator("[data-turnsettled]").last()).toBeVisible({
+    timeout: 60_000,
+  });
+}
 
-const openPickerMenu = async (page: Page) => {
-  await picker(page).click();
-  return page
-    .locator('[role="menu"], [data-slot="dropdown-menu-content"]')
-    .last();
-};
-
-test("AC-1 the folder pick follows the last session's choice — 'No folder' included", async ({
+test("AC-1 the new-chat folder follows the last session's folder — a move counts, a later session takes over", async ({
   page,
 }) => {
   test.setTimeout(180_000);
-  await dmDefault(page);
+  await openFolderless(page, "folder-less first");
 
-  /* Leg 1 — pick "No folder", send: after reload the pick is still
-     "No folder" (it used to silently reselect the repo). */
-  const menu1 = await openPickerMenu(page);
-  await menu1.getByText("No folder · just chat").click();
-  await expect(picker(page)).toContainText("No folder");
-  await send(page, "folder-less first");
-  await expect(page).toHaveURL(PANEL_URL, { timeout: 30_000 });
-  await panel(page).getByLabel("Close thread panel").click();
-  await expect(page).toHaveURL(DM_URL, { timeout: 15_000 });
-
-  await page.reload();
-  await expect(picker(page)).toContainText("No folder", { timeout: 30_000 });
-
-  /* Leg 2 — add the repo folder and send in it: after reload the pick is
-     the folder again. */
-  const menu2 = await openPickerMenu(page);
-  await menu2.getByText("Add a folder").click();
+  /* Leg 1 — add the repo through the thread's own dialog (the discovered
+     chip → repo card → Add): the session moves there, and the next new
+     chat's pick is that folder, even after a reload. */
+  await panel(page).locator("[data-add-folder]").click();
   const dialog = page.locator("[data-addfolder]");
   await expect(dialog).toBeVisible();
   await expect(dialog.locator(`[data-discovered="${repoShown}"]`)).toBeVisible({
@@ -125,26 +137,46 @@ test("AC-1 the folder pick follows the last session's choice — 'No folder' inc
   });
   await dialog.locator("[data-addbtn]").click();
   await expect(dialog).toHaveCount(0);
-  await expect(picker(page)).toContainText("lilos-repo-581");
-  await send(page, "in the repo now");
-  await expect(page).toHaveURL(PANEL_URL, { timeout: 30_000 });
-  await panel(page).getByLabel("Close thread panel").click();
-  await expect(page).toHaveURL(DM_URL, { timeout: 15_000 });
-  await page.reload();
-  await expect(picker(page)).toContainText("lilos-repo-581", {
+  await expect(panel(page).getByText(/Moved this thread to/)).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(await draftFolderChip(page)).toContainText("lilos-repo-581", {
     timeout: 30_000,
   });
 
-  /* Leg 3 — "No folder" again: the folder session in between must not
-     stick the pick on the repo. */
-  const menu3 = await openPickerMenu(page);
-  await menu3.getByText("No folder · just chat").click();
-  await send(page, "folder-less again");
-  await expect(page).toHaveURL(PANEL_URL, { timeout: 30_000 });
-  await panel(page).getByLabel("Close thread panel").click();
-  await expect(page).toHaveURL(DM_URL, { timeout: 15_000 });
-  await page.reload();
-  await expect(picker(page)).toContainText("No folder", { timeout: 30_000 });
+  /* Leg 2 — a session started in another folder takes the pick over: the
+     repo session in between must not stick it on the repo. (Its own dir:
+     moveDir is AC-2's move target, and an already-attached folder leaves
+     the dialog's Add button disabled.) */
+  await startChatInFolder(
+    page,
+    stack,
+    { id: "default", name: "Default" },
+    otherDir,
+    "in the other folder",
+  );
+  await expect(await draftFolderChip(page)).toContainText(otherName, {
+    timeout: 30_000,
+  });
+  await page.screenshot({ path: `${SHOTS}/ac-1-last-folder-remembered.png` });
+
+  /* Leg 3 — pick "No folder", send: after a reload the pick is still
+     "No folder" (it used to silently reselect the newest folder). */
+  await chatFromDraft(page, /No folder/, "folder-less by choice");
+  await expect(await draftFolderChip(page)).toContainText("No folder", {
+    timeout: 30_000,
+  });
+
+  /* Leg 4 — a folder pick takes the pick back, and "No folder" again after
+     it: the folder session in between must not stick the pick on the folder. */
+  await chatFromDraft(page, new RegExp(otherName), "back in a folder");
+  await expect(await draftFolderChip(page)).toContainText(otherName, {
+    timeout: 30_000,
+  });
+  await chatFromDraft(page, /No folder/, "folder-less again");
+  await expect(await draftFolderChip(page)).toContainText("No folder", {
+    timeout: 30_000,
+  });
   await page.screenshot({ path: `${SHOTS}/ac-1-no-folder-remembered.png` });
 });
 
@@ -152,19 +184,13 @@ test("AC-2 + AC-3 a folder-less thread's 'Add a folder' moves the session there 
   page,
 }) => {
   test.setTimeout(180_000);
-  await dmDefault(page);
 
-  /* A folder-less send (the previous test's last pick is "No folder", and
-     the pick follows it) opens the thread in the panel. */
-  const menu = await openPickerMenu(page);
-  await menu.getByText("No folder · just chat").click();
-  await send(page, "move me somewhere");
-  await expect(page).toHaveURL(PANEL_URL, { timeout: 30_000 });
+  /* A folder-less send opens the thread beside Threads. */
+  await openFolderless(page, "move me somewhere");
   await expect(panel(page)).toBeVisible();
 
   /* AC-2: the affordance is where the folder badge would sit. */
   const addBtn = panel(page).locator("[data-add-folder]");
-  await expect(addBtn).toBeVisible({ timeout: 15_000 });
   await expect(addBtn).toContainText("Add a folder");
   await page.screenshot({ path: `${SHOTS}/ac-2-add-folder-affordance.png` });
   await addBtn.click();

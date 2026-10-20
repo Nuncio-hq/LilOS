@@ -9,6 +9,8 @@ import {
   span,
   Title,
 } from "./v3-bits";
+import { Statuses } from "./v3-guide-bits";
+import { V3GuideToday } from "./v3-guide-today";
 import { ThreadPill } from "./v3-live";
 import {
   agentNameOf,
@@ -19,7 +21,7 @@ import {
   threadsOf,
   ticketOf,
 } from "./v3-model";
-import type { V3PageProps, V3Status } from "./v3-types";
+import type { V3PageProps } from "./v3-types";
 
 /* The explainer: five levels, a hand-off chain, how a thread lives. All
    examples come from live data so the page matches what you see elsewhere. */
@@ -43,29 +45,15 @@ function Flow({ children }: { children: ReactNode }) {
   );
 }
 
-const MEANINGS: { status: V3Status; word?: string; text: string }[] = [
-  { status: "working", text: "An agent is on it right now." },
-  {
-    status: "waiting",
-    text: "Paused on someone else: a teammate, or another ticket.",
-  },
-  {
-    status: "needs",
-    text: "Only you can unblock it: an approval or a question.",
-  },
-  {
-    status: "stuck",
-    text: "It keeps repeating the same step. Stop it or hand it on.",
-  },
-  { status: "idle", text: "Nothing to do until the next ticket or message." },
-  {
-    status: "done",
-    word: "Finished",
-    text: "Delivered. It stays here until you have looked.",
-  },
-];
+export function V3Guide(props: V3PageProps) {
+  return props.data.features.tickets ? (
+    <V3GuideTickets {...props} />
+  ) : (
+    <V3GuideToday data={props.data} go={props.go} />
+  );
+}
 
-export function V3Guide({ data, go }: V3PageProps) {
+function V3GuideTickets({ data, go }: V3PageProps) {
   const ticket = ticketOf(data, EXAMPLE_TICKET);
   const hops = threadsOf(data, EXAMPLE_TICKET);
   const goal = ticket?.goalId ? goalOf(data, ticket.goalId) : undefined;
@@ -226,20 +214,7 @@ export function V3Guide({ data, go }: V3PageProps) {
         <StatusPill status="stuck" />
       </Flow>
 
-      <Section title="Six statuses, colour only for status" />
-      <div className="border-[var(--v3-line)] border-t">
-        {MEANINGS.map((m) => (
-          <div
-            key={m.status}
-            className="grid grid-cols-[150px_minmax(0,1fr)] items-center gap-5 border-[var(--v3-line)] border-b py-2.5 text-[13.5px]"
-          >
-            <span>
-              <StatusPill status={m.status} label={m.word} />
-            </span>
-            <span className="text-muted-foreground">{m.text}</span>
-          </div>
-        ))}
-      </div>
+      <Statuses tickets />
     </Page>
   );
 }

@@ -13,19 +13,24 @@ import { expect, type Page, test } from "@playwright/test";
 import { allowAllWhile, expectSettled } from "./helpers/approvals";
 import {
   bootStack,
+  openSession,
   panelIntoFocus,
   pickPorts,
   type Stack,
+  startChatInFolder,
+  startFolderlessChat,
+  threadUrl,
 } from "./helpers/stack";
 
 /**
- * Issue #114 — Focus mode + Workbench in the real app (apps/web), on the real
- * stack (relay + harness + vite dev, engine-fake): a session opens in the
- * 420px thread panel beside the feed (#195), and the panel's ↗ continues into
- * full-window Focus at /dm/$employeeId/$conversationId/focus; the Workbench's
- * Changes (git.diff), Files (fs.tree/fs.read) and PR (forge.pr/comment/merge)
- * tabs read the session's real folder — here a tmp git repo served by the
- * stateful fake `gh` (packages/host/test/fake-gh) on the stack's PATH.
+ * Issue #114 — the session view + Workbench in the real app (apps/web), on
+ * the real stack (relay + harness + vite dev, engine-fake): a session opens
+ * in the side peek beside Threads (#195), and widening it (the panel's Focus
+ * or the peek's Widen, `full=1` in the hash) is the session view — chat
+ * beside the Workbench, whose Changes (git.diff), Files (fs.tree/fs.read)
+ * and PR (forge.pr/comment/merge) tabs read the session's real folder —
+ * here a tmp git repo served by the stateful fake `gh`
+ * (packages/host/test/fake-gh) on the stack's PATH.
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
@@ -117,68 +122,15 @@ test.afterAll(async () => {
 
 test.describe.configure({ mode: "serial" });
 
-/* `?roots=` lets git.discoverRepos find repoDir, but folders are added through
-   the dialog's path input — deterministic either way. */
-async function dmDefault(page: Page) {
-  await page.goto(`${stack.webUrl}/?roots=${ROOT}`);
-  const aside = page.locator("aside");
-  await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
-    timeout: 30_000,
-  });
-  const dmBtn = page.getByRole("button", {
-    name: /open dm|set up later|message/i,
-  });
-  if (
-    await dmBtn
-      .first()
-      .isVisible()
-      .catch(() => false)
-  ) {
-    await dmBtn.first().click();
-  } else {
-    await aside.getByRole("button", { name: /default/i }).click();
-  }
-  await expect(page).toHaveURL(/\/dm\//);
-}
-
-const pickerButton = (page: Page) => page.locator('[data-ws="folder"]');
-
-/** Pick `dir` for the next session: recents menu when listed, else Add folder. */
-async function pickSessionFolder(page: Page, dir: string) {
-  const menu = await (async () => {
-    await pickerButton(page).click();
-    return page
-      .locator('[role="menu"], [data-slot="dropdown-menu-content"]')
-      .last();
-  })();
-  const recent = menu.locator(`[data-wsfolder="${dir}"]`);
-  if (
-    await recent
-      .first()
-      .isVisible()
-      .catch(() => false)
-  ) {
-    await recent.first().click();
-  } else {
-    await menu.getByText("Add a folder").click();
-    const dialog = page.locator("[data-addfolder]");
-    await expect(dialog).toBeVisible();
-    await dialog.locator("[data-pathinput]").fill(dir);
-    await expect(dialog.locator("[data-folderinfo]")).toBeVisible({
-      timeout: 15_000,
-    });
-    await dialog.locator("[data-addbtn]").click();
-    await expect(dialog).toHaveCount(0);
-  }
-  // The pick lands async (addFolder → setPick) — wait for the button label
-  // before sending, or the session starts without the folder.
-  await expect(pickerButton(page)).toContainText(path.basename(dir), {
-    timeout: 15_000,
-  });
-}
+/* A new session in `dir`, the way a person starts one: the new-chat draft's
+   folder chip, then Send (the folder joins the recents over the relay
+   first). An id that names nobody opens the draft on the default agent, so
+   the spec needs no employee lookup. Returns the conversation id. */
+const startSession = (page: Page, dir: string, text: string) =>
+  startChatInFolder(page, stack, { id: "default", name: "Default" }, dir, text);
 
 const send = async (page: Page, text: string) => {
-  const box = page.locator("textarea").last();
+  const box = page.locator("[data-thread-panel] textarea").last();
   await box.fill(text);
   await box.press("Enter");
 };
@@ -211,38 +163,29 @@ const sendTurn = async (page: Page, text: string) => {
   return turn;
 };
 
-/** The open session's chip row on the DM home. */
-const sessionRow = (page: Page) => page.locator("[data-session] button").last();
+/* The session view: a thread widened over the page (what Focus was). The
+   thread beside Threads is the same hash without it. */
+const FOCUS_URL = /[#&]full=1(&|$)/;
+const THREAD_URL = /open=([^&]*,)?thread:[^&,]+$/;
 
-/* #195: a feed row opens the peek panel (not Focus); the panel's ↗ carries
-   on into Focus — every session-open in these tests goes through both. */
-const openFocus = async (page: Page) => {
-  await sessionRow(page).click();
-  await panelIntoFocus(page);
-};
-
-const FOCUS_URL = /\/dm\/[^/]+\/[^/]+\/focus$/;
-/* The peek panel sits at the conversation URL — end-anchored so it never
-   matches /focus. */
-const PANEL_URL = /\/dm\/[^/]+\/conv_[^/]+$/;
-const DM_URL = /\/dm\/[^/]+$/;
+/* AC-1's repo session: later tests reopen it as the session view. */
+let checkInConv: string;
 // exact: title substring-match would also hit "Hide workbench" when open.
 const workbenchToggle = (page: Page) =>
   page.getByTitle("Workbench", { exact: true });
 const tab = (page: Page, name: RegExp | string) =>
   page.getByRole("tab", { name });
 
-test("AC-1 a session opens in the panel; ↗ reaches Focus; Esc/Back return through the panel", async ({
+test("AC-1 a session opens beside Threads; Widen reaches the session view; Esc/Back return through the thread", async ({
   page,
 }) => {
   test.setTimeout(120_000);
-  await dmDefault(page);
-  await pickSessionFolder(page, repoDir);
-  await send(page, "check in");
-  /* #577 (supersedes #195's send→Focus): a send STAYS on the DM list with
-     the thread open in the side panel; Focus opens only from the panel's
-     ↗, so every way back out still lands on the same open peek. */
-  await expect(page).toHaveURL(PANEL_URL, { timeout: 30_000 });
+  checkInConv = await startSession(page, repoDir, "check in");
+  /* A send STAYS on Threads with the thread open in the side peek; the
+     session view (chat beside the Workbench) opens only from the panel's
+     Focus, so every way back out still lands on the same open thread. */
+  await expect(page).toHaveURL(THREAD_URL, { timeout: 30_000 });
+  await expect(page).not.toHaveURL(FOCUS_URL);
   const sentPanel = page.locator("[data-thread-panel]");
   await expect(sentPanel.getByText("check in").first()).toBeVisible({
     timeout: 30_000,
@@ -253,45 +196,54 @@ test("AC-1 a session opens in the panel; ↗ reaches Focus; Esc/Back return thro
   await expect(workbenchToggle(page)).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-1-focus.png` });
 
-  // Reload stays in Focus (the URL carries it).
+  // Reload stays in the session view (the URL carries it).
   await page.reload();
   await expect(page).toHaveURL(FOCUS_URL);
   await expect(workbenchToggle(page)).toBeVisible({ timeout: 30_000 });
-  await expect(page.locator("main").getByText("check in").first()).toBeVisible({
-    timeout: 30_000,
-  });
+  await expect(
+    page.locator("[data-thread-panel]").getByText("check in").first(),
+  ).toBeVisible({ timeout: 30_000 });
 
-  /* #195 AC-2: Esc returns to the DM feed with the panel open on the same
-     session — the feed stays visible beside it. */
+  /* #195 AC-2: Esc steps back to the thread with Threads still visible
+     beside it. */
   await page.keyboard.press("Escape");
-  await expect(page).toHaveURL(PANEL_URL);
+  await expect(page).toHaveURL(THREAD_URL);
+  await expect(page).not.toHaveURL(FOCUS_URL);
   const panel = page.locator("[data-thread-panel]");
   await expect(panel).toBeVisible({ timeout: 30_000 });
   await expect(panel.getByText("check in").first()).toBeVisible();
-  await expect(page.locator("main [data-session]").first()).toBeVisible();
+  await expect(
+    page.locator("main").getByRole("heading", { name: "Threads" }),
+  ).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-1-panel.png` });
 
-  // The panel URL reloads too (the URL carries it).
+  // The thread URL reloads too (the URL carries it).
   await page.reload();
-  await expect(page).toHaveURL(PANEL_URL);
+  await expect(page).toHaveURL(THREAD_URL);
   await expect(page.locator("[data-thread-panel]")).toBeVisible({
     timeout: 30_000,
   });
 
-  // #195 AC-1: Esc again closes the panel back to the plain feed.
+  // #195 AC-1: Esc again closes the thread back to the plain Threads page.
   await page.keyboard.press("Escape");
-  await expect(page).toHaveURL(DM_URL);
+  await expect(page).not.toHaveURL(/open=/);
   await expect(page.locator("[data-thread-panel]")).toHaveCount(0);
   await page.screenshot({ path: `${SHOTS}/ac-1-esc-dm.png` });
 
-  /* Clicking the session's row re-opens the panel (not Focus); the panel's
-     ↗ is the way into Focus; the Focus back arrow returns to the panel. */
-  await sessionRow(page).click();
-  await expect(page).toHaveURL(PANEL_URL);
+  /* Clicking the session's row re-opens the thread (not the session view);
+     the panel's Focus is the way into the session view; the session view's
+     back arrow returns to the thread. */
+  await page
+    .locator("main")
+    .getByRole("button", { name: /check in/i })
+    .first()
+    .click();
+  await expect(page).toHaveURL(THREAD_URL);
   await panel.getByTitle("Focus", { exact: true }).click();
   await expect(page).toHaveURL(FOCUS_URL);
   await page.getByTitle("Back to DM").click();
-  await expect(page).toHaveURL(PANEL_URL);
+  await expect(page).toHaveURL(THREAD_URL);
+  await expect(page).not.toHaveURL(FOCUS_URL);
   await page.screenshot({ path: `${SHOTS}/ac-1-back-panel.png` });
 });
 
@@ -299,8 +251,7 @@ test("AC-2 Focus is the same live conversation: streaming, steps, approvals, mod
   page,
 }) => {
   test.setTimeout(180_000);
-  await dmDefault(page);
-  await openFocus(page);
+  await openSession(page, stack.webUrl, checkInConv);
 
   // A reply turn streams in — reasoning + tool steps render live. `.last()`:
   // AC-1's "check in" turn sits above it and carries no tool steps.
@@ -346,7 +297,7 @@ test("AC-2 Focus is the same live conversation: streaming, steps, approvals, mod
   await expect(page.getByText("Approval needed").first()).toBeVisible({
     timeout: 60_000,
   });
-  const box = page.locator("main textarea");
+  const box = page.locator("[data-thread-panel] textarea");
   await box.click();
   /* ⌘. is the stop shortcut — Esc only closes surfaces now (#576). */
   await page.keyboard.press("Meta+Period");
@@ -362,8 +313,7 @@ test("AC-3 Changes lists uncommitted files with +/− and refreshes while the ag
   page,
 }) => {
   test.setTimeout(180_000);
-  await dmDefault(page);
-  await openFocus(page);
+  await openSession(page, stack.webUrl, checkInConv);
 
   const changes = tab(page, /Changes/);
   await expect(changes).toBeVisible({ timeout: 30_000 });
@@ -387,7 +337,9 @@ test("AC-3 Changes lists uncommitted files with +/− and refreshes while the ag
   });
   await expect(page.locator('[data-diff="a.txt"]')).toBeVisible();
   // +/− stats ride along; the patch content renders.
-  await expect(page.locator("main").getByText("+4").first()).toBeVisible();
+  await expect(
+    page.locator("[data-thread-panel]").getByText("+4").first(),
+  ).toBeVisible();
   await expect(
     page.locator('[data-diff="notes.txt"]').getByText("fresh"),
   ).toBeVisible();
@@ -405,8 +357,7 @@ test("AC-4 Files shows the folder tree (fs.tree) and file contents (fs.read)", a
   page,
 }) => {
   test.setTimeout(120_000);
-  await dmDefault(page);
-  await openFocus(page);
+  await openSession(page, stack.webUrl, checkInConv);
 
   const files = tab(page, "Files");
   await expect(files).toBeVisible({ timeout: 30_000 });
@@ -426,8 +377,7 @@ test("AC-5 the PR tab reads checks + comments through forge.pr; comment and merg
   page,
 }) => {
   test.setTimeout(180_000);
-  await dmDefault(page);
-  await openFocus(page);
+  await openSession(page, stack.webUrl, checkInConv);
 
   const prTab = tab(page, /PR/);
   await expect(prTab).toBeVisible({ timeout: 30_000 });
@@ -464,9 +414,10 @@ test("AC-5 the PR tab reads checks + comments through forge.pr; comment and merg
   // No PR for the branch → a plain note, not a crash.
   rmSync(viewPath);
   await page.reload();
-  /* #319: the picked tab rides the URL — the reload lands back on
-     `?tab=pr`, not the default tab. */
-  await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+\/focus\?tab=pr$/);
+  /* The reload lands back in the session view (`full=1` rides the URL);
+     the Workbench tab is the thread's own state now, so PR is picked again
+     below. */
+  await expect(page).toHaveURL(FOCUS_URL);
   await expect(tab(page, /^PR$/)).toBeVisible({ timeout: 30_000 });
   await tab(page, /^PR$/).click();
   await expect(
@@ -483,7 +434,11 @@ test("AC-5 the PR tab reads checks + comments through forge.pr; comment and merg
      tabpanel per signal-driven read decision, so the Retry press below is
      timed strictly after the scheduled land that used to yank the button
      mid-click (the land-vs-press race made deterministic). */
-  await page.goto(`${page.url()}&wbPrSigMark=1`);
+  /* The `?wbPrSigMark` knob is a real query parameter (read from
+     location.search), so it goes before the hash, not into it. */
+  const marked = new URL(page.url());
+  marked.searchParams.set("wbPrSigMark", "1");
+  await page.goto(marked.toString());
   await expect(tab(page, /^PR$/)).toBeVisible({ timeout: 30_000 });
   await tab(page, /^PR$/).click();
   await expect(
@@ -542,13 +497,9 @@ test("AC-6 tabs render only when their host method answers; a session without a 
   page,
 }) => {
   test.setTimeout(180_000);
-  await dmDefault(page);
-
   // A session on a plain (non-repo) folder: fs answers, git/forge don't →
   // only the Files tab renders. Browser/Terminal never render in this slice.
-  await pickSessionFolder(page, plainDir);
-  await send(page, "check the folder");
-  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  await startSession(page, plainDir, "check the folder");
   await panelIntoFocus(page);
   await expect(workbenchToggle(page)).toBeVisible({ timeout: 30_000 });
   await expect(tab(page, "Files")).toBeVisible({ timeout: 30_000 });
@@ -561,24 +512,15 @@ test("AC-6 tabs render only when their host method answers; a session without a 
   /* #543 rewrote this leg: a session without a folder still gets the
      Workbench — only its engine tabs render (Background, since the engine
      declares the capability even with no jobs yet; Subagents once a turn
-     has helpers), never the folder-bound tabs. Focus has no sidebar by
-     design (#246) — Esc back to the panel, then use it. */
-  await page.keyboard.press("Escape");
-  await expect(page).toHaveURL(PANEL_URL);
-  await page
-    .locator("aside")
-    .getByRole("button", { name: /default/i })
-    .click();
-  await expect(page).toHaveURL(DM_URL);
-  // The picker auto-selects the last session's folder — pick "just chat".
-  await pickerButton(page).click();
-  await page
-    .locator('[role="menu"], [data-slot="dropdown-menu-content"]')
-    .last()
-    .getByText("No folder · just chat")
-    .click();
-  await send(page, "just chat — no folder");
-  /* #577: a send lands on the panel; Focus opens via its ↗. */
+     has helpers), never the folder-bound tabs. The new-chat draft always
+     pre-picks a recent folder, so the folder-less session starts over the
+     relay — exactly what a send with no folder does. */
+  const chatConv = await startFolderlessChat(
+    page,
+    stack,
+    "just chat — no folder",
+  );
+  await page.goto(threadUrl(stack.webUrl, chatConv));
   await panelIntoFocus(page);
   await expect(workbenchToggle(page)).toBeVisible({ timeout: 30_000 });
   /* The panel opens on demand here — auto-open at ≥lg is for a panel that
@@ -607,19 +549,8 @@ test("AC-7 Focus + Workbench compose like the prototype (evidence screenshots)",
   page,
 }) => {
   test.setTimeout(120_000);
-  await dmDefault(page);
-  // AC-1's repo session — AC-6 added newer plain/no-folder rows on top.
-  // #195: the row opens the panel; ↗ carries on into Focus.
-  await page
-    .locator("[data-session]", { hasText: "check in" })
-    .getByRole("button", { name: /repl(y|ies)/ })
-    .click();
-  await expect(page).toHaveURL(PANEL_URL, { timeout: 30_000 });
-  await page
-    .locator("[data-thread-panel]")
-    .getByTitle("Focus", { exact: true })
-    .click();
-  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+  // AC-1's repo session — later sessions sit above it in Threads.
+  await openSession(page, stack.webUrl, checkInConv);
   await expect(tab(page, /Changes/)).toBeVisible({ timeout: 30_000 });
   await tab(page, /Changes/).click();
   await expect(page.locator('[data-diff="notes.txt"]')).toBeVisible({
@@ -635,10 +566,7 @@ test("AC-396 a turn that starts while you watch re-arms follow after a manual ta
   page,
 }) => {
   test.setTimeout(120_000);
-  await dmDefault(page);
-  await pickSessionFolder(page, regDir);
-  await send(page, "say hi");
-  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  await startSession(page, regDir, "say hi");
   await panelIntoFocus(page);
   /* Remount with NO live turn: the first live sighting after this mount
      must be a turn that BEGAN while mounted — that is exactly when

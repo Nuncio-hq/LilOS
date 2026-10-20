@@ -1511,6 +1511,9 @@ export class FakeEngine {
           stopReason: "refusal",
           error,
           errorCode: RPC_ERRORS.CONTEXT_LIMIT,
+          // A real engine reports usage on the error completion too, so
+          // the context meter reads Full and offers Compact / Continue.
+          usage: s.usage,
         });
         if (s.state !== "closed") this.setState(s, "idle");
         s.turn = undefined;

@@ -2,7 +2,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import { allowAllWhile, expectSettled } from "./helpers/approvals";
-import { bootStack, pickPorts } from "./helpers/stack";
+import { bootStack, pickPorts, skipFirstRun, startChat } from "./helpers/stack";
 
 /**
  * Issue #320 — a turn's collapsible blocks open themselves while it runs,
@@ -21,33 +21,17 @@ const SHOTS = path.join(repo, "test-results", "ac-320");
 const PANEL = '[data-tasksteps] [data-slot="collapsible-content"]';
 const TRIGGER = '[data-tasksteps] [data-slot="collapsible-trigger"]';
 
-async function dmDefault(stack: { webUrl: string }, page: Page) {
-  await page.goto(`${stack.webUrl}/`);
-  const aside = page.locator("aside");
-  await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
-    timeout: 30_000,
-  });
-  const dmBtn = page.getByRole("button", {
-    name: /open dm|set up later|message/i,
-  });
-  if (
-    await dmBtn
-      .first()
-      .isVisible()
-      .catch(() => false)
-  ) {
-    await dmBtn.first().click();
-  } else {
-    await aside.getByRole("button", { name: /default/i }).click();
-  }
-  await expect(page).toHaveURL(/\/dm\//);
+/** A chat with Default, started from the new-chat draft beside Threads: the
+    thread opens in the peek, and its hash survives the evidence leg's
+    reloads. */
+async function chatDefault(
+  stack: { webUrl: string },
+  page: Page,
+  text: string,
+) {
+  await skipFirstRun(page);
+  await startChat(page, stack.webUrl, { id: "default", name: "Default" }, text);
 }
-
-const send = async (page: Page, text: string) => {
-  const box = page.locator("textarea").last();
-  await box.fill(text);
-  await box.press("Enter");
-};
 
 test("AC-1/2/3 collapsing a running turn's steps stays collapsed; approval stays visible", async ({
   page,
@@ -57,10 +41,9 @@ test("AC-1/2/3 collapsing a running turn's steps stays collapsed; approval stays
     LILOS_USER_NAME: "Oscar",
   });
   try {
-    await dmDefault(stack, page);
     // An edit-ask prompt parks the turn on an approval — deterministic
     // running state with a steps block auto-opened.
-    await send(page, "Add a release note to the readme");
+    await chatDefault(stack, page, "Add a release note to the readme");
     const turn = page.locator("[data-agentturn]").last();
     await expect(turn.locator("[data-tasksteps]")).toBeVisible({
       timeout: 60_000,
@@ -119,8 +102,7 @@ test("AC-3 a user-opened steps block stays open through turn end", async ({
     LILOS_USER_NAME: "Oscar",
   });
   try {
-    await dmDefault(stack, page);
-    await send(page, "Add a release note to the readme");
+    await chatDefault(stack, page, "Add a release note to the readme");
     const turn = page.locator("[data-agentturn]").last();
     await expect(turn.locator("[data-tasksteps]")).toBeVisible({
       timeout: 60_000,
@@ -168,8 +150,7 @@ test("screens: collapsed running block, light + dark, three widths", async ({
   test.setTimeout(300_000);
   const stack = await bootStack("collapse-shots", await pickPorts());
   try {
-    await dmDefault(stack, page);
-    await send(page, "Add a release note to the readme");
+    await chatDefault(stack, page, "Add a release note to the readme");
 
     const collapseTurn = async () => {
       const turn = page.locator("[data-agentturn]").last();

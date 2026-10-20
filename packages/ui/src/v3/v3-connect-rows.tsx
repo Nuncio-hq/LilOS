@@ -61,6 +61,8 @@ export function ConnectRows({ rows }: { rows: V3ConnectRow[] }) {
               )}
             </span>
             <span
+              // Test hook: the row's real state, read live by e2e (#413).
+              data-connect-state={r.state}
               className={cn(
                 "flex shrink-0 items-center gap-1.5 text-[13px]",
                 s.text,

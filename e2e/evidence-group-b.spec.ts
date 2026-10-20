@@ -10,6 +10,9 @@ import {
   panelIntoFocus,
   pickPorts,
   type Stack,
+  startChatInFolder,
+  startFolderlessChat,
+  threadUrl,
 } from "./helpers/stack";
 
 /**
@@ -96,82 +99,18 @@ test.afterAll(async () => {
 
 test.describe.configure({ mode: "serial" });
 
-const PANEL_URL = /\/dm\/[^/]+\/conv_[^/]+$/;
+/* The seeded employee. An id that names nobody opens the new-chat draft on
+   the default agent, so the spec needs no employee lookup. Sessions start the
+   way a person starts one: the draft's Folder chip (the app's recents, which
+   `startChatInFolder` seeds over the relay — the old `?roots=` scan fed the
+   DM-home picker's discovered list, which no longer exists), then Send. */
+const DEFAULT_AGENT = { id: "default", name: "Default" };
+
 const tab = (page: Page, name: RegExp | string) =>
   page.getByRole("tab", { name });
 const shot = (page: Page, dir: string, name: string) =>
   page.screenshot({ path: path.join(OUT, dir, `${name}.png`) });
 const turns = (page: Page) => page.locator("[data-agentturn]");
-
-async function dmDefault(page: Page) {
-  await page.goto(`${stack.webUrl}/?roots=${ROOT}`);
-  const aside = page.locator("aside");
-  await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
-    timeout: 30_000,
-  });
-  const dmBtn = page.getByRole("button", {
-    name: /open dm|set up later|message/i,
-  });
-  if (
-    await dmBtn
-      .first()
-      .isVisible()
-      .catch(() => false)
-  )
-    await dmBtn.first().click();
-  else await aside.getByRole("button", { name: /default/i }).click();
-  await expect(page).toHaveURL(/\/dm\//);
-}
-
-const pickerButton = (page: Page) => page.locator('[data-ws="folder"]');
-
-async function pickSessionFolder(page: Page, dir: string) {
-  await pickerButton(page).click();
-  const menu = page
-    .locator('[role="menu"], [data-slot="dropdown-menu-content"]')
-    .last();
-  const recent = menu.locator(`[data-wsfolder="${dir}"]`);
-  /* Folders arrive async — give the rows a moment before deciding the
-     folder isn't listed (a repeat pick must not fall into the Add-folder
-     dialog, where the already-attached path stays disabled forever). */
-  await expect(menu.locator("[data-wsfolder]").first())
-    .toBeVisible({ timeout: 8_000 })
-    .catch(() => {});
-  if (
-    await recent
-      .first()
-      .isVisible()
-      .catch(() => false)
-  ) {
-    await recent.first().click();
-  } else {
-    await menu.getByText("Add a folder").click();
-    const dialog = page.locator("[data-addfolder]");
-    await expect(dialog).toBeVisible();
-    await dialog.locator("[data-pathinput]").fill(dir);
-    await expect(dialog.locator("[data-folderinfo]")).toBeVisible({
-      timeout: 15_000,
-    });
-    const addable = await expect(dialog.locator("[data-addbtn]"))
-      .toBeEnabled({ timeout: 8_000 })
-      .then(() => true)
-      .catch(() => false);
-    if (addable) {
-      await dialog.locator("[data-addbtn]").click();
-      await expect(dialog).toHaveCount(0);
-    } else {
-      /* Already attached — back out and pick the listed row. */
-      await dialog.getByRole("button", { name: "Cancel" }).click();
-      await expect(dialog).toHaveCount(0);
-      await pickerButton(page).click();
-      await expect(recent.first()).toBeVisible({ timeout: 15_000 });
-      await recent.first().click();
-    }
-  }
-  await expect(pickerButton(page)).toContainText(path.basename(dir), {
-    timeout: 15_000,
-  });
-}
 
 const send = async (page: Page, text: string) => {
   const box = page.locator("textarea").last();
@@ -242,9 +181,15 @@ for (const s of SIZES) {
 
       /* ── #587 AC-1: the folder session's tab strip — fixed membership,
          empties greyed but present, nothing rearranging mid-session. ── */
-      await dmDefault(page);
-      await pickSessionFolder(page, repoDir);
-      await send(page, "evidence ship session");
+      await startChatInFolder(
+        page,
+        stack,
+        DEFAULT_AGENT,
+        repoDir,
+        "evidence ship session",
+      );
+      /* A send lands on the thread beside Threads; widening it is the
+         session view (chat beside the Workbench). */
       await panelIntoFocus(page);
       /* Unique file per context — the stack (and the repo) is shared
          across tests, so an already-committed name would leave no diff. */
@@ -367,14 +312,13 @@ for (const s of SIZES) {
       /* ── #579 AC-2: an error names a step Oscar can take — a push with no
          remote reads "This folder isn't on GitHub yet. Ask Default to
          publish it.", never a command to type. ── */
-      await page.keyboard.press("Escape");
-      await expect(page).toHaveURL(PANEL_URL, { timeout: 30_000 });
-      await page
-        .locator("aside")
-        .getByRole("button", { name: /default/i })
-        .click();
-      await pickSessionFolder(page, nonremoteDir);
-      await send(page, "no remote evidence");
+      await startChatInFolder(
+        page,
+        stack,
+        DEFAULT_AGENT,
+        nonremoteDir,
+        "no remote evidence",
+      );
       await panelIntoFocus(page);
       await openTab(page, /Changes/);
       writeFileSync(path.join(nonremoteDir, `n2-${tag}.txt`), "more\n");
@@ -394,19 +338,14 @@ for (const s of SIZES) {
 
       /* ── #587 AC-1 (folderless): a just-chat session still gets the
          Workbench — only the engine tabs render, all greyed-empty. ── */
-      await page.keyboard.press("Escape");
-      await expect(page).toHaveURL(PANEL_URL, { timeout: 30_000 });
-      await page
-        .locator("aside")
-        .getByRole("button", { name: /default/i })
-        .click();
-      await pickerButton(page).click();
-      await page
-        .locator('[role="menu"], [data-slot="dropdown-menu-content"]')
-        .last()
-        .getByText("No folder · just chat")
-        .click();
-      await send(page, "just chat evidence");
+      /* No folder is a draft choice no more — a just-chat session starts
+         over the relay, and is opened as the session view. */
+      const chatConv = await startFolderlessChat(
+        page,
+        stack,
+        "just chat evidence",
+      );
+      await page.goto(threadUrl(stack.webUrl, chatConv));
       await panelIntoFocus(page);
       await expect(page.getByTitle("Workbench", { exact: true })).toBeVisible({
         timeout: 30_000,

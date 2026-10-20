@@ -1,4 +1,4 @@
-import { agentNameOf, agentOf, type V3DataActions, type V3Data } from "@lilos/ui"
+import { agentNameOf, agentOf, type V3DataActions, type V3Data, type V3Thread } from "@lilos/ui"
 
 type SetData = (fn: (d: V3Data) => V3Data) => void;
 
@@ -12,6 +12,8 @@ export function toolActions(
 ): Pick<
   V3DataActions,
   | "rewind"
+  | "renameThread"
+  | "archiveThread"
   | "scheduleSave"
   | "scheduleToggle"
   | "scheduleRunNow"
@@ -49,6 +51,29 @@ export function toolActions(
         ),
       }));
       toast("Rewound · files and conversation are back to before that message");
+    },
+    renameThread: (threadId, title) => {
+      const next = title.trim();
+      if (!next) return;
+      // A thread keeps its title wherever it lives: live or archived.
+      const rename = (t: V3Thread) => (t.id === threadId ? { ...t, title: next } : t);
+      setData((d) => ({
+        ...d,
+        threads: d.threads.map(rename),
+        archivedThreads: d.archivedThreads?.map(rename),
+      }));
+    },
+    archiveThread: (threadId, archived) => {
+      setData((d) => {
+        const from = archived ? d.threads : (d.archivedThreads ?? []);
+        const moved = from.find((t) => t.id === threadId);
+        if (!moved) return d;
+        const rest = from.filter((t) => t.id !== threadId);
+        return archived
+          ? { ...d, threads: rest, archivedThreads: [moved, ...(d.archivedThreads ?? [])] }
+          : { ...d, threads: [moved, ...d.threads], archivedThreads: rest };
+      });
+      toast(archived ? "Archived · it moved to Threads → All → Archived" : "Unarchived · it is back in your threads");
     },
     scheduleSave: (s) => {
       setData((d) => ({

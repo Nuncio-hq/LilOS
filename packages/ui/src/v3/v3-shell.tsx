@@ -51,8 +51,16 @@ export type V3ShellProps = {
   draft?: (text: string, data: V3Data) => V3Draft;
   /** The app's own thread view for a thread record. The real app uses this
      while its threads still render with the pre-v3 view (#769), until the
-     v3 conversation runs on real engine events (#770), which removes it. */
-  renderThread?: (props: V3PageProps & { id: string }) => ReactNode;
+     v3 conversation runs on real engine events (#770), which removes it.
+     `scrollTo` is a message to bring into view (a ⌘K message hit opened
+     the thread); the view calls `onScrolled` once it has, which clears it. */
+  renderThread?: (
+    props: V3PageProps & {
+      id: string;
+      scrollTo?: string;
+      onScrolled?: () => void;
+    },
+  ) => ReactNode;
   /** A notice above the page (connection lost, engine down); the app decides
      when there is one. */
   banner?: ReactNode;
@@ -92,6 +100,18 @@ export function V3Shell({
   onThemeChange,
 }: V3ShellProps) {
   const [palette, setPalette] = useState<string | null>(null);
+  /* A ⌘K message hit: the thread to open and the message to show in it. Held
+     here, not in the URL: a reload or a shared link opens the thread at its
+     end, and the jump happens once. */
+  const [jump, setJump] = useState<{ threadId: string; messageId: string }>();
+  const clearJump = useCallback(() => setJump(undefined), []);
+  // A jump that never landed (the thread has no such message) must not wait
+  // around for the next time that thread opens.
+  const openId = nav.peek[nav.peek.length - 1];
+  useEffect(() => {
+    if (jump && !(openId?.page === "thread" && openId.id === jump.threadId))
+      setJump(undefined);
+  }, [jump, openId]);
   const [theme, setTheme] = useTheme();
   useEffect(() => onThemeChange?.(theme), [theme, onThemeChange]);
   /* A native menu can consume ⌘K before the page sees it; the app then asks
@@ -163,11 +183,19 @@ export function V3Shell({
   const page = nav.page;
   const top = nav.peek[nav.peek.length - 1];
   const props = { data, go: goFromPage, act };
-  // First run owns the whole window: nothing to navigate yet.
+  /* First run owns the whole window: nothing to navigate yet. The Mac app has
+     no title bar (D-#232), so this strip is what the window is moved by and
+     where the traffic lights sit. It has no height of its own: the app's
+     desktop stylesheet gives it the lights' 56px, so a browser tab loses
+     nothing. The page scrolls beneath it, never under it, so no control is
+     ever swallowed by the drag region. */
   if (page.page === "welcome" || !data.setUp)
     return (
-      <div className="lilos-v3 h-dvh overflow-y-auto bg-[var(--v3-main)] text-[14px] text-foreground">
-        <V3Welcome {...props} />
+      <div className="lilos-v3 flex h-dvh flex-col bg-[var(--v3-main)] text-[14px] text-foreground">
+        <div aria-hidden className="lilos-drag shrink-0" />
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <V3Welcome {...props} />
+        </div>
       </div>
     );
   return (
@@ -242,7 +270,16 @@ export function V3Shell({
             {top && (
               <V3Peek
                 data={data}
-                renderThread={renderThread}
+                renderThread={
+                  renderThread &&
+                  ((p) =>
+                    renderThread({
+                      ...p,
+                      ...(jump?.threadId === p.id
+                        ? { scrollTo: jump.messageId, onScrolled: clearJump }
+                        : {}),
+                    }))
+                }
                 go={goFromPeek}
                 act={act}
                 trail={nav.peek}
@@ -272,6 +309,11 @@ export function V3Shell({
             onStart={startPlan}
             onClose={() => setPalette(null)}
             go={goFromPage}
+            searchMessages={actions.searchMessages}
+            onOpenMessage={(threadId, messageId) => {
+              setJump({ threadId, messageId });
+              goFromPage({ page: "thread", id: threadId });
+            }}
           />
         )}
       </div>

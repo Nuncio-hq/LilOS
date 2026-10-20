@@ -1,19 +1,22 @@
-import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  _electron,
   type ElectronApplication,
   expect,
   type Page,
   test,
 } from "@playwright/test";
 import { TRAFFIC_LIGHTS_END } from "../apps/desktop/src/window-chrome";
+import { launchDesktop } from "./helpers/electron";
+import { growDmThread } from "./helpers/relay-thread";
 import {
   bootStack,
-  panelIntoFocus,
+  panelFocusReady,
   pickPorts,
   type Stack,
+  skipFirstRun,
+  threadUrl,
+  v3Sidebar,
 } from "./helpers/stack";
 
 /**
@@ -21,39 +24,23 @@ import {
  * named test. The Electron legs need a real NSWindow, so they run only on
  * macOS; the browser leg (AC-5: a normal tab is unchanged) runs everywhere.
  * Screenshots land in test-results/ac-232 as PR evidence.
+ *
+ * The v3 shell's chrome: the sidebar's first row is the lights' strip (it
+ * drags and carries the inset — apps/web/src/index.css), the shell's top bar
+ * (`.lilos-drag`, packages/ui/src/v3/v3-shell.tsx) and an open thread's own
+ * header drag the window, and every control inside them opts out. The
+ * sidebar never collapses, so it — not a surface header — always owns the
+ * strip under the lights.
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, "..");
-const desktopDir = path.join(repo, "apps", "desktop");
 const SHOTS = path.join(repo, "test-results", "ac-232");
 
 const isMac = process.platform === "darwin";
 
-/** Build the Electron payload, then launch against the stack's web server. */
-async function launchDesktop(stack: Stack): Promise<ElectronApplication> {
-  const build = spawn("bun", ["scripts/dev.ts", "--payload-only"], {
-    cwd: desktopDir,
-    env: { ...process.env },
-    stdio: "inherit",
-  });
-  await new Promise<void>((resolve, reject) => {
-    build.once("exit", (c) =>
-      c === 0 ? resolve() : reject(new Error(`desktop build exit ${c}`)),
-    );
-  });
-  const portOf = (ws: string) => new URL(ws).port;
-  return _electron.launch({
-    args: [desktopDir],
-    env: {
-      ...process.env,
-      LILOS_RELAY_HOME: stack.home,
-      LILOS_RELAY_PORT: portOf(stack.relayWs),
-      LILOS_FEED_PORT: portOf(stack.feedWs),
-      LILOS_WEB_URL: stack.webUrl,
-    },
-  });
-}
+/** The app window on this stack, past first run, opened on `hash`. */
+const launch = (hash?: string) => launchDesktop(stack, { hash });
 
 const appRegion = (page: Page, selector: string) =>
   page
@@ -63,8 +50,12 @@ const appRegion = (page: Page, selector: string) =>
       getComputedStyle(el).getPropertyValue("-webkit-app-region"),
     );
 
-const sidebarHeader = (page: Page) =>
-  page.locator("aside.lilos-glass-side > div").first();
+/** The sidebar's first row: where the traffic lights sit. */
+const SIDEBAR_HEADER = ".lilos-v3 > aside:first-child > div:first-child";
+const sidebarHeader = (page: Page) => page.locator(SIDEBAR_HEADER);
+/** The shell's own top bar (company / page / search) — a `.lilos-drag` strip
+    in the column beside the sidebar, above the page and the side peek. */
+const TOP_BAR = ".lilos-v3 > div > .lilos-drag";
 
 /**
  * Wait until a native window is actually producing pixels before capturing
@@ -102,26 +93,13 @@ async function waitForNativeFrame(app: ElectronApplication, win: Page) {
   );
 }
 
-/** A fresh home gates the shell behind the first-run card — dismiss it so
- * the chrome underneath is clickable and screenshot-visible. */
-async function dismissFirstRun(win: Page) {
-  const skip = win.getByRole("button", { name: /set up later/i });
-  if (
-    await skip
-      .first()
-      .isVisible()
-      .catch(() => false)
-  )
-    await skip.first().click();
-  await expect(win.locator("[data-first-run]")).toHaveCount(0, {
-    timeout: 10_000,
-  });
-}
-
 let stack: Stack;
+let conversationId = "";
 test.beforeAll(async () => {
   test.setTimeout(120_000);
   stack = await bootStack("ac232", await pickPorts());
+  /* The thread the session-view and drag legs open on. */
+  conversationId = (await growDmThread(stack, ["chrome check"])).conversationId;
 });
 test.afterAll(async () => {
   await stack?.stop();
@@ -129,16 +107,26 @@ test.afterAll(async () => {
 
 test.describe.configure({ mode: "serial" });
 
+/** The v3 shell is up: the sidebar lists the seeded agent. */
+const shellReady = (win: Page) =>
+  expect(v3Sidebar(win).getByRole("button", { name: /default/i })).toBeVisible({
+    timeout: 60_000,
+  });
+
+const isFullscreen = (win: Page) =>
+  win.evaluate(() => document.documentElement.hasAttribute("data-fullscreen"));
+
+const setFullScreen = (app: ElectronApplication, on: boolean) =>
+  app.evaluate(({ BrowserWindow }, v) => {
+    BrowserWindow.getAllWindows()[0].setFullScreen(v);
+  }, on);
+
 test("AC-1 no title bar strip; traffic lights inset into the sidebar header", async () => {
   test.skip(!isMac, "native window chrome is a macOS leg");
   test.setTimeout(180_000);
-  const app = await launchDesktop(stack);
+  const { app, win } = await launch();
   try {
-    const win = await app.firstWindow();
-    await expect(
-      win.locator("aside").getByRole("button", { name: /default/i }),
-    ).toBeVisible({ timeout: 60_000 });
-    await dismissFirstRun(win);
+    await shellReady(win);
     await expect
       .poll(() =>
         win.evaluate(() =>
@@ -160,15 +148,13 @@ test("AC-1 no title bar strip; traffic lights inset into the sidebar header", as
     // The sidebar header is a drag region and its content clears the lights
     // (inset x=16 + a ~52-62px cluster → TRAFFIC_LIGHTS_END ≈ 78 worst case),
     // with the ~10px gap macOS leaves before content.
-    await expect
-      .poll(() => appRegion(win, "aside.lilos-glass-side > div"))
-      .toBe("drag");
+    await expect.poll(() => appRegion(win, SIDEBAR_HEADER)).toBe("drag");
     const head = sidebarHeader(win);
     const pad = await head.evaluate((el) => getComputedStyle(el).paddingLeft);
     expect(Number.parseFloat(pad)).toBeGreaterThanOrEqual(
       TRAFFIC_LIGHTS_END + 10,
     );
-    const logoBox = await head.locator("div").first().boundingBox();
+    const logoBox = await head.locator("span").first().boundingBox();
     if (!logoBox) throw new Error("company avatar has no box");
     expect(logoBox.x - TRAFFIC_LIGHTS_END).toBeGreaterThanOrEqual(10);
     await waitForNativeFrame(app, win);
@@ -181,21 +167,29 @@ test("AC-1 no title bar strip; traffic lights inset into the sidebar header", as
 test("AC-2 the window appearance follows the app theme", async () => {
   test.skip(!isMac, "native window chrome is a macOS leg");
   test.setTimeout(180_000);
-  const app = await launchDesktop(stack);
+  const { app, win } = await launch();
   try {
-    const win = await app.firstWindow();
-    await expect(win.locator("[data-theme-toggle]")).toBeVisible({
-      timeout: 60_000,
-    });
-    await dismissFirstRun(win);
+    await shellReady(win);
     const source = () =>
       app.evaluate(({ nativeTheme }) => nativeTheme.themeSource);
     // A dark app theme on a light OS must darken the vibrancy material too —
-    // a light material under light text is unreadable.
-    await win.locator('[data-theme-opt="dark"]').click();
+    // a light material under light text is unreadable. v3's sidebar has one
+    // toggle ("Dark mode" / "Light mode", named for where it goes next), so
+    // reach the dark side from whichever label the OS appearance shows.
+    const side = v3Sidebar(win);
+    if (await side.getByRole("button", { name: "Light mode" }).count())
+      await side.getByRole("button", { name: "Light mode" }).click();
+    await side.getByRole("button", { name: "Dark mode" }).click();
     await expect.poll(source).toBe("dark");
     await expect(win.locator("html.dark")).toHaveCount(1);
-    await win.locator('[data-theme-opt="system"]').click();
+    await side.getByRole("button", { name: "Light mode" }).click();
+    await expect.poll(source).toBe("light");
+    await expect(win.locator("html.dark")).toHaveCount(0);
+    /* v3 has no "System" control: the stored preference is the way back to
+       following the OS, and the shell must push it on load just the same. */
+    await win.evaluate(() => localStorage.setItem("lilos-theme", "system"));
+    await win.reload();
+    await shellReady(win);
     await expect.poll(source).toBe("system");
   } finally {
     await app.close();
@@ -205,47 +199,61 @@ test("AC-2 the window appearance follows the app theme", async () => {
 test("AC-3 header strips drag the window, buttons inside still work", async () => {
   test.skip(!isMac, "native window chrome is a macOS leg");
   test.setTimeout(180_000);
-  const app = await launchDesktop(stack);
+  const { app, win } = await launch(threadUrl(stack.webUrl, conversationId));
   try {
-    const win = await app.firstWindow();
-    const dm = win.locator("aside").getByRole("button", { name: /default/i });
-    await expect(dm).toBeVisible({ timeout: 60_000 });
-    await dismissFirstRun(win);
-    await dm.click();
+    await shellReady(win);
+    await panelFocusReady(win);
 
-    // Every panel header row is a drag region…
-    await expect.poll(() => appRegion(win, "main header")).toBe("drag");
+    // Every header row is a drag region: the sidebar's lights row, the
+    // shell's top bar, and the open thread's own header…
+    await expect.poll(() => appRegion(win, SIDEBAR_HEADER)).toBe("drag");
+    await expect.poll(() => appRegion(win, TOP_BAR)).toBe("drag");
     await expect
-      .poll(() => appRegion(win, "aside.lilos-glass-side > div"))
+      .poll(() => appRegion(win, "[data-thread-panel] .lilos-drag"))
       .toBe("drag");
     // …but interactive children opt out.
     await expect
-      .poll(() => appRegion(win, "main header button"))
+      .poll(() => appRegion(win, `${TOP_BAR} button`))
+      .toBe("no-drag");
+    await expect
+      .poll(() => appRegion(win, "[data-thread-panel] .lilos-drag button"))
       .toBe("no-drag");
 
     // Synthetic mouse events can't reach the native window-drag path — the
     // real drag/zoom evidence is the recorded manual pass — so here we prove
     // the OS-facing wiring: the element under empty header space IS the drag
     // region the OS hit-tests for dragging and double-click zoom.
+    const regionAt = (x: number, y: number) =>
+      win.evaluate(
+        ([px, py]) => {
+          const el = document.elementFromPoint(px, py);
+          return el
+            ? getComputedStyle(el).getPropertyValue("-webkit-app-region")
+            : "none";
+        },
+        [x, y] as const,
+      );
     const box = await sidebarHeader(win).boundingBox();
     if (!box) throw new Error("sidebar header has no box");
-    const hitRegion = await win.evaluate(
-      ([x, y]) => {
-        const el = document.elementFromPoint(x, y);
-        return el
-          ? getComputedStyle(el).getPropertyValue("-webkit-app-region")
-          : "none";
-      },
-      [box.x + box.width - 20, box.y + box.height / 2] as const,
+    expect(await regionAt(box.x + box.width - 20, box.y + box.height / 2)).toBe(
+      "drag",
     );
-    expect(hitRegion).toBe("drag");
+    // The top bar's empty middle (between the breadcrumb and the search
+    // button) is the same: window-draggable space.
+    const bar = await win.locator(TOP_BAR).boundingBox();
+    const crumb = await win.locator(`${TOP_BAR} button`).first().boundingBox();
+    const search = await win.locator(`${TOP_BAR} button`).last().boundingBox();
+    if (!bar || !crumb || !search) throw new Error("top bar has no box");
+    expect(
+      await regionAt(
+        (crumb.x + crumb.width + search.x) / 2,
+        bar.y + bar.height / 2,
+      ),
+    ).toBe("drag");
 
-    // A control inside the drag strip still clicks (profile button).
-    await win
-      .getByRole("button", { name: /profile/i })
-      .first()
-      .click();
-    await expect(win.getByText(/personal|profile|about/i).first()).toBeVisible({
+    // A control inside the drag strip still clicks (the top bar's search).
+    await win.locator(`${TOP_BAR} button`).last().click();
+    await expect(win.getByRole("dialog", { name: "Search" })).toBeVisible({
       timeout: 10_000,
     });
     await waitForNativeFrame(app, win);
@@ -258,13 +266,9 @@ test("AC-3 header strips drag the window, buttons inside still work", async () =
 test("AC-4 full screen hides the lights and drops the sidebar inset", async () => {
   test.skip(!isMac, "native window chrome is a macOS leg");
   test.setTimeout(180_000);
-  const app = await launchDesktop(stack);
+  const { app, win } = await launch();
   try {
-    const win = await app.firstWindow();
-    await expect(
-      win.locator("aside").getByRole("button", { name: /default/i }),
-    ).toBeVisible({ timeout: 60_000 });
-    await dismissFirstRun(win);
+    await shellReady(win);
     const padLeft = () =>
       sidebarHeader(win).evaluate((el) =>
         Number.parseFloat(getComputedStyle(el).paddingLeft),
@@ -272,32 +276,49 @@ test("AC-4 full screen hides the lights and drops the sidebar inset", async () =
     const inset = await padLeft();
     expect(inset).toBeGreaterThanOrEqual(TRAFFIC_LIGHTS_END + 10);
 
-    await app.evaluate(({ BrowserWindow }) =>
-      BrowserWindow.getAllWindows()[0].setFullScreen(true),
-    );
-    await expect
-      .poll(() =>
-        win.evaluate(() =>
-          document.documentElement.hasAttribute("data-fullscreen"),
-        ),
-      )
-      .toBe(true);
+    await setFullScreen(app, true);
+    await expect.poll(() => isFullscreen(win)).toBe(true);
     // No lights means no reserved gap.
     await expect.poll(padLeft).toBeLessThan(30);
     await waitForNativeFrame(app, win);
     await win.screenshot({ path: `${SHOTS}/ac-4-fullscreen.png` });
 
-    await app.evaluate(({ BrowserWindow }) =>
-      BrowserWindow.getAllWindows()[0].setFullScreen(false),
-    );
-    await expect
-      .poll(() =>
-        win.evaluate(() =>
-          document.documentElement.hasAttribute("data-fullscreen"),
-        ),
-      )
-      .toBe(false);
+    await setFullScreen(app, false);
+    await expect.poll(() => isFullscreen(win)).toBe(false);
     await expect.poll(padLeft).toBeGreaterThanOrEqual(TRAFFIC_LIGHTS_END + 10);
+  } finally {
+    await app.close();
+  }
+});
+
+test("AC-6 first run (Welcome) has a strip the window drags by, under the lights", async () => {
+  test.skip(!isMac, "native window chrome is a macOS leg");
+  test.setTimeout(180_000);
+  // Welcome has no sidebar, so nothing else owns the lights' row: without its
+  // own strip the window could not be moved while setting up.
+  const { app, win } = await launch("#?page=welcome");
+  try {
+    await expect(
+      win.getByRole("heading", { name: "Welcome to LilOS" }),
+    ).toBeVisible({ timeout: 60_000 });
+    const strip = ".lilos-v3 > .lilos-drag";
+    await expect.poll(() => appRegion(win, strip)).toBe("drag");
+    // It is as tall as the sidebar's lights row, so the lights sit inside it
+    // and nothing of the page does.
+    const box = await win.locator(strip).boundingBox();
+    const title = await win
+      .getByRole("heading", { name: "Welcome to LilOS" })
+      .boundingBox();
+    if (!box || !title) throw new Error("Welcome has no strip or title");
+    expect(box.y).toBe(0);
+    expect(box.height).toBeGreaterThanOrEqual(56);
+    expect(title.y).toBeGreaterThanOrEqual(box.y + box.height);
+    // The page's own controls are never under the drag region.
+    await expect
+      .poll(() => appRegion(win, "button:has-text('Next')"))
+      .not.toBe("drag");
+    await waitForNativeFrame(app, win);
+    await win.screenshot({ path: `${SHOTS}/ac-6-welcome-drag.png` });
   } finally {
     await app.close();
   }
@@ -306,13 +327,9 @@ test("AC-4 full screen hides the lights and drops the sidebar inset", async () =
 test("AC-5 the status window gets the same chrome", async () => {
   test.skip(!isMac, "native window chrome is a macOS leg");
   test.setTimeout(180_000);
-  const app = await launchDesktop(stack);
+  const { app, win } = await launch();
   try {
-    const win = await app.firstWindow();
-    await expect(
-      win.locator("aside").getByRole("button", { name: /default/i }),
-    ).toBeVisible({ timeout: 60_000 });
-    await dismissFirstRun(win);
+    await shellReady(win);
     await win.evaluate(() =>
       (
         window as unknown as { lilos?: { openStatus?: () => void } }
@@ -341,43 +358,41 @@ test("AC-5 the status window gets the same chrome", async () => {
   }
 });
 
-test("#295 Focus header reserves the lights strip while the sidebar is hidden", async () => {
+test("#295 the session view's header clears the lights strip (the sidebar keeps it); Back is live", async () => {
+  /* v3's sidebar never collapses, so unlike the old Focus view no surface
+     header ever sits under the lights: the sidebar's first row owns the
+     strip at every width and in the session view alike. What #295 guarded —
+     the leftmost control of the open surface is not under the lights, the
+     strip still drags, full screen drops the reserve, Back works — is
+     asserted on the session view (`full=1`, chat beside the Workbench). */
   test.skip(!isMac, "native window chrome is a macOS leg");
   test.setTimeout(180_000);
-  const app = await launchDesktop(stack);
+  const { app, win } = await launch(
+    threadUrl(stack.webUrl, conversationId, true),
+  );
   try {
-    const win = await app.firstWindow();
-    await expect(
-      win.locator("aside").getByRole("button", { name: /default/i }),
-    ).toBeVisible({ timeout: 60_000 });
-    await dismissFirstRun(win);
-    // Oscar's repro: a 1288 window, Focus view, back button under the lights.
+    await shellReady(win);
+    // The repro's window: 1288 wide.
     await app.evaluate(({ BrowserWindow }) =>
       BrowserWindow.getAllWindows()[0].setContentSize(1288, 860),
     );
-    await win
-      .locator("aside")
-      .getByRole("button", { name: /default/i })
-      .click();
-    await expect(win).toHaveURL(/\/dm\//, { timeout: 30_000 });
-    /* #577: a send lands on the panel; Focus still means "the sidebar
-       leaves the grid" — open it via the panel's ↗ button. */
-    const box = win.locator("textarea").last();
-    await box.fill("check in");
-    await box.press("Enter");
-    await panelIntoFocus(win);
+    await panelFocusReady(win);
 
-    const header = win.locator("main > header").first();
+    const header = win.locator("[data-thread-panel] > header").first();
     await expect(header).toBeVisible({ timeout: 30_000 });
     const padLeft = () =>
-      header.evaluate((el) =>
+      sidebarHeader(win).evaluate((el) =>
         Number.parseFloat(getComputedStyle(el).paddingLeft),
       );
 
-    // The strip still drags the window…
-    await expect.poll(() => appRegion(win, "main > header")).toBe("drag");
-    // …and the header reserves the same inset the sidebar header uses, so
-    // its first control clears the lights plus the ~10px macOS gap.
+    // The strips still drag the window…
+    await expect
+      .poll(() => appRegion(win, "[data-thread-panel] > header"))
+      .toBe("drag");
+    await expect.poll(() => appRegion(win, SIDEBAR_HEADER)).toBe("drag");
+    // …the lights' reserve lives on the sidebar header, which sits left of
+    // the surface, so the surface's first control clears the lights plus the
+    // ~10px macOS gap.
     await expect.poll(padLeft).toBeGreaterThanOrEqual(TRAFFIC_LIGHTS_END + 10);
     const controlBox = await header.getByRole("button").first().boundingBox();
     if (!controlBox) throw new Error("header control has no box");
@@ -385,61 +400,49 @@ test("#295 Focus header reserves the lights strip while the sidebar is hidden", 
     await waitForNativeFrame(app, win);
     await win.screenshot({ path: `${SHOTS}/295-focus-light.png` });
 
-    // Dark AC shot: the sidebar opens as an overlay in Focus — the header
-    // hamburger is itself one of the controls the strip now clears.
-    await header.getByTitle("Sidebar", { exact: true }).click();
-    await win.locator('[data-theme-opt="dark"]').click();
-    await win.getByRole("button", { name: "Close sidebar" }).last().click();
+    // Dark AC shot: v3's one sidebar toggle ("Dark mode" / "Light mode").
+    const side = v3Sidebar(win);
+    if (await side.getByRole("button", { name: "Light mode" }).count())
+      await side.getByRole("button", { name: "Light mode" }).click();
+    await side.getByRole("button", { name: "Dark mode" }).click();
+    await expect(win.locator("html.dark")).toHaveCount(1);
     await waitForNativeFrame(app, win);
     await win.screenshot({ path: `${SHOTS}/295-focus-dark.png` });
 
     // Full screen hides the lights — no leftover gap; leaving restores it.
-    await app.evaluate(({ BrowserWindow }) =>
-      BrowserWindow.getAllWindows()[0].setFullScreen(true),
-    );
-    await expect
-      .poll(() =>
-        win.evaluate(() =>
-          document.documentElement.hasAttribute("data-fullscreen"),
-        ),
-      )
-      .toBe(true);
+    await setFullScreen(app, true);
+    await expect.poll(() => isFullscreen(win)).toBe(true);
     await expect.poll(padLeft).toBeLessThan(30);
-    await app.evaluate(({ BrowserWindow }) =>
-      BrowserWindow.getAllWindows()[0].setFullScreen(false),
-    );
-    await expect
-      .poll(() =>
-        win.evaluate(() =>
-          document.documentElement.hasAttribute("data-fullscreen"),
-        ),
-      )
-      .toBe(false);
+    await setFullScreen(app, false);
+    await expect.poll(() => isFullscreen(win)).toBe(false);
     await expect.poll(padLeft).toBeGreaterThanOrEqual(TRAFFIC_LIGHTS_END + 10);
 
-    // Back is a live control, not dead space under the lights: it navigates.
+    // Back is a live control, not dead space: it steps out of the session
+    // view to the thread beside Threads (`full=1` leaves the URL).
     await header.getByRole("button", { name: /back to/i }).click();
-    await expect(win).toHaveURL(/\/dm\/[^/]+\/[^/]+$/, { timeout: 30_000 });
+    await expect(win).toHaveURL(/[?&]open=thread:[^&]+/, { timeout: 30_000 });
+    await expect(win).not.toHaveURL(/[#&]full=1(&|$)/);
   } finally {
     await app.close();
   }
 });
 
 test("AC-5 a plain browser tab is unchanged", async ({ page }) => {
+  await skipFirstRun(page);
   await page.goto(`${stack.webUrl}/`);
-  await expect(
-    page.locator("aside").getByRole("button", { name: /default/i }),
-  ).toBeVisible({ timeout: 30_000 });
-  await dismissFirstRun(page);
+  await shellReady(page);
   expect(
     await page.evaluate(() =>
       document.documentElement.hasAttribute("data-desktop"),
     ),
   ).toBe(false);
-  // No traffic-light inset in a browser tab.
+  // No traffic-light inset in a browser tab…
   const pad = await sidebarHeader(page).evaluate((el) =>
     Number.parseFloat(getComputedStyle(el).paddingLeft),
   );
   expect(pad).toBeLessThan(30);
+  // …and no drag regions: the header rows are plain page chrome there.
+  expect(await appRegion(page, SIDEBAR_HEADER)).not.toBe("drag");
+  expect(await appRegion(page, TOP_BAR)).not.toBe("drag");
   await page.screenshot({ path: `${SHOTS}/ac-5-browser.png` });
 });

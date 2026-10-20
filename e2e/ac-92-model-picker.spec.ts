@@ -1,7 +1,16 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  openNewChat,
+  pickPorts,
+  type Stack,
+  skipFirstRun,
+  startChat,
+  v3Peek,
+  v3Sidebar,
+} from "./helpers/stack";
 
 /**
  * Issue #92 — model picker v2 in the REAL app (apps/web over relay + harness
@@ -12,6 +21,11 @@ import { bootStack, pickPorts, type Stack } from "./helpers/stack";
  * Fake Small (no dial) / Fake Large (3 stops + fast, the default) /
  * Fake Reasoning (7-stop ladder + fast) / Fake Opus 2 (a "/" id) /
  * Fake Fresh (only via `models.list {refresh:true}`).
+ *
+ * v3: the full picker (effort slider, Fast, "Model ›" list, Refresh, Edit
+ * models) is on both composers: the thread panel's, and the new-chat draft
+ * beside Threads (the old DM home's new-session composer). Only one is on
+ * screen at a time, so `triggers` reads whichever is open.
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -41,56 +55,83 @@ function watchConsole(page: Page) {
   return errors;
 }
 
-/** Open the app, land on Default's DM home (dismissing the first-run card). */
-async function dmDefault(stack: Stack, page: Page) {
-  await page.goto(`${stack.webUrl}/`);
-  const aside = page.locator("aside");
-  await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
-    timeout: 30_000,
-  });
-  const dmBtn = page.getByRole("button", {
-    name: /open dm|set up later|message/i,
-  });
-  if (
-    await dmBtn
-      .first()
-      .isVisible()
-      .catch(() => false)
-  ) {
-    await dmBtn.first().click();
-  } else {
-    await aside.getByRole("button", { name: /default/i }).click();
-  }
-  await expect(page).toHaveURL(/\/dm\//);
+/* #511: leave the app BEFORE the stack dies — while the page still points at
+   a dead relay its reconnect loops log ERR_CONNECTION_REFUSED and watchConsole
+   is still collecting for the assert below. The stack's own origin, not
+   about:blank: the skip-first-run init script reads localStorage on every
+   document and about:blank denies it (a pageerror). */
+const leaveApp = (page: Page, stack: Stack) =>
+  page.goto(`${stack.webUrl}/lilos-config.json`);
+
+/** A new chat with Default: the draft beside Threads, type, Send, landing on
+ *  the thread in the side peek. An id that names nobody opens the draft on
+ *  the default agent. */
+async function chatDefault(stack: Stack, page: Page, text: string) {
+  await skipFirstRun(page);
+  await startChat(page, stack.webUrl, { id: "default", name: "Default" }, text);
 }
 
+/** The picker on the open session (the thread panel's composer). The old DM
+ *  home carried a second one on its new-session composer; in v3 that
+ *  composer is the draft's model chip (`draftChip`). */
 const triggers = (page: Page) =>
-  page.locator('[data-slot="model-picker-trigger"]');
+  v3Peek(page).locator('[data-slot="model-picker-trigger"]');
 
-/** Open a trigger's popover and drill into the searchable model list. */
-async function openModelList(page: Page, which: "first" | "last") {
-  await triggers(page)[which]().click();
+/** The new-chat draft's model picker: the same one the thread's composer has,
+ *  with effort and Fast (only one is on screen at a time). */
+const draftChip = triggers;
+
+/** Open the session picker's popover and drill into the searchable model
+ *  list (the v3 peek holds one thread, so there is one trigger). */
+async function openModelList(page: Page) {
+  await triggers(page).click();
   await page.getByRole("button", { name: /Model$/ }).click();
 }
 
 const option = (page: Page, name: string) =>
   page.locator("[cmdk-item]", { hasText: name });
 
+/** A reply in the open thread (the panel's composer). */
 const send = async (page: Page, text: string) => {
-  const box = page.locator("textarea").last();
+  const box = page.locator("[data-thread-panel] textarea").last();
   await box.fill(text);
   await box.press("Enter");
 };
 
-test("AC-1 + AC-5 the new-session composer starts on the employee default and lists every engine model grouped by provider", async ({
+test("AC-1 + AC-5 the new-session composer starts on the employee default and lists every engine model; the session picker groups them by provider", async ({
   page,
 }) => {
   test.setTimeout(90_000);
   const errors = watchConsole(page);
-  await dmDefault(stackA, page);
-  const home = triggers(page).first();
-  // The employee default (fake-large) — never a sticky last-used pick.
-  await expect(home).toContainText("Fake Large");
+  // The draft's picker: the employee default (fake-large) with its effort —
+  // never a sticky last-used pick — and every engine model under its provider.
+  await openNewChat(page, stackA.webUrl);
+  const chip = draftChip(page);
+  await expect(chip).toContainText("Fake Large");
+  await expect(chip).toContainText("Medium");
+  await chip.click();
+  await page.getByRole("button", { name: /Model$/ }).click();
+  await expect(page.getByRole("group", { name: "Fake" })).toBeVisible();
+  for (const name of [
+    "Fake Small",
+    "Fake Large",
+    "Fake Reasoning",
+    "Fake Opus 2",
+  ])
+    await expect(option(page, name)).toHaveCount(1);
+  // The refresh-only model is NOT listed until the engine is asked.
+  await expect(option(page, "Fake Fresh")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+
+  // The session picker (the thread panel's composer) starts on the same
+  // default with its effort, and groups every model under its provider.
+  await v3Peek(page)
+    .getByPlaceholder("Message Default…")
+    .fill("Check the relay reconnect plan");
+  await v3Peek(page).getByRole("button", { name: "Send" }).click();
+  await expect(page).toHaveURL(/open=thread:[^&]+/, { timeout: 30_000 });
+  const home = triggers(page);
+  await expect(home).toContainText("Fake Large", { timeout: 30_000 });
   await expect(home).toContainText("Medium");
   await home.click();
   await page.getByRole("button", { name: /Model$/ }).click();
@@ -115,8 +156,8 @@ test("AC-2 the slider has exactly the picked model's stops; no ticks; Faster/Sma
 }) => {
   test.setTimeout(90_000);
   const errors = watchConsole(page);
-  await dmDefault(stackA, page);
-  await triggers(page).first().click();
+  await chatDefault(stackA, page, "Check the relay reconnect plan");
+  await triggers(page).click();
   const slider = page.getByRole("slider", { name: "Reasoning effort" });
   // fake-large: efforts [low, medium, high] → slider 0..2.
   await expect(slider).toHaveAttribute("max", "2");
@@ -147,14 +188,13 @@ test("AC-3 + AC-4 the next turn runs the picked model + effort + fast; the foote
 }) => {
   test.setTimeout(240_000);
   const errors = watchConsole(page);
-  await dmDefault(stackA, page);
   // Park the first turn on an approval — provably running while we repick.
-  await send(page, "Add a release note to the readme");
+  await chatDefault(stackA, page, "Add a release note to the readme");
   await expect(page.getByText("Approval needed").first()).toBeVisible({
     timeout: 60_000,
   });
   // A pick while running never errors and applies to the NEXT turn.
-  await openModelList(page, "last");
+  await openModelList(page);
   await option(page, "Fake Reasoning").click();
   await page.getByRole("button", { name: "Fast mode" }).click();
   const slider = page.getByRole("slider", { name: "Reasoning effort" });
@@ -188,17 +228,17 @@ test("AC-3 + AC-4 the next turn runs the picked model + effort + fast; the foote
       .last()
       .getByText("· Fake Reasoning · High · Fast"),
   ).toBeVisible({ timeout: 90_000 });
-  await expect(triggers(page).last()).toContainText("Fake Reasoning");
+  await expect(triggers(page)).toContainText("Fake Reasoning");
   await page.screenshot({ path: `${SHOTS}/ac-4-footer.png` });
 
   // AC-8: a "/" id round-trips verbatim — the footer resolves Fake Opus 2
   // from the catalog (the raw id never gets re-split into provider/model).
   // The High effort is kept across the switch (opus-2 reports it too), and
   // Fast drops because opus-2 has no fast tier.
-  await openModelList(page, "last");
+  await openModelList(page);
   await option(page, "Fake Opus 2").click();
   await page.keyboard.press("Escape");
-  await expect(triggers(page).last()).toContainText("Fake Opus 2");
+  await expect(triggers(page)).toContainText("Fake Opus 2");
   await send(page, "one more thing");
   await expect(
     page.locator("[data-agentturn]").last().getByText("· Fake Opus 2 · High"),
@@ -211,16 +251,18 @@ test("AC-3 + AC-4 the next turn runs the picked model + effort + fast; the foote
    AC-3+AC-4, but the pick is made on the new-session composer BEFORE the
    session exists — it rides `conversations.open` into `session.start`, so the
    FIRST turn already runs it. The back half is AC-5's other clause: a fresh
-   new-session composer starts on the employee default, never a sticky pick. */
+   new-session composer starts on the employee default, never a sticky pick.
+   v3: the draft's picker is the full one, so effort and Fast ride the first
+   turn as before. */
 test("AC-4 + AC-5 a pick on the new-session composer lands on the FIRST turn; the next new session is back on the employee default", async ({
   page,
 }) => {
   test.setTimeout(120_000);
   const errors = watchConsole(page);
-  await dmDefault(stackA, page);
-  const home = triggers(page).first();
-  await expect(home).toContainText("Fake Large");
-  await home.click();
+  const box = await openNewChat(page, stackA.webUrl);
+  const chip = draftChip(page);
+  await expect(chip).toContainText("Fake Large");
+  await chip.click();
   const slider = page.getByRole("slider", { name: "Reasoning effort" });
   // fake-large reports 3 stops; the pick swaps in its own ladder.
   await expect(slider).toHaveAttribute("max", "2");
@@ -230,9 +272,11 @@ test("AC-4 + AC-5 a pick on the new-session composer lands on the FIRST turn; th
   await slider.press("ArrowUp"); // medium → high
   await page.getByRole("button", { name: "Fast mode" }).click();
   await page.keyboard.press("Escape");
-  await expect(home).toContainText("Fake Reasoning");
+  await expect(chip).toContainText("Fake Reasoning");
 
-  await send(page, "Check the relay reconnect plan");
+  await box.fill("Check the relay reconnect plan");
+  await v3Peek(page).getByRole("button", { name: "Send" }).click();
+  await expect(page).toHaveURL(/open=thread:[^&]+/, { timeout: 30_000 });
   // The FIRST turn runs the pick — footer = engine turn.started truth.
   await expect(
     page
@@ -241,21 +285,16 @@ test("AC-4 + AC-5 a pick on the new-session composer lands on the FIRST turn; th
       .getByText("· Fake Reasoning · High · Fast"),
   ).toBeVisible({ timeout: 90_000 });
   // The session keeps its pick on its own composer.
-  await expect(triggers(page).last()).toContainText("Fake Reasoning");
+  await expect(triggers(page)).toContainText("Fake Reasoning");
   await page.screenshot({ path: `${SHOTS}/ac-4-first-turn-pick.png` });
 
-  // A new-session composer (employee home) is back on the employee default.
-  // #577: the send already landed on the DM feed at /dm/e/c — the aside's
-  // employee rows are right here.
-  await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+$/);
-  await page
-    .locator("aside")
-    .first()
-    .getByRole("button", { name: /default/i })
+  // A new chat with the same person (their page → Message) is back on the
+  // employee default.
+  await v3Sidebar(page)
+    .getByRole("button", { name: /Default/ })
     .click();
-  await expect(page).toHaveURL(/\/dm\/[^/]+$/);
-  await expect(triggers(page).first()).toContainText("Fake Large");
-  await expect(triggers(page).first()).toContainText("Medium");
+  await v3Peek(page).getByRole("button", { name: "Message" }).click();
+  await expect(draftChip(page)).toContainText("Fake Large");
   expect(errors).toEqual([]);
 });
 
@@ -264,8 +303,8 @@ test("AC-6 + AC-7 Refresh surfaces a new model without restart; Edit models' ONE
 }) => {
   test.setTimeout(240_000);
   const errors = watchConsole(page);
-  await dmDefault(stackA, page);
-  await openModelList(page, "first");
+  await chatDefault(stackA, page, "Check the relay reconnect plan");
+  await openModelList(page);
   // Refresh renders only because the engine declares it; the click re-lists.
   await page.getByRole("option", { name: /Refresh models/ }).click();
   await expect(option(page, "Fake Fresh")).toHaveCount(1);
@@ -276,7 +315,7 @@ test("AC-6 + AC-7 Refresh surfaces a new model without restart; Edit models' ONE
   const dialog = page.getByRole("dialog", { name: "Models" });
   await dialog.getByRole("checkbox", { name: /Show all Fake/ }).click();
   await page.keyboard.press("Escape");
-  await openModelList(page, "first");
+  await openModelList(page);
   // Every non-selected model leaves the list; the current pick stays visible
   // so the picker never yanks the selection out from under a session on it.
   await expect(option(page, "Fake Small")).toHaveCount(0);
@@ -289,7 +328,7 @@ test("AC-6 + AC-7 Refresh surfaces a new model without restart; Edit models' ONE
   // Then hide ONE model — Fake Reasoning leaves the list, the others stay.
   await dialog.getByRole("switch", { name: /Show Fake Reasoning/ }).click();
   await page.keyboard.press("Escape");
-  await openModelList(page, "first");
+  await openModelList(page);
   await expect(option(page, "Fake Reasoning")).toHaveCount(0);
   await expect(option(page, "Fake Large")).toHaveCount(1);
   await page.keyboard.press("Escape");
@@ -304,17 +343,14 @@ test("AC-6 + AC-7 Refresh surfaces a new model without restart; Edit models' ONE
     { home: stackA.home },
   );
   try {
-    await dmDefault(stackB, page);
-    await openModelList(page, "first");
+    await chatDefault(stackB, page, "Check the relay reconnect plan");
+    await openModelList(page);
     await expect(option(page, "Fake Reasoning")).toHaveCount(0);
     // A model the engine adds AFTER the last edit is visible by default.
     await page.getByRole("option", { name: /Refresh models/ }).click();
     await expect(option(page, "Fake Fresh")).toHaveCount(1);
     await page.screenshot({ path: `${SHOTS}/ac-7-restart.png` });
-    /* #511: leave the app BEFORE the stack dies — while the page still
-       points at a dead relay its reconnect loops log ERR_CONNECTION_REFUSED
-       and watchConsole is still collecting for the assert below. */
-    await page.goto("about:blank");
+    await leaveApp(page, stackB);
   } finally {
     await stackB.stop();
   }
@@ -334,21 +370,20 @@ test("AC-3 (#30) no picker when the engine lacks the models capability", async (
     LILOS_HIDE_CAPS: "models",
   });
   try {
-    await dmDefault(stackB, page);
-    // The new-session composer is rendered but carries no picker trigger.
-    await expect(page.locator("textarea").last()).toBeVisible();
-    await expect(triggers(page)).toHaveCount(0);
-    await send(page, "Check the relay reconnect plan");
+    // The new-chat draft is rendered but carries no model chip.
+    const box = await openNewChat(page, stackB.webUrl);
+    await expect(box).toBeVisible();
+    await expect(draftChip(page)).toHaveCount(0);
+    await box.fill("Check the relay reconnect plan");
+    await v3Peek(page).getByRole("button", { name: "Send" }).click();
+    await expect(page).toHaveURL(/open=thread:[^&]+/, { timeout: 30_000 });
     // …and the open session's composer has none either, mid-turn included.
     await expect(page.locator("[data-agentturn]").first()).toBeVisible({
       timeout: 60_000,
     });
     await expect(triggers(page)).toHaveCount(0);
     await page.screenshot({ path: `${SHOTS}/ac-3-no-picker.png` });
-    /* #511: leave the app BEFORE the stack dies — while the page still
-       points at a dead relay its reconnect loops log ERR_CONNECTION_REFUSED
-       and watchConsole is still collecting for the assert below. */
-    await page.goto("about:blank");
+    await leaveApp(page, stackB);
   } finally {
     await stackB.stop();
   }

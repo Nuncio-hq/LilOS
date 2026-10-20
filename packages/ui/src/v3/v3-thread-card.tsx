@@ -211,6 +211,8 @@ export function ThreadCard({
         {t.unseen && (
           <span
             aria-hidden
+            // Test hook: the card's unseen dot (#563).
+            data-thread-unseen
             className="mr-1.5 inline-block size-[7px] rounded-full bg-sky-600 dark:bg-sky-400"
           />
         )}

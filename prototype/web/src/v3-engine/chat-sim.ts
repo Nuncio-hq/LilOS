@@ -1,4 +1,4 @@
-import { STEP_VERB, type V3Data, type V3Reply, type V3Thread, type V3Turn } from "@lilos/ui"
+import { type AttachedFile, STEP_VERB, type V3Data, type V3Reply, type V3Thread, type V3Turn } from "@lilos/ui"
 
 /* The prototype's stand-in for an engine turn: a message goes in, the
    agent's steps appear one by one (a run step streams its output into the
@@ -30,6 +30,8 @@ export function runTurn(
   reply: ReplyFn,
   thread: V3Thread,
   text: string,
+  /** What you attached to this message; shown on its turn. */
+  files?: AttachedFile[],
 ) {
   const id = thread.id;
   const n = Math.max(0, ...thread.turns.map((t) => t.n)) + 1;
@@ -68,7 +70,7 @@ export function runTurn(
         n,
         from: `you at ${at}`,
         took: "just now",
-        prompt: { by: "you", at, text },
+        prompt: { by: "you", at, text, ...(files?.length ? { files } : {}) },
         steps: [],
       },
       ...t.turns,
