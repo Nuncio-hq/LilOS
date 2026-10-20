@@ -1,7 +1,7 @@
 /* Small pure helpers shared by the LilOS surfaces. No state, no data. */
 import type { PhrasingContent, RootContent } from "mdast";
 import { fromMarkdown } from "mdast-util-from-markdown";
-import type { Phase, RespondTo, SessionLife, Status, Thread } from "../types";
+import type { Phase, SessionLife, Status, Thread } from "../types";
 
 export const plural = (n: number, w: string) =>
   `${n} ${w}${n === 1 ? "" : "s"}`;
@@ -30,9 +30,8 @@ export const stripAnsi = (s: string) => s.replace(/\u001b\[[0-9;]*m/g, "");
 /* Flatten markdown through the real parser (the one streamdown renders
    with) so emphasis markers unwrap but a code span or identifier keeps
    its underscores (#417 — the old char regex ate "_" inside
-   `LILOS_ENGINE`). Two surfaces share the machinery: preview() joins
-   blocks with " · " for the DM card, inline() joins them with one space
-   for single-line spots (#448). */
+   `LILOS_ENGINE`). inline() joins the blocks with one space for
+   single-line spots (#448). */
 const inlineText = (node: PhrasingContent): string => {
   if (node.type === "break") return " ";
   if (node.type === "image" || node.type === "imageReference")
@@ -57,21 +56,6 @@ const blockLines = (node: RootContent): string[] => {
   }
 };
 
-const parsePreview = (md: string) => {
-  try {
-    return fromMarkdown(md)
-      .children.flatMap(blockLines)
-      .map((l) => l.trim())
-      .filter(Boolean)
-      .reduce(
-        (acc, l) => acc + (acc.endsWith(":") ? " " : acc ? " · " : "") + l,
-        "",
-      );
-  } catch {
-    return md.replace(/\s+/g, " ").trim();
-  }
-};
-
 const parseInline = (md: string) => {
   try {
     return fromMarkdown(md)
@@ -85,11 +69,10 @@ const parseInline = (md: string) => {
   }
 };
 
-/* #569: the DM list re-parses every session row's preview on each
-   streamed word — the profile's single biggest block. Parse once per
-   distinct text. The map is FIFO-bounded: a growing stream mints a fresh
-   key per delta and the dead prefixes never re-hit, so an unbounded map
-   would just leak them. */
+/* #569: a row's one-line text was re-parsed on every streamed word — the
+   profile's single biggest block. Parse once per distinct text. The map is
+   FIFO-bounded: a growing stream mints a fresh key per delta and the dead
+   prefixes never re-hit, so an unbounded map would just leak them. */
 const textCache = (cap: number) => {
   const m = new Map<string, string>();
   return (text: string, parse: (t: string) => string): string => {
@@ -104,13 +87,10 @@ const textCache = (cap: number) => {
     return out;
   };
 };
-const previewCached = textCache(256);
 const inlineCached = textCache(256);
 
-export const preview = (md: string) => previewCached(md, parsePreview);
-
-/* One flat line, no " · " separators — the subagent now-line (#448). Same
-   parse as preview(); blocks and wrapped lines join with a single space. */
+/* One flat line — the subagent now-line (#448). Blocks and wrapped lines
+   join with a single space. */
 export const inline = (md: string) => inlineCached(md, parseInline);
 
 export const PHASE_LABEL: Record<Phase, string> = {
@@ -127,11 +107,6 @@ export const STATUS_DOT: Record<Status, string> = {
   online: "bg-[#34c759]",
   busy: "bg-[#007aff] animate-pulse",
   offline: "bg-zinc-400",
-};
-export const RESPOND: Record<RespondTo, string> = {
-  me: "Only me",
-  selected: "Selected people",
-  anyone: "Anyone in the channel",
 };
 
 /* #344: running while a turn works or any subagent still works (a session

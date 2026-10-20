@@ -1,12 +1,7 @@
 import { CheckIcon, ChevronDownIcon } from "lucide-react";
-import {
-  type KeyboardEvent,
-  type ReactNode,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import type { ReactNode } from "react";
 import { cn } from "../lib/utils";
+import { useMenu } from "./v3-keys";
 
 /* One chip that opens a small menu of choices: the new chat's who / where /
    which model, and the model on an agent's page while you edit it. */
@@ -47,39 +42,7 @@ export function ChipMenu({
   ariaLabel?: string;
   className?: string;
 }) {
-  const [open, setOpen] = useState(false);
-  const trigger = useRef<HTMLButtonElement>(null);
-  const list = useRef<HTMLDivElement>(null);
-
-  // Opening puts the keyboard on the current choice (or the first).
-  useEffect(() => {
-    if (!open) return;
-    const items = list.current?.querySelectorAll<HTMLElement>("button");
-    const on = list.current?.querySelector<HTMLElement>(
-      '[aria-checked="true"]',
-    );
-    (on ?? items?.[0])?.focus();
-  }, [open]);
-
-  const close = () => {
-    setOpen(false);
-    trigger.current?.focus();
-  };
-
-  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === "Escape") {
-      // Closes the menu, not the peek behind it.
-      e.stopPropagation();
-      close();
-      return;
-    }
-    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
-    e.preventDefault();
-    const items = [...(list.current?.querySelectorAll("button") ?? [])];
-    const at = items.indexOf(document.activeElement as HTMLButtonElement);
-    const step = e.key === "ArrowDown" ? 1 : -1;
-    items[(at + step + items.length) % items.length]?.focus();
-  };
+  const { open, setOpen, trigger, list, close, onKeyDown } = useMenu();
 
   return (
     <span className="relative min-w-0">

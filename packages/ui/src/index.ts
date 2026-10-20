@@ -43,6 +43,7 @@ export { V3Banner } from "./v3/v3-banner";
 // controlled; the vocabulary and lookups below let an app (or the prototype's
 // mock engine) build the same view models the pages read.
 export { STEP_VERB } from "./v3/v3-bits";
+export type * from "./v3/v3-data-types";
 export { agentNameOf, agentOf } from "./v3/v3-model";
 export {
   navFromParams,
@@ -50,6 +51,7 @@ export {
   paramsText,
   step as stepNav,
 } from "./v3/v3-nav";
+export type * from "./v3/v3-page-types";
 export { whenWords } from "./v3/v3-schedule-text";
 export { V3Shell } from "./v3/v3-shell";
 export type * from "./v3/v3-types";

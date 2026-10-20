@@ -1,4 +1,5 @@
 import type { V3Data, V3Workbench } from "@lilos/ui"
+import { MODEL_OPTIONS, MODEL_PROVIDERS, MODEL_VISIBILITY, settingsModels } from "./fake-v3-models"
 
 /* ?v3 mock: the tools around the company. Each thread's Workbench, the
    LilOS Browser's tabs, schedules, the paired phone and Settings. Same Monday
@@ -222,14 +223,23 @@ export const SETTINGS: V3Data["settings"] = {
   enginePolicy: "smart",
   editor: "Cursor",
   editors: ["Cursor", "VS Code", "Zed", "Xcode"],
-  models: [
-    { id: "opus", label: "Opus 5.5", on: true },
-    { id: "sonnet", label: "Sonnet 5", on: true },
-    { id: "haiku", label: "Haiku 5", on: true },
-    { id: "gpt", label: "GPT-6", on: false },
-  ],
+  models: settingsModels(MODEL_OPTIONS, MODEL_PROVIDERS, MODEL_VISIBILITY),
   engine: { name: "Hermes", version: "0.14.2", state: "ok", path: "~/.hermes/bin/hermes" },
   relay: { state: "ok" },
+  // Every hired agent's engine profile, not yet approved to see the app: the
+  // one-time Connect (Settings → Engine, and first run) turns them on.
+  connect: {
+    engine: "Hermes",
+    approved: false,
+    rows: [
+      { profile: "ceo", employee: "Chief", state: "not-connected" },
+      { profile: "builder", employee: "Builder", state: "not-connected" },
+      { profile: "reviewer", employee: "Reviewer", state: "not-connected" },
+      { profile: "marketer", employee: "Marketer", state: "not-connected" },
+      { profile: "scout", employee: "Scout", state: "not-connected" },
+      { profile: "designer", employee: "Designer", state: "not-connected" },
+    ],
+  },
   about: {
     version: "LilOS 0.9 (prototype)",
     whatsNew: { label: "What’s new in 0.9", ask: "What changed in LilOS 0.9?" },

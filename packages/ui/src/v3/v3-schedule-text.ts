@@ -1,5 +1,5 @@
 import { validCron } from "../schedule/schedule-text";
-import type { V3Schedule, V3ScheduleWhen } from "./v3-types";
+import type { V3Schedule, V3ScheduleWhen } from "./v3-data-types";
 
 /* Plain-words schedules for v3: kinds and wording. A saved schedule keeps
    `next` as a phrase, so saving computes it here against the real clock.

@@ -1,19 +1,18 @@
 import { LayoutListIcon, NetworkIcon, PlusIcon } from "lucide-react";
 import { cn } from "../lib/utils";
+import { Meter, Page, Tabs, Title } from "./v3-bits";
+import type { V3Data } from "./v3-data-types";
 import {
   AgentAvatar,
   Avatar,
   CeoMark,
-  Meter,
-  Page,
-  RowButton,
   StatusDot,
   StatusPill,
-  Tabs,
-  Title,
-} from "./v3-bits";
+} from "./v3-marks";
 import { agentStatus, agentThread, agentTicket } from "./v3-model";
-import type { V3Agent, V3Data, V3PageProps } from "./v3-types";
+import { RowButton } from "./v3-open-record";
+import type { V3PageProps } from "./v3-page-types";
+import type { V3Agent } from "./v3-types";
 
 /* People: every agent as a table (numbers) or as a tree (who reports to
    whom). LilOS agents and outside workers are listed apart: an outside worker

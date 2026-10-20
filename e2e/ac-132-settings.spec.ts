@@ -19,8 +19,8 @@ import { bootStack, pickPorts, skipFirstRun, v3Sidebar } from "./helpers/stack";
  * v3: Settings is a page, not a dialog — `#?page=settings&view=general|engine|phone`
  * with tabs General (you + company, Approvals, "Open files in", About) and
  * "Engine & models" (engine, Status, Models). So "Esc closes" has no
- * counterpart (nothing to dismiss) and the old Approvals policy
- * (Smart/Manual/Off) is now the Ask / Full access switch.
+ * counterpart (nothing to dismiss). Approvals is LilOS's own Ask / Full
+ * access switch with the engine's policy (Smart / Manual / Off) beneath it.
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/

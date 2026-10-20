@@ -1,10 +1,11 @@
 import { FolderIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { cn } from "../lib/utils";
-import { Avatar, Btn, CeoMark, Kbd, Title } from "./v3-bits";
+import { Btn, Kbd, Title } from "./v3-bits";
 import { ConnectRows } from "./v3-connect-rows";
+import { Avatar, CeoMark } from "./v3-marks";
 import { defaultAgent } from "./v3-model";
-import type { V3PageProps } from "./v3-types";
+import type { V3PageProps } from "./v3-page-types";
 import { Choice, Field, Steps } from "./v3-welcome-bits";
 import { EngineStep } from "./v3-welcome-engine";
 

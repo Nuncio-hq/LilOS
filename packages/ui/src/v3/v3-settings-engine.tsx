@@ -1,6 +1,9 @@
 import { CopyIcon } from "lucide-react";
-import { AgentAvatar, Btn, Section, Spinner } from "./v3-bits";
+import { Btn, Section, Spinner } from "./v3-bits";
 import { ConnectRows } from "./v3-connect-rows";
+import type { V3Settings } from "./v3-data-types";
+import { AgentAvatar } from "./v3-marks";
+import type { V3PageProps } from "./v3-page-types";
 import {
   EngineFix,
   EngineState,
@@ -9,7 +12,6 @@ import {
   useRun,
 } from "./v3-settings-bits";
 import { Confirm } from "./v3-settings-panes";
-import type { V3PageProps, V3Settings } from "./v3-types";
 
 /* Settings → Engine & models: the engine and the link to it, how to fix
    either, the agents on it, whether LilOS is connected to its profiles, and

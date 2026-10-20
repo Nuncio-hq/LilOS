@@ -44,9 +44,3 @@ export const openThread = (conversationId: string): void =>
     page: { page: "threads" },
     peek: [{ page: "thread", id: conversationId }],
   }));
-
-/** The conversation the side peek shows, if its top record is a thread. */
-export function openThreadId(nav: V3Nav): string | undefined {
-  const top = nav.peek[nav.peek.length - 1];
-  return top?.page === "thread" ? top.id : undefined;
-}

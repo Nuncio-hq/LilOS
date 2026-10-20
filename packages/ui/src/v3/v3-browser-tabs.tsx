@@ -1,10 +1,11 @@
 import { GlobeIcon, PlusIcon, XIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "../lib/utils";
-import { AgentAvatar, DOT } from "./v3-bits";
 import { NEW_TAB, tabStatus } from "./v3-browser-bits";
+import type { V3Data } from "./v3-data-types";
+import { AgentAvatar, DOT } from "./v3-marks";
 import { agentNameOf, agentOf } from "./v3-model";
-import type { V3BrowserTab, V3Data, V3Status } from "./v3-types";
+import type { V3BrowserTab, V3Status } from "./v3-types";
 
 /* The session browser's tab strip: this session's tabs in the order they were
    opened. An agent's tab wears the agent's face and a thin status line

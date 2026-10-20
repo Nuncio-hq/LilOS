@@ -1,6 +1,5 @@
 import type { StatusRow } from "@lilos/client-runtime";
 import {
-  type Conversation,
   nextRunAt,
   type ScheduledTask,
   type SystemStatusResult,
@@ -141,15 +140,19 @@ export const deviceOf = (
 /** A relay task as a v3 schedule, losslessly: `when` is the same record,
     `next` is the real next run (cron walked, a past "once" is over), and a
     run opens its thread by the conversation it made (only when that
-    conversation is known here). */
+    conversation is known here: `knownThreads` holds the ids of the ones that
+    are). */
 export function scheduleOf(
   task: ScheduledTask,
-  conversations: Conversation[],
+  knownThreads: ReadonlySet<string>,
   now: Date,
 ): V3Schedule {
   const next = nextRunAt(task.schedule, now);
   const run = task.lastRun;
-  const threadId = conversations.find((c) => c.id === run?.conversationId)?.id;
+  const threadId =
+    run && knownThreads.has(run.conversationId)
+      ? run.conversationId
+      : undefined;
   return {
     id: task.id,
     agentId: task.employeeId,

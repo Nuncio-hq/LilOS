@@ -8,7 +8,7 @@ import {
 } from "react";
 import { formatBytes, withinCount, withinSize } from "../lib/attach-rules";
 import type { AttachedFile } from "../types";
-import type { V3Data } from "./v3-types";
+import type { V3Data } from "./v3-data-types";
 
 /* Files staged in a v3 message box before the first send: paste, drop or the
    paperclip put them here as chips you can remove. The caps come from the app

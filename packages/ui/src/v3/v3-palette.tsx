@@ -1,10 +1,12 @@
 import { CornerDownLeftIcon, SparklesIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "../lib/utils";
-import { Avatar, Btn, Kbd, Spinner } from "./v3-bits";
+import { Btn, Kbd, Spinner } from "./v3-bits";
+import type { V3Data, V3Draft } from "./v3-data-types";
+import { Avatar } from "./v3-marks";
+import type { V3Actions, V3Route } from "./v3-page-types";
 import { MessageHitRow, useMessageHits } from "./v3-palette-messages";
 import { Footer, PlanView } from "./v3-palette-plan";
-import type { V3Actions, V3Data, V3Draft, V3Route } from "./v3-types";
 
 type Plan = Extract<V3Draft, { kind: "plan" }>;
 type Jump = { label: string; hint: string; route: V3Route };
@@ -67,7 +69,7 @@ export function V3Palette({
           route: { page: "needs" },
         },
         ...work,
-        { label: "Threads", hint: "live sessions", route: { page: "threads" } },
+        { label: "Threads", hint: "live threads", route: { page: "threads" } },
       ];
     }
     const hit = (s: string) => s.toLowerCase().includes(q);

@@ -1,8 +1,11 @@
 import { GlobeIcon, HandIcon, LockIcon, Undo2Icon } from "lucide-react";
 import { useState } from "react";
-import { AgentAvatar, Btn, StatusDot } from "./v3-bits";
+import { Btn } from "./v3-bits";
+import type { V3Data } from "./v3-data-types";
+import { AgentAvatar, StatusDot } from "./v3-marks";
 import { agentOf, FORMER_AGENT } from "./v3-model";
-import type { V3BrowserTab, V3Data, V3PageProps, V3Status } from "./v3-types";
+import type { V3PageProps } from "./v3-page-types";
+import type { V3BrowserTab, V3Status } from "./v3-types";
 
 /* Small pieces of a session's browser: address helpers, the page body, the
    agent banner and the empty state. */
@@ -72,8 +75,8 @@ export function SessionStart({
       />
       <p className="mt-3 text-[14px] text-muted-foreground">
         {empty
-          ? `No tabs in this session yet.${agentName ? ` Open a page here and ${agentName} can see it too.` : ""}`
-          : `New tab.${agentName ? ` ${agentName} can see pages you open in this session.` : ""}`}
+          ? `No tabs in this thread yet.${agentName ? ` Open a page here and ${agentName} can see it too.` : ""}`
+          : `New tab.${agentName ? ` ${agentName} can see pages you open in this thread.` : ""}`}
       </p>
       <form
         className="mt-4 flex h-[34px] w-full items-center rounded-lg bg-[var(--v3-hover)] px-3 focus-within:bg-background focus-within:shadow-[inset_0_0_0_1px_var(--foreground)]"
@@ -89,7 +92,7 @@ export function SessionStart({
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder="Search or type an address"
-          aria-label="Open a page in this session"
+          aria-label="Open a page in this thread"
           spellCheck={false}
           autoComplete="off"
           className="min-w-0 flex-1 bg-transparent text-[13.5px] text-foreground outline-none placeholder:text-muted-foreground/70"

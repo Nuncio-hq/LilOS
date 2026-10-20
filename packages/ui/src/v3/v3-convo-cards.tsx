@@ -1,16 +1,11 @@
 import { Fragment } from "react";
-import { ago, Btn, StatusPill } from "./v3-bits";
+import { ago, Btn } from "./v3-bits";
+import type { V3Ask, V3Data } from "./v3-data-types";
+import { StatusPill } from "./v3-marks";
 import { agentNameOf, agentOf, FORMER_AGENT } from "./v3-model";
+import type { V3PageProps } from "./v3-page-types";
 import { viaOf } from "./v3-rows";
-import type {
-  V3Agent,
-  V3Ask,
-  V3Data,
-  V3PageProps,
-  V3Thread,
-  V3Ticket,
-  V3Turn,
-} from "./v3-types";
+import type { V3Agent, V3Thread, V3Ticket, V3Turn } from "./v3-types";
 
 /* The quiet lines and cards around a conversation: how the thread opened,
    what it waits on, where it is stuck, and the "working" indicator. */

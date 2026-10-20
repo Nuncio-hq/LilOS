@@ -8,9 +8,10 @@ import {
 } from "lucide-react";
 import { type ReactNode, useRef, useState } from "react";
 import { cn } from "../lib/utils";
-import { AgentAvatar, Btn, CeoMark, Page, Title } from "./v3-bits";
+import { Btn, Page, Title } from "./v3-bits";
 import { ExistingProfiles } from "./v3-hire-profiles";
-import type { V3PageProps } from "./v3-types";
+import { AgentAvatar, CeoMark } from "./v3-marks";
+import type { V3PageProps } from "./v3-page-types";
 
 /* Hire: pick a role, check the three fields, done. With a CEO position the
    CEO writes the first instructions, so the form stays this short. The

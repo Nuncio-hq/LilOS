@@ -253,7 +253,7 @@ async function trial(shotsDir = ""): Promise<{ open: Window; reload: Window }> {
         await skipFirstRun(page);
         await page.goto(`${preview.url}/#?page=threads&view=all`);
         const row = page
-          .locator(`#v3-main [data-thread="${grown.conversationId}"]`)
+          .locator(`#v3-main [data-thread-row="${grown.conversationId}"]`)
           .getByRole("button")
           .first();
         await expect(row).toBeVisible({ timeout: 60_000 });

@@ -7,7 +7,8 @@ import {
 import { useState } from "react";
 import { cn } from "../lib/utils";
 import { Btn, Diff } from "./v3-bits";
-import type { V3Attachment, V3PageProps } from "./v3-types";
+import type { V3PageProps } from "./v3-page-types";
+import type { V3Attachment } from "./v3-types";
 
 /* What a reply carries besides prose: calm bordered cards under the answer.
    Images sit two to a row; every other card takes the full width. */

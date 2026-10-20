@@ -1,8 +1,9 @@
 import { CircleAlertIcon } from "lucide-react";
 import type { ReactNode } from "react";
-import { AgentAvatar, Avatar, Btn, TicketId } from "./v3-bits";
+import { Btn, TicketId } from "./v3-bits";
+import type { V3Data, V3Draft } from "./v3-data-types";
+import { AgentAvatar, Avatar } from "./v3-marks";
 import { agentOf, FORMER_AGENT, goalOf } from "./v3-model";
-import type { V3Data, V3Draft } from "./v3-types";
 
 /* ⌘K's draft plan: what the CEO would start, with the one button that makes
    it real. */

@@ -1,16 +1,7 @@
 import { cn } from "../lib/utils";
-import {
-  AgentAvatar,
-  ago,
-  Btn,
-  Meter,
-  Page,
-  RowButton,
-  Section,
-  StatusDot,
-  StatusPill,
-  Title,
-} from "./v3-bits";
+import { ago, Btn, Meter, Page, Section, Title } from "./v3-bits";
+import type { V3Data } from "./v3-data-types";
+import { AgentAvatar, StatusDot, StatusPill } from "./v3-marks";
 import {
   agentNameOf,
   agentOf,
@@ -24,7 +15,9 @@ import {
   ticketOf,
   waitingLabel,
 } from "./v3-model";
-import type { V3Agent, V3Data, V3PageProps, V3Status } from "./v3-types";
+import { RowButton } from "./v3-open-record";
+import type { V3PageProps } from "./v3-page-types";
+import type { V3Agent, V3Status } from "./v3-types";
 
 /* Home: three quiet answers on one page. What do I have to do, how is the
    team, how far are the goals. The CEO's note sits on top like a morning

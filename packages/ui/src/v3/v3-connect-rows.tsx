@@ -1,5 +1,5 @@
 import { cn } from "../lib/utils";
-import type { V3ConnectRow } from "./v3-types";
+import type { V3ConnectRow } from "./v3-data-types";
 
 /* The engine's profiles and whether LilOS is connected to each: the approval
    that lets an engine's agents see the app. Shown in Settings → Engine and in

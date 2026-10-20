@@ -1,4 +1,5 @@
-import type { V3Agent, V3Data, V3Status, V3Thread, V3Ticket } from "./v3-types";
+import type { V3Data } from "./v3-data-types";
+import type { V3Agent, V3Status, V3Thread, V3Ticket } from "./v3-types";
 
 /* Lookups every v3 page shares. Pure; the shell owns the data. */
 

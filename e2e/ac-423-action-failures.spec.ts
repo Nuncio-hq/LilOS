@@ -38,9 +38,6 @@ const SHOTS = path.join(repo, "test-results", "ac-423");
 const TOAST = "[data-toast]";
 const BANNER = "[data-status-banner]";
 const PICKER = '[data-slot="model-picker-trigger"]';
-/* The model picker on the new-chat draft: its Model chip lists the same
-   `models.list` catalog every thread's picker reads. */
-const PICK = (page: Page) => v3Peek(page).getByTitle("Model", { exact: true });
 const VIEW = { width: 1288, height: 900 };
 /* The wire reason every injected rejection carries — raw relay jargon the
    toast must NOT show. What it shows instead is the plain-words mapping
@@ -179,7 +176,10 @@ test("AC-3 the model catalog survives failed models.list calls", async ({
     message: "engine host not ready",
   });
   await newChat(page);
-  await expect(PICK(page)).toBeVisible({ timeout: 30_000 });
+  /* The draft's model picker is the engine's full picker, listing the same
+     `models.list` catalog every thread's picker reads. It only renders once
+     the app holds that catalog, so its presence is the proof. */
+  await expect(v3Peek(page).locator(PICKER)).toBeVisible({ timeout: 30_000 });
   /* (b) The host fully gone for the app's fetches: every models.list
      rejects, yet the relay's host-status cache still seeds the picker —
      a hello that predates the first models-carrying report catches up on
@@ -187,7 +187,7 @@ test("AC-3 the model catalog survives failed models.list calls", async ({
   fail.heal();
   fail.reject(method("models.list"));
   await page.reload();
-  await expect(PICK(page)).toBeVisible({ timeout: 30_000 });
+  await expect(v3Peek(page).locator(PICKER)).toBeVisible({ timeout: 30_000 });
   await shot(page, "ac3-catalog-seeded");
 });
 

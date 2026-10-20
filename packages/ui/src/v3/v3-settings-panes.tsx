@@ -1,7 +1,8 @@
 import { type ReactNode, useState } from "react";
 import { Btn, Section, Spinner } from "./v3-bits";
+import { EscLayer, useFocusBack } from "./v3-keys";
+import type { V3PageProps } from "./v3-page-types";
 import { LinkRow, Row, Segmented, useRun } from "./v3-settings-bits";
-import type { V3PageProps } from "./v3-types";
 
 /* Settings → General: you and the company, approvals, the editor, About.
    Each control calls act.saveSettings (or saveProfile); a control whose
@@ -45,6 +46,8 @@ function Fact({
   onSave?: (value: string) => void;
 }) {
   const [draft, setDraft] = useState<string>();
+  // Saving or cancelling swaps the field back for "Rename…": the keyboard goes there.
+  const renameBtn = useFocusBack<HTMLButtonElement>(draft !== undefined);
   const save = () => {
     const next = draft?.trim();
     if (next && next !== value) onSave?.(next);
@@ -60,18 +63,25 @@ function Fact({
           {value}
         </span>
       ) : (
-        <input
-          // biome-ignore lint/a11y/noAutofocus: it opens because you asked to rename
-          autoFocus
-          aria-label={label}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") save();
-            if (e.key === "Escape") setDraft(undefined);
-          }}
-          className={INPUT}
-        />
+        <>
+          {/* Esc cancels the rename, not a peek that may be open beside it. */}
+          <EscLayer onEscape={() => setDraft(undefined)} />
+          <input
+            // biome-ignore lint/a11y/noAutofocus: it opens because you asked to rename
+            autoFocus
+            aria-label={label}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key !== "Enter") return;
+              // The keyboard moves to "Rename…" as the box closes; the Enter
+              // being pressed must not also click it and reopen the box.
+              e.preventDefault();
+              save();
+            }}
+            className={INPUT}
+          />
+        </>
       )}
       {draft !== undefined ? (
         <>
@@ -84,7 +94,11 @@ function Fact({
         </>
       ) : (
         (onSave || onRename) && (
-          <Btn small onClick={onSave ? () => setDraft(value) : onRename}>
+          <Btn
+            small
+            ref={renameBtn}
+            onClick={onSave ? () => setDraft(value) : onRename}
+          >
             Rename…
           </Btn>
         )

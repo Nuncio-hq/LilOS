@@ -27,8 +27,9 @@ import {
  * new-chat draft's Folder chip (a menu of the app's recents, newest first;
  * unreachable folders are left out) and a folder-less thread's "Add a
  * folder" button, which opens the in-app dialog and MOVES that session into
- * the pick. There is no "No folder · just chat" choice in the draft — a
- * folder-less session starts over the relay (startFolderlessChat).
+ * the pick. "No folder · just chat" is the draft's last menu entry (AC-6 picks
+ * it); the folder-less threads the other legs start from skip the draft and
+ * open over the relay (startFolderlessChat).
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
@@ -301,16 +302,25 @@ test("AC-6 a new chat pre-selects the last session's folder; a no-folder session
   page,
 }) => {
   // Last session ran in repoDir → the draft's Folder chip comes up on it.
-  await expect(await draftFolderChip(page)).toContainText("lilos-repo-a", {
-    timeout: 15_000,
-  });
-  // …but a folder is never required: a folder-less session is a plain chat.
-  const conv = await startFolderlessChat(page, stack, "no folder please");
-  await page.goto(threadUrl(stack.webUrl, conv));
+  const chip = await draftFolderChip(page);
+  await expect(chip).toContainText("lilos-repo-a", { timeout: 15_000 });
+  // …but a folder is never required: pick "No folder · just chat" and send.
+  await chip.click();
+  await v3Peek(page)
+    .getByRole("menuitemradio", { name: /No folder/ })
+    .click();
+  await expect(chip).toContainText("No folder", { timeout: 15_000 });
+  await v3Peek(page)
+    .getByPlaceholder("Message Default…")
+    .fill("no folder please");
+  await v3Peek(page).getByRole("button", { name: "Send" }).click();
+  await expect(page).toHaveURL(/open=thread:[^&]+/, { timeout: 30_000 });
+  const conv = decodeURIComponent(
+    /open=thread:([^&,]+)/.exec(page.url())?.[1] ?? "",
+  );
   /* The thread opens beside Threads: the turn settles (an employee turn
      renders) and nothing announces the missing folder: no system note, no
      header chip, a neutral hint (#196 — supersedes the #113 AC-6 notice). */
-  await expect(page).toHaveURL(/open=thread:[^&]+/);
   await expect(page.locator("[data-agentturn]").first()).toBeVisible({
     timeout: 30_000,
   });

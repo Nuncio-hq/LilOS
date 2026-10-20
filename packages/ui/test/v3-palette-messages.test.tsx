@@ -10,8 +10,9 @@ import {
   screen,
 } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import type { V3Data } from "../src/v3/v3-data-types";
 import { V3Palette } from "../src/v3/v3-palette";
-import type { V3Data, V3MessageHit, V3Thread } from "../src/v3/v3-types";
+import type { V3MessageHit, V3Thread } from "../src/v3/v3-types";
 
 afterEach(cleanup);
 

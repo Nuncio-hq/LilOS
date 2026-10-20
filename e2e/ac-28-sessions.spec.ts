@@ -362,7 +362,7 @@ test("AC-3 rename + archive persist across restart", async ({ page }) => {
 
   // Rename it in place from its row's menu, then archive it.
   await page.goto(`${stack.webUrl}/#?page=threads&view=all`);
-  const row = page.locator(`[data-thread="${convId}"]`);
+  const row = page.locator(`[data-thread-row="${convId}"]`);
   await expect(row).toBeVisible({ timeout: 30_000 });
   const menu = (r: Locator) =>
     r.getByRole("button", { name: "Thread actions", exact: true });
@@ -384,7 +384,7 @@ test("AC-3 rename + archive persist across restart", async ({ page }) => {
   await expect(listRow(page, "Keeper thread")).toBeVisible();
   await page.getByRole("button", { name: /Archived \(1\)/ }).click();
   const archived = page.locator(
-    `[data-archived-list] [data-thread="${convId}"]`,
+    `[data-archived-list] [data-thread-row="${convId}"]`,
   );
   await expect(archived).toContainText("Repo summary thread");
   await page.screenshot({ path: `${SHOTS}/ac3-archived.png` });
@@ -398,7 +398,7 @@ test("AC-3 rename + archive persist across restart", async ({ page }) => {
   await page.goto(`${stack.webUrl}/#?page=threads&view=all`);
   await expect(listRow(page, "Keeper thread")).toBeVisible({ timeout: 30_000 });
   await expect(
-    page.locator(`[data-thread="${convId}"]:not([data-archived])`),
+    page.locator(`[data-thread-row="${convId}"]:not([data-archived])`),
   ).toHaveCount(0);
   await page.getByRole("button", { name: /Archived \(1\)/ }).click();
   await expect(archived).toContainText("Repo summary thread", {
@@ -409,7 +409,7 @@ test("AC-3 rename + archive persist across restart", async ({ page }) => {
   await menu(archived).click();
   await page.getByRole("menuitem", { name: "Unarchive thread" }).click();
   await expect(
-    page.locator(`[data-thread="${convId}"]:not([data-archived])`),
+    page.locator(`[data-thread-row="${convId}"]:not([data-archived])`),
   ).toContainText("Repo summary thread", { timeout: 30_000 });
   await expect(listRow(page, "Keeper thread")).toBeVisible();
 });

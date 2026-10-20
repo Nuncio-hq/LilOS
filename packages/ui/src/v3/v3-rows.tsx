@@ -1,22 +1,11 @@
 import { cn } from "../lib/utils";
-import {
-  AgentAvatar,
-  ago,
-  RowButton,
-  Spinner,
-  StatusDot,
-  StatusPill,
-  TicketId,
-} from "./v3-bits";
+import { ago, Spinner, TicketId } from "./v3-bits";
+import type { V3Data } from "./v3-data-types";
+import { AgentAvatar, StatusDot, StatusPill } from "./v3-marks";
 import { agentOf, FORMER_AGENT, ticketOf } from "./v3-model";
-import type {
-  V3Agent,
-  V3ConnectorDef,
-  V3Data,
-  V3Route,
-  V3Thread,
-  V3Ticket,
-} from "./v3-types";
+import { RowButton } from "./v3-open-record";
+import type { V3Route } from "./v3-page-types";
+import type { V3Agent, V3ConnectorDef, V3Thread, V3Ticket } from "./v3-types";
 
 /* Rows shared by the goal, project and agent pages: the same ticket or
    thread always looks the same wherever it is listed. */

@@ -5,7 +5,7 @@ import {
 } from "@lilos/client-runtime";
 import type { DesktopAbout } from "@lilos/contracts/app";
 import type { V3Data } from "@lilos/ui";
-import { atom, onMount, type ReadableAtom } from "nanostores";
+import { atom, computed, onMount, type ReadableAtom } from "nanostores";
 import { toastOnFail } from "../lib/actions";
 import { connectApproved } from "../lib/connect";
 import { folders, refreshFolders } from "../lib/folders";
@@ -70,6 +70,7 @@ const FIRST_RUN_MODELS = 8;
 
 function build(): Slice {
   const now = Date.now();
+  const threadIds = new Set(relay.conversations.get().map((c) => c.id));
   const status = relay.status.get();
   const connection = relay.state.get();
   const rows: StatusRow[] = toStatusComponents({
@@ -167,7 +168,7 @@ function build(): Slice {
     // not shuffle when one is paused.
     schedules: [...$scheduledTasks.get()]
       .sort((a, b) => a.createdAt - b.createdAt)
-      .map((t) => scheduleOf(t, relay.conversations.get(), new Date(now))),
+      .map((t) => scheduleOf(t, threadIds, new Date(now))),
     setUp: onboarded.get(),
   };
 }
@@ -188,13 +189,21 @@ const slice = atom<Slice>(INITIAL);
 
 onMount(slice, () => {
   const refresh = () => slice.set(build());
+  /* A schedule links the thread its last run made, so the slice needs which
+     threads exist, not how each one is doing: keyed by the ids, a turn
+     starting or a thread being read (a `conversation.updated`) does not
+     rebuild the diagnostics, model lists and cron walks. Built here, not at
+     module level: `relay` exists only after boot. */
+  const threadIdKey = computed(relay.conversations, (cs) =>
+    cs.map((c) => c.id).join(","),
+  );
   const sources: { listen: (cb: () => void) => () => void }[] = [
     relay.devices,
     relay.status,
     relay.state,
     relay.fatal,
     relay.employees,
-    relay.conversations,
+    threadIdKey,
     $scheduledTasks,
     defaultAccess,
     defaultEditor,

@@ -8,11 +8,13 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "../lib/utils";
-import { AgentAvatar, Btn, Section, StatusPill } from "./v3-bits";
+import { Btn, Section } from "./v3-bits";
+import type { V3Schedule } from "./v3-data-types";
+import { AgentAvatar, StatusPill } from "./v3-marks";
 import { agentOf, FORMER_AGENT, projectOf } from "./v3-model";
+import type { V3PageProps } from "./v3-page-types";
 import { ScheduleEditor } from "./v3-schedule-editor";
 import { describeWhen, PER_CRON } from "./v3-schedule-text";
-import type { V3PageProps, V3Schedule } from "./v3-types";
 
 export { ScheduleEditor } from "./v3-schedule-editor";
 

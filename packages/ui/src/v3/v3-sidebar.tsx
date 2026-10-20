@@ -14,9 +14,11 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "../lib/utils";
-import { AgentAvatar, CeoMark, Kbd, ProjectMark, StatusDot } from "./v3-bits";
+import { Kbd } from "./v3-bits";
+import type { V3Data } from "./v3-data-types";
+import { AgentAvatar, CeoMark, ProjectMark, StatusDot } from "./v3-marks";
 import { agentDot } from "./v3-model";
-import type { V3Data, V3PageRoute, V3RecordRoute, V3Route } from "./v3-types";
+import type { V3PageRoute, V3RecordRoute, V3Route } from "./v3-page-types";
 
 /* The v3 sidebar is the company's table of contents: the three databases
    (Work, Threads, Goals), the projects, and the people, each person with the

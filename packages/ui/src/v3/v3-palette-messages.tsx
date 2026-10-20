@@ -1,8 +1,10 @@
 import { ArchiveIcon } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { cn } from "../lib/utils";
+import type { V3Data } from "./v3-data-types";
 import { agentNameOf } from "./v3-model";
-import type { V3Actions, V3Data, V3MessageHit, V3Thread } from "./v3-types";
+import type { V3Actions } from "./v3-page-types";
+import type { V3MessageHit, V3Thread } from "./v3-types";
 
 /* ⌘K's Messages group: what was said, found by its text, with the thread and
    the agent it was said to. The search is the app's (`act.searchMessages`);

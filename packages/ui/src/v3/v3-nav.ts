@@ -1,4 +1,9 @@
-import type { V3Nav, V3PageRoute, V3RecordRoute, V3Route } from "./v3-types";
+import type {
+  V3Nav,
+  V3PageRoute,
+  V3RecordRoute,
+  V3Route,
+} from "./v3-page-types";
 
 /* One place for how you move around v3 (#767 feedback). You live on a page
    (Threads, Work, People…); everything you open from it (a thread, its

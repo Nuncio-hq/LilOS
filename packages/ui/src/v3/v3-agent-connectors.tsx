@@ -1,7 +1,8 @@
-import { useState } from "react";
 import { cn } from "../lib/utils";
-import { Avatar } from "./v3-bits";
-import type { V3ConnectorDef, V3PageProps } from "./v3-types";
+import { useMenu } from "./v3-keys";
+import { Avatar } from "./v3-marks";
+import type { V3PageProps } from "./v3-page-types";
+import type { V3ConnectorDef } from "./v3-types";
 
 /* The Connectors row on an agent's page. The page only draws it when the app
    can turn a connector on or off for an agent, so `toggle` is never absent. */
@@ -39,7 +40,7 @@ export function Connectors({
   agentName: string;
   toggle: (connectorId: string, agentId: string) => void;
 } & Pick<V3PageProps, "go">) {
-  const [open, setOpen] = useState(false);
+  const { open, setOpen, trigger, list, close, onKeyDown } = useMenu();
   const on = connectors.filter((c) => c.agents.includes(agentId));
   const off = connectors.filter((c) => !c.agents.includes(agentId));
   return (
@@ -62,7 +63,10 @@ export function Connectors({
       )}
       <span className="relative">
         <button
+          ref={trigger}
           type="button"
+          aria-haspopup="menu"
+          aria-expanded={open}
           onClick={() => setOpen((o) => !o)}
           className="text-[13px] text-muted-foreground/70 hover:text-foreground"
         >
@@ -72,11 +76,19 @@ export function Connectors({
           <>
             <button
               type="button"
+              tabIndex={-1}
               aria-label="Close menu"
               onClick={() => setOpen(false)}
               className="fixed inset-0 z-10 cursor-default"
             />
-            <div className="absolute top-full left-0 z-20 mt-1 w-[230px] rounded-lg border border-[var(--v3-line)] bg-background py-1 text-[13.5px]">
+            <div
+              ref={list}
+              role="menu"
+              aria-label="Add a connector"
+              tabIndex={-1}
+              onKeyDown={onKeyDown}
+              className="absolute top-full left-0 z-20 mt-1 w-[230px] rounded-lg border border-[var(--v3-line)] bg-background py-1 text-[13.5px]"
+            >
               {off.length === 0 && (
                 <p className="px-3 py-1.5 text-muted-foreground">
                   Every connector is on.
@@ -86,9 +98,10 @@ export function Connectors({
                 <button
                   key={c.id}
                   type="button"
+                  role="menuitem"
                   onClick={() => {
                     toggle(c.id, agentId);
-                    setOpen(false);
+                    close();
                   }}
                   className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-foreground hover:bg-[var(--v3-hover)]"
                 >
@@ -99,6 +112,7 @@ export function Connectors({
               ))}
               <button
                 type="button"
+                role="menuitem"
                 onClick={() => {
                   setOpen(false);
                   go({ page: "settings" });

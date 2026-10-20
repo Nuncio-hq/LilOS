@@ -1,4 +1,5 @@
-import { Section, StatusPill } from "./v3-bits";
+import { Section } from "./v3-bits";
+import { StatusPill } from "./v3-marks";
 import type { V3Status } from "./v3-types";
 
 /* What each status means, shared by both Guides. Without tickets there is no

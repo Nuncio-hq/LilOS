@@ -8,8 +8,10 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "../lib/utils";
-import { INK, Spinner, StatusPill } from "./v3-bits";
-import type { V3Data, V3Status, V3Workbench } from "./v3-types";
+import { Spinner } from "./v3-bits";
+import type { V3Data } from "./v3-data-types";
+import { INK, StatusPill } from "./v3-marks";
+import type { V3Status, V3Workbench } from "./v3-types";
 import {
   CARD,
   Panel,

@@ -3,13 +3,9 @@ import { QRCodeSVG } from "qrcode.react";
 import { useEffect, useRef, useState } from "react";
 import { cn } from "../lib/utils";
 import { Btn, Section, Spinner } from "./v3-bits";
+import type { V3Pairing, V3PairOffer, V3Settings } from "./v3-data-types";
+import type { V3PageProps } from "./v3-page-types";
 import { Row, Switch, useFlash } from "./v3-settings-bits";
-import type {
-  V3PageProps,
-  V3Pairing,
-  V3PairOffer,
-  V3Settings,
-} from "./v3-types";
 
 /* Settings → Phone: the phones paired with this Mac, a one-time pairing card
    (a QR the phone scans, plus the same code to type) and, where the app

@@ -54,7 +54,7 @@ const send = async (page: Page, text: string) => {
     state pill — the v3 home of what the DM feed's rows said. */
 async function threadsAll(stack: Stack, page: Page) {
   await page.goto(`${stack.webUrl}/#?page=threads&view=all`);
-  await expect(page.getByText("Every agent session, live.")).toBeVisible({
+  await expect(page.getByText("Every agent thread, live.")).toBeVisible({
     timeout: 30_000,
   });
 }

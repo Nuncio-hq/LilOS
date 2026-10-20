@@ -1,17 +1,10 @@
 import { ArrowRightIcon } from "lucide-react";
 import type { ReactNode } from "react";
-import {
-  AgentAvatar,
-  Page,
-  RowButton,
-  Section,
-  StatusPill,
-  span,
-  Title,
-} from "./v3-bits";
+import { Page, Section, span, Title } from "./v3-bits";
 import { Statuses } from "./v3-guide-bits";
 import { V3GuideToday } from "./v3-guide-today";
 import { ThreadPill } from "./v3-live";
+import { AgentAvatar, StatusPill } from "./v3-marks";
 import {
   agentNameOf,
   agentOf,
@@ -21,7 +14,8 @@ import {
   threadsOf,
   ticketOf,
 } from "./v3-model";
-import type { V3PageProps } from "./v3-types";
+import { RowButton } from "./v3-open-record";
+import type { V3PageProps } from "./v3-page-types";
 
 /* The explainer: five levels, a hand-off chain, how a thread lives. All
    examples come from live data so the page matches what you see elsewhere. */
@@ -121,7 +115,7 @@ function V3GuideTickets({ data, go }: V3PageProps) {
       <div className="border-[var(--v3-line)] border-t">
         {levels.map((l, i) => {
           const row = (
-            <div className="grid grid-cols-[150px_330px_minmax(0,1fr)] items-baseline gap-5 py-[11px] text-[13.5px] max-[760px]:grid-cols-1 max-[760px]:gap-1">
+            <div className="grid grid-cols-[150px_330px_minmax(0,1fr)] items-baseline gap-5 py-[11px] text-[13.5px] @max-[760px]:grid-cols-1 @max-[760px]:gap-1">
               <div className="font-semibold text-[14px]">
                 {i > 0 && (
                   <i className="mr-1.5 font-normal text-muted-foreground/70 not-italic">
@@ -152,7 +146,7 @@ function V3GuideTickets({ data, go }: V3PageProps) {
       </div>
 
       <Section title={`${EXAMPLE_TICKET} changed hands ${hops.length} times`} />
-      <div className="mt-2 flex items-stretch max-[760px]:flex-col">
+      <div className="mt-2 flex items-stretch @max-[760px]:flex-col">
         {hops.map((t, i) => {
           const a = agentOf(data, t.agentId);
           const turns =

@@ -10,7 +10,8 @@ import {
 } from "./v3-browser-bits";
 import { TabStrip } from "./v3-browser-tabs";
 import { agentOf } from "./v3-model";
-import type { V3BrowserTab, V3PageProps, V3Thread } from "./v3-types";
+import type { V3PageProps } from "./v3-page-types";
+import type { V3BrowserTab, V3Thread } from "./v3-types";
 
 /* A session's own small browser: the tabs its agent drives and the tabs you
    opened in this session, and nothing else. An agent's tab says who drives it

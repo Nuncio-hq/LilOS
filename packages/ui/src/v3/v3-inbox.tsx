@@ -1,6 +1,8 @@
-import { AgentAvatar, Page, Section, Title } from "./v3-bits";
+import { Page, Section, Title } from "./v3-bits";
+import type { V3Update } from "./v3-data-types";
+import { AgentAvatar } from "./v3-marks";
 import { agentOf, FORMER_AGENT } from "./v3-model";
-import type { V3PageProps, V3Update } from "./v3-types";
+import type { V3PageProps } from "./v3-page-types";
 
 /* Inbox: what the company told you, newest first, as a plain feed. */
 

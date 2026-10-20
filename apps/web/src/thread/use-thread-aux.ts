@@ -2,13 +2,14 @@ import type { SessionModel } from "@lilos/client-runtime";
 import type { Conversation } from "@lilos/contracts/app";
 import type { Job } from "@lilos/contracts/engine";
 import type { PullRequest } from "@lilos/ui/types";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { describeActionError, hasCapability } from "../lib/actions";
 import { useAtom } from "../lib/hooks";
 import { hostEditors, type OsEditor } from "../lib/host";
 import { $prs, refreshConversationPrs, watchPrs } from "../lib/prs";
 import { relay } from "../lib/runtime";
 import { sayError } from "../lib/toast";
+import { defaultEditor, orderEditors } from "../settings/state";
 
 /* What a thread's header + Workbench read beyond its messages: the
    engine's background jobs, the session's PRs, and the host's editors. */
@@ -74,15 +75,19 @@ export function useThreadAux(
   /* Open-in-editor affordance for the session header (issue #110): editors
      the host detected — `null` while unknown or when os.open isn't on this
      host (the badge menu hides entirely then, D-#19); `[]` means os.open
-     works but no editor was found (Reveal in Finder only). */
-  const [editors, setEditors] = useState<OsEditor[] | null>(null);
+     works but no editor was found (Reveal in Finder only). The detection
+     is per folder; the order is the Settings pick's (#132), applied here
+     so a pick that lands after the probe (a reload, or a change made while
+     this thread is open beside Settings) still leads. */
+  const [detected, setDetected] = useState<OsEditor[] | null>(null);
+  const picked = useAtom(defaultEditor);
   useEffect(() => {
     let off = false;
-    setEditors(null);
+    setDetected(null);
     if (cwd)
       void hostEditors()
         .then((e) => {
-          if (!off) setEditors(e);
+          if (!off) setDetected(e);
         })
         /* A failed probe only hides the badge's editor menu (D-#19) — no
            toast: nothing the user asked for failed. */
@@ -91,6 +96,10 @@ export function useThreadAux(
       off = true;
     };
   }, [cwd]);
+  const editors = useMemo(
+    () => (detected ? orderEditors(detected, picked) : null),
+    [detected, picked],
+  );
 
   return { jobsCapable, listedJobs, listedPr, probePr, setProbePr, editors };
 }

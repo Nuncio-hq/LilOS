@@ -1,6 +1,7 @@
-import { Page, RowButton, Section, Title } from "./v3-bits";
+import { Page, Section, Title } from "./v3-bits";
 import { Statuses } from "./v3-guide-bits";
-import type { V3PageProps } from "./v3-types";
+import { RowButton } from "./v3-open-record";
+import type { V3PageProps } from "./v3-page-types";
 
 /* How it works while the company has no tickets (the real app today): the
    few things you actually meet, and where each one lives. Counts come from
@@ -40,7 +41,7 @@ export function V3GuideToday({ data, go }: Pick<V3PageProps, "data" | "go">) {
     },
     {
       name: "Threads",
-      df: "Every session, live. Look at it by status, by agent, or as a full list.",
+      df: "Every thread, live. Look at it by status, by agent, or as a full list.",
       to: () => go({ page: "threads" }),
     },
     {
@@ -59,7 +60,7 @@ export function V3GuideToday({ data, go }: Pick<V3PageProps, "data" | "go">) {
     <div className="border-[var(--v3-line)] border-t">
       {list.map((l) => {
         const row = (
-          <div className="grid grid-cols-[150px_minmax(0,1fr)] items-baseline gap-5 py-[11px] text-[13.5px] max-[760px]:grid-cols-1 max-[760px]:gap-1">
+          <div className="grid grid-cols-[150px_minmax(0,1fr)] items-baseline gap-5 py-[11px] text-[13.5px] @max-[760px]:grid-cols-1 @max-[760px]:gap-1">
             <div className="font-semibold text-[14px]">
               {l.name}
               {"eg" in l && l.eg && (

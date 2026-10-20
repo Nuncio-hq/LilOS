@@ -1,6 +1,9 @@
 import { cn } from "../lib/utils";
-import { AgentAvatar, Btn, Section } from "./v3-bits";
-import type { V3Actions, V3Agent, V3Data } from "./v3-types";
+import { Btn, Section } from "./v3-bits";
+import type { V3Data } from "./v3-data-types";
+import { AgentAvatar } from "./v3-marks";
+import type { V3Actions } from "./v3-page-types";
+import type { V3Agent } from "./v3-types";
 
 /* What sits under an agent's instructions: a rule the CEO proposes after it
    got stuck, and what it remembers. */

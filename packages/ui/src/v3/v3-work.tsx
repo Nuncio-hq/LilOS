@@ -8,10 +8,14 @@ import {
 } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { cn } from "../lib/utils";
-import { Avatar, Btn, Page, Tabs, Title } from "./v3-bits";
-import type { V3Data, V3PageProps, V3Ticket } from "./v3-types";
+import { Btn, Page, Tabs, Title } from "./v3-bits";
+import type { V3Data } from "./v3-data-types";
+import { Avatar } from "./v3-marks";
+import type { V3PageProps } from "./v3-page-types";
+import type { V3Ticket } from "./v3-types";
+import { BoardView } from "./v3-work-board";
 import { TimelineView } from "./v3-work-timeline";
-import { BoardView, ProjectView, WaitingView } from "./v3-work-views";
+import { ProjectView, WaitingView } from "./v3-work-views";
 
 type View = "waiting" | "board" | "project" | "timeline";
 

@@ -9,7 +9,8 @@ import {
 } from "react";
 import { useTheme } from "../shell/use-theme";
 import type { Theme } from "../types";
-import { Kbd, OpenRecord } from "./v3-bits";
+import { Kbd } from "./v3-bits";
+import type { V3Data, V3Draft } from "./v3-data-types";
 import { V3Goals } from "./v3-goals";
 import { V3Guide } from "./v3-guide";
 import { V3Hire } from "./v3-hire";
@@ -17,22 +18,21 @@ import { V3Home } from "./v3-home";
 import { V3Inbox } from "./v3-inbox";
 import { step } from "./v3-nav";
 import { V3Needs } from "./v3-needs";
+import { OpenRecord } from "./v3-open-record";
+import type {
+  V3Actions,
+  V3DataActions,
+  V3Nav,
+  V3PageProps,
+  V3PageRoute,
+  V3Route,
+} from "./v3-page-types";
 import { V3Palette } from "./v3-palette";
 import { V3Peek } from "./v3-peek";
 import { V3People } from "./v3-people";
 import { V3Settings } from "./v3-settings";
 import { V3Sidebar } from "./v3-sidebar";
 import { V3Threads } from "./v3-threads";
-import type {
-  V3Actions,
-  V3Data,
-  V3DataActions,
-  V3Draft,
-  V3Nav,
-  V3PageProps,
-  V3PageRoute,
-  V3Route,
-} from "./v3-types";
 import { V3Welcome } from "./v3-welcome";
 import { V3Work } from "./v3-work";
 

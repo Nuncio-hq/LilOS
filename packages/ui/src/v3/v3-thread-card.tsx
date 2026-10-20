@@ -1,19 +1,15 @@
 import { AlertCircleIcon, GlobeIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "../lib/utils";
-import {
-  AgentAvatar,
-  Btn,
-  Meter,
-  Spinner,
-  TicketId,
-  useOpenRecord,
-  useTick,
-} from "./v3-bits";
+import { Btn, Meter, Spinner, TicketId, useTick } from "./v3-bits";
+import type { V3Data } from "./v3-data-types";
 import { elapsedAt, streamTail, ThreadPill, turnCount } from "./v3-live";
+import { AgentAvatar } from "./v3-marks";
 import { agentOf, FORMER_AGENT } from "./v3-model";
+import { useOpenRecord } from "./v3-open-record";
+import type { V3PageProps } from "./v3-page-types";
 import { viaOf } from "./v3-rows";
-import type { V3Agent, V3Data, V3PageProps, V3Thread } from "./v3-types";
+import type { V3Agent, V3Thread } from "./v3-types";
 
 /* One card on the live board: who, what, where it is right now, and the
    buttons to deal with it without opening the thread. */

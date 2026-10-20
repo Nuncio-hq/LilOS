@@ -1,12 +1,14 @@
 import { ChevronRightIcon } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { cn } from "../lib/utils";
-import { Meter, RowButton, span, TicketId } from "./v3-bits";
+import { Meter, span, TicketId } from "./v3-bits";
 import { ThreadPill } from "./v3-live";
 import { agentOf } from "./v3-model";
+import { RowButton } from "./v3-open-record";
+import type { V3PageProps } from "./v3-page-types";
 import { AgentName } from "./v3-rows";
 import { useRenameMenu } from "./v3-thread-menu";
-import type { V3PageProps, V3Thread } from "./v3-types";
+import type { V3Thread } from "./v3-types";
 
 /* The rows of Threads' lists. Each carries the thread's quiet ⋯ menu (rename
    in place, archive) where the app can do those, and opens the thread on a
@@ -52,7 +54,9 @@ function ThreadRow({
     onArchive: archiveThread && ((to) => archiveThread(t.id, to)),
   });
   return (
-    <div data-thread={t.id} data-archived={archived || undefined}>
+    // `data-thread-row`, not `data-thread`: that one marks the open thread's
+    // transcript, and the list sits under the peek on the same page.
+    <div data-thread-row={t.id} data-archived={archived || undefined}>
       <RowButton
         opens={{ page: "thread", id: t.id }}
         onClick={() => go({ page: "thread", id: t.id })}

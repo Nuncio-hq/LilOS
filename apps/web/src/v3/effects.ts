@@ -1,5 +1,6 @@
 import type { DesktopShortcutAction } from "@lilos/contracts/app";
 import { stepNav, type V3Nav } from "@lilos/ui";
+import { computed, type ReadableAtom } from "nanostores";
 import { useEffect } from "react";
 import { useBrowserContextPush } from "../lib/browser";
 import { refreshFolders } from "../lib/folders";
@@ -15,33 +16,60 @@ import {
 } from "../lib/runtime";
 import { isSettingsShortcut } from "../settings/state";
 import { watchBrowserTabs } from "./browser";
-import { moveNav, openThread, openThreadId, v3Nav } from "./nav";
+import { v3DataStore } from "./data";
+import { openThread, v3Nav } from "./nav";
+import { threadOnScreen, visibleNav } from "./shown";
+import { employeeOfConversation } from "./threads";
 
 /* Everything the old AppShell did besides drawing pages, for the v3 root:
    the engine feed for the open thread, the Mac's notifications, presence for
    the phone, the desktop browser's roster, and the keyboard map. */
 
-/** The agent on screen (an open agent or new chat), else the first one. */
-function currentAgentId(nav: V3Nav): string | undefined {
+let onScreen: ReadableAtom<string | undefined> | undefined;
+
+/** The thread the shell is drawing right now (see `threadOnScreen`): the nav
+    on screen and whether first run owns the window. A store, so a move or the
+    end of first run reaches the readers that the click did not touch. Built
+    on first read: the data store needs the booted relay. */
+function onScreenThread(): ReadableAtom<string | undefined> {
+  onScreen ??= computed([v3Nav, v3DataStore()], threadOnScreen);
+  return onScreen;
+}
+
+/** The agent ⌘N starts a chat with: the one on screen (an open agent, a new
+    chat, or the agent behind the open thread), else the first one. */
+function currentAgentId(): string | undefined {
+  const nav = visibleNav(v3Nav.get(), v3DataStore().get().features.tickets);
   const top = nav.peek[nav.peek.length - 1];
   if (top?.page === "agent" || top?.page === "newchat") return top.id;
+  if (top?.page === "thread") {
+    const conv = relay.conversations.get().find((c) => c.id === top.id);
+    const agentId = conv && employeeOfConversation(conv, relay.channels.get());
+    if (agentId) return agentId;
+  }
   return relay.employees.get()[0]?.id;
 }
 
 export function useShellEffects({
-  nav,
+  move,
   openSearch,
   openShortcuts,
 }: {
-  nav: V3Nav;
+  /** A move from the nav the shell draws (root.tsx), not the raw hash. */
+  move: (update: (nav: V3Nav) => V3Nav) => void;
   /** Ask the shell for ⌘K when a native menu consumed the chord. */
   openSearch: () => void;
   openShortcuts: () => void;
 }): void {
   /* #572: the thread on screen earns an engine feed (the session watch's
      scope head) and the read watermark follows it; leaving releases it. */
-  useEffect(() => openConversation.set(openThreadId(nav)), [nav]);
-
+  useEffect(() => {
+    const off = onScreenThread().subscribe((id) => openConversation.set(id));
+    return () => {
+      off();
+      openConversation.set(undefined);
+    };
+  }, []);
   /* LilOS Browser (desktop): relay roster → host, host tabs → v3. */
   useBrowserContextPush();
   useEffect(() => watchBrowserTabs(), []);
@@ -112,11 +140,11 @@ export function useShellEffects({
                 },
               ];
             }),
-          openConversationId: () => openThreadId(v3Nav.get()) ?? null,
+          openConversationId: () => onScreenThread().get() ?? null,
           inForeground: () =>
             document.visibilityState === "visible" && document.hasFocus(),
           onViewChange: (fn) => {
-            const un = v3Nav.listen(fn);
+            const un = onScreenThread().listen(fn);
             document.addEventListener("visibilitychange", fn);
             window.addEventListener("focus", fn);
             window.addEventListener("blur", fn);
@@ -155,7 +183,7 @@ export function useShellEffects({
       const digit = /^employee-(\d)$/.exec(action);
       if (digit) {
         const id = relay.employees.get()[Number(digit[1]) - 1]?.id;
-        if (id) moveNav((n) => stepNav(n, { page: "agent", id }, "page"));
+        if (id) move((n) => stepNav(n, { page: "agent", id }, "page"));
         return;
       }
       if (action === "quick-switcher") openSearch();
@@ -163,15 +191,15 @@ export function useShellEffects({
       else if (action === "back") history.back();
       else if (action === "forward") history.forward();
       else if (action === "new-session") {
-        const id = currentAgentId(v3Nav.get());
-        if (id) moveNav((n) => stepNav(n, { page: "newchat", id }, "page"));
+        const id = currentAgentId();
+        if (id) move((n) => stepNav(n, { page: "newchat", id }, "page"));
       }
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.isComposing) return;
       if (isSettingsShortcut(e)) {
         e.preventDefault();
-        moveNav((n) => stepNav(n, { page: "settings" }, "page"));
+        move((n) => stepNav(n, { page: "settings" }, "page"));
         return;
       }
       const action = shortcutFromKey(e);
@@ -185,12 +213,12 @@ export function useShellEffects({
     window.addEventListener("keydown", onKey);
     const offShortcut = window.lilos?.onShortcut?.(run);
     const offSettings = window.lilos?.onOpenSettings?.(() =>
-      moveNav((n) => stepNav(n, { page: "settings" }, "page")),
+      move((n) => stepNav(n, { page: "settings" }, "page")),
     );
     return () => {
       window.removeEventListener("keydown", onKey);
       offShortcut?.();
       offSettings?.();
     };
-  }, [openSearch, openShortcuts]);
+  }, [move, openSearch, openShortcuts]);
 }

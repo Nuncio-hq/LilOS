@@ -17,14 +17,13 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { V3AgentPage } from "../src/v3/v3-agent";
+import type { V3Data } from "../src/v3/v3-data-types";
 import { V3Hire } from "../src/v3/v3-hire";
 import { agentDot } from "../src/v3/v3-model";
+import type { V3Actions, V3Nav } from "../src/v3/v3-page-types";
 import { V3Shell } from "../src/v3/v3-shell";
 import type {
-  V3Actions,
   V3Agent,
-  V3Data,
-  V3Nav,
   V3Profile,
   V3Status,
   V3Thread,

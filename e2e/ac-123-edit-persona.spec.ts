@@ -113,18 +113,18 @@ async function pickModel(peek: ReturnType<typeof v3Peek>, label: string) {
     .click();
 }
 
-/** A new chat with Default, sent once the draft's model chip names `model`.
- *  The chip shows the raw id until the engine's model catalog arrives, and a
- *  send before that cannot map the id to a catalog model (it falls back to
- *  the engine default) — so the wait on the chip is what makes "the next new
+/** A new chat with Default, sent once the draft's model picker names `model`.
+ *  The draft shows the engine's model picker only once the model catalog has
+ *  arrived (until then it is the plain menu over bare ids), and a send before
+ *  that cannot map the id to a catalog model (it falls back to the engine
+ *  default) — so the wait on the picker's label is what makes "the next new
  *  session uses the updated default" deterministic. */
 async function chatWithDefault(page: Page, text: string, model: string) {
   await skipFirstRun(page);
   await page.goto(`${stackA.webUrl}/#?page=threads&open=newchat:default`);
-  await expect(v3Peek(page).getByTitle("Model", { exact: true })).toContainText(
-    model,
-    { timeout: 30_000 },
-  );
+  await expect(
+    v3Peek(page).locator('[data-slot="model-picker-trigger"]'),
+  ).toContainText(model, { timeout: 30_000 });
   await v3Peek(page).getByPlaceholder("Message Default…").fill(text);
   await v3Peek(page).getByRole("button", { name: "Send" }).click();
   await expect(page).toHaveURL(/open=thread:[^&]+/, { timeout: 30_000 });

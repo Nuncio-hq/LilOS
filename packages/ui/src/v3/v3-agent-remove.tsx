@@ -1,8 +1,9 @@
 import { Trash2Icon } from "lucide-react";
 import { useState } from "react";
-import { EscLayer } from "./v3-agent-edit";
 import { Btn } from "./v3-bits";
-import type { V3Agent, V3PageProps } from "./v3-types";
+import { EscLayer, useFocusBack, useFocusOn } from "./v3-keys";
+import type { V3PageProps } from "./v3-page-types";
+import type { V3Agent } from "./v3-types";
 
 /* The quiet end of an agent's page: take it off the team. It asks in place
    and says what happens first, because it cannot be undone: the record, the
@@ -19,6 +20,9 @@ export function RemoveAgent({
   agent,
 }: V3PageProps & { agent: V3Agent }) {
   const [asking, setAsking] = useState(false);
+  // The question opens on its safe answer; closing it returns to the trigger.
+  const cancelBtn = useFocusOn<HTMLButtonElement>(asking);
+  const trigger = useFocusBack<HTMLButtonElement>(asking);
   const [busy, setBusy] = useState(false);
   const remove = act.removeAgent;
   if (!remove) return null;
@@ -68,13 +72,18 @@ export function RemoveAgent({
             <Btn small primary onClick={busy ? undefined : confirm}>
               {busy ? "Removing…" : "Remove from company"}
             </Btn>
-            <Btn small onClick={busy ? undefined : () => setAsking(false)}>
+            <Btn
+              small
+              ref={cancelBtn}
+              onClick={busy ? undefined : () => setAsking(false)}
+            >
               Cancel
             </Btn>
           </div>
         </div>
       ) : (
         <button
+          ref={trigger}
           type="button"
           onClick={() => setAsking(true)}
           className="inline-flex h-7 items-center gap-1.5 rounded-[7px] px-2 text-[13px] text-muted-foreground transition-colors hover:bg-[var(--v3-hover)] hover:text-red-600 dark:hover:text-red-300 [&_svg]:size-3.5"

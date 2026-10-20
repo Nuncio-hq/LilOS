@@ -1,8 +1,12 @@
 import { CalendarClockIcon, FolderIcon } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { cn } from "../lib/utils";
-import { AgentAvatar, Btn, ProjectMark } from "./v3-bits";
+import { Btn } from "./v3-bits";
+import type { V3Data, V3Schedule } from "./v3-data-types";
+import { EscLayer } from "./v3-keys";
+import { AgentAvatar, ProjectMark } from "./v3-marks";
 import { agentOf, defaultAgent } from "./v3-model";
+import type { V3Actions } from "./v3-page-types";
 import {
   DAYS,
   describeWhen,
@@ -14,7 +18,6 @@ import {
   type When,
 } from "./v3-schedule-text";
 import { Switch } from "./v3-settings-bits";
-import type { V3Actions, V3Data, V3Schedule } from "./v3-types";
 
 /* Create or edit one schedule, inline on the page it was opened from. The
    plain-words line under "When" is exactly what the list will show. */
@@ -157,10 +160,9 @@ export function ScheduleEditor({
   };
 
   return (
-    <div
-      className="space-y-4 rounded-lg border border-[var(--v3-line)] bg-[var(--v3-soft)] p-4"
-      onKeyDown={(e) => e.key === "Escape" && onDone()}
-    >
+    <div className="space-y-4 rounded-lg border border-[var(--v3-line)] bg-[var(--v3-soft)] p-4">
+      {/* Esc closes the editor, not the peek behind it. */}
+      <EscLayer onEscape={onDone} />
       <div>
         <span className={LABEL}>Agent</span>
         <div className="flex flex-wrap gap-1.5">

@@ -7,8 +7,10 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "../lib/utils";
-import { AgentAvatar, Btn, DOT, Page, Section, Tabs, Title } from "./v3-bits";
+import { Btn, Page, Section, Tabs, Title } from "./v3-bits";
+import { AgentAvatar, DOT } from "./v3-marks";
 import { defaultAgent } from "./v3-model";
+import type { V3PageProps } from "./v3-page-types";
 import { ScheduledView } from "./v3-schedules";
 import { IdleCard, ThreadCard } from "./v3-thread-card";
 import {
@@ -18,7 +20,7 @@ import {
   Archived,
   RecentRow,
 } from "./v3-threads-rows";
-import type { V3PageProps, V3Status, V3Thread } from "./v3-types";
+import type { V3Status, V3Thread } from "./v3-types";
 
 type View = "live" | "all" | "agent" | "scheduled";
 
@@ -195,7 +197,7 @@ export function V3Threads(props: V3PageProps & { view: View }) {
     <Page wide>
       <Title>Threads</Title>
       <p className="-mt-1 text-[15px] text-muted-foreground">
-        Every agent session, live.
+        Every agent thread, live.
       </p>
       <div className="flex items-end justify-between gap-4">
         <Tabs

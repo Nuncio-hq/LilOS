@@ -1,7 +1,8 @@
 import { ChevronRightIcon } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
+import { InlineCodeText } from "../lib/inline-code";
 import { cn } from "../lib/utils";
-import type { V3Settings } from "./v3-types";
+import type { V3Settings } from "./v3-data-types";
 
 /* Small pieces the Settings panes and the Welcome flow share: a switch, a
    segmented choice, a labelled row, and the engine's state with the steps to
@@ -220,7 +221,7 @@ export function EngineFix({ engine }: { engine: V3Settings["engine"] }) {
   if (engine.problem)
     return (
       <p className="mt-3 whitespace-pre-line text-[13.5px] text-muted-foreground">
-        {engine.problem}
+        <InlineCodeText text={engine.problem} />
       </p>
     );
   const cmd = engine.name.toLowerCase();

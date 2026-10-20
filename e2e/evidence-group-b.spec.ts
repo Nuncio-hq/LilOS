@@ -338,8 +338,8 @@ for (const s of SIZES) {
 
       /* ── #587 AC-1 (folderless): a just-chat session still gets the
          Workbench — only the engine tabs render, all greyed-empty. ── */
-      /* No folder is a draft choice no more — a just-chat session starts
-         over the relay, and is opened as the session view. */
+      /* A just-chat session needs no draft pick here: it starts over the
+         relay, and is opened as the session view. */
       const chatConv = await startFolderlessChat(
         page,
         stack,

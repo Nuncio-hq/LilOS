@@ -12,7 +12,9 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { V3AgentPage } from "../src/v3/v3-agent";
-import type { V3Actions, V3Agent, V3Data, V3Route } from "../src/v3/v3-types";
+import type { V3Data } from "../src/v3/v3-data-types";
+import type { V3Actions, V3Route } from "../src/v3/v3-page-types";
+import type { V3Agent } from "../src/v3/v3-types";
 
 afterEach(cleanup);
 

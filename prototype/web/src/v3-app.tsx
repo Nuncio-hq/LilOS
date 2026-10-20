@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { type V3Nav, V3Shell, navFromParams, paramsFromNav, paramsText } from "@lilos/ui"
 import { V3_DATA, v3Draft } from "./fake-v3"
 import { v3Reply } from "./fake-v3-reply"
+import { StatusBanner, StatusDetails } from "./status-host"
 import { makeActions } from "./v3-engine/actions"
 
 /* The prototype's one screen: the calm company. The URL mirrors where you
@@ -50,10 +51,30 @@ export default function V3App() {
   const [data, setData] = useState(V3_DATA)
   const dataRef = useRef(data)
   dataRef.current = data
-  const actions = useMemo(() => makeActions(setData, () => dataRef.current, v3Reply, onToast), [onToast])
+  // The system status dialog is the app's, beside the shell (the real app hosts it too).
+  const [status, setStatus] = useState(false)
+  const actions = useMemo(
+    () =>
+      makeActions({
+        setData,
+        getData: () => dataRef.current,
+        reply: v3Reply,
+        toast: onToast,
+        openStatus: () => setStatus(true),
+      }),
+    [onToast],
+  )
   return (
     <>
-      <V3Shell data={data} actions={actions} nav={nav} onNav={setNav} draft={v3Draft} />
+      <V3Shell
+        data={data}
+        actions={actions}
+        nav={nav}
+        onNav={setNav}
+        draft={v3Draft}
+        banner={<StatusBanner data={data} onDetails={() => setStatus(true)} />}
+      />
+      {status && <StatusDetails data={data} onClose={() => setStatus(false)} onCopied={() => onToast("Diagnostics copied")} />}
       {toast && (
         <div className="lilos-rise fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full bg-foreground px-4 py-2 text-[13px] text-background shadow-lg">
           {toast}

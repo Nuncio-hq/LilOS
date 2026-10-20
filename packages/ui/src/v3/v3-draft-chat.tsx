@@ -3,12 +3,15 @@ import { AccessPill } from "../chat/access-pill";
 import { clearDraftIfSent, draftKey, useDraft } from "../lib/drafts";
 import type { AttachedFile, ConversationAccess, ModelChoice } from "../types";
 import { readStaged, useAttach } from "./v3-attach";
-import { AgentAvatar, Page, ProjectMark, Title } from "./v3-bits";
+import { Page, Title } from "./v3-bits";
 import { ChipMenu } from "./v3-chip-menu";
 import { Composer } from "./v3-composer";
+import type { V3Data } from "./v3-data-types";
 import { FolderChip, ModelChip, NO_FOLDER } from "./v3-draft-chips";
+import { AgentAvatar, ProjectMark } from "./v3-marks";
 import { agentOf, defaultAgent, projectOf, ticketOf } from "./v3-model";
-import type { V3Agent, V3Data, V3PageProps } from "./v3-types";
+import type { V3PageProps } from "./v3-page-types";
+import type { V3Agent } from "./v3-types";
 
 /* A new chat, opened like any record in the side peek: you already chose who
    (from their page, or the CEO from Threads), so there is no picker, only a
@@ -133,11 +136,12 @@ function DraftChat({
   const edit = (text: string) => {
     if (!(sending.current && text === "")) setDraft(text);
   };
-  /* `@` and `/` read the folder the chat will run in; without one there are
-     no files to offer. Stable identities: the menus search when they change. */
+  /* `@` and `/` read the folder the chat will run in (a project's own, else the
+     picked one); without one there are no files to offer. Stable identities:
+     the menus search when they change. */
   const searchFiles = act.searchFiles;
   const searchCommands = act.searchCommands;
-  const folderPathNow = folder?.path;
+  const folderPathNow = project?.folder ?? folder?.path;
   const onSearchFiles = useMemo(
     () =>
       searchFiles && folderPathNow

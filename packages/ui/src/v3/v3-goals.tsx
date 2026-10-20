@@ -1,20 +1,13 @@
 import { CalendarIcon, FolderIcon, InfoIcon, TargetIcon } from "lucide-react";
 import { useState } from "react";
 import { cn } from "../lib/utils";
-import {
-  Btn,
-  DOT,
-  Meter,
-  Page,
-  ProjectMark,
-  Prop,
-  RowButton,
-  Section,
-  Title,
-} from "./v3-bits";
+import { Btn, Meter, Page, Prop, Section, Title } from "./v3-bits";
+import { DOT, ProjectMark } from "./v3-marks";
 import { goalOf, goalProgress, projectOf } from "./v3-model";
+import { RowButton } from "./v3-open-record";
+import type { V3PageProps } from "./v3-page-types";
 import { TicketRow } from "./v3-rows";
-import type { V3PageProps, V3Status } from "./v3-types";
+import type { V3Status } from "./v3-types";
 
 /* Goals: what the company wants and how far along it is. A goal's progress is
    its done tickets over all its tickets, nothing more clever than that. */

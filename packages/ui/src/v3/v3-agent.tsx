@@ -12,7 +12,6 @@ import { Connectors, PILL } from "./v3-agent-connectors";
 import {
   DescriptionField,
   EditButton,
-  EscLayer,
   HeldModel,
   InstructionsField,
   ModelField,
@@ -24,24 +23,15 @@ import {
 } from "./v3-agent-edit";
 import { RemoveAgent } from "./v3-agent-remove";
 import { Memory, RuleSuggestion } from "./v3-agent-rules";
-import {
-  AgentAvatar,
-  Avatar,
-  ago,
-  Btn,
-  CeoMark,
-  Meter,
-  Page,
-  Prop,
-  Section,
-  StatusPill,
-  Title,
-} from "./v3-bits";
+import { ago, Btn, Meter, Page, Prop, Section, Title } from "./v3-bits";
+import { EscLayer, useFocusBack } from "./v3-keys";
+import { AgentAvatar, Avatar, CeoMark, StatusPill } from "./v3-marks";
 import { agentOf, agentStatus, agentTicket } from "./v3-model";
+import type { V3PageProps } from "./v3-page-types";
 import { ThreadRow, TicketRow } from "./v3-rows";
 import { soonestNext } from "./v3-schedule-text";
 import { AgentSchedules } from "./v3-schedules";
-import type { V3Agent, V3ConnectorDef, V3PageProps } from "./v3-types";
+import type { V3Agent, V3ConnectorDef } from "./v3-types";
 
 /* One agent, like a person's profile in Notion: what it does, what it runs
    on, what it has been plugged into, and how far to trust it this week. An
@@ -88,6 +78,8 @@ export function V3AgentPage(props: V3PageProps & { id: string }) {
 function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
   const ed = useAgentEditor(data, agent, act);
   const draft = ed?.draft;
+  // Saving or cancelling swaps the fields back for Edit: the keyboard goes there.
+  const editButton = useFocusBack<HTMLButtonElement>(!!draft);
   const outside = agent.kind === "outside";
   const via = outside
     ? data.connectors.find((c) => c.id === agent.via)
@@ -164,7 +156,7 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
                   Make CEO
                 </button>
               )}
-              {ed && <EditButton onClick={ed.start} />}
+              {ed && <EditButton ref={editButton} onClick={ed.start} />}
             </>
           )}
         </div>

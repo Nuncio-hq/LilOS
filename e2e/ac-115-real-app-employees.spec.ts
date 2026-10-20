@@ -18,13 +18,15 @@ import {
  * passthrough `agents.*`/`models.list` → harness → engine-fake).
  *
  * v3: Hire is the page `#?page=hire` (sidebar "Hire an agent"), a role grid +
- * name + model + Hire, creating a NEW engine profile named after the person.
- * The old dialog's "Use profile" path (link an existing engine profile, with
- * its model / skills / soul preview) and "New profile"'s template rows,
- * instructions box and engine-model buttons have no v3 control; AC-2/AC-3
- * keep what a person can still do. A name equal to an existing engine
- * profile is refused by the engine ("agent X already exists"), which is how
- * AC-3's rejection reads in v3 (a toast, the form stays).
+ * name + model + Hire, creating a NEW engine profile named after the person
+ * (AC-2/AC-3), and a second section, "Or bring in an existing profile", that
+ * links an engine profile nobody is hired on, keeping the engine's own model
+ * and persona (AC-2b, the old dialog's "Use profile"). "New profile"'s
+ * template rows, instructions box and engine-model buttons have no v3
+ * control; AC-2/AC-3 keep what a person can still do. A name equal to an
+ * existing engine profile is refused by the engine ("agent X already
+ * exists"), which is how AC-3's rejection reads in v3 (a toast, the form
+ * stays).
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
@@ -211,11 +213,16 @@ test("AC-2 hire a QA agent: the engine profile is created, the employee links it
   await expect(modelButton(page, "Fake Small")).toBeVisible();
   await modelButton(page, "Fake Small").click();
   await page.screenshot({ path: `${SHOTS}/ac-2-use-profile.png` });
-  // dispatchEvent lands a second click while the request is in flight — the
-  // pending guard must keep it from hiring a duplicate.
+  /* Two clicks in one synchronous task: the second always lands while the
+     first hire is in flight, so the pending guard — not timing — is what
+     keeps it from hiring a duplicate. (Two separate dispatches race the
+     hire finishing and the page moving on, leaving no button for the
+     second.) */
   const hireBtn = page.getByRole("button", { name: "Hire", exact: true });
-  await hireBtn.dispatchEvent("click");
-  await hireBtn.dispatchEvent("click");
+  await hireBtn.evaluate((b: HTMLElement) => {
+    b.click();
+    b.click();
+  });
 
   await expect(
     v3Sidebar(page).getByRole("button", { name: "Tester" }),
@@ -264,10 +271,13 @@ test("AC-2b hire from an existing engine profile: it is linked, not created agai
   await expect(section.getByText(/Read the diff first/)).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-2b-existing-profile.png` });
 
-  // A second click while the request is in flight hires no duplicate.
+  // Two clicks in one synchronous task: the second lands while the request
+  // is in flight and hires no duplicate.
   const hireBtn = page.getByRole("button", { name: "Hire", exact: true });
-  await hireBtn.dispatchEvent("click");
-  await hireBtn.dispatchEvent("click");
+  await hireBtn.evaluate((b: HTMLElement) => {
+    b.click();
+    b.click();
+  });
 
   await expect(page).toHaveURL(/[#&?]page=people&open=agent:/, {
     timeout: 30_000,

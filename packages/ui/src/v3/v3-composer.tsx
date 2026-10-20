@@ -16,9 +16,11 @@ import {
   AttachChips,
   pastedFiles,
 } from "./v3-attach";
-import { AgentAvatar, Kbd } from "./v3-bits";
+import { Kbd } from "./v3-bits";
 import { MentionMenu, SlashMenu } from "./v3-composer-menus";
-import type { V3Agent, V3Data } from "./v3-types";
+import type { V3Data } from "./v3-data-types";
+import { AgentAvatar } from "./v3-marks";
+import type { V3Agent } from "./v3-types";
 
 /* One message box for both chat pages: a textarea that grows with the text, a
    row of quiet chips that say who hears it and where it works, and Send. Where

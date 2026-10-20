@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Locator, type Page, test } from "@playwright/test";
+import { expectSettled } from "./helpers/approvals";
 import {
   bootStack,
   panelIntoFocus,
@@ -133,7 +134,11 @@ test("AC-578-1 the affordance lives on the message, revealed on hover — no lin
   /* Hover the ROW, not the trigger: the trigger re-renders when its turn
      settles (title "Stop the running turn first" → "Rewind…"), which can
      drop a hover that landed mid-swap. group-hover on the row is what
-     reveals it anyway. */
+     reveals it anyway. Let beta's reply settle first: while it streams in,
+     the transcript keeps growing and scrolling, so the row slides out from
+     under the parked pointer and the hover is lost (opacity peaks, then
+     falls back to 0). */
+  await expectSettled(page.locator("[data-thread] [data-agentturn]").nth(1));
   const betaRow = triggers.nth(1).locator("..");
   /* force: the invisible (opacity-0) trigger intercepts the pointer point
      over the row — but any hover inside the group still reveals it. */

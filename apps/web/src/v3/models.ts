@@ -56,10 +56,13 @@ export function modelRowStore(): ReadableAtom<ModelRow[]> {
   return rows;
 }
 
-/** The label a stored model id shows as (an id the catalog doesn't know shows
-    as itself). An empty id is the engine's default: its label when the
-    catalog names one, else "Engine default". `provider` disambiguates ids
-    shared by providers. */
+/** The label a stored model id shows as: the picker's own label for it
+    (`modelRows`, so a name two providers share carries its provider here
+    too, or the page's model field would match no picker option). An id the
+    catalog doesn't know shows as itself; one Settings hides shows its bare
+    name. An empty id is the engine's default: its label when the catalog
+    names one, else "Engine default". `provider` disambiguates ids shared by
+    providers. */
 export function modelLabel(id: string | undefined, provider?: string): string {
   const catalog = engineModels.get();
   const want = id || engineDefaultModel.get();
@@ -68,7 +71,12 @@ export function modelLabel(id: string | undefined, provider?: string): string {
   const hit =
     catalog.find((m) => m.id === want && m.provider === defaultProvider) ??
     catalog.find((m) => m.id === want);
-  return hit ? nameOf(hit) : want;
+  if (!hit) return want;
+  return (
+    modelRowStore()
+      .get()
+      .find((r) => r.option === hit)?.label ?? nameOf(hit)
+  );
 }
 
 /** The real pick behind a picker label; undefined = the engine's default

@@ -1,16 +1,13 @@
 import { CheckIcon, WorkflowIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "../lib/utils";
-import { AgentAvatar, Diff, Meter, ProjectMark, span } from "./v3-bits";
+import { Diff, Meter, span } from "./v3-bits";
+import type { V3Data } from "./v3-data-types";
+import { AgentAvatar, ProjectMark } from "./v3-marks";
 import { FORMER_AGENT } from "./v3-model";
+import type { V3PageProps } from "./v3-page-types";
 import { viaOf } from "./v3-rows";
-import type {
-  V3Agent,
-  V3Data,
-  V3PageProps,
-  V3Project,
-  V3Thread,
-} from "./v3-types";
+import type { V3Agent, V3Project, V3Thread } from "./v3-types";
 
 /* A thread's Details, the last tab of its work panel: where it runs, the
    plan, what it changed. Full-width rows in a panel of its own. */

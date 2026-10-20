@@ -4,14 +4,9 @@ import {
   EllipsisIcon,
   PencilIcon,
 } from "lucide-react";
-import {
-  type KeyboardEvent,
-  type ReactNode,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { type ReactNode, type RefObject, useRef, useState } from "react";
 import { cn } from "../lib/utils";
+import { EscLayer, useMenu } from "./v3-keys";
 
 /* A thread's quiet ⋯ menu and its inline title editor: rename in place, put
    away, bring back. The menu draws only the items the app can do
@@ -29,41 +24,22 @@ export function ThreadMenu({
   onArchive,
   quiet,
   className,
+  triggerRef,
 }: {
   archived?: boolean;
   onRename?: () => void;
   onArchive?: () => void;
+  /** For a caller that puts the keyboard back on the ⋯ button itself (after
+      renaming in place). */
+  triggerRef?: RefObject<HTMLButtonElement | null>;
   /** In a list row: drawn only while the row is hovered or focused (the
       row is `group/thread`). Off, as in a thread's own header, it always shows. */
   quiet?: boolean;
   className?: string;
 }) {
-  const [open, setOpen] = useState(false);
-  const trigger = useRef<HTMLButtonElement>(null);
-  const list = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (open) list.current?.querySelector<HTMLElement>("button")?.focus();
-  }, [open]);
+  const { open, setOpen, trigger, list, onKeyDown } = useMenu(triggerRef);
   if (!onRename && !onArchive) return null;
 
-  const close = () => {
-    setOpen(false);
-    trigger.current?.focus();
-  };
-  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === "Escape") {
-      // Closes the menu, not the peek behind it.
-      e.stopPropagation();
-      close();
-      return;
-    }
-    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
-    e.preventDefault();
-    const items = [...(list.current?.querySelectorAll("button") ?? [])];
-    const at = items.indexOf(document.activeElement as HTMLButtonElement);
-    const step = e.key === "ArrowDown" ? 1 : -1;
-    items[(at + step + items.length) % items.length]?.focus();
-  };
   const pick = (run: () => void) => () => {
     setOpen(false);
     run();
@@ -138,7 +114,9 @@ export function ThreadMenu({
 }
 
 /** The title being renamed. Enter or leaving the box saves; Esc keeps the old
-    title. An empty or unchanged title is not a rename. */
+    title. An empty or unchanged title is not a rename. `onDone(byKey)` says
+    whether the keyboard ended it (Enter, Esc): then focus should come back to
+    where the rename began; after a click elsewhere it stays where you clicked. */
 export function TitleInput({
   value,
   onSave,
@@ -147,39 +125,48 @@ export function TitleInput({
 }: {
   value: string;
   onSave: (title: string) => void;
-  onDone: () => void;
+  onDone: (byKey: boolean) => void;
   className?: string;
 }) {
   const [draft, setDraft] = useState(value);
   // Leaving the box also fires blur once Enter or Esc has already decided.
   const decided = useRef(false);
-  const finish = (save: boolean) => {
+  const finish = (save: boolean, byKey = true) => {
     if (decided.current) return;
     decided.current = true;
     const next = draft.trim();
     if (save && next && next !== value) onSave(next);
-    onDone();
+    onDone(byKey);
   };
   return (
-    <input
-      // biome-ignore lint/a11y/noAutofocus: it opens because you asked to rename
-      autoFocus
-      aria-label="Thread title"
-      value={draft}
-      onFocus={(e) => e.currentTarget.select()}
-      onChange={(e) => setDraft(e.target.value)}
-      onClick={(e) => e.stopPropagation()}
-      onKeyDown={(e) => {
-        e.stopPropagation();
-        if (e.key === "Enter") finish(true);
-        if (e.key === "Escape") finish(false);
-      }}
-      onBlur={() => finish(true)}
-      className={cn(
-        "h-7 min-w-0 flex-1 rounded-[7px] border border-foreground/25 bg-background px-2 text-foreground outline-none [font-family:inherit] [font-size:inherit] [font-weight:inherit] focus:border-foreground/45",
-        className,
-      )}
-    />
+    <>
+      {/* Esc through the layer stack, like every other panel: a view behind
+          this box (the widened thread) must not take the key first and close,
+          which would also unmount the box and save what Esc cancels. */}
+      <EscLayer onEscape={() => finish(false)} />
+      <input
+        // biome-ignore lint/a11y/noAutofocus: it opens because you asked to rename
+        autoFocus
+        aria-label="Thread title"
+        value={draft}
+        onFocus={(e) => e.currentTarget.select()}
+        onChange={(e) => setDraft(e.target.value)}
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => {
+          e.stopPropagation();
+          if (e.key !== "Enter") return;
+          // Focus returns to the ⋯ button as the box closes; this Enter must
+          // not also click it and open the menu.
+          e.preventDefault();
+          finish(true);
+        }}
+        onBlur={() => finish(true, false)}
+        className={cn(
+          "h-7 min-w-0 flex-1 rounded-[7px] border border-foreground/25 bg-background px-2 text-foreground outline-none [font-family:inherit] [font-size:inherit] [font-weight:inherit] focus:border-foreground/45",
+          className,
+        )}
+      />
+    </>
   );
 }
 
@@ -204,18 +191,25 @@ export function useRenameMenu({
   onArchive?: (archived: boolean) => void;
 }): { input: ReactNode | undefined; menu: ReactNode | undefined } {
   const [editing, setEditing] = useState(false);
+  // Renaming comes from the ⋯ menu: finishing by key puts the keyboard back on
+  // its button, as closing the menu would.
+  const trigger = useRef<HTMLButtonElement>(null);
   const input =
     editing && onRename ? (
       <TitleInput
         value={title}
         onSave={onRename}
-        onDone={() => setEditing(false)}
+        onDone={(byKey) => {
+          setEditing(false);
+          if (byKey) trigger.current?.focus();
+        }}
         className={inputClassName}
       />
     ) : undefined;
   const menu =
     onRename || onArchive ? (
       <ThreadMenu
+        triggerRef={trigger}
         quiet={quiet}
         archived={archived}
         onRename={onRename ? () => setEditing(true) : undefined}

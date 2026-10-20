@@ -2,7 +2,8 @@ import { FolderIcon, MessageSquareIcon, PencilLineIcon } from "lucide-react";
 import { choiceFor, ModelPicker } from "../chat/model-picker";
 import type { ModelChoice } from "../types";
 import { ChipMenu } from "./v3-chip-menu";
-import type { V3Actions, V3Data } from "./v3-types";
+import type { V3Data } from "./v3-data-types";
+import type { V3Actions } from "./v3-page-types";
 
 /* The new chat's three working-conditions chips that are not about who: where
    it works, which model (the full picker where the app has the engine's

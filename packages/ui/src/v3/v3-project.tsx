@@ -1,18 +1,11 @@
 import { FolderIcon, TargetIcon, UsersIcon } from "lucide-react";
 import { useState } from "react";
-import {
-  AgentAvatar,
-  Meter,
-  Page,
-  ProjectMark,
-  Prop,
-  RowButton,
-  Section,
-  Title,
-} from "./v3-bits";
+import { Meter, Page, Prop, Section, Title } from "./v3-bits";
+import { AgentAvatar, ProjectMark } from "./v3-marks";
 import { agentOf, FORMER_AGENT, goalProgress, projectOf } from "./v3-model";
+import { RowButton } from "./v3-open-record";
+import type { V3PageProps } from "./v3-page-types";
 import { ThreadRow, TicketRow } from "./v3-rows";
-import type { V3PageProps } from "./v3-types";
 
 /* A project page: the folder, its goals, and everything moving inside it. */
 

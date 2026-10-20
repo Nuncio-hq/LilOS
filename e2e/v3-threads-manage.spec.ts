@@ -8,7 +8,7 @@ import { expect, type Page, test } from "@playwright/test";
  */
 
 const T = "t-lil81";
-const row = (page: Page) => page.locator(`#v3-main [data-thread="${T}"]`);
+const row = (page: Page) => page.locator(`#v3-main [data-thread-row="${T}"]`);
 const menu = (scope: ReturnType<Page["locator"]>) =>
   scope.getByRole("button", { name: "Thread actions", exact: true });
 
@@ -68,7 +68,9 @@ test("an archived thread leaves Live and Recent, shows under All → Archived, a
   await expect(page.locator("#v3-main")).not.toContainText("Fix the flaky");
   await page.getByRole("button", { name: "Open All" }).click();
   await page.getByRole("button", { name: /Archived \(1\)/ }).click();
-  const archived = page.locator(`[data-archived-list] [data-thread="${T}"]`);
+  const archived = page.locator(
+    `[data-archived-list] [data-thread-row="${T}"]`,
+  );
   await expect(archived).toBeVisible();
 
   // It still opens, and Unarchive is on its menu.

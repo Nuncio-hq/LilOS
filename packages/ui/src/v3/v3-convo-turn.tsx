@@ -4,17 +4,14 @@ import { AttachmentChips } from "../chat/attachment-chips";
 import { MessageResponse } from "../components/ai-elements/message";
 import { cn } from "../lib/utils";
 import type { AttachedFile } from "../types";
-import { AgentAvatar, Btn } from "./v3-bits";
+import { Btn } from "./v3-bits";
 import { Attachments } from "./v3-convo-attach";
 import { WorkBlock } from "./v3-convo-work";
+import type { V3Data } from "./v3-data-types";
+import { AgentAvatar } from "./v3-marks";
 import { agentOf, FORMER_AGENT } from "./v3-model";
-import type {
-  V3Agent,
-  V3Data,
-  V3PageProps,
-  V3Thread,
-  V3Turn,
-} from "./v3-types";
+import type { V3PageProps } from "./v3-page-types";
+import type { V3Agent, V3Thread, V3Turn } from "./v3-types";
 
 /* One turn of the conversation: the message that started it, the work it
    caused (folded), the agent's answer with what it attached, and anything you

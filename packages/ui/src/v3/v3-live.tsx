@@ -1,4 +1,4 @@
-import { StatusPill } from "./v3-bits";
+import { StatusPill } from "./v3-marks";
 import type { V3Status, V3Thread } from "./v3-types";
 
 /* Live-feel helpers for threads. The prototype has a fixed list of output

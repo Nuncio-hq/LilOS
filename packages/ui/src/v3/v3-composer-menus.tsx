@@ -2,8 +2,9 @@ import { FileIcon, FolderIcon, TerminalIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import type { ComposerMenus } from "../chat/composer-menus";
 import { cn } from "../lib/utils";
-import { AgentAvatar } from "./v3-bits";
-import type { V3Agent, V3Data } from "./v3-types";
+import type { V3Data } from "./v3-data-types";
+import { AgentAvatar } from "./v3-marks";
+import type { V3Agent } from "./v3-types";
 
 /* The `@` and `/` menus above a v3 message box, drawn from the state every
    composer shares (`chat/composer-menus`). The markers (`data-mention-*`,

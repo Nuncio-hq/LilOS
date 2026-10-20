@@ -8,7 +8,7 @@ import {
 import { Fragment, type ReactNode } from "react";
 import { cn } from "../lib/utils";
 import { V3AgentPage } from "./v3-agent";
-import { PeekWidth } from "./v3-bits";
+import type { V3Data } from "./v3-data-types";
 import { V3DraftChat } from "./v3-draft-chat";
 import { V3GoalPage } from "./v3-goals";
 import {
@@ -18,10 +18,11 @@ import {
   goalOf,
   projectOf,
 } from "./v3-model";
+import { PeekWidth } from "./v3-open-record";
+import type { V3PageProps, V3RecordRoute } from "./v3-page-types";
 import { V3ProjectPage } from "./v3-project";
 import { V3ThreadPage } from "./v3-thread";
 import { V3TicketPage } from "./v3-ticket";
-import type { V3Data, V3PageProps, V3RecordRoute } from "./v3-types";
 
 /** A record's name in the trail: short enough to fit four in a row. */
 function label(d: V3Data, r: V3RecordRoute) {
@@ -96,6 +97,7 @@ export function V3Peek({
           onClick={onBack}
           className={iconBtn}
           title="Back one step"
+          aria-label="Back one step"
         >
           <ArrowLeftIcon />
         </button>
@@ -134,6 +136,9 @@ export function V3Peek({
           onClick={() => onFull(!full)}
           className={iconBtn}
           title={full ? "Narrow, back beside the page" : "Widen over the page"}
+          aria-label={
+            full ? "Narrow, back beside the page" : "Widen over the page"
+          }
         >
           {full ? <Minimize2Icon /> : <Maximize2Icon />}
         </button>
@@ -142,6 +147,7 @@ export function V3Peek({
           onClick={onClose}
           className={iconBtn}
           title="Close (Esc)"
+          aria-label="Close"
         >
           <XIcon />
         </button>

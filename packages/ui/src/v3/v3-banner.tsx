@@ -1,5 +1,6 @@
+import { InlineCodeText } from "../lib/inline-code";
 import { cn } from "../lib/utils";
-import { DOT } from "./v3-bits";
+import { DOT } from "./v3-marks";
 import type { V3Status } from "./v3-types";
 
 /* A one-line notice above the page for what the app itself cannot work
@@ -22,7 +23,10 @@ export function V3Banner({
       className="flex shrink-0 items-center gap-2.5 border-[var(--v3-line)] border-b bg-[var(--v3-soft)] px-5 py-1.5 text-[13px] text-muted-foreground"
     >
       <i className={cn("size-[7px] shrink-0 rounded-full", DOT[status])} />
-      <span className="min-w-0 flex-1 truncate">{text}</span>
+      <span className="min-w-0 flex-1 truncate">
+        {/* The engine's reason carries commands in backticks (#99). */}
+        <InlineCodeText text={text} />
+      </span>
       {action && (
         <button
           type="button"

@@ -11,10 +11,12 @@ import {
   TimerIcon,
 } from "lucide-react";
 import { cn } from "../lib/utils";
+import type { V3Data } from "./v3-data-types";
 import { agentOf, projectOf } from "./v3-model";
+import type { V3PageProps } from "./v3-page-types";
 import { SessionBrowser } from "./v3-session-browser";
 import { ThreadDetails } from "./v3-thread-rail";
-import type { V3Data, V3PageProps, V3Thread } from "./v3-types";
+import type { V3Thread } from "./v3-types";
 import { WorkbenchTab } from "./v3-workbench";
 import type { SessionTab } from "./v3-workbench-bits";
 
@@ -92,7 +94,7 @@ export function WorkStrip({
 }) {
   return (
     <nav
-      aria-label="Session work"
+      aria-label="Thread work"
       className="mt-4 flex flex-wrap items-center gap-x-0.5 gap-y-1 border-[var(--v3-line)] border-b pb-3"
     >
       {tabs.map((t) => {

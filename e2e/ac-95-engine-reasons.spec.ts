@@ -115,13 +115,16 @@ test("AC-1 (#95) a too-old Hermes reads plainly — status banner + dialog", asy
     await page.goto(agentPage(stack, employeeId));
 
     /* The plain reason rides the v3 status banner (the old DM composer note
-       is gone). */
+       is gone). #99 AC-1: the command renders as inline code, not literal
+       backticks. */
     const note = page.getByRole("status").filter({ hasText: /Details/ });
     await expect(note).toBeVisible({ timeout: 60_000 });
     await expect(note).toContainText(
-      "Hermes 0.20.2 is too old — LilOS needs 0.21.5 or newer. Run",
+      "Hermes 0.20.2 is too old — LilOS needs 0.21.5 or newer. Run hermes update.",
       { timeout: 30_000 },
     );
+    await expect(note.locator("code")).toHaveText("hermes update");
+    await expect(note).not.toContainText("`");
     for (const size of [
       { width: 1288, height: 700 },
       { width: 900, height: 700 },

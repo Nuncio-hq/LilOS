@@ -1,11 +1,12 @@
 import { BellIcon, PencilIcon } from "lucide-react";
-import { type KeyboardEvent, useState } from "react";
-import { useUiLayer } from "../chat/ui-layers";
+import { type KeyboardEvent, type Ref, useState } from "react";
 import { cn } from "../lib/utils";
 import { Btn, Prop, Section } from "./v3-bits";
 import { ChipMenu } from "./v3-chip-menu";
+import type { V3Data } from "./v3-data-types";
+import type { V3Actions } from "./v3-page-types";
 import { Switch } from "./v3-settings-bits";
-import type { V3Actions, V3Agent, V3AgentPatch, V3Data } from "./v3-types";
+import type { V3Agent, V3AgentPatch } from "./v3-types";
 
 /* Editing an agent from its own page. An Edit button turns the title, the
    role line, the model and the instructions into fields in place (no dialog);
@@ -44,14 +45,6 @@ export type AgentEditor = {
 
 const FIELD =
   "rounded-[7px] border border-foreground/15 bg-background text-foreground outline-none focus:border-foreground/40";
-
-/** Esc closes the editor, not the peek behind it: the layer stack marks the
-    key as handled, and the shell leaves keys a panel already used alone.
-    Mounted only while there is something to close. */
-export function EscLayer({ onEscape }: { onEscape: () => void }) {
-  useUiLayer({ onEscape });
-  return null;
-}
 
 /** The editing state of one agent; undefined where the page cannot edit it
     (the app has no save, or the agent is an outside worker LilOS only watches). */
@@ -142,9 +135,17 @@ export function useAgentEditor(
   };
 }
 
-export function EditButton({ onClick }: { onClick: () => void }) {
+/** `ref` is how the page puts the keyboard back here once the editing closes. */
+export function EditButton({
+  onClick,
+  ref,
+}: {
+  onClick: () => void;
+  ref?: Ref<HTMLButtonElement>;
+}) {
   return (
     <button
+      ref={ref}
       type="button"
       onClick={onClick}
       className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-[7px] px-2 text-[13px] text-muted-foreground transition-colors hover:bg-[var(--v3-hover)] hover:text-foreground [&_svg]:size-3.5"

@@ -16,17 +16,17 @@ import {
  *
  * v3: the card is the agent's page in the side peek (`v3-agent.tsx`), opened
  * from its sidebar row. What that page shows of the old card: the engine
- * ("Runs on"), the model, the "Now" row with its status, the role, the
- * instructions, and a Message button. What it does NOT have (reported, not
- * faked): the Profile row, the "owned by <you>" line, the "Instructions
+ * ("Runs on"), the engine profile ("Profile"), the model, the "Now" row with
+ * its status, the role, the instructions, and a Message button. What it does
+ * NOT have (reported, not faked): the "owned by <you>" line, the "Instructions
  * (SOUL.md)" label and its "No instructions yet" empty state (the page draws
  * an Instructions section only when there is text), the footer note, and the
- * missing-profile switch. AC-2's switch is therefore driven
- * through the relay call the old combobox made (`employees.update {profile}`)
- * and asserted end to end: the record re-points and the next session boots on
- * the new profile. The prototype side-by-side leg (old AC-3, a composite
- * against the prototype's own card on :5199) is dropped: that screen is the
- * v3 shell now, and AC-3 (#504) below keeps the real-app matrix.
+ * missing-profile switch. AC-2's switch is therefore driven through the relay
+ * call the old combobox made (`employees.update {profile}`) and asserted end
+ * to end: the record re-points and the next session boots on the new profile.
+ * The prototype side-by-side leg (old AC-3, a composite against the
+ * prototype's own card on :5199) is dropped: that screen is the v3 shell now,
+ * and AC-3 (#504) below keeps the real-app matrix.
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
@@ -105,7 +105,7 @@ async function openAgentPage(page: Page, name: string) {
 const prop = (peek: ReturnType<typeof v3Peek>, label: string) =>
   peek.locator("div.flex.min-h-9").filter({ hasText: new RegExp(`^${label}`) });
 
-test("AC-1 the agent page carries the card's rows: engine, model, now; no old-modal Soul row", async ({
+test("AC-1 the agent page carries the card's rows: engine, profile, model, now; no old-modal Soul row", async ({
   page,
 }) => {
   test.setTimeout(90_000);
@@ -117,6 +117,7 @@ test("AC-1 the agent page carries the card's rows: engine, model, now; no old-mo
   await expect(prop(peek, "Runs on")).toContainText("engine-fake", {
     timeout: 30_000,
   });
+  await expect(prop(peek, "Profile")).toContainText("default");
   await expect(prop(peek, "Model")).toBeVisible();
   await expect(prop(peek, "Now")).toContainText("Idle");
   // The Instructions are the engine profile's own persona (the page reads

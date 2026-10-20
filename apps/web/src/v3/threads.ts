@@ -84,7 +84,8 @@ export interface ThreadSources {
   asks: readonly Ask[];
 }
 
-/** The employee a conversation belongs to: its DM channel's one employee. */
+/** The employee a conversation belongs to: its DM channel's one employee. For
+    one conversation; a pass over many builds `ownersOf` once instead. */
 export function employeeOfConversation(
   c: Conversation,
   channels: readonly AppChannel[],
@@ -92,16 +93,21 @@ export function employeeOfConversation(
   return channels.find((ch) => ch.id === c.channelId)?.employeeId;
 }
 
+/** Channel id → its employee, once per pass over the conversations (a `find`
+    per conversation is quadratic on a long history). */
+const ownersOf = (channels: readonly AppChannel[]): Map<string, string> =>
+  new Map(channels.map((ch) => [ch.id, ch.employeeId]));
+
 /** The open asks as the Needs page reads them; oldest first. */
 export function v3Asks(src: ThreadSources): V3Ask[] {
   const names = new Map(src.employees.map((e) => [e.id, e.name]));
   const convs = new Map(src.conversations.map((c) => [c.id, c]));
+  const owners = ownersOf(src.channels);
   return src.asks
     .filter((a) => a.state === "open" && convs.has(a.conversationId))
     .flatMap((a): V3Ask[] => {
-      const from = employeeOfConversation(
-        convs.get(a.conversationId) as Conversation,
-        src.channels,
+      const from = owners.get(
+        (convs.get(a.conversationId) as Conversation).channelId,
       );
       if (!from) return [];
       const { title, text } = askText(a);
@@ -138,10 +144,14 @@ export function lastChats(
   src: ThreadSources,
 ): Map<string, { folder?: string; opener?: string }> {
   const summaries = new Map(src.summaries.map((s) => [s.conversation.id, s]));
+  const owners = ownersOf(src.channels);
   const byAgent = new Map<string, Conversation[]>();
   for (const c of src.conversations) {
-    const agentId = employeeOfConversation(c, src.channels);
-    if (agentId) byAgent.set(agentId, [...(byAgent.get(agentId) ?? []), c]);
+    const agentId = owners.get(c.channelId);
+    if (!agentId) continue;
+    const list = byAgent.get(agentId);
+    if (list) list.push(c);
+    else byAgent.set(agentId, [c]);
   }
   const out = new Map<string, { folder?: string; opener?: string }>();
   for (const [agentId, convs] of byAgent) {
@@ -171,6 +181,7 @@ export function v3ArchivedThreads(src: ThreadSources): V3Thread[] {
 
 function threadRows(src: ThreadSources, archived: boolean): V3Thread[] {
   const summaries = new Map(src.summaries.map((s) => [s.conversation.id, s]));
+  const owners = ownersOf(src.channels);
   const openAsk = new Map<string, Ask>();
   for (const a of src.asks)
     if (a.state === "open" && !openAsk.has(a.conversationId))
@@ -178,7 +189,7 @@ function threadRows(src: ThreadSources, archived: boolean): V3Thread[] {
   const rows: { last: number; thread: V3Thread }[] = [];
   for (const c of src.conversations) {
     if (!!c.archived !== archived) continue;
-    const agentId = employeeOfConversation(c, src.channels);
+    const agentId = owners.get(c.channelId);
     if (!agentId) continue;
     const summary = summaries.get(c.id);
     const status = threadStatus(

@@ -1,7 +1,8 @@
 import { useEffect } from "react";
 import { Btn } from "./v3-bits";
+import type { V3Settings } from "./v3-data-types";
+import type { V3PageProps } from "./v3-page-types";
 import { EngineFix, EngineState, useRun } from "./v3-settings-bits";
-import type { V3PageProps, V3Settings } from "./v3-types";
 import { CheckRow } from "./v3-welcome-bits";
 
 /* First run, step "Engine check": the relay, then the engine, each as the

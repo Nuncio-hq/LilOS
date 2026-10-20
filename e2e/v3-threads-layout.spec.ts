@@ -13,7 +13,7 @@ for (const view of ["live", "all", "agent"] as const) {
     }) => {
       await page.setViewportSize({ width, height: 800 });
       await page.goto(`/?page=threads&view=${view}&open=thread:t-lil81`);
-      const rows = page.locator("#v3-main [data-thread]");
+      const rows = page.locator("#v3-main [data-thread-row]");
       await expect(rows.first()).toBeVisible();
       const titles = await rows.evaluateAll((els) =>
         els.map((row) => {

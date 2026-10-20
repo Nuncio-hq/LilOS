@@ -1,5 +1,6 @@
 import type { V3Data, V3Draft, V3Profile } from "@lilos/ui"
 import { CONNECTORS, OUTSIDE_THREADS, OUTSIDE_TICKETS, OUTSIDE_WORKERS } from "./fake-v3-outside"
+import { MODEL_OPTIONS, MODEL_PROVIDERS, MODEL_VISIBILITY, modelIdOf } from "./fake-v3-models"
 import { BROWSER, DEVICES, SCHEDULES, SETTINGS, WORKBENCHES } from "./fake-v3-tools"
 
 /* ?v3 mock company: one Monday at 12:04. Every number on every screen comes
@@ -774,7 +775,8 @@ export const V3_DATA: V3Data = {
   me: "Oscar",
   today: "Monday, 19 October",
   ceoId: "ceo",
-  agents: [...AGENTS, ...OUTSIDE_WORKERS],
+  // The picker starts on each agent's own model (outside workers have none).
+  agents: [...AGENTS, ...OUTSIDE_WORKERS].map((a) => ({ ...a, modelId: modelIdOf(MODEL_OPTIONS, a.model) })),
   connectors: CONNECTORS,
   projects: PROJECTS,
   goals: GOALS,
@@ -789,6 +791,17 @@ export const V3_DATA: V3Data = {
   browser: BROWSER,
   devices: DEVICES,
   modelChoices: ["Opus 5.5 · High", "Sonnet 5 · Medium", "Haiku 5 · Fast"],
+  // The new-chat box shows the engine's full picker (effort, Fast, Edit models).
+  modelCatalog: {
+    options: MODEL_OPTIONS,
+    defaultModel: "sonnet",
+    defaultProvider: "anthropic",
+    providers: MODEL_PROVIDERS,
+    visibility: MODEL_VISIBILITY,
+    refreshable: true,
+  },
+  // A chat opens on the access you pick (Ask / Full access).
+  chatAccess: true,
   // The wire's caps (10 MB a file, 10 a message), so the prototype refuses what the app would.
   attachLimits: { maxFileBytes: 10 * 1024 * 1024, maxFiles: 10 },
   // The mock engine accepts every profile field.

@@ -12,6 +12,7 @@ import { StatusBanner, StatusDetails } from "./banner";
 import { v3DataStore } from "./data";
 import { useShellEffects } from "./effects";
 import { moveNav, v3Nav } from "./nav";
+import { visibleNav } from "./shown";
 
 /* The real app's root (D-#769: one shell — the page on the left, one record
    in a side peek with its trail, a widened thread is the session view, where
@@ -22,21 +23,20 @@ import { moveNav, v3Nav } from "./nav";
    on engine events (#770). Not: a second UI, a route per record, placeholder
    controls. */
 
-/** Work, Goals and Inbox wait for tickets (M2): a link to one lands on Home
-    and a ticket, goal or project record is not opened. */
-function visibleNav(nav: V3Nav, tickets: boolean): V3Nav {
-  if (tickets) return nav;
-  const gated = ["work", "inbox", "goals"].includes(nav.page.page);
-  const peek = nav.peek.filter(
-    (r) => r.page !== "ticket" && r.page !== "goal" && r.page !== "project",
-  );
-  if (!gated && peek.length === nav.peek.length) return nav;
-  return { ...nav, page: gated ? { page: "home" } : nav.page, peek };
-}
-
 function Company() {
   const nav = useAtom(v3Nav);
   const data = useAtom(v3DataStore());
+  /* What the shell draws, not what the hash says (a gated page is Home, a
+     gated record is not opened): every move starts from it, or a click on
+     the gated page (drawn as Home) would write `page=work` back into the
+     URL. */
+  const { tickets } = data.features;
+  const shown = visibleNav(nav, tickets);
+  const move = useCallback(
+    (update: (n: V3Nav) => V3Nav) =>
+      moveNav((raw) => update(visibleNav(raw, tickets))),
+    [tickets],
+  );
   const description = useAtom(engine.description);
   // #115/D-#19: Hire exists only while the engine can create agents; the new
   // chat's `/` menu only while it lists commands.
@@ -53,15 +53,15 @@ function Company() {
   const [shortcuts, setShortcuts] = useState(false);
   const openSearch = useCallback(() => setSearch((n) => n + 1), []);
   const toggleShortcuts = useCallback(() => setShortcuts((o) => !o), []);
-  useShellEffects({ nav, openSearch, openShortcuts: toggleShortcuts });
+  useShellEffects({ move, openSearch, openShortcuts: toggleShortcuts });
   return (
     <div className="flex h-dvh">
       <div className="min-w-0 flex-1">
         <V3Shell
           data={data}
           actions={actions}
-          nav={visibleNav(nav, data.features.tickets)}
-          onNav={moveNav}
+          nav={shown}
+          onNav={move}
           banner={<StatusBanner />}
           searchRequest={search}
           // The window's vibrancy follows the theme or the sidebar turns
@@ -78,8 +78,8 @@ function Company() {
               onOpenThread={(threadId) => go({ page: "thread", id: threadId })}
               // A widened thread is the session view (chat beside the
               // Workbench): one flag, in the URL, for both.
-              session={nav.full === true}
-              onSession={(open) => moveNav((n) => ({ ...n, full: open }))}
+              session={shown.full === true}
+              onSession={(open) => move((n) => ({ ...n, full: open }))}
             />
           )}
         />

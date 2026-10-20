@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { cn } from "../lib/utils";
-import { Avatar, Btn, Section } from "./v3-bits";
-import type { V3PageProps, V3Profile } from "./v3-types";
+import { Btn, Section } from "./v3-bits";
+import { Avatar } from "./v3-marks";
+import type { V3PageProps } from "./v3-page-types";
+import type { V3Profile } from "./v3-types";
 
 /* The Hire page's quiet second way in: a profile the engine already has (made
    in the engine's own app, or left behind by an agent that was removed:

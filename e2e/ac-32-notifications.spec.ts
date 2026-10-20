@@ -1,6 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
+import { allowAllWhile, expectSettled } from "./helpers/approvals";
 import {
   bootStack,
   openDefaultAgent,
@@ -189,13 +190,15 @@ test("AC-1/AC-2/AC-3 (engine-fake): notify only when not in view, click opens th
   await expect(page.getByText("Approval needed").first()).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-2-click-through.png` });
   /* engine-fake's release-note turn parks on a second approval after the
-     first — answer until the employee's dot leaves `needs`, so conv C below
-     shows a plain `working` dot (a pending ask outranks a running turn). */
-  await expect(async () => {
-    const once = page.getByRole("button", { name: "Once", exact: true });
-    if (await once.first().isVisible()) await once.first().click();
-    expect(await agentDot(page, "needs").count()).toBe(0);
-  }).toPass({ timeout: 60_000 });
+     first — answer until the turn itself settles (the dot can read "not
+     needs" in the gap between two asks, which is not "no more asks"), so
+     conv C below shows a plain `working` dot (a pending ask outranks a
+     running turn). */
+  await allowAllWhile(
+    page,
+    expectSettled(page.locator("[data-agentturn]").last()),
+  );
+  await expect(agentDot(page, "needs")).toHaveCount(0, { timeout: 15_000 });
 
   // ── conv C: finishes out of view → done notification + running badge ─
   /* `slow:500` (#432) paces this turn (~35 s) so it is still running after

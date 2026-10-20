@@ -634,11 +634,13 @@ export async function openSession(
 }
 
 /**
- * A chat in NO folder. The new-chat draft always pre-picks the newest recent
- * folder once the app has any (there is no "No folder" choice in it), so a
- * session without a folder starts over the relay, exactly what a send does:
- * `channels.openDm` + `conversations.open` with no `cwd`. Resolves with the
- * new conversation's id; the page is left on `stack.webUrl` past first run.
+ * A chat in NO folder, started over the relay with no draft: exactly what a
+ * send does (`channels.openDm` + `conversations.open` with no `cwd`). The
+ * draft's Folder chip does offer "No folder · just chat", but the newest
+ * recent is pre-picked once the app has any, so a spec that only needs a
+ * folder-less thread (not the pick itself) skips choosing it. Resolves with
+ * the new conversation's id; the page is left on `stack.webUrl` past first
+ * run.
  */
 export async function startFolderlessChat(
   page: playwright.Page,
