@@ -4,9 +4,11 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { useTheme } from "../shell/use-theme";
+import type { Theme } from "../types";
 import { Kbd, OpenRecord } from "./v3-bits";
 import { V3Goals } from "./v3-goals";
 import { V3Guide } from "./v3-guide";
@@ -51,6 +53,13 @@ export type V3ShellProps = {
      while its threads still render with the pre-v3 view (#769), until the
      v3 conversation runs on real engine events (#770), which removes it. */
   renderThread?: (props: V3PageProps & { id: string }) => ReactNode;
+  /** A notice above the page (connection lost, engine down); the app decides
+     when there is one. */
+  banner?: ReactNode;
+  /** The app bumps this to open ⌘K when a native menu consumed the chord. */
+  searchRequest?: number;
+  /** The theme the shell shows changed; the app tells its window. */
+  onThemeChange?: (theme: Theme) => void;
 };
 
 const PAGE_NAME: Record<V3PageRoute["page"], string> = {
@@ -78,9 +87,21 @@ export function V3Shell({
   onNav,
   draft,
   renderThread,
+  banner,
+  searchRequest,
+  onThemeChange,
 }: V3ShellProps) {
   const [palette, setPalette] = useState<string | null>(null);
   const [theme, setTheme] = useTheme();
+  useEffect(() => onThemeChange?.(theme), [theme, onThemeChange]);
+  /* A native menu can consume ⌘K before the page sees it; the app then asks
+     for the palette through this counter instead of a faked key press. */
+  const lastSearch = useRef(searchRequest);
+  useEffect(() => {
+    if (searchRequest === lastSearch.current) return;
+    lastSearch.current = searchRequest;
+    setPalette((p) => (p === null ? "" : null));
+  }, [searchRequest]);
   const dark =
     theme === "dark" ||
     (theme === "system" &&
@@ -108,6 +129,8 @@ export function V3Shell({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // A panel that already used the key (its own Esc) keeps it to itself.
+      if (e.defaultPrevented) return;
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setPalette((p) => (p === null ? "" : null));
@@ -132,6 +155,7 @@ export function V3Shell({
     plan: Extract<V3Draft, { kind: "plan" }>,
     text: string,
   ) => {
+    if (!actions.startPlan) return;
     actions.startPlan(plan, text);
     goFromPage({ page: "work", view: "waiting" });
   };
@@ -157,9 +181,11 @@ export function V3Shell({
           onSearch={() => setPalette("")}
           dark={dark}
           onTheme={() => setTheme(dark ? "light" : "dark")}
+          canHire={!!actions.hire}
         />
         <div className="flex min-w-0 flex-1 flex-col">
-          <div className="flex h-[46px] shrink-0 items-center justify-between gap-4 pr-3.5 pl-5 text-[14px] text-muted-foreground">
+          {banner}
+          <div className="lilos-drag flex h-[46px] shrink-0 items-center justify-between gap-4 pr-3.5 pl-5 text-[14px] text-muted-foreground">
             <div className="flex min-w-0 items-center truncate">
               <button
                 type="button"
@@ -179,7 +205,7 @@ export function V3Shell({
               className="flex h-[30px] w-[280px] items-center gap-2 rounded-lg bg-[var(--v3-hover)] pr-1.5 pl-2.5 text-[13px] text-muted-foreground/80 hover:text-foreground"
             >
               <SparklesIcon className="size-4" />
-              Ask the CEO anything…
+              {draft ? "Ask the CEO anything…" : "Search…"}
               <Kbd className="ml-auto">⌘K</Kbd>
             </button>
           </div>

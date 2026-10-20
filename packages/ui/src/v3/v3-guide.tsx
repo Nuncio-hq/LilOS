@@ -1,7 +1,7 @@
 import { ArrowRightIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import {
-  Avatar,
+  AgentAvatar,
   Page,
   RowButton,
   Section,
@@ -10,7 +10,15 @@ import {
   Title,
 } from "./v3-bits";
 import { ThreadPill } from "./v3-live";
-import { agentOf, goalOf, goalProgress, threadsOf, ticketOf } from "./v3-model";
+import {
+  agentNameOf,
+  agentOf,
+  FORMER_AGENT,
+  goalOf,
+  goalProgress,
+  threadsOf,
+  ticketOf,
+} from "./v3-model";
 import type { V3PageProps, V3Status } from "./v3-types";
 
 /* The explainer: five levels, a hand-off chain, how a thread lives. All
@@ -63,18 +71,22 @@ export function V3Guide({ data, go }: V3PageProps) {
   const goal = ticket?.goalId ? goalOf(data, ticket.goalId) : undefined;
   const goalCount = goal ? goalProgress(data, goal.id).total : 0;
   const thread = data.threads.find((t) => t.id === EXAMPLE_THREAD);
+  // Turns the app does not carry (empty) leave their counts out, never 0.
   const turn = thread?.turns[0];
   const run =
     turn?.steps?.find((s) => s.running) ??
     turn?.steps?.find((s) => s.kind === "run");
   const stepsIn = (thread?.step ?? 0) || (turn?.steps?.length ?? 0);
+  const hasCeo = data.agents.some((a) => a.id === data.ceoId);
 
   const levels = [
     {
       name: "Goal",
       eg: goal?.title ?? "A goal",
       n: `${goalCount} tickets`,
-      df: "What the company wants. The CEO splits it into tickets.",
+      df: hasCeo
+        ? "What the company wants. The CEO splits it into tickets."
+        : "What the company wants, split into tickets.",
       go: goal ? () => go({ page: "goal", id: goal.id }) : undefined,
     },
     {
@@ -87,16 +99,19 @@ export function V3Guide({ data, go }: V3PageProps) {
     {
       name: "Thread",
       eg: thread
-        ? `${agentOf(data, thread.agentId).name} · ${thread.ticketId} ${thread.title.toLowerCase()}`
+        ? `${agentNameOf(data, thread.agentId)} · ${thread.ticketId ? `${thread.ticketId} ` : ""}${thread.title.toLowerCase()}`
         : "A thread",
-      n: `${thread ? Math.max(...thread.turns.map((t) => t.n)) : 0} turns`,
+      n:
+        thread && thread.turns.length > 0
+          ? `${Math.max(...thread.turns.map((t) => t.n))} turns`
+          : "",
       df: "One agent working in one folder with one model. A new thread each time the ticket changes hands.",
       go: thread ? () => go({ page: "thread", id: thread.id }) : undefined,
     },
     {
       name: "Turn",
       eg: turn ? `Turn ${turn.n} · ${turn.from}` : "A turn",
-      n: `${stepsIn} steps`,
+      n: turn && stepsIn > 0 ? `${stepsIn} steps` : "",
       df: "One run, from a message to an answer.",
     },
     {
@@ -152,7 +167,8 @@ export function V3Guide({ data, go }: V3PageProps) {
       <div className="mt-2 flex items-stretch max-[760px]:flex-col">
         {hops.map((t, i) => {
           const a = agentOf(data, t.agentId);
-          const turns = Math.max(0, ...t.turns.map((x) => x.n));
+          const turns =
+            t.turns.length > 0 ? Math.max(...t.turns.map((x) => x.n)) : 0;
           return (
             <div key={t.id} className="flex min-w-0 flex-1 items-stretch">
               {i > 0 && (
@@ -166,12 +182,13 @@ export function V3Guide({ data, go }: V3PageProps) {
                 className="flex min-w-0 flex-1 flex-col items-start gap-1 rounded-[10px] border border-[var(--v3-line)] px-3.5 py-3 text-left text-[13px] hover:bg-[var(--v3-hover)]"
               >
                 <span className="flex items-center gap-2 text-[13.5px]">
-                  <Avatar name={a.name} tone={a.tone} />
-                  {a.name}
+                  <AgentAvatar data={data} agent={a} />
+                  {a?.name ?? FORMER_AGENT}
                 </span>
                 <span>{t.title}</span>
                 <span className="text-muted-foreground">
-                  {span(t.minutes)} · {turns} {turns === 1 ? "turn" : "turns"}
+                  {span(t.minutes)}
+                  {turns > 0 && ` · ${turns} ${turns === 1 ? "turn" : "turns"}`}
                 </span>
                 <ThreadPill status={t.status} />
               </button>

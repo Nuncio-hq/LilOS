@@ -34,9 +34,10 @@ export function Composer({
 }: {
   data: V3Data;
   agent: V3Agent;
-  /** Empty for an outside worker: it has no model of its own. */
-  model: string;
-  folder: string;
+  /** Absent or empty for an outside worker or an engine default: no chip. */
+  model?: string;
+  /** Absent = the harness's default folder: no chip. */
+  folder?: string;
   branch?: string;
   /** The agent is mid-turn: a message waits for the current step. */
   working?: boolean;
@@ -115,10 +116,14 @@ export function Composer({
                 <span className={CHIP}>{who}</span>
               )}
               {model && <span className={CHIP}>{model}</span>}
-              <span className={CHIP} title={folder}>
-                <FolderIcon className="size-3.5 shrink-0" />
-                <span className="truncate font-mono text-[12px]">{folder}</span>
-              </span>
+              {folder && (
+                <span className={CHIP} title={folder}>
+                  <FolderIcon className="size-3.5 shrink-0" />
+                  <span className="truncate font-mono text-[12px]">
+                    {folder}
+                  </span>
+                </span>
+              )}
               {branch && (
                 <span className={CHIP} title={branch}>
                   <GitBranchIcon className="size-3.5 shrink-0" />

@@ -11,7 +11,7 @@ import {
   TicketId,
   useOpenRecord,
 } from "./v3-bits";
-import { agentOf, projectOf } from "./v3-model";
+import { agentNameOf, agentOf, FORMER_AGENT, projectOf } from "./v3-model";
 import type { V3Data, V3Route, V3Status, V3Ticket } from "./v3-types";
 
 /* The three table-like Work views: Waiting on, Board, By project. They share
@@ -47,7 +47,7 @@ export function Who({ data, id }: { data: V3Data; id: string }) {
   return (
     <span className="flex min-w-0 items-center gap-2 font-medium">
       <AgentAvatar data={data} agent={a} />
-      <span className="truncate">{a.name}</span>
+      <span className="truncate">{a?.name ?? FORMER_AGENT}</span>
     </span>
   );
 }
@@ -110,10 +110,9 @@ function groupTickets(data: V3Data, tickets: V3Ticket[]): Group[] {
     ]);
   }
   for (const [agentId, rows] of byAgent) {
-    const a = agentOf(data, agentId);
     groups.push({
       key: `agent-${agentId}`,
-      label: `Waiting on ${agentId === data.ceoId ? "the CEO" : a.name}`,
+      label: `Waiting on ${agentId === data.ceoId ? "the CEO" : agentNameOf(data, agentId)}`,
       status: "waiting",
       rows,
       note: (t) => (t.waitingOn?.kind === "agent" ? t.waitingOn.why : null),
@@ -315,7 +314,9 @@ export function BoardView({ data, go, tickets }: WorkViewProps) {
                     </span>
                     <span className="flex items-center gap-1.5 text-[12.5px] text-muted-foreground">
                       <AgentAvatar data={data} agent={owner} size={18} />
-                      <span className="truncate">{owner.name}</span>
+                      <span className="truncate">
+                        {owner?.name ?? FORMER_AGENT}
+                      </span>
                       <span
                         className={cn(
                           "ml-auto shrink-0",

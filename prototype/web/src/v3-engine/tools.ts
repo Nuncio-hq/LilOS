@@ -1,4 +1,4 @@
-import { agentOf, type V3DataActions, type V3Data } from "@lilos/ui"
+import { agentNameOf, agentOf, type V3DataActions, type V3Data } from "@lilos/ui"
 
 type SetData = (fn: (d: V3Data) => V3Data) => void;
 
@@ -23,7 +23,10 @@ export function toolActions(
   | "unpairPhone"
   | "saveSettings"
   | "finishSetup"
+  | "checkEngine"
+  | "checkUpdates"
 > {
+  let checking: Promise<void> | undefined
   return {
     rewind: (threadId, turn) => {
       const th = getData().threads.find((t) => t.id === threadId);
@@ -55,7 +58,7 @@ export function toolActions(
           : [...d.schedules, s],
       }));
       toast(
-        `Scheduled · ${agentOf(getData(), s.agentId).name} runs it ${s.next.toLowerCase()}`,
+        `Scheduled · ${agentNameOf(getData(), s.agentId)} runs it ${s.next.toLowerCase()}`,
       );
     },
     scheduleToggle: (id) => {
@@ -72,6 +75,8 @@ export function toolActions(
       const threadId = `t-run-${id}-${Date.now().toString(36)}`;
       const project = getData().projects.find((p) => p.id === s.projectId);
       const agent = agentOf(getData(), s.agentId);
+      // A run needs someone on the team to run it.
+      if (!agent) return;
       setData((d) => ({
         ...d,
         schedules: d.schedules.map((x) =>
@@ -155,7 +160,7 @@ export function toolActions(
     browserTakeOver: (tabId) => {
       const tab = getData().browser.tabs.find((t) => t.id === tabId);
       if (!tab || tab.by === "you") return;
-      const name = agentOf(getData(), tab.by).name;
+      const name = agentNameOf(getData(), tab.by);
       setData((d) => ({
         ...d,
         browser: {
@@ -171,7 +176,7 @@ export function toolActions(
           : `You have the tab · ${name} waits`,
       );
     },
-    pairPhone: () => {
+    pairPhone: async () => {
       // The prototype's phone scans the code two seconds later.
       window.setTimeout(() => {
         setData((d) => ({
@@ -188,6 +193,17 @@ export function toolActions(
         }));
         toast("Paired · notifications go to this device too");
       }, 2000);
+      const host = "this-mac.tail4f2a.ts.net";
+      const code = Math.random().toString(36).slice(2, 14).toUpperCase().padEnd(12, "7");
+      return {
+        kind: "ready",
+        offer: {
+          host,
+          code,
+          url: `lilos://pair?host=${host}&name=This%20Mac#code=${code}`,
+          expiresAt: Date.now() + 300_000,
+        },
+      };
     },
     unpairPhone: (deviceId) => {
       setData((d) => ({
@@ -199,7 +215,7 @@ export function toolActions(
     saveSettings: (patch) => {
       setData((d) => ({ ...d, settings: { ...d.settings, ...patch } }));
     },
-    finishSetup: ({ company, me, ceoName, ceoModel }) => {
+    finishSetup: ({ company, me, agentName, agentModel }) => {
       setData((d) => ({
         ...d,
         company: company || d.company,
@@ -207,10 +223,29 @@ export function toolActions(
         setUp: true,
         agents: d.agents.map((a) =>
           a.id === d.ceoId
-            ? { ...a, name: ceoName || a.name, model: ceoModel || a.model }
+            ? { ...a, name: agentName || a.name, model: agentModel || a.model }
             : a,
         ),
       }));
     },
+    /* The mock relay and engine come up one after the other (the way the
+       first-run check always looked), then settle on what the data says. */
+    checkEngine: () =>
+      (checking ??= new Promise<void>((done) => {
+        const { relay, engine } = getData().settings
+        const put = (r: typeof relay, e: typeof engine) =>
+          setData((d) => ({ ...d, settings: { ...d.settings, relay: r, engine: e } }))
+        put({ state: "starting" }, { ...engine, state: "starting" })
+        window.setTimeout(() => put(relay, { ...engine, state: "starting" }), 600)
+        window.setTimeout(() => {
+          put(relay, engine)
+          checking = undefined
+          done()
+        }, 1400)
+      })),
+    checkUpdates: () =>
+      new Promise<string>((done) =>
+        window.setTimeout(() => done("LilOS is up to date."), 1000),
+      ),
   };
 }

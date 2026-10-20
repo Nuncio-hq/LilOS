@@ -405,24 +405,38 @@ export async function panelFocusReady(
   });
 }
 
+/** Where a conversation opens in v3: beside Threads, in the URL hash (the
+ *  packaged app loads from file:, so only the fragment can carry it).
+ *  `full` widens the peek over the page, what Focus used to be. */
+export const threadUrl = (
+  webUrl: string,
+  conversationId: string,
+  full = false,
+): string =>
+  `${webUrl}/#?page=threads&open=thread:${encodeURIComponent(conversationId)}${full ? "&full=1" : ""}`;
+
+/** A person's page in the side peek over People. */
+export const agentUrl = (webUrl: string, employeeId: string): string =>
+  `${webUrl}/#?page=people&open=agent:${encodeURIComponent(employeeId)}`;
+
 /**
- * #577 navigation helper: a send lands on the DM list with the thread open
- * in the side panel (`/dm/:e/:c`); Focus opens only from the panel's ↗
- * button. Specs that need Focus after a send call this — it waits for the
- * panel URL, clicks Focus, and waits for the Focus URL.
+ * Navigation helper: a send lands on Threads with the thread open in the
+ * side peek (`#?page=threads&open=thread:<id>`); widening it over the page
+ * is the peek header's button. Specs that need the wide session call this:
+ * it waits for the peek URL, clicks Widen, and waits for `full=1`.
  */
 export async function panelIntoFocus(
-  page: import("@playwright/test").Page,
-  focusUrl: RegExp = /\/dm\/[^/]+\/[^/]+\/focus$/,
+  page: playwright.Page,
+  focusUrl: RegExp = /[#&]full=1(&|$)/,
 ): Promise<void> {
   const { expect } = playwright;
-  await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+$/, { timeout: 30_000 });
+  await expect(page).toHaveURL(/open=thread:[^&]+/, { timeout: 30_000 });
   // The URL lands before the panel mounts (the conv resolves async under
   // load) — wait for the surface, then the button.
   await panelFocusReady(page);
   await page
-    .locator("[data-thread-panel]")
-    .getByTitle("Focus", { exact: true })
+    .getByRole("complementary", { name: "Opened record" })
+    .getByTitle("Widen over the page", { exact: true })
     .click();
   await expect(page).toHaveURL(focusUrl, { timeout: 30_000 });
 }

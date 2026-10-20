@@ -82,7 +82,7 @@ export function runTurn(
       patchThread((t) => ({
         ...t,
         step: (t.step ?? 0) + 1,
-        context: Math.min(95, t.context + 2),
+        context: Math.min(95, (t.context ?? 0) + 2),
         now: {
           kind: step.kind,
           text: `${STEP_VERB[step.kind]} ${step.target}`,

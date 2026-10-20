@@ -1,5 +1,5 @@
 import { StatusPill } from "./v3-bits";
-import type { V3Status } from "./v3-types";
+import type { V3Status, V3Thread } from "./v3-types";
 
 /* Live-feel helpers for threads. The prototype has a fixed list of output
    lines per thread; these make it read as a stream that keeps arriving. */
@@ -46,6 +46,13 @@ export function OutLine({ text }: { text: string }) {
       {text.slice(1)}
     </>
   );
+}
+
+/** How many turns a thread has had, or undefined when the app does not carry
+   its turns (then no label may say "0 turns"). */
+export function turnCount(t: V3Thread): number | undefined {
+  if (t.turns.length === 0) return undefined;
+  return t.turns.reduce((m, x) => Math.max(m, x.n), 0);
 }
 
 /** A thread's status pill: a finished thread reads "Finished", not "Done". */

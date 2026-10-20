@@ -1,5 +1,5 @@
 import { AgentAvatar, Page, Section, Title } from "./v3-bits";
-import { agentOf } from "./v3-model";
+import { agentOf, FORMER_AGENT } from "./v3-model";
 import type { V3PageProps, V3Update } from "./v3-types";
 
 /* Inbox: what the company told you, newest first, as a plain feed. */
@@ -35,7 +35,9 @@ export function V3Inbox({ data, go }: V3PageProps) {
               <AgentAvatar data={data} agent={by} size={24} className="mt-px" />
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline gap-2 text-[13.5px]">
-                  <b className="font-semibold text-foreground">{by.name}</b>
+                  <b className="font-semibold text-foreground">
+                    {by?.name ?? FORMER_AGENT}
+                  </b>
                   <span className="text-muted-foreground">
                     {KIND_WORD[u.kind]}
                   </span>

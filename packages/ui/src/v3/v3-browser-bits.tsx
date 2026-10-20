@@ -1,7 +1,7 @@
 import { GlobeIcon, HandIcon, LockIcon, Undo2Icon } from "lucide-react";
 import { useState } from "react";
 import { AgentAvatar, Btn, StatusDot } from "./v3-bits";
-import { agentOf } from "./v3-model";
+import { agentOf, FORMER_AGENT } from "./v3-model";
 import type { V3BrowserTab, V3Data, V3PageProps, V3Status } from "./v3-types";
 
 /* Small pieces of a session's browser: address helpers, the page body, the
@@ -57,7 +57,8 @@ export function SessionStart({
   empty,
   onOpen,
 }: {
-  agentName: string;
+  /** Who else sees these pages; absent once the agent has left the team. */
+  agentName?: string;
   /** No tab at all in this session (else: a blank tab among others). */
   empty: boolean;
   onOpen: (text: string) => void;
@@ -71,8 +72,8 @@ export function SessionStart({
       />
       <p className="mt-3 text-[14px] text-muted-foreground">
         {empty
-          ? `No tabs in this session yet. Open a page here and ${agentName} can see it too.`
-          : `New tab. ${agentName} can see pages you open in this session.`}
+          ? `No tabs in this session yet.${agentName ? ` Open a page here and ${agentName} can see it too.` : ""}`
+          : `New tab.${agentName ? ` ${agentName} can see pages you open in this session.` : ""}`}
       </p>
       <form
         className="mt-4 flex h-[34px] w-full items-center rounded-lg bg-[var(--v3-hover)] px-3 focus-within:bg-background focus-within:shadow-[inset_0_0_0_1px_var(--foreground)]"
@@ -99,8 +100,11 @@ export function SessionStart({
 }
 
 /** A calm rendering of the page's lines (the prototype has no real pages):
-   the site on top, the first line as the heading, the rest as cards. */
+   the site on top, the first line as the heading, the rest as cards. The real
+   browser paints its pages natively and carries no lines: then there is
+   nothing to draw here. */
 export function PageBody({ tab }: { tab: V3BrowserTab }) {
+  if (!tab.page) return null;
   const [head, ...rest] = tab.page;
   const Lock = /^https:/i.test(tab.url) ? LockIcon : GlobeIcon;
   return (
@@ -135,6 +139,8 @@ export function AgentBanner({
   act,
 }: Pick<V3PageProps, "data" | "act"> & { tab: V3BrowserTab }) {
   const agent = agentOf(data, tab.by);
+  const name = agent?.name ?? FORMER_AGENT;
+  const takeOver = act.browserTakeOver;
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-[var(--v3-line)] border-b bg-[var(--v3-soft)] px-3 py-2 text-[13.5px]">
       <AgentAvatar data={data} agent={agent} size={20} />
@@ -143,24 +149,25 @@ export function AgentBanner({
         {tab.takenOver ? (
           <span className="min-w-0 truncate">
             You took this tab over —{" "}
-            <b className="font-medium text-foreground">{agent.name}</b> is
-            paused
+            <b className="font-medium text-foreground">{name}</b> is paused
           </span>
         ) : (
           <span className="min-w-0 truncate">
-            <b className="font-medium text-foreground">{agent.name}</b> is
-            driving{tab.doing ? ` · ${tab.doing}` : ""}
+            <b className="font-medium text-foreground">{name}</b> is driving
+            {tab.doing ? ` · ${tab.doing}` : ""}
           </span>
         )}
       </p>
-      <Btn small primary onClick={() => act.browserTakeOver(tab.id)}>
-        {tab.takenOver ? (
-          <Undo2Icon className="size-3.5" />
-        ) : (
-          <HandIcon className="size-3.5" />
-        )}
-        {tab.takenOver ? "Hand back" : "Take over"}
-      </Btn>
+      {takeOver && (
+        <Btn small primary onClick={() => takeOver(tab.id)}>
+          {tab.takenOver ? (
+            <Undo2Icon className="size-3.5" />
+          ) : (
+            <HandIcon className="size-3.5" />
+          )}
+          {tab.takenOver ? "Hand back" : "Take over"}
+        </Btn>
+      )}
     </div>
   );
 }

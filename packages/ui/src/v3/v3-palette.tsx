@@ -5,8 +5,8 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "../lib/utils";
-import { Avatar, Btn, Kbd, Spinner, TicketId } from "./v3-bits";
-import { agentOf, goalOf } from "./v3-model";
+import { AgentAvatar, Avatar, Btn, Kbd, Spinner, TicketId } from "./v3-bits";
+import { agentOf, FORMER_AGENT, goalOf } from "./v3-model";
 import type { V3Data, V3Draft, V3Route } from "./v3-types";
 
 type Plan = Extract<V3Draft, { kind: "plan" }>;
@@ -22,7 +22,7 @@ const TRY = [
    right here, work gets a draft plan (tickets, owners, order, time, cost,
    where it will ask you) that only becomes real when you press Start. The
    same box doubles as search: typed text also matches tickets, people,
-   goals and projects to jump to. */
+   threads, goals and projects to jump to (threads after people; six rows). */
 export function V3Palette({
   data,
   seed,
@@ -85,6 +85,18 @@ export function V3Palette({
             route: { page: "agent", id: a.id },
           }),
         ),
+      ...data.threads.flatMap((t): Jump[] => {
+        // A thread whose agent is gone is still found by its title.
+        const who = data.agents.find((a) => a.id === t.agentId)?.name ?? "";
+        if (!hit(t.title) && !hit(who)) return [];
+        return [
+          {
+            label: t.title,
+            hint: who ? `${who} · thread` : "thread",
+            route: { page: "thread", id: t.id },
+          },
+        ];
+      }),
       ...data.goals
         .filter((g) => hit(g.title))
         .map(
@@ -232,7 +244,7 @@ export function V3Palette({
               const idx = lead + i;
               return (
                 <Row
-                  key={j.label}
+                  key={JSON.stringify(j.route)}
                   on={sel === idx}
                   onClick={() => pick(idx)}
                   onHover={() => setSel(idx)}
@@ -352,8 +364,8 @@ function PlanView({
                   )}
                 </span>
                 <span className="flex w-[108px] shrink-0 items-center gap-2 font-medium">
-                  <Avatar name={a.name} tone={a.tone} />
-                  {a.name}
+                  <AgentAvatar data={data} agent={a} />
+                  {a?.name ?? FORMER_AGENT}
                 </span>
                 <span className="w-[96px] shrink-0 text-[12.5px] text-muted-foreground/70">
                   {t.after ? `after ${t.after}` : "starts now"}

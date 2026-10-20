@@ -18,16 +18,16 @@ export interface ShortcutRow {
 export const SHORTCUTS: ShortcutRow[] = [
   {
     keys: "⌘K",
-    action: "Quick switcher — jump to an employee, session or folder",
+    action: "Search — jump to a person, a thread or a page",
   },
   {
     keys: "⌘N",
-    action: "New session with the current employee",
+    action: "New chat with the agent on screen",
     desktop: true,
   },
   {
     keys: "⌘1–⌘9",
-    action: "Go to the Nth employee in the sidebar",
+    action: "Open the Nth agent",
     desktop: true,
   },
   { keys: "⌘[", action: "Back" },

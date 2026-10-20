@@ -200,9 +200,13 @@ export function TimelineView({ data, go, tickets }: WorkViewProps) {
                       </>
                     )}
                     <span className="relative block truncate px-2 leading-6 text-foreground">
-                      <span className="text-muted-foreground">
-                        {bar.ticketId}
-                      </span>{" "}
+                      {bar.ticketId && (
+                        <>
+                          <span className="text-muted-foreground">
+                            {bar.ticketId}
+                          </span>{" "}
+                        </>
+                      )}
                       {bar.label}
                     </span>
                   </button>

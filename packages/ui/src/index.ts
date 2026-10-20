@@ -156,11 +156,20 @@ export * from "./types";
 // UX v2 prototype: threads by project, agent as a per-thread picker
 export { V2Shell } from "./v2/v2-shell";
 export type * from "./v2/v2-types";
+export { V3Banner } from "./v3/v3-banner";
 // UX v3: the calm company (People, Work, Goals; Notion-like). The shell is
 // controlled; the vocabulary and lookups below let an app (or the prototype's
 // mock engine) build the same view models the pages read.
 export { STEP_VERB } from "./v3/v3-bits";
-export { agentOf } from "./v3/v3-model";
+export { agentNameOf, agentOf, FORMER_AGENT } from "./v3/v3-model";
+export {
+  homeOf,
+  navFromParams,
+  paramsFromNav,
+  paramsText,
+  step as stepNav,
+} from "./v3/v3-nav";
+export { whenWords } from "./v3/v3-schedule-text";
 export { V3Shell } from "./v3/v3-shell";
 export type * from "./v3/v3-types";
 export type { TreeNode } from "./workbench/artifacts";

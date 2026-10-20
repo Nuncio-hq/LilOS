@@ -1,4 +1,4 @@
-import { CheckIcon, ChevronDownIcon } from "lucide-react";
+import { CheckIcon, ChevronDownIcon, FolderIcon } from "lucide-react";
 import {
   type KeyboardEvent,
   type ReactNode,
@@ -9,22 +9,16 @@ import {
 import { cn } from "../lib/utils";
 import { AgentAvatar, Page, ProjectMark, Title } from "./v3-bits";
 import { Composer } from "./v3-composer";
-import { agentOf, projectOf, ticketOf } from "./v3-model";
-import type { V3Data, V3PageProps } from "./v3-types";
+import { agentOf, defaultAgent, projectOf, ticketOf } from "./v3-model";
+import type { V3Agent, V3Data, V3PageProps } from "./v3-types";
 
 /* A new chat, opened like any record in the side peek: you already chose who
    (from their page, or the CEO from Threads), so there is no picker, only a
    box to write in. Who, where and which model sit as quiet chips under the
    text and open a tiny menu to change. Sending starts a thread with no ticket
-   and takes the draft's place on the trail; "Make it a ticket" comes later. */
-
-const MODELS = ["Opus 5.5 · High", "Sonnet 5 · Medium", "Haiku 5 · Fast"];
-
-const SUGGESTIONS = [
-  "Why is ac-544 flaky?",
-  "Summarise yesterday's PRs",
-  "Draft release notes for 0.9",
-];
+   and takes the draft's place on the trail; "Make it a ticket" comes later.
+   The models on offer are the app's (`modelChoices`); where it works is a
+   project, or, in a company without projects, one of the app's folders. */
 
 const CHIP =
   "inline-flex h-6 min-w-0 items-center gap-1.5 rounded-md px-1.5 text-[12.5px] text-muted-foreground transition-colors hover:bg-[var(--v3-hover)] hover:text-foreground";
@@ -152,30 +146,85 @@ function ChipMenu({
   );
 }
 
-export function V3DraftChat({
+export function V3DraftChat(props: V3PageProps & { id: string }) {
+  const fallback = defaultAgent(props.data);
+  // Nobody is hired yet: there is no one to start a chat with.
+  if (!fallback) {
+    return (
+      <Page>
+        <Title small kicker="New chat">
+          No agents yet
+        </Title>
+        <p className="text-[14.5px] text-muted-foreground">
+          A chat needs an agent to talk to.
+        </p>
+      </Page>
+    );
+  }
+  return <DraftChat {...props} fallback={fallback} />;
+}
+
+function DraftChat({
   data,
   go,
   act,
   id,
-}: V3PageProps & { id: string }) {
+  fallback,
+}: V3PageProps & { id: string; fallback: V3Agent }) {
   const [agentId, setAgent] = useState(
-    data.agents.some((a) => a.id === id) ? id : data.ceoId,
+    data.agents.some((a) => a.id === id) ? id : fallback.id,
   );
-  const agent = agentOf(data, agentId);
+  // The chosen agent can leave the team while the draft is open (or the id
+  // never matched one): the draft then goes to the default, like "nobody
+  // chosen".
+  const agent = agentOf(data, agentId) ?? fallback;
   // Project and model follow the agent until you choose one yourself.
   const [chosenProject, setProject] = useState<string>();
   const projectId = chosenProject ?? usualProject(data, agent.id);
   const project = projectOf(data, projectId);
+  // A company with no projects yet picks among the app's recent folders.
+  const folders = data.folders ?? [];
+  const [chosenFolder, setFolder] = useState<string>();
+  const folder = project
+    ? undefined
+    : (folders.find((f) => f.path === chosenFolder) ?? folders[0]);
   const [chosenModel, setModel] = useState<string>();
   // An outside worker has no model of its own: no chip, and none sent.
   const outside = agent.kind === "outside";
   const model = outside ? "" : (chosenModel ?? agent.model);
   const [draft, setDraft] = useState("");
   const input = useRef<HTMLTextAreaElement>(null);
+  const sending = useRef(false);
 
   useEffect(() => {
     input.current?.focus({ preventScroll: true });
   }, []);
+
+  // The Composer empties the box right after onSend, before we know whether
+  // the chat started. That clearing is ignored while one is starting, so if
+  // the app could not start it (it has said why) the typed text is still
+  // there, and a second Send meanwhile cannot start a second chat.
+  const edit = (text: string) => {
+    if (!(sending.current && text === "")) setDraft(text);
+  };
+  async function send(text: string) {
+    if (sending.current) return;
+    sending.current = true;
+    try {
+      const thread = await act.startChat({
+        agentId: agent.id,
+        projectId: project?.id,
+        folder: folder?.path,
+        model,
+        text,
+      });
+      if (thread === undefined) return;
+      setDraft("");
+      go({ page: "thread", id: thread });
+    } finally {
+      sending.current = false;
+    }
+  }
 
   const chips = (
     <>
@@ -202,7 +251,7 @@ export function V3DraftChat({
           ),
         }))}
       />
-      {project && (
+      {project ? (
         <ChipMenu
           title={`Project · ${project.folder}`}
           value={project.id}
@@ -230,14 +279,45 @@ export function V3DraftChat({
             ),
           }))}
         />
+      ) : (
+        folder && (
+          <ChipMenu
+            title={`Folder · ${folder.path}`}
+            value={folder.path}
+            onPick={setFolder}
+            label={
+              <>
+                <FolderIcon className="size-3.5 shrink-0" />
+                <span className="truncate">{folder.label}</span>
+              </>
+            }
+            options={folders.map((f) => ({
+              id: f.path,
+              node: (
+                <>
+                  <FolderIcon className="size-3.5 shrink-0" />
+                  <span className="shrink-0">{f.label}</span>
+                  {f.path !== f.label && (
+                    <span className="truncate font-mono text-[12px] text-muted-foreground/70">
+                      {f.path}
+                    </span>
+                  )}
+                </>
+              ),
+            }))}
+          />
+        )
       )}
-      {!outside && (
+      {!outside && data.modelChoices.length > 0 && (
         <ChipMenu
           title="Model"
           value={model}
           onPick={setModel}
           label={<span className="truncate">{model}</span>}
-          options={MODELS.map((m) => ({ id: m, node: <span>{m}</span> }))}
+          options={data.modelChoices.map((m) => ({
+            id: m,
+            node: <span>{m}</span>,
+          }))}
         />
       )}
     </>
@@ -257,44 +337,39 @@ export function V3DraftChat({
         {agent.role}
       </p>
       <p className="mt-3 text-[15px] text-muted-foreground">
-        Talk to {agent.name} directly. Turn it into a ticket any time.
+        Talk to {agent.name} directly.
+        {data.features.tickets && " Turn it into a ticket any time."}
       </p>
 
-      <div className="mt-8 flex flex-wrap gap-2">
-        {SUGGESTIONS.map((s) => (
-          <button
-            key={s}
-            type="button"
-            onClick={() => {
-              setDraft(s);
-              input.current?.focus();
-            }}
-            className="h-7 rounded-full border border-[var(--v3-line)] px-3 text-[13px] text-muted-foreground transition-colors hover:bg-[var(--v3-hover)] hover:text-foreground"
-          >
-            {s}
-          </button>
-        ))}
-      </div>
+      {data.starters && data.starters.length > 0 && (
+        <div className="mt-8 flex flex-wrap gap-2">
+          {data.starters.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => {
+                edit(s);
+                input.current?.focus();
+              }}
+              className="h-7 rounded-full border border-[var(--v3-line)] px-3 text-[13px] text-muted-foreground transition-colors hover:bg-[var(--v3-hover)] hover:text-foreground"
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="mt-3">
         <Composer
           data={data}
           agent={agent}
           model={model}
-          folder={project?.folder ?? "~"}
+          folder={project?.folder ?? folder?.path}
           value={draft}
-          onChange={setDraft}
+          onChange={edit}
           inputRef={input}
           chips={chips}
-          onSend={(text) => {
-            const thread = act.startChat({
-              agentId: agent.id,
-              projectId,
-              model,
-              text,
-            });
-            go({ page: "thread", id: thread });
-          }}
+          onSend={send}
         />
       </div>
     </Page>

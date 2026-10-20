@@ -12,17 +12,19 @@ import {
   Title,
 } from "./v3-bits";
 import {
+  agentNameOf,
   agentOf,
   agentStatus,
   agentThread,
   agentTicket,
+  FORMER_AGENT,
   goalProgress,
   projectOf,
   teamCounts,
   ticketOf,
   waitingLabel,
 } from "./v3-model";
-import type { V3Data, V3PageProps, V3Status } from "./v3-types";
+import type { V3Agent, V3Data, V3PageProps, V3Status } from "./v3-types";
 
 /* Home: three quiet answers on one page. What do I have to do, how is the
    team, how far are the goals. The CEO's note sits on top like a morning
@@ -43,7 +45,8 @@ const TEAM_GRID =
 const WIDE = "hidden @min-[660px]:block";
 
 /** One team row: what the agent is on, since when, and who it waits on. */
-function teamRow(d: V3Data, agentId: string) {
+function teamRow(d: V3Data, agent: V3Agent) {
+  const agentId = agent.id;
   const status = agentStatus(d, agentId);
   const thread = agentThread(d, agentId);
   const idle = status === "idle";
@@ -57,7 +60,7 @@ function teamRow(d: V3Data, agentId: string) {
     status,
     idle,
     text: idle
-      ? (agentOf(d, agentId).next ?? "Nothing assigned")
+      ? (agent.next ?? "Nothing assigned")
       : (thread?.title ?? ticket?.title ?? "—"),
     ticketId: ticket?.id,
     since:
@@ -88,7 +91,7 @@ export function V3Home({ data, go, act }: V3PageProps) {
           <b className="font-semibold text-foreground">
             {data.agents.length - outside}
           </b>{" "}
-          agents
+          {data.agents.length - outside === 1 ? "agent" : "agents"}
         </span>
         {outside > 0 && (
           <span>
@@ -111,7 +114,7 @@ export function V3Home({ data, go, act }: V3PageProps) {
         )}
       </div>
 
-      {brief && briefBy && (
+      {brief && (
         <div className="mt-6 flex gap-3 rounded-[10px] bg-[var(--v3-soft)] px-[18px] py-4">
           <AgentAvatar
             data={data}
@@ -122,7 +125,9 @@ export function V3Home({ data, go, act }: V3PageProps) {
           <div className="min-w-0">
             <div className="flex items-baseline gap-2 text-[13.5px] text-muted-foreground">
               <span>
-                <b className="font-semibold text-foreground">{briefBy.name}</b>{" "}
+                <b className="font-semibold text-foreground">
+                  {briefBy?.name ?? FORMER_AGENT}
+                </b>{" "}
                 · update at {brief.at}
               </span>
               <button
@@ -148,7 +153,8 @@ export function V3Home({ data, go, act }: V3PageProps) {
       />
       {data.asks.length === 0 ? (
         <p className="border-[var(--v3-line)] border-y py-3.5 text-[14px] text-muted-foreground">
-          Nothing needs you. The CEO will write at 15:00.
+          Nothing needs you.
+          {data.ceoId && " The CEO will write at 15:00."}
         </p>
       ) : (
         <div className="border-[var(--v3-line)] border-t">
@@ -163,8 +169,8 @@ export function V3Home({ data, go, act }: V3PageProps) {
                   {ask.title}
                 </div>
                 <div className="mt-px text-[13px] text-muted-foreground">
-                  {ask.ticketId} · {agentOf(data, ask.from).name} · waiting{" "}
-                  {ago(ask.waiting)}
+                  {ask.ticketId ?? "Chat"} · {agentNameOf(data, ask.from)} ·
+                  waiting {ago(ask.waiting)}
                 </div>
               </div>
               {/* Buttons act on the ask; the row itself opens the full page. */}
@@ -209,7 +215,7 @@ export function V3Home({ data, go, act }: V3PageProps) {
           <span className={cn(WIDE, "text-right")}>Waiting on</span>
         </div>
         {data.agents.map((a) => {
-          const r = teamRow(data, a.id);
+          const r = teamRow(data, a);
           return (
             <RowButton
               key={a.id}

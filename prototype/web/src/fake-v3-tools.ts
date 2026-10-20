@@ -220,6 +220,7 @@ export const SETTINGS: V3Data["settings"] = {
   push: { needsYou: true, finished: false, stuck: true, failed: true },
   approvals: "ask",
   editor: "Cursor",
+  editors: ["Cursor", "VS Code", "Zed", "Xcode"],
   models: [
     { id: "opus", label: "Opus 5.5", on: true },
     { id: "sonnet", label: "Sonnet 5", on: true },
@@ -227,4 +228,20 @@ export const SETTINGS: V3Data["settings"] = {
     { id: "gpt", label: "GPT-6", on: false },
   ],
   engine: { name: "Hermes", version: "0.14.2", state: "ok", path: "~/.hermes/bin/hermes" },
+  relay: { state: "ok" },
+  about: {
+    version: "LilOS 0.9 (prototype)",
+    whatsNew: { label: "What’s new in 0.9", ask: "What changed in LilOS 0.9?" },
+  },
+  firstRun: {
+    models: [
+      { label: "Opus 5.5 · High", note: "Best judgement; the default." },
+      { label: "Sonnet 5 · Medium", note: "Faster and cheaper." },
+    ],
+    folders: [
+      { path: "~/Code/LilOS", note: "Git repository · used 2 days ago" },
+      { path: "~/Code/heardback", note: "Git repository · used last week" },
+      { path: "~/Code/qrit", note: "Git repository · used last month" },
+    ],
+  },
 }

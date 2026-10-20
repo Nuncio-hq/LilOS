@@ -2,83 +2,108 @@ import { FolderIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { cn } from "../lib/utils";
 import { Avatar, Btn, CeoMark, Kbd, Title } from "./v3-bits";
-import { EngineFix, EngineState } from "./v3-settings-bits";
+import { ConnectRows } from "./v3-connect-rows";
+import { defaultAgent } from "./v3-model";
 import type { V3PageProps } from "./v3-types";
-import { CheckRow, Choice, Field, Steps } from "./v3-welcome-bits";
+import { Choice, Field, Steps } from "./v3-welcome-bits";
+import { EngineStep } from "./v3-welcome-engine";
 
-/* First run: one calm column, four short steps. Nothing to navigate yet, so
+/* First run: one calm column, a few short steps. Nothing to navigate yet, so
    no sidebar. Enter advances; the engine check blocks the way on until the
-   engine is fine, with the steps to fix it right there. */
+   engine is fine, with the steps to fix it right there. Models and folders
+   come from the app (`settings.firstRun`); a choice it has none for is not
+   drawn. */
 
-const STEPS = [
-  "You and your company",
-  "Engine check",
-  "Your CEO",
-  "First project",
-];
+type StepId = "you" | "engine" | "connect" | "agent" | "folder";
 
-const MODELS = [
-  { id: "Opus 5.5 · High", note: "Best judgement; the default." },
-  { id: "Sonnet 5 · Medium", note: "Faster and cheaper." },
-];
-
-const FOLDERS = [
-  { path: "~/Code/LilOS", note: "Git repository · used 2 days ago" },
-  { path: "~/Code/heardback", note: "Git repository · used last week" },
-  { path: "~/Code/qrit", note: "Git repository · used last month" },
-];
+const NUMBER = ["Three", "Four", "Five"];
 
 export function V3Welcome({ data, go, act }: V3PageProps) {
-  const { engine } = data.settings;
+  const { engine, relay, connect, firstRun } = data.settings;
+  const models = firstRun?.models ?? [];
+  const folders = firstRun?.folders ?? [];
+  const isCeo = !!data.ceoId;
+
+  // Whether the engine asks to connect is fixed on arrival: approving it
+  // must not make its own step vanish.
+  const [showConnect] = useState(
+    () => !!connect && !connect.approved && !!act.connectEngine,
+  );
+  const steps: { id: StepId; label: string }[] = [
+    { id: "you", label: "You and your company" },
+    { id: "engine", label: "Engine check" },
+    ...(showConnect
+      ? [{ id: "connect" as const, label: `Connect ${connect?.engine}` }]
+      : []),
+    { id: "agent", label: isCeo ? "Your CEO" : "Your first agent" },
+    { id: "folder", label: "First project" },
+  ];
   const [step, setStep] = useState(0);
+  const id = steps[step].id;
+
+  // The OS name can arrive after this opens: the fields follow the data
+  // until you type in them.
+  const touched = useRef(false);
   const [me, setMe] = useState(data.me);
   const [company, setCompany] = useState(data.company);
-  const [ceoName, setCeoName] = useState("Chief");
-  const [ceoModel, setCeoModel] = useState(MODELS[0].id);
-  const [picked, setPicked] = useState(FOLDERS[0].path);
+  useEffect(() => {
+    if (touched.current) return;
+    setMe(data.me);
+    setCompany(data.company);
+  }, [data.me, data.company]);
+  const [agentName, setAgentName] = useState(defaultAgent(data)?.name ?? "");
+  const [agentModel, setAgentModel] = useState<string | undefined>(
+    models[0]?.label,
+  );
+  const [picked, setPicked] = useState(folders[0]?.path ?? "");
   const [typed, setTyped] = useState("");
   const folder = typed.trim() || picked;
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
 
-  // Engine check: relay first, then the engine. `n` counts finished legs.
-  const [n, setN] = useState(0);
-  const [run, setRun] = useState(0);
-  useEffect(() => {
-    const legs: [number, number][] =
-      run === 0
-        ? [
-            [600, 1],
-            [1400, 2],
-          ]
-        : [[1000, 2]];
-    const ids = legs.map(([ms, to]) => window.setTimeout(() => setN(to), ms));
-    return () => {
-      for (const id of ids) window.clearTimeout(id);
-    };
-  }, [run]);
-  const engineOk = engine.state === "ok";
-  const checked = n === 2;
+  const engineOk = relay.state === "ok" && engine.state === "ok";
+  const ready = {
+    you: me.trim() !== "" && company.trim() !== "",
+    engine: engineOk,
+    connect: true,
+    agent: agentName.trim() !== "",
+    // No folders to offer: typing one is optional, the first chat can pick.
+    folder: folder !== "" || folders.length === 0,
+  }[id];
+  const last = step === steps.length - 1;
 
-  const ready = [
-    me.trim() !== "" && company.trim() !== "",
-    checked && engineOk,
-    ceoName.trim() !== "",
-    folder !== "",
-  ][step];
-  const last = step === STEPS.length - 1;
-  const next = () => {
-    if (!ready) return;
+  const next = async () => {
+    if (!ready || busy) return;
+    setError(undefined);
+    if (id === "connect") {
+      setBusy(true);
+      try {
+        await act.connectEngine?.();
+        setStep(step + 1);
+      } catch {
+        // The app has already said why; the step stays so you can retry.
+      }
+      setBusy(false);
+      return;
+    }
     if (!last) {
       setStep(step + 1);
       return;
     }
-    act.finishSetup({
-      company: company.trim(),
-      me: me.trim(),
-      ceoName: ceoName.trim(),
-      ceoModel,
-      folder,
-    });
-    go({ page: "home" });
+    setBusy(true);
+    try {
+      await act.finishSetup({
+        company: company.trim(),
+        me: me.trim(),
+        agentName: agentName.trim(),
+        ...(agentModel ? { agentModel } : {}),
+        ...(folder ? { folder } : {}),
+      });
+      go({ page: "home" });
+    } catch {
+      setError("Couldn't finish setting up. Try again.");
+      setBusy(false);
+    }
   };
 
   // Enter advances from anywhere except a control that Enter already presses.
@@ -89,7 +114,7 @@ export function V3Welcome({ data, go, act }: V3PageProps) {
       if (e.key !== "Enter" || e.repeat || e.isComposing) return;
       if (e.target instanceof HTMLElement && e.target.closest("button, a"))
         return;
-      latest.current();
+      void latest.current();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -105,81 +130,62 @@ export function V3Welcome({ data, go, act }: V3PageProps) {
       <div className="mx-auto w-full max-w-[560px] px-6 pt-[10vh] pb-16">
         <Title>Welcome to LilOS</Title>
         <p className="-mt-1 text-[15px] text-muted-foreground">
-          A company of AI agents that works while you are away. Four quick
-          steps.
+          A company of AI agents that works while you are away.{" "}
+          {NUMBER[steps.length - 3]} quick steps.
         </p>
-        <Steps steps={STEPS} at={step} />
+        <Steps steps={steps.map((s) => s.label)} at={step} />
 
-        <div key={step} className="lilos-v3-line-in min-h-[300px]">
-          <h2 className="font-semibold text-[17px]">{STEPS[step]}</h2>
+        <div key={id} className="lilos-v3-line-in min-h-[300px]">
+          <h2 className="font-semibold text-[17px]">{steps[step].label}</h2>
 
-          {step === 0 && (
+          {id === "you" && (
             <>
               <Field
                 inputRef={first}
                 label="Your name"
                 value={me}
-                onChange={setMe}
+                onChange={(v) => {
+                  touched.current = true;
+                  setMe(v);
+                }}
                 placeholder="What the agents call you"
               />
               <Field
                 label="Company name"
                 value={company}
-                onChange={setCompany}
+                onChange={(v) => {
+                  touched.current = true;
+                  setCompany(v);
+                }}
                 placeholder="Your company"
               />
             </>
           )}
 
-          {step === 1 && (
+          {id === "engine" && <EngineStep data={data} act={act} />}
+
+          {id === "connect" && connect && (
             <div className="mt-3">
-              <p className="mb-1 text-[14px] text-muted-foreground">
-                LilOS runs on your Mac. This makes sure everything it needs is
-                there.
+              <p className="mb-2 text-[14px] text-muted-foreground">
+                Connected agents see the app (their chats, folders and work) and
+                act in it for you. Only chats LilOS opens are affected, and you
+                can do this later in Settings.
               </p>
-              <CheckRow
-                state={n >= 1 ? "ok" : "run"}
-                label="Local relay"
-                result="Connected"
-              />
-              <CheckRow
-                state={
-                  n < 1 ? "wait" : n < 2 ? "run" : engineOk ? "ok" : "fail"
-                }
-                label={`Engine ${engine.name}${engine.state === "missing" ? "" : ` ${engine.version}`}`}
-                result={engineOk ? "Ready" : <EngineState engine={engine} />}
-              />
-              {checked && !engineOk && (
-                <div className="mt-4">
-                  <EngineFix engine={engine} />
-                  <div className="mt-4">
-                    <Btn
-                      small
-                      onClick={() => {
-                        // The mock engine stays as it is: still blocked.
-                        setN(1);
-                        setRun(run + 1);
-                      }}
-                    >
-                      Check again
-                    </Btn>
-                  </div>
-                </div>
-              )}
+              <ConnectRows rows={connect.rows} />
             </div>
           )}
 
-          {step === 2 && (
+          {id === "agent" && (
             <>
               <p className="mt-3 text-[14.5px] text-muted-foreground">
-                The CEO is a position, not a person: it splits your goals into
-                tickets, hands them to the right agent, checks every result and
-                writes you a short update. You can give it to anyone later.
+                {isCeo
+                  ? "The CEO is a position, not a person: it splits your goals into tickets, hands them to the right agent, checks every result and writes you a short update. You can give it to anyone later."
+                  : "This is the agent you start chatting with. Name it as you like; you can rename it, and hire more, any time."}
               </p>
               <div className="mt-5 flex items-end gap-3">
                 <Avatar
-                  name={ceoName || "C"}
-                  tone="c"
+                  name={agentName || "C"}
+                  tone={isCeo ? "c" : "n"}
                   size={36}
                   className="mb-0.5"
                 />
@@ -187,59 +193,70 @@ export function V3Welcome({ data, go, act }: V3PageProps) {
                   <Field
                     inputRef={first}
                     label="Name"
-                    value={ceoName}
-                    onChange={setCeoName}
+                    value={agentName}
+                    onChange={setAgentName}
                     placeholder="Chief"
                   />
                 </div>
-                <CeoMark className="mb-2.5" />
+                {isCeo && <CeoMark className="mb-2.5" />}
               </div>
-              <div className="mt-5 mb-2 text-[13px] text-muted-foreground">
-                Model
-              </div>
-              <div
-                role="radiogroup"
-                aria-label="CEO model"
-                className="space-y-2"
-              >
-                {MODELS.map((m) => (
-                  <Choice
-                    key={m.id}
-                    on={ceoModel === m.id}
-                    onClick={() => setCeoModel(m.id)}
-                    title={m.id}
-                    note={m.note}
-                  />
-                ))}
-              </div>
+              {models.length > 0 && (
+                <>
+                  <div className="mt-5 mb-2 text-[13px] text-muted-foreground">
+                    Model
+                  </div>
+                  <div
+                    role="radiogroup"
+                    aria-label="Model"
+                    className="space-y-2"
+                  >
+                    {models.map((m) => (
+                      <Choice
+                        key={m.label}
+                        on={agentModel === m.label}
+                        onClick={() => setAgentModel(m.label)}
+                        title={m.label}
+                        note={m.note}
+                      />
+                    ))}
+                  </div>
+                </>
+              )}
             </>
           )}
 
-          {step === 3 && (
+          {id === "folder" && (
             <>
               <p className="mt-3 mb-3 text-[14.5px] text-muted-foreground">
-                Agents work inside a folder on this Mac. Pick the first one; add
-                more any time.
+                {folders.length > 0
+                  ? "Agents work inside a folder on this Mac. Pick the first one; add more any time."
+                  : "Agents work inside a folder on this Mac. Type the path of the first one, or leave it empty and pick one when you start a chat."}
               </p>
-              <div role="radiogroup" aria-label="Folder" className="space-y-2">
-                {FOLDERS.map((f) => (
-                  <Choice
-                    key={f.path}
-                    on={folder === f.path}
-                    onClick={() => {
-                      setPicked(f.path);
-                      setTyped("");
-                    }}
-                    title={f.path}
-                    note={f.note}
-                    icon={
-                      <FolderIcon className="size-4 shrink-0 text-muted-foreground" />
-                    }
-                  />
-                ))}
-              </div>
+              {folders.length > 0 && (
+                <div
+                  role="radiogroup"
+                  aria-label="Folder"
+                  className="space-y-2"
+                >
+                  {folders.map((f) => (
+                    <Choice
+                      key={f.path}
+                      on={folder === f.path}
+                      onClick={() => {
+                        setPicked(f.path);
+                        setTyped("");
+                      }}
+                      title={f.path}
+                      note={f.note}
+                      icon={
+                        <FolderIcon className="size-4 shrink-0 text-muted-foreground" />
+                      }
+                    />
+                  ))}
+                </div>
+              )}
               <Field
-                label="Or type a path"
+                label={folders.length > 0 ? "Or type a path" : "Path"}
                 value={typed}
                 onChange={setTyped}
                 placeholder="~/Code/my-project"
@@ -249,28 +266,48 @@ export function V3Welcome({ data, go, act }: V3PageProps) {
           )}
         </div>
 
+        {error && (
+          <p className="mt-4 text-[13.5px] text-red-600 dark:text-red-300">
+            {error}
+          </p>
+        )}
         <div className="mt-8 flex items-center gap-2 border-[var(--v3-line)] border-t pt-4">
           {step > 0 && <Btn onClick={() => setStep(step - 1)}>Back</Btn>}
+          {act.skipSetup && (
+            <button
+              type="button"
+              onClick={() => {
+                act.skipSetup?.();
+                go({ page: "home" });
+              }}
+              className="text-[13px] text-muted-foreground hover:text-foreground"
+            >
+              Set up later
+            </button>
+          )}
           <span className="ml-auto flex items-center gap-2 text-[13px] text-muted-foreground">
-            {ready && (
+            {ready && !busy && (
               <>
                 Press <Kbd>↵</Kbd>
               </>
             )}
           </span>
+          {id === "connect" && (
+            <Btn onClick={() => setStep(step + 1)}>Later</Btn>
+          )}
           <Btn
             primary
-            onClick={next}
-            className={cn(!ready && "cursor-not-allowed opacity-50")}
+            onClick={() => void next()}
+            className={cn((!ready || busy) && "cursor-not-allowed opacity-50")}
             title={
               ready
                 ? undefined
-                : step === 1
+                : id === "engine"
                   ? "The engine has to be ready first"
                   : "Fill this in to go on"
             }
           >
-            {last ? "Open my company" : "Next"}
+            {last ? "Open my company" : id === "connect" ? "Connect" : "Next"}
           </Btn>
         </div>
       </div>

@@ -1,4 +1,4 @@
-import { agentOf, type V3Data, type V3DataActions, type V3Draft, type V3Status, type V3Thread } from "@lilos/ui"
+import { agentNameOf, agentOf, type V3Data, type V3DataActions, type V3Draft, type V3Status, type V3Thread } from "@lilos/ui"
 import { cancelTurn, nowClock, type ReplyFn, runTurn } from "./chat-sim"
 import { toolActions } from "./tools"
 
@@ -40,7 +40,7 @@ export function planRecords(
       },
     ],
     updates: [
-      { by: d.ceoId, ago: 0, text: `Part of your request: “${text}”.` },
+      { by: d.ceoId ?? d.agents[0].id, ago: 0, text: `Part of your request: “${text}”.` },
     ],
   }));
   const threads: V3Thread[] = plan.tickets
@@ -55,7 +55,7 @@ export function planRecords(
       minutes: 0,
       step: 1,
       context: 3,
-      model: agentOf(d, t.owner).model,
+      model: agentOf(d, t.owner)?.model,
       folder: project.folder,
       now: { kind: "read", text: "Reading the brief", elapsed: "0s" },
       live: {
@@ -87,7 +87,7 @@ export function planRecords(
     updates: [
       {
         id: `u-${plan.tickets[0].id}`,
-        by: d.ceoId,
+        by: d.ceoId ?? d.agents[0].id,
         at: "12:05",
         ticketId: plan.tickets[0].id,
         kind: "plan",
@@ -152,9 +152,9 @@ export function makeActions(
               ...ticket.updates,
               { by: "you", ago: 0, text: word },
               ...(yes
-                ? [{ by: ask.from, ago: 0, text: ask.ifYes }]
+                ? [{ by: ask.from, ago: 0, text: ask.ifYes ?? "" }]
                 : outcome === "no"
-                  ? [{ by: d.ceoId, ago: 0, text: ask.ifNo }]
+                  ? [{ by: d.ceoId ?? d.agents[0].id, ago: 0, text: ask.ifNo ?? "" }]
                   : []),
             ],
           })
@@ -246,7 +246,7 @@ export function makeActions(
                 since: 0,
                 waitingOn: {
                   kind: "agent",
-                  agentId: d.ceoId,
+                  agentId: d.ceoId ?? d.agents[0].id,
                   why: "to decide what next",
                 },
                 updates: [
@@ -254,7 +254,7 @@ export function makeActions(
                   {
                     by: "you",
                     ago: 0,
-                    text: `Stopped ${agentOf(d, th.agentId).name}.`,
+                    text: `Stopped ${agentNameOf(d, th.agentId)}.`,
                   },
                 ],
               })
@@ -268,6 +268,8 @@ export function makeActions(
         const ticket = d.tickets.find((t) => t.id === ticketId);
         if (!ticket) return d;
         const to = agentOf(d, agentId);
+        // A hand-off needs someone on the team to hand to.
+        if (!to) return d;
         const project = d.projects.find((p) => p.id === ticket.projectId);
         const fresh: V3Thread = {
           id: `t-${ticketId.toLowerCase()}-${agentId}`,
@@ -409,7 +411,7 @@ export function makeActions(
         ),
       }));
       toast(
-        `Queued · ${agentOf(getData(), th.agentId).name} reads it after the current step`,
+        `Queued · ${agentNameOf(getData(), th.agentId)} reads it after the current step`,
       );
     },
     startChat: ({ agentId, projectId, model, text }) => {
@@ -433,7 +435,7 @@ export function makeActions(
       runTurn(setData, getData, reply, chat, text);
       // The draft that sent it decides where the thread shows (it takes the
       // draft's place on the trail), so this does not navigate.
-      return chat.id;
+      return Promise.resolve(chat.id);
     },
     markSeen: (threadId) => {
       setData((d) => ({
@@ -471,7 +473,7 @@ export function makeActions(
         ],
       }));
       toast(`${name} hired`)
-      return id
+      return Promise.resolve(id)
     },
     makeCeo: (agentId) => {
       setData((d) => {
@@ -487,7 +489,7 @@ export function makeActions(
           })),
         };
       });
-      toast(`${agentOf(getData(), agentId).name} is now the CEO`);
+      toast(`${agentNameOf(getData(), agentId)} is now the CEO`);
     },
     toggleConnector: (connectorId, agentId) => {
       setData((d) => ({

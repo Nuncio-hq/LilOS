@@ -11,7 +11,13 @@ import { V3AgentPage } from "./v3-agent";
 import { PeekWidth } from "./v3-bits";
 import { V3DraftChat } from "./v3-draft-chat";
 import { V3GoalPage } from "./v3-goals";
-import { agentOf, goalOf, projectOf } from "./v3-model";
+import {
+  agentNameOf,
+  agentOf,
+  defaultAgent,
+  goalOf,
+  projectOf,
+} from "./v3-model";
 import { V3ProjectPage } from "./v3-project";
 import { V3ThreadPage } from "./v3-thread";
 import { V3TicketPage } from "./v3-ticket";
@@ -22,11 +28,15 @@ function label(d: V3Data, r: V3RecordRoute) {
   if (r.page === "thread") {
     const t = d.threads.find((x) => x.id === r.id);
     return t
-      ? `${agentOf(d, t.agentId).name} · ${t.ticketId ?? "Chat"}`
+      ? `${agentNameOf(d, t.agentId)} · ${t.ticketId ?? "Chat"}`
       : "Thread";
   }
-  if (r.page === "agent") return agentOf(d, r.id).name;
-  if (r.page === "newchat") return `New chat · ${agentOf(d, r.id).name}`;
+  if (r.page === "agent") return agentNameOf(d, r.id);
+  if (r.page === "newchat") {
+    // The draft talks to the default agent when the id names nobody.
+    const to = agentOf(d, r.id) ?? defaultAgent(d);
+    return to ? `New chat · ${to.name}` : "New chat";
+  }
   if (r.page === "goal") return goalOf(d, r.id)?.title ?? "Goal";
   if (r.page === "project") return projectOf(d, r.id)?.name ?? "Project";
   return r.id;

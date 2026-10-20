@@ -1,33 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { type V3Nav, type V3PageRoute, type V3RecordRoute, V3Shell } from "@lilos/ui"
+import { type V3Nav, V3Shell, navFromParams, paramsFromNav, paramsText } from "@lilos/ui"
 import { V3_DATA, v3Draft } from "./fake-v3"
 import { v3Reply } from "./fake-v3-reply"
 import { makeActions } from "./v3-engine/actions"
-
-const PAGES = [
-  "home",
-  "needs",
-  "inbox",
-  "work",
-  "threads",
-  "goals",
-  "people",
-  "hire",
-  "guide",
-  "settings",
-  "welcome",
-] as const
-const RECORDS = ["ticket", "thread", "goal", "project", "agent", "newchat"] as const
-
-/* Where a bare record link lands: the page that lists it. */
-const HOME_OF: Record<(typeof RECORDS)[number], V3PageRoute["page"]> = {
-  ticket: "work",
-  thread: "threads",
-  newchat: "threads",
-  agent: "people",
-  goal: "goals",
-  project: "home",
-}
 
 /* ?v3 entry: the calm-company prototype. The URL mirrors where you are, so
    any screen can be linked, reloaded, or reached with Back/Forward:
@@ -38,34 +13,11 @@ const HOME_OF: Record<(typeof RECORDS)[number], V3PageRoute["page"]> = {
    ?v3&page=people&open=agent:scout,newchat:scout · &theme=dark|light. A bare record link
    (?v3&page=ticket&id=HB-12) opens it over the page that lists it. The mock
    company state lives in the shell and resets only on a full reload. */
-function navFromUrl(): V3Nav {
-  const q = new URLSearchParams(location.search)
-  const name = q.get("page") ?? "home"
-  const view = q.get("view") ?? undefined
-  const peek: V3RecordRoute[] = (q.get("open") ?? "")
-    .split(",")
-    .map((s) => s.split(":"))
-    .filter(([p, id]) => id && RECORDS.includes(p as (typeof RECORDS)[number]))
-    .map(([p, id]) => ({ page: p, id }) as V3RecordRoute)
-  const full = q.get("full") === "1"
-  const id = q.get("id")
-  if (RECORDS.includes(name as (typeof RECORDS)[number]) && id) {
-    const r = { page: name, id } as V3RecordRoute
-    return { page: { page: HOME_OF[r.page] } as V3PageRoute, peek: [r], full }
-  }
-  if (!PAGES.includes(name as (typeof PAGES)[number])) return { page: { page: "home" }, peek }
-  return { page: { page: name, view } as V3PageRoute, peek, full }
-}
+const navFromUrl = (): V3Nav => navFromParams(new URLSearchParams(location.search))
 
 function urlFromNav(n: V3Nav) {
-  const q = new URLSearchParams(location.search)
-  for (const k of ["page", "id", "view", "open", "full"]) q.delete(k)
-  const p = n.page
-  if (p.page !== "home") q.set("page", p.page)
-  if ("view" in p && p.view) q.set("view", p.view)
-  if (n.peek.length) q.set("open", n.peek.map((r) => `${r.page}:${r.id}`).join(","))
-  if (n.full && n.peek.length) q.set("full", "1")
-  return `?${q.toString().replace(/^v3=(&|$)/, "v3$1").replaceAll("%3A", ":").replaceAll("%2C", ",")}`
+  const text = paramsText(paramsFromNav(n, new URLSearchParams(location.search)))
+  return `?${text.replace(/^v3=(&|$)/, "v3$1")}`
 }
 
 /* &theme= pins the theme before the shell's theme hook first reads it. */

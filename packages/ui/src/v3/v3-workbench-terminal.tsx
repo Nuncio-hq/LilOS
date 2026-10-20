@@ -81,6 +81,15 @@ function RunBar({ thread, data, act }: WbPanelProps) {
     setSent(text);
     setCmd("");
   };
+  const agent = agentOf(data, thread.agentId);
+  // Running a command is a message to the agent; nobody to read it, no bar.
+  if (!agent) {
+    return (
+      <p className="text-[12.5px] text-muted-foreground/70">
+        This agent is no longer on the team, so nothing can be run here.
+      </p>
+    );
+  }
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
@@ -104,13 +113,13 @@ function RunBar({ thread, data, act }: WbPanelProps) {
       <p className="text-[12.5px] text-muted-foreground/70">
         {sent ? (
           <>
-            Asked {agentOf(data, thread.agentId).name} to run{" "}
+            Asked {agent.name} to run{" "}
             <span className="font-mono text-[12px]">{sent}</span>.
           </>
         ) : (
           <>
-            {agentOf(data, thread.agentId).name} runs it in {thread.folder} and
-            the output lands here.
+            {agent.name} runs it
+            {thread.folder && ` in ${thread.folder}`} and the output lands here.
           </>
         )}
       </p>

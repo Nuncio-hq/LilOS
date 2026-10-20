@@ -164,7 +164,8 @@ export function Avatar({
 }
 
 /** An agent's face wherever it appears: a LilOS agent's letter on its tone,
-   or an outside worker's connector mark. */
+   or an outside worker's connector mark. An agent that is gone (its id
+   outlived it) shows a neutral "?" instead of another agent's face. */
 export function AgentAvatar({
   data,
   agent,
@@ -172,10 +173,12 @@ export function AgentAvatar({
   className,
 }: {
   data: V3Data;
-  agent: V3Agent;
+  agent: V3Agent | undefined;
   size?: number;
   className?: string;
 }) {
+  if (!agent)
+    return <Avatar name="?" tone="n" size={size} className={className} />;
   const via =
     agent.kind === "outside"
       ? data.connectors.find((c) => c.id === agent.via)

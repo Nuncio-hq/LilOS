@@ -2,8 +2,22 @@ import type { V3Agent, V3Data, V3Status, V3Thread, V3Ticket } from "./v3-types";
 
 /* Lookups every v3 page shares. Pure; the shell owns the data. */
 
-export const agentOf = (d: V3Data, id: string): V3Agent =>
-  d.agents.find((a) => a.id === id) ?? d.agents[0];
+/** An id can outlive its agent: a fired agent's threads, asks and schedules
+   stay on record. A miss is undefined, never another agent in its place. */
+export const agentOf = (d: V3Data, id: string): V3Agent | undefined =>
+  d.agents.find((a) => a.id === id);
+
+/** What stands in for the name of an agent that is no longer on the team. */
+export const FORMER_AGENT = "Former agent";
+
+/** An agent's name for a label, or FORMER_AGENT once it is gone. */
+export const agentNameOf = (d: V3Data, id: string): string =>
+  agentOf(d, id)?.name ?? FORMER_AGENT;
+
+/** Who a new chat starts with when nobody was chosen: the CEO if the company
+   has that position, else the first agent (none when nobody is hired). */
+export const defaultAgent = (d: V3Data): V3Agent | undefined =>
+  d.agents.find((a) => a.id === d.ceoId) ?? d.agents[0];
 
 export const ticketOf = (d: V3Data, id: string): V3Ticket | undefined =>
   d.tickets.find((t) => t.id === id);
@@ -64,7 +78,7 @@ export function waitingLabel(d: V3Data, t: V3Ticket): string {
   const w = t.waitingOn;
   if (!w) return "—";
   if (w.kind === "you") return "You";
-  if (w.kind === "agent") return agentOf(d, w.agentId).name;
+  if (w.kind === "agent") return agentNameOf(d, w.agentId);
   return w.ticketId;
 }
 

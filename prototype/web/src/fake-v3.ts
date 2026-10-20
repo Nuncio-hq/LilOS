@@ -781,6 +781,8 @@ export const V3_DATA: V3Data = {
   schedules: SCHEDULES,
   browser: BROWSER,
   devices: DEVICES,
+  modelChoices: ["Opus 5.5 · High", "Sonnet 5 · Medium", "Haiku 5 · Fast"],
+  starters: ["Why is ac-544 flaky?", "Summarise yesterday's PRs", "Draft release notes for 0.9"],
   settings: SETTINGS,
   // ?v3&page=welcome shows first run; the rest of the company is ready.
   setUp: true,

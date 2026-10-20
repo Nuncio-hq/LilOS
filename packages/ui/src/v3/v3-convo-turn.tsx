@@ -5,7 +5,7 @@ import { cn } from "../lib/utils";
 import { AgentAvatar, Btn } from "./v3-bits";
 import { Attachments } from "./v3-convo-attach";
 import { WorkBlock } from "./v3-convo-work";
-import { agentOf } from "./v3-model";
+import { agentOf, FORMER_AGENT } from "./v3-model";
 import type {
   V3Agent,
   V3Data,
@@ -141,13 +141,15 @@ function Who({
   note,
 }: {
   data: V3Data;
-  agent: V3Agent;
+  agent: V3Agent | undefined;
   note?: string;
 }) {
   return (
     <div className="flex items-center gap-2 text-[13.5px]">
       <AgentAvatar data={data} agent={agent} size={20} />
-      <span className="font-medium text-foreground">{agent.name}</span>
+      <span className="font-medium text-foreground">
+        {agent?.name ?? FORMER_AGENT}
+      </span>
       {note && (
         <span className="text-[12px] text-muted-foreground/70">{note}</span>
       )}
@@ -190,7 +192,7 @@ function Answer({
   streaming,
 }: {
   data: V3Data;
-  agent: V3Agent;
+  agent: V3Agent | undefined;
   text: string;
   streaming: boolean;
 }) {
@@ -226,7 +228,7 @@ export function ConvoTurn({
   turn: V3Turn;
   thread: V3Thread;
   data: V3Data;
-  agent: V3Agent;
+  agent: V3Agent | undefined;
   /** This is the thread's newest turn. */
   newest: boolean;
   go: V3PageProps["go"];
@@ -269,7 +271,7 @@ export function ConvoTurn({
         <div key={i} className="mt-4">
           <YouBubble
             text={q.text}
-            note={`Queued · ${agent.name} reads this after the current step`}
+            note={`Queued · ${agent?.name ?? FORMER_AGENT} reads this after the current step`}
           />
         </div>
       ))}

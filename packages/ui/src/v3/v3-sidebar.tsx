@@ -29,6 +29,7 @@ export function V3Sidebar({
   onSearch,
   dark,
   onTheme,
+  canHire = true,
 }: {
   data: V3Data;
   /** The page you are on: its entry stays lit while records open beside it. */
@@ -39,6 +40,8 @@ export function V3Sidebar({
   onSearch: () => void;
   dark: boolean;
   onTheme: () => void;
+  /** The app can create agents; without it the Hire entry is not drawn. */
+  canHire?: boolean;
 }) {
   const open = data.tickets.filter((t) => t.status !== "done").length;
   const live = data.threads.filter(
@@ -117,16 +120,21 @@ export function V3Sidebar({
         />
       )}
 
-      <Label>Projects</Label>
-      {data.projects.map((p) => (
-        <Item
-          key={p.id}
-          icon={<ProjectMark name={p.name} tone={p.tone} />}
-          label={p.name}
-          on={on("project", p.id)}
-          onClick={() => go({ page: "project", id: p.id })}
-        />
-      ))}
+      {/* No projects yet (a company of plain folders): no empty heading. */}
+      {data.projects.length > 0 && (
+        <>
+          <Label>Projects</Label>
+          {data.projects.map((p) => (
+            <Item
+              key={p.id}
+              icon={<ProjectMark name={p.name} tone={p.tone} />}
+              label={p.name}
+              on={on("project", p.id)}
+              onClick={() => go({ page: "project", id: p.id })}
+            />
+          ))}
+        </>
+      )}
 
       <Label onClick={() => go({ page: "people" })} on={on("people")}>
         People
@@ -151,12 +159,14 @@ export function V3Sidebar({
       ))}
 
       <div className="flex-1" />
-      <Item
-        icon={<PlusIcon />}
-        label="Hire an agent"
-        on={on("hire")}
-        onClick={() => go({ page: "hire" })}
-      />
+      {canHire && (
+        <Item
+          icon={<PlusIcon />}
+          label="Hire an agent"
+          on={on("hire")}
+          onClick={() => go({ page: "hire" })}
+        />
+      )}
       <Item
         icon={<BookOpenIcon />}
         label="How it works"

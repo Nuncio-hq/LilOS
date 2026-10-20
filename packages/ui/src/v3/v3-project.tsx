@@ -10,7 +10,7 @@ import {
   Section,
   Title,
 } from "./v3-bits";
-import { agentOf, goalProgress, projectOf } from "./v3-model";
+import { agentOf, FORMER_AGENT, goalProgress, projectOf } from "./v3-model";
 import { ThreadRow, TicketRow } from "./v3-rows";
 import type { V3PageProps } from "./v3-types";
 
@@ -38,9 +38,11 @@ export function V3ProjectPage({ data, go, id }: V3PageProps & { id: string }) {
       t.status !== "done" &&
       t.status !== "idle",
   );
-  const owners = [...new Set(open.map((t) => t.owner))].map((a) =>
-    agentOf(data, a),
-  );
+  const ownerIds = [...new Set(open.map((t) => t.owner))];
+  const owners = ownerIds.flatMap((id) => agentOf(data, id) ?? []);
+  // A fired agent can still hold an open ticket: it is on the project, but
+  // there is no page to open and no name to give.
+  const formerOwners = ownerIds.length > owners.length;
 
   return (
     <Page wide>
@@ -78,7 +80,7 @@ export function V3ProjectPage({ data, go, id }: V3PageProps & { id: string }) {
           ))}
         </Prop>
         <Prop icon={<UsersIcon />} label="Agents on it">
-          {owners.length === 0 && (
+          {owners.length === 0 && !formerOwners && (
             <span className="text-muted-foreground">Nobody right now</span>
           )}
           {owners.map((a) => (
@@ -92,6 +94,12 @@ export function V3ProjectPage({ data, go, id }: V3PageProps & { id: string }) {
               {a.name}
             </button>
           ))}
+          {formerOwners && (
+            <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+              <AgentAvatar data={data} agent={undefined} />
+              {FORMER_AGENT}
+            </span>
+          )}
         </Prop>
       </div>
 

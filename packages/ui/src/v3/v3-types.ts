@@ -52,17 +52,20 @@ export type V3Agent = {
   /** Outside workers: the connector id they are reached through. */
   via?: string;
   hired: string;
-  runtime: string;
+  /* What the relay cannot tell (a runtime per agent, its schedule, skills,
+     spend, memory, week) is absent, and the agent page hides that part
+     instead of showing a made-up value. */
+  runtime?: string;
   model: string;
-  schedule: string;
-  skills: string[];
+  schedule?: string;
+  skills?: string[];
   /** Dollars spent this period, and the cap. */
-  spend: { used: number; cap: number; period: "week" | "month" };
+  spend?: { used: number; cap: number; period: "week" | "month" };
   instructions: string[];
   /** A rule the CEO proposes after this agent got stuck. */
   suggestion?: { text: string; after: string };
-  memory: { text: string; source: string }[];
-  week: { done: number; typical: string; stuck: number; handed: number };
+  memory?: { text: string; source: string }[];
+  week?: { done: number; typical: string; stuck: number; handed: number };
   /** Idle agents: what wakes them next. */
   next?: string;
 };
@@ -225,12 +228,17 @@ export type V3Thread = {
   startedAt: string;
   /** Minutes running (or ran). */
   minutes: number;
+  /** Empty when the app does not carry the conversation's turns (the real
+     app shows them in its own thread view); counts and "Turn N" labels
+     then stay hidden instead of reading 0. */
   turns: V3Turn[];
   step?: number;
-  /** Context window used, percent. */
-  context: number;
-  model: string;
-  folder: string;
+  /** Context window used, percent; absent when the engine reports none. */
+  context?: number;
+  /** Absent = the engine's default model. */
+  model?: string;
+  /** Absent = the harness's default folder. */
+  folder?: string;
   branch?: string;
   /** The step running now. */
   now?: { kind: V3StepKind; text: string; elapsed: string };
@@ -294,8 +302,9 @@ export type V3BrowserTab = {
   doing?: string;
   /** You took the tab over from its agent; it waits until you hand it back. */
   takenOver?: boolean;
-  /** A few lines of the page, so the prototype has something to show. */
-  page: string[];
+  /** A few lines of the page, so the prototype has something to show. The
+     real browser draws its pages natively, so the app leaves this out. */
+  page?: string[];
 };
 
 export type V3ScheduleWhen = {
@@ -315,6 +324,8 @@ export type V3Schedule = {
   id: string;
   agentId: string;
   projectId?: string;
+  /** The folder a run opens in, when it is not a project's. */
+  folder?: string;
   title: string;
   /** What the agent is told each time. */
   prompt: string;
@@ -330,19 +341,49 @@ export type V3Schedule = {
     result: "running" | "finished" | "failed";
     threadId?: string;
   };
+  /** When a run was skipped because the one before was still going. */
+  skipped?: string;
 };
 
 /** A phone paired with this Mac. */
 export type V3Device = {
   id: string;
   name: string;
-  model: string;
+  /** Absent when the Mac cannot tell (the relay records no hardware). */
+  model?: string;
   lastSeen: string;
 };
 
+/** What a phone scans (and the same facts to type by hand). */
+export type V3PairOffer = {
+  /** Where the phone dials. */
+  host: string;
+  /** The one-time grant; the only secret. */
+  code: string;
+  /** What the QR encodes. */
+  url: string;
+  /** Epoch ms; absent = does not expire. */
+  expiresAt?: number;
+};
+
+export type V3Pairing =
+  | { kind: "ready"; offer: V3PairOffer }
+  /** This Mac is not reachable from a phone yet. */
+  | { kind: "no-remote" };
+
+/** One engine profile's connection to LilOS (the approval that lets its
+   agents see the app). */
+export type V3ConnectRow = {
+  profile: string;
+  employee?: string;
+  state: "connected" | "not-connected" | "updating" | "failed";
+  reason?: string;
+};
+
 export type V3Settings = {
-  /** What the phone is told about. */
-  push: {
+  /** What the phone is told about. Absent: the app sends no pushes, so
+     there is nothing to choose. */
+  push?: {
     needsYou: boolean;
     finished: boolean;
     stuck: boolean;
@@ -350,38 +391,74 @@ export type V3Settings = {
   };
   /** Ask before risky commands, or let agents run anything. */
   approvals: "ask" | "full";
-  /** Where "Open in editor" goes. */
-  editor: string;
-  /** Models the pickers offer. */
-  models: { id: string; label: string; on: boolean }[];
+  /** Where "Open in editor" goes (its name). Absent: no editor found. */
+  editor?: string;
+  /** Editors this Mac has, by name; absent: nothing to choose. */
+  editors?: string[];
+  /** Models the pickers offer; `group` names the provider when the engine
+     has several. Empty: the engine reports no catalog. */
+  models: { id: string; label: string; on: boolean; group?: string }[];
   engine: {
     name: string;
+    /** Absent until the engine has said. */
+    version?: string;
+    /** ok · missing: not installed · old: below the minimum version ·
+       starting: coming up, nothing to do yet · down: installed but not
+       running (see `problem`). */
+    state: "ok" | "missing" | "old" | "starting" | "down";
+    /** Absent where the app cannot tell where it lives. */
+    path?: string;
+    /** What is wrong in plain words, with the next step, as the engine
+       reported it; replaces the generic steps. */
+    problem?: string;
+  };
+  /** The link between this app and the engine. */
+  relay: { state: "ok" | "starting" | "down"; problem?: string };
+  /** This app's own version line; absent where it has none to show. */
+  about?: {
     version: string;
-    /** ok · missing: not installed · old: below the minimum version. */
-    state: "ok" | "missing" | "old";
-    path: string;
+    /** A question for the CEO about what changed; absent = no such row. */
+    whatsNew?: { label: string; ask: string };
+  };
+  /** Everything worth pasting into a bug report; absent = built from what
+     is on screen. */
+  diagnostics?: string;
+  /** Engine profiles and whether LilOS is connected to them; absent when
+     the engine has no such step. */
+  connect?: { engine: string; approved: boolean; rows: V3ConnectRow[] };
+  /** What first run offers: models and folders with a line about each.
+     An absent or empty list hides that choice. */
+  firstRun?: {
+    models: { label: string; note?: string }[];
+    folders: { path: string; note?: string }[];
   };
 };
 
 export type V3Ask = {
   id: string;
-  ticketId: string;
+  /** Absent when the ask belongs to a chat, not a ticket. */
+  ticketId?: string;
+  /** The thread the agent asked in; the Needs page opens it when there is
+     no ticket. */
+  threadId?: string;
   from: string;
   kind: "approval" | "question";
   title: string;
   /** Minutes waiting. */
   waiting: number;
   ask: string;
-  why: string;
-  ifYes: string;
-  ifNo: string;
+  /* The agent's own reasons and what each answer would do come from the
+     CEO's briefing; without one these stay absent and the page hides them. */
+  why?: string;
+  ifYes?: string;
+  ifNo?: string;
   spend?: { amount: number; used: number; cap: number };
   /** Offered as "let this agent do it without asking next time". */
   allowRule?: string;
   /** Question answers; the first is what happens by default. */
   options?: string[];
   /** If you don't answer by `at`, the CEO does this. */
-  fallback: { at: string; does: string };
+  fallback?: { at: string; does: string };
 };
 
 export type V3Update = {
@@ -416,8 +493,11 @@ export type V3Data = {
   company: string;
   me: string;
   today: string;
-  /** CEO is a position: the agent holding it. Everyone else reports to it. */
-  ceoId: string;
+  /** CEO is a position: the agent holding it. Everyone else reports to it.
+     Absent when the company has no such position (the real app has none
+     yet): no crown, no "reports to", no "Make CEO", and new chats start
+     with the first agent. */
+  ceoId?: string;
   agents: V3Agent[];
   connectors: V3ConnectorDef[];
   projects: V3Project[];
@@ -432,6 +512,15 @@ export type V3Data = {
     bookmarks: { title: string; url: string }[];
   };
   devices: V3Device[];
+  /** Models the new-chat and hire pickers offer, as the picker shows them
+     (the app turns a pick back into a real model when it acts on it). */
+  modelChoices: string[];
+  /** Openers a new chat offers as one-click prompts. Absent: none (the
+     real app has no source for them yet). */
+  starters?: string[];
+  /** Folders a new chat can work in when the company has no projects yet:
+     the app's recent folders. Absent = no folder choice. */
+  folders?: { path: string; label: string }[];
   settings: V3Settings;
   /** The company is set up; false shows the first-run welcome. */
   setUp: boolean;
@@ -478,64 +567,102 @@ export type V3Nav = {
   full?: boolean;
 };
 
-/** Everything a page can change; the shell owns the state. */
+/** Everything a page can change; the shell owns the state. An action the app
+   has no backend for is absent (marked `?`), and the control that would call
+   it is not drawn: capability by presence, never a button that does nothing. */
 export type V3Actions = {
   approve: (askId: string, alwaysAllow?: boolean) => void;
   deny: (askId: string) => void;
   answer: (askId: string, option: string) => void;
   stop: (threadId: string) => void;
-  handOff: (ticketId: string, agentId: string) => void;
-  acceptRule: (agentId: string) => void;
-  dismissRule: (agentId: string) => void;
-  comment: (ticketId: string, text: string) => void;
+  handOff?: (ticketId: string, agentId: string) => void;
+  acceptRule?: (agentId: string) => void;
+  dismissRule?: (agentId: string) => void;
+  comment?: (ticketId: string, text: string) => void;
   /** Sends a message into a thread. A finished thread starts a new turn and
      the agent answers; a working one queues it until the current step ends. */
   message: (threadId: string, text: string) => void;
-  /** Opens a new chat thread with an agent in a project's folder and returns
-     its id, so the caller can show it where the draft was. */
+  /** Opens a new chat thread with an agent and returns its id, so the caller
+     can show it where the draft was. Resolves undefined when the chat could
+     not start (the app has already said why); the draft stays. `folder` is a
+     path from `data.folders`, for a company without projects. */
   startChat: (chat: {
     agentId: string;
-    projectId: string;
+    projectId?: string;
+    folder?: string;
     model: string;
     text: string;
-  }) => string;
+  }) => Promise<string | undefined>;
   markSeen: (threadId: string) => void;
-  /** Hires an agent and returns its id, so the Hire page can open it. */
-  hire: (agent: { name: string; role: string; model: string }) => string;
+  /** Hires an agent and returns its id, so the Hire page can open it. Rejects
+     when the hire failed (the app has already said why). Absent while the
+     engine cannot create agents. */
+  hire?: (agent: {
+    name: string;
+    role: string;
+    model: string;
+  }) => Promise<string>;
   /** Starts a ⌘K draft plan: its tickets (and the threads that can start now). */
-  startPlan: (plan: Extract<V3Draft, { kind: "plan" }>, text: string) => void;
+  startPlan?: (plan: Extract<V3Draft, { kind: "plan" }>, text: string) => void;
   /** Moves the CEO position to this agent; everyone else reports to it. */
-  makeCeo: (agentId: string) => void;
+  makeCeo?: (agentId: string) => void;
   /** Turns a connector on or off for one agent's sessions. */
-  toggleConnector: (connectorId: string, agentId: string) => void;
-  addConnector: (c: {
+  toggleConnector?: (connectorId: string, agentId: string) => void;
+  addConnector?: (c: {
     label: string;
     kind: "cli" | "mcp";
     command: string;
   }) => void;
   /** Undo files and conversation back to before this turn's message. */
-  rewind: (threadId: string, turn: number) => void;
+  rewind?: (threadId: string, turn: number) => void;
   scheduleSave: (s: V3Schedule) => void;
   scheduleToggle: (id: string) => void;
   scheduleRunNow: (id: string) => void;
   scheduleDelete: (id: string) => void;
-  /** Opens a tab in a session's browser (yours, so the agent can see it). */
-  browserOpen: (url: string, threadId: string) => void;
-  browserClose: (tabId: string) => void;
+  /** Opens a tab in a session's browser (yours, so the agent can see it).
+     Absent without the desktop browser. */
+  browserOpen?: (url: string, threadId: string) => void;
+  browserClose?: (tabId: string) => void;
   /** Take a tab from its agent (it pauses), or hand it back. */
-  browserTakeOver: (tabId: string) => void;
-  /** Shows a pairing code; resolves the next "phone" that scans it. */
-  pairPhone: () => void;
+  browserTakeOver?: (tabId: string) => void;
+  /** Mints a one-time pairing offer for the phone to scan. Resolves
+     `no-remote` when this Mac is not reachable from a phone (nothing to
+     show but what to turn on); rejects when the offer could not be made (the
+     app has already said why). The pane sees the phone arrive in
+     `data.devices`. */
+  pairPhone: () => Promise<V3Pairing>;
   unpairPhone: (deviceId: string) => void;
+  /** Closes the door pairing opened: no phone reaches this Mac until the
+     next offer. Absent when the app cannot. */
+  disablePhoneAccess?: () => void;
   saveSettings: (patch: Partial<V3Settings>) => void;
-  /** First run done: the company exists and the app opens on Home. */
+  /** Renames the company and/or you, in place. Absent where the CEO changes
+     them through ⌘K instead (or nobody can). */
+  saveProfile?: (p: { company?: string; me?: string }) => void;
+  /** Re-reads the relay and engine; resolves when the answer is in
+     `settings.relay` / `settings.engine`. Absent: no Check again. */
+  checkEngine?: () => Promise<void>;
+  /** Asks the shell's updater; resolves with what it found, in words.
+     Absent where the app cannot update itself (the web build). */
+  checkUpdates?: () => Promise<string>;
+  /** The one-time approval that lets the engine's agents see the app;
+     rows update in `settings.connect`. Absent without engine support. */
+  connectEngine?: () => Promise<void>;
+  /** First run done: the company exists and the app opens on Home. The
+     agent is the first one hired (the CEO, where the company has one); a
+     name or model left out keeps what the engine started it with, and no
+     folder means the first chat picks one. Rejects only if nothing could be
+     saved: the welcome says so and stays open. */
   finishSetup: (s: {
     company: string;
     me: string;
-    ceoName?: string;
-    ceoModel: string;
-    folder: string;
-  }) => void;
+    agentName?: string;
+    agentModel?: string;
+    folder?: string;
+  }) => void | Promise<void>;
+  /** Leaves first run for now (Settings can fix what blocked it). Absent in
+     the prototype, where there is nothing to be stuck on. */
+  skipSetup?: () => void;
   /** Opens the ⌘K palette, optionally prefilled. */
   ask: (text?: string) => void;
 };

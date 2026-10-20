@@ -50,7 +50,7 @@ export function Choice({
   on: boolean;
   onClick: () => void;
   title: string;
-  note: string;
+  note?: string;
   icon?: ReactNode;
 }) {
   return (
@@ -73,9 +73,11 @@ export function Choice({
         >
           {title}
         </span>
-        <span className="block truncate text-[13px] text-muted-foreground">
-          {note}
-        </span>
+        {note && (
+          <span className="block truncate text-[13px] text-muted-foreground">
+            {note}
+          </span>
+        )}
       </span>
       {on && <CheckIcon className="size-4 shrink-0" />}
     </button>

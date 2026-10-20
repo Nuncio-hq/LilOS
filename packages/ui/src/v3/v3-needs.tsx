@@ -13,8 +13,15 @@ import {
   StatusPill,
   Title,
 } from "./v3-bits";
-import { agentOf, goalOf, threadsOf, ticketOf } from "./v3-model";
-import type { V3Ask, V3Data, V3PageProps } from "./v3-types";
+import {
+  agentNameOf,
+  agentOf,
+  FORMER_AGENT,
+  goalOf,
+  threadsOf,
+  ticketOf,
+} from "./v3-model";
+import type { V3Ask, V3Data, V3PageProps, V3Route } from "./v3-types";
 
 /* Needs you: the one place for everything waiting on the chairman. The
    oldest ask is open with its four answers (ask, why, yes, no); every ask
@@ -94,21 +101,28 @@ function OpenAsk({
   setAllow: (v: boolean) => void;
 }) {
   const from = agentOf(data, ask.from);
-  const ticket = ticketOf(data, ask.ticketId);
+  const ticket = ask.ticketId ? ticketOf(data, ask.ticketId) : undefined;
   const goal = ticket?.goalId ? goalOf(data, ticket.goalId) : undefined;
   const isQuestion = ask.kind === "question";
-  const rows: [string, string, boolean?][] = [
+  // The agent's reasons come from the CEO's briefing; without one, no row.
+  const rows: [string, string | undefined, boolean?][] = [
     ["The ask", ask.ask],
     ["Why", ask.why],
     [isQuestion ? "If yes" : "If you approve", ask.ifYes],
     [isQuestion ? "If no" : "If you deny", ask.ifNo, true],
   ];
+  // Without a ticket the ask lives in the chat it was raised in.
+  const opens: { label: string; to: V3Route } | undefined = ask.ticketId
+    ? { label: "Open ticket", to: { page: "ticket", id: ask.ticketId } }
+    : ask.threadId
+      ? { label: "Open thread", to: { page: "thread", id: ask.threadId } }
+      : undefined;
 
   return (
     <div className="my-3 mb-1 rounded-[10px] border border-[var(--v3-line)] px-[18px] pt-4 pb-3.5">
       <div className="flex items-baseline gap-2.5 font-semibold text-[17px] text-foreground">
         <span className="font-normal text-[14px] text-muted-foreground/70">
-          {ask.ticketId}
+          {ask.ticketId ?? "Chat"}
         </span>
         {ask.title}
         <StatusPill status="needs" className="ml-auto self-center" />
@@ -116,24 +130,26 @@ function OpenAsk({
       <div className="mt-0.5 flex items-center gap-2 text-[13px] text-muted-foreground">
         <AgentAvatar data={data} agent={from} size={18} />
         <span>
-          {from.name} asks · waiting {ago(ask.waiting)}
+          {from?.name ?? FORMER_AGENT} asks · waiting {ago(ask.waiting)}
           {goal && ` · goal ${goal.title}`}
         </span>
       </div>
 
       <div className="mt-4 mb-1 grid grid-cols-[120px_1fr] gap-x-3.5 gap-y-[9px] text-[14px] leading-[1.5]">
-        {rows.map(([k, v, quiet]) => (
-          <div key={k} className="contents">
-            <span className="text-muted-foreground">{k}</span>
-            <span
-              className={cn(
-                quiet ? "text-muted-foreground" : "text-foreground",
-              )}
-            >
-              {v}
-            </span>
-          </div>
-        ))}
+        {rows.map(([k, v, quiet]) =>
+          v === undefined ? null : (
+            <div key={k} className="contents">
+              <span className="text-muted-foreground">{k}</span>
+              <span
+                className={cn(
+                  quiet ? "text-muted-foreground" : "text-foreground",
+                )}
+              >
+                {v}
+              </span>
+            </div>
+          ),
+        )}
         {ask.spend && (
           <>
             <span className="text-muted-foreground">Spend</span>
@@ -148,11 +164,14 @@ function OpenAsk({
         )}
       </div>
 
-      <div className="mt-3 flex">
-        <span className={CHIP}>
-          If you don't answer by {ask.fallback.at}: the CEO {ask.fallback.does}
-        </span>
-      </div>
+      {ask.fallback && (
+        <div className="mt-3 flex">
+          <span className={CHIP}>
+            If you don't answer by {ask.fallback.at}: the CEO{" "}
+            {ask.fallback.does}
+          </span>
+        </div>
+      )}
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
         {ask.allowRule && (
@@ -172,9 +191,7 @@ function OpenAsk({
             !ask.allowRule && "ml-auto",
           )}
         >
-          <Btn onClick={() => go({ page: "ticket", id: ask.ticketId })}>
-            Open ticket
-          </Btn>
+          {opens && <Btn onClick={() => go(opens.to)}>{opens.label}</Btn>}
           {isQuestion ? (
             (ask.options ?? []).map((o) => (
               <Btn key={o} onClick={() => act.answer(ask.id, o)}>
@@ -343,15 +360,19 @@ export function V3Needs({ data, go, act }: V3PageProps) {
                   onClick={() => setSelected(a.id)}
                   meta={
                     <>
-                      {a.ticketId} ·{" "}
-                      <b className="font-medium text-foreground">{from.name}</b>{" "}
+                      {a.ticketId ?? "Chat"} ·{" "}
+                      <b className="font-medium text-foreground">
+                        {from?.name ?? FORMER_AGENT}
+                      </b>{" "}
                       · waiting {ago(a.waiting)}
                     </>
                   }
                 >
-                  <span className={CHIP}>
-                    {a.fallback.at} {a.fallback.does}
-                  </span>
+                  {a.fallback && (
+                    <span className={CHIP}>
+                      {a.fallback.at} {a.fallback.does}
+                    </span>
+                  )}
                 </Item>
               );
             })}
@@ -381,7 +402,7 @@ export function V3Needs({ data, go, act }: V3PageProps) {
                     <>
                       {t.id} ·{" "}
                       <b className="font-medium text-foreground">
-                        {agentOf(data, t.owner).name}
+                        {agentNameOf(data, t.owner)}
                       </b>{" "}
                       · <span className={INK.stuck}>{t.stuckWhy}</span>
                     </>
@@ -426,7 +447,7 @@ export function V3Needs({ data, go, act }: V3PageProps) {
                   <>
                     {r.ticketId ?? "Chat"} ·{" "}
                     <b className="font-medium text-foreground">
-                      {agentOf(data, r.by).name}
+                      {agentNameOf(data, r.by)}
                     </b>
                     {r.note && ` · ${r.note}`}
                   </>

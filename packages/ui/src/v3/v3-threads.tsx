@@ -21,7 +21,7 @@ import {
   Title,
 } from "./v3-bits";
 import { ThreadPill } from "./v3-live";
-import { agentOf } from "./v3-model";
+import { agentOf, defaultAgent } from "./v3-model";
 import { AgentName } from "./v3-rows";
 import { ScheduledView } from "./v3-schedules";
 import { IdleCard, ThreadCard } from "./v3-thread-card";
@@ -36,13 +36,18 @@ const TABS: { id: View; label: string; icon: ReactNode }[] = [
   { id: "scheduled", label: "Scheduled", icon: <CalendarClockIcon /> },
 ];
 
-/** Live board order: what needs a person first. */
+/** Live board order: what needs a person first. A failed thread surfaces
+   right after a stuck one, so it never hides in the history. */
 const RANK: Partial<Record<V3Status, number>> = {
   needs: 0,
   stuck: 1,
+  failed: 1.5,
   working: 2,
   done: 3,
 };
+
+/** How many finished threads "Earlier today" lists; All has the rest. */
+const EARLIER = 12;
 
 function Summary({ threads }: { threads: V3Thread[] }) {
   const n = (s: V3Status) => threads.filter((t) => t.status === s).length;
@@ -82,7 +87,9 @@ function Live(p: V3PageProps) {
   const asleep = data.agents.filter(
     (a) => !board.some((t) => t.agentId === a.id),
   );
-  const earlier = data.threads.filter((t) => t.status === "done" && !t.unseen);
+  // Threads arrive newest first, so the head of the list is the newest.
+  const finished = data.threads.filter((t) => t.status === "done" && !t.unseen);
+  const earlier = finished.slice(0, EARLIER);
 
   return (
     <>
@@ -99,7 +106,7 @@ function Live(p: V3PageProps) {
 
       <Section
         title="Earlier today"
-        count={earlier.length}
+        count={finished.length}
         link="Open All"
         onLink={() => go({ page: "threads", view: "all" })}
       />
@@ -132,15 +139,19 @@ function Live(p: V3PageProps) {
   );
 }
 
-const COLS = "grid-cols-[minmax(0,1fr)_150px_100px_70px_70px_100px]";
+/** The Context column only exists when some thread reports its context. */
+const COLS = "grid-cols-[minmax(0,1fr)_150px_100px_70px_70px]";
+const COLS_CONTEXT = "grid-cols-[minmax(0,1fr)_150px_100px_70px_70px_100px]";
 
 function All({ data, go }: V3PageProps) {
+  const hasContext = data.threads.some((t) => t.context !== undefined);
+  const cols = hasContext ? COLS_CONTEXT : COLS;
   return (
     <div className="mt-5 text-[13.5px]">
       <div
         className={cn(
           "grid gap-4 border-[var(--v3-line)] border-b pb-1.5 text-[12.5px] text-muted-foreground",
-          COLS,
+          cols,
         )}
       >
         <span>Thread</span>
@@ -148,7 +159,7 @@ function All({ data, go }: V3PageProps) {
         <span>Status</span>
         <span>Started</span>
         <span>Took</span>
-        <span>Context</span>
+        {hasContext && <span>Context</span>}
       </div>
       {data.threads.map((t) => {
         const a = agentOf(data, t.agentId);
@@ -159,7 +170,7 @@ function All({ data, go }: V3PageProps) {
             onClick={() => go({ page: "thread", id: t.id })}
             className={cn(
               "grid items-center gap-4 border-[var(--v3-line)] border-b py-2.5",
-              COLS,
+              cols,
             )}
           >
             <span className="truncate">
@@ -172,10 +183,16 @@ function All({ data, go }: V3PageProps) {
             </span>
             <span className="text-muted-foreground">{t.startedAt}</span>
             <span className="text-muted-foreground">{span(t.minutes)}</span>
-            <span className="flex items-center gap-2 text-muted-foreground">
-              <Meter value={t.context} className="w-10" />
-              {t.context}%
-            </span>
+            {hasContext && (
+              <span className="flex items-center gap-2 text-muted-foreground">
+                {t.context !== undefined && (
+                  <>
+                    <Meter value={t.context} className="w-10" />
+                    {t.context}%
+                  </>
+                )}
+              </span>
+            )}
           </RowButton>
         );
       })}
@@ -207,7 +224,8 @@ function ByAgent({ data, go }: V3PageProps) {
             <div className="border-[var(--v3-line)] border-t">
               {mine.length === 0 && (
                 <div className="border-[var(--v3-line)] border-b py-2.5 text-[13.5px] text-muted-foreground/70">
-                  No threads yet. {a.next ?? a.schedule}
+                  No threads yet.
+                  {(a.next ?? a.schedule) && ` ${a.next ?? a.schedule}`}
                 </div>
               )}
               {mine.map((t) => (
@@ -240,6 +258,7 @@ function ByAgent({ data, go }: V3PageProps) {
 
 export function V3Threads(props: V3PageProps & { view: View }) {
   const { view, go, data } = props;
+  const starter = defaultAgent(data);
   return (
     <Page wide>
       <Title>Threads</Title>
@@ -252,13 +271,15 @@ export function V3Threads(props: V3PageProps & { view: View }) {
           value={view}
           onChange={(v) => go({ page: "threads", view: v })}
         />
-        <Btn
-          primary
-          small
-          onClick={() => go({ page: "newchat", id: data.ceoId })}
-        >
-          <PlusIcon /> New chat
-        </Btn>
+        {starter && (
+          <Btn
+            primary
+            small
+            onClick={() => go({ page: "newchat", id: starter.id })}
+          >
+            <PlusIcon /> New chat
+          </Btn>
+        )}
       </div>
       {view !== "scheduled" && <Summary threads={data.threads} />}
       {view === "live" && <Live {...props} />}

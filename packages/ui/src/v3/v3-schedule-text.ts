@@ -1,3 +1,4 @@
+import { validCron } from "../schedule/schedule-text";
 import type { V3Schedule, V3ScheduleWhen } from "./v3-types";
 
 /* Plain-words schedules for v3, ported from the app's schedule-text.ts: the
@@ -50,7 +51,7 @@ const dateText = (d: Date) =>
 /** Whether the schedule can be saved: five cron fields for Custom, else a
     real time, and a date for "once". */
 export function validWhen(w: When): boolean {
-  if (w.kind === "cron") return (w.cron ?? "").trim().split(/\s+/).length === 5;
+  if (w.kind === "cron") return validCron(w.cron ?? "");
   const t = /^(\d{1,2}):(\d{2})$/.exec(w.time);
   if (!t || Number(t[1]) > 23 || Number(t[2]) > 59) return false;
   if (w.kind !== "once") return true;
@@ -107,8 +108,10 @@ function nextRun(w: When, now: Date): Date | null {
   return null;
 }
 
-/** "Today 14:00", "Tomorrow 09:00", "Fri 09:00", "Thu 9 Oct 09:00". */
-function whenText(d: Date, now: Date): string {
+/** "Today 14:00", "Tomorrow 09:00", "Fri 09:00", "Thu 9 Oct 09:00": a real
+    date in the words a saved schedule carries (the app builds `next` and
+    `last.at` with it, so a list reads one way whoever made the phrase). */
+export function whenWords(d: Date, now: Date): string {
   const at = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
   const day = (x: Date) =>
     new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
@@ -123,7 +126,7 @@ function whenText(d: Date, now: Date): string {
 export function nextWords(w: When, now = new Date()): string | null {
   if (w.kind === "cron") return PER_CRON;
   const d = nextRun(w, now);
-  return d ? whenText(d, now) : null;
+  return d ? whenWords(d, now) : null;
 }
 
 /* Sooner-first rank for the phrases a saved schedule carries ("Today 14:00",
@@ -138,7 +141,7 @@ export function soonestNext(list: V3Schedule[]): string | undefined {
   };
   return list
     .filter(
-      (s) => !s.paused && s.when.kind !== "cron" && s.next !== "No more runs",
+      (s) => !s.paused && s.next !== PER_CRON && s.next !== "No more runs",
     )
     .sort(
       (a, b) =>

@@ -40,15 +40,24 @@ export type WorkTab = {
   meta?: string;
 };
 
-/** The tabs this thread's work has, in order. Browser and Details are always
-   there; Preview, PR and Background appear once the agent has something in
-   them. */
-export function workTabs(data: V3Data, t: V3Thread): WorkTab[] {
+/** The tabs this thread's work has, in order. Details is always there; the
+   Browser is there when this thread has tabs or the app can open pages in it
+   (else it has nothing to show or do); Preview, PR and Background appear once
+   the agent has something in them. */
+export function workTabs(
+  data: V3Data,
+  t: V3Thread,
+  canOpenPages: boolean,
+): WorkTab[] {
   const wb = t.workbench;
   const open = data.browser.tabs.filter((b) => b.threadId === t.id).length;
-  const tabs: WorkTab[] = [
-    { id: "browser", label: "Browser", meta: open ? String(open) : undefined },
-  ];
+  const tabs: WorkTab[] = [];
+  if (open > 0 || canOpenPages)
+    tabs.push({
+      id: "browser",
+      label: "Browser",
+      meta: open ? String(open) : undefined,
+    });
   if (wb) {
     tabs.push(
       {
@@ -188,7 +197,9 @@ export function WorkPanel({
       </div>
 
       <div className={cn("min-h-0 flex-1", tab !== "browser" && "hidden")}>
-        <SessionBrowser data={data} go={go} act={act} thread={thread} />
+        {tabs.some((x) => x.id === "browser") && (
+          <SessionBrowser data={data} go={go} act={act} thread={thread} />
+        )}
       </div>
       {tab !== "browser" && (
         // A new key per tab: each opens at its top.

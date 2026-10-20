@@ -27,7 +27,15 @@ import {
   span,
   Title,
 } from "./v3-bits";
-import { agentOf, goalOf, projectOf, threadsOf, ticketOf } from "./v3-model";
+import {
+  agentNameOf,
+  agentOf,
+  FORMER_AGENT,
+  goalOf,
+  projectOf,
+  threadsOf,
+  ticketOf,
+} from "./v3-model";
 import { viaOf } from "./v3-rows";
 import type { V3Data, V3PageProps, V3Route, V3Ticket } from "./v3-types";
 
@@ -42,7 +50,7 @@ function Person({ data, id }: { data: V3Data; id: string }) {
   return (
     <span className="flex items-center gap-2 font-medium">
       <AgentAvatar data={data} agent={a} />
-      {a.name}
+      {a?.name ?? FORMER_AGENT}
     </span>
   );
 }
@@ -55,6 +63,7 @@ function StuckNote({
 }: { data: V3Data; t: V3Ticket } & Pick<V3PageProps, "act">) {
   const [picking, setPicking] = useState(false);
   const threadId = threadsOf(data, t.id).find((x) => x.status === "stuck")?.id;
+  const handOff = act.handOff;
   const others = data.agents.filter(
     (a) => a.id !== t.owner && a.id !== data.ceoId,
   );
@@ -69,16 +78,19 @@ function StuckNote({
         </div>
       )}
       <div className="mt-2.5 flex flex-wrap items-center gap-2">
-        <Btn small onClick={() => setPicking((p) => !p)}>
-          Hand to …
-        </Btn>
-        {picking &&
+        {handOff && (
+          <Btn small onClick={() => setPicking((p) => !p)}>
+            Hand to …
+          </Btn>
+        )}
+        {handOff &&
+          picking &&
           others.map((a) => (
             <Btn
               small
               key={a.id}
               onClick={() => {
-                act.handOff(t.id, a.id);
+                handOff(t.id, a.id);
                 setPicking(false);
               }}
             >
@@ -106,38 +118,45 @@ function AskNote({
   const ask =
     w?.kind === "you" ? data.asks.find((a) => a.id === w.askId) : undefined;
   if (!ask) return null;
+  const answers = ask.kind === "question" ? (ask.options ?? []) : undefined;
   return (
     <div className="mt-3 rounded-lg bg-orange-50/70 px-3.5 py-3 text-[14px] dark:bg-orange-400/10">
       <div className="font-medium">{ask.ask}</div>
-      <div className="mt-0.5 text-[13.5px] text-muted-foreground">
-        {ask.why}
-      </div>
-      <div className="mt-2.5 flex flex-wrap items-center gap-2">
-        {ask.options ? (
-          ask.options.map((o, i) => (
-            <Btn
-              small
-              primary={i === 0}
-              key={o}
-              onClick={() => act.answer(ask.id, o)}
-            >
-              {o}
-            </Btn>
-          ))
-        ) : (
-          <>
-            <Btn small primary onClick={() => act.approve(ask.id)}>
-              Approve
-            </Btn>
-            <Btn small onClick={() => act.deny(ask.id)}>
-              Deny
-            </Btn>
-          </>
-        )}
-        <span className="text-[13px] text-muted-foreground/70">
-          Otherwise at {ask.fallback.at} the CEO {ask.fallback.does}
-        </span>
-      </div>
+      {ask.why && (
+        <div className="mt-0.5 text-[13.5px] text-muted-foreground">
+          {ask.why}
+        </div>
+      )}
+      {(ask.fallback || !answers || answers.length > 0) && (
+        <div className="mt-2.5 flex flex-wrap items-center gap-2">
+          {answers ? (
+            answers.map((o, i) => (
+              <Btn
+                small
+                primary={i === 0}
+                key={o}
+                onClick={() => act.answer(ask.id, o)}
+              >
+                {o}
+              </Btn>
+            ))
+          ) : (
+            <>
+              <Btn small primary onClick={() => act.approve(ask.id)}>
+                Approve
+              </Btn>
+              <Btn small onClick={() => act.deny(ask.id)}>
+                Deny
+              </Btn>
+            </>
+          )}
+          {ask.fallback && (
+            <span className="text-[13px] text-muted-foreground/70">
+              Otherwise at {ask.fallback.at} the CEO {ask.fallback.does}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -240,12 +259,13 @@ function Hands({
               >
                 <span className="flex items-center gap-2 text-[13.5px] font-medium">
                   <AgentAvatar data={data} agent={a} />
-                  {a.name}
+                  {a?.name ?? FORMER_AGENT}
                 </span>
                 <span className="w-full truncate">{th.title}</span>
                 <span className="text-muted-foreground">
-                  {span(th.minutes)} · {th.turns.length}{" "}
-                  {th.turns.length === 1 ? "turn" : "turns"}
+                  {span(th.minutes)}
+                  {th.turns.length > 0 &&
+                    ` · ${th.turns.length} ${th.turns.length === 1 ? "turn" : "turns"}`}
                 </span>
                 <StatusPill status={th.status} />
               </button>
@@ -294,7 +314,7 @@ function Progress({ data, t }: { data: V3Data; t: V3Ticket }) {
               {s.text}
               <span className="text-muted-foreground/70">
                 {" "}
-                · {s.by === "you" ? data.me : agentOf(data, s.by).name}
+                · {s.by === "you" ? data.me : agentNameOf(data, s.by)}
               </span>
             </span>
             <span
@@ -348,29 +368,33 @@ function Updates({
   act,
 }: { data: V3Data; t: V3Ticket } & Pick<V3PageProps, "act">) {
   const [text, setText] = useState("");
+  const comment = act.comment;
   const send = () => {
     const body = text.trim();
-    if (!body) return;
-    act.comment(t.id, body);
+    if (!body || !comment) return;
+    comment(t.id, body);
     setText("");
   };
+  // Without comments in the app and nothing said yet, there is no section.
+  if (!comment && t.updates.length === 0) return null;
   return (
     <>
       <Section title="Updates" count={t.updates.length || undefined} />
       {t.updates.map((u) => {
-        const by = u.by === "you" ? undefined : agentOf(data, u.by);
-        const name = by ? by.name : data.me;
+        const you = u.by === "you";
+        const by = you ? undefined : agentOf(data, u.by);
+        const name = you ? data.me : (by?.name ?? FORMER_AGENT);
         return (
           <div key={`${u.by}-${u.ago}-${u.text}`} className="flex gap-3 py-2.5">
-            {by ? (
+            {you ? (
+              <Avatar name={name} tone="n" size={24} className="mt-0.5" />
+            ) : (
               <AgentAvatar
                 data={data}
                 agent={by}
                 size={24}
                 className="mt-0.5"
               />
-            ) : (
-              <Avatar name={name} tone="n" size={24} className="mt-0.5" />
             )}
             <div>
               <div className="text-[13.5px]">
@@ -384,19 +408,21 @@ function Updates({
           </div>
         );
       })}
-      <div className="mt-3 flex items-center gap-3 border-[var(--v3-line)] border-t pt-3.5">
-        <Avatar name={data.me} tone="n" size={24} />
-        <input
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && send()}
-          placeholder="Add a comment…"
-          className="min-w-0 flex-1 bg-transparent text-[14px] outline-none placeholder:text-muted-foreground/70"
-        />
-        <span className="shrink-0 text-[13px] text-muted-foreground/70">
-          Type @ to ask an agent
-        </span>
-      </div>
+      {comment && (
+        <div className="mt-3 flex items-center gap-3 border-[var(--v3-line)] border-t pt-3.5">
+          <Avatar name={data.me} tone="n" size={24} />
+          <input
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && send()}
+            placeholder="Add a comment…"
+            className="min-w-0 flex-1 bg-transparent text-[14px] outline-none placeholder:text-muted-foreground/70"
+          />
+          <span className="shrink-0 text-[13px] text-muted-foreground/70">
+            Type @ to ask an agent
+          </span>
+        </div>
+      )}
     </>
   );
 }
@@ -429,10 +455,12 @@ export function V3TicketPage({
   const via = viaOf(data, agentOf(data, t.owner));
   return (
     <Page>
-      <Title kicker={`${t.id} · ${project?.name ?? ""}`}>{t.title}</Title>
+      <Title kicker={project ? `${t.id} · ${project.name}` : t.id}>
+        {t.title}
+      </Title>
       <div className="mb-2 flex">
         <Btn small onClick={() => act.ask(`About ${t.id}: `)}>
-          Ask the CEO about this
+          {data.ceoId ? "Ask the CEO about this" : "Ask about this"}
         </Btn>
       </div>
       <div className="mt-1.5 mb-1">

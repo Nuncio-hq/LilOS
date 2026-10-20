@@ -2,6 +2,7 @@ import { CheckIcon, WorkflowIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "../lib/utils";
 import { AgentAvatar, Diff, Meter, ProjectMark, span } from "./v3-bits";
+import { FORMER_AGENT } from "./v3-model";
 import { viaOf } from "./v3-rows";
 import type {
   V3Agent,
@@ -69,7 +70,7 @@ export function ThreadDetails({
 }: {
   data: V3Data;
   t: V3Thread;
-  agent: V3Agent;
+  agent: V3Agent | undefined;
   /** A chat's project; a ticket thread shows its ticket instead. */
   project?: V3Project;
   go: V3PageProps["go"];
@@ -83,14 +84,22 @@ export function ThreadDetails({
   return (
     <div className="mx-auto w-full max-w-[560px] px-6 pt-4 pb-10 text-[13px]">
       <Kv k="Agent">
-        <button
-          type="button"
-          onClick={() => go({ page: "agent", id: agent.id })}
-          className="flex items-center gap-1.5 hover:underline"
-        >
-          <AgentAvatar data={data} agent={agent} size={18} />
-          {agent.name}
-        </button>
+        {agent ? (
+          <button
+            type="button"
+            onClick={() => go({ page: "agent", id: agent.id })}
+            className="flex items-center gap-1.5 hover:underline"
+          >
+            <AgentAvatar data={data} agent={agent} size={18} />
+            {agent.name}
+          </button>
+        ) : (
+          // A fired agent has no page to open.
+          <span className="flex items-center gap-1.5">
+            <AgentAvatar data={data} agent={undefined} size={18} />
+            {FORMER_AGENT}
+          </span>
+        )}
       </Kv>
       {ticketId ? (
         <Kv k="Ticket">
@@ -119,11 +128,13 @@ export function ThreadDetails({
       {via ? (
         <Kv k="Reached through">{via.label}</Kv>
       ) : (
-        <Kv k="Model">{t.model}</Kv>
+        t.model && <Kv k="Model">{t.model}</Kv>
       )}
-      <Kv k="Folder">
-        <span className="truncate font-mono text-[12px]">{t.folder}</span>
-      </Kv>
+      {t.folder && (
+        <Kv k="Folder">
+          <span className="truncate font-mono text-[12px]">{t.folder}</span>
+        </Kv>
+      )}
       {t.branch && (
         <Kv k="Branch">
           <span className="truncate font-mono text-[12px]">{t.branch}</span>
@@ -132,7 +143,7 @@ export function ThreadDetails({
       <Kv k="Started">
         {t.startedAt} · {span(t.minutes)}
       </Kv>
-      {t.context > 0 && (
+      {t.context !== undefined && t.context > 0 && (
         <Kv k="Context">
           <Meter value={t.context} className="w-[60px]" />
           {t.context}%

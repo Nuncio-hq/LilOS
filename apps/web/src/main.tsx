@@ -1,7 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./index.css";
-import { App } from "./app";
 import { loadConfig } from "./lib/config";
 import { watchDesktopChrome, watchDragRegions } from "./lib/desktop";
 import { watchDraftPruning } from "./lib/drafts";
@@ -12,6 +11,7 @@ import {
   watchSessionFeeds,
   watchWorkbenchOpens,
 } from "./lib/runtime";
+import { App } from "./v3/root";
 
 /* The real app's entry. D-#3 web stack: React 19 + Vite + Tailwind v4 +
    shadcn (base-nova) + AI Elements (mandatory) + TanStack Router +

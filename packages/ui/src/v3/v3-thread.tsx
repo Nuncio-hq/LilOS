@@ -13,8 +13,8 @@ import { Composer } from "./v3-composer";
 import { AskCard, Opening, StuckCard, Typing } from "./v3-convo-cards";
 import { ConvoTurn, RewoundLine } from "./v3-convo-turn";
 import { useFollowBottom } from "./v3-follow";
-import { ThreadPill } from "./v3-live";
-import { agentOf, projectOf, ticketOf } from "./v3-model";
+import { ThreadPill, turnCount } from "./v3-live";
+import { agentOf, FORMER_AGENT, projectOf, ticketOf } from "./v3-model";
 import { WorkPanel, WorkStrip, workTabs } from "./v3-thread-work";
 import type { V3PageProps, V3Thread } from "./v3-types";
 import type { SessionTab } from "./v3-workbench-bits";
@@ -45,12 +45,13 @@ export function V3ThreadPage(props: V3PageProps & { id: string }) {
 
 function ThreadBody({ data, go, act, t }: V3PageProps & { t: V3Thread }) {
   const peek = useContext(PeekWidth);
-  const tabs = workTabs(data, t);
+  const tabs = workTabs(data, t, !!act.browserOpen);
   const [picked, setPicked] = useState<SessionTab>();
-  // Widened, the session opens on the browser unless you chose a tab; a tab
-  // that has gone (its job ended, say) falls back to the browser too.
-  const wanted = picked ?? "browser";
-  const tab = tabs.some((x) => x.id === wanted) ? wanted : "browser";
+  // Widened, the session opens on the first tab (the browser, when there is
+  // one) unless you chose a tab; a tab that has gone (its job ended, say)
+  // falls back to it too.
+  const first = tabs[0].id;
+  const tab = tabs.find((x) => x.id === picked)?.id ?? first;
   const session = peek ? peek.full : picked !== undefined;
 
   const open = (next: SessionTab) => {
@@ -74,12 +75,16 @@ function ThreadBody({ data, go, act, t }: V3PageProps & { t: V3Thread }) {
     }
   }, [wantFocus]);
   // Rewind: the files and conversation go back, the message returns to the
-  // composer to be edited and sent again.
-  const rewind = (turn: number, text: string) => {
-    act.rewind(t.id, turn);
-    setDraft(text);
-    setWantFocus(true);
-  };
+  // composer to be edited and sent again. Without the action there is no
+  // Rewind on the turns at all.
+  const doRewind = act.rewind;
+  const rewind = doRewind
+    ? (turn: number, text: string) => {
+        doRewind(t.id, turn);
+        setDraft(text);
+        setWantFocus(true);
+      }
+    : undefined;
 
   const { markSeen } = act;
   useEffect(() => {
@@ -157,7 +162,7 @@ function ChatColumn({
   draft: string;
   onDraft: (text: string) => void;
   composer: RefObject<HTMLTextAreaElement | null>;
-  onRewind: (turn: number, text: string) => void;
+  onRewind?: (turn: number, text: string) => void;
   session: boolean;
   /** Under the header: the work strip, beside the list. */
   children?: ReactNode;
@@ -167,6 +172,8 @@ function ChatColumn({
   const ticket = ticketId ? ticketOf(data, ticketId) : undefined;
   const project = t.projectId ? projectOf(data, t.projectId) : undefined;
   const ask = t.askId ? data.asks.find((a) => a.id === t.askId) : undefined;
+  // A stuck ticket is handed to the Marketer; with none on the team the card
+  // offers no hand-off.
   const handTo = agentOf(data, "marketer");
   const working = t.status === "working";
 
@@ -176,7 +183,8 @@ function ChatColumn({
     [t.turns],
   );
   const newest = turns.at(-1);
-  const count = turns.reduce((m, u) => Math.max(m, u.n), 0);
+  // Empty turns means the app does not carry them: no count to print.
+  const count = turnCount(t);
 
   // Anything that makes the conversation taller bumps this, so the scroller
   // follows it down: a turn, a step, a word of the answer, a card.
@@ -198,7 +206,7 @@ function ChatColumn({
   const link = "hover:text-foreground hover:underline";
   const kicker = ticketId ? (
     <>
-      Thread · {agent.name} on{" "}
+      Thread · {agent?.name ?? FORMER_AGENT} on{" "}
       <button
         type="button"
         onClick={() => go({ page: "ticket", id: ticketId })}
@@ -209,7 +217,7 @@ function ChatColumn({
     </>
   ) : (
     <>
-      Chat · {agent.name}
+      Chat · {agent?.name ?? FORMER_AGENT}
       {project && (
         <>
           {" · "}
@@ -254,7 +262,14 @@ function ChatColumn({
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2 text-[13.5px] text-muted-foreground">
         <ThreadPill status={t.status} />
         <span>
-          Started {t.startedAt} · {count} {count === 1 ? "turn" : "turns"} ·{" "}
+          Started {t.startedAt}
+          {count !== undefined && (
+            <>
+              {" · "}
+              {count} {count === 1 ? "turn" : "turns"}
+            </>
+          )}
+          {" · "}
           {span(t.minutes)}
         </span>
         <span className="ml-auto flex items-center gap-2">
@@ -273,7 +288,9 @@ function ChatColumn({
               small
               onClick={() =>
                 act.ask(
-                  `Make a ticket from my chat with ${agent.name}: ${t.title}`,
+                  agent
+                    ? `Make a ticket from my chat with ${agent.name}: ${t.title}`
+                    : `Make a ticket from this chat: ${t.title}`,
                 )
               }
             >
@@ -304,7 +321,7 @@ function ChatColumn({
       {t.rewound && <RewoundLine rewound={t.rewound} />}
       {turns.length === 0 && !working && (
         <p className="text-[13.5px] text-muted-foreground/70">
-          No messages yet. Say something to {agent.name}.
+          No messages yet.{agent && ` Say something to ${agent.name}.`}
         </p>
       )}
       {ask && <AskCard ask={ask} from={agentOf(data, ask.from)} act={act} />}
@@ -315,7 +332,8 @@ function ChatColumn({
     </div>
   );
 
-  const composerEl = (
+  // Messaging needs someone on the team to read it.
+  const composerEl = agent ? (
     <Composer
       data={data}
       agent={agent}
@@ -332,6 +350,10 @@ function ChatColumn({
       onAgent={() => go({ page: "agent", id: agent.id })}
       inputRef={composer}
     />
+  ) : (
+    <p className="py-2 text-[13.5px] text-muted-foreground">
+      This agent is no longer on the team, so there is no one to message.
+    </p>
   );
 
   if (session)

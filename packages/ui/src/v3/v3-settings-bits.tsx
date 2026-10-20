@@ -7,19 +7,32 @@ import type { V3Settings } from "./v3-types";
    segmented choice, a labelled row, and the engine's state with the steps to
    fix it, so the same problem reads the same wherever it shows up. */
 
-/** A check that takes a second, then reports: the prototype's "Check again",
-   "Check for updates" and "Copy" confirmations. */
-export function useCheck(ms = 1000) {
+/** An action that takes a moment, then reports: "Check again", "Check for
+   updates", "Copy". `busy` lasts as long as the action does (it may be a
+   promise from the app); `done` keeps its result for `holdMs`, then quiets. A
+   rejection means the app has already said what went wrong. */
+export function useRun<T>(run: () => T | Promise<T>, holdMs = 1800) {
   const [state, set] = useState<"idle" | "busy" | "done">("idle");
+  const [result, setResult] = useState<T>();
   useEffect(() => {
-    if (state === "idle") return;
-    const t = window.setTimeout(
-      () => set(state === "busy" ? "done" : "idle"),
-      state === "busy" ? ms : 1800,
-    );
+    if (state !== "done") return;
+    const t = window.setTimeout(() => set("idle"), holdMs);
     return () => window.clearTimeout(t);
-  }, [state, ms]);
-  return [state, () => set("busy")] as const;
+  }, [state, holdMs]);
+  const start = () => {
+    if (state === "busy") return;
+    set("busy");
+    void Promise.resolve()
+      .then(run)
+      .then(
+        (r) => {
+          setResult(r);
+          set("done");
+        },
+        () => set("idle"),
+      );
+  };
+  return [state, start, result] as const;
 }
 
 /** A confirmation that shows for a moment ("Copied"), then goes away. */
@@ -52,9 +65,6 @@ export function LinkRow({
     </button>
   );
 }
-
-/** The oldest engine version LilOS works with. */
-export const ENGINE_MIN = "0.14";
 
 export function Switch({
   on,
@@ -159,24 +169,33 @@ export function Row({
 
 /** The engine's state in plain words, with a status dot. */
 export function EngineState({ engine }: { engine: V3Settings["engine"] }) {
-  const tone =
-    engine.state === "ok"
-      ? {
-          dot: "bg-emerald-500",
-          text: "text-muted-foreground",
-          word: "Running",
-        }
-      : engine.state === "old"
-        ? {
-            dot: "bg-amber-500",
-            text: "text-amber-700 dark:text-amber-300",
-            word: `Update needed (minimum ${ENGINE_MIN})`,
-          }
-        : {
-            dot: "bg-red-500",
-            text: "text-red-600 dark:text-red-300",
-            word: "Not installed",
-          };
+  const tone = {
+    ok: {
+      dot: "bg-emerald-500",
+      text: "text-muted-foreground",
+      word: "Running",
+    },
+    starting: {
+      dot: "bg-stone-400",
+      text: "text-muted-foreground",
+      word: "Starting…",
+    },
+    old: {
+      dot: "bg-amber-500",
+      text: "text-amber-700 dark:text-amber-300",
+      word: "Update needed",
+    },
+    down: {
+      dot: "bg-red-500",
+      text: "text-red-600 dark:text-red-300",
+      word: "Not running",
+    },
+    missing: {
+      dot: "bg-red-500",
+      text: "text-red-600 dark:text-red-300",
+      word: "Not installed",
+    },
+  }[engine.state];
   return (
     <span className={cn("flex items-center gap-1.5 text-[13.5px]", tone.text)}>
       <span aria-hidden className={cn("size-1.5 rounded-full", tone.dot)} />
@@ -193,14 +212,31 @@ function Cmd({ children }: { children: ReactNode }) {
   );
 }
 
-/** What to do about an engine that is missing or too old; nothing when it
-   is fine. */
+/** What to do about an engine that is not fine; nothing when it is, or
+   while it is still coming up. The engine's own words (`problem`) lead when
+   it gave any; the generic steps are for a state it said nothing about. */
 export function EngineFix({ engine }: { engine: V3Settings["engine"] }) {
-  if (engine.state === "ok") return null;
+  if (engine.state === "ok" || engine.state === "starting") return null;
+  if (engine.problem)
+    return (
+      <p className="mt-3 whitespace-pre-line text-[13.5px] text-muted-foreground">
+        {engine.problem}
+      </p>
+    );
   const cmd = engine.name.toLowerCase();
   const steps: ReactNode[] =
-    engine.state === "missing"
+    engine.state === "old"
       ? [
+          <>
+            Update {engine.name} to the newest version, the same way you
+            installed it{engine.version ? ` (you have ${engine.version})` : ""}.
+          </>,
+          <>
+            Open Terminal and run <Cmd>{cmd} --version</Cmd> to confirm.
+          </>,
+          <>Come back here and press Check again.</>,
+        ]
+      : [
           <>
             Install {engine.name} on this Mac, from its website or your package
             manager.
@@ -208,16 +244,6 @@ export function EngineFix({ engine }: { engine: V3Settings["engine"] }) {
           <>
             Open Terminal and run <Cmd>{cmd} --version</Cmd>; it should print a
             version.
-          </>,
-          <>Come back here and press Check again.</>,
-        ]
-      : [
-          <>
-            Update {engine.name} to {ENGINE_MIN} or newer, the same way you
-            installed it (you have {engine.version}).
-          </>,
-          <>
-            Open Terminal and run <Cmd>{cmd} --version</Cmd> to confirm.
           </>,
           <>Come back here and press Check again.</>,
         ];

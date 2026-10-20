@@ -22,14 +22,20 @@ import {
    agent has started a dev server, opened a pull request or left a command
    running. */
 
-/** Opens a page in this session's browser and shows it. */
-function openInBrowser({ act, thread, onTab }: WbPanelProps, url: string) {
-  act.browserOpen(url, thread.id);
-  onTab("browser");
+/** Opens a page in this session's browser and shows it. Absent without the
+   desktop browser: then the buttons that call it are not drawn. */
+function browserOpener({ act, thread, onTab }: WbPanelProps) {
+  const open = act.browserOpen;
+  if (!open) return undefined;
+  return (url: string) => {
+    open(url, thread.id);
+    onTab("browser");
+  };
 }
 
 export function PreviewTab(p: WbPanelProps) {
   const { preview } = p.wb;
+  const openInBrowser = browserOpener(p);
   // Reload remounts the page, so it visibly paints again.
   const [loads, setLoads] = useState(0);
   if (!preview)
@@ -57,10 +63,12 @@ export function PreviewTab(p: WbPanelProps) {
           >
             {preview.url}
           </span>
-          <WbBtn onClick={() => openInBrowser(p, preview.url)}>
-            <ExternalLinkIcon className="size-3.5" />
-            Open in browser
-          </WbBtn>
+          {openInBrowser && (
+            <WbBtn onClick={() => openInBrowser(preview.url)}>
+              <ExternalLinkIcon className="size-3.5" />
+              Open in browser
+            </WbBtn>
+          )}
         </div>
         <div
           key={loads}
@@ -70,9 +78,11 @@ export function PreviewTab(p: WbPanelProps) {
             <div className="font-medium text-[15px] text-foreground">
               {preview.title}
             </div>
-            <div className="mt-1 text-[12.5px] text-muted-foreground/70">
-              Served from {p.thread.folder}
-            </div>
+            {p.thread.folder && (
+              <div className="mt-1 text-[12.5px] text-muted-foreground/70">
+                Served from {p.thread.folder}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -105,6 +115,7 @@ function prUrl(data: V3Data, wb: V3Workbench, num: number): string {
 
 export function PrTab(p: WbPanelProps) {
   const { pr } = p.wb;
+  const openInBrowser = browserOpener(p);
   if (!pr)
     return (
       <Panel>
@@ -154,13 +165,15 @@ export function PrTab(p: WbPanelProps) {
           {checks}
         </div>
         <div className="mt-4 flex flex-wrap items-center gap-2">
-          <WbBtn
-            primary={pr.checks !== "failing"}
-            onClick={() => openInBrowser(p, prUrl(p.data, p.wb, pr.num))}
-          >
-            <ExternalLinkIcon className="size-3.5" />
-            Open in Browser
-          </WbBtn>
+          {openInBrowser && (
+            <WbBtn
+              primary={pr.checks !== "failing"}
+              onClick={() => openInBrowser(prUrl(p.data, p.wb, pr.num))}
+            >
+              <ExternalLinkIcon className="size-3.5" />
+              Open in Browser
+            </WbBtn>
+          )}
           {pr.checks === "failing" && (
             <WbBtn
               primary
