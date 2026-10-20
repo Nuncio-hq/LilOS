@@ -1,5 +1,12 @@
+import { approvalAskMarks, approvalAskSection } from "./approval-tools.js";
+
 /**
  * Guide page: employees (#340 AC-3).
+ *
+ * Hiring and editing open an approval ask (`team_hire`, `team_update`).
+ * The page used to say that gate ships separately (D-#36, #783). The
+ * names, and every other approval tool, come from `LILOS_TOOLS` where
+ * `access === "approval"`.
  */
 export const employees = {
   title: "Employees",
@@ -19,6 +26,10 @@ Tools that apply:
 - \`team_list\` — the roster as the agent sees it: name, role, status, model.
 - \`context\` — the calling session's own employee record (name, role,
   profile, model) plus its thread.
-- Hiring, editing and removing are company changes — they go through an
-  approval, not a plain tool call (the approval gate ships separately).`,
+- Hiring and editing your own record open an approval ask:
+  ${approvalAskMarks("team")}.
+  The call waits, and nothing is written until Oscar approves. Removing an
+  employee is done in the app.
+
+${approvalAskSection()}`,
 };
