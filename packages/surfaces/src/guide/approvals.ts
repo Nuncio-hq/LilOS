@@ -1,5 +1,11 @@
+import { approvalAskSection } from "./approval-tools.js";
+
 /**
  * Guide page: approvals (#340 AC-3).
+ *
+ * Which tools open an approval ask is rendered from `LILOS_TOOLS` (D-#36,
+ * #783). A hand-written list named four tools and left out the schedule
+ * writes.
  */
 export const approvals = {
   title: "Approvals",
@@ -16,12 +22,12 @@ What Oscar sees:
   either surface resolves the ask everywhere.
 - A decided ask stays in the thread as a receipt ("Approved once by Oscar").
 
-Tools that apply:
-- \`thread_start\`, \`team_hire\`, \`team_update\` and \`folder_add\` are
-  approval tools: calling one posts the ask card here and the call waits —
-  Approve applies the change and returns its result; Decline returns a
-  declined error the agent can read. Company changes always ask, even when
-  the thread's access is Full.
-- The session reads its context with \`context\`, \`thread_read\` and
-  \`thread_list\`, and answers Oscar plainly via \`thread_post\`.`,
+${approvalAskSection()}
+
+Calling one posts the ask card and the call waits — Approve applies the
+change and returns its result; Decline returns a declined error the agent
+can read. Company changes always ask, even when the thread's access is Full.
+
+The session reads its context with \`context\`, \`thread_read\` and
+\`thread_list\`, and answers Oscar plainly via \`thread_post\`.`,
 };
