@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "../shell/use-theme";
 import { makeActions, planRecords } from "./v3-actions";
 import { Kbd, OpenRecord } from "./v3-bits";
+import { V3Browser } from "./v3-browser";
 import { V3ChatNew } from "./v3-chat-new";
 import type { ReplyFn } from "./v3-chat-sim";
 import { V3Goals } from "./v3-goals";
@@ -26,6 +27,7 @@ import type {
   V3PageRoute,
   V3Route,
 } from "./v3-types";
+import { V3Welcome } from "./v3-welcome";
 import { V3Work } from "./v3-work";
 
 export type V3ShellProps = {
@@ -53,6 +55,8 @@ const PAGE_NAME: Record<V3PageRoute["page"], string> = {
   hire: "Hire an agent",
   guide: "How it works",
   settings: "Settings",
+  browser: "Browser",
+  welcome: "Welcome",
   chat: "New chat",
 };
 
@@ -107,6 +111,16 @@ export function V3Shell({
         setPalette((p) => (p === null ? "" : null));
         return;
       }
+      // ⌘⇧B opens the LilOS Browser, as it does in the Mac app.
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        e.shiftKey &&
+        e.key.toLowerCase() === "b"
+      ) {
+        e.preventDefault();
+        onNav(() => ({ page: { page: "browser" }, peek: [] }));
+        return;
+      }
       // Esc closes the peek, unless you are typing or the palette owns Esc.
       const typing = (e.target as HTMLElement | null)?.closest(
         "input, textarea",
@@ -115,7 +129,7 @@ export function V3Shell({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [palette, closePeek]);
+  }, [palette, closePeek, onNav]);
 
   const act = useMemo<V3Actions>(
     () =>
@@ -145,6 +159,13 @@ export function V3Shell({
   const page = nav.page;
   const top = nav.peek[nav.peek.length - 1];
   const props = { data, go: goFromPage, act };
+  // First run owns the whole window: nothing to navigate yet.
+  if (page.page === "welcome" || !data.setUp)
+    return (
+      <div className="lilos-v3 h-dvh overflow-y-auto bg-[var(--v3-main)] text-[14px] text-foreground">
+        <V3Welcome {...props} />
+      </div>
+    );
   return (
     <OpenRecord.Provider value={top}>
       <div className="lilos-v3 flex h-dvh min-h-0 overflow-hidden bg-[var(--v3-main)] text-[14px] text-foreground">
@@ -208,7 +229,10 @@ export function V3Shell({
               )}
               {page.page === "hire" && <V3Hire {...props} />}
               {page.page === "guide" && <V3Guide {...props} />}
-              {page.page === "settings" && <V3Settings {...props} />}
+              {page.page === "settings" && (
+                <V3Settings {...props} view={page.view ?? "general"} />
+              )}
+              {page.page === "browser" && <V3Browser {...props} />}
               {page.page === "chat" && (
                 <V3ChatNew {...props} agentId={page.agentId} />
               )}

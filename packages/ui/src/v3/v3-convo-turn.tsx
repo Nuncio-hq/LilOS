@@ -1,6 +1,8 @@
+import { Undo2Icon } from "lucide-react";
+import { useState } from "react";
 import { MessageResponse } from "../components/ai-elements/message";
 import { cn } from "../lib/utils";
-import { AgentAvatar } from "./v3-bits";
+import { AgentAvatar, Btn } from "./v3-bits";
 import { Attachments } from "./v3-convo-attach";
 import { WorkBlock } from "./v3-convo-work";
 import { agentOf } from "./v3-model";
@@ -31,12 +33,104 @@ const CARET =
 const BUBBLE =
   "whitespace-pre-wrap break-words rounded-2xl bg-[var(--v3-soft)] px-4 py-2.5 text-[14.5px] text-foreground leading-[1.55]";
 
-/** Your words, right-aligned, with a faint line under them. */
-function YouBubble({ text, note }: { text: string; note: string }) {
+type RewindProps = {
+  /** The agent is mid-turn: Rewind waits. */
+  working: boolean;
+  /** Turns after this one, which go away with it. */
+  later: number;
+  onRewind: () => void;
+};
+
+/** Your words, right-aligned, with a faint line under them. On your own
+   messages that line also holds Rewind, which shows on hover and asks right
+   there before undoing anything. */
+function YouBubble({
+  text,
+  note,
+  rewind,
+}: {
+  text: string;
+  note: string;
+  rewind?: RewindProps;
+}) {
+  const [asking, setAsking] = useState(false);
+  // If the agent starts a turn while the question is open, it closes.
+  const confirming = asking && !rewind?.working;
   return (
-    <div className="flex flex-col items-end">
+    <div className="group/you flex flex-col items-end">
       <div className={cn(BUBBLE, "max-w-[80%]")}>{text}</div>
-      <span className="mt-1 text-[12px] text-muted-foreground/70">{note}</span>
+      <div className="mt-1 flex items-center gap-3 text-[12px] text-muted-foreground/70">
+        {rewind && !confirming && (
+          // The wrapper carries the tooltip: a disabled button swallows pointer events.
+          <span
+            title={rewind.working ? "Wait for the turn to finish" : undefined}
+          >
+            <button
+              type="button"
+              data-rewind
+              disabled={rewind.working}
+              onClick={() => setAsking(true)}
+              className={cn(
+                "inline-flex items-center gap-1 rounded-md px-1 py-0.5 opacity-0 transition-opacity",
+                rewind.working
+                  ? "cursor-not-allowed group-hover/you:opacity-50"
+                  : "hover:text-foreground focus-visible:opacity-100 group-focus-within/you:opacity-100 group-hover/you:opacity-100",
+              )}
+            >
+              <Undo2Icon className="size-3" />
+              Rewind to here
+            </button>
+          </span>
+        )}
+        <span>{note}</span>
+      </div>
+      {rewind && confirming && (
+        <div className="mt-2 flex max-w-[80%] flex-wrap items-center justify-end gap-x-3 gap-y-2 text-[13px] text-muted-foreground">
+          <span>
+            Undo files and conversation back to before this message?{" "}
+            {rewind.later > 0
+              ? `${rewind.later} later ${rewind.later === 1 ? "message" : "messages"} go away.`
+              : "Only this turn goes away."}
+          </span>
+          <span className="flex gap-2">
+            <Btn small onClick={() => setAsking(false)}>
+              Cancel
+            </Btn>
+            <Btn
+              small
+              primary
+              onClick={() => {
+                // Close first: the page takes it from here.
+                setAsking(false);
+                rewind.onRewind();
+              }}
+            >
+              Rewind
+            </Btn>
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** A quiet line where the thread was rewound: the messages and files that
+   went back to before one of yours. */
+export function RewoundLine({
+  rewound,
+}: {
+  rewound: NonNullable<V3Thread["rewound"]>;
+}) {
+  const { dropped, files } = rewound;
+  return (
+    <div className="flex items-center gap-3 text-[12.5px] text-muted-foreground/70">
+      <span className="h-px flex-1 bg-[var(--v3-line)]" />
+      <span className="max-w-[80%] text-center">
+        Rewound to before your message — {dropped}{" "}
+        {dropped === 1 ? "message" : "messages"} dropped
+        {files ? ", files restored" : ""}.
+      </span>
+      <span className="h-px flex-1 bg-[var(--v3-line)]" />
     </div>
   );
 }
@@ -62,7 +156,15 @@ function Who({
 }
 
 /** What started the turn. Old turns have no prompt, only a "from" line. */
-function Prompt({ turn, data }: { turn: V3Turn; data: V3Data }) {
+function Prompt({
+  turn,
+  data,
+  rewind,
+}: {
+  turn: V3Turn;
+  data: V3Data;
+  rewind?: RewindProps;
+}) {
   const p = turn.prompt;
   if (!p) {
     return (
@@ -71,7 +173,8 @@ function Prompt({ turn, data }: { turn: V3Turn; data: V3Data }) {
       </div>
     );
   }
-  if (p.by === "you") return <YouBubble text={p.text} note={p.at} />;
+  if (p.by === "you")
+    return <YouBubble text={p.text} note={p.at} rewind={rewind} />;
   return (
     <div>
       <Who data={data} agent={agentOf(data, p.by)} note={p.at} />
@@ -118,6 +221,7 @@ export function ConvoTurn({
   agent,
   newest,
   go,
+  onRewind,
 }: {
   turn: V3Turn;
   thread: V3Thread;
@@ -126,13 +230,30 @@ export function ConvoTurn({
   /** This is the thread's newest turn. */
   newest: boolean;
   go: V3PageProps["go"];
+  /** Rewind to before this turn's message (yours only); gets its text back
+     so the page can return it to the composer. */
+  onRewind?: (turn: number, text: string) => void;
 }) {
   // Old turns carry one line of summary instead of an answer.
   const text = turn.answer ?? turn.summary ?? "";
   const streaming = !!turn.streaming;
+  const prompt = turn.prompt;
   return (
     <section>
-      <Prompt turn={turn} data={data} />
+      <Prompt
+        turn={turn}
+        data={data}
+        rewind={
+          onRewind && prompt?.by === "you"
+            ? {
+                // A turn in flight cannot be undone; wait for it to end.
+                working: thread.status === "working",
+                later: thread.turns.filter((u) => u.n > turn.n).length,
+                onRewind: () => onRewind(turn.n, prompt.text),
+              }
+            : undefined
+        }
+      />
       <WorkBlock turn={turn} thread={thread} newest={newest} />
       {(text || streaming) && (
         <Answer data={data} agent={agent} text={text} streaming={streaming} />

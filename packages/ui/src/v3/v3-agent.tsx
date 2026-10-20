@@ -23,6 +23,8 @@ import {
 } from "./v3-bits";
 import { agentOf, agentStatus, agentTicket } from "./v3-model";
 import { ThreadRow, TicketRow } from "./v3-rows";
+import { soonestNext } from "./v3-schedule-text";
+import { AgentSchedules } from "./v3-schedules";
 import type { V3ConnectorDef, V3PageProps } from "./v3-types";
 
 /* One agent, like a person's profile in Notion: what it does, what it runs
@@ -184,6 +186,10 @@ export function V3AgentPage({
   const boss = holdsCeo ? "You" : ceo.name;
   const spendPct = (agent.spend.used / agent.spend.cap) * 100;
   const fmt = (n: number) => (Number.isInteger(n) ? `${n}` : n.toFixed(2));
+  // The soonest scheduled job that is not paused: Works says when it is due.
+  const nextJob = outside
+    ? undefined
+    : soonestNext(data.schedules.filter((s) => s.agentId === agent.id));
 
   return (
     <Page wide>
@@ -271,6 +277,9 @@ export function V3AgentPage({
         )}
         <Prop icon={<ClockIcon />} label="Works">
           {agent.schedule}
+          {nextJob && (
+            <span className="text-muted-foreground">· Next: {nextJob}</span>
+          )}
         </Prop>
         {!outside && (
           <>
@@ -326,6 +335,10 @@ export function V3AgentPage({
           <TicketRow key={t.id} data={data} ticket={t} go={go} />
         ))}
       </div>
+
+      {!outside && (
+        <AgentSchedules data={data} go={go} act={act} agentId={agent.id} />
+      )}
 
       {!outside && (
         <>

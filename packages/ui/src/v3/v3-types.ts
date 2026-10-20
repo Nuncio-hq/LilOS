@@ -246,6 +246,121 @@ export type V3Thread = {
   plan?: { text: string; state: "done" | "current" | "todo" }[];
   changes?: { path: string; add: number; del: number }[];
   helpers?: { text: string; took: string }[];
+  /** The thread's folder as it is now: what the agent changed, ran and opened. */
+  workbench?: V3Workbench;
+  /** The last Rewind on this thread, shown as a quiet line in the chat. */
+  rewound?: { dropped: number; files: boolean };
+};
+
+/** A thread's Workbench: the same folder the agent works in, seen from
+   the side (the current app's Workbench tabs, re-homed in v3). */
+export type V3Workbench = {
+  /** Files changed this session, with a few diff lines each. */
+  diffs: {
+    path: string;
+    add: number;
+    del: number;
+    lines: { kind: "add" | "del" | "ctx"; text: string }[];
+  }[];
+  /** Every path in the folder ("src/app.ts"); folders end with "/". */
+  files: string[];
+  /** What a few files say, for the Files viewer. */
+  fileText: Record<string, string>;
+  /** The agent's terminals: each command and its output. */
+  terminal: { cmd: string; lines: string[]; running?: boolean }[];
+  /** A dev server the agent started, shown in Preview. */
+  preview?: { url: string; title: string };
+  /** The branch's pull request, once opened. */
+  pr?: {
+    num: number;
+    title: string;
+    state: "draft" | "open" | "merged";
+    checks: "running" | "passing" | "failing";
+  };
+  /** Long commands left running in the background. */
+  jobs: { cmd: string; state: "running" | "done" | "failed"; tail: string }[];
+};
+
+/** One tab in the LilOS Browser: yours, or one an agent drives. */
+export type V3BrowserTab = {
+  id: string;
+  title: string;
+  url: string;
+  /** "you", or the agent id driving it. */
+  by: string;
+  /** Agent tabs: the thread it belongs to. */
+  threadId?: string;
+  /** Agent tabs: what it is doing now ("Reading posts"). */
+  doing?: string;
+  /** You took the tab over from its agent; it waits until you hand it back. */
+  takenOver?: boolean;
+  /** A few lines of the page, so the prototype has something to show. */
+  page: string[];
+};
+
+export type V3ScheduleWhen = {
+  kind: "hourly" | "daily" | "weekdays" | "weekly" | "once" | "cron";
+  /** "HH:MM" (hourly reads only the minutes). */
+  time: string;
+  /** weekly: 0–6 = Sun–Sat. */
+  day?: number;
+  /** once: "YYYY-MM-DD". */
+  date?: string;
+  /** cron: five fields, for anything the presets can't say. */
+  cron?: string;
+};
+
+/** A job an agent runs by itself on a schedule; each run is a new thread. */
+export type V3Schedule = {
+  id: string;
+  agentId: string;
+  projectId?: string;
+  title: string;
+  /** What the agent is told each time. */
+  prompt: string;
+  when: V3ScheduleWhen;
+  /** Next run, in words ("Tomorrow 09:00"). */
+  next: string;
+  paused?: boolean;
+  /** Runs without asking before risky commands: nobody is there at 2am
+     to approve, so the schedule says up front what it may do. */
+  fullAccess?: boolean;
+  last?: {
+    at: string;
+    result: "running" | "finished" | "failed";
+    threadId?: string;
+  };
+};
+
+/** A phone paired with this Mac. */
+export type V3Device = {
+  id: string;
+  name: string;
+  model: string;
+  lastSeen: string;
+};
+
+export type V3Settings = {
+  /** What the phone is told about. */
+  push: {
+    needsYou: boolean;
+    finished: boolean;
+    stuck: boolean;
+    failed: boolean;
+  };
+  /** Ask before risky commands, or let agents run anything. */
+  approvals: "ask" | "full";
+  /** Where "Open in editor" goes. */
+  editor: string;
+  /** Models the pickers offer. */
+  models: { id: string; label: string; on: boolean }[];
+  engine: {
+    name: string;
+    version: string;
+    /** ok · missing: not installed · old: below the minimum version. */
+    state: "ok" | "missing" | "old";
+    path: string;
+  };
 };
 
 export type V3Ask = {
@@ -311,6 +426,15 @@ export type V3Data = {
   threads: V3Thread[];
   asks: V3Ask[];
   updates: V3Update[];
+  schedules: V3Schedule[];
+  browser: {
+    tabs: V3BrowserTab[];
+    bookmarks: { title: string; url: string }[];
+  };
+  devices: V3Device[];
+  settings: V3Settings;
+  /** The company is set up; false shows the first-run welcome. */
+  setUp: boolean;
 };
 
 export type V3Route =
@@ -319,7 +443,7 @@ export type V3Route =
   | { page: "inbox" }
   | { page: "work"; view?: "waiting" | "board" | "project" | "timeline" }
   | { page: "ticket"; id: string }
-  | { page: "threads"; view?: "live" | "all" | "agent" }
+  | { page: "threads"; view?: "live" | "all" | "agent" | "scheduled" }
   | { page: "thread"; id: string }
   | { page: "goals" }
   | { page: "goal"; id: string }
@@ -328,7 +452,11 @@ export type V3Route =
   | { page: "agent"; id: string }
   | { page: "hire" }
   | { page: "guide" }
-  | { page: "settings" }
+  | { page: "settings"; view?: "general" | "engine" | "phone" | "connectors" }
+  /** The LilOS Browser (its own window in the Mac app). */
+  | { page: "browser" }
+  /** First run: name the company, check the engine, hire the CEO, add a project. */
+  | { page: "welcome" }
   /** A new chat with an agent; `agentId` preselects who. */
   | { page: "chat"; agentId?: string };
 
@@ -378,6 +506,28 @@ export type V3Actions = {
     label: string;
     kind: "cli" | "mcp";
     command: string;
+  }) => void;
+  /** Undo files and conversation back to before this turn's message. */
+  rewind: (threadId: string, turn: number) => void;
+  scheduleSave: (s: V3Schedule) => void;
+  scheduleToggle: (id: string) => void;
+  scheduleRunNow: (id: string) => void;
+  scheduleDelete: (id: string) => void;
+  browserOpen: (url: string) => void;
+  browserClose: (tabId: string) => void;
+  /** Take a tab from its agent (it pauses), or hand it back. */
+  browserTakeOver: (tabId: string) => void;
+  /** Shows a pairing code; resolves the next "phone" that scans it. */
+  pairPhone: () => void;
+  unpairPhone: (deviceId: string) => void;
+  saveSettings: (patch: Partial<V3Settings>) => void;
+  /** First run done: the company exists and the app opens on Home. */
+  finishSetup: (s: {
+    company: string;
+    me: string;
+    ceoName?: string;
+    ceoModel: string;
+    folder: string;
   }) => void;
   /** Opens the ⌘K palette, optionally prefilled. */
   ask: (text?: string) => void;

@@ -1,3 +1,4 @@
+import { toolActions } from "./v3-actions-tools";
 import { cancelTurn, nowClock, type ReplyFn, runTurn } from "./v3-chat-sim";
 import { agentOf } from "./v3-model";
 import type {
@@ -538,6 +539,7 @@ export function makeActions(
       }));
       toast(`${label} added · turn it on for the agents that need it`);
     },
+    ...toolActions(setData, getData, toast, go),
     ask: (text) => setPalette(text ?? ""),
   };
 }

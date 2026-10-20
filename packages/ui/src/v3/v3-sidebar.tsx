@@ -1,6 +1,7 @@
 import {
   BookOpenIcon,
   CircleAlertIcon,
+  GlobeIcon,
   HomeIcon,
   InboxIcon,
   LayersIcon,
@@ -85,6 +86,13 @@ export function V3Sidebar({
         label="Inbox"
         on={on("inbox")}
         onClick={() => go({ page: "inbox" })}
+      />
+      <Item
+        icon={<GlobeIcon />}
+        label="Browser"
+        on={on("browser")}
+        onClick={() => go({ page: "browser" })}
+        right={<Kbd>⌘⇧B</Kbd>}
       />
 
       <Label>Company</Label>

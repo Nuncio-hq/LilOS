@@ -1,4 +1,10 @@
-import { LayoutGridIcon, ListIcon, PlusIcon, TableIcon } from "lucide-react";
+import {
+  CalendarClockIcon,
+  LayoutGridIcon,
+  ListIcon,
+  PlusIcon,
+  TableIcon,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "../lib/utils";
 import {
@@ -17,15 +23,17 @@ import {
 import { ThreadPill } from "./v3-live";
 import { agentOf } from "./v3-model";
 import { AgentName } from "./v3-rows";
+import { ScheduledView } from "./v3-schedules";
 import { IdleCard, ThreadCard } from "./v3-thread-card";
 import type { V3PageProps, V3Status, V3Thread } from "./v3-types";
 
-type View = "live" | "all" | "agent";
+type View = "live" | "all" | "agent" | "scheduled";
 
 const TABS: { id: View; label: string; icon: ReactNode }[] = [
   { id: "live", label: "Live", icon: <LayoutGridIcon /> },
   { id: "all", label: "All", icon: <ListIcon /> },
   { id: "agent", label: "By agent", icon: <TableIcon /> },
+  { id: "scheduled", label: "Scheduled", icon: <CalendarClockIcon /> },
 ];
 
 /** Live board order: what needs a person first. */
@@ -248,10 +256,11 @@ export function V3Threads(props: V3PageProps & { view: View }) {
           <PlusIcon /> New chat
         </Btn>
       </div>
-      <Summary threads={data.threads} />
+      {view !== "scheduled" && <Summary threads={data.threads} />}
       {view === "live" && <Live {...props} />}
       {view === "all" && <All {...props} />}
       {view === "agent" && <ByAgent {...props} />}
+      {view === "scheduled" && <ScheduledView {...props} />}
     </Page>
   );
 }

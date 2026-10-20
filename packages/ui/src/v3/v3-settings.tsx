@@ -1,10 +1,13 @@
-import { PlugIcon, PlusIcon } from "lucide-react";
+import { PlusIcon } from "lucide-react";
 import { useState } from "react";
 import { cn } from "../lib/utils";
 import { AgentAvatar, Avatar, Btn, Page, Tabs, Title } from "./v3-bits";
+import { EnginePane, GeneralPane } from "./v3-settings-panes";
+import { PhonePane } from "./v3-settings-phone";
 import type { V3ConnectorDef, V3PageProps } from "./v3-types";
 
-/* Settings: company-level choices. Connectors for now: the outside services
+/* Settings: company-level choices in four tabs. General, Engine & models and
+   Phone live in their own files; Connectors stays here: the outside services
    agents use, turned on per agent. LilOS keeps what to run and who gets it,
    never a login (each connector keeps its own). */
 
@@ -204,22 +207,19 @@ function ConnectorRow({
   );
 }
 
-export function V3Settings({ data, go, act }: V3PageProps) {
+type View = "general" | "engine" | "phone" | "connectors";
+
+const TABS: { id: View; label: string }[] = [
+  { id: "general", label: "General" },
+  { id: "engine", label: "Engine & models" },
+  { id: "phone", label: "Phone" },
+  { id: "connectors", label: "Connectors" },
+];
+
+function ConnectorsPane({ data, go, act }: V3PageProps) {
   const [adding, setAdding] = useState(false);
   return (
-    <Page wide>
-      <Title>Settings</Title>
-      <Tabs
-        tabs={[
-          {
-            id: "connectors" as const,
-            label: "Connectors",
-            icon: <PlugIcon />,
-          },
-        ]}
-        value="connectors"
-        onChange={() => {}}
-      />
+    <>
       <p className="mt-4 max-w-[620px] text-[14.5px] text-muted-foreground">
         Outside services your agents use: a command on this Mac (CLI) or an MCP
         server. LilOS stores what to run and who uses it, never your logins.
@@ -253,6 +253,26 @@ export function V3Settings({ data, go, act }: V3PageProps) {
           <ConnectorRow key={c.id} c={c} data={data} go={go} act={act} />
         ))}
       </div>
+    </>
+  );
+}
+
+export function V3Settings({
+  view = "general",
+  ...props
+}: V3PageProps & { view?: View }) {
+  return (
+    <Page wide>
+      <Title>Settings</Title>
+      <Tabs
+        tabs={TABS}
+        value={view}
+        onChange={(id) => props.go({ page: "settings", view: id })}
+      />
+      {view === "general" && <GeneralPane {...props} />}
+      {view === "engine" && <EnginePane {...props} />}
+      {view === "phone" && <PhonePane {...props} />}
+      {view === "connectors" && <ConnectorsPane {...props} />}
     </Page>
   );
 }

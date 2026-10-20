@@ -3,7 +3,21 @@ import { type V3Nav, type V3PageRoute, type V3RecordRoute, V3Shell } from "@lilo
 import { V3_DATA, v3Draft } from "./fake-v3"
 import { v3Reply } from "./fake-v3-reply"
 
-const PAGES = ["home", "needs", "inbox", "work", "threads", "goals", "people", "hire", "guide", "settings", "chat"] as const
+const PAGES = [
+  "home",
+  "needs",
+  "inbox",
+  "work",
+  "threads",
+  "goals",
+  "people",
+  "hire",
+  "guide",
+  "settings",
+  "browser",
+  "welcome",
+  "chat",
+] as const
 const RECORDS = ["ticket", "thread", "goal", "project", "agent"] as const
 
 /* Where a bare record link lands: the page that lists it. */
@@ -19,7 +33,8 @@ const HOME_OF: Record<(typeof RECORDS)[number], V3PageRoute["page"]> = {
    any screen can be linked, reloaded, or reached with Back/Forward:
    ?v3&page=threads&open=thread:t-lil81,ticket:LIL-81 (a page, plus the trail
    open in the side peek) · &full=1 widens the peek · ?v3&page=work&view=board
-   · ?v3&page=chat&agent=scout · &theme=dark|light. A bare record link
+   · ?v3&page=settings&view=phone · ?v3&page=browser · ?v3&page=welcome (first
+   run) · ?v3&page=chat&agent=scout · &theme=dark|light. A bare record link
    (?v3&page=ticket&id=HB-12) opens it over the page that lists it. The mock
    company state lives in the shell and resets only on a full reload. */
 function navFromUrl(): V3Nav {

@@ -1,5 +1,6 @@
 import type { V3Data, V3Draft } from "@lilos/ui"
 import { CONNECTORS, OUTSIDE_THREADS, OUTSIDE_TICKETS, OUTSIDE_WORKERS } from "./fake-v3-outside"
+import { BROWSER, DEVICES, SCHEDULES, SETTINGS, WORKBENCHES } from "./fake-v3-tools"
 
 /* ?v3 mock company: one Monday at 12:04. Every number on every screen comes
    from these records, so Home, Work, Threads and People always agree. */
@@ -772,9 +773,17 @@ export const V3_DATA: V3Data = {
   projects: PROJECTS,
   goals: GOALS,
   tickets: [...TICKETS, ...OUTSIDE_TICKETS],
-  threads: [...THREADS, ...OUTSIDE_THREADS],
+  threads: [...THREADS, ...OUTSIDE_THREADS].map((t) =>
+    WORKBENCHES[t.id] ? { ...t, workbench: WORKBENCHES[t.id] } : t,
+  ),
   asks: ASKS,
   updates: UPDATES,
+  schedules: SCHEDULES,
+  browser: BROWSER,
+  devices: DEVICES,
+  settings: SETTINGS,
+  // ?v3&page=welcome shows first run; the rest of the company is ready.
+  setUp: true,
 }
 
 /* The fake CEO behind ⌘K. A question gets a reply built from the live data;

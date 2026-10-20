@@ -1,14 +1,16 @@
 import { SquareIcon } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { Btn, Page, span, Title } from "./v3-bits";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Btn, Page, span, Tabs, Title } from "./v3-bits";
 import { Composer } from "./v3-composer";
 import { AskCard, Opening, StuckCard, Typing } from "./v3-convo-cards";
-import { ConvoTurn } from "./v3-convo-turn";
+import { ConvoTurn, RewoundLine } from "./v3-convo-turn";
 import { useFollowBottom } from "./v3-follow";
 import { ThreadPill } from "./v3-live";
 import { agentOf, projectOf, ticketOf } from "./v3-model";
 import { ThreadRail } from "./v3-thread-rail";
 import type { V3PageProps, V3Thread } from "./v3-types";
+import { WorkbenchTab, workbenchTabs } from "./v3-workbench";
+import type { WbTab } from "./v3-workbench-bits";
 
 /* One thread as a conversation: you (or the CEO) and one agent, oldest turn
    first, the work folded under each message, and a composer that stays at the
@@ -42,6 +44,33 @@ function ThreadBody({ data, go, act, t }: V3PageProps & { t: V3Thread }) {
   const handTo = agentOf(data, "marketer");
   const working = t.status === "working";
   const [draft, setDraft] = useState("");
+  const composer = useRef<HTMLTextAreaElement>(null);
+
+  // The Workbench rides on the record as tabs; a thread with none has no row.
+  const tabs = t.workbench ? workbenchTabs(t.workbench) : undefined;
+  const [picked, setTab] = useState<"chat" | WbTab>("chat");
+  // A tab that has gone (its job ended, say) falls back to the conversation.
+  const tab = !tabs || tabs.some((x) => x.id === picked) ? picked : "chat";
+  // "Ask the agent to change…" comes back to Chat; the composer mounts a
+  // render later, so focus waits for it.
+  const [wantFocus, setWantFocus] = useState(false);
+  useEffect(() => {
+    if (tab === "chat" && wantFocus) {
+      composer.current?.focus();
+      setWantFocus(false);
+    }
+  }, [tab, wantFocus]);
+  const askAgent = () => {
+    setTab("chat");
+    setWantFocus(true);
+  };
+  // Rewind: the files and conversation go back, the message returns to the
+  // composer to be edited and sent again.
+  const rewind = (turn: number, text: string) => {
+    act.rewind(t.id, turn);
+    setDraft(text);
+    setWantFocus(true);
+  };
 
   // Oldest first, like any chat; the data keeps the newest first.
   const turns = useMemo(
@@ -170,52 +199,78 @@ function ThreadBody({ data, go, act, t }: V3PageProps & { t: V3Thread }) {
           </div>
         </header>
 
-        <div className="flex-1 space-y-7 pt-8 pb-8">
-          <Opening data={data} thread={t} first={turns[0]} />
-          {turns.map((turn) => (
-            <ConvoTurn
-              key={turn.n}
-              turn={turn}
-              thread={t}
-              data={data}
-              agent={agent}
-              newest={turn === newest}
-              go={go}
-            />
-          ))}
-          {turns.length === 0 && !working && (
-            <p className="text-[13.5px] text-muted-foreground/70">
-              No messages yet. Say something to {agent.name}.
-            </p>
-          )}
-          {ask && (
-            <AskCard ask={ask} from={agentOf(data, ask.from)} act={act} />
-          )}
-          {t.stuck && (
-            <StuckCard thread={t} ticket={ticket} handTo={handTo} act={act} />
-          )}
-          {typing && <Typing agent={agent} text={t.now?.text} />}
-        </div>
+        {tabs && (
+          <Tabs
+            tabs={[{ id: "chat", label: "Chat" }, ...tabs]}
+            value={tab}
+            onChange={setTab}
+          />
+        )}
+
+        {tab === "chat" ? (
+          <div className="flex-1 space-y-7 pt-8 pb-8">
+            <Opening data={data} thread={t} first={turns[0]} />
+            {turns.map((turn) => (
+              <ConvoTurn
+                key={turn.n}
+                turn={turn}
+                thread={t}
+                data={data}
+                agent={agent}
+                newest={turn === newest}
+                go={go}
+                onRewind={rewind}
+              />
+            ))}
+            {t.rewound && <RewoundLine rewound={t.rewound} />}
+            {turns.length === 0 && !working && (
+              <p className="text-[13.5px] text-muted-foreground/70">
+                No messages yet. Say something to {agent.name}.
+              </p>
+            )}
+            {ask && (
+              <AskCard ask={ask} from={agentOf(data, ask.from)} act={act} />
+            )}
+            {t.stuck && (
+              <StuckCard thread={t} ticket={ticket} handTo={handTo} act={act} />
+            )}
+            {typing && <Typing agent={agent} text={t.now?.text} />}
+          </div>
+        ) : (
+          <WorkbenchTab
+            thread={t}
+            tab={tab}
+            data={data}
+            go={go}
+            act={act}
+            onTab={setTab}
+            onAsk={askAgent}
+          />
+        )}
 
         {/* The surface colour, opaque, so the conversation scrolls under the
-            composer instead of through it. */}
-        <div className="sticky bottom-0 border-[var(--v3-line)] border-t bg-[var(--v3-main)] pt-3 pb-5">
-          <Composer
-            data={data}
-            agent={agent}
-            model={t.model}
-            folder={t.folder}
-            branch={t.branch}
-            working={working}
-            value={draft}
-            onChange={setDraft}
-            onSend={(text) => {
-              follow();
-              act.message(t.id, text);
-            }}
-            onAgent={() => go({ page: "agent", id: agent.id })}
-          />
-        </div>
+            composer instead of through it. Only Chat has a composer; the
+            Workbench tabs bring their own bar. */}
+        {tab === "chat" && (
+          <div className="sticky bottom-0 border-[var(--v3-line)] border-t bg-[var(--v3-main)] pt-3 pb-5">
+            <Composer
+              data={data}
+              agent={agent}
+              model={t.model}
+              folder={t.folder}
+              branch={t.branch}
+              working={working}
+              value={draft}
+              onChange={setDraft}
+              onSend={(text) => {
+                follow();
+                act.message(t.id, text);
+              }}
+              onAgent={() => go({ page: "agent", id: agent.id })}
+              inputRef={composer}
+            />
+          </div>
+        )}
       </div>
 
       {/* The rail needs about 980px of its pane (a column of ~620px beside

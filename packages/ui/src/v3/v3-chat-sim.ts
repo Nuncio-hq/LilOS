@@ -59,6 +59,8 @@ export function runTurn(
     status: "working",
     unseen: false,
     stuck: undefined,
+    // A new message moves the conversation on; the last Rewind note goes.
+    rewound: undefined,
     step: (t.step ?? 0) + 1,
     now: { kind: "think", text: "Reading your message", elapsed: "0s" },
     live: undefined,
