@@ -14,9 +14,11 @@ import { ForgePrListItem } from "../host/forge.js";
  * The one LilOS tool catalog (D-#36, #337): every operation an engine
  * session can call through the Agent Gateway — the MCP streamable-HTTP
  * endpoint, the `lilos mcp` stdio server, and the `lilos` CLI all render from
- * this table, and so do the host policy and the `lilos_guide` gateway page
- * (`packages/surfaces/src/guide/gateway.ts`, #754). Nothing else hand-writes
- * a tool list.
+ * this table, and so do the host policy and the `lilos_guide` pages that
+ * state tool facts: the gateway page lists every area
+ * (`packages/surfaces/src/guide/gateway.ts`, #754); the approvals and
+ * employees pages list every `access: "approval"` tool
+ * (`packages/surfaces/src/guide/approval-tools.ts`, #783).
  *
  * Names are canonical `<area>_<action>` ("root" tools like `context`/`guide`
  * carry no prefix). Each entry declares its `area`, its `access` level
