@@ -10,7 +10,15 @@ const MAX_BUFFER = 64 * 1024 * 1024;
 export const CHECKPOINT_KEEP = 50;
 export const CHECKPOINT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
-/** Folders never snapshotted — the user's own .git first among them. */
+/* Directory names never snapshotted (D-#742). `git add -A -f` is deliberate
+   — a user's .gitignore must not hide a `.env` from rewind — so without
+   these names every turn hashes ignored build output. The added names are
+   generated trees that are never source: CocoaPods (`Pods`), Expo
+   (`.expo`), Xcode (`DerivedData`), Gradle (`.gradle`), SwiftPM (`.build`).
+   `ios`, `android` and `out` stay off this list: many apps keep real source
+   there, and excluding them would stop rewind from restoring it. Restore
+   skips the same names (`isExcluded` reads this list), so a tree we refuse
+   to snapshot is also left in place. */
 const DEFAULT_EXCLUDE_NAMES = [
   ".git",
   ".lilos",
@@ -26,6 +34,11 @@ const DEFAULT_EXCLUDE_NAMES = [
   "venv",
   "__pycache__",
   ".DS_Store",
+  "Pods",
+  ".expo",
+  "DerivedData",
+  ".gradle",
+  ".build",
 ];
 const DEFAULT_EXCLUDES = DEFAULT_EXCLUDE_NAMES.join("\n");
 
