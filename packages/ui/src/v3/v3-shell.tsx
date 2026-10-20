@@ -1,5 +1,11 @@
 import { SparklesIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { useTheme } from "../shell/use-theme";
 import { Kbd, OpenRecord } from "./v3-bits";
 import { V3Goals } from "./v3-goals";
@@ -21,6 +27,7 @@ import type {
   V3DataActions,
   V3Draft,
   V3Nav,
+  V3PageProps,
   V3PageRoute,
   V3Route,
 } from "./v3-types";
@@ -40,6 +47,10 @@ export type V3ShellProps = {
   /** The CEO behind ⌘K: a reply or a draft plan for one line. Without it,
      ⌘K only searches and jumps. */
   draft?: (text: string, data: V3Data) => V3Draft;
+  /** The app's own thread view for a thread record. The real app uses this
+     while its threads still render with the pre-v3 view (#769), until the
+     v3 conversation runs on real engine events (#770), which removes it. */
+  renderThread?: (props: V3PageProps & { id: string }) => ReactNode;
 };
 
 const PAGE_NAME: Record<V3PageRoute["page"], string> = {
@@ -60,7 +71,14 @@ const PAGE_NAME: Record<V3PageRoute["page"], string> = {
    every screen stays consistent after a click (approve on Home and Needs
    you, Threads and Work all agree). It owns movement: a page on the left,
    what you opened from it in the side peek on the right (see v3-nav.ts). */
-export function V3Shell({ data, actions, nav, onNav, draft }: V3ShellProps) {
+export function V3Shell({
+  data,
+  actions,
+  nav,
+  onNav,
+  draft,
+  renderThread,
+}: V3ShellProps) {
   const [palette, setPalette] = useState<string | null>(null);
   const [theme, setTheme] = useTheme();
   const dark =
@@ -198,6 +216,7 @@ export function V3Shell({ data, actions, nav, onNav, draft }: V3ShellProps) {
             {top && (
               <V3Peek
                 data={data}
+                renderThread={renderThread}
                 go={goFromPeek}
                 act={act}
                 trail={nav.peek}

@@ -5,7 +5,7 @@ import {
   Minimize2Icon,
   XIcon,
 } from "lucide-react";
-import { Fragment } from "react";
+import { Fragment, type ReactNode } from "react";
 import { cn } from "../lib/utils";
 import { V3AgentPage } from "./v3-agent";
 import { PeekWidth } from "./v3-bits";
@@ -48,6 +48,7 @@ export function V3Peek({
   onTrail,
   onFull,
   onClose,
+  renderThread,
 }: V3PageProps & {
   trail: V3RecordRoute[];
   full: boolean;
@@ -58,6 +59,8 @@ export function V3Peek({
   /** Widen over the page (a session) or narrow back beside it. */
   onFull: (full: boolean) => void;
   onClose: () => void;
+  /** The app's own thread view, shown instead of the v3 one (see V3Shell). */
+  renderThread?: (props: V3PageProps & { id: string }) => ReactNode;
 }) {
   const top = trail[trail.length - 1];
   // Keyed by record: a new record mounts fresh, so it opens at its top.
@@ -137,7 +140,12 @@ export function V3Peek({
           key={key}
           className="lilos-v3-line-in @container min-h-0 flex-1 overflow-y-auto"
         >
-          {top.page === "thread" && <V3ThreadPage {...props} id={top.id} />}
+          {top.page === "thread" &&
+            (renderThread ? (
+              renderThread({ ...props, id: top.id })
+            ) : (
+              <V3ThreadPage {...props} id={top.id} />
+            ))}
           {top.page === "newchat" && <V3DraftChat {...props} id={top.id} />}
           {top.page === "ticket" && <V3TicketPage {...props} id={top.id} />}
           {top.page === "agent" && <V3AgentPage {...props} id={top.id} />}
