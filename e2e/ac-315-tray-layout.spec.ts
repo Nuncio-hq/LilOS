@@ -3,7 +3,15 @@ import { randomBytes } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { bootStack, freePort, killProc, pickPorts } from "./helpers/stack";
+import {
+  bootStack,
+  freePort,
+  killProc,
+  pickPorts,
+  skipFirstRun,
+  startChat,
+  v3Peek,
+} from "./helpers/stack";
 
 /**
  * #315 tray geometry: the waiting tray must reserve its own height — it can
@@ -18,30 +26,16 @@ import { bootStack, freePort, killProc, pickPorts } from "./helpers/stack";
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
 const repo = path.resolve(here, "..");
 
-async function dmDefault(page: Page, webUrl: string) {
-  await page.goto(`${webUrl}/`);
-  const aside = page.locator("aside");
-  await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
-    timeout: 30_000,
-  });
-  const dmBtn = page.getByRole("button", {
-    name: /open dm|set up later|message/i,
-  });
-  if (
-    await dmBtn
-      .first()
-      .isVisible()
-      .catch(() => false)
-  ) {
-    await dmBtn.first().click();
-  } else {
-    await aside.getByRole("button", { name: /default/i }).click();
-  }
-  await expect(page).toHaveURL(/\/dm\//);
+/** A chat with Default, started from the new-chat draft beside Threads: the
+    thread opens in the peek, which is where the tray and cards live. */
+async function chatDefault(page: Page, webUrl: string, text: string) {
+  await skipFirstRun(page);
+  await startChat(page, webUrl, { id: "default", name: "Default" }, text);
 }
 
+/** A reply typed in the thread composer in the peek. */
 const send = async (page: Page, text: string) => {
-  const box = page.locator("textarea").last();
+  const box = v3Peek(page).locator("[data-thread-panel] textarea");
   await box.fill(text);
   await box.press("Enter");
 };
@@ -78,10 +72,8 @@ test("tray reserves its height: the approval card stays answerable with a waitin
   });
   try {
     await page.setViewportSize({ width: 1288, height: 700 });
-    await dmDefault(page, stack.webUrl);
     // Edit-ask prompt: the turn parks on the approval card and stays live.
-    await send(page, "Add a release note to the readme");
-    await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+/, { timeout: 30_000 });
+    await chatDefault(page, stack.webUrl, "Add a release note to the readme");
     await expect(openCard(page)).toBeVisible({ timeout: 30_000 });
     // A mid-turn send waits in the tray — the state that must not cover the card.
     await send(page, "first waiting nudge");
@@ -270,14 +262,13 @@ test("tray text holds WCAG AA in dark and keeps its palette in light (#371)", as
   try {
     await page.setViewportSize({ width: 1288, height: 700 });
     await page.emulateMedia({ colorScheme: "light" });
-    await dmDefault(page, stack.webUrl);
+    await chatDefault(page, stack.webUrl, "Add a release note to the readme");
     // Theme toggles run color transitions (~150ms): computed colors read
     // mid-flight come back as oklab interpolations, not the final value.
     await page.addStyleTag({
       content:
         "*,*::before,*::after{transition:none!important;animation:none!important}",
     });
-    await send(page, "Add a release note to the readme");
     await expect(openCard(page)).toBeVisible({ timeout: 30_000 });
     await send(page, "first waiting nudge");
     await expect(tray(page)).toBeVisible();

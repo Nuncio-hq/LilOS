@@ -13,9 +13,11 @@ import { expect, type Page, test } from "@playwright/test";
 import { allowAllWhile, expectSettled } from "./helpers/approvals";
 import {
   bootStack,
+  openSession,
   panelIntoFocus,
   pickPorts,
   type Stack,
+  startChatInFolder,
 } from "./helpers/stack";
 
 /**
@@ -104,6 +106,9 @@ const rivalPush = () => {
 };
 
 let stack: Stack;
+/* The ship-repo session's conversation: AC-1 starts it, every later test
+   reopens it as the session view. */
+let shipConv: string;
 test.beforeAll(async () => {
   test.setTimeout(120_000);
   stack = await bootStack("ac107", await pickPorts(), {
@@ -123,61 +128,15 @@ test.afterAll(async () => {
 
 test.describe.configure({ mode: "serial" });
 
-async function dmDefault(page: Page) {
-  await page.goto(`${stack.webUrl}/?roots=${ROOT}`);
-  const aside = page.locator("aside");
-  await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
-    timeout: 30_000,
-  });
-  const dmBtn = page.getByRole("button", {
-    name: /open dm|set up later|message/i,
-  });
-  if (
-    await dmBtn
-      .first()
-      .isVisible()
-      .catch(() => false)
-  ) {
-    await dmBtn.first().click();
-  } else {
-    await aside.getByRole("button", { name: /default/i }).click();
-  }
-  await expect(page).toHaveURL(/\/dm\//);
-}
+/* The seeded employee. An id that names nobody opens the new-chat draft on
+   the default agent, so the spec needs no employee lookup. */
+const DEFAULT_AGENT = { id: "default", name: "Default" };
 
-const pickerButton = (page: Page) => page.locator('[data-ws="folder"]');
-
-/** Pick `dir` for the next session: recents menu when listed, else Add folder. */
-async function pickSessionFolder(page: Page, dir: string) {
-  const menu = await (async () => {
-    await pickerButton(page).click();
-    return page
-      .locator('[role="menu"], [data-slot="dropdown-menu-content"]')
-      .last();
-  })();
-  const recent = menu.locator(`[data-wsfolder="${dir}"]`);
-  if (
-    await recent
-      .first()
-      .isVisible()
-      .catch(() => false)
-  ) {
-    await recent.first().click();
-  } else {
-    await menu.getByText("Add a folder").click();
-    const dialog = page.locator("[data-addfolder]");
-    await expect(dialog).toBeVisible();
-    await dialog.locator("[data-pathinput]").fill(dir);
-    await expect(dialog.locator("[data-folderinfo]")).toBeVisible({
-      timeout: 15_000,
-    });
-    await dialog.locator("[data-addbtn]").click();
-    await expect(dialog).toHaveCount(0);
-  }
-  await expect(pickerButton(page)).toContainText(path.basename(dir), {
-    timeout: 15_000,
-  });
-}
+/** A new session in `dir`, the way a person starts one: the new-chat draft's
+    folder chip, then Send. Lands on the thread beside Threads; returns its
+    conversation id. */
+const startSession = (page: Page, dir: string, text: string) =>
+  startChatInFolder(page, stack, DEFAULT_AGENT, dir, text);
 
 const send = async (page: Page, text: string) => {
   const box = page.locator("textarea").last();
@@ -215,19 +174,8 @@ const sendTurn = async (page: Page, text: string) => {
   return turn;
 };
 
-const PANEL_URL = /\/dm\/[^/]+\/conv_[^/]+$/;
 const tab = (page: Page, name: RegExp | string) =>
   page.getByRole("tab", { name });
-
-/* Opens the newest session — or the one whose first message matches — into
-   Focus through the peek panel. */
-const openFocus = async (page: Page, hasText?: string) => {
-  const row = hasText
-    ? page.locator("[data-session]", { hasText })
-    : page.locator("[data-session]").last();
-  await row.getByRole("button", { name: /repl(y|ies)/ }).click();
-  await panelIntoFocus(page);
-};
 
 const stageCheck = (page: Page, diffPath: string) =>
   page
@@ -242,10 +190,9 @@ test("AC-1 checkboxes pick the staged set; Commit commits only the checked files
   page,
 }) => {
   test.setTimeout(180_000);
-  await dmDefault(page);
-  await pickSessionFolder(page, repoDir);
-  await send(page, SHIP_SESSION);
-  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  shipConv = await startSession(page, repoDir, SHIP_SESSION);
+  /* A send lands on the thread beside Threads; widening it is the session
+     view (chat beside the Workbench). */
   await panelIntoFocus(page);
 
   await tab(page, /Changes/).click();
@@ -299,8 +246,7 @@ test("AC-2 (#584) Suggest is a side request: no user message, no turn; fills the
   page,
 }) => {
   test.setTimeout(300_000);
-  await dmDefault(page);
-  await openFocus(page, SHIP_SESSION);
+  await openSession(page, stack.webUrl, shipConv);
   await tab(page, /Changes/).click();
   await expect(page.locator("[data-shipbar]")).toBeVisible({ timeout: 30_000 });
 
@@ -373,8 +319,7 @@ test("AC-3 Push sets upstream and lands the branch; rejected, no-remote and auth
   page,
 }) => {
   test.setTimeout(240_000);
-  await dmDefault(page);
-  await openFocus(page, SHIP_SESSION);
+  await openSession(page, stack.webUrl, shipConv);
   await tab(page, /Changes/).click();
 
   // Happy path: push to origin — the bare remote gains the tip. Poll:
@@ -480,15 +425,7 @@ test("AC-3 Push sets upstream and lands the branch; rejected, no-remote and auth
   await page.screenshot({ path: `${SHOTS}/ac-5-pulled.png` });
 
   // No remote: a repo without origin.
-  await page.keyboard.press("Escape");
-  await expect(page).toHaveURL(PANEL_URL, { timeout: 30_000 });
-  await page
-    .locator("aside")
-    .getByRole("button", { name: /default/i })
-    .click();
-  await pickSessionFolder(page, nonremoteDir);
-  await send(page, "no remote session");
-  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  await startSession(page, nonremoteDir, "no remote session");
   await panelIntoFocus(page);
   await tab(page, /Changes/).click();
   writeFileSync(path.join(nonremoteDir, "n2.txt"), "more\n");
@@ -510,15 +447,7 @@ test("AC-3 Push sets upstream and lands the branch; rejected, no-remote and auth
 
   // Auth: the remote is an unroutable ssh URL — git's own auth-ish failure
   // reads plainly (never raw stderr on the surface).
-  await page.keyboard.press("Escape");
-  await expect(page).toHaveURL(PANEL_URL, { timeout: 30_000 });
-  await page
-    .locator("aside")
-    .getByRole("button", { name: /default/i })
-    .click();
-  await pickSessionFolder(page, authDir);
-  await send(page, "auth remote session");
-  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  await startSession(page, authDir, "auth remote session");
   await panelIntoFocus(page);
   await tab(page, /Changes/).click();
   writeFileSync(path.join(authDir, "s2.txt"), "more\n");
@@ -539,8 +468,7 @@ test("AC-4 Create PR asks for a branch name on the default branch, then gh pr cr
   page,
 }) => {
   test.setTimeout(240_000);
-  await dmDefault(page);
-  await openFocus(page, SHIP_SESSION);
+  await openSession(page, stack.webUrl, shipConv);
   await tab(page, /Changes/).click();
   await expect(page.locator("[data-shipbar]")).toBeVisible({ timeout: 30_000 });
 
@@ -586,8 +514,7 @@ test("AC-5 agent-shell commits and pushes refresh Changes/Commits/PR on their ow
   page,
 }) => {
   test.setTimeout(180_000);
-  await dmDefault(page);
-  await openFocus(page, SHIP_SESSION);
+  await openSession(page, stack.webUrl, shipConv);
   await tab(page, /Changes/).click();
   await expect(page.locator("[data-shipbar]")).toBeVisible({ timeout: 30_000 });
 
@@ -618,10 +545,7 @@ test("AC-6 a folder that is not a git repo shows no ship bar and no Changes/PR t
   page,
 }) => {
   test.setTimeout(180_000);
-  await dmDefault(page);
-  await pickSessionFolder(page, plainDir);
-  await send(page, "plain folder session");
-  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  await startSession(page, plainDir, "plain folder session");
   await panelIntoFocus(page);
   await expect(page.getByTitle("Workbench", { exact: true })).toBeVisible({
     timeout: 30_000,

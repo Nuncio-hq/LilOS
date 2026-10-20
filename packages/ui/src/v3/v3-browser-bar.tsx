@@ -39,9 +39,11 @@ export function AddressBar({
   focusKey: number;
   onBack: () => void;
   onForward: () => void;
-  onReload: () => void;
-  /** Enter on typed text (an address or a search). */
-  onSubmit: (text: string) => void;
+  /** Absent when the pages are painted natively: nothing here can reload them. */
+  onReload?: () => void;
+  /** Enter on typed text (an address or a search). Absent when the app
+     cannot open pages: the address then only shows where the tab is. */
+  onSubmit?: (text: string) => void;
 }) {
   const input = useRef<HTMLInputElement>(null);
   // null = not editing: the bar shows the page's own address.
@@ -79,29 +81,31 @@ export function AddressBar({
       >
         <ArrowRightIcon />
       </button>
-      <button
-        type="button"
-        aria-label="Reload"
-        title="Reload"
-        disabled={!hasPage}
-        onClick={onReload}
-        className={ICON_BTN}
-      >
-        <RotateCwIcon
-          // A new key restarts the one-turn spin on every press.
-          key={reloads}
-          className={cn(
-            reloads > 0 &&
-              "animate-[spin_0.5s_ease-out_1] motion-reduce:animate-none",
-          )}
-        />
-      </button>
+      {onReload && (
+        <button
+          type="button"
+          aria-label="Reload"
+          title="Reload"
+          disabled={!hasPage}
+          onClick={onReload}
+          className={ICON_BTN}
+        >
+          <RotateCwIcon
+            // A new key restarts the one-turn spin on every press.
+            key={reloads}
+            className={cn(
+              reloads > 0 &&
+                "animate-[spin_0.5s_ease-out_1] motion-reduce:animate-none",
+            )}
+          />
+        </button>
+      )}
       <form
         className="mx-1 flex h-[30px] min-w-0 flex-1 items-center gap-2 rounded-lg bg-[var(--v3-hover)] pr-2.5 pl-2.5 focus-within:bg-background focus-within:shadow-[inset_0_0_0_1px_var(--foreground)]"
         onSubmit={(e) => {
           e.preventDefault();
           const text = (draft ?? shown).trim();
-          if (!text) return;
+          if (!text || !onSubmit) return;
           onSubmit(text);
           setDraft(null);
           input.current?.blur();
@@ -116,7 +120,8 @@ export function AddressBar({
         <input
           ref={input}
           value={draft ?? shown}
-          placeholder="Search or type an address"
+          readOnly={!onSubmit}
+          placeholder={onSubmit ? "Search or type an address" : undefined}
           aria-label="Address"
           spellCheck={false}
           autoComplete="off"

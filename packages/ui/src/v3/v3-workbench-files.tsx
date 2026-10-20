@@ -179,9 +179,12 @@ export function FilesTab({ wb, data, act }: WbPanelProps) {
                   {path}
                 </span>
                 {diff && <Diff add={diff.add} del={diff.del} />}
-                <WbBtn onClick={() => act.ask(`Open ${path} in my editor`)}>
-                  Open in {data.settings.editor}
-                </WbBtn>
+                {/* Without a configured editor there is nothing to open it in. */}
+                {data.settings.editor && (
+                  <WbBtn onClick={() => act.ask(`Open ${path} in my editor`)}>
+                    Open in {data.settings.editor}
+                  </WbBtn>
+                )}
               </div>
               {text === undefined ? (
                 <div className="px-4 py-10 text-center text-[13.5px] text-muted-foreground/70">

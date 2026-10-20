@@ -1,12 +1,24 @@
 import { expect, type Page, test } from "@playwright/test";
+import { type GrownThread, growDmThread } from "./helpers/relay-thread";
+import {
+  bootStack,
+  pickPorts,
+  type Stack,
+  skipFirstRun,
+  threadUrl,
+} from "./helpers/stack";
 
 /* Issue #535 — the floating ↓ scroll-to-latest button must never overlap
    message content. Real-browser invariant (boundingBox): with the view
    scrolled up, the button's box intersects no [data-msg] box — in the
-   Thread panel AND in Focus, at the three desktop sizes the issue names.
-   The fixture is the prototype's seeded ses_b71d thread (open by default on
-   ≥1280px): the same view and the same last row the bug was reported on.
-   Red on main: the button floats bottom-4 over the port's content. */
+   thread beside Threads AND in the session view (the thread widened over the
+   page), at the three desktop sizes the issue names.
+
+   Real app: engine-fake turns grown over relay RPC (ac-602's fixture: tall
+   `md: table` replies) make a thread that scrolls at every size below; the
+   old spec read the prototype's seeded ses_b71d thread.
+   Red when the button floats over the port's content instead of in its own
+   gutter below the scroller. */
 
 const SIZES: Array<{ w: number; h: number }> = [
   { w: 1288, h: 700 },
@@ -15,12 +27,15 @@ const SIZES: Array<{ w: number; h: number }> = [
 ];
 
 /* The conversation port carries role="log" (components/ai-elements/
-   conversation.tsx); the scroll button is its only direct-child <button>
-   (TurnRow chrome lives deeper inside the content).
+   conversation.tsx) inside the thread panel — the same `[data-thread-panel]`
+   in the side peek and in the session view; the scroll button is its only
+   direct-child <button> (TurnRow chrome lives deeper inside the content).
    Rows scrolled out of the scroller keep unclipped bounding boxes — a row
    half-out of view would falsely "hit" the button through the clip, so each
    row is clipped to the scroller's own rect before intersecting: what the
    check measures is what a user can actually see. */
+const PORT = "[data-thread-panel] [role='log']";
+
 const overlaps = (page: Page, portSelector: string) =>
   page.evaluate((sel) => {
     const port = document.querySelector(sel);
@@ -70,32 +85,38 @@ const scrollerStats = (page: Page, portSelector: string) =>
     single programmatic write is otherwise swallowed: use-stick-to-bottom
     drops scroll events that land while its resizeDifference is set, and
     its resize="smooth" animation keeps re-writing scrollTop to the
-    bottom until the content stops growing. */
+    bottom until the content stops growing. The predicate is unchanged; only
+    the deadline is longer than the 5s default, which the first leg after a
+    stack boot missed once when four workers shared the machine (it passes
+    alone in ~7s). */
 async function settlePort(page: Page, portSelector: string) {
   let prev: { h: number; top: number; ch: number } | null = null;
   await expect
-    .poll(async () => {
-      const cur = await page.evaluate((sel) => {
-        const sc = document.querySelector(sel)
-          ?.firstElementChild as HTMLElement | null;
-        if (!sc) throw new Error(`no scroller under ${sel}`);
-        return {
-          h: sc.scrollHeight,
-          top: sc.scrollTop,
-          ch: sc.clientHeight,
-        };
-      }, portSelector);
-      const settled =
-        cur.h > 0 &&
-        prev !== null &&
-        cur.h === prev.h &&
-        cur.top === prev.top &&
-        /* The library's lock target is scrollHeight - 1 - clientHeight
-           and scrollTop is fractional — "at the bottom" is within 2px. */
-        cur.top >= cur.h - cur.ch - 2;
-      prev = cur;
-      return settled;
-    })
+    .poll(
+      async () => {
+        const cur = await page.evaluate((sel) => {
+          const sc = document.querySelector(sel)
+            ?.firstElementChild as HTMLElement | null;
+          if (!sc) throw new Error(`no scroller under ${sel}`);
+          return {
+            h: sc.scrollHeight,
+            top: sc.scrollTop,
+            ch: sc.clientHeight,
+          };
+        }, portSelector);
+        const settled =
+          cur.h > 0 &&
+          prev !== null &&
+          cur.h === prev.h &&
+          cur.top === prev.top &&
+          /* The library's lock target is scrollHeight - 1 - clientHeight
+             and scrollTop is fractional — "at the bottom" is within 2px. */
+          cur.top >= cur.h - cur.ch - 2;
+        prev = cur;
+        return settled;
+      },
+      { timeout: 30_000 },
+    )
     .toBe(true);
 }
 
@@ -151,35 +172,54 @@ async function expectClear(page: Page, portSelector: string) {
   }
 }
 
+/* Tall `md: table` turns (ac-431) grown over relay RPC: four of them
+   overflow the scroller at every viewport above. */
+const FILLER = Array.from({ length: 4 }, (_, i) => `md: table — turn ${i + 1}`);
+
 test.describe("AC-2 ↓ scroll-to-latest never overlaps a message row", () => {
+  test.describe.configure({ mode: "serial" });
+  let stack: Stack;
+  let grown: GrownThread;
+  test.beforeAll(async () => {
+    test.setTimeout(240_000);
+    stack = await bootStack("btn535", await pickPorts());
+    grown = await growDmThread(stack, FILLER);
+  });
+  test.afterAll(async () => {
+    await stack?.stop();
+  });
+
   for (const { w, h } of SIZES) {
     test(`Thread panel ${w}x${h}`, async ({ page }) => {
+      test.setTimeout(120_000);
       await page.setViewportSize({ width: w, height: h });
-      await page.goto("/");
-      // The seeded ses_b71d thread opens in the right-hand panel by default.
-      const port = page.locator("aside").last().locator('[role="log"]');
-      await expect(port.locator("[data-msg]").first()).toBeVisible({
-        timeout: 15_000,
-      });
-      await expectClear(page, "aside [role='log']");
+      await skipFirstRun(page);
+      // The thread opens in the side peek beside Threads.
+      await page.goto(threadUrl(stack.webUrl, grown.conversationId));
+      await expect(
+        page.locator(PORT).locator("[data-msg]").first(),
+      ).toBeVisible({ timeout: 30_000 });
+      await expectClear(page, PORT);
     });
 
-    test(`Focus ${w}x${h}`, async ({ page }) => {
+    test(`Session view ${w}x${h}`, async ({ page }) => {
+      test.setTimeout(120_000);
       await page.setViewportSize({ width: w, height: h });
+      await skipFirstRun(page);
       /* #626: `stickDropMs` holds use-stick-to-bottom's post-resize
          scroll-event drop window open — the exact condition that
-         swallowed the Focus scroll-up's escape and let the bottom-lock
-         spring re-pin the port (the ↓ then never mounted: "element(s)
-         not found"). Without ConversationEscapeGuard this leg fails at
-         the first toBeVisible. */
-      await page.goto("/?stickDropMs=20000");
-      const panel = page.locator("aside").last();
-      await panel.getByRole("button", { name: "Focus", exact: true }).click();
-      const port = page.locator('main [role="log"]');
-      await expect(port.locator("[data-msg]").first()).toBeVisible({
-        timeout: 15_000,
-      });
-      await expectClear(page, "main [role='log']");
+         swallowed the session view's scroll-up escape and let the
+         bottom-lock spring re-pin the port (the ↓ then never mounted:
+         "element(s) not found"). Without ConversationEscapeGuard this leg
+         fails at the first toBeVisible. It is a real query param, so it
+         rides ahead of the hash. */
+      await page.goto(
+        `${stack.webUrl}/?stickDropMs=20000#?page=threads&open=thread:${encodeURIComponent(grown.conversationId)}&full=1`,
+      );
+      await expect(
+        page.locator(PORT).locator("[data-msg]").first(),
+      ).toBeVisible({ timeout: 30_000 });
+      await expectClear(page, PORT);
     });
   }
 });

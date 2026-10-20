@@ -10,7 +10,8 @@ import {
 } from "./v3-browser-bits";
 import { TabStrip } from "./v3-browser-tabs";
 import { agentOf } from "./v3-model";
-import type { V3BrowserTab, V3PageProps, V3Thread } from "./v3-types";
+import type { V3PageProps } from "./v3-page-types";
+import type { V3BrowserTab, V3Thread } from "./v3-types";
 
 /* A session's own small browser: the tabs its agent drives and the tabs you
    opened in this session, and nothing else. An agent's tab says who drives it
@@ -31,12 +32,13 @@ export function SessionBrowser({
   thread,
 }: V3PageProps & { thread: V3Thread }) {
   const agent = agentOf(data, thread.agentId);
+  // What the app can do here: each control is drawn only when its action is.
+  const { browserOpen, browserClose } = act;
   const all = data.browser.tabs;
   const tabs = useMemo(
     () => all.filter((t) => t.threadId === thread.id),
     [all, thread.id],
   );
-
   const [picked, setPicked] = useState<string | undefined>(
     () => startTab(tabs)?.id,
   );
@@ -79,15 +81,17 @@ export function SessionBrowser({
 
   // Opening an address this session already has open switches to it, as in
   // any browser; anything else is a new tab.
-  const openUrl = (url: string) => {
-    const open = tabs.find((t) => urlKey(t.url) === urlKey(url));
-    if (open) {
-      setBlank(false);
-      visit(open.id);
-      return;
-    }
-    act.browserOpen(url, thread.id);
-  };
+  const openUrl = browserOpen
+    ? (url: string) => {
+        const open = tabs.find((t) => urlKey(t.url) === urlKey(url));
+        if (open) {
+          setBlank(false);
+          visit(open.id);
+          return;
+        }
+        browserOpen(url, thread.id);
+      }
+    : undefined;
 
   const newTab = () => {
     setBlank(true);
@@ -99,7 +103,7 @@ export function SessionBrowser({
     const i = tabs.findIndex((t) => t.id === id);
     const wasShown = id === shownId;
     if (id === NEW_TAB) setBlank(false);
-    else act.browserClose(id);
+    else browserClose?.(id);
     if (!wasShown) return;
     // Land on the neighbour, else the blank tab, else the empty browser.
     const next = id === NEW_TAB ? tabs.at(-1) : (tabs[i + 1] ?? tabs[i - 1]);
@@ -134,7 +138,8 @@ export function SessionBrowser({
         shownId={shownId}
         onSelect={visit}
         onClose={closeTab}
-        onNew={newTab}
+        closable={!!browserClose}
+        onNew={openUrl && newTab}
       />
       <AddressBar
         url={tab?.url ?? ""}
@@ -145,8 +150,9 @@ export function SessionBrowser({
         focusKey={focusKey}
         onBack={() => walk(-1)}
         onForward={() => walk(1)}
-        onReload={() => setReloads((n) => n + 1)}
-        onSubmit={(text) => openUrl(resolveInput(text))}
+        // Reload re-draws the page's lines; a tab painted natively has none.
+        onReload={!tab || tab.page ? () => setReloads((n) => n + 1) : undefined}
+        onSubmit={openUrl && ((text) => openUrl(resolveInput(text)))}
       />
       {tab && tab.by !== "you" && (
         <AgentBanner data={data} tab={tab} act={act} />
@@ -156,11 +162,13 @@ export function SessionBrowser({
           // A new key re-mounts the page, which is what reload does here.
           <PageBody key={`${tab.id}:${reloads}`} tab={tab} />
         ) : (
-          <SessionStart
-            agentName={agent.name}
-            empty={tabs.length === 0}
-            onOpen={(text) => openUrl(resolveInput(text))}
-          />
+          openUrl && (
+            <SessionStart
+              agentName={agent?.name}
+              empty={tabs.length === 0}
+              onOpen={(text) => openUrl(resolveInput(text))}
+            />
+          )
         )}
       </div>
     </div>

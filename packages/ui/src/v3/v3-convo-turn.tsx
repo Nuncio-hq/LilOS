@@ -1,18 +1,17 @@
 import { Undo2Icon } from "lucide-react";
 import { useState } from "react";
+import { AttachmentChips } from "../chat/attachment-chips";
 import { MessageResponse } from "../components/ai-elements/message";
 import { cn } from "../lib/utils";
-import { AgentAvatar, Btn } from "./v3-bits";
+import type { AttachedFile } from "../types";
+import { Btn } from "./v3-bits";
 import { Attachments } from "./v3-convo-attach";
 import { WorkBlock } from "./v3-convo-work";
-import { agentOf } from "./v3-model";
-import type {
-  V3Agent,
-  V3Data,
-  V3PageProps,
-  V3Thread,
-  V3Turn,
-} from "./v3-types";
+import type { V3Data } from "./v3-data-types";
+import { AgentAvatar } from "./v3-marks";
+import { agentOf, FORMER_AGENT } from "./v3-model";
+import type { V3PageProps } from "./v3-page-types";
+import type { V3Agent, V3Thread, V3Turn } from "./v3-types";
 
 /* One turn of the conversation: the message that started it, the work it
    caused (folded), the agent's answer with what it attached, and anything you
@@ -46,10 +45,13 @@ type RewindProps = {
    there before undoing anything. */
 function YouBubble({
   text,
+  files,
   note,
   rewind,
 }: {
   text: string;
+  /** What you attached; a message of files alone has no bubble. */
+  files?: AttachedFile[];
   note: string;
   rewind?: RewindProps;
 }) {
@@ -58,7 +60,12 @@ function YouBubble({
   const confirming = asking && !rewind?.working;
   return (
     <div className="group/you flex flex-col items-end">
-      <div className={cn(BUBBLE, "max-w-[80%]")}>{text}</div>
+      {text && <div className={cn(BUBBLE, "max-w-[80%]")}>{text}</div>}
+      {!!files?.length && (
+        <div className="flex max-w-[80%] justify-end">
+          <AttachmentChips files={files} />
+        </div>
+      )}
       <div className="mt-1 flex items-center gap-3 text-[12px] text-muted-foreground/70">
         {rewind && !confirming && (
           // The wrapper carries the tooltip: a disabled button swallows pointer events.
@@ -141,13 +148,15 @@ function Who({
   note,
 }: {
   data: V3Data;
-  agent: V3Agent;
+  agent: V3Agent | undefined;
   note?: string;
 }) {
   return (
     <div className="flex items-center gap-2 text-[13.5px]">
       <AgentAvatar data={data} agent={agent} size={20} />
-      <span className="font-medium text-foreground">{agent.name}</span>
+      <span className="font-medium text-foreground">
+        {agent?.name ?? FORMER_AGENT}
+      </span>
       {note && (
         <span className="text-[12px] text-muted-foreground/70">{note}</span>
       )}
@@ -174,7 +183,9 @@ function Prompt({
     );
   }
   if (p.by === "you")
-    return <YouBubble text={p.text} note={p.at} rewind={rewind} />;
+    return (
+      <YouBubble text={p.text} files={p.files} note={p.at} rewind={rewind} />
+    );
   return (
     <div>
       <Who data={data} agent={agentOf(data, p.by)} note={p.at} />
@@ -190,7 +201,7 @@ function Answer({
   streaming,
 }: {
   data: V3Data;
-  agent: V3Agent;
+  agent: V3Agent | undefined;
   text: string;
   streaming: boolean;
 }) {
@@ -226,7 +237,7 @@ export function ConvoTurn({
   turn: V3Turn;
   thread: V3Thread;
   data: V3Data;
-  agent: V3Agent;
+  agent: V3Agent | undefined;
   /** This is the thread's newest turn. */
   newest: boolean;
   go: V3PageProps["go"];
@@ -269,7 +280,7 @@ export function ConvoTurn({
         <div key={i} className="mt-4">
           <YouBubble
             text={q.text}
-            note={`Queued · ${agent.name} reads this after the current step`}
+            note={`Queued · ${agent?.name ?? FORMER_AGENT} reads this after the current step`}
           />
         </div>
       ))}

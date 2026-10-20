@@ -1,8 +1,9 @@
 // @vitest-environment happy-dom
 /* AC tests for issues #577, #581, #590 (Group D — navigation + folders):
-   #577 the panel has a visible ✕ back to the DM list, the header panel icon
-   is a labelled toggle, and Focus has ONE back control named for where it
-   goes; #581 a folder-less DM thread offers "Add a folder" and the dialog
+   #577 the panel has a visible ✕ back to the DM list and Focus has ONE back
+   control named for where it goes (the header panel-toggle icon belonged to
+   the old DM home, which is gone); #581 a folder-less DM thread offers
+   "Add a folder" and the dialog
    opens clean (nothing picked, no dev text, no unbuilt promises); #590 a
    prefilled draft lands the caret after the prefix, Focus's header names the
    employee, the context meter has a tooltip, and Status shows no internals. */
@@ -17,10 +18,8 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { Composer } from "../src/chat/composer";
 import { FocusComposer } from "../src/chat/focus-composer";
 import { AddFolderDialog } from "../src/dialogs/add-folder-dialog";
-import { EmployeeHome } from "../src/employee/employee-home";
 import { FocusView } from "../src/focus/focus-view";
 import { SessionUsage } from "../src/focus/session-usage";
-import { NO_WS } from "../src/lib/helpers";
 import { StatusDialog } from "../src/shell/status";
 import { ThreadView } from "../src/thread/thread-view";
 import type {
@@ -124,45 +123,6 @@ describe("issue #577 — way back", () => {
     const x = r.getByRole("button", { name: "Close thread panel" });
     fireEvent.click(x);
     expect(onClose).toHaveBeenCalledTimes(1);
-  });
-
-  test("AC-2 the DM header panel icon is a labelled toggle", () => {
-    const onPanel = vi.fn();
-    const onPanelClose = vi.fn();
-    const home = (panelOpen: boolean) => (
-      <EmployeeHome
-        e={BUILDER}
-        feed={[]}
-        threadId={null}
-        emp={emp}
-        human={human}
-        onNav={() => {}}
-        onProfile={() => {}}
-        onOpen={() => {}}
-        onSend={() => {}}
-        panelOpen={panelOpen}
-        onPanel={onPanel}
-        onPanelClose={onPanelClose}
-        folders={[]}
-        pick={NO_WS}
-        setPick={() => {}}
-      />
-    );
-    const r = render(home(false));
-    const toggle = r.container.querySelector("[data-panel-toggle]")!;
-    expect(toggle.textContent).toContain("Panel");
-    expect(toggle.getAttribute("aria-pressed")).toBe("false");
-    expect(toggle.getAttribute("aria-label")).toBe("Show the latest thread");
-    fireEvent.click(toggle);
-    expect(onPanel).toHaveBeenCalledTimes(1);
-    cleanup();
-    const open = render(home(true));
-    const openToggle = open.container.querySelector("[data-panel-toggle]")!;
-    expect(openToggle.getAttribute("aria-pressed")).toBe("true");
-    expect(openToggle.getAttribute("aria-label")).toBe("Hide the thread panel");
-    fireEvent.click(openToggle);
-    expect(onPanelClose).toHaveBeenCalledTimes(1);
-    expect(onPanel).toHaveBeenCalledTimes(1);
   });
 
   test("AC-3 Focus has ONE back control, labelled for where it goes", () => {

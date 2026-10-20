@@ -1,15 +1,9 @@
 import { ChevronRightIcon, CloudIcon } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { cn } from "../lib/utils";
-import {
-  Diff,
-  Spinner,
-  STEP_VERB,
-  StatusDot,
-  StepIcon,
-  useTick,
-} from "./v3-bits";
+import { Diff, Spinner, STEP_VERB, StepIcon, useTick } from "./v3-bits";
 import { elapsedAt, OutLine, streamTail } from "./v3-live";
+import { StatusDot } from "./v3-marks";
 import type { V3Step, V3StepKind, V3Thread, V3Turn } from "./v3-types";
 
 /* The work under a prompt. A finished turn is one quiet line you can open to

@@ -1,8 +1,16 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { _electron, expect, type Page, test } from "@playwright/test";
-import { electronScreenshot, ensureDesktopPayload } from "./helpers/electron";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import { expect, type Page, test } from "@playwright/test";
+import { electronScreenshot, launchDesktop } from "./helpers/electron";
+import {
+  bootStack,
+  pickPorts,
+  type Stack,
+  skipFirstRun,
+  startChat,
+  v3Peek,
+  v3Sidebar,
+} from "./helpers/stack";
 
 /**
  * Issue #71 — desktop DM polish (incl. the AC-7 model-display-name scope
@@ -10,14 +18,17 @@ import { bootStack, pickPorts, type Stack } from "./helpers/stack";
  * against the real stack (apps/relay + apps/harness on engine-fake + vite
  * dev, Electron for AC-5), same harness as e2e/ac-27-dm.spec.ts on offset
  * ports.
+ *
+ * v3: a chat starts from the new-chat draft beside Threads and its thread
+ * opens in the side peek (`[data-thread-panel]`). The old per-session DM
+ * list row is the Threads board card for the thread, and the sidebar's
+ * per-employee badge is the person's status dot plus the "Needs you" count.
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
 const repo = path.resolve(here, "..");
 // --repeat-each spreads a file's repeats across worker processes; each boots
 // the stack again, so ports are offset per worker or relays race one port (#84).
-
-const desktopDir = path.join(repo, "apps", "desktop");
 
 const SHOTS = path.join(repo, "test-results", "ac-71");
 
@@ -32,36 +43,20 @@ test.afterAll(async () => {
 
 test.describe.configure({ mode: "serial" });
 
-async function dmDefault(page: Page) {
-  await page.goto(`${stack.webUrl}/`);
-  const aside = page.locator("aside");
-  await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
-    timeout: 30_000,
-  });
-  const dmBtn = page.getByRole("button", {
-    name: /open dm|set up later|message/i,
-  });
-  if (
-    await dmBtn
-      .first()
-      .isVisible()
-      .catch(() => false)
-  ) {
-    await dmBtn.first().click();
-  } else {
-    await aside.getByRole("button", { name: /default/i }).click();
-  }
-  await expect(page).toHaveURL(/\/dm\//);
+const AGENT = { id: "default", name: "Default" };
+
+/** A new chat with the seeded Default employee: the draft beside Threads,
+    then the thread in the side peek. Past first run. */
+async function chatDefault(page: Page, text: string) {
+  await skipFirstRun(page);
+  await startChat(page, stack.webUrl, AGENT, text);
 }
 
-const send = async (page: Page, text: string) => {
-  const box = page.locator("textarea").last();
-  await box.fill(text);
-  await box.press("Enter");
-};
-
-const employeeIdFromUrl = (page: Page) =>
-  decodeURIComponent(page.url().split("/dm/")[1].split("/")[0]);
+/** The default agent's dot in the sidebar: the per-employee badge. */
+const agentDot = (page: Page, status: string) =>
+  v3Sidebar(page)
+    .getByRole("button", { name: /default/i })
+    .locator(`[data-v3-status="${status}"]`);
 
 /** Counts <img> elements that failed to load (broken images). */
 const brokenImages = (page: Page) =>
@@ -77,8 +72,7 @@ test("AC-1 tool events render once — as the tool cards inside the turn", async
   page,
 }) => {
   test.setTimeout(120_000);
-  await dmDefault(page);
-  await send(page, "Say hello then list files");
+  await chatDefault(page, "Say hello then list files");
   const turn = page.locator("[data-agentturn]").first();
   await expect(turn).toBeVisible({ timeout: 30_000 });
   await expect(turn.locator("[data-tasksteps]")).toBeVisible({
@@ -97,22 +91,30 @@ test("AC-1 tool events render once — as the tool cards inside the turn", async
 test("AC-2 employee avatars render as colour orbs; no image on the page is broken", async ({
   page,
 }) => {
-  await dmDefault(page);
+  await chatDefault(page, "Say hello then list files");
   // #224 orb design: an employee avatar is a tone-shifted colour orb
-  // (role=img + the name as its label), not a file <img>. The broken-image
-  // check still guards any <img> the page does render (human avatars).
-  const orbs = page.locator('[role="img"]:has(.lilos-orb-blobs)');
+  // (role=img + the name as its label), not a file <img>. v3 draws it on the
+  // employee's turn in the thread; the shell's own chrome (sidebar, Threads
+  // cards, People) uses the letter chip instead, so the orb is asserted where
+  // it lives. The broken-image check still guards any <img> the page renders.
+  const orbs = page.locator(
+    '[data-thread-panel] [role="img"]:has(.lilos-orb-blobs)',
+  );
   await expect(orbs.first()).toBeVisible({ timeout: 30_000 });
+  await expect(orbs.first()).toHaveAttribute("aria-label", AGENT.name);
   expect(await brokenImages(page)).toEqual([]);
   await page.screenshot({ path: `${SHOTS}/ac-2-avatars.png` });
 });
 
-test("AC-3 the DM header hides `· now:` when the employee has none", async ({
+test("AC-3 the thread header hides `· now:` when the employee has none", async ({
   page,
 }) => {
-  await dmDefault(page);
-  const subtitle = page.locator("main header .text-xs").first();
+  await chatDefault(page, "Say hello then list files");
+  // The thread panel's header is the old DM header: title row, then the quiet
+  // line under it (kind · employee · folder link).
+  const subtitle = page.locator("[data-thread-panel] [title^='Thread ']");
   await expect(subtitle).toBeVisible({ timeout: 30_000 });
+  await expect(subtitle).toContainText(AGENT.name);
   await expect(subtitle).not.toContainText("now:");
   await page.screenshot({ path: `${SHOTS}/ac-3-header.png` });
 });
@@ -121,9 +123,7 @@ test("AC-4 an approval-blocked session reads `needs you` / `Waiting for approval
   page,
 }) => {
   test.setTimeout(180_000);
-  await dmDefault(page);
-  const empId = employeeIdFromUrl(page);
-  await send(page, "Add a release note to the readme");
+  await chatDefault(page, "Add a release note to the readme");
   await expect(page.getByText("Approval needed").first()).toBeVisible({
     timeout: 60_000,
   });
@@ -131,18 +131,28 @@ test("AC-4 an approval-blocked session reads `needs you` / `Waiting for approval
   await expect(
     page.locator("[data-tasksteps]").getByText("Waiting for approval"),
   ).toBeVisible({ timeout: 30_000 });
-  // Sidebar badge + DM list row both read `needs you`.
-  await expect(page.locator("[data-badge-approvals]").first()).toContainText(
-    "needs you",
-  );
-  await page.goto(`${stack.webUrl}/dm/${empId}`);
-  const waitingRow = page
-    .locator("[data-session]")
+  // The employee's badge (the status dot goes `needs`, the sidebar's "Needs
+  // you" count says one) and the thread's Threads-board card both read
+  // `Needs you`.
+  await expect(agentDot(page, "needs")).toBeVisible({ timeout: 60_000 });
+  await expect(
+    v3Sidebar(page).getByRole("button", { name: /Needs you/ }),
+  ).toContainText("1");
+  // Leave the session (close the peek): the board card is the list row.
+  await v3Peek(page).getByTitle("Close (Esc)").click();
+  await expect(v3Peek(page)).toHaveCount(0);
+  const waitingCard = page
+    .locator("#v3-main")
+    .getByRole("button")
     .filter({ hasText: /release note/i });
-  await expect(waitingRow).toContainText("needs you", { timeout: 30_000 });
+  await expect(waitingCard).toContainText("Needs you", { timeout: 30_000 });
   await page.screenshot({ path: `${SHOTS}/ac-4-needs-you.png` });
   // Back in the session, answering the approval unblocks the turn.
-  await waitingRow.getByRole("button", { name: /repl(y|ies)/ }).click();
+  await waitingCard
+    .getByText(/release note/i)
+    .first()
+    .click();
+  await expect(page).toHaveURL(/open=thread:[^&]+$/);
   await expect(page.getByText("Approval needed").first()).toBeVisible({
     timeout: 30_000,
   });
@@ -171,9 +181,8 @@ test("AC-7 model display names — picker groups and the turn footer", async ({
   page,
 }) => {
   test.setTimeout(120_000);
-  await dmDefault(page);
   // The picker lives in the session thread — open a session first.
-  await send(page, "Say hello then list files");
+  await chatDefault(page, "Say hello then list files");
   const turn = page.locator("[data-agentturn]").first();
   await expect(turn).toBeVisible({ timeout: 30_000 });
   // A finished turn's footer names the model, same label as the picker.
@@ -206,26 +215,11 @@ test("AC-7 model display names — picker groups and the turn footer", async ({
 
 test("AC-5 the Electron app menu is named LilOS", async () => {
   test.setTimeout(180_000);
-  await ensureDesktopPayload(desktopDir);
-  const portOf = (ws: string) => new URL(ws).port;
-  const app = await _electron.launch({
-    args:
-      process.platform === "linux"
-        ? [desktopDir, "--no-sandbox"]
-        : [desktopDir],
-    env: {
-      ...process.env,
-      LILOS_RELAY_HOME: stack.home,
-      LILOS_RELAY_PORT: portOf(stack.relayWs),
-      LILOS_FEED_PORT: portOf(stack.feedWs),
-      LILOS_WEB_URL: stack.webUrl,
-    },
-  });
+  const { app, win } = await launchDesktop(stack);
   try {
     expect(await app.evaluate(({ app }) => app.getName())).toBe("LilOS");
-    const win = await app.firstWindow();
     await expect(
-      win.locator("aside").getByRole("button", { name: /default/i }),
+      v3Sidebar(win).getByRole("button", { name: /default/i }),
     ).toBeVisible({ timeout: 60_000 });
     // captureScreenshot fails if the window hasn't painted yet — wait for
     // visible+painted and retry.

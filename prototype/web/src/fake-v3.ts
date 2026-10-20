@@ -1,5 +1,6 @@
-import type { V3Data, V3Draft } from "@lilos/ui"
+import type { V3Data, V3Draft, V3Profile } from "@lilos/ui"
 import { CONNECTORS, OUTSIDE_THREADS, OUTSIDE_TICKETS, OUTSIDE_WORKERS } from "./fake-v3-outside"
+import { MODEL_OPTIONS, MODEL_PROVIDERS, MODEL_VISIBILITY, modelIdOf } from "./fake-v3-models"
 import { BROWSER, DEVICES, SCHEDULES, SETTINGS, WORKBENCHES } from "./fake-v3-tools"
 
 /* ?v3 mock company: one Monday at 12:04. Every number on every screen comes
@@ -13,6 +14,7 @@ const AGENTS: V3Data["agents"] = [
     role: "Runs the company",
     hired: "1 Oct",
     runtime: "Hermes · profile ceo",
+    profile: "ceo",
     model: "Opus 5.5 · High",
     schedule: "Always on · checks every ticket every 15 min",
     skills: ["planning", "code-review", "weekly-report"],
@@ -35,6 +37,7 @@ const AGENTS: V3Data["agents"] = [
     reportsTo: "ceo",
     hired: "1 Oct",
     runtime: "Hermes · profile builder",
+    profile: "builder",
     model: "Opus 5.5 · High",
     schedule: "When given a ticket",
     skills: ["typescript", "playwright", "git-pr"],
@@ -57,6 +60,7 @@ const AGENTS: V3Data["agents"] = [
     reportsTo: "ceo",
     hired: "4 Oct",
     runtime: "Hermes · profile reviewer",
+    profile: "reviewer",
     model: "Sonnet 5 · Medium",
     schedule: "When a ticket needs review",
     skills: ["ios-simulator", "screenshots"],
@@ -73,6 +77,7 @@ const AGENTS: V3Data["agents"] = [
     reportsTo: "ceo",
     hired: "2 Oct",
     runtime: "Hermes · profile marketer",
+    profile: "marketer",
     model: "Sonnet 5 · Medium",
     schedule: "When given a ticket · posts at 9:00",
     skills: ["copywriting", "meta-ads", "x-threads"],
@@ -89,6 +94,7 @@ const AGENTS: V3Data["agents"] = [
     reportsTo: "ceo",
     hired: "2 Oct",
     runtime: "Hermes · profile scout",
+    profile: "scout",
     model: "Sonnet 5 · Medium",
     schedule: "When given a ticket · checks in every 30 min",
     skills: ["web-research", "creator-vetting", "sheets"],
@@ -116,6 +122,7 @@ const AGENTS: V3Data["agents"] = [
     reportsTo: "ceo",
     hired: "6 Oct",
     runtime: "Hermes · profile designer",
+    profile: "designer",
     model: "Sonnet 5 · Medium",
     schedule: "Weekdays 14:00–18:00",
     skills: ["figma-export", "app-store-assets"],
@@ -768,7 +775,8 @@ export const V3_DATA: V3Data = {
   me: "Oscar",
   today: "Monday, 19 October",
   ceoId: "ceo",
-  agents: [...AGENTS, ...OUTSIDE_WORKERS],
+  // The picker starts on each agent's own model (outside workers have none).
+  agents: [...AGENTS, ...OUTSIDE_WORKERS].map((a) => ({ ...a, modelId: modelIdOf(MODEL_OPTIONS, a.model) })),
   connectors: CONNECTORS,
   projects: PROJECTS,
   goals: GOALS,
@@ -776,14 +784,34 @@ export const V3_DATA: V3Data = {
   threads: [...THREADS, ...OUTSIDE_THREADS].map((t) =>
     WORKBENCHES[t.id] ? { ...t, workbench: WORKBENCHES[t.id] } : t,
   ),
+  archivedThreads: [],
   asks: ASKS,
   updates: UPDATES,
   schedules: SCHEDULES,
   browser: BROWSER,
   devices: DEVICES,
+  modelChoices: ["Opus 5.5 · High", "Sonnet 5 · Medium", "Haiku 5 · Fast"],
+  // The new-chat box shows the engine's full picker (effort, Fast, Edit models).
+  modelCatalog: {
+    options: MODEL_OPTIONS,
+    defaultModel: "sonnet",
+    defaultProvider: "anthropic",
+    providers: MODEL_PROVIDERS,
+    visibility: MODEL_VISIBILITY,
+    refreshable: true,
+  },
+  // A chat opens on the access you pick (Ask / Full access).
+  chatAccess: true,
+  // The wire's caps (10 MB a file, 10 a message), so the prototype refuses what the app would.
+  attachLimits: { maxFileBytes: 10 * 1024 * 1024, maxFiles: 10 },
+  // The mock engine accepts every profile field.
+  agentFields: ["description", "model", "instructions"],
+  starters: ["Why is ac-544 flaky?", "Summarise yesterday's PRs", "Draft release notes for 0.9"],
   settings: SETTINGS,
   // ?v3&page=welcome shows first run; the rest of the company is ready.
   setUp: true,
+  // The prototype shows the whole company, M2 included.
+  features: { tickets: true },
 }
 
 /* The fake CEO behind ⌘K. A question gets a reply built from the live data;
@@ -835,3 +863,32 @@ export function v3Draft(text: string, d: V3Data): V3Draft {
     ],
   }
 }
+
+/* Every profile the mock engine has: what "Or bring in an existing profile" on
+   Hire lists. The page leaves out the ones an agent already runs on, so only
+   Ops and the Librarian show until someone is removed (removing an agent
+   never deletes its profile, D-#29). */
+export const ENGINE_PROFILES: V3Profile[] = [
+  { id: "ceo", name: "Chief", model: "Opus 5.5 · High", skills: 3 },
+  { id: "builder", name: "Builder", model: "Opus 5.5 · High", skills: 3 },
+  { id: "reviewer", name: "Reviewer", model: "Sonnet 5 · Medium", skills: 2 },
+  { id: "marketer", name: "Marketer", model: "Sonnet 5 · Medium", skills: 3 },
+  { id: "scout", name: "Scout", model: "Sonnet 5 · Medium", skills: 3 },
+  { id: "designer", name: "Designer", model: "Sonnet 5 · Medium", skills: 2 },
+  {
+    id: "ops",
+    name: "Ops",
+    description: "Runs the dev server and the nightly chores.",
+    model: "Haiku 5 · Fast",
+    skills: 14,
+    soul: "You keep the dev server and the nightly jobs healthy. Restart what is stuck, report what you could not fix.",
+  },
+  {
+    id: "librarian",
+    name: "Librarian",
+    description: "Keeps the notes and the research sheets tidy.",
+    model: "Sonnet 5 · Medium",
+    skills: 6,
+    soul: "You file every sheet and note where the team will look for it, and say where you put it.",
+  },
+]

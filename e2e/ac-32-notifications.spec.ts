@@ -1,14 +1,25 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import { allowAllWhile, expectSettled } from "./helpers/approvals";
+import {
+  bootStack,
+  openDefaultAgent,
+  pickPorts,
+  type Stack,
+  startChat,
+  threadUrl,
+  v3Sidebar,
+} from "./helpers/stack";
 
 /**
  * Issue #32 — macOS notifications + per-employee badges. ACs:
  *   AC-1 notification on done / needs approval / failed, only when that
  *       conversation is not in view;
  *   AC-2 clicking a notification opens the exact conversation;
- *   AC-3 per-employee badge = needs-approval count (priority) or running count.
+ *   AC-3 per-employee badge = needs-approval (priority) or running. In v3 the
+ *       badge is the person's status dot in the sidebar (`needs` wins over
+ *       `working`, like the old badge's priority) plus the "Needs you" count.
  *
  * CI leg (engine-fake, also runs on Linux): the renderer logic is exercised
  * through an injected `window.lilos` bridge — the same shape the Electron
@@ -104,47 +115,15 @@ async function waitForPost(
     .toContain(`${convId}:${kind}`);
 }
 
-async function dmDefault(page: Page) {
-  await page.goto(`${stack.webUrl}/`);
-  const aside = page.locator("aside");
-  // Under real hermes the first-run hire waits on the engine's agent catalog
-  // — the "Hiring your first employee…" placeholder clears only then. The
-  // auto-hired agent is always profile id `default`; its display name is
-  // "Default" on engine-fake and "default" on hermes.
-  const employeeRow = aside.getByText(/^default$/i);
-  await expect(employeeRow).toBeVisible({ timeout: LIVE ? 120_000 : 30_000 });
-  const dmBtn = page.getByRole("button", {
-    name: /open dm|set up later|message/i,
-  });
-  if (
-    await dmBtn
-      .first()
-      .isVisible()
-      .catch(() => false)
-  ) {
-    await dmBtn.first().click();
-  } else {
-    await employeeRow.click();
-  }
-  await expect(page).toHaveURL(/\/dm\//);
-}
+/** Where a notification click (or a link) puts a conversation: beside Threads. */
+const openedThread = (conversationId: string) =>
+  new RegExp(`page=threads&open=thread:${conversationId}$`);
 
-const send = async (page: Page, text: string) => {
-  const box = page.locator("textarea").last();
-  await box.fill(text);
-  await box.press("Enter");
-};
-
-/** After send() the URL becomes /dm/<emp>/<conv> — return the pair. */
-const convFromUrl = async (page: Page) => {
-  await page.waitForURL(/\/dm\/[^/]+\/[^/]+/, { timeout: 15_000 });
-  const m = /\/dm\/([^/]+)\/([^/]+)/.exec(new URL(page.url()).pathname);
-  if (!m) throw new Error(`not on a conversation page: ${page.url()}`);
-  return { employeeId: decodeURIComponent(m[1]), conversationId: m[2] };
-};
-
-const convUrl = (employeeId: string, conversationId: string) =>
-  `${stack.webUrl}/dm/${encodeURIComponent(employeeId)}/${conversationId}`;
+/** The default agent's dot in the sidebar: the per-employee badge. */
+const agentDot = (page: Page, status: string) =>
+  v3Sidebar(page)
+    .getByRole("button", { name: /default/i })
+    .locator(`[data-v3-status="${status}"]`);
 
 test("AC-1/AC-2/AC-3 (engine-fake): notify only when not in view, click opens the conversation, badges count", async ({
   page,
@@ -152,53 +131,53 @@ test("AC-1/AC-2/AC-3 (engine-fake): notify only when not in view, click opens th
   test.skip(LIVE, "fake-only leg — live leg runs with LILOS_ENGINE=hermes");
   test.setTimeout(240_000);
   await injectBridge(page);
-  await dmDefault(page);
+  const agent = await openDefaultAgent(page, stack.webUrl);
 
   // ── conv A: completes while in view → no notification ────────────────
-  await send(page, "Say hello then list files");
-  const convA = await convFromUrl(page);
+  const convA = await startChat(
+    page,
+    stack.webUrl,
+    agent,
+    "Say hello then list files",
+  );
   await expect(page.locator("[data-agentturn]").first()).toContainText(
     /envelope|file|Done|answer/i,
     { timeout: 90_000 },
   );
   // Turn fully done (badge cleared) + a beat for any stray event → the
   // in-view suppression really suppressed, not just raced.
-  const aside = page.locator("aside");
-  await expect(aside.locator("[data-badge-running]")).toHaveCount(0, {
-    timeout: 60_000,
-  });
+  await expect(agentDot(page, "working")).toHaveCount(0, { timeout: 60_000 });
   await page.waitForTimeout(500);
   expect(await posts(page)).toEqual([]); // AC-1 suppression
 
   // ── conv B: opens an approval while conv A is in view → ask badge + ask
-  await page.goto(`${stack.webUrl}/dm/${convA.employeeId}`);
-  await send(page, "Add a release note to the readme");
-  const convB = await convFromUrl(page);
-  await page.goto(convUrl(convA.employeeId, convA.conversationId));
+  const convB = await startChat(
+    page,
+    stack.webUrl,
+    agent,
+    "Add a release note to the readme",
+  );
+  await page.goto(threadUrl(stack.webUrl, convA));
+  await expect(page).toHaveURL(openedThread(convA));
 
-  // AC-3: approvals badge on the employee while the ask waits.
-  // #224 restyle: a `!` mark; `needs you` is the sr-only label and the count
-  // lives on the title.
-  const approvals = aside.locator("[data-badge-approvals]");
-  await expect(approvals.locator("[aria-hidden]")).toHaveText("!", {
-    timeout: 60_000,
-  });
-  await expect(approvals.locator(".sr-only")).toHaveText("needs you");
+  // AC-3: the employee's badge while the ask waits — in v3 the person's
+  // status dot goes `needs` (it outranks `working`, like the old `!` badge)
+  // and the sidebar's "Needs you" count says one.
+  await expect(agentDot(page, "needs")).toBeVisible({ timeout: 60_000 });
+  await expect(
+    v3Sidebar(page).getByRole("button", { name: /Needs you/ }),
+  ).toContainText("1");
   await page.screenshot({ path: `${SHOTS}/ac-3-badge-approvals.png` });
 
-  await waitForPost(page, convB.conversationId, "ask");
-  const askPost = (await posts(page)).find(
-    (n) => n.conversationId === convB.conversationId,
-  );
+  await waitForPost(page, convB, "ask");
+  const askPost = (await posts(page)).find((n) => n.conversationId === convB);
   expect(askPost?.title).toContain("approval");
   expect(askPost?.body).toBeTruthy();
 
   // AC-2 + #195 AC-3: a notification click opens that exact conversation in
-  // the peek panel (the conversation URL, not /focus).
-  await clickNotification(page, convB.conversationId);
-  await expect(page).toHaveURL(
-    new RegExp(`/dm/${convA.employeeId}/${convB.conversationId}$`),
-  );
+  // the side peek beside Threads (the thread, not the widened session view).
+  await clickNotification(page, convB);
+  await expect(page).toHaveURL(openedThread(convB));
   await expect(page.locator("[data-thread-panel]")).toBeVisible({
     timeout: 30_000,
   });
@@ -210,45 +189,49 @@ test("AC-1/AC-2/AC-3 (engine-fake): notify only when not in view, click opens th
   });
   await expect(page.getByText("Approval needed").first()).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-2-click-through.png` });
-  await page.getByRole("button", { name: "Once", exact: true }).first().click();
+  /* engine-fake's release-note turn parks on a second approval after the
+     first — answer until the turn itself settles (the dot can read "not
+     needs" in the gap between two asks, which is not "no more asks"), so
+     conv C below shows a plain `working` dot (a pending ask outranks a
+     running turn). */
+  await allowAllWhile(
+    page,
+    expectSettled(page.locator("[data-agentturn]").last()),
+  );
+  await expect(agentDot(page, "needs")).toHaveCount(0, { timeout: 15_000 });
 
   // ── conv C: finishes out of view → done notification + running badge ─
-  await page.goto(`${stack.webUrl}/dm/${convA.employeeId}`);
   /* `slow:500` (#432) paces this turn (~35 s) so it is still running after
      the navigate-back below — otherwise a fast reply can finish inside the
-     `page.goto` window and the running badge is never there to see. */
-  await send(page, "slow:500 Say hi to Carol");
-  const convC = await convFromUrl(page);
-  await page.goto(convUrl(convA.employeeId, convA.conversationId));
-  // While it runs the blue running badge shows.
-  await expect(aside.locator("[data-badge-running]")).toBeVisible({
-    timeout: 60_000,
-  });
-  await waitForPost(page, convC.conversationId, "done");
+     navigation window and the running badge is never there to see. */
+  const convC = await startChat(
+    page,
+    stack.webUrl,
+    agent,
+    "slow:500 Say hi to Carol",
+  );
+  await page.goto(threadUrl(stack.webUrl, convA));
+  await expect(page).toHaveURL(openedThread(convA));
+  // While it runs the person's dot is `working`.
+  await expect(agentDot(page, "working")).toBeVisible({ timeout: 60_000 });
+  await waitForPost(page, convC, "done");
   // #561 AC-2: the banner carries the reply's own words — engine-fake's
   // canned answer starts "Short answer:" — not the thread's title.
-  const donePost = (await posts(page)).find(
-    (n) => n.conversationId === convC.conversationId,
-  );
+  const donePost = (await posts(page)).find((n) => n.conversationId === convC);
   expect(donePost?.body).toContain("Short answer:");
 
   // ── conv D: fails out of view → failed notification ──────────────────
-  await page.goto(`${stack.webUrl}/dm/${convA.employeeId}`);
-  await send(page, "fail now please");
-  const convD = await convFromUrl(page);
-  await page.goto(convUrl(convA.employeeId, convA.conversationId));
-  await waitForPost(page, convD.conversationId, "failed");
-  const failPost = (await posts(page)).find(
-    (n) => n.conversationId === convD.conversationId,
-  );
+  const convD = await startChat(page, stack.webUrl, agent, "fail now please");
+  await page.goto(threadUrl(stack.webUrl, convA));
+  await expect(page).toHaveURL(openedThread(convA));
+  await waitForPost(page, convD, "failed");
+  const failPost = (await posts(page)).find((n) => n.conversationId === convD);
   expect(failPost?.body).toContain("engine-fake");
 
   // Clicking the failed notification opens conv D's panel with its error
   // visible.
-  await clickNotification(page, convD.conversationId);
-  await expect(page).toHaveURL(
-    new RegExp(`/dm/${convA.employeeId}/${convD.conversationId}$`),
-  );
+  await clickNotification(page, convD);
+  await expect(page).toHaveURL(openedThread(convD));
   await expect(page.locator("[data-thread-panel]")).toBeVisible({
     timeout: 30_000,
   });
@@ -275,20 +258,27 @@ test("AC-32 live: done notification + click-through under real hermes", async ({
   test.skip(!LIVE, "live leg — run with LILOS_ENGINE=hermes");
   test.setTimeout(300_000);
   await injectBridge(page);
-  await dmDefault(page);
+  // Under real hermes the first-run hire waits on the engine's agent catalog.
+  const agent = await openDefaultAgent(page, stack.webUrl, 120_000);
 
-  await send(page, "Reply with exactly the word: ok");
-  const convA = await convFromUrl(page);
+  const convA = await startChat(
+    page,
+    stack.webUrl,
+    agent,
+    "Reply with exactly the word: ok",
+  );
 
   // A second conversation finishes while we look at the first.
-  await page.goto(`${stack.webUrl}/dm/${convA.employeeId}`);
-  await send(page, "Reply with exactly the word: done");
-  const convB = await convFromUrl(page);
-  await page.goto(convUrl(convA.employeeId, convA.conversationId));
-
-  await waitForPost(page, convB.conversationId, "done", 240_000);
-  await clickNotification(page, convB.conversationId);
-  await expect(page).toHaveURL(
-    new RegExp(`/dm/${convA.employeeId}/${convB.conversationId}$`),
+  const convB = await startChat(
+    page,
+    stack.webUrl,
+    agent,
+    "Reply with exactly the word: done",
   );
+  await page.goto(threadUrl(stack.webUrl, convA));
+  await expect(page).toHaveURL(openedThread(convA));
+
+  await waitForPost(page, convB, "done", 240_000);
+  await clickNotification(page, convB);
+  await expect(page).toHaveURL(openedThread(convB));
 });

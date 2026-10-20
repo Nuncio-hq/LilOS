@@ -1,24 +1,18 @@
 import { AlertCircleIcon, GlobeIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "../lib/utils";
-import {
-  AgentAvatar,
-  Btn,
-  Meter,
-  Spinner,
-  TicketId,
-  useOpenRecord,
-  useTick,
-} from "./v3-bits";
-import { elapsedAt, streamTail, ThreadPill } from "./v3-live";
-import { agentOf } from "./v3-model";
+import { Btn, Meter, Spinner, TicketId, useTick } from "./v3-bits";
+import type { V3Data } from "./v3-data-types";
+import { elapsedAt, streamTail, ThreadPill, turnCount } from "./v3-live";
+import { AgentAvatar } from "./v3-marks";
+import { agentOf, FORMER_AGENT } from "./v3-model";
+import { useOpenRecord } from "./v3-open-record";
+import type { V3PageProps } from "./v3-page-types";
 import { viaOf } from "./v3-rows";
-import type { V3Agent, V3Data, V3PageProps, V3Thread } from "./v3-types";
+import type { V3Agent, V3Thread } from "./v3-types";
 
 /* One card on the live board: who, what, where it is right now, and the
    buttons to deal with it without opening the thread. */
-
-const turnsOf = (t: V3Thread) => t.turns.reduce((m, x) => Math.max(m, x.n), 0);
 
 const shell =
   "flex min-h-[206px] min-w-0 cursor-pointer flex-col gap-2.5 rounded-[10px] border border-[var(--v3-line)] p-3.5 pb-3 text-left outline-none transition-colors hover:bg-[var(--v3-hover)] focus-visible:bg-[var(--v3-hover)]";
@@ -91,16 +85,21 @@ function Tail({ lines }: { lines: { key: string | number; text: string }[] }) {
   );
 }
 
+/** The card's last line: a label on the left, the context meter on the right.
+   Either may be absent; with neither there is no line at all. */
 function Foot({
   children,
   context,
 }: {
-  children: ReactNode;
+  children?: ReactNode;
   context?: number;
 }) {
+  if (children === undefined && context === undefined) return null;
   return (
     <div className="mt-auto flex items-center gap-2.5 text-[12.5px] text-muted-foreground">
-      <span className="whitespace-nowrap">{children}</span>
+      {children !== undefined && (
+        <span className="whitespace-nowrap">{children}</span>
+      )}
       {context !== undefined && (
         <>
           <Meter value={context} className="flex-1" />
@@ -117,14 +116,14 @@ function Head({
   pill,
 }: {
   data: V3Data;
-  agent: V3Agent;
+  agent: V3Agent | undefined;
   pill: ReactNode;
 }) {
   const via = viaOf(data, agent);
   return (
     <div className="flex items-center gap-2 font-medium text-[13.5px]">
       <AgentAvatar data={data} agent={agent} />
-      {agent.name}
+      {agent?.name ?? FORMER_AGENT}
       {via && (
         <span className="font-normal text-[11.5px] text-muted-foreground/70">
           via {via.label}
@@ -151,6 +150,13 @@ function WorkingBody({ t }: { t: V3Thread }) {
   const shown = streamed.length
     ? streamed
     : (t.tail ?? []).map((text) => ({ key: text, text }));
+  const turns = turnCount(t);
+  const where =
+    turns === undefined
+      ? undefined
+      : t.step === undefined
+        ? `Turn ${turns}`
+        : `Turn ${turns} · step ${t.step}`;
   return (
     <>
       {t.now && (
@@ -165,9 +171,7 @@ function WorkingBody({ t }: { t: V3Thread }) {
         </div>
       )}
       <Tail lines={shown} />
-      <Foot context={t.context}>
-        Turn {turnsOf(t)} · step {t.step}
-      </Foot>
+      <Foot context={t.context}>{where}</Foot>
     </>
   );
 }
@@ -186,7 +190,15 @@ export function ThreadCard({
   };
   const askId = t.askId;
   const ask = askId ? data.asks.find((a) => a.id === askId) : undefined;
+  const ticketId = t.ticketId;
+  const handOff = act.handOff;
+  // A stuck ticket is handed to the Marketer; with none on the team there is
+  // no hand-off to offer.
   const handTo = agentOf(data, "marketer");
+  // A failed thread may carry no reason: then the card is just title, agent
+  // and Open, instead of an empty alert line.
+  const reason = t.status === "stuck" || t.stuck !== undefined;
+  const turns = turnCount(t);
 
   return (
     <Frame onOpen={open} selected={isOpen("thread", t.id)}>
@@ -195,10 +207,12 @@ export function ThreadCard({
         {t.unseen && (
           <span
             aria-hidden
+            // Test hook: the card's unseen dot (#563).
+            data-thread-unseen
             className="mr-1.5 inline-block size-[7px] rounded-full bg-sky-600 dark:bg-sky-400"
           />
         )}
-        <TicketId id={t.ticketId ?? "Chat"} className="mr-2 font-normal" />
+        <TicketId id={ticketId ?? "Chat"} className="mr-2 font-normal" />
         {t.title}
       </div>
 
@@ -206,10 +220,13 @@ export function ThreadCard({
 
       {t.status === "needs" && (
         <>
-          <div className="text-[13px] text-muted-foreground leading-normal">
-            {t.quote}
-          </div>
-          {askId && (
+          {t.quote && (
+            <div className="text-[13px] text-muted-foreground leading-normal">
+              {t.quote}
+            </div>
+          )}
+          {/* A question is answered with its own options, or in the thread. */}
+          {askId && ask?.kind !== "question" && (
             <Actions>
               <Btn small onClick={() => act.deny(askId)}>
                 Deny
@@ -219,32 +236,54 @@ export function ThreadCard({
               </Btn>
             </Actions>
           )}
+          {askId && ask?.kind === "question" && !!ask.options?.length && (
+            <Actions>
+              {ask.options.map((o) => (
+                <Btn key={o} small onClick={() => act.answer(askId, o)}>
+                  {o}
+                </Btn>
+              ))}
+            </Actions>
+          )}
           <Foot context={t.context}>Waiting {ask?.waiting ?? 0}m</Foot>
         </>
       )}
 
-      {t.status === "stuck" && (
+      {(t.status === "stuck" || t.status === "failed") && (
         <>
-          <div className="flex min-w-0 items-center gap-2 text-[13px] text-red-600 dark:text-red-300">
-            {t.now?.kind === "web" ? (
-              <GlobeIcon className="size-3.5 shrink-0" />
-            ) : (
-              <AlertCircleIcon className="size-3.5 shrink-0" />
-            )}
-            <span className="min-w-0 flex-1 truncate">{t.stuck?.what}</span>
-            <span className="whitespace-nowrap text-[12px]">
-              {t.now?.elapsed}
-            </span>
-          </div>
-          <Tail
-            lines={(t.stuck?.detail ?? []).map((text) => ({ key: text, text }))}
-          />
+          {reason && (
+            <>
+              <div className="flex min-w-0 items-center gap-2 text-[13px] text-red-600 dark:text-red-300">
+                {t.now?.kind === "web" ? (
+                  <GlobeIcon className="size-3.5 shrink-0" />
+                ) : (
+                  <AlertCircleIcon className="size-3.5 shrink-0" />
+                )}
+                <span className="min-w-0 flex-1 truncate">{t.stuck?.what}</span>
+                <span className="whitespace-nowrap text-[12px]">
+                  {t.now?.elapsed}
+                </span>
+              </div>
+              <Tail
+                lines={(t.stuck?.detail ?? []).map((text) => ({
+                  key: text,
+                  text,
+                }))}
+              />
+            </>
+          )}
           <Actions className="mt-auto">
-            <Btn small onClick={() => act.stop(t.id)}>
-              Stop
-            </Btn>
-            {t.ticketId && (
-              <Btn small onClick={() => act.handOff(t.ticketId!, handTo.id)}>
+            {t.status === "stuck" ? (
+              <Btn small onClick={() => act.stop(t.id)}>
+                Stop
+              </Btn>
+            ) : (
+              <Btn small onClick={open}>
+                Open
+              </Btn>
+            )}
+            {ticketId && handOff && handTo && (
+              <Btn small onClick={() => handOff(ticketId, handTo.id)}>
                 Hand to {handTo.name}
               </Btn>
             )}
@@ -254,11 +293,21 @@ export function ThreadCard({
 
       {t.status === "done" && (
         <>
-          <div className="text-[13px] text-muted-foreground leading-normal">
-            “{t.quote}”
-          </div>
+          {t.quote ? (
+            <div className="text-[13px] text-muted-foreground leading-normal">
+              “{t.quote}”
+            </div>
+          ) : (
+            t.summary && (
+              <div className="text-[13px] text-muted-foreground leading-normal">
+                {t.summary}
+              </div>
+            )
+          )}
           <Foot>
-            {turnsOf(t)} turns · {t.minutes}m
+            {turns === undefined
+              ? `${t.minutes}m`
+              : `${turns} turns · ${t.minutes}m`}
           </Foot>
         </>
       )}
@@ -283,7 +332,7 @@ export function IdleCard({
         {agent.next ?? agent.role}
       </div>
       <div className="text-[13px] text-muted-foreground leading-normal">
-        Asleep. {agent.schedule}.
+        Asleep.{agent.schedule && ` ${agent.schedule}.`}
       </div>
     </Frame>
   );

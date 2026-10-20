@@ -173,22 +173,6 @@ export function notificationForEvent(
   }
 }
 
-/** `/dm/<employee>/<conversation>` params for the conversation a click opens. */
-export function routeForConversation(
-  conversationId: string,
-  ctx: Pick<NotifyContext, "conversations" | "channels">,
-): { employeeId: string; conversationId: string } | null {
-  const conv = ctx.conversations.find((c) => c.id === conversationId);
-  const ch = conv && ctx.channels.find((c) => c.id === conv.channelId);
-  return ch ? { employeeId: ch.employeeId, conversationId } : null;
-}
-
-/** The conversation currently shown in the thread panel, if any. */
-export function openConversationFromPath(pathname: string): string | null {
-  const m = /^\/dm\/[^/]+\/([^/]+)/.exec(pathname);
-  return m ? decodeURIComponent(m[1]) : null;
-}
-
 /** Per-session seq record for the state-driven completion check. */
 interface CompletionSeqStore {
   /** Accounted seqs; `undefined` means the watcher has never seen the session. */

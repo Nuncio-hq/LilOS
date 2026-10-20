@@ -188,7 +188,7 @@ describe("issue #308 — replies anchor to their own turn's question", () => {
 
   test("AC-1 a turn answering the root anchors at the top — newer messages never render above it", () => {
     /* The queued-message e2e (ac-27 AC-5b): turn1's prompt is the thread
-       root, which dm.tsx filters out of `replies` — it renders as the
+       root, which the thread panel filters out of `replies` — it renders as the
        thread header, so its answer anchors directly under the header at
        the TOP of the list; the queued prompt and its own answer follow. */
     const replies = conversationReplies(

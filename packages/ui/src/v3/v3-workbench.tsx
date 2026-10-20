@@ -2,7 +2,8 @@ import { CheckIcon, ChevronRightIcon } from "lucide-react";
 import { useState } from "react";
 import { cn } from "../lib/utils";
 import { Diff } from "./v3-bits";
-import type { V3PageProps, V3Thread, V3Workbench } from "./v3-types";
+import type { V3PageProps } from "./v3-page-types";
+import type { V3Thread, V3Workbench } from "./v3-types";
 import {
   CARD,
   DiffLines,

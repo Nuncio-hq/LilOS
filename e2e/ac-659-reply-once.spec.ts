@@ -4,6 +4,8 @@ import {
   panelIntoFocus,
   pickPorts,
   type Stack,
+  skipFirstRun,
+  startChat,
 } from "./helpers/stack";
 
 /**
@@ -43,37 +45,23 @@ test("AC-1/2 a reply renders exactly once while the answer row beats the stream"
   page,
 }) => {
   test.setTimeout(120_000);
-  await page.goto(stack.webUrl);
-  const aside = page.locator("aside");
-  /* 60 s, not the usual 30: under --repeat-each the previous iteration's
-     paced drain can still be clearing when the next page boots, and the
-     relay/warmup has once needed >30 s to paint the sidebar (repeat 18
-     of the x20 leg flaked here; the dup assertion never ran). */
-  await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
-    timeout: 60_000,
-  });
-  const dmBtn = page.getByRole("button", {
-    name: /open dm|set up later|message/i,
-  });
-  if (
-    await dmBtn
-      .first()
-      .isVisible()
-      .catch(() => false)
-  ) {
-    await dmBtn.first().click();
-  } else {
-    await aside.getByRole("button", { name: /default/i }).click();
-  }
-  await expect(page).toHaveURL(/\/dm\//);
-
-  /* First send opens the session; the follow-up answer is the #659 text
+  /* The first send opens the session; the follow-up answer is the #659 text
      ("Noted. Plan for this session now: …"). Both turns drain through the
-     paced feed — every reply must render exactly once the whole time. */
+     paced feed — every reply must render exactly once the whole time. The
+     new chat is Default's draft beside Threads (60 s for the boot, not the
+     usual 30: under --repeat-each the previous iteration's paced drain can
+     still be clearing when the next page boots — repeat 18 of the x20 leg
+     flaked on the old sidebar wait, and the dup assertion never ran). */
+  await skipFirstRun(page);
   const thread = page.locator("[data-thread]");
-  await send(page, "first marker");
-  /* #577: a send opens the thread in the DM panel now — hop into Focus so
-     [data-thread] and the rest of this spec see the same surface the
+  await startChat(
+    page,
+    stack.webUrl,
+    { id: "default", name: "Default" },
+    "first marker",
+  );
+  /* #577: a send opens the thread in the peek — hop into the session view
+     so [data-thread] and the rest of this spec see the same surface the
      soak was written against. */
   await panelIntoFocus(page);
   await expect(thread.getByText("If you want me to change code")).toBeVisible({

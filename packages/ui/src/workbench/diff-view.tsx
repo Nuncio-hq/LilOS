@@ -32,7 +32,7 @@ export type DiffRow = {
   a?: number;
   b?: number;
 };
-export function parsePatch(patch: string): DiffRow[] {
+function parsePatch(patch: string): DiffRow[] {
   const rows: DiffRow[] = [];
   let a = 0,
     b = 0;
@@ -177,15 +177,39 @@ function CommentEditor({
   );
 }
 
+/* How many diff rows the Changes tab paints open before the rest of the
+   files start collapsed. Every row is ~8 DOM nodes: a working tree with
+   hundreds of changed files painted whole (the repo mid-refactor) is
+   ~600k nodes — a multi-second main-thread stall in which no click, tab
+   pick or scroll lands. Collapsed files keep their header (name, stat,
+   Viewed) and open on the chevron. */
+const OPEN_ROW_BUDGET = 1500;
+
+/** The files that start open: in order, until the budget of rows is spent
+    (the first always opens, however long). */
+export function openPaths(diffs: Diff[]): Set<string> {
+  const open = new Set<string>();
+  let rows = 0;
+  for (const d of diffs) {
+    if (rows >= OPEN_ROW_BUDGET) break;
+    open.add(d.path);
+    rows += d.patch.split("\n").length;
+  }
+  return open;
+}
+
 export function DiffView({
   d,
   collapsible = true,
+  defaultOpen = true,
   openMenu,
   onOpenLine,
   comments,
 }: {
   d: Diff;
   collapsible?: boolean;
+  /* Where the file starts: open (rows painted) or collapsed to its header. */
+  defaultOpen?: boolean;
   /* Open/reveal menu on the file header + per-row open-at-line on the new
      line numbers (issue #110); absent → static diff (D-#19). */
   openMenu?: OpenMenuFor;
@@ -194,7 +218,7 @@ export function DiffView({
      absent → no comment affordances at all (D-#19). */
   comments?: DiffCommentsApi;
 }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(defaultOpen);
   const [viewed, setViewed] = useState(false);
   /* Selection being edited: row indexes [lo, hi]. `drag` = the row the
      gutter drag began on; while the mouse is down the range follows

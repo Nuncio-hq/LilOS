@@ -10,6 +10,9 @@ import {
   killProc,
   pickPorts,
   type StackPorts,
+  skipFirstRun,
+  startChat,
+  v3Peek,
   WORKER,
   waitForFeed,
   waitForHttp,
@@ -20,9 +23,13 @@ import {
 /**
  * AC-130: a send the relay refuses (killed mid-send / down) keeps the draft —
  * typed text and image chips stay in the composer so Oscar can press send
- * again. AC-1 home (new-session) composer, AC-2 thread (reply) composer,
- * AC-3 a successful send still clears with no double-send on Enter-Enter,
- * AC-4 the prototype's fake sends still clear (they never fail).
+ * again. AC-1 new-chat draft (new-session composer), AC-2 thread (reply)
+ * composer, AC-3 a successful send still clears with no double-send on
+ * Enter-Enter.
+ *
+ * v3: AC-1 is the new-chat draft beside Threads (its image chips sit in
+ * `[data-staged]`), AC-2 the thread's reply composer. AC-4 (the prototype's
+ * fake sends clear) is dropped: the prototype's old default screen is gone.
  *
  * Stack is spawned as three separate processes (ac-28 style, not the
  * `bun run dev` umbrella) so the relay can be killed while vite keeps
@@ -163,43 +170,40 @@ async function boot(): Promise<Procs> {
   };
 }
 
-/** Open the app, land on Default's DM home (dismissing the first-run card). */
-async function dmDefault(page: Page, base: string) {
-  await page.goto(`${base}/`);
-  const aside = page.locator("aside").first();
-  await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
-    timeout: 60_000,
-  });
-  const firstRun = page.getByRole("button", { name: /open dm/i });
-  if (await firstRun.isVisible().catch(() => false)) {
-    await firstRun.click();
-  } else {
-    await aside.getByRole("button", { name: /default/i }).click();
-  }
-  await expect(page.locator("main form")).toBeVisible({ timeout: 15_000 });
+const DEFAULT_AGENT = { id: "default", name: "Default" };
+
+/** The new-chat draft's box and Send button, in the peek. */
+const draftBox = (page: Page) =>
+  v3Peek(page).getByPlaceholder("Message Default…");
+const draftSend = (page: Page) =>
+  v3Peek(page).getByRole("button", { name: "Send" });
+
+/** Open a new chat with Default beside Threads (past first run). */
+async function openDraft(page: Page, base: string) {
+  await skipFirstRun(page);
+  await page.goto(`${base}/#?page=threads&open=newchat:default`);
+  await expect(draftBox(page)).toBeVisible({ timeout: 60_000 });
 }
 
-/** The composer form on `scope` — "home" is main, "thread" is the panel.
-   The panel mounts a beat after the URL changes (its summary row lands over
-   the socket), so `form.last()`/`textarea.last()` can still be the home
-   composer — a fill then goes to the wrong draft (#719). Scoping to
-   [data-thread-panel] makes every step wait for the real thread composer. */
-const formOf = (page: Page, scope: "home" | "thread") =>
-  scope === "home"
-    ? page.locator("main form")
-    : page.locator("[data-thread-panel] form");
-const boxOf = (page: Page, scope: "home" | "thread") =>
-  scope === "home"
-    ? page.locator("main textarea")
-    : page.locator("[data-thread-panel] textarea");
+/** The thread panel's composer — the one that takes files. */
+const panel = (page: Page) => v3Peek(page).locator("[data-thread-panel]");
+const formOf = (page: Page) => panel(page).locator("form");
+const boxOf = (page: Page) => panel(page).locator("textarea");
 
-async function attach(page: Page, name: string, scope: "home" | "thread") {
-  const input =
-    scope === "home"
-      ? page.locator('main input[type="file"]')
-      : page.locator('[data-thread-panel] input[type="file"]');
-  await input.setInputFiles({ name, mimeType: "image/png", buffer: PNG });
-  await expect(formOf(page, scope).getByText(name)).toBeVisible();
+async function attach(page: Page, name: string) {
+  await panel(page)
+    .locator('input[type="file"]')
+    .setInputFiles({ name, mimeType: "image/png", buffer: PNG });
+  await expect(formOf(page).getByText(name)).toBeVisible();
+}
+
+/** The same on the new-chat draft: its chips sit above the box. */
+const staged = (page: Page) => v3Peek(page).locator("[data-staged]");
+async function attachToDraft(page: Page, name: string) {
+  await v3Peek(page)
+    .locator('input[type="file"]')
+    .setInputFiles({ name, mimeType: "image/png", buffer: PNG });
+  await expect(staged(page).getByText(name)).toBeVisible();
 }
 
 /** Kill the relay and wait until the page's socket is definitely down so the
@@ -216,20 +220,18 @@ async function relayDown(stack: Procs) {
    client's socket is still in reconnect backoff, so the first retry can be
    refused too — it just keeps the draft and we try again (ac-28's loop). */
 async function sendUntil(
-  page: Page,
-  scope: "home" | "thread",
+  press: () => Promise<unknown>,
   sent: () => Promise<boolean>,
+  what: string,
   ms = 60_000,
 ) {
   const deadline = Date.now() + ms;
   for (;;) {
     if (await sent()) return;
     if (Date.now() > deadline)
-      throw new Error(`kept draft never sent (${scope} composer)`);
-    await formOf(page, scope).evaluate((f: HTMLFormElement) =>
-      f.requestSubmit(),
-    );
-    await page.waitForTimeout(1_000);
+      throw new Error(`kept draft never sent (${what})`);
+    await press();
+    await new Promise((r) => setTimeout(r, 1_000));
   }
 }
 
@@ -266,10 +268,17 @@ async function rpc(
   return out;
 }
 
-async function channelIdFor(page: Page, stack: Procs): Promise<string> {
-  const emp = page.url().match(/\/dm\/([^/]+)/)?.[1] ?? "default";
+/** Default's DM channel, over the wire (the URL carries no employee in v3). */
+async function channelIdFor(stack: Procs): Promise<string> {
+  const listed = await rpc(stack.home, [
+    { method: "employees.list", params: {} },
+  ]);
+  const emp = (
+    listed[0] as { employees: { id: string; name: string }[] }
+  ).employees.find((e) => /default/i.test(e.name));
+  if (!emp) throw new Error("no Default employee");
   const r = await rpc(stack.home, [
-    { method: "channels.openDm", params: { employeeId: emp } },
+    { method: "channels.openDm", params: { employeeId: emp.id } },
   ]);
   return (r[0] as { channel: { id: string } }).channel.id;
 }
@@ -286,81 +295,70 @@ test.afterAll(async () => {
 test.describe.configure({ mode: "serial" });
 test.setTimeout(180_000);
 
-test("AC-1 a refused send in the home composer keeps the text and image chips", async ({
+test("AC-1 a refused send in the new-chat draft keeps the text and image chips", async ({
   page,
 }) => {
-  await dmDefault(page, stack.webUrl);
-  await boxOf(page, "home").fill("kept through a refused send");
-  await attach(page, "kept.png", "home");
+  await openDraft(page, stack.webUrl);
+  await draftBox(page).fill("kept through a refused send");
+  await attachToDraft(page, "kept.png");
 
   await relayDown(stack);
-  await formOf(page, "home").evaluate((f: HTMLFormElement) =>
-    f.requestSubmit(),
-  );
+  await draftSend(page).click();
 
   // The failure toast fires and the draft is untouched.
   await expect(page.locator(TOAST)).toContainText(/try again/i, {
     timeout: 30_000,
   });
-  await expect(boxOf(page, "home")).toHaveValue("kept through a refused send");
-  await expect(formOf(page, "home").getByText("kept.png")).toBeVisible();
-  // Still on the DM home — no conversation was opened.
-  await expect(page).toHaveURL(/\/dm\/[^/]+$/);
+  await expect(draftBox(page)).toHaveValue("kept through a refused send");
+  await expect(staged(page).getByText("kept.png")).toBeVisible();
+  // Still on the new chat — no conversation was opened.
+  await expect(page).toHaveURL(/open=newchat:/);
+  await expect(page).not.toHaveURL(/open=thread:/);
   await page.screenshot({ path: `${SHOTS}/ac1-draft-kept.png` });
 
   // Relay back: pressing send again posts the kept draft and opens the session.
   await stack.restartRelay();
   await sendUntil(
-    page,
-    "home",
-    async () => /\/dm\/[^/]+\/[^/]+$/.test(page.url()), // #577: sessions open in the thread panel
+    () =>
+      draftSend(page)
+        .click({ timeout: 5_000 })
+        .catch(() => {}),
+    async () => /open=thread:/.test(page.url()),
+    "new-chat draft",
   );
-  /* #577: a send lands on the DM list with the thread open beside it. */
-  await page.waitForURL(/\/dm\/[^/]+\/[^/]+$/, { timeout: 30_000 });
+  await expect(page).toHaveURL(/open=thread:[^&]+/, { timeout: 30_000 });
   await page.screenshot({ path: `${SHOTS}/ac1-retry-sent.png` });
 });
 
 test("AC-2 a refused reply in the thread composer keeps the text and image chips", async ({
   page,
 }) => {
-  await dmDefault(page, stack.webUrl);
-
   // Open a session while the relay is healthy so the thread composer shows.
-  await boxOf(page, "home").fill("open a session first");
-  await formOf(page, "home").evaluate((f: HTMLFormElement) =>
-    f.requestSubmit(),
-  );
-  /* #577: a send lands on the DM list with the thread open beside it. */
-  await page.waitForURL(/\/dm\/[^/]+\/[^/]+$/);
-  await expect(formOf(page, "thread")).toBeVisible();
+  await skipFirstRun(page);
+  await startChat(page, stack.webUrl, DEFAULT_AGENT, "open a session first");
+  await expect(formOf(page)).toBeVisible({ timeout: 30_000 });
 
-  await boxOf(page, "thread").fill("reply kept through a refused send");
-  await attach(page, "reply-kept.png", "thread");
+  await boxOf(page).fill("reply kept through a refused send");
+  await attach(page, "reply-kept.png");
 
   await relayDown(stack);
-  await formOf(page, "thread").evaluate((f: HTMLFormElement) =>
-    f.requestSubmit(),
-  );
+  await formOf(page).evaluate((f: HTMLFormElement) => f.requestSubmit());
 
   await expect(page.locator(TOAST)).toContainText(/try again/i, {
     timeout: 30_000,
   });
-  await expect(boxOf(page, "thread")).toHaveValue(
-    "reply kept through a refused send",
-  );
-  await expect(
-    formOf(page, "thread").getByText("reply-kept.png"),
-  ).toBeVisible();
+  await expect(boxOf(page)).toHaveValue("reply kept through a refused send");
+  await expect(formOf(page).getByText("reply-kept.png")).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac2-draft-kept.png` });
 
   // Retry lands the reply in the thread once the relay is back.
   await stack.restartRelay();
   await sendUntil(
-    page,
-    "thread",
-    async () => (await boxOf(page, "thread").inputValue()) === "",
+    () => formOf(page).evaluate((f: HTMLFormElement) => f.requestSubmit()),
+    async () => (await boxOf(page).inputValue()) === "",
+    "thread composer",
   );
-  await expect(boxOf(page, "thread")).toHaveValue("");
+  await expect(boxOf(page)).toHaveValue("");
   await expect(
     page.locator("text=reply kept through a refused send").last(),
   ).toBeVisible({ timeout: 30_000 });
@@ -370,13 +368,13 @@ test("AC-2 a refused reply in the thread composer keeps the text and image chips
 test("AC-3 a successful send clears the composer and Enter-Enter sends once", async ({
   page,
 }) => {
-  await dmDefault(page, stack.webUrl);
-  await boxOf(page, "home").fill("opens cleanly");
-  await formOf(page, "home").evaluate((f: HTMLFormElement) =>
-    f.requestSubmit(),
+  await skipFirstRun(page);
+  const conv = await startChat(
+    page,
+    stack.webUrl,
+    DEFAULT_AGENT,
+    "opens cleanly",
   );
-  /* #577: a send lands on the DM list with the thread open beside it. */
-  await page.waitForURL(/\/dm\/[^/]+\/[^/]+$/);
 
   /* Turn 1 must be settled: the panel arrives before it finishes, and a
      reply typed mid-turn is a pending steer — the tray shows it but it is
@@ -387,43 +385,25 @@ test("AC-3 a successful send clears the composer and Enter-Enter sends once", as
 
   // Reply via a real Enter-Enter: one send, composer cleared.
   const text = "double-enter sends once";
-  await boxOf(page, "thread").fill(text);
-  await boxOf(page, "thread").press("Enter");
-  await boxOf(page, "thread").press("Enter");
-  await expect(boxOf(page, "thread")).toHaveValue("");
+  await boxOf(page).fill(text);
+  await boxOf(page).press("Enter");
+  await boxOf(page).press("Enter");
+  await expect(boxOf(page)).toHaveValue("");
   await expect(page.locator(`text=${text}`).last()).toBeVisible({
     timeout: 30_000,
   });
 
   // Wire check: exactly one message with that text reached the relay.
-  const conv = page.url().match(/\/dm\/[^/]+\/([^/]+?)(?:\/focus)?$/)?.[1];
-  const channelId = await channelIdFor(page, stack);
+  const channelId = await channelIdFor(stack);
   const listed = await rpc(stack.home, [
-    { method: "messages.list", params: { channelId, conversationId: conv } },
+    {
+      method: "messages.list",
+      params: { channelId, conversationId: conv },
+    },
   ]);
   const sent = (
     listed[0] as { messages: { authorKind: string; text: string }[] }
   ).messages.filter((m) => m.text === text && m.authorKind === "user");
   expect(sent).toHaveLength(1);
   await page.screenshot({ path: `${SHOTS}/ac3-sent-once.png` });
-});
-
-test("AC-4 the prototype keeps its fake-send behaviour: send clears the composer", async ({
-  page,
-}) => {
-  // The shared prototype dev server (playwright webServer, :5199).
-  await page.goto("/");
-  await page
-    .locator("aside")
-    .first()
-    .getByRole("button", { name: /builder/i })
-    .click();
-  const main = page.locator("main");
-  await expect(main.locator("form")).toBeVisible();
-  await main.locator("textarea").fill("prototype send clears");
-  await main
-    .locator("form")
-    .evaluate((f: HTMLFormElement) => f.requestSubmit());
-  await expect(main.locator("textarea")).toHaveValue("");
-  await expect(main.locator("text=prototype send clears")).toBeVisible();
 });

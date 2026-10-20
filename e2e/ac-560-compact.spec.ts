@@ -2,7 +2,14 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
 import { growDmThread } from "./helpers/relay-thread";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  pickPorts,
+  type Stack,
+  skipFirstRun,
+  threadUrl,
+  v3Peek,
+} from "./helpers/stack";
 
 /**
  * Issue #560 — context-full UX: the engine's `session.compact` rides the
@@ -39,9 +46,8 @@ test("AC: Compact now posts one compaction note and the meter drops", async ({
 }) => {
   test.setTimeout(120_000);
   const grown = await growDmThread(stack, ["Say hi.", "What is two plus two?"]);
-  await page.goto(
-    `${stack.webUrl}/dm/${grown.employeeId}/${grown.conversationId}/focus`,
-  );
+  await skipFirstRun(page);
+  await page.goto(threadUrl(stack.webUrl, grown.conversationId, true));
 
   /* The meter's trigger is an AI Elements Context button — accessible
      name carries the current share ("Context used: …"). */
@@ -95,21 +101,31 @@ test("AC: context-limit failure offers Compact now + Continue in a new session",
       text: "contextfull please do the thing",
     });
 
-    await page.goto(
-      `${stack.webUrl}/dm/${grown.employeeId}/${grown.conversationId}`,
-    );
-    const alert = page.locator("[data-session-alert]");
-    await expect(alert).toBeVisible({ timeout: 60_000 });
-    await expect(alert.locator("[data-compact-now]")).toBeVisible();
-    await expect(alert.locator("[data-continue-new-session]")).toBeVisible();
-    await alert.screenshot({ path: `${SHOTS}/context-full-alert.png` });
+    /* The thread in the side peek: a full context window shows on the
+       header's meter, which offers both outs (the old per-row alert in the
+       DM list is gone with that list). */
+    await skipFirstRun(page);
+    await page.goto(threadUrl(stack.webUrl, grown.conversationId));
+    const meter = v3Peek(page).getByRole("button", {
+      name: "Context window full",
+    });
+    await expect(meter).toBeVisible({ timeout: 60_000 });
+    await meter.hover();
+    const panel = page.locator("[data-context-panel]");
+    await expect(panel).toBeVisible();
+    await expect(page.locator("[data-compact-now]")).toBeVisible();
+    await expect(page.locator("[data-continue-new-session]")).toBeVisible();
+    await panel.screenshot({ path: `${SHOTS}/context-full-alert.png` });
 
     /* AC: Continue in a new session — a fresh root whose first message
-       carries the transcript recap lands in the DM feed. */
-    await alert.locator("[data-continue-new-session]").click();
-    const recap = page.locator("[data-session]", {
-      hasText: "Picking up mid-thread",
-    });
+       carries the transcript recap lands as a new thread (Threads → All). */
+    /* dispatchEvent like the Compact leg above: the meter is a hover card
+       and a thread row can sit under the pointer when the click lands. */
+    await page.locator("[data-continue-new-session]").dispatchEvent("click");
+    await page.goto(`${stack.webUrl}/#?page=threads&view=all`);
+    const recap = page
+      .getByRole("button")
+      .filter({ hasText: "Picking up mid-thread" });
     await expect(recap).toHaveCount(1, { timeout: 30_000 });
     await recap.first().scrollIntoViewIfNeeded();
     await page.screenshot({ path: `${SHOTS}/continued-session.png` });

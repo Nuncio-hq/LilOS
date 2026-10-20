@@ -101,7 +101,7 @@ const PROVIDER_NAMES: Record<string, string> = {
   zai: "Z.ai",
 };
 
-export function providerName(slug: string, providers?: ModelProvider[]) {
+function providerName(slug: string, providers?: ModelProvider[]) {
   return (
     providers?.find((p) => p.id === slug)?.name ??
     PROVIDER_NAMES[slug] ??
@@ -109,13 +109,7 @@ export function providerName(slug: string, providers?: ModelProvider[]) {
   );
 }
 
-export function ModelLogo({
-  provider,
-  logo,
-}: {
-  provider?: string;
-  logo?: string;
-}) {
+function ModelLogo({ provider, logo }: { provider?: string; logo?: string }) {
   const slug = logo ?? provider;
   return slug && LOGO_PROVIDERS.has(slug) ? (
     <ModelSelectorLogo
@@ -144,7 +138,7 @@ export const effortLabel = (e: string) =>
 /* The effort the engine reports for the model — or nothing. The picker
    shows "Engine default" for the unset case rather than inventing a level
    (a mid-ladder guess would display an effort the turn never ran with). */
-export function defaultEffort(m?: ModelOption): string | undefined {
+function defaultEffort(m?: ModelOption): string | undefined {
   if (!m?.efforts?.length) return undefined;
   if (m.defaultEffort && m.efforts.includes(m.defaultEffort))
     return m.defaultEffort;

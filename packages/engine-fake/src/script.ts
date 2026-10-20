@@ -219,6 +219,61 @@ export function scriptFor(
     };
   }
 
+  /* `longoutput:` — a turn whose tool cards carry text that cannot wrap: one
+     very long unbroken JSON output (what execute_code returns), a long
+     input value, a long path and a long terminal line (#305). None of it
+     may widen the Tool card or the chat column. Never needs approval. */
+  if (/^longoutput:/i.test(q)) {
+    const longJson = JSON.stringify({
+      ok: true,
+      reused: false,
+      execution_count: 1,
+      state_reset: false,
+      stdout_truncated: false,
+      checks: Array.from({ length: 40 }, (_, i) => ({
+        name: `probe.${i}`,
+        ms: i * 3,
+        ok: true,
+        detail: `relay.socket.${"x".repeat(30)}.${i}`,
+      })),
+    });
+    return {
+      reasoning:
+        "Probe the relay, then hash the tarball — the outputs are long unbroken tokens.",
+      steps: [
+        {
+          tool: "search_files",
+          input: { pattern: "WebSocketServer", path: "apps/relay" },
+          output: "0 matches",
+        },
+        {
+          tool: "read_file",
+          input: { path: "packages/contracts/src/envelope.ts" },
+          output: "58 lines · seq, kind, body",
+        },
+        {
+          tool: "execute_code",
+          input: {
+            code: "relay.probe(deep=true)",
+            trace: `t-${"deadbeef".repeat(300)}`,
+          },
+          output: longJson,
+        },
+        {
+          tool: "read_file",
+          input: { path: `apps/relay/${"deep/".repeat(45)}socket.ts` },
+          output: "12 lines",
+        },
+        {
+          tool: "terminal",
+          input: { command: "openssl dgst -sha256 relay.tar" },
+          output: `SHA2-256(relay.tar)= ${"9f4a2c7e1b8d35f0".repeat(150)}`,
+        },
+      ],
+      text: "Probed — the relay answers; the digests are above.",
+    };
+  }
+
   /* `recall:` — echo the turns the session still remembers (#134 AC-2).
      After a rewind to turn N this answer must name only turns 1..N. */
   if (/^recall:/i.test(q)) {

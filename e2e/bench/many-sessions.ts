@@ -8,8 +8,8 @@
  * employee with N DM sessions over the relay socket — the same
  * conversations.open + messages.post calls the composer makes.
  *
- * Per checkpoint (1/10/31/51 sessions) the page reloads the DM list
- * (thread panel closed — the layout the issue profiled), then one
+ * Per checkpoint (1/10/31/51 sessions) the page reloads Threads → All (no
+ * thread open — the layout the issue profiled), then one
  * `slow:2 md: blocks` reply streams into the LAST session via
  * messages.post. The reply window — post resolves → the turn's
  * relay `turn.completed` + a quiet frame — is bracketed with CDP
@@ -24,7 +24,7 @@
  *   bun e2e/bench/many-sessions.ts --runs 1 --shots pr-assets/569/before
  *
  * Before/after protocol: run on main (or the pre-PR commit), run on the
- * PR head, diff the medians. --shots captures the 51-session DM list
+ * PR head, diff the medians. --shots captures the 51-session Threads list
  * light + dark at 1288×900 for AC-2's pixel-identical evidence.
  */
 
@@ -37,7 +37,7 @@ import { type CDPSession, chromium, expect, type Page } from "@playwright/test";
    node_modules resolve their inner @lilos/* imports). */
 import { RelayClient } from "../../packages/client-runtime/src/index";
 import type { EngineEvent } from "../../packages/contracts/src/engine/index";
-import { bootStack, freePort, pickPorts } from "../helpers/stack";
+import { bootStack, freePort, pickPorts, skipFirstRun } from "../helpers/stack";
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/bench
 const repo = path.resolve(here, "../..");
@@ -57,7 +57,7 @@ const arg = (name: string, dflt: string) => {
 };
 const RUNS = Math.max(1, Number(arg("runs", "3")) || 3);
 const MAX_SESSIONS = Math.max(1, Number(arg("sessions", "51")) || 51);
-const SHOTS = arg("shots", ""); // dir → screenshot the max-N DM list
+const SHOTS = arg("shots", ""); // dir → screenshot the max-N Threads list
 const TICK = arg("tick", "2"); // engine-fake pacing for seeds + slow:2
 /* The seed prompt builds a markdown answer (preview() does real work per
    row); the measured reply streams it again at slow:2. */
@@ -300,6 +300,7 @@ async function trial(shotsDir: string): Promise<Map<number, Window>> {
         const context = await browser.newContext({ viewport: VIEWPORT });
         const page = await context.newPage();
         await page.emulateMedia({ colorScheme: "light" });
+        await skipFirstRun(page);
         await page.addInitScript(LONGTASKS);
         if (shotsDir) await page.addInitScript(FREEZE_TIMES);
         const cdp = await context.newCDPSession(page);
@@ -308,10 +309,13 @@ async function trial(shotsDir: string): Promise<Map<number, Window>> {
         for (const n of CHECKPOINTS.filter((c) => c <= MAX_SESSIONS)) {
           /* Grow the employee's DM to N sessions, then reload so each
              measurement opens a clean list (the fold caches re-seed off
-             the relay rows, like a real page load). */
+             the relay rows, like a real page load). about:blank first: the
+             same URL plus a hash is a same-document navigation, which
+             would not restart the document. */
           await bench.seedTo(n);
-          await page.goto(`${preview.url}/dm/${bench.employeeId}`);
-          const rows = page.locator("[data-session]");
+          await page.goto("about:blank");
+          await page.goto(`${preview.url}/#?page=threads&view=all`);
+          const rows = page.locator("#v3-main [data-thread-row]");
           await expect.poll(() => rows.count(), { timeout: 60_000 }).toBe(n);
           const m0 = await snap(cdp, page);
           await bench.stream(STREAM_PROMPT);
@@ -343,18 +347,17 @@ async function trial(shotsDir: string): Promise<Map<number, Window>> {
   return out;
 }
 
-/** 1288×900 DM-list shots, light + dark — the AC-2 "unchanged" evidence.
-   The list's stick-to-bottom can lag the last delta by a frame, so pin
-   the scroller to the end before capturing (same anchor on both legs →
+/** 1288×900 Threads-list shots, light + dark — the AC-2 "unchanged" evidence.
+   The list's scroll position can lag the last delta by a frame, so pin
+   the page's scroller to the end before capturing (same anchor on both legs →
    identical slice for the pixel diff). */
 async function takeShots(page: Page, dir: string) {
   mkdirSync(dir, { recursive: true });
   await page.mouse.move(0, 0);
   const scrollBottom = () =>
     page.evaluate(() => {
-      for (const el of document.querySelectorAll("main *"))
-        if (el.scrollHeight > el.clientHeight + 4)
-          el.scrollTop = el.scrollHeight;
+      const main = document.getElementById("v3-main");
+      if (main) main.scrollTop = main.scrollHeight;
     });
   const twoFrames = () =>
     page.evaluate(
@@ -367,12 +370,12 @@ async function takeShots(page: Page, dir: string) {
   await twoFrames();
   await scrollBottom();
   await twoFrames();
-  await page.screenshot({ path: path.join(dir, "dm-list-light.png") });
+  await page.screenshot({ path: path.join(dir, "threads-list-light.png") });
   await page.emulateMedia({ colorScheme: "dark" });
   await quiet(page);
-  await page.screenshot({ path: path.join(dir, "dm-list-dark.png") });
+  await page.screenshot({ path: path.join(dir, "threads-list-dark.png") });
   await page.emulateMedia({ colorScheme: "light" });
-  console.log(`    shots → ${dir}/dm-list-{light,dark}.png`);
+  console.log(`    shots → ${dir}/threads-list-{light,dark}.png`);
 }
 
 async function main() {

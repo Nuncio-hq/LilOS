@@ -10,6 +10,9 @@ import {
   panelIntoFocus,
   pickPorts,
   type Stack,
+  startChatInFolder,
+  startFolderlessChat,
+  threadUrl,
 } from "./helpers/stack";
 
 /**
@@ -58,66 +61,24 @@ test.afterAll(async () => {
 
 test.describe.configure({ mode: "serial" });
 
-async function openDefault(page: Page, s: Stack = stack) {
-  await page.addInitScript(() => localStorage.setItem("lilos-onboarded", "1"));
-  await page.goto(`${s.webUrl}/?roots=${ROOT}`);
-  const aside = page.locator("aside");
-  await expect(aside.getByRole("button", { name: /Default/ })).toBeVisible({
-    timeout: 30_000,
-  });
-  const dmBtn = page.getByRole("button", {
-    name: /open dm|set up later|message/i,
-  });
-  if (
-    await dmBtn
-      .first()
-      .isVisible()
-      .catch(() => false)
-  ) {
-    await dmBtn.first().click();
-  } else {
-    await aside.getByRole("button", { name: /Default/i }).click();
-  }
-  await expect(page).toHaveURL(/\/dm\//);
-}
+/* A new session in the repo, the way a person starts one: the new-chat
+   draft's folder chip, then Send. An id that names nobody opens the draft on
+   the default agent, so the spec needs no employee lookup. */
+const startSession = (page: Page, text: string) =>
+  startChatInFolder(
+    page,
+    stack,
+    { id: "default", name: "Default" },
+    repoDir,
+    text,
+  );
 
-const pickerButton = (page: Page) => page.locator('[data-ws="folder"]');
-
-async function pickNoFolder(page: Page) {
-  await pickerButton(page).click();
-  await page
-    .locator('[role="menu"], [data-slot="dropdown-menu-content"]')
-    .last()
-    .getByText("No folder · just chat")
-    .click();
-}
-
-async function pickSessionFolder(page: Page, dir: string) {
-  await pickerButton(page).click();
-  const menu = page
-    .locator('[role="menu"], [data-slot="dropdown-menu-content"]')
-    .last();
-  const recent = menu.locator(`[data-wsfolder="${dir}"]`);
-  const recentVisible = await expect(recent.first())
-    .toBeVisible({ timeout: 5_000 })
-    .then(() => true)
-    .catch(() => false);
-  if (recentVisible) {
-    await recent.first().click();
-  } else {
-    await menu.getByText("Add a folder").click();
-    const dialog = page.locator("[data-addfolder]");
-    await expect(dialog).toBeVisible();
-    await dialog.locator("[data-pathinput]").fill(dir);
-    await expect(dialog.locator("[data-folderinfo]")).toBeVisible({
-      timeout: 15_000,
-    });
-    await dialog.locator("[data-addbtn]").click();
-    await expect(dialog).toHaveCount(0);
-  }
-  await expect(pickerButton(page)).toContainText(path.basename(dir), {
-    timeout: 15_000,
-  });
+/** The folderless session `conv` as a person reaches the Workbench: the
+    thread opens beside Threads, then the peek's Widen button turns it into
+    the session view. */
+async function openFolderless(page: Page, conv: string) {
+  await page.goto(threadUrl(stack.webUrl, conv));
+  await panelIntoFocus(page);
 }
 
 const send = async (page: Page, text: string) => {
@@ -348,11 +309,14 @@ test("AC-1/AC-3 folderless session: every Workbench tab label holds AA at the fl
   test.setTimeout(240_000);
   await page.setViewportSize({ width: 1288, height: 700 });
   await page.emulateMedia({ colorScheme: "light" });
-  await openDefault(page);
-  await pickNoFolder(page);
-  await send(page, "slow:100 delegate the relay scan to subagents");
-  /* #577: a send lands on the panel; Focus opens via its ↗. */
-  await panelIntoFocus(page);
+  await openFolderless(
+    page,
+    await startFolderlessChat(
+      page,
+      stack,
+      "slow:100 delegate the relay scan to subagents",
+    ),
+  );
   await turnSettled(page);
   await openWorkbench(page, "Subagents");
   await expect(tab(page, "Background")).toBeVisible();
@@ -387,10 +351,7 @@ test("AC-1/AC-2/AC-3 folder session: tab strip + file-view ink hold AA at the fl
   test.setTimeout(300_000);
   await page.setViewportSize({ width: 1288, height: 700 });
   await page.emulateMedia({ colorScheme: "light" });
-  await openDefault(page);
-  await pickSessionFolder(page, repoDir);
-  await send(page, "slow:100 delegate the relay scan to subagents");
-  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  await startSession(page, "slow:100 delegate the relay scan to subagents");
   await panelIntoFocus(page);
   await turnSettled(page);
   await openWorkbench(page, "Changes");
@@ -446,13 +407,10 @@ test("AC-4 shot matrix: 1288x700 + 1440x900 × light/dark × folder/folderless",
   test.setTimeout(360_000);
   mkdirSync(SHOTS, { recursive: true });
 
-  /* Folder session: Changes / Files (file view open) / PR. */
+  /* Folder session: Changes / Files (file view open). */
   await page.setViewportSize({ width: 1288, height: 700 });
   await page.emulateMedia({ colorScheme: "light" });
-  await openDefault(page);
-  await pickSessionFolder(page, repoDir);
-  await send(page, "slow:100 delegate the relay scan to subagents");
-  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  await startSession(page, "slow:100 delegate the relay scan to subagents");
   await panelIntoFocus(page);
   await turnSettled(page);
   await openWorkbench(page, "Changes");
@@ -488,11 +446,14 @@ test("AC-4 shot matrix: 1288x700 + 1440x900 × light/dark × folder/folderless",
 
   /* Folderless session: Subagents / Background. */
   await page.emulateMedia({ colorScheme: "light" });
-  await openDefault(page);
-  await pickNoFolder(page);
-  await send(page, "leave the dev server running in the background");
-  /* #577: a send lands on the panel; Focus opens via its ↗. */
-  await panelIntoFocus(page);
+  await openFolderless(
+    page,
+    await startFolderlessChat(
+      page,
+      stack,
+      "leave the dev server running in the background",
+    ),
+  );
   await turnSettled(page);
   await send(page, "delegate the relay scan to subagents");
   await turnSettled(page);

@@ -16,6 +16,9 @@ import {
   panelIntoFocus,
   pickPorts,
   type Stack,
+  skipFirstRun,
+  startChatInFolder,
+  threadUrl,
 } from "./helpers/stack";
 
 /**
@@ -30,7 +33,8 @@ import {
  *
  * Two real-app stacks: stackA declares every capability (rewind on),
  * stackB hides it (`LILOS_HIDE_CAPS=rewind`) for the AC-3 files-only
- * fallback. The last leg is the prototype (AC-8).
+ * fallback. (The old prototype leg, AC-8, is gone with the prototype's old
+ * default screen; the v3 thread view is the one surface left.)
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
@@ -86,29 +90,9 @@ test.afterAll(async () => {
 
 test.describe.configure({ mode: "serial" });
 
-/** Open the app, land on Default's DM home composer. `roots` feeds
-    `?roots=` so git.discoverRepos finds the fixture repo. */
-async function dmDefault(stack: Stack, page: Page, roots = "") {
-  await page.goto(`${stack.webUrl}/${roots ? `?roots=${roots}` : ""}`);
-  const aside = page.locator("aside");
-  await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
-    timeout: 30_000,
-  });
-  const dmBtn = page.getByRole("button", {
-    name: /open dm|set up later|message/i,
-  });
-  if (
-    await dmBtn
-      .first()
-      .isVisible()
-      .catch(() => false)
-  ) {
-    await dmBtn.first().click();
-  } else {
-    await aside.getByRole("button", { name: /default/i }).click();
-  }
-  await expect(page).toHaveURL(/\/dm\//);
-}
+/* The seeded employee. An id that names nobody opens the new-chat draft on
+   the default agent, which on these one-agent stacks is Default. */
+const DEFAULT_AGENT = { id: "default", name: "Default" };
 
 const send = async (page: Page, text: string) => {
   const box = page.locator("textarea").last();
@@ -116,62 +100,13 @@ const send = async (page: Page, text: string) => {
   await box.press("Enter");
 };
 
-const empId = (page: Page) =>
-  decodeURIComponent(page.url().split("/dm/")[1].split("/")[0]);
-
-/** Pick `dir` in the home composer's folder picker (Add folder dialog). */
-async function pickFolder(page: Page, dir: string) {
-  /* The pick persists on the composer — a second session in the same folder
-     finds the chip already set and needs nothing at all. */
-  const chip = page.locator('[data-ws="folder"]');
-  const base = dir.split("/").pop() ?? dir;
-  /* The remembered pick lands when folders.list arrives — poll the chip
-     instead of a single read so we don't open the picker before hydration. */
-  for (let i = 0; i < 40; i++) {
-    if ((await chip.innerText().catch(() => "")).includes(base)) return;
-    if (i >= 10) break; /* ~2s then give up — fresh stacks stay "No folder" */
-    await page.waitForTimeout(200);
-  }
-  await chip.click();
-  const menu = page
-    .locator('[role="menu"], [data-slot="dropdown-menu-content"]')
-    .last();
-  /* Existing folders list by id — match the row by its rendered path. A
-     folder bound to a live session is filtered out of "discovered", so
-     picking it again for a second session only works through this list. */
-  const recent = menu.locator("[data-wsfolder]").filter({ hasText: dir });
-  /* folders.list lands asynchronously — give the rows a beat to populate
-     before deciding the folder isn't in the picker yet (session B re-picks
-     a folder that session A already added). */
-  if (
-    await recent
-      .first()
-      .isVisible({ timeout: 8_000 })
-      .catch(() => false)
-  ) {
-    await recent.first().click();
-    return;
-  }
-  await menu.getByText("Add a folder").click();
-  const dialog = page.locator("[data-addfolder]");
-  await expect(dialog).toBeVisible();
-  await expect(dialog.locator(`[data-discovered="${dir}"]`)).toBeVisible({
-    timeout: 15_000,
-  });
-  await dialog.locator(`[data-discovered="${dir}"]`).click();
-  await expect(dialog.locator("[data-folderinfo]")).toContainText("Git repo", {
-    timeout: 15_000,
-  });
-  await dialog.locator("[data-addbtn]").click();
-  await expect(dialog).toHaveCount(0);
-  /* The pick lands asynchronously (`addFolder().then(setPick)`) — wait for
-     the chip to show the folder before sending, or the conversation binds
-     the harness workdir instead of the repo. */
-  await expect(chip).toContainText(base, { timeout: 10_000 });
-}
+/** The conversation at the top of the peek's trail (`open=…,thread:<id>`). */
+const topThread = (page: Page): string =>
+  decodeURIComponent(
+    /[?&]open=(?:[^&]*,)?thread:([^&,]+)/.exec(page.url())?.[1] ?? "",
+  );
 
 let convA = "";
-let empA = "";
 
 /** Message-row text match that excludes the composer textarea — after a
     rewind the draft legitimately echoes the dropped message (AC-4), and
@@ -201,14 +136,17 @@ test("AC-2/4 + AC-1 files: rewind drops the tail, restores the folder, refills t
 }) => {
   test.setTimeout(180_000);
   watchConsole(page);
-  await dmDefault(stackA, page, ROOT);
-  await pickFolder(page, repoDir);
-  await expect(page.locator('[data-ws="folder"]')).toContainText("lilos-repo");
-  await send(page, "alpha marker one");
-  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  /* The new-chat draft's folder chip picks the fixture repo (it is added to
+     the app's recents first), then the send lands on the thread in the peek. */
+  convA = await startChatInFolder(
+    page,
+    stackA,
+    DEFAULT_AGENT,
+    repoDir,
+    "alpha marker one",
+  );
+  /* #577: a send lands on the peek; the session view opens via its widen. */
   await panelIntoFocus(page);
-  convA = decodeURIComponent(page.url().split("/dm/")[1].split("/")[1]);
-  empA = empId(page);
   await expect(
     page.locator("[data-thread]").getByText("If you want me to change code"),
   ).toBeVisible({ timeout: 60_000 });
@@ -296,7 +234,8 @@ test("AC-5 rewind triggers are disabled while a turn runs", async ({
   page,
 }) => {
   test.setTimeout(120_000);
-  await page.goto(`${stackA.webUrl}/dm/${empA}/${convA}/focus`);
+  await skipFirstRun(page);
+  await page.goto(threadUrl(stackA.webUrl, convA, true));
   await expect(page.locator("[data-rewind]").first()).toBeVisible({
     timeout: 30_000,
   });
@@ -321,15 +260,17 @@ test("AC-5 a folder shared with another session warns + names it before rewindin
   page,
 }) => {
   test.setTimeout(120_000);
-  /* Session B: same employee, same folder, second conversation. `?roots=`
-     is what lets git.discoverRepos offer the fixture repo in the picker. */
-  await page.goto(`${stackA.webUrl}/dm/${empA}?roots=${ROOT}`);
-  await pickFolder(page, repoDir);
-  await send(page, "session B alpha");
-  /* #577: a send lands on the panel; Focus opens via its ↗. */
-  await panelIntoFocus(page);
-  const convB = page.url().split("/dm/")[1].split("/")[1];
+  /* Session B: same employee, same folder, second conversation. */
+  const convB = await startChatInFolder(
+    page,
+    stackA,
+    DEFAULT_AGENT,
+    repoDir,
+    "session B alpha",
+  );
   expect(convB).not.toBe(convA);
+  /* #577: a send lands on the peek; the session view opens via its widen. */
+  await panelIntoFocus(page);
   await expect(
     page.locator("[data-thread]").getByText("If you want me to change code"),
   ).toBeVisible({ timeout: 60_000 });
@@ -337,7 +278,8 @@ test("AC-5 a folder shared with another session warns + names it before rewindin
   /* Back on session A: #578 removed the confirm dialog — the shared-folder
      warning lives on the trigger's tooltip and the click applies at once
      (the 10 s Undo toast is the safeguard). */
-  await page.goto(`${stackA.webUrl}/dm/${empA}/${convA}/focus`);
+  await skipFirstRun(page);
+  await page.goto(threadUrl(stackA.webUrl, convA, true));
   const thread = page.locator("[data-thread]");
   const sharedTrigger = thread.locator("[data-rewind]").first();
   await expect(sharedTrigger).toBeEnabled({ timeout: 30_000 });
@@ -365,12 +307,15 @@ test("AC-3 without rewind: files restore, the plain note shows, Start a new thre
   page,
 }) => {
   test.setTimeout(120_000);
-  await dmDefault(stackB, page, ROOT);
-  await pickFolder(page, repoDir);
-  await send(page, "alpha in the no-rewind session");
-  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  const convC = await startChatInFolder(
+    page,
+    stackB,
+    DEFAULT_AGENT,
+    repoDir,
+    "alpha in the no-rewind session",
+  );
+  /* #577: a send lands on the peek; the session view opens via its widen. */
   await panelIntoFocus(page);
-  const convC = page.url().split("/dm/")[1].split("/")[1];
   await expect(
     page.locator("[data-thread]").getByText("If you want me to change code"),
   ).toBeVisible({ timeout: 60_000 });
@@ -411,17 +356,14 @@ test("AC-3 without rewind: files restore, the plain note shows, Start a new thre
   await page
     .getByRole("button", { name: "Start a new thread from here" })
     .click();
-  /* Already sitting on convC's /focus URL — wait until it changes. */
-  await page.waitForURL(
-    (u) =>
-      /\/dm\/[^/]+\/[^/]+$/.test(u.pathname) && !u.pathname.includes(convC),
-    { timeout: 30_000 },
-  );
-  /* #577: the fresh session landed on its panel — step into Focus where
-     [data-thread] renders. */
-  await panelIntoFocus(page);
-  const convD = page.url().split("/dm/")[1].split("/")[1];
+  /* Already sitting on convC's session view — wait until the trail's top
+     thread is another one. */
+  await expect.poll(() => topThread(page), { timeout: 30_000 }).not.toBe(convC);
+  const convD = topThread(page);
   expect(convD).not.toBe(convC);
+  /* The widened peek stays widened across the hop, so the fresh session is
+     already the session view where [data-thread] renders. */
+  await expect(page).toHaveURL(/[#&]full=1(&|$)/);
   /* The fresh session's root carries the surviving transcript as quoted
      context, then the rewound text. Pin exactly one row — the committed root
      user message: the engine reply's reasoning echoes the seeded prompt
@@ -440,44 +382,4 @@ test("AC-3 without rewind: files restore, the plain note shows, Start a new thre
     timeout: 60_000,
   });
   await page.screenshot({ path: `${SHOTS}/ac-3-new-session.png` });
-});
-
-test("AC-8 prototype shows the action and the result", async ({ page }) => {
-  test.setTimeout(90_000);
-  await page.goto("/");
-  await page
-    .locator("aside")
-    .first()
-    .getByRole("button", { name: /Builder/ })
-    .click();
-  const box = page.getByPlaceholder(/New thread with Builder/);
-  await box.fill("prototype alpha");
-  await box.press("Enter");
-  /* A message sent while a turn runs is folded in as a steer — no new user
-     turn, no checkpoint trigger. Wait for alpha's trigger to enable (turn
-     done) before sending beta as a second turn. */
-  await expect(page.locator("[data-rewind]").nth(0)).toBeEnabled({
-    timeout: 60_000,
-  });
-  const thread = page.locator("textarea").last();
-  await thread.fill("prototype beta");
-  await thread.press("Enter");
-  /* Same story for beta's own turn — wait for its trigger to enable. */
-  await expect(page.locator("[data-rewind]").nth(1)).toBeEnabled({
-    timeout: 60_000,
-  });
-  await page.screenshot({ path: `${SHOTS}/ac-8-action.png` });
-  await page.locator("[data-rewind]").nth(1).locator("..").hover();
-  await page.locator("[data-rewind]").nth(1).click();
-  await expect(
-    page.getByText("prototype beta").and(page.locator(":not(textarea)")),
-  ).toHaveCount(0);
-  await expect(page.locator("[data-toast-action]")).toHaveText("Undo");
-  await expect(page.locator("textarea").last()).toHaveValue("prototype beta");
-  /* The ⚠ note lands on commit — when the Undo window closes. */
-  await page.waitForTimeout(10_500);
-  await expect(page.getByText(/Rewound to before your message/)).toBeVisible({
-    timeout: 15_000,
-  });
-  await page.screenshot({ path: `${SHOTS}/ac-8-result.png` });
 });

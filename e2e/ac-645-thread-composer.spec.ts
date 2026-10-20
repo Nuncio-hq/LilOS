@@ -1,5 +1,11 @@
-import { expect, type Page, test } from "@playwright/test";
-import { bootStack } from "./helpers/stack";
+import { expect, test } from "@playwright/test";
+import {
+  bootStack,
+  pickPorts,
+  skipFirstRun,
+  startChat,
+  v3Peek,
+} from "./helpers/stack";
 
 /**
  * Issue #645 — the ac-103-drafts AC-4 flake: after a send, the thread
@@ -25,28 +31,6 @@ import { bootStack } from "./helpers/stack";
 const SHOTS = "test-results/ac-645";
 const REPLY = /Reply to /;
 
-async function dmDefault(page: Page, webUrl: string) {
-  await page.goto(`${webUrl}/`);
-  const aside = page.locator("aside");
-  await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
-    timeout: 30_000,
-  });
-  const dmBtn = page.getByRole("button", {
-    name: /open dm|set up later|message/i,
-  });
-  if (
-    await dmBtn
-      .first()
-      .isVisible()
-      .catch(() => false)
-  ) {
-    await dmBtn.first().click();
-  } else {
-    await aside.getByRole("button", { name: /default/i }).click();
-  }
-  await expect(page).toHaveURL(/\/dm\//);
-}
-
 test("AC-645 the thread composer mounts and re-arms while summaries lag", async ({
   page,
 }) => {
@@ -54,29 +38,31 @@ test("AC-645 the thread composer mounts and re-arms while summaries lag", async 
   await page.setViewportSize({ width: 1288, height: 700 });
   /* 8s: past an engine-fake turn's length (the latch window) but under the
      15s request timeout — the exact lateness CI's load produced. */
-  const stack = await bootStack(
-    "tc645",
-    { relay: 4650, feed: 4651, web: 5240 },
-    { LILOS_SUMMARY_DELAY_MS: "8000" },
-  );
+  const stack = await bootStack("tc645", await pickPorts(), {
+    LILOS_SUMMARY_DELAY_MS: "8000",
+  });
   try {
-    await dmDefault(page, stack.webUrl);
-    const home = page.getByPlaceholder(/New thread with/);
-    await home.fill("composer under lag");
-    await home.press("Enter");
-    await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+/);
+    await skipFirstRun(page);
+    /* The new chat is Default's draft beside Threads; the send swaps it for
+       its thread in the peek. */
+    await startChat(
+      page,
+      stack.webUrl,
+      { id: "default", name: "Default" },
+      "composer under lag",
+    );
 
     /* The summary row lands ~8s late; the composer must still mount (the
        `conversations` union) and return to "Reply to…" once the session
        feed's model answers — the placeholder is the deterministic anchor
        for "running" having handed off. */
-    const thread = page.getByPlaceholder(REPLY);
+    const thread = v3Peek(page).getByPlaceholder(REPLY);
     await expect(thread).toBeVisible({ timeout: 45_000 });
     await thread.fill("still here under lag");
     await page.screenshot({ path: `${SHOTS}/ac-645-composer-reamed.png` });
 
     await page.reload();
-    await expect(page.getByPlaceholder(REPLY)).toHaveValue(
+    await expect(v3Peek(page).getByPlaceholder(REPLY)).toHaveValue(
       "still here under lag",
       { timeout: 45_000 },
     );

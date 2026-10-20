@@ -319,15 +319,6 @@ export type PullRequest = {
   checks: CheckRun[];
   comments: PrComment[];
 };
-/* A designed failure/notice attached to a session (model error, sleep interrupt, …).
-   retry:true means the session can be re-prompted in place. "context" =
-   the turn died on the context window — the row offers Compact now / a
-   fresh session instead of a bare retry (retrying re-fails the same way). */
-export type SessionAlert = {
-  kind: "model" | "sleep" | "generic" | "context";
-  text: string;
-  retry?: boolean;
-};
 /* Whether the session behind a thread holds the machine (#344): `running` while
    a turn or a subagent works, `open` while it sits loaded and idle, `closed`
    once idle-closed (resumes on the next message). */
@@ -352,11 +343,6 @@ export type Thread = {
   title?: string;
   /* Archived sessions hide from the DM list until the Archived disclosure is opened. */
   archived?: boolean;
-  alert?: SessionAlert;
-  /* The last turn ended stopped (#583): stamped on the conversation so the
-     row's "stopped" word survives a released/replayed session with no live
-     turn model. */
-  stopped?: boolean;
   /* Running background-job count (#583): the relay-stamped seed for the
      row's "N in background" badge — the live `jobs` list wins once the
      session feed lands. */
@@ -408,15 +394,9 @@ export type FsDir = {
   children?: string[];
 };
 
-/* Picked in the composer before the first message of a session.
-   new = git worktree add -b <branch> <base> · existing = reuse a workstream's worktree · direct = edit the folder checkout on <base>. */
+/* new = git worktree add -b <branch> <base> · existing = reuse a workstream's
+   worktree · direct = edit the folder checkout on <base>. */
 export type WsMode = "new" | "existing" | "direct";
-export type WsPick = {
-  folder: string | null;
-  base: string;
-  mode: WsMode;
-  existing?: string;
-};
 
 /* One row of the `@` menu's Files section (#105): a file or dir inside the
    session's folder, relative to it. The mention sent is the plain `@path`
@@ -444,29 +424,6 @@ export type HireDraft = {
   /** Reuse an existing engine profile instead of minting one. */
   profile?: string;
 };
-/**
- * What the Edit employee dialog hands back on Save (#123). Engine fields are
- * only set when the engine advertises them (`agents` capability
- * `detail.updatable`, D-#19) and the value actually changed — an untouched
- * guarded model must not re-trigger the engine's confirm prompt.
- */
-export type EmployeeEditSave = {
-  name: string;
-  role: string;
-  soul?: string;
-  model?: string;
-  description?: string;
-  /** Mirror the display name into the profile (updatable lists "name"). */
-  engineName?: boolean;
-  /** Re-send after the engine asked to confirm a guarded model. */
-  confirmModel?: boolean;
-};
-/**
- * What an Edit save answers. A `confirmModel` string means the engine held
- * back the model pin and wants a confirm — the dialog shows the message and
- * offers a "Pin anyway" that re-sends with `confirmModel: true`.
- */
-export type EmployeeSaveReply = { confirmModel?: string } | undefined;
 export type TicketRow = {
   id: string;
   title: string;
@@ -474,42 +431,6 @@ export type TicketRow = {
   who: string;
   ch: string;
   branch?: string;
-};
-/**
- * An engine profile as the engine reports it (`agents.list`/`agents.describe`).
- * Engine-agnostic: the id is the profile handle the engine starts sessions
- * with; `name` is its display name when the engine sets one.
- */
-export type EngineProfile = {
-  id: string;
-  name?: string;
-  model: string;
-  soul: string;
-  skills: number;
-};
-
-/* Per-profile LilOS connection state (issue #338, agent gateway #336):
-   "connected" = the profile's LilOS plugin is enabled; "not-connected" = the
-   one-time approval was never given or was declined; "updating" = a connect
-   or plugin update is in flight; "failed" = the last attempt failed and
-   `reason` carries the plain why. LilOS only enables/disables the plugin —
-   it never deletes a profile. */
-export type ConnectionState =
-  | "connected"
-  | "not-connected"
-  | "updating"
-  | "failed";
-
-/* One profile's connection row — the Connect step and Settings → Engine both
-   speak this. */
-export type ProfileConnection = {
-  /** Engine profile id (`agents.*` handle). */
-  profile: string;
-  /** Display name of the employee hired on this profile, when there is one. */
-  employee?: string;
-  state: ConnectionState;
-  /** Plain reason shown when state is "failed". */
-  reason?: string;
 };
 export type Msg =
   | {
@@ -523,22 +444,6 @@ export type Msg =
       attachments?: AttachedFile[];
     }
   | { kind: "event"; id: string; text: string; ticket: string };
-
-/* A message-level match in the DM session filter (issue #138). Groups under
-   its session in the list; `messageId` is the scroll/flash anchor when the
-   hit is opened (AC-3). `archived` carries the marker for AC-4. */
-export type MessageHit = {
-  /** Session's root message id — the `onOpen`/`threadId` key. */
-  rootId: string;
-  /** The matched message's id. */
-  messageId: string;
-  from: string;
-  time: string;
-  /** Excerpt with `<mark>` around matched terms — parsed back into elements,
-     never set as HTML. */
-  snippet: string;
-  archived?: boolean;
-};
 
 /* The chain a session needs: relay → harness → engine → model. One line each for the
    status surface; the app builds the rows (and the Copy diagnostics text) from real
@@ -558,15 +463,6 @@ export type StatusComponent = {
   reason: string;
   hint?: string;
   detail?: string;
-};
-
-/* Sidebar badge per employee: running turns (blue) / turns waiting on the user (amber). */
-export type EmpBadge = {
-  running?: number;
-  approvals?: number;
-  /* One of this employee's threads finished unseen (#563) — a dot beside
-     the badges; clears everywhere when the thread is opened. */
-  unseen?: boolean;
 };
 
 /* People (non-employee) as display metadata for avatars/names. Passed IN from the app.
@@ -657,64 +553,8 @@ export type WbTab =
 export type OsApp = "vscode" | "cursor" | "zed" | "xcode" | "finder";
 export type OsEditor = { id: Exclude<OsApp, "finder">; name: string };
 
-/* Settings surface (issue #139; prototyped first, real app in #132). Each
-   section renders only when its props are passed (D-#19); all values and
-   callbacks are app-owned state. */
-export type SettingsSectionId =
-  | "general"
-  | "approvals"
-  | "editors"
-  | "models"
-  | "engine"
-  | "status"
-  | "about";
-/* Engine approval policy: Smart = routine steps run, risky ones ask;
-   Manual = every ask surfaces; Off = never asks. */
-export type ApprovalPolicy = "smart" | "manual" | "off";
 /* What a brand-new conversation may touch without asking (#106). */
 export type ConversationAccess = "ask" | "full";
-/* Scheduled tasks (issue #136, prototype #366): a prompt that runs as a new
-   session with one employee on a schedule. `time` is "HH:MM" (hourly reads
-   only the minutes); `day` 0–6 = Sun–Sat for weekly; `date` "YYYY-MM-DD" for
-   once; `cron` five fields for custom. */
-export type ScheduleKind =
-  | "hourly"
-  | "daily"
-  | "weekdays"
-  | "weekly"
-  | "once"
-  | "cron";
-export type Schedule = {
-  kind: ScheduleKind;
-  time: string;
-  day?: number;
-  date?: string;
-  cron?: string;
-};
-/* The latest run of a task. `rootId` is the run's session in the DM. */
-export type ScheduledRun = {
-  at: string;
-  result: "running" | "finished" | "failed";
-  rootId?: string;
-};
-export type ScheduledTask = {
-  id: string;
-  employee: string;
-  name: string;
-  prompt: string;
-  /** Folder id the run's session opens in; unset = no folder. */
-  folder?: string;
-  schedule: Schedule;
-  /** Access for unattended runs (#106): Ask stops on risky commands. */
-  access: ConversationAccess;
-  paused?: boolean;
-  lastRun?: ScheduledRun;
-  /** When a run was skipped because the previous one was still going
-      (#136 AC-4); cleared by the next run that starts. */
-  skipped?: string;
-};
-/* An editor found on this Mac (#110) — `path` is the .app bundle. */
-export type DetectedEditor = { id: string; name: string; path?: string };
 /* A `forge.pr` failure already classified by the host (#114 AC-5) — mirrors
    contracts `ForgeGhReason` (packages/ui doesn't import contracts): "missing"
    = gh isn't installed, "unauthenticated" = run `gh auth login`, "other" =

@@ -3,7 +3,13 @@ import WebSocket from "ws";
 import { RelayClient } from "../packages/client-runtime/src/index";
 import type { Ask, Conversation } from "../packages/contracts/src/app/index";
 import type { EngineEvent } from "../packages/contracts/src/engine/index";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  pickPorts,
+  type Stack,
+  skipFirstRun,
+  v3Sidebar,
+} from "./helpers/stack";
 
 /**
  * Issue #572 — replay only the threads that matter at launch. ACs:
@@ -13,6 +19,10 @@ import { bootStack, pickPorts, type Stack } from "./helpers/stack";
  *   AC-2 badges, the life ring, and notifications keep updating for
  *       background sessions that were never opened — driven by relay rows
  *       plus broadcast-folded signals, not per-session replay.
+ *
+ * v3 reads: the thread list is Threads → All (one row per thread, its state
+ * pill the life ring), the running badge is the sidebar's Threads count and
+ * the approvals badge is its "Needs you" count.
  *
  * The spec seeds 31 real engine sessions in beforeAll through the same
  * relay calls the composer makes, then watches the app's feed socket:
@@ -202,51 +212,34 @@ test("AC-1/AC-2: cold boot replays nothing; background sessions still badge, rin
   await injectBridge(page);
   const meter = await meterFeedSocket(page);
 
-  // ── AC-1: cold boot on the DM home — 31 engine sessions, zero replays ──
-  await page.goto(`${stack.webUrl}/`);
-  const aside = page.locator("aside");
-  await expect(aside.getByText(/^default$/i)).toBeVisible({
-    timeout: 30_000,
-  });
-  const dmBtn = page.getByRole("button", {
-    name: /open dm|set up later|message/i,
-  });
-  if (
-    await dmBtn
-      .first()
-      .isVisible()
-      .catch(() => false)
-  ) {
-    await dmBtn.first().click();
-  } else {
-    await aside.getByText(/^default$/i).click();
-  }
-  await expect(page).toHaveURL(/\/dm\//);
-  /* The session list renders from relay rows — all 31 land before we meter;
-     any replay would have been sent the moment the feed socket opened, so
-     once every row is on screen the window for boot replays is closed. A
-     beat (ac-32's convention for "nothing posts") closes the race between
-     the row render and the socket's first frames. */
-  await expect(page.locator("[data-session]")).toHaveCount(SESSIONS, {
-    timeout: 60_000,
-  });
+  // ── AC-1: cold boot on Threads → All — 31 engine sessions, zero replays ──
+  await skipFirstRun(page);
+  await page.goto(`${stack.webUrl}/#?page=threads&view=all`);
+  /* One row per thread: a button that opens with its "Chat" tag (the row's
+     only fixed text — titles are the fake engine's). */
+  const rows = page.getByRole("button").filter({ hasText: /^Chat/ });
+  const sidebar = v3Sidebar(page);
+  /* The list renders from relay rows — all 31 land before we meter; any
+     replay would have been sent the moment the feed socket opened, so once
+     every row is on screen the window for boot replays is closed. A beat
+     (ac-32's convention for "nothing posts") closes the race between the row
+     render and the socket's first frames. */
+  await expect(rows).toHaveCount(SESSIONS, { timeout: 60_000 });
   await page.waitForTimeout(1_000);
   expect(meter.sinceCalls).toEqual([]);
   expect(meter.inboundBytes).toBeLessThan(BOOT_BUDGET_BYTES);
 
   // ── AC-2: a background turn badges running + rings without a replay ──
   const convA = convs[0];
-  await post(convA.id, "slow:400 Say hi to Carol");
-  await expect(aside.locator("[data-badge-running]")).toBeVisible({
-    timeout: 60_000,
+  const runningBadge = sidebar.getByRole("button", {
+    name: /^Threads\s*[1-9]\d*$/,
   });
-  /* The session row's life pill shows the running ring. */
-  const rowA = page.locator(`[data-session="${convA.rootMessageId}"]`);
-  await expect(rowA.locator("[data-life]")).toHaveAttribute(
-    "data-life",
-    "running",
-    { timeout: 30_000 },
-  );
+  await post(convA.id, "slow:400 Say hi to Carol");
+  await expect(runningBadge).toBeVisible({ timeout: 60_000 });
+  /* The thread row's state pill shows the running ring. */
+  await expect(rows.filter({ hasText: "Working" })).toHaveCount(1, {
+    timeout: 30_000,
+  });
   /* The running session earns its feed — exactly that one session replays.
      (Set compare: a reconnect resync could legitimately re-ask a sid.) */
   await expect
@@ -256,10 +249,10 @@ test("AC-1/AC-2: cold boot replays nothing; background sessions still badge, rin
   // ── AC-2: a background ask badges approvals + posts a notification ──
   const convB = convs[1];
   await post(convB.id, "Add a release note to the readme");
-  const approvals = aside.locator("[data-badge-approvals]");
-  await expect(approvals.locator("[aria-hidden]")).toHaveText("!", {
-    timeout: 60_000,
+  const approvals = sidebar.getByRole("button", {
+    name: /^Needs you\s*[1-9]\d*$/,
   });
+  await expect(approvals).toBeVisible({ timeout: 60_000 });
   await expect
     .poll(() => postKeys(page), { timeout: 60_000 })
     .toContain(`${convB.id}:ask`);
@@ -268,11 +261,16 @@ test("AC-1/AC-2: cold boot replays nothing; background sessions still badge, rin
     .toEqual(new Set([convA.engineRef, convB.engineRef]));
 
   // ── AC-1: opening a thread replays exactly that session ──
-  const convC = convs[2];
-  await page
-    .locator(`[data-session="${convC.rootMessageId}"] [data-life]`)
-    .click();
-  await expect(page).toHaveURL(new RegExp(`/dm/[^/]+/${convC.id}$`));
+  /* The oldest row is a settled seed (A and B just moved to the top); the
+     row says which conversation it is by the thread it opens. */
+  await rows.last().click();
+  await expect(page).toHaveURL(/open=thread:[^&]+/);
+  const openedId = decodeURIComponent(
+    /open=thread:([^&,]+)/.exec(page.url())?.[1] ?? "",
+  );
+  const convC = convs.find((c) => c.id === openedId);
+  if (!convC) throw new Error(`opened thread ${openedId} is not a seed`);
+  expect([convA.id, convB.id]).not.toContain(convC.id);
   await expect(page.locator("[data-thread-panel]")).toBeVisible({
     timeout: 30_000,
   });
@@ -317,7 +315,5 @@ test("AC-1/AC-2: cold boot replays nothing; background sessions still badge, rin
   await expect
     .poll(() => postKeys(page), { timeout: 120_000 })
     .toContain(`${convA.id}:done`);
-  await expect(aside.locator("[data-badge-running]")).toHaveCount(0, {
-    timeout: 60_000,
-  });
+  await expect(runningBadge).toHaveCount(0, { timeout: 60_000 });
 });

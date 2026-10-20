@@ -1,9 +1,17 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "@playwright/test";
 import { expectSettled } from "./helpers/approvals";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  panelIntoFocus,
+  pickPorts,
+  type Stack,
+  skipFirstRun,
+  startChat,
+  v3Peek,
+} from "./helpers/stack";
 
 /**
  * Evidence capture for Group A (#576/#578/#558) — PR #637.
@@ -16,6 +24,17 @@ import { bootStack, pickPorts, type Stack } from "./helpers/stack";
  *
  * Output lands in test-results/evidence/group-a/{576,578,558}/ (the 3x2
  * size/theme matrix) and …/recordings/ (webm).
+ *
+ * v3: the flows are the ported ac-576/ac-578/ac-558 ones. A chat starts from
+ * the new-chat draft beside Threads and its thread opens in the side peek;
+ * the rewind/ask-key shots need `[data-userturn]` rows, which are the session
+ * view's (the peek widened, `full=1`). Of the dialogs #576 names, the ones
+ * that are still dialogs are shot: Search (⌘K), the shortcut list (⌘/), "Add
+ * a folder" (the folder-less thread header's link) and System status (the
+ * banner's Details, which only draws while a leg is down, so a second stack
+ * on an engine that cannot start supplies it). Hire and Pair phone are pages
+ * now and Edit employee / the Profile card are gone, so Esc has nothing to
+ * close there and they are not harvested.
  */
 
 test.skip(
@@ -35,6 +54,9 @@ const SIZES = [
 const THEMES = ["light", "dark"] as const;
 
 let stackA: Stack;
+/* System status only draws while a leg is down: an engine that cannot start
+   — the same dead-engine shape ac-576 and the #85/#589 e2e drive. */
+let stackDead: Stack;
 test.beforeAll(async () => {
   test.setTimeout(300_000);
   mkdirSync(OUT, { recursive: true });
@@ -43,9 +65,14 @@ test.beforeAll(async () => {
   stackA = await bootStack("evid", await pickPorts(), {
     LILOS_USER_NAME: "Oscar",
   });
+  stackDead = await bootStack("evidead", await pickPorts(), {
+    LILOS_ENGINE: "hermes",
+    HERMES_BIN: "/nonexistent/hermes-bin",
+  });
 });
 test.afterAll(async () => {
   await stackA?.stop();
+  await stackDead?.stop();
 });
 
 test.describe.configure({ mode: "serial" });
@@ -56,24 +83,17 @@ const send = async (page: Page, text: string) => {
   await box.press("Enter");
 };
 
-async function dmDefault(stack: Stack, page: Page) {
-  await page.goto(`${stack.webUrl}/`);
-  const aside = page.locator("aside");
-  await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
-    timeout: 30_000,
-  });
-  const dmBtn = page.getByRole("button", {
-    name: /open dm|set up later|message/i,
-  });
-  if (
-    await dmBtn
-      .first()
-      .isVisible()
-      .catch(() => false)
-  )
-    await dmBtn.first().click();
-  else await aside.getByRole("button", { name: /default/i }).click();
-  await expect(page).toHaveURL(/\/dm\//);
+/** A new chat with the seeded Default employee, the way a person starts one:
+    the draft beside Threads, then the thread in the side peek. An id that
+    names nobody opens the draft on the default agent. */
+async function chatDefault(page: Page, text: string) {
+  await skipFirstRun(page);
+  await startChat(
+    page,
+    stackA.webUrl,
+    { id: "default", name: "Default" },
+    text,
+  );
 }
 
 const shot = (page: Page, dir: string, name: string) =>
@@ -83,9 +103,15 @@ const RUNNING_HINT = /Enter (steers|queues) · ⌘\. stop/;
 /* #585 stripped the wire name — the turn chip renders "Stopped" plain. */
 const STOPPED = /^Stopped$/;
 
-/** Each dialog #576 names, shot open, then Esc closed. */
-async function dialogsPass(page: Page, tag: string) {
-  const close = async (dialog: ReturnType<Page["getByRole"]>) => {
+/** Each dialog #576 names that is still a dialog, shot open, then Esc closed.
+    The thread is open beside Threads (the peek) while the dialogs open; only
+    the dialog may close on each Esc. */
+async function dialogsPass(
+  page: Page,
+  tag: string,
+  theme: (typeof THEMES)[number],
+) {
+  const close = async (dialog: Locator) => {
     await page.keyboard.press("Escape");
     await expect(dialog)
       .toHaveCount(0, { timeout: 4_000 })
@@ -94,63 +120,63 @@ async function dialogsPass(page: Page, tag: string) {
         await page.keyboard.press("Escape");
         await expect(dialog).toHaveCount(0, { timeout: 15_000 });
       });
+    // Only the top layer closed: the thread is still open beside the list.
+    await expect(page.locator("[data-thread-panel]")).toBeVisible();
   };
 
-  await page
-    .locator("aside")
-    .getByRole("button", { name: /hire employee/i })
-    .click();
-  const hire = page.getByRole("dialog", { name: "Hire an employee" });
-  await expect(hire).toBeVisible({ timeout: 15_000 });
-  await shot(page, "576", `${tag}-hire`);
-  await close(hire);
+  await page.keyboard.press("Meta+k");
+  const search = page.getByRole("dialog", { name: "Search" });
+  await expect(search).toBeVisible({ timeout: 15_000 });
+  await shot(page, "576", `${tag}-search`);
+  await close(search);
 
-  await page.locator('[data-ws="folder"]').click();
-  await page
-    .locator('[role="menu"], [data-slot="dropdown-menu-content"]')
-    .last()
-    .getByText("Add a folder")
-    .click();
+  await page.locator("[data-add-folder]").click();
   const folder = page.getByRole("dialog", { name: "Add a folder" });
   await expect(folder).toBeVisible({ timeout: 15_000 });
   await shot(page, "576", `${tag}-addfolder`);
   await close(folder);
 
-  await page.getByRole("button", { name: "Pair phone" }).click();
-  const pair = page.getByRole("dialog", { name: "Pair phone" });
-  await expect(pair).toBeVisible({ timeout: 15_000 });
-  await shot(page, "576", `${tag}-pair`);
-  await close(pair);
+  await page.keyboard.press("Meta+/");
+  const shortcuts = page.locator("[data-shortcuts-dialog]");
+  await expect(shortcuts).toBeVisible({ timeout: 15_000 });
+  await shot(page, "576", `${tag}-shortcuts`);
+  await close(shortcuts);
 
-  await page.getByRole("button", { name: "System status" }).click();
-  const status = page.getByRole("dialog", { name: "System status" });
-  await expect(status).toBeVisible({ timeout: 15_000 });
-  await shot(page, "576", `${tag}-status`);
-  await close(status);
-
-  await page.getByRole("button", { name: "Profile", exact: true }).click();
-  const card = page.getByRole("dialog", { name: /profile$/i });
-  await expect(card).toBeVisible({ timeout: 15_000 });
-  await card
-    .getByRole("button", { name: /^Edit$/ })
-    .first()
-    .click();
-  const edit = page.getByRole("dialog", { name: "Edit employee" });
-  await expect(edit).toBeVisible({ timeout: 15_000 });
-  await shot(page, "576", `${tag}-edit`);
-  await close(edit);
-  await expect(card).toBeVisible();
-  await close(card);
+  /* System status: the dead-engine stack's banner, in a page of the same
+     context (same size and colour scheme). */
+  const dead = await page.context().newPage();
+  try {
+    await skipFirstRun(dead);
+    await dead.addInitScript(
+      (t) => localStorage.setItem("lilos-theme", t),
+      theme,
+    );
+    await dead.goto(`${stackDead.webUrl}/`);
+    await dead
+      .getByRole("status")
+      .getByRole("button", { name: "Details" })
+      .click({ timeout: 90_000 });
+    const status = dead.getByRole("dialog", { name: "System status" });
+    await expect(status).toBeVisible({ timeout: 15_000 });
+    await shot(dead, "576", `${tag}-status`);
+    await dead.keyboard.press("Escape");
+    await expect(status).toHaveCount(0, { timeout: 15_000 });
+  } finally {
+    await dead.close();
+  }
 }
 
 /** Rewind hover affordance + Undo toast (#578) + approval-card hint (#558)
     + the running ⌘. stop hint (#576), all on the same seeded thread. */
 const lastTurn = (page: Page) => page.locator("[data-agentturn]").last();
 
+/** The thread is already open in the peek with its first message sent; the
+    session view (the peek widened) is where the user rows the rewind trigger
+    lives on render. */
 async function threadSubjects(page: Page, tag: string) {
+  await panelIntoFocus(page);
   /* Each send waits its turn's settle — a send mid-turn lands in the tray
      and never grows a second user-turn row for the rewind trigger. */
-  await send(page, "alpha marker one");
   await expectSettled(lastTurn(page), 60_000);
   await send(page, "beta marker two");
   await expectSettled(lastTurn(page), 60_000);
@@ -199,7 +225,7 @@ async function threadSubjects(page: Page, tag: string) {
 }
 
 test("capture the 3x2 size/theme matrix", async ({ browser }) => {
-  test.setTimeout(300_000);
+  test.setTimeout(900_000);
   for (const s of SIZES) {
     for (const t of THEMES) {
       const tag = `${s.w}x${s.h}-${t}`;
@@ -212,8 +238,8 @@ test("capture the 3x2 size/theme matrix", async ({ browser }) => {
         (theme) => localStorage.setItem("lilos-theme", theme),
         t,
       );
-      await dmDefault(stackA, page);
-      await dialogsPass(page, tag);
+      await chatDefault(page, "alpha marker one");
+      await dialogsPass(page, tag, t);
       await threadSubjects(page, tag);
       await ctx.close();
       console.log(`captured ${tag}`);
@@ -231,8 +257,8 @@ test("record the rewind→Undo→restore flow", async ({ browser }) => {
     },
   });
   const page = await ctx.newPage();
-  await dmDefault(stackA, page);
-  await send(page, "alpha marker one");
+  await chatDefault(page, "alpha marker one");
+  await panelIntoFocus(page);
   await expectSettled(lastTurn(page), 60_000);
   await send(page, "beta marker two");
   await expectSettled(lastTurn(page), 60_000);
@@ -272,25 +298,34 @@ test("record Esc during a running turn (turn never stops)", async ({
     },
   });
   const page = await ctx.newPage();
-  await dmDefault(stackA, page);
-  await send(page, "LILOS_TURN_HOLD Add a release note to the readme");
+  await chatDefault(page, "LILOS_TURN_HOLD Add a release note to the readme");
   await expect(page.getByText(RUNNING_HINT)).toBeVisible({
     timeout: 30_000,
   });
+  /* Hop into the session view so the walk has every layer: widened → peek →
+     Threads list. */
+  await panelIntoFocus(page);
   await page.waitForTimeout(800);
-  /* Esc pops one surface per press — Focus → thread → DM landing — while
-     the turn keeps running underneath; the session row still says open. */
+  /* Esc pops one surface per press — session view → thread beside the list →
+     the Threads list — while the turn keeps running underneath; the thread's
+     board card still reads Working. */
   await page.keyboard.press("Escape");
-  await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+$/, { timeout: 10_000 });
+  await expect(page).not.toHaveURL(/full=1/, { timeout: 10_000 });
+  await expect(page).toHaveURL(/open=thread:[^&]+$/);
   await page.waitForTimeout(700);
   await page.keyboard.press("Escape");
-  await expect(page).toHaveURL(/\/dm\/[^/]+$/, { timeout: 10_000 });
-  await expect(page.getByText("Session running")).toBeVisible({
+  await expect(page).toHaveURL(/page=threads$/, { timeout: 10_000 });
+  await expect(v3Peek(page)).toHaveCount(0);
+  const card = page
+    .locator("#v3-main")
+    .getByRole("button")
+    .filter({ hasText: /release note/i });
+  await expect(card.getByText("Working", { exact: true })).toBeVisible({
     timeout: 15_000,
   });
-  /* Re-open the still-running session, then ⌘. — the real stop. */
-  await page
-    .getByRole("button", { name: /Session running/ })
+  /* Re-open the still-running thread, then ⌘. — the real stop. */
+  await card
+    .getByText(/release note/i)
     .first()
     .click();
   await expect(page.getByText(RUNNING_HINT)).toBeVisible({

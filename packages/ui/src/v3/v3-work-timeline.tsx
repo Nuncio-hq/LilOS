@@ -1,5 +1,6 @@
 import { cn } from "../lib/utils";
-import { AgentAvatar, DOT, span } from "./v3-bits";
+import { span } from "./v3-bits";
+import { AgentAvatar, DOT } from "./v3-marks";
 import type { V3Status } from "./v3-types";
 import type { WorkViewProps } from "./v3-work-views";
 
@@ -200,9 +201,13 @@ export function TimelineView({ data, go, tickets }: WorkViewProps) {
                       </>
                     )}
                     <span className="relative block truncate px-2 leading-6 text-foreground">
-                      <span className="text-muted-foreground">
-                        {bar.ticketId}
-                      </span>{" "}
+                      {bar.ticketId && (
+                        <>
+                          <span className="text-muted-foreground">
+                            {bar.ticketId}
+                          </span>{" "}
+                        </>
+                      )}
                       {bar.label}
                     </span>
                   </button>

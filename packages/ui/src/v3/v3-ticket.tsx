@@ -2,7 +2,6 @@ import {
   ArrowRightIcon,
   CalendarIcon,
   CheckIcon,
-  ClockIcon,
   EyeIcon,
   GitPullRequestIcon,
   ImageIcon,
@@ -12,186 +11,26 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "../lib/utils";
+import { ago, Btn, Diff, Page, Prop, Section, span, Title } from "./v3-bits";
+import type { V3Data } from "./v3-data-types";
+import { AgentAvatar, Avatar, StatusPill } from "./v3-marks";
 import {
-  AgentAvatar,
-  Avatar,
-  ago,
-  Btn,
-  Diff,
-  INK,
-  Page,
-  Prop,
-  RowButton,
-  Section,
-  StatusPill,
-  span,
-  Title,
-} from "./v3-bits";
-import { agentOf, goalOf, projectOf, threadsOf, ticketOf } from "./v3-model";
+  agentNameOf,
+  agentOf,
+  FORMER_AGENT,
+  goalOf,
+  projectOf,
+  threadsOf,
+  ticketOf,
+} from "./v3-model";
+import { RowButton } from "./v3-open-record";
+import type { V3PageProps, V3Route } from "./v3-page-types";
 import { viaOf } from "./v3-rows";
-import type { V3Data, V3PageProps, V3Route, V3Ticket } from "./v3-types";
+import { AskNote, link, Person, StuckNote, WaitingOn } from "./v3-ticket-notes";
+import type { V3Ticket } from "./v3-types";
 
 /* One ticket as a Notion page: properties, the hands it passed through, steps
    with times, the result, and the conversation. */
-
-const link = "border-foreground/25 border-b hover:border-foreground/60";
-
-function Person({ data, id }: { data: V3Data; id: string }) {
-  if (id === "you") return <span className="font-medium">{data.me}</span>;
-  const a = agentOf(data, id);
-  return (
-    <span className="flex items-center gap-2 font-medium">
-      <AgentAvatar data={data} agent={a} />
-      {a.name}
-    </span>
-  );
-}
-
-/** Stuck: say why, say what the CEO does otherwise, and offer the two moves. */
-function StuckNote({
-  data,
-  t,
-  act,
-}: { data: V3Data; t: V3Ticket } & Pick<V3PageProps, "act">) {
-  const [picking, setPicking] = useState(false);
-  const threadId = threadsOf(data, t.id).find((x) => x.status === "stuck")?.id;
-  const others = data.agents.filter(
-    (a) => a.id !== t.owner && a.id !== data.ceoId,
-  );
-  return (
-    <div className="mt-3 rounded-lg bg-red-50/70 px-3.5 py-3 text-[14px] dark:bg-red-400/10">
-      <div className={cn("font-medium", INK.stuck)}>
-        Not moving: {t.stuckWhy}
-      </div>
-      {t.fallback && (
-        <div className="mt-0.5 text-[13.5px] text-muted-foreground">
-          At {t.fallback.at} the CEO {t.fallback.does}.
-        </div>
-      )}
-      <div className="mt-2.5 flex flex-wrap items-center gap-2">
-        <Btn small onClick={() => setPicking((p) => !p)}>
-          Hand to …
-        </Btn>
-        {picking &&
-          others.map((a) => (
-            <Btn
-              small
-              key={a.id}
-              onClick={() => {
-                act.handOff(t.id, a.id);
-                setPicking(false);
-              }}
-            >
-              <AgentAvatar data={data} agent={a} size={16} />
-              {a.name}
-            </Btn>
-          ))}
-        {threadId && (
-          <Btn small onClick={() => act.stop(threadId)}>
-            Stop
-          </Btn>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/** Waiting on you: the question and its answers, right on the page. */
-function AskNote({
-  data,
-  t,
-  act,
-}: { data: V3Data; t: V3Ticket } & Pick<V3PageProps, "act">) {
-  const w = t.waitingOn;
-  const ask =
-    w?.kind === "you" ? data.asks.find((a) => a.id === w.askId) : undefined;
-  if (!ask) return null;
-  return (
-    <div className="mt-3 rounded-lg bg-orange-50/70 px-3.5 py-3 text-[14px] dark:bg-orange-400/10">
-      <div className="font-medium">{ask.ask}</div>
-      <div className="mt-0.5 text-[13.5px] text-muted-foreground">
-        {ask.why}
-      </div>
-      <div className="mt-2.5 flex flex-wrap items-center gap-2">
-        {ask.options ? (
-          ask.options.map((o, i) => (
-            <Btn
-              small
-              primary={i === 0}
-              key={o}
-              onClick={() => act.answer(ask.id, o)}
-            >
-              {o}
-            </Btn>
-          ))
-        ) : (
-          <>
-            <Btn small primary onClick={() => act.approve(ask.id)}>
-              Approve
-            </Btn>
-            <Btn small onClick={() => act.deny(ask.id)}>
-              Deny
-            </Btn>
-          </>
-        )}
-        <span className="text-[13px] text-muted-foreground/70">
-          Otherwise at {ask.fallback.at} the CEO {ask.fallback.does}
-        </span>
-      </div>
-    </div>
-  );
-}
-
-function WaitingOn({
-  data,
-  t,
-  go,
-}: {
-  data: V3Data;
-  t: V3Ticket;
-  go: (r: V3Route) => void;
-}) {
-  const w = t.waitingOn;
-  if (!w) return null;
-  return (
-    <Prop icon={<ClockIcon />} label="Waiting on">
-      {w.kind === "you" && (
-        <>
-          <button
-            type="button"
-            className={cn("font-medium", link)}
-            onClick={() => go({ page: "needs" })}
-          >
-            You
-          </button>
-          <span className="text-muted-foreground">
-            for your answer · {ago(t.since)}
-          </span>
-        </>
-      )}
-      {w.kind === "agent" && (
-        <>
-          <Person data={data} id={w.agentId} />
-          <span className="text-muted-foreground">
-            {w.why} · {ago(t.since)}
-          </span>
-        </>
-      )}
-      {w.kind === "ticket" && (
-        <>
-          <button
-            type="button"
-            className={link}
-            onClick={() => go({ page: "ticket", id: w.ticketId })}
-          >
-            {w.ticketId} {ticketOf(data, w.ticketId)?.title}
-          </button>
-          <span className="text-muted-foreground">· {ago(t.since)}</span>
-        </>
-      )}
-    </Prop>
-  );
-}
 
 /** The hand-off chain: one box per thread, oldest hand first. */
 function Hands({
@@ -240,12 +79,13 @@ function Hands({
               >
                 <span className="flex items-center gap-2 text-[13.5px] font-medium">
                   <AgentAvatar data={data} agent={a} />
-                  {a.name}
+                  {a?.name ?? FORMER_AGENT}
                 </span>
                 <span className="w-full truncate">{th.title}</span>
                 <span className="text-muted-foreground">
-                  {span(th.minutes)} · {th.turns.length}{" "}
-                  {th.turns.length === 1 ? "turn" : "turns"}
+                  {span(th.minutes)}
+                  {th.turns.length > 0 &&
+                    ` · ${th.turns.length} ${th.turns.length === 1 ? "turn" : "turns"}`}
                 </span>
                 <StatusPill status={th.status} />
               </button>
@@ -294,7 +134,7 @@ function Progress({ data, t }: { data: V3Data; t: V3Ticket }) {
               {s.text}
               <span className="text-muted-foreground/70">
                 {" "}
-                · {s.by === "you" ? data.me : agentOf(data, s.by).name}
+                · {s.by === "you" ? data.me : agentNameOf(data, s.by)}
               </span>
             </span>
             <span
@@ -348,29 +188,33 @@ function Updates({
   act,
 }: { data: V3Data; t: V3Ticket } & Pick<V3PageProps, "act">) {
   const [text, setText] = useState("");
+  const comment = act.comment;
   const send = () => {
     const body = text.trim();
-    if (!body) return;
-    act.comment(t.id, body);
+    if (!body || !comment) return;
+    comment(t.id, body);
     setText("");
   };
+  // Without comments in the app and nothing said yet, there is no section.
+  if (!comment && t.updates.length === 0) return null;
   return (
     <>
       <Section title="Updates" count={t.updates.length || undefined} />
       {t.updates.map((u) => {
-        const by = u.by === "you" ? undefined : agentOf(data, u.by);
-        const name = by ? by.name : data.me;
+        const you = u.by === "you";
+        const by = you ? undefined : agentOf(data, u.by);
+        const name = you ? data.me : (by?.name ?? FORMER_AGENT);
         return (
           <div key={`${u.by}-${u.ago}-${u.text}`} className="flex gap-3 py-2.5">
-            {by ? (
+            {you ? (
+              <Avatar name={name} tone="n" size={24} className="mt-0.5" />
+            ) : (
               <AgentAvatar
                 data={data}
                 agent={by}
                 size={24}
                 className="mt-0.5"
               />
-            ) : (
-              <Avatar name={name} tone="n" size={24} className="mt-0.5" />
             )}
             <div>
               <div className="text-[13.5px]">
@@ -384,19 +228,21 @@ function Updates({
           </div>
         );
       })}
-      <div className="mt-3 flex items-center gap-3 border-[var(--v3-line)] border-t pt-3.5">
-        <Avatar name={data.me} tone="n" size={24} />
-        <input
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && send()}
-          placeholder="Add a comment…"
-          className="min-w-0 flex-1 bg-transparent text-[14px] outline-none placeholder:text-muted-foreground/70"
-        />
-        <span className="shrink-0 text-[13px] text-muted-foreground/70">
-          Type @ to ask an agent
-        </span>
-      </div>
+      {comment && (
+        <div className="mt-3 flex items-center gap-3 border-[var(--v3-line)] border-t pt-3.5">
+          <Avatar name={data.me} tone="n" size={24} />
+          <input
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && send()}
+            placeholder="Add a comment…"
+            className="min-w-0 flex-1 bg-transparent text-[14px] outline-none placeholder:text-muted-foreground/70"
+          />
+          <span className="shrink-0 text-[13px] text-muted-foreground/70">
+            Type @ to ask an agent
+          </span>
+        </div>
+      )}
     </>
   );
 }
@@ -429,10 +275,12 @@ export function V3TicketPage({
   const via = viaOf(data, agentOf(data, t.owner));
   return (
     <Page>
-      <Title kicker={`${t.id} · ${project?.name ?? ""}`}>{t.title}</Title>
+      <Title kicker={project ? `${t.id} · ${project.name}` : t.id}>
+        {t.title}
+      </Title>
       <div className="mb-2 flex">
         <Btn small onClick={() => act.ask(`About ${t.id}: `)}>
-          Ask the CEO about this
+          {data.ceoId ? "Ask the CEO about this" : "Ask about this"}
         </Btn>
       </div>
       <div className="mt-1.5 mb-1">

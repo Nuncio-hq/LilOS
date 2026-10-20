@@ -6,14 +6,18 @@ import {
   panelIntoFocus,
   pickPorts,
   type Stack,
+  skipFirstRun,
+  v3Peek,
 } from "./helpers/stack";
 
 /**
  * Issue #423 — a failed DM action says so instead of landing nowhere:
  *
  *   AC-1 every action that rejects shows a toast naming what failed in
- *      plain words — Stop, model pick, rename, archive/unarchive, and the
- *      background-jobs list (which used to leave the tab quietly empty).
+ *      plain words — Stop, model pick, rename, archive/unarchive (a thread
+ *      row's ⋯ menu on Threads, and the same menu in the thread's header),
+ *      and the background-jobs list (which used to leave the tab quietly
+ *      empty).
  *   AC-2 a failed history load shows a retryable notice in the thread —
  *      not silently missing messages.
  *   AC-3 the once-only model-catalog load survives failed `models.list`
@@ -121,41 +125,32 @@ async function wireFailures(page: Page) {
   };
 }
 
-/** Open the app, land on Default's DM home (dismissing the first-run card).
-    `statusPollMs=500` shortens the catalog-seed poll so the AC-3 reload leg
-    doesn't wait the production 15s for the heartbeat-carried fallback. */
-async function dmDefault(page: Page) {
-  await page.goto(`${stack.webUrl}/?statusPollMs=500`);
-  const aside = page.locator("aside").first();
-  await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
+/* The seeded employee. An id that names nobody opens the new-chat draft on
+   the default agent, which on this one-agent stack is Default. */
+const DEFAULT_AGENT_ID = "default";
+/* `statusPollMs=500` shortens the catalog-seed poll so the AC-3 reload leg
+   doesn't wait the production 15s for the heartbeat-carried fallback. The
+   query rides ahead of the hash, so it survives every reload. */
+const APP = (): string => `${stack.webUrl}/?statusPollMs=500`;
+
+/** The new-chat draft beside Threads — past first run. */
+async function newChat(page: Page) {
+  await skipFirstRun(page);
+  await page.goto(`${APP()}#?page=threads&open=newchat:${DEFAULT_AGENT_ID}`);
+  await expect(v3Peek(page).getByPlaceholder(/^Message /)).toBeVisible({
     timeout: 30_000,
   });
-  const dmBtn = page.getByRole("button", {
-    name: /open dm|set up later|message/i,
-  });
-  if (
-    await dmBtn
-      .first()
-      .isVisible()
-      .catch(() => false)
-  ) {
-    await dmBtn.first().click();
-  } else {
-    await aside.getByRole("button", { name: /default/i }).click();
-  }
-  await expect(page).toHaveURL(/\/dm\//);
 }
 
-const send = async (page: Page, text: string) => {
-  const box = page.locator("textarea").last();
-  await box.fill(text);
-  await box.press("Enter");
-};
-
-/** Send from the DM home and open the new session in Focus (via the
-   panel's ↗ button — a send lands on the panel now, #577). */
+/** Send from a new chat and open the new session as the session view (a
+   widened thread): a send lands on the thread in the side peek (#577), so
+   step in through its widen button. */
 const openSession = async (page: Page, text: string) => {
-  await send(page, text);
+  await newChat(page);
+  await v3Peek(page)
+    .getByPlaceholder(/^Message /)
+    .fill(text);
+  await v3Peek(page).getByRole("button", { name: "Send" }).click();
   await panelIntoFocus(page);
 };
 
@@ -180,8 +175,11 @@ test("AC-3 the model catalog survives failed models.list calls", async ({
     match: (m) => m === "models.list" && rejectsLeft-- > 0,
     message: "engine host not ready",
   });
-  await dmDefault(page);
-  await expect(page.locator(PICKER).first()).toBeVisible({ timeout: 30_000 });
+  await newChat(page);
+  /* The draft's model picker is the engine's full picker, listing the same
+     `models.list` catalog every thread's picker reads. It only renders once
+     the app holds that catalog, so its presence is the proof. */
+  await expect(v3Peek(page).locator(PICKER)).toBeVisible({ timeout: 30_000 });
   /* (b) The host fully gone for the app's fetches: every models.list
      rejects, yet the relay's host-status cache still seeds the picker —
      a hello that predates the first models-carrying report catches up on
@@ -189,8 +187,7 @@ test("AC-3 the model catalog survives failed models.list calls", async ({
   fail.heal();
   fail.reject(method("models.list"));
   await page.reload();
-  await dmDefault(page);
-  await expect(page.locator(PICKER).first()).toBeVisible({ timeout: 30_000 });
+  await expect(v3Peek(page).locator(PICKER)).toBeVisible({ timeout: 30_000 });
   await shot(page, "ac3-catalog-seeded");
 });
 
@@ -199,7 +196,6 @@ test("AC-2 a failed history load shows a retryable notice", async ({
 }) => {
   await page.setViewportSize(VIEW);
   const fail = await wireFailures(page);
-  await dmDefault(page);
   await openSession(page, "history that must survive a reload");
 
   /* Reopen the thread with history broken: the fetch used to land nowhere
@@ -221,11 +217,11 @@ test("AC-2 a failed history load shows a retryable notice", async ({
     page.getByText("history that must survive a reload").first(),
   ).toBeVisible({ timeout: 15_000 });
 
-  /* The panel thread (off /focus) carries the same notice — the AC says
-     "in the thread", and dm.tsx renders it on both views. A reload forces
-     the remount (focus→panel is a nested route, no guaranteed refetch). */
+  /* The thread in the side peek (off the session view) carries the same
+     notice — the AC says "in the thread", and both views render it. A
+     reload forces the remount (no guaranteed refetch on narrowing). */
   fail.reject(method("messages.list"));
-  await page.goto(page.url().replace(/\/focus$/, ""));
+  await page.goto(page.url().replace(/&full=1(?=&|$)/, ""));
   await page.reload();
   await expect(page.locator(BANNER).first()).toContainText(
     "Couldn't load this thread's history",
@@ -236,7 +232,6 @@ test("AC-2 a failed history load shows a retryable notice", async ({
 test("AC-1 a failed Stop shows its reason", async ({ page }) => {
   await page.setViewportSize(VIEW);
   const fail = await wireFailures(page);
-  await dmDefault(page);
   /* `slow:` paces the turn so the Stop button stays up across the click. */
   await openSession(page, "slow:400 a turn to stop");
   const stop = page.getByRole("button", { name: "Stop (⌘.)" });
@@ -266,7 +261,6 @@ test("AC-1 a failed Stop shows its reason", async ({ page }) => {
 test("AC-1 a failed model pick shows its reason", async ({ page }) => {
   await page.setViewportSize(VIEW);
   const fail = await wireFailures(page);
-  await dmDefault(page);
   await openSession(page, "a model to switch");
   const trigger = page.locator(PICKER).first();
   await expect(trigger).toBeVisible({ timeout: 30_000 });
@@ -287,24 +281,33 @@ test("AC-1 a failed model pick shows its reason", async ({ page }) => {
   await shot(page, "ac1-model-toast");
 });
 
+/** A thread's row on the Threads page: the row is a button holding the
+    title, so find it by the title it shows. */
+const threadRow = (page: Page, title: string) =>
+  page
+    .locator("#v3-main")
+    .locator('[role="button"]', { hasText: title })
+    .first();
+
 test("AC-1 failed rename, archive and unarchive show their reasons", async ({
   page,
 }) => {
   await page.setViewportSize(VIEW);
   const fail = await wireFailures(page);
-  await dmDefault(page);
-  await openSession(page, "a session to rename and archive");
-  /* Back on the DM home the new session is the last row's menu. */
-  const home = page.url().match(/\/dm\/[^/]+/)?.[0] ?? "/dm/default";
-  await page.goto(`${stack.webUrl}${home}`);
-  const menu = page.getByRole("button", { name: "Thread actions" }).last();
-  await expect(menu).toBeVisible({ timeout: 15_000 });
+  const TITLE = "a thread to rename and archive";
+  await openSession(page, TITLE);
+  /* Back to the page beside the list: the new thread is a row on Threads. */
+  await page.goto(`${APP()}#?page=threads&view=all`);
+  const row = threadRow(page, TITLE);
+  await expect(row).toBeVisible({ timeout: 30_000 });
+  const menu = row.getByRole("button", { name: "Thread actions", exact: true });
 
-  /* Rename — conversations.update {title}. */
+  /* Rename — conversations.update {title}, in place on the row. */
   fail.reject({
     match: (m, p) => m === "conversations.update" && p.title !== undefined,
     message: ERR,
   });
+  await row.hover();
   await menu.click();
   await page.getByRole("menuitem", { name: "Rename thread" }).click();
   const title = page.getByRole("textbox", { name: "Thread title" });
@@ -312,7 +315,9 @@ test("AC-1 failed rename, archive and unarchive show their reasons", async ({
   await title.press("Enter");
   await expect(page.locator(TOAST)).toContainText(
     "Couldn't rename the thread",
-    { timeout: 15_000 },
+    {
+      timeout: 15_000,
+    },
   );
   await expect(page.locator(TOAST)).toContainText(LOST);
 
@@ -322,7 +327,10 @@ test("AC-1 failed rename, archive and unarchive show their reasons", async ({
     match: (m, p) => m === "conversations.update" && p.archived !== undefined,
     message: ERR,
   });
-  await menu.click();
+  await row.hover();
+  await row
+    .getByRole("button", { name: "Thread actions", exact: true })
+    .click();
   await page.getByRole("menuitem", { name: "Archive thread" }).click();
   await expect(page.locator(TOAST)).toContainText(
     "Couldn't archive the thread",
@@ -333,14 +341,17 @@ test("AC-1 failed rename, archive and unarchive show their reasons", async ({
 
   /* Unarchive — the row moves under the collapsed Archived section first. */
   fail.heal();
-  await menu.click();
+  await row.hover();
+  await row
+    .getByRole("button", { name: "Thread actions", exact: true })
+    .click();
   await page.getByRole("menuitem", { name: "Archive thread" }).click();
   await page.getByRole("button", { name: /Archived \(\d+\)/ }).click();
   const archivedMenu = page
-    .locator("[data-archived]")
-    .getByRole("button", { name: "Thread actions" })
+    .locator("[data-archived-list]")
+    .getByRole("button", { name: "Thread actions", exact: true })
     .last();
-  await expect(archivedMenu).toBeVisible({ timeout: 15_000 });
+  await expect(archivedMenu).toBeAttached({ timeout: 15_000 });
   fail.reject({
     match: (m, p) => m === "conversations.update" && p.archived !== undefined,
     message: ERR,
@@ -354,12 +365,69 @@ test("AC-1 failed rename, archive and unarchive show their reasons", async ({
   await expect(page.locator(TOAST)).toContainText(LOST);
 });
 
+test("AC-1 the thread's own header renames and archives, and failures say so", async ({
+  page,
+}) => {
+  await page.setViewportSize(VIEW);
+  const fail = await wireFailures(page);
+  await openSession(page, "a thread renamed from its header");
+  const panel = page.locator("[data-thread-panel]");
+  const menu = panel.getByRole("button", {
+    name: "Thread actions",
+    exact: true,
+  });
+  await expect(menu).toBeVisible({ timeout: 30_000 });
+
+  /* A rename that fails toasts, and the title stays what it was. */
+  fail.reject({
+    match: (m, p) => m === "conversations.update" && p.title !== undefined,
+    message: ERR,
+  });
+  await menu.click();
+  await page.getByRole("menuitem", { name: "Rename thread" }).click();
+  const input = panel.getByRole("textbox", { name: "Thread title" });
+  await input.fill("renamed in the header");
+  await input.press("Enter");
+  await expect(page.locator(TOAST)).toContainText(
+    "Couldn't rename the thread",
+    {
+      timeout: 15_000,
+    },
+  );
+  await expect(page.locator(TOAST)).toContainText(LOST);
+
+  /* Healed, the same rename lands in the header. */
+  fail.heal();
+  await menu.click();
+  await page.getByRole("menuitem", { name: "Rename thread" }).click();
+  await input.fill("renamed in the header");
+  await input.press("Enter");
+  await expect(panel.locator("[data-session-title]")).toHaveText(
+    "renamed in the header",
+    { timeout: 15_000 },
+  );
+
+  /* A failed archive toasts too. */
+  fail.reject({
+    match: (m, p) => m === "conversations.update" && p.archived !== undefined,
+    message: ERR,
+  });
+  await menu.click();
+  await page.getByRole("menuitem", { name: "Archive thread" }).click();
+  await expect(page.locator(TOAST)).toContainText(
+    "Couldn't archive the thread",
+    {
+      timeout: 15_000,
+    },
+  );
+  await expect(page.locator(TOAST)).toContainText(LOST);
+});
+
 test("AC-1 a failed background-jobs list shows its reason", async ({
   page,
 }) => {
   await page.setViewportSize(VIEW);
   const fail = await wireFailures(page);
-  await dmDefault(page);
   await openSession(page, "a session whose jobs list fails");
   /* Arm, then remount: the jobs effect refires the moment the feed is
      synced, so the toast is fresh when the assertion starts polling. */

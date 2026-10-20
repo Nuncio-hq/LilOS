@@ -1,14 +1,15 @@
 /**
  * Settings pane state (issue #132): the pure helpers behind the wired
- * SettingsView — which sections exist (D-#19: only with real data), the
- * stored default editor's place in detected lists, the ⌘, shortcut, and
- * General's draft-vs-relay reconciliation. `defaultEditor` itself lives in
- * the relay's settings KV like `modelVisibility` (#92) — seeded in
- * runtime.ts, written via actions.ts.
+ * Settings — the stored default editor's place in detected lists, the ⌘,
+ * shortcut, About's version lines. `defaultEditor` itself lives in the
+ * relay's settings KV like `modelVisibility` (#92) — seeded in runtime.ts,
+ * written via actions.ts.
  */
 import type { ProfileSettings } from "@lilos/contracts/app";
-import type { ConversationAccess } from "@lilos/contracts/engine";
-import type { DetectedEditor } from "@lilos/ui/types";
+import type {
+  ApprovalPolicy,
+  ConversationAccess,
+} from "@lilos/contracts/engine";
 import { atom } from "nanostores";
 
 /** The picked default editor (relay `settings` key `defaultEditor`); null
@@ -20,6 +21,26 @@ export const defaultEditor = atom<string | null>(null);
  *  remembers a previous session's level. */
 export const defaultAccess = atom<ConversationAccess>("ask");
 
+/** The engine approval policy the user picked this session. The engine's
+ *  own value only reaches us on `describe` (at reconnect), so a pick stands
+ *  here until then; `undefined` = trust the declared `detail.current`. */
+export const enginePolicyPick = atom<ApprovalPolicy | undefined>(undefined);
+
+/** The policy Settings shows: the pick, else what the engine declared, else
+ *  Smart (the engine default). `undefined` while the engine declares no
+ *  `approval_policy` capability (D-#19: no capability, no control). */
+export function enginePolicyOf(
+  capability: { detail?: Record<string, unknown> } | undefined,
+  pick: ApprovalPolicy | undefined,
+): ApprovalPolicy | undefined {
+  if (!capability) return undefined;
+  if (pick) return pick;
+  const current = capability.detail?.current;
+  return current === "manual" || current === "off" || current === "smart"
+    ? current
+    : "smart";
+}
+
 /** ⌘, on macOS / Ctrl+, elsewhere — the platform's Settings shortcut. */
 export function isSettingsShortcut(e: {
   key: string;
@@ -27,17 +48,6 @@ export function isSettingsShortcut(e: {
   ctrlKey: boolean;
 }): boolean {
   return (e.metaKey || e.ctrlKey) && e.key === ",";
-}
-
-/** The host's os.editors row (issue #110) — `app` is the bundle path. */
-export interface DetectedEditorWire {
-  id: string;
-  name: string;
-  app?: string;
-}
-
-export function toDetectedEditor(e: DetectedEditorWire): DetectedEditor {
-  return { id: e.id, name: e.name, ...(e.app ? { path: e.app } : {}) };
 }
 
 /** The stored default leads every editor list (Open-in-editor menus pick
@@ -49,23 +59,6 @@ export function orderEditors<T extends { id: string }>(
   const i = defaultId ? list.findIndex((e) => e.id === defaultId) : -1;
   if (i <= 0) return list;
   return [list[i], ...list.slice(0, i), ...list.slice(i + 1)];
-}
-
-/** Editors section props — undefined when nothing is installed (D-#19).
- *  `defaultId` falls back to the first detected editor so the section always
- *  shows which editor is in effect. `editors` arrives already ordered
- *  (orderEditors inside the host client). */
-export function editorsProps(
-  editors: DetectedEditorWire[] | null | undefined,
-  defaultId: string | null,
-): { detected: DetectedEditor[]; defaultId: string | null } | undefined {
-  if (!editors?.length) return undefined;
-  const detected = editors.map(toDetectedEditor);
-  const stored = defaultId && editors.some((e) => e.id === defaultId);
-  return {
-    detected,
-    defaultId: stored ? defaultId : detected[0].id,
-  };
 }
 
 /** What Settings → About shows: the app version the shell reports (desktop
@@ -102,36 +95,14 @@ export function updateOutcomeMessage(outcome: string): string {
   }
 }
 
-/** General's fields are controlled inputs (AC-3): keystrokes edit a local
- *  draft, a debounce posts profile.update, and the relay's echo (or another
- *  window's edit) drops each field once the stored value catches up — so
- *  typing never fights the round trip. */
-export interface SettingsDraft {
-  name?: string;
-  company?: string;
-  color?: string;
-}
-
-/** Draft minus the fields the relay now stores at the same value. */
-export function settledDrafts(
-  drafts: SettingsDraft,
-  current: { name: string; company: string; color: string },
-): SettingsDraft {
-  const next = { ...drafts };
-  if (next.name !== undefined && next.name === current.name) delete next.name;
-  if (next.company !== undefined && next.company === current.company)
-    delete next.company;
-  if (next.color !== undefined && next.color === current.color)
-    delete next.color;
-  return next;
-}
-
 /* The schema's min(1) (#118): an emptied field isn't sent — the derived
    identity keeps showing elsewhere, same as first run. */
-export function profilePatch(d: SettingsDraft): ProfileSettings {
+export function profilePatch(d: {
+  name?: string;
+  company?: string;
+}): ProfileSettings {
   const patch: ProfileSettings = {};
   if (d.name?.trim()) patch.userName = d.name;
   if (d.company?.trim()) patch.companyName = d.company;
-  if (d.color) patch.avatarColor = d.color;
   return patch;
 }

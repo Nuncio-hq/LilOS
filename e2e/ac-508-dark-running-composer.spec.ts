@@ -6,6 +6,8 @@ import {
   panelIntoFocus,
   pickPorts,
   type Stack,
+  skipFirstRun,
+  v3Peek,
 } from "./helpers/stack";
 
 /**
@@ -34,6 +36,13 @@ const SHOTS = path.join(repo, "test-results", "ac-508");
 /* The running composer is the only capsule carrying a Stop (⌘.) button —
    that scopes every selector to the mid-turn surface, not a sibling one. */
 const CAPSULE = '[data-slot="input-group"]:has([aria-label="Stop (⌘.)"])';
+
+/* The capsule's fill is the theme's `--glass` token (#fbfbfdd9 / #2c2c2ed9).
+   The old window frame's `.lilos-desktop` override (white at 0.75 / 0.06) went
+   with the pre-v3 shell: v3 draws no such frame, so the token is what the
+   capsule shows. */
+const GLASS_LIGHT = "rgba(251, 251, 253, 0.85)";
+const GLASS_DARK = "rgba(44, 44, 46, 0.85)";
 
 const CHECKS = [
   { name: "placeholder", sel: `${CAPSULE} textarea`, pseudo: "::placeholder" },
@@ -151,37 +160,23 @@ test.afterAll(async () => {
   await stack?.stop();
 });
 
-/** Boot onto Default's DM home, dismissing the first-run card. */
-async function dmDefault(page: Page) {
-  await page.goto(`${stack.webUrl}/?statusPollMs=500`);
-  const aside = page.locator("aside").first();
-  await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
-    timeout: 30_000,
-  });
-  const dmBtn = page.getByRole("button", {
-    name: /open dm|set up later|message/i,
-  });
-  if (
-    await dmBtn
-      .first()
-      .isVisible()
-      .catch(() => false)
-  ) {
-    await dmBtn.first().click();
-  } else {
-    await aside.getByRole("button", { name: /default/i }).click();
-  }
-  await expect(page).toHaveURL(/\/dm\//);
-}
-
-/** Send and land on the Focus view mid-turn. `LILOS_TURN_HOLD` (#400) parks
-    the fake engine's turn as running until an interrupt — the composer never
-    drops the Stop button between the measurements and the six shots. */
+/** Start a chat and land on the session view mid-turn. `LILOS_TURN_HOLD`
+    (#400) parks the fake engine's turn as running until an interrupt — the
+    composer never drops the Stop button between the measurements and the six
+    shots. The chat is Default's new-chat draft beside Threads;
+    `statusPollMs` (a query param, ahead of the hash) keeps the status poll
+    short as it always was here. */
 async function runningFocus(page: Page) {
-  const box = page.locator("textarea").last();
-  await box.fill("LILOS_TURN_HOLD keep this turn running");
-  await box.press("Enter");
-  // #577: send lands on the panel; Focus opens only from its button.
+  await skipFirstRun(page);
+  await page.goto(
+    `${stack.webUrl}/?statusPollMs=500#?page=threads&open=newchat:default`,
+  );
+  const draft = v3Peek(page).getByPlaceholder("Message Default…");
+  await expect(draft).toBeVisible({ timeout: 30_000 });
+  await draft.fill("LILOS_TURN_HOLD keep this turn running");
+  await v3Peek(page).getByRole("button", { name: "Send" }).click();
+  // #577: send lands on the thread in the peek; the session view opens only
+  // from its widen button.
   await panelIntoFocus(page);
   await expect(page.getByRole("button", { name: "Stop (⌘.)" })).toBeVisible({
     timeout: 30_000,
@@ -213,7 +208,6 @@ test("AC-2 placeholder, hint and chip label hold 4.5:1 in dark; light stays byte
   page,
 }) => {
   await page.setViewportSize({ width: 1288, height: 900 });
-  await dmDefault(page);
   await runningFocus(page);
   const html = page.locator("html");
 
@@ -224,7 +218,7 @@ test("AC-2 placeholder, hint and chip label hold 4.5:1 in dark; light stays byte
   await expect(html).toHaveClass(/dark/);
   const cap = await capsule(page);
   expect(cap.transition).not.toMatch(/\b(background|background-color|all)\b/);
-  expect(cap.bg).toBe("rgba(255, 255, 255, 0.06)");
+  expect(cap.bg).toBe(GLASS_DARK);
   await killMotion(page);
   const dark = await measure(page, CHECKS);
   console.log("#508 composer dark", fmt(dark));
@@ -240,7 +234,7 @@ test("AC-2 placeholder, hint and chip label hold 4.5:1 in dark; light stays byte
   await page.emulateMedia({ colorScheme: "light" });
   await expect(html).not.toHaveClass(/dark/);
   const capLight = await capsule(page);
-  expect(capLight.bg).toBe("rgba(255, 255, 255, 0.75)");
+  expect(capLight.bg).toBe(GLASS_LIGHT);
   const light = await measure(page, CHECKS);
   console.log("#508 composer light", fmt(light));
   const pin = (name: string, rgb: [number, number, number]) => {
@@ -252,14 +246,17 @@ test("AC-2 placeholder, hint and chip label hold 4.5:1 in dark; light stays byte
   };
   pin("placeholder", [134, 134, 139]);
   pin("hint", [134, 134, 139]);
-  pin("chip name", [74, 74, 76]);
-  pin("chip effort", [95, 95, 98]);
+  /* The chip inks are translucent, so they composite over the capsule's fill:
+     over `--glass` (252,252,253 once its own 0.85 alpha sits on the page)
+     they land one blue unit under what the old frame's white 0.75 gave
+     (74,74,76 / 95,95,98). Same ink, same byte-exact pin, new backdrop. */
+  pin("chip name", [74, 74, 75]);
+  pin("chip effort", [95, 95, 97]);
 });
 
 test("AC-3 screenshots of the running composer at the three viewports, light and dark", async ({
   page,
 }) => {
-  await dmDefault(page);
   await runningFocus(page);
   await killMotion(page); // stills read the final palette, not a mid-flip frame
   const html = page.locator("html");

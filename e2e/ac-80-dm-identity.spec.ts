@@ -1,22 +1,27 @@
-import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  _electron,
-  expect,
-  type Locator,
-  type Page,
-  test,
-} from "@playwright/test";
-import { bootStack, pickPorts } from "./helpers/stack";
+import { expect, type Locator, type Page, test } from "@playwright/test";
+import { electronScreenshot, launchDesktop } from "./helpers/electron";
+import { bootStack, pickPorts, skipFirstRun, startChat } from "./helpers/stack";
 
 /**
- * Issue #80 — DM identity + streaming markdown. AC-1 asserts the user's
- * message avatar IS the sidebar footer's avatar (same initial, same computed
- * colour — never the anonymous grey "Y"). AC-2 asserts markdown renders
+ * Issue #80 — thread identity + streaming markdown. AC-1 asserts the user's
+ * message avatar is the signed-in person's own (their initial on a colour,
+ * never the anonymous grey "Y") and that the same person reads the same on
+ * the other v3 surface that draws them. AC-2 asserts markdown renders
  * mid-stream (the prompt's `slow:` directive stretches its own text
  * phase so the stream is observable — #432; no stack-wide tick). AC-3
  * captures both in the Electron desktop app.
+ *
+ * v3: the message row is the thread panel's row beside Threads (the shared
+ * feed `Row`: avatar + Who line + text); a send lands there, so no DM feed or
+ * "N replies" chip is needed to reach it. The old assertion that the row's
+ * avatar IS the sidebar footer's avatar has no v3 counterpart: the v3 sidebar
+ * has no me-row footer, and the only other place v3 draws the signed-in
+ * person is the People org chart's "Chairman" chip (a different avatar
+ * component: initial on the neutral foreground chip). So "one identity" is
+ * asserted as same name + same initial across the two surfaces, not same
+ * colour (see the report: the two surfaces colour the person differently).
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
@@ -24,29 +29,25 @@ const repo = path.resolve(here, "..");
 // --repeat-each spreads a file's repeats across worker processes; each boots
 // the stack again, so ports are offset per worker or relays race one port (#84).
 
-const desktopDir = path.join(repo, "apps", "desktop");
-
 const SHOTS = path.join(repo, "test-results", "ac-80");
 /* AC-1 never gates on a running turn — its prompt runs at the engine tick. */
 const PROMPT = "What does the replay contract carry?"; // hits the default script
 /* `slow:75` paces only this turn (~4 s) — the mid-stream window AC-2's
    markdown asserts need; the streaming block is live whenever they look. */
 const STREAM_PROMPT = `slow:75 ${PROMPT}`;
-/* AC-3 asserts mid-stream markdown after reopening the session — its send
-   needs the longer ~8 s window to still be streaming then (#432). */
+/* AC-3 asserts mid-stream markdown after the send lands — its send needs the
+   longer ~8 s window to still be streaming by the time the shots are taken
+   (#432). */
 const STREAM_PROMPT_DESKTOP = `slow:150 ${PROMPT}`;
-
-/* The footer's me-row: the aside's last child, its avatar fallback. */
-const footerAvatar = (page: Page) =>
-  page.locator("aside > div:last-child [data-slot='avatar-fallback']");
+const AGENT = { id: "default", name: "Default" };
 
 /* The grid row the user's message renders in (avatar + Who + text) — Row's
    root is `group relative grid`, distinct from the agent-turn's group wrap.
-   Scoped to the feed's session rows: the open peek panel (#195) renders the
-   same message in its thread, which is not the row with the "N replies" chip. */
+   Scoped to the thread panel's message rows: the Threads list beside the
+   peek has avatars of its own. */
 const userRow = (page: Page, text: string) =>
   page
-    .locator("[data-session] div.group.grid")
+    .locator("[data-thread-panel] [data-msg] > div.group.grid")
     .filter({ has: page.locator('[data-slot="avatar-fallback"]') })
     .filter({ hasText: text })
     .last();
@@ -54,40 +55,41 @@ const userRow = (page: Page, text: string) =>
 const bg = (loc: Locator) =>
   loc.evaluate((el) => getComputedStyle(el).backgroundColor);
 
-async function dmDefault(page: Page, webUrl: string) {
-  await page.goto(`${webUrl}/`);
-  const aside = page.locator("aside");
-  await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
-    timeout: 90_000,
-  });
-  const dmBtn = page.getByRole("button", {
-    name: /open dm|set up later|message/i,
-  });
-  if (
-    await dmBtn
-      .first()
-      .isVisible()
-      .catch(() => false)
-  ) {
-    await dmBtn.first().click();
-  } else {
-    await aside.getByRole("button", { name: /default/i }).click();
-  }
-  await expect(page).toHaveURL(/\/dm\//);
+/* The user's row avatar is the signed-in person's: their initial, on a colour
+   that is not the anonymous fallback's near-white grey (bg-muted ≈
+   oklch(0.97 0 0)). Returns the avatar's initial for the cross-surface check. */
+async function expectOwnAvatar(row: Locator): Promise<string> {
+  const rowFb = row.locator('[data-slot="avatar-fallback"]');
+  await expect(rowFb).toHaveText("O");
+  expect(await bg(rowFb)).not.toBe("oklch(0.97 0 0)");
+  return (await rowFb.textContent()) ?? "";
 }
 
-const send = async (page: Page, text: string) => {
-  const box = page.locator("textarea").last();
-  await box.fill(text);
-  await box.press("Enter");
-};
+/* The People org chart's "Chairman" chip is the signed-in person's other
+   avatar in v3: same name, same initial as the message row's. */
+async function expectChairmanIsSamePerson(
+  page: Page,
+  webUrl: string,
+  initial: string,
+) {
+  await page.goto(`${webUrl}/#?page=people&view=org`);
+  const chip = page
+    .locator("#v3-main")
+    .getByText("Chairman", { exact: true })
+    .locator("xpath=ancestor::div[1]");
+  await expect(chip).toBeVisible({ timeout: 30_000 });
+  await expect(chip).toContainText("Oscar");
+  await expect(chip.locator("span[aria-hidden='true']").first()).toHaveText(
+    initial,
+  );
+}
 
 test.describe.configure({ mode: "serial" });
 
-test("AC-1 the user's message avatar is the footer avatar (not a grey 'Y')", async ({
+test("AC-1 the user's message avatar is their own identity (not a grey 'Y')", async ({
   page,
 }) => {
-  // bootStack + send + Focus navigation need headroom under parallel load.
+  // bootStack + send need headroom under parallel load.
   test.setTimeout(180_000);
   const stack = await bootStack(
     "ac80a",
@@ -97,24 +99,18 @@ test("AC-1 the user's message avatar is the footer avatar (not a grey 'Y')", asy
     { LILOS_USER_NAME: "Oscar" },
   );
   try {
-    await dmDefault(page, stack.webUrl);
-    await send(page, PROMPT);
-    /* #577: the send stays on the DM feed with the thread beside it — the
-       feed row this test measures is already rendered. */
+    await skipFirstRun(page);
+    await startChat(page, stack.webUrl, AGENT, PROMPT);
+    /* #577: the send lands in the thread panel — the row this test measures
+       is already rendered. */
     const row = userRow(page, PROMPT);
     await expect(row).toBeVisible({ timeout: 30_000 });
-    const rowFb = row.locator('[data-slot="avatar-fallback"]');
-    const footFb = footerAvatar(page);
-    await expect(rowFb).toHaveText("O");
-    await expect(footFb).toHaveText("O");
-    // Same computed colour on both → literally one identity; and never the
-    // old anonymous fallback's near-white grey (bg-muted ≈ oklch(0.97 0 0)).
-    const [rowBg, footBg] = [await bg(rowFb), await bg(footFb)];
-    expect(rowBg).toBe(footBg);
-    expect(rowBg).not.toBe("oklch(0.97 0 0)");
+    const initial = await expectOwnAvatar(row);
     // The Who line names the signed-in human, not "You".
     await expect(row).toContainText("Oscar");
     await expect(row).not.toContainText("You");
+    // …and the other surface that draws the same person agrees.
+    await expectChairmanIsSamePerson(page, stack.webUrl, initial);
   } finally {
     await stack.stop();
   }
@@ -132,12 +128,10 @@ test("AC-2 markdown renders while the reply streams, then settles unchanged", as
     { LILOS_USER_NAME: "Oscar" },
   );
   try {
-    await dmDefault(page, stack.webUrl);
-    await send(page, STREAM_PROMPT);
-    /* #577: a send lands on the DM list with the thread in the panel
-       (conv URL) — exactly the thread-panel markdown path this test
-       covers; no goto needed anymore. */
-    await page.waitForURL(/\/dm\/[^/]+\/[^/]+$/, { timeout: 30_000 });
+    await skipFirstRun(page);
+    /* #577: a send lands in the thread panel (`open=thread:<id>`) — exactly
+       the thread-panel markdown path this test covers. */
+    await startChat(page, stack.webUrl, AGENT, STREAM_PROMPT);
     const turn = page.locator("[data-agentturn]").first();
     const streaming = turn.locator("[data-streaming]");
     await expect(streaming).toBeVisible({ timeout: 60_000 });
@@ -169,45 +163,18 @@ test("AC-3 desktop app: same identity + streaming markdown in Electron", async (
     LILOS_USER_NAME: "Oscar",
   });
   try {
-    const build = spawn("bun", ["scripts/dev.ts", "--payload-only"], {
-      cwd: desktopDir,
-      env: { ...process.env },
-      stdio: "inherit",
-    });
-    await new Promise<void>((resolve, reject) => {
-      build.once("exit", (c) =>
-        c === 0 ? resolve() : reject(new Error(`desktop build exit ${c}`)),
-      );
-    });
-    const portOf = (ws: string) => new URL(ws).port;
-    const app = await _electron.launch({
-      args:
-        process.platform === "linux"
-          ? [desktopDir, "--no-sandbox"]
-          : [desktopDir],
-      env: {
-        ...process.env,
-        LILOS_RELAY_HOME: stack.home,
-        LILOS_RELAY_PORT: portOf(stack.relayWs),
-        LILOS_FEED_PORT: portOf(stack.feedWs),
-        LILOS_WEB_URL: stack.webUrl,
-        LILOS_USER_NAME: "Oscar",
-      },
+    const { app, win } = await launchDesktop(stack, {
+      env: { LILOS_USER_NAME: "Oscar" },
     });
     try {
-      const win = await app.firstWindow();
-      await dmDefault(win, stack.webUrl);
-      await send(win, STREAM_PROMPT_DESKTOP);
-      // #577: the send stays on the feed — no back hop needed.
-      // AC-1 in the desktop window: the user's row avatar IS the footer avatar.
+      await startChat(win, stack.webUrl, AGENT, STREAM_PROMPT_DESKTOP);
+      // AC-1 in the desktop window: the user's row avatar is their own.
       const row = userRow(win, PROMPT);
       await expect(row).toBeVisible({ timeout: 30_000 });
-      const rowFb = row.locator('[data-slot="avatar-fallback"]');
-      const footFb = footerAvatar(win);
-      expect(await bg(rowFb)).toBe(await bg(footFb));
-      await win.screenshot({ path: `${SHOTS}/ac-3-desktop-avatar.png` });
-      // AC-2 in the desktop window: markdown mid-stream — reopen the session.
-      await row.getByRole("button", { name: /repl/i }).click();
+      const initial = await expectOwnAvatar(row);
+      await electronScreenshot(app, win, `${SHOTS}/ac-3-desktop-avatar.png`);
+      // AC-2 in the desktop window: markdown mid-stream. The send already
+      // opened the thread in the panel — no session to reopen.
       await expect(win.locator("[data-agentturn]")).toHaveCount(1, {
         timeout: 15_000,
       });
@@ -216,9 +183,11 @@ test("AC-3 desktop app: same identity + streaming markdown in Electron", async (
         timeout: 60_000,
       });
       await expect(streaming.locator("code").first()).toBeVisible();
-      await win.screenshot({ path: `${SHOTS}/ac-3-desktop-streaming.png` });
+      await electronScreenshot(app, win, `${SHOTS}/ac-3-desktop-streaming.png`);
       await expect(streaming).toHaveCount(0, { timeout: 60_000 });
-      await win.screenshot({ path: `${SHOTS}/ac-3-desktop-done.png` });
+      await electronScreenshot(app, win, `${SHOTS}/ac-3-desktop-done.png`);
+      // The same person on the other surface that draws them.
+      await expectChairmanIsSamePerson(win, stack.webUrl, initial);
     } finally {
       await app.close();
     }

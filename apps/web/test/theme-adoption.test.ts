@@ -1,11 +1,10 @@
 /* Issue #246 — the real app adopts the approved prototype look. The theme
    now lives once in `packages/ui/src/theme.css` and both apps import it, so
    they cannot drift again (the #230 regression class was drift). */
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
-import { appFrameClass } from "../src/lib/frame";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const theme = readFileSync(join(ROOT, "packages/ui/src/theme.css"), "utf8");
@@ -14,7 +13,12 @@ const protoCss = readFileSync(
   join(ROOT, "prototype/web/src/index.css"),
   "utf8",
 );
-const dmPage = readFileSync(join(ROOT, "apps/web/src/pages/dm.tsx"), "utf8");
+// The DM surface is the thread view now (apps/web/src/thread).
+const threadDir = join(ROOT, "apps/web/src/thread");
+const threadSurface = readdirSync(threadDir)
+  .filter((f) => f.endsWith(".tsx"))
+  .map((f) => readFileSync(join(threadDir, f), "utf8"))
+  .join("\n");
 const preload = readFileSync(
   join(ROOT, "apps/desktop/src/preload.cjs"),
   "utf8",
@@ -42,51 +46,32 @@ describe("issue #246", () => {
     expect(theme).toContain(".dark");
   });
 
-  test("AC-2 the primary tint is teal — never the old near-black — and buttons keep their fills", () => {
+  test("AC-2 the primary tint is teal — never the old near-black", () => {
     expect(theme).not.toMatch(/--primary:\s*oklch\(0\.2/); // old near-black is gone
-    // #230 regression class: the borderless-card sweep must exclude buttons.
-    expect(theme).toContain(':not([data-slot="button"])');
     // DM-surface primary buttons use the tint, not a black slab.
-    expect(dmPage).not.toMatch(/<button[^>]*\bbg-foreground\b/);
+    expect(threadSurface).not.toMatch(/<button[^>]*\bbg-foreground\b/);
   });
 
-  test("AC-3 the colour field + floating window are browser-only; the frame picks by isDesktop", () => {
-    // Wallpaper and the drifting orbs exist only under .lilos-float.
-    expect(theme).toMatch(/body:has\(\.lilos-float\)\s*\{[^}]*radial-gradient/);
-    expect(theme).toMatch(/body:has\(\.lilos-float\)::before/);
-    // The inset margin + rounded window is float-only chrome.
-    const win = theme.match(/\.lilos-desktop\.lilos-float\s*\{([^}]*)\}/);
-    expect(win?.[1]).toContain("margin: 14px");
-    expect(win?.[1]).toContain("border-radius");
+  test("AC-3 no wallpaper and no window frame: one flat window, the OS draws the edge", () => {
+    // The colour field and the floating inset window left with the old shell.
+    expect(theme).not.toMatch(/lilos-float|lilos-desktop/);
+    expect(theme).not.toMatch(/body:has\(/);
     // The Electron preload tells the renderer it is the desktop shell.
     expect(preload).toContain("isDesktop: true");
-    // The frame: browser floats, desktop fills the OS window.
-    expect(appFrameClass({ desktop: false, focus: false })).toContain(
-      "lilos-float",
-    );
-    expect(appFrameClass({ desktop: true, focus: false })).not.toContain(
-      "lilos-float",
-    );
-    // Focus is one column (sidebar hides) either way.
-    expect(appFrameClass({ desktop: false, focus: true })).not.toContain(
-      "264px",
-    );
   });
 
-  test("AC-4 dialogs and floating panels are near-opaque glass", () => {
+  test("AC-4 dialogs are near-opaque glass", () => {
     const sheet = theme.match(
       /\[data-slot="dialog-content"\],\s*\[role="alertdialog"\]\s*\{([^}]*)\}/s,
     );
     expect(sheet?.[1]).toMatch(/rgb\(255 255 255 \/ 0\.9[0-9]/);
     expect(sheet?.[1]).toContain("backdrop-filter");
-    expect(theme).toContain(".lilos-glass.fixed");
   });
 
-  test("AC-5 prefers-reduced-motion kills the drifting background and the rise animations", () => {
+  test("AC-5 prefers-reduced-motion kills the rise and orb animations", () => {
     const rm = theme.match(
       /@media \(prefers-reduced-motion: reduce\)\s*\{([\s\S]*?)\n\}/,
     );
-    expect(rm?.[1]).toContain("::before"); // the drifting colour field
     expect(rm?.[1]).toContain("lilos-rise");
     expect(rm?.[1]).toContain("lilos-orb");
     expect(rm?.[1]).toContain("animation: none");

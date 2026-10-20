@@ -18,7 +18,7 @@ const SEARCH = "https://www.google.com/search?q=";
 
 /* What the address bar does with typed text: a URL-looking input opens that
    address (http for localhost), anything else searches. */
-export function resolveInput(text: string): string {
+function resolveInput(text: string): string {
   const t = text.trim();
   /* Any explicit scheme (http, https, data:, lilos:, file:) goes through as
      typed — scheme-less text is the only thing resolved here. */

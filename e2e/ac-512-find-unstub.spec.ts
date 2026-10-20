@@ -1,6 +1,12 @@
 import { expect, type Locator, test } from "@playwright/test";
 import { growDmThread } from "./helpers/relay-thread";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  pickPorts,
+  type Stack,
+  skipFirstRun,
+  threadUrl,
+} from "./helpers/stack";
 
 /**
  * Issue #512 — held (stubbed) turn rows carry no text nodes (#430), so
@@ -66,12 +72,17 @@ test("AC-1: Cmd+F mounts held rows — a held row's text enters the DOM; the lap
     ...Array.from({ length: 58 }, (_, i) => `status check pass ${i + 3}`),
   ]);
 
-  /* Straight to the panel route of the grown thread — `?findUnstubMs=`
-     rides this FIRST load since the store reads it once at module eval;
-     `?findUnstubNudge=` arms the #537 drift hook the same way. */
+  /* The grown thread opens in the side peek beside Threads, the narrow
+     panel the old `/dm/<emp>/<conv>` route was. `?findUnstubMs=` is read
+     from `location.search` once at module eval, so it rides this FIRST load
+     AHEAD of the hash (the nav fragment keeps it across every route
+     change); `?findUnstubNudge=` arms the #537 drift hook the same way. */
+  await skipFirstRun(page);
   await page.goto(
-    `${stack.webUrl}/dm/${grown.employeeId}/${grown.conversationId}` +
-      `?findUnstubMs=2500&findUnstubNudge=${NUDGE_PX}`,
+    threadUrl(stack.webUrl, grown.conversationId).replace(
+      "/#",
+      `/?findUnstubMs=2500&findUnstubNudge=${NUDGE_PX}#`,
+    ),
   );
   const panel = page.locator("[data-thread-panel]");
   await expect(panel).toBeVisible({ timeout: 60_000 });

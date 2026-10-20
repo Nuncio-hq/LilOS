@@ -12,13 +12,7 @@
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.3.0",
-    "@lilos/client-runtime": "workspace:*",
-    "@lilos/contracts": "workspace:*",
-    "@lilos/engine-fake": "workspace:*",
-    "@lilos/host": "workspace:*",
-    "@lilos/surfaces": "workspace:*",
     "@lilos/ui": "workspace:*",
-    "lucide-react": "^1.48.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "shadcn": "^4.21.0",

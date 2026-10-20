@@ -1,8 +1,30 @@
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  statSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { type ElectronApplication, expect, type Page } from "@playwright/test";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  _electron,
+  type ElectronApplication,
+  expect,
+  type Page,
+} from "@playwright/test";
+import type { Stack } from "./stack";
+
+const desktopDir = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "..",
+  "apps",
+  "desktop",
+);
 
 /**
  * Build the Electron payload (`apps/desktop/scripts/dev.ts --payload-only`)
@@ -107,4 +129,64 @@ export async function electronScreenshot(
     }
   }
   throw lastErr;
+}
+
+/**
+ * Launch the desktop app against a booted stack, past first run.
+ *
+ * The shell shows Welcome until `localStorage["lilos-onboarded"]` is set, and
+ * a fresh Electron profile never has it — so the window is flagged onboarded
+ * and reloaded once (the reload keeps the hash, so a launch URL's
+ * `#?page=…&open=…` lands where it says). A spec that is about first run
+ * launches by hand instead.
+ *
+ * - `hash`: a `#?…` fragment, or the full URL `threadUrl`/`agentUrl` return.
+ *   The packaged app loads from `file:`, where only the fragment navigates.
+ * - `stateDir`: reuse a profile across a relaunch (tabs, cookies, the
+ *   onboarded flag). Omitted, every launch gets a fresh scratch profile that
+ *   is removed when the app closes — never the user's real Application
+ *   Support.
+ * - `env`: extra environment for the app process.
+ */
+export async function launchDesktop(
+  stack: Stack,
+  opts: { hash?: string; stateDir?: string; env?: Record<string, string> } = {},
+): Promise<{ app: ElectronApplication; win: Page; stateDir: string }> {
+  await ensureDesktopPayload(desktopDir);
+  const stateDir =
+    opts.stateDir ?? mkdtempSync(join(tmpdir(), "lilos-desktop-state-"));
+  mkdirSync(stateDir, { recursive: true });
+  const url = !opts.hash
+    ? stack.webUrl
+    : opts.hash.startsWith("#")
+      ? `${stack.webUrl}/${opts.hash}`
+      : opts.hash;
+  const app = await _electron.launch({
+    args:
+      process.platform === "linux"
+        ? [desktopDir, "--no-sandbox"]
+        : [desktopDir],
+    env: {
+      ...process.env,
+      LILOS_RELAY_HOME: stack.home,
+      LILOS_RELAY_PORT: String(stack.ports.relay),
+      LILOS_FEED_PORT: String(stack.ports.feed),
+      LILOS_WEB_URL: url,
+      LILOS_STATE_DIR: stateDir,
+      ...opts.env,
+    },
+  });
+  if (!opts.stateDir)
+    app.once("close", () => rmSync(stateDir, { recursive: true, force: true }));
+  const win = await app.firstWindow();
+  await win.waitForURL((u) => u.href.startsWith(stack.webUrl), {
+    timeout: 60_000,
+  });
+  const wasOnboarded = await win.evaluate(() => {
+    const had = localStorage.getItem("lilos-onboarded") === "1";
+    localStorage.setItem("lilos-onboarded", "1");
+    return had;
+  });
+  if (!wasOnboarded) await win.reload();
+  return { app, win, stateDir };
 }

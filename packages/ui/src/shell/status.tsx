@@ -92,10 +92,9 @@ export function StatusRow({
   );
 }
 
-/* The legs list itself, shared by StatusDialog and the Settings Status pane
-   (issue #139): one row per component with state chip, reason, hint and the
-   collapsed raw detail. */
-export function StatusList({ components }: { components: StatusComponent[] }) {
+/* The legs list of StatusDialog (issue #139): one row per component with
+   state chip, reason, hint and the collapsed raw detail. */
+function StatusList({ components }: { components: StatusComponent[] }) {
   return (
     <div className="divide-y">
       {components.map((c) => {

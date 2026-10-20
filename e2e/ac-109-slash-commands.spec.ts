@@ -1,7 +1,14 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  pickPorts,
+  type Stack,
+  skipFirstRun,
+  startChat,
+  v3Peek,
+} from "./helpers/stack";
 
 /**
  * Issue #109 — engine slash commands + skills in the composer, end to end
@@ -27,29 +34,26 @@ test.afterAll(async () => {
 
 test.describe.configure({ mode: "serial" });
 
-async function dmDefault(page: Page) {
-  await page.goto(stack.webUrl);
-  const aside = page.locator("aside");
-  await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
-    timeout: 30_000,
+/* The slash menu lives on the thread composer and on the new-chat draft
+   beside Threads (the old home composer's: its commands are the agent's and
+   the chosen folder's, asked before any session exists). Most tests open a
+   chat with Default, let its first turn settle, and drive the thread composer
+   in the peek; the draft has its own legs at the end. */
+async function chatDefault(page: Page) {
+  await skipFirstRun(page);
+  await startChat(
+    page,
+    stack.webUrl,
+    { id: "default", name: "Default" },
+    "Say hello",
+  );
+  await expect(page.locator("[data-turnsettled]").last()).toBeVisible({
+    timeout: 60_000,
   });
-  const dmBtn = page.getByRole("button", {
-    name: /open dm|set up later|message/i,
-  });
-  if (
-    await dmBtn
-      .first()
-      .isVisible()
-      .catch(() => false)
-  ) {
-    await dmBtn.first().click();
-  } else {
-    await aside.getByRole("button", { name: /default/i }).click();
-  }
-  await expect(page).toHaveURL(/\/dm\//);
 }
 
-const box = (page: Page) => page.locator("textarea").first();
+const box = (page: Page) =>
+  v3Peek(page).locator("[data-thread-panel] textarea");
 const menu = (page: Page) => page.getByRole("listbox", { name: "Commands" });
 const rows = (page: Page) => page.locator("[data-slash-command]");
 
@@ -61,7 +65,7 @@ async function sendDraft(page: Page, text: string) {
 test("AC menu lists commands + skills, typing filters, Esc dismisses", async ({
   page,
 }) => {
-  await dmDefault(page);
+  await chatDefault(page);
   await box(page).click();
   await page.keyboard.type("/");
   await expect(rows(page)).toHaveCount(5, { timeout: 15_000 });
@@ -89,7 +93,7 @@ test("AC menu lists commands + skills, typing filters, Esc dismisses", async ({
 test("AC Enter inserts and sending execs the command in the engine", async ({
   page,
 }) => {
-  await dmDefault(page);
+  await chatDefault(page);
   await box(page).click();
   await page.keyboard.type("/usa");
   await expect(rows(page)).toHaveCount(1, { timeout: 15_000 });
@@ -109,7 +113,7 @@ test("AC Enter inserts and sending execs the command in the engine", async ({
 test("AC a skill expands into the next turn like the Hermes TUI", async ({
   page,
 }) => {
-  await dmDefault(page);
+  await chatDefault(page);
   await sendDraft(page, "/review src/auth");
   /* outcome:"prompt" → the harness sends the expanded prompt as the next
      turn; engine-fake echoes it as the agent's reply. */
@@ -122,7 +126,7 @@ test("AC a skill expands into the next turn like the Hermes TUI", async ({
 test("AC /model opens the picker the surface already owns", async ({
   page,
 }) => {
-  await dmDefault(page);
+  await chatDefault(page);
   await sendDraft(page, "/model");
   await expect(
     page
@@ -130,4 +134,36 @@ test("AC /model opens the picker the surface already owns", async ({
       .or(page.locator('[aria-label="Model and reasoning"]')),
   ).toBeVisible({ timeout: 15_000 });
   await page.screenshot({ path: `${SHOTS}/ac-model-picker.png` });
+});
+
+/** The new-chat draft's box. */
+const draftBox = (page: Page) =>
+  v3Peek(page).getByPlaceholder("Message Default…");
+
+test("AC the new-chat draft lists the commands too, and /model opens its own picker", async ({
+  page,
+}) => {
+  await skipFirstRun(page);
+  await page.goto(`${stack.webUrl}/#?page=threads&open=newchat:default`);
+  await expect(draftBox(page)).toBeVisible({ timeout: 30_000 });
+  await draftBox(page).click();
+  await page.keyboard.type("/");
+  await expect(rows(page)).toHaveCount(5, { timeout: 15_000 });
+  await expect(page.locator('[data-slash-command="help"]')).toBeVisible();
+  await page.keyboard.type("rev");
+  await expect(rows(page)).toHaveCount(1);
+  await page.keyboard.press("Enter");
+  await expect(draftBox(page)).toHaveValue(/\/review\s*$/);
+  await page.screenshot({ path: `${SHOTS}/ac-draft-menu.png` });
+
+  // `/model` is the app's: it opens the draft's picker and sends nothing.
+  await draftBox(page).fill("/model");
+  await draftBox(page).press("Enter");
+  await expect(
+    page
+      .getByRole("dialog")
+      .or(page.locator('[aria-label="Model and reasoning"]')),
+  ).toBeVisible({ timeout: 15_000 });
+  await expect(page).not.toHaveURL(/open=thread:/);
+  await page.screenshot({ path: `${SHOTS}/ac-draft-model-picker.png` });
 });

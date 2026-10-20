@@ -8,6 +8,8 @@ import {
   panelIntoFocus,
   pickPorts,
   type Stack,
+  skipFirstRun,
+  startChat,
 } from "./helpers/stack";
 
 /**
@@ -60,26 +62,12 @@ async function askOutcome(
   }
 }
 
-async function dmDefault(stack: Stack, page: Page) {
-  await page.goto(`${stack.webUrl}/`);
-  const aside = page.locator("aside");
-  await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
-    timeout: 30_000,
-  });
-  const dmBtn = page.getByRole("button", {
-    name: /open dm|set up later|message/i,
-  });
-  if (
-    await dmBtn
-      .first()
-      .isVisible()
-      .catch(() => false)
-  ) {
-    await dmBtn.first().click();
-  } else {
-    await aside.getByRole("button", { name: /default/i }).click();
-  }
-  await expect(page).toHaveURL(/\/dm\//);
+/* A new chat with the seeded Default employee: the draft beside Threads,
+   then the thread in the side peek. An id that names nobody opens the draft
+   on the default agent. */
+async function chatDefault(stack: Stack, page: Page, text: string) {
+  await skipFirstRun(page);
+  await startChat(page, stack.webUrl, { id: "default", name: "Default" }, text);
 }
 
 const send = async (page: Page, text: string) => {
@@ -100,19 +88,22 @@ test("AC-558-1 a waiting approval card shows the hint and ↵ allows once", asyn
   page,
 }) => {
   test.setTimeout(180_000);
-  await dmDefault(stackA, page);
   /* `slow:` keeps the turn live after the answer lands — the resolved
      card's "Allowed once" label lives only while its turn does. The
      post-ask tail is only ~3 steps + the closing text, so the pace must
      be generous enough (~30 s window) that the label survives CI input
      latency long enough to assert it. */
-  await send(page, "slow:1500 update the readme with a release note");
+  await chatDefault(
+    stackA,
+    page,
+    "slow:1500 update the readme with a release note",
+  );
   const card = openCard(page);
   await expect(card).toBeVisible({ timeout: 60_000 });
   const askId = await card.getAttribute("data-ask-id");
   /* #577: the Esc leg below needs a close target that keeps the card's
-     surface mounted — on the panel Esc closes the panel itself. Focus's
-     Esc pops back onto the panel, card still on screen. */
+     surface mounted — in the peek Esc closes the peek itself. The session
+     view's Esc steps back onto the peek, card still on screen. */
   await panelIntoFocus(page);
 
   // The focused (only pending) card shows the shortcut hint.
@@ -155,8 +146,11 @@ test("AC-558-2 ⌫ denies; typing in the composer never answers the card", async
   page,
 }) => {
   test.setTimeout(180_000);
-  await dmDefault(stackA, page);
-  await send(page, "slow:150 update the readme with a release note");
+  await chatDefault(
+    stackA,
+    page,
+    "slow:150 update the readme with a release note",
+  );
   const card = openCard(page);
   await expect(card).toBeVisible({ timeout: 60_000 });
   const askId = await card.getAttribute("data-ask-id");
@@ -198,10 +192,9 @@ test("AC-558-3 a waiting plan card answers with ↵ approve / ⌫ reject", async
   page,
 }) => {
   test.setTimeout(240_000);
-  await dmDefault(stackA, page);
 
   // ↵ approves — the card carries the hint while it waits.
-  await send(page, "plan: propose — approve from keys");
+  await chatDefault(stackA, page, "plan: propose — approve from keys");
   const proposed = page
     .locator('[data-plan][data-planstatus="proposed"]')
     .last();

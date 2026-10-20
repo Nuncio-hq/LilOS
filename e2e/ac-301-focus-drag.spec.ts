@@ -1,18 +1,14 @@
-import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  _electron,
-  type ElectronApplication,
-  expect,
-  type Page,
-  test,
-} from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
+import { launchDesktop } from "./helpers/electron";
 import {
   bootStack,
   panelIntoFocus,
   pickPorts,
   type Stack,
+  v3Peek,
+  v3Sidebar,
 } from "./helpers/stack";
 
 /**
@@ -20,7 +16,9 @@ import {
  * the thread panel ⇄ Focus swap mounts a fresh `.lilos-drag` header with the
  * toggle at the same spot the cursor is already over, and the OS-side
  * draggable-region map isn't recomputed until a pointer event forces it —
- * the click is swallowed as a window drag.
+ * the click is swallowed as a window drag. In v3 the swap is the side peek's
+ * thread panel ⇄ session view (`full=1`): both views keep their own
+ * `.lilos-drag` header inside `[data-thread-panel]`.
  *
  * What this spec can and cannot prove: Playwright's `page.mouse.click`
  * dispatches synthetic events that never reach the native NSView hit-test,
@@ -35,35 +33,9 @@ import {
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, "..");
-const desktopDir = path.join(repo, "apps", "desktop");
 const SHOTS = path.join(repo, "test-results", "ac-301");
 
 const isMac = process.platform === "darwin";
-
-/** Build the Electron payload, then launch against the stack's web server. */
-async function launchDesktop(stack: Stack): Promise<ElectronApplication> {
-  const build = spawn("bun", ["scripts/dev.ts", "--payload-only"], {
-    cwd: desktopDir,
-    env: { ...process.env },
-    stdio: "inherit",
-  });
-  await new Promise<void>((resolve, reject) => {
-    build.once("exit", (c) =>
-      c === 0 ? resolve() : reject(new Error(`desktop build exit ${c}`)),
-    );
-  });
-  const portOf = (ws: string) => new URL(ws).port;
-  return _electron.launch({
-    args: [desktopDir],
-    env: {
-      ...process.env,
-      LILOS_RELAY_HOME: stack.home,
-      LILOS_RELAY_PORT: portOf(stack.relayWs),
-      LILOS_FEED_PORT: portOf(stack.feedWs),
-      LILOS_WEB_URL: stack.webUrl,
-    },
-  });
-}
 
 const appRegion = (page: Page, selector: string) =>
   page
@@ -73,22 +45,15 @@ const appRegion = (page: Page, selector: string) =>
       getComputedStyle(el).getPropertyValue("-webkit-app-region"),
     );
 
-async function dismissFirstRun(win: Page) {
-  const skip = win.getByRole("button", { name: /set up later/i });
-  if (
-    await skip
-      .first()
-      .isVisible()
-      .catch(() => false)
-  )
-    await skip.first().click();
-  await expect(win.locator("[data-first-run]")).toHaveCount(0, {
-    timeout: 10_000,
-  });
-}
-
-const FOCUS_URL = /\/dm\/[^/]+\/[^/]+\/focus$/;
-const PANEL_URL = /\/dm\/[^/]+\/conv_[^/]+$/;
+/* A thread open beside Threads (`open=…thread:<id>`), and the session view
+   (`full=1`) it widens into. The thread may sit behind the person it was
+   started from in the trail. */
+const PANEL_URL = /[?&]open=([^&]*,)?thread:[^&,]+/;
+const FULL_URL = /[#&]full=1(&|$)/;
+const expectPanelUrl = async (win: Page) => {
+  await expect(win).toHaveURL(PANEL_URL, { timeout: 30_000 });
+  await expect(win).not.toHaveURL(FULL_URL);
+};
 
 let stack: Stack;
 test.beforeAll(async () => {
@@ -108,29 +73,26 @@ test.describe.configure({ mode: "serial" });
 test("#301 Focus toggle stays clickable across the panel ⇄ Focus header swap", async () => {
   test.skip(!isMac, "native drag regions are a macOS leg");
   test.setTimeout(180_000);
-  const app = await launchDesktop(stack);
+  const { app, win } = await launchDesktop(stack);
   try {
-    const win = await app.firstWindow();
-    await expect(
-      win.locator("aside").getByRole("button", { name: /default/i }),
-    ).toBeVisible({ timeout: 60_000 });
-    await dismissFirstRun(win);
-    await win
-      .locator("aside")
-      .getByRole("button", { name: /default/i })
-      .click();
-    await expect(win).toHaveURL(/\/dm\//, { timeout: 30_000 });
-
-    /* #577: a send lands on the panel — step into Focus and back so the
-       Expand button sits at the spot the next click will land (Focus's
-       one back control is "Back to DM"). */
-    const box = win.locator("textarea").last();
+    const person = v3Sidebar(win).getByRole("button", { name: /default/i });
+    await expect(person).toBeVisible({ timeout: 60_000 });
+    /* A person opens in the side peek; "Message" starts the chat, and the
+       send takes the draft's place with its thread. */
+    await person.click();
+    await v3Peek(win).getByRole("button", { name: "Message" }).click();
+    const box = v3Peek(win).getByPlaceholder("Message Default…");
+    await expect(box).toBeVisible({ timeout: 30_000 });
     await box.fill("check in");
-    await box.press("Enter");
-    await expect(win).toHaveURL(PANEL_URL, { timeout: 30_000 });
+    await v3Peek(win).getByRole("button", { name: "Send" }).click();
+    await expectPanelUrl(win);
+
+    /* #577: a send lands on the panel — step into the session view and back
+       so the Expand button sits at the spot the next click will land (the
+       session view's one back control is "Back to DM"). */
     await panelIntoFocus(win);
     await win.getByTitle("Back to DM", { exact: true }).click();
-    await expect(win).toHaveURL(PANEL_URL, { timeout: 30_000 });
+    await expectPanelUrl(win);
 
     const expand = win
       .locator("[data-thread-panel]")
@@ -176,7 +138,7 @@ test("#301 Focus toggle stays clickable across the panel ⇄ Focus header swap",
 
     // Synthetic click #1 at that point, no prior mouse-out — mounts Focus.
     await win.mouse.click(cx, cy);
-    await expect(win).toHaveURL(FOCUS_URL, { timeout: 30_000 });
+    await expect(win).toHaveURL(FULL_URL, { timeout: 30_000 });
     /* #577: the swapped-in control is the one back control, "Back to
        DM" — same header spot as the old Exit-focus affordance. */
     const collapse = win.getByTitle("Back to DM", { exact: true });
@@ -191,7 +153,9 @@ test("#301 Focus toggle stays clickable across the panel ⇄ Focus header swap",
       )
       .toBeGreaterThan(0);
     // …and the fresh button is again a no-drag rect at the same spot.
-    await expect.poll(() => appRegion(win, "main > header")).toBe("drag");
+    await expect
+      .poll(() => appRegion(win, "[data-thread-panel] > header"))
+      .toBe("drag");
     await expect
       .poll(() => appRegion(win, 'button[title="Back to DM"]'))
       .toBe("no-drag");
@@ -209,7 +173,7 @@ test("#301 Focus toggle stays clickable across the panel ⇄ Focus header swap",
 
     // Click #2, back to the panel — same coordinates, still no mouse-out.
     await win.mouse.click(box2.x + box2.width / 2, box2.y + box2.height / 2);
-    await expect(win).toHaveURL(PANEL_URL, { timeout: 30_000 });
+    await expectPanelUrl(win);
     await expect(expand).toBeVisible({ timeout: 30_000 });
   } finally {
     await app.close();

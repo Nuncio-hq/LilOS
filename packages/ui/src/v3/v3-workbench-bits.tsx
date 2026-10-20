@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { cn } from "../lib/utils";
-import type { V3PageProps, V3Thread, V3Workbench } from "./v3-types";
+import type { V3PageProps } from "./v3-page-types";
+import type { V3Thread, V3Workbench } from "./v3-types";
 
 export type WbTab =
   | "changes"

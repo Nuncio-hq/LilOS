@@ -1,6 +1,12 @@
 /* UX v3 view models (prototype): the company as three databases (People,
    Work, Goals) in a calm, Notion-like layout. Every row answers who holds it,
-   what state it is in, since when, and what it waits on. Not wire types. */
+   what state it is in, since when, and what it waits on. Not wire types.
+   This file holds the records themselves (agents, tickets, threads and what a
+   thread carries); v3-data-types the company around them (schedules, phone,
+   settings, the whole `V3Data`); v3-page-types where you are and what a page
+   may change. */
+
+import type { AttachedFile } from "../types";
 
 /** The one status vocabulary every screen shares. Colour is reserved for it. */
 export type V3Status =
@@ -52,19 +58,69 @@ export type V3Agent = {
   /** Outside workers: the connector id they are reached through. */
   via?: string;
   hired: string;
-  runtime: string;
+  /* What the relay cannot tell (a runtime per agent, its schedule, skills,
+     spend, memory, week) is absent, and the agent page hides that part
+     instead of showing a made-up value. */
+  runtime?: string;
+  /** The engine profile the agent runs on (its id on the engine), where the
+     app knows it. Persona, memory and skills live in that profile. */
+  profile?: string;
   model: string;
-  schedule: string;
-  skills: string[];
+  /** The model's id on the engine, where `model` (the label) names one: the
+     new-chat picker starts on it with its own effort. Absent: the engine's
+     default model. */
+  modelId?: string;
+  /** Your newest chat with this agent, by when it began: where it ran (absent
+     = in no folder) and the first message you wrote, as you wrote it. The new
+     chat starts in the same folder, and ↑ in its empty box brings the message
+     back. Absent: no chat yet. */
+  lastChat?: { folder?: string; opener?: string };
+  /** What the agent is for, in a line: the engine profile's description,
+     where the engine lets the app write one. Absent: none set. */
+  description?: string;
+  /** Notifications switched off for this agent (banners and pushes alike). */
+  muted?: boolean;
+  schedule?: string;
+  skills?: string[];
   /** Dollars spent this period, and the cap. */
-  spend: { used: number; cap: number; period: "week" | "month" };
+  spend?: { used: number; cap: number; period: "week" | "month" };
   instructions: string[];
   /** A rule the CEO proposes after this agent got stuck. */
   suggestion?: { text: string; after: string };
-  memory: { text: string; source: string }[];
-  week: { done: number; typical: string; stuck: number; handed: number };
+  memory?: { text: string; source: string }[];
+  week?: { done: number; typical: string; stuck: number; handed: number };
   /** Idle agents: what wakes them next. */
   next?: string;
+};
+
+/** An edit to an agent: only the fields present are written. `muted` is
+   notifications switched off; `confirmModel` re-sends a model the engine held
+   back for a confirm. */
+export type V3AgentPatch = {
+  name?: string;
+  role?: string;
+  description?: string;
+  model?: string;
+  instructions?: string;
+  muted?: boolean;
+  confirmModel?: boolean;
+};
+
+/** An engine profile as the engine reports it: a persona with a model and
+   skills that exists on the engine whether or not anyone is hired on it. The
+   Hire page offers the ones no agent runs yet. */
+export type V3Profile = {
+  /** The profile's id on the engine; an agent's `profile` names it. */
+  id: string;
+  /** The name the engine shows for it. */
+  name: string;
+  /** What the engine says it is for, in a line, if it says. */
+  description?: string;
+  /** Its own model, as the pickers label it; absent when it sets none. */
+  model?: string;
+  skills: number;
+  /** Its persona text, if the engine describes it. */
+  soul?: string;
 };
 
 export type V3Project = {
@@ -184,8 +240,9 @@ export type V3Turn = {
   /** "asked by CEO at 11:52". */
   from: string;
   took: string;
-  /** The message that started the turn. `by` is an agent id or "you". */
-  prompt?: { by: string; at: string; text: string };
+  /** The message that started the turn. `by` is an agent id or "you";
+     `files` are what you attached to it (text may then be empty). */
+  prompt?: { by: string; at: string; text: string; files?: AttachedFile[] };
   /** Folded turns show this line instead of their steps. */
   summary?: string;
   facts?: string;
@@ -225,12 +282,17 @@ export type V3Thread = {
   startedAt: string;
   /** Minutes running (or ran). */
   minutes: number;
+  /** Empty when the app does not carry the conversation's turns (the real
+     app shows them in its own thread view); counts and "Turn N" labels
+     then stay hidden instead of reading 0. */
   turns: V3Turn[];
   step?: number;
-  /** Context window used, percent. */
-  context: number;
-  model: string;
-  folder: string;
+  /** Context window used, percent; absent when the engine reports none. */
+  context?: number;
+  /** Absent = the engine's default model. */
+  model?: string;
+  /** Absent = the harness's default folder. */
+  folder?: string;
   branch?: string;
   /** The step running now. */
   now?: { kind: V3StepKind; text: string; elapsed: string };
@@ -250,6 +312,19 @@ export type V3Thread = {
   workbench?: V3Workbench;
   /** The last Rewind on this thread, shown as a quiet line in the chat. */
   rewound?: { dropped: number; files: boolean };
+};
+
+/** One message that matched a ⌘K search. The thread's title and whether it
+   is archived come from `data.threads` / `data.archivedThreads`. */
+export type V3MessageHit = {
+  messageId: string;
+  threadId: string;
+  /** Who wrote it: an agent id, "you", or "system" (a note LilOS itself wrote). */
+  by: string;
+  at: string;
+  /** An excerpt with `<mark>` around the matched words. Parsed back into
+     elements, never set as HTML. */
+  snippet: string;
 };
 
 /** A thread's Workbench: the same folder the agent works in, seen from
@@ -294,248 +369,7 @@ export type V3BrowserTab = {
   doing?: string;
   /** You took the tab over from its agent; it waits until you hand it back. */
   takenOver?: boolean;
-  /** A few lines of the page, so the prototype has something to show. */
-  page: string[];
-};
-
-export type V3ScheduleWhen = {
-  kind: "hourly" | "daily" | "weekdays" | "weekly" | "once" | "cron";
-  /** "HH:MM" (hourly reads only the minutes). */
-  time: string;
-  /** weekly: 0–6 = Sun–Sat. */
-  day?: number;
-  /** once: "YYYY-MM-DD". */
-  date?: string;
-  /** cron: five fields, for anything the presets can't say. */
-  cron?: string;
-};
-
-/** A job an agent runs by itself on a schedule; each run is a new thread. */
-export type V3Schedule = {
-  id: string;
-  agentId: string;
-  projectId?: string;
-  title: string;
-  /** What the agent is told each time. */
-  prompt: string;
-  when: V3ScheduleWhen;
-  /** Next run, in words ("Tomorrow 09:00"). */
-  next: string;
-  paused?: boolean;
-  /** Runs without asking before risky commands: nobody is there at 2am
-     to approve, so the schedule says up front what it may do. */
-  fullAccess?: boolean;
-  last?: {
-    at: string;
-    result: "running" | "finished" | "failed";
-    threadId?: string;
-  };
-};
-
-/** A phone paired with this Mac. */
-export type V3Device = {
-  id: string;
-  name: string;
-  model: string;
-  lastSeen: string;
-};
-
-export type V3Settings = {
-  /** What the phone is told about. */
-  push: {
-    needsYou: boolean;
-    finished: boolean;
-    stuck: boolean;
-    failed: boolean;
-  };
-  /** Ask before risky commands, or let agents run anything. */
-  approvals: "ask" | "full";
-  /** Where "Open in editor" goes. */
-  editor: string;
-  /** Models the pickers offer. */
-  models: { id: string; label: string; on: boolean }[];
-  engine: {
-    name: string;
-    version: string;
-    /** ok · missing: not installed · old: below the minimum version. */
-    state: "ok" | "missing" | "old";
-    path: string;
-  };
-};
-
-export type V3Ask = {
-  id: string;
-  ticketId: string;
-  from: string;
-  kind: "approval" | "question";
-  title: string;
-  /** Minutes waiting. */
-  waiting: number;
-  ask: string;
-  why: string;
-  ifYes: string;
-  ifNo: string;
-  spend?: { amount: number; used: number; cap: number };
-  /** Offered as "let this agent do it without asking next time". */
-  allowRule?: string;
-  /** Question answers; the first is what happens by default. */
-  options?: string[];
-  /** If you don't answer by `at`, the CEO does this. */
-  fallback: { at: string; does: string };
-};
-
-export type V3Update = {
-  id: string;
-  by: string;
-  at: string;
-  ticketId?: string;
-  kind: "brief" | "done" | "handoff" | "stuck" | "plan";
-  text: string;
-};
-
-/** The CEO's answer to one ⌘K line: either a reply or a draft plan. */
-export type V3Draft =
-  | { kind: "answer"; text: string }
-  | {
-      kind: "plan";
-      lead: string;
-      goalId?: string;
-      hours: number;
-      cost: number;
-      tickets: {
-        id: string;
-        title: string;
-        owner: string;
-        after?: string;
-        est: string;
-        asksYou?: boolean;
-      }[];
-    };
-
-export type V3Data = {
-  company: string;
-  me: string;
-  today: string;
-  /** CEO is a position: the agent holding it. Everyone else reports to it. */
-  ceoId: string;
-  agents: V3Agent[];
-  connectors: V3ConnectorDef[];
-  projects: V3Project[];
-  goals: V3Goal[];
-  tickets: V3Ticket[];
-  threads: V3Thread[];
-  asks: V3Ask[];
-  updates: V3Update[];
-  schedules: V3Schedule[];
-  browser: {
-    tabs: V3BrowserTab[];
-    bookmarks: { title: string; url: string }[];
-  };
-  devices: V3Device[];
-  settings: V3Settings;
-  /** The company is set up; false shows the first-run welcome. */
-  setUp: boolean;
-};
-
-export type V3Route =
-  | { page: "home" }
-  | { page: "needs" }
-  | { page: "inbox" }
-  | { page: "work"; view?: "waiting" | "board" | "project" | "timeline" }
-  | { page: "ticket"; id: string }
-  | { page: "threads"; view?: "live" | "all" | "agent" | "scheduled" }
-  | { page: "thread"; id: string }
-  | { page: "goals" }
-  | { page: "goal"; id: string }
-  | { page: "project"; id: string }
-  | { page: "people"; view?: "table" | "org" }
-  | { page: "agent"; id: string }
-  | { page: "hire" }
-  | { page: "guide" }
-  | { page: "settings"; view?: "general" | "engine" | "phone" | "connectors" }
-  /** First run: name the company, check the engine, hire the CEO, add a project. */
-  | { page: "welcome" }
-  /** A new chat, opened like any record beside the page you are on; `id` is
-     the agent it starts with (you already chose who, so no picker first). */
-  | { page: "newchat"; id: string };
-
-/** A record: something you open (a ticket, a thread, a person, a goal, a
-   project). Records open beside the page you are on, never instead of it. */
-export type V3RecordRoute = Extract<V3Route, { id: string }>;
-
-/** A page: somewhere you live (the sidebar's entries). */
-export type V3PageRoute = Exclude<V3Route, V3RecordRoute>;
-
-/** Where you are: one page, plus the records you opened from it, in order.
-   The last record shows in the side peek; the rest are its trail. `full`
-   widens the peek over the page without leaving it. */
-export type V3Nav = {
-  page: V3PageRoute;
-  peek: V3RecordRoute[];
-  full?: boolean;
-};
-
-/** Everything a page can change; the shell owns the state. */
-export type V3Actions = {
-  approve: (askId: string, alwaysAllow?: boolean) => void;
-  deny: (askId: string) => void;
-  answer: (askId: string, option: string) => void;
-  stop: (threadId: string) => void;
-  handOff: (ticketId: string, agentId: string) => void;
-  acceptRule: (agentId: string) => void;
-  dismissRule: (agentId: string) => void;
-  comment: (ticketId: string, text: string) => void;
-  /** Sends a message into a thread. A finished thread starts a new turn and
-     the agent answers; a working one queues it until the current step ends. */
-  message: (threadId: string, text: string) => void;
-  /** Opens a new chat thread with an agent in a project's folder and returns
-     its id, so the caller can show it where the draft was. */
-  startChat: (chat: {
-    agentId: string;
-    projectId: string;
-    model: string;
-    text: string;
-  }) => string;
-  markSeen: (threadId: string) => void;
-  hire: (agent: { name: string; role: string; model: string }) => void;
-  /** Moves the CEO position to this agent; everyone else reports to it. */
-  makeCeo: (agentId: string) => void;
-  /** Turns a connector on or off for one agent's sessions. */
-  toggleConnector: (connectorId: string, agentId: string) => void;
-  addConnector: (c: {
-    label: string;
-    kind: "cli" | "mcp";
-    command: string;
-  }) => void;
-  /** Undo files and conversation back to before this turn's message. */
-  rewind: (threadId: string, turn: number) => void;
-  scheduleSave: (s: V3Schedule) => void;
-  scheduleToggle: (id: string) => void;
-  scheduleRunNow: (id: string) => void;
-  scheduleDelete: (id: string) => void;
-  /** Opens a tab in a session's browser (yours, so the agent can see it). */
-  browserOpen: (url: string, threadId: string) => void;
-  browserClose: (tabId: string) => void;
-  /** Take a tab from its agent (it pauses), or hand it back. */
-  browserTakeOver: (tabId: string) => void;
-  /** Shows a pairing code; resolves the next "phone" that scans it. */
-  pairPhone: () => void;
-  unpairPhone: (deviceId: string) => void;
-  saveSettings: (patch: Partial<V3Settings>) => void;
-  /** First run done: the company exists and the app opens on Home. */
-  finishSetup: (s: {
-    company: string;
-    me: string;
-    ceoName?: string;
-    ceoModel: string;
-    folder: string;
-  }) => void;
-  /** Opens the ⌘K palette, optionally prefilled. */
-  ask: (text?: string) => void;
-};
-
-export type V3PageProps = {
-  data: V3Data;
-  go: (route: V3Route) => void;
-  act: V3Actions;
+  /** A few lines of the page, so the prototype has something to show. The
+     real browser draws its pages natively, so the app leaves this out. */
+  page?: string[];
 };

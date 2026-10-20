@@ -8,7 +8,10 @@ import {
   bootStack,
   panelIntoFocus,
   pickPorts,
+  relayRpc,
   type Stack,
+  skipFirstRun,
+  v3Peek,
 } from "./helpers/stack";
 
 /**
@@ -110,77 +113,30 @@ test.describe.configure({ mode: "serial" });
    e2e sleeps nothing — the hold IS the race window. */
 const REORDER = "feedHold=turn.completed:400";
 
-async function dmDefault(page: Page, roots = ROOT) {
-  await page.goto(`${stack.webUrl}/?roots=${roots}&${REORDER}`);
-  const aside = page.locator("aside");
-  await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
-    timeout: 30_000,
-  });
-  const dmBtn = page.getByRole("button", {
-    name: /open dm|set up later|message/i,
-  });
-  if (
-    await dmBtn
-      .first()
-      .isVisible()
-      .catch(() => false)
-  ) {
-    await dmBtn.first().click();
-  } else {
-    await aside.getByRole("button", { name: /default/i }).click();
-  }
-  await expect(page).toHaveURL(/\/dm\//);
+/* A new session in `dir`, the way a person starts one: the new-chat draft's
+   folder chip, then Send (the folder joins the recents over the relay
+   first). The page loads with the reorder knob — a query parameter, so it
+   rides every hash navigation after it — and the thread opens beside
+   Threads. An id that names nobody opens the draft on the default agent. */
+async function startSession(page: Page, dir: string, text: string) {
+  await skipFirstRun(page);
+  const app = `${stack.webUrl}/?${REORDER}`;
+  await page.goto(app);
+  await relayRpc(page, stack, "folders.add", { path: dir });
+  await page.goto(`${app}#?page=threads&open=newchat:default`);
+  await page.reload();
+  const peek = v3Peek(page);
+  const chip = peek.getByTitle(/^Folder · /);
+  await expect(chip).toBeVisible({ timeout: 30_000 });
+  await chip.click();
+  await peek
+    .getByRole("menuitemradio", { name: new RegExp(path.basename(dir)) })
+    .click();
+  await expect(chip).toContainText(path.basename(dir), { timeout: 15_000 });
+  await peek.getByPlaceholder("Message Default…").fill(text);
+  await peek.getByRole("button", { name: "Send" }).click();
+  await expect(page).toHaveURL(/open=thread:[^&]+/, { timeout: 30_000 });
 }
-
-const pickerButton = (page: Page) => page.locator('[data-ws="folder"]');
-
-async function pickSessionFolder(page: Page, dir: string) {
-  const menu = await (async () => {
-    await pickerButton(page).click();
-    return page
-      .locator('[role="menu"], [data-slot="dropdown-menu-content"]')
-      .last();
-  })();
-  /* Recents populate async — `folders.list` plus a per-folder host probe —
-     so a one-shot check can miss a row that lands right after; the dialog
-     path then dead-ends because an already-attached folder's Add button
-     stays disabled forever (#606). Wait for any recent row first: `folders`
-     sets all rows in one atom write, so the first row means the list has
-     settled. An empty list (first-ever pick) just costs the timeout. */
-  await expect(menu.locator("[data-wsfolder]").first())
-    .toBeVisible({
-      timeout: 15_000,
-    })
-    .catch(() => {});
-  const recent = menu.locator(`[data-wsfolder="${dir}"]`);
-  if (
-    await recent
-      .first()
-      .isVisible()
-      .catch(() => false)
-  ) {
-    await recent.first().click();
-  } else {
-    await menu.getByText("Add a folder").click();
-    const dialog = page.locator("[data-addfolder]");
-    await expect(dialog).toBeVisible();
-    await dialog.locator("[data-pathinput]").fill(dir);
-    await expect(dialog.locator("[data-folderinfo]")).toBeVisible({
-      timeout: 15_000,
-    });
-    await dialog.locator("[data-addbtn]").click();
-    await expect(dialog).toHaveCount(0);
-  }
-  await expect(pickerButton(page)).toContainText(path.basename(dir), {
-    timeout: 15_000,
-  });
-}
-
-const send = async (page: Page, text: string) => {
-  const box = page.locator("textarea").last();
-  await box.fill(text);
-  await box.press("Enter");
-};
 
 const workbenchToggle = (page: Page) =>
   page.getByTitle("Workbench", { exact: true });
@@ -237,10 +193,7 @@ test("AC-1/2/4: reopen shows last-known rows on the first frame, no Reading hold
 }) => {
   test.setTimeout(180_000);
   await page.setViewportSize({ width: 1288, height: 700 });
-  await dmDefault(page);
-  await pickSessionFolder(page, repoDir);
-  await send(page, "check the folder");
-  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  await startSession(page, repoDir, "check the folder");
   await panelIntoFocus(page);
 
   // The panel auto-opens on a folder session at ≥lg — Files tab + rows.
@@ -302,10 +255,7 @@ test("AC-5/AC-2 on a 2,400-file repo: reopen → first row in the first frame un
 }) => {
   test.setTimeout(180_000);
   await page.setViewportSize({ width: 1288, height: 700 });
-  await dmDefault(page);
-  await pickSessionFolder(page, bigDir);
-  await send(page, "check the folder");
-  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  await startSession(page, bigDir, "check the folder");
   await panelIntoFocus(page);
   await expect(tab(page, "Files")).toBeVisible({ timeout: 30_000 });
   await tab(page, "Files").click();
@@ -354,10 +304,7 @@ test("AC-6 on LilOS itself: Workbench reopen → Files visible, measured", async
 }) => {
   test.setTimeout(180_000);
   await page.setViewportSize({ width: 1288, height: 700 });
-  await dmDefault(page, path.dirname(repo));
-  await pickSessionFolder(page, repo);
-  await send(page, "check the folder");
-  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  await startSession(page, repo, "check the folder");
   await panelIntoFocus(page);
   await expect(tab(page, "Files")).toBeVisible({ timeout: 30_000 });
   await tab(page, "Files").click();
@@ -384,10 +331,7 @@ test("AC-6 #606 pick-hold: a Files pick while the turn starts survives its first
 }) => {
   test.setTimeout(120_000);
   await page.setViewportSize({ width: 1288, height: 700 });
-  await dmDefault(page, path.dirname(repo));
-  await pickSessionFolder(page, repo);
-  await send(page, "slowstart:5000 check the folder");
-  /* #577: a send lands on the panel; Focus opens via its ↗. */
+  await startSession(page, repo, "slowstart:5000 check the folder");
   await panelIntoFocus(page);
   await expect(tab(page, "Files")).toBeVisible({ timeout: 30_000 });
   await tab(page, "Files").click();

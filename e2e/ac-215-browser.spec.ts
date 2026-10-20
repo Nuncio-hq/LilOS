@@ -4,15 +4,21 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  _electron,
   type ElectronApplication,
   expect,
   type Page,
   test,
 } from "@playwright/test";
-import { electronScreenshot, ensureDesktopPayload } from "./helpers/electron";
+import { electronScreenshot, launchDesktop } from "./helpers/electron";
 import { growDmThread } from "./helpers/relay-thread";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  panelFocusReady,
+  pickPorts,
+  type Stack,
+  skipFirstRun,
+  threadUrl,
+} from "./helpers/stack";
 
 /**
  * Issue #215 — the LilOS Browser in the Mac app (D-#215: main-process
@@ -36,7 +42,6 @@ import { bootStack, pickPorts, type Stack } from "./helpers/stack";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, "..");
-const desktopDir = path.join(repo, "apps", "desktop");
 const SHOTS = path.join(repo, "test-results", "ac-215");
 const stateDir = path.join(tmpdir(), `lilos-ac215-${process.pid}`);
 const downloadsDir = path.join(stateDir, "downloads");
@@ -59,35 +64,13 @@ const DOWNLOAD_URL =
 
 let stack: Stack;
 
-function launchDesktop(webUrl: string): Promise<ElectronApplication> {
-  return _electron.launch({
-    args:
-      process.platform === "linux"
-        ? [desktopDir, "--no-sandbox"]
-        : [desktopDir],
-    env: {
-      ...process.env,
-      LILOS_RELAY_HOME: stack.home,
-      LILOS_RELAY_PORT: String(stack.ports.relay),
-      LILOS_FEED_PORT: String(stack.ports.feed),
-      LILOS_WEB_URL: webUrl,
-      LILOS_STATE_DIR: stateDir,
-      LILOS_BROWSER_DOWNLOADS_DIR: downloadsDir,
-    },
-  });
-}
-
-async function dismissFirstRun(win: Page) {
-  const skip = win.getByRole("button", { name: /set up later/i });
-  if (
-    await skip
-      .first()
-      .isVisible()
-      .catch(() => false)
-  )
-    await skip.first().click();
-  await expect(win.locator("[data-first-run]")).toHaveCount(0, {
-    timeout: 10_000,
+/** The desktop app on the shared profile (`stateDir`: tabs and the browser
+ *  partition persist across the relaunch), opened on `hash`. */
+function launch(hash: string) {
+  return launchDesktop(stack, {
+    hash,
+    stateDir,
+    env: { LILOS_BROWSER_DOWNLOADS_DIR: downloadsDir },
   });
 }
 
@@ -131,6 +114,8 @@ async function captureView(app: ElectronApplication, file: string) {
     })
     .toBeTruthy();
   if (!png) throw new Error("no visible WebContentsView painted");
+  /* Another Playwright run's start wipes test-results/ mid-test. */
+  mkdirSync(path.dirname(file), { recursive: true });
   await writeFile(file, Buffer.from(png, "base64"));
 }
 
@@ -163,7 +148,6 @@ test.beforeAll(async () => {
   test.skip(!isMac, "the LilOS Browser is a macOS desktop feature");
   mkdirSync(SHOTS, { recursive: true });
   rmSync(stateDir, { recursive: true, force: true });
-  await ensureDesktopPayload(desktopDir);
   stack = await bootStack("ac-215", await pickPorts(), {
     LILOS_USER_NAME: "Oscar",
   });
@@ -176,11 +160,8 @@ test.afterAll(async () => {
 
 test("AC-1/AC-3: panel renders real pages; pop-out window; find, zoom, print, downloads", async () => {
   const grown = await growDmThread(stack, ["thread for the browser spec"]);
-  let app = await launchDesktop(
-    `${stack.webUrl}/dm/${grown.employeeId}/${grown.conversationId}`,
-  );
-  let win = await app.firstWindow();
-  await dismissFirstRun(win);
+  const hash = threadUrl(stack.webUrl, grown.conversationId);
+  let { app, win } = await launch(hash);
 
   /* AC-1a: the View menu's LilOS Browser item (⌘⇧B's same path) opens the
      docked panel with its tab strip + omnibox. */
@@ -326,11 +307,7 @@ test("AC-1/AC-3: panel renders real pages; pop-out window; find, zoom, print, do
   /* AC-2: quit + relaunch restores the tabs; the partition keeps the
      sign-in cookie. */
   await app.close();
-  app = await launchDesktop(
-    `${stack.webUrl}/dm/${grown.employeeId}/${grown.conversationId}`,
-  );
-  win = await app.firstWindow();
-  await dismissFirstRun(win);
+  ({ app, win } = await launch(hash));
   const dock2 = win.locator("[data-browser-dock]");
   /* open:true restores automatically — clicking the menu item would only
      toggle it closed again. */
@@ -353,47 +330,64 @@ test("AC-1/AC-3: panel renders real pages; pop-out window; find, zoom, print, do
   await app.close();
 });
 
+/** The session view's Workbench, open: a folderless DM session doesn't
+ *  auto-open it, and v3 has no `?tab=` — the header's Workbench toggle is the
+ *  way in. */
+async function openWorkbench(win: Page) {
+  await panelFocusReady(win);
+  const toggle = win.getByTitle("Workbench", { exact: true });
+  await expect(toggle).toBeVisible({ timeout: 60_000 });
+  if (!(await win.locator("[data-wb-shell]:not(.hidden)").count()))
+    await toggle.click();
+  await expect(win.locator("[data-wb-shell]:not(.hidden)")).toBeVisible({
+    timeout: 30_000,
+  });
+}
+
 test("AC-2 thread: the Workbench Browser tab shows this thread's tabs", async () => {
   const grown = await growDmThread(stack, ["thread browser spec"]);
-  /* ?tab=browser opens the Workbench straight on the Browser tab — a
-     folderless DM session doesn't auto-open the panel. */
-  const app = await launchDesktop(
-    `${stack.webUrl}/dm/${grown.employeeId}/${grown.conversationId}/focus?tab=browser`,
+  /* `full=1` is the session view (chat beside the Workbench). */
+  const { app, win } = await launch(
+    threadUrl(stack.webUrl, grown.conversationId, true),
   );
-  const win = await app.firstWindow();
-  await dismissFirstRun(win);
-  /* Focus + Workbench Browser tab — the same host, scoped to this thread. */
-  const tab = win.locator("[data-wb-browser]").first();
-  await expect(tab).toBeVisible({ timeout: 60_000 });
-  await tab.click();
-  await expect(win.locator("[data-browser='thread']")).toBeVisible();
-  const om = win
-    .locator("[data-browser='thread'] [data-omnibox] input")
-    .first();
-  await om.fill(PAGE_URL);
-  await om.press("Enter");
-  await expect(
-    win.locator("[data-browser='thread'] [data-browser-tab]", {
-      hasText: "AC-215 Page",
-    }),
-  ).toBeVisible({ timeout: 30_000 });
-  await electronScreenshot(
-    app,
-    win,
-    path.join(SHOTS, "ac2-thread-browser.png"),
-  );
-  await app.close();
+  try {
+    await openWorkbench(win);
+    /* Session view + Workbench Browser tab — the same host, scoped to this
+       thread. */
+    const tab = win.locator("[data-wb-browser]").first();
+    await expect(tab).toBeVisible({ timeout: 60_000 });
+    await tab.click();
+    await expect(win.locator("[data-browser='thread']")).toBeVisible();
+    const om = win
+      .locator("[data-browser='thread'] [data-omnibox] input")
+      .first();
+    await om.fill(PAGE_URL);
+    await om.press("Enter");
+    await expect(
+      win.locator("[data-browser='thread'] [data-browser-tab]", {
+        hasText: "AC-215 Page",
+      }),
+    ).toBeVisible({ timeout: 30_000 });
+    await electronScreenshot(
+      app,
+      win,
+      path.join(SHOTS, "ac2-thread-browser.png"),
+    );
+  } finally {
+    await app.close();
+  }
 });
 
 test("AC-4: no browser control in the web build", async ({ page }) => {
   const grown = await growDmThread(stack, ["web build has no browser UI"]);
-  await page.goto(
-    `${stack.webUrl}/dm/${grown.employeeId}/${grown.conversationId}/focus?tab=browser`,
-  );
+  await skipFirstRun(page);
+  await page.goto(threadUrl(stack.webUrl, grown.conversationId, true));
+  await openWorkbench(page);
+  /* The Workbench is open and has its tabs, but a web build has no native
+     page host — no Browser tab, no dock, no open control. */
+  await expect(page.locator("[data-wb-tab]").first()).toBeVisible();
   await expect(page.locator("[data-browser-dock]")).toHaveCount(0);
   await expect(page.locator("[data-browser-open]")).toHaveCount(0);
-  /* ?tab=browser is dropped on the floor — a web build has no Browser tab
-     to land on. */
   await expect(page.locator("[data-wb-browser]")).toHaveCount(0);
   await page.screenshot({
     path: path.join(SHOTS, "ac4-web-no-browser.png"),

@@ -99,7 +99,7 @@ export interface SessionWatchDeps {
   onEvent: (fn: (e: EngineEvent) => void) => () => void;
   /** Outputs — module atoms the watcher publishes into. */
   signals: WritableAtom<Record<string, SessionSignal>>;
-  /** sid -> a feed is attached/wanted (#572): dm.tsx's "pending" gate. */
+  /** sid -> a feed is attached/wanted (#572): the thread's "pending" gate (use-conv-folds.ts). */
   watched: WritableAtom<Record<string, boolean>>;
   models: WritableAtom<Record<string, SessionModel>>;
   attached: WritableAtom<Record<string, boolean>>;

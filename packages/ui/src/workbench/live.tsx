@@ -46,7 +46,7 @@ export interface LiveSurfaces {
   input(evt: LiveBrowserInput): void;
 }
 
-export type LiveBrowserInput =
+type LiveBrowserInput =
   | {
       kind: "mouse";
       event: "down" | "up" | "move";

@@ -6,6 +6,9 @@ import {
   panelIntoFocus,
   pickPorts,
   type Stack,
+  skipFirstRun,
+  startChat,
+  v3Peek,
 } from "./helpers/stack";
 
 /* Issue #649 — when a decision card (approval ask, question ask, plan) is
@@ -15,11 +18,13 @@ import {
    scroller's end (a ~12px content pad rests at ~11px), and a layout nudge
    while the lock chases stream growth kills the pin entirely, parking the
    card under the composer.
-   Approval and plan legs ride the engine-fake dev stack on a real session
-   grown scrollable first; the question-card leg rides the prototype's
-   seeded "v3" thread (question asks are prototype-only — engine-fake never
-   emits one). Every leg measures card-bottom → composer-top on the
-   three desktop sizes × light+dark and keeps a screenshot. */
+   Every leg rides the engine-fake dev stack on a real session grown
+   scrollable first — the approval, plan and question cards (engine-fake's
+   `question:` prompt, #553, replaced the prototype's seeded "v3" thread the
+   question leg used to ride). Each surface is the v3 thread panel: the peek
+   beside Threads, and the same panel widened into the session view. Every
+   leg measures card-bottom → composer-top on the three desktop sizes ×
+   light+dark and keeps a screenshot. */
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
 const repo = path.resolve(here, "..");
@@ -177,7 +182,7 @@ async function expectCardClearance(
 }
 
 const send = async (page: Page, text: string) => {
-  const box = page.locator("textarea").last();
+  const box = page.locator("[data-thread-panel] textarea").last();
   await box.fill(text);
   await box.press("Enter");
 };
@@ -216,7 +221,7 @@ const idle = async (page: Page) => {
 /** Grow the session until the Focus scroller overflows with headroom for
     the card that follows (≥ a card's height of scroll range). */
 async function makeScrollable(page: Page) {
-  const focusSel = "main [role='log']";
+  const focusSel = "[data-thread-panel] [role='log']";
   const range = () =>
     page.evaluate((s) => {
       const sc = document.querySelector(s)
@@ -230,7 +235,7 @@ async function makeScrollable(page: Page) {
   expect(await range(), "session never became scrollable").toBeGreaterThan(320);
 }
 
-test.describe("AC-1/2 approval + plan cards (real app, engine-fake)", () => {
+test.describe("AC-1/2/3 approval, plan and question cards (real app, engine-fake)", () => {
   test.describe.configure({ mode: "serial" });
   let stack: Stack;
 
@@ -242,29 +247,32 @@ test.describe("AC-1/2 approval + plan cards (real app, engine-fake)", () => {
     await stack?.stop();
   });
 
-  async function openDm(page: Page) {
-    await page.addInitScript(() =>
-      localStorage.setItem("lilos-onboarded", "1"),
+  /* A new chat with the seeded employee, landed on its thread in the side
+     peek and then widened into the session view — the peek's widen button
+     is the only way in (#577). An id that names nobody opens the draft on
+     the default agent. */
+  async function openChat(page: Page) {
+    await skipFirstRun(page);
+    await startChat(
+      page,
+      stack.webUrl,
+      { id: "default", name: "Default" },
+      "hello there",
     );
-    await page.goto(`${stack.webUrl}/`);
-    const dmBtn = page.getByRole("button", {
-      name: /open dm|set up later|message/i,
-    });
-    if (
-      await dmBtn
-        .first()
-        .isVisible()
-        .catch(() => false)
-    ) {
-      await dmBtn.first().click();
-    } else {
-      await page
-        .locator("aside")
-        .first()
-        .getByRole("button", { name: /default/i })
-        .click();
+    await panelIntoFocus(page);
+  }
+
+  /** The surface under test: the session view as is, or narrowed back to the
+      peek (the ask stays open across the swap). */
+  async function surfaceOf(page: Page, surface: "focus" | "panel") {
+    if (surface === "panel") {
+      await v3Peek(page).getByTitle("Narrow, back beside the page").click();
+      await expect(page).not.toHaveURL(/[#&]full=1(&|$)/);
+      await expect(
+        page.locator("[data-thread-panel] [role='log'] [data-msg]").first(),
+      ).toBeVisible({ timeout: 15_000 });
     }
-    await expect(page).toHaveURL(/\/dm\//, { timeout: 30_000 });
+    return "[data-thread-panel] [role='log']";
   }
 
   /* One session per card kind, both surfaces walked off it — the ask stays
@@ -275,30 +283,17 @@ test.describe("AC-1/2 approval + plan cards (real app, engine-fake)", () => {
     }) => {
       test.setTimeout(240_000);
       await page.setViewportSize({ width: 1288, height: 700 });
-      await openDm(page);
-      await send(page, "hello there");
-      /* #577: a send lands on the thread panel (`/dm/:e/:c`) — Focus opens
-         only from the panel's button. */
-      await panelIntoFocus(page);
+      await openChat(page);
       await idle(page);
       await makeScrollable(page);
       /* An edit-shaped prompt gates the first tool behind an approval ask —
          the card lands while the lock is chasing the stream. */
       await send(page, "slow:150 update the readme with a release note");
       const card = page.locator(
-        'main [role="log"] [data-ask-id][data-ask-state="open"]',
+        '[data-thread-panel] [role="log"] [data-ask-id][data-ask-state="open"]',
       );
       await expect(card).toBeVisible({ timeout: 60_000 });
-      const portSel =
-        surface === "focus"
-          ? "main [role='log']"
-          : "[data-thread-panel] [role='log']";
-      if (surface === "panel") {
-        await page.goto(page.url().replace(/\/focus$/, ""));
-        await expect(
-          page.locator("[data-thread-panel] [role='log'] [data-msg]").first(),
-        ).toBeVisible({ timeout: 15_000 });
-      }
+      const portSel = await surfaceOf(page, surface);
       for (const { w, h } of VIEWPORTS) {
         for (const theme of THEMES) {
           await page.setViewportSize({ width: w, height: h });
@@ -319,26 +314,15 @@ test.describe("AC-1/2 approval + plan cards (real app, engine-fake)", () => {
     }) => {
       test.setTimeout(240_000);
       await page.setViewportSize({ width: 1288, height: 700 });
-      await openDm(page);
-      await send(page, "hello there");
-      /* #577: a send lands on the thread panel (`/dm/:e/:c`) — Focus opens
-         only from the panel's button. */
-      await panelIntoFocus(page);
+      await openChat(page);
       await idle(page);
       await makeScrollable(page);
       await send(page, "plan: propose — backoff reconnect");
-      const card = page.locator('main [role="log"] [data-plan]').last();
+      const card = page
+        .locator('[data-thread-panel] [role="log"] [data-plan]')
+        .last();
       await expect(card).toBeVisible({ timeout: 60_000 });
-      const portSel =
-        surface === "focus"
-          ? "main [role='log']"
-          : "[data-thread-panel] [role='log']";
-      if (surface === "panel") {
-        await page.goto(page.url().replace(/\/focus$/, ""));
-        await expect(
-          page.locator("[data-thread-panel] [role='log'] [data-msg]").first(),
-        ).toBeVisible({ timeout: 15_000 });
-      }
+      const portSel = await surfaceOf(page, surface);
       for (const { w, h } of VIEWPORTS) {
         for (const theme of THEMES) {
           await page.setViewportSize({ width: w, height: h });
@@ -353,46 +337,23 @@ test.describe("AC-1/2 approval + plan cards (real app, engine-fake)", () => {
         }
       }
     });
-  }
-});
 
-test.describe("AC-3 question card clears the composer (prototype)", () => {
-  /* The reviewer DM's "v3" session parks on a 5-option open question —
-     the tallest card the app ships. */
-  async function openV3(page: Page) {
-    await page.goto("/");
-    await page
-      .locator("aside")
-      .first()
-      .getByRole("button", { name: /Reviewer/ })
-      .click();
-    await page
-      .locator('[data-session="v3"]')
-      .getByRole("button", { name: /repl/ })
-      .click();
-  }
-
-  for (const surface of ["panel", "focus"] as const) {
-    test(`AC-3 question card — ${surface}`, async ({ page }) => {
-      test.setTimeout(120_000);
+    test(`AC-3 question card clears the composer — ${surface}`, async ({
+      page,
+    }) => {
+      test.setTimeout(240_000);
       await page.setViewportSize({ width: 1288, height: 700 });
-      await openV3(page);
-      const portSel =
-        surface === "panel" ? "aside [role='log']" : "main [role='log']";
-      if (surface === "focus") {
-        await page
-          .locator("aside")
-          .last()
-          .getByRole("button", { name: "Focus", exact: true })
-          .click();
-        await expect(
-          page.locator('main [role="log"] [data-msg]').first(),
-        ).toBeVisible({ timeout: 15_000 });
-      }
-      const port = page.locator(portSel).last();
-      await expect(
-        port.locator('[data-question-card][data-ask-state="open"]'),
-      ).toBeVisible({ timeout: 15_000 });
+      await openChat(page);
+      await idle(page);
+      await makeScrollable(page);
+      /* The `question:` prompt parks the turn on a free-text + options ask —
+         the shared QuestionCard, the tallest card the app ships. */
+      await send(page, "question: pick the ship target");
+      const card = page.locator(
+        '[data-thread-panel] [role="log"] [data-question-card][data-ask-state="open"]',
+      );
+      await expect(card).toBeVisible({ timeout: 60_000 });
+      const portSel = await surfaceOf(page, surface);
       for (const { w, h } of QUESTION_VIEWPORTS) {
         for (const theme of THEMES) {
           await page.setViewportSize({ width: w, height: h });

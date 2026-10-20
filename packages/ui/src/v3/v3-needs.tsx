@@ -1,27 +1,20 @@
 import { type ReactNode, useEffect, useMemo, useState } from "react";
-import { cn } from "../lib/utils";
+import { ago, Btn, Page, Section, Title } from "./v3-bits";
+import { INK, StatusDot } from "./v3-marks";
 import {
-  AgentAvatar,
-  ago,
-  Btn,
-  INK,
-  Meter,
-  Page,
-  RowButton,
-  Section,
-  StatusDot,
-  StatusPill,
-  Title,
-} from "./v3-bits";
-import { agentOf, goalOf, threadsOf, ticketOf } from "./v3-model";
-import type { V3Ask, V3Data, V3PageProps } from "./v3-types";
+  agentNameOf,
+  agentOf,
+  FORMER_AGENT,
+  threadsOf,
+  ticketOf,
+} from "./v3-model";
+import { CHIP, OpenAsk } from "./v3-needs-ask";
+import { RowButton } from "./v3-open-record";
+import type { V3PageProps } from "./v3-page-types";
 
 /* Needs you: the one place for everything waiting on the chairman. The
    oldest ask is open with its four answers (ask, why, yes, no); every ask
    also carries the CEO's default, so the company never waits forever. */
-
-const CHIP =
-  "inline-flex shrink-0 items-center rounded-[10px] bg-yellow-50 px-[9px] py-px font-medium text-[12.5px] text-yellow-700 dark:bg-yellow-400/12 dark:text-yellow-300";
 
 /** Keys typed into a field must never trigger the A / D / J / K shortcuts. */
 function typingInField(e: KeyboardEvent) {
@@ -75,123 +68,6 @@ function Stop({ children }: { children: ReactNode }) {
     >
       {children}
     </span>
-  );
-}
-
-function OpenAsk({
-  ask,
-  data,
-  go,
-  act,
-  allow,
-  setAllow,
-}: {
-  ask: V3Ask;
-  data: V3Data;
-  go: V3PageProps["go"];
-  act: V3PageProps["act"];
-  allow: boolean;
-  setAllow: (v: boolean) => void;
-}) {
-  const from = agentOf(data, ask.from);
-  const ticket = ticketOf(data, ask.ticketId);
-  const goal = ticket?.goalId ? goalOf(data, ticket.goalId) : undefined;
-  const isQuestion = ask.kind === "question";
-  const rows: [string, string, boolean?][] = [
-    ["The ask", ask.ask],
-    ["Why", ask.why],
-    [isQuestion ? "If yes" : "If you approve", ask.ifYes],
-    [isQuestion ? "If no" : "If you deny", ask.ifNo, true],
-  ];
-
-  return (
-    <div className="my-3 mb-1 rounded-[10px] border border-[var(--v3-line)] px-[18px] pt-4 pb-3.5">
-      <div className="flex items-baseline gap-2.5 font-semibold text-[17px] text-foreground">
-        <span className="font-normal text-[14px] text-muted-foreground/70">
-          {ask.ticketId}
-        </span>
-        {ask.title}
-        <StatusPill status="needs" className="ml-auto self-center" />
-      </div>
-      <div className="mt-0.5 flex items-center gap-2 text-[13px] text-muted-foreground">
-        <AgentAvatar data={data} agent={from} size={18} />
-        <span>
-          {from.name} asks · waiting {ago(ask.waiting)}
-          {goal && ` · goal ${goal.title}`}
-        </span>
-      </div>
-
-      <div className="mt-4 mb-1 grid grid-cols-[120px_1fr] gap-x-3.5 gap-y-[9px] text-[14px] leading-[1.5]">
-        {rows.map(([k, v, quiet]) => (
-          <div key={k} className="contents">
-            <span className="text-muted-foreground">{k}</span>
-            <span
-              className={cn(
-                quiet ? "text-muted-foreground" : "text-foreground",
-              )}
-            >
-              {v}
-            </span>
-          </div>
-        ))}
-        {ask.spend && (
-          <>
-            <span className="text-muted-foreground">Spend</span>
-            <span className="flex items-center gap-2.5 text-[13px] text-muted-foreground">
-              <Meter
-                value={(ask.spend.used / ask.spend.cap) * 100}
-                className="w-[120px]"
-              />
-              ${ask.spend.used} of ${ask.spend.cap} this month
-            </span>
-          </>
-        )}
-      </div>
-
-      <div className="mt-3 flex">
-        <span className={CHIP}>
-          If you don't answer by {ask.fallback.at}: the CEO {ask.fallback.does}
-        </span>
-      </div>
-
-      <div className="mt-4 flex flex-wrap items-center gap-2">
-        {ask.allowRule && (
-          <label className="mr-auto flex cursor-pointer items-center gap-2 text-[13px] text-muted-foreground">
-            <input
-              type="checkbox"
-              checked={allow}
-              onChange={(e) => setAllow(e.target.checked)}
-              className="size-3.5 cursor-pointer accent-foreground"
-            />
-            {ask.allowRule}
-          </label>
-        )}
-        <span
-          className={cn(
-            "flex flex-wrap items-center gap-2",
-            !ask.allowRule && "ml-auto",
-          )}
-        >
-          <Btn onClick={() => go({ page: "ticket", id: ask.ticketId })}>
-            Open ticket
-          </Btn>
-          {isQuestion ? (
-            (ask.options ?? []).map((o) => (
-              <Btn key={o} onClick={() => act.answer(ask.id, o)}>
-                {o}
-              </Btn>
-            ))
-          ) : (
-            <>
-              <Btn onClick={() => act.deny(ask.id)}>Deny</Btn>
-              <Btn primary onClick={() => act.approve(ask.id, allow)}>
-                Approve{ask.spend ? ` $${ask.spend.amount}` : ""}
-              </Btn>
-            </>
-          )}
-        </span>
-      </div>
-    </div>
   );
 }
 
@@ -343,15 +219,19 @@ export function V3Needs({ data, go, act }: V3PageProps) {
                   onClick={() => setSelected(a.id)}
                   meta={
                     <>
-                      {a.ticketId} ·{" "}
-                      <b className="font-medium text-foreground">{from.name}</b>{" "}
+                      {a.ticketId ?? "Chat"} ·{" "}
+                      <b className="font-medium text-foreground">
+                        {from?.name ?? FORMER_AGENT}
+                      </b>{" "}
                       · waiting {ago(a.waiting)}
                     </>
                   }
                 >
-                  <span className={CHIP}>
-                    {a.fallback.at} {a.fallback.does}
-                  </span>
+                  {a.fallback && (
+                    <span className={CHIP}>
+                      {a.fallback.at} {a.fallback.does}
+                    </span>
+                  )}
                 </Item>
               );
             })}
@@ -381,7 +261,7 @@ export function V3Needs({ data, go, act }: V3PageProps) {
                     <>
                       {t.id} ·{" "}
                       <b className="font-medium text-foreground">
-                        {agentOf(data, t.owner).name}
+                        {agentNameOf(data, t.owner)}
                       </b>{" "}
                       · <span className={INK.stuck}>{t.stuckWhy}</span>
                     </>
@@ -426,7 +306,7 @@ export function V3Needs({ data, go, act }: V3PageProps) {
                   <>
                     {r.ticketId ?? "Chat"} ·{" "}
                     <b className="font-medium text-foreground">
-                      {agentOf(data, r.by).name}
+                      {agentNameOf(data, r.by)}
                     </b>
                     {r.note && ` · ${r.note}`}
                   </>

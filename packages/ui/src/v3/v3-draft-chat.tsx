@@ -1,33 +1,31 @@
-import { CheckIcon, ChevronDownIcon } from "lucide-react";
-import {
-  type KeyboardEvent,
-  type ReactNode,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
-import { cn } from "../lib/utils";
-import { AgentAvatar, Page, ProjectMark, Title } from "./v3-bits";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { AccessPill } from "../chat/access-pill";
+import { clearDraftIfSent, draftKey, useDraft } from "../lib/drafts";
+import type { AttachedFile, ConversationAccess, ModelChoice } from "../types";
+import { readStaged, useAttach } from "./v3-attach";
+import { Page, Title } from "./v3-bits";
+import { ChipMenu } from "./v3-chip-menu";
 import { Composer } from "./v3-composer";
-import { agentOf, projectOf, ticketOf } from "./v3-model";
-import type { V3Data, V3PageProps } from "./v3-types";
+import type { V3Data } from "./v3-data-types";
+import { FolderChip, ModelChip, NO_FOLDER } from "./v3-draft-chips";
+import { AgentAvatar, ProjectMark } from "./v3-marks";
+import { agentOf, defaultAgent, projectOf, ticketOf } from "./v3-model";
+import type { V3PageProps } from "./v3-page-types";
+import type { V3Agent } from "./v3-types";
 
 /* A new chat, opened like any record in the side peek: you already chose who
    (from their page, or the CEO from Threads), so there is no picker, only a
    box to write in. Who, where and which model sit as quiet chips under the
    text and open a tiny menu to change. Sending starts a thread with no ticket
-   and takes the draft's place on the trail; "Make it a ticket" comes later. */
-
-const MODELS = ["Opus 5.5 · High", "Sonnet 5 · Medium", "Haiku 5 · Fast"];
-
-const SUGGESTIONS = [
-  "Why is ac-544 flaky?",
-  "Summarise yesterday's PRs",
-  "Draft release notes for 0.9",
-];
-
-const CHIP =
-  "inline-flex h-6 min-w-0 items-center gap-1.5 rounded-md px-1.5 text-[12.5px] text-muted-foreground transition-colors hover:bg-[var(--v3-hover)] hover:text-foreground";
+   and takes the draft's place on the trail; "Make it a ticket" comes later.
+   The models on offer are the app's (`modelChoices`); where it works is a
+   project, or, in a company without projects, one of the app's folders, or
+   no folder at all (a chat that only talks). This box is the first-message
+   composer, so it keeps what the old home composer had, each only where the
+   app can do it: files on the first message (paste, drop, paperclip), the
+   draft kept per agent across reloads, ↑ for your last opener, `@` for people
+   and files of the folder, `/` for the engine's commands, the full model
+   picker and the Ask / Full access pill. */
 
 /** Where an agent usually works: the project of its most recent thread (a
     chat names its project; a ticket's hand uses the ticket's), else the
@@ -44,138 +42,169 @@ function usualProject(data: V3Data, agentId: string): string {
   return best?.project ?? data.projects[0]?.id ?? "";
 }
 
-type Option = { id: string; node: ReactNode };
-
-/** One chip that opens a small menu of choices above it. */
-function ChipMenu({
-  label,
-  title,
-  options,
-  value,
-  onPick,
-}: {
-  label: ReactNode;
-  title: string;
-  options: Option[];
-  value: string;
-  onPick: (id: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const trigger = useRef<HTMLButtonElement>(null);
-  const list = useRef<HTMLDivElement>(null);
-
-  // Opening puts the keyboard on the current choice (or the first).
-  useEffect(() => {
-    if (!open) return;
-    const items = list.current?.querySelectorAll<HTMLElement>("button");
-    const on = list.current?.querySelector<HTMLElement>(
-      '[aria-checked="true"]',
-    );
-    (on ?? items?.[0])?.focus();
-  }, [open]);
-
-  const close = () => {
-    setOpen(false);
-    trigger.current?.focus();
-  };
-
-  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === "Escape") {
-      // Closes the menu, not the peek behind it.
-      e.stopPropagation();
-      close();
-      return;
-    }
-    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
-    e.preventDefault();
-    const items = [...(list.current?.querySelectorAll("button") ?? [])];
-    const at = items.indexOf(document.activeElement as HTMLButtonElement);
-    const step = e.key === "ArrowDown" ? 1 : -1;
-    items[(at + step + items.length) % items.length]?.focus();
-  };
-
+/** Where this agent's chats usually go, as its last one did: that chat's
+    folder, or "No folder" when it had none or the app no longer lists it.
+    With no chat yet, the newest recent folder. */
+function usualFolder(data: V3Data, agent: V3Agent): string {
+  const folders = data.folders ?? [];
+  if (!agent.lastChat) return folders[0]?.path ?? NO_FOLDER;
   return (
-    <span className="relative min-w-0">
-      <button
-        ref={trigger}
-        type="button"
-        title={title}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
-        className={cn(CHIP, open && "bg-[var(--v3-hover)] text-foreground")}
-      >
-        {label}
-        <ChevronDownIcon className="size-3 shrink-0 opacity-60" />
-      </button>
-      {open && (
-        <>
-          <button
-            type="button"
-            tabIndex={-1}
-            aria-label={`Close ${title.toLowerCase()} menu`}
-            onClick={() => setOpen(false)}
-            className="fixed inset-0 z-10 cursor-default"
-          />
-          <div
-            ref={list}
-            role="menu"
-            aria-label={title}
-            tabIndex={-1}
-            onKeyDown={onKeyDown}
-            className="absolute bottom-full left-0 z-20 mb-1 max-h-[min(280px,50dvh)] min-w-[220px] max-w-[min(340px,calc(100vw-48px))] overflow-y-auto rounded-lg border border-[var(--v3-line)] bg-background py-1 text-[13.5px]"
-          >
-            {options.map((o) => (
-              <button
-                key={o.id}
-                type="button"
-                role="menuitemradio"
-                aria-checked={o.id === value}
-                onClick={() => {
-                  onPick(o.id);
-                  close();
-                }}
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-foreground outline-none hover:bg-[var(--v3-hover)] focus-visible:bg-[var(--v3-hover)]"
-              >
-                <span className="flex min-w-0 flex-1 items-center gap-2">
-                  {o.node}
-                </span>
-                {o.id === value && (
-                  <CheckIcon className="size-3.5 shrink-0 text-muted-foreground" />
-                )}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-    </span>
+    folders.find((f) => f.path === agent.lastChat?.folder)?.path ?? NO_FOLDER
   );
 }
 
-export function V3DraftChat({
+export function V3DraftChat(props: V3PageProps & { id: string }) {
+  const fallback = defaultAgent(props.data);
+  // Nobody is hired yet: there is no one to start a chat with.
+  if (!fallback) {
+    return (
+      <Page>
+        <Title small kicker="New chat">
+          No agents yet
+        </Title>
+        <p className="text-[14.5px] text-muted-foreground">
+          A chat needs an agent to talk to.
+        </p>
+      </Page>
+    );
+  }
+  return <DraftChat {...props} fallback={fallback} />;
+}
+
+function DraftChat({
   data,
   go,
   act,
   id,
-}: V3PageProps & { id: string }) {
+  fallback,
+}: V3PageProps & { id: string; fallback: V3Agent }) {
   const [agentId, setAgent] = useState(
-    data.agents.some((a) => a.id === id) ? id : data.ceoId,
+    data.agents.some((a) => a.id === id) ? id : fallback.id,
   );
-  const agent = agentOf(data, agentId);
+  // The chosen agent can leave the team while the draft is open (or the id
+  // never matched one): the draft then goes to the default, like "nobody
+  // chosen".
+  const agent = agentOf(data, agentId) ?? fallback;
   // Project and model follow the agent until you choose one yourself.
   const [chosenProject, setProject] = useState<string>();
   const projectId = chosenProject ?? usualProject(data, agent.id);
   const project = projectOf(data, projectId);
+  // A company with no projects yet picks among the app's recent folders.
+  const folders = data.folders ?? [];
+  const [chosenFolder, setFolder] = useState<string>();
+  // A pick whose folder the app no longer lists is as good as none.
+  const picked =
+    chosenFolder === NO_FOLDER || folders.some((f) => f.path === chosenFolder)
+      ? chosenFolder
+      : undefined;
+  const folderPath = picked ?? usualFolder(data, agent);
+  const folder = project
+    ? undefined
+    : folders.find((f) => f.path === folderPath);
   const [chosenModel, setModel] = useState<string>();
   // An outside worker has no model of its own: no chip, and none sent.
   const outside = agent.kind === "outside";
   const model = outside ? "" : (chosenModel ?? agent.model);
-  const [draft, setDraft] = useState("");
+  /* What the full picker chose (model, effort, Fast) and the access pill's
+     level, each held per agent as the old home composer held them: they are
+     for the chat being written, not settings, and switching the agent chip
+     must not carry one agent's over to another. Unset = the agent's own model
+     on its default effort, and Settings' default access. */
+  const [picks, setPicks] = useState<Record<string, ModelChoice>>({});
+  const pick = picks[agent.id];
+  const [pickOpen, setPickOpen] = useState(false);
+  const [accesses, setAccesses] = useState<Record<string, ConversationAccess>>(
+    {},
+  );
+  const access = accesses[agent.id] ?? data.settings.approvals;
+  /* The text is kept per agent, in the same store the thread composers use,
+     so a reload or a trip to another page leaves it where it was. */
+  const [draft, setDraft] = useDraft(draftKey.dm(agent.id));
   const input = useRef<HTMLTextAreaElement>(null);
+  const sending = useRef(false);
+  // Absent where the app sends no files: no paperclip, nothing to paste into.
+  const attach = useAttach(data.attachLimits);
 
   useEffect(() => {
     input.current?.focus({ preventScroll: true });
   }, []);
+
+  // The Composer empties the box right after onSend, before we know whether
+  // the chat started. That clearing is ignored while one is starting, so if
+  // the app could not start it (it has said why) the typed text is still
+  // there, and a second Send meanwhile cannot start a second chat.
+  const edit = (text: string) => {
+    if (!(sending.current && text === "")) setDraft(text);
+  };
+  /* `@` and `/` read the folder the chat will run in (a project's own, else the
+     picked one); without one there are no files to offer. Stable identities:
+     the menus search when they change. */
+  const searchFiles = act.searchFiles;
+  const searchCommands = act.searchCommands;
+  const folderPathNow = project?.folder ?? folder?.path;
+  const onSearchFiles = useMemo(
+    () =>
+      searchFiles && folderPathNow
+        ? (q: string) => searchFiles(folderPathNow, q)
+        : undefined,
+    [searchFiles, folderPathNow],
+  );
+  const onSearchCommands = useMemo(
+    () =>
+      searchCommands
+        ? (q: string) =>
+            searchCommands(
+              {
+                agentId: agent.id,
+                ...(folderPathNow ? { folder: folderPathNow } : {}),
+              },
+              q,
+            )
+        : undefined,
+    [searchCommands, agent.id, folderPathNow],
+  );
+  async function send(text: string) {
+    if (sending.current) return;
+    sending.current = true;
+    try {
+      // The chips stay until the chat has started: a refused send keeps them.
+      let files: AttachedFile[] = [];
+      try {
+        files = await readStaged(attach?.files ?? []);
+      } catch {
+        attach?.warn(
+          "A file couldn't be read — nothing was sent. Re-attach it.",
+        );
+        return;
+      }
+      const thread = await act.startChat({
+        agentId: agent.id,
+        projectId: project?.id,
+        folder: folder?.path,
+        model,
+        ...(pick && !outside ? { pick } : {}),
+        ...(data.chatAccess ? { access } : {}),
+        text,
+        ...(files.length ? { files } : {}),
+      });
+      if (thread === undefined) return;
+      clearDraftIfSent(draftKey.dm(agent.id), text);
+      setDraft("");
+      attach?.clear();
+      go({ page: "thread", id: thread });
+    } finally {
+      sending.current = false;
+    }
+  }
+
+  /* The commands the app owns: `/model` opens the picker this box already
+     has (and is only claimed when it has one). Everything else posts and the
+     engine runs it. */
+  const onCommand = (name: string) => {
+    if (name !== "model" || !data.modelCatalog || outside) return false;
+    setPickOpen(true);
+    return true;
+  };
 
   const chips = (
     <>
@@ -202,7 +231,7 @@ export function V3DraftChat({
           ),
         }))}
       />
-      {project && (
+      {project ? (
         <ChipMenu
           title={`Project · ${project.folder}`}
           value={project.id}
@@ -230,14 +259,33 @@ export function V3DraftChat({
             ),
           }))}
         />
+      ) : (
+        folders.length > 0 && (
+          <FolderChip
+            folders={folders}
+            folder={folder}
+            onPick={setFolder}
+            onAdd={act.addFolder ? () => act.addFolder?.(setFolder) : undefined}
+          />
+        )
       )}
       {!outside && (
-        <ChipMenu
-          title="Model"
-          value={model}
-          onPick={setModel}
-          label={<span className="truncate">{model}</span>}
-          options={MODELS.map((m) => ({ id: m, node: <span>{m}</span> }))}
+        <ModelChip
+          data={data}
+          act={act}
+          agentModelId={agent.modelId}
+          pick={pick}
+          onPick={(c) => setPicks((p) => ({ ...p, [agent.id]: c }))}
+          label={model}
+          onLabel={setModel}
+          open={pickOpen}
+          onOpen={setPickOpen}
+        />
+      )}
+      {data.chatAccess && (
+        <AccessPill
+          access={access}
+          onAccess={(a) => setAccesses((m) => ({ ...m, [agent.id]: a }))}
         />
       )}
     </>
@@ -257,44 +305,45 @@ export function V3DraftChat({
         {agent.role}
       </p>
       <p className="mt-3 text-[15px] text-muted-foreground">
-        Talk to {agent.name} directly. Turn it into a ticket any time.
+        Talk to {agent.name} directly.
+        {data.features.tickets && " Turn it into a ticket any time."}
       </p>
 
-      <div className="mt-8 flex flex-wrap gap-2">
-        {SUGGESTIONS.map((s) => (
-          <button
-            key={s}
-            type="button"
-            onClick={() => {
-              setDraft(s);
-              input.current?.focus();
-            }}
-            className="h-7 rounded-full border border-[var(--v3-line)] px-3 text-[13px] text-muted-foreground transition-colors hover:bg-[var(--v3-hover)] hover:text-foreground"
-          >
-            {s}
-          </button>
-        ))}
-      </div>
+      {data.starters && data.starters.length > 0 && (
+        <div className="mt-8 flex flex-wrap gap-2">
+          {data.starters.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => {
+                edit(s);
+                input.current?.focus();
+              }}
+              className="h-7 rounded-full border border-[var(--v3-line)] px-3 text-[13px] text-muted-foreground transition-colors hover:bg-[var(--v3-hover)] hover:text-foreground"
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="mt-3">
         <Composer
           data={data}
           agent={agent}
           model={model}
-          folder={project?.folder ?? "~"}
+          folder={project?.folder ?? folder?.path}
           value={draft}
-          onChange={setDraft}
+          onChange={edit}
           inputRef={input}
           chips={chips}
-          onSend={(text) => {
-            const thread = act.startChat({
-              agentId: agent.id,
-              projectId,
-              model,
-              text,
-            });
-            go({ page: "thread", id: thread });
-          }}
+          attach={attach}
+          lastSent={agent.lastChat?.opener}
+          people={data.agents}
+          onSearchFiles={onSearchFiles}
+          onSearchCommands={onSearchCommands}
+          onCommand={onCommand}
+          onSend={send}
         />
       </div>
     </Page>

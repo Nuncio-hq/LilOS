@@ -4,7 +4,7 @@ import type { Diff, Reply, Step, Thread } from "../types";
    inline_diff → Changes (merged per file), terminal output → Terminal, git commit → Commits.
    A subagent works in the same checkout, so its steps count too; another employee's help does
    not — that ran in their own session (issue #170). */
-export function turnSteps(r: Reply): Step[] {
+function turnSteps(r: Reply): Step[] {
   return [
     ...(r.steps ?? []),
     ...(r.subagents ?? []).flatMap((a) => (a.employee ? [] : a.steps)),

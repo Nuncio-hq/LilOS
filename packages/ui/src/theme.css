@@ -1,17 +1,8 @@
-/* LilOS theme — the single source of truth for the accepted prototype look
-   (D-#246): every web/desktop surface imports this file, so the real app
-   and the prototype cannot drift again (drift was the #230 regression
-   class). Only the entry files keep the vendored imports (tailwindcss,
-   shadcn, font) and the @source directive. Not: a second copy of the palette
-   in an app entry, or wallpaper inside the desktop window.
-
-   Two frames hang off the app root:
-   - `.lilos-desktop`  — one merged window: panels flow into each other,
-     cards are borderless and float on soft shadows, no divider lines.
-     Applied in every host (browser and Electron).
-   - `.lilos-float`    — a plain browser tab only: the floating inset window
-     over the slow colour field. Inside Electron the OS window is the frame,
-     so there is no wallpaper and no margin (#232 owns that chrome). */
+/* LilOS theme — the single source of truth for the accepted look (D-#246):
+   every web/desktop surface imports this file, so the real app and the
+   prototype cannot drift (drift was the #230 regression class). Only the
+   entry files keep the vendored imports (tailwindcss, shadcn, font) and the
+   @source directive. Not: a second copy of the palette in an app entry. */
 
 @custom-variant dark (&:is(.dark *));
 
@@ -779,60 +770,7 @@
   -webkit-backdrop-filter: blur(24px) saturate(1.6);
 }
 
-/* ---- Liquid glass colour field (issue #223, round 2; #246: browser only) ----
-   Glass only reads when something colourful moves behind it: a slow, blurred
-   colour field sits under the app. In the desktop shell the OS window is the
-   frame, so the field exists only under .lilos-float — the class the app root
-   carries outside Electron. */
-body:has(.lilos-float) {
-  background:
-    radial-gradient(40% 55% at 12% 18%, #5fd6ce66, transparent 70%),
-    radial-gradient(45% 50% at 88% 12%, #7b6cff4d, transparent 70%),
-    radial-gradient(50% 55% at 78% 92%, #ffb14a40, transparent 70%),
-    radial-gradient(45% 55% at 20% 95%, #3f7ff540, transparent 70%), #eef1f5;
-  background-attachment: fixed;
-}
-.dark body:has(.lilos-float) {
-  background:
-    radial-gradient(40% 55% at 12% 18%, #0f6f6a80, transparent 70%),
-    radial-gradient(45% 50% at 88% 12%, #3b2f8a80, transparent 70%),
-    radial-gradient(50% 55% at 78% 92%, #6a3a1060, transparent 70%),
-    radial-gradient(45% 55% at 20% 95%, #13306e80, transparent 70%), #0b0c10;
-}
-/* The colour field drifts, slowly — alive, never distracting. */
-body:has(.lilos-float)::before {
-  content: "";
-  position: fixed;
-  inset: -20%;
-  z-index: -1;
-  pointer-events: none;
-  background:
-    radial-gradient(30% 35% at 30% 40%, #3cc4bc38, transparent 70%),
-    radial-gradient(30% 35% at 70% 60%, #af52de2e, transparent 70%);
-  filter: blur(40px);
-  animation: lilos-drift 28s ease-in-out infinite alternate;
-}
-@keyframes lilos-drift {
-  0% {
-    transform: translate3d(-6%, -4%, 0) rotate(0deg) scale(1);
-  }
-  50% {
-    transform: translate3d(5%, 3%, 0) rotate(12deg) scale(1.08);
-  }
-  100% {
-    transform: translate3d(-3%, 6%, 0) rotate(-8deg) scale(1);
-  }
-}
-
-.lilos-desktop {
-  background: transparent;
-}
-@media (min-width: 1024px) {
-  .lilos-desktop {
-    padding: 10px;
-    gap: 10px;
-  }
-}
+/* Frosted glass sheet: the Workbench beside a session view (focus-view.tsx). */
 .lilos-glass {
   --glass-fill: rgb(255 255 255 / 0.62);
   background: var(--glass-fill) !important;
@@ -859,13 +797,6 @@ body:has(.lilos-float)::before {
     overflow: hidden;
   }
 }
-/* The sidebar is a clearer, more tinted sheet — like Finder's. */
-.lilos-glass.lilos-glass-side {
-  --glass-fill: rgb(246 248 250 / 0.45);
-}
-.dark .lilos-glass.lilos-glass-side {
-  --glass-fill: rgb(20 20 24 / 0.45);
-}
 
 /* ---- Motion ----
    Springy, short and physical. Things arrive (rise + unblur), lift under the
@@ -879,16 +810,6 @@ body:has(.lilos-float)::before {
   to {
     opacity: 1;
     transform: none;
-    filter: none;
-  }
-}
-@keyframes lilos-fade {
-  from {
-    opacity: 0;
-    filter: blur(4px);
-  }
-  to {
-    opacity: 1;
     filter: none;
   }
 }
@@ -997,7 +918,6 @@ button:not(:disabled):active,
   min-height: 4.5rem;
 }
 @media (prefers-reduced-motion: reduce) {
-  body::before,
   .lilos-orb-blobs,
   .lilos-orb-ring,
   .lilos-rise {
@@ -1025,182 +945,8 @@ form:has(textarea:not(:placeholder-shown), [aria-label="Stop (⌘.)"])
   animation: lilos-rise 0.3s ease both;
 }
 
-/* ---- One window (issue #223, round 3; #246: floating form is browser-only) ----
-   Not three floating boxes: the whole app is ONE window. Sidebar, content and
-   side panels flow into each other and differ only in how clear the glass is —
-   no gaps, no divider lines. Inside, cards are borderless and float on soft
-   shadows instead of being outlined. In a plain browser tab (.lilos-float) the
-   window floats over the colour field; inside Electron the same merged window
-   fills the OS frame edge to edge. */
-@media (min-width: 1024px) {
-  .lilos-desktop {
-    padding: 0;
-    gap: 0;
-  }
-  .lilos-desktop.lilos-float {
-    margin: 14px;
-    height: calc(100dvh - 28px) !important;
-    border-radius: 26px;
-    background: rgb(255 255 255 / 0.5);
-    backdrop-filter: blur(40px) saturate(1.8);
-    -webkit-backdrop-filter: blur(40px) saturate(1.8);
-    border: 1px solid rgb(255 255 255 / 0.75);
-    box-shadow:
-      inset 0 1px 0 rgb(255 255 255 / 0.9),
-      0 2px 6px rgb(0 0 0 / 0.05),
-      0 40px 90px -30px rgb(20 30 60 / 0.4);
-  }
-  .dark .lilos-desktop.lilos-float {
-    background: rgb(24 24 28 / 0.55);
-    border-color: rgb(255 255 255 / 0.1);
-    box-shadow:
-      inset 0 1px 0 rgb(255 255 255 / 0.08),
-      0 40px 90px -30px rgb(0 0 0 / 0.8);
-  }
-  .lilos-desktop > div {
-    gap: 0 !important;
-  }
-  /* Panels inside the window are just tones of the same glass. */
-  .lilos-desktop .lilos-glass {
-    background: transparent !important;
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-    border: 0 !important;
-    border-radius: 0;
-    box-shadow: none;
-    margin: 0 !important;
-  }
-  /* Sidebar: the clearest glass, the colour field shows through. */
-  .lilos-desktop .lilos-glass.lilos-glass-side {
-    background: rgb(255 255 255 / 0.18) !important;
-  }
-  .dark .lilos-desktop .lilos-glass.lilos-glass-side {
-    background: rgb(255 255 255 / 0.03) !important;
-  }
-  /* No field behind the desktop window: a whisper of tone keeps the sidebar
-     reading as the clearer sheet. */
-  .lilos-desktop:not(.lilos-float) .lilos-glass.lilos-glass-side {
-    background: rgb(0 0 0 / 0.03) !important;
-  }
-  .dark .lilos-desktop:not(.lilos-float) .lilos-glass.lilos-glass-side {
-    background: rgb(255 255 255 / 0.04) !important;
-  }
-  /* Content: the most opaque, where you read. */
-  .lilos-desktop main.lilos-glass {
-    background: rgb(255 255 255 / 0.55) !important;
-  }
-  .dark .lilos-desktop main.lilos-glass {
-    background: rgb(28 28 32 / 0.5) !important;
-  }
-  .lilos-desktop:not(.lilos-float) main.lilos-glass {
-    background: transparent !important;
-  }
-  /* Side panels melt in from the content with a soft gradient edge, no line. */
-  .lilos-desktop aside.lilos-glass:not(.lilos-glass-side) {
-    background: linear-gradient(
-      to right,
-      rgb(255 255 255 / 0.2),
-      rgb(255 255 255 / 0.4) 48px
-    ) !important;
-  }
-  .dark .lilos-desktop aside.lilos-glass:not(.lilos-glass-side) {
-    background: linear-gradient(
-      to right,
-      rgb(255 255 255 / 0.01),
-      rgb(255 255 255 / 0.04) 48px
-    ) !important;
-  }
-  /* Focus: the workbench floats as one soft inset sheet inside the window. */
-  .lilos-desktop main aside.lilos-glass {
-    margin: 8px 8px 8px 0 !important;
-    border-radius: 20px;
-    box-shadow:
-      0 1px 2px rgb(0 0 0 / 0.04),
-      0 16px 40px -20px rgb(20 30 60 / 0.3);
-  }
-}
-/* No structural divider lines anywhere: headers, strips and panel edges. */
-.lilos-desktop :is(header, aside, .lilos-glass > div, [data-slot="tabs-list"]) {
-  border-color: transparent !important;
-}
-/* Cards: borderless, floating on a soft shadow. */
-.lilos-desktop
-  :is(main, aside)
-  :is(.rounded-md, .rounded-lg, .rounded-xl, .rounded-2xl).border:not(
-    [data-slot="input-group"]
-  ):not(input):not(textarea):not(button):not([data-slot="button"]):not(
-    .fixed *
-  ) {
-  border-color: transparent !important;
-  background-color: rgb(255 255 255 / 0.6);
-  box-shadow:
-    0 1px 2px rgb(0 0 0 / 0.04),
-    0 8px 24px -14px rgb(20 30 60 / 0.25);
-}
-.dark
-  .lilos-desktop
-  :is(main, aside)
-  :is(.rounded-md, .rounded-lg, .rounded-xl, .rounded-2xl).border:not(
-    [data-slot="input-group"]
-  ):not(input):not(textarea):not(button):not([data-slot="button"]):not(
-    .fixed *
-  ) {
-  background-color: rgb(255 255 255 / 0.05);
-  box-shadow:
-    0 1px 2px rgb(0 0 0 / 0.3),
-    0 10px 28px -14px rgb(0 0 0 / 0.6);
-}
-/* A plan waiting on you glows teal instead of being outlined. */
-.lilos-desktop [data-planphase="waiting"] {
-  box-shadow:
-    0 0 0 1.5px color-mix(in srgb, var(--primary) 45%, transparent),
-    0 12px 32px -12px color-mix(in srgb, var(--primary) 45%, transparent) !important;
-}
-/* Composer: part of the window, a raised pill without a hard edge. */
-.lilos-desktop [data-slot="input-group"]:has(textarea) {
-  border-color: transparent;
-  background: rgb(255 255 255 / 0.75);
-}
-.dark .lilos-desktop [data-slot="input-group"]:has(textarea) {
-  background: rgb(255 255 255 / 0.06);
-}
-/* Changing view is a soft cross-fade, not a jump — and the header never
-   rides it. The header is window chrome: its controls must sit at their
-   final spot the instant the view mounts, because a click already on its
-   way (the ⇄ Focus toggle's in-place second click) lands before a rise
-   would settle and dies on the .lilos-drag strip (#404). `main` only
-   fades; the body below the header still rises in. */
-.lilos-desktop main {
-  animation: lilos-fade 0.45s cubic-bezier(0.2, 0.9, 0.25, 1.1) both;
-}
-.lilos-desktop main > :not(header) {
-  animation: lilos-rise 0.45s cubic-bezier(0.2, 0.9, 0.25, 1.1) both;
-}
-/* The selected sidebar item reads as lit, not boxed. */
-.lilos-desktop .lilos-glass-side .text-tint-text {
-  box-shadow: inset 0 0 0 1px
-    color-mix(in srgb, var(--primary) 18%, transparent);
-}
-/* Single-side borders are dividers — gone; structure comes from spacing. */
-.lilos-desktop :is(.border-b, .border-t, .border-l, .border-r):not(.border) {
-  border-color: transparent !important;
-}
-/* The terminal is dark glass inside the window, not a black slab. */
-.lilos-desktop .bg-zinc-950 {
-  background-color: rgb(22 22 28 / 0.88) !important;
-}
-.lilos-desktop .bg-zinc-950 .border {
-  background-color: transparent !important;
-  box-shadow: none !important;
-}
-
-/* Modals: the scrim blurs what's behind, the sheet is near-opaque glass so
-   text behind never shows through. */
-.lilos-desktop .fixed.inset-0 {
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-}
-.lilos-desktop .fixed.inset-0 > :is(.border, [role="dialog"]),
+/* ---- Dialogs ----
+   The sheet is near-opaque frosted glass, so text behind never shows through. */
 [data-slot="dialog-content"],
 [role="alertdialog"] {
   background: rgb(255 255 255 / 0.94) !important;
@@ -1212,156 +958,10 @@ form:has(textarea:not(:placeholder-shown), [aria-label="Stop (⌘.)"])
     0 30px 80px -20px rgb(20 30 60 / 0.45),
     0 2px 6px rgb(0 0 0 / 0.06);
 }
-.dark .lilos-desktop .fixed.inset-0 > :is(.border, [role="dialog"]),
 .dark [data-slot="dialog-content"],
 .dark [role="alertdialog"] {
   background: rgb(36 36 40 / 0.94) !important;
   border-color: rgb(255 255 255 / 0.1) !important;
-}
-
-/* Panels that float over the content (the sidebar opened from Focus, the
-   side panel or workbench on narrow windows) are sheets, not tints: near-
-   opaque frosted glass with a shadow, so nothing behind reads through. */
-.lilos-desktop .lilos-glass.fixed,
-.lilos-desktop .lilos-glass.lilos-glass-side.fixed {
-  background: rgb(246 247 250 / 0.92) !important;
-  backdrop-filter: blur(30px) saturate(1.8) !important;
-  -webkit-backdrop-filter: blur(30px) saturate(1.8) !important;
-  box-shadow:
-    0 30px 80px -20px rgb(20 30 60 / 0.45),
-    1px 0 0 rgb(255 255 255 / 0.6) !important;
-}
-.dark .lilos-desktop .lilos-glass.fixed,
-.dark .lilos-desktop .lilos-glass.lilos-glass-side.fixed {
-  background: rgb(30 30 34 / 0.92) !important;
-  box-shadow:
-    0 30px 80px -20px rgb(0 0 0 / 0.8),
-    1px 0 0 rgb(255 255 255 / 0.06) !important;
-}
-@media (max-width: 1279px) {
-  .lilos-desktop .lilos-glass[class*="max-xl:fixed"] {
-    background: rgb(246 247 250 / 0.92) !important;
-    backdrop-filter: blur(30px) saturate(1.8) !important;
-  }
-  .dark .lilos-desktop .lilos-glass[class*="max-xl:fixed"] {
-    background: rgb(30 30 34 / 0.92) !important;
-  }
-}
-@media (max-width: 1023px) {
-  .lilos-desktop .lilos-glass[class*="max-lg:fixed"] {
-    background: rgb(246 247 250 / 0.92) !important;
-    backdrop-filter: blur(30px) saturate(1.8) !important;
-  }
-  .dark .lilos-desktop .lilos-glass[class*="max-lg:fixed"] {
-    background: rgb(30 30 34 / 0.92) !important;
-  }
-}
-
-/* ---- UX v2 prototype (threads by project) ----
-   One quiet window: a tinted sidebar sheet and a white reading column that
-   share one frame, no floating glass panels, no colour field. Colour is
-   reserved for state dots; everything else is ink on neutral. */
-.lilos-v2 {
-  --v2-side: oklch(0.975 0.004 250);
-  --v2-main: oklch(1 0 0);
-  background: var(--v2-side);
-}
-.dark .lilos-v2 {
-  --v2-side: oklch(0.19 0.006 260);
-  --v2-main: oklch(0.225 0.006 260);
-}
-.lilos-v2-side {
-  background: var(--v2-side);
-}
-.lilos-v2-main {
-  background: var(--v2-main);
-  border-left: 1px solid color-mix(in oklch, var(--foreground) 7%, transparent);
-}
-@media (min-width: 1024px) {
-  .lilos-v2 {
-    padding: 8px 8px 8px 0;
-  }
-  .lilos-v2-main {
-    border: 1px solid color-mix(in oklch, var(--foreground) 7%, transparent);
-    border-radius: 14px;
-    box-shadow:
-      0 1px 2px oklch(0.3 0.02 260 / 0.04),
-      0 12px 32px -16px oklch(0.3 0.02 260 / 0.12);
-  }
-  .dark .lilos-v2-main {
-    box-shadow: none;
-  }
-}
-@keyframes lilos-v2-breathe {
-  0%,
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.45;
-    transform: scale(0.82);
-  }
-}
-.lilos-v2-breathe {
-  animation: lilos-v2-breathe 1.8s cubic-bezier(0.45, 0, 0.55, 1) infinite;
-}
-/* Side sheets and the workbench slide in from the right instead of the
-   page changing under you; a page pushed inside a sheet nudges in. */
-@keyframes lilos-v2-sheet-in {
-  from {
-    transform: translateX(104%);
-  }
-  to {
-    transform: translateX(0);
-  }
-}
-@keyframes lilos-v2-sheet-out {
-  from {
-    transform: translateX(0);
-  }
-  to {
-    transform: translateX(104%);
-  }
-}
-@keyframes lilos-v2-push {
-  from {
-    opacity: 0;
-    transform: translateX(28px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-@keyframes lilos-v2-dim {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-.lilos-v2-sheet {
-  animation: lilos-v2-sheet-in 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) both;
-}
-.lilos-v2-sheet[data-closing] {
-  animation: lilos-v2-sheet-out 0.2s cubic-bezier(0.4, 0, 1, 1) both;
-}
-.lilos-v2-push {
-  animation: lilos-v2-push 0.24s cubic-bezier(0.2, 0.8, 0.2, 1) both;
-}
-.lilos-v2-dim {
-  animation: lilos-v2-dim 0.2s ease-out both;
-}
-@media (prefers-reduced-motion: reduce) {
-  .lilos-v2-breathe,
-  .lilos-v2-sheet,
-  .lilos-v2-sheet[data-closing],
-  .lilos-v2-push,
-  .lilos-v2-dim {
-    animation: none;
-  }
 }
 
 /* ---- UX v3 prototype (the calm company) ----
@@ -1401,6 +1001,26 @@ form:has(textarea:not(:placeholder-shown), [aria-label="Stop (⌘.)"])
 }
 @media (prefers-reduced-motion: reduce) {
   .lilos-v3-line-in {
+    animation: none;
+  }
+}
+/* A working status dot breathes (StatusDot, the browser tab strip). */
+@keyframes lilos-v3-breathe {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.82);
+  }
+}
+.lilos-v3-breathe {
+  animation: lilos-v3-breathe 1.8s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lilos-v3-breathe {
     animation: none;
   }
 }

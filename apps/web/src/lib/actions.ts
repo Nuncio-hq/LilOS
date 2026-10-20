@@ -14,7 +14,11 @@ import type {
 import type { ModelChoice, ModelVisibility } from "@lilos/ui";
 import type { AttachedFile } from "@lilos/ui/types";
 import { atom } from "nanostores";
-import { defaultAccess, defaultEditor } from "../settings/state";
+import {
+  defaultAccess,
+  defaultEditor,
+  enginePolicyPick,
+} from "../settings/state";
 import { toAttachmentInputs } from "./attachments";
 import { USER_ID } from "./me";
 import { applyModelCatalog, engine, modelVisibility, relay } from "./runtime";
@@ -29,7 +33,7 @@ function dmChannelFor(employeeId: string): AppChannel | undefined {
     .find((c) => c.kind === "dm" && c.employeeId === employeeId);
 }
 
-export async function openDmChannel(employeeId: string): Promise<AppChannel> {
+async function openDmChannel(employeeId: string): Promise<AppChannel> {
   const existing = dmChannelFor(employeeId);
   if (existing) return existing;
   const res = await relay.request<{ channel: AppChannel }>("channels.openDm", {
@@ -376,13 +380,6 @@ export async function respondToRequest(
   }
 }
 
-export async function renameConversation(
-  conversationId: string,
-  title: string,
-): Promise<void> {
-  await relay.request("conversations.update", { conversationId, title });
-}
-
 /** #106 AC-1: switch a conversation's access level — applies from the
  *  agent's NEXT action, mid-turn included; rides `conversation.updated`
  *  straight into the session (dedicated method so the pill never falls to
@@ -404,9 +401,36 @@ export async function setDefaultAccess(
 
 /** #106: the engine's own approval policy — passthrough `approvals.setPolicy`
  *  (method reachability is the caller's job: only engines declaring
- *  `approval_policy` get the control). */
+ *  `approval_policy` get the control). The engine echoes it on its next
+ *  `describe`, which only comes at reconnect, so the pick is kept in
+ *  `enginePolicyPick` meanwhile; a refused write puts the old value back. */
 export async function setApprovalPolicy(policy: ApprovalPolicy): Promise<void> {
-  await relay.request("approvals.setPolicy", { policy });
+  const before = enginePolicyPick.get();
+  enginePolicyPick.set(policy);
+  try {
+    await relay.request("approvals.setPolicy", { policy });
+  } catch (e) {
+    enginePolicyPick.set(before);
+    throw e;
+  }
+}
+
+/** Rename a thread (`conversations.update {title}`). The user's title wins
+ *  over any later engine-derived one (#137, `titleSource`). */
+export async function renameConversation(
+  conversationId: string,
+  title: string,
+): Promise<void> {
+  await relay.request("conversations.update", { conversationId, title });
+}
+
+/** Put a thread away (or bring it back): `conversations.update {archived}`.
+ *  Archived threads leave the live lists but stay searchable (#28, #138). */
+export async function archiveConversation(
+  conversationId: string,
+  archived: boolean,
+): Promise<void> {
+  await relay.request("conversations.update", { conversationId, archived });
 }
 
 /** Pin the pick a conversation's next turn runs on (`conversations.setModel`, #92). */
@@ -441,13 +465,6 @@ export async function setModelVisibility(v: ModelVisibility): Promise<void> {
 export async function setDefaultEditor(id: string): Promise<void> {
   defaultEditor.set(id);
   await relay.request("settings.set", { key: "defaultEditor", value: id });
-}
-
-export async function archiveConversation(
-  conversationId: string,
-  archived: boolean,
-): Promise<void> {
-  await relay.request("conversations.update", { conversationId, archived });
 }
 
 /** #581 AC-2: move a thread's working folder — the engine re-homes the

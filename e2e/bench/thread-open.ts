@@ -10,9 +10,9 @@
  * at OUR relay + feed — no reuseExistingServer, never 5199), then per
  * trial measures two windows:
  *
- *   open   — DM feed → click the "N replies" chip → panel's last turn
- *            settles + a quiet frame (the in-app open the issue timed at
- *            ~370 ms of main-thread work at 200 turns);
+ *   open   — Threads → All → click the thread's row → the side peek's panel
+ *            last turn settles + a quiet frame (the in-app open the issue
+ *            timed at ~370 ms of main-thread work at 200 turns);
  *   reload — page.reload() on the conv URL → same settle (321–449 ms).
  *
  * CDP Performance.getMetrics deltas give the Task/Script/Layout/Recalc
@@ -40,7 +40,7 @@ import {
   type Page,
 } from "@playwright/test";
 import { growDmThread } from "../helpers/relay-thread";
-import { bootStack, freePort, pickPorts } from "../helpers/stack";
+import { bootStack, freePort, pickPorts, skipFirstRun } from "../helpers/stack";
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/bench
 const repo = path.resolve(here, "../..");
@@ -248,19 +248,19 @@ async function trial(shotsDir = ""): Promise<{ open: Window; reload: Window }> {
         await cdp.send("Performance.enable");
         const panel = page.locator("[data-thread-panel]");
 
-        /* Leg 1 — open: the feed's "N replies" chip mounts the panel. */
-        await page.goto(`${preview.url}/dm/${grown.employeeId}`);
-        const chip = page.getByRole("button", { name: /replies/ });
-        await expect(chip).toBeVisible({ timeout: 60_000 });
-        await page.evaluate(() => {
-          (window as unknown as { __lt: { n: number; max: number } }).__lt = {
-            n: 0,
-            max: 0,
-          };
-        });
+        /* Leg 1 — open: the thread's row on Threads → All opens the side
+           peek, which mounts the panel. */
+        await skipFirstRun(page);
+        await page.goto(`${preview.url}/#?page=threads&view=all`);
+        const row = page
+          .locator(`#v3-main [data-thread-row="${grown.conversationId}"]`)
+          .getByRole("button")
+          .first();
+        await expect(row).toBeVisible({ timeout: 60_000 });
+        await page.evaluate("window.__lt = { n: 0, max: 0 };");
         const m0 = await snap(cdp, page);
-        await chip.click();
-        await expect(page).toHaveURL(/\/dm\/[^/]+\/[^/]+/);
+        await row.click();
+        await expect(page).toHaveURL(/open=thread:[^&]+/);
         await waitSettled(panel, TURNS);
         await quiet(page);
         const open = await windowBetween(page, m0, await snap(cdp, page));

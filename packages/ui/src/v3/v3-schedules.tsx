@@ -8,11 +8,13 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "../lib/utils";
-import { AgentAvatar, Btn, Section, StatusPill } from "./v3-bits";
-import { agentOf, projectOf } from "./v3-model";
+import { Btn, Section } from "./v3-bits";
+import type { V3Schedule } from "./v3-data-types";
+import { AgentAvatar, StatusPill } from "./v3-marks";
+import { agentOf, FORMER_AGENT, projectOf } from "./v3-model";
+import type { V3PageProps } from "./v3-page-types";
 import { ScheduleEditor } from "./v3-schedule-editor";
-import { describeWhen } from "./v3-schedule-text";
-import type { V3PageProps, V3Schedule } from "./v3-types";
+import { describeWhen, PER_CRON } from "./v3-schedule-text";
 
 export { ScheduleEditor } from "./v3-schedule-editor";
 
@@ -46,7 +48,11 @@ function Row({
 }) {
   const [confirm, setConfirm] = useState(false);
   const agent = agentOf(data, s.agentId);
-  const project = s.projectId ? projectOf(data, s.projectId) : undefined;
+  // A project is a folder: a schedule that names only the folder still
+  // belongs to the project that has it.
+  const project = s.projectId
+    ? projectOf(data, s.projectId)
+    : data.projects.find((p) => s.folder && p.folder === s.folder);
   const run = s.last && RUN[s.last.result];
   const { threadId } = s.last ?? {};
 
@@ -58,16 +64,22 @@ function Row({
           s.paused && "text-muted-foreground",
         )}
       >
-        {!agentId && (
-          <button
-            type="button"
-            title={`Open ${agent.name}`}
-            onClick={() => go({ page: "agent", id: agent.id })}
-            className={cn("mt-px shrink-0", s.paused && "opacity-60")}
-          >
-            <AgentAvatar data={data} agent={agent} size={24} />
-          </button>
-        )}
+        {!agentId &&
+          (agent ? (
+            <button
+              type="button"
+              title={`Open ${agent.name}`}
+              onClick={() => go({ page: "agent", id: agent.id })}
+              className={cn("mt-px shrink-0", s.paused && "opacity-60")}
+            >
+              <AgentAvatar data={data} agent={agent} size={24} />
+            </button>
+          ) : (
+            // A fired agent has no page to open.
+            <span className={cn("mt-px shrink-0", s.paused && "opacity-60")}>
+              <AgentAvatar data={data} agent={undefined} size={24} />
+            </span>
+          ))}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 text-[14.5px]">
             <span
@@ -89,15 +101,23 @@ function Row({
             )}
           </div>
           <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13.5px] text-muted-foreground">
-            {!agentId && <span>{agent.name}</span>}
-            {project && <span>{project.name}</span>}
+            {!agentId && <span>{agent?.name ?? FORMER_AGENT}</span>}
+            {project ? (
+              <span>{project.name}</span>
+            ) : (
+              s.folder && (
+                <span title={s.folder}>
+                  {s.folder.split("/").filter(Boolean).pop() ?? s.folder}
+                </span>
+              )
+            )}
             <span className={cn(!s.paused && "text-foreground")}>
               {describeWhen(s.when)}
             </span>
             <span>
               {s.paused
                 ? "Won't run while paused"
-                : s.when.kind === "cron" || s.next === "No more runs"
+                : s.next === PER_CRON || s.next === "No more runs"
                   ? s.next
                   : `Next ${s.next}`}
             </span>
@@ -117,6 +137,11 @@ function Row({
               ) : (
                 <StatusPill status={run.status} label={run.label} />
               )}
+            </div>
+          )}
+          {s.skipped && (
+            <div className="mt-1 text-[13px] text-amber-700 dark:text-amber-300">
+              Skipped {s.skipped}: previous run still going
             </div>
           )}
           <p className="mt-1.5 line-clamp-2 text-[13px] text-muted-foreground/70 leading-relaxed">
@@ -145,9 +170,12 @@ function Row({
           </>
         ) : (
           <>
-            <Btn small onClick={() => act.scheduleRunNow(s.id)}>
-              <PlayIcon className="size-3.5" /> Run now
-            </Btn>
+            {/* A fired agent cannot run it: reassign it first (Edit). */}
+            {agent && (
+              <Btn small onClick={() => act.scheduleRunNow(s.id)}>
+                <PlayIcon className="size-3.5" /> Run now
+              </Btn>
+            )}
             <button
               type="button"
               onClick={() => act.scheduleToggle(s.id)}

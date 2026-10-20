@@ -1,6 +1,12 @@
 import { expect, type Locator, test } from "@playwright/test";
 import { growDmThread } from "./helpers/relay-thread";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  pickPorts,
+  type Stack,
+  skipFirstRun,
+  threadUrl,
+} from "./helpers/stack";
 
 /**
  * Issue #570 — opening or reloading a long thread must not mount every
@@ -15,8 +21,9 @@ import { bootStack, pickPorts, type Stack } from "./helpers/stack";
  * the newest turn.
  *
  * AC-2's named leg keeps the interaction contract on a stubbed thread:
- * scrolling up mounts older turns, a find chord un-stubs held text
- * (#512), and a search-hit click jumps to a held anchor (#138).
+ * scrolling up mounts older turns, a find chord un-stubs held text (#512),
+ * and a ⌘K message-hit click jumps to a held anchor (#138): the hit's row is
+ * a stub until the scroll target keeps it mounted.
  *
  * A 60-turn engine-fake thread grown through relay RPC (#574 — the
  * browser never types them; 119 reply rows » TURN_LAZY_AFTER).
@@ -82,13 +89,18 @@ test("AC-1: opening a lazy thread mounts only the tail — older turns start as 
           }
     }).observe(document.documentElement, { childList: true, subtree: true });
   }, EARLY_PROBE);
-
   /* `?stubHydrateMs=` delays each born-stub's un-hold — the CI-slow
      hydration under which the open pin and the scroll-to-top leg must
-     still resolve (the named slow-box knob, not a timeout bump). */
+     still resolve (the named slow-box knob, not a timeout bump). It is a
+     real query param read once at module eval, so it sits ahead of the hash
+     that carries the v3 nav. The thread opens in the side peek, the narrow
+     panel `/dm/<emp>/<conv>` was. */
+  await skipFirstRun(page);
   await page.goto(
-    `${stack.webUrl}/dm/${grown.employeeId}/${grown.conversationId}` +
-      `?stubHydrateMs=60`,
+    threadUrl(stack.webUrl, grown.conversationId).replace(
+      "/#",
+      "/?stubHydrateMs=60#",
+    ),
   );
   const panel = page.locator("[data-thread-panel]");
   await expect(panel).toBeVisible({ timeout: 60_000 });
@@ -155,10 +167,14 @@ test("AC-2: scroll, find, and jump-to-message reach held turns on a lazy thread"
   page,
 }) => {
   test.setTimeout(240_000);
-  const convUrl =
-    `${stack.webUrl}/dm/${grown.employeeId}/${grown.conversationId}` +
-    `?stubHydrateMs=60`;
-  await page.goto(convUrl);
+  /* Same knob, same place: ahead of the hash. */
+  await skipFirstRun(page);
+  await page.goto(
+    threadUrl(stack.webUrl, grown.conversationId).replace(
+      "/#",
+      "/?stubHydrateMs=60#",
+    ),
+  );
   const panel = page.locator("[data-thread-panel]");
   await expect(panel).toBeVisible({ timeout: 60_000 });
   await waitSettled(panel, 60);
@@ -192,21 +208,20 @@ test("AC-2: scroll, find, and jump-to-message reach held turns on a lazy thread"
     timeout: 15_000,
   });
 
-  /* Jump-to-message: the session filter's message hits open the conv
-     scrolled to the match (#138) — the hit's row is a stub until the
-     scroll target keeps it mounted. */
-  await page.goto(`${stack.webUrl}/dm/${grown.employeeId}`);
-  const filter = page.getByPlaceholder("Filter threads");
-  await filter.fill("quaggmire");
-  const hitsPanel = page.locator("[data-message-hits]");
-  await expect(hitsPanel).toBeVisible({ timeout: 15_000 });
-  const hit = hitsPanel.locator("[data-message-hit]").first();
+  /* Jump-to-message: ⌘K's message hits open the thread scrolled to the
+     match (#138). Start from Threads with nothing open (so the click really
+     opens the thread), search a word only the early turn holds, and pick it. */
+  await page.goto(`${stack.webUrl}/?stubHydrateMs=60#?page=threads`);
+  await expect(panel).toHaveCount(0);
+  await page.keyboard.press("ControlOrMeta+k");
+  const palette = page.getByRole("dialog", { name: "Search" });
+  await palette.locator("input").fill("quaggmire");
+  const hit = palette.locator("[data-message-hit]").first();
+  await expect(hit).toBeVisible({ timeout: 15_000 });
   const hitId = await hit.getAttribute("data-message-hit");
   expect(hitId).toBeTruthy();
   await hit.click();
-  await expect(page).toHaveURL(/\/dm\/[^/]+\/conv_[^/]+$/, {
-    timeout: 10_000,
-  });
+  await expect(page).toHaveURL(/open=thread:conv_[^&]+/, { timeout: 10_000 });
   const anchor = panel.locator(`[data-msg="${hitId}"]`);
   await expect(anchor).toBeVisible({ timeout: 15_000 });
   /* The target mounted real (not a stub) and flashed. */

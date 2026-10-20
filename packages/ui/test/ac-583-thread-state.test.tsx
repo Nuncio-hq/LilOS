@@ -1,11 +1,10 @@
 // @vitest-environment happy-dom
-/* Issue #583 — threadState words + the waiting composer; issue #585 — the
-   centred system note render. Unit-level AC evidence; the e2e spec
-   ac-583/585 covers the wired app. */
+/* Issue #583 — the waiting composer; issue #585 — the centred system
+   note render. Unit-level AC evidence; the e2e spec ac-583/585 covers the
+   wired app. */
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, test } from "vitest";
 import { waitingComposer } from "../src/chat/agent-chat";
-import { threadState } from "../src/lib/helpers";
 import { ThreadView } from "../src/thread/thread-view";
 import type { EmpFn, HumanFn, Msg, Reply, Thread } from "../src/types";
 
@@ -36,15 +35,6 @@ const emp: EmpFn = (id) => (id === "builder" ? BUILDER : undefined);
 const human: HumanFn = (id) =>
   id === "ada" ? { name: "Ada", color: "bg-blue-600" } : undefined;
 
-const turn = (over: Partial<Reply>): Reply => ({
-  id: "r1",
-  from: "builder",
-  time: "10:04",
-  turnId: "t1",
-  text: "answer",
-  phase: "done",
-  ...over,
-});
 const thread = (over: Partial<Thread>): Thread => ({
   session: "s_abc123",
   replies: [],
@@ -63,47 +53,6 @@ const dmChannel = {
   employees: ["builder"],
   dm: true,
 };
-
-describe("issue #583 threadState", () => {
-  test("AC-2 a turn waiting on the user reads 'needs you'", () => {
-    const t = thread({
-      replies: [turn({ phase: "waiting", live: true })],
-    });
-    expect(threadState(t)?.word).toBe("needs you");
-  });
-  test("AC-2 live work reads 'running'", () => {
-    expect(threadState(thread({ replies: [turn({ live: true })] }))?.word).toBe(
-      "running",
-    );
-    // A running delegated helper counts too.
-    expect(
-      threadState(
-        thread({
-          replies: [turn({ subagents: [{ status: "running" } as never] })],
-        }),
-      )?.word,
-    ).toBe("running");
-  });
-  test("AC-2 a failed turn reads 'failed'; a stopped turn 'stopped'", () => {
-    expect(
-      threadState(thread({ replies: [turn({ phase: "failed" })] }))?.word,
-    ).toBe("failed");
-    expect(
-      threadState(thread({ replies: [turn({ phase: "stopped" })] }))?.word,
-    ).toBe("stopped");
-    // The row's failure card (thread.alert) counts as failed too.
-    expect(
-      threadState(
-        thread({
-          alert: { kind: "model", text: "engine died", retry: true },
-        }),
-      )?.word,
-    ).toBe("failed");
-  });
-  test("AC-2 a quiet finished thread says nothing", () => {
-    expect(threadState(thread({ replies: [turn({})] }))).toBeUndefined();
-  });
-});
 
 describe("issue #583 waitingComposer", () => {
   test("AC-1 an approval/plan wait says 'waiting for your approval…', never 'working'", () => {

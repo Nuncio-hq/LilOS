@@ -37,7 +37,12 @@
  */
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { bootStack, pickPorts, type Stack } from "../../e2e/helpers/stack";
+import {
+  bootStack,
+  pickPorts,
+  type Stack,
+  threadUrl,
+} from "../../e2e/helpers/stack";
 import { RelayClient } from "../../packages/client-runtime/src/client";
 import { EngineClient } from "../../packages/client-runtime/src/engine";
 import { cleanup, startStub } from "./lib/helpers";
@@ -398,9 +403,7 @@ try {
       await page.addInitScript(
         "try { localStorage.setItem('lilos-onboarded', '1'); } catch {}",
       );
-      await page.goto(
-        `${stack.webUrl}/dm/${encodeURIComponent(employee.id)}/${encodeURIComponent(conversation.id)}`,
-      );
+      await page.goto(threadUrl(stack.webUrl, conversation.id));
 
       const uiWait = async (sel: string, label: string, ms = 60_000) =>
         page
@@ -486,9 +489,7 @@ try {
         await dp.addInitScript(
           "try { localStorage.setItem('lilos-onboarded', '1'); } catch {}",
         );
-        await dp.goto(
-          `${stack.webUrl}/dm/${encodeURIComponent(employee.id)}/${encodeURIComponent(conversation.id)}`,
-        );
+        await dp.goto(threadUrl(stack.webUrl, conversation.id));
         await dp
           .locator("[data-agentturn] [data-turnsettled]")
           .first()

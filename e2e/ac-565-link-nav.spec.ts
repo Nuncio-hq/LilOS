@@ -1,13 +1,8 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  _electron,
-  type ElectronApplication,
-  expect,
-  test,
-} from "@playwright/test";
-import { electronScreenshot, ensureDesktopPayload } from "./helpers/electron";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import { type ElectronApplication, expect, test } from "@playwright/test";
+import { electronScreenshot, launchDesktop } from "./helpers/electron";
+import { bootStack, pickPorts, type Stack, v3Sidebar } from "./helpers/stack";
 
 /**
  * Issue #565 — the Electron shell is the last line of defense behind
@@ -19,7 +14,6 @@ import { bootStack, pickPorts, type Stack } from "./helpers/stack";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, "..");
-const desktopDir = path.join(repo, "apps", "desktop");
 const SHOTS = path.join(repo, "test-results", "ac-565");
 
 let stack: Stack;
@@ -31,24 +25,10 @@ test.afterAll(async () => {
   await stack?.stop();
 });
 
-/** Build the payload, launch Electron at the stack's web server, stub
+/** Launch Electron at the stack's web server (past first run), stub
  *  shell.openExternal so the "opens in the browser" half is observable. */
-async function launchDesktop(): Promise<ElectronApplication> {
-  await ensureDesktopPayload(desktopDir);
-  const portOf = (ws: string) => new URL(ws).port;
-  const app = await _electron.launch({
-    args:
-      process.platform === "linux"
-        ? [desktopDir, "--no-sandbox"]
-        : [desktopDir],
-    env: {
-      ...process.env,
-      LILOS_RELAY_HOME: stack.home,
-      LILOS_RELAY_PORT: portOf(stack.relayWs),
-      LILOS_FEED_PORT: portOf(stack.feedWs),
-      LILOS_WEB_URL: stack.webUrl,
-    },
-  });
+async function launchApp(): Promise<ElectronApplication> {
+  const { app } = await launchDesktop(stack);
   /* Record instead of delegating: a real openExternal would spawn xdg-open
      under xvfb, whose grandchild inherits Electron's stdio pipes — the app
      then never exits and app.close() hangs the whole worker (#565 CI). */
@@ -72,14 +52,14 @@ const openedExternal = (app: ElectronApplication) =>
 const ready = async (app: ElectronApplication) => {
   const win = await app.firstWindow();
   await expect(
-    win.locator("aside").getByRole("button", { name: /default/i }),
+    v3Sidebar(win).getByRole("button", { name: /default/i }),
   ).toBeVisible({ timeout: 60_000 });
   return win;
 };
 
 test("AC-1+AC-2 links can't open windows or take over the app window", async () => {
   test.setTimeout(180_000);
-  const app = await launchDesktop();
+  const app = await launchApp();
   try {
     const win = await ready(app);
     const appUrl = win.url();
@@ -122,7 +102,7 @@ test("AC-1+AC-2 links can't open windows or take over the app window", async () 
     const asideShown = () =>
       win
         .evaluate(() => {
-          const el = document.querySelector("aside");
+          const el = document.querySelector("aside:not([aria-label])");
           if (!el) return false;
           const r = el.getBoundingClientRect();
           const s = getComputedStyle(el);
@@ -153,7 +133,7 @@ test("AC-1+AC-2 links can't open windows or take over the app window", async () 
 
 test("AC-3 the app page carries a CSP that bites", async () => {
   test.setTimeout(180_000);
-  const app = await launchDesktop();
+  const app = await launchApp();
   try {
     const win = await ready(app);
     const csp = await win.evaluate(

@@ -1,16 +1,11 @@
 import { Fragment } from "react";
-import { ago, Btn, StatusPill } from "./v3-bits";
-import { agentOf } from "./v3-model";
+import { ago, Btn } from "./v3-bits";
+import type { V3Ask, V3Data } from "./v3-data-types";
+import { StatusPill } from "./v3-marks";
+import { agentNameOf, agentOf, FORMER_AGENT } from "./v3-model";
+import type { V3PageProps } from "./v3-page-types";
 import { viaOf } from "./v3-rows";
-import type {
-  V3Agent,
-  V3Ask,
-  V3Data,
-  V3PageProps,
-  V3Thread,
-  V3Ticket,
-  V3Turn,
-} from "./v3-types";
+import type { V3Agent, V3Thread, V3Ticket, V3Turn } from "./v3-types";
 
 /* The quiet lines and cards around a conversation: how the thread opened,
    what it waits on, where it is stuck, and the "working" indicator. */
@@ -30,7 +25,9 @@ export function Opening({
   const ticketId = thread.ticketId;
   if (!ticketId) return null;
   const agent = agentOf(data, thread.agentId);
-  const ceo = agentOf(data, data.ceoId);
+  const agentName = agent?.name ?? FORMER_AGENT;
+  // No CEO position: only turn 1 can say who asked.
+  const ceo = data.ceoId ? agentOf(data, data.ceoId) : undefined;
   const via = viaOf(data, agent);
   // Only turn 1 knows who asked and when; if the early turns are not on
   // record, the hand-off time is the thread's start and the asker the CEO.
@@ -41,17 +38,17 @@ export function Opening({
     asker === "you" || from.startsWith("handed over")
       ? "You"
       : asker
-        ? agentOf(data, asker).name
-        : (/^asked by (.+?) at /.exec(from)?.[1] ?? ceo.name);
+        ? agentNameOf(data, asker)
+        : (/^asked by (.+?) at /.exec(from)?.[1] ?? ceo?.name);
   const at =
     known?.prompt?.at ?? /\d{1,2}:\d{2}/.exec(from)?.[0] ?? thread.startedAt;
   return (
     <div className="flex items-center gap-3 text-[12.5px] text-muted-foreground/70">
       <span className="h-px flex-1 bg-[var(--v3-line)]" />
       <span className="max-w-[80%] text-center">
-        {who === agent.name
-          ? `${who} started ${ticketId}`
-          : `${who} handed ${ticketId} to ${agent.name}`}{" "}
+        {!who || who === agent?.name
+          ? `${agentName} started ${ticketId}`
+          : `${who} handed ${ticketId} to ${agentName}`}{" "}
         · {at}
         {via && ` · steps come through ${via.label}`}
       </span>
@@ -67,53 +64,60 @@ export function AskCard({
   act,
 }: {
   ask: V3Ask;
-  from: V3Agent;
+  from: V3Agent | undefined;
   act: V3PageProps["act"];
 }) {
   const question = ask.kind === "question";
-  const rows: [string, string][] = [
-    ["Why", ask.why],
-    [question ? "If yes" : "If you approve", ask.ifYes],
-    [question ? "If no" : "If you deny", ask.ifNo],
-  ];
+  const rows: [string, string][] = [];
+  if (ask.why) rows.push(["Why", ask.why]);
+  if (ask.ifYes) rows.push([question ? "If yes" : "If you approve", ask.ifYes]);
+  if (ask.ifNo) rows.push([question ? "If no" : "If you deny", ask.ifNo]);
+  const answers = question ? (ask.options ?? []) : undefined;
   return (
     <div className="rounded-[10px] border border-[var(--v3-line)] px-4 py-3.5">
       <div className="flex items-center gap-2 text-[13.5px] text-muted-foreground">
         <StatusPill status="needs" />
         <span>
-          {from.name} asks · waiting {ago(ask.waiting)}
+          {from?.name ?? FORMER_AGENT} asks · waiting {ago(ask.waiting)}
         </span>
       </div>
       <p className="mt-2.5 text-[14.5px] text-foreground leading-normal">
         {ask.ask}
       </p>
-      <div className="mt-3 grid grid-cols-[104px_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[13.5px] leading-normal">
-        {rows.map(([k, v]) => (
-          <Fragment key={k}>
-            <span className="text-muted-foreground">{k}</span>
-            <span className="text-foreground">{v}</span>
-          </Fragment>
-        ))}
-      </div>
-      <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
-        <span className="mr-auto text-[12.5px] text-muted-foreground/70">
-          If you don’t answer by {ask.fallback.at}, the CEO {ask.fallback.does}.
-        </span>
-        {question ? (
-          (ask.options ?? []).map((o) => (
-            <Btn key={o} onClick={() => act.answer(ask.id, o)}>
-              {o}
-            </Btn>
-          ))
-        ) : (
-          <>
-            <Btn onClick={() => act.deny(ask.id)}>Deny</Btn>
-            <Btn primary onClick={() => act.approve(ask.id)}>
-              Approve{ask.spend ? ` $${ask.spend.amount}` : ""}
-            </Btn>
-          </>
-        )}
-      </div>
+      {rows.length > 0 && (
+        <div className="mt-3 grid grid-cols-[104px_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[13.5px] leading-normal">
+          {rows.map(([k, v]) => (
+            <Fragment key={k}>
+              <span className="text-muted-foreground">{k}</span>
+              <span className="text-foreground">{v}</span>
+            </Fragment>
+          ))}
+        </div>
+      )}
+      {(ask.fallback || !answers || answers.length > 0) && (
+        <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
+          {ask.fallback && (
+            <span className="mr-auto text-[12.5px] text-muted-foreground/70">
+              If you don’t answer by {ask.fallback.at}, the CEO{" "}
+              {ask.fallback.does}.
+            </span>
+          )}
+          {answers ? (
+            answers.map((o) => (
+              <Btn key={o} onClick={() => act.answer(ask.id, o)}>
+                {o}
+              </Btn>
+            ))
+          ) : (
+            <>
+              <Btn onClick={() => act.deny(ask.id)}>Deny</Btn>
+              <Btn primary onClick={() => act.approve(ask.id)}>
+                Approve{ask.spend ? ` $${ask.spend.amount}` : ""}
+              </Btn>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -127,12 +131,14 @@ export function StuckCard({
 }: {
   thread: V3Thread;
   ticket?: V3Ticket;
-  handTo: V3Agent;
+  /** Who a stuck ticket can be handed to; none, no button. */
+  handTo: V3Agent | undefined;
   act: V3PageProps["act"];
 }) {
   const stuck = thread.stuck;
   if (!stuck) return null;
   const ticketId = thread.ticketId;
+  const handOff = act.handOff;
   const fallback = ticket?.fallback;
   return (
     <div className="rounded-[10px] border border-red-200 bg-red-50/60 px-4 py-3.5 dark:border-red-400/25 dark:bg-red-400/8">
@@ -161,8 +167,8 @@ export function StuckCard({
         <Btn small onClick={() => act.stop(thread.id)}>
           Stop
         </Btn>
-        {ticketId && (
-          <Btn small onClick={() => act.handOff(ticketId, handTo.id)}>
+        {ticketId && handOff && handTo && (
+          <Btn small onClick={() => handOff(ticketId, handTo.id)}>
             Hand to {handTo.name}
           </Btn>
         )}
@@ -172,7 +178,13 @@ export function StuckCard({
 }
 
 /** Between steps, or before the first one: the agent is on it. */
-export function Typing({ agent, text }: { agent: V3Agent; text?: string }) {
+export function Typing({
+  agent,
+  text,
+}: {
+  agent: V3Agent | undefined;
+  text?: string;
+}) {
   return (
     <div
       role="status"
@@ -188,7 +200,7 @@ export function Typing({ agent, text }: { agent: V3Agent; text?: string }) {
         ))}
       </span>
       <span>
-        {agent.name} is working{text ? ` · ${text}` : ""}
+        {agent?.name ?? FORMER_AGENT} is working{text ? ` · ${text}` : ""}
       </span>
     </div>
   );

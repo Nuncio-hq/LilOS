@@ -1,18 +1,17 @@
 // @vitest-environment happy-dom
 /* Issue #71, ui layer: AC-1 avatar-less feed rows keep the content column at
    full width, AC-2 the employee avatar is a colour orb toned by name (no
-   image), AC-3 `· now:` hides when empty, AC-4 waiting surfaces show the "!"
-   needs-you badge with an sr-only "needs you" / "Waiting for approval". */
+   image), AC-4 a waiting surface says "needs you" / "Waiting for approval".
+   (AC-3 `· now:` and the DM-list / sidebar "!" badge belonged to the old DM
+   home and sidebar, which are gone.) */
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, test } from "vitest";
 import { ModelPicker } from "../src/chat/model-picker";
 import { AgentTurn, TurnSteps } from "../src/conversation/turns";
-import { EmployeeHome } from "../src/employee/employee-home";
 import { Row } from "../src/feed/row";
-import { NO_WS, PHASE_LABEL } from "../src/lib/helpers";
+import { PHASE_LABEL } from "../src/lib/helpers";
 import { HermesAvatar, orbTone } from "../src/shell/avatars";
-import { Sidebar } from "../src/shell/sidebar";
-import type { Employee, Msg } from "../src/types";
+import type { Employee } from "../src/types";
 
 if (typeof globalThis.ResizeObserver === "undefined") {
   globalThis.ResizeObserver = class {
@@ -69,128 +68,8 @@ describe("issue #71", () => {
     expect(orbTone("Builder")).toBe("blue");
   });
 
-  test("AC-3 `· now:` is hidden when the employee has no now value", () => {
-    const { container } = render(
-      <EmployeeHome
-        e={EMP}
-        feed={[]}
-        threadId={null}
-        emp={emp}
-        human={human}
-        onNav={() => {}}
-        onProfile={() => {}}
-        onOpen={() => {}}
-        onSend={() => {}}
-        panelOpen={false}
-        onPanel={() => {}}
-        folders={[]}
-        pick={NO_WS}
-        setPick={() => {}}
-      />,
-    );
-    const subtitle = container.querySelector("header .text-xs");
-    expect(subtitle.textContent).not.toContain("now:");
-    cleanup();
-    const again = render(
-      <EmployeeHome
-        e={{ ...EMP, now: "shipping #71" }}
-        feed={[]}
-        threadId={null}
-        emp={emp}
-        human={human}
-        onNav={() => {}}
-        onProfile={() => {}}
-        onOpen={() => {}}
-        onSend={() => {}}
-        panelOpen={false}
-        onPanel={() => {}}
-        folders={[]}
-        pick={NO_WS}
-        setPick={() => {}}
-      />,
-    );
-    expect(
-      again.container.querySelector("header .text-xs")?.textContent,
-    ).toContain("now: shipping #71");
-  });
-
-  test("AC-4 a waiting session shows the `!` needs-you badge in the DM list and sidebar", () => {
-    const waitingReply = {
-      id: "r1",
-      from: EMP.id,
-      time: "12:00",
-      text: "",
-      phase: "waiting" as const,
-      live: true,
-      waitingOn: "approval" as const,
-      steps: [
-        {
-          tool: "patch",
-          input: {},
-          output: "",
-          running: true,
-        },
-      ],
-    };
-    const feed: Msg[] = [
-      {
-        kind: "msg",
-        id: "m1",
-        from: "user",
-        time: "12:00",
-        text: "Add a note",
-        thread: { session: "s1", replies: [waitingReply] },
-      },
-    ];
-    const home = render(
-      <EmployeeHome
-        e={EMP}
-        feed={feed}
-        threadId={null}
-        emp={emp}
-        human={human}
-        onNav={() => {}}
-        onProfile={() => {}}
-        onOpen={() => {}}
-        onSend={() => {}}
-        panelOpen={false}
-        onPanel={() => {}}
-        folders={[]}
-        pick={NO_WS}
-        setPick={() => {}}
-      />,
-    );
-    expect(
-      home.container.querySelector("[data-session]")?.textContent,
-    ).toContain("needs you");
+  test("AC-4 a waiting session is labelled `needs you`", () => {
     expect(PHASE_LABEL.waiting).toBe("needs you");
-    cleanup();
-    const side = render(
-      <Sidebar
-        navOpen
-        hiddenWhenClosed={false}
-        me={{ name: "Ada", color: "bg-blue-600" }}
-        company="Ada Co"
-        companyChannels={[]}
-        projects={[]}
-        folders={[]}
-        employees={[EMP]}
-        view={{ kind: "dm", id: "" }}
-        theme="light"
-        isProjectDefaultOpen={() => false}
-        onSetTheme={() => {}}
-        onCloseNav={() => {}}
-        onGoChannel={() => {}}
-        onGoDM={() => {}}
-        onOpenTickets={() => {}}
-        onAddFolder={() => {}}
-        badges={{ [EMP.id]: { approvals: 1 } }}
-      />,
-    );
-    // The badge is an icon now: visible "!" (aria-hidden) + sr-only label.
-    const badge = side.container.querySelector("[data-badge-approvals]");
-    expect(badge?.querySelector("[aria-hidden]")?.textContent).toBe("!");
-    expect(badge?.querySelector(".sr-only")?.textContent).toBe("needs you");
   });
 
   test("AC-4 the blocked tool card says `Waiting for approval`", () => {

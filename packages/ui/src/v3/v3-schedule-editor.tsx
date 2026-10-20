@@ -1,8 +1,12 @@
-import { CalendarClockIcon } from "lucide-react";
+import { CalendarClockIcon, FolderIcon } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { cn } from "../lib/utils";
-import { AgentAvatar, Btn, ProjectMark } from "./v3-bits";
-import { agentOf } from "./v3-model";
+import { Btn } from "./v3-bits";
+import type { V3Data, V3Schedule } from "./v3-data-types";
+import { EscLayer } from "./v3-keys";
+import { AgentAvatar, ProjectMark } from "./v3-marks";
+import { agentOf, defaultAgent } from "./v3-model";
+import type { V3Actions } from "./v3-page-types";
 import {
   DAYS,
   describeWhen,
@@ -14,7 +18,6 @@ import {
   type When,
 } from "./v3-schedule-text";
 import { Switch } from "./v3-settings-bits";
-import type { V3Actions, V3Data, V3Schedule } from "./v3-types";
 
 /* Create or edit one schedule, inline on the page it was opened from. The
    plain-words line under "When" is exactly what the list will show. */
@@ -32,7 +35,7 @@ function Chip({
   children,
 }: {
   on: boolean;
-  onClick: () => void;
+  onClick?: () => void;
   /** Shown as chosen and not changeable (the agent whose page this is). */
   fixed?: boolean;
   className?: string;
@@ -74,8 +77,39 @@ export function ScheduleEditor({
   onDone: () => void;
   act: V3Actions;
 }) {
-  const [agent, setAgent] = useState(agentId ?? initial?.agentId ?? data.ceoId);
-  const [project, setProject] = useState(initial?.projectId);
+  const [agent, setAgent] = useState(
+    agentId ?? initial?.agentId ?? defaultAgent(data)?.id ?? "",
+  );
+  // A project is a folder: where a run opens is kept as both, so a schedule
+  // that names only its folder shows the project that has it.
+  const [place, setPlace] = useState<{ projectId?: string; folder?: string }>(
+    () => ({
+      projectId:
+        initial?.projectId ??
+        data.projects.find(
+          (p) => initial?.folder && p.folder === initial.folder,
+        )?.id,
+      folder: initial?.folder,
+    }),
+  );
+  const choices =
+    data.projects.length > 0
+      ? data.projects.map((p) => ({
+          key: p.id,
+          projectId: p.id,
+          folder: p.folder,
+          label: p.name,
+          tone: p.tone,
+        }))
+      : (data.folders ?? []).map((f) => ({
+          key: f.path,
+          projectId: undefined,
+          folder: f.path,
+          label: f.label,
+          tone: undefined,
+        }));
+  const isPicked = (c: (typeof choices)[number]) =>
+    c.projectId ? c.projectId === place.projectId : c.folder === place.folder;
   const [title, setTitle] = useState(initial?.title ?? "");
   const [prompt, setPrompt] = useState(initial?.prompt ?? "");
   const [when, setWhen] = useState<When>(
@@ -95,7 +129,10 @@ export function ScheduleEditor({
 
   const valid = validWhen(when);
   const next = valid ? nextWords(when) : null;
-  const ready = !!title.trim() && !!prompt.trim() && valid;
+  // A schedule whose agent left the team cannot be saved as it is: someone
+  // on the team has to be picked first.
+  const ready =
+    !!agentOf(data, agent) && !!title.trim() && !!prompt.trim() && valid;
   const minute = Number(when.time.split(":")[1] ?? 0);
 
   const save = () => {
@@ -111,7 +148,8 @@ export function ScheduleEditor({
       ...initial,
       id: initial?.id ?? `s-${Date.now().toString(36)}`,
       agentId: agent,
-      projectId: project,
+      projectId: place.projectId,
+      folder: place.folder,
       title: title.trim(),
       prompt: prompt.trim(),
       fullAccess: fullAccess || undefined,
@@ -122,10 +160,9 @@ export function ScheduleEditor({
   };
 
   return (
-    <div
-      className="space-y-4 rounded-lg border border-[var(--v3-line)] bg-[var(--v3-soft)] p-4"
-      onKeyDown={(e) => e.key === "Escape" && onDone()}
-    >
+    <div className="space-y-4 rounded-lg border border-[var(--v3-line)] bg-[var(--v3-soft)] p-4">
+      {/* Esc closes the editor, not the peek behind it. */}
+      <EscLayer onEscape={onDone} />
       <div>
         <span className={LABEL}>Agent</span>
         <div className="flex flex-wrap gap-1.5">
@@ -144,30 +181,57 @@ export function ScheduleEditor({
               </Chip>
             ))}
         </div>
+        {initial && !agentOf(data, agent) && (
+          <p className="mt-1.5 text-[13px] text-muted-foreground">
+            This schedule's agent is no longer on the team. Pick who runs it.
+          </p>
+        )}
       </div>
 
-      <div>
-        <span className={LABEL}>Project</span>
-        <div className="flex flex-wrap gap-1.5">
-          <Chip
-            on={project === undefined}
-            onClick={() => setProject(undefined)}
-          >
-            No project
-          </Chip>
-          {data.projects.map((p) => (
+      {(choices.length > 0 || place.folder !== undefined) && (
+        <div>
+          <span className={LABEL}>
+            {data.projects.length > 0 ? "Project" : "Folder"}
+          </span>
+          <div className="flex flex-wrap gap-1.5">
             <Chip
-              key={p.id}
-              on={p.id === project}
-              title={p.folder}
-              onClick={() => setProject(p.id)}
+              on={place.projectId === undefined && place.folder === undefined}
+              onClick={() => setPlace({})}
             >
-              <ProjectMark name={p.name} tone={p.tone} className="size-4" />
-              {p.name}
+              {data.projects.length > 0 ? "No project" : "No folder"}
             </Chip>
-          ))}
+            {choices.map((c) => (
+              <Chip
+                key={c.key}
+                on={isPicked(c)}
+                title={c.folder}
+                onClick={() =>
+                  setPlace({ projectId: c.projectId, folder: c.folder })
+                }
+              >
+                {c.tone ? (
+                  <ProjectMark
+                    name={c.label}
+                    tone={c.tone}
+                    className="size-4"
+                  />
+                ) : (
+                  <FolderIcon className="size-3.5" />
+                )}
+                {c.label}
+              </Chip>
+            ))}
+            {/* A folder the schedule already has that no choice names stays
+                chosen, so saving never drops it. */}
+            {place.folder !== undefined && !choices.some(isPicked) && (
+              <Chip on fixed title={place.folder}>
+                <FolderIcon className="size-3.5" />
+                {place.folder.split("/").filter(Boolean).pop() ?? place.folder}
+              </Chip>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       <label className="block">
         <span className={LABEL}>Title</span>
@@ -185,7 +249,7 @@ export function ScheduleEditor({
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           rows={3}
-          placeholder={`What ${agentOf(data, agent).name} is told each time it runs.`}
+          placeholder={`What ${agentOf(data, agent)?.name ?? "the agent"} is told each time it runs.`}
           className={cn(
             FIELD,
             "block h-auto w-full resize-y py-1.5 leading-normal",

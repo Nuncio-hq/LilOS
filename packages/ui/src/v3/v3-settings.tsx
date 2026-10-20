@@ -1,10 +1,13 @@
 import { PlusIcon } from "lucide-react";
 import { useState } from "react";
 import { cn } from "../lib/utils";
-import { AgentAvatar, Avatar, Btn, Page, Tabs, Title } from "./v3-bits";
-import { EnginePane, GeneralPane } from "./v3-settings-panes";
+import { Btn, Page, Tabs, Title } from "./v3-bits";
+import { AgentAvatar, Avatar } from "./v3-marks";
+import type { V3PageProps } from "./v3-page-types";
+import { EnginePane } from "./v3-settings-engine";
+import { GeneralPane } from "./v3-settings-panes";
 import { PhonePane } from "./v3-settings-phone";
-import type { V3ConnectorDef, V3PageProps } from "./v3-types";
+import type { V3ConnectorDef } from "./v3-types";
 
 /* Settings: company-level choices in four tabs. General, Engine & models and
    Phone live in their own files; Connectors stays here: the outside services
@@ -162,29 +165,31 @@ function ConnectorRow({
         </div>
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-1.5 pl-10">
-        {lilos.map((a) => {
-          const on = c.agents.includes(a.id);
-          return (
-            <button
-              key={a.id}
-              type="button"
-              aria-pressed={on}
-              title={`${on ? "Turn off" : "Turn on"} ${c.label} for ${a.name}`}
-              onClick={() => act.toggleConnector(c.id, a.id)}
-              className={cn(
-                "inline-flex h-[24px] items-center gap-1.5 rounded-full border pr-2.5 pl-1 text-[12.5px] transition-colors",
-                on
-                  ? "border-foreground bg-foreground text-background"
-                  : "border-[var(--v3-line)] text-muted-foreground hover:bg-[var(--v3-hover)] hover:text-foreground",
-              )}
-            >
-              <AgentAvatar data={data} agent={a} size={16} />
-              {a.name}
-            </button>
-          );
-        })}
-      </div>
+      {act.toggleConnector && (
+        <div className="mt-3 flex flex-wrap items-center gap-1.5 pl-10">
+          {lilos.map((a) => {
+            const on = c.agents.includes(a.id);
+            return (
+              <button
+                key={a.id}
+                type="button"
+                aria-pressed={on}
+                title={`${on ? "Turn off" : "Turn on"} ${c.label} for ${a.name}`}
+                onClick={() => act.toggleConnector?.(c.id, a.id)}
+                className={cn(
+                  "inline-flex h-[24px] items-center gap-1.5 rounded-full border pr-2.5 pl-1 text-[12.5px] transition-colors",
+                  on
+                    ? "border-foreground bg-foreground text-background"
+                    : "border-[var(--v3-line)] text-muted-foreground hover:bg-[var(--v3-hover)] hover:text-foreground",
+                )}
+              >
+                <AgentAvatar data={data} agent={a} size={16} />
+                {a.name}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {workers.length > 0 && (
         <p className="mt-2.5 pl-10 text-[13px] text-muted-foreground">
@@ -225,23 +230,25 @@ function ConnectorsPane({ data, go, act }: V3PageProps) {
         server. LilOS stores what to run and who uses it, never your logins.
       </p>
 
-      <div className="mt-5">
-        {!adding && (
-          <Btn onClick={() => setAdding(true)}>
-            <PlusIcon className="size-3.5" />
-            Add connector
-          </Btn>
-        )}
-        {adding && (
-          <AddForm
-            onAdd={(c) => {
-              act.addConnector(c);
-              setAdding(false);
-            }}
-            onCancel={() => setAdding(false)}
-          />
-        )}
-      </div>
+      {act.addConnector && (
+        <div className="mt-5">
+          {!adding && (
+            <Btn onClick={() => setAdding(true)}>
+              <PlusIcon className="size-3.5" />
+              Add connector
+            </Btn>
+          )}
+          {adding && (
+            <AddForm
+              onAdd={(c) => {
+                act.addConnector?.(c);
+                setAdding(false);
+              }}
+              onCancel={() => setAdding(false)}
+            />
+          )}
+        </div>
+      )}
 
       <div className="mt-4 border-[var(--v3-line)] border-t">
         {data.connectors.length === 0 && (
@@ -261,18 +268,23 @@ export function V3Settings({
   view = "general",
   ...props
 }: V3PageProps & { view?: View }) {
+  // Connectors is a tab only where there is something to show or add.
+  const hasConnectors =
+    props.data.connectors.length > 0 || !!props.act.addConnector;
+  const tabs = TABS.filter((t) => t.id !== "connectors" || hasConnectors);
+  const shown = tabs.some((t) => t.id === view) ? view : "general";
   return (
     <Page wide>
       <Title>Settings</Title>
       <Tabs
-        tabs={TABS}
-        value={view}
+        tabs={tabs}
+        value={shown}
         onChange={(id) => props.go({ page: "settings", view: id })}
       />
-      {view === "general" && <GeneralPane {...props} />}
-      {view === "engine" && <EnginePane {...props} />}
-      {view === "phone" && <PhonePane {...props} />}
-      {view === "connectors" && <ConnectorsPane {...props} />}
+      {shown === "general" && <GeneralPane {...props} />}
+      {shown === "engine" && <EnginePane {...props} />}
+      {shown === "phone" && <PhonePane {...props} />}
+      {shown === "connectors" && <ConnectorsPane {...props} />}
     </Page>
   );
 }

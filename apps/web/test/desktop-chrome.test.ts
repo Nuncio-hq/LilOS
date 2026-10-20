@@ -9,7 +9,6 @@ import { fileURLToPath } from "node:url";
 import type { DesktopBridge } from "@lilos/contracts/app";
 import { afterEach, describe, expect, test } from "vitest";
 import { watchDesktopChrome } from "../src/lib/desktop";
-import { appFrameClass } from "../src/lib/frame";
 
 const css = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), "..", "src", "index.css"),
@@ -76,34 +75,15 @@ describe("desktop chrome attributes", () => {
 });
 
 describe("desktop chrome stylesheet", () => {
-  test("AC-1 the sidebar header reserves the traffic-light inset on desktop only", () => {
-    expect(css).toMatch(
-      /html\[data-desktop\]:not\(\[data-fullscreen\]\)[^{]*\{[^}]*--lilos-traffic-inset|html\[data-desktop\][^}]*padding-left:\s*(7[0-9]|8[0-9])px/,
-    );
-    // The inset drops in full screen (the OS hides the lights).
-    expect(css).toMatch(/data-fullscreen/);
-  });
-
-  test("#295 the surface header takes the same reserve when the sidebar is hidden", () => {
-    // One shared reserve — no second magic number.
+  test("AC-1 the sidebar's first row reserves the traffic-light inset on desktop only", () => {
+    // One shared reserve — no second magic number — set only outside full
+    // screen (the OS hides the lights there).
     expect(css).toMatch(/--lilos-traffic-inset:\s*88px/);
-    // In Focus the sidebar is always hidden: the frame carries lilos-focus
-    // and the surface header reserves the strip at any width…
-    expect(appFrameClass({ desktop: true, focus: true })).toContain(
-      "lilos-focus",
+    expect(css).toMatch(
+      /html\[data-desktop\]:not\(\[data-fullscreen\]\)\s*\{[^}]*--lilos-traffic-inset/,
     );
     expect(css).toMatch(
-      /\.lilos-focus\s+main\s*>\s*header\s*\{[^}]*padding-left:\s*var\(--lilos-traffic-inset\)/,
-    );
-    // …and below the lg breakpoint every view's sidebar collapses to an
-    // overlay, so a media rule covers any other leftmost surface header.
-    const narrow = css.match(/@media \(max-width: 1023px\)\s*\{([\s\S]*?)\n\}/);
-    expect(narrow?.[1]).toMatch(
-      /data-desktop[\s\S]*main\s*>\s*header[\s\S]*var\(--lilos-traffic-inset\)/,
-    );
-    // Same scoping as the sidebar reserve: desktop only, off in full screen.
-    expect(css).toMatch(
-      /html\[data-desktop\]:not\(\[data-fullscreen\]\)\s*\.lilos-focus\s+main/,
+      /html\[data-desktop\]:not\(\[data-fullscreen\]\)\s*\.lilos-v3\s*>\s*aside:first-child\s*>\s*div:first-child\s*\{[^}]*padding-left:\s*var\(--lilos-traffic-inset\)/,
     );
   });
 
@@ -116,25 +96,9 @@ describe("desktop chrome stylesheet", () => {
     for (const rule of dragRules) expect(rule).toMatch(/data-desktop/);
   });
 
-  test("AC-2 the sidebar goes transparent so the vibrancy shows", () => {
-    // #254 moved the glass theme to packages/ui/theme.css: under
-    // .lilos-desktop (Electron) the sidebar keeps only a translucent tint so
-    // the vibrancy material reads through; a plain browser tab keeps glass.
-    const themeCss = readFileSync(
-      join(
-        dirname(fileURLToPath(import.meta.url)),
-        "..",
-        "..",
-        "..",
-        "packages",
-        "ui",
-        "src",
-        "theme.css",
-      ),
-      "utf8",
-    );
-    expect(themeCss).toMatch(
-      /\.lilos-desktop:not\(\.lilos-float\)[^{]*lilos-glass-side[^{]*\{[^}]*background:\s*rgb\([^)]*\/\s*0\./,
+  test("AC-2 the document stays clear under Electron so the vibrancy shows", () => {
+    expect(css).toMatch(
+      /html\[data-desktop\]\s+body\s*\{[^}]*background:\s*transparent/,
     );
   });
 });

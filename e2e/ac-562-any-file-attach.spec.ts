@@ -1,13 +1,22 @@
 import { execSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import {
   bootStack,
-  panelIntoFocus,
   pickPorts,
+  relayRpc,
   type Stack,
+  skipFirstRun,
+  v3Peek,
 } from "./helpers/stack";
 
 /**
@@ -20,13 +29,23 @@ import {
  *
  * Real stack (relay + harness + engine-fake + vite dev), same pattern as
  * ac-112 (image attachments) and ac-113 (folder picking).
+ *
+ * v3: the first message is written in the new-chat draft beside Threads: its
+ * paperclip stages the files (chips in `[data-staged]`) and its Folder chip
+ * picks `repoDir` or "No folder · just chat". A reply from the thread
+ * composer in the peek takes files the same way.
  */
-const ROOT = path.join(
+const SHOTS = path.join(
   path.dirname(fileURLToPath(import.meta.url)).replace(/\/e2e$/, ""),
   "test-results",
   "ac-562",
+  "shots",
 );
-const SHOTS = path.join(ROOT, "shots");
+/* The fixture folder is outside `test-results/`: Playwright empties that dir
+   at the start of every run, and a run starting elsewhere mid-spec would pull
+   the folder out from under the session (a sibling's file then lands without
+   the collision this spec asserts). */
+const ROOT = mkdtempSync(path.join(tmpdir(), "lilos-562-"));
 const repoDir = path.join(ROOT, "repo-a");
 mkdirSync(repoDir, { recursive: true });
 execSync(
@@ -43,99 +62,82 @@ const TXT = Buffer.from("folder-less attachment\n");
 
 const TOAST = "[data-toast]";
 
-/** The employee home DM for the fake engine's seeded employee. */
-async function dmDefault(page: Page, stack: Stack) {
-  await page.goto(`${stack.webUrl}/?roots=${ROOT}`);
-  const aside = page.locator("aside").first();
-  await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
-    timeout: 30_000,
+/** The thread panel in the peek: its composer is the one that takes files. */
+const panel = (page: Page) => v3Peek(page).locator("[data-thread-panel]");
+
+/** The panel is up and its first turn has settled — a reply typed mid-turn
+    is a steer, not the plain follow-up these legs mean. */
+async function settled(page: Page) {
+  await expect(panel(page).locator("form")).toBeVisible({ timeout: 30_000 });
+  await expect(panel(page).locator("[data-turnsettled]").last()).toBeVisible({
+    timeout: 60_000,
   });
-  const firstRun = page.getByRole("button", { name: /open dm/i });
-  if (await firstRun.isVisible().catch(() => false)) {
-    await firstRun.click();
-  } else {
-    await aside.getByRole("button", { name: /default/i }).click();
-  }
-  await expect(page.locator("main form")).toBeVisible({ timeout: 15_000 });
 }
 
-/** Stage a file through the composer's own input. */
+const DEFAULT_AGENT = { id: "default", name: "Default" };
+
+const draft = (page: Page) => v3Peek(page);
+const draftBox = (page: Page) =>
+  draft(page).getByPlaceholder(`Message ${DEFAULT_AGENT.name}…`);
+/** The draft's staged files, and the line that says what was left out. */
+const staged = (page: Page) => draft(page).locator("[data-staged]");
+
+/** The new-chat draft with Default, its Folder chip set to `choice`: the
+    folder's name, or "No folder". The folder joins the app's recents over
+    the relay first and the page reloads (the shell reads them on mount). */
+async function openDraft(page: Page, choice: "repo" | "none") {
+  await skipFirstRun(page);
+  await page.goto(`${stack.webUrl}/`);
+  await relayRpc(page, stack, "folders.add", { path: repoDir });
+  await page.goto(
+    `${stack.webUrl}/#?page=threads&open=newchat:${DEFAULT_AGENT.id}`,
+  );
+  await page.reload();
+  const chip = draft(page).getByTitle(/^Folder · /);
+  await expect(chip).toBeVisible({ timeout: 30_000 });
+  await chip.click();
+  await draft(page)
+    .getByRole("menuitemradio", {
+      name: choice === "repo" ? /repo-a/ : /No folder/,
+    })
+    .click();
+  await expect(chip).toContainText(choice === "repo" ? "repo-a" : "No folder", {
+    timeout: 15_000,
+  });
+  await expect(draftBox(page)).toBeVisible();
+}
+
+/** Send the draft; resolves once it has swapped for its thread. */
+async function sendDraft(page: Page, text: string) {
+  if (text) await draftBox(page).fill(text);
+  await draft(page).getByRole("button", { name: "Send" }).click();
+  await expect(page).toHaveURL(/open=thread:[^&]+/, { timeout: 30_000 });
+  await settled(page);
+}
+
+/** Stage a file through a composer's own input: the draft's, or (`thread`)
+    the open thread's reply box. */
 async function attach(
   page: Page,
   name: string,
   mimeType: string,
   buffer: Buffer,
+  where: "draft" | "thread" = "thread",
 ) {
-  await page
-    .locator('main input[type="file"]')
+  await (where === "draft" ? draft(page) : panel(page))
+    .locator('input[type="file"]')
     .setInputFiles({ name, mimeType, buffer });
 }
 
-const pickerButton = (page: Page) => page.locator('[data-ws="folder"]');
-
-/** Open the folder menu; returns the menu container. */
-async function openPicker(page: Page) {
-  await pickerButton(page).click();
-  return page
-    .locator('[role="menu"], [data-slot="dropdown-menu-content"]')
-    .last();
-}
-
-const send = async (page: Page, text: string) => {
-  const box = page.locator("main textarea").first();
-  await box.fill(text);
-  await box.press("Enter");
-};
-
 let stack: Stack;
-
-/** Bare JSON-RPC client — e2e runs under Node without workspace deps. */
-async function rpc(
-  home: string,
-  relayPort: number,
-  calls: { method: string; params: Record<string, unknown> }[],
-): Promise<Record<string, unknown>[]> {
-  const token = readFileSync(path.join(home, "relay-token"), "utf8").trim();
-  const ws = new WebSocket(
-    `ws://127.0.0.1:${relayPort}/ws?token=${encodeURIComponent(token)}`,
-  );
-  await new Promise<void>((res, rej) => {
-    ws.onopen = () => res();
-    ws.onerror = () => rej(new Error("ws connect failed"));
-  });
-  const pending = new Map<string, (r: Record<string, unknown>) => void>();
-  ws.onmessage = (e) => {
-    const f = JSON.parse(e.data as string) as Record<string, unknown>;
-    if (typeof f.id === "string") pending.get(f.id)?.(f);
-  };
-  const send = (id: string, method: string, params: object) =>
-    new Promise<Record<string, unknown>>((res, rej) => {
-      pending.set(id, (f) =>
-        f.error ? rej(f.error) : res(f.result as Record<string, unknown>),
-      );
-      ws.send(JSON.stringify({ jsonrpc: "2.0", id, method, params }));
-    });
-  await send("h", "session.hello", { protocolVersion: 1, token });
-  const out: Record<string, unknown>[] = [];
-  for (const [i, c] of calls.entries())
-    out.push(await send(String(i), c.method, c.params));
-  ws.close();
-  return out;
-}
 
 test.describe.configure({ mode: "serial" });
 test.setTimeout(120_000);
 
 test.beforeAll(async () => {
-  const ports = await pickPorts();
-  stack = await bootStack("ac562", ports, {
+  stack = await bootStack("ac562", await pickPorts(), {
     LILOS_ENGINE: "fake",
   });
-  /* The folder menu lists relay recents (ac-113: the Add-folder dialog
-     populates them) — seed repoDir once so every test can pick it. */
-  await rpc(stack.home, ports.relay, [
-    { method: "folders.add", params: { path: repoDir } },
-  ]);
 });
 
 test.afterAll(async () => {
@@ -146,14 +148,37 @@ test.afterAll(async () => {
 test("AC-1 the composer takes any file — chips show name + size", async ({
   page,
 }) => {
-  await dmDefault(page, stack);
-  await expect(page.locator('main input[type="file"]')).toHaveAttribute(
+  await openDraft(page, "repo");
+  await expect(draft(page).locator('input[type="file"]')).toHaveAttribute(
+    "accept",
+    "*/*",
+  );
+  await attach(page, "spec.pdf", "application/pdf", PDF, "draft");
+  await attach(page, "run.log", "text/plain", LOG, "draft");
+  await expect(staged(page).getByText("spec.pdf")).toBeVisible();
+  await expect(staged(page).getByText("run.log")).toBeVisible();
+  await expect(staged(page).getByText("2.0 KB")).toBeVisible();
+  await expect(staged(page).getByText("512 B")).toBeVisible();
+  await page.screenshot({ path: `${SHOTS}/ac1-chips-draft.png` });
+
+  // Chips come back off (this leg sends nothing: AC-2 names these files in
+  // the same folder and must be the first to store them).
+  for (const name of ["spec.pdf", "run.log"])
+    await staged(page)
+      .getByRole("button", { name: `Remove ${name}` })
+      .click();
+  await expect(staged(page).getByText("spec.pdf")).toHaveCount(0);
+  await expect(staged(page).getByText("run.log")).toHaveCount(0);
+
+  // The thread composer takes any file too.
+  await sendDraft(page, "open a thread");
+  await expect(panel(page).locator('input[type="file"]')).toHaveAttribute(
     "accept",
     "*/*",
   );
   await attach(page, "spec.pdf", "application/pdf", PDF);
   await attach(page, "run.log", "text/plain", LOG);
-  const form = page.locator("main form");
+  const form = panel(page).locator("form");
   await expect(form.getByText("spec.pdf")).toBeVisible();
   await expect(form.getByText("run.log")).toBeVisible();
   await expect(form.getByText("2.0 KB")).toBeVisible();
@@ -164,33 +189,29 @@ test("AC-1 the composer takes any file — chips show name + size", async ({
 test("AC-2 files land in the session folder; the prompt names the paths", async ({
   page,
 }) => {
-  await dmDefault(page, stack);
-  const folderMenu = await openPicker(page);
-  await folderMenu.locator(`[data-wsfolder="${repoDir}"]`).click();
-  await expect(pickerButton(page)).toContainText("repo-a");
-  await attach(page, "spec.pdf", "application/pdf", PDF);
-  await attach(page, "run.log", "text/plain", LOG);
-  await send(page, "read these files");
-  await panelIntoFocus(page);
+  await openDraft(page, "repo");
+  await attach(page, "spec.pdf", "application/pdf", PDF, "draft");
+  await attach(page, "run.log", "text/plain", LOG, "draft");
+  await sendDraft(page, "read these files");
 
   // The sent message shows the same chips.
-  const main = page.locator("main");
+  const thread = panel(page);
   await expect(
-    main.locator("[data-attachments]", { hasText: "spec.pdf" }),
+    thread.locator("[data-attachments]", { hasText: "spec.pdf" }),
   ).toBeVisible({ timeout: 15_000 });
   await expect(
-    main.locator("[data-attachments]", { hasText: "run.log" }),
+    thread.locator("[data-attachments]", { hasText: "run.log" }),
   ).toBeVisible();
 
   // engine-fake answers citing the saved paths the prompt named.
   await expect(
-    main.getByText("Got your files", { exact: false }).last(),
+    thread.getByText("Got your files", { exact: false }).last(),
   ).toBeVisible({ timeout: 30_000 });
   await expect(
-    main.getByText("spec.pdf (2.0 KB)", { exact: false }).last(),
+    thread.getByText("spec.pdf (2.0 KB)", { exact: false }).last(),
   ).toBeVisible();
   await expect(
-    main.getByText("run.log (512 B)", { exact: false }).last(),
+    thread.getByText("run.log (512 B)", { exact: false }).last(),
   ).toBeVisible();
 
   // The bytes are really on disk, in the session folder, out of git.
@@ -206,14 +227,11 @@ test("AC-2 files land in the session folder; the prompt names the paths", async 
 test("AC-2b a resend with the same name collides, not clobbers", async ({
   page,
 }) => {
-  await dmDefault(page, stack);
-  const folderMenu = await openPicker(page);
-  await folderMenu.locator(`[data-wsfolder="${repoDir}"]`).click();
-  await attach(page, "spec.pdf", "application/pdf", TXT); // different bytes
-  await send(page, "again");
-  await panelIntoFocus(page);
+  await openDraft(page, "repo");
+  await attach(page, "spec.pdf", "application/pdf", TXT, "draft"); // different bytes
+  await sendDraft(page, "again");
   await expect(
-    page.locator("main").getByText("Got your file", { exact: false }).last(),
+    panel(page).getByText("Got your file", { exact: false }).last(),
   ).toBeVisible({ timeout: 30_000 });
   const dir = path.join(repoDir, ".lilos", "attachments");
   expect(readFileSync(path.join(dir, "spec-1.pdf"))).toEqual(TXT);
@@ -223,37 +241,41 @@ test("AC-2b a resend with the same name collides, not clobbers", async ({
 test("AC-4 over-cap file → plain error, draft kept, nothing sent", async ({
   page,
 }) => {
-  await dmDefault(page, stack);
+  await openDraft(page, "repo");
   const big = Buffer.alloc(10 * 1024 * 1024 + 1, 0x63);
-  await page.locator("main textarea").fill("keep this draft");
-  await page.locator('main input[type="file"]').setInputFiles({
-    name: "huge.bin",
-    mimeType: "application/octet-stream",
-    buffer: big,
-  });
+  await draftBox(page).fill("keep this draft");
+  await attach(page, "huge.bin", "application/octet-stream", big, "draft");
+  await expect(staged(page)).toContainText("too large", { timeout: 10_000 });
+  await expect(draftBox(page)).toHaveValue("keep this draft");
+  await expect(staged(page).getByText("huge.bin")).toHaveCount(0);
+  await expect(page).not.toHaveURL(/open=thread:/);
+  await page.screenshot({ path: `${SHOTS}/ac3-overcap-draft.png` });
+
+  // The thread composer says the same, in a toast, and keeps its draft.
+  await sendDraft(page, "");
+  const box = panel(page).locator("textarea");
+  await box.fill("keep this draft too");
+  await attach(page, "huge.bin", "application/octet-stream", big);
   await expect(page.locator(TOAST)).toContainText("too large", {
     timeout: 10_000,
   });
-  await expect(page.locator("main textarea")).toHaveValue("keep this draft");
-  await expect(page.locator("main form").getByText("huge.bin")).toHaveCount(0);
+  await expect(box).toHaveValue("keep this draft too");
+  await expect(panel(page).locator("form").getByText("huge.bin")).toHaveCount(
+    0,
+  );
   await page.screenshot({ path: `${SHOTS}/ac3-overcap.png` });
-  // Clean the draft so the next test starts empty.
-  await page.locator("main textarea").fill("");
 });
 
 test("AC-3 a folder-less session still stores the attachment", async ({
   page,
 }) => {
-  await dmDefault(page, stack);
-  // The employee remembers repoDir from earlier tests — explicitly take
-  // the no-folder lane so the session has no cwd.
-  const folderMenu = await openPicker(page);
-  await folderMenu.getByText("No folder · just chat").click();
-  await attach(page, "nofolder.txt", "text/plain", TXT);
-  await send(page, "no folder on this one");
-  await panelIntoFocus(page);
+  // The shared stack has `repoDir` in its recents by now: the draft's "No
+  // folder · just chat" is the explicit lane, so the session has no cwd.
+  await openDraft(page, "none");
+  await attach(page, "nofolder.txt", "text/plain", TXT, "draft");
+  await sendDraft(page, "no folder on this one");
   await expect(
-    page.locator("main").getByText("Got your file", { exact: false }).last(),
+    panel(page).getByText("Got your file", { exact: false }).last(),
   ).toBeVisible({ timeout: 30_000 });
   const stored = path.join(
     stack.home,

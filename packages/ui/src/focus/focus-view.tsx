@@ -108,6 +108,7 @@ import type {
   Work,
 } from "../types";
 import { VIEWER_ID } from "../types";
+import { useRenameMenu } from "../v3/v3-thread-menu";
 import { sessionArtifacts } from "../workbench/artifacts";
 import type { LiveSurfaces } from "../workbench/live";
 import { planTodos, threadPlans } from "../workbench/plan-panel";
@@ -186,6 +187,8 @@ export function FocusView({
   ship,
   access,
   onAccess,
+  onRename,
+  onArchive,
   caps,
   onSuggest,
   onPr,
@@ -307,6 +310,11 @@ export function FocusView({
      (both or neither; D-#19). */
   access?: ConversationAccess;
   onAccess?: (a: ConversationAccess) => void;
+  /* Rename the title in place / put the thread away (true) or back (false):
+     the header's ⋯ menu draws the items whose handler is passed, none → no
+     menu. `thread.archived` says which way Archive reads. */
+  onRename?: (title: string) => void;
+  onArchive?: (archived: boolean) => void;
   /* This thread's own tabs of the LilOS Browser → Workbench Browser (#214). */
   browser?: ReactNode;
   /* Opens on this Workbench tab (e.g. a thread panel's "N subagents · Open" link, #317) —
@@ -332,8 +340,8 @@ export function FocusView({
   /* #579 AC-1: the Workbench's live forge read reports the session's PR
      upward — a just-created/merged PR reaches the header chip instantly. */
   onPr?: (pr: PullRequest | null) => void;
-  /* #660: the caller mounts the shared <main> landmark itself (DmPage) so
-     the pane element survives the feed↔Focus swap — omit → own <main>. */
+  /* #660: the caller mounts the shared <main> landmark itself (the web
+     SessionPane) so the pane element survives a view swap — omit → own <main>. */
   bare?: boolean;
   /* #554: the host's wired find bar, rendered as an overlay inside the
      conversation scrollport (desktop ⌘F); absent = no find UI. */
@@ -383,9 +391,14 @@ export function FocusView({
        close→open→close leaves several timers queued and only the final
        wanted state is correct. */
     setTimeout(() => setWbOpen(wbOpenWanted.current), 0);
-    document
-      .querySelector("[data-wb-shell]")
-      ?.classList.toggle("hidden", !open);
+    /* `flex` and `hidden` flip together (#736): the aside's display comes
+       from `flex`, which the render drops while it is `hidden` — unhiding
+       alone leaves it `display:block` until the deferred re-render, a frame
+       that lays the Files scroller out at its full height and clamps its
+       restored scrollTop to 0. */
+    const shell = document.querySelector("[data-wb-shell]");
+    shell?.classList.toggle("hidden", !open);
+    shell?.classList.toggle("flex", open);
   }, []);
   const wbClose = useCallback(() => wbFlip(false), [wbFlip]);
   const wbSend = useCallback((t: string) => onSend(t), [onSend]);
@@ -480,6 +493,12 @@ export function FocusView({
       id && flash === id && "bg-amber-100 dark:bg-amber-900/40",
     );
   const isDM = !!channel.dm;
+  const { input: titleInput, menu: threadMenu } = useRenameMenu({
+    title: thread.title || plain(root.text),
+    archived: thread.archived,
+    onRename,
+    onArchive,
+  });
   /* The session's model via the one shared resolver (#294) — the DM panel
      resolves the same way, so one session can't show two windows. */
   const model = sessionModelId(
@@ -864,13 +883,15 @@ export function FocusView({
         <div className="min-w-0">
           {/* #137 AC-4: the session's title (placeholder → engine-written)
               leads; untitled threads keep the first message. */}
-          <div
-            className="truncate font-semibold"
-            title={thread.title || plain(root.text)}
-            data-session-title
-          >
-            {thread.title || plain(root.text)}
-          </div>
+          {titleInput ?? (
+            <div
+              className="truncate font-semibold"
+              title={thread.title || plain(root.text)}
+              data-session-title
+            >
+              {thread.title || plain(root.text)}
+            </div>
+          )}
           <div
             className="flex min-w-0 items-center gap-1.5 text-muted-foreground text-xs"
             title={`${where} / ${chLabel} · ${lead?.name ?? ""} · ${thread.session}`}
@@ -1007,6 +1028,7 @@ export function FocusView({
               </span>
             </Button>
           )}
+          {threadMenu}
           {wbAvailable && (
             <Button
               variant={wbOpen ? "secondary" : "ghost"}
@@ -1303,11 +1325,13 @@ export function FocusView({
             )}
             <aside
               className={cn(
-                "lilos-glass flex min-h-0 flex-col border-l bg-background lg:my-2 lg:mr-2 max-lg:fixed max-lg:inset-y-0 max-lg:right-0 max-lg:z-30 max-lg:w-[min(560px,100vw)] max-lg:shadow-2xl",
+                "lilos-glass min-h-0 flex-col border-l bg-background lg:my-2 lg:mr-2 max-lg:fixed max-lg:inset-y-0 max-lg:right-0 max-lg:z-30 max-lg:w-[min(560px,100vw)] max-lg:shadow-2xl",
                 /* Reads the wanted value: an unrelated render landing while
                    a deferred setWbOpen is still pending must not re-hide a
-                   panel wbFlip just opened (#547). */
-                !wbOpenWanted.current && "hidden",
+                   panel wbFlip just opened (#547). `flex` and `hidden` are
+                   one either/or (never both, so tailwind-merge can't drop
+                   `flex`) and wbFlip toggles them as a pair (#736). */
+                wbOpenWanted.current ? "flex" : "hidden",
               )}
               data-wb-shell
             >

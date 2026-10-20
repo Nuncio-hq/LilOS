@@ -1,7 +1,14 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  pickPorts,
+  type Stack,
+  skipFirstRun,
+  v3Peek,
+  v3Sidebar,
+} from "./helpers/stack";
 
 /**
  * Issue #115 — hire, edit and remove employees in the real app (apps/web,
@@ -9,6 +16,17 @@ import { bootStack, pickPorts, type Stack } from "./helpers/stack";
  * Stacks get dynamically-picked ports so parallel workers never collide.
  * Engine/relay truth is probed over the real JSON-RPC path (session.hello →
  * passthrough `agents.*`/`models.list` → harness → engine-fake).
+ *
+ * v3: Hire is the page `#?page=hire` (sidebar "Hire an agent"), a role grid +
+ * name + model + Hire, creating a NEW engine profile named after the person
+ * (AC-2/AC-3), and a second section, "Or bring in an existing profile", that
+ * links an engine profile nobody is hired on, keeping the engine's own model
+ * and persona (AC-2b, the old dialog's "Use profile"). "New profile"'s
+ * template rows, instructions box and engine-model buttons have no v3
+ * control; AC-2/AC-3 keep what a person can still do. A name equal to an
+ * existing engine profile is refused by the engine ("agent X already
+ * exists"), which is how AC-3's rejection reads in v3 (a toast, the form
+ * stays).
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
@@ -61,6 +79,8 @@ interface EmployeeRow {
   name: string;
   role: string;
   profile: string;
+  model: string;
+  instructions: string;
 }
 
 async function employeeRows(stack: Stack): Promise<EmployeeRow[]> {
@@ -98,45 +118,62 @@ test.afterAll(async () => {
   await stackA?.stop();
 });
 
-/** Open the app past first-run, landed on the auto-hired Default's DM. */
+/** Open the app past first run, on Home with the auto-hired Default in the
+ *  sidebar's People. */
 async function openApp(stack: Stack, page: Page) {
-  await page.addInitScript(() => localStorage.setItem("lilos-onboarded", "1"));
+  await skipFirstRun(page);
   await page.goto(`${stack.webUrl}/`);
-  await expect(page).toHaveURL(/\/dm\//, { timeout: 30_000 });
   await expect(
-    page.locator("aside").getByRole("button", { name: /Default/ }),
+    v3Sidebar(page).getByRole("button", { name: /Default/ }),
   ).toBeVisible({ timeout: 30_000 });
 }
 
-const hireDialog = (page: Page) =>
-  page.locator("div.fixed.inset-0", { hasText: "Hire an employee" });
-const editDialog = (page: Page) =>
-  page.locator("div.fixed.inset-0", { hasText: "Edit employee" });
+const hireHeading = (page: Page) =>
+  page.getByRole("heading", { level: 1, name: "Hire an agent" });
 
+/** Sidebar "Hire an agent" → the Hire page. */
 async function openHire(page: Page) {
-  await page
-    .locator("aside")
-    .getByRole("button", { name: "Hire employee" })
-    .click();
-  await expect(page.getByText("Hire an employee")).toBeVisible();
+  await v3Sidebar(page).getByRole("button", { name: "Hire an agent" }).click();
+  await expect(hireHeading(page)).toBeVisible();
+  await expect(page).toHaveURL(/[#&?]page=hire/);
 }
 
-test("AC-1 sidebar + opens HireDialog only when the engine declares `agents`", async ({
+/** A role card on the Hire page (its accessible name starts with the role). */
+const roleCard = (page: Page, role: string) =>
+  page.getByRole("button", { name: new RegExp(`^${role} `) });
+
+/** The Hire form's name field and its segmented model buttons. */
+const nameField = (page: Page) => page.getByPlaceholder("Name");
+const modelButton = (page: Page, label: string) =>
+  page.getByRole("button", { name: label, exact: true });
+
+test("AC-1 the sidebar offers Hire, and opens the Hire page, only when the engine declares `agents`", async ({
   page,
 }) => {
   await openApp(stackA, page);
-  const aside = page.locator("aside");
+  const sidebar = v3Sidebar(page);
   await expect(
-    aside.getByRole("button", { name: "Add Employees" }),
+    sidebar.getByRole("button", { name: "Hire an agent" }),
   ).toBeVisible();
-  await aside.getByRole("button", { name: "Add Employees" }).click();
-  const dlg = hireDialog(page);
-  await expect(dlg.getByText("Hire an employee")).toBeVisible();
-  await expect(dlg.getByRole("button", { name: "Use profile" })).toBeVisible();
-  await expect(dlg.getByRole("button", { name: "New profile" })).toBeVisible();
+  await openHire(page);
+  // The role grid is the page's way in (it replaced "Use profile" / "New
+  // profile"): every role is a card, the form appears once one is picked.
+  for (const role of [
+    "Researcher",
+    "Engineer",
+    "Designer",
+    "Growth",
+    "QA",
+    "Support",
+  ])
+    await expect(roleCard(page, role)).toBeVisible();
+  await expect(nameField(page)).toHaveCount(0);
+  await roleCard(page, "Engineer").click();
+  await expect(nameField(page)).toHaveValue("Engineer");
+  await expect(
+    page.getByRole("button", { name: "Hire", exact: true }),
+  ).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-1-hire-dialog.png` });
-  await dlg.getByRole("button", { name: "Cancel" }).click();
-  await expect(dlg).toHaveCount(0);
 
   // D-#19: no `agents` capability advertised → no hire affordance at all.
   const stackB = await bootStack("noagents", await pickPorts(), {
@@ -145,122 +182,199 @@ test("AC-1 sidebar + opens HireDialog only when the engine declares `agents`", a
   try {
     await openApp(stackB, page);
     await expect(
-      aside.getByRole("button", { name: "Hire employee" }),
+      v3Sidebar(page).getByRole("button", { name: "Hire an agent" }),
     ).toHaveCount(0);
+    // A link to the Hire page says plainly that it can't be used.
+    await page.goto(`${stackB.webUrl}/#?page=hire`);
     await expect(
-      aside.getByRole("button", { name: "Add Employees" }),
-    ).toHaveCount(0);
+      page.getByText(
+        /Hiring is not available while the engine cannot create agents/,
+      ),
+    ).toBeVisible();
+    await expect(roleCard(page, "Engineer")).toHaveCount(0);
     await page.screenshot({ path: `${SHOTS}/ac-1-no-agents-capability.png` });
   } finally {
     await stackB.stop();
   }
 });
 
-test("AC-2 Use profile lists unhired engine profiles (model, skills, soul); hire links it", async ({
+test("AC-2 hire a QA agent: the engine profile is created, the employee links it, a second click hires no duplicate", async ({
   page,
 }) => {
   await openApp(stackA, page);
   // Engine truth through the real path: relay -> harness -> engine-fake.
-  const ids = await agentIds(stackA);
+  const before = await agentIds(stackA);
   for (const id of ["default", "builder", "marketer", "reviewer"])
-    expect(ids).toContain(id);
+    expect(before).toContain(id);
 
   await openHire(page);
-  const dlg = hireDialog(page);
-  // `default` is already an employee → row is disabled "hired".
-  await expect(dlg.getByRole("button", { name: /default/ })).toBeDisabled();
-  await expect(dlg.getByRole("button", { name: /builder/ })).toBeVisible();
-  const reviewer = dlg.getByRole("button", { name: /reviewer/ });
-  await expect(reviewer).toBeVisible();
-  await expect(reviewer).toContainText("6 skills");
-  await reviewer.click();
-  // Picked card: model, skills count and the soul preview (agents.describe).
-  // #194: the picked card shows the model's display name, not the id.
-  await expect(dlg.getByText("Fake Small")).toBeVisible();
-  await expect(dlg.getByText(/Read the diff first/)).toBeVisible();
+  await roleCard(page, "QA").click();
+  await nameField(page).fill("Tester");
+  await expect(modelButton(page, "Fake Small")).toBeVisible();
+  await modelButton(page, "Fake Small").click();
   await page.screenshot({ path: `${SHOTS}/ac-2-use-profile.png` });
-  // dispatchEvent lands a second click while the request is in flight — the
-  // pending guard must keep it from hiring a duplicate.
-  const hireBtn = dlg.getByRole("button", { name: /Hire Reviewer/ });
-  await hireBtn.dispatchEvent("click");
-  await hireBtn.dispatchEvent("click");
+  /* Two clicks in one synchronous task: the second always lands while the
+     first hire is in flight, so the pending guard — not timing — is what
+     keeps it from hiring a duplicate. (Two separate dispatches race the
+     hire finishing and the page moving on, leaving no button for the
+     second.) */
+  const hireBtn = page.getByRole("button", { name: "Hire", exact: true });
+  await hireBtn.evaluate((b: HTMLElement) => {
+    b.click();
+    b.click();
+  });
 
-  const aside = page.locator("aside");
-  await expect(aside.getByRole("button", { name: "Reviewer" })).toBeVisible();
+  await expect(
+    v3Sidebar(page).getByRole("button", { name: "Tester" }),
+  ).toBeVisible();
+  // A second attempt would have been refused by the engine ("already
+  // exists") and toasted; the guard means there is no second attempt.
+  await expect(page.getByText(/already exists/i)).toHaveCount(0);
   const employees = await employeeRows(stackA);
-  const hired = employees.filter((e) => e.profile === "reviewer");
+  const hired = employees.filter((e) => e.profile === "tester");
   expect(hired.length).toBe(1);
-  expect(hired[0]?.name).toBe("Reviewer");
+  expect(hired[0]?.name).toBe("Tester");
+  expect(hired[0]?.role).toBe("QA");
+  expect(hired[0]?.model).toBe("fake-small");
+  expect(await agentIds(stackA)).toContain("tester");
 });
 
-test("AC-3 New profile: 4 templates + Blank, agents.create then hire; a rejection reads plainly", async ({
+/** The Hire page's second section: engine profiles nobody is hired on. */
+const existingProfiles = (page: Page) =>
+  page.getByRole("region", { name: "Existing engine profiles" });
+
+test("AC-2b hire from an existing engine profile: it is linked, not created again, and keeps the engine's own model and persona", async ({
+  page,
+}) => {
+  await openApp(stackA, page);
+  const before = await agentIds(stackA);
+  await openHire(page);
+
+  // The quiet second section lists what the engine already has. `default` is
+  // an agent already, so it is not offered a second time.
+  const section = existingProfiles(page);
+  await expect(
+    section.getByRole("heading", { name: /Or bring in an existing profile/ }),
+  ).toBeVisible();
+  await expect(section.getByRole("button", { name: /^Builder/ })).toBeVisible();
+  await expect(section.getByRole("button", { name: /^Default/ })).toHaveCount(
+    0,
+  );
+  const reviewer = section.getByRole("button", { name: /^Reviewer/ });
+  await expect(reviewer).toContainText("6 skills");
+  await reviewer.click();
+
+  // The picked profile's form: a name and a role to edit, and what the
+  // engine keeps owning (model, persona) shown, not asked for.
+  await expect(nameField(page)).toHaveValue("Reviewer");
+  await expect(section.getByText("Fake Small")).toBeVisible();
+  await expect(section.getByText(/Read the diff first/)).toBeVisible();
+  await page.screenshot({ path: `${SHOTS}/ac-2b-existing-profile.png` });
+
+  // Two clicks in one synchronous task: the second lands while the request
+  // is in flight and hires no duplicate.
+  const hireBtn = page.getByRole("button", { name: "Hire", exact: true });
+  await hireBtn.evaluate((b: HTMLElement) => {
+    b.click();
+    b.click();
+  });
+
+  await expect(page).toHaveURL(/[#&?]page=people&open=agent:/, {
+    timeout: 30_000,
+  });
+  const peek = v3Peek(page);
+  await expect(
+    peek.getByRole("heading", { level: 1, name: "Reviewer" }),
+  ).toBeVisible();
+  await expect(
+    v3Sidebar(page).getByRole("button", { name: "Reviewer" }),
+  ).toBeVisible();
+  await expect(page.getByText(/already exists/i)).toHaveCount(0);
+  // The agent's page says which engine profile it runs.
+  await expect(peek.getByText("Profile", { exact: true })).toBeVisible();
+  await expect(peek.getByText("reviewer", { exact: true })).toBeVisible();
+  await page.screenshot({ path: `${SHOTS}/ac-2b-hired-profile.png` });
+
+  // The engine side: no new profile was made (agents.create never ran), and
+  // the employee points at the existing one with its model and persona.
+  expect(await agentIds(stackA)).toEqual(before);
+  const hired = (await employeeRows(stackA)).filter(
+    (e) => e.profile === "reviewer",
+  );
+  expect(hired.length).toBe(1);
+  expect(hired[0]?.name).toBe("Reviewer");
+  expect(hired[0]?.model).toBe("fake-small");
+  expect(hired[0]?.instructions).toMatch(/Read the diff first/);
+
+  // Now an agent runs on it, so the Hire page no longer offers it.
+  await openHire(page);
+  await expect(section.getByRole("button", { name: /^Builder/ })).toBeVisible();
+  await expect(section.getByRole("button", { name: /^Reviewer/ })).toHaveCount(
+    0,
+  );
+});
+
+test("AC-3 hire an Engineer with a model: agents.create with the slug then the employee; a rejection reads plainly", async ({
   page,
 }) => {
   await openApp(stackA, page);
   await openHire(page);
-  const dlg = hireDialog(page);
-  await dlg.getByRole("button", { name: "New profile" }).click();
-  // Rows read "<name> <role>" — "Engineer Engineer", "Reviewer QA", ...
-  for (const [name, role] of [
-    ["Engineer", "Engineer"],
-    ["Reviewer", "QA"],
-    ["Researcher", "Research"],
-    ["Marketer", "Growth"],
-  ])
-    await expect(
-      dlg.getByRole("button", { name: new RegExp(`${name} ${role}`) }),
-    ).toBeVisible();
-  await expect(dlg.getByRole("button", { name: /Blank/ })).toBeVisible();
-
-  await dlg.getByRole("button", { name: /Engineer Engineer/ }).click();
+  await roleCard(page, "Engineer").click();
   // Display names are what Oscar types — the app derives the engine profile
   // slug ("senior-engineer"); the employee keeps the display name.
-  await dlg.getByPlaceholder("Tester").fill("Senior Engineer");
-  await dlg
-    .locator("textarea")
-    .fill("You are the Senior Engineer. Keep the record straight.");
-  await dlg.getByRole("button", { name: "Fake Reasoning" }).click();
+  await nameField(page).fill("Senior Engineer");
+  await modelButton(page, "Fake Reasoning").click();
   await page.screenshot({ path: `${SHOTS}/ac-3-new-profile.png` });
-  await dlg.getByRole("button", { name: /Hire Senior Engineer/ }).click();
-  await expect(hireDialog(page)).toHaveCount(0);
+  await page.getByRole("button", { name: "Hire", exact: true }).click();
 
-  const aside = page.locator("aside");
+  // Hiring lands on the new agent's page, opened beside People.
+  await expect(page).toHaveURL(/[#&?]page=people&open=agent:/);
+  const peek = v3Peek(page);
   await expect(
-    aside.getByRole("button", { name: "Senior Engineer" }),
+    peek.getByRole("heading", { level: 1, name: "Senior Engineer" }),
+  ).toBeVisible();
+  await expect(
+    v3Sidebar(page).getByRole("button", { name: "Senior Engineer" }),
   ).toBeVisible();
   // agents.create ran for real with the slug, not the display name.
   expect(await agentIds(stackA)).toContain("senior-engineer");
   const employees = await employeeRows(stackA);
-  expect(
-    employees.some(
-      (e) => e.name === "Senior Engineer" && e.profile === "senior-engineer",
-    ),
-  ).toBe(true);
+  const hired = employees.find((e) => e.name === "Senior Engineer");
+  expect(hired?.profile).toBe("senior-engineer");
+  expect(hired?.role).toBe("Engineer");
+  expect(hired?.model).toBe("fake-reasoning");
+  // The Engineer role's starter instructions are what the engine profile
+  // (soul) and the employee carry — and the agent page shows them.
+  expect(hired?.instructions).toMatch(/full-stack engineer/);
+  await expect(peek.getByText(/full-stack engineer/)).toBeVisible();
+  await expect(peek.getByText("Fake Reasoning", { exact: true })).toBeVisible();
 
   // Engine rejection: a name the engine already has reads plainly, nothing is
-  // created (no employee, no agent — the dialog stays open with the reason).
+  // created (no employee, no agent — the form stays with the reason).
   await openHire(page);
-  await dlg.getByRole("button", { name: "New profile" }).click();
-  await dlg.getByRole("button", { name: /Blank/ }).click();
-  await dlg.getByPlaceholder("Tester").fill("default");
-  const before = await employeeRows(stackA);
-  await dlg.getByRole("button", { name: /Hire default/ }).click();
-  await expect(dlg.getByText(/agent default already exists/i)).toBeVisible();
-  await expect(dlg.getByText("Hire an employee")).toBeVisible();
+  await roleCard(page, "Support").click();
+  await nameField(page).fill("default");
+  const rows = await employeeRows(stackA);
+  const agentsBefore = await agentIds(stackA);
+  await page.getByRole("button", { name: "Hire", exact: true }).click();
+  await expect(page.getByText(/agent default already exists/i)).toBeVisible();
+  await expect(hireHeading(page)).toBeVisible();
+  await expect(nameField(page)).toHaveValue("default");
   await page.screenshot({ path: `${SHOTS}/ac-3-engine-rejection.png` });
-  expect((await employeeRows(stackA)).length).toBe(before.length);
+  expect((await employeeRows(stackA)).length).toBe(rows.length);
+  expect(await agentIds(stackA)).toEqual(agentsBefore);
 
   // Same slug again: retyping the display name hits the duplicate check too.
-  await dlg.getByPlaceholder("Tester").fill("Senior Engineer");
-  await dlg.getByRole("button", { name: /Hire Senior Engineer/ }).click();
+  await nameField(page).fill("Senior Engineer");
+  await page.getByRole("button", { name: "Hire", exact: true }).click();
   await expect(
-    dlg.getByText(/agent senior-engineer already exists/i),
+    page.getByText(/agent senior-engineer already exists/i),
   ).toBeVisible();
-  await expect(dlg).toBeVisible();
-  await dlg.getByRole("button", { name: "Cancel" }).click();
+  await expect(hireHeading(page)).toBeVisible();
+  expect((await employeeRows(stackA)).length).toBe(rows.length);
 });
 
-test("AC-4 the model list in the dialog comes from models.list", async ({
+test("AC-4 the model list on the Hire page comes from models.list", async ({
   page,
 }) => {
   await openApp(stackA, page);
@@ -271,73 +385,95 @@ test("AC-4 the model list in the dialog comes from models.list", async ({
     .models;
 
   await openHire(page);
-  const dlg = hireDialog(page);
-  await dlg.getByRole("button", { name: "New profile" }).click();
+  await roleCard(page, "Engineer").click();
   // Every catalog entry renders — nothing hardcoded (D-#85).
   for (const m of models)
-    await expect(
-      dlg.getByRole("button", { name: m.name ?? m.id, exact: true }),
-    ).toBeVisible();
+    await expect(modelButton(page, m.name ?? m.id)).toBeVisible();
   // The prototype's mock-only model names are absent.
-  await expect(dlg.getByText(/GPT-6 Astra|Qwen 3\.8/)).toHaveCount(0);
+  await expect(page.getByText(/GPT-6 Astra|Qwen 3\.8/)).toHaveCount(0);
   await page.screenshot({ path: `${SHOTS}/ac-4-model-list.png` });
-  await dlg.getByRole("button", { name: "Cancel" }).click();
 });
 
-test("AC-5 after hiring, the sidebar + new DM appear live and the app navigates to it", async ({
+test("AC-5 after hiring, the sidebar + new chat appear live and the app navigates to the agent", async ({
   page,
 }) => {
   await openApp(stackA, page);
   await openHire(page);
-  const dlg = hireDialog(page);
-  await dlg.getByRole("button", { name: /marketer/ }).click();
-  await dlg.getByRole("button", { name: /Hire Marketer/ }).click();
+  await roleCard(page, "Growth").click();
+  await nameField(page).fill("Growth Lead");
+  await page.getByRole("button", { name: "Hire", exact: true }).click();
 
-  // No reload: SPA navigation lands on the new employee's DM, ready to chat.
-  await expect(page).toHaveURL(/\/dm\/emp_[^/]+$/);
-  const aside = page.locator("aside");
-  await expect(aside.getByRole("button", { name: "Marketer" })).toBeVisible();
-  // The DM channel already exists — the home renders, not a skeleton.
-  await expect(page.getByText("Start a thread with Marketer")).toBeVisible();
-  await expect(page.locator("textarea").last()).toHaveAttribute(
-    "placeholder",
-    /New thread with Marketer/,
-  );
+  // No reload: SPA navigation lands on the new agent's page beside People.
+  await expect(page).toHaveURL(/[#&?]page=people&open=agent:emp_[^&,]+/);
+  await expect(
+    v3Sidebar(page).getByRole("button", { name: "Growth Lead" }),
+  ).toBeVisible();
+  const peek = v3Peek(page);
+  await expect(
+    peek.getByRole("heading", { level: 1, name: "Growth Lead" }),
+  ).toBeVisible();
+  // The DM channel already exists — a chat with them is ready to type, not a
+  // skeleton.
+  await peek.getByRole("button", { name: "Message" }).click();
+  await expect(peek.getByPlaceholder("Message Growth Lead…")).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-5-live-dm.png` });
 
   const employeeId = decodeURIComponent(
-    page.url().split("/dm/")[1].split("/")[0],
+    /open=agent:([^&,]+)/.exec(page.url())?.[1] ?? "",
   );
   const employees = await employeeRows(stackA);
   const emp = employees.find((e) => e.id === employeeId);
-  expect(emp?.name).toBe("Marketer");
-  expect(emp?.profile).toBe("marketer");
+  expect(emp?.name).toBe("Growth Lead");
+  expect(emp?.profile).toBe("growth-lead");
   expect((await dmChannelIds(stackA, employeeId)).length).toBe(1);
 });
+
+test("AC-8 the channel-assignment part of the Hire page does not render in the real app", async ({
+  page,
+}) => {
+  await openApp(stackA, page);
+  await openHire(page);
+  await expect(page.getByText("Join channels")).toHaveCount(0);
+  await expect(page.getByText("engineering")).toHaveCount(0);
+  await roleCard(page, "Engineer").click();
+  await expect(page.getByText("Join channels")).toHaveCount(0);
+  await page.screenshot({ path: `${SHOTS}/ac-8-no-channels.png` });
+});
+
+/** An agent's page in the side peek, opened from its sidebar row. */
+async function openAgent(page: Page, name: string) {
+  await v3Sidebar(page).getByRole("button", { name, exact: true }).click();
+  const peek = v3Peek(page);
+  await expect(peek.getByRole("heading", { level: 1, name })).toBeVisible();
+  return peek;
+}
 
 test("AC-6 Edit saves display name + role via employees.update; surfaces update live", async ({
   page,
 }) => {
   await openApp(stackA, page);
-  const aside = page.locator("aside");
-  await aside.getByRole("button", { name: "Senior Engineer" }).click();
-  await expect(page).toHaveURL(/\/dm\//);
-  await page.getByRole("button", { name: /Profile/ }).click();
-  await page.getByRole("button", { name: "Edit" }).click();
+  const peek = await openAgent(page, "Senior Engineer");
+  await peek.getByRole("button", { name: "Edit" }).click();
 
-  const dlg = editDialog(page);
-  await dlg.getByLabel("Display name").fill("Engineer Prime");
-  await dlg.getByLabel("Role").fill("Records lead");
+  await peek.getByRole("textbox", { name: "Name" }).fill("Engineer Prime");
+  await peek.getByRole("textbox", { name: "Role" }).fill("Records lead");
   await page.screenshot({ path: `${SHOTS}/ac-6-edit-dialog.png` });
-  await dlg.getByRole("button", { name: "Save" }).click();
-  await expect(dlg).toHaveCount(0);
+  await peek.getByRole("button", { name: "Save" }).click();
+  // "Save" reads "Saving…" while in flight: Edit is back once it has landed.
+  await expect(peek.getByRole("button", { name: "Edit" })).toBeVisible();
 
-  // Sidebar row and DM header read the updated record without a reload.
-  const primeRow = aside.getByRole("button", { name: /Engineer Prime/ });
-  await expect(primeRow).toBeVisible();
-  // The restyled row shows the name only; the role lives on the title.
-  await expect(primeRow).toHaveAttribute("title", "Records lead");
-  await expect(page.getByText("Records lead").last()).toBeVisible();
+  // The sidebar row and the agent page read the updated record without a
+  // reload; the role is the page's kicker line.
+  await expect(
+    v3Sidebar(page).getByRole("button", { name: "Engineer Prime" }),
+  ).toBeVisible();
+  await expect(
+    peek.getByRole("heading", { level: 1, name: "Engineer Prime" }),
+  ).toBeVisible();
+  await expect(peek.getByText(/^Records lead/)).toBeVisible();
+  await expect(
+    v3Sidebar(page).getByRole("button", { name: "Senior Engineer" }),
+  ).toHaveCount(0);
   await page.screenshot({ path: `${SHOTS}/ac-6-updated.png` });
   const employees = await employeeRows(stackA);
   expect(
@@ -347,56 +483,52 @@ test("AC-6 Edit saves display name + role via employees.update; surfaces update 
   ).toBe(true);
 });
 
-test("AC-7 Remove deletes the LilOS record + DM, never the engine profile; the profile is hirable again", async ({
+test("AC-7 Remove deletes the LilOS record + DM, never the engine profile", async ({
   page,
 }) => {
   await openApp(stackA, page);
-  const aside = page.locator("aside");
-  await aside.getByRole("button", { name: "Reviewer" }).click();
-  await expect(page).toHaveURL(/\/dm\//);
+  const peek = await openAgent(page, "Tester");
   const employeeId = decodeURIComponent(
-    page.url().split("/dm/")[1].split("/")[0],
+    /open=agent:([^&,]+)/.exec(page.url())?.[1] ?? "",
   );
   expect((await dmChannelIds(stackA, employeeId)).length).toBe(1);
 
-  await page.getByRole("button", { name: /Profile/ }).click();
-  await page.getByRole("button", { name: "Edit" }).click();
-  const dlg = editDialog(page);
-  await dlg.getByRole("button", { name: /Remove from company/ }).click();
+  await peek.getByRole("button", { name: "Remove from company" }).click();
   // #64's plain confirmation: what goes (record + DMs) vs what stays (profile).
+  const confirm = peek.getByRole("group", {
+    name: "Remove Tester from the company",
+  });
   await expect(
-    dlg.getByText("Remove Reviewer from the company?"),
+    confirm.getByText("Remove Tester from the company?"),
   ).toBeVisible();
-  await expect(dlg.getByText(/its history, memory, and skills/)).toBeVisible();
+  await expect(
+    confirm.getByText(
+      /its engine profile, with its history, memory and skills/,
+    ),
+  ).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-7-remove-confirm.png` });
-  await dlg.getByRole("button", { name: "Remove from company" }).last().click();
+  await confirm.getByRole("button", { name: "Remove from company" }).click();
 
-  await expect(aside.getByRole("button", { name: "Reviewer" })).toHaveCount(0);
-  await expect(page).not.toHaveURL(new RegExp(`/dm/${employeeId}`));
+  // The sidebar row goes, the peek closes and the app is on People.
+  await expect(
+    v3Sidebar(page).getByRole("button", { name: "Tester", exact: true }),
+  ).toHaveCount(0);
+  await expect(v3Peek(page)).toHaveCount(0);
+  await expect(page).not.toHaveURL(new RegExp(employeeId));
+  await expect(page).toHaveURL(/[#&?]page=people/);
   await page.screenshot({ path: `${SHOTS}/ac-7-removed.png` });
 
   const employees = await employeeRows(stackA);
   expect(employees.some((e) => e.id === employeeId)).toBe(false);
   expect((await dmChannelIds(stackA, employeeId)).length).toBe(0);
-  // D-#29: the engine profile is untouched and shows under Use profile again.
-  expect(await agentIds(stackA)).toContain("reviewer");
+  // D-#29: the engine profile is untouched.
+  expect(await agentIds(stackA)).toContain("tester");
+  // …and it is hirable again under "Or bring in an existing profile" (the
+  // old "Use profile" list): only the LilOS record went. The engine named
+  // the profile by its slug, so that is what the row reads.
   await openHire(page);
-  const dlg2 = hireDialog(page);
-  await expect(dlg2.getByRole("button", { name: /reviewer/ })).toBeEnabled();
+  await expect(
+    existingProfiles(page).getByRole("button", { name: /^tester/i }),
+  ).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-7-profile-back.png` });
-  await dlg2.getByRole("button", { name: "Cancel" }).click();
-});
-
-test("AC-8 the channel-assignment part of HireDialog does not render in the real app", async ({
-  page,
-}) => {
-  await openApp(stackA, page);
-  await openHire(page);
-  const dlg = hireDialog(page);
-  await expect(dlg.getByText("Join channels")).toHaveCount(0);
-  await expect(dlg.getByText("engineering")).toHaveCount(0);
-  await dlg.getByRole("button", { name: "New profile" }).click();
-  await expect(dlg.getByText("Join channels")).toHaveCount(0);
-  await page.screenshot({ path: `${SHOTS}/ac-8-no-channels.png` });
-  await dlg.getByRole("button", { name: "Cancel" }).click();
 });

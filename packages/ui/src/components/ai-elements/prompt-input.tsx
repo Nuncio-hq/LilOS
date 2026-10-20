@@ -1,5 +1,6 @@
 "use client";
 
+import { formatBytes, withinCount, withinSize } from "../../lib/attach-rules";
 import { Button } from "../ui/button";
 import {
   Command,
@@ -74,21 +75,8 @@ import {
 // Provider Context & Types
 // ============================================================================
 
-/* `1.2 MB`-style label for the chip + hovercard (vendored UI ships no size
-   formatter; the wire's sizeBytes lands on the FileUIPart via add/addLocal). */
-function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes < 0) return "";
-  if (bytes < 1024) return `${bytes} B`;
-  const units = ["KB", "MB", "GB"];
-  let size = bytes;
-  let unit = "B";
-  for (const u of units) {
-    if (size < 1024) break;
-    size /= 1024;
-    unit = u;
-  }
-  return `${size >= 100 ? Math.round(size) : size.toFixed(1)} ${unit}`;
-}
+// `1.2 MB`-style label for the chip + hovercard: the one formatter every
+// composer shares (the wire's sizeBytes lands on the FileUIPart via add/addLocal).
 
 export type AttachmentsContext = {
   files: (FileUIPart & { id: string })[];
@@ -492,7 +480,21 @@ export const PromptInput = ({
   const formRef = useRef<HTMLFormElement | null>(null);
 
   // ----- Local attachments (only used when no provider)
-  const [items, setItems] = useState<(FileUIPart & { id: string })[]>([]);
+  const [items, setItemsState] = useState<(FileUIPart & { id: string })[]>([]);
+  /* The staged list, read and written synchronously: add/remove/clear compute
+     from it instead of a `setItems(prev => …)` updater. An updater runs while
+     React renders this component, so the `onError` the add path called inside
+     one set the host's state (its toast atom) mid-render — "Cannot update a
+     component (`Company`) while rendering a different component" — and
+     StrictMode's second run of it minted every blob URL twice. */
+  const itemsRef = useRef(items);
+  const setItems = useCallback(
+    (next: (FileUIPart & { id: string })[]) => {
+      itemsRef.current = next;
+      setItemsState(next);
+    },
+    []
+  );
   const files = usingProvider ? controller.attachments.files : items;
 
   // Keep a ref to files for cleanup on unmount (avoids stale closure)
@@ -542,84 +544,57 @@ export const PromptInput = ({
         });
         return;
       }
-      const withinSize = (f: File) =>
-        maxFileSize ? f.size <= maxFileSize : true;
-      const sized = accepted.filter(withinSize);
-      if (accepted.length > 0 && sized.length === 0) {
-        onError?.({
-          code: "max_file_size",
-          message: maxFileSize
-            ? `That file is too large to attach (${formatBytes(maxFileSize)} max per file).`
-            : "All files exceed the maximum size.",
-        });
-        return;
-      }
+      const { kept: sized, note: sizeNote } = withinSize(accepted, maxFileSize);
       // A mixed batch drops only the oversized files; still tell the host so
       // a lost attachment is never silent (issue #31 patch to AI Elements).
-      if (sized.length < accepted.length) {
-        onError?.({
-          code: "max_file_size",
-          message: maxFileSize
-            ? `Some files were too large to attach (${formatBytes(maxFileSize)} max per file) and were left out.`
-            : "Some files exceed the maximum size and were not added.",
-        });
+      if (sizeNote) {
+        onError?.({ code: "max_file_size", message: sizeNote });
       }
+      if (accepted.length > 0 && sized.length === 0) return;
 
-      setItems((prev) => {
-        const capacity =
-          typeof maxFiles === "number"
-            ? Math.max(0, maxFiles - prev.length)
-            : undefined;
-        const capped =
-          typeof capacity === "number" ? sized.slice(0, capacity) : sized;
-        if (typeof capacity === "number" && sized.length > capacity) {
-          onError?.({
-            code: "max_files",
-            message: "Too many files. Some were not added.",
-          });
-        }
-        const next: (FileUIPart & { id: string; sizeBytes?: number })[] =
-          [];
-        for (const file of capped) {
-          next.push({
+      const { kept: capped, note: countNote } = withinCount(
+        sized,
+        itemsRef.current.length,
+        maxFiles
+      );
+      if (countNote) {
+        onError?.({ code: "max_files", message: countNote });
+      }
+      setItems(
+        itemsRef.current.concat(
+          capped.map((file) => ({
             id: nanoid(),
-            type: "file",
+            type: "file" as const,
             url: URL.createObjectURL(file),
             mediaType: file.type,
             filename: file.name,
             sizeBytes: file.size,
-          });
-        }
-        return prev.concat(next);
-      });
+          }))
+        )
+      );
     },
-    [accept, matchesAccept, maxFiles, maxFileSize, onError]
+    [accept, matchesAccept, maxFiles, maxFileSize, onError, setItems]
   );
 
   const removeLocal = useCallback(
-    (id: string) =>
-      setItems((prev) => {
-        const found = prev.find((file) => file.id === id);
-        if (found?.url) {
-          URL.revokeObjectURL(found.url);
-        }
-        return prev.filter((file) => file.id !== id);
-      }),
-    []
+    (id: string) => {
+      const found = itemsRef.current.find((file) => file.id === id);
+      if (found?.url) {
+        URL.revokeObjectURL(found.url);
+      }
+      setItems(itemsRef.current.filter((file) => file.id !== id));
+    },
+    [setItems]
   );
 
-  const clearLocal = useCallback(
-    () =>
-      setItems((prev) => {
-        for (const file of prev) {
-          if (file.url) {
-            URL.revokeObjectURL(file.url);
-          }
-        }
-        return [];
-      }),
-    []
-  );
+  const clearLocal = useCallback(() => {
+    for (const file of itemsRef.current) {
+      if (file.url) {
+        URL.revokeObjectURL(file.url);
+      }
+    }
+    setItems([]);
+  }, [setItems]);
 
   const add = usingProvider ? controller.attachments.add : addLocal;
   const remove = usingProvider ? controller.attachments.remove : removeLocal;

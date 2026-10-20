@@ -11,10 +11,10 @@
 
 /* ── Native macOS window chrome (#232) ─────────────────────────────────────
    Every Electron window uses the hiddenInset title bar: the traffic lights
-   sit inside the sidebar's 56px header, the window's "sidebar" vibrancy
-   shows through the shell glass (the theme already leaves .lilos-desktop
-   panels transparent), and header rows drag the window. All of it is scoped
-   to html[data-desktop] — a plain browser tab is unchanged (AC-5). */
+   sit inside the sidebar's 56px first row, the window's "sidebar" vibrancy
+   shows through wherever the page is transparent, and header rows drag the
+   window. All of it is scoped to html[data-desktop] — a plain browser tab is
+   unchanged (AC-5). */
 
 /* Vibrancy paints through wherever the page is transparent; the theme gives
    body an opaque fill, so under Electron the document itself must stay clear
@@ -25,43 +25,12 @@ html[data-desktop] body {
 
 /* The lights end ~x=78 worst case (inset x 16 + a cluster that measures
    ~52-62px across macOS versions/displays — TRAFFIC_LIGHTS_END in
-   apps/desktop/src/window-chrome.ts): the leftmost header reserves their
-   strip plus the ~10px macOS leaves before content — and drops it in full
-   screen, where the OS hides them and an empty gap would remain (AC-1, AC-4).
-   One var so every edge case shares the same reserve (#295). */
+   apps/desktop/src/window-chrome.ts): the leftmost row reserves their strip
+   plus the ~10px macOS leaves before content — and drops it in full screen,
+   where the OS hides them and an empty gap would remain (AC-1, AC-4). One var
+   so every edge case shares the same reserve (#295). */
 html[data-desktop]:not([data-fullscreen]) {
   --lilos-traffic-inset: 88px;
-}
-html[data-desktop]:not([data-fullscreen])
-  aside.lilos-glass-side
-  > div:first-child {
-  padding-left: var(--lilos-traffic-inset);
-}
-
-/* The sidebar hides in Focus (it is overlay-only there) and below the lg
-   breakpoint in every view — then the surface's own header is the leftmost
-   edge and takes over the same strip (#295). The header already carries
-   lilos-drag, so the reserved strip drags the window while its buttons
-   stay no-drag. */
-html[data-desktop]:not([data-fullscreen]) .lilos-focus main > header {
-  padding-left: var(--lilos-traffic-inset);
-}
-@media (max-width: 1023px) {
-  html[data-desktop]:not([data-fullscreen]) .lilos-desktop main > header {
-    padding-left: var(--lilos-traffic-inset);
-  }
-}
-
-/* The overlay sidebar opened from the hamburger on narrow windows floats
-   OVER the content — it's a sheet, not the window's material: near-opaque
-   so text behind it never reads through the vibrancy. */
-html[data-desktop] aside.lilos-glass-side.fixed {
-  background: rgb(246 247 250 / 0.92);
-  backdrop-filter: blur(30px) saturate(1.8);
-  -webkit-backdrop-filter: blur(30px) saturate(1.8);
-}
-html[data-desktop].dark aside.lilos-glass-side.fixed {
-  background: rgb(30 30 34 / 0.92);
 }
 
 /* Header rows drag the window like a title bar (AC-3); every interactive
@@ -84,6 +53,28 @@ html[data-desktop]
     [data-radix-collection-item]
   ) {
   -webkit-app-region: no-drag;
+}
+
+/* v3: the sidebar's first row sits where the traffic lights are — it takes
+   the same inset and drags the window like a title bar (its text is not
+   interactive). Only the shell's own sidebar: the side peek's aside is deeper
+   in the tree. */
+html[data-desktop] .lilos-v3 > aside:first-child > div:first-child {
+  min-height: 56px;
+  -webkit-app-region: drag;
+}
+html[data-desktop]:not([data-fullscreen])
+  .lilos-v3
+  > aside:first-child
+  > div:first-child {
+  padding-left: var(--lilos-traffic-inset);
+}
+
+/* First run has no sidebar: its own strip above Welcome (v3-shell.tsx) is
+   the lights' row and drags the window, so the window can be moved while
+   setting up. A browser tab gives it no height. */
+html[data-desktop] .lilos-v3 > .lilos-drag {
+  min-height: 56px;
 }
 
 /* #554 ⌘F: the DOM find paints matches through the Custom Highlight API —

@@ -3,17 +3,22 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  pickPorts,
+  type Stack,
+  skipFirstRun,
+} from "./helpers/stack";
 
 /**
  * Issue #95 — engine start failures read plainly.
  * Boots the real `bun run dev` stack (same pattern as e2e/ac-85-real-engine.spec.ts)
  * with a stub HERMES_BIN:
  *
- *   AC-1: the stub prints an old version → status dialog + DM composer say
+ *   AC-1: the stub prints an old version → status banner + dialog say
  *         `Hermes <found> is too old — LilOS needs <min> or newer. Run \`hermes update\`.`
  *         and the harness stops retrying (fatal — it won't fix itself).
- *   AC-2: the stub `kill -9`s itself → after the retry budget the same two
+ *   AC-2: the stub `kill -9`s itself → after the retry budget the same
  *         surfaces say `The engine was stopped by the system (SIGKILL) — a
  *         device security policy may be blocking it.`
  */
@@ -64,6 +69,11 @@ function stubHermes(name: string, body: string): string {
   return bin;
 }
 
+/** The agent's page in the side peek, `statusPollMs` ahead of the hash (it is
+    a real query param). */
+const agentPage = (stack: Stack, employeeId: string) =>
+  `${stack.webUrl}/?statusPollMs=500#?page=people&open=agent:${employeeId}`;
+
 /** Engine down → no auto-hire: seed the employee + DM over the relay. */
 async function seedDm(stack: Stack): Promise<string> {
   const [created] = await rpc(stack.relayWs, stack.relayToken, [
@@ -87,7 +97,7 @@ async function seedDm(stack: Stack): Promise<string> {
 
 test.describe.configure({ mode: "serial" });
 
-test("AC-1 (#95) a too-old Hermes reads plainly — status dialog + DM composer", async ({
+test("AC-1 (#95) a too-old Hermes reads plainly — status banner + dialog", async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -101,28 +111,20 @@ test("AC-1 (#95) a too-old Hermes reads plainly — status dialog + DM composer"
   });
   try {
     const employeeId = await seedDm(stack);
-    await page.goto(`${stack.webUrl}/dm/${employeeId}?statusPollMs=500`);
+    await skipFirstRun(page);
+    await page.goto(agentPage(stack, employeeId));
 
-    const note = page.locator("[data-composer-note]");
+    /* The plain reason rides the v3 status banner (the old DM composer note
+       is gone). #99 AC-1: the command renders as inline code, not literal
+       backticks. */
+    const note = page.getByRole("status").filter({ hasText: /Details/ });
     await expect(note).toBeVisible({ timeout: 60_000 });
     await expect(note).toContainText(
       "Hermes 0.20.2 is too old — LilOS needs 0.21.5 or newer. Run hermes update.",
+      { timeout: 30_000 },
     );
-    // #99 AC-1: the command renders as inline code, not literal backticks.
     await expect(note.locator("code")).toHaveText("hermes update");
     await expect(note).not.toContainText("`");
-    // #99 AC-3: the note keeps a visible gap above the composer box (the
-    // prompt form is the note's next rendered sibling inside the composer).
-    const gap = await note.evaluate((el) => {
-      const form = el.parentElement?.querySelector("form");
-      return form
-        ? form.getBoundingClientRect().top - el.getBoundingClientRect().bottom
-        : Number.NaN;
-    });
-    expect(gap).toBeGreaterThanOrEqual(6);
-    // #99 AC-2: presence dots don't read "online" while the engine is down.
-    await expect(page.locator("[data-presence]").first()).toBeVisible();
-    await expect(page.locator('[data-presence="online"]')).toHaveCount(0);
     for (const size of [
       { width: 1288, height: 700 },
       { width: 900, height: 700 },
@@ -133,7 +135,7 @@ test("AC-1 (#95) a too-old Hermes reads plainly — status dialog + DM composer"
     await page.setViewportSize({ width: 1280, height: 720 });
     await page.screenshot({ path: `${SHOTS}/ac-1-dm.png` });
 
-    await page.getByRole("button", { name: "System status" }).click();
+    await note.getByRole("button", { name: "Details" }).click();
     const dialog = page.getByRole("dialog", { name: "System status" });
     const reason = dialog
       .locator("p")
@@ -141,6 +143,7 @@ test("AC-1 (#95) a too-old Hermes reads plainly — status dialog + DM composer"
     await expect(reason).toHaveText(
       "Hermes 0.20.2 is too old — LilOS needs 0.21.5 or newer. Run hermes update.",
     );
+    // #99 AC-1: the command renders as inline code, not literal backticks.
     await expect(reason.locator("code")).toHaveText("hermes update");
     await page.screenshot({ path: `${SHOTS}/ac-1-status.png` });
 
@@ -166,16 +169,20 @@ test("AC-2 (#95) a SIGKILLed engine names the signal and the policy hint", async
   });
   try {
     const employeeId = await seedDm(stack);
-    await page.goto(`${stack.webUrl}/dm/${employeeId}?statusPollMs=500`);
+    await skipFirstRun(page);
+    await page.goto(agentPage(stack, employeeId));
 
-    const note = page.locator("[data-composer-note]");
+    const note = page.getByRole("status").filter({ hasText: /Details/ });
     await expect(note).toBeVisible({ timeout: 120_000 });
+    /* The banner reads "Engine restarting." through the retry budget; the
+       plain reason lands once the supervisor gives up. */
     await expect(note).toContainText(
       "The engine was stopped by the system (SIGKILL) — a device security policy may be blocking it.",
+      { timeout: 120_000 },
     );
     await page.screenshot({ path: `${SHOTS}/ac-2-dm.png` });
 
-    await page.getByRole("button", { name: "System status" }).click();
+    await note.getByRole("button", { name: "Details" }).click();
     const dialog = page.getByRole("dialog", { name: "System status" });
     await expect(
       dialog.getByText(

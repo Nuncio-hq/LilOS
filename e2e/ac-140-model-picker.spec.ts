@@ -2,7 +2,14 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
-import { bootStack, pickPorts, type Stack } from "./helpers/stack";
+import {
+  bootStack,
+  pickPorts,
+  type Stack,
+  skipFirstRun,
+  threadUrl,
+  v3Sidebar,
+} from "./helpers/stack";
 
 /**
  * AC-140: the picker always shows the model the session runs, even when the
@@ -105,20 +112,18 @@ test("AC-1 + AC-2 a session on a catalog-absent model: hint → Refresh → swit
   /* A conversation pinned to the refresh-only model at open — the same
      stamp Hermes sessions get on Oscar's Mac when Astra isn't in the
      cached catalog. */
-  await page.goto(`${stack.webUrl}/`);
-  const aside = page.locator("aside").first();
-  await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
-    timeout: 30_000,
-  });
-  const firstRun = page.getByRole("button", { name: /open dm/i });
-  if (await firstRun.isVisible().catch(() => false)) {
-    await firstRun.click();
-  } else {
-    await aside.getByRole("button", { name: /default/i }).click();
-  }
-  await expect(page).toHaveURL(/\/dm\/[^/]+/, { timeout: 15_000 });
-  const employeeId = page.url().match(/\/dm\/([^/]+)/)?.[1];
-  if (!employeeId) throw new Error("no employee id in url");
+  await skipFirstRun(page);
+  await page.goto(`${stack.webUrl}/#?page=people`);
+  await expect(
+    v3Sidebar(page).getByRole("button", { name: /Default/ }),
+  ).toBeVisible({ timeout: 30_000 });
+  const listed = await rpc(stack.home, RELAY, [
+    { method: "employees.list", params: {} },
+  ]);
+  const employeeId = (
+    listed[0] as { employees: { id: string; name: string }[] }
+  ).employees.find((e) => e.name === "Default")?.id;
+  if (!employeeId) throw new Error("no Default employee on the relay");
   const dm = await rpc(stack.home, RELAY, [
     { method: "channels.openDm", params: { employeeId } },
   ]);
@@ -138,7 +143,7 @@ test("AC-1 + AC-2 a session on a catalog-absent model: hint → Refresh → swit
 
   // The picker shows what the session actually runs — the catalog doesn't
   // list it, but the trigger and the checked row do.
-  await page.goto(`${stack.webUrl}/dm/${employeeId}/${conv.id}/focus`);
+  await page.goto(threadUrl(stack.webUrl, conv.id, true));
   const trigger = triggers(page).last();
   await expect(trigger).toContainText("fake-fresh", { timeout: 30_000 });
 

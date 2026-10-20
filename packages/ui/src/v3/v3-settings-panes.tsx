@@ -1,24 +1,12 @@
-import { CopyIcon } from "lucide-react";
-import type { ReactNode } from "react";
-import { AgentAvatar, Btn, Section, Spinner } from "./v3-bits";
-import {
-  EngineFix,
-  EngineState,
-  LinkRow,
-  Row,
-  Segmented,
-  Switch,
-  useCheck,
-} from "./v3-settings-bits";
-import type { V3PageProps } from "./v3-types";
+import { type ReactNode, useState } from "react";
+import { Btn, Section, Spinner } from "./v3-bits";
+import { EscLayer, useFocusBack } from "./v3-keys";
+import type { V3PageProps } from "./v3-page-types";
+import { LinkRow, Row, Segmented, useRun } from "./v3-settings-bits";
 
-/* Settings panes: General, and Engine & models. Phone and Connectors live in
-   their own files. Every control calls act.saveSettings (or asks the CEO);
-   nothing here keeps state worth keeping beyond a one-second "checking". */
-
-const VERSION = "LilOS 0.9 (prototype)";
-
-const EDITORS = ["Cursor", "VS Code", "Zed", "Xcode"];
+/* Settings → General: you and the company, approvals, the editor, About.
+   Each control calls act.saveSettings (or saveProfile); a control whose
+   action or data the app does not have is not drawn. */
 
 const APPROVALS = [
   {
@@ -33,57 +21,113 @@ const APPROVALS = [
   },
 ];
 
-/** A fact about you or the company: label, value, and a way to change it. */
+/* The engine's own policy (`approvals.setPolicy`), under the default above:
+   what the engine does before it ever reaches LilOS's Ask / Full access. */
+const POLICIES = [
+  { id: "smart" as const, label: "Smart" },
+  { id: "manual" as const, label: "Manual" },
+  { id: "off" as const, label: "Off" },
+];
+
+const INPUT =
+  "h-8 min-w-0 flex-1 rounded-[7px] border border-foreground/15 bg-background px-2.5 text-[14px] text-foreground outline-none focus:border-foreground/40";
+
+/** A fact about you or the company: label, value, and a way to change it:
+   in place (`onSave`), by asking the CEO (`onRename`), or not at all. */
 function Fact({
   label,
   value,
   onRename,
+  onSave,
 }: {
   label: string;
   value: string;
-  onRename: () => void;
+  onRename?: () => void;
+  onSave?: (value: string) => void;
 }) {
+  const [draft, setDraft] = useState<string>();
+  // Saving or cancelling swaps the field back for "Rename…": the keyboard goes there.
+  const renameBtn = useFocusBack<HTMLButtonElement>(draft !== undefined);
+  const save = () => {
+    const next = draft?.trim();
+    if (next && next !== value) onSave?.(next);
+    setDraft(undefined);
+  };
   return (
     <div className="flex items-center gap-4 border-[var(--v3-line)] border-b py-3">
       <span className="w-24 shrink-0 text-[13px] text-muted-foreground">
         {label}
       </span>
-      <span className="min-w-0 flex-1 truncate text-[14.5px] text-foreground">
-        {value}
-      </span>
-      <Btn small onClick={onRename}>
-        Rename…
-      </Btn>
+      {draft === undefined ? (
+        <span className="min-w-0 flex-1 truncate text-[14.5px] text-foreground">
+          {value}
+        </span>
+      ) : (
+        <>
+          {/* Esc cancels the rename, not a peek that may be open beside it. */}
+          <EscLayer onEscape={() => setDraft(undefined)} />
+          <input
+            // biome-ignore lint/a11y/noAutofocus: it opens because you asked to rename
+            autoFocus
+            aria-label={label}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key !== "Enter") return;
+              // The keyboard moves to "Rename…" as the box closes; the Enter
+              // being pressed must not also click it and reopen the box.
+              e.preventDefault();
+              save();
+            }}
+            className={INPUT}
+          />
+        </>
+      )}
+      {draft !== undefined ? (
+        <>
+          <Btn small primary onClick={save}>
+            Save
+          </Btn>
+          <Btn small onClick={() => setDraft(undefined)}>
+            Cancel
+          </Btn>
+        </>
+      ) : (
+        (onSave || onRename) && (
+          <Btn
+            small
+            ref={renameBtn}
+            onClick={onSave ? () => setDraft(value) : onRename}
+          >
+            Rename…
+          </Btn>
+        )
+      )}
     </div>
   );
 }
 
 /** "Check for updates" / "Copy diagnostics": a button, then a quiet result.
-   `checking` adds a one-second "Checking…" before the result. */
-function Confirm({
+   `checking` shows "Checking…" while the app works; the result it resolves
+   with (a sentence) replaces `done`. */
+export function Confirm({
   label,
   done,
   checking,
-  onClick,
+  run,
   icon,
 }: {
   label: string;
   done: string;
   checking?: boolean;
-  onClick?: () => void;
+  /** A string it returns (or resolves to) replaces `done` as the note. */
+  run?: () => unknown;
   icon?: ReactNode;
 }) {
-  const [state, start] = useCheck(checking ? 1000 : 0);
+  const [state, start, result] = useRun(() => run?.(), checking ? 6000 : 1800);
   return (
     <span className="flex items-center gap-2.5">
-      <Btn
-        small
-        onClick={() => {
-          if (state === "busy") return;
-          onClick?.();
-          start();
-        }}
-      >
+      <Btn small onClick={start}>
         {icon}
         {label}
       </Btn>
@@ -94,34 +138,51 @@ function Confirm({
         </span>
       )}
       {state === "done" && (
-        <span className="text-[13px] text-muted-foreground">{done}</span>
+        <span className="text-[13px] text-muted-foreground">
+          {typeof result === "string" ? result : done}
+        </span>
       )}
     </span>
   );
 }
 
 export function GeneralPane({ data, go, act }: V3PageProps) {
-  const { approvals, editor } = data.settings;
-  const editors = EDITORS.includes(editor) ? EDITORS : [editor, ...EDITORS];
+  const { approvals, enginePolicy, editor, editors, about } = data.settings;
+  // The CEO can rename things through ⌘K where the app has no way to do it
+  // in place and the company has one.
+  const askToRename = !act.saveProfile && !!data.ceoId;
+  const editorChoices =
+    editors && editor && !editors.includes(editor)
+      ? [editor, ...editors]
+      : editors;
   return (
     <>
       <Section title="You and the company" className="mt-6" />
       <Fact
         label="Company"
         value={data.company}
-        onRename={() => act.ask("Rename the company to ")}
+        onRename={
+          askToRename ? () => act.ask("Rename the company to ") : undefined
+        }
+        onSave={
+          act.saveProfile
+            ? (company) => act.saveProfile?.({ company })
+            : undefined
+        }
       />
       <Fact
         label="Your name"
         value={data.me}
-        onRename={() => act.ask("Call me ")}
+        onRename={askToRename ? () => act.ask("Call me ") : undefined}
+        onSave={act.saveProfile ? (me) => act.saveProfile?.({ me }) : undefined}
       />
 
       <Section title="Approvals" />
       <div className="border-[var(--v3-line)] border-b pb-4">
         <p className="mb-3 text-[13px] text-muted-foreground">
-          What agents may do without asking you. Each ticket can still ask about
-          anything public or paid.
+          What agents may do without asking you.
+          {data.features.tickets &&
+            " Each ticket can still ask about anything public or paid."}
         </p>
         <Segmented
           label="Approvals"
@@ -143,171 +204,58 @@ export function GeneralPane({ data, go, act }: V3PageProps) {
             </li>
           ))}
         </ul>
+        {enginePolicy && (
+          <div className="mt-4">
+            <p className="mb-2 text-[13px] text-muted-foreground">
+              The engine’s own policy. Smart runs routine steps and asks for
+              risky ones. Manual asks every time. Off never asks.
+            </p>
+            <Segmented
+              label="Engine approval policy"
+              value={enginePolicy}
+              options={POLICIES}
+              onChange={(id) => act.saveSettings({ enginePolicy: id })}
+            />
+          </div>
+        )}
       </div>
 
-      <Section title="Open files in" />
-      <div className="border-[var(--v3-line)] border-b pb-4">
-        <p className="mb-3 text-[13px] text-muted-foreground">
-          “Open in editor” on a file or a workbench goes here.
-        </p>
-        <Segmented
-          label="Open files in"
-          value={editor}
-          options={editors.map((e) => ({ id: e, label: e }))}
-          onChange={(id) => act.saveSettings({ editor: id })}
-        />
-      </div>
+      {editorChoices && editorChoices.length > 0 && editor && (
+        <>
+          <Section title="Open files in" />
+          <div className="border-[var(--v3-line)] border-b pb-4">
+            <p className="mb-3 text-[13px] text-muted-foreground">
+              “Open in editor” on a file or a workbench goes here.
+            </p>
+            <Segmented
+              label="Open files in"
+              value={editor}
+              options={editorChoices.map((e) => ({ id: e, label: e }))}
+              onChange={(id) => act.saveSettings({ editor: id })}
+            />
+          </div>
+        </>
+      )}
 
       <Section title="About" />
-      <Row title="LilOS" hint={VERSION}>
-        <Confirm
-          checking
-          label="Check for updates"
-          done="LilOS is up to date."
-        />
-      </Row>
-      <LinkRow onClick={() => go({ page: "guide" })}>Guide</LinkRow>
-      <LinkRow onClick={() => act.ask("What changed in LilOS 0.9?")}>
-        What’s new in 0.9
-      </LinkRow>
-    </>
-  );
-}
-
-export function EnginePane({ data, go, act }: V3PageProps) {
-  const { engine, models } = data.settings;
-  const [check, again] = useCheck(1000);
-  const onCount = models.filter((m) => m.on).length;
-  const onAgents = data.agents.filter((a) => a.kind !== "outside");
-  const diagnostics = [
-    VERSION,
-    "Local relay: connected",
-    `Engine: ${engine.name} ${engine.version} (${engine.state}) at ${engine.path}`,
-    `Agents on the engine: ${onAgents.length}`,
-    `Models on: ${models
-      .filter((m) => m.on)
-      .map((m) => m.label)
-      .join(", ")}`,
-  ].join("\n");
-
-  return (
-    <>
-      <Section title="Engine" className="mt-6" />
-      <div className="rounded-lg border border-[var(--v3-line)] p-4">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <span
-            aria-hidden
-            className="grid size-9 shrink-0 place-items-center rounded-lg bg-[var(--v3-soft)] font-semibold text-[15px] text-foreground"
-          >
-            {engine.name.slice(0, 1)}
-          </span>
-          <div className="min-w-0 flex-1 basis-48">
-            <div className="text-[14.5px] text-foreground">
-              {engine.name}
-              <span className="ml-2 text-[13px] text-muted-foreground">
-                {engine.version}
-              </span>
-            </div>
-            <div className="mt-0.5 truncate font-mono text-[12.5px] text-muted-foreground">
-              {engine.path}
-            </div>
-          </div>
-          <EngineState engine={engine} />
-        </div>
-        <EngineFix engine={engine} />
-        <div className="mt-4 flex items-center gap-3">
-          <Btn
-            small
-            onClick={() => {
-              if (check !== "busy") again();
-            }}
-          >
-            {check === "busy" ? "Checking…" : "Check again"}
-          </Btn>
-          {check === "busy" && <Spinner />}
-          {check === "done" && (
-            <span className="text-[13px] text-muted-foreground">
-              {engine.state === "ok"
-                ? "Checked just now · all good."
-                : "Checked just now · still not ready."}
-            </span>
-          )}
-        </div>
-      </div>
-
-      <Section title="Status" />
-      <Row
-        title="Local relay"
-        hint="Carries messages between this app and the engine."
-      >
-        <span className="flex items-center gap-1.5 text-[13.5px] text-muted-foreground">
-          <span aria-hidden className="size-1.5 rounded-full bg-emerald-500" />
-          Connected
-        </span>
-      </Row>
-      <Row title="Engine">
-        <EngineState engine={engine} />
-      </Row>
-      <div className="py-3.5">
-        <Confirm
-          label="Copy diagnostics"
-          done="Copied"
-          icon={<CopyIcon className="size-3.5" />}
-          onClick={() => {
-            void navigator.clipboard?.writeText(diagnostics)?.catch(() => {});
-          }}
-        />
-      </div>
-
-      <Section title="Agents on this engine" count={onAgents.length} />
-      {onAgents.map((a) => (
-        <button
-          key={a.id}
-          type="button"
-          onClick={() => go({ page: "agent", id: a.id })}
-          className="-mx-2 flex w-[calc(100%+1rem)] items-center gap-3 rounded-md px-2 py-2 text-left transition-colors hover:bg-[var(--v3-hover)]"
-        >
-          <AgentAvatar data={data} agent={a} size={22} />
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-[14.5px] text-foreground">
-              {a.name}
-            </span>
-            <span className="block truncate font-mono text-[12.5px] text-muted-foreground">
-              {a.runtime}
-            </span>
-          </span>
-          <span className="flex shrink-0 items-center gap-1.5 text-[13px] text-muted-foreground">
-            <span
-              aria-hidden
-              className={`size-1.5 rounded-full ${engine.state === "ok" ? "bg-emerald-500" : "bg-stone-400"}`}
+      {about && (
+        <Row title="LilOS" hint={about.version}>
+          {act.checkUpdates && (
+            <Confirm
+              checking
+              label="Check for updates"
+              done="LilOS is up to date."
+              run={act.checkUpdates}
             />
-            {engine.state === "ok" ? "Connected" : "Waiting for engine"}
-          </span>
-        </button>
-      ))}
-
-      <Section title="Models" count={`${onCount} on`} />
-      <p className="mb-1 text-[13px] text-muted-foreground">
-        Pickers only offer the models that are on.
-      </p>
-      {models.map((m) => (
-        <Row key={m.id} title={m.label}>
-          <Switch
-            label={`${m.label} on`}
-            on={m.on}
-            // At least one model stays on, or a picker would be empty.
-            disabled={m.on && onCount === 1}
-            title={
-              m.on && onCount === 1 ? "Keep at least one model on" : undefined
-            }
-            onChange={(on) =>
-              act.saveSettings({
-                models: models.map((x) => (x.id === m.id ? { ...x, on } : x)),
-              })
-            }
-          />
+          )}
         </Row>
-      ))}
+      )}
+      <LinkRow onClick={() => go({ page: "guide" })}>Guide</LinkRow>
+      {about?.whatsNew && (
+        <LinkRow onClick={() => act.ask(about.whatsNew?.ask)}>
+          {about.whatsNew.label}
+        </LinkRow>
+      )}
     </>
   );
 }

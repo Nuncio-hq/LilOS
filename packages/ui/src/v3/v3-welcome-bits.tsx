@@ -50,7 +50,7 @@ export function Choice({
   on: boolean;
   onClick: () => void;
   title: string;
-  note: string;
+  note?: string;
   icon?: ReactNode;
 }) {
   return (
@@ -73,9 +73,11 @@ export function Choice({
         >
           {title}
         </span>
-        <span className="block truncate text-[13px] text-muted-foreground">
-          {note}
-        </span>
+        {note && (
+          <span className="block truncate text-[13px] text-muted-foreground">
+            {note}
+          </span>
+        )}
       </span>
       {on && <CheckIcon className="size-4 shrink-0" />}
     </button>
@@ -134,7 +136,12 @@ export function CheckRow({
   result: ReactNode;
 }) {
   return (
-    <div className="flex items-center gap-3 border-[var(--v3-line)] border-b py-3">
+    <div
+      // Test hook: the leg's real state, read by e2e (#589); never a timer.
+      data-first-run-step
+      data-state={state}
+      className="flex items-center gap-3 border-[var(--v3-line)] border-b py-3"
+    >
       <span className="grid size-5 shrink-0 place-items-center">
         {state === "run" && <Spinner />}
         {state === "ok" && (

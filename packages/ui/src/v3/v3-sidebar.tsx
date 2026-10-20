@@ -14,13 +14,16 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "../lib/utils";
-import { AgentAvatar, CeoMark, Kbd, ProjectMark, StatusDot } from "./v3-bits";
-import { agentStatus } from "./v3-model";
-import type { V3Data, V3PageRoute, V3RecordRoute, V3Route } from "./v3-types";
+import { Kbd } from "./v3-bits";
+import type { V3Data } from "./v3-data-types";
+import { AgentAvatar, CeoMark, ProjectMark, StatusDot } from "./v3-marks";
+import { agentDot } from "./v3-model";
+import type { V3PageRoute, V3RecordRoute, V3Route } from "./v3-page-types";
 
 /* The v3 sidebar is the company's table of contents: the three databases
    (Work, Threads, Goals), the projects, and the people, each person with the
-   one status dot that says whether they need anything. */
+   one status dot that says what wants your eye (needs you, working, failed,
+   finished and not seen yet). */
 export function V3Sidebar({
   data,
   page,
@@ -29,6 +32,7 @@ export function V3Sidebar({
   onSearch,
   dark,
   onTheme,
+  canHire = true,
 }: {
   data: V3Data;
   /** The page you are on: its entry stays lit while records open beside it. */
@@ -39,6 +43,8 @@ export function V3Sidebar({
   onSearch: () => void;
   dark: boolean;
   onTheme: () => void;
+  /** The app can create agents; without it the Hire entry is not drawn. */
+  canHire?: boolean;
 }) {
   const open = data.tickets.filter((t) => t.status !== "done").length;
   const live = data.threads.filter(
@@ -80,21 +86,26 @@ export function V3Sidebar({
           )
         }
       />
-      <Item
-        icon={<InboxIcon />}
-        label="Inbox"
-        on={on("inbox")}
-        onClick={() => go({ page: "inbox" })}
-      />
+      {/* Inbox, Work and Goals come with tickets (M2): hidden, not empty. */}
+      {data.features.tickets && (
+        <Item
+          icon={<InboxIcon />}
+          label="Inbox"
+          on={on("inbox")}
+          onClick={() => go({ page: "inbox" })}
+        />
+      )}
 
       <Label>Company</Label>
-      <Item
-        icon={<SquareCheckIcon />}
-        label="Work"
-        on={on("work")}
-        onClick={() => go({ page: "work" })}
-        right={<Count n={open} />}
-      />
+      {data.features.tickets && (
+        <Item
+          icon={<SquareCheckIcon />}
+          label="Work"
+          on={on("work")}
+          onClick={() => go({ page: "work" })}
+          right={<Count n={open} />}
+        />
+      )}
       <Item
         icon={<LayersIcon />}
         label="Threads"
@@ -102,24 +113,31 @@ export function V3Sidebar({
         onClick={() => go({ page: "threads" })}
         right={<Count n={live} />}
       />
-      <Item
-        icon={<TargetIcon />}
-        label="Goals"
-        on={on("goals")}
-        onClick={() => go({ page: "goals" })}
-        right={<Count n={data.goals.length} />}
-      />
-
-      <Label>Projects</Label>
-      {data.projects.map((p) => (
+      {data.features.tickets && (
         <Item
-          key={p.id}
-          icon={<ProjectMark name={p.name} tone={p.tone} />}
-          label={p.name}
-          on={on("project", p.id)}
-          onClick={() => go({ page: "project", id: p.id })}
+          icon={<TargetIcon />}
+          label="Goals"
+          on={on("goals")}
+          onClick={() => go({ page: "goals" })}
+          right={<Count n={data.goals.length} />}
         />
-      ))}
+      )}
+
+      {/* No projects yet (a company of plain folders): no empty heading. */}
+      {data.projects.length > 0 && (
+        <>
+          <Label>Projects</Label>
+          {data.projects.map((p) => (
+            <Item
+              key={p.id}
+              icon={<ProjectMark name={p.name} tone={p.tone} />}
+              label={p.name}
+              on={on("project", p.id)}
+              onClick={() => go({ page: "project", id: p.id })}
+            />
+          ))}
+        </>
+      )}
 
       <Label onClick={() => go({ page: "people" })} on={on("people")}>
         People
@@ -134,22 +152,21 @@ export function V3Sidebar({
           right={
             <>
               {a.id === data.ceoId && <CeoMark />}
-              <StatusDot
-                status={agentStatus(data, a.id)}
-                className="size-[7px]"
-              />
+              <StatusDot status={agentDot(data, a.id)} className="size-[7px]" />
             </>
           }
         />
       ))}
 
       <div className="flex-1" />
-      <Item
-        icon={<PlusIcon />}
-        label="Hire an agent"
-        on={on("hire")}
-        onClick={() => go({ page: "hire" })}
-      />
+      {canHire && (
+        <Item
+          icon={<PlusIcon />}
+          label="Hire an agent"
+          on={on("hire")}
+          onClick={() => go({ page: "hire" })}
+        />
+      )}
       <Item
         icon={<BookOpenIcon />}
         label="How it works"

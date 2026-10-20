@@ -1,10 +1,10 @@
 import type { ReactNode } from "react";
 
-/* The DM surface's single `<main>` landmark (#660). `apps/web` mounts this
-   itself so the element outlives the EmployeeHome↔FocusView swap — a pane
-   that remounts goes detached mid-measure and reads as "not laid out".
-   `bare` lets a view render its contents into that host pane; without it
-   the view supplies its own `<main>` (prototype paths unchanged). */
+/* A pane's single `<main>` landmark (#660). A host mounts this itself so
+   the element outlives a view swap — a pane that remounts goes detached
+   mid-measure and reads as "not laid out". `bare` lets a view render its
+   contents into that host pane; without it the view supplies its own
+   `<main>` (prototype paths unchanged). */
 export function MainPane({
   bare,
   children,

@@ -1,17 +1,21 @@
 import { ArrowRightIcon } from "lucide-react";
 import type { ReactNode } from "react";
-import {
-  Avatar,
-  Page,
-  RowButton,
-  Section,
-  StatusPill,
-  span,
-  Title,
-} from "./v3-bits";
+import { Page, Section, span, Title } from "./v3-bits";
+import { Statuses } from "./v3-guide-bits";
+import { V3GuideToday } from "./v3-guide-today";
 import { ThreadPill } from "./v3-live";
-import { agentOf, goalOf, goalProgress, threadsOf, ticketOf } from "./v3-model";
-import type { V3PageProps, V3Status } from "./v3-types";
+import { AgentAvatar, StatusPill } from "./v3-marks";
+import {
+  agentNameOf,
+  agentOf,
+  FORMER_AGENT,
+  goalOf,
+  goalProgress,
+  threadsOf,
+  ticketOf,
+} from "./v3-model";
+import { RowButton } from "./v3-open-record";
+import type { V3PageProps } from "./v3-page-types";
 
 /* The explainer: five levels, a hand-off chain, how a thread lives. All
    examples come from live data so the page matches what you see elsewhere. */
@@ -35,46 +39,36 @@ function Flow({ children }: { children: ReactNode }) {
   );
 }
 
-const MEANINGS: { status: V3Status; word?: string; text: string }[] = [
-  { status: "working", text: "An agent is on it right now." },
-  {
-    status: "waiting",
-    text: "Paused on someone else: a teammate, or another ticket.",
-  },
-  {
-    status: "needs",
-    text: "Only you can unblock it: an approval or a question.",
-  },
-  {
-    status: "stuck",
-    text: "It keeps repeating the same step. Stop it or hand it on.",
-  },
-  { status: "idle", text: "Nothing to do until the next ticket or message." },
-  {
-    status: "done",
-    word: "Finished",
-    text: "Delivered. It stays here until you have looked.",
-  },
-];
+export function V3Guide(props: V3PageProps) {
+  return props.data.features.tickets ? (
+    <V3GuideTickets {...props} />
+  ) : (
+    <V3GuideToday data={props.data} go={props.go} />
+  );
+}
 
-export function V3Guide({ data, go }: V3PageProps) {
+function V3GuideTickets({ data, go }: V3PageProps) {
   const ticket = ticketOf(data, EXAMPLE_TICKET);
   const hops = threadsOf(data, EXAMPLE_TICKET);
   const goal = ticket?.goalId ? goalOf(data, ticket.goalId) : undefined;
   const goalCount = goal ? goalProgress(data, goal.id).total : 0;
   const thread = data.threads.find((t) => t.id === EXAMPLE_THREAD);
+  // Turns the app does not carry (empty) leave their counts out, never 0.
   const turn = thread?.turns[0];
   const run =
     turn?.steps?.find((s) => s.running) ??
     turn?.steps?.find((s) => s.kind === "run");
   const stepsIn = (thread?.step ?? 0) || (turn?.steps?.length ?? 0);
+  const hasCeo = data.agents.some((a) => a.id === data.ceoId);
 
   const levels = [
     {
       name: "Goal",
       eg: goal?.title ?? "A goal",
       n: `${goalCount} tickets`,
-      df: "What the company wants. The CEO splits it into tickets.",
+      df: hasCeo
+        ? "What the company wants. The CEO splits it into tickets."
+        : "What the company wants, split into tickets.",
       go: goal ? () => go({ page: "goal", id: goal.id }) : undefined,
     },
     {
@@ -87,16 +81,19 @@ export function V3Guide({ data, go }: V3PageProps) {
     {
       name: "Thread",
       eg: thread
-        ? `${agentOf(data, thread.agentId).name} · ${thread.ticketId} ${thread.title.toLowerCase()}`
+        ? `${agentNameOf(data, thread.agentId)} · ${thread.ticketId ? `${thread.ticketId} ` : ""}${thread.title.toLowerCase()}`
         : "A thread",
-      n: `${thread ? Math.max(...thread.turns.map((t) => t.n)) : 0} turns`,
+      n:
+        thread && thread.turns.length > 0
+          ? `${Math.max(...thread.turns.map((t) => t.n))} turns`
+          : "",
       df: "One agent working in one folder with one model. A new thread each time the ticket changes hands.",
       go: thread ? () => go({ page: "thread", id: thread.id }) : undefined,
     },
     {
       name: "Turn",
       eg: turn ? `Turn ${turn.n} · ${turn.from}` : "A turn",
-      n: `${stepsIn} steps`,
+      n: turn && stepsIn > 0 ? `${stepsIn} steps` : "",
       df: "One run, from a message to an answer.",
     },
     {
@@ -118,7 +115,7 @@ export function V3Guide({ data, go }: V3PageProps) {
       <div className="border-[var(--v3-line)] border-t">
         {levels.map((l, i) => {
           const row = (
-            <div className="grid grid-cols-[150px_330px_minmax(0,1fr)] items-baseline gap-5 py-[11px] text-[13.5px] max-[760px]:grid-cols-1 max-[760px]:gap-1">
+            <div className="grid grid-cols-[150px_330px_minmax(0,1fr)] items-baseline gap-5 py-[11px] text-[13.5px] @max-[760px]:grid-cols-1 @max-[760px]:gap-1">
               <div className="font-semibold text-[14px]">
                 {i > 0 && (
                   <i className="mr-1.5 font-normal text-muted-foreground/70 not-italic">
@@ -149,10 +146,11 @@ export function V3Guide({ data, go }: V3PageProps) {
       </div>
 
       <Section title={`${EXAMPLE_TICKET} changed hands ${hops.length} times`} />
-      <div className="mt-2 flex items-stretch max-[760px]:flex-col">
+      <div className="mt-2 flex items-stretch @max-[760px]:flex-col">
         {hops.map((t, i) => {
           const a = agentOf(data, t.agentId);
-          const turns = Math.max(0, ...t.turns.map((x) => x.n));
+          const turns =
+            t.turns.length > 0 ? Math.max(...t.turns.map((x) => x.n)) : 0;
           return (
             <div key={t.id} className="flex min-w-0 flex-1 items-stretch">
               {i > 0 && (
@@ -166,12 +164,13 @@ export function V3Guide({ data, go }: V3PageProps) {
                 className="flex min-w-0 flex-1 flex-col items-start gap-1 rounded-[10px] border border-[var(--v3-line)] px-3.5 py-3 text-left text-[13px] hover:bg-[var(--v3-hover)]"
               >
                 <span className="flex items-center gap-2 text-[13.5px]">
-                  <Avatar name={a.name} tone={a.tone} />
-                  {a.name}
+                  <AgentAvatar data={data} agent={a} />
+                  {a?.name ?? FORMER_AGENT}
                 </span>
                 <span>{t.title}</span>
                 <span className="text-muted-foreground">
-                  {span(t.minutes)} · {turns} {turns === 1 ? "turn" : "turns"}
+                  {span(t.minutes)}
+                  {turns > 0 && ` · ${turns} ${turns === 1 ? "turn" : "turns"}`}
                 </span>
                 <ThreadPill status={t.status} />
               </button>
@@ -209,20 +208,7 @@ export function V3Guide({ data, go }: V3PageProps) {
         <StatusPill status="stuck" />
       </Flow>
 
-      <Section title="Six statuses, colour only for status" />
-      <div className="border-[var(--v3-line)] border-t">
-        {MEANINGS.map((m) => (
-          <div
-            key={m.status}
-            className="grid grid-cols-[150px_minmax(0,1fr)] items-center gap-5 border-[var(--v3-line)] border-b py-2.5 text-[13.5px]"
-          >
-            <span>
-              <StatusPill status={m.status} label={m.word} />
-            </span>
-            <span className="text-muted-foreground">{m.text}</span>
-          </div>
-        ))}
-      </div>
+      <Statuses tickets />
     </Page>
   );
 }

@@ -7,7 +7,7 @@ import {
   SquareIcon,
   TerminalIcon,
 } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   PromptInput,
   PromptInputAttachment,
@@ -23,13 +23,8 @@ import {
 import { cn } from "../lib/utils";
 import { HermesAvatar } from "../shell/avatars";
 import type { AttachedFile, Employee, FileMention, SlashItem } from "../types";
-import { composerKeyDown } from "./composer-keys";
-import {
-  insertMention,
-  mentionBeforeCaret,
-  mentionQuery,
-} from "./composer-mentions";
-import { insertSlash, parseSlashDraft, slashQuery } from "./composer-slash";
+import { useComposerMenus } from "./composer-menus";
+import { parseSlashDraft } from "./composer-slash";
 
 /* The paperclip opens the file dialog through PromptInput's attachments context. */
 function AttachButton() {
@@ -181,136 +176,26 @@ export function Composer({
      time means typing during a slow send survives (it's a new draft). */
   const draftRef = useRef(draft);
   draftRef.current = draft;
-  /* Esc closes the `@` menu once; the next keystroke reopens it (the menu is
-     derived from the draft, so dismissal lives in a flag). */
-  const [mentionDismissed, setMentionDismissed] = useState(false);
   /* A promise-returning onSend keeps the submit in flight until it settles
      (#130): `sendRef` dedupes submits that arrive while one is pending, and
      `sending` disables the send button so Enter-Enter can't reach
      requestSubmit at all. */
   const [sending, setSending] = useState(false);
   const sendRef = useRef<Promise<void> | null>(null);
-  const wrapRef = useRef<HTMLDivElement>(null);
-  /* File rows for the Files section: the host fuzzy-matches per keystroke;
-     `null` = a search is in flight, `[]` = no hits. */
-  const fragment = mentionQuery(draft);
-  const fragmentQuery = fragment?.query ?? null;
-  const [fileHits, setFileHits] = useState<FileMention[] | null>(null);
-  const searchSeq = useRef(0);
-  /* The `/` menu's rows — same fetch-per-keystroke shape as the file hits.
-     `null` = a search is in flight or the menu never applied. */
-  const slashQ = slashQuery(draft);
-  const [slashHits, setSlashHits] = useState<SlashItem[] | null>(null);
-  const slashSeq = useRef(0);
-  const [slashDismissed, setSlashDismissed] = useState(false);
-  useEffect(() => {
-    if (!onSearchCommands || slashQ === null) {
-      setSlashHits(null);
-      return;
-    }
-    const seq = ++slashSeq.current;
-    let live = true;
-    void onSearchCommands(slashQ).then(
-      (hits) => {
-        if (live && seq === slashSeq.current) setSlashHits(hits);
-      },
-      () => {
-        if (live && seq === slashSeq.current) setSlashHits([]);
-      },
-    );
-    return () => {
-      live = false;
-    };
-  }, [onSearchCommands, slashQ]);
-  const [slashActive, setSlashActive] = useState(0);
-  const [slashNav, setSlashNav] = useState<{
-    query: string | null;
-    hits: SlashItem[] | null;
-  }>({ query: slashQ, hits: slashHits });
-  if (slashNav.query !== slashQ || slashNav.hits !== slashHits) {
-    setSlashNav({ query: slashQ, hits: slashHits });
-    setSlashActive(0);
-  }
-  const slashOpen = !slashDismissed && slashQ !== null && !!onSearchCommands;
-  const slashRows = slashHits ?? [];
-  const pickSlash = (item: SlashItem) => {
-    const next = insertSlash(item.name);
-    caretRef.current = next.length;
-    setDraft(next);
-  };
-  useEffect(() => {
-    if (!onSearchFiles || fragmentQuery === null) {
-      setFileHits(null);
-      return;
-    }
-    const seq = ++searchSeq.current;
-    let live = true;
-    void onSearchFiles(fragmentQuery).then(
-      (hits) => {
-        if (live && seq === searchSeq.current) setFileHits(hits);
-      },
-      () => {
-        if (live && seq === searchSeq.current) setFileHits([]);
-      },
-    );
-    return () => {
-      live = false;
-    };
-  }, [onSearchFiles, fragmentQuery]);
-  /* Flat keyboard navigation across both sections (issue #105, AC-1): one
-     active index over [employees…, files…]; ↓/↑ move, Enter picks, Esc stays
-     the existing dismiss path. The reset runs during render, not in an
-     effect: it must commit atomically with the rows it belongs to — a
-     passive effect flushes a task late, and a ↓ landing in that window got
-     clobbered back to the top row (#693). */
-  const [active, setActive] = useState(0);
-  const [navRows, setNavRows] = useState<{
-    query: string | null;
-    hits: FileMention[] | null;
-  }>({ query: fragmentQuery, hits: fileHits });
-  if (navRows.query !== fragmentQuery || navRows.hits !== fileHits) {
-    setNavRows({ query: fragmentQuery, hits: fileHits });
-    setActive(0);
-  }
-  type Row =
-    | { kind: "emp"; employee: Employee }
-    | { kind: "file"; file: FileMention };
-  const rows: Row[] = [
-    ...employees.map((e) => ({ kind: "emp" as const, employee: e })),
-    ...(fileHits ?? []).map((f) => ({ kind: "file" as const, file: f })),
-  ];
-  const mentionOpen =
-    !mentionDismissed &&
-    fragment !== null &&
-    (employees.length > 0 || !!onSearchFiles);
-  /* Caret moves a pick/delete wants, applied in the layout effect right after
-     the draft commits — an rAF can fire after the next keystroke and yank the
-     caret backwards mid-typing (e2e caught `@src/app.tsx ap@`). */
-  const caretRef = useRef<number | null>(null);
-  const prevDraftRef = useRef(draft);
-  useLayoutEffect(() => {
-    /* #590 AC-1: an external prefill (draft goes empty → text — plan
-       "Change…", a seeded rewind) focuses the composer and lands the caret
-       at the end, after any prefix, so the user types the answer straight
-       away. Pick/deletes take precedence via caretRef. */
-    const at =
-      caretRef.current ??
-      (prevDraftRef.current === "" && draft !== "" ? draft.length : null);
-    caretRef.current = null;
-    prevDraftRef.current = draft;
-    if (at === null) return;
-    const el = wrapRef.current?.querySelector("textarea");
-    el?.focus();
-    el?.setSelectionRange(at, at);
+  /* The `@` and `/` menus, their keys and the caret after a pick — shared
+     with the v3 composer (composer-menus.ts). */
+  const { wrapRef, onKeyDown, onEdited, slash, mention } = useComposerMenus({
+    draft,
+    setDraft,
+    employees,
+    onSearchFiles,
+    onSearchCommands,
   });
-  const pickMention = (row: Row) => {
-    const next =
-      row.kind === "emp"
-        ? insertMention(draft, row.employee.name, false)
-        : insertMention(draft, row.file.path, row.file.kind === "dir");
-    caretRef.current = next.length;
-    setDraft(next);
-  };
+  const { open: slashOpen, hits: slashHits, rows: slashRows } = slash;
+  const { open: mentionOpen, fileHits, active } = mention;
+  const slashActive = slash.active;
+  const pickSlash = slash.pick;
+  const pickMention = mention.pick;
   const busy = status === "submitted" || status === "streaming";
   return (
     /* data-composer marks the bottom-anchored block the app's toast clears
@@ -517,89 +402,9 @@ export function Composer({
             value={draft}
             onChange={(e) => {
               setDraft(e.target.value);
-              setMentionDismissed(false);
-              setSlashDismissed(false);
+              onEdited();
             }}
-            onKeyDown={(e) => {
-              if (
-                slashOpen &&
-                (e.key === "ArrowDown" ||
-                  e.key === "ArrowUp" ||
-                  e.key === "Enter" ||
-                  e.key === "Tab")
-              ) {
-                /* "No matches" doesn't own Enter/Tab — the full `/cmd`
-                   draft still submits so the engine (or an app-owned
-                   command) sees it. */
-                if (
-                  slashRows.length === 0 &&
-                  e.key !== "ArrowDown" &&
-                  e.key !== "ArrowUp"
-                )
-                  return;
-                e.preventDefault();
-                if (slashRows.length === 0) return;
-                if (e.key === "ArrowDown") {
-                  setSlashActive((a) => (a + 1) % slashRows.length);
-                } else if (e.key === "ArrowUp") {
-                  setSlashActive(
-                    (a) => (a - 1 + slashRows.length) % slashRows.length,
-                  );
-                } else {
-                  pickSlash(
-                    slashRows[Math.min(slashActive, slashRows.length - 1)],
-                  );
-                }
-                return;
-              }
-              if (
-                mentionOpen &&
-                (e.key === "ArrowDown" ||
-                  e.key === "ArrowUp" ||
-                  e.key === "Enter" ||
-                  e.key === "Tab")
-              ) {
-                /* The open menu owns these keys (AC-1): ↑/↓ move the flat
-                   highlight, Enter/Tab insert the highlighted row. */
-                e.preventDefault();
-                if (rows.length === 0) return;
-                if (e.key === "ArrowDown") {
-                  setActive((a) => (a + 1) % rows.length);
-                } else if (e.key === "ArrowUp") {
-                  setActive((a) => (a - 1 + rows.length) % rows.length);
-                } else {
-                  pickMention(rows[Math.min(active, rows.length - 1)]);
-                }
-                return;
-              }
-              /* Atomic chips (#105, AC-3): Backspace right after an `@token`
-                 removes the whole mention, not one character. */
-              if (e.key === "Backspace" && !e.defaultPrevented) {
-                const el = e.currentTarget;
-                if (el.selectionStart === el.selectionEnd) {
-                  const at = mentionBeforeCaret(el.value, el.selectionStart);
-                  if (at !== null) {
-                    e.preventDefault();
-                    caretRef.current = at;
-                    setDraft(
-                      el.value.slice(0, at) + el.value.slice(el.selectionStart),
-                    );
-                    return;
-                  }
-                }
-              }
-              composerKeyDown({
-                running: busy,
-                onStop,
-                lastSent,
-                setDraft,
-                onDismissOverlay: slashOpen
-                  ? () => setSlashDismissed(true)
-                  : mentionOpen
-                    ? () => setMentionDismissed(true)
-                    : undefined,
-              })(e);
-            }}
+            onKeyDown={(e) => onKeyDown(e, { running: busy, onStop, lastSent })}
             placeholder={placeholder}
             className="min-h-12"
           />

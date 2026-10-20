@@ -1,9 +1,25 @@
-/* Issue #448: the subagent now-line and the Start-work title seed share
-   `inline`/`titleSeed` — the single-line siblings of preview() (#417).
-   The char regexes they replace ate the "_" inside `write_file` /
-   `ses_c03e` / `LILOS_ENGINE` while leaving real `_emph_` markers on. */
-import { describe, expect, test } from "vitest";
-import { inline, titleSeed } from "../src/lib/helpers";
+/* Issue #448: the subagent now-line shares `inline` — the char regexes it
+   replaces ate the "_" inside `write_file` / `ses_c03e` / `LILOS_ENGINE`
+   while leaving real `_emph_` markers on. Issue #569: it re-parses a row's
+   text on every streamed word, so each distinct text is parsed once. */
+import type * as MdastFromMarkdown from "mdast-util-from-markdown";
+import { describe, expect, test, vi } from "vitest";
+
+/* Counts real markdown parses, so the cache is observable from outside. */
+const counts = vi.hoisted(() => ({ parses: 0 }));
+
+vi.mock("mdast-util-from-markdown", async (importOriginal) => {
+  const orig = await importOriginal<typeof MdastFromMarkdown>();
+  return {
+    ...orig,
+    fromMarkdown: (...args: Parameters<typeof orig.fromMarkdown>) => {
+      counts.parses++;
+      return orig.fromMarkdown(...args);
+    },
+  };
+});
+
+import { inline } from "../src/lib/helpers";
 
 describe("issue #448 — inline() flattens markdown to one line", () => {
   test("AC-1 snake_case identifiers keep underscores, in and out of code spans", () => {
@@ -31,22 +47,20 @@ describe("issue #448 — inline() flattens markdown to one line", () => {
   });
 });
 
-describe("issue #448 — titleSeed() for the Start-work dialog", () => {
-  test("AC-3 mentions come out and emphasis unwraps to one flat line", () => {
-    expect(titleSeed("**@Builder** fix _the_ `foo_bar` retry path")).toBe(
-      "fix the foo_bar retry path",
-    );
-  });
+describe("issue #569 — inline() parses each distinct text once", () => {
+  test("AC-1 repeats are served from the cache, a new text parses once", () => {
+    counts.parses = 0;
+    expect(inline("**uniq-a** _em_")).toBe("uniq-a em");
+    expect(inline("**uniq-a** _em_")).toBe("uniq-a em");
+    expect(inline("**uniq-b**")).toBe("uniq-b");
+    /* Two distinct texts, each parsed once — the repeat came from cache. */
+    expect(counts.parses).toBe(2);
+    inline("**uniq-a** _em_");
+    inline("**uniq-b**");
+    expect(counts.parses).toBe(2);
 
-  test("AC-3 a multi-line message seeds a single line", () => {
-    const seed = titleSeed("First line\n\n- second **point**\n- third `x_y`");
-    expect(seed).toBe("First line second point third x_y");
-    expect(seed).not.toContain("\n");
-  });
-
-  test("AC-3 the seed caps at 60 chars", () => {
-    expect(titleSeed(`Refactor ${"x".repeat(80)} end`)).toBe(
-      `Refactor ${"x".repeat(51)}`,
-    );
+    expect(inline("## uniq-c `x_y`")).toBe("uniq-c x_y");
+    expect(inline("## uniq-c `x_y`")).toBe("uniq-c x_y");
+    expect(counts.parses).toBe(3);
   });
 });

@@ -5,7 +5,7 @@ import { useCallback, useState } from "react";
    web thread can remount a turn card when its live row claims the relay
    row's id — React state alone then forgets the user's click. A keyed store
    outlives the remount so open/collapse still wins (web row keys use
-   `r.turnId`; dm.tsx stamps the conv id in). Not: auto-open as a lock, or
+   `r.turnId`; conv-fold.ts stamps the conv id in). Not: auto-open as a lock, or
    per-component `useState` only. */
 const store = new Map<string, unknown>();
 const CAP = 500;
