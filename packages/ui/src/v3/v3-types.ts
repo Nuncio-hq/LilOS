@@ -435,6 +435,9 @@ export type V3Data = {
   settings: V3Settings;
   /** The company is set up; false shows the first-run welcome. */
   setUp: boolean;
+  /** What this company has switched on. `tickets` (M2): Work, Goals, Inbox
+     and the CEO's update; off, those stay out of sight rather than empty. */
+  features: { tickets: boolean };
 };
 
 export type V3Route =

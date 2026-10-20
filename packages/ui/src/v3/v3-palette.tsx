@@ -52,13 +52,16 @@ export function V3Palette({
   const jumps = useMemo<Jump[]>(() => {
     const q = text.trim().toLowerCase();
     if (!q) {
+      const work: Jump[] = data.features.tickets
+        ? [{ label: "Work", hint: "every ticket", route: { page: "work" } }]
+        : [];
       return [
         {
           label: "Needs you",
           hint: `${data.asks.length} waiting`,
           route: { page: "needs" },
         },
-        { label: "Work", hint: "every ticket", route: { page: "work" } },
+        ...work,
         { label: "Threads", hint: "live sessions", route: { page: "threads" } },
       ];
     }

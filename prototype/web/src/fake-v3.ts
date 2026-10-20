@@ -784,6 +784,8 @@ export const V3_DATA: V3Data = {
   settings: SETTINGS,
   // ?v3&page=welcome shows first run; the rest of the company is ready.
   setUp: true,
+  // The prototype shows the whole company, M2 included.
+  features: { tickets: true },
 }
 
 /* The fake CEO behind ⌘K. A question gets a reply built from the live data;

@@ -80,21 +80,26 @@ export function V3Sidebar({
           )
         }
       />
-      <Item
-        icon={<InboxIcon />}
-        label="Inbox"
-        on={on("inbox")}
-        onClick={() => go({ page: "inbox" })}
-      />
+      {/* Inbox, Work and Goals come with tickets (M2): hidden, not empty. */}
+      {data.features.tickets && (
+        <Item
+          icon={<InboxIcon />}
+          label="Inbox"
+          on={on("inbox")}
+          onClick={() => go({ page: "inbox" })}
+        />
+      )}
 
       <Label>Company</Label>
-      <Item
-        icon={<SquareCheckIcon />}
-        label="Work"
-        on={on("work")}
-        onClick={() => go({ page: "work" })}
-        right={<Count n={open} />}
-      />
+      {data.features.tickets && (
+        <Item
+          icon={<SquareCheckIcon />}
+          label="Work"
+          on={on("work")}
+          onClick={() => go({ page: "work" })}
+          right={<Count n={open} />}
+        />
+      )}
       <Item
         icon={<LayersIcon />}
         label="Threads"
@@ -102,13 +107,15 @@ export function V3Sidebar({
         onClick={() => go({ page: "threads" })}
         right={<Count n={live} />}
       />
-      <Item
-        icon={<TargetIcon />}
-        label="Goals"
-        on={on("goals")}
-        onClick={() => go({ page: "goals" })}
-        right={<Count n={data.goals.length} />}
-      />
+      {data.features.tickets && (
+        <Item
+          icon={<TargetIcon />}
+          label="Goals"
+          on={on("goals")}
+          onClick={() => go({ page: "goals" })}
+          right={<Count n={data.goals.length} />}
+        />
+      )}
 
       <Label>Projects</Label>
       {data.projects.map((p) => (

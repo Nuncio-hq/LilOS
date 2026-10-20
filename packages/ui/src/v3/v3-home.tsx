@@ -268,40 +268,45 @@ export function V3Home({ data, go, act }: V3PageProps) {
         })}
       </div>
 
-      <Section
-        title="Goals"
-        count={data.goals.length}
-        link="Open Goals"
-        onLink={() => go({ page: "goals" })}
-      />
-      <div className="border-[var(--v3-line)] border-t">
-        {data.goals.map((g) => {
-          const p = goalProgress(data, g.id);
-          return (
-            <RowButton
-              key={g.id}
-              onClick={() => go({ page: "goal", id: g.id })}
-              className="flex min-h-[52px] items-center gap-3.5 border-[var(--v3-line)] border-b py-[7px]"
-            >
-              <div className="min-w-0 flex-1">
-                <div className="truncate font-medium text-foreground">
-                  {g.title}
-                </div>
-                <div className="mt-px text-[13px] text-muted-foreground">
-                  {projectOf(data, g.projectId)?.name} · due {g.due}
-                </div>
-              </div>
-              <Meter
-                value={p.total ? (p.done / p.total) * 100 : 0}
-                className="w-[150px] shrink-0"
-              />
-              <span className="w-11 text-right text-[13px] text-muted-foreground">
-                {p.done} / {p.total}
-              </span>
-            </RowButton>
-          );
-        })}
-      </div>
+      {/* Goals arrive with tickets (M2); until then nothing fake shows. */}
+      {data.features.tickets && (
+        <>
+          <Section
+            title="Goals"
+            count={data.goals.length}
+            link="Open Goals"
+            onLink={() => go({ page: "goals" })}
+          />
+          <div className="border-[var(--v3-line)] border-t">
+            {data.goals.map((g) => {
+              const p = goalProgress(data, g.id);
+              return (
+                <RowButton
+                  key={g.id}
+                  onClick={() => go({ page: "goal", id: g.id })}
+                  className="flex min-h-[54px] items-center gap-4 border-[var(--v3-line)] border-b py-2"
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-medium text-foreground">
+                      {g.title}
+                    </span>
+                    <span className="block text-[13px] text-muted-foreground">
+                      {projectOf(data, g.projectId)?.name} · due {g.due}
+                    </span>
+                  </span>
+                  <Meter
+                    value={p.total ? (p.done / p.total) * 100 : 0}
+                    className="w-[150px]"
+                  />
+                  <span className="w-11 text-right text-[13px] text-muted-foreground">
+                    {p.done} / {p.total}
+                  </span>
+                </RowButton>
+              );
+            })}
+          </div>
+        </>
+      )}
     </Page>
   );
 }
