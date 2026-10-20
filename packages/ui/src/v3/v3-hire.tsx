@@ -8,7 +8,8 @@ import {
 } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { cn } from "../lib/utils";
-import { Avatar, Btn, Page, Title } from "./v3-bits";
+import { AgentAvatar, Btn, CeoMark, Page, Title } from "./v3-bits";
+import { agentOf } from "./v3-model";
 import type { V3PageProps } from "./v3-types";
 
 /* Hire: pick a role, check the three fields, done. The CEO writes the first
@@ -62,7 +63,7 @@ export function V3Hire({ data, act }: V3PageProps) {
   const [picked, setPicked] = useState<number | null>(null);
   const [name, setName] = useState("");
   const [model, setModel] = useState(MODELS[1]);
-  const ceo = data.agents.find((a) => !a.reportsTo) ?? data.agents[0];
+  const ceo = agentOf(data, data.ceoId);
   const tpl = picked === null ? undefined : ROLES[picked];
 
   function pick(i: number) {
@@ -132,6 +133,24 @@ export function V3Hire({ data, act }: V3PageProps) {
             <div className="mt-1 text-[14px] text-foreground">{tpl.role}</div>
           </div>
           <div>
+            <span className={FIELD}>Runs on</span>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <span className="inline-flex h-[26px] items-center rounded-[7px] border border-foreground bg-[var(--v3-soft)] px-2.5 font-medium text-[13px] text-foreground">
+                Hermes
+              </span>
+              <button
+                type="button"
+                disabled
+                className="inline-flex h-[26px] cursor-not-allowed items-center rounded-[7px] border border-[var(--v3-line)] px-2.5 text-[13px] text-muted-foreground/60"
+              >
+                Claude Code
+              </button>
+              <span className="text-[12.5px] text-muted-foreground/70">
+                Soon · through ACP
+              </span>
+            </div>
+          </div>
+          <div>
             <span className={FIELD}>Model</span>
             <div className="mt-1 inline-flex rounded-[7px] border border-[var(--v3-line)] p-0.5">
               {MODELS.map((m) => (
@@ -153,8 +172,9 @@ export function V3Hire({ data, act }: V3PageProps) {
           <div>
             <span className={FIELD}>Reports to</span>
             <div className="mt-1 flex items-center gap-2 text-[14px] text-foreground">
-              <Avatar name={ceo.name} tone={ceo.tone} />
+              <AgentAvatar data={data} agent={ceo} />
               {ceo.name}
+              <CeoMark />
             </div>
           </div>
           <div className="pt-1">

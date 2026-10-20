@@ -1,4 +1,4 @@
-import { ChevronRightIcon } from "lucide-react";
+import { ChevronRightIcon, CloudIcon } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { cn } from "../lib/utils";
 import {
@@ -100,6 +100,24 @@ function StepRow({
       >
         {s.target}
       </span>
+      {s.helper && (
+        <a
+          href={s.helper.url}
+          target="_blank"
+          rel="noreferrer"
+          title={s.helper.label}
+          className="shrink-0 whitespace-nowrap text-[12.5px] text-sky-700 hover:underline dark:text-sky-300"
+        >
+          Open ↗
+        </a>
+      )}
+      {s.where && (
+        // Steps that ran off your Mac say where; no chip = your Mac.
+        <span className="inline-flex h-5 shrink-0 items-center gap-1 whitespace-nowrap rounded-md bg-[var(--v3-soft)] px-1.5 text-[11.5px] text-muted-foreground">
+          <CloudIcon className="size-3" />
+          {s.where}
+        </span>
+      )}
       {s.add !== undefined && s.del !== undefined ? (
         <Diff add={s.add} del={s.del} />
       ) : (

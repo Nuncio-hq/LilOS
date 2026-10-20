@@ -1,5 +1,5 @@
 import { cn } from "../lib/utils";
-import { Avatar, DOT, span } from "./v3-bits";
+import { AgentAvatar, DOT, span } from "./v3-bits";
 import type { V3Status } from "./v3-types";
 import type { WorkViewProps } from "./v3-work-views";
 
@@ -162,7 +162,7 @@ export function TimelineView({ data, go, tickets }: WorkViewProps) {
                 style={{ width: LABEL_W }}
                 className="flex shrink-0 items-start gap-2 pt-[9px] text-[13.5px] font-medium"
               >
-                <Avatar name={a.name} tone={a.tone} />
+                <AgentAvatar data={data} agent={a} />
                 {a.name}
               </div>
               <div className="relative flex-1">

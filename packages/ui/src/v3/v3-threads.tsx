@@ -2,7 +2,7 @@ import { LayoutGridIcon, ListIcon, PlusIcon, TableIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "../lib/utils";
 import {
-  Avatar,
+  AgentAvatar,
   Btn,
   DOT,
   Meter,
@@ -16,6 +16,7 @@ import {
 } from "./v3-bits";
 import { ThreadPill } from "./v3-live";
 import { agentOf } from "./v3-model";
+import { AgentName } from "./v3-rows";
 import { IdleCard, ThreadCard } from "./v3-thread-card";
 import type { V3PageProps, V3Status, V3Thread } from "./v3-types";
 
@@ -84,7 +85,7 @@ function Live(p: V3PageProps) {
           <ThreadCard key={t.id} t={t} {...p} />
         ))}
         {asleep.map((a) => (
-          <IdleCard key={a.id} agent={a} go={go} />
+          <IdleCard key={a.id} data={data} agent={a} go={go} />
         ))}
       </div>
 
@@ -102,16 +103,13 @@ function Live(p: V3PageProps) {
               key={t.id}
               opens={{ page: "thread", id: t.id }}
               onClick={() => go({ page: "thread", id: t.id })}
-              className="grid grid-cols-[minmax(0,1fr)_130px_minmax(0,170px)_70px] items-center gap-4 border-[var(--v3-line)] border-b py-2.5 text-[13.5px]"
+              className="grid grid-cols-[minmax(0,1fr)_150px_minmax(0,170px)_70px] items-center gap-4 border-[var(--v3-line)] border-b py-2.5 text-[13.5px]"
             >
               <span className="truncate">
                 <TicketId id={t.ticketId ?? "Chat"} />
                 {t.title}
               </span>
-              <span className="flex items-center gap-2">
-                <Avatar name={a.name} tone={a.tone} />
-                {a.name}
-              </span>
+              <AgentName data={data} agent={a} />
               <span className="truncate text-muted-foreground">
                 {t.summary}
               </span>
@@ -126,7 +124,7 @@ function Live(p: V3PageProps) {
   );
 }
 
-const COLS = "grid-cols-[minmax(0,1fr)_120px_100px_70px_70px_100px]";
+const COLS = "grid-cols-[minmax(0,1fr)_150px_100px_70px_70px_100px]";
 
 function All({ data, go }: V3PageProps) {
   return (
@@ -160,10 +158,7 @@ function All({ data, go }: V3PageProps) {
               <TicketId id={t.ticketId ?? "Chat"} />
               {t.title}
             </span>
-            <span className="flex items-center gap-2">
-              <Avatar name={a.name} tone={a.tone} />
-              {a.name}
-            </span>
+            <AgentName data={data} agent={a} />
             <span>
               <ThreadPill status={t.status} />
             </span>
@@ -190,7 +185,7 @@ function ByAgent({ data, go }: V3PageProps) {
             <Section
               title={
                 <span className="flex items-center gap-2">
-                  <Avatar name={a.name} tone={a.tone} />
+                  <AgentAvatar data={data} agent={a} />
                   {a.name}
                   <span className="font-normal text-[13px] text-muted-foreground">
                     {a.role}

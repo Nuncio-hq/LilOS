@@ -15,6 +15,7 @@ import { V3Needs } from "./v3-needs";
 import { V3Palette } from "./v3-palette";
 import { V3Peek } from "./v3-peek";
 import { V3People } from "./v3-people";
+import { V3Settings } from "./v3-settings";
 import { V3Sidebar } from "./v3-sidebar";
 import { V3Threads } from "./v3-threads";
 import type {
@@ -51,6 +52,7 @@ const PAGE_NAME: Record<V3PageRoute["page"], string> = {
   people: "People",
   hire: "Hire an agent",
   guide: "How it works",
+  settings: "Settings",
   chat: "New chat",
 };
 
@@ -206,6 +208,7 @@ export function V3Shell({
               )}
               {page.page === "hire" && <V3Hire {...props} />}
               {page.page === "guide" && <V3Guide {...props} />}
+              {page.page === "settings" && <V3Settings {...props} />}
               {page.page === "chat" && (
                 <V3ChatNew {...props} agentId={page.agentId} />
               )}

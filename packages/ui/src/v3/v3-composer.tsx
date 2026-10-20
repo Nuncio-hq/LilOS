@@ -6,8 +6,8 @@ import {
   useRef,
 } from "react";
 import { cn } from "../lib/utils";
-import { Avatar, Kbd } from "./v3-bits";
-import type { V3Agent } from "./v3-types";
+import { AgentAvatar, Kbd } from "./v3-bits";
+import type { V3Agent, V3Data } from "./v3-types";
 
 /* One message box for both chat pages: a textarea that grows with the text, a
    row of quiet chips that say who hears it and where it works, and Send. */
@@ -18,6 +18,7 @@ const CHIP =
   "inline-flex h-6 min-w-0 items-center gap-1.5 rounded-md px-1.5 text-[12.5px] text-muted-foreground";
 
 export function Composer({
+  data,
   agent,
   model,
   folder,
@@ -29,7 +30,9 @@ export function Composer({
   onAgent,
   inputRef,
 }: {
+  data: V3Data;
   agent: V3Agent;
+  /** Empty for an outside worker: it has no model of its own. */
   model: string;
   folder: string;
   branch?: string;
@@ -70,7 +73,7 @@ export function Composer({
   const placeholder = `Message ${agent.name}…${working ? " it reads this after the current step" : ""}`;
   const who = (
     <>
-      <Avatar name={agent.name} tone={agent.tone} size={16} />
+      <AgentAvatar data={data} agent={agent} size={16} />
       <span className="truncate">{agent.name}</span>
     </>
   );
@@ -104,7 +107,7 @@ export function Composer({
           ) : (
             <span className={CHIP}>{who}</span>
           )}
-          <span className={CHIP}>{model}</span>
+          {model && <span className={CHIP}>{model}</span>}
           <span className={CHIP} title={folder}>
             <FolderIcon className="size-3.5 shrink-0" />
             <span className="truncate font-mono text-[12px]">{folder}</span>

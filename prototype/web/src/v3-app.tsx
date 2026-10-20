@@ -3,7 +3,7 @@ import { type V3Nav, type V3PageRoute, type V3RecordRoute, V3Shell } from "@lilo
 import { V3_DATA, v3Draft } from "./fake-v3"
 import { v3Reply } from "./fake-v3-reply"
 
-const PAGES = ["home", "needs", "inbox", "work", "threads", "goals", "people", "hire", "guide", "chat"] as const
+const PAGES = ["home", "needs", "inbox", "work", "threads", "goals", "people", "hire", "guide", "settings", "chat"] as const
 const RECORDS = ["ticket", "thread", "goal", "project", "agent"] as const
 
 /* Where a bare record link lands: the page that lists it. */

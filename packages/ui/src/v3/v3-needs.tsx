@@ -1,7 +1,7 @@
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { cn } from "../lib/utils";
 import {
-  Avatar,
+  AgentAvatar,
   ago,
   Btn,
   INK,
@@ -114,7 +114,7 @@ function OpenAsk({
         <StatusPill status="needs" className="ml-auto self-center" />
       </div>
       <div className="mt-0.5 flex items-center gap-2 text-[13px] text-muted-foreground">
-        <Avatar name={from.name} tone={from.tone} size={18} />
+        <AgentAvatar data={data} agent={from} size={18} />
         <span>
           {from.name} asks · waiting {ago(ask.waiting)}
           {goal && ` · goal ${goal.title}`}

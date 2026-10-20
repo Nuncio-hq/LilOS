@@ -1,4 +1,4 @@
-import { Avatar, Page, Section, Title } from "./v3-bits";
+import { AgentAvatar, Page, Section, Title } from "./v3-bits";
 import { agentOf } from "./v3-model";
 import type { V3PageProps, V3Update } from "./v3-types";
 
@@ -32,12 +32,7 @@ export function V3Inbox({ data, go }: V3PageProps) {
               key={u.id}
               className="flex gap-3 border-[var(--v3-line)] border-b py-3.5"
             >
-              <Avatar
-                name={by.name}
-                tone={by.tone}
-                size={24}
-                className="mt-px"
-              />
+              <AgentAvatar data={data} agent={by} size={24} className="mt-px" />
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline gap-2 text-[13.5px]">
                   <b className="font-semibold text-foreground">{by.name}</b>

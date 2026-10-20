@@ -1,7 +1,7 @@
 import { type ReactNode, useState } from "react";
 import { cn } from "../lib/utils";
 import {
-  Avatar,
+  AgentAvatar,
   ago,
   INK,
   ProjectMark,
@@ -46,7 +46,7 @@ export function Who({ data, id }: { data: V3Data; id: string }) {
   const a = agentOf(data, id);
   return (
     <span className="flex min-w-0 items-center gap-2 font-medium">
-      <Avatar name={a.name} tone={a.tone} />
+      <AgentAvatar data={data} agent={a} />
       <span className="truncate">{a.name}</span>
     </span>
   );
@@ -113,7 +113,7 @@ function groupTickets(data: V3Data, tickets: V3Ticket[]): Group[] {
     const a = agentOf(data, agentId);
     groups.push({
       key: `agent-${agentId}`,
-      label: `Waiting on ${agentId === "ceo" ? "the CEO" : a.name}`,
+      label: `Waiting on ${agentId === data.ceoId ? "the CEO" : a.name}`,
       status: "waiting",
       rows,
       note: (t) => (t.waitingOn?.kind === "agent" ? t.waitingOn.why : null),
@@ -314,7 +314,7 @@ export function BoardView({ data, go, tickets }: WorkViewProps) {
                       {t.title}
                     </span>
                     <span className="flex items-center gap-1.5 text-[12.5px] text-muted-foreground">
-                      <Avatar name={owner.name} tone={owner.tone} size={18} />
+                      <AgentAvatar data={data} agent={owner} size={18} />
                       <span className="truncate">{owner.name}</span>
                       <span
                         className={cn(

@@ -6,12 +6,14 @@ import {
   EyeIcon,
   GitPullRequestIcon,
   ImageIcon,
+  PlugIcon,
   TargetIcon,
   UserIcon,
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "../lib/utils";
 import {
+  AgentAvatar,
   Avatar,
   ago,
   Btn,
@@ -26,6 +28,7 @@ import {
   Title,
 } from "./v3-bits";
 import { agentOf, goalOf, projectOf, threadsOf, ticketOf } from "./v3-model";
+import { viaOf } from "./v3-rows";
 import type { V3Data, V3PageProps, V3Route, V3Ticket } from "./v3-types";
 
 /* One ticket as a Notion page: properties, the hands it passed through, steps
@@ -38,7 +41,7 @@ function Person({ data, id }: { data: V3Data; id: string }) {
   const a = agentOf(data, id);
   return (
     <span className="flex items-center gap-2 font-medium">
-      <Avatar name={a.name} tone={a.tone} />
+      <AgentAvatar data={data} agent={a} />
       {a.name}
     </span>
   );
@@ -52,7 +55,9 @@ function StuckNote({
 }: { data: V3Data; t: V3Ticket } & Pick<V3PageProps, "act">) {
   const [picking, setPicking] = useState(false);
   const threadId = threadsOf(data, t.id).find((x) => x.status === "stuck")?.id;
-  const others = data.agents.filter((a) => a.id !== t.owner && a.id !== "ceo");
+  const others = data.agents.filter(
+    (a) => a.id !== t.owner && a.id !== data.ceoId,
+  );
   return (
     <div className="mt-3 rounded-lg bg-red-50/70 px-3.5 py-3 text-[14px] dark:bg-red-400/10">
       <div className={cn("font-medium", INK.stuck)}>
@@ -77,7 +82,7 @@ function StuckNote({
                 setPicking(false);
               }}
             >
-              <Avatar name={a.name} tone={a.tone} size={16} />
+              <AgentAvatar data={data} agent={a} size={16} />
               {a.name}
             </Btn>
           ))}
@@ -234,7 +239,7 @@ function Hands({
                 )}
               >
                 <span className="flex items-center gap-2 text-[13.5px] font-medium">
-                  <Avatar name={a.name} tone={a.tone} />
+                  <AgentAvatar data={data} agent={a} />
                   {a.name}
                 </span>
                 <span className="w-full truncate">{th.title}</span>
@@ -353,15 +358,20 @@ function Updates({
     <>
       <Section title="Updates" count={t.updates.length || undefined} />
       {t.updates.map((u) => {
-        const name = u.by === "you" ? data.me : agentOf(data, u.by).name;
+        const by = u.by === "you" ? undefined : agentOf(data, u.by);
+        const name = by ? by.name : data.me;
         return (
           <div key={`${u.by}-${u.ago}-${u.text}`} className="flex gap-3 py-2.5">
-            <Avatar
-              name={name}
-              tone={u.by === "you" ? "n" : agentOf(data, u.by).tone}
-              size={24}
-              className="mt-0.5"
-            />
+            {by ? (
+              <AgentAvatar
+                data={data}
+                agent={by}
+                size={24}
+                className="mt-0.5"
+              />
+            ) : (
+              <Avatar name={name} tone="n" size={24} className="mt-0.5" />
+            )}
             <div>
               <div className="text-[13.5px]">
                 <b className="mr-2 font-semibold">{name}</b>
@@ -416,9 +426,15 @@ export function V3TicketPage({
   }
   const project = projectOf(data, t.projectId);
   const goal = t.goalId ? goalOf(data, t.goalId) : undefined;
+  const via = viaOf(data, agentOf(data, t.owner));
   return (
     <Page>
       <Title kicker={`${t.id} · ${project?.name ?? ""}`}>{t.title}</Title>
+      <div className="mb-2 flex">
+        <Btn small onClick={() => act.ask(`About ${t.id}: `)}>
+          Ask the CEO about this
+        </Btn>
+      </div>
       <div className="mt-1.5 mb-1">
         <Prop icon={<span className="size-4" />} label="Status">
           <StatusPill status={t.status} />
@@ -467,6 +483,12 @@ export function V3TicketPage({
           </Prop>
         )}
       </div>
+      {via && (
+        <p className="mt-1 flex items-center gap-2 text-[13px] text-muted-foreground">
+          <PlugIcon className="size-3.5 shrink-0" />
+          Outside worker. Its steps come through the {via.label} connector.
+        </p>
+      )}
       {t.status === "stuck" && <StuckNote data={data} t={t} act={act} />}
       {t.waitingOn?.kind === "you" && <AskNote data={data} t={t} act={act} />}
       <Hands data={data} t={t} go={go} />

@@ -1,6 +1,6 @@
 import { type ReactNode, useRef, useState } from "react";
 import { cn } from "../lib/utils";
-import { Avatar, Page, ProjectMark, Title } from "./v3-bits";
+import { AgentAvatar, Page, ProjectMark, Title } from "./v3-bits";
 import { Composer } from "./v3-composer";
 import type { V3PageProps } from "./v3-types";
 
@@ -65,7 +65,9 @@ export function V3ChatNew({
   const project = data.projects.find((p) => p.id === projectId);
   // The model follows the agent until you choose one yourself.
   const [chosen, setChosen] = useState<string>();
-  const model = chosen ?? agent.model;
+  // An outside worker has no model of its own: no row, and none sent.
+  const outside = agent.kind === "outside";
+  const model = outside ? "" : (chosen ?? agent.model);
   const [draft, setDraft] = useState("");
   const input = useRef<HTMLTextAreaElement>(null);
 
@@ -84,7 +86,7 @@ export function V3ChatNew({
             on={a.id === agent.id}
             onClick={() => setAgent(a.id)}
           >
-            <Avatar name={a.name} tone={a.tone} size={18} />
+            <AgentAvatar data={data} agent={a} size={18} />
             <span className="truncate">{a.name}</span>
             <span className="truncate font-normal text-[12.5px] text-muted-foreground/70">
               {a.role}
@@ -109,13 +111,15 @@ export function V3ChatNew({
         ))}
       </Row>
 
-      <Row label="Model">
-        {MODELS.map((m) => (
-          <Choice key={m} on={m === model} onClick={() => setChosen(m)}>
-            {m}
-          </Choice>
-        ))}
-      </Row>
+      {!outside && (
+        <Row label="Model">
+          {MODELS.map((m) => (
+            <Choice key={m} on={m === model} onClick={() => setChosen(m)}>
+              {m}
+            </Choice>
+          ))}
+        </Row>
+      )}
 
       <div className="mt-8 flex flex-wrap gap-2">
         {SUGGESTIONS.map((s) => (
@@ -135,6 +139,7 @@ export function V3ChatNew({
 
       <div className="mt-3">
         <Composer
+          data={data}
           agent={agent}
           model={model}
           folder={project?.folder ?? "~"}

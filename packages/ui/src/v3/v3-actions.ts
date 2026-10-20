@@ -46,7 +46,9 @@ export function planRecords(
         state: (t.after ? "todo" : "current") as "todo" | "current",
       },
     ],
-    updates: [{ by: "ceo", ago: 0, text: `Part of your request: “${text}”.` }],
+    updates: [
+      { by: d.ceoId, ago: 0, text: `Part of your request: “${text}”.` },
+    ],
   }));
   const threads: V3Thread[] = plan.tickets
     .filter((t) => !t.after && !t.asksYou)
@@ -92,7 +94,7 @@ export function planRecords(
     updates: [
       {
         id: `u-${plan.tickets[0].id}`,
-        by: "ceo",
+        by: d.ceoId,
         at: "12:05",
         ticketId: plan.tickets[0].id,
         kind: "plan",
@@ -160,7 +162,7 @@ export function makeActions(
               ...(yes
                 ? [{ by: ask.from, ago: 0, text: ask.ifYes }]
                 : outcome === "no"
-                  ? [{ by: "ceo", ago: 0, text: ask.ifNo }]
+                  ? [{ by: d.ceoId, ago: 0, text: ask.ifNo }]
                   : []),
             ],
           })
@@ -252,7 +254,7 @@ export function makeActions(
                 since: 0,
                 waitingOn: {
                   kind: "agent",
-                  agentId: "ceo",
+                  agentId: d.ceoId,
                   why: "to decide what next",
                 },
                 updates: [
@@ -297,7 +299,7 @@ export function makeActions(
             lines: [
               "Read the ticket and its updates",
               "Read the last thread’s searches",
-              "Switching to Grok Bot for bulk lookups…",
+              "Trying a different search approach…",
             ],
           },
           tail: ["Read the last thread’s searches", "Switching approach…"],
@@ -460,12 +462,11 @@ export function makeActions(
               d.agents.length % 6
             ],
             role,
-            reportsTo: "ceo",
+            reportsTo: d.ceoId,
             hired: "today",
             runtime: `Hermes · profile ${id}`,
             model,
             schedule: "When given a ticket",
-            connectors: [{ name: "Browser", icon: "web", on: true }],
             skills: [],
             spend: { used: 0, cap: 10, period: "week" },
             instructions: [
@@ -480,6 +481,62 @@ export function makeActions(
       toast(`${name} hired`);
       go({ page: "people" });
       go({ page: "agent", id });
+    },
+    makeCeo: (agentId) => {
+      setData((d) => {
+        if (d.ceoId === agentId) return d;
+        // The position moves; the org follows it: the new CEO reports to
+        // you, everyone else (the old CEO included) reports to the new one.
+        return {
+          ...d,
+          ceoId: agentId,
+          agents: d.agents.map((a) => ({
+            ...a,
+            reportsTo: a.id === agentId ? undefined : agentId,
+          })),
+        };
+      });
+      toast(`${agentOf(getData(), agentId).name} is now the CEO`);
+    },
+    toggleConnector: (connectorId, agentId) => {
+      setData((d) => ({
+        ...d,
+        connectors: d.connectors.map((c) =>
+          c.id !== connectorId
+            ? c
+            : {
+                ...c,
+                agents: c.agents.includes(agentId)
+                  ? c.agents.filter((a) => a !== agentId)
+                  : [...c.agents, agentId],
+              },
+        ),
+      }));
+    },
+    addConnector: ({ label, kind, command }) => {
+      const id = label.toLowerCase().replace(/[^a-z0-9]+/g, "-") || "connector";
+      setData((d) => ({
+        ...d,
+        connectors: [
+          ...d.connectors,
+          {
+            id,
+            label,
+            kind,
+            command,
+            about:
+              kind === "mcp"
+                ? "An MCP server you added."
+                : "A command you added.",
+            // A new connector is found but not yet tried; its own login (if
+            // any) happens the first time an agent uses it.
+            state: "ready",
+            look: { mark: label.slice(0, 1).toUpperCase(), color: "#57534e" },
+            agents: [],
+          },
+        ],
+      }));
+      toast(`${label} added · turn it on for the agents that need it`);
     },
     ask: (text) => setPalette(text ?? ""),
   };

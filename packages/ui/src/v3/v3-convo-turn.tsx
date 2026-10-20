@@ -1,6 +1,6 @@
 import { MessageResponse } from "../components/ai-elements/message";
 import { cn } from "../lib/utils";
-import { Avatar } from "./v3-bits";
+import { AgentAvatar } from "./v3-bits";
 import { Attachments } from "./v3-convo-attach";
 import { WorkBlock } from "./v3-convo-work";
 import { agentOf } from "./v3-model";
@@ -41,10 +41,18 @@ function YouBubble({ text, note }: { text: string; note: string }) {
   );
 }
 
-function Who({ agent, note }: { agent: V3Agent; note?: string }) {
+function Who({
+  data,
+  agent,
+  note,
+}: {
+  data: V3Data;
+  agent: V3Agent;
+  note?: string;
+}) {
   return (
     <div className="flex items-center gap-2 text-[13.5px]">
-      <Avatar name={agent.name} tone={agent.tone} size={20} />
+      <AgentAvatar data={data} agent={agent} size={20} />
       <span className="font-medium text-foreground">{agent.name}</span>
       {note && (
         <span className="text-[12px] text-muted-foreground/70">{note}</span>
@@ -66,24 +74,26 @@ function Prompt({ turn, data }: { turn: V3Turn; data: V3Data }) {
   if (p.by === "you") return <YouBubble text={p.text} note={p.at} />;
   return (
     <div>
-      <Who agent={agentOf(data, p.by)} note={p.at} />
+      <Who data={data} agent={agentOf(data, p.by)} note={p.at} />
       <div className={cn(BUBBLE, "mt-1.5 w-fit max-w-[88%]")}>{p.text}</div>
     </div>
   );
 }
 
 function Answer({
+  data,
   agent,
   text,
   streaming,
 }: {
+  data: V3Data;
   agent: V3Agent;
   text: string;
   streaming: boolean;
 }) {
   return (
     <div className="mt-5">
-      <Who agent={agent} />
+      <Who data={data} agent={agent} />
       <div className={cn("mt-1.5", GAP, streaming && CARET)}>
         {text ? (
           <MessageResponse className="lilos-prose break-words">
@@ -125,7 +135,7 @@ export function ConvoTurn({
       <Prompt turn={turn} data={data} />
       <WorkBlock turn={turn} thread={thread} newest={newest} />
       {(text || streaming) && (
-        <Answer agent={agent} text={text} streaming={streaming} />
+        <Answer data={data} agent={agent} text={text} streaming={streaming} />
       )}
       {!!turn.attachments?.length && (
         <Attachments

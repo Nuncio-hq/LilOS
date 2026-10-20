@@ -2,7 +2,7 @@ import { AlertCircleIcon, GlobeIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "../lib/utils";
 import {
-  Avatar,
+  AgentAvatar,
   Btn,
   Meter,
   Spinner,
@@ -12,7 +12,8 @@ import {
 } from "./v3-bits";
 import { elapsedAt, streamTail, ThreadPill } from "./v3-live";
 import { agentOf } from "./v3-model";
-import type { V3Agent, V3PageProps, V3Thread } from "./v3-types";
+import { viaOf } from "./v3-rows";
+import type { V3Agent, V3Data, V3PageProps, V3Thread } from "./v3-types";
 
 /* One card on the live board: who, what, where it is right now, and the
    buttons to deal with it without opening the thread. */
@@ -110,11 +111,25 @@ function Foot({
   );
 }
 
-function Head({ agent, pill }: { agent: V3Agent; pill: ReactNode }) {
+function Head({
+  data,
+  agent,
+  pill,
+}: {
+  data: V3Data;
+  agent: V3Agent;
+  pill: ReactNode;
+}) {
+  const via = viaOf(data, agent);
   return (
     <div className="flex items-center gap-2 font-medium text-[13.5px]">
-      <Avatar name={agent.name} tone={agent.tone} />
+      <AgentAvatar data={data} agent={agent} />
       {agent.name}
+      {via && (
+        <span className="font-normal text-[11.5px] text-muted-foreground/70">
+          via {via.label}
+        </span>
+      )}
       <span className="ml-auto">{pill}</span>
     </div>
   );
@@ -175,7 +190,7 @@ export function ThreadCard({
 
   return (
     <Frame onOpen={open} selected={isOpen("thread", t.id)}>
-      <Head agent={agent} pill={<ThreadPill status={t.status} />} />
+      <Head data={data} agent={agent} pill={<ThreadPill status={t.status} />} />
       <div className="font-semibold text-[14.5px] leading-[1.35]">
         {t.unseen && (
           <span
@@ -253,15 +268,17 @@ export function ThreadCard({
 
 /** An agent with nothing live: a quiet card that opens the agent page. */
 export function IdleCard({
+  data,
   agent,
   go,
 }: {
+  data: V3Data;
   agent: V3Agent;
   go: V3PageProps["go"];
 }) {
   return (
     <Frame onOpen={() => go({ page: "agent", id: agent.id })}>
-      <Head agent={agent} pill={<ThreadPill status="idle" />} />
+      <Head data={data} agent={agent} pill={<ThreadPill status="idle" />} />
       <div className="font-semibold text-[14.5px] leading-[1.35]">
         {agent.next ?? agent.role}
       </div>

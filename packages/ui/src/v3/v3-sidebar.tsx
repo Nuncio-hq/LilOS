@@ -7,13 +7,14 @@ import {
   MoonIcon,
   PlusIcon,
   SearchIcon,
+  SettingsIcon,
   SquareCheckIcon,
   SunIcon,
   TargetIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "../lib/utils";
-import { Avatar, Kbd, ProjectMark, StatusDot } from "./v3-bits";
+import { AgentAvatar, CeoMark, Kbd, ProjectMark, StatusDot } from "./v3-bits";
 import { agentStatus } from "./v3-model";
 import type { V3Data, V3PageRoute, V3RecordRoute, V3Route } from "./v3-types";
 
@@ -126,15 +127,18 @@ export function V3Sidebar({
       {data.agents.map((a) => (
         <Item
           key={a.id}
-          icon={<Avatar name={a.name} tone={a.tone} />}
+          icon={<AgentAvatar data={data} agent={a} />}
           label={a.name}
           on={on("agent", a.id)}
           onClick={() => go({ page: "agent", id: a.id })}
           right={
-            <StatusDot
-              status={agentStatus(data, a.id)}
-              className="size-[7px]"
-            />
+            <>
+              {a.id === data.ceoId && <CeoMark />}
+              <StatusDot
+                status={agentStatus(data, a.id)}
+                className="size-[7px]"
+              />
+            </>
           }
         />
       ))}
@@ -151,6 +155,12 @@ export function V3Sidebar({
         label="How it works"
         on={on("guide")}
         onClick={() => go({ page: "guide" })}
+      />
+      <Item
+        icon={<SettingsIcon />}
+        label="Settings"
+        on={on("settings")}
+        onClick={() => go({ page: "settings" })}
       />
       <Item
         icon={dark ? <SunIcon /> : <MoonIcon />}

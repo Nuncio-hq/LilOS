@@ -1,6 +1,6 @@
 import { cn } from "../lib/utils";
 import {
-  Avatar,
+  AgentAvatar,
   ago,
   Btn,
   Meter,
@@ -73,6 +73,7 @@ function teamRow(d: V3Data, agentId: string) {
 
 export function V3Home({ data, go, act }: V3PageProps) {
   const counts = teamCounts(data);
+  const outside = data.agents.filter((a) => a.kind === "outside").length;
   const brief = [...data.updates]
     .filter((u) => u.kind === "brief")
     .sort((a, b) => b.at.localeCompare(a.at))[0];
@@ -84,9 +85,17 @@ export function V3Home({ data, go, act }: V3PageProps) {
 
       <div className="flex flex-wrap gap-x-[18px] gap-y-1.5 text-[13.5px] text-muted-foreground">
         <span>
-          <b className="font-semibold text-foreground">{data.agents.length}</b>{" "}
+          <b className="font-semibold text-foreground">
+            {data.agents.length - outside}
+          </b>{" "}
           agents
         </span>
+        {outside > 0 && (
+          <span>
+            <b className="font-semibold text-foreground">{outside}</b> outside{" "}
+            {outside === 1 ? "worker" : "workers"}
+          </span>
+        )}
         {COUNT_ORDER.map(({ status, word }) =>
           counts[status] ? (
             <span key={status} className="inline-flex items-center gap-[7px]">
@@ -104,9 +113,9 @@ export function V3Home({ data, go, act }: V3PageProps) {
 
       {brief && briefBy && (
         <div className="mt-6 flex gap-3 rounded-[10px] bg-[var(--v3-soft)] px-[18px] py-4">
-          <Avatar
-            name={briefBy.name}
-            tone={briefBy.tone}
+          <AgentAvatar
+            data={data}
+            agent={briefBy}
             size={24}
             className="mt-px"
           />
@@ -212,7 +221,7 @@ export function V3Home({ data, go, act }: V3PageProps) {
               )}
             >
               <span className="flex items-center gap-[9px] font-medium text-foreground">
-                <Avatar name={a.name} tone={a.tone} />
+                <AgentAvatar data={data} agent={a} />
                 {a.name}
               </span>
               <span>

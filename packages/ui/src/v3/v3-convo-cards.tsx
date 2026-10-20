@@ -1,6 +1,7 @@
 import { Fragment } from "react";
 import { ago, Btn, StatusPill } from "./v3-bits";
 import { agentOf } from "./v3-model";
+import { viaOf } from "./v3-rows";
 import type {
   V3Agent,
   V3Ask,
@@ -29,7 +30,8 @@ export function Opening({
   const ticketId = thread.ticketId;
   if (!ticketId) return null;
   const agent = agentOf(data, thread.agentId);
-  const ceo = data.agents.find((a) => !a.reportsTo) ?? data.agents[0];
+  const ceo = agentOf(data, data.ceoId);
+  const via = viaOf(data, agent);
   // Only turn 1 knows who asked and when; if the early turns are not on
   // record, the hand-off time is the thread's start and the asker the CEO.
   const known = first?.n === 1 ? first : undefined;
@@ -51,6 +53,7 @@ export function Opening({
           ? `${who} started ${ticketId}`
           : `${who} handed ${ticketId} to ${agent.name}`}{" "}
         · {at}
+        {via && ` · steps come through ${via.label}`}
       </span>
       <span className="h-px flex-1 bg-[var(--v3-line)]" />
     </div>

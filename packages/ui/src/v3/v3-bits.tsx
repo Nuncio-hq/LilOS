@@ -15,7 +15,14 @@ import {
   useState,
 } from "react";
 import { cn } from "../lib/utils";
-import type { V3RecordRoute, V3Status, V3StepKind, V3Tone } from "./v3-types";
+import type {
+  V3Agent,
+  V3Data,
+  V3RecordRoute,
+  V3Status,
+  V3StepKind,
+  V3Tone,
+} from "./v3-types";
 
 /* Shared marks for v3. One rule: colour belongs to status; avatars and
    project marks are soft pastels, everything else is ink on paper. */
@@ -126,23 +133,75 @@ export function Avatar({
   tone,
   size = 20,
   className,
+  look,
 }: {
   name: string;
   tone: V3Tone;
   size?: number;
   className?: string;
+  /** An outside worker: its connector's mark on the connector's colour, in
+     a rounded square, so a bot never looks like a LilOS agent. */
+  look?: { mark: string; color: string };
 }) {
   return (
     <span
       aria-hidden
-      style={{ width: size, height: size, fontSize: Math.round(size * 0.5) }}
+      style={{
+        width: size,
+        height: size,
+        fontSize: Math.round(size * (look && look.mark.length > 1 ? 0.4 : 0.5)),
+        ...(look ? { background: look.color, color: "#fff" } : {}),
+      }}
       className={cn(
-        "inline-grid shrink-0 place-items-center rounded-full font-semibold leading-none",
-        TONE[tone],
+        "inline-grid shrink-0 place-items-center font-semibold leading-none",
+        look ? "rounded-[28%]" : ["rounded-full", TONE[tone]],
         className,
       )}
     >
-      {name.slice(0, 1).toUpperCase()}
+      {look ? look.mark : name.slice(0, 1).toUpperCase()}
+    </span>
+  );
+}
+
+/** An agent's face wherever it appears: a LilOS agent's letter on its tone,
+   or an outside worker's connector mark. */
+export function AgentAvatar({
+  data,
+  agent,
+  size,
+  className,
+}: {
+  data: V3Data;
+  agent: V3Agent;
+  size?: number;
+  className?: string;
+}) {
+  const via =
+    agent.kind === "outside"
+      ? data.connectors.find((c) => c.id === agent.via)
+      : undefined;
+  return (
+    <Avatar
+      name={agent.name}
+      tone={agent.tone}
+      size={size}
+      className={className}
+      look={via?.look}
+    />
+  );
+}
+
+/** The crown beside whoever holds the CEO position. */
+export function CeoMark({ className }: { className?: string }) {
+  return (
+    <span
+      title="Holds the CEO position"
+      className={cn(
+        "inline-flex h-[18px] shrink-0 items-center rounded-full bg-amber-100 px-1.5 font-semibold text-[10.5px] text-amber-800 tracking-wide dark:bg-amber-400/15 dark:text-amber-300",
+        className,
+      )}
+    >
+      CEO
     </span>
   );
 }

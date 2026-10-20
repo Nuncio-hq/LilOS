@@ -201,6 +201,7 @@ function ThreadBody({ data, go, act, t }: V3PageProps & { t: V3Thread }) {
             composer instead of through it. */}
         <div className="sticky bottom-0 border-[var(--v3-line)] border-t bg-[var(--v3-main)] pt-3 pb-5">
           <Composer
+            data={data}
             agent={agent}
             model={t.model}
             folder={t.folder}
@@ -222,7 +223,13 @@ function ThreadBody({ data, go, act, t }: V3PageProps & { t: V3Thread }) {
           peek is widened. */}
       <div className="hidden w-[232px] shrink-0 @min-[980px]:block">
         <div className="no-scrollbar sticky top-0 max-h-[calc(100dvh-46px)] overflow-y-auto pt-8">
-          <ThreadRail t={t} agent={agent} project={project} go={go} />
+          <ThreadRail
+            data={data}
+            t={t}
+            agent={agent}
+            project={project}
+            go={go}
+          />
         </div>
       </div>
     </div>

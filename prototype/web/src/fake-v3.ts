@@ -1,4 +1,5 @@
 import type { V3Data, V3Draft } from "@lilos/ui"
+import { CONNECTORS, OUTSIDE_THREADS, OUTSIDE_TICKETS, OUTSIDE_WORKERS } from "./fake-v3-outside"
 
 /* ?v3 mock company: one Monday at 12:04. Every number on every screen comes
    from these records, so Home, Work, Threads and People always agree. */
@@ -6,17 +7,13 @@ import type { V3Data, V3Draft } from "@lilos/ui"
 const AGENTS: V3Data["agents"] = [
   {
     id: "ceo",
-    name: "CEO",
+    name: "Chief",
     tone: "c",
     role: "Runs the company",
     hired: "1 Oct",
     runtime: "Hermes · profile ceo",
     model: "Opus 5.5 · High",
     schedule: "Always on · checks every ticket every 15 min",
-    connectors: [
-      { name: "Browser", icon: "web", on: true },
-      { name: "Mail", icon: "mail", on: true },
-    ],
     skills: ["planning", "code-review", "weekly-report"],
     spend: { used: 9.8, cap: 25, period: "week" },
     instructions: [
@@ -39,7 +36,6 @@ const AGENTS: V3Data["agents"] = [
     runtime: "Hermes · profile builder",
     model: "Opus 5.5 · High",
     schedule: "When given a ticket",
-    connectors: [{ name: "Browser", icon: "web", on: true }],
     skills: ["typescript", "playwright", "git-pr"],
     spend: { used: 31.2, cap: 60, period: "week" },
     instructions: [
@@ -62,7 +58,6 @@ const AGENTS: V3Data["agents"] = [
     runtime: "Hermes · profile reviewer",
     model: "Sonnet 5 · Medium",
     schedule: "When a ticket needs review",
-    connectors: [{ name: "Browser", icon: "web", on: true }],
     skills: ["ios-simulator", "screenshots"],
     spend: { used: 3.4, cap: 15, period: "week" },
     instructions: ["Check every result on a real device or browser before you call it done. Attach screenshots."],
@@ -79,11 +74,6 @@ const AGENTS: V3Data["agents"] = [
     runtime: "Hermes · profile marketer",
     model: "Sonnet 5 · Medium",
     schedule: "When given a ticket · posts at 9:00",
-    connectors: [
-      { name: "Browser", icon: "web", on: true },
-      { name: "Grok Bot", icon: "bolt", on: true },
-      { name: "Sheets", icon: "sheet", on: true },
-    ],
     skills: ["copywriting", "meta-ads", "x-threads"],
     spend: { used: 112, cap: 300, period: "month" },
     instructions: ["You write copy and run growth tests. Every claim needs a number behind it."],
@@ -100,11 +90,6 @@ const AGENTS: V3Data["agents"] = [
     runtime: "Hermes · profile scout",
     model: "Sonnet 5 · Medium",
     schedule: "When given a ticket · checks in every 30 min",
-    connectors: [
-      { name: "Browser", icon: "web", on: true },
-      { name: "Grok Bot", icon: "bolt", on: true },
-      { name: "Muse", icon: "spark", on: false },
-    ],
     skills: ["web-research", "creator-vetting", "sheets"],
     spend: { used: 4.1, cap: 10, period: "week" },
     instructions: [
@@ -132,10 +117,6 @@ const AGENTS: V3Data["agents"] = [
     runtime: "Hermes · profile designer",
     model: "Sonnet 5 · Medium",
     schedule: "Weekdays 14:00–18:00",
-    connectors: [
-      { name: "Browser", icon: "web", on: true },
-      { name: "Muse", icon: "spark", on: true },
-    ],
     skills: ["figma-export", "app-store-assets"],
     spend: { used: 2.2, cap: 10, period: "week" },
     instructions: ["You make screens and store assets. Show two options, never one."],
@@ -785,11 +766,13 @@ export const V3_DATA: V3Data = {
   company: "Oscar Co",
   me: "Oscar",
   today: "Monday, 19 October",
-  agents: AGENTS,
+  ceoId: "ceo",
+  agents: [...AGENTS, ...OUTSIDE_WORKERS],
+  connectors: CONNECTORS,
   projects: PROJECTS,
   goals: GOALS,
-  tickets: TICKETS,
-  threads: THREADS,
+  tickets: [...TICKETS, ...OUTSIDE_TICKETS],
+  threads: [...THREADS, ...OUTSIDE_THREADS],
   asks: ASKS,
   updates: UPDATES,
 }

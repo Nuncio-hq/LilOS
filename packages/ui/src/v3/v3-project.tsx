@@ -1,7 +1,7 @@
 import { FolderIcon, TargetIcon, UsersIcon } from "lucide-react";
 import { useState } from "react";
 import {
-  Avatar,
+  AgentAvatar,
   Meter,
   Page,
   ProjectMark,
@@ -88,7 +88,7 @@ export function V3ProjectPage({ data, go, id }: V3PageProps & { id: string }) {
               onClick={() => go({ page: "agent", id: a.id })}
               className="inline-flex items-center gap-1.5 text-foreground hover:underline"
             >
-              <Avatar name={a.name} tone={a.tone} />
+              <AgentAvatar data={data} agent={a} />
               {a.name}
             </button>
           ))}

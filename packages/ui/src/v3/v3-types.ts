@@ -15,11 +15,26 @@ export type V3Status =
 
 export type V3Tone = "c" | "b" | "r" | "m" | "s" | "d" | "n";
 
-export type V3Connector = {
-  name: string;
-  icon: "web" | "bolt" | "spark" | "mail" | "sheet";
-  /** Attached to this agent's sessions. */
-  on: boolean;
+/** An outside service agents use: a command on the Mac (CLI) or an MCP
+   server. LilOS keeps what to run and who uses it, never credentials (each
+   connector keeps its own login). Its name, mark and colour come from the
+   connector itself (an MCP server's serverInfo, or what you set when adding a
+   CLI), so LilOS code never names a provider; only data does. */
+export type V3ConnectorDef = {
+  id: string;
+  /** Display name, from the connector. */
+  label: string;
+  kind: "cli" | "mcp";
+  /** What LilOS runs: a command line, or an MCP server's command / URL. */
+  command: string;
+  /** What it does, one line. */
+  about: string;
+  /** ready: found and signed in · missing: not installed · signed-out: needs its own login. */
+  state: "ready" | "missing" | "signed-out";
+  /** Its mark: one or two characters on its colour. */
+  look: { mark: string; color: string };
+  /** Agents whose sessions get it. */
+  agents: string[];
 };
 
 export type V3Agent = {
@@ -28,13 +43,18 @@ export type V3Agent = {
   /** Avatar colour. */
   tone: V3Tone;
   role: string;
-  /** Agent id; absent = reports to you. */
+  /** Agent id; absent = reports to you (the CEO does). */
   reportsTo?: string;
+  /** Absent: a LilOS agent (a runtime + model working in a folder).
+     "outside": an always-on bot the CEO reaches through a connector; its look
+     and its steps come through that connector. */
+  kind?: "outside";
+  /** Outside workers: the connector id they are reached through. */
+  via?: string;
   hired: string;
   runtime: string;
   model: string;
   schedule: string;
-  connectors: V3Connector[];
   skills: string[];
   /** Dollars spent this period, and the cap. */
   spend: { used: number; cap: number; period: "week" | "month" };
@@ -132,6 +152,10 @@ export type V3Step = {
   del?: number;
   failed?: boolean;
   running?: boolean;
+  /** Where it ran, when not on your Mac: "Cloud · Linux". Absent = your Mac. */
+  where?: string;
+  /** A helper this step started (a cloud coding agent…) and where to watch it. */
+  helper?: { label: string; url: string };
 };
 
 /** Something a reply carries besides prose. */
@@ -277,7 +301,10 @@ export type V3Data = {
   company: string;
   me: string;
   today: string;
+  /** CEO is a position: the agent holding it. Everyone else reports to it. */
+  ceoId: string;
   agents: V3Agent[];
+  connectors: V3ConnectorDef[];
   projects: V3Project[];
   goals: V3Goal[];
   tickets: V3Ticket[];
@@ -301,6 +328,7 @@ export type V3Route =
   | { page: "agent"; id: string }
   | { page: "hire" }
   | { page: "guide" }
+  | { page: "settings" }
   /** A new chat with an agent; `agentId` preselects who. */
   | { page: "chat"; agentId?: string };
 
@@ -342,6 +370,15 @@ export type V3Actions = {
   }) => void;
   markSeen: (threadId: string) => void;
   hire: (agent: { name: string; role: string; model: string }) => void;
+  /** Moves the CEO position to this agent; everyone else reports to it. */
+  makeCeo: (agentId: string) => void;
+  /** Turns a connector on or off for one agent's sessions. */
+  toggleConnector: (connectorId: string, agentId: string) => void;
+  addConnector: (c: {
+    label: string;
+    kind: "cli" | "mcp";
+    command: string;
+  }) => void;
   /** Opens the ⌘K palette, optionally prefilled. */
   ask: (text?: string) => void;
 };

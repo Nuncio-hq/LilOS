@@ -1,6 +1,6 @@
 import { cn } from "../lib/utils";
 import {
-  Avatar,
+  AgentAvatar,
   ago,
   RowButton,
   Spinner,
@@ -9,10 +9,48 @@ import {
   TicketId,
 } from "./v3-bits";
 import { agentOf, ticketOf } from "./v3-model";
-import type { V3Data, V3Route, V3Thread, V3Ticket } from "./v3-types";
+import type {
+  V3Agent,
+  V3ConnectorDef,
+  V3Data,
+  V3Route,
+  V3Thread,
+  V3Ticket,
+} from "./v3-types";
 
 /* Rows shared by the goal, project and agent pages: the same ticket or
    thread always looks the same wherever it is listed. */
+
+/** The connector an outside worker is reached through; none for a LilOS agent. */
+export const viaOf = (d: V3Data, a: V3Agent): V3ConnectorDef | undefined =>
+  a.kind === "outside" ? d.connectors.find((c) => c.id === a.via) : undefined;
+
+/** An agent's face and name; an outside worker also says which connector it
+   is reached through, tiny and muted, only when the pane is wide enough. */
+export function AgentName({
+  data,
+  agent,
+  size,
+}: {
+  data: V3Data;
+  agent: V3Agent;
+  size?: number;
+}) {
+  const via = viaOf(data, agent);
+  return (
+    <span className="flex min-w-0 items-center gap-2">
+      <AgentAvatar data={data} agent={agent} size={size} />
+      <span className="truncate">
+        {agent.name}
+        {via && (
+          <span className="ml-1.5 hidden text-[11.5px] text-muted-foreground/70 @min-[680px]:inline">
+            via {via.label}
+          </span>
+        )}
+      </span>
+    </span>
+  );
+}
 
 export function TicketRow({
   data,
@@ -39,7 +77,7 @@ export function TicketRow({
       </span>
       {owner && (
         <span className="flex w-[108px] shrink-0 items-center gap-2 text-[13.5px] text-muted-foreground">
-          <Avatar name={who.name} tone={who.tone} size={18} />
+          <AgentAvatar data={data} agent={who} size={18} />
           {who.name}
         </span>
       )}
@@ -100,9 +138,8 @@ export function ThreadRow({
         </span>
       </span>
       {byAgent && (
-        <span className="flex w-[100px] shrink-0 items-center gap-2 text-[13.5px] text-muted-foreground">
-          <Avatar name={who.name} tone={who.tone} size={18} />
-          {who.name}
+        <span className="w-[100px] shrink-0 text-[13.5px] text-muted-foreground @min-[680px]:w-[170px]">
+          <AgentName data={data} agent={who} size={18} />
         </span>
       )}
       <span className="w-[96px] shrink-0">

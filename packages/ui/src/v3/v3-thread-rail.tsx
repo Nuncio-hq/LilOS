@@ -1,8 +1,15 @@
 import { CheckIcon, WorkflowIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "../lib/utils";
-import { Avatar, Diff, Meter, ProjectMark, span } from "./v3-bits";
-import type { V3Agent, V3PageProps, V3Project, V3Thread } from "./v3-types";
+import { AgentAvatar, Diff, Meter, ProjectMark, span } from "./v3-bits";
+import { viaOf } from "./v3-rows";
+import type {
+  V3Agent,
+  V3Data,
+  V3PageProps,
+  V3Project,
+  V3Thread,
+} from "./v3-types";
 
 /* The thread's right rail: where it runs, the plan, what it changed. */
 
@@ -53,11 +60,13 @@ function PlanDot({ state }: { state: "done" | "current" | "todo" }) {
 }
 
 export function ThreadRail({
+  data,
   t,
   agent,
   project,
   go,
 }: {
+  data: V3Data;
   t: V3Thread;
   agent: V3Agent;
   /** A chat's project; a ticket thread shows its ticket instead. */
@@ -69,6 +78,7 @@ export function ThreadRail({
   const changes = t.changes ?? [];
   const helpers = t.helpers ?? [];
   const planDone = plan.filter((p) => p.state === "done").length;
+  const via = viaOf(data, agent);
   return (
     <aside className="text-[13px]">
       <Head>Details</Head>
@@ -78,7 +88,7 @@ export function ThreadRail({
           onClick={() => go({ page: "agent", id: agent.id })}
           className="flex items-center gap-1.5 hover:underline"
         >
-          <Avatar name={agent.name} tone={agent.tone} size={18} />
+          <AgentAvatar data={data} agent={agent} size={18} />
           {agent.name}
         </button>
       </Kv>
@@ -106,7 +116,11 @@ export function ThreadRail({
           </Kv>
         )
       )}
-      <Kv k="Model">{t.model}</Kv>
+      {via ? (
+        <Kv k="Reached through">{via.label}</Kv>
+      ) : (
+        <Kv k="Model">{t.model}</Kv>
+      )}
       <Kv k="Folder">
         <span className="truncate font-mono text-[12px]">{t.folder}</span>
       </Kv>
@@ -118,10 +132,12 @@ export function ThreadRail({
       <Kv k="Started">
         {t.startedAt} · {span(t.minutes)}
       </Kv>
-      <Kv k="Context">
-        <Meter value={t.context} className="w-[60px]" />
-        {t.context}%
-      </Kv>
+      {t.context > 0 && (
+        <Kv k="Context">
+          <Meter value={t.context} className="w-[60px]" />
+          {t.context}%
+        </Kv>
+      )}
 
       {plan.length > 0 && (
         <>
