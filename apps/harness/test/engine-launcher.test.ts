@@ -6,9 +6,11 @@ import { join } from "node:path";
 import { LILOS_ENV_ALLOW_LIST } from "@lilos/contracts/env";
 import { SURFACES_ENV } from "@lilos/surfaces";
 import { describe, expect, it } from "vitest";
+import { connectEngineWs } from "../src/engine/client";
 import {
   commandLauncher,
   FatalEngineStart,
+  fakeEngineLauncher,
   hermesEngineLauncher,
   isFatalEngineStart,
 } from "../src/engine/launcher";
@@ -310,6 +312,40 @@ describe("AC-1 (#412) the engine env is allow-listed — no LilOS internals", ()
       else process.env.LILOS_SURFACES_URL = prevSurfaces;
     }
   });
+});
+
+describe("#752 the launcher hands the protocol token to the adapter", () => {
+  it("a url without the token is refused; the url the launcher returns still connects", async () => {
+    const launched = await fakeEngineLauncher({
+      repoRoot: process.cwd(),
+      tick: 1,
+      log: log(),
+    }).start();
+    try {
+      const bare = new URL(launched.url);
+      bare.search = "";
+      await expect(connectEngineWs(bare.toString())).rejects.toThrow();
+      const conn = await connectEngineWs(launched.url);
+      try {
+        const described = await conn.request<{
+          protocol: { name: string; version: number };
+        }>("describe");
+        expect(described.protocol).toEqual({
+          name: "lilos-engine",
+          version: 1,
+        });
+        expect(new URL(launched.url).hostname).toBe("127.0.0.1");
+        expect(new URL(launched.url).searchParams.get("token")).toHaveLength(
+          32,
+        );
+      } finally {
+        conn.close();
+      }
+    } finally {
+      launched.process?.kill();
+      await launched.process?.exited;
+    }
+  }, 20_000);
 });
 
 describe("AC-1 (#699) the exited-before-ready verdict waits for stdio close", () => {

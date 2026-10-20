@@ -71,6 +71,19 @@ export interface EngineSocket {
 
 type EngineSocketFactory = (url: string) => EngineSocket;
 
+/** The protocol credential rides `?token=` (D-#564, #752). Errors the
+ *  supervisor logs must name the endpoint without that secret. */
+const endpointForLog = (url: string): string => {
+  try {
+    const shown = new URL(url);
+    shown.search = "";
+    shown.hash = "";
+    return shown.toString();
+  } catch {
+    return url.replace(/\?[^#]*/, "");
+  }
+};
+
 const defaultFactory: EngineSocketFactory = (url) => {
   const Impl = (globalThis as { WebSocket?: new (u: string) => EngineSocket })
     .WebSocket;
@@ -122,14 +135,16 @@ export function connectEngineWs(
     socket.addEventListener("error", () => {
       if (settled) return;
       settled = true;
-      reject(new Error(`engine socket error before open (${url})`));
+      reject(
+        new Error(`engine socket error before open (${endpointForLog(url)})`),
+      );
     });
     socket.addEventListener("close", (event) => {
       if (!settled) {
         settled = true;
         reject(
           new Error(
-            `engine socket closed during handshake: ${event.code ?? "?"}`,
+            `engine socket closed during handshake (${endpointForLog(url)}): ${event.code ?? "?"}`,
           ),
         );
         return;

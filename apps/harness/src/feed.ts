@@ -1,4 +1,4 @@
-import { equalSecret } from "@lilos/contracts/auth";
+import { authorizeLoopbackUpgrade } from "@lilos/contracts/auth";
 import type { EngineEvent } from "@lilos/contracts/engine";
 import type { Harness } from "./harness";
 
@@ -16,9 +16,8 @@ import type { Harness } from "./harness";
  * handshakes a browser sends. Only `/healthz` stays open, and it answers
  * just the readiness nonce `{ok, instanceId}` (#273). Not: an open feed
  * because it "only reads", or a relay-minted feed token in `welcome` (the
- * install token already reaches every feed client). Known gap: the engine
- * adapters' own `/ws` (each engine package's scripts/serve.ts) binds every
- * interface with no token yet — #752.
+ * install token already reaches every feed client). The engine adapters'
+ * own `/ws` uses this same gate and binds 127.0.0.1 (#752).
  *
  * Runtime-neutral: index.ts wires it to a Bun WebSocket server.
  */
@@ -199,59 +198,15 @@ function createFeed(deps: FeedDeps, frameDelayMs = 0) {
 }
 
 /**
- * #564 AC-1: the feed's upgrade gate — index.ts runs it before
- * `server.upgrade`, so a refused socket never attaches and never sees a
- * held or live frame. The credential is the install token, the same one
- * `/host` and the relay hello use; a browser WebSocket can't set headers,
- * so it rides the URL as `?token=` (same carrier the surfaces viewer's
- * `/view` socket uses).
- *
- * `Origin`: a browser always sends it; script/native clients (Bun
- * `WebSocket`, `ws`, curl) don't — its absence means "not a browser", not
- * a failure. When present it must be the app's own: a loopback http(s)
- * host (the dev server, `vite preview`, and e2e pages pick their own
- * ports, so the check is scheme+host, not port), `file://`, or `null` —
- * Blink serializes a file: document's origin as `null` unless
- * `--allow-file-access-from-files` is set, so the packaged Electron
- * window can arrive as either. `null` also covers other opaque origins
- * (sandboxed iframes, data:); the token remains the credential — this
- * check only filters serialized foreign origins.
+ * D-#564 AC-1: the feed's upgrade gate — index.ts runs it before
+ * `server.upgrade`. The check itself is `authorizeLoopbackUpgrade` (the
+ * same one the engine adapter uses, #752): install token as `?token=`,
+ * constant-time compare, app Origin when a browser sent one. A refusal
+ * never attaches and never sees a held or live frame.
  */
 export function authorizeFeedUpgrade(
   req: Request,
   token: string,
 ): Response | undefined {
-  /* Fail closed: an empty configured credential must never authenticate.
-     #611: the `?token=` credential is a secret — constant-time compare. */
-  if (
-    !token ||
-    !equalSecret(new URL(req.url).searchParams.get("token") ?? "", token)
-  ) {
-    return new Response("unauthorized\n", { status: 401 });
-  }
-  const origin = req.headers.get("origin");
-  if (origin !== null && !appOrigin(origin)) {
-    return new Response("forbidden origin\n", { status: 403 });
-  }
-  return undefined;
+  return authorizeLoopbackUpgrade(req, token);
 }
-
-/* A foreign page can reach 127.0.0.1 over a WebSocket — the handshake is
-   not CORS-gated — but its Origin is the site's own. Loopback-only app
-   origins keep such a page out even if a token ever leaked to it. */
-const appOrigin = (origin: string): boolean => {
-  if (origin === "null" || origin === "file://") return true;
-  try {
-    const url = new URL(origin);
-    if (url.protocol !== "http:" && url.protocol !== "https:") return false;
-    const host = url.hostname.replace(/^\[|\]$/g, "");
-    return (
-      host === "localhost" ||
-      host.endsWith(".localhost") ||
-      host === "127.0.0.1" ||
-      host === "::1"
-    );
-  } catch {
-    return false;
-  }
-};

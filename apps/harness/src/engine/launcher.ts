@@ -1,7 +1,9 @@
 import { spawn, spawnSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { scrubLilosEnv } from "@lilos/contracts/env";
+import { withEngineProtocolToken } from "@lilos/contracts/auth";
+import { ENGINE_PROTOCOL_TOKEN_ENV, scrubLilosEnv } from "@lilos/contracts/env";
 import {
   HERMES_HOST_CONFLICT_EXIT_CODE,
   HERMES_TOO_OLD_EXIT_CODE,
@@ -70,7 +72,9 @@ export interface EngineLauncher {
    `env | grep LILOS` must not be handed the relay token or pointers into
    ~/.lilos). Entries a session legitimately needs (the gateway URL +
    engine token the lilos plugin reads) ride `options.env` — merged AFTER
-   the scrub, so an explicit grant always wins. */
+   the scrub, so an explicit grant always wins. The protocol credential
+   (D-#564, #752) is one of those grants: minted per launch, not inherited
+   from the harness env, and not on the allow-list. */
 
 export interface CommandLauncherOptions {
   name: string;
@@ -293,6 +297,24 @@ export function fakeServeCommand(options: {
   ];
 }
 
+/** D-#564 (#752): mint the adapter's protocol credential, grant it on the
+ *  spawn, and attach it to the url the supervisor connects with. The child
+ *  prints LISTENING without the secret. */
+export function startWithProtocolToken(
+  options: CommandLauncherOptions,
+): Promise<LaunchedEngine> {
+  const token = randomBytes(16).toString("hex");
+  return commandLauncher({
+    ...options,
+    env: { ...options.env, [ENGINE_PROTOCOL_TOKEN_ENV]: token },
+  })
+    .start()
+    .then((launched) => ({
+      ...launched,
+      url: withEngineProtocolToken(launched.url, token),
+    }));
+}
+
 /** `fake serve` through the command launcher — the CI/dev engine. */
 export function fakeEngineLauncher(options: {
   repoRoot: string;
@@ -307,13 +329,14 @@ export function fakeEngineLauncher(options: {
     name: "engine-fake",
     // Build argv inside start(): a bundle without the fake binary fails as a
     // supervised crash with a plain reason, not an opaque harness boot error.
+    // `async` so that throw rejects the start promise (AC-4).
     start: async () =>
-      commandLauncher({
+      startWithProtocolToken({
         name: "engine-fake",
         command: fakeServeCommand(options),
         readyPattern: /LISTENING (ws:\/\/\S+)/,
         log: options.log,
-      }).start(),
+      }),
   };
 }
 
@@ -396,7 +419,7 @@ export function hermesEngineLauncher(options: {
       }
       const command = hermesServeCommand({ ...options, hermesBin });
       options.log.info("hermes binary", { hermesBin });
-      return commandLauncher({
+      return startWithProtocolToken({
         name: "hermes",
         command,
         readyPattern: /LISTENING (ws:\/\/\S+)/,
@@ -407,7 +430,7 @@ export function hermesEngineLauncher(options: {
         ],
         env: options.env,
         log: options.log,
-      }).start();
+      });
     },
   };
 }

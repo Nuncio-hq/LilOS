@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
@@ -216,6 +217,10 @@ async function bootSteerlessEngine(port: number): Promise<{
   url: string;
   stop: () => Promise<void>;
 }> {
+  /* #752: serve.ts refuses /ws without the per-launch token. The harness
+     connects to LILOS_ENGINE_URL as an external engine, so the token rides
+     that url (ENGINE_PROTOCOL_TOKEN_ENV in packages/contracts/src/env.ts). */
+  const token = randomBytes(16).toString("hex");
   const proc = spawn(
     "bun",
     [
@@ -226,7 +231,11 @@ async function bootSteerlessEngine(port: number): Promise<{
       "--tag",
       "e2e-371",
     ],
-    { cwd: repo, stdio: ["ignore", "pipe", "inherit"] },
+    {
+      cwd: repo,
+      env: { ...process.env, LILOS_ENGINE_PROTOCOL_TOKEN: token },
+      stdio: ["ignore", "pipe", "inherit"],
+    },
   );
   const url = await new Promise<string>((resolve, reject) => {
     let buf = "";
@@ -237,9 +246,11 @@ async function bootSteerlessEngine(port: number): Promise<{
     proc.stdout?.on("data", (d) => {
       buf += d.toString();
       const m = buf.match(/LISTENING (ws:\/\/\S+)/);
-      if (m) {
+      if (m?.[1]) {
         clearTimeout(timer);
-        resolve(m[1]);
+        const authed = new URL(m[1]);
+        authed.searchParams.set("token", token);
+        resolve(authed.toString());
       }
     });
   });
