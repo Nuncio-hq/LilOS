@@ -156,6 +156,9 @@ export * from "./types";
 // UX v2 prototype: threads by project, agent as a per-thread picker
 export { V2Shell } from "./v2/v2-shell";
 export type * from "./v2/v2-types";
+// UX v3 prototype: the calm company (People, Work, Goals; Notion-like)
+export { V3Shell } from "./v3/v3-shell";
+export type * from "./v3/v3-types";
 export type { TreeNode } from "./workbench/artifacts";
 export { buildTree, sessionArtifacts, turnSteps } from "./workbench/artifacts";
 export { BackgroundPanel } from "./workbench/background-panel";
