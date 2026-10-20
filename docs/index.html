@@ -55,19 +55,20 @@ input{width:100%;max-width:420px;padding:8px 12px;border-radius:8px;border:1px s
 
 <section id="direction">
   <h2>Where it is going</h2>
-  <p><span class="tag">agreed with Oscar 2026-10-14, revised 2026-10-15 · prototypes merged · not decisions yet</span> Each becomes a decision only when the slice implementing it merges. Until then the decisions below stay in force.</p>
-  <h3>UX v2: threads by project, no DMs (<a href="https://github.com/Nuncio-hq/LilOS/issues/749">#749</a>)</h3>
+  <p><span class="tag">agreed with Oscar 2026-10-14, revised 2026-10-15 and 2026-10-20 · prototypes merged · not decisions yet</span> Each becomes a decision only when the slice implementing it merges. Until then the decisions below stay in force.</p>
+  <h3>UX v3: the calm company, threads by project, no DMs (<a href="https://github.com/Nuncio-hq/LilOS/issues/749">#749</a>, <a href="https://github.com/Nuncio-hq/LilOS/issues/767">#767</a>)</h3>
   <ul>
-    <li>Threads (= engine sessions) stay the unit and live under a <b>project</b> (or "No project"). DMs go away. Who works a thread is an <b>agent picker</b> next to the model: a Hermes profile today; other runtimes later through ACP (<a href="https://github.com/Nuncio-hq/LilOS/issues/111">#111</a>).</li>
-    <li>The list stays short: needs-you, failed and finished-not-seen float up; running threads fold into one "N working" line; quiet threads settle out. A company home shows who is at work, what needs you, and recent activity.</li>
-    <li>Prototype: <code>packages/ui/src/v2</code> + <code>prototype/web/src/v2-app.tsx</code>, open <code>localhost:5173/?v2</code>. Its later slices rewrite <a href="#d-25-3">D-#25</a> (DM = one employee) and <a href="#d-113">D-#113</a> (DM owns the folder).</li>
+    <li><b>v3 replaces v2</b> (Oscar, 2026-10-20): Notion-like, colour only for status. People, Work, Goals plus live Threads; every row says who holds it, its state, since when, and what it waits on.</li>
+    <li>Threads (= engine sessions) stay the unit, under a <b>project</b> or as a plain chat. DMs go away. An <b>agent picker</b> sits next to the model: a Hermes profile today; other runtimes later through ACP (<a href="https://github.com/Nuncio-hq/LilOS/issues/111">#111</a>). A thread reads as a conversation with each turn's work folded.</li>
+    <li><b>One place to stand</b>: records (thread, ticket, agent, goal, project) open in a side peek with a trail beside the page you are on. <b>⌘K</b> replaces the CEO chat: an answer, or a draft plan that starts on one keypress.</li>
+    <li>Prototype: <code>packages/ui/src/v3</code>, open <code>localhost:5173/?v3</code> (<code>?v2</code> is superseded). Later slices rewrite <a href="#d-25-3">D-#25</a> (DM = one employee) and <a href="#d-113">D-#113</a> (DM owns the folder).</li>
   </ul>
   <h3>The AI company: a CEO runs the work through tickets (<a href="https://github.com/Nuncio-hq/LilOS/issues/746">#746</a>)</h3>
   <ul>
     <li>Oscar is the <b>Chairman</b> and talks to one <b>CEO</b>, a position any agent can hold (Paperclip-style). Every agent has the same shape: role, reports-to, runtime + model, instructions, memory, skills, connectors. The CEO plans, splits the work into tickets, gives each to the right worker, checks the result and reports back. It acts on its own; only risky actions (spending money, sending anything outside, dangerous commands) ask Oscar.</li>
     <li>Lean tickets, Paperclip-style: goal → ticket → one assignee → status, owned by the relay and driven through gateway tools (<code>ticket_*</code>). An assignee is a LilOS agent or an outside worker the CEO names.</li>
     <li><b>LilOS stays provider-neutral</b> (revised 2026-10-15). Runtimes run threads in a folder: Hermes now; later ones only through ACP with one shared mapping, the way T3 Code runs ACP agents (contracts first, <a href="https://github.com/Nuncio-hq/LilOS/issues/764">#764</a>; Codex dropped). Outside always-on bots (Grok Bot, Muse, anything later) are <b>connectors</b>: their own CLI or MCP server, attached to an agent's sessions. LilOS never names a provider in contracts, relay, harness or UI types, never wraps a provider's API, never stores its credentials. Test: remove every connector and LilOS still builds and runs; a new provider needs only its CLI or MCP installed. <em>Not: a bot contract with one adapter per provider, or bots listed as runtimes (the 2026-10-14 plan).</em></li>
-    <li>Prototype: <code>packages/ui/src/company</code>, open <code>localhost:5173/?company</code>. Paused, and it still names providers; it gets redone inside v2 without them.</li>
+    <li>Prototype: tickets, goals, the CEO and ⌘K plans live in the v3 prototype (<code>?v3</code>, Work and a ticket's page). The older <code>packages/ui/src/company</code> (<code>?company</code>) is superseded.</li>
   </ul>
 <pre><code>Oscar (Chairman) ── talks to the CEO, approves risky actions
    │

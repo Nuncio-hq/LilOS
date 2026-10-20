@@ -770,6 +770,12 @@ describe("AC-1 DM tools over the gateway (issue #340)", () => {
         );
         expect(page.topic).toBe(topic);
         expect((page.body as string).length).toBeGreaterThan(40);
+        if (topic === "gateway") {
+          // #754 — the call serves the catalog, including an approval tool.
+          const text = page.body as string;
+          expect(text).toContain("`folder`:");
+          expect(text).toContain("`schedule_create` (opens an approval ask)");
+        }
       }
       // An unknown topic is a params error, not a result.
       const bad = await dmCall(api.baseUrl, "t-guide", "guide", {

@@ -1363,3 +1363,44 @@ form:has(textarea:not(:placeholder-shown), [aria-label="Stop (⌘.)"])
     animation: none;
   }
 }
+
+/* ---- UX v3 prototype (the calm company) ----
+   Notion-like: warm paper, ink text, hairlines instead of boxes, serif page
+   titles over a sans body. No shadows except the ⌘K palette; colour only on
+   status. */
+.lilos-v3 {
+  --v3-side: oklch(0.982 0.002 90);
+  --v3-main: oklch(1 0 0);
+  --v3-soft: oklch(0.975 0.002 90);
+  --v3-line: color-mix(in oklch, var(--foreground) 9%, transparent);
+  --v3-hover: color-mix(in oklch, var(--foreground) 5%, transparent);
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+.dark .lilos-v3 {
+  --v3-side: oklch(0.2 0.003 90);
+  --v3-main: oklch(0.225 0.003 90);
+  --v3-soft: oklch(0.255 0.003 90);
+}
+.lilos-v3-serif {
+  font-family: Charter, "Iowan Old Style", Palatino, Georgia, serif;
+  letter-spacing: -0.005em;
+}
+@keyframes lilos-v3-line-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.lilos-v3-line-in {
+  animation: lilos-v3-line-in 0.25s ease both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lilos-v3-line-in {
+    animation: none;
+  }
+}
