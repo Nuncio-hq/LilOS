@@ -43,9 +43,6 @@ export type BrowserDownload = {
   when?: string;
 };
 
-/** A saved sign-in for the current site (the password never leaves the store). */
-export type SavedLogin = { id: string; username: string };
-
 /** panel = docked beside the chat · window = popped out ·
     thread = embedded in a thread's Workbench, showing only that thread's tabs. */
 export type BrowserMode = "panel" | "window" | "thread";

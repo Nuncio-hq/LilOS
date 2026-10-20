@@ -46,40 +46,32 @@ describe("issue #246", () => {
     expect(theme).toContain(".dark");
   });
 
-  test("AC-2 the primary tint is teal — never the old near-black — and buttons keep their fills", () => {
+  test("AC-2 the primary tint is teal — never the old near-black", () => {
     expect(theme).not.toMatch(/--primary:\s*oklch\(0\.2/); // old near-black is gone
-    // #230 regression class: the borderless-card sweep must exclude buttons.
-    expect(theme).toContain(':not([data-slot="button"])');
     // DM-surface primary buttons use the tint, not a black slab.
     expect(threadSurface).not.toMatch(/<button[^>]*\bbg-foreground\b/);
   });
 
-  test("AC-3 the colour field + floating window are browser-only", () => {
-    // Wallpaper and the drifting orbs exist only under .lilos-float.
-    expect(theme).toMatch(/body:has\(\.lilos-float\)\s*\{[^}]*radial-gradient/);
-    expect(theme).toMatch(/body:has\(\.lilos-float\)::before/);
-    // The inset margin + rounded window is float-only chrome.
-    const win = theme.match(/\.lilos-desktop\.lilos-float\s*\{([^}]*)\}/);
-    expect(win?.[1]).toContain("margin: 14px");
-    expect(win?.[1]).toContain("border-radius");
+  test("AC-3 no wallpaper and no window frame: one flat window, the OS draws the edge", () => {
+    // The colour field and the floating inset window left with the old shell.
+    expect(theme).not.toMatch(/lilos-float|lilos-desktop/);
+    expect(theme).not.toMatch(/body:has\(/);
     // The Electron preload tells the renderer it is the desktop shell.
     expect(preload).toContain("isDesktop: true");
   });
 
-  test("AC-4 dialogs and floating panels are near-opaque glass", () => {
+  test("AC-4 dialogs are near-opaque glass", () => {
     const sheet = theme.match(
       /\[data-slot="dialog-content"\],\s*\[role="alertdialog"\]\s*\{([^}]*)\}/s,
     );
     expect(sheet?.[1]).toMatch(/rgb\(255 255 255 \/ 0\.9[0-9]/);
     expect(sheet?.[1]).toContain("backdrop-filter");
-    expect(theme).toContain(".lilos-glass.fixed");
   });
 
-  test("AC-5 prefers-reduced-motion kills the drifting background and the rise animations", () => {
+  test("AC-5 prefers-reduced-motion kills the rise and orb animations", () => {
     const rm = theme.match(
       /@media \(prefers-reduced-motion: reduce\)\s*\{([\s\S]*?)\n\}/,
     );
-    expect(rm?.[1]).toContain("::before"); // the drifting colour field
     expect(rm?.[1]).toContain("lilos-rise");
     expect(rm?.[1]).toContain("lilos-orb");
     expect(rm?.[1]).toContain("animation: none");

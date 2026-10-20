@@ -21,9 +21,9 @@
  *
  * Before/after protocol: run on main (or the pre-PR commit), run on the PR
  * head, diff the medians. --shots captures the 50-turn thread light + dark
- * at 1288×900 for AC-2's pixel-identical evidence. Turn 1 streams in Focus
- * (a fresh send always lands there); turns ≥2 run in the thread panel —
- * the view the issue profiled.
+ * at 1288×900 for AC-2's pixel-identical evidence. Every turn streams in the
+ * side peek's thread panel beside Threads (a new chat's first send lands
+ * there too) — the view the issue profiled.
  */
 
 import { execFileSync, spawn } from "node:child_process";
@@ -37,7 +37,13 @@ import {
   type Locator,
   type Page,
 } from "@playwright/test";
-import { bootStack, freePort, pickPorts } from "../helpers/stack";
+import {
+  bootStack,
+  freePort,
+  openDefaultAgent,
+  pickPorts,
+  v3Peek,
+} from "../helpers/stack";
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/bench
 const repo = path.resolve(here, "../..");
@@ -171,31 +177,24 @@ async function cdpMetrics(cdp: CDPSession) {
 const ltCount = (page: Page) =>
   page.evaluate(() => (window as unknown as { __lt: number }).__lt);
 
-/** First-run → land on Default's DM (mirrors the specs' dmDefault). */
-async function dmDefault(webUrl: string, page: Page) {
-  await page.goto(`${webUrl}/`);
-  const aside = page.locator("aside");
-  await expect(aside.getByRole("button", { name: /default/i })).toBeVisible({
-    timeout: 30_000,
-  });
-  const dmBtn = page.getByRole("button", {
-    name: /open dm|set up later|message/i,
-  });
-  if (
-    await dmBtn
-      .first()
-      .isVisible()
-      .catch(() => false)
-  ) {
-    await dmBtn.first().click();
-  } else {
-    await aside.getByRole("button", { name: /default/i }).click();
-  }
-  await expect(page).toHaveURL(/\/dm\//);
+/** First run done → the default agent's new-chat draft, open beside
+    Threads (`#?page=threads&open=newchat:<id>`). */
+async function openDraft(webUrl: string, page: Page) {
+  const agent = await openDefaultAgent(page, webUrl);
+  await page.goto(
+    `${webUrl}/#?page=threads&open=newchat:${encodeURIComponent(agent.id)}`,
+  );
+  const box = v3Peek(page).getByPlaceholder(`Message ${agent.name}…`);
+  await expect(box).toBeVisible({ timeout: 30_000 });
+  return box;
 }
 
+/* The thread panel's own composer, pinned to the panel: the placeholder
+   follows the turn (idle "Reply to…", mid-turn "…is working"/"…is waiting"). */
 const send = async (page: Page, text = PROMPT) => {
-  const box = page.locator("textarea").last();
+  const box = page
+    .locator("[data-thread-panel]")
+    .getByPlaceholder(/Reply to |is working|is waiting/);
   await box.fill(text);
   await box.press("Enter");
 };
@@ -255,20 +254,21 @@ async function trial(shotsDir: string): Promise<Map<number, Window>> {
         if (shotsDir) await page.addInitScript(FREEZE_TIMES);
         const cdp = await context.newCDPSession(page);
         await cdp.send("Performance.enable");
-        await dmDefault(preview.url, page);
+        const box = await openDraft(preview.url, page);
 
-        const focus = page.locator("[data-thread]");
+        const panel = page.locator("[data-thread-panel]");
         let m0 = await snap(cdp, page);
-        await send(page, promptFor(1));
-        await waitSettled(focus, 1);
+        /* Turn 1 is the draft's own send: Enter swaps the draft for the
+           thread in the same peek (so the window brackets Enter → settled,
+           which `startChat` cannot — it clicks Send itself). */
+        await box.fill(promptFor(1));
+        await box.press("Enter");
+        await waitSettled(panel, 1);
         await quiet(page);
         out.set(1, between(m0, await snap(cdp, page)));
 
-        /* The same thread, peeked open in the panel beside the feed — the
-           layout the issue profiled. */
-        const panelUrl = page.url().replace(/\/focus.*$/, "");
-        await page.goto(panelUrl);
-        const panel = page.locator("[data-thread-panel]");
+        /* Turns ≥2 reply in that same open thread — the panel beside the
+           list, the layout the issue profiled. */
         await expect(panel).toBeVisible({ timeout: 60_000 });
 
         let shot50 = false;
@@ -365,9 +365,7 @@ async function takeShots(page: Page, dir: string, mix = false) {
   await page.mouse.move(0, 0);
   const scrollBottom = () =>
     page.evaluate(() => {
-      for (const el of document.querySelectorAll(
-        "[data-thread-panel] *, [data-thread] *",
-      ))
+      for (const el of document.querySelectorAll("[data-thread-panel] *"))
         if (el.scrollHeight > el.clientHeight + 4)
           el.scrollTop = el.scrollHeight;
     });

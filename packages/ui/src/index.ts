@@ -31,8 +31,6 @@ export {
   useDraft,
 } from "./lib/drafts";
 export * from "./lib/helpers";
-// scheduled tasks (issue #136)
-export * from "./schedule/schedule-text";
 // shell
 export { StatusBanner } from "./shell/banner";
 export { ShortcutsDialog } from "./shell/shortcuts-dialog";

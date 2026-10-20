@@ -42,13 +42,10 @@ describe("issue #508", () => {
     expect(promptInput).toContain("<InputGroup");
     expect(inputGroup).toContain('data-slot="input-group"');
 
-    // The capsule's fills are the theme tokens, dark pinned under .dark.
-    expect(rule(`.lilos-desktop ${CAPSULE}`)).toContain(
-      "rgb(255 255 255 / 0.75)",
-    );
-    expect(rule(`.dark .lilos-desktop ${CAPSULE}`)).toContain(
-      "rgb(255 255 255 / 0.06)",
-    );
+    // The capsule's fill is the theme's `--glass` token (dark pinned under
+    // .dark in the token block); no window-frame override repaints it.
+    expect(rule(CAPSULE)).toContain("background: var(--glass)");
+    expect(theme).not.toMatch(/\.lilos-desktop/);
 
     /* The fill must reach the token instantly, not fade to it: a
        background-color transition paints the near-opaque light glass for

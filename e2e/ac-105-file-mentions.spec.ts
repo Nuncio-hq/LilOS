@@ -389,15 +389,21 @@ test("AC-3 + AC-4 picking a file inserts a chip; Backspace removes it; it surviv
   // Send: the message shows the mention as a chip (inline code). The session
   // already runs in the repo (the draft's Folder chip carried its cwd through,
   // like #113) — the Files section above could not have searched it otherwise.
+  /* Turns are addressed by position, never by a count taken here: right after
+     the reload above the thread has not re-rendered its turns yet (the count
+     reads 0), so a relative "+1" was met by the FIRST turn re-appearing, and
+     `turns.last()`'s settled footer was that first turn's — the spec moved on
+     while the second turn still ran, and the follow-up below was steered into
+     it (no third turn, ever). */
   const turns = panel(page).locator("[data-agentturn]");
-  const turnsBefore = await turns.count();
+  await expect(turns).toHaveCount(1, { timeout: 30_000 });
   await replyBox(page).press("Enter");
   await expect(
     page.locator("code").filter({ hasText: "@src/app.tsx" }).first(),
   ).toBeVisible({ timeout: 30_000 });
-  await expect(turns).toHaveCount(turnsBefore + 1, { timeout: 30_000 });
-  // The new turn's own settled footer — the first turn's is already there.
-  await expectSettled(turns.last());
+  await expect(turns).toHaveCount(2, { timeout: 30_000 });
+  // The second turn's own settled footer — the first turn's is already there.
+  await expectSettled(turns.nth(1));
   await page.reload();
   await expect(
     page.locator("code").filter({ hasText: "@src/app.tsx" }).first(),
@@ -411,11 +417,13 @@ test("AC-3 + AC-4 picking a file inserts a chip; Backspace removes it; it surviv
 
   // AC-4: a follow-up mention reaches the engine as plain text — the fake's
   // reply plan echoes it verbatim. The previous turn is settled (above): a
-  // message sent mid-turn is a steer (no new reply), not a follow-up.
-  const followBefore = await turns.count();
+  // message sent mid-turn is a steer (no new reply), not a follow-up. After
+  // the reload both turns are back, and the second one is already over.
+  await expect(turns).toHaveCount(2, { timeout: 30_000 });
+  await expectSettled(turns.nth(1));
   await replyBox(page).fill("note @docs/guide.md ");
   await replyBox(page).press("Enter");
-  await expect(turns).toHaveCount(followBefore + 1, { timeout: 30_000 });
+  await expect(turns).toHaveCount(3, { timeout: 30_000 });
   await expect(turns.last()).toContainText("Noted. Plan for this session", {
     timeout: 30_000,
   });

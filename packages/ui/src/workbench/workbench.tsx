@@ -115,7 +115,7 @@ import {
 } from "./artifacts";
 import { BackgroundPanel } from "./background-panel";
 import { CommitBar } from "./commit-bar";
-import { DiffView } from "./diff-view";
+import { DiffView, openPaths } from "./diff-view";
 import { TreeNodes } from "./file-tree-nodes";
 import { LivePreview, type LiveSurfaces, LiveTerminal } from "./live";
 import { OpenPathButton } from "./open-path";
@@ -948,6 +948,9 @@ export function Workbench({
     work?.path ??
     (work?.branch ? `.lilos/wt/${work.ticket.toLowerCase()}` : "main");
   const shown = sel ? diffs.filter((d) => d.path === sel) : diffs;
+  /* Which of the shown files start open (a huge working tree starts mostly
+     collapsed — see `openPaths`). */
+  const startOpen = useMemo(() => openPaths(shown), [shown]);
   const addT = diffs.reduce((s, d) => s + d.add, 0);
   const delT = diffs.reduce((s, d) => s + d.del, 0);
   const count = (n: number) =>
@@ -1588,7 +1591,12 @@ export function Workbench({
                   )}
                 </div>
                 {shown.map((d) => (
-                  <div key={d.path} className="flex items-start gap-2">
+                  <div
+                    /* A file picked from the Files tab remounts open, even if
+                       the list started it collapsed. */
+                    key={sel ? `${d.path}#picked` : d.path}
+                    className="flex items-start gap-2"
+                  >
                     {/* Stage checkbox — the ship bar commits the checked
                       set (issue #107 AC-1; all checked by default). */}
                     {shipBar && (
@@ -1603,6 +1611,7 @@ export function Workbench({
                     <div className="min-w-0 flex-1">
                       <DiffView
                         d={d}
+                        defaultOpen={startOpen.has(d.path)}
                         comments={{
                           list: dc.comments.filter((c) => c.path === d.path),
                           onAdd: dc.add,

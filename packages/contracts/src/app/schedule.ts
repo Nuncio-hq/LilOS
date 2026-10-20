@@ -7,9 +7,9 @@ import { Timestamp } from "./domain";
  * employee on a schedule. The relay owns the task records (D-#25); the
  * engine host owns the clock and fires each run as a `conversations.open`.
  *
- * The schedule math here is the same algorithm `packages/ui`'s
- * `schedule/schedule-text.ts` renders — the UI keeps its own copy because
- * `packages/ui` deliberately has no contracts dependency.
+ * `packages/ui` keeps its own copy of the cron check (`validCron` in
+ * `schedule/schedule-text.ts`) because it deliberately has no contracts
+ * dependency.
  */
 
 export const ScheduleKind = z.enum([

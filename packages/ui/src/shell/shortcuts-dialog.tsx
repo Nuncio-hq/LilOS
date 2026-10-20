@@ -8,14 +8,14 @@ import { ScrollArea } from "../components/ui/scroll-area";
    reserves, so they render (and are labelled) only inside the Electron
    shell where the menu owns them. */
 
-export interface ShortcutRow {
+interface ShortcutRow {
   keys: string;
   action: string;
   /** True = desktop app only — the browser reserves the chord. */
   desktop?: boolean;
 }
 
-export const SHORTCUTS: ShortcutRow[] = [
+const SHORTCUTS: ShortcutRow[] = [
   {
     keys: "⌘K",
     action: "Search — jump to a person, a thread or a page",

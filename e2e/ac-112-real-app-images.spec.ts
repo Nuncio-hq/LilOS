@@ -359,6 +359,14 @@ test("AC-3 thumbnails render from stored refs, survive reload + reopen", async (
 test("AC-4 oversize and too many files are refused and send nothing", async ({
   page,
 }) => {
+  /* React reports a state write made while another component renders as a
+     console error ("Cannot update a component (`X`) while rendering a
+     different component") — a render-phase write in the attach path. */
+  const errors: string[] = [];
+  page.on("console", (m) => {
+    if (m.type() === "error") errors.push(m.text());
+  });
+  page.on("pageerror", (e) => errors.push(String(e)));
   await draftDefault(page, stack.webUrl);
   // Serial mode shares the stack: assert the DM's conversation count doesn't
   // grow when a send is refused.
@@ -463,6 +471,12 @@ test("AC-4 oversize and too many files are refused and send nothing", async ({
       },
     ]),
   ).rejects.toMatchObject({ data: { code: "attachment_too_large" } });
+
+  // The refusals above ran through both composers' attach paths: none of
+  // them may have written state (the toast) while another component rendered.
+  expect(
+    errors.filter((e) => /while rendering a different component/.test(e)),
+  ).toEqual([]);
 });
 
 test("AC-5 engine-fake receives the image as a prompt content block", async ({

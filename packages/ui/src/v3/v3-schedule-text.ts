@@ -1,11 +1,11 @@
 import { validCron } from "../schedule/schedule-text";
 import type { V3Schedule, V3ScheduleWhen } from "./v3-types";
 
-/* Plain-words schedules for v3, ported from the app's schedule-text.ts: the
-   same kinds and wording. A saved schedule keeps `next` as a phrase, so saving
-   computes it here against the real clock. Times are always "HH:MM". Custom
-   (cron) is only checked loosely and never walked: its next run reads "Per its
-   cron" rather than a time the prototype could get wrong. */
+/* Plain-words schedules for v3: kinds and wording. A saved schedule keeps
+   `next` as a phrase, so saving computes it here against the real clock.
+   Times are always "HH:MM". Custom (cron) is only checked loosely and never
+   walked: its next run reads "Per its cron" rather than a time the
+   prototype could get wrong. */
 
 export type When = V3ScheduleWhen;
 

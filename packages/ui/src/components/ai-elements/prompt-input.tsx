@@ -480,7 +480,21 @@ export const PromptInput = ({
   const formRef = useRef<HTMLFormElement | null>(null);
 
   // ----- Local attachments (only used when no provider)
-  const [items, setItems] = useState<(FileUIPart & { id: string })[]>([]);
+  const [items, setItemsState] = useState<(FileUIPart & { id: string })[]>([]);
+  /* The staged list, read and written synchronously: add/remove/clear compute
+     from it instead of a `setItems(prev => …)` updater. An updater runs while
+     React renders this component, so the `onError` the add path called inside
+     one set the host's state (its toast atom) mid-render — "Cannot update a
+     component (`Company`) while rendering a different component" — and
+     StrictMode's second run of it minted every blob URL twice. */
+  const itemsRef = useRef(items);
+  const setItems = useCallback(
+    (next: (FileUIPart & { id: string })[]) => {
+      itemsRef.current = next;
+      setItemsState(next);
+    },
+    []
+  );
   const files = usingProvider ? controller.attachments.files : items;
 
   // Keep a ref to files for cleanup on unmount (avoids stale closure)
@@ -538,57 +552,49 @@ export const PromptInput = ({
       }
       if (accepted.length > 0 && sized.length === 0) return;
 
-      setItems((prev) => {
-        const { kept: capped, note: countNote } = withinCount(
-          sized,
-          prev.length,
-          maxFiles
-        );
-        if (countNote) {
-          onError?.({ code: "max_files", message: countNote });
-        }
-        const next: (FileUIPart & { id: string; sizeBytes?: number })[] =
-          [];
-        for (const file of capped) {
-          next.push({
+      const { kept: capped, note: countNote } = withinCount(
+        sized,
+        itemsRef.current.length,
+        maxFiles
+      );
+      if (countNote) {
+        onError?.({ code: "max_files", message: countNote });
+      }
+      setItems(
+        itemsRef.current.concat(
+          capped.map((file) => ({
             id: nanoid(),
-            type: "file",
+            type: "file" as const,
             url: URL.createObjectURL(file),
             mediaType: file.type,
             filename: file.name,
             sizeBytes: file.size,
-          });
-        }
-        return prev.concat(next);
-      });
+          }))
+        )
+      );
     },
-    [accept, matchesAccept, maxFiles, maxFileSize, onError]
+    [accept, matchesAccept, maxFiles, maxFileSize, onError, setItems]
   );
 
   const removeLocal = useCallback(
-    (id: string) =>
-      setItems((prev) => {
-        const found = prev.find((file) => file.id === id);
-        if (found?.url) {
-          URL.revokeObjectURL(found.url);
-        }
-        return prev.filter((file) => file.id !== id);
-      }),
-    []
+    (id: string) => {
+      const found = itemsRef.current.find((file) => file.id === id);
+      if (found?.url) {
+        URL.revokeObjectURL(found.url);
+      }
+      setItems(itemsRef.current.filter((file) => file.id !== id));
+    },
+    [setItems]
   );
 
-  const clearLocal = useCallback(
-    () =>
-      setItems((prev) => {
-        for (const file of prev) {
-          if (file.url) {
-            URL.revokeObjectURL(file.url);
-          }
-        }
-        return [];
-      }),
-    []
-  );
+  const clearLocal = useCallback(() => {
+    for (const file of itemsRef.current) {
+      if (file.url) {
+        URL.revokeObjectURL(file.url);
+      }
+    }
+    setItems([]);
+  }, [setItems]);
 
   const add = usingProvider ? controller.attachments.add : addLocal;
   const remove = usingProvider ? controller.attachments.remove : removeLocal;

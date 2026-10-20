@@ -319,15 +319,6 @@ export type PullRequest = {
   checks: CheckRun[];
   comments: PrComment[];
 };
-/* A designed failure/notice attached to a session (model error, sleep interrupt, …).
-   retry:true means the session can be re-prompted in place. "context" =
-   the turn died on the context window — the row offers Compact now / a
-   fresh session instead of a bare retry (retrying re-fails the same way). */
-export type SessionAlert = {
-  kind: "model" | "sleep" | "generic" | "context";
-  text: string;
-  retry?: boolean;
-};
 /* Whether the session behind a thread holds the machine (#344): `running` while
    a turn or a subagent works, `open` while it sits loaded and idle, `closed`
    once idle-closed (resumes on the next message). */
@@ -352,11 +343,6 @@ export type Thread = {
   title?: string;
   /* Archived sessions hide from the DM list until the Archived disclosure is opened. */
   archived?: boolean;
-  alert?: SessionAlert;
-  /* The last turn ended stopped (#583): stamped on the conversation so the
-     row's "stopped" word survives a released/replayed session with no live
-     turn model. */
-  stopped?: boolean;
   /* Running background-job count (#583): the relay-stamped seed for the
      row's "N in background" badge — the live `jobs` list wins once the
      session feed lands. */
@@ -408,15 +394,9 @@ export type FsDir = {
   children?: string[];
 };
 
-/* Picked in the composer before the first message of a session.
-   new = git worktree add -b <branch> <base> · existing = reuse a workstream's worktree · direct = edit the folder checkout on <base>. */
+/* new = git worktree add -b <branch> <base> · existing = reuse a workstream's
+   worktree · direct = edit the folder checkout on <base>. */
 export type WsMode = "new" | "existing" | "direct";
-export type WsPick = {
-  folder: string | null;
-  base: string;
-  mode: WsMode;
-  existing?: string;
-};
 
 /* One row of the `@` menu's Files section (#105): a file or dir inside the
    session's folder, relative to it. The mention sent is the plain `@path`
@@ -575,48 +555,6 @@ export type OsEditor = { id: Exclude<OsApp, "finder">; name: string };
 
 /* What a brand-new conversation may touch without asking (#106). */
 export type ConversationAccess = "ask" | "full";
-/* Scheduled tasks (issue #136, prototype #366): a prompt that runs as a new
-   session with one employee on a schedule. `time` is "HH:MM" (hourly reads
-   only the minutes); `day` 0–6 = Sun–Sat for weekly; `date` "YYYY-MM-DD" for
-   once; `cron` five fields for custom. */
-export type ScheduleKind =
-  | "hourly"
-  | "daily"
-  | "weekdays"
-  | "weekly"
-  | "once"
-  | "cron";
-export type Schedule = {
-  kind: ScheduleKind;
-  time: string;
-  day?: number;
-  date?: string;
-  cron?: string;
-};
-/* The latest run of a task. `rootId` is the run's session in the DM. */
-export type ScheduledRun = {
-  at: string;
-  result: "running" | "finished" | "failed";
-  rootId?: string;
-};
-export type ScheduledTask = {
-  id: string;
-  employee: string;
-  name: string;
-  prompt: string;
-  /** Folder id the run's session opens in; unset = no folder. */
-  folder?: string;
-  schedule: Schedule;
-  /** Access for unattended runs (#106): Ask stops on risky commands. */
-  access: ConversationAccess;
-  paused?: boolean;
-  lastRun?: ScheduledRun;
-  /** When a run was skipped because the previous one was still going
-      (#136 AC-4); cleared by the next run that starts. */
-  skipped?: string;
-};
-/* An editor found on this Mac (#110) — `path` is the .app bundle. */
-export type DetectedEditor = { id: string; name: string; path?: string };
 /* A `forge.pr` failure already classified by the host (#114 AC-5) — mirrors
    contracts `ForgeGhReason` (packages/ui doesn't import contracts): "missing"
    = gh isn't installed, "unauthenticated" = run `gh auth login`, "other" =

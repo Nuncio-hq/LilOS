@@ -4,9 +4,11 @@ import { expect, type Page, test } from "@playwright/test";
 import {
   bootStack,
   pickPorts,
+  relayRpc,
   type Stack,
   skipFirstRun,
   startChat,
+  v3Peek,
 } from "./helpers/stack";
 
 /**
@@ -199,6 +201,89 @@ test("AC-3+AC-9 Settings Approvals: policy pick, honest copy, and the default se
       enginePolicy.getByRole("radio", { name: "Manual", exact: true }),
     ).toHaveAttribute("aria-checked", "true");
     await page.screenshot({ path: `${SHOTS}/ac-106-engine-policy.png` });
+  } finally {
+    await stack.stop();
+  }
+});
+
+/** The new-chat draft's access pill (the thread's is `pill`). */
+const draftPill = (page: Page) =>
+  v3Peek(page).locator('[data-slot="access-pill"]');
+
+/** Switch the open draft to another agent through its Agent chip. */
+async function draftAgent(page: Page, name: string) {
+  await v3Peek(page).getByTitle("Agent", { exact: true }).click();
+  await v3Peek(page)
+    .getByRole("menuitemradio", { name: new RegExp(name) })
+    .click();
+  await expect(v3Peek(page).getByPlaceholder(`Message ${name}…`)).toBeVisible();
+}
+
+/** Send the open draft; resolves once it has swapped for its thread and the
+    thread's first turn is over. */
+async function sendDraft(page: Page, name: string) {
+  await v3Peek(page)
+    .getByPlaceholder(`Message ${name}…`)
+    .fill("Say hello once");
+  await v3Peek(page).getByRole("button", { name: "Send" }).click();
+  await expect(page).toHaveURL(/open=thread:[^&]+/, { timeout: 30_000 });
+  await expect(pill(page)).toBeVisible({ timeout: 30_000 });
+  await expect(settled(page)).toBeVisible({ timeout: 90_000 });
+}
+
+test("AC-3 the new-chat draft's Ask / Full access pill starts on Settings' default, a pick holds per agent, and the thread starts with it (#106)", async ({
+  page,
+}) => {
+  test.setTimeout(300_000);
+  const stack = await bootStack("ac106d", await pickPorts());
+  try {
+    await skipFirstRun(page);
+    await page.goto(`${stack.webUrl}/`);
+    const { employee } = await relayRpc<{ employee: { id: string } }>(
+      page,
+      stack,
+      "employees.create",
+      { name: "Blanca" },
+    );
+
+    /* ── Default's draft starts on Settings' default (Ask, untouched) ── */
+    await page.goto(`${stack.webUrl}/#?page=threads&open=newchat:default`);
+    await expect(draftPill(page)).toHaveAttribute("data-access", "ask", {
+      timeout: 30_000,
+    });
+    await expect(draftPill(page)).toContainText("Ask");
+
+    /* ── A pick flips it; another agent's draft is not that agent's pick ── */
+    await draftPill(page).click();
+    await expect(draftPill(page)).toHaveAttribute("data-access", "full");
+    await expect(draftPill(page)).toContainText("Full access");
+    await draftAgent(page, "Blanca");
+    await expect(draftPill(page)).toHaveAttribute("data-access", "ask");
+    /* …and Default's pick is still there when the chip comes back to it. */
+    await draftAgent(page, "Default");
+    await expect(draftPill(page)).toHaveAttribute("data-access", "full");
+    await page.screenshot({ path: `${SHOTS}/ac-3-draft-pill-full.png` });
+
+    /* ── The thread starts with the draft's access, read on its own pill ── */
+    await sendDraft(page, "Default");
+    await expect(pill(page)).toHaveAttribute("data-access", "full");
+
+    /* ── Settings' default moves the next draft; a pick still beats it ── */
+    await openSettings(stack, page);
+    await page
+      .getByRole("radiogroup", { name: "Approvals", exact: true })
+      .getByRole("radio", { name: "Full access" })
+      .click();
+    await page.goto(
+      `${stack.webUrl}/#?page=threads&open=newchat:${employee.id}`,
+    );
+    await expect(draftPill(page)).toHaveAttribute("data-access", "full", {
+      timeout: 30_000,
+    });
+    await draftPill(page).click();
+    await expect(draftPill(page)).toHaveAttribute("data-access", "ask");
+    await sendDraft(page, "Blanca");
+    await expect(pill(page)).toHaveAttribute("data-access", "ask");
   } finally {
     await stack.stop();
   }

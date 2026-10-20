@@ -27,7 +27,7 @@ export function step(nav: V3Nav, r: V3Route, from: "page" | "peek"): V3Nav {
 }
 
 /** The page a record belongs on when it is opened from a bare link. */
-export function homeOf(r: V3RecordRoute): V3PageRoute {
+function homeOf(r: V3RecordRoute): V3PageRoute {
   if (r.page === "ticket") return { page: "work" };
   if (r.page === "thread" || r.page === "newchat") return { page: "threads" };
   if (r.page === "agent") return { page: "people" };

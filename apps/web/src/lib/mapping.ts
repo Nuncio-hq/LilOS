@@ -803,15 +803,6 @@ export function toFeed(
          derived by sessionLife from the replies, never stored. */
       ...(conv.life ? { life: conv.life } : {}),
       replies,
-      /* #419: the session row's failure card — the harness stamps
-         `turnFailure` when a turn dies on an error or a sleep/restart
-         interrupt; Retry re-sends the user's last message (thread-actions.ts). */
-      ...(conv.turnFailure
-        ? { alert: { ...conv.turnFailure, retry: true } }
-        : {}),
-      /* #583: a stopped turn's word — relay-persisted like `turnFailure`
-         so a released session's summary-only row still says "stopped". */
-      ...(conv.turnStopped ? { stopped: true } : {}),
       /* #583 AC-3: the relay-stamped running-job count — the row's badge
          renders before the session feed lands. */
       ...(conv.bgJobs ? { bgJobs: conv.bgJobs } : {}),

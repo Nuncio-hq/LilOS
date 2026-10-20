@@ -2,13 +2,16 @@
  * Issue #570 — CI flake repro, run manually (NOT a Playwright test, no
  * fixed ports): boots its own stack on pickPorts(), grows a --turns
  * thread through relay RPC, serves the production build via `vite
- * preview`, then opens the conv URL with the named hydration knob
+ * preview`, then opens the thread in the side peek beside Threads
+ * (`#?page=threads&open=thread:<id>`) with the named hydration knob
  * `?stubHydrateMs=` and samples the scroll port per frame for --window
  * seconds.
  *
  * Prints the sampled (scrollTop, scrollHeight) timeline and a verdict:
  * PASS when the port settles within a row of the true bottom, FAIL when
- * it strands (the e2e/ac-570 AC-1 assert's shape).
+ * it strands (the e2e/ac-570 AC-1 assert's shape). The pin's own flags
+ * (the old `?pinDebug=1` hook) no longer exist, so the stream is geometry
+ * only.
  *
  *   bun e2e/bench/repro-570.ts --hydrate 60 --cpu 4
  *   bun e2e/bench/repro-570.ts --hydrate 0 --turns 60 --window 8
@@ -23,7 +26,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, expect } from "@playwright/test";
 import { growDmThread } from "../helpers/relay-thread";
-import { bootStack, freePort, pickPorts } from "../helpers/stack";
+import {
+  bootStack,
+  freePort,
+  pickPorts,
+  skipFirstRun,
+  threadUrl,
+} from "../helpers/stack";
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/bench
 const repo = path.resolve(here, "../..");
@@ -51,9 +60,9 @@ const promptFor = (i: number) =>
       : `turn ${i} status check`
     : "md: blocks";
 
-/** Per-frame scroll geometry + pin-state sampler, injected before
-    navigation. Also logs every port scroll event with the live pin
-    flags so an escape shows up in the stream it killed. */
+/** Per-frame scroll geometry sampler, injected before navigation. Also logs
+    every port scroll event so a stranding shows up in the stream that
+    caused it. */
 const SAMPLER = `
 window.__tl = [];
 window.__ev = [];
@@ -65,33 +74,19 @@ window.__ev = [];
   if (p && !p.__wired) {
     p.__wired = true;
     p.addEventListener("scroll", () => {
-      const pin = p.__pin;
       window.__ev.push({
         t: Math.round(performance.now() - t0),
         top: Math.round(p.scrollTop),
         h: p.scrollHeight,
-        at: pin ? pin.state.isAtBottom : "?",
-        esc: pin ? pin.state.escapedFromLock : "?",
-        gesc: pin ? pin.escaped.v : "?",
-        hyd: pin ? Math.round(performance.now() - pin.hydratedAt.v) : "?",
-        anim: pin ? !!pin.state.animation : "?",
-        rd: pin ? Math.round(pin.state.resizeDifference) : "?",
       });
     });
   }
-  const pin = p && p.__pin;
   window.__tl.push({
     t: Math.round(performance.now() - t0),
     top: p ? Math.round(p.scrollTop) : -1,
     h: p ? p.scrollHeight : -1,
     ch: p ? p.clientHeight : -1,
     held: document.querySelectorAll("[data-held-stub]").length,
-    at: pin ? pin.state.isAtBottom : "?",
-    esc: pin ? pin.state.escapedFromLock : "?",
-    gesc: pin ? pin.escaped.v : "?",
-    hyd: pin ? Math.round(performance.now() - pin.hydratedAt.v) : "?",
-    anim: pin ? !!pin.state.animation : "?",
-    rd: pin ? Math.round(pin.state.resizeDifference) : "?",
   });
   if (window.__tl.length < ${WINDOW_S} * 90)
     requestAnimationFrame((ts) => rec(t0 ?? ts));
@@ -157,10 +152,16 @@ async function main() {
         const cdp = await context.newCDPSession(page);
         if (CPU > 0)
           await cdp.send("Emulation.setCPUThrottlingRate", { rate: CPU });
+        await skipFirstRun(page);
         await page.addInitScript(SAMPLER);
+        /* `?stubHydrateMs=` is a real query param read once at module eval,
+           so it rides ahead of the hash that carries the v3 nav; the thread
+           opens in the side peek beside Threads. */
         await page.goto(
-          `${url}/dm/${grown.employeeId}/${grown.conversationId}` +
-            `?stubHydrateMs=${HYDRATE_MS}&pinDebug=1`,
+          threadUrl(url, grown.conversationId).replace(
+            "/#",
+            `/?stubHydrateMs=${HYDRATE_MS}#`,
+          ),
         );
         const panel = page.locator("[data-thread-panel]");
         await expect(panel).toBeVisible({ timeout: 60_000 });
@@ -172,55 +173,33 @@ async function main() {
           turns.nth(TURNS - 1).locator("[data-turnsettled]"),
         ).toBeAttached({ timeout: 120_000 });
         await page.waitForTimeout(WINDOW_S * 1000);
-        const { tl, ev } = await page.evaluate(() => {
-          const w = window as unknown as {
-            __tl: {
-              t: number;
-              top: number;
-              h: number;
-              ch: number;
-              held: number;
-              at: boolean | string;
-              esc: boolean | string;
-              anim: boolean | string;
-              rd: number | string;
-            }[];
-            __ev: {
-              t: number;
-              top: number;
-              h: number;
-              at: boolean | string;
-              esc: boolean | string;
-              anim: boolean | string;
-              rd: number | string;
-            }[];
-          };
-          return { tl: w.__tl ?? [], ev: w.__ev ?? [] };
-        });
-        /* Scroll events — the escape suspects — with the pin flags the
-           event observed. */
+        /* The sampler's own arrays, read back as the shape SAMPLER pushes. */
+        const { tl, ev } = await page.evaluate<{
+          tl: { t: number; top: number; h: number; ch: number; held: number }[];
+          ev: { t: number; top: number; h: number }[];
+        }>("({ tl: window.__tl ?? [], ev: window.__ev ?? [] })");
+        /* Scroll events — the stranding suspects. */
         console.log("scroll events:");
         let pe = "";
         for (const e of ev) {
-          const key = `${e.top}|${e.at}|${e.esc}|${e.gesc}|${e.anim}`;
+          const key = `${e.top}`;
           if (key === pe) continue;
           pe = key;
           console.log(
-            `  t=${String(e.t).padStart(5)}ms top=${String(e.top).padStart(6)} ` +
-              `h=${e.h} at=${e.at} esc=${e.esc} gesc=${e.gesc} hyd=${e.hyd} anim=${e.anim} rd=${e.rd}`,
+            `  t=${String(e.t).padStart(5)}ms top=${String(e.top).padStart(6)} h=${e.h}`,
           );
         }
         /* Collapse the frame series to state transitions. */
         console.log("frames:");
         let prev = "";
         for (const s of tl) {
-          const key = `${s.top}|${s.h}|${s.held}|${s.at}|${s.esc}|${s.gesc}|${s.anim}`;
+          const key = `${s.top}|${s.h}|${s.held}`;
           if (key === prev) continue;
           prev = key;
           console.log(
             `  t=${String(s.t).padStart(5)}ms top=${String(s.top).padStart(6)} ` +
               `h=${String(s.h).padStart(6)} ch=${s.ch} held=${s.held} ` +
-              `gap=${s.h - s.top - s.ch} at=${s.at} esc=${s.esc} gesc=${s.gesc} hyd=${s.hyd} anim=${s.anim} rd=${s.rd}`,
+              `gap=${s.h - s.top - s.ch}`,
           );
         }
         const last = tl[tl.length - 1];

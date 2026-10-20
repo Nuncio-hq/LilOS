@@ -13,10 +13,14 @@ import { v3DataStore } from "./data";
 import { useShellEffects } from "./effects";
 import { moveNav, v3Nav } from "./nav";
 
-/* The real app's root: V3Shell on the relay's company. Where you are lives in
-   the URL hash (nav.ts); the data is one computed store (data.ts); every click
-   is an action (actions.ts). The thread beside a page is the app's own thread
-   view until the v3 conversation runs on engine events (#770). */
+/* The real app's root (D-#769: one shell — the page on the left, one record
+   in a side peek with its trail, a widened thread is the session view, where
+   you are is the URL hash, a control exists only when the engine can do it).
+   V3Shell runs on the relay's company: the nav is nav.ts, the data one
+   computed store (data.ts), every click an action (actions.ts). The thread
+   beside a page is the app's own thread view until the v3 conversation runs
+   on engine events (#770). Not: a second UI, a route per record, placeholder
+   controls. */
 
 /** Work, Goals and Inbox wait for tickets (M2): a link to one lands on Home
     and a ticket, goal or project record is not opened. */

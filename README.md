@@ -11,7 +11,7 @@ sessions, memory, skills and profiles; LilOS owns the company, projects,
 channels, messages and tickets. Hermes is the first engine — it is never
 glued in.
 
-![LilOS web prototype: company sidebar, #engineering channel and an employee thread](docs/img/prototype-web.png)
+![LilOS: company sidebar, the Threads page and a thread open in the side peek](docs/img/prototype-web.png)
 
 *Stage: prototype. `prototype/` is the UI/UX source of truth; the real app
 (`apps/web` + relay + harness) is landing slice by slice.*
@@ -33,8 +33,8 @@ bun run prototype:dev   # web prototype with mock data — no engine needed
 ```
 
 Then open http://localhost:5173. Everything you see is interactive mock data:
-post to a channel, @mention an employee, steer a running turn, pair a phone.
-http://localhost:5173/?v2 opens the next layout (threads by project).
+start a chat with an agent, steer a running thread, answer what needs you,
+press ⌘K, pair a phone.
 
 More:
 

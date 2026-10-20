@@ -14,12 +14,7 @@ import type {
 } from "@lilos/contracts/app";
 import type { EngineEvent, EngineRequest } from "@lilos/contracts/engine";
 import { describe, expect, it, vi } from "vitest";
-import {
-  notificationForEvent,
-  openConversationFromPath,
-  routeForConversation,
-  watchNotifications,
-} from "../src/lib/notify";
+import { notificationForEvent, watchNotifications } from "../src/lib/notify";
 
 const employee: Employee = {
   id: "e1",
@@ -669,22 +664,6 @@ describe("AC-1 watchNotifications — only when the conversation is not in view"
     asksChanged();
     asksChanged();
     expect(posted).toEqual([]);
-  });
-});
-
-describe("AC-2 open the exact conversation", () => {
-  it("maps the notification's conversation to its DM route", () => {
-    expect(routeForConversation("c1", ctx(conv("c1", "s1")))).toEqual({
-      employeeId: "e1",
-      conversationId: "c1",
-    });
-    expect(routeForConversation("nope", ctx(conv("c1", "s1")))).toBeNull();
-  });
-
-  it("reads the open conversation from the route", () => {
-    expect(openConversationFromPath("/dm/e1/c1")).toBe("c1");
-    expect(openConversationFromPath("/dm/e1")).toBeNull();
-    expect(openConversationFromPath("/")).toBeNull();
   });
 });
 
