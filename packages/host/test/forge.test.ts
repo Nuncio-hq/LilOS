@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import {
   chmodSync,
   existsSync,
@@ -23,6 +22,7 @@ import {
   it,
 } from "vitest";
 import { callHost } from "../src/index";
+import { fixtureGit, pinFixtureRepo } from "./fixture-git";
 
 /**
  * Issue #37 AC tests for the forge host API. `gh` is faked by a stateful bun
@@ -90,11 +90,11 @@ beforeAll(() => {
     GH_FAKE_LOG: process.env.GH_FAKE_LOG,
   };
   repo = mkdtempSync(join(tmpdir(), "lilos-forge-"));
-  const git = (args: string[]) =>
-    execFileSync("git", args, { cwd: repo, encoding: "utf8" });
+  const git = (args: string[]) => fixtureGit(repo, args);
   git(["init", "-b", "main"]);
   git(["config", "user.email", "t@t"]);
   git(["config", "user.name", "t"]);
+  pinFixtureRepo(repo);
   writeFileSync(join(repo, "a.txt"), "one\n");
   git(["add", "."]);
   git(["commit", "-m", "init"]);

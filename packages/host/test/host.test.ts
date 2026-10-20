@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,6 +5,7 @@ import { HOST_API } from "@lilos/contracts/host";
 import { FakeEngine } from "@lilos/engine-fake";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { callHost, handleHostFrame } from "../src/index";
+import { fixtureGit, pinFixtureRepo } from "./fixture-git";
 
 /**
  * AC tests against a real temp git repo. The fixture: one commit, then a
@@ -15,8 +15,7 @@ let dir = "";
 // Isolated scan root: `git.discoverRepos` must not depend on what else lives
 // in the machine's shared tmp dir (it stops at DISCOVER_CAP repos).
 let scanRoot = "";
-const git = (args: string[]) =>
-  execFileSync("git", args, { cwd: dir, encoding: "utf8" });
+const git = (args: string[]) => fixtureGit(dir, args);
 
 beforeAll(() => {
   scanRoot = mkdtempSync(join(tmpdir(), "lilos-host-"));
@@ -25,6 +24,7 @@ beforeAll(() => {
   git(["init", "-b", "main"]);
   git(["config", "user.email", "t@t"]);
   git(["config", "user.name", "t"]);
+  pinFixtureRepo(dir);
   writeFileSync(join(dir, "a.txt"), "one\n");
   writeFileSync(join(dir, "keep.md"), "# keep\n");
   git(["add", "."]);
@@ -36,7 +36,7 @@ beforeAll(() => {
   // a nested sibling dir that is NOT a repo + a subdir that is
   mkdirSync(join(dir, "plain"));
   mkdirSync(join(dir, "subrepo"));
-  execFileSync("git", ["init", "-b", "main"], { cwd: join(dir, "subrepo") });
+  fixtureGit(join(dir, "subrepo"), ["init", "-b", "main"]);
 });
 afterAll(() => rmSync(scanRoot, { recursive: true, force: true }));
 

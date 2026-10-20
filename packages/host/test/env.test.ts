@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import {
   chmodSync,
   mkdirSync,
@@ -12,6 +11,12 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { run } from "../src/exec";
 import { callHost } from "../src/index";
+import { fixtureGit, isolateFixtureGit, pinFixtureRepo } from "./fixture-git";
+
+/* #787: `git.commit` below must run the planted post-commit hook, so this
+   file does not set `core.hooksPath`. Blank global config so a machine
+   `core.hooksPath` or `commit.gpgsign` cannot redirect or stall that commit. */
+const restoreFixtureGit = isolateFixtureGit();
 
 /**
  * Issue #507 — host execs must run with the allow-listed env only.
@@ -63,6 +68,7 @@ afterAll(() => {
     if (v === undefined) delete process.env[k];
     else process.env[k] = v;
   }
+  restoreFixtureGit();
   rmSync(root, { recursive: true, force: true });
 });
 
@@ -93,11 +99,11 @@ describe("AC-1 (#507) host exec children see only the allow-listed LILOS_* env",
   it("a repo hook planted in the session folder cannot recover LILOS_* internals", async () => {
     const repo = join(root, "repo");
     mkdirSync(repo);
-    const git = (args: string[]) =>
-      execFileSync("git", args, { cwd: repo, encoding: "utf8" });
+    const git = (args: string[]) => fixtureGit(repo, args, { keepHooks: true });
     git(["init", "-b", "trunk"]);
     git(["config", "user.email", "t@t"]);
     git(["config", "user.name", "t"]);
+    pinFixtureRepo(repo, { keepHooks: true });
     writeFileSync(join(repo, "f.txt"), "one\n");
     const dump = join(root, "hook-env.txt");
     /* The #507 attack: agent-writable `.git/hooks/*` runs inside the
