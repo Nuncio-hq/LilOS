@@ -114,7 +114,7 @@ test("AC-2/3/4 message hits: found by message text, snippet marked, archived onl
   await expect(idleComposer).toBeVisible({ timeout: 60_000 });
   // Archive session B the way a person does: its row's menu on Threads → All.
   await page.goto(`${stack.webUrl}/#?page=threads&view=all`);
-  const rowB = page.locator(`[data-thread="${convB}"]`);
+  const rowB = page.locator(`[data-thread-row="${convB}"]`);
   await expect(rowB).toBeVisible({ timeout: 30_000 });
   await rowB.hover();
   await rowB
@@ -210,7 +210,7 @@ test("AC-2/3/4 message hits: found by message text, snippet marked, archived onl
     .click();
   await page.getByRole("menuitem", { name: "Unarchive thread" }).click();
   await page.goto(`${stack.webUrl}/#?page=threads&view=all`);
-  await expect(page.locator(`[data-thread="${convB}"]`)).toBeVisible({
+  await expect(page.locator(`[data-thread-row="${convB}"]`)).toBeVisible({
     timeout: 15_000,
   });
 
