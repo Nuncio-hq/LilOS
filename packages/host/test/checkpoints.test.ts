@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   existsSync,
@@ -16,6 +15,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createCheckpointStore } from "../src/index";
+import { fixtureGit } from "./fixture-git";
 
 /**
  * Issue #134: harness-owned file checkpoints — a shadow git dir per session
@@ -32,8 +32,7 @@ const write = (p: string, text: string) => {
   mkdirSync(dirname(abs), { recursive: true });
   writeFileSync(abs, text);
 };
-const gitCwd = (args: string[]) =>
-  execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
+const gitCwd = (args: string[]) => fixtureGit(cwd, args).trim();
 /** Hash every byte of .git: HEAD, refs, index, objects, stash — all of it. */
 const snapshotUserGit = (dir: string) => {
   const h = createHash("sha256");

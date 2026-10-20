@@ -1,10 +1,10 @@
-import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HOST_ERRORS } from "@lilos/contracts/host";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { callHost } from "../src/index";
+import { fixtureGit, pinFixtureRepo } from "./fixture-git";
 
 /**
  * Issue #107 AC tests for the git-write host API. The fixture is a real temp
@@ -18,8 +18,7 @@ let scanRoot = "";
 let repo = "";
 let bare = "";
 
-const inRepo = (args: string[], cwd = repo) =>
-  execFileSync("git", args, { cwd, encoding: "utf8" });
+const inRepo = (args: string[], cwd = repo) => fixtureGit(cwd, args);
 
 const makeRepo = (name: string, remote = true) => {
   const dir = join(scanRoot, name);
@@ -27,6 +26,8 @@ const makeRepo = (name: string, remote = true) => {
   inRepo(["init", "-b", "trunk"], dir);
   inRepo(["config", "user.email", "t@t"], dir);
   inRepo(["config", "user.name", "t"], dir);
+  /* Product `git.commit` has no `-c` flags — the repo config skips the signer. */
+  pinFixtureRepo(dir);
   writeFileSync(join(dir, "a.txt"), "one\n");
   inRepo(["add", "."], dir);
   inRepo(["commit", "-m", "init"], dir);

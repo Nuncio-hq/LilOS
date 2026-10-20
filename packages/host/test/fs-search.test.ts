@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import {
   mkdirSync,
   mkdtempSync,
@@ -10,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { callHost } from "../src/index";
+import { fixtureGit, pinFixtureRepo } from "./fixture-git";
 
 /**
  * fs.search AC tests (issue #105): fuzzy file/dir search inside a session
@@ -24,8 +24,7 @@ let root = "";
 let dir = ""; // git repo
 let plain = ""; // non-repo folder
 let big = ""; // repo with many files (perf)
-const git = (cwd: string, args: string[]) =>
-  execFileSync("git", args, { cwd, encoding: "utf8" });
+const git = (cwd: string, args: string[]) => fixtureGit(cwd, args);
 
 const search = (path: string, query: string, limit?: number) =>
   callHost("fs.search", {
@@ -50,6 +49,7 @@ beforeAll(() => {
   git(dir, ["init", "-b", "main"]);
   git(dir, ["config", "user.email", "t@t"]);
   git(dir, ["config", "user.name", "t"]);
+  pinFixtureRepo(dir);
   git(dir, ["add", "-A"]);
   git(dir, ["commit", "-m", "init"]);
   writeFileSync(join(dir, "untracked.ts"), "export {}\n");
@@ -74,6 +74,7 @@ beforeAll(() => {
   git(big, ["init", "-b", "main"]);
   git(big, ["config", "user.email", "t@t"]);
   git(big, ["config", "user.name", "t"]);
+  pinFixtureRepo(big);
   git(big, ["add", "-A"]);
   git(big, ["commit", "-m", "init"]);
 });
