@@ -1,6 +1,14 @@
-import { mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { RelaySocket, SocketFactory } from "@lilos/client-runtime";
 import { RelayClient } from "@lilos/client-runtime";
 import { connectFake, FakeEngine } from "@lilos/engine-fake";
@@ -37,6 +45,87 @@ export const mkhome = () => {
   homes.push(dir);
   return dir;
 };
+
+/* #784: git fixtures must not inherit the machine's git config. A global
+   `commit.gpgsign` runs an SSH signer (`gpg.ssh.program`) on every
+   `git commit`, and that child has been measured at ~25s — `execFileSync`
+   then holds the worker past the 5s/20s test timeout before any assertion.
+   `core.fsmonitor` and the system git-lfs filters are the same class of
+   work these tests never assert. Seed one repo per file and copy it.
+   Every fixture git ignores global/system config, hooks, gc, gpg and
+   fsmonitor. `isolateFixtureGit()` also sets that on `process.env` so the
+   harness's own git (worktree add, status, rev-parse) stays off the signer.
+   Call it at module scope in the file that seeds. Assertions stay put. */
+const FIXTURE_GIT_CONFIG = [
+  "-c",
+  "core.hooksPath=/dev/null",
+  "-c",
+  "core.fsmonitor=false",
+  "-c",
+  "gc.auto=0",
+  "-c",
+  "commit.gpgsign=false",
+  "-c",
+  "tag.gpgsign=false",
+  "-c",
+  "user.email=t@t",
+  "-c",
+  "user.name=t",
+];
+
+export function isolateFixtureGit(): void {
+  process.env.GIT_CONFIG_NOSYSTEM = "1";
+  process.env.GIT_CONFIG_GLOBAL = "/dev/null";
+  process.env.GIT_TERMINAL_PROMPT = "0";
+}
+
+function fixtureGit(dir: string, args: string[]): string {
+  return execFileSync("git", ["-C", dir, ...FIXTURE_GIT_CONFIG, ...args], {
+    encoding: "utf8",
+    env: process.env,
+  });
+}
+
+/** One commit on `branch`, plus extra branch names at that same commit. */
+export function seedFixtureRepo(
+  dir: string,
+  branch = "main",
+  extraBranches: string[] = [],
+): string {
+  isolateFixtureGit();
+  mkdirSync(dir, { recursive: true });
+  execFileSync(
+    "git",
+    [...FIXTURE_GIT_CONFIG, "init", "-q", "-b", branch, dir],
+    {
+      env: process.env,
+    },
+  );
+  /* Local keys so a later git without these `-c` flags (the harness, a
+     copied repo) still skips the signer, fsmonitor, hooks and gc. */
+  for (const [key, value] of [
+    ["commit.gpgsign", "false"],
+    ["tag.gpgsign", "false"],
+    ["core.fsmonitor", "false"],
+    ["gc.auto", "0"],
+    ["core.hooksPath", "/dev/null"],
+    ["user.email", "t@t"],
+    ["user.name", "t"],
+  ] as const) {
+    fixtureGit(dir, ["config", key, value]);
+  }
+  writeFileSync(join(dir, "README.md"), "# seed\n");
+  fixtureGit(dir, ["add", "README.md"]);
+  fixtureGit(dir, ["commit", "-qm", "seed"]);
+  for (const name of extraBranches) fixtureGit(dir, ["branch", name]);
+  return dir;
+}
+
+/** Copy a seeded repo. Dest's parent is created; dest itself must not exist. */
+export function copyFixtureRepo(src: string, dest: string): void {
+  mkdirSync(dirname(dest), { recursive: true });
+  cpSync(src, dest, { recursive: true, preserveTimestamps: true });
+}
 
 /** A RelaySocket that talks straight into a relay.connect() peer. */
 export const socketFor =
