@@ -11,11 +11,12 @@ import type {
   V3Thread,
 } from "./v3-types";
 
-/* The thread's right rail: where it runs, the plan, what it changed. */
+/* A thread's Details, the last tab of its work panel: where it runs, the
+   plan, what it changed. Full-width rows in a panel of its own. */
 
 function Head({ children, count }: { children: ReactNode; count?: string }) {
   return (
-    <div className="mt-6 mb-2 flex justify-between font-medium text-[12px] text-muted-foreground/70 first:mt-1.5">
+    <div className="mt-6 mb-2 flex justify-between font-medium text-[12px] text-muted-foreground/70 first:mt-0">
       {children}
       {count && <span className="font-normal">{count}</span>}
     </div>
@@ -24,7 +25,7 @@ function Head({ children, count }: { children: ReactNode; count?: string }) {
 
 function Kv({ k, children }: { k: string; children: ReactNode }) {
   return (
-    <div className="flex min-h-[29px] items-center justify-between gap-3 text-[13px]">
+    <div className="flex min-h-[32px] items-center justify-between gap-3 text-[13px]">
       <span className="text-muted-foreground">{k}</span>
       <span className="flex min-w-0 items-center gap-1.5 text-right">
         {children}
@@ -59,7 +60,7 @@ function PlanDot({ state }: { state: "done" | "current" | "todo" }) {
   );
 }
 
-export function ThreadRail({
+export function ThreadDetails({
   data,
   t,
   agent,
@@ -80,8 +81,7 @@ export function ThreadRail({
   const planDone = plan.filter((p) => p.state === "done").length;
   const via = viaOf(data, agent);
   return (
-    <aside className="text-[13px]">
-      <Head>Details</Head>
+    <div className="mx-auto w-full max-w-[560px] px-6 pt-4 pb-10 text-[13px]">
       <Kv k="Agent">
         <button
           type="button"
@@ -170,7 +170,7 @@ export function ThreadRail({
             <div
               key={c.path}
               title={c.path}
-              className="flex min-h-[27px] items-center justify-between gap-3"
+              className="flex min-h-[29px] items-center justify-between gap-3"
             >
               <span className="truncate font-mono text-[12px]">
                 {c.path.split("/").pop()}
@@ -187,7 +187,7 @@ export function ThreadRail({
           {helpers.map((h) => (
             <div
               key={h.text}
-              className="flex min-h-[27px] items-center justify-between gap-3"
+              className="flex min-h-[29px] items-center justify-between gap-3"
             >
               <span className="flex min-w-0 items-center gap-2">
                 <WorkflowIcon className="size-3.5 shrink-0 text-muted-foreground" />
@@ -200,6 +200,6 @@ export function ThreadRail({
           ))}
         </>
       )}
-    </aside>
+    </div>
   );
 }

@@ -453,12 +453,11 @@ export type V3Route =
   | { page: "hire" }
   | { page: "guide" }
   | { page: "settings"; view?: "general" | "engine" | "phone" | "connectors" }
-  /** The LilOS Browser (its own window in the Mac app). */
-  | { page: "browser" }
   /** First run: name the company, check the engine, hire the CEO, add a project. */
   | { page: "welcome" }
-  /** A new chat with an agent; `agentId` preselects who. */
-  | { page: "chat"; agentId?: string };
+  /** A new chat, opened like any record beside the page you are on; `id` is
+     the agent it starts with (you already chose who, so no picker first). */
+  | { page: "newchat"; id: string };
 
 /** A record: something you open (a ticket, a thread, a person, a goal, a
    project). Records open beside the page you are on, never instead of it. */
@@ -489,13 +488,14 @@ export type V3Actions = {
   /** Sends a message into a thread. A finished thread starts a new turn and
      the agent answers; a working one queues it until the current step ends. */
   message: (threadId: string, text: string) => void;
-  /** Opens a new chat thread with an agent in a project's folder. */
+  /** Opens a new chat thread with an agent in a project's folder and returns
+     its id, so the caller can show it where the draft was. */
   startChat: (chat: {
     agentId: string;
     projectId: string;
     model: string;
     text: string;
-  }) => void;
+  }) => string;
   markSeen: (threadId: string) => void;
   hire: (agent: { name: string; role: string; model: string }) => void;
   /** Moves the CEO position to this agent; everyone else reports to it. */
@@ -513,7 +513,8 @@ export type V3Actions = {
   scheduleToggle: (id: string) => void;
   scheduleRunNow: (id: string) => void;
   scheduleDelete: (id: string) => void;
-  browserOpen: (url: string) => void;
+  /** Opens a tab in a session's browser (yours, so the agent can see it). */
+  browserOpen: (url: string, threadId: string) => void;
   browserClose: (tabId: string) => void;
   /** Take a tab from its agent (it pauses), or hand it back. */
   browserTakeOver: (tabId: string) => void;

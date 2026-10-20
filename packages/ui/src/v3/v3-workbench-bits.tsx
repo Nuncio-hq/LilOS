@@ -10,12 +10,16 @@ export type WbTab =
   | "pr"
   | "background";
 
-/** What every Workbench tab gets. `onTab` jumps to another Workbench tab;
-   `onAsk` goes back to Chat with the composer focused. */
+/** Everything a session's work panel can show: the Workbench tabs plus the
+   session's own browser and the thread's details. */
+export type SessionTab = WbTab | "browser" | "details";
+
+/** What every Workbench tab gets. `onTab` jumps to another tab of the
+   session (the browser included); `onAsk` focuses the chat's composer. */
 export type WbPanelProps = V3PageProps & {
   thread: V3Thread;
   wb: V3Workbench;
-  onTab: (tab: WbTab) => void;
+  onTab: (tab: SessionTab) => void;
   onAsk: () => void;
 };
 
@@ -23,9 +27,9 @@ export type WbPanelProps = V3PageProps & {
    bar, a card, a field, a button that can be switched off, a quiet line and
    the tinted diff lines. */
 
-/** A tab's body, and optionally a bar that sticks to the bottom of the pane
-   like the composer does on Chat. Both are direct children of the thread's
-   column (a fragment), which is what lets the bar stick. */
+/** A tab's body, and optionally a bar that sticks to the bottom of the work
+   panel like the composer does under the chat. Both are direct children of
+   the panel's scroller (a fragment), which is what lets the bar stick. */
 export function Panel({
   children,
   bar,
@@ -35,9 +39,9 @@ export function Panel({
 }) {
   return (
     <>
-      <div className="flex-1 pt-6 pb-8">{children}</div>
+      <div className="flex-1 px-5 pt-5 pb-8">{children}</div>
       {bar && (
-        <div className="sticky bottom-0 border-[var(--v3-line)] border-t bg-[var(--v3-main)] pt-3 pb-5">
+        <div className="sticky bottom-0 border-[var(--v3-line)] border-t bg-[var(--v3-main)] px-5 pt-3 pb-4">
           {bar}
         </div>
       )}

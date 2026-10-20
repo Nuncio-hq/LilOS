@@ -1,6 +1,7 @@
 import { FolderIcon, GitBranchIcon } from "lucide-react";
 import {
   type KeyboardEvent,
+  type ReactNode,
   type RefObject,
   useLayoutEffect,
   useRef,
@@ -28,6 +29,7 @@ export function Composer({
   onChange,
   onSend,
   onAgent,
+  chips,
   inputRef,
 }: {
   data: V3Data;
@@ -43,6 +45,9 @@ export function Composer({
   onSend: (text: string) => void;
   /** Makes the agent chip a link; absent where another control picks the agent. */
   onAgent?: () => void;
+  /** Replaces the quiet chips (agent, model, folder, branch) with the
+     caller's own, e.g. menus that choose them before the chat exists. */
+  chips?: ReactNode;
   inputRef?: RefObject<HTMLTextAreaElement | null>;
 }) {
   const own = useRef<HTMLTextAreaElement>(null);
@@ -92,31 +97,37 @@ export function Composer({
       />
       <div className="mt-2 flex items-center gap-1">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-0.5 gap-y-1">
-          {onAgent ? (
-            <button
-              type="button"
-              onClick={onAgent}
-              title={`Open ${agent.name}`}
-              className={cn(
-                CHIP,
-                "hover:bg-[var(--v3-hover)] hover:text-foreground",
+          {chips ?? (
+            <>
+              {onAgent ? (
+                <button
+                  type="button"
+                  onClick={onAgent}
+                  title={`Open ${agent.name}`}
+                  className={cn(
+                    CHIP,
+                    "hover:bg-[var(--v3-hover)] hover:text-foreground",
+                  )}
+                >
+                  {who}
+                </button>
+              ) : (
+                <span className={CHIP}>{who}</span>
               )}
-            >
-              {who}
-            </button>
-          ) : (
-            <span className={CHIP}>{who}</span>
-          )}
-          {model && <span className={CHIP}>{model}</span>}
-          <span className={CHIP} title={folder}>
-            <FolderIcon className="size-3.5 shrink-0" />
-            <span className="truncate font-mono text-[12px]">{folder}</span>
-          </span>
-          {branch && (
-            <span className={CHIP} title={branch}>
-              <GitBranchIcon className="size-3.5 shrink-0" />
-              <span className="truncate font-mono text-[12px]">{branch}</span>
-            </span>
+              {model && <span className={CHIP}>{model}</span>}
+              <span className={CHIP} title={folder}>
+                <FolderIcon className="size-3.5 shrink-0" />
+                <span className="truncate font-mono text-[12px]">{folder}</span>
+              </span>
+              {branch && (
+                <span className={CHIP} title={branch}>
+                  <GitBranchIcon className="size-3.5 shrink-0" />
+                  <span className="truncate font-mono text-[12px]">
+                    {branch}
+                  </span>
+                </span>
+              )}
+            </>
           )}
         </div>
         <Kbd className="shrink-0">⌘↵</Kbd>

@@ -420,6 +420,7 @@ export function Tabs<T extends string>({
           type="button"
           key={t.id}
           onClick={() => onChange(t.id)}
+          title={t.label}
           className={cn(
             "relative flex shrink-0 items-center gap-1.5 whitespace-nowrap px-2.5 pt-1.5 pb-2.5 hover:text-foreground [&_svg]:size-4",
             value === t.id &&
@@ -427,7 +428,13 @@ export function Tabs<T extends string>({
           )}
         >
           {t.icon}
-          {t.label}
+          {/* Beside an open record the page narrows: tabs with an icon fold
+              to it, except the open one, so none is cut off. */}
+          <span
+            className={cn(t.icon && value !== t.id && "@max-[560px]:sr-only")}
+          >
+            {t.label}
+          </span>
         </button>
       ))}
       {right && (
@@ -588,6 +595,14 @@ export function useOpenRecord() {
   return (page: V3RecordRoute["page"], id: string) =>
     open?.page === page && open.id === id;
 }
+
+/** The side peek's width, for the record inside it. A thread widens it into
+   a session (chat on the left, its work on the right) and narrows it back
+   beside the list; null when the record is not in a peek. */
+export const PeekWidth = createContext<{
+  full: boolean;
+  setFull: (full: boolean) => void;
+} | null>(null);
 
 /** The mark for an open row: a quiet tint and an ink bar on its left edge. */
 export const OPEN_ROW =

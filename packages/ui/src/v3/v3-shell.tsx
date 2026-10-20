@@ -3,8 +3,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "../shell/use-theme";
 import { makeActions, planRecords } from "./v3-actions";
 import { Kbd, OpenRecord } from "./v3-bits";
-import { V3Browser } from "./v3-browser";
-import { V3ChatNew } from "./v3-chat-new";
 import type { ReplyFn } from "./v3-chat-sim";
 import { V3Goals } from "./v3-goals";
 import { V3Guide } from "./v3-guide";
@@ -55,9 +53,7 @@ const PAGE_NAME: Record<V3PageRoute["page"], string> = {
   hire: "Hire an agent",
   guide: "How it works",
   settings: "Settings",
-  browser: "Browser",
   welcome: "Welcome",
-  chat: "New chat",
 };
 
 /* The v3 shell owns the company state for the prototype: pages read `data`
@@ -109,16 +105,6 @@ export function V3Shell({
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setPalette((p) => (p === null ? "" : null));
-        return;
-      }
-      // ⌘⇧B opens the LilOS Browser, as it does in the Mac app.
-      if (
-        (e.metaKey || e.ctrlKey) &&
-        e.shiftKey &&
-        e.key.toLowerCase() === "b"
-      ) {
-        e.preventDefault();
-        onNav(() => ({ page: { page: "browser" }, peek: [] }));
         return;
       }
       // Esc closes the peek, unless you are typing or the palette owns Esc.
@@ -232,10 +218,6 @@ export function V3Shell({
               {page.page === "settings" && (
                 <V3Settings {...props} view={page.view ?? "general"} />
               )}
-              {page.page === "browser" && <V3Browser {...props} />}
-              {page.page === "chat" && (
-                <V3ChatNew {...props} agentId={page.agentId} />
-              )}
             </main>
             {top && (
               <V3Peek
@@ -255,7 +237,7 @@ export function V3Shell({
                 onTrail={(i) =>
                   onNav((n) => ({ ...n, peek: n.peek.slice(0, i + 1) }))
                 }
-                onFull={() => onNav((n) => ({ ...n, full: !n.full }))}
+                onFull={(full) => onNav((n) => ({ ...n, full }))}
                 onClose={closePeek}
               />
             )}

@@ -252,7 +252,11 @@ export function V3Threads(props: V3PageProps & { view: View }) {
           value={view}
           onChange={(v) => go({ page: "threads", view: v })}
         />
-        <Btn primary small onClick={() => go({ page: "chat" })}>
+        <Btn
+          primary
+          small
+          onClick={() => go({ page: "newchat", id: data.ceoId })}
+        >
           <PlusIcon /> New chat
         </Btn>
       </div>

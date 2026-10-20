@@ -439,10 +439,10 @@ export function makeActions(
         turns: [],
       };
       setData((d) => ({ ...d, threads: [chat, ...d.threads] }));
-      // Land on Threads with the new chat open beside it, not on the form.
-      go({ page: "threads" });
-      go({ page: "thread", id: chat.id });
       runTurn(setData, getData, reply, chat, text);
+      // The draft that sent it decides where the thread shows (it takes the
+      // draft's place on the trail), so this does not navigate.
+      return chat.id;
     },
     markSeen: (threadId) => {
       setData((d) => ({

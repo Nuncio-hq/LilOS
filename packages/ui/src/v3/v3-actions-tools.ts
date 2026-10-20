@@ -124,7 +124,7 @@ export function toolActions(
       }));
       toast("Schedule deleted");
     },
-    browserOpen: (url) => {
+    browserOpen: (url, threadId) => {
       const host = url.replace(/^https?:\/\//, "").split("/")[0];
       setData((d) => ({
         ...d,
@@ -137,6 +137,8 @@ export function toolActions(
               title: host,
               url,
               by: "you",
+              // Yours, but in this session: its agent can see it too.
+              threadId,
               page: [host, url],
             },
           ],

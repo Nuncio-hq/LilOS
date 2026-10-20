@@ -8,6 +8,8 @@ import {
 import { Fragment } from "react";
 import { cn } from "../lib/utils";
 import { V3AgentPage } from "./v3-agent";
+import { PeekWidth } from "./v3-bits";
+import { V3DraftChat } from "./v3-draft-chat";
 import { V3GoalPage } from "./v3-goals";
 import { agentOf, goalOf, projectOf } from "./v3-model";
 import { V3ProjectPage } from "./v3-project";
@@ -24,6 +26,7 @@ function label(d: V3Data, r: V3RecordRoute) {
       : "Thread";
   }
   if (r.page === "agent") return agentOf(d, r.id).name;
+  if (r.page === "newchat") return `New chat · ${agentOf(d, r.id).name}`;
   if (r.page === "goal") return goalOf(d, r.id)?.title ?? "Goal";
   if (r.page === "project") return projectOf(d, r.id)?.name ?? "Project";
   return r.id;
@@ -52,7 +55,8 @@ export function V3Peek({
   pageName: string;
   onBack: () => void;
   onTrail: (index: number) => void;
-  onFull: () => void;
+  /** Widen over the page (a session) or narrow back beside it. */
+  onFull: (full: boolean) => void;
   onClose: () => void;
 }) {
   const top = trail[trail.length - 1];
@@ -112,7 +116,7 @@ export function V3Peek({
         </nav>
         <button
           type="button"
-          onClick={onFull}
+          onClick={() => onFull(!full)}
           className={iconBtn}
           title={full ? "Narrow, back beside the page" : "Widen over the page"}
         >
@@ -127,17 +131,20 @@ export function V3Peek({
           <XIcon />
         </button>
       </div>
-      <div
-        data-v3-scroller
-        key={key}
-        className="lilos-v3-line-in @container min-h-0 flex-1 overflow-y-auto"
-      >
-        {top.page === "thread" && <V3ThreadPage {...props} id={top.id} />}
-        {top.page === "ticket" && <V3TicketPage {...props} id={top.id} />}
-        {top.page === "agent" && <V3AgentPage {...props} id={top.id} />}
-        {top.page === "goal" && <V3GoalPage {...props} id={top.id} />}
-        {top.page === "project" && <V3ProjectPage {...props} id={top.id} />}
-      </div>
+      <PeekWidth.Provider value={{ full, setFull: onFull }}>
+        <div
+          data-v3-scroller
+          key={key}
+          className="lilos-v3-line-in @container min-h-0 flex-1 overflow-y-auto"
+        >
+          {top.page === "thread" && <V3ThreadPage {...props} id={top.id} />}
+          {top.page === "newchat" && <V3DraftChat {...props} id={top.id} />}
+          {top.page === "ticket" && <V3TicketPage {...props} id={top.id} />}
+          {top.page === "agent" && <V3AgentPage {...props} id={top.id} />}
+          {top.page === "goal" && <V3GoalPage {...props} id={top.id} />}
+          {top.page === "project" && <V3ProjectPage {...props} id={top.id} />}
+        </div>
+      </PeekWidth.Provider>
     </aside>
   );
 }

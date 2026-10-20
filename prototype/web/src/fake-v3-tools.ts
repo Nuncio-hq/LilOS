@@ -159,6 +159,8 @@ export const SCHEDULES: V3Data["schedules"] = [
   },
 ]
 
+/* Every tab belongs to a session: the agent's tabs, and the ones you opened
+   in that session so its agent can see them. */
 export const BROWSER: V3Data["browser"] = {
   tabs: [
     {
@@ -166,7 +168,25 @@ export const BROWSER: V3Data["browser"] = {
       title: "HeardBack · App Store Connect",
       url: "https://appstoreconnect.apple.com/apps/heardback",
       by: "you",
+      threadId: "t-hb11",
       page: ["HeardBack · iOS App", "Version 2.4 · Ready for Sale", "Ratings: 4.7 · 1,204 ratings"],
+    },
+    {
+      id: "b-4",
+      title: "LilOS prototype · localhost:5173",
+      url: "http://localhost:5173/?v2",
+      by: "builder",
+      threadId: "t-lil81",
+      doing: "Reopening the workbench to check the scroll",
+      page: ["LilOS prototype", "Workbench · Files · 1,840 px scrolled", "Scroll restored after reopen ✓"],
+    },
+    {
+      id: "b-5",
+      title: "ac-544 · Playwright trace",
+      url: "http://localhost:9323/trace/ac-544",
+      by: "you",
+      threadId: "t-lil81",
+      page: ["Trace · ac-544 › AC-6 restores the scroll position", "Run 2 · failed · expected 1840, got 0", "Frame 412: restoreScroll() before first paint"],
     },
     {
       id: "b-2",

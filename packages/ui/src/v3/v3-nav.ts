@@ -15,6 +15,10 @@ export const isRecordRoute = (r: V3Route): r is V3RecordRoute => "id" in r;
 export function step(nav: V3Nav, r: V3Route, from: "page" | "peek"): V3Nav {
   if (!isRecordRoute(r)) return { page: r, peek: [] };
   if (from === "page") return { ...nav, peek: [r] };
+  // A sent draft becomes its thread in the same place on the trail.
+  const top = nav.peek[nav.peek.length - 1];
+  if (top?.page === "newchat" && r.page === "thread")
+    return { ...nav, peek: [...nav.peek.slice(0, -1), r] };
   // Opening something already on the trail goes back to it instead of
   // growing a loop (thread → ticket → the same thread).
   const at = nav.peek.findIndex((x) => x.page === r.page && x.id === r.id);
@@ -25,7 +29,7 @@ export function step(nav: V3Nav, r: V3Route, from: "page" | "peek"): V3Nav {
 /** The page a record belongs on when it is opened from a bare link. */
 export function homeOf(r: V3RecordRoute): V3PageRoute {
   if (r.page === "ticket") return { page: "work" };
-  if (r.page === "thread") return { page: "threads" };
+  if (r.page === "thread" || r.page === "newchat") return { page: "threads" };
   if (r.page === "agent") return { page: "people" };
   if (r.page === "goal") return { page: "goals" };
   return { page: "home" };

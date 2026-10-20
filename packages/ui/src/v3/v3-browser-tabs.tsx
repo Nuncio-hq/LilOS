@@ -2,13 +2,13 @@ import { GlobeIcon, PlusIcon, XIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "../lib/utils";
 import { AgentAvatar, DOT } from "./v3-bits";
-import { Favicon, NEW_TAB, tabStatus } from "./v3-browser-bits";
+import { NEW_TAB, tabStatus } from "./v3-browser-bits";
 import { agentOf } from "./v3-model";
 import type { V3BrowserTab, V3Data, V3Status } from "./v3-types";
 
-/* The tab strip is the window's title row: your tabs first, then the tabs
-   agents drive. An agent's tab wears the agent's face instead of a favicon
-   and a thin status line underneath, so whose tab it is never needs reading. */
+/* The session browser's tab strip: this session's tabs in the order they were
+   opened. An agent's tab wears the agent's face and a thin status line
+   underneath, yours a globe, so whose tab it is never needs reading. */
 
 function TabChip({
   active,
@@ -31,7 +31,7 @@ function TabChip({
   return (
     <div
       className={cn(
-        "group relative flex h-8 w-[168px] shrink-0 items-center rounded-t-lg border border-transparent border-b-0 text-[13px] transition-colors",
+        "group relative flex h-8 w-[152px] shrink-0 items-center rounded-t-lg border border-transparent border-b-0 text-[13px] transition-colors",
         active
           ? "border-[var(--v3-line)] bg-background text-foreground"
           : "text-muted-foreground hover:bg-[var(--v3-hover)] hover:text-foreground",
@@ -72,12 +72,9 @@ function TabChip({
   );
 }
 
-const LABEL = "shrink-0 self-center px-2 text-[12px] text-muted-foreground/70";
-
 export function TabStrip({
   data,
-  yours,
-  agents,
+  tabs,
   blank,
   shownId,
   onSelect,
@@ -85,9 +82,8 @@ export function TabStrip({
   onNew,
 }: {
   data: V3Data;
-  yours: V3BrowserTab[];
-  agents: V3BrowserTab[];
-  /** The empty tab from + or ⌘T, before it has an address. */
+  tabs: V3BrowserTab[];
+  /** The empty tab from +, before it has an address. */
   blank: boolean;
   /** Id of the tab on show; NEW_TAB for the blank one. */
   shownId?: string;
@@ -95,23 +91,41 @@ export function TabStrip({
   onClose: (id: string) => void;
   onNew: () => void;
 }) {
-  // Labels only help when there are two groups to tell apart.
-  const labelled = agents.length > 0 && (yours.length > 0 || blank);
   return (
     <div className="flex shrink-0 items-end gap-1 border-[var(--v3-line)] border-b bg-[var(--v3-soft)] px-2 pt-1.5">
       <div className="no-scrollbar flex min-w-0 items-end gap-0.5 overflow-x-auto">
-        {labelled && <span className={LABEL}>Yours</span>}
-        {yours.map((t) => (
-          <TabChip
-            key={t.id}
-            active={t.id === shownId}
-            icon={<Favicon url={t.url} />}
-            title={t.title}
-            tip={t.title}
-            onSelect={() => onSelect(t.id)}
-            onClose={() => onClose(t.id)}
-          />
-        ))}
+        {tabs.map((t) =>
+          t.by === "you" ? (
+            <TabChip
+              key={t.id}
+              active={t.id === shownId}
+              icon={
+                <GlobeIcon className="size-4 shrink-0 text-muted-foreground" />
+              }
+              title={t.title}
+              tip={t.title}
+              onSelect={() => onSelect(t.id)}
+              onClose={() => onClose(t.id)}
+            />
+          ) : (
+            <TabChip
+              key={t.id}
+              active={t.id === shownId}
+              icon={
+                <AgentAvatar
+                  data={data}
+                  agent={agentOf(data, t.by)}
+                  size={16}
+                />
+              }
+              title={t.title}
+              tip={`${agentOf(data, t.by).name} · ${t.title}`}
+              status={tabStatus(data, t)}
+              onSelect={() => onSelect(t.id)}
+              onClose={() => onClose(t.id)}
+            />
+          ),
+        )}
         {blank && (
           <TabChip
             active={shownId === NEW_TAB}
@@ -124,37 +138,11 @@ export function TabStrip({
             onClose={() => onClose(NEW_TAB)}
           />
         )}
-        {agents.length > 0 && (
-          <>
-            {labelled && (
-              <span
-                aria-hidden
-                className="mx-1.5 h-4 w-px shrink-0 self-center bg-[var(--v3-line)]"
-              />
-            )}
-            <span className={LABEL}>Agents</span>
-            {agents.map((t) => {
-              const agent = agentOf(data, t.by);
-              return (
-                <TabChip
-                  key={t.id}
-                  active={t.id === shownId}
-                  icon={<AgentAvatar data={data} agent={agent} size={16} />}
-                  title={t.title}
-                  tip={`${agent.name} · ${t.title}`}
-                  status={tabStatus(data, t)}
-                  onSelect={() => onSelect(t.id)}
-                  onClose={() => onClose(t.id)}
-                />
-              );
-            })}
-          </>
-        )}
       </div>
       <button
         type="button"
         aria-label="New tab"
-        title="New tab (⌘T)"
+        title="New tab"
         onClick={onNew}
         className="mb-1 grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-[var(--v3-hover)] hover:text-foreground"
       >

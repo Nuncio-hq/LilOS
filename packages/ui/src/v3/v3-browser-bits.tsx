@@ -1,13 +1,13 @@
 import { GlobeIcon, HandIcon, LockIcon, Undo2Icon } from "lucide-react";
-import { cn } from "../lib/utils";
-import { AgentAvatar, Btn, Kbd, StatusDot } from "./v3-bits";
+import { useState } from "react";
+import { AgentAvatar, Btn, StatusDot } from "./v3-bits";
 import { agentOf } from "./v3-model";
 import type { V3BrowserTab, V3Data, V3PageProps, V3Status } from "./v3-types";
 
-/* Small pieces of the LilOS Browser page: address helpers, the page body,
-   the agent banner and the start view. */
+/* Small pieces of a session's browser: address helpers, the page body, the
+   agent banner and the empty state. */
 
-/** Id of the blank tab you opened with + or ⌘T, before it has an address. */
+/** Id of the blank tab you opened with +, before it has an address. */
 export const NEW_TAB = "new-tab";
 
 const SEARCH = "https://search.example/?q=";
@@ -39,7 +39,7 @@ export const hostOf = (url: string) =>
     .split(/[/?#]/)[0]
     .replace(/^www\./, "");
 
-/** One key per page, so bookmarks and recents agree on what is the same. */
+/** One key per page, so opening an address you already have switches to it. */
 export const urlKey = (url: string) => stripScheme(url).toLowerCase();
 
 /** What an agent's tab is doing, as a status: taking it over pauses the
@@ -50,102 +50,50 @@ export function tabStatus(data: V3Data, tab: V3BrowserTab): V3Status {
   return s && s !== "done" && s !== "planned" ? s : "working";
 }
 
-/** A site's letter chip until real favicons exist. */
-export function Favicon({
-  url,
-  className,
-}: {
-  url: string;
-  className?: string;
-}) {
-  return (
-    <span
-      aria-hidden
-      className={cn(
-        "grid size-4 shrink-0 place-items-center rounded-[4px] bg-[var(--v3-hover)] font-medium text-[10px] text-muted-foreground uppercase",
-        className,
-      )}
-    >
-      {hostOf(url).charAt(0) || "·"}
-    </span>
-  );
-}
-
-export type BrowserLink = { title: string; url: string };
-
-function QuickLinks({
-  links,
-  onOpen,
-}: {
-  links: BrowserLink[];
-  onOpen: (url: string) => void;
-}) {
-  return (
-    <div className="grid grid-cols-1 gap-1.5 @min-[560px]:grid-cols-2">
-      {links.map((l) => (
-        <button
-          key={l.url}
-          type="button"
-          onClick={() => onOpen(l.url)}
-          className="flex min-w-0 items-center gap-2.5 rounded-lg border border-[var(--v3-line)] px-3 py-2.5 text-left transition-colors hover:bg-[var(--v3-hover)]"
-        >
-          <Favicon url={l.url} className="size-5 text-[11px]" />
-          <span className="min-w-0 flex-1">
-            <span className="block truncate font-medium text-[13.5px] text-foreground">
-              {l.title}
-            </span>
-            <span className="block truncate text-[12.5px] text-muted-foreground/70">
-              {hostOf(l.url)}
-            </span>
-          </span>
-        </button>
-      ))}
-    </div>
-  );
-}
-
-/** A tab with nowhere to go yet: the blank tab you just opened, or the
-   window with no tabs at all. Bookmarks are one click away in both. */
-export function StartView({
+/** A session browser with nothing in it yet, or a blank tab: say so, and
+   take an address or a search right here. */
+export function SessionStart({
+  agentName,
   empty,
-  links,
-  onNew,
   onOpen,
 }: {
+  agentName: string;
+  /** No tab at all in this session (else: a blank tab among others). */
   empty: boolean;
-  links: BrowserLink[];
-  onNew: () => void;
-  onOpen: (url: string) => void;
+  onOpen: (text: string) => void;
 }) {
+  const [text, setText] = useState("");
   return (
-    <div className="mx-auto flex w-full max-w-[560px] flex-col items-center px-6 pt-[12vh] pb-16 text-center">
+    <div className="mx-auto flex w-full max-w-[420px] flex-col items-center px-6 pt-[10vh] pb-16 text-center">
       <GlobeIcon
         className="size-7 text-muted-foreground/60"
         strokeWidth={1.5}
       />
-      <h2 className="mt-3 font-semibold text-[17px] text-foreground">
-        {empty ? "No tabs open" : "New tab"}
-      </h2>
-      <p className="mt-1 text-[14px] text-muted-foreground">
+      <p className="mt-3 text-[14px] text-muted-foreground">
         {empty
-          ? "Type an address above, or open a bookmark."
-          : "Type a search or an address above, or open a bookmark."}
+          ? `No tabs in this session yet. Open a page here and ${agentName} can see it too.`
+          : `New tab. ${agentName} can see pages you open in this session.`}
       </p>
-      {empty && (
-        <div className="mt-4">
-          <Btn onClick={onNew}>
-            New tab <Kbd>⌘T</Kbd>
-          </Btn>
-        </div>
-      )}
-      {links.length > 0 && (
-        <div className="mt-8 w-full text-left">
-          <p className="mb-2 text-[12.5px] text-muted-foreground/70">
-            Bookmarks
-          </p>
-          <QuickLinks links={links} onOpen={onOpen} />
-        </div>
-      )}
+      <form
+        className="mt-4 flex h-[34px] w-full items-center rounded-lg bg-[var(--v3-hover)] px-3 focus-within:bg-background focus-within:shadow-[inset_0_0_0_1px_var(--foreground)]"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const v = text.trim();
+          if (!v) return;
+          onOpen(v);
+          setText("");
+        }}
+      >
+        <input
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="Search or type an address"
+          aria-label="Open a page in this session"
+          spellCheck={false}
+          autoComplete="off"
+          className="min-w-0 flex-1 bg-transparent text-[13.5px] text-foreground outline-none placeholder:text-muted-foreground/70"
+        />
+      </form>
     </div>
   );
 }
@@ -156,15 +104,15 @@ export function PageBody({ tab }: { tab: V3BrowserTab }) {
   const [head, ...rest] = tab.page;
   const Lock = /^https:/i.test(tab.url) ? LockIcon : GlobeIcon;
   return (
-    <article className="lilos-v3-line-in mx-auto w-full max-w-[680px] px-6 pt-10 pb-20 @min-[720px]:px-8">
+    <article className="lilos-v3-line-in mx-auto w-full max-w-[680px] px-6 pt-8 pb-16 @min-[720px]:px-8">
       <p className="flex items-center gap-1.5 text-[12.5px] text-muted-foreground/70">
         <Lock className="size-3" />
         {hostOf(tab.url)}
       </p>
-      <h1 className="mt-3 font-semibold text-[26px] text-foreground leading-tight tracking-[-0.01em]">
+      <h1 className="mt-3 font-semibold text-[24px] text-foreground leading-tight tracking-[-0.01em]">
         {head ?? tab.title}
       </h1>
-      <div className="mt-6 space-y-2">
+      <div className="mt-5 space-y-2">
         {rest.map((line) => (
           <p
             key={line}
@@ -179,19 +127,18 @@ export function PageBody({ tab }: { tab: V3BrowserTab }) {
 }
 
 /** Under the address bar on an agent's tab: who drives it, and the way to
-   take it over, hand it back, or see the thread behind it. */
+   take it over or hand it back. The thread behind it is the session you are
+   already in. */
 export function AgentBanner({
   data,
   tab,
-  go,
   act,
-}: Pick<V3PageProps, "data" | "go" | "act"> & { tab: V3BrowserTab }) {
+}: Pick<V3PageProps, "data" | "act"> & { tab: V3BrowserTab }) {
   const agent = agentOf(data, tab.by);
-  const threadId = tab.threadId;
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-[var(--v3-line)] border-b bg-[var(--v3-soft)] px-3 py-2 text-[13.5px]">
       <AgentAvatar data={data} agent={agent} size={20} />
-      <p className="flex min-w-0 flex-1 basis-[260px] items-center gap-2 text-muted-foreground">
+      <p className="flex min-w-0 flex-1 basis-[200px] items-center gap-2 text-muted-foreground">
         <StatusDot status={tabStatus(data, tab)} />
         {tab.takenOver ? (
           <span className="min-w-0 truncate">
@@ -206,21 +153,14 @@ export function AgentBanner({
           </span>
         )}
       </p>
-      <div className="flex shrink-0 items-center gap-2">
-        <Btn small primary onClick={() => act.browserTakeOver(tab.id)}>
-          {tab.takenOver ? (
-            <Undo2Icon className="size-3.5" />
-          ) : (
-            <HandIcon className="size-3.5" />
-          )}
-          {tab.takenOver ? "Hand back" : "Take over"}
-        </Btn>
-        {threadId && (
-          <Btn small onClick={() => go({ page: "thread", id: threadId })}>
-            Open thread
-          </Btn>
+      <Btn small primary onClick={() => act.browserTakeOver(tab.id)}>
+        {tab.takenOver ? (
+          <Undo2Icon className="size-3.5" />
+        ) : (
+          <HandIcon className="size-3.5" />
         )}
-      </div>
+        {tab.takenOver ? "Hand back" : "Take over"}
+      </Btn>
     </div>
   );
 }

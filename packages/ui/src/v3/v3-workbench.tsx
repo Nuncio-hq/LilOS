@@ -10,6 +10,7 @@ import {
   FIELD,
   Panel,
   Quiet,
+  type SessionTab,
   WbBtn,
   type WbPanelProps,
   type WbTab,
@@ -22,22 +23,6 @@ import { TerminalTab } from "./v3-workbench-terminal";
    tabs on the thread record. Everything here is the agent's work made
    visible; changes go back to the agent through the conversation. */
 
-/** The Workbench tabs a thread offers, in order. Preview, PR and Background
-   appear only once there is something in them. */
-export function workbenchTabs(wb: V3Workbench): { id: WbTab; label: string }[] {
-  const n = wb.diffs.length;
-  const tabs: { id: WbTab; label: string }[] = [
-    { id: "changes", label: n ? `Changes ${n}` : "Changes" },
-    { id: "files", label: "Files" },
-    { id: "terminal", label: "Terminal" },
-  ];
-  if (wb.preview) tabs.push({ id: "preview", label: "Preview" });
-  if (wb.pr) tabs.push({ id: "pr", label: "PR" });
-  if (wb.jobs.length)
-    tabs.push({ id: "background", label: `Background ${wb.jobs.length}` });
-  return tabs;
-}
-
 export function WorkbenchTab({
   thread,
   tab,
@@ -49,9 +34,9 @@ export function WorkbenchTab({
 }: V3PageProps & {
   thread: V3Thread;
   tab: WbTab;
-  /** Jump to another Workbench tab. */
-  onTab: (tab: WbTab) => void;
-  /** Back to Chat with the composer focused. */
+  /** Jump to another tab of the session. */
+  onTab: (tab: SessionTab) => void;
+  /** Focus the chat's composer. */
   onAsk: () => void;
 }) {
   const wb = thread.workbench;

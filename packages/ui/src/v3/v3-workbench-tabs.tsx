@@ -22,10 +22,10 @@ import {
    agent has started a dev server, opened a pull request or left a command
    running. */
 
-/** Opens a page in the LilOS Browser and shows it. */
-function openInBrowser({ act, go }: WbPanelProps, url: string) {
-  act.browserOpen(url);
-  go({ page: "browser" });
+/** Opens a page in this session's browser and shows it. */
+function openInBrowser({ act, thread, onTab }: WbPanelProps, url: string) {
+  act.browserOpen(url, thread.id);
+  onTab("browser");
 }
 
 export function PreviewTab(p: WbPanelProps) {
@@ -59,7 +59,7 @@ export function PreviewTab(p: WbPanelProps) {
           </span>
           <WbBtn onClick={() => openInBrowser(p, preview.url)}>
             <ExternalLinkIcon className="size-3.5" />
-            Open in LilOS Browser
+            Open in browser
           </WbBtn>
         </div>
         <div
