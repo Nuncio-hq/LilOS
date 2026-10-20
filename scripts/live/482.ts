@@ -28,9 +28,12 @@
  * restart sequence is visible verbatim (the harness-log equivalent).
  */
 import { execFileSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { withEngineProtocolToken } from "../../packages/contracts/src/auth";
+import { ENGINE_PROTOCOL_TOKEN_ENV } from "../../packages/contracts/src/env";
 import {
   cleanup,
   freePort,
@@ -73,6 +76,7 @@ const workdir = join(scratch, "work");
 mkdirSync(workdir, { recursive: true });
 const bun = process.env.BUN_BIN ?? "bun";
 
+const protocolToken = randomBytes(16).toString("hex");
 const adapter = launch(
   "adapter",
   [
@@ -92,6 +96,7 @@ const adapter = launch(
   {
     HERMES_SERVE_PID_FILE: pidFile,
     HERMES_SERVE_TIMEOUT_MS: process.env.HERMES_SERVE_TIMEOUT_MS ?? "240000",
+    [ENGINE_PROTOCOL_TOKEN_ENV]: protocolToken,
   },
 );
 
@@ -112,7 +117,12 @@ const wsDeadline = Date.now() + 300_000;
 for (;;) {
   try {
     ws = await new Promise<WebSocket>((res, rej) => {
-      const w = new WebSocket(`ws://127.0.0.1:${adapterPort}/ws`);
+      const w = new WebSocket(
+        withEngineProtocolToken(
+          `ws://127.0.0.1:${adapterPort}/ws`,
+          protocolToken,
+        ),
+      );
       w.onopen = () => res(w);
       w.onerror = () => rej(new Error("adapter ws connect failed"));
       setTimeout(() => rej(new Error("adapter ws connect timeout")), 3_000);

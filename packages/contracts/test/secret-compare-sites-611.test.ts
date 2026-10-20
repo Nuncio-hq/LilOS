@@ -16,15 +16,22 @@ import { describe, expect, it } from "vitest";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const read = (p: string) => readFileSync(join(ROOT, p), "utf8");
 
-/* Every file that compares a credential on a loopback boundary. */
+/* Every file that compares a credential on a loopback boundary. The feed
+   and the engine adapter sockets call `authorizeLoopbackUpgrade` instead
+   of `equalSecret` directly — that helper is the compare. */
 const SITES = [
   "apps/harness/src/host.ts",
   "apps/harness/src/surfaces/server.ts",
-  "apps/harness/src/feed.ts",
   "packages/surfaces/src/gateway.ts",
   "apps/relay/src/session/handshake.ts",
   "apps/relay/src/db/drizzle-store.ts",
   "apps/relay/test/memory-store.ts",
+];
+
+const UPGRADE_GATES = [
+  "apps/harness/src/feed.ts",
+  "packages/engine-fake/scripts/serve.ts",
+  "packages/engine-hermes/scripts/serve.ts",
 ];
 
 /* A === / !== on a line that also names a credential-ish operand is a
@@ -56,6 +63,17 @@ describe("AC-1 one shared constant-time compare", () => {
   });
 
   it.each(SITES)("%s has no === / !== compare on a secret", (file) => {
+    expect(suspects(file)).toEqual([]);
+  });
+
+  it.each(UPGRADE_GATES)(
+    "%s gates the socket with authorizeLoopbackUpgrade",
+    (file) => {
+      expect(read(file)).toContain("authorizeLoopbackUpgrade");
+    },
+  );
+
+  it.each(UPGRADE_GATES)("%s has no === / !== compare on a secret", (file) => {
     expect(suspects(file)).toEqual([]);
   });
 });

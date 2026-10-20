@@ -237,7 +237,10 @@ fi
 if have lilos-engine-fake; then
   FLOG="$TMP/engine-fake.log"
   FPORT="$(port)"
-  ( cd "$TMP" && "$RUN/lilos-engine-fake" --port "$FPORT" \
+  # #752: the adapter refuses /ws without the per-launch token.
+  FTOKEN="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+  ( cd "$TMP" && env LILOS_ENGINE_PROTOCOL_TOKEN="$FTOKEN" \
+      "$RUN/lilos-engine-fake" --port "$FPORT" \
       >"$FLOG" 2>&1 ) &
   FPID=$!; PIDS="$PIDS $FPID"
   if wait_for "$FLOG" "LISTENING" "$FPID" lilos-engine-fake 20; then
@@ -253,7 +256,7 @@ if have lilos-engine-fake; then
   # closes the socket instead.
   if [ -n "$FPORT" ]; then
     cat >"$TMP/big-frame-engine.ts" <<'TS'
-const [port] = process.argv.slice(2);
+const [port, token] = process.argv.slice(2);
 const timer = setTimeout(() => {
   console.error("timeout waiting for the engine's answer");
   process.exit(1);
@@ -263,7 +266,7 @@ const fail = (m: string): never => {
   console.error(m);
   process.exit(1);
 };
-const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+const ws = new WebSocket(`ws://127.0.0.1:${port}/ws?token=${encodeURIComponent(token)}`);
 ws.addEventListener("close", (e) => fail(`socket closed ${e.code}`));
 ws.addEventListener("error", () => fail("socket error"));
 ws.addEventListener("open", () => {
@@ -282,7 +285,7 @@ ws.addEventListener("message", (ev) => {
   }
 });
 TS
-    if (cd "$TMP" && bun "$TMP/big-frame-engine.ts" "$FPORT"); then
+    if (cd "$TMP" && bun "$TMP/big-frame-engine.ts" "$FPORT" "$FTOKEN"); then
       ok "lilos-engine-fake answered a >16 MiB ws frame"
     else
       bad "lilos-engine-fake dropped a >16 MiB ws frame"

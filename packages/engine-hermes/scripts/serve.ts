@@ -9,13 +9,18 @@
  *
  * Spawns `hermes serve` (generated token on 127.0.0.1), connects the engine,
  * then serves the LilOS protocol at ws://127.0.0.1:PORT/ws and prints
- * `LISTENING ws://...` on stdout once up. #482: `HermesBackendSupervisor`
+ * `LISTENING ws://...` on stdout once up. The listener binds 127.0.0.1
+ * only. `/ws` requires `LILOS_ENGINE_PROTOCOL_TOKEN` (the harness grants
+ * it on spawn and sends it as `?token=`); a missing or wrong token is 401
+ * and the socket never attaches. #482: `HermesBackendSupervisor`
  * keeps the backend watched — a dead child or dropped socket fails engine
  * calls fast typed and relaunches `hermes serve` with backoff instead of
  * leaving the adapter "running" on a corpse.
  */
 import { homedir } from "node:os";
+import { authorizeLoopbackUpgrade } from "@lilos/contracts/auth";
 import { MAX_FRAME_BYTES } from "@lilos/contracts/engine";
+import { takeEngineProtocolToken } from "@lilos/contracts/env";
 import { HermesBackendSupervisor } from "../src/backend.js";
 import { HermesEngine } from "../src/engine.js";
 import { RpcError } from "../src/errors.js";
@@ -26,6 +31,12 @@ import {
   HERMES_TOO_OLD_EXIT_CODE,
   hermesTooOldMessage,
 } from "../src/version.js";
+
+/* D-#564 (#752): read the per-launch credential and drop it before
+   `hermes serve` or ACP copy `process.env`. Not on the D-#412 allow-list —
+   agent shells must not see a secret that drives this socket. The harness
+   passes it as an explicit spawn grant. Empty fails closed in the gate. */
+const protocolToken = takeEngineProtocolToken();
 
 /**
  * Die with a clean last line (#95): an uncaught rejection prints a Bun
@@ -115,10 +126,19 @@ engine.onEvent((e) => {
 });
 
 const server = Bun.serve({
+  /* D-#564 (#752): Bun's default hostname is every interface, which is
+     what the old LISTENING line claimed was 127.0.0.1. Bind the loopback
+     interface only — another machine must not be able to open this port. */
+  hostname: "127.0.0.1",
   port: Number(arg("port", "0")),
   fetch(req, srv) {
     const url = new URL(req.url);
-    if (url.pathname === "/ws" && srv.upgrade(req)) return;
+    if (url.pathname === "/ws") {
+      const denied = authorizeLoopbackUpgrade(req, protocolToken);
+      if (denied) return denied;
+      if (srv.upgrade(req)) return;
+      return new Response("websocket upgrade failed\n", { status: 400 });
+    }
     return new Response("engine-hermes: websocket at /ws", { status: 404 });
   },
   websocket: {

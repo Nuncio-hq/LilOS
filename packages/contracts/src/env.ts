@@ -31,6 +31,28 @@ export const LILOS_ENV_ALLOW_LIST: readonly string[] = [
   "LILOS_ENGINE_TOKEN", // surfaces.engineToken — engine-scoped credential
 ];
 
+/**
+ * Per-launch credential for the engine adapter's `/ws` (D-#564, #752).
+ * The harness mints one per engine spawn and passes it as an explicit
+ * grant — merged after `scrubLilosEnv`, which is how D-#412 hands a child
+ * a credential it needs without inheriting the harness env. It is not on
+ * `LILOS_ENV_ALLOW_LIST`: that list is what agent-influenced code may see,
+ * and this secret is what drives the protocol socket. The adapter reads it
+ * once (`takeEngineProtocolToken`) and drops it before it spawns
+ * `hermes serve`, ACP, or MCP, so those children never inherit it.
+ */
+export const ENGINE_PROTOCOL_TOKEN_ENV = "LILOS_ENGINE_PROTOCOL_TOKEN";
+
+/** Read the protocol credential and remove it from `env` (default
+ *  `process.env`) so later child spawns do not inherit it. */
+export function takeEngineProtocolToken(
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  const token = env[ENGINE_PROTOCOL_TOKEN_ENV] ?? "";
+  delete env[ENGINE_PROTOCOL_TOKEN_ENV];
+  return token;
+}
+
 /** `env` minus every LILOS_* outside the allow-list above. */
 export const scrubLilosEnv = (env: NodeJS.ProcessEnv): NodeJS.ProcessEnv => {
   const keep = new Set<string>(LILOS_ENV_ALLOW_LIST);

@@ -1,6 +1,8 @@
 import { spawn, spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { withEngineProtocolToken } from "@lilos/contracts/auth";
+import { ENGINE_PROTOCOL_TOKEN_ENV } from "@lilos/contracts/env";
 import { describe, expect, test } from "vitest";
 import { Harness } from "../src/harness.js";
 import { connectWs } from "../src/ws.js";
@@ -24,7 +26,9 @@ const wsAvailable =
  */
 describe.runIf(bunAvailable && wsAvailable)("WebSocket transport", () => {
   test("AC-1 engine-fake speaks the protocol over ws://", async () => {
+    const token = "conformance-ws-token";
     const proc = spawn("bun", [SERVE, "--port", "0", "--tick", "2"], {
+      env: { ...process.env, [ENGINE_PROTOCOL_TOKEN_ENV]: token },
       stdio: ["ignore", "pipe", "pipe"],
     });
     try {
@@ -41,7 +45,7 @@ describe.runIf(bunAvailable && wsAvailable)("WebSocket transport", () => {
           10_000,
         );
       });
-      const conn = await connectWs(url);
+      const conn = await connectWs(withEngineProtocolToken(url, token));
       const h = new Harness(conn);
       try {
         const r = (await h.request("describe")) as {

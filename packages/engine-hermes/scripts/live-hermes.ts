@@ -28,6 +28,7 @@
  * Exits non-zero unless every scenario passes.
  */
 import { spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import {
   appendFileSync,
   existsSync,
@@ -38,6 +39,8 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { withEngineProtocolToken } from "@lilos/contracts/auth";
+import { ENGINE_PROTOCOL_TOKEN_ENV } from "@lilos/contracts/env";
 import {
   COMPRESS_FILLER_TURNS,
   compressFillerPrompt,
@@ -474,6 +477,7 @@ conn.close();
   const t0 = Date.now();
   const id = "transport: serve.ts WS carries describe + a turn";
   try {
+    const protocolToken = randomBytes(16).toString("hex");
     const serve = spawn(
       "bun",
       [
@@ -487,7 +491,14 @@ conn.close();
         ...(model ? ["--model", model] : []),
         ...(args.length ? ["--hermes-args", args.join(" ")] : []),
       ],
-      { stdio: ["ignore", "pipe", "inherit"], env: { ...process.env, ...env } },
+      {
+        stdio: ["ignore", "pipe", "inherit"],
+        env: {
+          ...process.env,
+          ...env,
+          [ENGINE_PROTOCOL_TOKEN_ENV]: protocolToken,
+        },
+      },
     );
     children.push(serve);
     const url = await new Promise<string>((resolve, reject) => {
@@ -509,7 +520,7 @@ conn.close();
         reject(new Error(`engine serve exited ${c}:\n${buf}`)),
       );
     });
-    const ws = await connectWs(url);
+    const ws = await connectWs(withEngineProtocolToken(url, protocolToken));
     const wh = new Harness(ws, WAIT_MS);
     const { sessionId } = (await wh.request("session.start", {
       agent: "builder",
