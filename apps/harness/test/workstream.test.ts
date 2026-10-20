@@ -1,11 +1,23 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { RelayClient } from "@lilos/client-runtime";
 import type { AppMessage, Conversation } from "@lilos/contracts/app";
-import { describe, expect, it } from "vitest";
-import { openDm, setupWorld as setupWorldBase, waitFor } from "./helpers";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import {
+  copyFixtureRepo,
+  homes,
+  isolateFixtureGit,
+  openDm,
+  seedFixtureRepo,
+  setupWorld as setupWorldBase,
+  waitFor,
+} from "./helpers";
+
+/* #784: one seeded repo, copied per test. Git ignores the machine config
+   — see `isolateFixtureGit` in helpers.ts. */
+isolateFixtureGit();
 
 /**
  * Issue #156 AC-4: a "new workstream" open materializes its git worktree
@@ -19,17 +31,24 @@ const setupWorld = () => setupWorldBase({ reconnectMinDelayMs: 20 });
 const git = (dir: string, args: string[]) =>
   execFileSync("git", ["-C", dir, ...args], { encoding: "utf8" });
 
-/** A real repo with one commit + a named feature branch. */
+/** Template built once per file (#784): main + feat/x. Each test copies it. */
+let template = "";
+
+beforeAll(() => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "lilos-ws-seed-")));
+  template = seedFixtureRepo(root, "main", ["feat/x"]);
+});
+
+afterAll(() => {
+  if (template) rmSync(template, { recursive: true, force: true });
+});
+
+/** A copy of the template. realpath: git reports /private/tmp on macOS. */
 function seedRepo() {
-  // realpath: git reports /private/tmp on macOS, not the tmpdir() alias.
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), "lilos-ws-")));
-  execFileSync("git", ["init", "-q", "-b", "main", dir]);
-  git(dir, ["config", "user.email", "t@t"]);
-  git(dir, ["config", "user.name", "t"]);
-  writeFileSync(join(dir, "README.md"), "# seed\n");
-  git(dir, ["add", "README.md"]);
-  git(dir, ["commit", "-qm", "seed"]);
-  git(dir, ["branch", "feat/x"]);
+  const parent = realpathSync(mkdtempSync(join(tmpdir(), "lilos-ws-")));
+  homes.push(parent);
+  const dir = join(parent, "repo");
+  copyFixtureRepo(template, dir);
   return dir;
 }
 
@@ -95,9 +114,7 @@ describe("AC-4 workstream modes (#156)", () => {
     }
   });
 
-  it('a second open onto an existing worktree reuses it (no "already exists" failure)', {
-    timeout: 20_000,
-  }, async () => {
+  it('a second open onto an existing worktree reuses it (no "already exists" failure)', async () => {
     const repo = seedRepo();
     const w = await setupWorld();
     try {
@@ -129,9 +146,7 @@ describe("AC-4 workstream modes (#156)", () => {
     }
   });
 
-  it('mode "existing" starts the session in the picked worktree', {
-    timeout: 20_000,
-  }, async () => {
+  it('mode "existing" starts the session in the picked worktree', async () => {
     const repo = seedRepo();
     const dir = `${repo}/.lilos/wt/old`;
     git(repo, ["worktree", "add", "-b", "ws/old", dir, "main"]);

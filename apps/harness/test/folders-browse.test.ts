@@ -1,5 +1,12 @@
-import { execFileSync } from "node:child_process";
-import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type RelayClient, RelayError } from "@lilos/client-runtime";
 import type {
@@ -7,29 +14,25 @@ import type {
   FoldersBrowseResult,
   FoldersDiscoverResult,
 } from "@lilos/contracts/app";
-import { describe, expect, it } from "vitest";
-import { mkhome, setupWorld as setupWorldBase, waitFor } from "./helpers";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import {
+  copyFixtureRepo,
+  isolateFixtureGit,
+  mkhome,
+  seedFixtureRepo,
+  setupWorld as setupWorldBase,
+  waitFor,
+} from "./helpers";
+
+/* #784: one seeded repo per shape, copied into each home. Git ignores the
+   machine config — see `isolateFixtureGit` in helpers.ts. */
+isolateFixtureGit();
 
 /* `folders.browse`/`folders.discover` (#238): the phone's folder browser,
    driven by a device-scope client over a real relay + harness + tmpdir
    "home" on disk. The home-folder boundary is enforced by the harness
    (server-side) — every escape shape is refused before any listing. The
    pick then lands via `folders.add` and a session in it proves the cwd. */
-
-const git = (dir: string, args: string[]) =>
-  execFileSync("git", ["-C", dir, ...args], { encoding: "utf8" });
-
-/** A real repo with one commit on `branch` at `dir` (inside `home`). */
-function seedRepo(dir: string, branch = "main") {
-  mkdirSync(dir, { recursive: true });
-  execFileSync("git", ["init", "-q", "-b", branch, dir]);
-  git(dir, ["config", "user.email", "t@t"]);
-  git(dir, ["config", "user.name", "t"]);
-  writeFileSync(join(dir, "README.md"), "# seed\n");
-  git(dir, ["add", "README.md"]);
-  git(dir, ["commit", "-qm", "seed"]);
-  return dir;
-}
 
 /* The phone: a paired device peer, like the real app (#153). */
 async function setupWorld(home: string) {
@@ -49,12 +52,29 @@ async function setupWorld(home: string) {
   };
 }
 
+/** Templates built once per file (#784). Each test copies them into a home. */
+let seedRoot = "";
+let crewTemplate = "";
+let notesTemplate = "";
+let demoTemplate = "";
+
+beforeAll(() => {
+  seedRoot = realpathSync(mkdtempSync(join(tmpdir(), "lilos-browse-seed-")));
+  crewTemplate = seedFixtureRepo(join(seedRoot, "crew"));
+  notesTemplate = seedFixtureRepo(join(seedRoot, "notes"), "feat/y");
+  demoTemplate = seedFixtureRepo(join(seedRoot, "demo"));
+});
+
+afterAll(() => {
+  if (seedRoot) rmSync(seedRoot, { recursive: true, force: true });
+});
+
 /** A fake "home": repos/, Desktop/, Documents/ (+hidden +file), a symlink out. */
 function seedHome() {
   const home = mkhome();
-  seedRepo(join(home, "repos", "crew"));
-  seedRepo(join(home, "repos", "notes"), "feat/y");
-  seedRepo(join(home, "Desktop", "demo"));
+  copyFixtureRepo(crewTemplate, join(home, "repos", "crew"));
+  copyFixtureRepo(notesTemplate, join(home, "repos", "notes"));
+  copyFixtureRepo(demoTemplate, join(home, "Desktop", "demo"));
   mkdirSync(join(home, "Documents", "plain", "sub"), { recursive: true });
   mkdirSync(join(home, "Documents", ".hidden"), { recursive: true });
   writeFileSync(join(home, "Documents", "file.txt"), "hi");
