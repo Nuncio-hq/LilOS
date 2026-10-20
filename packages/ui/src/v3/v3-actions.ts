@@ -11,7 +11,7 @@ import type {
 
 /* A started ⌘K plan becomes real records: tickets that can start now get a
    working thread at once; the rest wait on the ticket before them, and the
-   one that asks Oscar first stays planned. */
+   one that asks the chairman first stays planned. */
 export function planRecords(
   d: V3Data,
   plan: Extract<V3Draft, { kind: "plan" }>,
@@ -172,7 +172,9 @@ export function makeActions(
         now: closes
           ? undefined
           : { kind: "web", text: "Launching the ads", elapsed: "0s" },
-        tail: closes ? undefined : ["Approved by Oscar", "Creating 3 ad sets…"],
+        tail: closes
+          ? undefined
+          : [`Approved by ${d.me}`, "Creating 3 ad sets…"],
         live: closes
           ? undefined
           : {
