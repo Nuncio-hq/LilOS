@@ -10,7 +10,7 @@ const MAX_BUFFER = 64 * 1024 * 1024;
 export const CHECKPOINT_KEEP = 50;
 export const CHECKPOINT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
-/* Directory names never snapshotted (D-#742). `git add -A -f` is deliberate
+/* Directory names never snapshotted (D-#134, #742). `git add -A -f` is deliberate
    — a user's .gitignore must not hide a `.env` from rewind — so without
    these names every turn hashes ignored build output. The added names are
    generated trees that are never source: CocoaPods (`Pods`), Expo
