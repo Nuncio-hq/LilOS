@@ -63,7 +63,9 @@ function Company() {
                 go({ page: "agent", id: employeeId })
               }
               onOpenThread={(threadId) => go({ page: "thread", id: threadId })}
-              // Its Focus is the session view: the peek widens over the page.
+              // A widened thread is the session view (chat beside the
+              // Workbench): one flag, in the URL, for both.
+              session={nav.full === true}
               onSession={(open) => moveNav((n) => ({ ...n, full: open }))}
             />
           )}

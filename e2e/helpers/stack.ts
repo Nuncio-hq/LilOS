@@ -407,7 +407,8 @@ export async function panelFocusReady(
 
 /** Where a conversation opens in v3: beside Threads, in the URL hash (the
  *  packaged app loads from file:, so only the fragment can carry it).
- *  `full` widens the peek over the page, what Focus used to be. */
+ *  `full` widens the peek over the page, which IS the session view (chat
+ *  beside the Workbench), what Focus used to be. */
 export const threadUrl = (
   webUrl: string,
   conversationId: string,
@@ -422,8 +423,9 @@ export const agentUrl = (webUrl: string, employeeId: string): string =>
 /**
  * Navigation helper: a send lands on Threads with the thread open in the
  * side peek (`#?page=threads&open=thread:<id>`); widening it over the page
- * is the peek header's button. Specs that need the wide session call this:
- * it waits for the peek URL, clicks Widen, and waits for `full=1`.
+ * (the peek header's button, or the panel's Focus) opens the session view.
+ * Specs that need the Workbench call this: it waits for the peek URL,
+ * clicks Widen, and waits for `full=1`.
  */
 export async function panelIntoFocus(
   page: playwright.Page,

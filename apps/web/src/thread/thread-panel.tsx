@@ -23,12 +23,17 @@ import { useThreadWith } from "./use-thread";
  */
 export function ThreadPanel({
   conversationId,
+  session,
   onOpenAgent,
   onOpenThread,
   onClose,
   onSession,
 }: {
   conversationId: string;
+  /** The session view (chat beside the Workbench) is showing. The host owns
+      it: in v3 a widened thread IS the session, so it lives in the URL
+      (`full=1`) and Back/Forward and links reproduce it. */
+  session: boolean;
   /** A subagent row names an employee that has no known thread yet. */
   onOpenAgent?: (employeeId: string) => void;
   /** A subagent row, or "Start a new thread from here" after a files-only
@@ -36,16 +41,16 @@ export function ThreadPanel({
   onOpenThread?: (conversationId: string, employeeId: string) => void;
   /** Esc in the thread mode. */
   onClose?: () => void;
-  /** The panel entered (true) / left (false) the session view — a host that
-      shows it in a narrow box can widen it for the Workbench. */
-  onSession?: (open: boolean) => void;
+  /** Enter (true) / leave (false) the session view. */
+  onSession: (open: boolean) => void;
 }) {
-  /* Keyed: another conversation starts with a fresh mode, tab and composer
-     state instead of carrying the last one's over. */
+  /* Keyed: another conversation starts with a fresh tab and composer state
+     instead of carrying the last one's over. */
   return (
     <PanelBody
       key={conversationId}
       conversationId={conversationId}
+      session={session}
       onOpenAgent={onOpenAgent}
       onOpenThread={onOpenThread}
       onClose={onClose}
@@ -56,16 +61,18 @@ export function ThreadPanel({
 
 function PanelBody({
   conversationId,
+  session,
   onOpenAgent,
   onOpenThread,
   onClose,
   onSession,
 }: {
   conversationId: string;
+  session: boolean;
   onOpenAgent?: (employeeId: string) => void;
   onOpenThread?: (conversationId: string, employeeId: string) => void;
   onClose?: () => void;
-  onSession?: (open: boolean) => void;
+  onSession: (open: boolean) => void;
 }) {
   const allConvs = useAtom(relay.conversations);
   const channels = useAtom(relay.channels);
@@ -83,14 +90,9 @@ function PanelBody({
   });
   const d = useThreadWith(conv, folds);
 
-  const [mode, setMode] = useState<"thread" | "session">("thread");
   /* The Workbench tab the session view opens on: a panel link's pick, then
      whatever the user picks there (#319 AC-2). */
   const [tab, setTab] = useState<WbTab | undefined>();
-  const enter = (m: "thread" | "session") => {
-    setMode(m);
-    onSession?.(m === "session");
-  };
 
   /* #340 AC-2b: the session's `workbench_open` brings the Workbench
      forward — a request NEWER than what the panel mounted with (an older
@@ -102,8 +104,7 @@ function PanelBody({
   useEffect(() => {
     if (spotAt === undefined || spotAt === seenSpot.current) return;
     seenSpot.current = spotAt;
-    setMode("session");
-    onSessionRef.current?.(true);
+    onSessionRef.current(true);
   }, [spotAt]);
 
   if (!d)
@@ -117,11 +118,11 @@ function PanelBody({
      panes fill it. */
   return (
     <div data-thread-panel className="flex h-full min-h-0 min-w-0 flex-col">
-      {mode === "session" ? (
+      {session ? (
         <SessionPane
           d={d}
           nav={nav}
-          onBack={() => enter("thread")}
+          onBack={() => onSession(false)}
           tab={tab}
           onTab={setTab}
         />
@@ -130,10 +131,10 @@ function PanelBody({
           d={d}
           nav={nav}
           onClose={onClose}
-          onFocus={() => enter("session")}
+          onFocus={() => onSession(true)}
           onOpenTab={(t) => {
             setTab(t);
-            enter("session");
+            onSession(true);
           }}
         />
       )}
