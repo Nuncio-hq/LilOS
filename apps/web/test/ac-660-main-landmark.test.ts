@@ -11,24 +11,22 @@ import { describe, expect, test } from "vitest";
    detached-node flake; e2e/dm-layout.spec.ts AC-660 only samples the real
    page on CI. */
 
-const DM = join(
-  dirname(fileURLToPath(import.meta.url)),
-  "..",
-  "src",
-  "pages",
-  "dm.tsx",
-);
+const SRC = join(dirname(fileURLToPath(import.meta.url)), "..", "src");
+const DM = join(SRC, "pages", "dm.tsx");
+/* Focus moved out of the page with the thread extraction — SessionPane is
+   the one place that renders FocusView, always `bare`. */
+const SESSION_PANE = join(SRC, "thread", "session-pane.tsx");
 
 describe("issue #660 — DmPage owns the <main> landmark", () => {
   const src = readFileSync(DM, "utf8");
 
   test("both views render bare inside a page-mounted <MainPane>", () => {
-    /* <FocusView/EmployeeHome with `bare` inside a <MainPane> block — the
-       prop sits on its own line under Biome formatting. */
-    expect(src).toMatch(
-      /<MainPane>[\s\S]*?<FocusView\s+bare[\s\S]*?<\/MainPane>/,
-    );
+    /* The page mounts <MainPane> around SessionPane (Focus) and
+       EmployeeHome (the feed); SessionPane hands FocusView `bare`. The prop
+       sits on its own line under Biome formatting. */
+    expect(src).toMatch(/<MainPane>[\s\S]*?<SessionPane[\s\S]*?<\/MainPane>/);
     expect(src).toMatch(/<MainPane>[\s\S]*?<EmployeeHome\s+bare/);
+    expect(readFileSync(SESSION_PANE, "utf8")).toMatch(/<FocusView\s+bare/);
   });
 
   test("dm.tsx never renders a raw <main> — the landmark comes only from MainPane", () => {
