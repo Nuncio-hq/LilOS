@@ -40,7 +40,7 @@ async function shot(page: Page, name: string) {
   await page.emulateMedia({ colorScheme: "light" });
 }
 
-test("statuses and this week's finished, failed, and stuck counts match Threads", async ({
+test("statuses and this week's counts, including a thread that recovered from stuck", async ({
   page,
 }) => {
   test.setTimeout(240_000);
@@ -125,11 +125,18 @@ test("statuses and this week's finished, failed, and stuck counts match Threads"
     await expect(
       block.getByRole("button").filter({ hasText: "Working" }),
     ).toContainText(/release note/i);
-    /* Recovered: Threads has no Stuck row. The week number above is the
-       stamp, so it is not this count. */
+    /* The live tally is 0. The recovered thread's title is "Stuck" and its
+       pill says Finished, so a button named Stuck is not a stuck thread.
+       The week number above is the stamp. */
     await expect(
-      block.getByRole("button").filter({ hasText: "Stuck" }),
+      main(page).getByText("0 stuck", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      block.locator("span.rounded-full", { hasText: /^Stuck$/ }),
     ).toHaveCount(0);
+    await expect(
+      block.getByRole("button", { name: /Stuck Finished/ }),
+    ).toBeVisible();
   } finally {
     await stack.stop();
   }
