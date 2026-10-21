@@ -1586,7 +1586,10 @@ export class FakeEngine {
       if (QUESTION_PROMPT.test(scripted)) {
         return await this.runQuestionTurn(s, turnId, scripted);
       }
-      await this.streamWords(s, turnId, "reasoning", script.reasoning);
+      for (const w of words(script.reasoning)) {
+        await this.sleep(s);
+        this.emit(s, "turn.delta", { turnId, stream: "reasoning", delta: w });
+      }
       s.turn.phase = "tools";
       for (const step of script.steps) {
         if (step.pauseBeforeMs) {
@@ -1704,7 +1707,10 @@ export class FakeEngine {
       }
       this.drainSteers(s, turnId);
       s.turn.phase = "text";
-      await this.streamWords(s, turnId, "text", script.text);
+      for (const w of words(script.text)) {
+        await this.sleep(s);
+        this.emit(s, "turn.delta", { turnId, stream: "text", delta: w });
+      }
       return this.finishTurn(s, turnId, "end_turn", script, scripted);
     } catch (e) {
       if (!(e instanceof Interrupted)) throw e;
@@ -2341,28 +2347,6 @@ export class FakeEngine {
   private async sleep(s: FakeSession): Promise<void> {
     await new Promise((r) => setTimeout(r, s.turnPace ?? this.tick));
     if (s.turn?.interrupted) throw new Interrupted();
-  }
-
-  /* Unpaced turns emit a stream in one frame after a single tick. Per-word
-     sleeps stay for a `slow:` turn (turnPace set) so a mid-stream assertion
-     can see the text land. A default script is a few dozen words; sleeping
-     on each one outlasts a 5s settle poll when the runner is loaded, and
-     the next send then lands as a steer (#807). */
-  private async streamWords(
-    s: FakeSession,
-    turnId: string,
-    stream: "reasoning" | "text",
-    text: string,
-  ): Promise<void> {
-    if (s.turnPace !== undefined) {
-      for (const w of words(text)) {
-        await this.sleep(s);
-        this.emit(s, "turn.delta", { turnId, stream, delta: w });
-      }
-      return;
-    }
-    await this.sleep(s);
-    if (text) this.emit(s, "turn.delta", { turnId, stream, delta: text });
   }
 
   private setState(s: FakeSession, state: SessionState) {

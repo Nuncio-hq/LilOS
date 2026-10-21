@@ -154,8 +154,8 @@ export function Composer({
        gutters — so the box lines up with the turns above it. Its 2px
        top margin plus the column's own bottom padding is the whole band
        between the last turn and the box (#602 caps it at 24px). The settled
-       turn's hover line used to hang 20px past that padding — the band the
-       cap measures — and a half-pixel font metric then read 24.5.
+       hover line sits on the turn, out of that measurement, so it cannot
+       hang past the padding and read 24.5.
        `@container`: the key hint steps aside when the box is narrow. */
     <div
       ref={menus.wrapRef}

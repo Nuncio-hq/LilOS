@@ -151,12 +151,15 @@ const sendTurn = async (page: Page, text: string) => {
   await expect(turns(page).locator("[data-streaming]")).toHaveCount(0, {
     timeout: 60_000,
   });
-  if ((await turns(page).count()) > 0) {
-    /* #621: on this shared stack the last turn of the opened session can be
-       parked on an approval nobody is answering — e.g. a queued follow-up
-       whose card opened after the previous test's allowAllWhile left. A
-       bare settle wait only watches the parked card; allowAllWhile keeps
-       answering it so the turn can actually finish. */
+  /* A user row is already up (the session opener, or the previous send).
+     `turns().count() === 0` only means its agent turn has not mounted yet,
+     not that the session is idle — sending then lands as a steer (#807).
+     Wait for that turn to start, then settle. #621: the turn can be parked
+     on an approval, so allowAllWhile answers the card while we wait. */
+  if (
+    (await page.locator("[data-msg]").locator("[data-userturn]").count()) > 0
+  ) {
+    await expect(turns(page).last()).toBeVisible({ timeout: 60_000 });
     await allowAllWhile(page, expectSettled(turns(page).last(), 60_000));
   }
   await send(page, text);

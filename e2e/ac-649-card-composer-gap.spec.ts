@@ -187,17 +187,14 @@ const send = async (page: Page, text: string) => {
   await box.press("Enter");
 };
 
-/* Idle = the open thread has nothing queued or still streaming, and the
-   last agent turn carries its settled footer — and stays that way.
-   engine-fake's pumpSteers mints a queued steer into a fresh turn in the
-   same tick as turn.completed, so a placeholder can flash the idle copy
-   ("Message X…") while a turn is already running; the running copy
-   ("…it reads this at the next step") is not idle either. A send landing
-   inside that window is consumed as a `turn.steered` note, never a prompt.
-   `data-turnsettled` is the end anchor (text lands earlier). Require a
-   stable 600ms window before sending the next prompt. The poll keeps
-   expect's default 5s: an unpaced turn settles inside it (#807); `slow:`
-   turns are not what this helper waits on. */
+/* Idle = the composer is not running, nothing is queued or streaming,
+   and the last row is a settled agent turn — and stays that way.
+   The previous agent turn's footer is the wrong anchor: the last
+   `[data-msg]` can still be the user's just-posted row, with no agent
+   turn mounted yet. Treating that as idle lets the next send land as a
+   `turn.steered` note (#807). Stop (⌘.) covers the same gap before
+   `[data-streaming]` exists. Require a stable 600ms window. The poll
+   keeps expect's default 5s. */
 const idle = async (page: Page) => {
   let idleSince: number | null = null;
   await expect
@@ -205,13 +202,16 @@ const idle = async (page: Page) => {
       const idleNow = await page.evaluate(() => {
         const root = document.querySelector("[data-thread-panel]");
         if (!root) return false;
+        if (root.querySelector('button[aria-label="Stop (⌘.)"]')) return false;
         if (
           root.querySelector("[data-queued], [data-notsent], [data-streaming]")
         )
           return false;
-        const turns = root.querySelectorAll("[data-agentturn]");
-        const last = turns[turns.length - 1];
-        return !!last && !!last.querySelector("[data-turnsettled]");
+        const msgs = root.querySelectorAll("[data-msg]");
+        const last = msgs[msgs.length - 1];
+        if (!last) return false;
+        const turn = last.querySelector("[data-agentturn]");
+        return !!turn && !!turn.querySelector("[data-turnsettled]");
       });
       const now = Date.now();
       if (!idleNow) {

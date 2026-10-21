@@ -529,6 +529,62 @@ describe("model picker v2", () => {
     });
   });
 
+  /* The engine owns Fast and effort. An echo that is not an earlier write
+     — Fast explicitly off, or a different effort — replaces the draft so
+     the trigger does not keep a pick the engine rejected (#807). */
+  test("an echo with Fast off drops a Fast draft the engine refused", async () => {
+    const picks: ModelChoice[] = [];
+    const { rerender } = render(<Harness picks={picks} />);
+    await open();
+    await act(async () =>
+      fireEvent.click(
+        body().querySelector('button[aria-label="Fast mode"]') as HTMLElement,
+      ),
+    );
+    expect(picks.at(-1)).toMatchObject({ fast: true });
+    expect(body().querySelector('[aria-label="Fast"]')).toBeTruthy();
+    await act(async () =>
+      rerender(
+        <Harness
+          picks={picks}
+          value={{ ...choiceFor("gpt-test-5", MODELS), fast: false }}
+        />,
+      ),
+    );
+    expect(body().querySelector('[aria-label="Fast"]')).toBeNull();
+    await act(async () =>
+      fireEvent.keyDown(
+        body().querySelector('input[type="range"]') as HTMLElement,
+        { key: "ArrowRight" },
+      ),
+    );
+    expect(picks.at(-1)).toMatchObject({ fast: false, effort: "high" });
+  });
+
+  test("an echo with a normalised effort replaces the draft", async () => {
+    const picks: ModelChoice[] = [];
+    const { rerender } = render(<Harness picks={picks} />);
+    await open();
+    await act(async () =>
+      fireEvent.keyDown(
+        body().querySelector('input[type="range"]') as HTMLElement,
+        { key: "ArrowRight" },
+      ),
+    );
+    expect(picks.at(-1)).toMatchObject({ effort: "high" });
+    expect(trigger().textContent).toContain("High");
+    await act(async () =>
+      rerender(
+        <Harness
+          picks={picks}
+          value={{ ...choiceFor("gpt-test-5", MODELS), effort: "low" }}
+        />,
+      ),
+    );
+    expect(trigger().textContent).toContain("Low");
+    expect(trigger().textContent).not.toContain("High");
+  });
+
   test("Refresh / Edit models render only with their handlers (D-#19)", async () => {
     const { unmount } = render(<Harness />);
     await openModels();
