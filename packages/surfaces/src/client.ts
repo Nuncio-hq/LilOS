@@ -1,4 +1,5 @@
 import {
+  type AskToolResult,
   type BrowserClickResult,
   type BrowserEvalResult,
   type BrowserOpenResult,
@@ -111,6 +112,7 @@ export function toolBackend(opts: ToolClientOptions): SurfaceBackend {
       call("workbench_open", p) as Promise<WorkbenchOpenResult>,
     context: () => call("context", {}) as Promise<ContextResult>,
     guide: (p) => call("guide", p) as Promise<GuideResult>,
+    ask: (p) => call("ask", p) as Promise<AskToolResult>,
     teamList: () => call("team_list", {}) as Promise<TeamListResult>,
     scheduleList: () =>
       call("schedule_list", {}) as Promise<ScheduleListResult>,

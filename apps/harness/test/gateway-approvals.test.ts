@@ -572,4 +572,65 @@ describe("approval-gated gateway tools", () => {
       await v.w.cleanup();
     }
   });
+
+  it("ask posts why, ifYes and ifNo, and returns the chosen answer", async () => {
+    const v = await world();
+    try {
+      const seen = new Set((await v.asks("open")).map((a) => a.id));
+      const before = (await v.employees()).length;
+      const call = v.client.ask({
+        question: "Ship the paywall?",
+        why: "The hooks scored best",
+        ifYes: "The ads start today",
+        ifNo: "The ticket closes",
+        options: ["Keep it", "Ship it"],
+      });
+      const ask = await v.nextAsk(seen);
+      expect(ask.why).toBe("The hooks scored best");
+      expect(ask.ifYes).toBe("The ads start today");
+      expect(ask.ifNo).toBe("The ticket closes");
+      expect(ask.request).toMatchObject({
+        kind: "question",
+        question: "Ship the paywall?",
+      });
+      expect((await v.employees()).length).toBe(before);
+      await v.w.user.request("asks.respond", {
+        askId: ask.id,
+        outcome: "answer",
+        answer: "o1",
+      });
+      await expect(call).resolves.toEqual({
+        outcome: "yes",
+        answer: "Ship it",
+      });
+    } finally {
+      v.gw.server.close();
+      await v.scope.close();
+      await v.w.cleanup();
+    }
+  });
+
+  it("ask without options is a once/deny approval, and deny declines", async () => {
+    const v = await world();
+    try {
+      const seen = new Set((await v.asks("open")).map((a) => a.id));
+      const call = v.client.ask({
+        question: "Delete the draft",
+        why: "It is stale",
+      });
+      const ask = await v.nextAsk(seen);
+      expect(ask.why).toBe("It is stale");
+      expect(ask.request).toMatchObject({
+        kind: "approval",
+        command: "Delete the draft",
+        options: ["once", "deny"],
+      });
+      await v.answer(ask.id, "deny");
+      await expect(call).rejects.toThrow(/declined/);
+    } finally {
+      v.gw.server.close();
+      await v.scope.close();
+      await v.w.cleanup();
+    }
+  });
 });

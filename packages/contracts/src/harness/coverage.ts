@@ -88,7 +88,8 @@ export const NOT_AGENT_FACING: Record<string, string> = {
   "messages.claim":
     "host bookkeeping — the harness claims a send once its prompt commits (#377)",
   /* app wire — the agent raises asks through its engine; answering is the user's */
-  "asks.open": "the agent's engine raises asks; the app renders them",
+  "asks.open":
+    "host-only: the engine and the gateway ask tool post here; the app renders the inbox",
   "asks.respond": "answering an ask is the user's action",
   "asks.list": "the ask inbox is the user's",
   /* app wire — user controls of a session */

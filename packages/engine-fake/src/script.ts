@@ -709,6 +709,51 @@ ${tail}`,
     };
   }
 
+  /* `ask:` — one real `ask` tool call (D-#773). The first line is the
+     question; later lines are `why:`, `ifYes:`, `ifNo:`, `option:`.
+     With options the user picks one; without them they approve or deny.
+     The turn waits on the tool, then finishes. */
+  const askProbe = /^ask:\s*([\s\S]+)$/i.exec(q);
+  if (askProbe) {
+    const lines = askProbe[1]
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean);
+    const question = lines[0] ?? "A question";
+    let why: string | undefined;
+    let ifYes: string | undefined;
+    let ifNo: string | undefined;
+    const options: string[] = [];
+    for (const line of lines.slice(1)) {
+      const m = /^(why|ifYes|ifNo|option):\s*(.*)$/i.exec(line);
+      if (!m) continue;
+      const val = m[2].trim();
+      if (!val) continue;
+      const key = m[1].toLowerCase();
+      if (key === "why") why = val;
+      else if (key === "ifyes") ifYes = val;
+      else if (key === "ifno") ifNo = val;
+      else options.push(val);
+    }
+    return {
+      reasoning: "Asking before going on.",
+      steps: [
+        {
+          tool: "mcp__lilos__ask",
+          input: {
+            question,
+            ...(why ? { why } : {}),
+            ...(ifYes ? { ifYes } : {}),
+            ...(ifNo ? { ifNo } : {}),
+            ...(options.length ? { options } : {}),
+          },
+          output: "",
+        },
+      ],
+      text: "Heard the answer and carried on.",
+    };
+  }
+
   if (EDIT_ASK.test(q)) {
     const h = nextHex();
     return {

@@ -165,6 +165,9 @@ const appOps: AppOps = {
   scheduleRunNow: async () => {
     throw new Error("not exercised in this script");
   },
+  askUser: async () => {
+    throw new Error("not exercised in this script");
+  },
   hireEmployee: async () => {
     throw new Error("not exercised in this script");
   },

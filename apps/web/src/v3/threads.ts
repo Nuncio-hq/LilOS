@@ -61,14 +61,23 @@ function askText(ask: Ask): { title: string; text: string } {
       title: `Hire ${ask.hire.name}`,
       text: `${ask.hire.name} · ${ask.hire.role} on ${ask.hire.model || "the engine's default model"}`,
     };
-  if (r.kind === "question") return { title: "A question", text: r.question };
+  // The question is the title; "The ask" row only adds the full text when
+  // the title had to cut it (the card hides a row equal to its title).
+  if (r.kind === "question")
+    return { title: oneLine(r.question, 80), text: r.question };
   if (r.kind === "plan")
     return {
       title: "Review the plan",
       text: "The plan is in the thread; open it to read it before you decide.",
     };
+  /* The command is "The ask" row; a description that already quotes it
+     would say it twice (D-#769), so the title keeps only the rest. */
+  const said = r.description
+    ?.replace(r.command, "")
+    .replace(/[\s:·–—-]+$/u, "")
+    .trim();
   return {
-    title: oneLine(r.description ?? "Approve a command", 80),
+    title: oneLine(said || "Approve a command", 80),
     text: r.command,
   };
 }
@@ -99,13 +108,13 @@ export function employeeOfConversation(
 const ownersOf = (channels: readonly AppChannel[]): Map<string, string> =>
   new Map(channels.map((ch) => [ch.id, ch.employeeId]));
 
-/** The open asks as the Needs page reads them; oldest first. */
+/** The open asks as the Needs page reads them; oldest first (D-#773). */
 export function v3Asks(src: ThreadSources): V3Ask[] {
-  const names = new Map(src.employees.map((e) => [e.id, e.name]));
   const convs = new Map(src.conversations.map((c) => [c.id, c]));
   const owners = ownersOf(src.channels);
   return src.asks
     .filter((a) => a.state === "open" && convs.has(a.conversationId))
+    .sort((a, b) => a.createdAt - b.createdAt)
     .flatMap((a): V3Ask[] => {
       const from = owners.get(
         (convs.get(a.conversationId) as Conversation).channelId,
@@ -121,19 +130,22 @@ export function v3Asks(src: ThreadSources): V3Ask[] {
           kind: r.kind === "question" ? "question" : "approval",
           title,
           waiting: Math.max(0, Math.round((src.now - a.createdAt) / MIN)),
+          at: a.createdAt,
           ask: text,
+          ...(a.why ? { why: a.why } : {}),
+          ...(a.ifYes ? { ifYes: a.ifYes } : {}),
+          ...(a.ifNo ? { ifNo: a.ifNo } : {}),
+          /* "Allow this next time" only when the engine offers `always`.
+             A gateway ask is once/deny, so it never grows this box. */
           ...(r.kind === "approval" && r.options.includes("always")
-            ? {
-                allowRule: `Let ${names.get(from) ?? "this agent"} do this without asking next time`,
-              }
+            ? { allowRule: "Allow this next time" }
             : {}),
           ...(r.kind === "question" && r.options?.length
             ? { options: r.options.map((o) => o.label) }
             : {}),
         },
       ];
-    })
-    .sort((a, b) => b.waiting - a.waiting);
+    });
 }
 
 /** Each agent's newest chat by when it began (archived ones count: the old
@@ -185,9 +197,12 @@ function threadRows(src: ThreadSources, archived: boolean): V3Thread[] {
   const summaries = new Map(src.summaries.map((s) => [s.conversation.id, s]));
   const owners = ownersOf(src.channels);
   const openAsk = new Map<string, Ask>();
-  for (const a of src.asks)
-    if (a.state === "open" && !openAsk.has(a.conversationId))
-      openAsk.set(a.conversationId, a);
+  const openCount = new Map<string, number>();
+  for (const a of [...src.asks].sort((x, y) => x.createdAt - y.createdAt)) {
+    if (a.state !== "open") continue;
+    openCount.set(a.conversationId, (openCount.get(a.conversationId) ?? 0) + 1);
+    if (!openAsk.has(a.conversationId)) openAsk.set(a.conversationId, a);
+  }
   const rows: { last: number; thread: V3Thread }[] = [];
   for (const c of src.conversations) {
     if (!!c.archived !== archived) continue;
@@ -198,6 +213,7 @@ function threadRows(src: ThreadSources, archived: boolean): V3Thread[] {
       c,
       c.engineRef ? src.models[c.engineRef] : undefined,
       c.engineRef ? src.signals[c.engineRef] : undefined,
+      openCount.get(c.id) ?? 0,
     );
     const last = summary?.last.createdAt ?? c.createdAt;
     const live = status === "working" || status === "needs";
@@ -225,7 +241,14 @@ function threadRows(src: ThreadSources, archived: boolean): V3Thread[] {
         agentId,
         title,
         status: V3_STATUS[status],
-        ...(status === "unseen" ? { unseen: true } : {}),
+        /* Completion age is this thread's own clock (last message, else
+           when it was opened). Needs you must not read a ticket for it. */
+        ...(status === "unseen"
+          ? {
+              unseen: true,
+              doneAgo: Math.max(0, Math.round((src.now - last) / MIN)),
+            }
+          : {}),
         startedAt: clockOrDate(c.createdAt, src.now),
         minutes: Math.max(
           0,

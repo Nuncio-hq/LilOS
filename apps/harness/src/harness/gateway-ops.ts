@@ -11,6 +11,7 @@ import type {
 } from "@lilos/contracts/app";
 import type { AgentDescriptor } from "@lilos/contracts/engine";
 import type {
+  AskParams,
   ProjectCreateParams,
   ScheduleCreateParams,
   ScheduleUpdateParams,
@@ -118,6 +119,7 @@ export function createGatewayApprovalOps(
   | "scheduleUpdate"
   | "scheduleDelete"
   | "scheduleRunNow"
+  | "askUser"
 > {
   const { relay, runningTurnId, binding } = deps;
 
@@ -379,6 +381,61 @@ export function createGatewayApprovalOps(
         { id },
       );
       return r.task;
+    },
+
+    /**
+     * `ask` (D-#773). Options make a question; otherwise a once/deny
+     * approval — never "always", so "Allow this next time" stays an
+     * engine offer. why/ifYes/ifNo sit on the ask, not the request, so
+     * an engine approval keeps its command. A decline throws, and the
+     * turn resumes with that.
+     */
+    askUser: async (p: AskParams) => {
+      const requestId = `gw-${crypto.randomUUID()}`;
+      const turnId = runningTurnId() ?? requestId;
+      const lines = {
+        ...(p.why ? { why: p.why } : {}),
+        ...(p.ifYes ? { ifYes: p.ifYes } : {}),
+        ...(p.ifNo ? { ifNo: p.ifNo } : {}),
+      };
+      const request = p.options?.length
+        ? {
+            kind: "question" as const,
+            question: p.question,
+            options: p.options.map((label, i) => ({ id: `o${i}`, label })),
+          }
+        : {
+            kind: "approval" as const,
+            command: p.question,
+            description: p.question,
+            options: ["once" as const, "deny" as const],
+          };
+      const { ask } = await relay.request<{ ask: Ask }>("asks.open", {
+        channelId: binding.channelId,
+        conversationId: binding.conversationId,
+        turnId,
+        requestId,
+        request,
+        ...lines,
+      });
+      const resolved = await waitForResolution(relay, ask);
+      if (request.kind === "question") {
+        const picked =
+          resolved.outcome === "answer"
+            ? p.options?.find((_, i) => `o${i}` === resolved.answer)
+            : undefined;
+        if (!picked) {
+          throw new SurfaceError(
+            "declined",
+            `the user declined: ${p.question}`,
+          );
+        }
+        return { outcome: "yes" as const, answer: picked };
+      }
+      if (resolved.outcome !== "once") {
+        throw new SurfaceError("declined", `the user declined: ${p.question}`);
+      }
+      return { outcome: "yes" as const };
     },
   };
 }

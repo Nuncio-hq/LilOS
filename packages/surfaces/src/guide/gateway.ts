@@ -72,6 +72,8 @@ What Oscar sees:
 
 ${renderGatewayTools()}
 
+\`ask\` waits until the user answers. Optional \`why\`, \`ifYes\` and \`ifNo\` are the lines Needs you shows for that ask. An engine approval keeps its command and does not use them.
+
 A session only sees the areas it has attached: \`root\`, \`terminal\` and
 \`workbench\` always; \`browser\` when a browser can launch; \`thread\`,
 \`team\`, \`folder\`, \`project\` and \`schedule\` when the session is bound to
