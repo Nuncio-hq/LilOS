@@ -398,9 +398,7 @@ export interface RelayStore {
    * `clearedCeo` is true when this person held the position: the same
    * write drops `ceoId` (D-#778).
    */
-  removeEmployee(
-    id: string,
-  ): Promise<{
+  removeEmployee(id: string): Promise<{
     employee: Employee;
     channelIds: string[];
     clearedCeo: boolean;

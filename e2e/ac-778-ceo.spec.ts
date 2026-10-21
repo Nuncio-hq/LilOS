@@ -260,12 +260,7 @@ test("a CEO thread's team_set_ceo moves the position only after approval", async
     const quillId = created.employee.id;
     await relayRpc(page, stack, "company.setCeo", { employeeId: agent.id });
 
-    await startChat(
-      page,
-      stack.webUrl,
-      agent,
-      `surfaces: set-ceo ${quillId}`,
-    );
+    await startChat(page, stack.webUrl, agent, `surfaces: set-ceo ${quillId}`);
     await page.goto(`${stack.webUrl}/#?page=needs`);
     await expect(main(page)).toContainText("Give the CEO position to Quill", {
       timeout: 60_000,
@@ -324,16 +319,14 @@ test("a non-CEO thread calling a CEO-only tool is refused", async ({
       employeeId: created.employee.id,
     });
 
-    await startChat(
-      page,
-      stack.webUrl,
-      agent,
-      `surfaces: set-ceo ${agent.id}`,
-    );
+    await startChat(page, stack.webUrl, agent, `surfaces: set-ceo ${agent.id}`);
     await expect(
       v3Peek(page).getByRole("button", { name: "Copy" }).first(),
     ).toBeVisible({ timeout: 60_000 });
-    await v3Peek(page).getByText(/Worked/).first().click();
+    await v3Peek(page)
+      .getByText(/Worked/)
+      .first()
+      .click();
     await expect(v3Peek(page)).toContainText("mcp__lilos__team_set_ceo");
     await expect(v3Peek(page)).toContainText("failed");
     await expect(page.getByText("Give the CEO position")).toHaveCount(0);

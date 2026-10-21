@@ -941,7 +941,7 @@ export const LILOS_TOOLS: Record<string, LilosToolContract> = {
   ticket_assign: {
     params: TicketAssignParams,
     result: TicketAssignResult,
-    doc: 'Give a ticket to one employee (ownerId, or "ceo" for whoever stands in). Handing a ticket to an agent is the CEO\'s job: only the holder\'s session is offered this, and with no CEO it is offered to nobody. Does not ask. Sets the owner and opens their thread in one step. Assigning again adds the next hand\'s thread.',
+    doc: "Give a ticket to one employee (ownerId, or \"ceo\" for whoever stands in). Handing a ticket to an agent is the CEO's job: only the holder's session is offered this, and with no CEO it is offered to nobody. Does not ask. Sets the owner and opens their thread in one step. Assigning again adds the next hand's thread.",
     area: "ticket",
     access: "write",
     /* #746: the CEO assigns. D2 builds on this gate (D-#778). */

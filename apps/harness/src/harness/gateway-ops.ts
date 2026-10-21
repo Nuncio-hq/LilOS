@@ -1,5 +1,4 @@
 import type { RelayClient } from "@lilos/client-runtime";
-import { CEO_SETTING_KEY } from "@lilos/contracts/app";
 import type {
   AppMessage,
   Ask,
@@ -11,6 +10,7 @@ import type {
   RecentFolder,
   ScheduledTask,
 } from "@lilos/contracts/app";
+import { CEO_SETTING_KEY } from "@lilos/contracts/app";
 import type { AgentDescriptor } from "@lilos/contracts/engine";
 import type {
   AskParams,
