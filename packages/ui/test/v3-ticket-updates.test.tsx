@@ -42,7 +42,7 @@ const act = (over: Partial<V3Actions> = {}) =>
 function company(over: Partial<V3Data> = {}): V3Data {
   return {
     company: "Co",
-    me: "Oscar",
+    me: "Nia",
     today: "Wednesday",
     agents: [agent("ada", "Ada")],
     connectors: [],
@@ -100,11 +100,11 @@ describe("ticket updates", () => {
     );
     const system = screen.getByText("LIL-1 is done, so this can move.");
     expect(system.parentElement?.textContent).toContain("just now");
-    expect(system.parentElement?.textContent).not.toContain("Oscar");
+    expect(system.parentElement?.textContent).not.toContain("Nia");
     expect(system.parentElement?.textContent).not.toContain("Ada");
     expect(system.parentElement?.querySelector("span[aria-hidden]")).toBeNull();
     const person = screen.getByText("Looked at it");
-    expect(person.parentElement?.textContent).toContain("Oscar");
+    expect(person.parentElement?.textContent).toContain("Nia");
     expect(person.parentElement?.textContent).toContain("5m ago");
   });
 
