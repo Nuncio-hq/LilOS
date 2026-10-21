@@ -138,6 +138,10 @@ export function waitingLabel(d: V3Data, t: V3Ticket): string {
   if (!w) return "—";
   if (w.kind === "you") return "You";
   if (w.kind === "agent") return agentNameOf(d, w.agentId);
+  if (w.kind === "ceo") {
+    const ceo = d.agents.find((a) => a.id === d.ceoId) ?? defaultAgent(d);
+    return ceo?.name ?? "CEO";
+  }
   return w.ticketId;
 }
 
