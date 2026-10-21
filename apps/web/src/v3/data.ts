@@ -14,6 +14,7 @@ import {
   type V3Tone,
 } from "@lilos/ui";
 import { atom, computed, onMount, type ReadableAtom } from "nanostores";
+import { HIRE_TEMPLATES } from "../lib/employees";
 import { folders } from "../lib/folders";
 import { currentCompany, currentName, osFullName, profile } from "../lib/me";
 import {
@@ -240,6 +241,7 @@ export function v3DataStore(): ReadableAtom<V3Data> {
         updates: [],
         browser: { tabs: [], bookmarks: [] },
         modelChoices: modelRows.map((r) => r.label),
+        hireTemplates: HIRE_TEMPLATES,
         ...(catalog.length
           ? {
               modelCatalog: {

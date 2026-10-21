@@ -8,9 +8,10 @@ import type { ThreadSources } from "./threads";
    Threads shows.
 
    Finished means the turn completed (`finishedSeq > 0`) and the thread is
-   idle or unseen. A stopped turn reads "Finished" on the pill but did not
-   finish, so it is not counted. Failed is `threadStatus === "failed"`.
-   Working and needs are in progress, not this week's tally.
+   idle or unseen. A stopped turn is not a finished one (`turnStopped`),
+   even when an earlier turn completed. Failure is already
+   `threadStatus === "failed"`. Working and needs are in progress, not
+   this week's tally.
 
    Stuck is left out: Conversation has no stuck mark. That lands with
    issue #772; until then the count is finished and failed only. */
@@ -54,7 +55,7 @@ export function weekByAgent(src: ThreadSources): Map<string, WeekCounts> {
     else if (
       (status === "idle" || status === "unseen") &&
       c.finishedSeq > 0 &&
-      !c.turnFailure
+      !c.turnStopped
     )
       bump(agentId, "finished");
   }

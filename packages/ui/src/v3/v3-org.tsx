@@ -36,16 +36,45 @@ function reached(agents: readonly V3Agent[]): Set<string> {
   return seen;
 }
 
-/** One person per group the owner-walk never reaches (a cycle the relay
-    rejected, or a row left over). The rest of that group hangs under them. */
+/** The employee this one reports to, when that person is still on the roster. */
+function managerId(agents: readonly V3Agent[], id: string): string | undefined {
+  const ids = new Set(agents.map((a) => a.id));
+  const boss = agents.find((a) => a.id === id)?.reportsTo;
+  return boss && ids.has(boss) ? boss : undefined;
+}
+
+/** Walk up `reportsTo` until the walk repeats. That id is in the cycle.
+    Someone who only reports into the cycle is not an entry: picking them
+    first draws them again under the cycle member (roster order A→B, B↔C). */
+function cycleMember(
+  agents: readonly V3Agent[],
+  startId: string,
+): string | undefined {
+  const walked = new Set<string>();
+  let cur: string | undefined = startId;
+  while (cur) {
+    if (walked.has(cur)) return cur;
+    walked.add(cur);
+    cur = managerId(agents, cur);
+  }
+  return undefined;
+}
+
+/** One cycle member per group the owner-walk never reaches. Everyone who
+    reports into that cycle hangs under it, once. */
 function entryPoints(agents: readonly V3Agent[]): V3Agent[] {
   const seen = reached(agents);
+  const byId = new Map(agents.map((a) => [a.id, a]));
   const extra: V3Agent[] = [];
   for (const a of agents) {
     if (seen.has(a.id)) continue;
-    extra.push(a);
-    const stack = [a.id];
-    seen.add(a.id);
+    const entryId = cycleMember(agents, a.id);
+    if (!entryId || seen.has(entryId)) continue;
+    const entry = byId.get(entryId);
+    if (!entry) continue;
+    extra.push(entry);
+    const stack = [entryId];
+    seen.add(entryId);
     while (stack.length) {
       const id = stack.pop() as string;
       for (const kid of reportsOf(agents, id)) {

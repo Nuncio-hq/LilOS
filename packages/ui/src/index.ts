@@ -42,10 +42,14 @@ export { type ToastNotice, ToastView } from "./shell/toast-view";
 // thread panel
 export { ThreadView } from "./thread/thread-view";
 export * from "./types";
-export { V3Banner } from "./v3/v3-banner";
 // UX v3: the calm company (People, Work, Goals; Notion-like). The shell is
 // controlled; the vocabulary and lookups below let an app (or the prototype's
 // mock engine) build the same view models the pages read.
+export {
+  HIRE_TEMPLATES,
+  type V3HireTemplate,
+} from "./v3/hire-templates";
+export { V3Banner } from "./v3/v3-banner";
 export { STEP_VERB } from "./v3/v3-bits";
 export type * from "./v3/v3-data-types";
 export { agentNameOf, agentOf } from "./v3/v3-model";

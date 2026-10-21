@@ -23,54 +23,24 @@ import type { V3PageProps } from "./v3-page-types";
 const choiceAt = (choices: string[], i: number): string | undefined =>
   choices[i] ?? choices[0];
 
-/* `plain` is the blurb where there is no ticket backend yet (it names no
-   ticket); a role without one reads the same either way. */
-const ROLES: {
-  role: string;
-  icon: ReactNode;
-  does: string;
-  plain?: string;
-  model: number;
-}[] = [
-  {
-    role: "Researcher",
-    icon: <SearchIcon />,
-    does: "Finds people, numbers and sources, and returns a sheet.",
-    model: 1,
-  },
-  {
-    role: "Engineer",
-    icon: <CodeIcon />,
-    does: "Writes and fixes code, and opens a PR for every ticket.",
-    plain: "Writes and fixes code, and opens a PR for every change.",
-    model: 0,
-  },
-  {
-    role: "Designer",
-    icon: <PaletteIcon />,
-    does: "Makes screens and store assets, always two options.",
-    model: 1,
-  },
-  {
-    role: "Growth",
-    icon: <TrendingUpIcon />,
-    does: "Writes copy and runs growth tests with a number behind each claim.",
-    model: 1,
-  },
-  {
-    role: "QA",
-    icon: <ShieldCheckIcon />,
-    does: "Checks every result on a real device before it is called done.",
-    model: 1,
-  },
-  {
-    role: "Support",
-    icon: <HeadsetIcon />,
-    does: "Answers users and files what it learns as tickets.",
-    plain: "Answers users and passes on what it learns.",
-    model: 2,
-  },
-];
+/* The icon is presentation. The role, the blurb and the instructions are
+   the app's `hireTemplates` — one list, so they cannot drift. */
+function roleIcon(role: string): ReactNode {
+  switch (role) {
+    case "Engineer":
+      return <CodeIcon />;
+    case "Designer":
+      return <PaletteIcon />;
+    case "Growth":
+      return <TrendingUpIcon />;
+    case "QA":
+      return <ShieldCheckIcon />;
+    case "Support":
+      return <HeadsetIcon />;
+    default:
+      return <SearchIcon />;
+  }
+}
 
 const FIELD = "text-[13px] text-muted-foreground";
 
@@ -83,12 +53,13 @@ export function V3Hire({ data, go, act }: V3PageProps) {
   const [profile, setProfile] = useState<string | null>(null);
   const hiring = useRef(false);
   const ceo = data.agents.find((a) => a.id === data.ceoId);
-  const tpl = picked === null ? undefined : ROLES[picked];
+  const templates = data.hireTemplates ?? [];
+  const tpl = picked === null ? undefined : templates[picked];
   const choices = data.modelChoices;
   const model =
     chosen && choices.includes(chosen)
       ? chosen
-      : (choiceAt(choices, tpl?.model ?? 1) ?? "");
+      : (choiceAt(choices, tpl?.modelAt ?? 1) ?? "");
 
   function pick(i: number) {
     setPicked(i);
@@ -96,7 +67,7 @@ export function V3Hire({ data, go, act }: V3PageProps) {
     setChosen(undefined);
     // A name is only suggested while the field is still untouched.
     setName((n) =>
-      n === "" || ROLES.some((r) => r.role === n) ? ROLES[i].role : n,
+      n === "" || templates.some((r) => r.role === n) ? templates[i].role : n,
     );
   }
 
@@ -139,7 +110,7 @@ export function V3Hire({ data, go, act }: V3PageProps) {
       </p>
 
       <div className="mt-6 grid grid-cols-3 gap-3">
-        {ROLES.map((r, i) => (
+        {templates.map((r, i) => (
           <button
             key={r.role}
             type="button"
@@ -150,7 +121,7 @@ export function V3Hire({ data, go, act }: V3PageProps) {
             )}
           >
             <span className="text-muted-foreground [&_svg]:size-[18px]">
-              {r.icon}
+              {roleIcon(r.role)}
             </span>
             <span className="font-semibold text-[14.5px] text-foreground">
               {r.role}
@@ -158,9 +129,9 @@ export function V3Hire({ data, go, act }: V3PageProps) {
             <span className="text-[13px] text-muted-foreground leading-snug">
               {data.features.tickets ? r.does : (r.plain ?? r.does)}
             </span>
-            {choiceAt(choices, r.model) && (
+            {choiceAt(choices, r.modelAt) && (
               <span className="mt-auto pt-1 text-[12.5px] text-muted-foreground/70">
-                {choiceAt(choices, r.model)}
+                {choiceAt(choices, r.modelAt)}
               </span>
             )}
           </button>

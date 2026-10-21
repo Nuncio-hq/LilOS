@@ -1,47 +1,14 @@
 import type { Employee } from "@lilos/contracts/app";
+import { HIRE_TEMPLATES } from "@lilos/ui";
 import type { HireDraft } from "@lilos/ui/types";
 import { relay } from "./runtime";
 
 /* Hiring for the real app (#115). The wire methods already exist on the
-   relay — this module is the app's share of the flow: starter templates and
-   the create/link + DM-open sequence a hire needs. */
+   relay — this module is the app's share of the flow: the one hire list
+   (cards and soul text, `HIRE_TEMPLATES`) and the create/link + DM-open
+   sequence a hire needs. The page receives that same list as data. */
 
-/**
- * Starter personas for Hire → New profile (LilOS starter content, moved here
- * from the prototype). `model: ""` means the engine's default — the app
- * resolves it against the live `models.list` catalog when the dialog opens
- * (D-#85: the engine owns defaults; LilOS stores none).
- */
-export const HIRE_TEMPLATES: HireDraft[] = [
-  {
-    name: "Engineer",
-    role: "Engineer",
-    model: "",
-    instructions:
-      "You are a full-stack engineer. Work only on assigned tickets, on a branch. Run checks before reporting. Report scope creep instead of expanding.",
-  },
-  {
-    name: "Reviewer",
-    role: "QA",
-    model: "",
-    instructions:
-      "You review changes for correctness, tests and boundaries. Comment with file:line. Never push to main.",
-  },
-  {
-    name: "Researcher",
-    role: "Research",
-    model: "",
-    instructions:
-      "You research questions with cited sources and a one-paragraph answer first.",
-  },
-  {
-    name: "Marketer",
-    role: "Growth",
-    model: "",
-    instructions:
-      "You write marketing copy and plans in the founder's voice: plain, specific, no hype.",
-  },
-];
+export { HIRE_TEMPLATES };
 
 /**
  * Engine profile ids are lowercase slugs (Hermes: letters, numbers, `-`/`_`,

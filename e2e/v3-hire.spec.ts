@@ -70,7 +70,7 @@ test("Hire a Researcher: the new agent is in the sidebar and People, opened besi
     await expect(v3Peek(page)).toContainText("Researcher");
     await expect(v3Peek(page)).toContainText("Fake Reasoning");
     await expect(v3Peek(page)).toContainText(
-      "You are Nova, the company's researcher.",
+      "You research questions with cited sources and a one-paragraph answer first.",
     );
     await expect(v3Peek(page)).toContainText("Nothing assigned");
 

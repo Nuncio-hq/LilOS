@@ -1,3 +1,4 @@
+import { HIRE_TEMPLATES } from "@lilos/ui";
 import { expect, type Page, test } from "@playwright/test";
 import {
   bootStack,
@@ -22,6 +23,21 @@ import {
  */
 
 const main = (page: Page) => page.locator("#v3-main");
+
+const RESEARCHER = HIRE_TEMPLATES.find((t) => t.role === "Researcher");
+if (!RESEARCHER) throw new Error("Researcher template missing");
+
+/** Light and dark at the moment a criterion holds. */
+async function shot(page: Page, name: string) {
+  for (const colorScheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme });
+    await page.screenshot({
+      path: `test-results/ac-775/${name}-${colorScheme}.png`,
+      animations: "disabled",
+    });
+  }
+  await page.emulateMedia({ colorScheme: "light" });
+}
 
 test("statuses and this week's finished and failed counts match Threads", async ({
   page,
@@ -72,6 +88,7 @@ test("statuses and this week's finished and failed counts match Threads", async 
     const failed = Number(/(\d+) failed/.exec(text)?.[1]);
     expect(finished).toBeGreaterThan(0);
     expect(failed).toBeGreaterThan(0);
+    await shot(page, "01-week");
 
     await page.goto(`${stack.webUrl}/#?page=threads&view=agent`);
     const block = main(page)
@@ -107,6 +124,7 @@ test("editing instructions persists, and the next thread's session starts on tha
 
     await page.reload();
     await expect(v3Peek(page)).toContainText(sentence);
+    await shot(page, "02-instructions");
 
     const listed = await relayRpc<{
       employees: { id: string; profile: string; instructions: string }[];
@@ -182,6 +200,10 @@ test("Hire, then message the new agent at once", async ({ page }) => {
     await expect(v3Peek(page).getByRole("heading", { level: 1 })).toHaveText(
       "Pia",
     );
+    await expect(v3Peek(page)).toContainText(RESEARCHER.instructions, {
+      timeout: 30_000,
+    });
+    await shot(page, "03-hire");
 
     await v3Peek(page).getByRole("button", { name: "Message" }).click();
     await v3Peek(page).getByPlaceholder("Message Pia…").fill("Say hi");
@@ -192,11 +214,23 @@ test("Hire, then message the new agent at once", async ({ page }) => {
     });
 
     const listed = await relayRpc<{
-      employees: { name: string; reportsTo?: string }[];
+      employees: {
+        name: string;
+        profile?: string;
+        instructions: string;
+        reportsTo?: string;
+      }[];
     }>(page, stack, "employees.list", {});
-    expect(
-      listed.employees.find((e) => e.name === "Pia")?.reportsTo,
-    ).toBeUndefined();
+    const pia = listed.employees.find((e) => e.name === "Pia");
+    expect(pia?.reportsTo).toBeUndefined();
+    expect(pia?.instructions).toBe(RESEARCHER.instructions);
+    const described = await relayRpc<{ agent: { soul?: string } }>(
+      page,
+      stack,
+      "agents.describe",
+      { id: pia?.profile ?? "" },
+    );
+    expect(described.agent.soul).toBe(RESEARCHER.instructions);
   } finally {
     await stack.stop();
   }
@@ -232,6 +266,7 @@ test("the org chart reflects reportsTo, and the owner is the profile name", asyn
     await expect(
       main(page).getByText("Nia", { exact: true }).first(),
     ).toBeVisible();
+    await shot(page, "04-org");
 
     await page.goto(
       `${stack.webUrl}/#?page=people&open=agent:${encodeURIComponent(agent.id)}`,

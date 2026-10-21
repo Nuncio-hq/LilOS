@@ -554,6 +554,51 @@ describe("approval-gated gateway tools", () => {
     }
   });
 
+  it("team_update rejects a bad reportsTo before any ask or engine write", async () => {
+    const v = await world();
+    try {
+      const engineWrites = () =>
+        v.sent.filter(
+          (s) => s.method === "agents.update" || s.method === "asks.open",
+        );
+
+      await expect(
+        v.client.teamUpdate({
+          reportsTo: v.binding.employeeId,
+          model: "fake-large",
+        }),
+      ).rejects.toThrow(/itself/);
+      expect(await v.asks("open")).toEqual([]);
+      expect(engineWrites()).toEqual([]);
+
+      await expect(
+        v.client.teamUpdate({ reportsTo: "emp_missing" }),
+      ).rejects.toThrow(/not found/);
+      expect(await v.asks("open")).toEqual([]);
+      expect(engineWrites()).toEqual([]);
+
+      const { employee: other } = await v.w.user.request<{
+        employee: Employee;
+      }>("employees.create", { name: "Bea", role: "ops" });
+      await v.w.user.request("employees.update", {
+        id: other.id,
+        reportsTo: v.binding.employeeId,
+      });
+      await expect(
+        v.client.teamUpdate({
+          reportsTo: other.id,
+          instructions: "should not land",
+        }),
+      ).rejects.toThrow(/cycle/);
+      expect(await v.asks("open")).toEqual([]);
+      expect(engineWrites()).toEqual([]);
+    } finally {
+      v.gw.server.close();
+      await v.scope.close();
+      await v.w.cleanup();
+    }
+  });
+
   it("folder_add: approve lands the recents row, decline doesn't", async () => {
     const v = await world();
     try {

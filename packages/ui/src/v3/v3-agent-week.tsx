@@ -55,9 +55,17 @@ export function AgentWeek({
           )}
         >
           <Stat value={w.finished} label="threads finished" />
-          <Stat value={w.failed} label="threads failed" ink={INK.failed} />
+          <Stat
+            value={w.failed}
+            label="threads failed"
+            ink={w.failed > 0 ? INK.failed : undefined}
+          />
           {w.stuck !== undefined && (
-            <Stat value={w.stuck} label="threads stuck" ink={INK.stuck} />
+            <Stat
+              value={w.stuck}
+              label="threads stuck"
+              ink={w.stuck > 0 ? INK.stuck : undefined}
+            />
           )}
         </div>
       </>

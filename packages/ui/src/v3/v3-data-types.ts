@@ -2,6 +2,7 @@
    on you, the CEO's drafts, and `V3Data`, everything a page reads. */
 
 import type { ModelOption, ModelProvider, ModelVisibility } from "../types";
+import type { V3HireTemplate } from "./hire-templates";
 import type {
   V3Agent,
   V3BrowserTab,
@@ -238,6 +239,9 @@ export type V3Data = {
   /** Models the new-chat and hire pickers offer, as the picker shows them
      (the app turns a pick back into a real model when it acts on it). */
   modelChoices: string[];
+  /** Hire cards. The same list the app uses for a new agent's instructions,
+      so the role on the card is the role that gets stored. */
+  hireTemplates: V3HireTemplate[];
   /** What the app may write on an agent's page, beyond name, role and
      notifications (which it always can when it can edit at all): the engine
      lists the profile fields it accepts. Absent or empty: only those three. */

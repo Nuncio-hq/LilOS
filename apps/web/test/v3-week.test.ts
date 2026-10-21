@@ -97,7 +97,7 @@ describe("week counts", () => {
       ...src([
         conv({ id: "gone", archived: true, finishedSeq: 2 }),
         conv({ id: "live", engineRef: "s1", state: "active" }),
-        conv({ id: "stopped", finishedSeq: 0, turnStopped: true }),
+        conv({ id: "stopped", finishedSeq: 2, turnStopped: true }),
       ]),
       signals: { s1: { running: true, openRequests: new Map() } },
     });
