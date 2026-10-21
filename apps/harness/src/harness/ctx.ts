@@ -121,6 +121,14 @@ export interface SessionBinding {
   /** Latest pick made while a turn runs — applied to the idle session
       before the next prompt goes out (#92). */
   heldPick?: ModelPick;
+  /** #790: the fallback route already explained in this thread. A later
+      turn on the same route still stamps the footer, without a second
+      note. Cleared when a turn completes on the requested model, or
+      when the user changes the pick. */
+  lastFallback?: { model: string; provider?: string };
+  /** #790: this turn's `turn.model` named a different route — finishTurn
+      keeps `lastFallback` instead of clearing it. */
+  fellBackThisTurn?: boolean;
   /** The conversation's pick before `heldPick`'s intent was written —
       restored when the held apply fails so a dead pick can't linger. */
   heldPickPrev?: ConversationPickPatch;
@@ -177,6 +185,11 @@ export type ConversationPickPatch = {
 
 export interface HarnessCtx {
   engine?: EngineConnection;
+  /** #790: lazy `models.list`, so a fallback note can use catalog names
+      without the harness importing an engine's label rules. */
+  modelCatalog?: Promise<
+    readonly { id: string; name?: string; provider?: string }[]
+  >;
   hostId?: string;
   started: boolean;
   readonly bindings: Map<string, SessionBinding>;

@@ -31,6 +31,16 @@ export async function onModelRequested(
 ) {
   const binding = this.bindings.get(conversationId);
   const conn = this.engine;
+  /* A new pick is a different route from the one a fallback note
+     explained. The next fallback says so again (#790). */
+  if (binding) {
+    const conv = this.conversationFromAtom(conversationId);
+    if (
+      (conv?.model ?? undefined) !== pick.model ||
+      (conv?.provider ?? undefined) !== (pick.provider ?? undefined)
+    )
+      binding.lastFallback = undefined;
+  }
   /* The pick is the whole intended state: a field the new model drops
      (provider on a single-provider engine, effort on a non-reasoning
      model, fast on a model with no tier) writes NULL so the old pick

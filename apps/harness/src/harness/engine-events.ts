@@ -1,5 +1,9 @@
-import { type EngineEvent, fmtTokens } from "@lilos/contracts/engine";
-import type { HarnessCtx } from "./ctx";
+import {
+  type EngineEvent,
+  fallbackTurnNote,
+  fmtTokens,
+} from "@lilos/contracts/engine";
+import type { HarnessCtx, SessionBinding } from "./ctx";
 
 /**
  * engine -> relay: the `onEngineEvent` switch — turn
@@ -224,11 +228,18 @@ export function onEngineEvent(this: HarnessCtx, event: EngineEvent) {
         });
       break;
     }
+    case "turn.model":
+      /* #790: the adapter reported the route answering this turn. An
+         empty pick (a session on the engine's default, with no
+         turn.started model) is that route — no note. A different route
+         is a fallback: one note per route, and the pick the footer
+         reads moves to whoever answered. The conversation's model stays. */
+      if (binding) applyTurnModel(this, binding, event);
+      break;
     case "session.note":
-      /* Engine-authored note (e.g. a deferred model switch that failed at
-         turn start — "Couldn't switch to X — staying on Y"). Surfaced as a
-         system message; deduped by seq AND session — a rebound session
-         restarts its seq at 1 (#92). */
+      /* Engine-authored note (a deferred model switch that failed at
+         turn start). Surfaced as a system message; deduped by seq AND
+         session — a rebound session restarts its seq at 1 (#92). */
       if (binding) {
         this.postSystem(
           binding,
@@ -374,4 +385,121 @@ export function onEngineEvent(this: HarnessCtx, event: EngineEvent) {
     default:
       break;
   }
+}
+
+type CatalogRow = { id: string; name?: string; provider?: string };
+
+/** #790: move the turn's pick to the route that answered. The first
+    report on a turn that announced no model establishes that pick and
+    is not a fallback. A repeated route stamps the footer without a
+    second note. */
+function applyTurnModel(
+  ctx: HarnessCtx,
+  binding: SessionBinding,
+  event: Extract<EngineEvent, { type: "turn.model" }>,
+) {
+  const { turnId, model, provider, reason } = event.payload;
+  const pick = binding.pickByTurn.get(turnId);
+  if (!pick?.model) {
+    binding.pickByTurn.set(turnId, {
+      ...(pick ?? {}),
+      model,
+      ...(provider ? { provider } : {}),
+    });
+    return;
+  }
+  const changed =
+    model !== pick.model ||
+    (provider !== undefined && provider !== pick.provider);
+  if (!changed) return;
+  const asked = pick.model;
+  const askedProvider = pick.provider;
+  binding.pickByTurn.set(turnId, {
+    ...pick,
+    model,
+    ...(provider !== undefined ? { provider } : {}),
+  });
+  binding.fellBackThisTurn = true;
+  const last = binding.lastFallback;
+  if (
+    last?.model === model &&
+    (last.provider ?? undefined) === (provider ?? undefined)
+  )
+    return;
+  binding.lastFallback = { model, ...(provider ? { provider } : {}) };
+  void explainFallback(ctx, binding, {
+    fromId: asked,
+    fromProvider: askedProvider,
+    toId: model,
+    toProvider: provider,
+    reason,
+    dedupeKey: `sys:${binding.conversationId}:fallback:${event.sessionId}:${turnId}`,
+  });
+}
+
+async function explainFallback(
+  ctx: HarnessCtx,
+  binding: SessionBinding,
+  o: {
+    fromId: string;
+    fromProvider?: string;
+    toId: string;
+    toProvider?: string;
+    reason?: string;
+    dedupeKey: string;
+  },
+) {
+  const rows = await catalogRows(ctx);
+  const names = fallbackNames(
+    rows,
+    o.fromId,
+    o.fromProvider,
+    o.toId,
+    o.toProvider,
+  );
+  await ctx.postSystem(
+    binding,
+    fallbackTurnNote(names.from, names.to, o.reason),
+    o.dedupeKey,
+  );
+}
+
+function catalogRows(ctx: HarnessCtx): Promise<readonly CatalogRow[]> {
+  if (!ctx.modelCatalog) {
+    const conn = ctx.engine;
+    ctx.modelCatalog = conn
+      ? conn
+          .request<{ models?: CatalogRow[] }>("models.list", {})
+          .then((r) => r.models ?? [])
+          .catch(() => [])
+      : Promise.resolve([]);
+  }
+  return ctx.modelCatalog;
+}
+
+/** Catalog names. Identical names on two routes get the provider, and
+    if that still collides, the raw ids (#790). */
+function fallbackNames(
+  rows: readonly CatalogRow[],
+  fromId: string,
+  fromProvider: string | undefined,
+  toId: string,
+  toProvider: string | undefined,
+): { from: string; to: string } {
+  const nameOf = (id: string, provider?: string) => {
+    const exact = provider
+      ? rows.find((m) => m.id === id && m.provider === provider)
+      : undefined;
+    const any = rows.find((m) => m.id === id);
+    return (exact ?? any)?.name || id;
+  };
+  const fromName = nameOf(fromId, fromProvider);
+  const toName = nameOf(toId, toProvider);
+  if (fromName !== toName) return { from: fromName, to: toName };
+  const labeled = (name: string, id: string, provider?: string) =>
+    provider ? `${name} (${provider})` : id;
+  const fromLabeled = labeled(fromName, fromId, fromProvider);
+  const toLabeled = labeled(toName, toId, toProvider);
+  if (fromLabeled !== toLabeled) return { from: fromLabeled, to: toLabeled };
+  return { from: fromId, to: toId };
 }

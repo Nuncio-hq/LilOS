@@ -118,10 +118,12 @@ describe("issue #71", () => {
       />,
     );
     expect(named.container.textContent).toContain("Fake Large");
+    expect(named.container.textContent).not.toContain("· Fake Large");
     expect(named.container.textContent).not.toContain("fake-large");
     cleanup();
     // No catalog handed down: fall back to the engine's model id.
     const bare = render(<AgentTurn r={{ ...reply }} emp={emp} last />);
     expect(bare.container.textContent).toContain("fake-large");
+    expect(bare.container.textContent).not.toContain("· fake-large");
   });
 });

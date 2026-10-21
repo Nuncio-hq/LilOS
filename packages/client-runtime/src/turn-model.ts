@@ -670,6 +670,15 @@ export class SessionReducer {
         this.turn(e.payload.turnId).steers.push(e.payload.text);
         break;
       }
+      case "turn.model": {
+        /* #790: fold the route onto the turn as soon as the adapter
+           reports it — a long turn, or a stop after the fallback, names
+           who answered. The session pick (this.model) stays. */
+        const t = this.turn(e.payload.turnId);
+        t.model = e.payload.model;
+        if (e.payload.provider) t.provider = e.payload.provider;
+        break;
+      }
       case "turn.completed": {
         const t = this.turn(e.payload.turnId);
         /* #419: an error payload means the turn failed — the stop reason

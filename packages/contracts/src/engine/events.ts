@@ -360,6 +360,36 @@ export const TurnCompletedPayload = z.strictObject({
   errorCode: z.number().optional(),
 });
 
+/**
+ * The route now answering a turn (#790). Adapters report what ran —
+ * mid-turn, as soon as they know — and nothing else. The harness decides
+ * whether that route is a fallback and writes the thread note; the
+ * client folds `model` onto the turn so the footer names who answered.
+ * `reason` is the engine's own short cause ("rate limit", "connection
+ * error"), when it gave one.
+ */
+export const TurnModelPayload = z.strictObject({
+  turnId: TurnId,
+  model: z.string().min(1),
+  provider: z.string().optional(),
+  reason: z.string().optional(),
+});
+export type TurnModelPayload = z.infer<typeof TurnModelPayload>;
+
+/**
+ * Thread note when a turn ran on another route (#790). `fromName` /
+ * `toName` are catalog display names (raw ids when the catalog has no
+ * name, or when the two names collide). `reason` is the engine's cause.
+ */
+export function fallbackTurnNote(
+  fromName: string,
+  toName: string,
+  reason?: string,
+): string {
+  const why = reason ? ` (${reason})` : "";
+  return `${fromName} didn't answer${why}; ${toName} answered this turn`;
+}
+
 /** type -> payload map. The registry below is generated from this union. */
 export const EngineEvent = z.discriminatedUnion("type", [
   z.strictObject({
@@ -451,6 +481,12 @@ export const EngineEvent = z.discriminatedUnion("type", [
     sessionId: SessionId,
     type: z.literal("plan.updated"),
     payload: PlanUpdatedPayload,
+  }),
+  z.strictObject({
+    seq: Seq,
+    sessionId: SessionId,
+    type: z.literal("turn.model"),
+    payload: TurnModelPayload,
   }),
   z.strictObject({
     seq: Seq,
