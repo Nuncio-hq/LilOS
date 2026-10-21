@@ -88,6 +88,9 @@ export function V3Peek({
   return (
     <aside
       aria-label="Opened record"
+      /* Widened, this covers the page under it. Needs you keys read the
+         attribute so they do nothing while the page is covered. */
+      data-covers={full ? "" : undefined}
       className={cn(
         "z-20 row-span-3 row-start-1 grid min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-subgrid border-[var(--v3-line)] bg-[var(--v3-main)]",
         full ? "col-span-full col-start-1" : "col-start-2 border-l",

@@ -804,10 +804,7 @@
         "properties": {
           "outcome": {
             "type": "string",
-            "enum": [
-              "yes",
-              "no"
-            ]
+            "const": "yes"
           },
           "answer": {
             "type": "string",

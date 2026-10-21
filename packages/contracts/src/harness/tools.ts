@@ -285,7 +285,9 @@ export const AskParams = z.strictObject({
 });
 export type AskParams = z.infer<typeof AskParams>;
 export const AskToolResult = z.object({
-  outcome: z.enum(["yes", "no"]),
+  /** The user agreed. A denial throws `declined` and never returns `"no"`. */
+  outcome: z.literal("yes"),
+  /** The chosen option's label, when the ask was a question. */
   answer: z.string().min(1).optional(),
 });
 export type AskToolResult = z.infer<typeof AskToolResult>;

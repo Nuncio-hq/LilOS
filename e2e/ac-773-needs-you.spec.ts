@@ -2,11 +2,14 @@ import { expect, type Page, test } from "@playwright/test";
 import {
   bootStack,
   openDefaultAgent,
+  panelIntoFocus,
   pickPorts,
   type Stack,
   startChat,
+  v3Peek,
   v3Sidebar,
 } from "./helpers/stack";
+import { openWorkbench } from "./helpers/workbench";
 
 /**
  * #773: Needs you lists every open ask, oldest first, with what yes and no
@@ -73,6 +76,9 @@ test("an approval from one thread and a question from another both appear, oldes
     "Which environment should this change ship to?",
   );
   await expect(main(page).getByText("Allow this next time")).toHaveCount(0);
+  // A question has no approve or deny (D-#19), so the hint is only J/K.
+  await expect(main(page)).toContainText("J/K move");
+  await expect(main(page).getByText(/A approve/)).toHaveCount(0);
 
   // Back to the older approval, then clear both so the next criterion starts empty.
   await page.keyboard.press("k");
@@ -177,6 +183,35 @@ test("A, D, J and K work, and do nothing while typing in a field", async ({
   // Opening the page clears the thread peek, so the keys are not typing.
   // The why line is only on the open card, so it says which ask is open.
   await expect(main(page)).toContainText("Readers liked the hooks");
+  await expect(main(page)).toContainText("A approve · D deny · J/K move");
+
+  // The open ask's thread, widened over the page, covers Needs you. Typing
+  // in its Workbench terminal, and a bare `a` while it stays widened, must
+  // not approve.
+  await main(page).getByRole("button", { name: "Open thread" }).click();
+  await panelIntoFocus(page);
+  await openWorkbench(page);
+  const terminalTab = page.locator('[data-work-tab="terminal"]');
+  await expect(terminalTab).toBeVisible({ timeout: 30_000 });
+  await terminalTab.click();
+  const terminal = page.locator("[data-lilos-terminal]");
+  await expect(terminal).toBeVisible();
+  await terminal.click();
+  await page.keyboard.type("a");
+  await expect(sideItem(page)).toHaveText(/^Needs you\s*2$/);
+  await expect(main(page)).toContainText("Readers liked the hooks");
+
+  await page.evaluate(() =>
+    (document.activeElement as HTMLElement | null)?.blur(),
+  );
+  await page.keyboard.press("a");
+  await expect(sideItem(page)).toHaveText(/^Needs you\s*2$/);
+  await expect(main(page)).toContainText("Readers liked the hooks");
+
+  await v3Peek(page)
+    .getByRole("button", { name: "Close", exact: true })
+    .click();
+  await expect(page).not.toHaveURL(/open=thread:/);
 
   // Typing in Search swallows J and A: the open card and the count stay.
   await v3Sidebar(page)

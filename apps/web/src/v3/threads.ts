@@ -232,7 +232,14 @@ function threadRows(src: ThreadSources, archived: boolean): V3Thread[] {
         agentId,
         title,
         status: V3_STATUS[status],
-        ...(status === "unseen" ? { unseen: true } : {}),
+        /* Completion age is this thread's own clock (last message, else
+           when it was opened). Needs you must not read a ticket for it. */
+        ...(status === "unseen"
+          ? {
+              unseen: true,
+              doneAgo: Math.max(0, Math.round((src.now - last) / MIN)),
+            }
+          : {}),
         startedAt: clockOrDate(c.createdAt, src.now),
         minutes: Math.max(
           0,

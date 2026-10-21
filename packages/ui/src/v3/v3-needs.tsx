@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { foreignOverlayOpen } from "../chat/ui-layers";
 import { ago, Btn, Page, Section, Title } from "./v3-bits";
 import { INK, StatusDot } from "./v3-marks";
 import {
@@ -18,16 +19,34 @@ import type { V3PageProps } from "./v3-page-types";
    oldest ask is open with its four answers (ask, why, yes, no); every ask
    also carries the CEO's default, so the company never waits forever. */
 
-/** Keys typed into a field must never trigger the A / D / J / K shortcuts. */
-function typingInField(e: KeyboardEvent) {
+/** A / D / J / K do nothing while the key is already handled, the user is
+    typing anywhere, or something covers this page (a dialog, the palette,
+    or a thread widened over it). */
+function needsKeysBlocked(e: KeyboardEvent) {
+  if (e.defaultPrevented || e.isComposing) return true;
+  if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return true;
+  /* The shell's overlay check — menus, popovers, vendored dialogs. Not a
+     second detector. A widened thread is the opened record covering the
+     page (`data-covers`); a thread beside the page is not. */
+  if (foreignOverlayOpen()) return true;
+  if (document.querySelector('aside[aria-label="Opened record"][data-covers]'))
+    return true;
   const el = e.target as HTMLElement | null;
-  if (!el) return false;
-  if (el.isContentEditable) return true;
-  if (el.tagName === "TEXTAREA" || el.tagName === "SELECT") return true;
+  if (!el?.closest) return false;
+  if (el.isContentEditable || el.closest('[contenteditable="true"]'))
+    return true;
+  if (
+    el.closest(
+      '[role="textbox"], [data-lilos-terminal], [role="dialog"], aside[aria-label="Opened record"]',
+    )
+  )
+    return true;
+  const field = el.closest("textarea, select, input");
+  if (!field) return false;
+  if (field.tagName !== "INPUT") return true;
   /* A checkbox is a choice, not typing, so A still approves after
      "Allow this next time". A text field swallows the key. */
-  if (el.tagName !== "INPUT") return false;
-  const type = (el as HTMLInputElement).type;
+  const type = (field as HTMLInputElement).type;
   return type !== "checkbox" && type !== "radio" && type !== "button";
 }
 
@@ -95,8 +114,7 @@ export function V3Needs({ data, go, act }: V3PageProps) {
   // Keys read the latest asks through the effect deps; re-binding is cheap.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey || typingInField(e) || !current)
-        return;
+      if (needsKeysBlocked(e) || !current) return;
       const k = e.key.toLowerCase();
       if (k === "a" && current.kind === "approval")
         act.approve(current.id, allow[current.id]);
@@ -136,7 +154,7 @@ export function V3Needs({ data, go, act }: V3PageProps) {
         tag: threadTag(data, th),
         by: th.agentId,
         note: th.quote ? `“${th.quote}”` : (th.summary ?? ""),
-        minutes: t?.doneAgo ?? t?.since ?? 0,
+        minutes: th.doneAgo ?? t?.doneAgo ?? t?.since ?? 0,
         threadId: th.id,
         unseen: true,
       });
@@ -209,8 +227,12 @@ export function V3Needs({ data, go, act }: V3PageProps) {
             allow={!!allow[current.id]}
             setAllow={(v) => setAllow((s) => ({ ...s, [current.id]: v }))}
           />
+          {/* D-#19: the hint only names a key that does something. A question
+              has no approve or deny. */}
           <p className="mt-2 text-[12.5px] text-muted-foreground/70">
-            A approve · D deny · J/K move
+            {current.kind === "approval"
+              ? "A approve · D deny · J/K move"
+              : "J/K move"}
           </p>
         </>
       ) : (

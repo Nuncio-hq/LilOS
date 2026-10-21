@@ -5,6 +5,7 @@
 import type {
   AppChannel,
   Conversation,
+  ConversationSummary,
   MessageSearchHit,
 } from "@lilos/contracts/app";
 import { describe, expect, test } from "vitest";
@@ -69,6 +70,44 @@ describe("archived threads", () => {
     const back = sources([conv({ id: "gone", archived: false })]);
     expect(v3Threads(back).map((t) => t.id)).toEqual(["gone"]);
     expect(v3ArchivedThreads(back)).toEqual([]);
+  });
+
+  test("a finished-not-seen thread carries minutes since it finished", () => {
+    const now = 12 * 60_000;
+    const done = conv({
+      id: "done",
+      createdAt: 0,
+      finishedSeq: 2,
+      readSeq: 0,
+    });
+    const src = sources([done]);
+    src.now = now;
+    const summary: ConversationSummary = {
+      conversation: done,
+      root: {
+        id: "m1",
+        conversationId: "done",
+        authorId: "u",
+        authorKind: "user",
+        text: "go",
+        seq: 1,
+        createdAt: 0,
+      },
+      last: {
+        id: "m2",
+        conversationId: "done",
+        authorId: "emp1",
+        authorKind: "employee",
+        text: "done",
+        seq: 2,
+        createdAt: 2 * 60_000,
+      },
+      messageCount: 2,
+    };
+    src.summaries = [summary];
+    const row = v3Threads(src)[0];
+    expect(row.unseen).toBe(true);
+    expect(row.doneAgo).toBe(10);
   });
 });
 
