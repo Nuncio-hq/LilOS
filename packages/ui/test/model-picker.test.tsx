@@ -487,6 +487,190 @@ describe("model picker v2", () => {
     expect(body().querySelector('button[aria-label="Fast mode"]')).toBeNull();
   });
 
+  /* #807: mid-turn pick. The model write echoes before Fast does. That
+     echo must not wipe the draft, or the next slider step composes from
+     it and sends Fast back off. */
+  test("a model echo without Fast leaves the Fast draft for the next slider step", async () => {
+    const picks: ModelChoice[] = [];
+    const { rerender } = render(
+      <Harness picks={picks} value={choiceFor("qwen", MODELS)} />,
+    );
+    await openModels();
+    await act(async () =>
+      fireEvent.click(
+        headingFor("OpenAI").querySelector("button") as HTMLElement,
+      ),
+    );
+    await act(async () =>
+      fireEvent.click(within(list()).getByText("GPT test 5")),
+    );
+    await act(async () =>
+      fireEvent.click(
+        body().querySelector('button[aria-label="Fast mode"]') as HTMLElement,
+      ),
+    );
+    expect(picks.at(-1)).toMatchObject({ model: "gpt-test-5", fast: true });
+    /* The model write's echo: gpt-test-5 landed, Fast has not. */
+    await act(async () =>
+      rerender(
+        <Harness picks={picks} value={choiceFor("gpt-test-5", MODELS)} />,
+      ),
+    );
+    await act(async () =>
+      fireEvent.keyDown(
+        body().querySelector('input[type="range"]') as HTMLElement,
+        { key: "ArrowRight" },
+      ),
+    );
+    expect(picks.at(-1)).toMatchObject({
+      model: "gpt-test-5",
+      effort: "high",
+      fast: true,
+    });
+  });
+
+  /* The engine owns Fast and effort. An echo that is not an earlier write
+     — Fast explicitly off, or a different effort — replaces the draft so
+     the trigger does not keep a pick the engine rejected (#807). */
+  test("an echo with Fast off drops a Fast draft the engine refused", async () => {
+    const picks: ModelChoice[] = [];
+    const { rerender } = render(<Harness picks={picks} />);
+    await open();
+    await act(async () =>
+      fireEvent.click(
+        body().querySelector('button[aria-label="Fast mode"]') as HTMLElement,
+      ),
+    );
+    expect(picks.at(-1)).toMatchObject({ fast: true });
+    expect(body().querySelector('[aria-label="Fast"]')).toBeTruthy();
+    await act(async () =>
+      rerender(
+        <Harness
+          picks={picks}
+          value={{ ...choiceFor("gpt-test-5", MODELS), fast: false }}
+        />,
+      ),
+    );
+    expect(body().querySelector('[aria-label="Fast"]')).toBeNull();
+    await act(async () =>
+      fireEvent.keyDown(
+        body().querySelector('input[type="range"]') as HTMLElement,
+        { key: "ArrowRight" },
+      ),
+    );
+    expect(picks.at(-1)).toMatchObject({ fast: false, effort: "high" });
+  });
+
+  test("an echo with a normalised effort replaces the draft", async () => {
+    const picks: ModelChoice[] = [];
+    const { rerender } = render(<Harness picks={picks} />);
+    await open();
+    await act(async () =>
+      fireEvent.keyDown(
+        body().querySelector('input[type="range"]') as HTMLElement,
+        { key: "ArrowRight" },
+      ),
+    );
+    expect(picks.at(-1)).toMatchObject({ effort: "high" });
+    expect(trigger().textContent).toContain("High");
+    await act(async () =>
+      rerender(
+        <Harness
+          picks={picks}
+          value={{ ...choiceFor("gpt-test-5", MODELS), effort: "low" }}
+        />,
+      ),
+    );
+    expect(trigger().textContent).toContain("Low");
+    expect(trigger().textContent).not.toContain("High");
+  });
+
+  /* Three writes queued before any echo: model, then Fast, then effort.
+     The first echo is only the model write. Popping it and then treating
+     the effort mismatch as a rewrite used to wipe High and Fast (#807). */
+  test("a model echo with Fast and effort still in flight keeps both", async () => {
+    const picks: ModelChoice[] = [];
+    const { rerender } = render(
+      <Harness picks={picks} value={choiceFor("qwen", MODELS)} />,
+    );
+    await openModels();
+    await act(async () =>
+      fireEvent.click(
+        headingFor("OpenAI").querySelector("button") as HTMLElement,
+      ),
+    );
+    await act(async () =>
+      fireEvent.click(within(list()).getByText("GPT test 5")),
+    );
+    await act(async () =>
+      fireEvent.click(
+        body().querySelector('button[aria-label="Fast mode"]') as HTMLElement,
+      ),
+    );
+    await act(async () =>
+      fireEvent.keyDown(
+        body().querySelector('input[type="range"]') as HTMLElement,
+        { key: "ArrowRight" },
+      ),
+    );
+    expect(picks).toHaveLength(3);
+    expect(picks[2]).toMatchObject({
+      model: "gpt-test-5",
+      effort: "high",
+      fast: true,
+    });
+    expect(trigger().textContent).toContain("High");
+    expect(trigger().querySelector('[aria-label="Fast"]')).toBeTruthy();
+    await act(async () =>
+      rerender(
+        <Harness picks={picks} value={choiceFor("gpt-test-5", MODELS)} />,
+      ),
+    );
+    expect(trigger().textContent).toContain("High");
+    expect(trigger().textContent).not.toContain("Medium");
+    expect(trigger().querySelector('[aria-label="Fast"]')).toBeTruthy();
+  });
+
+  /* The harness stores a refused Fast as null; the relay maps that to
+     undefined, not false. That echo is not the Fast-on write, so the
+     draft drops (#807). */
+  test("a Fast refusal echoed as undefined drops the draft", async () => {
+    const picks: ModelChoice[] = [];
+    /* The prop has to move: a refusal that stays `undefined` is the same
+       value the picker already showed. Explicit false, then undefined, is
+       what the relay emits when the harness writes null. */
+    const { rerender } = render(
+      <Harness
+        picks={picks}
+        value={{ ...choiceFor("gpt-test-5", MODELS), fast: false }}
+      />,
+    );
+    await open();
+    await act(async () =>
+      fireEvent.click(
+        body().querySelector('button[aria-label="Fast mode"]') as HTMLElement,
+      ),
+    );
+    expect(picks.at(-1)).toMatchObject({ fast: true });
+    expect(trigger().querySelector('[aria-label="Fast"]')).toBeTruthy();
+    await act(async () =>
+      rerender(
+        <Harness
+          picks={picks}
+          value={{ ...choiceFor("gpt-test-5", MODELS), fast: undefined }}
+        />,
+      ),
+    );
+    expect(trigger().querySelector('[aria-label="Fast"]')).toBeNull();
+    await act(async () =>
+      fireEvent.keyDown(
+        body().querySelector('input[type="range"]') as HTMLElement,
+        { key: "ArrowRight" },
+      ),
+    );
+    expect(picks.at(-1)).toMatchObject({ fast: false, effort: "high" });
+  });
+
   test("Refresh / Edit models render only with their handlers (D-#19)", async () => {
     const { unmount } = render(<Harness />);
     await openModels();

@@ -325,6 +325,15 @@ test("AC-3 without rewind: files restore, the plain note shows, Start a new thre
   await expect(
     page.locator("[data-thread]").getByText("If you want me to change code"),
   ).toBeVisible({ timeout: 60_000 });
+  /* That sentence is in the streamed answer, which lands before
+     `turn.completed`. Sending on the text alone makes beta a steer of
+     turn 1 (#807). The footer is the end of the turn. */
+  await expect(
+    page
+      .locator("[data-thread] [data-agentturn]")
+      .last()
+      .locator("[data-turnsettled]"),
+  ).toBeVisible({ timeout: 60_000 });
   await send(page, "beta in the no-rewind session");
   await expect(
     page.locator("[data-thread]").getByText("Noted. Plan for this session"),

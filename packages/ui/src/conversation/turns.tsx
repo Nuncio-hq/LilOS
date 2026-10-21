@@ -247,14 +247,18 @@ export function AgentTurn({
           r.phase === "failed") && (
           /* data-turnsettled: the footer only renders once the turn has ended —
            the stable "turn is over" anchor for specs (text lands earlier).
-           It has a real box (specs wait on it being visible) but hangs into
-           the 28px gap below the turn — negative margins return its height —
-           so a quiet hover line never pushes the next message away. Under a
-           resolved question card that box reads as a dead gap, so the turn
-           with a collapsed receipt drops it entirely (FIX #515 r4). */
+           It stays in flow under the reply. An absolute bar sat on the
+           last line and blocked selecting it. `-mt-3.5` cancels this
+           column's gap so the line starts at the text, not over it.
+           `-mb-4` overhangs the turn by 16px; with the composer's 2px
+           margin the band is 18px, under #602's 24px cap. The 4px bottom
+           padding holds the 3px focus ring inside the bar — a bare `h-6`
+           put the ring on the scrollport edge, where it was clipped. No
+           overflow clip. The buttons stay 24px. A resolved question card
+           drops the line (FIX #515 r4). */
           <div
             data-turnsettled
-            className="-mt-3.5 -mb-5 flex h-5 items-center gap-x-1.5 overflow-hidden whitespace-nowrap text-[12px] text-muted-foreground/70 opacity-0 transition-opacity duration-300 group-hover:opacity-100 group-has-[[data-question-card][data-ask-state=resolved]]:m-0 group-has-[[data-question-card][data-ask-state=resolved]]:h-0"
+            className="-mt-3.5 -mb-4 flex items-center gap-x-1.5 pb-1 whitespace-nowrap text-[12px] text-muted-foreground/70 opacity-0 transition-opacity duration-300 group-hover:opacity-100 group-has-[[data-question-card][data-ask-state=resolved]]:hidden"
           >
             {r.model && (
               <span>

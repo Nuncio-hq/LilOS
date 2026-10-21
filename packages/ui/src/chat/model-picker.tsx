@@ -259,15 +259,36 @@ export function ModelPicker({
   const [pendingLeave, setPendingLeave] = useState<ModelOption | null>(null);
   /* The pick writes are async (relay round-trip). While the popover is open,
      the shown state is the user's latest edit — composing off the `value`
-     prop would drop an earlier toggle that hasn't echoed back yet. The draft
-     is dropped the moment the prop actually moves (the echo, or an external
-     change): the parent stays authoritative. */
+     prop would drop an earlier toggle that hasn't echoed back yet. Each
+     write is queued. An echo is matched against that list: it drops itself
+     and every write before it, and the draft stays while a newer write is
+     still queued. Popping the head before the search made the model echo
+     (effort still medium) look like the engine had normalised High away,
+     and wiped Fast with it (#807). An echo that matches nothing in flight
+     is the engine's own answer — a refusal, a normalised effort, or another
+     session — so the draft goes. Fast refused can come back as `undefined`
+     (the harness writes null and the relay drops it), which does not match
+     a Fast-on write. */
   const [picked, setPicked] = useState<ModelChoice | null>(null);
-  const [prev, setPrev] = useState(value);
-  if (!samePick(value, prev)) {
-    setPrev(value);
-    if (picked) setPicked(null);
+  const [inflight, setInflight] = useState<ModelChoice[]>([]);
+  const echoKey = `${value.model}\0${value.provider ?? ""}\0${value.effort ?? ""}\0${value.fast === true ? 1 : value.fast === false ? 0 : ""}`;
+  const [handled, setHandled] = useState(echoKey);
+  if (echoKey !== handled) {
+    setHandled(echoKey);
     setRefreshed(false);
+    const at = inflight.findIndex((s) => samePick(value, s));
+    if (at >= 0) {
+      const rest = inflight.slice(at + 1);
+      if (rest.length === 0) {
+        if (picked) setPicked(null);
+        if (inflight.length > 0) setInflight([]);
+      } else {
+        setInflight(rest);
+      }
+    } else if (picked || inflight.length > 0) {
+      setPicked(null);
+      setInflight([]);
+    }
   }
   const shown0 = picked ?? value;
   /* `merged` adds the session's own model when the catalog omits it (#140
@@ -291,6 +312,7 @@ export function ModelPicker({
   const fast = !!(cur?.fast && shown0.fast);
   const choose = (c: ModelChoice) => {
     setPicked(c);
+    setInflight((q) => [...q, c]);
     onChoice(c);
   };
   const pName = (p: string) => providerName(p, providers);
@@ -374,6 +396,7 @@ export function ModelPicker({
           if (!o) {
             setView("main");
             setPicked(null);
+            setInflight([]);
           }
         }}
       >

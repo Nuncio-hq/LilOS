@@ -152,9 +152,9 @@ export function Composer({
        (queued chips included — they're inside this wrapper). It spans the
        panel; the inner box is the prototype's column — 720px less its 32px
        gutters — so the box lines up with the turns above it. Its 2px
-       top margin plus the column's own bottom padding is the whole band
-       between the last turn and the box (#602 caps it at 24px; 4px left
-       Linux font metrics a half pixel over).
+       top margin plus the settled line's 16px overhang is the band under
+       the last turn (#602 caps it at 24px; this reads 18). The line stays
+       in flow below the reply.
        `@container`: the key hint steps aside when the box is narrow. */
     <div
       ref={menus.wrapRef}
