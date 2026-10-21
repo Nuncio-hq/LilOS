@@ -1140,6 +1140,57 @@ describe("workspace harness", () => {
       await w.cleanup();
     }
   });
+
+  it("#814 turn.completed is observable only once the row is idle", { timeout: 15_000 }, async () => {
+    /* SessionWatch seeds `running` from `state === "active"` at boot
+       (#572). Publishing the completion before that write lets a list
+       in the gap replay a finished session. Hold the idle write: the
+       event must not reach a subscriber until the hold releases. */
+    const w = await setupWorld();
+    try {
+      const { channel } = await openDmConversation(w.user);
+      await w.user.request("channel.subscribe", { channelId: channel.id });
+      const orig = w.harnessRelay.request.bind(w.harnessRelay);
+      let heldIdle = false;
+      let releaseIdle: () => void = () => {};
+      const idleGate = new Promise<void>((resolve) => {
+        releaseIdle = resolve;
+      });
+      w.harnessRelay.request = ((
+        method: string,
+        params?: Record<string, unknown>,
+      ) => {
+        if (
+          method === "conversations.update" &&
+          (params as { state?: string } | undefined)?.state === "idle"
+        ) {
+          heldIdle = true;
+          return idleGate.then(() => orig(method, params));
+        }
+        return orig(method, params);
+      }) as typeof w.harnessRelay.request;
+      let sawCompleted = false;
+      w.user.onEvent((method, params) => {
+        if (method !== "engine.event") return;
+        const event = (params as { event?: { type?: string } }).event;
+        if (event?.type === "turn.completed") sawCompleted = true;
+      });
+      await w.user.request("conversations.open", {
+        channelId: channel.id,
+        text: "Say hi",
+      });
+      await waitFor(() => (heldIdle ? true : undefined), "idle write held");
+      await new Promise((r) => setTimeout(r, 50));
+      expect(sawCompleted).toBe(false);
+      releaseIdle();
+      await waitFor(
+        () => (sawCompleted ? true : undefined),
+        "completion after idle",
+      );
+    } finally {
+      await w.cleanup();
+    }
+  });
 });
 
 describe("engine supervisor (AC-2)", () => {

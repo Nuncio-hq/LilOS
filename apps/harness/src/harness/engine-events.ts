@@ -23,6 +23,39 @@ import {
  * `Object.assign` at the bottom of `../harness.ts`.
  */
 
+/**
+ * Live-socket entry. `onEngineEvent` stays synchronous for replay.
+ *
+ * #814 / #572: SessionWatch seeds `running` from `state === "active"`
+ * at boot, because a cold client has no broadcast history. The
+ * completion used to be published first and the idle write
+ * fire-and-forgotten after it, so a list in that gap — a loaded boot,
+ * a second window — attached `events.since` for a turn that had
+ * already ended. Commit idle before anyone can observe the event.
+ * The caller's chain holds the next event so a new turn's `active`
+ * write cannot land underneath this one. A failure to write still
+ * publishes the event: losing the completion is worse than a stale row.
+ */
+export async function deliverLiveEngineEvent(
+  this: HarnessCtx,
+  event: EngineEvent,
+): Promise<void> {
+  if (event.type === "turn.completed") {
+    const convId = this.conversationBySession.get(event.sessionId);
+    const binding = convId ? this.bindings.get(convId) : undefined;
+    if (binding && binding.runningTurnId === event.payload.turnId) {
+      await this.updateConversation(binding.conversationId, {
+        state: "idle",
+      }).catch((error) =>
+        this.opts.log.warn("idle before turn.completed failed", {
+          error: String(error),
+        }),
+      );
+    }
+  }
+  this.onEngineEvent(event);
+}
+
 export function onEngineEvent(this: HarnessCtx, event: EngineEvent) {
   for (const fn of this.feedListeners) {
     try {

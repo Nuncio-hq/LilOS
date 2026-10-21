@@ -77,7 +77,10 @@ import {
   resyncBinding,
   surfaceBackendDown,
 } from "./harness/engine-attach";
-import { onEngineEvent } from "./harness/engine-events";
+import {
+  deliverLiveEngineEvent,
+  onEngineEvent,
+} from "./harness/engine-events";
 import {
   applyHeldPick,
   doApplyHeldPick,
@@ -523,7 +526,20 @@ export class Harness {
   attachEngine(conn: EngineConnection): void {
     this.engine?.close();
     this.engine = conn;
-    this.unsubs.push(conn.onEvent((e) => this.onEngineEvent(e)));
+    /* Live events stay in order across the idle await below. Replay
+       calls `onEngineEvent` directly and stays synchronous. */
+    let liveEvents = Promise.resolve();
+    this.unsubs.push(
+      conn.onEvent((e) => {
+        liveEvents = liveEvents
+          .then(() => this.deliverLiveEngineEvent(e))
+          .catch((error) =>
+            this.opts.log.warn("engine event delivery failed", {
+              error: String(error),
+            }),
+          );
+      }),
+    );
     void this.describeAndHire(conn).catch((error) =>
       this.opts.log.warn("describe/hire failed", { error: String(error) }),
     );
@@ -640,6 +656,7 @@ export class Harness {
   /* ------------------------- engine -> relay ---------------------------- */
 
   declare private onEngineEvent: (event: EngineEvent) => void;
+  declare private deliverLiveEngineEvent: (event: EngineEvent) => Promise<void>;
 
   /* --------------------------- relay -> engine -------------------------- */
 
@@ -706,6 +723,7 @@ Object.assign(Harness.prototype, {
   onAskResolved,
   onChannelRemoved,
   onEngineEvent,
+  deliverLiveEngineEvent,
   onEngineRequestResolved,
   onInterruptRequested,
   onModelRequested,

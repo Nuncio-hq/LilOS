@@ -348,6 +348,8 @@ export interface HarnessCtx {
     channelId: string,
   ): Promise<SessionBinding | undefined>;
   onEngineEvent(event: EngineEvent): void;
+  /** Live-socket entry (#814): commits idle before `turn.completed`. */
+  deliverLiveEngineEvent(event: EngineEvent): Promise<void>;
   openAsk(
     binding: SessionBinding,
     turnId: string,
