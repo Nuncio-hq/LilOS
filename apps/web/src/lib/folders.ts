@@ -66,11 +66,16 @@ export async function refreshFolders(): Promise<void> {
   folders.set(await Promise.all(res.folders.map((f) => probeFolder(f.path))));
 }
 
-/** Add a picked path to the shared recents, then refresh the rows. */
+/** Add a picked path to the shared recents, then refresh the rows. The
+    relay stores its own spelling of the folder (D-#771: `~/x` under the
+    home, no trailing slash), so the row is found by what it stored, not by
+    what was typed. */
 export async function addFolder(path: string): Promise<Folder | undefined> {
-  await relay.request("folders.add", { path });
+  const res = await relay.request<{ folder: { path: string } }>("folders.add", {
+    path,
+  });
   await refreshFolders();
-  return folders.get().find((f) => f.path === path);
+  return folders.get().find((f) => f.path === res.folder.path);
 }
 
 /** Lazy probe for a conversation's cwd (thread header branch). */
