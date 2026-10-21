@@ -258,6 +258,8 @@ function Connecting({ navigation, route }: Props<"Connecting">) {
         await savePairedMac({
           id: result.deviceId,
           name: offer.name ?? fallbackName(offer.host),
+          /* D-#803: the offer host, unchanged. The relay puts a *.ts.net
+             name here when it knows one. */
           host: offer.host,
           route: routeFor(offer.host),
           pairedAt: now,
