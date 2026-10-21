@@ -201,7 +201,6 @@ function DraftChat({
           <>
             <AgentAvatar data={data} agent={agent} size={16} />
             <span className="truncate">{agent.name}</span>
-            {agent.id === data.ceoId && <CeoMark />}
           </>
         }
         options={data.agents.map((a) => ({

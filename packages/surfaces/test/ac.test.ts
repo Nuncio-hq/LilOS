@@ -331,26 +331,21 @@ describe("approval-gated tools: dispatch + areas + declined over HTTP", () => {
 });
 
 describe("CEO-only tools (D-#778)", () => {
-  const hire = {
-    name: "Bea",
-    role: "designer",
-    model: "m",
-    instructions: "i",
-  };
+  const setCeo = { employeeId: "emp-other" };
 
   it("is not offered to a session that did not start as CEO", async () => {
     const appOps = fakeAppOps();
     const { scope } = makeScope({ appOps });
     const gw = await serveGateway({ sessions: [{ scope, token: "tok" }] });
     try {
-      const res = await fetch(`${gw.baseUrl}/tools/team_hire`, {
+      const res = await fetch(`${gw.baseUrl}/tools/team_set_ceo`, {
         method: "POST",
         headers: {
           "content-type": "application/json",
           authorization: "Bearer tok",
           [SESSION_HEADER]: "s1",
         },
-        body: JSON.stringify(hire),
+        body: JSON.stringify(setCeo),
       });
       expect(res.status).toBe(404);
       expect(appOps.asks).toEqual([]);
@@ -364,7 +359,9 @@ describe("CEO-only tools (D-#778)", () => {
     const appOps = fakeAppOps([], { ceoId: "someone-else" });
     const { scope } = makeScope({ appOps, ceoAtStart: true });
     try {
-      await expect(callTool(scope, "team_hire", hire)).rejects.toMatchObject({
+      await expect(
+        callTool(scope, "team_set_ceo", setCeo),
+      ).rejects.toMatchObject({
         code: "forbidden",
       });
       expect(appOps.asks).toEqual([]);

@@ -3,7 +3,7 @@ import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "../lib/utils";
 import { Btn, Kbd, Spinner } from "./v3-bits";
 import type { V3Data, V3Draft } from "./v3-data-types";
-import { Avatar, CeoMark } from "./v3-marks";
+import { AgentAvatar, CeoMark } from "./v3-marks";
 import type { V3Actions, V3Route } from "./v3-page-types";
 import { MessageHitRow, useMessageHits } from "./v3-palette-messages";
 import { Footer, PlanView } from "./v3-palette-plan";
@@ -136,10 +136,12 @@ export function V3Palette({
   const messages = useMessageHits(text, searchMessages, data);
 
   /* A holder plus a way to reach them: the prototype drafts a plan, the
-     app opens a thread (D-#778). Without a holder, every row jumps. */
-  const holder = data.agents.some((a) => a.id === data.ceoId);
-  const canAsk = holder && (!!draft || !!onAskCeo);
-  const lead = !canAsk ? 0 : draft ? (text.trim() ? 1 : TRY.length) : 1;
+     app opens a thread (D-#778). Without a holder, every row jumps.
+     One Ask row: the app always, the prototype once there is text. */
+  const holderAgent = data.agents.find((a) => a.id === data.ceoId);
+  const canAsk = !!holderAgent && (!!draft || !!onAskCeo);
+  const showAsk = (canAsk && !draft) || (!!draft && text.trim().length > 0);
+  const lead = showAsk ? 1 : draft && !text.trim() ? TRY.length : 0;
   const rows = lead + jumps.length + messages.length;
 
   const submit = (line: string) => {
@@ -242,13 +244,13 @@ export function V3Palette({
 
         {phase === "input" && (
           <div className="max-h-[52vh] overflow-y-auto p-2">
-            {canAsk && !draft ? (
+            {showAsk ? (
               <Row
                 on={sel === 0}
                 onClick={() => pick(0)}
                 onHover={() => setSel(0)}
               >
-                <Avatar name="CEO" tone="c" size={18} />
+                <AgentAvatar data={data} agent={holderAgent} size={18} />
                 <span className="min-w-0 flex-1 truncate">
                   {text.trim() ? (
                     <>
@@ -261,20 +263,7 @@ export function V3Palette({
                 </span>
                 <CornerDownLeftIcon className="size-3.5 text-muted-foreground" />
               </Row>
-            ) : !draft ? null : text.trim() ? (
-              <Row
-                on={sel === 0}
-                onClick={() => pick(0)}
-                onHover={() => setSel(0)}
-              >
-                <Avatar name="CEO" tone="c" size={18} />
-                <span className="min-w-0 flex-1 truncate">
-                  Ask the CEO:{" "}
-                  <span className="font-medium">“{text.trim()}”</span>
-                </span>
-                <CornerDownLeftIcon className="size-3.5 text-muted-foreground" />
-              </Row>
-            ) : (
+            ) : draft && !text.trim() ? (
               <>
                 <Group>Try</Group>
                 {TRY.map((t, i) => (
@@ -289,7 +278,7 @@ export function V3Palette({
                   </Row>
                 ))}
               </>
-            )}
+            ) : null}
             {jumps.length > 0 && <Group>Go to</Group>}
             {jumps.map((j, i) => {
               const idx = lead + i;

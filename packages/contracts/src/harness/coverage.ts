@@ -38,6 +38,8 @@ export const AGENT_METHOD_TOOLS: Record<string, string> = {
   "conversations.prs": "thread_prs",
   "conversations.open": "thread_start",
   "employees.list": "team_list",
+  /* Every agent may hire, and it still asks the owner (D-#341). Not CEO-only:
+     a company with no CEO yet must still be able to hire. */
   "employees.create": "team_hire",
   "employees.update": "team_update",
   /* The position moves through one relay op; the agent proposes it and waits (D-#778). */
@@ -62,6 +64,7 @@ export const AGENT_METHOD_TOOLS: Record<string, string> = {
   "tickets.read": "ticket_read",
   "tickets.create": "ticket_create",
   "tickets.update": "ticket_update",
+  /* Handing a ticket to an agent is the CEO's job (#746, D-#778). */
   "tickets.assign": "ticket_assign",
   "tickets.comment": "ticket_comment",
 } as const;

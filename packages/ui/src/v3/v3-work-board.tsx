@@ -1,6 +1,6 @@
 import { cn } from "../lib/utils";
 import { ago } from "./v3-bits";
-import { AgentAvatar, INK, StatusDot } from "./v3-marks";
+import { AgentAvatar, CeoMark, INK, StatusDot } from "./v3-marks";
 import { agentOf, FORMER_AGENT } from "./v3-model";
 import { useOpenRecord } from "./v3-open-record";
 import type { V3Status, V3Ticket } from "./v3-types";
@@ -73,6 +73,7 @@ export function BoardView({ data, go, tickets }: WorkViewProps) {
                       <span className="truncate">
                         {t.owner ? (owner?.name ?? FORMER_AGENT) : "Unassigned"}
                       </span>
+                      {owner?.id === data.ceoId && <CeoMark />}
                       <span
                         className={cn(
                           "ml-auto shrink-0",

@@ -22,7 +22,7 @@ import {
   Title,
 } from "./v3-bits";
 import type { V3Data } from "./v3-data-types";
-import { AgentAvatar, Avatar, StatusPill } from "./v3-marks";
+import { AgentAvatar, Avatar, CeoMark, StatusPill } from "./v3-marks";
 import {
   agentNameOf,
   agentOf,
@@ -96,6 +96,7 @@ function Hands({
                 <span className="flex items-center gap-2 text-[13.5px] font-medium">
                   <AgentAvatar data={data} agent={a} />
                   {a?.name ?? FORMER_AGENT}
+                  {a?.id === data.ceoId && <CeoMark />}
                 </span>
                 <span className="w-full truncate">{th.title}</span>
                 <span className="text-muted-foreground">
@@ -250,6 +251,9 @@ function Updates({
             <div>
               <div className="text-[13.5px]">
                 {name && <b className="mr-2 font-semibold">{name}</b>}
+                {!you && by?.id === data.ceoId && (
+                  <CeoMark className="mr-2 align-middle" />
+                )}
                 <span className="text-muted-foreground/70">
                   {relativeTime(u.ago)}
                 </span>

@@ -1,7 +1,9 @@
 /**
  * D-#778: company.setCeo is one write. The memory store covers the wire
  * (events, the settings-key lock). The drizzle subprocess covers the
- * real transaction and that user_version stays 31 — migration 32 is #776's.
+ * real transaction and that user_version stays 32 — #776's migration.
+ * C3 adds none. A hire while someone holds the seat reports to them;
+ * removing the holder clears ceoId in that same write.
  */
 
 import { spawnSync } from "node:child_process";
@@ -104,6 +106,29 @@ describe("company.setCeo (D-#778)", () => {
       error?: { data?: { code?: string } };
     };
     expect(missing.error?.data?.code).toBe("not_found");
+
+    /* Bea holds it. A hire now reports to her (D-#778). */
+    user.frames.length = 0;
+    const dee = await hire("Dee");
+    expect(dee.reportsTo).toBe(bea.id);
+
+    user.frames.length = 0;
+    await user.connection.receive(req("employees.remove", { id: bea.id }));
+    await tick();
+    expect(eventsNamed(user.frames, "settings.changed")).toEqual([
+      expect.objectContaining({
+        params: { key: CEO_SETTING_KEY, value: null },
+      }),
+    ]);
+    user.frames.length = 0;
+    await user.connection.receive(
+      req("settings.get", { key: CEO_SETTING_KEY }),
+    );
+    await tick();
+    const cleared = resultOf(user.frames, lastId()).result as {
+      value: unknown;
+    };
+    expect(cleared.value).toBeNull();
   });
 });
 
@@ -126,16 +151,27 @@ const bea = await hire("Bea");
 const cio = await hire("Cio");
 await s.updateEmployee(cio.id, { reportsTo: bea.id });
 const first = await s.setCeo(ada.id);
+const dee = await hire("Dee");
 const again = await s.setCeo(ada.id);
 const second = await s.setCeo(bea.id);
 const rows = await s.listEmployees();
+const ceoBefore = await s.getSetting("ceoId");
+const removed = await s.removeEmployee(bea.id);
+const tag = (id) => id === ada.id ? "ada" : id === bea.id ? "bea" : id === cio.id ? "cio" : null;
+const named = (list) => list.employees.flatMap((e) => {
+  const t = tag(e.id);
+  return t ? [[t, e.reportsTo ?? null]] : [];
+});
 console.log(JSON.stringify({
   version: db.query("PRAGMA user_version").get().user_version,
-  first: first.employees.map((e) => [e.id === ada.id ? "ada" : e.id === bea.id ? "bea" : "cio", e.reportsTo ?? null]),
+  first: named(first),
   again: again.changed,
-  second: second.employees.map((e) => [e.id === ada.id ? "ada" : e.id === bea.id ? "bea" : "cio", e.reportsTo ?? null]),
-  ceo: await s.getSetting("ceoId"),
+  second: named(second),
+  ceo: ceoBefore,
   cio: rows.find((e) => e.id === cio.id)?.reportsTo === bea.id,
+  dee: dee.reportsTo === ada.id,
+  cleared: removed?.clearedCeo === true,
+  afterCeo: await s.getSetting("ceoId"),
 }));
 `;
 
@@ -154,8 +190,11 @@ describe("company.setCeo on the real store (D-#778)", () => {
       second: [string, string | null][];
       ceo: string;
       cio: boolean;
+      dee: boolean;
+      cleared: boolean;
+      afterCeo: unknown;
     };
-    expect(out.version).toBe(31);
+    expect(out.version).toBe(32);
     expect(out.first).toContainEqual(["bea", expect.stringMatching(/^emp_/)]);
     expect(out.again).toBe(false);
     expect(out.second).toContainEqual(["ada", expect.stringMatching(/^emp_/)]);
@@ -163,5 +202,8 @@ describe("company.setCeo on the real store (D-#778)", () => {
     expect(out.second.some((row) => row[0] === "cio")).toBe(false);
     expect(out.ceo).toMatch(/^emp_/);
     expect(out.cio).toBe(true);
+    expect(out.dee).toBe(true);
+    expect(out.cleared).toBe(true);
+    expect(out.afterCeo).toBeNull();
   });
 });

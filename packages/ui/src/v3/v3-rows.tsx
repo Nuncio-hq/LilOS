@@ -1,7 +1,7 @@
 import { cn } from "../lib/utils";
 import { ago, Spinner, TicketId } from "./v3-bits";
 import type { V3Data } from "./v3-data-types";
-import { AgentAvatar, StatusDot, StatusPill } from "./v3-marks";
+import { AgentAvatar, CeoMark, StatusDot, StatusPill } from "./v3-marks";
 import { agentOf, FORMER_AGENT, threadTag, ticketOf } from "./v3-model";
 import { RowButton } from "./v3-open-record";
 import type { V3Route } from "./v3-page-types";
@@ -42,6 +42,7 @@ export function AgentName({
           </span>
         )}
       </span>
+      {agent?.id === data.ceoId && <CeoMark />}
     </span>
   );
 }
@@ -70,9 +71,12 @@ export function TicketRow({
         {ticket.title}
       </span>
       {owner && (
-        <span className="flex w-[108px] shrink-0 items-center gap-2 text-[13.5px] text-muted-foreground">
+        <span className="flex w-[148px] shrink-0 items-center gap-1.5 text-[13.5px] text-muted-foreground">
           {ticket.owner && <AgentAvatar data={data} agent={who} size={18} />}
-          {ticket.owner ? (who?.name ?? FORMER_AGENT) : "Unassigned"}
+          <span className="truncate">
+            {ticket.owner ? (who?.name ?? FORMER_AGENT) : "Unassigned"}
+          </span>
+          {who?.id === data.ceoId && <CeoMark />}
         </span>
       )}
       <span className="w-[96px] shrink-0">

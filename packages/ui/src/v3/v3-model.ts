@@ -132,15 +132,16 @@ export function agentTicket(d: V3Data, agentId: string): V3Ticket | undefined {
     .sort((a, b) => order.indexOf(a.status) - order.indexOf(b.status))[0];
 }
 
-/** What a ticket waits on, as one plain phrase: "You", "CEO", "HB-11". */
+/** What a ticket waits on, as one plain phrase: "You", "the CEO", "HB-11".
+    No holder stays "the CEO" — never another agent's name (D-#778). */
 export function waitingLabel(d: V3Data, t: V3Ticket): string {
   const w = t.waitingOn;
   if (!w) return "—";
   if (w.kind === "you") return "You";
   if (w.kind === "agent") return agentNameOf(d, w.agentId);
   if (w.kind === "ceo") {
-    const ceo = d.agents.find((a) => a.id === d.ceoId) ?? defaultAgent(d);
-    return ceo?.name ?? "CEO";
+    const ceo = d.agents.find((a) => a.id === d.ceoId);
+    return ceo?.name ?? "the CEO";
   }
   return w.ticketId;
 }

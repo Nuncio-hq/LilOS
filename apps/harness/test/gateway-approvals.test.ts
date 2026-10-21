@@ -25,9 +25,10 @@ describe("approval-gated gateway tools", () => {
   async function world() {
     const w = await setupWorld();
     const { employee, channel } = await openDmConversation(w.user);
-    /* team_hire is CEO-only (D-#778). This employee holds the position
-       before the recording proxy, so the hire test's `sent` list stays
-       about the tool call. */
+    /* team_set_ceo is CEO-only (D-#778). This employee holds the position
+       before the recording proxy, so those calls are offered and the hire
+       test's `sent` list stays about the tool call. team_hire is not
+       CEO-only; the holder is still set so a hire reports to them. */
     await w.user.request("company.setCeo", { employeeId: employee.id });
     const { conversation } = await w.user.request<{
       conversation: Conversation;
@@ -442,6 +443,10 @@ describe("approval-gated gateway tools", () => {
       const all = await v.employees();
       expect(all.length).toBe(before + 1);
       expect(all.find((e) => e.name === "Bea")?.profile).toBeTruthy();
+      /* A hire while someone holds the seat reports to them (D-#778). */
+      expect(all.find((e) => e.name === "Bea")?.reportsTo).toBe(
+        v.binding.employeeId,
+      );
 
       const call2 = v.client.teamHire({
         name: "Cal",
@@ -454,6 +459,60 @@ describe("approval-gated gateway tools", () => {
       await v.answer(ask2.id, "deny");
       await expect(call2).rejects.toThrow();
       expect((await v.employees()).length).toBe(before + 1);
+    } finally {
+      v.gw.server.close();
+      await v.scope.close();
+      await v.w.cleanup();
+    }
+  });
+
+  it("team_set_ceo: unknown and already-holder open no card; deny writes nothing; approve moves it", async () => {
+    const v = await world();
+    try {
+      const ceoNow = async () =>
+        (
+          await v.w.user.request<{ value: unknown }>("settings.get", {
+            key: "ceoId",
+          })
+        ).value;
+
+      await expect(
+        v.client.teamSetCeo({ employeeId: "emp_missing" }),
+      ).rejects.toThrow(/not found/);
+      expect(await v.asks("open")).toEqual([]);
+      expect(await ceoNow()).toBe(v.binding.employeeId);
+
+      await expect(
+        v.client.teamSetCeo({ employeeId: v.binding.employeeId }),
+      ).rejects.toThrow(/already holds/);
+      expect(await v.asks("open")).toEqual([]);
+
+      const { employee: denied } = await v.w.user.request<{
+        employee: Employee;
+      }>("employees.create", { name: "Nia", role: "ops" });
+      const seen = new Set<string>();
+      const denyCall = v.client.teamSetCeo({ employeeId: denied.id });
+      const askDeny = await v.nextAsk(seen);
+      seen.add(askDeny.id);
+      expect(askDeny.request.kind).toBe("approval");
+      if (askDeny.request.kind === "approval") {
+        expect(askDeny.request.description ?? "").toContain("Nia");
+      }
+      expect(await ceoNow()).toBe(v.binding.employeeId);
+      await v.answer(askDeny.id, "deny");
+      await expect(denyCall).rejects.toThrow(/declined/);
+      expect(await ceoNow()).toBe(v.binding.employeeId);
+
+      const { employee: next } = await v.w.user.request<{
+        employee: Employee;
+      }>("employees.create", { name: "Quill", role: "notes" });
+      const call = v.client.teamSetCeo({ employeeId: next.id });
+      const ask = await v.nextAsk(seen);
+      seen.add(ask.id);
+      expect(await ceoNow()).toBe(v.binding.employeeId);
+      await v.answer(ask.id, "once");
+      expect((await call).ceoId).toBe(next.id);
+      expect(await ceoNow()).toBe(next.id);
     } finally {
       v.gw.server.close();
       await v.scope.close();

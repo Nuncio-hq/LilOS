@@ -1,4 +1,5 @@
 import {
+  CEO_SETTING_KEY,
   ChannelsOpenDmParams,
   EmployeesCreateParams,
   EmployeesRemoveParams,
@@ -122,6 +123,14 @@ export async function handleDirectory(c: RelayCtx): Promise<false | undefined> {
         broadcast("channel.removed", { channelId });
       }
       broadcast("employee.removed", { employeeId: parsed.data.id });
+      /* The same write dropped ceoId. Clients clear the chip off this
+         event; a missing key reads back as null (D-#778). */
+      if (removed.clearedCeo) {
+        broadcast("settings.changed", {
+          key: CEO_SETTING_KEY,
+          value: null,
+        });
+      }
       respond(peer, id, { ok: true });
       return;
     }

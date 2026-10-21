@@ -3,14 +3,8 @@ import { useState } from "react";
 import { cn } from "../lib/utils";
 import { ago, Btn, Prop } from "./v3-bits";
 import type { V3Data } from "./v3-data-types";
-import { AgentAvatar, INK } from "./v3-marks";
-import {
-  agentOf,
-  defaultAgent,
-  FORMER_AGENT,
-  threadsOf,
-  ticketOf,
-} from "./v3-model";
+import { AgentAvatar, CeoMark, INK } from "./v3-marks";
+import { agentOf, FORMER_AGENT, threadsOf, ticketOf } from "./v3-model";
 import type { V3PageProps, V3Route } from "./v3-page-types";
 import type { V3Ticket } from "./v3-types";
 
@@ -29,6 +23,7 @@ export function Person({ data, id }: { data: V3Data; id: string }) {
     <span className="flex items-center gap-2 font-medium">
       <AgentAvatar data={data} agent={a} />
       {a?.name ?? FORMER_AGENT}
+      {a?.id === data.ceoId && <CeoMark />}
     </span>
   );
 }
@@ -96,6 +91,7 @@ export function TicketMoves({
           >
             <AgentAvatar data={data} agent={a} size={16} />
             {a.name}
+            {a.id === data.ceoId && <CeoMark />}
           </Btn>
         ))}
       {markDone && (
@@ -165,10 +161,11 @@ export function AskNote({
   );
 }
 
-/** Whoever holds the seat now, else the default agent. Never a stored id. */
+/** The holder, when there is one. No CEO stays "the CEO" — never another
+    agent's name (D-#778). Asking with no CEO may still open the default
+    agent's draft; that is an action, not this label. */
 function CeoWait({ data }: { data: V3Data }) {
-  const ceo =
-    data.agents.find((a) => a.id === data.ceoId) ?? defaultAgent(data);
+  const ceo = data.agents.find((a) => a.id === data.ceoId);
   if (!ceo) return <span className="font-medium">the CEO</span>;
   return <Person data={data} id={ceo.id} />;
 }

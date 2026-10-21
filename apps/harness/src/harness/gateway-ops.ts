@@ -1,4 +1,5 @@
 import type { RelayClient } from "@lilos/client-runtime";
+import { CEO_SETTING_KEY } from "@lilos/contracts/app";
 import type {
   AppMessage,
   Ask,
@@ -286,17 +287,33 @@ export function createGatewayApprovalOps(
       return employee;
     },
 
-    /* The position, not a persona (D-#778). The card names who receives it;
-       the relay re-points reportsTo only after "once". */
+    /* The position, not a persona (D-#778). Unknown, or already the holder:
+       say so before any card. The card names who receives it; the relay
+       re-points reportsTo only after "once". */
     setCeo: async (employeeId: string) => {
       const { employees } = await relay.request<{ employees: Employee[] }>(
         "employees.list",
         {},
       );
       const who = employees.find((e) => e.id === employeeId);
+      if (!who) {
+        throw new SurfaceError(
+          "not_found",
+          `employee not found: ${employeeId}`,
+        );
+      }
+      const current = await relay.request<{ value: unknown }>("settings.get", {
+        key: CEO_SETTING_KEY,
+      });
+      if (current.value === employeeId) {
+        throw new SurfaceError(
+          "invalid_params",
+          `${who.name} already holds the CEO position`,
+        );
+      }
       await gate({
         command: `team_set_ceo ${employeeId}`,
-        description: `Give the CEO position to ${who?.name ?? employeeId}. Everyone who reported to the previous CEO or to the owner then reports to them; they report to the owner.`,
+        description: `Give the CEO position to ${who.name}. Everyone who reported to the previous CEO or to the owner then reports to them; they report to the owner.`,
       });
       const r = await relay.request<{ ceoId: string }>("company.setCeo", {
         employeeId,

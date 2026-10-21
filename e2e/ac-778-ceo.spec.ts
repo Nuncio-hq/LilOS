@@ -191,8 +191,9 @@ test("the new CEO's next thread gets the CEO tools and the old one's does not", 
     const asCeo = offers(profile).at(-1) ?? "";
     expect(asCeo).toContain("ceo=1");
     expect(asCeo).toContain("ceoTools=");
-    expect(asCeo).toContain("team_hire");
     expect(asCeo).toContain("team_set_ceo");
+    expect(asCeo).toContain("ticket_assign");
+    expect(asCeo).not.toContain("team_hire");
 
     const events = await relayRpc<{
       events: { type: string; payload?: { agent?: string } }[];
@@ -210,7 +211,8 @@ test("the new CEO's next thread gets the CEO tools and the old one's does not", 
     const lost = offers(profile).at(-1) ?? "";
     expect(lost).toContain("ceo=0");
     expect(lost).toContain("ceoTools=-");
-    expect(lost).not.toContain("team_hire");
+    expect(lost).not.toContain("team_set_ceo");
+    expect(lost).not.toContain("ticket_assign");
 
     const beforeQuill = offers(quill.profile).length;
     await startChat(page, stack.webUrl, quill, "Say hi");
@@ -222,10 +224,127 @@ test("the new CEO's next thread gets the CEO tools and the old one's does not", 
       .toBeGreaterThan(beforeQuill);
     const gained = offers(quill.profile).at(-1) ?? "";
     expect(gained).toContain("ceo=1");
-    expect(gained).toContain("team_hire");
     expect(gained).toContain("team_set_ceo");
+    expect(gained).toContain("ticket_assign");
+    expect(gained).not.toContain("team_hire");
     await expect(v3Peek(page).locator(CHIP)).toBeVisible();
     await shot(page, "02-tools");
+  } finally {
+    await stack.stop();
+  }
+});
+
+test("a CEO thread's team_set_ceo moves the position only after approval", async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  const stack = await bootStack("ac778-set", await pickPorts());
+  try {
+    const agent = await openDefaultAgent(page, stack.webUrl);
+    const created = await relayRpc<{ employee: { id: string } }>(
+      page,
+      stack,
+      "employees.create",
+      {
+        name: "Quill",
+        role: "Notes",
+        status: "online",
+        profile: "builder",
+        model: "fake-large",
+        instructions: "You take notes.",
+      },
+    );
+    await relayRpc(page, stack, "channels.openDm", {
+      employeeId: created.employee.id,
+    });
+    const quillId = created.employee.id;
+    await relayRpc(page, stack, "company.setCeo", { employeeId: agent.id });
+
+    await startChat(
+      page,
+      stack.webUrl,
+      agent,
+      `surfaces: set-ceo ${quillId}`,
+    );
+    await page.goto(`${stack.webUrl}/#?page=needs`);
+    await expect(main(page)).toContainText("Give the CEO position to Quill", {
+      timeout: 60_000,
+    });
+    await shot(page, "03-approval");
+    await main(page)
+      .getByRole("button", { name: "Approve", exact: true })
+      .click();
+
+    await page.goto(`${stack.webUrl}/#?page=people`);
+    await expect(
+      main(page).getByRole("button", { name: /Quill/ }).locator(CHIP),
+    ).toBeVisible({ timeout: 30_000 });
+    await expect(
+      main(page)
+        .getByRole("button", { name: new RegExp(agent.name, "i") })
+        .locator(CHIP),
+    ).toHaveCount(0);
+    const held = await relayRpc<{ value: unknown }>(
+      page,
+      stack,
+      "settings.get",
+      { key: "ceoId" },
+    );
+    expect(held.value).toBe(quillId);
+    await shot(page, "04-moved");
+  } finally {
+    await stack.stop();
+  }
+});
+
+test("a non-CEO thread calling a CEO-only tool is refused", async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  const stack = await bootStack("ac778-refuse", await pickPorts());
+  try {
+    const agent = await openDefaultAgent(page, stack.webUrl);
+    const created = await relayRpc<{ employee: { id: string } }>(
+      page,
+      stack,
+      "employees.create",
+      {
+        name: "Quill",
+        role: "Notes",
+        status: "online",
+        profile: "builder",
+        model: "fake-large",
+        instructions: "You take notes.",
+      },
+    );
+    await relayRpc(page, stack, "channels.openDm", {
+      employeeId: created.employee.id,
+    });
+    await relayRpc(page, stack, "company.setCeo", {
+      employeeId: created.employee.id,
+    });
+
+    await startChat(
+      page,
+      stack.webUrl,
+      agent,
+      `surfaces: set-ceo ${agent.id}`,
+    );
+    await expect(
+      v3Peek(page).getByRole("button", { name: "Copy" }).first(),
+    ).toBeVisible({ timeout: 60_000 });
+    await v3Peek(page).getByText(/Worked/).first().click();
+    await expect(v3Peek(page)).toContainText("mcp__lilos__team_set_ceo");
+    await expect(v3Peek(page)).toContainText("failed");
+    await expect(page.getByText("Give the CEO position")).toHaveCount(0);
+    const held = await relayRpc<{ value: unknown }>(
+      page,
+      stack,
+      "settings.get",
+      { key: "ceoId" },
+    );
+    expect(held.value).toBe(created.employee.id);
+    await shot(page, "05-refused");
   } finally {
     await stack.stop();
   }

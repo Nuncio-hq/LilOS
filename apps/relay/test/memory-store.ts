@@ -244,10 +244,16 @@ export function createMemoryStore(): RelayStore {
       return employees.get(id) ?? null;
     },
     async createEmployee(input) {
+      const stored = settings.get(CEO_SETTING_KEY);
+      const reportsTo =
+        typeof stored === "string" && employees.has(stored)
+          ? stored
+          : undefined;
       const employee: Employee = {
         id: newId("emp"),
         createdAt: now(),
         ...input,
+        ...(reportsTo ? { reportsTo } : {}),
       };
       employees.set(employee.id, employee);
       return employee;
@@ -298,7 +304,9 @@ export function createMemoryStore(): RelayStore {
         if (other.reportsTo === id) delete other.reportsTo;
       }
       employees.delete(id);
-      return { employee, channelIds: [...channelIds] };
+      const clearedCeo = settings.get(CEO_SETTING_KEY) === id;
+      if (clearedCeo) settings.delete(CEO_SETTING_KEY);
+      return { employee, channelIds: [...channelIds], clearedCeo };
     },
     async setCeo(employeeId) {
       if (!employees.has(employeeId)) return null;

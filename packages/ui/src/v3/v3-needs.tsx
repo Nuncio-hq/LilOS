@@ -1,7 +1,7 @@
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { foreignOverlayOpen } from "../chat/ui-layers";
 import { ago, Btn, Page, relativeTime, Section, Title } from "./v3-bits";
-import { INK, StatusDot } from "./v3-marks";
+import { CeoMark, INK, StatusDot } from "./v3-marks";
 import {
   agentNameOf,
   agentOf,
@@ -206,7 +206,13 @@ export function V3Needs({ data, go, act }: V3PageProps) {
                       {askTag(data, a)} ·{" "}
                       <b className="font-medium text-foreground">
                         {from?.name ?? FORMER_AGENT}
-                      </b>{" "}
+                      </b>
+                      {from?.id === data.ceoId && (
+                        <>
+                          {" "}
+                          <CeoMark />
+                        </>
+                      )}{" "}
                       · waiting {ago(a.waiting)}
                     </>
                   }
@@ -250,6 +256,12 @@ export function V3Needs({ data, go, act }: V3PageProps) {
                         </b>
                       ) : (
                         "Unassigned"
+                      )}
+                      {t.owner === data.ceoId && (
+                        <>
+                          {" "}
+                          <CeoMark />
+                        </>
                       )}{" "}
                       · <span className={INK.stuck}>{t.stuckWhy}</span>
                     </>
