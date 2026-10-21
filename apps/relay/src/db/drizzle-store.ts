@@ -455,7 +455,7 @@ export function createDrizzleStore(db: Db): RelayStore {
       channelId: input.channelId,
       conversationId,
       authorId: input.authorId,
-      authorKind: "user",
+      authorKind: input.authorKind ?? "user",
       rewound: false,
       dropped: false,
       removed: false,
@@ -1285,7 +1285,7 @@ export function createDrizzleStore(db: Db): RelayStore {
       const rows = db
         .select()
         .from(schema.companyUpdates)
-        .orderBy(desc(schema.companyUpdates.createdAt))
+        .orderBy(desc(schema.companyUpdates.createdAt), desc(sql`rowid`))
         .all();
       return rows.map(rowToUpdate);
     },
@@ -1308,7 +1308,7 @@ export function createDrizzleStore(db: Db): RelayStore {
         .select()
         .from(schema.conversations)
         .where(eq(schema.conversations.ticketId, ticketId))
-        .orderBy(desc(schema.conversations.createdAt))
+        .orderBy(desc(schema.conversations.createdAt), desc(sql`rowid`))
         .all();
       return rows.map(rowToConversation);
     },

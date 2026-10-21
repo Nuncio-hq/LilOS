@@ -4670,7 +4670,7 @@
         "readOnlyHint": false
       },
       "_meta": {
-        "lilos/area": "ticket",
+        "lilos/area": "update",
         "lilos/access": "write",
         "lilos/ceoOnly": true
       }

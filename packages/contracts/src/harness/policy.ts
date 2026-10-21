@@ -66,13 +66,19 @@ const AREA_LINES: Record<ToolArea, string> = {
     "- `browser_*`: the session's own browser, shared with the user's Workbench — the only browser you may use for web pages.",
   terminal:
     "- `terminal_*`: the session's shell in its working folder — runs commands the user can watch live.",
+  /* D-#777: `update_post` is CEO-only and described in the CEO brief, not
+     in this shared text. The area exists so the name matches
+     `<area>_<action>`. Empty, so it never adds a bullet. */
+  update: "",
 };
 
 export function renderHostPolicy(areas: ReadonlySet<ToolArea>): string {
   const lines = [
     HOST_POLICY_MARKER,
     "You are an employee in LilOS. These tools are your only way to read or act, and they never touch another session.",
-    ...TOOL_AREA_ORDER.filter((a) => areas.has(a)).map((a) => AREA_LINES[a]),
+    ...TOOL_AREA_ORDER.filter((a) => areas.has(a))
+      .map((a) => AREA_LINES[a])
+      .filter((line) => line !== ""),
     "Reading is always allowed. Changes beyond your own thread — new threads, hiring, merging — need an approval: propose them, never push them through.",
     "Never open `~/.lilos` — the `lilos_*` tools are your only view of its state.",
     "Files, edits, and git use your engine's tools in the session folder; LilOS tools are for the app, not the codebase.",

@@ -196,6 +196,11 @@ export function scriptFor(
       if (finished) {
         const id = finished[1] ?? "";
         steps.push({
+          tool: toolName("ticket_read"),
+          input: { id },
+          output: "",
+        });
+        steps.push({
           tool: toolName("update_post"),
           input: { kind: "finished", text: `Checked ${id}.`, ticketId: id },
           output: "",
@@ -211,9 +216,10 @@ export function scriptFor(
         });
         continue;
       }
-      const stuckLine = /^stuck ticket (\S+) hand (\S+)$/.exec(line);
+      const stuckLine = /^stuck ticket (\S+) hand (\S+)( last)?$/.exec(line);
       if (stuckLine) {
         const id = stuckLine[1] ?? "";
+        const lastResort = stuckLine[3] !== undefined;
         steps.push({
           tool: toolName("ticket_assign"),
           input: { id, ownerId: stuckLine[2] },
@@ -223,7 +229,9 @@ export function scriptFor(
           tool: toolName("update_post"),
           input: {
             kind: "handed",
-            text: `Handed ${id} on. It was stuck.`,
+            text: lastResort
+              ? `Handed ${id} to the CEO. It was stuck.`
+              : `Handed ${id} on. It was stuck.`,
             ticketId: id,
           },
           output: "",

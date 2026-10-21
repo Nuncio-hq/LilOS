@@ -232,6 +232,8 @@ export interface OpenConversationInput {
       message's (channelId, key) slot — the same index `appendMessage`
       dedupes on — so a resend answers the stored thread. */
   dedupeKey?: string;
+  /** Host-only (D-#777). Absent is the owner's send. */
+  authorKind?: AuthorKind;
   /** Host-only (#136): the scheduled task the run was fired for — the
       thread is marked and the chip opens the task. */
   scheduled?: { taskId: string; name: string };

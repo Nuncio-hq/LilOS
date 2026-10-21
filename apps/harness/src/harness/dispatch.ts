@@ -35,9 +35,13 @@ export async function sendPrompt(
      running the queued one in its place). Claimed rows leave the tray
      and render as their own bubble; the engine never sees a row the
      user removed. */
-  this.relayWrite(`claim ${message.id}`, () =>
-    this.opts.relay.request("messages.claim", { messageId: message.id }),
-  );
+  /* A CEO wake is a system note (D-#777). It is not a tray row, so it
+     is not claimed — claim rejects anything that is not the owner's. */
+  if (message.authorKind === "user") {
+    this.relayWrite(`claim ${message.id}`, () =>
+      this.opts.relay.request("messages.claim", { messageId: message.id }),
+    );
+  }
   let releaseGate!: () => void;
   const gate = new Promise<void>((resolve) => (releaseGate = resolve));
   binding.promptGates.add(gate);
@@ -431,6 +435,7 @@ export function markDelivered(
    waiting again, and removable, so the tray takes it back. Fire-and-forget;
    a lost write only delays the tray row. */
 export function unclaimMessage(this: HarnessCtx, message: AppMessage): void {
+  if (message.authorKind !== "user") return;
   this.relayWrite(`unclaim ${message.id}`, () =>
     this.opts.relay.request("messages.claim", {
       messageId: message.id,

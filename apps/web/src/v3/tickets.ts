@@ -35,6 +35,7 @@ export function v3Updates(rows: readonly CompanyUpdate[]): V3Update[] {
     at: clock(u.createdAt),
     atSort: u.createdAt,
     ...(u.ticketId ? { ticketId: u.ticketId } : {}),
+    ...(u.goalId ? { goalId: u.goalId } : {}),
     kind: u.kind,
     text: u.text,
   }));

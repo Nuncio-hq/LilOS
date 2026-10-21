@@ -127,12 +127,17 @@ function publish(
     return;
   }
   if (reason === binding.stuckReason) return;
+  /* Wake once, on the transition into stuck. A longer streak ("7 times",
+     "8 times") rewrites the card and must not wake again (D-#777). */
+  const wasStuck = binding.stuckReason !== undefined;
   binding.stuckReason = reason;
   void ctx
     .updateConversation(binding.conversationId, {
       stuck: { reason },
     })
-    .then(() => ceoOnStuck(ctx, binding))
+    .then(() => {
+      if (!wasStuck) return ceoOnStuck(ctx, binding);
+    })
     .catch((error) =>
       ctx.opts.log.warn("stuck write failed", { error: String(error) }),
     );

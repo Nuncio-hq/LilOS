@@ -2626,6 +2626,17 @@
             "taskId",
             "name"
           ]
+        },
+        "authorKind": {
+          "type": "string",
+          "enum": [
+            "user",
+            "system"
+          ]
+        },
+        "titleSource": {
+          "type": "string",
+          "const": "user"
         }
       },
       "required": [

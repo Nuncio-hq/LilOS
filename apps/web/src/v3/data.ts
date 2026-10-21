@@ -19,6 +19,7 @@ import { folders } from "../lib/folders";
 import { currentCompany, currentName, osFullName, profile } from "../lib/me";
 import {
   asks,
+  ceoThreadId,
   companyCeoId,
   engine as engineClient,
   engineDefaultModel,
@@ -189,6 +190,7 @@ export function v3DataStore(): ReadableAtom<V3Data> {
       relay.tickets,
       relay.updates,
       companyCeoId,
+      ceoThreadId,
     ],
     (
       employees,
@@ -215,6 +217,7 @@ export function v3DataStore(): ReadableAtom<V3Data> {
       tickets,
       updates,
       holderId,
+      standingId,
     ): V3Data => {
       const src = {
         now,
@@ -247,8 +250,8 @@ export function v3DataStore(): ReadableAtom<V3Data> {
         projects: projectRows(projects),
         goals: v3Goals(goals),
         tickets: v3Tickets(tickets, now),
-        threads: v3Threads(src),
-        archivedThreads: v3ArchivedThreads(src),
+        threads: v3Threads(src, standingId),
+        archivedThreads: v3ArchivedThreads(src, standingId),
         asks: v3Asks(src),
         updates: v3Updates(updates),
         browser: { tabs: [], bookmarks: [] },

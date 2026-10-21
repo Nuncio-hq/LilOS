@@ -61,19 +61,45 @@ async function home(page: Page) {
     .click();
 }
 
+/** The standing thread is idle, or not opened yet. A wake still running
+    would swallow the next one (D-#777). */
+async function ceoIdle(page: Page) {
+  await expect
+    .poll(
+      async () => {
+        const { conversations } = await relayRpc<{
+          conversations: { title: string; state: string }[];
+        }>(page, stack, "conversations.list", { includeArchived: true });
+        const standing = conversations.filter((c) => c.title === "CEO");
+        if (standing.length === 0) return "absent";
+        return standing.every((c) => c.state === "idle" || c.state === "closed")
+          ? "idle"
+          : "busy";
+      },
+      { timeout: 90_000 },
+    )
+    .not.toBe("busy");
+}
+
 test("a goal given to the CEO becomes tickets with owners in one turn", async ({
   page,
 }) => {
   test.setTimeout(180_000);
   agent = await openDefaultAgent(page, stack.webUrl);
-  const folder = `${stack.home}/page`;
+  await ceoIdle(page);
+  /* Each repeat gets its own project so the ticket id is free again.
+     The worker is hired once: a second hire would become the hand-off
+     target and the last-resort update would no longer be the one under
+     test. */
+  const n = test.info().repeatEachIndex;
+  const folder = `${stack.home}/page-${n}`;
   mkdirSync(folder, { recursive: true });
   project = (
     await relayRpc<{ project: { id: string; key: string } }>(
       page,
       stack,
       "projects.create",
-      { folder, name: "Pages" },
+      { folder, name: `Pages ${n}` },
     )
   ).project;
   goalId = (
@@ -82,27 +108,32 @@ test("a goal given to the CEO becomes tickets with owners in one turn", async ({
       title: "Ship the page",
     })
   ).goal.id;
-  worker = (
-    await relayRpc<{ employee: { id: string; name: string } }>(
-      page,
-      stack,
-      "employees.create",
-      {
-        name: "Page",
-        role: "Writer",
-        status: "online",
-        profile: "builder",
-        model: "fake-large",
-        instructions: "You write pages.",
-      },
-    )
-  ).employee;
+  if (!worker) {
+    worker = (
+      await relayRpc<{ employee: { id: string; name: string } }>(
+        page,
+        stack,
+        "employees.create",
+        {
+          name: "Page",
+          role: "Writer",
+          status: "online",
+          profile: "builder",
+          model: "fake-large",
+          instructions: "You write pages.",
+        },
+      )
+    ).employee;
+  }
 
   await page.goto(
     `${stack.webUrl}/#?page=people&open=agent:${encodeURIComponent(agent.id)}`,
   );
-  await v3Peek(page).getByRole("button", { name: "Make CEO" }).click();
-  await expect(v3Peek(page).locator(CHIP)).toBeVisible({ timeout: 15_000 });
+  const makeCeo = v3Peek(page).getByRole("button", { name: "Make CEO" });
+  const chip = v3Peek(page).locator(CHIP);
+  await expect(makeCeo.or(chip)).toBeVisible({ timeout: 15_000 });
+  if (await makeCeo.isVisible()) await makeCeo.click();
+  await expect(chip).toBeVisible({ timeout: 15_000 });
 
   const ticketId = `${project.key}-1`;
   await startChat(
@@ -136,6 +167,7 @@ test("a finished ticket wakes the CEO, who checks it and assigns the next", asyn
   page,
 }) => {
   test.setTimeout(180_000);
+  await ceoIdle(page);
   await openDefaultAgent(page, stack.webUrl);
   const { ticket: first } = await relayRpc<{ ticket: { id: string } }>(
     page,
@@ -173,6 +205,23 @@ test("a finished ticket wakes the CEO, who checks it and assigns the next", asyn
   await expect(main(page)).toContainText(`Checked ${first.id}.`, {
     timeout: 30_000,
   });
+  await ceoIdle(page);
+  const { conversations } = await relayRpc<{
+    conversations: { id: string; title: string; titleSource?: string }[];
+  }>(page, stack, "conversations.list", { includeArchived: true });
+  const standing = conversations.find((c) => c.title === "CEO");
+  expect(standing?.titleSource).toBe("user");
+  if (!standing) throw new Error("missing CEO thread");
+  await page.goto(
+    `${stack.webUrl}/#?page=threads&open=thread:${encodeURIComponent(standing.id)}`,
+  );
+  await expect(v3Peek(page)).toContainText("LilOS:", { timeout: 30_000 });
+  await expect(v3Peek(page)).toContainText(`${first.id} is done`);
+  await expect(
+    v3Peek(page).getByText("CEO wake.", { exact: false }),
+  ).toHaveCount(0);
+  await shot(page, "2-note");
+  await home(page);
   await shot(page, "2-checked");
 });
 
@@ -180,6 +229,7 @@ test("a stuck thread is handed to another agent, with an update", async ({
   page,
 }) => {
   test.setTimeout(180_000);
+  await ceoIdle(page);
   await openDefaultAgent(page, stack.webUrl);
   const { ticket } = await relayRpc<{ ticket: { id: string } }>(
     page,
@@ -199,6 +249,7 @@ test("a stuck thread is handed to another agent, with an update", async ({
   await expect(v3Peek(page).getByRole("button", { name: "Send" })).toBeVisible({
     timeout: 90_000,
   });
+  await ceoIdle(page);
   const box = v3Peek(page).getByPlaceholder(`Message ${worker.name}…`);
   await box.fill("stuck:");
   await v3Peek(page).getByRole("button", { name: "Send" }).click();
@@ -211,10 +262,11 @@ test("a stuck thread is handed to another agent, with an update", async ({
   });
   await home(page);
   await expect(main(page)).toContainText(
-    `Handed ${ticket.id} on. It was stuck.`,
+    `Handed ${ticket.id} to the CEO. It was stuck.`,
     { timeout: 30_000 },
   );
   await expect(page.getByText("The CEO will handle it.")).toHaveCount(0);
+  await ceoIdle(page);
   await shot(page, "3-handed");
 });
 

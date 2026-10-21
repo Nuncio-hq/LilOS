@@ -12,6 +12,7 @@ import type {
   Employee,
   SummaryMessage,
 } from "@lilos/contracts/app";
+import { ceoWakeNote } from "@lilos/contracts/harness";
 import type {
   BackgroundJob,
   Msg,
@@ -370,7 +371,9 @@ const messageReply = (m: ReplySource): Reply => ({
   id: m.id,
   from: m.authorKind === "system" ? "" : m.authorId,
   time: clock(m.createdAt),
-  text: m.text,
+  /* A CEO wake is stored as the machine lines the engine reads. The
+     thread shows the short system note (D-#777). */
+  text: m.authorKind === "system" ? (ceoWakeNote(m.text) ?? m.text) : m.text,
   ...(m.authorKind === "system" ? { system: true } : {}),
   model: m.model,
   effort: m.effort,

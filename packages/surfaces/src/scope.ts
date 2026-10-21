@@ -123,7 +123,8 @@ export class SessionSurfaces implements ViewerScope {
       // browser_* only when a real browser can attach — never advertised otherwise.
       ...(opts.createBrowser ? (["browser"] as const) : []),
       // thread_* / team_* / folder_* / project_* / ticket_* / goal_* /
-      // schedule_* only when the session is bound to an employee's thread.
+      // schedule_* / update_* only when the session is bound to an
+      // employee's thread.
       ...(opts.appOps
         ? ([
             "thread",
@@ -133,6 +134,10 @@ export class SessionSurfaces implements ViewerScope {
             "ticket",
             "goal",
             "schedule",
+            /* D-#777: attached so a CEO session is offered `update_post`.
+               A non-CEO session still does not see it (`ceoOnly`). The
+               shared host policy has no line for this area. */
+            "update",
           ] as const)
         : []),
     ]);

@@ -42,11 +42,6 @@ describe("AC-1 the one tool catalog", () => {
       const area = LILOS_TOOLS[name].area;
       if (area === "root") {
         expect(name, name).toMatch(/^[a-z]+$/);
-      } else if (name === "update_post") {
-        /* D-#777: CEO-only, and it lives on the ticket area so the shared
-           host policy does not grow a new area line. The name is the one
-           the brief tells the CEO. */
-        expect(area).toBe("ticket");
       } else {
         expect(name, name).toMatch(new RegExp(`^${area}_[a-z_]+$`));
       }

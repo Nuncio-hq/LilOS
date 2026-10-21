@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   CEO_WAKE_COALESCE_MS,
   CeoWakes,
+  ceoWakeNote,
   formatCeoWake,
 } from "../src/harness/ceo-wake.js";
 
@@ -81,6 +82,38 @@ describe("CEO wakes", () => {
         "- next LIL-2 owner emp_b",
         "- stuck ticket LIL-9 hand emp_c",
       ].join("\n"),
+    );
+    const last = formatCeoWake([
+      {
+        reason: "stuck",
+        ticketId: "LIL-9",
+        handTo: "emp_ceo",
+        lastResort: true,
+        at: 0,
+      },
+    ]);
+    expect(last).toContain("- stuck ticket LIL-9 hand emp_ceo last");
+    expect(ceoWakeNote(text)).toBe(
+      "LilOS: LIL-1 is done · LIL-2 is next · LIL-9 is stuck",
+    );
+    expect(ceoWakeNote("Handed to Blair")).toBeNull();
+  });
+
+  it("puts a busy batch back ready, and a failed batch behind a new window", () => {
+    const busy = new CeoWakes();
+    busy.note({ reason: "done", ticketId: "LIL-1", at: 0 }, ceo);
+    const taken = busy.poll(CEO_WAKE_COALESCE_MS);
+    busy.hold(taken ?? [], CEO_WAKE_COALESCE_MS);
+    expect(busy.isRunning).toBe(false);
+    expect(busy.poll(CEO_WAKE_COALESCE_MS)?.[0]?.ticketId).toBe("LIL-1");
+
+    const failed = new CeoWakes();
+    failed.note({ reason: "ask", ticketId: "LIL-2", at: 0 }, ceo);
+    const batch = failed.poll(CEO_WAKE_COALESCE_MS);
+    failed.restore(batch ?? [], 5_000);
+    expect(failed.poll(5_000)).toBeNull();
+    expect(failed.poll(5_000 + CEO_WAKE_COALESCE_MS)?.[0]?.ticketId).toBe(
+      "LIL-2",
     );
   });
 });

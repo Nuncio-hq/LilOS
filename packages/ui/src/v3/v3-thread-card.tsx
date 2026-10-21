@@ -194,10 +194,15 @@ export function ThreadCard({
   const askId = t.askId;
   const ask = askId ? data.asks.find((a) => a.id === askId) : undefined;
   const ticketId = t.ticketId;
-  const handOff = act.handOff;
-  // A stuck ticket is handed to the Marketer; with none on the team there is
-  // no hand-off to offer.
-  const handTo = agentOf(data, "marketer");
+  /* The sentence is the loop's, not a button (D-#777). All three: a CEO
+     exists, this thread is not the CEO's own, and someone else can take
+     it — another worker, or the CEO as the last resort. */
+  const ceoWill =
+    t.status === "stuck" &&
+    !!ticketId &&
+    !!data.ceoId &&
+    t.agentId !== data.ceoId &&
+    data.agents.some((a) => a.id !== t.agentId);
   // A failed thread may carry no reason: then the card is just title, agent
   // and Open, instead of an empty alert line.
   const reason = t.status === "stuck" || t.stuck !== undefined;
@@ -285,18 +290,10 @@ export function ThreadCard({
                 Open
               </Btn>
             )}
-            {ticketId && t.status === "stuck" && data.ceoId ? (
+            {ceoWill && (
               <span className="text-[13px] text-muted-foreground">
                 The CEO will handle it.
               </span>
-            ) : (
-              ticketId &&
-              handOff &&
-              handTo && (
-                <Btn small onClick={() => handOff(ticketId, handTo.id)}>
-                  Hand to {handTo.name}
-                </Btn>
-              )
             )}
           </Actions>
         </>

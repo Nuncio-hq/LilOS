@@ -43,7 +43,7 @@ import {
   suspendBinding,
   writeLife,
 } from "./harness/bind";
-import { wireCeoLoop } from "./harness/ceo-loop";
+import { stopCeoLoop, wireCeoLoop } from "./harness/ceo-loop";
 import { execSlashCommand, slashFor } from "./harness/commands";
 import {
   conversationFromAtom,
@@ -494,7 +494,9 @@ export class Harness {
   async stop(): Promise<void> {
     this.reaper.stop();
     this.scheduler?.stop();
-    /* D-#772: a quiet timer must not fire after the harness stops. */
+    /* D-#772: a quiet timer must not fire after the harness stops.
+       D-#777: the CEO coalesce timer is the same kind of quiet timer. */
+    stopCeoLoop(this as unknown as HarnessCtx);
     stopStuckWatches(this.bindings.values());
     for (const t of this.earlyFlushTimers.values()) clearTimeout(t);
     this.earlyFlushTimers.clear();

@@ -586,6 +586,12 @@ export const ConversationsOpenParams = z
     scheduled: z
       .object({ taskId: z.string().min(1), name: z.string() })
       .optional(),
+    /** Host-only (D-#777): the standing CEO thread's root is a system
+        note, not the owner typing. A client-supplied kind is ignored. */
+    authorKind: z.enum(["user", "system"]).optional(),
+    /** Host-only (D-#777): stamp the title as the user's so the engine's
+        auto-title cannot rename it. Clients already get "user". */
+    titleSource: z.literal("user").optional(),
   })
   .refine(
     (p) => p.text.length > 0 || (p.attachments?.length ?? 0) > 0,

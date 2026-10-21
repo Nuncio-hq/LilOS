@@ -62,6 +62,9 @@ export const TOOL_AREAS = [
   "browser",
   "terminal",
   "schedule",
+  /* D-#777: CEO-only `update_post`. Not a host-policy bullet — the brief
+     describes it, and a non-CEO session is not offered the tool. */
+  "update",
 ] as const;
 export type ToolArea = (typeof TOOL_AREAS)[number];
 
@@ -972,7 +975,9 @@ export const LILOS_TOOLS: Record<string, LilosToolContract> = {
     params: UpdatePostParams,
     result: UpdatePostResult,
     doc: "Post a short note on Home and in Inbox. kind is plan, finished, handed, stuck, or note. Does not ask. Only the CEO's session is offered this, and with no CEO it is offered to nobody.",
-    area: "ticket",
+    /* Own area so the name matches `<area>_<action>` (D-#777). The shared
+       host policy does not grow a line for it; the CEO brief describes it. */
+    area: "update",
     access: "write",
     ceoOnly: true,
   },

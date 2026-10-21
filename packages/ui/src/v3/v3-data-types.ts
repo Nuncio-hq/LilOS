@@ -187,6 +187,7 @@ export type V3Update = {
   /** Epoch ms. Absent in the prototype, which sorts the clock string. */
   atSort?: number;
   ticketId?: string;
+  goalId?: string;
   kind: "plan" | "finished" | "handed" | "stuck" | "note";
   text: string;
   /** A system note is LilOS, not an agent (D-#777). */

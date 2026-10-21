@@ -370,4 +370,31 @@ describe("tickets", () => {
     );
     expect(errorData(user.frames, lastId())).toBe("not_found");
   });
+
+  it("a hand-off moves a stuck ticket to working and clears the reason", async () => {
+    const { user, employee, project } = await setup();
+    const { employee: blair } = await call<{ employee: { id: string } }>(
+      user,
+      "employees.create",
+      { name: "Blair", role: "Notes" },
+    );
+    const { ticket } = await call<{ ticket: Ticket }>(user, "tickets.create", {
+      project: project.key,
+      title: "Stuck",
+      ownerId: employee.id,
+    });
+    const marked = await call<{ tickets: Ticket[] }>(user, "tickets.update", {
+      id: ticket.id,
+      status: "stuck",
+      stuckWhy: "Same web search 6 times",
+    });
+    expect(marked.tickets[0]?.status).toBe("stuck");
+    const handed = await call<{ ticket: Ticket }>(user, "tickets.assign", {
+      id: ticket.id,
+      ownerId: blair.id,
+    });
+    expect(handed.ticket.status).toBe("working");
+    expect(handed.ticket.ownerId).toBe(blair.id);
+    expect(handed.ticket.stuckWhy).toBeUndefined();
+  });
 });

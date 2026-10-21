@@ -1,7 +1,7 @@
 import { Page, Section, Title } from "./v3-bits";
 import type { V3Update } from "./v3-data-types";
 import { AgentAvatar } from "./v3-marks";
-import { agentOf, FORMER_AGENT } from "./v3-model";
+import { agentOf, FORMER_AGENT, goalOf } from "./v3-model";
 import type { V3PageProps } from "./v3-page-types";
 
 /* Inbox: what the company told you, newest first, as a plain feed. */
@@ -68,16 +68,31 @@ export function V3Inbox({ data, go }: V3PageProps) {
                 <p className="mt-0.5 text-[14.5px] leading-[1.6] text-foreground">
                   {u.text}
                 </p>
-                {u.ticketId && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      go({ page: "ticket", id: u.ticketId as string })
-                    }
-                    className="mt-1 text-[12.5px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-                  >
-                    {u.ticketId}
-                  </button>
+                {(u.ticketId || u.goalId) && (
+                  <div className="mt-1 flex flex-wrap gap-x-3">
+                    {u.ticketId && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          go({ page: "ticket", id: u.ticketId as string })
+                        }
+                        className="text-[12.5px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                      >
+                        {u.ticketId}
+                      </button>
+                    )}
+                    {u.goalId && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          go({ page: "goal", id: u.goalId as string })
+                        }
+                        className="text-[12.5px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                      >
+                        {goalOf(data, u.goalId)?.title ?? u.goalId}
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             </div>

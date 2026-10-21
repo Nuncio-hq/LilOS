@@ -229,7 +229,7 @@ export function createMemoryStore(): RelayStore {
       channelId: input.channelId,
       conversationId: conversation.id,
       authorId: input.authorId,
-      authorKind: "user",
+      authorKind: input.authorKind ?? "user",
       text: input.text,
       attachments: input.attachments,
       dedupeKey: input.dedupeKey,
@@ -550,7 +550,12 @@ export function createMemoryStore(): RelayStore {
       return ticket;
     },
     async listUpdates() {
-      return [...companyUpdates].sort((a, b) => b.createdAt - a.createdAt);
+      /* Same-millisecond rows stay newest-first: a later insert wins the
+         tie (D-#777). Drizzle breaks it with rowid. */
+      return companyUpdates
+        .map((row, index) => ({ row, index }))
+        .sort((a, b) => b.row.createdAt - a.row.createdAt || b.index - a.index)
+        .map((x) => x.row);
     },
     async postUpdate(input) {
       const update: CompanyUpdate = {
@@ -567,9 +572,13 @@ export function createMemoryStore(): RelayStore {
       return update;
     },
     async threadsOnTicket(ticketId: string) {
-      return [...conversations.values()]
-        .filter((c) => c.ticketId === ticketId)
-        .sort((a, b) => b.createdAt - a.createdAt);
+      const rows = [...conversations.values()].filter(
+        (c) => c.ticketId === ticketId,
+      );
+      return rows
+        .map((row, index) => ({ row, index }))
+        .sort((a, b) => b.row.createdAt - a.row.createdAt || b.index - a.index)
+        .map((x) => x.row);
     },
     async listRecentFolders() {
       return [...folders.values()].sort((a, b) => b.lastUsedAt - a.lastUsedAt);

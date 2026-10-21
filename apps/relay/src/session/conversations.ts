@@ -130,8 +130,19 @@ export async function handleConversations(
                engine-owned ("auto") from the host; empty → placeholder.
                A scheduled run's title is the user's own task name — stamp
                it "user" or the engine's auto-title would overwrite it. */
+            /* D-#777: the host may lock a title as the user's (the standing
+               CEO thread). A client already gets "user". A scheduled run
+               keeps its task name the same way. */
             titleSource:
-              isHost(peer) && !parsed.data.scheduled ? "auto" : "user",
+              !isHost(peer) ||
+              parsed.data.scheduled ||
+              parsed.data.titleSource === "user"
+                ? "user"
+                : "auto",
+            authorKind:
+              isHost(peer) && parsed.data.authorKind === "system"
+                ? "system"
+                : "user",
           });
         /* #552: a dedupe hit answers the stored thread and announces
            nothing again — the retry's attachment blobs are dropped

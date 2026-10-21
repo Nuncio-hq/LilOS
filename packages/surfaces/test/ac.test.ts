@@ -1,3 +1,4 @@
+import { toolsForSession } from "@lilos/contracts/harness";
 import { describe, expect, it, vi } from "vitest";
 import {
   callTool,
@@ -249,6 +250,11 @@ describe("approval-gated tools: dispatch + areas + declined over HTTP", () => {
     const { scope } = makeScope({ appOps, ceoAtStart: true });
     expect(scope.areas.has("folder")).toBe(true);
     expect(scope.areas.has("project")).toBe(true);
+    /* D-#777: the area is attached so the CEO is offered `update_post`.
+       A session that did not hold the position still is not. */
+    expect(scope.areas.has("update")).toBe(true);
+    expect(toolsForSession(scope.areas, true)).toContain("update_post");
+    expect(toolsForSession(scope.areas, false)).not.toContain("update_post");
     const gw = await serveGateway({ sessions: [{ scope, token: "tok" }] });
     const client = toolBackend({
       baseUrl: gw.baseUrl,

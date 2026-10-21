@@ -22,6 +22,8 @@ export interface CeoWakeEvent {
   actorId?: string;
   /** Another employee a stuck thread should be handed to. */
   handTo?: string;
+  /** The only person left to take it is the CEO. The update says so. */
+  lastResort?: boolean;
   /** Tickets waiting on a finish, with the owner to move them to. */
   next?: { ticketId: string; ownerId: string }[];
   text?: string;
@@ -66,6 +68,28 @@ export class CeoWakes {
     this.running = false;
   }
 
+  /**
+   * The batch was taken but the thread was busy, so it was not posted.
+   * Put it back with the window already closed: the idle edge delivers
+   * it, and it does not wait another coalesce.
+   */
+  hold(events: readonly CeoWakeEvent[], now: number): void {
+    this.running = false;
+    this.pending = [...events, ...this.pending];
+    this.windowAt = now - CEO_WAKE_COALESCE_MS;
+  }
+
+  /**
+   * The post failed. Put the batch back and open a fresh window so the
+   * retry does not spin, and a restart inside that window still has the
+   * wake (nothing was delivered, so nothing is marked fired).
+   */
+  restore(events: readonly CeoWakeEvent[], now: number): void {
+    this.running = false;
+    this.pending = [...events, ...this.pending];
+    this.windowAt = now;
+  }
+
   /** Drop what has not started. A running turn is left to finish. */
   clear(): void {
     this.pending = [];
@@ -95,7 +119,8 @@ export class CeoWakes {
   }
 }
 
-/** The user message a standing CEO thread reads. One line per event. */
+/** What the engine reads. One line per event. The thread shows
+    `ceoWakeNote` of this text, not the lines themselves (D-#777). */
 export function formatCeoWake(events: readonly CeoWakeEvent[]): string {
   const lines = ["CEO wake."];
   for (const event of events) {
@@ -105,7 +130,10 @@ export function formatCeoWake(events: readonly CeoWakeEvent[]): string {
         lines.push(`- next ${next.ticketId} owner ${next.ownerId}`);
       }
     } else if (event.reason === "stuck" && event.ticketId && event.handTo) {
-      lines.push(`- stuck ticket ${event.ticketId} hand ${event.handTo}`);
+      const last = event.lastResort ? " last" : "";
+      lines.push(
+        `- stuck ticket ${event.ticketId} hand ${event.handTo}${last}`,
+      );
     } else if (event.reason === "ask" && event.ticketId) {
       lines.push(`- ask ticket ${event.ticketId}`);
     } else if (event.reason === "schedule") {
@@ -114,4 +142,37 @@ export function formatCeoWake(events: readonly CeoWakeEvent[]): string {
     }
   }
   return lines.join("\n");
+}
+
+/** The system note the CEO thread shows. Null when `text` is not a wake,
+    so an ordinary system line is left as it was written. */
+export function ceoWakeNote(text: string): string | null {
+  if (!text.startsWith("CEO wake.")) return null;
+  const bits: string[] = [];
+  for (const raw of text.split("\n").slice(1)) {
+    const line = raw.replace(/^- /, "").trim();
+    const finished = /^finished (\S+)$/.exec(line);
+    if (finished?.[1]) {
+      bits.push(`${finished[1]} is done`);
+      continue;
+    }
+    const next = /^next (\S+) owner \S+$/.exec(line);
+    if (next?.[1]) {
+      bits.push(`${next[1]} is next`);
+      continue;
+    }
+    const stuck = /^stuck ticket (\S+) hand \S+(?: last)?$/.exec(line);
+    if (stuck?.[1]) {
+      bits.push(`${stuck[1]} is stuck`);
+      continue;
+    }
+    const ask = /^ask ticket (\S+)$/.exec(line);
+    if (ask?.[1]) {
+      bits.push(`${ask[1]} was answered`);
+      continue;
+    }
+    const sched = /^schedule (.*)$/.exec(line);
+    if (sched) bits.push(sched[1] || "a schedule");
+  }
+  return bits.length > 0 ? `LilOS: ${bits.join(" · ")}` : "LilOS: wake";
 }
