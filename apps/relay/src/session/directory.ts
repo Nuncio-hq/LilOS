@@ -10,7 +10,8 @@ import {
   FoldersListParams,
   ProfileUpdateParams,
 } from "@lilos/contracts/app";
-import { collapsePath, resolveUnderHome } from "@lilos/host";
+import { resolveUnderHome } from "@lilos/host";
+import { projectFolderOf } from "../projects";
 import type { RelayCtx } from "./ctx";
 import { badParams, JsonRpcCode, RpcError } from "./rpc";
 
@@ -99,11 +100,15 @@ export async function handleDirectory(c: RelayCtx): Promise<false | undefined> {
     case "folders.add": {
       const parsed = FoldersAddParams.safeParse(params);
       if (!parsed.success) throw badParams(parsed.error.issues);
-      let path = parsed.data.path;
+      /* One spelling per folder (D-#771): recents use the same canonical
+         form as projects (`~/x` under the Mac's home, no trailing slash),
+         so a path typed absolute and the project's folder never list as
+         two rows. */
+      let path = projectFolderOf(parsed.data.path, homeDir);
       if (devicePeers.has(peer)) {
         /* The phone may add only what its browser could have listed —
-           a real folder under the Mac's home (D-#238). The stored path
-           is the canonical `~/x` form of the resolved one. */
+           a real folder under the Mac's home (D-#238); stored as the
+           canonical form of the resolved one. */
         const abs = resolveUnderHome(path, homeDir);
         if (!abs) {
           throw new RpcError(
@@ -112,7 +117,7 @@ export async function handleDirectory(c: RelayCtx): Promise<false | undefined> {
             "path is outside the Mac's home folder",
           );
         }
-        path = collapsePath(abs, homeDir);
+        path = projectFolderOf(abs, homeDir);
       }
       respond(peer, id, { folder: await store.addRecentFolder(path) });
       return;
