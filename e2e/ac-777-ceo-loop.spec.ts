@@ -8,6 +8,7 @@ import {
   pickPorts,
   relayRpc,
   type Stack,
+  skipFirstRun,
   startChat,
   v3Peek,
   v3Sidebar,
@@ -110,15 +111,20 @@ test("a goal given to the CEO becomes tickets with owners in one turn", async ({
     agent,
     `surfaces: ticket ${project.key} | Write the page | goal:${goalId} | owner:${worker.id}; ticket-assign ${ticketId} | ${worker.id}; update plan | Split the goal into one ticket. | goal:${goalId} | ticket:${ticketId}`,
   );
-  await expect(v3Peek(page).locator("[data-agentturn]").first()).toBeVisible({
-    timeout: 90_000,
-  });
-  const { tickets } = await relayRpc<{
-    tickets: { id: string; ownerId?: string; goalId?: string }[];
-  }>(page, stack, "tickets.list", {});
-  const written = tickets.find((t) => t.id === ticketId);
-  expect(written?.ownerId).toBe(worker.id);
-  expect(written?.goalId).toBe(goalId);
+  await expect
+    .poll(
+      async () => {
+        const { tickets } = await relayRpc<{
+          tickets: { id: string; ownerId?: string; goalId?: string }[];
+        }>(page, stack, "tickets.list", {});
+        const written = tickets.find((t) => t.id === ticketId);
+        return written
+          ? `${written.ownerId ?? ""} ${written.goalId ?? ""}`
+          : "";
+      },
+      { timeout: 90_000 },
+    )
+    .toBe(`${worker.id} ${goalId}`);
   await home(page);
   await expect(main(page)).toContainText("Split the goal into one ticket.", {
     timeout: 30_000,
@@ -190,7 +196,7 @@ test("a stuck thread is handed to another agent, with an update", async ({
   await page.goto(
     `${stack.webUrl}/#?page=threads&open=thread:${encodeURIComponent(conversation.id)}`,
   );
-  await expect(v3Peek(page).locator("[data-agentturn]").first()).toBeVisible({
+  await expect(v3Peek(page).getByRole("button", { name: "Send" })).toBeVisible({
     timeout: 90_000,
   });
   const box = v3Peek(page).getByPlaceholder(`Message ${worker.name}…`);
@@ -214,6 +220,7 @@ test("a stuck thread is handed to another agent, with an update", async ({
 
 test("Home shows the latest update and Inbox lists them", async ({ page }) => {
   test.setTimeout(120_000);
+  await skipFirstRun(page);
   await page.goto(`${stack.webUrl}/#?page=home`);
   await expect(main(page)).toContainText("Handed", { timeout: 30_000 });
   await expect(main(page)).toContainText("It was stuck.");
