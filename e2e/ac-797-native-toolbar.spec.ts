@@ -30,8 +30,8 @@ import {
  *       edge to edge, and every item is centred on it.
  *   AC-2 the toggle comes right after the lights docked or hidden; hidden,
  *       Search joins it, in the page's segment — or the peek's, widened.
- *   AC-3 a notice (the stack's own "no model reported") stays under the
- *       toolbar, above the page AND the peek, widened or not.
+ *   AC-3 a notice (a degraded model leg, forced at the wire) stays under
+ *       the toolbar, above the page AND the peek, widened or not.
  *   AC-4 (Mac window) the first message of a thread starts ≤ 140px from the
  *       window's top (was ~250).
  * The native window around the row — the lights centred in it, drag, full
@@ -79,6 +79,51 @@ async function openThread(page: Page, full = false) {
     v3Sidebar(page).getByRole("button", { name: /default/i }),
   ).toBeVisible({ timeout: 60_000 });
   await panelFocusReady(page);
+}
+
+/** This page's relay socket reports the model leg degraded, so the app
+    draws its notice (V3Banner). Forced at the wire (ac-423's pattern):
+    whether the stack's own status says "no model" depends on when the
+    harness first caches `models.list` — a race, not a state to wait on. */
+async function degradeModelLeg(page: Page) {
+  const statusIds = new Set<unknown>();
+  await page.routeWebSocket(
+    new RegExp(`127\\.0\\.0\\.1:${stack.ports.relay}/`),
+    (ws) => {
+      const server = ws.connectToServer();
+      ws.onMessage((raw) => {
+        const text = typeof raw === "string" ? raw : raw.toString("utf8");
+        try {
+          const frame = JSON.parse(text) as { id?: unknown; method?: unknown };
+          if (frame.method === "system.status") statusIds.add(frame.id);
+        } catch {}
+        server.send(raw);
+      });
+      server.onMessage((raw) => {
+        const text = typeof raw === "string" ? raw : raw.toString("utf8");
+        let frame: {
+          id?: unknown;
+          result?: {
+            components?: { id: string; state: string; reason: string }[];
+          };
+        };
+        try {
+          frame = JSON.parse(text);
+        } catch {
+          ws.send(raw);
+          return;
+        }
+        const model = frame.result?.components?.find((c) => c.id === "model");
+        if (!statusIds.has(frame.id) || !model) {
+          ws.send(raw);
+          return;
+        }
+        model.state = "degraded";
+        model.reason = "engine running but no model reported";
+        ws.send(JSON.stringify(frame));
+      });
+    },
+  );
 }
 
 test("AC-1 one toolbar row: the sidebar's, the page's and the peek's segments share the window's top edge, edge to edge", async ({
@@ -218,10 +263,9 @@ test("AC-3 a notice stays under the toolbar and above the page and the peek, wid
   page,
 }) => {
   test.setTimeout(120_000);
+  await degradeModelLeg(page);
   await openThread(page);
-  /* The stack's engine-fake reports no model, so the app draws its notice
-     (V3Banner, role=status, with "Details"): the one outage this stack has
-     without killing a service. */
+  // The notice: V3Banner, role=status, with "Details".
   const notice = page.getByRole("status").filter({ hasText: "Details" });
   await expect(notice).toBeVisible({ timeout: 30_000 });
   const n = (await notice.boundingBox()) ?? {
