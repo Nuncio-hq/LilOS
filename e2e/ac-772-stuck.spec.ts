@@ -30,8 +30,18 @@ const REASON = "Same web search 6 times";
 const SHOTS = path.join("test-results", "ac772");
 mkdirSync(SHOTS, { recursive: true });
 
+/** The PR's evidence, light and dark, with transitions finished. */
 async function shot(page: Page, name: string) {
-  await page.screenshot({ path: path.join(SHOTS, name), fullPage: true });
+  const base = name.replace(/\.png$/, "");
+  for (const scheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    await page.screenshot({
+      path: path.join(SHOTS, `${base}-${scheme}.png`),
+      fullPage: true,
+      animations: "disabled",
+    });
+  }
+  await page.emulateMedia({ colorScheme: "light" });
 }
 
 function lanAddress(): string | undefined {
