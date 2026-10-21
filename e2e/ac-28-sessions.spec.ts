@@ -285,12 +285,12 @@ test("AC-1/4 restart keeps conversations listed; search narrows them", async ({
   // Turn 1 on stack A.
   const agent = await openApp(stack, page);
   convId = await startChat(page, stack.webUrl, agent, ROOT_TEXT);
+  // Turn 1 has finished before the restart. The answer is what settles it;
+  // matching its words would also hit the reasoning, folded inside the
+  // turn's work line (hidden) since #770.
   await expect(
-    page
-      .locator("[data-thread-panel]")
-      .getByText(/repo|layout|readme/i)
-      .last(),
-  ).toBeVisible({ timeout: 60_000 });
+    page.locator("[data-thread-panel] [data-turnsettled]").first(),
+  ).toBeAttached({ timeout: 60_000 });
 
   // Full app restart — same LILOS_HOME, new processes. Detach the page
   // while vite is down: a stale vite ws client reloads on reconnect, and
