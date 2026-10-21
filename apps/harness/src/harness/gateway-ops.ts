@@ -422,7 +422,7 @@ export function createGatewayApprovalOps(
       if (request.kind === "question") {
         const picked =
           resolved.outcome === "answer"
-            ? p.options?.find((_, i) => `o${i}` === resolved.answer)?.label
+            ? p.options?.find((_, i) => `o${i}` === resolved.answer)
             : undefined;
         if (!picked) {
           throw new SurfaceError(
