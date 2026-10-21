@@ -122,6 +122,13 @@ export function makeV3Actions(caps: V3Capabilities): V3DataActions {
           sayError(describeActionError("Couldn't hand the ticket on", e)),
         );
     },
+    markDone: (ticketId) => {
+      void relay
+        .request("tickets.update", { id: ticketId, status: "done" })
+        .catch((e) =>
+          sayError(describeActionError("Couldn't mark the ticket done", e)),
+        );
+    },
     message: (threadId, text) => {
       const employeeId = employeeIdOf(threadId);
       if (!employeeId) return;

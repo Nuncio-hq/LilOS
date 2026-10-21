@@ -2288,7 +2288,7 @@
     },
     {
       "name": "goal_create",
-      "description": "Propose a goal (project id or key, title, optional due and why). Asks unless ownerId is you — a goal you own is written now. Returns the goal.",
+      "description": "Propose a goal (project id or key, title, optional due and why). Always asks before it is written. Returns the goal.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -2445,6 +2445,19 @@
                         "kind": {
                           "type": "string",
                           "const": "you"
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "ceo"
                         }
                       },
                       "required": [
@@ -2735,6 +2748,19 @@
                     "properties": {
                       "kind": {
                         "type": "string",
+                        "const": "ceo"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
                         "const": "agent"
                       },
                       "agentId": {
@@ -2986,6 +3012,19 @@
                 "properties": {
                   "kind": {
                     "type": "string",
+                    "const": "ceo"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
                     "const": "agent"
                   },
                   "agentId": {
@@ -3111,6 +3150,19 @@
                       "kind": {
                         "type": "string",
                         "const": "you"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "ceo"
                       }
                     },
                     "required": [
@@ -3379,6 +3431,19 @@
                     "properties": {
                       "kind": {
                         "type": "string",
+                        "const": "ceo"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
                         "const": "agent"
                       },
                       "agentId": {
@@ -3579,6 +3644,19 @@
                         "kind": {
                           "type": "string",
                           "const": "you"
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "ceo"
                         }
                       },
                       "required": [
@@ -3862,6 +3940,19 @@
                       "kind": {
                         "type": "string",
                         "const": "you"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "ceo"
                       }
                     },
                     "required": [
@@ -4162,6 +4253,19 @@
                       "kind": {
                         "type": "string",
                         "const": "you"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "ceo"
                       }
                     },
                     "required": [

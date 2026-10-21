@@ -1077,14 +1077,16 @@ export class RelayClient {
       .catch(() => {});
     /* Same rule as projects: a relay that predates goals/tickets, or a slow
        answer, must not hold the directory at "Loading…". */
+    /* One write for the whole list. A per-row set notifies every subscriber
+       once per goal and once per ticket on every refresh. */
     this.request<{ goals: Goal[] }>("goals.list", {})
       .then(({ goals }) => {
-        for (const goal of goals) this.upsertGoal(goal);
+        this.goals.set(goals);
       })
       .catch(() => {});
     this.request<{ tickets: Ticket[] }>("tickets.list", {})
       .then(({ tickets }) => {
-        for (const ticket of tickets) this.upsertTicket(ticket);
+        this.tickets.set(tickets);
       })
       .catch(() => {});
     try {

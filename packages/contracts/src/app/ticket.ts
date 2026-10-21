@@ -6,7 +6,10 @@ import { AppMessage, Conversation, Timestamp } from "./domain";
  * project's key plus a number (`LIL-12`). One owner. A thread links to at
  * most one ticket (`Conversation.ticketId`); assigning is the checkout that
  * opens that thread. Not: a client-side list, one thread on many tickets,
- * or a CEO type — "ceo" on the wire is resolved to an employee by the relay.
+ * or a CEO type. Waiting on the CEO is the role `{kind: "ceo"}`, never a
+ * person's id, so it follows whoever holds the seat. Assign's owner is
+ * always an employee id ("ceo" there is whoever was hired first, until a
+ * CEO is named).
  */
 
 export const TicketStatus = z.enum([
@@ -20,9 +23,11 @@ export const TicketStatus = z.enum([
 ]);
 export type TicketStatus = z.infer<typeof TicketStatus>;
 
-/** Absent means the ticket waits on nothing. `you` is the human. */
+/** Absent means the ticket waits on nothing. `you` is the human. `ceo` is
+    the role, resolved to whoever holds it when the ticket is shown. */
 export const TicketWaitingOn = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("you") }).strict(),
+  z.object({ kind: z.literal("ceo") }).strict(),
   z
     .object({
       kind: z.literal("agent"),

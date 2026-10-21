@@ -456,6 +456,8 @@ export interface RelayStore {
     id: string;
     ownerId: string;
     channelId: string;
+    /** Resolved like `conversations.open`: the company's default, else ask. */
+    access?: ConversationAccess;
   }): Promise<{
     ticket: Ticket;
     conversation: Conversation;

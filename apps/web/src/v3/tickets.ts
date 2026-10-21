@@ -48,6 +48,7 @@ export function v3Tickets(tickets: readonly Ticket[], now: number): V3Ticket[] {
 
 function waitingOf(w: NonNullable<Ticket["waitingOn"]>): V3WaitingOn {
   if (w.kind === "you") return { kind: "you", askId: "" };
+  if (w.kind === "ceo") return { kind: "ceo" };
   if (w.kind === "agent")
     return { kind: "agent", agentId: w.agentId, why: w.why ?? "" };
   return { kind: "ticket", ticketId: w.ticketId };

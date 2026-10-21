@@ -26,7 +26,14 @@ import {
 import { RowButton } from "./v3-open-record";
 import type { V3PageProps, V3Route } from "./v3-page-types";
 import { viaOf } from "./v3-rows";
-import { AskNote, link, Person, StuckNote, WaitingOn } from "./v3-ticket-notes";
+import {
+  AskNote,
+  link,
+  Person,
+  StuckNote,
+  TicketMoves,
+  WaitingOn,
+} from "./v3-ticket-notes";
 import type { V3Ticket } from "./v3-types";
 
 /* One ticket as a Notion page: properties, the hands it passed through, steps
@@ -132,10 +139,12 @@ function Progress({ data, t }: { data: V3Data; t: V3Ticket }) {
               )}
             >
               {s.text}
-              <span className="text-muted-foreground/70">
-                {" "}
-                · {s.by === "you" ? data.me : agentNameOf(data, s.by)}
-              </span>
+              {s.by && (
+                <span className="text-muted-foreground/70">
+                  {" "}
+                  · {s.by === "you" ? data.me : agentNameOf(data, s.by)}
+                </span>
+              )}
             </span>
             <span
               className={cn(
@@ -203,10 +212,12 @@ function Updates({
       {t.updates.map((u) => {
         const you = u.by === "you";
         const by = you ? undefined : agentOf(data, u.by);
-        const name = you ? data.me : (by?.name ?? FORMER_AGENT);
+        const name = !u.by ? "" : you ? data.me : (by?.name ?? FORMER_AGENT);
         return (
           <div key={`${u.by}-${u.ago}-${u.text}`} className="flex gap-3 py-2.5">
-            {you ? (
+            {!u.by ? (
+              <span className="mt-0.5 size-6 shrink-0 rounded-full bg-muted" />
+            ) : you ? (
               <Avatar name={name} tone="n" size={24} className="mt-0.5" />
             ) : (
               <AgentAvatar
@@ -218,7 +229,7 @@ function Updates({
             )}
             <div>
               <div className="text-[13.5px]">
-                <b className="mr-2 font-semibold">{name}</b>
+                {name && <b className="mr-2 font-semibold">{name}</b>}
                 <span className="text-muted-foreground/70">
                   {ago(u.ago)} ago
                 </span>
@@ -238,9 +249,6 @@ function Updates({
             placeholder="Add a comment…"
             className="min-w-0 flex-1 bg-transparent text-[14px] outline-none placeholder:text-muted-foreground/70"
           />
-          <span className="shrink-0 text-[13px] text-muted-foreground/70">
-            Type @ to ask an agent
-          </span>
         </div>
       )}
     </>
@@ -278,10 +286,11 @@ export function V3TicketPage({
       <Title kicker={project ? `${t.id} · ${project.name}` : t.id}>
         {t.title}
       </Title>
-      <div className="mb-2 flex">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
         <Btn small onClick={() => act.ask(`About ${t.id}: `)}>
           {data.ceoId ? "Ask the CEO about this" : "Ask about this"}
         </Btn>
+        <TicketMoves data={data} t={t} act={act} />
       </div>
       <div className="mt-1.5 mb-1">
         <Prop icon={<span className="size-4" />} label="Status">
@@ -297,12 +306,16 @@ export function V3TicketPage({
         </Prop>
         <WaitingOn data={data} t={t} go={go} />
         <Prop icon={<UserIcon />} label="Owner">
-          <RowButton
-            onClick={() => go({ page: "agent", id: t.owner })}
-            className="py-1"
-          >
-            <Person data={data} id={t.owner} />
-          </RowButton>
+          {t.owner ? (
+            <RowButton
+              onClick={() => go({ page: "agent", id: t.owner })}
+              className="py-1"
+            >
+              <Person data={data} id={t.owner} />
+            </RowButton>
+          ) : (
+            <Person data={data} id="" />
+          )}
         </Prop>
         {t.reviewer && (
           <Prop icon={<EyeIcon />} label="Reviewer">

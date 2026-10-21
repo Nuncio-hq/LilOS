@@ -10,9 +10,10 @@ import {
 } from "./helpers/stack";
 
 /**
- * Tickets are on (D-#776), so Work, Goals and Inbox are in the sidebar and
- * their links open those pages. There is still no CEO (that position is a
- * later slice): no "Ask the CEO", no "Make CEO", and ⌘K stays a search.
+ * Tickets are on (D-#776), so Work and Goals are in the sidebar and their
+ * links open those pages. Inbox stays hidden until it has updates. There is
+ * still no CEO (that position is a later slice): no "Ask the CEO", no
+ * "Make CEO", and ⌘K stays a search.
  */
 
 let stack: Stack;
@@ -30,7 +31,7 @@ test.describe.configure({ mode: "serial" });
 const main = (page: Page) => page.locator("#v3-main");
 const palette = (page: Page) => page.getByRole("dialog", { name: "Search" });
 
-test("the sidebar offers Work, Goals and Inbox, and a link opens that page", async ({
+test("the sidebar offers Work and Goals, and a link opens that page", async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -53,15 +54,15 @@ test("the sidebar offers Work, Goals and Inbox, and a link opens that page", asy
   await expect(side.getByText("People", { exact: true })).toBeVisible();
   await expect(side.getByRole("button", { name: /Default/ })).toBeVisible();
 
-  for (const name of ["Work", "Goals", "Inbox"])
+  for (const name of ["Work", "Goals"])
     await expect(
       side.getByRole("button", { name: new RegExp(`^${name}`) }),
     ).toBeVisible();
+  await expect(side.getByRole("button", { name: /^Inbox/ })).toHaveCount(0);
   await expect(side.getByText("Projects", { exact: true })).toHaveCount(0);
 
   const links: [string, string][] = [
     ["#?page=work", "Work"],
-    ["#?page=inbox", "Inbox"],
     ["#?page=goals", "Goals"],
   ];
   for (const [link, heading] of links) {

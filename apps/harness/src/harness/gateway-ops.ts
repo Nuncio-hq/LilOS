@@ -374,16 +374,28 @@ export function createGatewayApprovalOps(
       return r.project;
     },
 
-    /* D-#776: a goal the caller owns is their own record, so it does not
-       ask. Any other owner — including none, which means the human — is a
-       company write and waits. The catalog stays `approval` either way. */
+    /* D-#341 / D-#776: a goal always asks, including one the caller would
+       own. The project (and owner, when named) is checked before the card
+       so a bad write never opens an ask. The card names the project. */
     createGoal: async (p: GoalCreateParams) => {
-      if (p.ownerId !== binding.employeeId) {
-        await gate({
-          command: `goal_create ${p.title}`,
-          description: `Add a goal "${p.title}"${p.why ? ` — ${p.why}` : ""}.`,
-        });
+      const projects = await listProjects(relay);
+      const project = projects.find(
+        (x) => x.id === p.project || x.key === p.project,
+      );
+      if (!project) throw new SurfaceError("not_found", "project not found");
+      if (p.ownerId) {
+        const { employees } = await relay.request<{ employees: Employee[] }>(
+          "employees.list",
+          {},
+        );
+        if (!employees.some((e) => e.id === p.ownerId)) {
+          throw new SurfaceError("not_found", "employee not found");
+        }
       }
+      await gate({
+        command: `goal_create ${p.title}`,
+        description: `Add a goal "${p.title}" on ${project.name}${p.why ? ` — ${p.why}` : ""}.`,
+      });
       const r = await relay.request<{ goal: Goal }>("goals.create", {
         project: p.project,
         title: p.title,

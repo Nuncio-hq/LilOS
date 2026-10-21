@@ -532,9 +532,10 @@ export type ProjectCreateResult = z.infer<typeof ProjectCreateResult>;
 
 /**
  * Tickets and goals (D-#776). Ticket writes do not ask — the company plan
- * (#746) is that creating and updating tickets never asks.
- * `goal_create` does, unless `ownerId` is the caller (the harness skips the
- * gate; the catalog stays `approval` so the guide still says it asks).
+ * (#746) is that creating and updating tickets never asks. `goal_create`
+ * always asks (D-#341): a goal changes the company, including one the
+ * caller would own. The owner's own `goals.create` from the app does not
+ * go through this tool.
  */
 
 export const GoalListParams = z.strictObject({});
@@ -548,8 +549,8 @@ export const GoalCreateParams = z.strictObject({
   title: z.string().min(1),
   due: z.string().optional(),
   why: z.string().optional(),
-  /** Employee id. Omit to propose a goal the human owns. Set it to yourself
-      and the goal is written now, without an ask. */
+  /** Employee id. Omit to propose a goal the human owns. Either way the
+      tool asks before anything is written. */
   ownerId: z.string().min(1).optional(),
 });
 export type GoalCreateParams = z.infer<typeof GoalCreateParams>;
@@ -871,7 +872,7 @@ export const LILOS_TOOLS: Record<string, LilosToolContract> = {
   goal_create: {
     params: GoalCreateParams,
     result: GoalCreateResult,
-    doc: "Propose a goal (project id or key, title, optional due and why). Asks unless ownerId is you — a goal you own is written now. Returns the goal.",
+    doc: "Propose a goal (project id or key, title, optional due and why). Always asks before it is written. Returns the goal.",
     area: "goal",
     access: "approval",
   },

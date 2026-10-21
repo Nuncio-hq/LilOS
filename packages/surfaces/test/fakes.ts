@@ -500,11 +500,18 @@ export function fakeAppOps(
       return goalRows;
     },
     async createGoal(p: GoalCreateParams) {
-      const self = opts.employees?.[0]?.id;
-      if (p.ownerId !== self) gate(`goal_create ${p.title}`);
-      const project =
-        projectRows.find((r) => r.id === p.project || r.key === p.project) ??
-        projectRows[0];
+      const project = projectRows.find(
+        (r) => r.id === p.project || r.key === p.project,
+      );
+      if (!project) throw new SurfaceError("not_found", "project not found");
+      if (
+        p.ownerId &&
+        opts.employees &&
+        !opts.employees.some((e) => e.id === p.ownerId)
+      ) {
+        throw new SurfaceError("not_found", "employee not found");
+      }
+      gate(`goal_create ${p.title}`);
       const goal: Goal = {
         id: `goal-${goalRows.length + 1}`,
         title: p.title,

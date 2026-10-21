@@ -1031,8 +1031,7 @@ export function createDrizzleStore(db: Db): RelayStore {
           .all();
         const number = taken.reduce((m, r) => Math.max(m, r.n), 0) + 1;
         const at = now();
-        const status = initialStatus(input);
-        const done = status === "done";
+        const settled = initialStatus(input);
         const ticket: Ticket = {
           id: `${input.projectKey}-${number}`,
           number,
@@ -1040,14 +1039,14 @@ export function createDrizzleStore(db: Db): RelayStore {
           projectId: input.projectId,
           ...(input.goalId ? { goalId: input.goalId } : {}),
           ...(input.ownerId ? { ownerId: input.ownerId } : {}),
-          status,
-          ...(!done && input.waitingOn ? { waitingOn: input.waitingOn } : {}),
+          status: settled.status,
+          ...(settled.waitingOn ? { waitingOn: settled.waitingOn } : {}),
           progress: input.progress ?? [],
           updates: [],
           ...(input.stuckWhy ? { stuckWhy: input.stuckWhy } : {}),
           ...(input.startsAt ? { startsAt: input.startsAt } : {}),
           statusAt: at,
-          ...(done ? { doneAt: at } : {}),
+          ...(settled.status === "done" ? { doneAt: at } : {}),
           createdAt: at,
         };
         tx.insert(schema.tickets).values(ticketToRow(ticket)).run();
@@ -1102,6 +1101,7 @@ export function createDrizzleStore(db: Db): RelayStore {
       id: string;
       ownerId: string;
       channelId: string;
+      access?: OpenConversationInput["access"];
     }) {
       /* Channel already exists. Owner + thread are one transaction (D-#776). */
       return db.transaction((tx) => {
@@ -1132,6 +1132,7 @@ export function createDrizzleStore(db: Db): RelayStore {
           cwd: project.folder,
           projectId: project.id,
           ticketId: ticket.id,
+          ...(input.access !== undefined ? { access: input.access } : {}),
         });
         return {
           ticket,

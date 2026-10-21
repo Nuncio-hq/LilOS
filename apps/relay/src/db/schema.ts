@@ -238,8 +238,9 @@ export const tickets = sqliteTable(
     createdAt: integer("created_at").notNull(),
   },
   (t) => [
+    /* (project_id, number) is unique, so a second index on project_id
+       alone would only repeat its leftmost column. */
     uniqueIndex("tickets_project_number").on(t.projectId, t.number),
-    index("tickets_project").on(t.projectId),
     index("tickets_goal").on(t.goalId),
   ],
 );

@@ -260,7 +260,6 @@ function DraftChat({
       </p>
       <p className="mt-3 text-[15px] text-muted-foreground">
         Talk to {agent.name} directly.
-        {data.features.tickets && " Turn it into a ticket any time."}
       </p>
 
       {data.starters && data.starters.length > 0 && (

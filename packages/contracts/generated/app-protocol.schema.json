@@ -9431,6 +9431,19 @@
               "properties": {
                 "kind": {
                   "type": "string",
+                  "const": "ceo"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
                   "const": "agent"
                 },
                 "agentId": {
@@ -9672,6 +9685,19 @@
                       "kind": {
                         "type": "string",
                         "const": "you"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "ceo"
                       }
                     },
                     "required": [
@@ -9944,6 +9970,19 @@
                   "properties": {
                     "kind": {
                       "type": "string",
+                      "const": "ceo"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
                       "const": "agent"
                     },
                     "agentId": {
@@ -10177,6 +10216,19 @@
               "properties": {
                 "kind": {
                   "type": "string",
+                  "const": "ceo"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
                   "const": "agent"
                 },
                 "agentId": {
@@ -10294,6 +10346,19 @@
                     "kind": {
                       "type": "string",
                       "const": "you"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "ceo"
                     }
                   },
                   "required": [
@@ -10502,6 +10567,19 @@
                       "kind": {
                         "type": "string",
                         "const": "you"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "ceo"
                       }
                     },
                     "required": [
@@ -10767,6 +10845,19 @@
                     "kind": {
                       "type": "string",
                       "const": "you"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "ceo"
                     }
                   },
                   "required": [
@@ -11441,6 +11532,19 @@
                     "kind": {
                       "type": "string",
                       "const": "you"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "ceo"
                     }
                   },
                   "required": [

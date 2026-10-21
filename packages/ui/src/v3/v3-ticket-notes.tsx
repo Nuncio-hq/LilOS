@@ -4,7 +4,13 @@ import { cn } from "../lib/utils";
 import { ago, Btn, Prop } from "./v3-bits";
 import type { V3Data } from "./v3-data-types";
 import { AgentAvatar, INK } from "./v3-marks";
-import { agentOf, FORMER_AGENT, threadsOf, ticketOf } from "./v3-model";
+import {
+  agentOf,
+  defaultAgent,
+  FORMER_AGENT,
+  threadsOf,
+  ticketOf,
+} from "./v3-model";
 import type { V3PageProps, V3Route } from "./v3-page-types";
 import type { V3Ticket } from "./v3-types";
 
@@ -27,18 +33,14 @@ export function Person({ data, id }: { data: V3Data; id: string }) {
   );
 }
 
-/** Stuck: say why, say what the CEO does otherwise, and offer the two moves. */
+/** Stuck: say why, and what happens if nobody moves it. Handing it on and
+    marking it done live once, with the other ticket controls. */
 export function StuckNote({
   data,
   t,
   act,
 }: { data: V3Data; t: V3Ticket } & Pick<V3PageProps, "act">) {
-  const [picking, setPicking] = useState(false);
   const threadId = threadsOf(data, t.id).find((x) => x.status === "stuck")?.id;
-  const handOff = act.handOff;
-  const others = data.agents.filter(
-    (a) => a.id !== t.owner && a.id !== data.ceoId,
-  );
   return (
     <div className="mt-3 rounded-lg bg-red-50/70 px-3.5 py-3 text-[14px] dark:bg-red-400/10">
       <div className={cn("font-medium", INK.stuck)}>
@@ -49,34 +51,57 @@ export function StuckNote({
           At {t.fallback.at} the CEO {t.fallback.does}.
         </div>
       )}
-      <div className="mt-2.5 flex flex-wrap items-center gap-2">
-        {handOff && (
-          <Btn small onClick={() => setPicking((p) => !p)}>
-            Hand to …
-          </Btn>
-        )}
-        {handOff &&
-          picking &&
-          others.map((a) => (
-            <Btn
-              small
-              key={a.id}
-              onClick={() => {
-                handOff(t.id, a.id);
-                setPicking(false);
-              }}
-            >
-              <AgentAvatar data={data} agent={a} size={16} />
-              {a.name}
-            </Btn>
-          ))}
-        {threadId && (
+      {threadId && (
+        <div className="mt-2.5 flex flex-wrap items-center gap-2">
           <Btn small onClick={() => act.stop(threadId)}>
             Stop
           </Btn>
-        )}
-      </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+/** The owner's two moves, once on the page: hand any open ticket to any
+    agent, and mark it done. Neither is drawn without a handler (D-#19). */
+export function TicketMoves({
+  data,
+  t,
+  act,
+}: { data: V3Data; t: V3Ticket } & Pick<V3PageProps, "act">) {
+  const [picking, setPicking] = useState(false);
+  if (t.status === "done") return null;
+  const handOff = act.handOff;
+  const markDone = act.markDone;
+  if (!handOff && !markDone) return null;
+  return (
+    <>
+      {handOff && (
+        <Btn small onClick={() => setPicking((p) => !p)}>
+          Hand to …
+        </Btn>
+      )}
+      {handOff &&
+        picking &&
+        data.agents.map((a) => (
+          <Btn
+            small
+            key={a.id}
+            onClick={() => {
+              handOff(t.id, a.id);
+              setPicking(false);
+            }}
+          >
+            <AgentAvatar data={data} agent={a} size={16} />
+            {a.name}
+          </Btn>
+        ))}
+      {markDone && (
+        <Btn small onClick={() => markDone(t.id)}>
+          Mark done
+        </Btn>
+      )}
+    </>
   );
 }
 
@@ -133,6 +158,14 @@ export function AskNote({
   );
 }
 
+/** Whoever holds the seat now, else the default agent. Never a stored id. */
+function CeoWait({ data }: { data: V3Data }) {
+  const ceo =
+    data.agents.find((a) => a.id === data.ceoId) ?? defaultAgent(data);
+  if (!ceo) return <span className="font-medium">the CEO</span>;
+  return <Person data={data} id={ceo.id} />;
+}
+
 export function WaitingOn({
   data,
   t,
@@ -177,6 +210,12 @@ export function WaitingOn({
           >
             {w.ticketId} {ticketOf(data, w.ticketId)?.title}
           </button>
+          <span className="text-muted-foreground">· {ago(t.since)}</span>
+        </>
+      )}
+      {w.kind === "ceo" && (
+        <>
+          <CeoWait data={data} />
           <span className="text-muted-foreground">· {ago(t.since)}</span>
         </>
       )}

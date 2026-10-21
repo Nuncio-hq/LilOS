@@ -13,22 +13,51 @@ import type {
  * transaction as the owner write.
  */
 
+const CLEARS_WAIT = new Set<TicketStatus>(["working", "planned", "done"]);
+
+/**
+ * Status and what the ticket waits on are one fact (D-#776). Waiting on you
+ * is needs; waiting on an agent, a ticket, or the CEO is waiting. No wait,
+ * and a status that only exists because of one, is working when someone
+ * holds it and planned otherwise. Working, planned, and done never wait.
+ */
 export function initialStatus(input: {
   status?: TicketStatus;
   waitingOn?: TicketWaitingOn;
-}): TicketStatus {
-  if (input.status) return input.status;
-  const waiting = input.waitingOn;
-  if (!waiting) return "planned";
-  if (waiting.kind === "you") return "needs";
-  return "waiting";
+  ownerId?: string;
+}): { status: TicketStatus; waitingOn?: TicketWaitingOn } {
+  if (input.status && CLEARS_WAIT.has(input.status)) {
+    return { status: input.status };
+  }
+  if (input.waitingOn) {
+    return {
+      status: input.waitingOn.kind === "you" ? "needs" : "waiting",
+      waitingOn: input.waitingOn,
+    };
+  }
+  if (input.status === "needs" || input.status === "waiting") {
+    return { status: input.ownerId ? "working" : "planned" };
+  }
+  return { status: input.status ?? "planned" };
 }
 
-/** A planned ticket becomes working when someone is checked out on it.
-    Anything already waiting, stuck, or finished keeps its status. */
+const drop = <T extends object, K extends keyof T>(row: T, key: K): T => {
+  const next = { ...row };
+  delete next[key];
+  return next;
+};
+
+/** A planned ticket becomes working when someone is checked out on it, and
+    that move drops the wait (working never waits). Anything already
+    waiting, stuck, or finished keeps its status. */
 export function checkout(ticket: Ticket, ownerId: string, at: number): Ticket {
   if (ticket.status !== "planned") return { ...ticket, ownerId };
-  return { ...ticket, ownerId, status: "working", statusAt: at };
+  return {
+    ...drop(ticket, "waitingOn"),
+    ownerId,
+    status: "working",
+    statusAt: at,
+  };
 }
 
 export type TicketWrite = {
@@ -42,14 +71,18 @@ export type TicketWrite = {
   stuckWhy?: string | null;
 };
 
-const drop = <T extends object, K extends keyof T>(row: T, key: K): T => {
-  const next = { ...row };
-  delete next[key];
-  return next;
-};
+const stamp = (ticket: Ticket, status: TicketStatus, at: number): Ticket =>
+  ticket.status === status
+    ? ticket
+    : {
+        ...ticket,
+        status,
+        statusAt: at,
+        ...(status === "done" ? { doneAt: ticket.doneAt ?? at } : {}),
+      };
 
-/** Apply a field write. Status is the caller's; becoming done is stamped
-    here and finished off by `finish`, which also wakes waiters. */
+/** Apply a field write, then make status and waitingOn agree. Becoming
+    done is finished off by `finish`, which also wakes waiters. */
 export function applyWrite(
   ticket: Ticket,
   patch: TicketWrite,
@@ -73,12 +106,25 @@ export function applyWrite(
   else if (patch.waitingOn !== undefined)
     next = { ...next, waitingOn: patch.waitingOn };
   if (patch.status !== undefined && patch.status !== ticket.status) {
-    next = {
-      ...next,
-      status: patch.status,
-      statusAt: at,
-      ...(patch.status === "done" ? { doneAt: at } : {}),
-    };
+    next = stamp(next, patch.status, at);
+  }
+  /* Moving to working, planned, or done drops the wait. A wait that remains
+     sets the status. Clearing a wait (or a needs/waiting status with nothing
+     to wait on) is working when owned, otherwise planned — unless this write
+     named another status, such as stuck. */
+  if (patch.status && CLEARS_WAIT.has(patch.status)) {
+    next = drop(next, "waitingOn");
+  } else if (next.waitingOn) {
+    next = stamp(next, next.waitingOn.kind === "you" ? "needs" : "waiting", at);
+  } else if (
+    patch.waitingOn === null &&
+    (patch.status === undefined ||
+      patch.status === "needs" ||
+      patch.status === "waiting")
+  ) {
+    next = stamp(next, next.ownerId ? "working" : "planned", at);
+  } else if (next.status === "needs" || next.status === "waiting") {
+    next = stamp(next, next.ownerId ? "working" : "planned", at);
   }
   return next;
 }

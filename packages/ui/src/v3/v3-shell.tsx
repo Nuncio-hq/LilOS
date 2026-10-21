@@ -8,11 +8,13 @@ import {
 } from "react";
 import { foreignOverlayOpen } from "../chat/ui-layers";
 import { ConversationReflowKey } from "../components/ai-elements/conversation";
+import { draftKey, setDraft } from "../lib/drafts";
 import { useTheme } from "../shell/use-theme";
 import type { Theme } from "../types";
 import type { V3Data, V3Draft } from "./v3-data-types";
 import { EscLayer } from "./v3-keys";
 import { SIDEBAR_W, shellSizes, useLayoutPrefs } from "./v3-layout-prefs";
+import { defaultAgent } from "./v3-model";
 import { step } from "./v3-nav";
 import { OpenRecord } from "./v3-open-record";
 import type {
@@ -209,8 +211,27 @@ export function V3Shell({
   }, [palette, closePeek, toggleSidebar]);
 
   const act = useMemo<V3Actions>(
-    () => ({ ...actions, ask: (text) => setPalette(text ?? "") }),
-    [actions],
+    () => ({
+      ...actions,
+      /* The prototype passes `draft`: ⌘K is the CEO. The real app does not,
+         so asking opens a new chat with the CEO (or the default agent until
+         one is named, #778) and the words are already in the box. */
+      ask: (text) => {
+        if (draft) {
+          setPalette(text ?? "");
+          return;
+        }
+        const ceo =
+          data.agents.find((a) => a.id === data.ceoId) ?? defaultAgent(data);
+        if (!ceo) {
+          setPalette(text ?? "");
+          return;
+        }
+        if (text) setDraft(draftKey.dm(ceo.id), text);
+        goFromPage({ page: "newchat", id: ceo.id });
+      },
+    }),
+    [actions, data, draft, goFromPage],
   );
 
   const startPlan = (

@@ -163,7 +163,7 @@ export interface AppOps {
   /** Make a project of a folder (`projects.create` on approve); a folder
       that already has a project answers it. */
   createProject(p: ProjectCreateParams): Promise<Project>;
-  /** Goals (D-#776). `createGoal` asks unless `ownerId` is the bound employee. */
+  /** Goals (D-#776). `createGoal` always asks (D-#341). */
   goals(): Promise<GoalListResult["goals"]>;
   createGoal(p: GoalCreateParams): Promise<GoalCreateResult["goal"]>;
   /** Ticket writes do not ask (#746). Assign opens the owner's thread. */

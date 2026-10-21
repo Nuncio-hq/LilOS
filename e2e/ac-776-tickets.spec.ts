@@ -14,13 +14,13 @@ import {
 
 /**
  * #776: tickets and goals in the real app. One test per acceptance
- * criterion, on the engine-fake stack. Light and dark shots of each
- * criterion's moment.
+ * criterion. The owner acts through the page (New, hand to…, Mark done);
+ * the agent acts through the tool. Light and dark shots of each
+ * criterion's moment live only under test-results/ac-776.
  */
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SHOTS = path.join(HERE, "../test-results/ac-776");
-const ARTIFACTS = "/opt/cursor/artifacts/ac-776";
 
 let stack: Stack;
 let agent: { id: string; name: string };
@@ -28,7 +28,6 @@ let agent: { id: string; name: string };
 test.beforeAll(async () => {
   test.setTimeout(180_000);
   mkdirSync(SHOTS, { recursive: true });
-  mkdirSync(ARTIFACTS, { recursive: true });
   stack = await bootStack("ac776", await pickPorts());
 });
 test.afterAll(async () => {
@@ -42,13 +41,10 @@ const main = (page: Page) => page.locator("#v3-main");
 async function shot(page: Page, name: string) {
   for (const colorScheme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme });
-    const file = `${name}-${colorScheme}.png`;
     await page.screenshot({
-      path: path.join(SHOTS, file),
+      path: path.join(SHOTS, `${name}-${colorScheme}.png`),
       animations: "disabled",
     });
-    const { copyFileSync } = await import("node:fs");
-    copyFileSync(path.join(SHOTS, file), path.join(ARTIFACTS, file));
   }
   await page.emulateMedia({ colorScheme: "light" });
 }
@@ -78,17 +74,41 @@ async function ready(page: Page) {
   pageOf = () => page;
 }
 
+async function ticketNamed(title: string) {
+  const { tickets } = await relayRpc<{
+    tickets: { id: string; title: string }[];
+  }>(pageOf(), stack, "tickets.list", {});
+  const hit = tickets.find((t) => t.title === title);
+  if (!hit) throw new Error(`no ticket titled ${title}`);
+  return hit;
+}
+
 test("a ticket from the owner and from an agent lands on Work and its project", async ({
   page,
 }) => {
   test.setTimeout(180_000);
   await ready(page);
   const proj = await project();
-  await relayRpc(page, stack, "tickets.create", {
-    project: proj.key,
-    title: "From you",
-    waitingOn: { kind: "you" },
+
+  await page.goto(`${stack.webUrl}/#?page=work`);
+  await expect(main(page).getByRole("button", { name: "New" })).toBeVisible({
+    timeout: 30_000,
   });
+  await main(page).getByRole("button", { name: "New" }).click();
+  const draft = v3Peek(page);
+  await expect(draft.getByText("New chat")).toBeVisible({ timeout: 30_000 });
+  await expect(draft.getByRole("heading", { level: 1 })).toHaveText(agent.name);
+  await expect(draft.getByText("Turn it into a ticket")).toHaveCount(0);
+
+  await startChat(
+    page,
+    stack.webUrl,
+    agent,
+    `surfaces: ticket ${proj.key} | From you | you`,
+  );
+  await expect(
+    v3Peek(page).getByRole("button", { name: "Copy" }).first(),
+  ).toBeVisible({ timeout: 90_000 });
   await startChat(
     page,
     stack.webUrl,
@@ -123,44 +143,53 @@ test("assign opens the owner's thread; reassign adds a second hand", async ({
   test.setTimeout(180_000);
   await ready(page);
   const proj = await project();
-  const { ticket } = await relayRpc<{ ticket: { id: string } }>(
+  await startChat(
     page,
-    stack,
-    "tickets.create",
-    { project: proj.key, title: "Hands" },
+    stack.webUrl,
+    agent,
+    `surfaces: ticket ${proj.key} | Hands`,
   );
-  const first = await relayRpc<{
-    conversation: { id: string; ticketId?: string };
-  }>(page, stack, "tickets.assign", {
-    id: ticket.id,
-    ownerId: agent.id,
-  });
+  await expect(
+    v3Peek(page).getByRole("button", { name: "Copy" }).first(),
+  ).toBeVisible({ timeout: 90_000 });
+  const ticket = await ticketNamed("Hands");
   const { employee } = await relayRpc<{
     employee: { id: string; name: string };
   }>(page, stack, "employees.create", { name: "Blair", role: "Notes" });
-  const second = await relayRpc<{
-    conversation: { id: string; ticketId?: string; channelId: string };
-  }>(page, stack, "tickets.assign", {
-    id: ticket.id,
-    ownerId: employee.id,
-  });
-  expect(first.conversation.ticketId).toBe(ticket.id);
-  expect(second.conversation.ticketId).toBe(ticket.id);
-  expect(second.conversation.id).not.toBe(first.conversation.id);
-  const listed = await relayRpc<{
-    conversations: { id: string; ticketId?: string; channelId: string }[];
-  }>(page, stack, "conversations.list", { includeArchived: true });
-  const hands = listed.conversations.filter((c) => c.ticketId === ticket.id);
-  expect(hands.map((c) => c.id).sort()).toEqual(
-    [first.conversation.id, second.conversation.id].sort(),
-  );
 
   await page.goto(`${stack.webUrl}/#?page=work&open=ticket:${ticket.id}`);
-  await expect(v3Peek(page).getByText("changed hands 1×")).toBeVisible({
+  const peek = v3Peek(page);
+  await expect(
+    peek.getByRole("button", { name: "Ask about this" }),
+  ).toBeVisible({ timeout: 30_000 });
+  await peek.getByRole("button", { name: "Ask about this" }).click();
+  await expect(peek.getByRole("textbox")).toHaveValue(`About ${ticket.id}: `);
+  await expect(peek.getByRole("heading", { level: 1 })).toHaveText(agent.name);
+
+  await page.goto(`${stack.webUrl}/#?page=work&open=ticket:${ticket.id}`);
+  await expect(peek.getByRole("button", { name: "Hand to …" })).toBeVisible({
     timeout: 30_000,
   });
-  await expect(v3Peek(page).getByText(agent.name).first()).toBeVisible();
-  await expect(v3Peek(page).getByText("Blair").first()).toBeVisible();
+  await peek.getByRole("button", { name: "Hand to …" }).click();
+  await peek.getByRole("button", { name: agent.name, exact: true }).click();
+  await expect(peek.getByText(agent.name).first()).toBeVisible({
+    timeout: 30_000,
+  });
+
+  await peek.getByRole("button", { name: "Hand to …" }).click();
+  await peek.getByRole("button", { name: "Blair", exact: true }).click();
+  await expect(peek.getByText("changed hands 1×")).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(peek.getByText(agent.name).first()).toBeVisible();
+  await expect(peek.getByText("Blair").first()).toBeVisible();
+
+  const listed = await relayRpc<{
+    conversations: { id: string; ticketId?: string }[];
+  }>(page, stack, "conversations.list", { includeArchived: true });
+  const hands = listed.conversations.filter((c) => c.ticketId === ticket.id);
+  expect(hands).toHaveLength(2);
+  expect(employee.name).toBe("Blair");
   await shot(page, "ac-2-hands");
 });
 
@@ -170,32 +199,32 @@ test("a ticket waiting on another moves when that one is done", async ({
   test.setTimeout(180_000);
   await ready(page);
   const proj = await project();
-  const { ticket: blocker } = await relayRpc<{ ticket: { id: string } }>(
+  await startChat(
     page,
-    stack,
-    "tickets.create",
-    { project: proj.key, title: "Blocker", ownerId: agent.id },
+    stack.webUrl,
+    agent,
+    `surfaces: ticket ${proj.key} | Blocker`,
   );
-  const { ticket: waiter } = await relayRpc<{ ticket: { id: string } }>(
+  await expect(
+    v3Peek(page).getByRole("button", { name: "Copy" }).first(),
+  ).toBeVisible({ timeout: 90_000 });
+  const blocker = await ticketNamed("Blocker");
+  await startChat(
     page,
-    stack,
-    "tickets.create",
-    {
-      project: proj.key,
-      title: "After the blocker",
-      ownerId: agent.id,
-      waitingOn: { kind: "ticket", ticketId: blocker.id },
-    },
+    stack.webUrl,
+    agent,
+    `surfaces: ticket ${proj.key} | After the blocker | ticket:${blocker.id} | owner:${agent.id}`,
   );
-  await page.goto(`${stack.webUrl}/#?page=work`);
+  await expect(
+    v3Peek(page).getByRole("button", { name: "Copy" }).first(),
+  ).toBeVisible({ timeout: 90_000 });
+
+  await page.goto(`${stack.webUrl}/#?page=work&open=ticket:${blocker.id}`);
   await expect(main(page).getByText("Waiting on another ticket")).toBeVisible({
     timeout: 30_000,
   });
-  await relayRpc(page, stack, "tickets.update", {
-    id: blocker.id,
-    status: "done",
-  });
-  await page.reload();
+  const peek = v3Peek(page);
+  await peek.getByRole("button", { name: "Mark done" }).click();
   await expect(main(page).getByText("Waiting on another ticket")).toHaveCount(
     0,
     { timeout: 30_000 },
@@ -203,7 +232,9 @@ test("a ticket waiting on another moves when that one is done", async ({
   await expect(main(page).getByText("Moving")).toBeVisible();
   await expect(main(page).getByText("After the blocker")).toBeVisible();
 
-  await page.goto(`${stack.webUrl}/#?page=work&open=ticket:${waiter.id}`);
+  await main(page)
+    .getByRole("button", { name: /After the blocker/ })
+    .click();
   await expect(
     v3Peek(page).getByText(`${blocker.id} is done, so this can move.`),
   ).toBeVisible({ timeout: 30_000 });

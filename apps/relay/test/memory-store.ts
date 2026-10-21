@@ -424,8 +424,7 @@ export function createMemoryStore(): RelayStore {
       );
       const number = taken.reduce((m, t) => Math.max(m, t.number), 0) + 1;
       const at = now();
-      const status = initialStatus(input);
-      const done = status === "done";
+      const settled = initialStatus(input);
       const ticket: Ticket = {
         id: `${input.projectKey}-${number}`,
         number,
@@ -433,14 +432,14 @@ export function createMemoryStore(): RelayStore {
         projectId: input.projectId,
         ...(input.goalId ? { goalId: input.goalId } : {}),
         ...(input.ownerId ? { ownerId: input.ownerId } : {}),
-        status,
-        ...(!done && input.waitingOn ? { waitingOn: input.waitingOn } : {}),
+        status: settled.status,
+        ...(settled.waitingOn ? { waitingOn: settled.waitingOn } : {}),
         progress: input.progress ?? [],
         updates: [],
         ...(input.stuckWhy ? { stuckWhy: input.stuckWhy } : {}),
         ...(input.startsAt ? { startsAt: input.startsAt } : {}),
         statusAt: at,
-        ...(done ? { doneAt: at } : {}),
+        ...(settled.status === "done" ? { doneAt: at } : {}),
         createdAt: at,
       };
       tickets.set(ticket.id, ticket);
@@ -477,6 +476,7 @@ export function createMemoryStore(): RelayStore {
       id: string;
       ownerId: string;
       channelId: string;
+      access?: OpenConversationInput["access"];
     }) {
       /* No await: the owner write and the new thread land together (D-#776).
          The owner's channel was opened before this call. */
@@ -494,6 +494,7 @@ export function createMemoryStore(): RelayStore {
         cwd: project.folder,
         projectId: project.id,
         ticketId: ticket.id,
+        ...(input.access !== undefined ? { access: input.access } : {}),
       });
       return {
         ticket,

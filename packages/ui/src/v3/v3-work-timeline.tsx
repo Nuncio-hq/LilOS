@@ -4,12 +4,11 @@ import { AgentAvatar, DOT } from "./v3-marks";
 import type { V3Status } from "./v3-types";
 import type { WorkViewProps } from "./v3-work-views";
 
-/* Today as one strip, 08:00 to 18:00: a row per agent, a bar per thread. The
-   mock company's clock is fixed at 12:04, so the "now" line is too. */
+/* Today as one strip, 08:00 to 18:00: a row per agent, a bar per thread.
+   The "now" line is the clock on this machine, not a fixed mock time. */
 
 const DAY_START = 8 * 60;
 const DAY_END = 18 * 60;
-const NOW = 12 * 60 + 4;
 /** A planned ticket has no estimate yet; draw it an hour long. */
 const PLANNED_LEN = 60;
 const LANE = 28;
@@ -56,6 +55,9 @@ const HOURS = Array.from(
 );
 
 export function TimelineView({ data, go, tickets }: WorkViewProps) {
+  const clock = new Date();
+  const nowMin = clock.getHours() * 60 + clock.getMinutes();
+  const nowLabel = `${String(clock.getHours()).padStart(2, "0")}:${String(clock.getMinutes()).padStart(2, "0")}`;
   const visible = new Set(tickets.map((t) => t.id));
   const barsOf = (agentId: string): Bar[] => [
     ...data.threads
@@ -125,7 +127,7 @@ export function TimelineView({ data, go, tickets }: WorkViewProps) {
           ))}
           <span
             className="absolute inset-y-0 w-px bg-foreground/60"
-            style={{ left: `${pct(NOW)}%` }}
+            style={{ left: `${pct(nowMin)}%` }}
           />
         </div>
 
@@ -143,9 +145,9 @@ export function TimelineView({ data, go, tickets }: WorkViewProps) {
             ))}
             <span
               className="absolute -top-0.5 z-10 -translate-x-1/2 rounded bg-foreground px-1.5 text-[11px] text-background"
-              style={{ left: `${pct(NOW)}%` }}
+              style={{ left: `${pct(nowMin)}%` }}
             >
-              12:04
+              {nowLabel}
             </span>
           </div>
         </div>

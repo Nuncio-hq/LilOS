@@ -476,7 +476,6 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
         created_at INTEGER NOT NULL
       )`,
       `CREATE UNIQUE INDEX tickets_project_number ON tickets(project_id, number)`,
-      `CREATE INDEX tickets_project ON tickets(project_id)`,
       `CREATE INDEX tickets_goal ON tickets(goal_id)`,
       `ALTER TABLE conversations ADD COLUMN ticket_id TEXT REFERENCES tickets(id)`,
       `CREATE INDEX conversations_ticket ON conversations(ticket_id)`,
