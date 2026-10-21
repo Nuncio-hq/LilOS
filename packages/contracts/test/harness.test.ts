@@ -3,11 +3,15 @@ import { z } from "zod";
 import { buildSchemaDoc } from "../scripts/gen-schemas.js";
 import {
   BrowserClickParams,
+  GoalCreateParams,
   harnessProtocol,
   LILOS_TOOLS,
   PreviewTarget,
   TerminalRunParams,
   ThreadPostParams,
+  TicketCommentParams,
+  TicketCreateParams,
+  TicketUpdateParams,
   ViewerClientMsg,
   ViewerServerMsg,
 } from "../src/harness/index.js";
@@ -196,6 +200,29 @@ describe("AC-5 preview discovery contract", () => {
     expect(
       PreviewTarget.safeParse({ url: "http://x", via: "lsof" }).success,
     ).toBe(false);
+  });
+});
+
+describe("ticket and goal writes reject a blank title or comment", () => {
+  it("trims, and a whitespace-only value never parses", () => {
+    expect(
+      GoalCreateParams.parse({ project: "lil", title: "  Ship  " }).title,
+    ).toBe("Ship");
+    expect(
+      GoalCreateParams.safeParse({ project: "lil", title: "   " }).success,
+    ).toBe(false);
+    expect(
+      TicketCreateParams.safeParse({ project: "lil", title: " " }).success,
+    ).toBe(false);
+    expect(
+      TicketUpdateParams.safeParse({ id: "LIL-1", title: "\n" }).success,
+    ).toBe(false);
+    expect(
+      TicketCommentParams.safeParse({ id: "LIL-1", text: "  " }).success,
+    ).toBe(false);
+    expect(TicketCommentParams.parse({ id: "LIL-1", text: "  hi " }).text).toBe(
+      "hi",
+    );
   });
 });
 

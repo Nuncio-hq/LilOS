@@ -42,6 +42,7 @@ import {
 import {
   applyWrite,
   checkout,
+  commentUpdate,
   finish,
   initialStatus,
   wakeWaiter,
@@ -458,12 +459,7 @@ export function createMemoryStore(): RelayStore {
             waiter.waitingOn?.kind === "ticket" &&
             waiter.waitingOn.ticketId === id
           ) {
-            const moved = wakeWaiter(waiter, next, at, {
-              id: newId("upd"),
-              by: next.ownerId ?? "you",
-              at,
-              text: "",
-            });
+            const moved = wakeWaiter(waiter, next, at, newId("upd"));
             tickets.set(moved.id, moved);
             changed.push(moved);
           }
@@ -505,12 +501,10 @@ export function createMemoryStore(): RelayStore {
     async commentTicket(id: string, update: { by: string; text: string }) {
       const before = tickets.get(id);
       if (!before) return null;
-      const ticket = withUpdate(before, {
-        id: newId("upd"),
-        by: update.by,
-        at: now(),
-        text: update.text,
-      });
+      const ticket = withUpdate(
+        before,
+        commentUpdate(newId("upd"), update.by, update.text, now()),
+      );
       tickets.set(ticket.id, ticket);
       return ticket;
     },

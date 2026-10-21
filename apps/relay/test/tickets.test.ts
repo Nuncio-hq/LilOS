@@ -130,9 +130,13 @@ describe("tickets", () => {
     expect(done?.waitingOn).toBeUndefined();
     expect(moved?.status).toBe("working");
     expect(moved?.waitingOn).toBeUndefined();
-    expect(moved?.updates.at(-1)?.text).toBe(
-      `${blocker.id} is done, so this can move.`,
-    );
+    expect(moved?.updates.at(-1)).toEqual({
+      id: expect.any(String),
+      authorKind: "system",
+      at: expect.any(Number),
+      text: `${blocker.id} is done, so this can move.`,
+    });
+    expect(moved?.updates.at(-1)?.by).toBeUndefined();
   });
 
   it("a comment from a person is stamped you", async () => {
@@ -147,7 +151,11 @@ describe("tickets", () => {
       by: "emp_nope",
     });
     expect(updated.ticket.updates).toEqual([
-      expect.objectContaining({ by: "you", text: "Looked at it" }),
+      expect.objectContaining({
+        authorKind: "user",
+        by: "you",
+        text: "Looked at it",
+      }),
     ]);
   });
 

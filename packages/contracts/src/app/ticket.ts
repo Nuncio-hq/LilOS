@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AppMessage, Conversation, Timestamp } from "./domain";
+import { AppMessage, AuthorKind, Conversation, Timestamp } from "./domain";
 
 /**
  * Goals and tickets (D-#776). The relay owns both. A ticket's id is its
@@ -70,8 +70,13 @@ export type TicketResult = z.infer<typeof TicketResult>;
 
 export const TicketUpdate = z.object({
   id: z.string().min(1),
-  /** An employee id, or "you" for the human. */
-  by: z.string().min(1),
+  /** Who wrote it. The same kinds a message uses: `user` the human,
+      `employee` an agent, `system` LilOS itself. A system note names
+      nobody — a waiter unblocked when its blocker finishes is LilOS,
+      not the ticket's owner. */
+  authorKind: AuthorKind,
+  /** Employee id, or "you" for the human. Absent when LilOS wrote it. */
+  by: z.string().min(1).optional(),
   at: Timestamp,
   text: z.string(),
 });

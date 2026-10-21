@@ -1,9 +1,9 @@
-import type {
-  Ticket,
-  TicketStatus,
-  TicketStep,
+import {
+  type Ticket,
+  type TicketStatus,
+  type TicketStep,
   TicketUpdate,
-  TicketWaitingOn,
+  type TicketWaitingOn,
 } from "@lilos/contracts/app";
 
 /**
@@ -141,12 +141,13 @@ export function finish(ticket: Ticket, at: number): Ticket {
 }
 
 /** The waiter can move: working when someone holds it, otherwise planned.
-    The update names the ticket that unblocked it. */
+    LilOS writes the note (`authorKind: "system"`). It is not the owner's
+    comment, so it carries no `by`. */
 export function wakeWaiter(
   waiter: Ticket,
   done: Ticket,
   at: number,
-  update: TicketUpdate,
+  updateId: string,
 ): Ticket {
   const next = drop(waiter, "waitingOn");
   return {
@@ -155,9 +156,63 @@ export function wakeWaiter(
     statusAt: at,
     updates: [
       ...waiter.updates,
-      { ...update, text: `${done.id} is done, so this can move.` },
+      {
+        id: updateId,
+        authorKind: "system",
+        at,
+        text: `${done.id} is done, so this can move.`,
+      },
     ],
   };
+}
+
+/** A comment from a person (`you`) or an employee. System notes are not
+    comments; `wakeWaiter` writes those. */
+export function commentUpdate(
+  id: string,
+  by: string,
+  text: string,
+  at: number,
+): TicketUpdate {
+  return {
+    id,
+    authorKind: by === "you" ? "user" : "employee",
+    by,
+    at,
+    text,
+  };
+}
+
+/** Updates stored before `authorKind` existed name a person in `by`.
+    A row with neither is LilOS. The filled row is checked against the
+    contract, so a corrupt blob still fails closed. */
+export function parseUpdates(json: string): TicketUpdate[] {
+  const rows: unknown = JSON.parse(json);
+  if (!Array.isArray(rows)) return TicketUpdate.array().parse(rows);
+  return rows.map((row) => {
+    const u = row as {
+      id?: unknown;
+      authorKind?: unknown;
+      by?: unknown;
+      at?: unknown;
+      text?: unknown;
+    };
+    const by = typeof u.by === "string" ? u.by : undefined;
+    const kind = u.authorKind;
+    const authorKind =
+      kind === "system" || (kind === undefined && !by)
+        ? "system"
+        : kind === "user" || kind === "employee"
+          ? kind
+          : by === "you"
+            ? "user"
+            : "employee";
+    return TicketUpdate.parse(
+      authorKind === "system"
+        ? { id: u.id, authorKind, at: u.at, text: u.text }
+        : { id: u.id, authorKind, by: by ?? "you", at: u.at, text: u.text },
+    );
+  });
 }
 
 export function withUpdate(ticket: Ticket, update: TicketUpdate): Ticket {

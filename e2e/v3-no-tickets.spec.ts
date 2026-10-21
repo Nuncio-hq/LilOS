@@ -105,6 +105,7 @@ test("no CEO copy, and a person can be given a ticket", async ({ page }) => {
   // new-chat draft beside People: none of them carries the words.
   const pages: [string, string][] = [
     ["#?page=home", "Good afternoon"],
+    ["#?page=inbox", "Good afternoon"],
     ["#?page=needs", "Needs you"],
     ["#?page=threads", "Threads"],
     ["#?page=threads&view=all", "Threads"],

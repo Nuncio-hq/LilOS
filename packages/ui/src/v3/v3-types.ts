@@ -162,8 +162,10 @@ export type V3ProgressStep = {
 };
 
 export type V3Comment = {
-  /** Agent id, or "you". */
-  by: string;
+  /** `system` is LilOS and names nobody. Absent is a person: `by` names them. */
+  authorKind?: "user" | "employee" | "system";
+  /** Agent id, or "you". Absent for a system note. */
+  by?: string;
   /** Minutes ago. */
   ago: number;
   text: string;

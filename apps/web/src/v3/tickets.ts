@@ -38,7 +38,8 @@ export function v3Tickets(tickets: readonly Ticket[], now: number): V3Ticket[] {
     progress: stepsOf(t.progress),
     ...(t.result ? { result: t.result } : {}),
     updates: t.updates.map((u) => ({
-      by: u.by,
+      authorKind: u.authorKind,
+      ...(u.by ? { by: u.by } : {}),
       ago: ago(u.at, now),
       text: u.text,
     })),

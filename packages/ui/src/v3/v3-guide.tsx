@@ -44,15 +44,18 @@ export function V3Guide(props: V3PageProps) {
 }
 
 function V3GuideTickets({ data, go }: V3PageProps) {
-  /* A real ticket, preferring one that already has a thread. No company
-     data means the example section is absent — never a made-up id. */
+  /* A real ticket, preferring one that changed hands (more than one
+     thread). The goal and thread examples fall back to the first of each
+     when the ticket has none. A count of zero is left off the row. */
   const ticket =
+    data.tickets.find((t) => threadsOf(data, t.id).length > 1) ??
     data.tickets.find((t) => threadsOf(data, t.id).length > 0) ??
     data.tickets[0];
   const hops = ticket ? threadsOf(data, ticket.id) : [];
-  const goal = ticket?.goalId ? goalOf(data, ticket.goalId) : undefined;
+  const goal =
+    (ticket?.goalId ? goalOf(data, ticket.goalId) : undefined) ?? data.goals[0];
   const goalCount = goal ? goalProgress(data, goal.id).total : 0;
-  const thread = hops[0];
+  const thread = hops[0] ?? data.threads[0];
   // Turns the app does not carry (empty) leave their counts out, never 0.
   const turn = thread?.turns[0];
   const run =
@@ -65,7 +68,7 @@ function V3GuideTickets({ data, go }: V3PageProps) {
     {
       name: "Goal",
       eg: goal?.title ?? "A goal",
-      n: `${goalCount} tickets`,
+      n: goalCount > 0 ? `${goalCount} tickets` : "",
       df: hasCeo
         ? "What the company wants. The CEO splits it into tickets."
         : "What the company wants, split into tickets.",
@@ -74,7 +77,7 @@ function V3GuideTickets({ data, go }: V3PageProps) {
     {
       name: "Ticket",
       eg: ticket ? `${ticket.id} ${ticket.title}` : "A ticket",
-      n: `${hops.length} threads`,
+      n: hops.length > 0 ? `${hops.length} threads` : "",
       df: "One piece of work: one owner, one status at a time.",
       go: ticket ? () => go({ page: "ticket", id: ticket.id }) : undefined,
     },
@@ -145,7 +148,7 @@ function V3GuideTickets({ data, go }: V3PageProps) {
         })}
       </div>
 
-      {ticket && hops.length > 0 && (
+      {ticket && hops.length > 1 && (
         <>
           <Section
             title={`${ticket.id} changed hands ${Math.max(hops.length - 1, 0)} times`}

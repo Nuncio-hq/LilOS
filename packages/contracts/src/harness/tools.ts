@@ -546,7 +546,8 @@ export type GoalListResult = z.infer<typeof GoalListResult>;
 export const GoalCreateParams = z.strictObject({
   /** A project's id or key. */
   project: z.string().min(1),
-  title: z.string().min(1),
+  /** Trimmed before the approval card: a blank title never opens an ask. */
+  title: z.string().trim().min(1),
   due: z.string().optional(),
   why: z.string().optional(),
   /** Employee id. Omit to propose a goal the human owns. Either way the
@@ -571,7 +572,7 @@ export type TicketReadResult = z.infer<typeof TicketReadResult>;
 
 export const TicketCreateParams = z.strictObject({
   project: z.string().min(1),
-  title: z.string().min(1),
+  title: z.string().trim().min(1),
   goalId: z.string().min(1).optional(),
   ownerId: z.string().min(1).optional(),
   status: TicketStatus.optional(),
@@ -586,7 +587,7 @@ export type TicketCreateResult = z.infer<typeof TicketCreateResult>;
 
 export const TicketUpdateParams = z.strictObject({
   id: z.string().min(1),
-  title: z.string().min(1).optional(),
+  title: z.string().trim().min(1).optional(),
   goalId: z.string().min(1).nullable().optional(),
   status: TicketStatus.optional(),
   waitingOn: TicketWaitingOn.nullable().optional(),
@@ -615,7 +616,7 @@ export type TicketAssignResult = z.infer<typeof TicketAssignResult>;
 
 export const TicketCommentParams = z.strictObject({
   id: z.string().min(1),
-  text: z.string().min(1),
+  text: z.string().trim().min(1),
 });
 export type TicketCommentParams = z.infer<typeof TicketCommentParams>;
 export const TicketCommentResult = z.object({ ticket: TicketSchema });

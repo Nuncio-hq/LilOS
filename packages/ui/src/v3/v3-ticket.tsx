@@ -11,7 +11,16 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "../lib/utils";
-import { ago, Btn, Diff, Page, Prop, Section, span, Title } from "./v3-bits";
+import {
+  Btn,
+  Diff,
+  Page,
+  Prop,
+  relativeTime,
+  Section,
+  span,
+  Title,
+} from "./v3-bits";
 import type { V3Data } from "./v3-data-types";
 import { AgentAvatar, Avatar, StatusPill } from "./v3-marks";
 import {
@@ -209,13 +218,24 @@ function Updates({
   return (
     <>
       <Section title="Updates" count={t.updates.length || undefined} />
-      {t.updates.map((u) => {
-        const you = u.by === "you";
-        const by = you ? undefined : agentOf(data, u.by);
-        const name = !u.by ? "" : you ? data.me : (by?.name ?? FORMER_AGENT);
+      {t.updates.map((u, i) => {
+        /* LilOS wrote it (a blocker finished). No person, no face. */
+        if (u.authorKind === "system") {
+          return (
+            <div key={`system-${i}`} className="py-2.5">
+              <div className="text-[13.5px] text-muted-foreground/70">
+                {relativeTime(u.ago)}
+              </div>
+              <p className="mt-0.5 text-[14.5px] leading-[1.55]">{u.text}</p>
+            </div>
+          );
+        }
+        const you = u.authorKind === "user" || u.by === "you";
+        const by = you || !u.by ? undefined : agentOf(data, u.by);
+        const name = you ? data.me : u.by ? (by?.name ?? FORMER_AGENT) : "";
         return (
           <div key={`${u.by}-${u.ago}-${u.text}`} className="flex gap-3 py-2.5">
-            {!u.by ? (
+            {!name ? (
               <span className="mt-0.5 size-6 shrink-0 rounded-full bg-muted" />
             ) : you ? (
               <Avatar name={name} tone="n" size={24} className="mt-0.5" />
@@ -231,7 +251,7 @@ function Updates({
               <div className="text-[13.5px]">
                 {name && <b className="mr-2 font-semibold">{name}</b>}
                 <span className="text-muted-foreground/70">
-                  {ago(u.ago)} ago
+                  {relativeTime(u.ago)}
                 </span>
               </div>
               <p className="mt-0.5 text-[14.5px] leading-[1.55]">{u.text}</p>
@@ -300,7 +320,7 @@ export function V3TicketPage({
           )}
           {t.status === "done" && (
             <span className="text-muted-foreground">
-              {ago(t.doneAgo ?? 0)} ago
+              {relativeTime(t.doneAgo ?? 0)}
             </span>
           )}
         </Prop>

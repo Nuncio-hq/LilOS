@@ -9565,6 +9565,14 @@
                 "type": "string",
                 "minLength": 1
               },
+              "authorKind": {
+                "type": "string",
+                "enum": [
+                  "user",
+                  "employee",
+                  "system"
+                ]
+              },
               "by": {
                 "type": "string",
                 "minLength": 1
@@ -9580,7 +9588,7 @@
             },
             "required": [
               "id",
-              "by",
+              "authorKind",
               "at",
               "text"
             ]
@@ -9831,6 +9839,14 @@
                       "type": "string",
                       "minLength": 1
                     },
+                    "authorKind": {
+                      "type": "string",
+                      "enum": [
+                        "user",
+                        "employee",
+                        "system"
+                      ]
+                    },
                     "by": {
                       "type": "string",
                       "minLength": 1
@@ -9846,7 +9862,7 @@
                   },
                   "required": [
                     "id",
-                    "by",
+                    "authorKind",
                     "at",
                     "text"
                   ]
@@ -10104,6 +10120,14 @@
                     "type": "string",
                     "minLength": 1
                   },
+                  "authorKind": {
+                    "type": "string",
+                    "enum": [
+                      "user",
+                      "employee",
+                      "system"
+                    ]
+                  },
                   "by": {
                     "type": "string",
                     "minLength": 1
@@ -10119,7 +10143,7 @@
                 },
                 "required": [
                   "id",
-                  "by",
+                  "authorKind",
                   "at",
                   "text"
                 ]
@@ -10713,6 +10737,14 @@
                       "type": "string",
                       "minLength": 1
                     },
+                    "authorKind": {
+                      "type": "string",
+                      "enum": [
+                        "user",
+                        "employee",
+                        "system"
+                      ]
+                    },
                     "by": {
                       "type": "string",
                       "minLength": 1
@@ -10728,7 +10760,7 @@
                   },
                   "required": [
                     "id",
-                    "by",
+                    "authorKind",
                     "at",
                     "text"
                   ]
@@ -10991,6 +11023,14 @@
                     "type": "string",
                     "minLength": 1
                   },
+                  "authorKind": {
+                    "type": "string",
+                    "enum": [
+                      "user",
+                      "employee",
+                      "system"
+                    ]
+                  },
                   "by": {
                     "type": "string",
                     "minLength": 1
@@ -11006,7 +11046,7 @@
                 },
                 "required": [
                   "id",
-                  "by",
+                  "authorKind",
                   "at",
                   "text"
                 ]
@@ -11678,6 +11718,14 @@
                     "type": "string",
                     "minLength": 1
                   },
+                  "authorKind": {
+                    "type": "string",
+                    "enum": [
+                      "user",
+                      "employee",
+                      "system"
+                    ]
+                  },
                   "by": {
                     "type": "string",
                     "minLength": 1
@@ -11693,7 +11741,7 @@
                 },
                 "required": [
                   "id",
-                  "by",
+                  "authorKind",
                   "at",
                   "text"
                 ]

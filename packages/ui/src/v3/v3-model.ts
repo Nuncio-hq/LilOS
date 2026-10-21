@@ -242,6 +242,8 @@ export function resultsToLookAt(data: V3Data): LookAtRow[] {
       title: t.title,
       ticketId: t.id,
       tag: t.id,
+      /* Empty when nobody holds it. The thread's agent is not a stand-in:
+         the row says Unassigned, not Former agent. */
       by: t.owner,
       note: th?.summary ?? (pr ? `PR #${pr.num} · ${pr.branch}` : "Done"),
       minutes: t.doneAgo ?? 0,

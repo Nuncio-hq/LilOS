@@ -73,22 +73,24 @@ export function TicketMoves({
   if (t.status === "done") return null;
   const handOff = act.handOff;
   const markDone = act.markDone;
-  if (!handOff && !markDone) return null;
+  /* Nobody to hand it to: the button would open an empty list (D-#19). */
+  const canHand = !!handOff && data.agents.length > 0;
+  if (!canHand && !markDone) return null;
   return (
     <>
-      {handOff && (
+      {canHand && (
         <Btn small onClick={() => setPicking((p) => !p)}>
           Hand to …
         </Btn>
       )}
-      {handOff &&
+      {canHand &&
         picking &&
         data.agents.map((a) => (
           <Btn
             small
             key={a.id}
             onClick={() => {
-              handOff(t.id, a.id);
+              handOff?.(t.id, a.id);
               setPicking(false);
             }}
           >
@@ -112,8 +114,13 @@ export function AskNote({
   act,
 }: { data: V3Data; t: V3Ticket } & Pick<V3PageProps, "act">) {
   const w = t.waitingOn;
+  /* The relay's wait on you carries no ask id (waitingOf sets askId "").
+     The ask is the one filed on this ticket. */
   const ask =
-    w?.kind === "you" ? data.asks.find((a) => a.id === w.askId) : undefined;
+    w?.kind === "you"
+      ? (data.asks.find((a) => a.ticketId === t.id) ??
+        (w.askId ? data.asks.find((a) => a.id === w.askId) : undefined))
+      : undefined;
   if (!ask) return null;
   const answers = ask.kind === "question" ? (ask.options ?? []) : undefined;
   return (

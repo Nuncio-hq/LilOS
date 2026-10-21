@@ -26,7 +26,6 @@ import {
   TicketResult,
   TicketStatus,
   TicketStep,
-  TicketUpdate,
   TicketWaitingOn,
   toSummaryMessage,
   toSummaryPreview,
@@ -88,8 +87,10 @@ import {
 import {
   applyWrite,
   checkout,
+  commentUpdate,
   finish,
   initialStatus,
+  parseUpdates,
   wakeWaiter,
   withUpdate,
 } from "../work";
@@ -255,7 +256,7 @@ const rowToTicket = (row: TicketRow): Ticket => {
     ...(waiting ? { waitingOn: waiting } : {}),
     progress: TicketStep.array().parse(JSON.parse(row.progress)),
     ...(result ? { result } : {}),
-    updates: TicketUpdate.array().parse(JSON.parse(row.updates)),
+    updates: parseUpdates(row.updates),
     ...(row.stuckWhy ? { stuckWhy: row.stuckWhy } : {}),
     ...(row.startsAt ? { startsAt: row.startsAt } : {}),
     statusAt: row.statusAt,
@@ -1076,12 +1077,7 @@ export function createDrizzleStore(db: Db): RelayStore {
               waiter.waitingOn?.kind === "ticket" &&
               waiter.waitingOn.ticketId === id
             ) {
-              const moved = wakeWaiter(waiter, next, at, {
-                id: newId("upd"),
-                by: next.ownerId ?? "you",
-                at,
-                text: "",
-              });
+              const moved = wakeWaiter(waiter, next, at, newId("upd"));
               tx.update(schema.tickets)
                 .set(ticketToRow(moved))
                 .where(eq(schema.tickets.id, moved.id))
@@ -1148,12 +1144,10 @@ export function createDrizzleStore(db: Db): RelayStore {
         .where(eq(schema.tickets.id, id))
         .get();
       if (!row) return null;
-      const ticket = withUpdate(rowToTicket(row), {
-        id: newId("upd"),
-        by: update.by,
-        at: now(),
-        text: update.text,
-      });
+      const ticket = withUpdate(
+        rowToTicket(row),
+        commentUpdate(newId("upd"), update.by, update.text, now()),
+      );
       db.update(schema.tickets)
         .set(ticketToRow(ticket))
         .where(eq(schema.tickets.id, id))

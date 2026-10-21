@@ -94,6 +94,16 @@ describe("visibleNav", () => {
     expect(visibleNav(nav, false)).toBe(nav);
   });
 
+  test("an empty inbox is Home while tickets are on; one with updates stays", () => {
+    const inbox: V3Nav = { page: { page: "inbox" }, peek: [] };
+    expect(visibleNav(inbox, true, false)).toEqual({
+      page: { page: "home" },
+      peek: [],
+    });
+    expect(visibleNav(inbox, true, true)).toBe(inbox);
+    expect(visibleNav(inbox, true)).toBe(inbox);
+  });
+
   test("a project is a folder, not a ticket: its record is drawn without tickets", () => {
     const nav: V3Nav = {
       page: { page: "threads" },
