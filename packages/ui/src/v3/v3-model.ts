@@ -1,4 +1,5 @@
 import type { V3Ask, V3Data } from "./v3-data-types";
+import { soonestRun } from "./v3-schedule-text";
 import type { V3Agent, V3Status, V3Thread, V3Ticket } from "./v3-types";
 
 /* Lookups every v3 page shares. Pure; the shell owns the data. */
@@ -131,12 +132,100 @@ export function goalProgress(d: V3Data, goalId: string) {
   };
 }
 
-/** The counts strip under a title: how many agents sit in each status. */
-export function teamCounts(d: V3Data) {
-  const c: Partial<Record<V3Status, number>> = {};
-  for (const a of d.agents) {
-    const s = agentStatus(d, a.id);
-    c[s] = (c[s] ?? 0) + 1;
+/** Threads on the live board, in board order. A finished thread is on it
+    only while you have not seen it. Home's idle count is who is not here:
+    the same agents Threads draws as idle cards (D-#774). */
+export const LIVE_RANK: Partial<Record<V3Status, number>> = {
+  needs: 0,
+  stuck: 1,
+  failed: 1.5,
+  working: 2,
+  done: 3,
+};
+
+export const onLiveBoard = (t: V3Thread): boolean =>
+  t.status in LIVE_RANK && (t.status !== "done" || t.unseen === true);
+
+/** How many threads wear one status. Home and Threads both read this, so
+    the two pages cannot disagree (D-#774). Status itself is `threadStatus`
+    in client-runtime (D-#33); this only counts. */
+export const threadsIn = (
+  threads: readonly V3Thread[],
+  status: V3Status,
+): number => threads.filter((t) => t.status === status).length;
+
+/** Finished, and not opened since. */
+export const unseenThreads = (threads: readonly V3Thread[]): V3Thread[] =>
+  threads.filter((t) => t.status === "done" && t.unseen);
+
+/** Agents with nothing on the live board. */
+export function asleepAgents(d: V3Data): V3Agent[] {
+  const busy = new Set(d.threads.filter(onLiveBoard).map((t) => t.agentId));
+  return d.agents.filter((a) => !busy.has(a.id));
+}
+
+/** An idle agent's next scheduled run, "Morning triage · Tomorrow 09:00".
+    The soonest by `nextAt` (D-#774). Absent when nothing will run; the
+    row then keeps `agent.next`. */
+export function nextRunLabel(d: V3Data, agentId: string): string | undefined {
+  const s = soonestRun(d.schedules.filter((x) => x.agentId === agentId));
+  return s ? `${s.title} · ${s.next}` : undefined;
+}
+
+/** One finished thing to look at. Needs you and Home share this list
+    (D-#774): unseen threads, then a done ticket from the last three hours
+    that no unseen thread already covers. */
+export interface LookAtRow {
+  key: string;
+  title: string;
+  ticketId?: string;
+  /** Where it lives: its ticket, its project, or "Chat". */
+  tag: string;
+  by: string;
+  note: string;
+  minutes: number;
+  threadId?: string;
+  unseen: boolean;
+}
+
+export function resultsToLookAt(data: V3Data): LookAtRow[] {
+  const rows: LookAtRow[] = [];
+  const seenTickets = new Set<string>();
+  for (const th of unseenThreads(data.threads)) {
+    const t = th.ticketId ? ticketOf(data, th.ticketId) : undefined;
+    if (th.ticketId) seenTickets.add(th.ticketId);
+    rows.push({
+      key: th.id,
+      title: th.title,
+      ticketId: th.ticketId,
+      tag: threadTag(data, th),
+      by: th.agentId,
+      note: th.quote ? `“${th.quote}”` : (th.summary ?? ""),
+      minutes: th.doneAgo ?? t?.doneAgo ?? t?.since ?? 0,
+      threadId: th.id,
+      unseen: true,
+    });
   }
-  return c;
+  for (const t of data.tickets) {
+    if (
+      t.status !== "done" ||
+      (t.doneAgo ?? Number.POSITIVE_INFINITY) >= 180 ||
+      seenTickets.has(t.id)
+    )
+      continue;
+    const th = threadsOf(data, t.id).at(-1);
+    const pr = t.result?.pr;
+    rows.push({
+      key: t.id,
+      title: t.title,
+      ticketId: t.id,
+      tag: t.id,
+      by: t.owner,
+      note: th?.summary ?? (pr ? `PR #${pr.num} · ${pr.branch}` : "Done"),
+      minutes: t.doneAgo ?? 0,
+      threadId: th?.id,
+      unseen: false,
+    });
+  }
+  return rows.sort((a, b) => a.minutes - b.minutes);
 }

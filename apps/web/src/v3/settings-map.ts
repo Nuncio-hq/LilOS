@@ -138,8 +138,9 @@ export const deviceOf = (
 });
 
 /** A relay task as a v3 schedule, losslessly: `when` is the same record,
-    `next` is the real next run (cron walked, a past "once" is over), and a
-    run opens its thread by the conversation it made (only when that
+    `next` is the real next run in words and `nextAt` is that same instant
+    (cron walked, a past "once" is over — words are not an order, D-#774),
+    and a run opens its thread by the conversation it made (only when that
     conversation is known here: `knownThreads` holds the ids of the ones that
     are). */
 export function scheduleOf(
@@ -160,6 +161,7 @@ export function scheduleOf(
     prompt: task.prompt,
     when: task.schedule,
     next: next ? whenWords(next, now) : "No more runs",
+    ...(next ? { nextAt: next.getTime() } : {}),
     ...(task.folder !== undefined ? { folder: task.folder } : {}),
     ...(task.paused ? { paused: true } : {}),
     ...(task.access === "full" ? { fullAccess: true } : {}),

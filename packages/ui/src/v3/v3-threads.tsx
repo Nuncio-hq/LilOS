@@ -9,7 +9,14 @@ import type { ReactNode } from "react";
 import { cn } from "../lib/utils";
 import { Btn, Page, Section, Tabs, Title } from "./v3-bits";
 import { AgentAvatar, DOT } from "./v3-marks";
-import { defaultAgent } from "./v3-model";
+import {
+  asleepAgents,
+  defaultAgent,
+  LIVE_RANK,
+  onLiveBoard,
+  threadsIn,
+  unseenThreads,
+} from "./v3-model";
 import type { V3PageProps } from "./v3-page-types";
 import { ScheduledView } from "./v3-schedules";
 import { IdleCard, ThreadCard } from "./v3-thread-card";
@@ -31,28 +38,23 @@ const TABS: { id: View; label: string; icon: ReactNode }[] = [
   { id: "scheduled", label: "Scheduled", icon: <CalendarClockIcon /> },
 ];
 
-/** Live board order: what needs a person first. A failed thread surfaces
-   right after a stuck one, so it never hides in the history. */
-const RANK: Partial<Record<V3Status, number>> = {
-  needs: 0,
-  stuck: 1,
-  failed: 1.5,
-  working: 2,
-  done: 3,
-};
-
 /** How many finished threads "Earlier today" lists; All has the rest. */
 const EARLIER = 12;
 
 function Summary({ threads }: { threads: V3Thread[] }) {
-  const n = (s: V3Status) => threads.filter((t) => t.status === s).length;
+  /* The same counts Home prints (D-#774). Zeros stay: this page is the
+     board, and an empty board should say so. */
   const items: { status: V3Status; count: number; word: string }[] = [
-    { status: "working", count: n("working"), word: "working" },
-    { status: "needs", count: n("needs"), word: "needs you" },
-    { status: "stuck", count: n("stuck"), word: "stuck" },
+    {
+      status: "working",
+      count: threadsIn(threads, "working"),
+      word: "working",
+    },
+    { status: "needs", count: threadsIn(threads, "needs"), word: "needs you" },
+    { status: "stuck", count: threadsIn(threads, "stuck"), word: "stuck" },
     {
       status: "done",
-      count: threads.filter((t) => t.status === "done" && t.unseen).length,
+      count: unseenThreads(threads).length,
       word: "finished, not seen",
     },
   ];
@@ -76,12 +78,10 @@ function Summary({ threads }: { threads: V3Thread[] }) {
 function Live(p: V3PageProps) {
   const { data, go } = p;
   const board = data.threads
-    .filter((t) => t.status in RANK && (t.status !== "done" || t.unseen))
-    .sort((a, b) => (RANK[a.status] ?? 9) - (RANK[b.status] ?? 9));
+    .filter(onLiveBoard)
+    .sort((a, b) => (LIVE_RANK[a.status] ?? 9) - (LIVE_RANK[b.status] ?? 9));
   // An agent with nothing on the board is asleep; its card says what wakes it.
-  const asleep = data.agents.filter(
-    (a) => !board.some((t) => t.agentId === a.id),
-  );
+  const asleep = asleepAgents(data);
   // Threads arrive newest first, so the head of the list is the newest.
   const finished = data.threads.filter((t) => t.status === "done" && !t.unseen);
   const earlier = finished.slice(0, EARLIER);

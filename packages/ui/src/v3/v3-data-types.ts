@@ -35,8 +35,11 @@ export type V3Schedule = {
   /** What the agent is told each time. */
   prompt: string;
   when: V3ScheduleWhen;
-  /** Next run, in words ("Tomorrow 09:00"). */
+  /** Next run, in words ("Tomorrow 09:00"). Display only. */
   next: string;
+  /** That same run, epoch ms. Absent when it will not run again. Lists
+      order by this, never by the words in `next` (D-#774). */
+  nextAt?: number;
   paused?: boolean;
   /** Runs without asking before risky commands: nobody is there at 2am
      to approve, so the schedule says up front what it may do. */

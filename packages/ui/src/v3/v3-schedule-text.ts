@@ -129,25 +129,22 @@ export function nextWords(w: When, now = new Date()): string | null {
   return d ? whenWords(d, now) : null;
 }
 
-/* Sooner-first rank for the phrases a saved schedule carries ("Today 14:00",
-   "Tonight 02:00", "Tomorrow 09:00", then weekdays and dates in list order). */
-const RANK = [/^(now|today)/i, /^tonight/i, /^tomorrow/i];
+/** The schedule that fires next. Paused ones, and ones with no next fire
+    (a past once, a cron that does not parse), are skipped. Order is the
+    real time `nextAt`, never the words in `next`: "Wed 09:00" does not
+    sort ahead of "Mon 09:00" (D-#774). */
+export function soonestRun(
+  list: readonly V3Schedule[],
+): V3Schedule | undefined {
+  let best: V3Schedule | undefined;
+  for (const s of list) {
+    if (s.paused || s.nextAt === undefined) continue;
+    if (!best || s.nextAt < (best.nextAt ?? Number.POSITIVE_INFINITY)) best = s;
+  }
+  return best;
+}
 
-/** The soonest next run among active schedules, e.g. "Tomorrow 09:00". */
-export function soonestNext(list: V3Schedule[]): string | undefined {
-  const rank = (n: string) => {
-    const i = RANK.findIndex((re) => re.test(n));
-    return i < 0 ? RANK.length : i;
-  };
-  return list
-    .filter(
-      (s) => !s.paused && s.next !== PER_CRON && s.next !== "No more runs",
-    )
-    .sort(
-      (a, b) =>
-        rank(a.next) - rank(b.next) ||
-        (rank(a.next) < RANK.length
-          ? a.next.slice(-5).localeCompare(b.next.slice(-5))
-          : 0),
-    )[0]?.next;
+/** When that run is, in the words the schedule already carries. */
+export function soonestNext(list: readonly V3Schedule[]): string | undefined {
+  return soonestRun(list)?.next;
 }
