@@ -30,7 +30,7 @@ const TOOL_AREA_ORDER: readonly ToolArea[] = [
 ];
 
 const AREA_LINES: Record<ToolArea, string> = {
-  root: "- `context`/`guide`/`ask`: who and where this session is, how LilOS works, and `ask` waits on the user (`why`, `ifYes`, `ifNo`). Read `context` and `guide` first.",
+  root: "- `context`/`guide`/`ask`: read first; `ask` waits (`why`, `ifYes`, `ifNo`).",
   thread:
     "- `thread_*`: your threads with the user — `thread_read`/`thread_search`/`thread_list`/`thread_prs` to look around, `thread_post` to answer, `thread_set_title` to retitle yours while its title is auto, `thread_start` to ask for a new thread. Posting lands a real message; it is always allowed here and never possible in anyone else's thread.",
   team: "- `team_*`: the roster — `team_list` reads; `team_hire` and `team_update` (your own record only) ask the user to approve.",
