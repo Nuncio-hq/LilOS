@@ -1654,6 +1654,12 @@
                         },
                         "errorCode": {
                           "type": "number"
+                        },
+                        "model": {
+                          "type": "string"
+                        },
+                        "provider": {
+                          "type": "string"
                         }
                       },
                       "required": [
@@ -4455,6 +4461,12 @@
                   },
                   "errorCode": {
                     "type": "number"
+                  },
+                  "model": {
+                    "type": "string"
+                  },
+                  "provider": {
+                    "type": "string"
                   }
                 },
                 "required": [
