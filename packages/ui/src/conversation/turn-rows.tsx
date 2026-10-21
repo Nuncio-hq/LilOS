@@ -74,7 +74,7 @@ const isSettled = (r: Reply) =>
 
 /* A note LilOS wrote into the thread, set between hairlines so it never
    reads as a message. */
-function SysNote({ children }: { children: ReactNode }) {
+export function SysNote({ children }: { children: ReactNode }) {
   return (
     <div
       data-sysnote

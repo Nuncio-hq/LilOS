@@ -17,7 +17,13 @@ import { ensureAttachments, toAttachedFiles } from "../lib/attachments";
 import { loadDiscovered } from "../lib/folders";
 import { useAtom } from "../lib/hooks";
 import { hostOsOpen } from "../lib/host";
-import { clock, sessionLabel, threadUsage, toUiEmployee } from "../lib/mapping";
+import {
+  clock,
+  sessionLabel,
+  systemFacing,
+  threadUsage,
+  toUiEmployee,
+} from "../lib/mapping";
 import { osFullName, osHome, profile } from "../lib/me";
 import {
   engine,
@@ -205,13 +211,14 @@ export function useThreadWith(
         ? { pr: aux.listedPr }
         : {}),
   };
+  const face = root ? systemFacing(root) : undefined;
   const rootMsg: Extract<Msg, { kind: "msg" }> = root
     ? {
         kind: "msg",
         id: root.id,
-        from: root.authorId,
+        from: face?.from ?? root.authorId,
         time: clock(root.createdAt),
-        text: root.text,
+        text: face?.text ?? root.text,
         attachments: toAttachedFiles(root.attachments),
         thread,
       }

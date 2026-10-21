@@ -11,7 +11,7 @@ import type {
   Work,
 } from "../types";
 import { TranscriptNoteRow } from "./transcript-note";
-import { type TurnActs, TurnRow } from "./turn-rows";
+import { SysNote, type TurnActs, TurnRow } from "./turn-rows";
 import type { TurnWindow } from "./use-thread-frame";
 import { UserTurn } from "./user-turn";
 
@@ -73,7 +73,8 @@ export function TurnList({
       )}
       {/* A thread an agent opened has no first message from the person: its
           header still says when it began, and a bare byline under it would
-          say nothing. */}
+          say nothing. A system root (`from` empty) is a LilOS note — the
+          standing CEO wake — never the owner typing (D-#777). */}
       {(root.text || root.attachments?.length) && (
         <div
           data-msg={root.id}
@@ -82,22 +83,26 @@ export function TurnList({
             flash === root.id && "bg-amber-100 dark:bg-amber-900/40",
           )}
         >
-          <UserTurn
-            from={root.from}
-            time={root.time}
-            text={root.text}
-            human={human}
-            attachments={root.attachments}
-            rewind={
-              onRewind && root.id && human(root.from)
-                ? {
-                    running,
-                    warning: rewindWarning,
-                    onRewind: () => onRewind(root.id ?? ""),
-                  }
-                : undefined
-            }
-          />
+          {root.from === "" ? (
+            <SysNote>{root.text}</SysNote>
+          ) : (
+            <UserTurn
+              from={root.from}
+              time={root.time}
+              text={root.text}
+              human={human}
+              attachments={root.attachments}
+              rewind={
+                onRewind && root.id && human(root.from)
+                  ? {
+                      running,
+                      warning: rewindWarning,
+                      onRewind: () => onRewind(root.id ?? ""),
+                    }
+                  : undefined
+              }
+            />
+          )}
         </div>
       )}
       {/* Employee turns render through the one shared AgentTurn — same DOM in

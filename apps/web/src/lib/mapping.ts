@@ -367,20 +367,35 @@ type ReplySource = AppMessage | SummaryMessage;
    renderer (#430). #585: system rows carry `system` and keep their text
    bare — the renderer draws the centred note and the prefix is gone from
    what the reader sees. */
-const messageReply = (m: ReplySource): Reply => ({
-  id: m.id,
-  from: m.authorKind === "system" ? "" : m.authorId,
-  time: clock(m.createdAt),
-  /* A CEO wake is stored as the machine lines the engine reads. The
-     thread shows the short system note (D-#777). */
-  text: m.authorKind === "system" ? (ceoWakeNote(m.text) ?? m.text) : m.text,
-  ...(m.authorKind === "system" ? { system: true } : {}),
-  model: m.model,
-  effort: m.effort,
-  fast: m.fast,
-  phase: m.authorKind === "employee" ? "done" : undefined,
-  attachments: toAttachedFiles(m.attachments),
-});
+/** What the thread shows for one relay row. A system row is a note
+    (`from` empty), and a CEO wake's machine lines become the short
+    LilOS note. The engine still read the stored text (D-#777). */
+export function systemFacing(m: ReplySource): {
+  from: string;
+  text: string;
+  system: boolean;
+} {
+  if (m.authorKind !== "system") {
+    return { from: m.authorId, text: m.text, system: false };
+  }
+  return { from: "", text: ceoWakeNote(m.text) ?? m.text, system: true };
+}
+
+const messageReply = (m: ReplySource): Reply => {
+  const face = systemFacing(m);
+  return {
+    id: m.id,
+    from: face.from,
+    time: clock(m.createdAt),
+    text: face.text,
+    ...(face.system ? { system: true } : {}),
+    model: m.model,
+    effort: m.effort,
+    fast: m.fast,
+    phase: m.authorKind === "employee" ? "done" : undefined,
+    attachments: toAttachedFiles(m.attachments),
+  };
+};
 
 /** Relay channel messages for one conversation -> ui Reply[].
     `cache` (#430): pass a WeakMap keyed on the message row to keep Reply
@@ -808,12 +823,13 @@ export function toFeed(
       one is still running. */
   jobs?: BackgroundJob[],
 ): Msg {
+  const face = systemFacing(root);
   return {
     kind: "msg",
     id: root.id,
-    from: root.authorId,
+    from: face.from,
     time: clock(root.createdAt),
-    text: root.text,
+    text: face.text,
     attachments: toAttachedFiles(root.attachments),
     thread: {
       session: sessionLabel(conv.engineRef ?? conv.id),

@@ -167,8 +167,8 @@ test("a finished ticket wakes the CEO, who checks it and assigns the next", asyn
   page,
 }) => {
   test.setTimeout(180_000);
-  await ceoIdle(page);
   await openDefaultAgent(page, stack.webUrl);
+  await ceoIdle(page);
   const { ticket: first } = await relayRpc<{ ticket: { id: string } }>(
     page,
     stack,
@@ -229,8 +229,8 @@ test("a stuck thread is handed to another agent, with an update", async ({
   page,
 }) => {
   test.setTimeout(180_000);
-  await ceoIdle(page);
   await openDefaultAgent(page, stack.webUrl);
+  await ceoIdle(page);
   const { ticket } = await relayRpc<{ ticket: { id: string } }>(
     page,
     stack,
