@@ -1,9 +1,11 @@
+import type { EngineEvent } from "@lilos/contracts/engine";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { HarnessCtx, SessionBinding } from "../src/harness/ctx";
 import {
   markTurnInterrupted,
   surfaceBackendDown,
 } from "../src/harness/engine-attach";
+import { onEngineEvent } from "../src/harness/engine-events";
 import {
   beginStuckTurn,
   clearStuck,
@@ -17,6 +19,7 @@ import {
   stopStuckWatches,
   stuckReason,
 } from "../src/harness/stuck";
+import { finishTurn } from "../src/harness/turns";
 
 /* D-#772: the two thresholds, and that a different step or a fresh start
    drops the mark. The harness calls this on each tool and on the quiet
@@ -309,4 +312,140 @@ describe("stuck watch", () => {
     expect(row.stuck).toBeUndefined();
     expect(binding.stuckTimer).toBeUndefined();
   });
+
+  it("replaying a running stuck turn writes the mark once and does not push again", () => {
+    const { binding, ctx, writes, pushes } = replay({
+      reason: "Same web search 6 times",
+    });
+    onEngineEvent.call(ctx, started(1, "t-live"));
+    for (let i = 0; i < STUCK_REPEAT; i++)
+      onEngineEvent.call(ctx, tool(2 + i, "t-live", i));
+    expect(writes).toEqual([]);
+    finishStuckReplay(ctx, binding);
+    expect(writes).toEqual([{ reason: "Same web search 6 times" }]);
+    expect(writes).not.toContain(null);
+    expect(pushes).toEqual([]);
+    stopStuckWatches([binding]);
+  });
+
+  it("a different step after a restart clears the persisted mark", async () => {
+    const { binding, ctx, row, writes } = world({
+      reason: "Same web search 6 times",
+    });
+    expect(binding.stuckReason).toBeUndefined();
+    beginStuckTurn(ctx, binding);
+    noteStuckTool(
+      ctx,
+      binding,
+      { tool: "read_file", input: { path: "a.ts" }, at: Date.now() },
+      false,
+    );
+    await Promise.resolve();
+    expect(row.stuck).toBeUndefined();
+    expect(writes).toEqual([null]);
+  });
+
+  it("an earlier turn's finish does not wipe the later turn's watch", async () => {
+    const { binding, ctx, writes, pushes, hold } = replay({
+      reason: "Same web search 6 times",
+    });
+    binding.runningTurnId = "t-old";
+    const done = finishTurn.call(ctx, binding, {
+      seq: 1,
+      sessionId: "s1",
+      type: "turn.completed",
+      payload: { turnId: "t-old", stopReason: "end_turn" },
+    });
+    onEngineEvent.call(ctx, started(2, "t-live"));
+    for (let i = 0; i < STUCK_REPEAT; i++)
+      onEngineEvent.call(ctx, tool(3 + i, "t-live", i));
+    finishStuckReplay(ctx, binding);
+    expect(writes).toEqual([{ reason: "Same web search 6 times" }]);
+    expect(binding.stuckCalls).toHaveLength(STUCK_REPEAT);
+    hold();
+    await done;
+    expect(writes).toEqual([{ reason: "Same web search 6 times" }]);
+    expect(writes).not.toContain(null);
+    expect(pushes).toEqual([]);
+    expect(binding.runningTurnId).toBe("t-live");
+    expect(binding.stuckCalls).toHaveLength(STUCK_REPEAT);
+    stopStuckWatches([binding]);
+  });
 });
+
+function started(seq: number, turnId: string): EngineEvent {
+  return {
+    seq,
+    sessionId: "s1",
+    type: "turn.started",
+    payload: { turnId },
+  };
+}
+
+function tool(seq: number, turnId: string, n: number): EngineEvent {
+  return {
+    seq,
+    sessionId: "s1",
+    type: "tool.started",
+    payload: {
+      turnId,
+      toolCallId: `call-${n}`,
+      tool: "web_search",
+      input: { query: "journaling creators" },
+    },
+  };
+}
+
+/** A session mid-replay: engine events land on the real handler, and a
+    stuck write counts as a push only when the row was clear. */
+function replay(stuck?: { reason: string }) {
+  const base = world(stuck);
+  const { binding, row, writes } = base;
+  const pushes: string[] = [];
+  let wasStuck = !!row.stuck;
+  binding.sessionId = "s1";
+  binding.queue = [];
+  binding.consumed = new Set();
+  binding.turnSource = new Map();
+  binding.steerPending = [];
+  binding.pickByTurn = new Map();
+  binding.lastSeq = 0;
+  binding.stuckDefer = true;
+  let releasePost: () => void = () => {};
+  const held = new Promise<void>((resolve) => {
+    releasePost = resolve;
+  });
+  const ctx = base.ctx;
+  Object.assign(ctx, {
+    feedListeners: new Set(),
+    conversationBySession: new Map([["s1", "c1"]]),
+    bindings: new Map([["c1", binding]]),
+    seqOfMessage: () => undefined,
+    stopSeqs: new Map(),
+    exemptFromCurrentStop: () => false,
+    pendingInterrupts: new Set(),
+    dismissed: new Set(),
+    employeeIdFor: () => undefined,
+    scheduleSteerReconcile: () => {},
+    drainQueue: () => {},
+    opts: {
+      log: { warn: () => {}, info: () => {} },
+      sleep: { acquire: () => {}, release: () => {} },
+      relay: { request: async () => ({}) },
+    },
+    updateConversation: async (
+      _id: string,
+      patch: { stuck?: { reason: string } | null },
+    ) => {
+      if (!("stuck" in patch)) return;
+      const next = patch.stuck ?? null;
+      writes.push(next);
+      if (next && !wasStuck) pushes.push(next.reason);
+      if (next) row.stuck = next;
+      else delete row.stuck;
+      wasStuck = !!row.stuck;
+    },
+    postSystem: () => held,
+  });
+  return { ...base, pushes, hold: releasePost };
+}

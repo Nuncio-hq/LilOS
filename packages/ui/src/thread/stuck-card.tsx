@@ -38,8 +38,20 @@ export function StuckCard({
   );
 }
 
+/** D-#19: Message exists only when a send can land. `onSend` is that
+    handler; the terminal takeover blocks the composer even when it is
+    wired. */
+export function stuckMessageHandler(
+  onSend: unknown,
+  focus: () => void,
+  blocked = false,
+): (() => void) | undefined {
+  if (blocked || typeof onSend !== "function") return undefined;
+  return focus;
+}
+
 /** The composer's box, from the column that holds the card and the box. */
 export function focusThreadComposer(root: HTMLElement | null) {
-  const box = root?.querySelector("textarea");
+  const box = root?.querySelector("[data-composer] textarea");
   if (box instanceof HTMLTextAreaElement) box.focus();
 }

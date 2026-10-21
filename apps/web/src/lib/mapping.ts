@@ -655,9 +655,20 @@ export function mergeTurns(
        is the only surface the error has (same reason stopped stays).
        #585 AC-2: a turn whose ask was answered (denied, cancelled) keeps
        its card too — `requests` non-empty means the turn opened a request
-       the user resolved, and the card is the only surface of that outcome. */
+       the user resolved, and the card is the only surface of that outcome.
+       D-#772: a text-less turn that did work (steps, a landed steer, a
+       plan, a helper, the reasoning) still has rows. Mobile already keeps
+       them. Dropping them here let the silent-end note replace the card,
+       and the steer — hidden as landed — vanished with it. */
+    const didWork =
+      t.steps.length > 0 ||
+      t.steers.length > 0 ||
+      t.plans.length > 0 ||
+      t.subagents.length > 0 ||
+      t.reasoning.trim().length > 0;
     if (
       !t.text.trim() &&
+      !didWork &&
       t.phase !== "stopped" &&
       t.phase !== "failed" &&
       t.requests.length === 0 &&
@@ -721,7 +732,13 @@ export function mergeTurns(
      always stay. */
   const isNote = (b: Reply[]) => b.length === 1 && !!b[0].system;
   const hasCard = (r: Reply) =>
-    !!r.approval || !!r.question || !!r.plan || !!r.steps?.length;
+    !!r.approval ||
+    !!r.question ||
+    !!r.plan ||
+    !!r.steps?.length ||
+    !!r.reasoning?.trim() ||
+    (r.steers?.length ?? 0) > 0 ||
+    (r.subagents?.length ?? 0) > 0;
   const duplicates = (note: Reply, turn?: Reply) => {
     if (!turn || turn.system || !turn.turnId) return false;
     const t = note.text;

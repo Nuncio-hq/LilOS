@@ -169,8 +169,11 @@ export function onEngineEvent(this: HarnessCtx, event: EngineEvent) {
            that made it this far worked. Same for the stopped word. */
         turnFailure: null,
         turnStopped: null,
-        /* D-#772: a new turn starts clear. The quiet window arms below. */
-        stuck: null,
+        /* D-#772: a live turn starts clear. During replay `stuckDefer`
+           is set and finishStuckReplay is the only writer — a clear
+           here drops a still-stuck mark, and the later re-mark pushes
+           a second time. */
+        ...(binding.stuckDefer ? {} : { stuck: null }),
       }).catch(() => {});
       beginStuckTurn(this, binding);
       /* #422: a turn is running but named no step yet — the header reads

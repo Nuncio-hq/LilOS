@@ -208,7 +208,8 @@ export function threadModel(
         }
       : {}),
     ...(jobs.length ? { jobs, bgJobs: jobs.filter((j) => j.status === "running").length } : {}),
-    ...(t.stuck ? { stuck: t.stuck.what } : {}),
+    // D-#772: the card only while the status is stuck, same as the app.
+    ...(t.status === "stuck" && t.stuck ? { stuck: t.stuck.what } : {}),
   }
 
   return {

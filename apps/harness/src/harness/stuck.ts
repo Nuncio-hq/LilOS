@@ -116,12 +116,20 @@ function publish(
   reason: string | undefined,
 ) {
   if (binding.stuckDefer) return;
+  /* No reason: memory is empty after a restart while the row can still
+     say stuck. `undefined === undefined` used to return here and leave
+     that mark. The clear reads the row. */
+  if (reason === undefined) {
+    const had = binding.stuckReason !== undefined;
+    binding.stuckReason = undefined;
+    void persistClear(ctx, binding, had);
+    return;
+  }
   if (reason === binding.stuckReason) return;
-  if (!reason && binding.stuckReason === undefined) return;
   binding.stuckReason = reason;
   void ctx
     .updateConversation(binding.conversationId, {
-      stuck: reason ? { reason } : null,
+      stuck: { reason },
     })
     .catch((error) =>
       ctx.opts.log.warn("stuck write failed", { error: String(error) }),

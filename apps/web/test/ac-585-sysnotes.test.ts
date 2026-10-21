@@ -154,4 +154,50 @@ describe("issue #585 system notes", () => {
     expect(out.map((r) => r.id)).toEqual(["u1", "live-t1"]);
     expect(out[1].approval?.command).toBe("git push origin main");
   });
+
+  test("D-#772 a silent turn that searched and was steered keeps both; the note drops", () => {
+    /* The root prompt is the thread header, so it is not a reply. The
+       landed steer is hidden from the reply list (it renders on the
+       turn). The card is the only place "keep going" and the searches
+       still show once the turn ends. */
+    const replies = conversationReplies(
+      [
+        msg({
+          id: "s1",
+          seq: 3,
+          text: "(the engine ended the turn silently)",
+        }),
+      ],
+      "c1",
+    );
+    const done = turn({
+      turnId: "t1",
+      phase: "done",
+      text: "",
+      ref: "root",
+      liveAttached: true,
+      reasoning: "Searching again for the same creators.",
+      steps: [
+        {
+          id: "c1",
+          tool: "web_search",
+          input: { query: "journaling creators 5k–50k" },
+          status: "completed",
+        },
+      ],
+      steers: ["keep going"],
+    });
+    const out = mergeTurns(
+      replies,
+      session([done]),
+      "emp",
+      [],
+      undefined,
+      (r) => r,
+      "root",
+    );
+    expect(out.map((r) => r.id)).toEqual(["live-t1"]);
+    expect(out[0].steers).toEqual(["keep going"]);
+    expect(out[0].steps).toHaveLength(1);
+  });
 });
