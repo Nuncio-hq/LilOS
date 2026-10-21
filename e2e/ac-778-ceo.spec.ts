@@ -130,11 +130,17 @@ test("Make CEO moves the chip everywhere and redraws the org chart", async ({
     );
     await expect(
       dialog.getByRole("button", { name: "Ask the CEO", exact: true }),
-    ).toBeVisible();
+    ).toHaveCount(1);
     await box.fill("Say hi from the palette");
     await box.press("Enter");
-    await expect(page).toHaveURL(/open=thread:/, { timeout: 30_000 });
-    await expect(v3Peek(page).locator(CHIP)).toBeVisible({ timeout: 30_000 });
+    /* Ask the CEO is openAsk: a draft with the holder, not a second send path. */
+    await expect(page).toHaveURL(new RegExp(`open=newchat:${quillId}`), {
+      timeout: 30_000,
+    });
+    await expect(v3Peek(page).getByPlaceholder("Message Quill…")).toHaveValue(
+      "Say hi from the palette",
+    );
+    await expect(v3Peek(page).locator(CHIP)).toBeVisible();
     await expect(v3Peek(page)).toContainText("Quill");
   } finally {
     await stack.stop();
