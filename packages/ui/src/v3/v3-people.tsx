@@ -1,6 +1,6 @@
 import { LayoutListIcon, NetworkIcon } from "lucide-react";
 import { cn } from "../lib/utils";
-import { Meter, Page, Tabs, Title } from "./v3-bits";
+import { Meter, Page, Section, Tabs, Title } from "./v3-bits";
 import type { V3Data } from "./v3-data-types";
 import { AgentAvatar, CeoMark, INK, StatusPill } from "./v3-marks";
 import { agentStatus, agentThread, agentTicket } from "./v3-model";
@@ -181,17 +181,16 @@ function Table({
 
       {(workers.length > 0 || canConnect) && (
         <>
-          <h3 className="mt-10 mb-1.5 flex flex-wrap items-baseline gap-x-2 font-semibold text-[15px] text-foreground">
-            Outside workers
-            <small className="font-normal text-[13px] text-muted-foreground/70">
-              {workers.length}
-            </small>
-            <span className="font-normal text-[13px] text-muted-foreground">
-              {hasCeo
+          <Section
+            className="flex-wrap"
+            title="Outside workers"
+            count={workers.length}
+            note={
+              hasCeo
                 ? "Always-on bots the CEO reaches through a connector."
-                : "Always-on bots reached through a connector."}
-            </span>
-          </h3>
+                : "Always-on bots reached through a connector."
+            }
+          />
           {workers.length === 0 ? (
             <p className="border-[var(--v3-line)] border-t py-3 text-muted-foreground">
               None yet. Add a connector in Settings.

@@ -140,20 +140,24 @@ export function Title({
   );
 }
 
-/** Section header: title, a quiet count, and an optional link on the right.
-    A count of 0 is left out (D-#769): the empty line under the heading
-    already says there is nothing, so "Needs you 0" above "Nothing needs
-    you." would say it twice. A positive count stays. A count that is not
-    a bare number ("2 more") stays. */
+/** Section header: title, a quiet count, an optional note, and an
+    optional link on the right. A count of 0 is left out (D-#769): the
+    empty line under the heading already says there is nothing, so
+    "Needs you 0" above "Nothing needs you." would say it twice. A
+    positive count stays. A count that is not a bare number ("2 more")
+    stays. The note stays either way. */
 export function Section({
   title,
   count,
+  note,
   link,
   onLink,
   className,
 }: {
   title: ReactNode;
   count?: ReactNode;
+  /** Words after the count. Not a tally, so a zero count does not hide it. */
+  note?: ReactNode;
   link?: string;
   onLink?: () => void;
   className?: string;
@@ -171,6 +175,11 @@ export function Section({
         <small className="font-normal text-[13px] text-muted-foreground/70">
           {quiet}
         </small>
+      )}
+      {note != null && (
+        <span className="font-normal text-[13px] text-muted-foreground">
+          {note}
+        </span>
       )}
       {link && (
         <button
