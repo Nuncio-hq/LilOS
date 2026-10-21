@@ -1,5 +1,5 @@
-import { HIRE_TEMPLATES } from "@lilos/ui";
 import { expect, type Page, test } from "@playwright/test";
+import { HIRE_TEMPLATES } from "../packages/ui/src/v3/hire-templates";
 import {
   bootStack,
   openDefaultAgent,
