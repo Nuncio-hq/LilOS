@@ -591,9 +591,11 @@ export function fakeAppOps(
     async commentTicket(p: TicketCommentParams) {
       const ticket = ticketRows.find((t) => t.id === p.id);
       if (!ticket) throw new Error(`unknown ticket ${p.id}`);
+      const by = opts.employees?.[0]?.id ?? "you";
       ticket.updates.push({
         id: `upd-${ticket.updates.length + 1}`,
-        by: opts.employees?.[0]?.id ?? "you",
+        authorKind: by === "you" ? "user" : "employee",
+        by,
         at: Date.now(),
         text: p.text,
       });
