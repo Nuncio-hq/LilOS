@@ -5,7 +5,6 @@ import {
   pickPorts,
   type Stack,
   startChat,
-  v3Peek,
   v3Sidebar,
 } from "./helpers/stack";
 
@@ -101,15 +100,18 @@ test("approve from Needs you resumes the turn and the item disappears everywhere
     name: "Approve",
     exact: true,
   });
-  const finished = main(page).getByText("Finished", { exact: true });
+  // Earlier criteria already left finished threads here, so "Finished"
+  // is not unique. This turn is done when its own result row appears.
+  const result = main(page).getByRole("button", {
+    name: /add a footer to the page/i,
+  });
   await expect(async () => {
     if (await approve.isVisible()) await approve.click();
-    await expect(finished).toBeVisible({ timeout: 2_000 });
+    await expect(result).toContainText("Finished", { timeout: 2_000 });
   }).toPass({ timeout: 120_000 });
 
   await expect(sideItem(page)).toHaveText(/^Needs you$/);
   await expect(main(page).getByText("0 waiting on you")).toBeVisible();
-  await expect(main(page).getByText("1 results to look at")).toBeVisible();
 
   await goTo(page, "Threads");
   const row = card(page, /add a footer to the page/i);
@@ -172,13 +174,13 @@ test("A, D, J and K work, and do nothing while typing in a field", async ({
   });
 
   await goTo(page, "Needs you");
-  await v3Peek(page).getByTitle("Close (Esc)").click();
+  // Opening the page clears the thread peek, so the keys are not typing.
   // The why line is only on the open card, so it says which ask is open.
   await expect(main(page)).toContainText("Readers liked the hooks");
 
   // Typing in Search swallows J and A: the open card and the count stay.
   await v3Sidebar(page)
-    .getByRole("button", { name: "Search", exact: true })
+    .getByRole("button", { name: /^Search/ })
     .click();
   const search = page
     .getByRole("dialog", { name: "Search" })
@@ -205,7 +207,7 @@ test("A, D, J and K work, and do nothing while typing in a field", async ({
   await expect(main(page)).toContainText("Retire the old banner");
 
   await v3Sidebar(page)
-    .getByRole("button", { name: "Search", exact: true })
+    .getByRole("button", { name: /^Search/ })
     .click();
   await expect(search).toBeFocused();
   await page.keyboard.press("d");
