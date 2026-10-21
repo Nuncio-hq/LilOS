@@ -69,6 +69,10 @@ input{width:100%;max-width:420px;padding:8px 12px;border-radius:8px;border:1px s
     <li><b>Provider-neutral</b> (revised 2026-10-15). Runtimes run threads in a folder: Hermes now; later ones only through one shared ACP mapping, as T3 Code does (contracts first, #764; Codex dropped). Outside always-on bots (Grok Bot, Muse, anything later) are <b>connectors</b>: their own CLI or MCP server, on an agent's sessions. Contracts, relay, harness and UI types never name a provider, wrap its API, or store its credentials. With every connector removed, LilOS still builds and runs; a new provider needs only its CLI or MCP installed. <em>Not: a bot contract with one adapter per provider, or bots listed as runtimes (the 2026-10-14 plan).</em></li>
     <li>Prototype: tickets, goals, the CEO and ⌘K plans live in v3 (Work and a ticket's page).</li>
   </ul>
+<pre><code>Oscar (Chairman) → the CEO (a position an agent holds) → tickets (ticket_*)
+LilOS: projects · threads · tickets · agent gateway
+  ├── runtimes (one session per thread): Hermes now · ACP later (#111)
+  └── connectors on an agent (CLI or MCP, never wrapped): grokbot · muse · …</code></pre>
 </section>
 <section id="map">
   <h2>Repo map</h2>
@@ -101,7 +105,13 @@ input{width:100%;max-width:420px;padding:8px 12px;border-radius:8px;border:1px s
 
 <section id="architecture">
   <h2>How the pieces fit</h2>
-  <p>Stack, top to bottom: the apps Oscar sees → relay (JSON-RPC/WebSocket; install token, paired credential on phones; SQLite: employees, channels, messages, asks) → harness, over the harness protocol (threads to sessions, read-only feed, <code>POST /host</code>, the agent gateway) → the engine adapter (<code>hermes serve</code>).</p>
+<pre><code>apps/web · desktop · mobile   what Oscar sees
+  │  JSON-RPC over WebSocket (install token; phones: paired credential)
+apps/relay                    SQLite: employees, channels, messages, asks
+  │  harness protocol
+apps/harness                  threads↔sessions · feed · POST /host · gateway
+  │  engine protocol (JSON-RPC, ACP-shaped, seq events)
+packages/engine-*             adapter owning the engine (hermes serve)</code></pre>
   <ul>
     <li>Clients write only through the relay; they read live engine events from the harness feed (Mac) or the relay's re-publish (phone). The harness posts final answers and asks back to the relay.</li>
     <li>Agents use LilOS through the <b>agent gateway</b>: one catalog (<code>packages/contracts/src/harness/tools.ts</code>) as MCP, the <code>lilos</code> CLI and the Hermes plugin. Scope is the calling session.</li>
@@ -249,7 +259,7 @@ input{width:100%;max-width:420px;padding:8px 12px;border-radius:8px;border:1px s
 <li id="d-35"><b>D-#35</b> Ad-hoc dev bundles register agents via <code>launchctl bootstrap</code> (survives bundle swaps); Developer ID bundles keep <code>SMAppService.agent</code>. <em>Not: SMAppService for dev builds (cdhash-keyed), bootstrap for signed ones (loses Login Items).</em> <small>#35 · PR #81</small> <kbd>apps/desktop/native/lilos-svc/main.swift</kbd></li>
 <li id="d-35-2"><b>D-#35</b> Auto-update swaps the whole <code>.app</code> (one version for app, relay and harness) and gates on the version handshake; a failure restores the old bundle and skips that build. <em>Not: per-component versions, binary patches, auto-retrying a failed release (Retry is manual, #539).</em> <small>#35 · PR #81</small> <kbd>apps/desktop/src/update/index.ts</kbd></li>
 <li id="d-206"><b>D-#206</b> The signed register path boots out launchd jobs SMAppService doesn't own, and treats an "entitlement" error on unregister as not-ours. <em>Not: trusting <code>SMAppService.status</code> alone.</em> <small>#206</small> <kbd>packages/background/src/services/register.ts</kbd></li>
-<li id="d-388"><b>D-#388</b> <code>lilos-harness --compile</code> marks <code>chromium-bidi</code> external (BiDi only; CDP never loads it) because playwright loads at runtime (D-#539). <em>Not: installing chromium-bidi just for the bundler.</em> <small>#388 · PR #389</small> <kbd>apps/harness/scripts/compile.ts</kbd></li>
+<li id="d-388"><b>D-#388</b> <code>lilos-harness --compile</code> marks <code>chromium-bidi</code> external (BiDi only; CDP never loads it; a guard since D-#539). <em>Not: installing chromium-bidi just for the bundler.</em> <small>#388 · PR #389</small> <kbd>apps/harness/scripts/compile.ts</kbd></li>
 <li id="d-539"><b>D-#539</b> The bundle ships <code>playwright</code> + <code>playwright-core</code> as real files under <code>Resources/app/pw</code>, loaded via <code>createRequire</code> on the first browser call. <em>Not: a package.json shim, bundling playwright, the ~500 MB browser cache in the DMG.</em> <small>#539 · PR #540</small> <kbd>apps/harness/src/surfaces/browser.ts</kbd></li>
 <li id="d-232"><b>D-#232</b> Native chrome: <code>hiddenInset</code> + sidebar vibrancy; the renderer owns the drag regions (<code>lilos-drag</code>) and the native theme. <em>Not: a framed window, or frameless with drawn traffic lights.</em> <small>#232 · #301</small> <kbd>apps/desktop/src/window-chrome.ts</kbd></li>
 <li id="d-215"><b>D-#215</b> LilOS Browser pages live in the main process, one <code>WebContentsView</code> per tab on <code>persist:lilos-browser</code>; renderers are chrome fed one state snapshot. <em>Not: <code>&lt;webview&gt;</code>, a window per tab, browser state via the relay.</em> <small>#215 · PR #735</small> <kbd>apps/desktop/src/browser.ts</kbd></li>
