@@ -1,8 +1,8 @@
 import { spawnSync } from "node:child_process";
 import {
   mkdirSync,
-  readFileSync,
   readdirSync,
+  readFileSync,
   statSync,
   writeFileSync,
 } from "node:fs";
@@ -12,8 +12,8 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 import {
   MANIFEST_PATH,
-  PLUGIN_DIR,
   manifestIsStale,
+  PLUGIN_DIR,
 } from "../scripts/gen-plugin-hash.js";
 import { listPluginFiles, pluginContentHash } from "../src/plugin-hash.js";
 

@@ -20,8 +20,8 @@ export { HermesEngine, type HermesEngineOptions } from "./engine.js";
 export { RpcError } from "./errors.js";
 export { type GatewayLike, HermesGateway } from "./gateway.js";
 export {
-  PLUGIN_CONTENT_HASH_FILE,
   listPluginFiles,
+  PLUGIN_CONTENT_HASH_FILE,
   pluginContentHash,
   renderPluginHashManifest,
 } from "./plugin-hash.js";
