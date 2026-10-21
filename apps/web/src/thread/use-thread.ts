@@ -242,7 +242,14 @@ export function useThreadWith(
     mentionables,
     rootMsg,
     status:
-      V3_STATUS[threadStatus(conv, model, sid ? signals[sid] : undefined)],
+      V3_STATUS[
+        threadStatus(
+          conv,
+          model,
+          sid ? signals[sid] : undefined,
+          asksHere.filter((a) => a.state === "open").length,
+        )
+      ],
     thread,
     resolved: resolvedReceipts(asksHere),
     running,

@@ -22,9 +22,13 @@ import type { V3PageProps } from "./v3-page-types";
 function typingInField(e: KeyboardEvent) {
   const el = e.target as HTMLElement | null;
   if (!el) return false;
-  return (
-    el.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName)
-  );
+  if (el.isContentEditable) return true;
+  if (el.tagName === "TEXTAREA" || el.tagName === "SELECT") return true;
+  /* A checkbox is a choice, not typing, so A still approves after
+     "Allow this next time". A text field swallows the key. */
+  if (el.tagName !== "INPUT") return false;
+  const type = (el as HTMLInputElement).type;
+  return type !== "checkbox" && type !== "radio" && type !== "button";
 }
 
 /** One line in a list: a quiet kind word, title + meta, then what's on the right. */
@@ -74,9 +78,13 @@ function Stop({ children }: { children: ReactNode }) {
 }
 
 export function V3Needs({ data, go, act }: V3PageProps) {
-  // Oldest first: the longest wait is the most overdue.
+  // Oldest first. Real asks carry `at`; prototype rows only have minutes.
   const asks = useMemo(
-    () => [...data.asks].sort((a, b) => b.waiting - a.waiting),
+    () =>
+      [...data.asks].sort((a, b) => {
+        if (a.at !== undefined && b.at !== undefined) return a.at - b.at;
+        return b.waiting - a.waiting;
+      }),
     [data.asks],
   );
   const [selected, setSelected] = useState<string>();

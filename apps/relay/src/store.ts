@@ -308,6 +308,10 @@ export interface NewAsk {
   request: EngineRequest;
   /** Gateway `team_hire` ask's hire draft. */
   hire?: AskHireProposal;
+  /** D-#773: Needs you lines. Omitted on an engine approval. */
+  why?: string;
+  ifYes?: string;
+  ifNo?: string;
 }
 
 export interface ResolveAskInput {

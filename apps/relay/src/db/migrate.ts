@@ -409,6 +409,16 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
       `CREATE INDEX conversations_project ON conversations(project_id)`,
     ],
   },
+  {
+    /* D-#773: why / if yes / if no on a gateway ask. Engine approvals
+       leave the columns null and keep the command on `request`. */
+    version: 29,
+    statements: [
+      `ALTER TABLE asks ADD COLUMN why TEXT`,
+      `ALTER TABLE asks ADD COLUMN if_yes TEXT`,
+      `ALTER TABLE asks ADD COLUMN if_no TEXT`,
+    ],
+  },
 ];
 
 /**

@@ -451,6 +451,12 @@ export function fakeAppOps(
       if (!task) throw new Error(`unknown scheduled task ${id}`);
       return task;
     },
+    async askUser(p) {
+      gate(`ask ${p.question}`);
+      if (p.options?.length)
+        return { outcome: "yes" as const, answer: p.options[0] };
+      return { outcome: "yes" as const };
+    },
     async addFolder(path: string) {
       gate(`folder_add ${path}`);
       return { path, lastUsedAt: Date.now() };

@@ -15,6 +15,7 @@ import {
 describe("AC-2 tool surface contracts", () => {
   it("exposes browser + terminal + workbench + thread + team + project + root ops", () => {
     expect(Object.keys(LILOS_TOOLS).sort()).toEqual([
+      "ask",
       "browser_click",
       "browser_eval",
       "browser_open",

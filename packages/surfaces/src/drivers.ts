@@ -12,6 +12,8 @@ import type {
   WorkbenchOpenTarget,
 } from "@lilos/contracts/app";
 import type {
+  AskParams,
+  AskToolResult,
   ProjectCreateParams,
   ScheduleCreateParams,
   ScheduleUpdateParams,
@@ -147,6 +149,11 @@ export interface AppOps {
   /** Make a project of a folder (`projects.create` on approve); a folder
       that already has a project answers it. */
   createProject(p: ProjectCreateParams): Promise<Project>;
+  /**
+   * `ask` (D-#773): post a question or a once/deny approval and wait.
+   * A decline throws `SurfaceError("declined")`.
+   */
+  askUser(p: AskParams): Promise<AskToolResult>;
 }
 
 export interface SurfaceScopeOptions {

@@ -4489,6 +4489,18 @@
             }
           ]
         },
+        "why": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ifYes": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ifNo": {
+          "type": "string",
+          "minLength": 1
+        },
         "hire": {
           "type": "object",
           "properties": {
@@ -6804,6 +6816,18 @@
             "instructions"
           ],
           "additionalProperties": false
+        },
+        "why": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ifYes": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ifNo": {
+          "type": "string",
+          "minLength": 1
         }
       },
       "required": [
@@ -6941,6 +6965,18 @@
                   "additionalProperties": false
                 }
               ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 1
+            },
+            "ifYes": {
+              "type": "string",
+              "minLength": 1
+            },
+            "ifNo": {
+              "type": "string",
+              "minLength": 1
             },
             "hire": {
               "type": "object",
@@ -7205,6 +7241,18 @@
                     "additionalProperties": false
                   }
                 ]
+              },
+              "why": {
+                "type": "string",
+                "minLength": 1
+              },
+              "ifYes": {
+                "type": "string",
+                "minLength": 1
+              },
+              "ifNo": {
+                "type": "string",
+                "minLength": 1
               },
               "hire": {
                 "type": "object",
@@ -8232,6 +8280,18 @@
                 }
               ]
             },
+            "why": {
+              "type": "string",
+              "minLength": 1
+            },
+            "ifYes": {
+              "type": "string",
+              "minLength": 1
+            },
+            "ifNo": {
+              "type": "string",
+              "minLength": 1
+            },
             "hire": {
               "type": "object",
               "properties": {
@@ -8446,6 +8506,18 @@
                   "additionalProperties": false
                 }
               ]
+            },
+            "why": {
+              "type": "string",
+              "minLength": 1
+            },
+            "ifYes": {
+              "type": "string",
+              "minLength": 1
+            },
+            "ifNo": {
+              "type": "string",
+              "minLength": 1
             },
             "hire": {
               "type": "object",
