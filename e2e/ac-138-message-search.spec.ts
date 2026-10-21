@@ -65,7 +65,9 @@ const search = (page: Page, query: string, includeArchived: boolean) =>
 
 /** Send a follow-up from the open thread's own composer. */
 async function followUp(page: Page, text: string) {
-  const box = v3Peek(page).getByPlaceholder(/Reply to Default/);
+  const box = v3Peek(page)
+    .locator("[data-thread-panel]")
+    .getByPlaceholder(/^Message Default…$/);
   await box.fill(text);
   await box.press("Enter");
 }
@@ -78,8 +80,10 @@ test("AC-2/3/4 message hits: found by message text, snippet marked, archived onl
 
   /* engine-fake steers mid-turn sends into the running turn — a follow-up
      only gets its own reply once the composer is back to its idle
-     placeholder ("Reply to Default…"). */
-  const idleComposer = v3Peek(page).getByPlaceholder(/Reply to Default/);
+     placeholder ("Message Default…"). */
+  const idleComposer = v3Peek(page)
+    .locator("[data-thread-panel]")
+    .getByPlaceholder(/^Message Default…$/);
   const panel = page.locator("[data-thread-panel]");
 
   // Session A: open, wait for the fake reply, then send a follow-up holding

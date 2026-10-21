@@ -63,21 +63,21 @@ export function AttachmentChips({ files }: { files: AttachedFile[] }) {
         return (
           <span
             key={i}
-            className="inline-flex items-center gap-1.5 rounded-md border px-1.5 py-0.5 text-xs"
+            className="inline-flex h-7 max-w-full items-center gap-1.5 rounded-md border border-[var(--v3-line)] px-1.5 text-[12.5px]"
             title={f.mediaType}
           >
             {f.url && f.mediaType.startsWith("image/") ? (
               <img
                 src={f.url}
                 alt={f.name}
-                className="size-8 rounded-sm object-cover"
+                className="size-5 shrink-0 rounded-sm object-cover"
               />
             ) : (
-              <Icon className="size-3 text-muted-foreground" />
+              <Icon className="size-3.5 shrink-0 text-muted-foreground" />
             )}
-            <span className="max-w-48 truncate font-medium">{f.name}</span>
+            <span className="min-w-0 max-w-48 truncate">{f.name}</span>
             {typeof f.sizeBytes === "number" && (
-              <span className="text-muted-foreground">
+              <span className="shrink-0 text-muted-foreground">
                 {formatBytes(f.sizeBytes)}
               </span>
             )}

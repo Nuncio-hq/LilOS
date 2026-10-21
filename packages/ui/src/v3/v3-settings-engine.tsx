@@ -122,9 +122,8 @@ export function EnginePane({ data, go, act }: V3PageProps) {
           {relayTone.word}
         </span>
       </Row>
-      <Row title="Engine">
-        <EngineState engine={engine} />
-      </Row>
+      {/* The engine's own state is the card's (above), once; Status adds only
+          the relay it talks through. */}
       <div className="py-3.5">
         <Confirm
           label="Copy diagnostics"

@@ -148,7 +148,6 @@ function PanelBody({
           onClose={onClose}
           scrollTo={scrollTo}
           onScrolled={onScrolled}
-          onFocus={() => onSession(true)}
           onOpenTab={(t) => {
             setTab(t);
             onSession(true);

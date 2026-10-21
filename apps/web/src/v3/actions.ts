@@ -5,7 +5,6 @@ import {
   archiveConversation,
   describeActionError,
   interruptSession,
-  loadThreadHistory,
   refreshModels,
   renameConversation,
   respondToRequest,
@@ -15,7 +14,7 @@ import {
 } from "../lib/actions";
 import { HIRE_TEMPLATES, hireEmployee } from "../lib/employees";
 import { refreshFolders } from "../lib/folders";
-import { beginRewind, flushRewind } from "../lib/rewind";
+import { flushRewind } from "../lib/rewind";
 import { asks, relay } from "../lib/runtime";
 import { sendKeyDoneForSend, sendKeyForSend } from "../lib/send-key";
 import { sayError } from "../lib/toast";
@@ -49,55 +48,11 @@ function employeeIdOf(conversationId: string): string | undefined {
   return conv && employeeOfConversation(conv, relay.channels.get());
 }
 
-/** Rewind to before the message that opened turn `turn` (the nth message you
-    sent): hide what follows, open the Undo window, commit when it closes. */
-async function rewindTurn(threadId: string, turn: number): Promise<void> {
-  const conv = conversationOf(threadId);
-  if (!conv) return;
-  const { messages } = await loadThreadHistory(
-    (method, params) => relay.request(method, params),
-    conv.channelId,
-    threadId,
-  );
-  const sent = messages.filter((m) => m.authorKind === "user");
-  const target = sent[turn - 1];
-  if (!target) return;
-  const doomed = messages.filter((m) => m.seq >= target.seq);
-  beginRewind(
-    { conversationId: threadId, messageId: target.id, draftBefore: "" },
-    {
-      fromSeq: target.seq,
-      ids: doomed.map((m) => m.id),
-      texts: doomed
-        .filter((m) => m.authorKind === "employee")
-        .map((m) => m.text.trim()),
-    },
-  );
-}
-
 /** Starter instructions for a hire: the template of the same role if the app
     has one, else one plain line naming the role (the engine's soul text). */
 const instructionsFor = (name: string, role: string): string =>
   HIRE_TEMPLATES.find((t) => t.role.toLowerCase() === role.toLowerCase())
     ?.instructions ?? `You are ${name}, the company's ${role.toLowerCase()}.`;
-
-/** The browser actions the desktop host can run; empty without the bridge. */
-function browserActions(): Pick<V3DataActions, "browserOpen" | "browserClose"> {
-  const bridge = window.lilos?.browser;
-  if (!bridge || bridge.isBrowserWindow) return {};
-  return {
-    browserOpen: (url, threadId) => {
-      const employeeId = employeeIdOf(threadId);
-      void bridge.command({
-        op: "newTab",
-        slotId: `thread:${threadId}`,
-        url,
-        ...(employeeId ? { group: { threadId, employeeId } } : {}),
-      });
-    },
-    browserClose: (tabId) => void bridge.command({ op: "closeTab", tabId }),
-  };
-}
 
 /** `/` in a new chat's box: the engine's commands for this agent and folder. */
 function draftCommands(
@@ -273,11 +228,6 @@ export function makeV3Actions(caps: V3Capabilities): V3DataActions {
         throw e;
       }
     },
-    rewind: (threadId, turn) =>
-      void rewindTurn(threadId, turn).catch((e) =>
-        sayError(describeActionError("Couldn't rewind the turn", e)),
-      ),
-    ...browserActions(),
     showStatus: openStatus,
     ...v3SettingsActions,
   };

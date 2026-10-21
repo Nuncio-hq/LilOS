@@ -188,7 +188,7 @@ const send = async (page: Page, text: string) => {
 };
 
 /* Idle = no queued/not-sent rows and the composer is back to its
-   post-turn placeholder (Focus "Continue session…", panel "Reply to…") —
+   post-turn placeholder (Focus "Continue session…", panel "Message X…") —
    and stays there. engine-fake's pumpSteers mints a queued steer into a
    fresh turn in the same tick as turn.completed, so the placeholder can
    flash idle while a turn is already running; a send landing inside that
@@ -204,7 +204,7 @@ const idle = async (page: Page) => {
           [...document.querySelectorAll("textarea")].some(
             (t) =>
               t.placeholder.includes("Continue session") ||
-              t.placeholder.includes("Reply to"),
+              /^Message [^…]+…$/.test(t.placeholder),
           ),
       );
       const now = Date.now();

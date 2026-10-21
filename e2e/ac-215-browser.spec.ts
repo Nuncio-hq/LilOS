@@ -19,6 +19,7 @@ import {
   skipFirstRun,
   threadUrl,
 } from "./helpers/stack";
+import { openWorkbench as openWb } from "./helpers/workbench";
 
 /**
  * Issue #215 — the LilOS Browser in the Mac app (D-#215: main-process
@@ -331,17 +332,10 @@ test("AC-1/AC-3: panel renders real pages; pop-out window; find, zoom, print, do
 });
 
 /** The session view's Workbench, open: a folderless DM session doesn't
- *  auto-open it, and v3 has no `?tab=` — the header's Workbench toggle is the
- *  way in. */
+ *  auto-open it, and v3 has no `?tab=` — the work strip's tab is the way in. */
 async function openWorkbench(win: Page) {
   await panelFocusReady(win);
-  const toggle = win.getByTitle("Workbench", { exact: true });
-  await expect(toggle).toBeVisible({ timeout: 60_000 });
-  if (!(await win.locator("[data-wb-shell]:not(.hidden)").count()))
-    await toggle.click();
-  await expect(win.locator("[data-wb-shell]:not(.hidden)")).toBeVisible({
-    timeout: 30_000,
-  });
+  await openWb(win, "details", 60_000);
 }
 
 test("AC-2 thread: the Workbench Browser tab shows this thread's tabs", async () => {

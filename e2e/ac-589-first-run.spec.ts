@@ -31,9 +31,9 @@ const steps = (page: Page) => page.locator("[data-first-run-step]");
 async function toEngineCheck(page: Page, webUrl: string) {
   await page.goto(`${webUrl}/?statusPollMs=500`);
   await page.getByRole("button", { name: "Next", exact: true }).click();
-  await expect(
-    page.getByRole("heading", { name: "Engine check" }),
-  ).toBeVisible();
+  await expect(page.locator('[aria-current="step"]')).toContainText(
+    "Engine check",
+  );
 }
 
 test("AC-1 the ticks follow the real legs — relay up, engine up, company opens", async ({
@@ -113,9 +113,9 @@ test("AC-2 a dead engine shows its plain reason, never a green tick; the status 
 
     /* The way on stays shut while the engine is down... */
     await page.getByRole("button", { name: "Next", exact: true }).click();
-    await expect(
-      page.getByRole("heading", { name: "Engine check" }),
-    ).toBeVisible();
+    await expect(page.locator('[aria-current="step"]')).toContainText(
+      "Engine check",
+    );
 
     /* ...and the status dialog is one click away once Welcome is left: the
        banner repeats the reason with Details. */

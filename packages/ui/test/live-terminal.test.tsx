@@ -27,7 +27,7 @@ describe("AC-2 takeover state shows across the pane", () => {
     const { container } = render(
       <LiveTerminal live={live("agent")} cwd="/repo" agentName="Builder" />,
     );
-    const badge = container.querySelector("span.bg-emerald-800");
+    const badge = container.querySelector("[data-term-badge=live]");
     expect(badge?.textContent).toBe("live");
     expect(container.textContent).not.toContain("you");
   });
@@ -36,9 +36,9 @@ describe("AC-2 takeover state shows across the pane", () => {
     const { container } = render(
       <LiveTerminal live={live("user")} cwd="/repo" agentName="Builder" />,
     );
-    const badge = container.querySelector("span.bg-amber-800");
+    const badge = container.querySelector("[data-term-badge=you]");
     expect(badge?.textContent).toBe("you");
-    expect(container.querySelector("span.bg-emerald-800")).toBeNull();
+    expect(container.querySelector("[data-term-badge=live]")).toBeNull();
     expect(container.textContent).toContain("in control");
   });
 });

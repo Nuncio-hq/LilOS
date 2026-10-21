@@ -22,12 +22,14 @@ const menus = () => {
   const fileMenu = items.find((i) => i.label === "File");
   const editMenu = items.find((i) => i.label === "Edit");
   const goMenu = items.find((i) => i.label === "Go");
+  const viewMenu = items.find((i) => i.label === "View");
   return {
     calls,
     sub: (appMenu?.submenu ?? []) as MenuItemConstructorOptions[],
     file: (fileMenu?.submenu ?? []) as MenuItemConstructorOptions[],
     edit: (editMenu?.submenu ?? []) as MenuItemConstructorOptions[],
     go: (goMenu?.submenu ?? []) as MenuItemConstructorOptions[],
+    view: (viewMenu?.submenu ?? []) as MenuItemConstructorOptions[],
   };
 };
 
@@ -99,5 +101,15 @@ describe("keyboard navigation in the app menu", () => {
       ...Array.from({ length: 9 }, (_, i) => `shortcut:employee-${i + 1}`),
       "shortcut:shortcuts",
     ]);
+  });
+});
+
+describe("#793 the View menu hides and shows the sidebar", () => {
+  it("View → Toggle Sidebar ⌘\\ routes into the window", () => {
+    const { calls, view } = menus();
+    const item = view.find((i) => i.label === "Toggle Sidebar");
+    expect(item?.accelerator).toBe("CmdOrCtrl+\\");
+    item?.click?.(item as never, undefined as never, {} as never);
+    expect(calls).toEqual(["shortcut:toggle-sidebar"]);
   });
 });

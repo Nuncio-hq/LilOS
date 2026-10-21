@@ -150,7 +150,6 @@ export const OUTSIDE_THREADS: V3Data["threads"] = [
       { text: "Read their top posts", state: "current" },
       { text: "Score the hooks", state: "todo" },
     ],
-    changes: [],
     turns: [
       {
         n: 1,

@@ -30,15 +30,17 @@ function WsBadgeContent({ ws }: { ws: Workspace }) {
           <span className="truncate font-mono">{ws.branch}</span>
         </>
       )}
-      <span className="shrink-0 text-emerald-700/80">
+      <span className="shrink-0 opacity-70">
         · {ws.mode === "direct" ? "direct" : "worktree"}
       </span>
     </>
   );
 }
 
+/* Quiet, inline: the badge sits in the thread header's kicker line, so it
+   reads as text (folder · branch), not a coloured chip — colour is for status. */
 const badgeClass =
-  "mt-1 flex w-fit max-w-full items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-800 text-xs";
+  "inline-flex min-w-0 max-w-full items-center gap-1 align-bottom text-muted-foreground";
 
 /* Workspace pill in the thread header: which folder/branch this session runs in.
    With `openMenu` (host os.open) the badge is also the Open-in-editor /
@@ -58,7 +60,7 @@ export function WsBadge({
         trigger={
           <button
             type="button"
-            className={`${badgeClass} cursor-pointer hover:bg-emerald-100`}
+            className={`${badgeClass} cursor-pointer hover:text-foreground`}
             aria-label={`${ws.cwd} — open in an editor or reveal in Finder`}
             data-wsbadge
           />
@@ -69,9 +71,9 @@ export function WsBadge({
       </OpenPathMenu>
     );
   return (
-    <div className={badgeClass} title={ws.cwd} data-wsbadge>
+    <span className={badgeClass} title={ws.cwd} data-wsbadge>
       <WsBadgeContent ws={ws} />
-    </div>
+    </span>
   );
 }
 
@@ -84,26 +86,21 @@ export function WorkspaceBadge({
 }) {
   if (work?.branch)
     return (
-      <div className="mt-1 flex w-fit max-w-full items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-800 text-xs">
+      <span className={badgeClass}>
         <GitBranchIcon className="size-3 shrink-0" />
         <span className="truncate font-mono">{work.branch}</span>
         <span className="shrink-0">· can edit</span>
-      </div>
+      </span>
     );
-  if (work)
-    return (
-      <div className="mt-1 w-fit rounded bg-muted px-1.5 py-0.5 text-muted-foreground text-xs">
-        ticket · no repo
-      </div>
-    );
+  if (work) return <span className={badgeClass}>ticket · no repo</span>;
   return (
-    <div className="mt-1 flex w-fit items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-muted-foreground text-xs">
+    <span className={badgeClass}>
       <EyeIcon className="size-3" />
       {repo ? (
         <span className="font-mono">main · read-only</span>
       ) : (
         "discussion"
       )}
-    </div>
+    </span>
   );
 }

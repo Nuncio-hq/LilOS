@@ -1,12 +1,3 @@
-import {
-  BotIcon,
-  BrainIcon,
-  FileTextIcon,
-  GlobeIcon,
-  PencilIcon,
-  SearchIcon,
-  TerminalIcon,
-} from "lucide-react";
 import { type ReactNode, type Ref, useEffect, useState } from "react";
 import { cn } from "../lib/utils";
 import type { V3StepKind } from "./v3-types";
@@ -305,16 +296,6 @@ export function Spinner({ className }: { className?: string }) {
   );
 }
 
-const STEP_ICON: Record<V3StepKind, typeof FileTextIcon> = {
-  read: FileTextIcon,
-  search: SearchIcon,
-  edit: PencilIcon,
-  run: TerminalIcon,
-  web: GlobeIcon,
-  think: BrainIcon,
-  delegate: BotIcon,
-};
-
 export const STEP_VERB: Record<V3StepKind, string> = {
   read: "Read",
   search: "Searched",
@@ -324,22 +305,6 @@ export const STEP_VERB: Record<V3StepKind, string> = {
   think: "Thought",
   delegate: "Delegated",
 };
-
-export function StepIcon({
-  kind,
-  className,
-}: {
-  kind: V3StepKind;
-  className?: string;
-}) {
-  const Icon = STEP_ICON[kind];
-  return (
-    <Icon
-      aria-hidden
-      className={cn("size-[15px] shrink-0 text-muted-foreground", className)}
-    />
-  );
-}
 
 export function Diff({ add, del }: { add: number; del: number }) {
   return (

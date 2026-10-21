@@ -21,7 +21,6 @@ import {
   sessionModels,
   sessionSignals,
 } from "../lib/runtime";
-import { browserTabs } from "./browser";
 import { modelLabel, modelRowStore } from "./models";
 import { profileStore } from "./profiles";
 import { v3SettingsSlice } from "./settings-data";
@@ -143,7 +142,6 @@ export function v3DataStore(): ReadableAtom<V3Data> {
       company,
       folders,
       modelRowStore(),
-      browserTabs,
       v3SettingsSlice,
       profileStore(),
       engineModels,
@@ -165,7 +163,6 @@ export function v3DataStore(): ReadableAtom<V3Data> {
       [me, companyName],
       folderRows,
       modelRows,
-      tabs,
       settingsSlice,
       profiles,
       catalog,
@@ -207,7 +204,7 @@ export function v3DataStore(): ReadableAtom<V3Data> {
         archivedThreads: v3ArchivedThreads(src),
         asks: v3Asks(src),
         updates: [],
-        browser: { tabs, bookmarks: [] },
+        browser: { tabs: [], bookmarks: [] },
         modelChoices: modelRows.map((r) => r.label),
         ...(catalog.length
           ? {

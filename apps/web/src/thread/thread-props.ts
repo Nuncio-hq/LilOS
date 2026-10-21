@@ -1,4 +1,7 @@
-import { MAX_ATTACHMENT_BYTES } from "@lilos/contracts/app";
+import {
+  MAX_ATTACHMENT_BYTES,
+  MAX_ATTACHMENTS_PER_MESSAGE,
+} from "@lilos/contracts/app";
 import {
   archiveConversation,
   renameConversation,
@@ -17,6 +20,8 @@ export function sharedViewProps(d: ThreadData) {
   return {
     root: d.rootMsg,
     thread: d.thread,
+    lead: d.uiEmp,
+    threadStatus: d.status,
     channel: d.uiChannel,
     emp: d.empFn,
     human: humanFor,
@@ -45,6 +50,11 @@ export function sharedViewProps(d: ThreadData) {
     defaultModel: d.defaultModel,
     defaultProvider: d.defaultProvider,
     onCommand: d.onCommand,
+    /* The composer's `@` and `/` menus: the same in the panel and the widened
+       session, so each is passed once here, never per frame. */
+    mentionables: d.mentionables,
+    onSearchFiles: d.searchFiles,
+    onSearchCommands: d.searchCommands,
     modelOpen: d.modelOpen,
     onModelOpen: d.setModelOpen,
     access: d.conv.access,
@@ -75,6 +85,7 @@ export function sharedViewProps(d: ThreadData) {
     onDraftChange: d.setDraft,
     accept: "*/*",
     maxFileSize: MAX_ATTACHMENT_BYTES,
+    maxFiles: MAX_ATTACHMENTS_PER_MESSAGE,
     onAttachError: sayError,
     onStop: d.onStop,
     lastSent: d.lastSent,

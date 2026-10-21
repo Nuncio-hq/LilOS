@@ -29,7 +29,8 @@ import {
  */
 
 const SHOTS = "test-results/ac-645";
-const REPLY = /Reply to /;
+/* Inside the thread panel: the new-chat draft beside it is "Message X…" too. */
+const REPLY = /^Message [^…]+…$/;
 
 test("AC-645 the thread composer mounts and re-arms while summaries lag", async ({
   page,
@@ -53,19 +54,20 @@ test("AC-645 the thread composer mounts and re-arms while summaries lag", async 
     );
 
     /* The summary row lands ~8s late; the composer must still mount (the
-       `conversations` union) and return to "Reply to…" once the session
+       `conversations` union) and return to "Message X…" once the session
        feed's model answers — the placeholder is the deterministic anchor
        for "running" having handed off. */
-    const thread = v3Peek(page).getByPlaceholder(REPLY);
+    const thread = v3Peek(page)
+      .locator("[data-thread-panel]")
+      .getByPlaceholder(REPLY);
     await expect(thread).toBeVisible({ timeout: 45_000 });
     await thread.fill("still here under lag");
     await page.screenshot({ path: `${SHOTS}/ac-645-composer-reamed.png` });
 
     await page.reload();
-    await expect(v3Peek(page).getByPlaceholder(REPLY)).toHaveValue(
-      "still here under lag",
-      { timeout: 45_000 },
-    );
+    await expect(
+      v3Peek(page).locator("[data-thread-panel]").getByPlaceholder(REPLY),
+    ).toHaveValue("still here under lag", { timeout: 45_000 });
     await page.screenshot({ path: `${SHOTS}/ac-645-after-reload.png` });
   } finally {
     await stack.stop();

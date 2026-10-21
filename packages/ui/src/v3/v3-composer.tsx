@@ -7,6 +7,7 @@ import {
   useRef,
 } from "react";
 import { useComposerMenus } from "../chat/composer-menus";
+import { MentionPopup, SlashPopup } from "../chat/composer-popups";
 import { parseSlashDraft } from "../chat/composer-slash";
 import { cn } from "../lib/utils";
 import type { FileMention, SlashItem } from "../types";
@@ -17,7 +18,6 @@ import {
   pastedFiles,
 } from "./v3-attach";
 import { Kbd } from "./v3-bits";
-import { MentionMenu, SlashMenu } from "./v3-composer-menus";
 import type { V3Data } from "./v3-data-types";
 import { AgentAvatar } from "./v3-marks";
 import type { V3Agent } from "./v3-types";
@@ -147,8 +147,13 @@ export function Composer({
 
   return (
     <div ref={menus.wrapRef} data-composer className="relative">
-      <MentionMenu data={data} menus={menus} />
-      <SlashMenu menus={menus} />
+      <MentionPopup
+        menus={menus}
+        employees={people ?? []}
+        avatar={(a) => <AgentAvatar data={data} agent={a} size={18} />}
+        meta={(a) => a.role}
+      />
+      <SlashPopup menus={menus} />
       <div
         onDragOver={
           attach

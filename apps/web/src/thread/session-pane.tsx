@@ -20,7 +20,6 @@ import { sharedViewProps } from "./thread-props";
 export function SessionPane({
   d,
   onBack,
-  onNav,
   tab,
   onTab,
   scrollTo,
@@ -28,10 +27,8 @@ export function SessionPane({
   nav,
 }: {
   d: ThreadData;
-  /** Esc / the back button — out of the session view. */
+  /** Esc — out of the session view (the peek header's Narrow is the other way). */
   onBack?: () => void;
-  /** The header's sidebar button. */
-  onNav?: () => void;
   /** The Workbench tab to open on (a panel link's pick); `onTab` reports picks. */
   tab?: WbTab;
   onTab?: (t: WbTab) => void;
@@ -44,12 +41,10 @@ export function SessionPane({
     <FocusView
       bare
       {...sharedViewProps(d)}
-      lead={d.uiEmp}
       work={d.work}
       onOpenSession={sessionOpener(d, nav)}
       onStopJob={d.onStopJob}
       onBack={onBack}
-      onNav={onNav}
       onModel={d.onModel}
       say={sayNotice}
       /* #543: the Workbench exists for every session — the accessors are

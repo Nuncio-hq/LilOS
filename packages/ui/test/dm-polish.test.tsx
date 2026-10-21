@@ -1,14 +1,16 @@
 // @vitest-environment happy-dom
-/* Issue #71, ui layer: AC-1 avatar-less feed rows keep the content column at
-   full width, AC-2 the employee avatar is a colour orb toned by name (no
-   image), AC-4 a waiting surface says "needs you" / "Waiting for approval".
-   (AC-3 `· now:` and the DM-list / sidebar "!" badge belonged to the old DM
-   home and sidebar, which are gone.) */
+/* Issue #71, ui layer: AC-2 the employee avatar is a colour orb toned by name
+   (no image), AC-4 a waiting surface says "needs you" / "Waiting for
+   approval". (AC-1's avatar-less `Row` column-width check went with
+   `feed/row.tsx` in #770, when turns became a full-width `AgentTurn` and a
+   right-aligned `UserTurn` bubble with no avatar grid to keep wide. AC-3
+   `· now:` and the DM-list / sidebar "!" badge belonged to the old DM home
+   and sidebar, which are gone.) */
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, test } from "vitest";
 import { ModelPicker } from "../src/chat/model-picker";
-import { AgentTurn, TurnSteps } from "../src/conversation/turns";
-import { Row } from "../src/feed/row";
+import { TurnWork } from "../src/conversation/turn-work";
+import { AgentTurn } from "../src/conversation/turns";
 import { PHASE_LABEL } from "../src/lib/helpers";
 import { HermesAvatar, orbTone } from "../src/shell/avatars";
 import type { Employee } from "../src/types";
@@ -40,21 +42,7 @@ const EMP: Employee = {
   respondTo: "me",
 };
 
-const emp = (id: string) => (id === EMP.id ? EMP : undefined);
-const human = () => undefined;
-
 describe("issue #71", () => {
-  test("AC-1 a row with no avatar still renders content at the wide column", () => {
-    const { container } = render(
-      <Row from="system" emp={emp} human={human}>
-        <p>notice</p>
-      </Row>,
-    );
-    const grid = container.firstElementChild;
-    const content = grid?.querySelector(".is-assistant");
-    expect(content?.className).toContain("col-start-2");
-  });
-
   test("AC-2 the employee avatar is a colour orb toned by name, no image", () => {
     const { container } = render(<HermesAvatar name="Default" />);
     // No <img> at all — nothing can 404 in apps/web or under file:// in
@@ -74,7 +62,7 @@ describe("issue #71", () => {
 
   test("AC-4 the blocked tool card says `Waiting for approval`", () => {
     const { container } = render(
-      <TurnSteps
+      <TurnWork
         steps={[{ tool: "patch", input: {}, output: "", running: true }]}
         autoOpen
         waitingApproval

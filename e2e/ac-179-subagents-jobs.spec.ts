@@ -8,6 +8,7 @@ import {
   bootStack,
   openSession,
   panelIntoFocus,
+  panelOutOfFocus,
   pickPorts,
   relayRpc,
   type Stack,
@@ -414,7 +415,7 @@ test("AC-319 the thread's 'N subagents · Open' lands on the session view → Su
 
     /* AC-1: back in the thread beside Threads the turn shows only the
        one-line link — the rows live on the Subagents tab, never inline. */
-    await page.getByTitle("Back to DM").click();
+    await panelOutOfFocus(page);
     await expect(page).toHaveURL(THREAD_URL, { timeout: 30_000 });
     await expect(page).not.toHaveURL(FULL_URL);
     const panel = page.locator("[data-thread-panel]");

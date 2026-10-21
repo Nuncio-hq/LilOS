@@ -113,12 +113,18 @@ let convA = "";
     getByText matches a textarea's content too. Turn-card collapsibles are
     excluded the same way: a live card's reasoning echoes the prompt
     verbatim (#266), and while it's open getByText strict-matches both —
-    the #432 fast tick lands asserts inside that open window. */
+    the #432 fast tick lands asserts inside that open window. A turn's
+    reasoning now lives in its work fold (`[data-tasksteps]`), and the
+    thread's own title (`[data-session-title]`, repeated in the sticky bar
+    `[data-thread-bar]` once the header scrolls away) is derived from the
+    first message — none of them is a message row, so all are excluded. */
 const rowText = (scope: Locator, text: string | RegExp) =>
   scope
     .getByText(text)
     .and(
-      scope.locator(":not(textarea):not([data-slot='collapsible-content'] *)"),
+      scope.locator(
+        ":not(textarea):not([data-slot='collapsible-content'] *):not([data-tasksteps] *):not([data-session-title]):not([data-thread-bar] *)",
+      ),
     );
 
 function watchConsole(page: Page) {

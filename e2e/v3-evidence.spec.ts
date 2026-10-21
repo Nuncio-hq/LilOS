@@ -10,6 +10,7 @@ import {
   v3Peek,
   v3Sidebar,
 } from "./helpers/stack";
+import { openWorkbench } from "./helpers/workbench";
 
 /**
  * Screenshot evidence for the v3 shell (replaces the old chrome's
@@ -189,7 +190,7 @@ for (const theme of ["light", "dark"] as const) {
       await expect(page.locator("[data-thread-panel]")).toContainText(
         "Add a footer to the page",
       );
-      await page.locator('[data-thread-panel] [title="Workbench"]').click();
+      await openWorkbench(page);
       await expect(page.locator("[data-wb-tab]").first()).toBeVisible({
         timeout: 30_000,
       });

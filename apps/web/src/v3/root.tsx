@@ -1,10 +1,9 @@
-import { ShortcutsDialog, type V3Nav, V3Shell } from "@lilos/ui";
+import { ShortcutsDialog, ToastView, type V3Nav, V3Shell } from "@lilos/ui";
 import { useCallback, useMemo, useState } from "react";
 import { BrowserDock, BrowserWindowApp } from "../lib/browser";
 import { useAtom } from "../lib/hooks";
 import { bootError, booted, engine, relay } from "../lib/runtime";
 import { toast } from "../lib/toast";
-import { ToastView } from "../lib/toast-view";
 import { ThreadPanel } from "../thread/thread-panel";
 import { makeV3Actions } from "./actions";
 import { AddFolderHost } from "./add-folder";
@@ -19,9 +18,9 @@ import { visibleNav } from "./shown";
    you are is the URL hash, a control exists only when the engine can do it).
    V3Shell runs on the relay's company: the nav is nav.ts, the data one
    computed store (data.ts), every click an action (actions.ts). The thread
-   beside a page is the app's own thread view until the v3 conversation runs
-   on engine events (#770). Not: a second UI, a route per record, placeholder
-   controls. */
+   in the peek and widened is ThreadPanel: the one v3 thread view, running on
+   engine events (#770). Not: a second UI, a route per record, placeholder or
+   duplicate controls. */
 
 function Company() {
   const nav = useAtom(v3Nav);
@@ -53,7 +52,14 @@ function Company() {
   const [shortcuts, setShortcuts] = useState(false);
   const openSearch = useCallback(() => setSearch((n) => n + 1), []);
   const toggleShortcuts = useCallback(() => setShortcuts((o) => !o), []);
-  useShellEffects({ move, openSearch, openShortcuts: toggleShortcuts });
+  const [sidebar, setSidebar] = useState(0);
+  const toggleSidebar = useCallback(() => setSidebar((n) => n + 1), []);
+  useShellEffects({
+    move,
+    openSearch,
+    openShortcuts: toggleShortcuts,
+    toggleSidebar,
+  });
   return (
     <div className="flex h-dvh">
       <div className="min-w-0 flex-1">
@@ -64,6 +70,7 @@ function Company() {
           onNav={move}
           banner={<StatusBanner />}
           searchRequest={search}
+          sidebarRequest={sidebar}
           // The window's vibrancy follows the theme or the sidebar turns
           // unreadable (#232).
           onThemeChange={(theme) => window.lilos?.setThemeSource?.(theme)}

@@ -1,4 +1,3 @@
-import { SparklesIcon } from "lucide-react";
 import {
   type ReactNode,
   useCallback,
@@ -7,15 +6,18 @@ import {
   useRef,
   useState,
 } from "react";
+import { foreignOverlayOpen } from "../chat/ui-layers";
+import { ConversationReflowKey } from "../components/ai-elements/conversation";
 import { useTheme } from "../shell/use-theme";
 import type { Theme } from "../types";
-import { Kbd } from "./v3-bits";
 import type { V3Data, V3Draft } from "./v3-data-types";
 import { V3Goals } from "./v3-goals";
 import { V3Guide } from "./v3-guide";
 import { V3Hire } from "./v3-hire";
 import { V3Home } from "./v3-home";
 import { V3Inbox } from "./v3-inbox";
+import { EscLayer } from "./v3-keys";
+import { SIDEBAR_W, shellSizes, useLayoutPrefs } from "./v3-layout-prefs";
 import { step } from "./v3-nav";
 import { V3Needs } from "./v3-needs";
 import { OpenRecord } from "./v3-open-record";
@@ -30,9 +32,12 @@ import type {
 import { V3Palette } from "./v3-palette";
 import { V3Peek } from "./v3-peek";
 import { V3People } from "./v3-people";
+import { SidebarHotZone, useSidebarPopout } from "./v3-popout";
+import { ResizeHandle, useWidth } from "./v3-resize";
 import { V3Settings } from "./v3-settings";
-import { V3Sidebar } from "./v3-sidebar";
+import { type SidebarMode, V3Sidebar } from "./v3-sidebar";
 import { V3Threads } from "./v3-threads";
+import { V3TopBar } from "./v3-topbar";
 import { V3Welcome } from "./v3-welcome";
 import { V3Work } from "./v3-work";
 
@@ -49,12 +54,11 @@ export type V3ShellProps = {
   /** The CEO behind ⌘K: a reply or a draft plan for one line. Without it,
      ⌘K only searches and jumps. */
   draft?: (text: string, data: V3Data) => V3Draft;
-  /** The app's own thread view for a thread record. The real app uses this
-     while its threads still render with the pre-v3 view (#769), until the
-     v3 conversation runs on real engine events (#770), which removes it.
-     `scrollTo` is a message to bring into view (a ⌘K message hit opened
-     the thread); the view calls `onScrolled` once it has, which clears it. */
-  renderThread?: (
+  /** The app's thread view for a thread record (the prototype passes the same
+     component on mock data). `scrollTo` is a message to bring into view (a
+     ⌘K message hit opened the thread); the view calls `onScrolled` once it
+     has, which clears it. */
+  renderThread: (
     props: V3PageProps & {
       id: string;
       scrollTo?: string;
@@ -66,6 +70,9 @@ export type V3ShellProps = {
   banner?: ReactNode;
   /** The app bumps this to open ⌘K when a native menu consumed the chord. */
   searchRequest?: number;
+  /** The same for ⌘\: the desktop View menu consumed it, so the app asks
+     the shell to hide or show the sidebar through this counter. */
+  sidebarRequest?: number;
   /** The theme the shell shows changed; the app tells its window. */
   onThemeChange?: (theme: Theme) => void;
 };
@@ -97,6 +104,7 @@ export function V3Shell({
   renderThread,
   banner,
   searchRequest,
+  sidebarRequest,
   onThemeChange,
 }: V3ShellProps) {
   const [palette, setPalette] = useState<string | null>(null);
@@ -146,7 +154,44 @@ export function V3Shell({
     () => onNav((n) => ({ ...n, peek: [], full: false })),
     [onNav],
   );
+  /* The layout is this device's: column widths and whether the sidebar is
+     hidden persist (v3-layout-prefs.ts). Limits come from the window, so
+     shrinking it never crushes the page: the peek gives way first, then the
+     sidebar. */
+  const prefs = useLayoutPrefs();
+  const { hidden, setHidden } = prefs;
+  const [frame, frameW] = useWidth();
+  const { side, peek } = shellSizes(frameW, prefs);
+  const pop = useSidebarPopout(hidden);
+  const mode: SidebarMode = !hidden
+    ? "docked"
+    : pop.popped
+      ? "popped"
+      : "hidden";
+  const toggleSidebar = useCallback(
+    () => setHidden(!hidden),
+    [hidden, setHidden],
+  );
+  // The desktop View menu's ⌘\ arrives as a request, like ⌘K's.
+  const lastSidebar = useRef(sidebarRequest);
+  useEffect(() => {
+    if (sidebarRequest === lastSidebar.current) return;
+    lastSidebar.current = sidebarRequest;
+    toggleSidebar();
+  }, [sidebarRequest, toggleSidebar]);
 
+  const { popped, tuck } = pop;
+  /* Esc over a floating sidebar tucks it. It is a layer, not a bubble-phase
+     branch: a widened thread under it is a layer too and takes Esc in the
+     capture phase first — narrowing the page while the sidebar stayed open.
+     Keyboard focus inside the sidebar would be lost with it: hand it to the
+     bar's toggle, where the sidebar's controls were one tab away. */
+  const tuckOnEsc = useCallback(() => {
+    const inside = document.activeElement?.closest("aside");
+    tuck();
+    if (inside && inside === pop.side.current)
+      document.querySelector<HTMLElement>("[data-v3-topbar] button")?.focus();
+  }, [tuck, pop.side]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // A panel that already used the key (its own Esc) keeps it to itself.
@@ -156,15 +201,34 @@ export function V3Shell({
         setPalette((p) => (p === null ? "" : null));
         return;
       }
-      // Esc closes the peek, unless you are typing or the palette owns Esc.
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        !e.altKey &&
+        (e.key === "\\" || e.code === "Backslash")
+      ) {
+        e.preventDefault();
+        toggleSidebar();
+        return;
+      }
+      /* Esc closes the peek unless you are typing, the palette owns Esc, or
+         a menu/popover/dialog of the thread is open: that overlay closes on
+         this very key and must not take the peek with it (the layer stack
+         leaves such a key unhandled for the overlay, so it reaches us). */
       const typing = (e.target as HTMLElement | null)?.closest(
         "input, textarea",
       );
-      if (e.key === "Escape" && palette === null && !typing) closePeek();
+      if (
+        e.key !== "Escape" ||
+        palette !== null ||
+        typing ||
+        foreignOverlayOpen()
+      )
+        return;
+      closePeek();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [palette, closePeek, onNav]);
+  }, [palette, closePeek, toggleSidebar]);
 
   const act = useMemo<V3Actions>(
     () => ({ ...actions, ask: (text) => setPalette(text ?? "") }),
@@ -200,7 +264,11 @@ export function V3Shell({
     );
   return (
     <OpenRecord.Provider value={top}>
-      <div className="lilos-v3 flex h-dvh min-h-0 overflow-hidden bg-[var(--v3-main)] text-[14px] text-foreground">
+      <div
+        ref={frame}
+        className="lilos-v3 relative flex h-dvh min-h-0 overflow-hidden bg-[var(--v3-main)] text-[14px] text-foreground"
+      >
+        {popped && palette === null && <EscLayer onEscape={tuckOnEsc} />}
         <V3Sidebar
           data={data}
           page={page}
@@ -210,33 +278,39 @@ export function V3Shell({
           dark={dark}
           onTheme={() => setTheme(dark ? "light" : "dark")}
           canHire={!!actions.hire}
+          mode={mode}
+          width={side.w}
+          sideRef={pop.side}
+          onToggle={toggleSidebar}
+          onPointerEnter={pop.cancel}
+          onPointerLeave={pop.tuckSoon}
+          onBlur={pop.tuckSoon}
         />
+        {hidden ? (
+          <SidebarHotZone onEnter={pop.show} onLeave={pop.tuckSoon} />
+        ) : (
+          <ResizeHandle
+            label="Resize sidebar"
+            value={side.w}
+            min={SIDEBAR_W.min}
+            max={side.max}
+            grows="right"
+            edge="before"
+            onChange={prefs.setSidebarW}
+            onReset={() => prefs.setSidebarW(undefined)}
+          />
+        )}
         <div className="flex min-w-0 flex-1 flex-col">
+          {/* The bar is the window's top strip (the lights sit over it while
+            the sidebar is hidden), so a notice goes below it, above the page. */}
+          <V3TopBar
+            company={data.company}
+            hidden={hidden}
+            onHome={() => goFromPage({ page: "home" })}
+            onShowSidebar={toggleSidebar}
+            onSearch={() => setPalette("")}
+          />
           {banner}
-          <div className="lilos-drag flex h-[46px] shrink-0 items-center justify-between gap-4 pr-3.5 pl-5 text-[14px] text-muted-foreground">
-            <div className="flex min-w-0 items-center truncate">
-              <button
-                type="button"
-                onClick={() => goFromPage({ page: "home" })}
-                className="hover:text-foreground"
-              >
-                {data.company}
-              </button>
-              <span className="mx-1.5 text-muted-foreground/60">/</span>
-              <span className="font-medium text-foreground">
-                {PAGE_NAME[page.page]}
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={() => setPalette("")}
-              className="flex h-[30px] w-[280px] items-center gap-2 rounded-lg bg-[var(--v3-hover)] pr-1.5 pl-2.5 text-[13px] text-muted-foreground/80 hover:text-foreground"
-            >
-              <SparklesIcon className="size-4" />
-              {draft ? "Ask the CEO anything…" : "Search…"}
-              <Kbd className="ml-auto">⌘K</Kbd>
-            </button>
-          </div>
           {/* Page and peek side by side: the page narrows instead of hiding,
             stays mounted (scroll and all), and marks the open row, so
             closing the peek puts you exactly where you were. Widened, the
@@ -267,19 +341,37 @@ export function V3Shell({
                 <V3Settings {...props} view={page.view ?? "general"} />
               )}
             </main>
+            {top && !nav.full && (
+              <ResizeHandle
+                label="Resize side panel"
+                value={peek.w}
+                min={peek.min}
+                max={peek.max}
+                grows="left"
+                edge="after"
+                onChange={prefs.setPeekW}
+                onReset={() => prefs.setPeekW(undefined)}
+              />
+            )}
             {top && (
               <V3Peek
                 data={data}
-                renderThread={
-                  renderThread &&
-                  ((p) =>
-                    renderThread({
+                width={peek.w}
+                renderThread={(p) => (
+                  /* #315: the panes' widths as one key — the thread re-pins
+                     to its bottom in the very commit that moves them (see
+                     the guard in conversation.tsx). */
+                  <ConversationReflowKey.Provider
+                    value={`${hidden ? 0 : side.w}:${peek.w}:${nav.full ? "full" : "side"}`}
+                  >
+                    {renderThread({
                       ...p,
                       ...(jump?.threadId === p.id
                         ? { scrollTo: jump.messageId, onScrolled: clearJump }
                         : {}),
-                    }))
-                }
+                    })}
+                  </ConversationReflowKey.Provider>
+                )}
                 go={goFromPeek}
                 act={act}
                 trail={nav.peek}

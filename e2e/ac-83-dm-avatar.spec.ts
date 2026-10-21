@@ -13,20 +13,23 @@ import {
 /**
  * Issue #83 — message row avatar alignment. A row's first content line was
  * the title/actions row, so the grid avatar top-aligned with it and floated
- * a line above the "Oscar · 07:20 PM" header. AC-2 measures the row's avatar
+ * a line above the "Oscar · 07:20 PM" header. AC-2 measures the avatar
  * top edge against the name line's top edge in the live web app (≤4px —
  * happy-dom has no layout engine, so this must be real layout). AC-1 checks
  * the row's text and controls sit in the column right of the avatar and that
  * hover doesn't shift anything; AC-3 repeats the check inside the Electron
  * desktop app and captures the row there.
  *
- * v3: the row is the thread panel's message row (the shared feed `Row`: a 36px
- * avatar column + Who line + text), beside Threads in the side peek. The old
- * "N replies" chip and the DM feed's `[data-session]` row existed only on the
- * deleted DM home, so the "chip" half of AC-1 measures what the row still
- * carries to the right of the avatar (its Who line, its text, its Rewind
- * button), and the idle/selected states move to the Threads list row for the
- * same thread (it is `aria-current` while its thread is open).
+ * v3: your messages are right-aligned bubbles with no avatar, so the avatar
+ * + name pair this spec guards is the agent turn's header (`data-agentwho`: a
+ * 20px orb and the agent's name beside it, over the answer). AC-1 checks the
+ * name and time sit in the column right of the orb, that the answer is NOT
+ * pushed into a gutter (it spans the column under the header), and that your
+ * bubble is flush with the column's right edge; hover must not shift
+ * anything. The "N replies" chip and the DM feed's `[data-session]` row
+ * existed only on the deleted DM home, so the idle/selected states move to
+ * the Threads list row for the same thread (it is `aria-current` while its
+ * thread is open).
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
@@ -38,13 +41,10 @@ const SHOTS = path.join(repo, "test-results", "ac-83");
 const PROMPT = "What does the replay contract carry?"; // engine-fake script
 const AGENT = { id: "default", name: "Default" };
 
-/* The thread panel's first message row: `[data-msg]` wraps the `Row` grid. The
-   row's avatar is its grid column 1 and the name line's top is measured at the
-   "Oscar" span — exact text, since the avatar fallback "O" also carries
-   `font-semibold`. The name/time line is the grid's second child's first
-   child (see tops()). */
+/* The thread panel's first agent header: the orb is its first child, the
+   name its first childless span, the time the span after it. */
 const panelRow = (page: Page) =>
-  page.locator("[data-thread-panel] [data-msg] > div.group.grid").first();
+  page.locator("[data-thread-panel] [data-agentturn] [data-agentwho]").first();
 
 /* The same thread's row on the Threads page (an "Earlier today" row once its
    turn is finished and seen): the agent's avatar and name in one flex line. */
@@ -63,13 +63,11 @@ const tops = (row: Locator) =>
     const yOf = (n: Element | null | undefined) =>
       n ? n.getBoundingClientRect().y : null;
     const nameSpan = [...el.querySelectorAll("span")].find(
-      (n) => n.childElementCount === 0 && n.textContent?.trim() === "Oscar",
+      (n) => n.childElementCount === 0 && n.textContent?.trim() === "Default",
     );
-    const avatarTop = yOf(el.querySelector("[data-slot='avatar']"));
+    const avatarTop = yOf(el.firstElementChild);
     const nameTop = yOf(nameSpan);
-    const lineTop = yOf(
-      el.querySelector(":scope > *:nth-child(2) > *:first-child"),
-    );
+    const lineTop = yOf(el);
     if (avatarTop === null || nameTop === null) {
       throw new Error("row avatar or name line not laid out");
     }
@@ -198,20 +196,17 @@ test("AC-1/AC-2 the avatar and name line share a top edge (≤4px)", async ({
   const stack = await bootStack(
     "ac83a",
     await pickPorts(),
-    // #118: the row's name is the OS user's — pin it for the exact-text
-    // name-line measurements.
+    // #118: pin the OS user's name so nothing else in the panel reads
+    // like the agent's.
     { LILOS_USER_NAME: "Oscar" },
   );
   try {
     await skipFirstRun(page);
     await startChat(page, stack.webUrl, AGENT, PROMPT);
-    /* The send lands in the side peek: the message row is already rendered. */
+    /* The send lands in the side peek; the agent's header renders with its turn. */
     const row = panelRow(page);
-    await expect(row).toBeVisible({ timeout: 30_000 });
+    await expect(row).toBeVisible({ timeout: 60_000 });
     // Settled state: engine-fake's reply is in and its turn is over.
-    await expect(
-      page.locator("[data-thread-panel]").getByText(/\d+ repl(y|ies)/),
-    ).toBeVisible({ timeout: 60_000 });
     await expect(page.locator("[data-turnsettled]")).toBeVisible({
       timeout: 60_000,
     });
@@ -222,35 +217,51 @@ test("AC-1/AC-2 the avatar and name line share a top edge (≤4px)", async ({
     await page.setViewportSize({ width: 900, height: 720 });
     await expectAligned(page, row, "900px viewport");
     await page.setViewportSize({ width: 1280, height: 720 });
-    // AC-1: the row's Who line, its text and its controls sit in the column
-    // to the RIGHT of the avatar. Same single-frame rule as tops(): separate
-    // boundingBox() calls can straddle a reflow and mix frames (#84 — CI hit
-    // a 7px false negative).
-    const { avatarRight, columns } = await row.evaluate((el) => {
-      const avatar = el.querySelector("[data-slot='avatar']");
-      const right = (n: Element | null | undefined) => {
-        const b = n?.getBoundingClientRect();
-        return b ? b.x : null;
-      };
-      const a = avatar?.getBoundingClientRect();
+    // AC-1: the agent's name and time sit in the column to the RIGHT of the
+    // orb, the answer spans the column under the header, and your bubble is
+    // flush with the column's right edge. Same single-frame rule as tops():
+    // separate boundingBox() calls can straddle a reflow and mix frames (#84
+    // — CI hit a 7px false negative).
+    const geo = await row.evaluate((el) => {
+      const x = (n: Element | null | undefined) =>
+        n?.getBoundingClientRect().x ?? null;
+      const orb = el.firstElementChild?.getBoundingClientRect();
+      const turn = el.closest("[data-agentturn]");
+      const bubble = document.querySelector(
+        "[data-thread-panel] [data-userturn]",
+      );
       return {
-        avatarRight: a ? a.x + a.width : null,
-        columns: {
-          who: right(
-            el.querySelector(":scope > *:nth-child(2) > *:first-child"),
+        orbRight: orb ? orb.x + orb.width : null,
+        name: x(
+          [...el.querySelectorAll("span")].find(
+            (n) =>
+              n.childElementCount === 0 && n.textContent?.trim() === "Default",
           ),
-          text: right(el.querySelector(".lilos-prose")),
-          rewind: right(el.querySelector("[data-rewind]")),
-        },
+        ),
+        // The answer's prose — not the reasoning's, which sits inside the work fold.
+        answer: x(
+          [...(turn?.querySelectorAll(".lilos-prose") ?? [])].find(
+            (n) => !n.closest("[data-tasksteps]"),
+          ),
+        ),
+        orbLeft: orb?.x ?? null,
+        colRight: turn?.getBoundingClientRect().right ?? null,
+        bubbleRight: bubble?.getBoundingClientRect().right ?? null,
       };
     });
-    if (avatarRight === null) throw new Error("row avatar missing");
-    for (const [name, x] of Object.entries(columns)) {
-      expect(x, `${name} is laid out`).not.toBeNull();
-      expect(x as number, `${name} right of the avatar`).toBeGreaterThanOrEqual(
-        avatarRight - 1,
-      );
-    }
+    if (geo.orbRight === null) throw new Error("agent orb missing");
+    expect(geo.name, "name right of the orb").toBeGreaterThanOrEqual(
+      geo.orbRight - 1,
+    );
+    expect(
+      geo.answer,
+      "answer starts under the orb, not in a gutter",
+    ).toBeLessThanOrEqual((geo.orbLeft ?? 0) + 1);
+    // The agent turn spans the whole column, so its right edge IS the column's.
+    expect(
+      Math.abs((geo.colRight ?? 0) - (geo.bubbleRight ?? -99)),
+      "bubble flush with the column's right edge",
+    ).toBeLessThanOrEqual(1);
     // AC-1: hover (and its background change) doesn't shift the row's layout.
     await row.hover();
     await expectAligned(page, row, "hovered");
@@ -287,10 +298,7 @@ test("AC-3 desktop app: the thread row in Electron", async () => {
     try {
       await startChat(win, stack.webUrl, AGENT, PROMPT);
       const row = panelRow(win);
-      await expect(row).toBeVisible({ timeout: 30_000 });
-      await expect(
-        win.locator("[data-thread-panel]").getByText(/\d+ repl(y|ies)/),
-      ).toBeVisible({ timeout: 60_000 });
+      await expect(row).toBeVisible({ timeout: 60_000 });
       await expect(win.locator("[data-turnsettled]")).toBeVisible({
         timeout: 60_000,
       });

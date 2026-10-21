@@ -1,669 +1,298 @@
-import type { ChatStatus } from "ai";
-import { CheckIcon, Maximize2Icon, PlayIcon, XIcon } from "lucide-react";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { AccessPill } from "../chat/access-pill";
-import {
-  ConversationKeepBottom,
-  NotSentTray,
-  plain,
-  QueuedTray,
-  type QueuedTrayItem,
-  queuedItemText,
-  ReconnectingLine,
-  runningComposer,
-  waitingComposer,
-} from "../chat/agent-chat";
-import { Composer } from "../chat/composer";
-import { ModelPicker, sessionChoice } from "../chat/model-picker";
-import { useUiLayer } from "../chat/ui-layers";
+import { CheckIcon, XIcon } from "lucide-react";
+import { useMemo, useRef } from "react";
+import { ConversationKeepBottom, plain } from "../chat/agent-chat";
 import {
   Conversation,
   ConversationContent,
-  type ConversationPin,
 } from "../components/ai-elements/conversation";
 import { Button } from "../components/ui/button";
-import { askKeyDown, pendingAsk } from "../conversation/ask-keys";
 import { openStartRequest } from "../conversation/cards";
 import { FindUnstubAnchor, FindUnstubNudge } from "../conversation/find-unstub";
-import { landJump } from "../conversation/jump-to-hit";
-import type { PlanAction } from "../conversation/plan-card";
+import { QuestionAwareScrollButton } from "../conversation/question-card";
+import { TurnList } from "../conversation/turn-list";
 import {
-  type QuestionAnswer,
-  QuestionAwareScrollButton,
-} from "../conversation/question-card";
-import { TranscriptNoteRow } from "../conversation/transcript-note";
-import {
-  estTurnHeight,
-  openTailStart,
-  RewindHover,
-  TURN_LAZY_AFTER,
-  type TurnActs,
-  TurnRow,
-} from "../conversation/turn-rows";
-import { AttachmentChips } from "../conversation/turns";
-import { Body, Row, Who } from "../feed/row";
+  leadOf,
+  useJumpToHit,
+  useThreadKeys,
+  useTurnActs,
+  useTurnWindow,
+} from "../conversation/use-thread-frame";
 import { SessionUsage } from "../focus/session-usage";
 import { sessionModelId } from "../lib/context-window";
-import { cn } from "../lib/utils";
-import type {
-  AttachedFile,
-  Channel,
-  ConversationAccess,
-  EmpFn,
-  Employee,
-  FileMention,
-  HumanFn,
-  ModelChoice,
-  ModelOption,
-  ModelPickerExtras,
-  Msg,
-  OsApp,
-  OsEditor,
-  QuestionAsk,
-  SlashItem,
-  Thread,
-  TranscriptNote,
-  WbTab,
-  Work,
-} from "../types";
-import { VIEWER_ID } from "../types";
+import type { OsApp, WbTab } from "../types";
 import { useRenameMenu } from "../v3/v3-thread-menu";
-import { WorkspaceBadge, WsBadge } from "../workbench/ws-badges";
+import type { ThreadFrameProps } from "./frame-props";
+import { ThreadComposer } from "./thread-composer";
+import { StartWork, sentTurns, ThreadHeader } from "./thread-header";
+import { panelFolder, threadKicker } from "./thread-kicker";
+import { workTabs } from "./work-strip";
 
-/* #134/#430: the "Rewind to here" checkpoint lives in
-   conversation/turn-rows.tsx so both frames share the memoized row. */
-
-/* The right-panel frame around the conversation — channel threads AND DM sessions (issue #19).
-   The employee turns render through the shared AgentTurn (identical to Focus); human turns keep
-   the compact feed Row. DM-ness comes only from channel.dm — never the display name (AC-3).
-   D-#19: a control renders only when its handler is passed, so the app shows only working
-   surfaces (no placeholder buttons). Conversation UI = shared pieces (AgentTurn, UserTurn,
-   cards, composers) + thin frames (ThreadView, FocusView); a frame-only feature is a piece the
-   frame adds, never a prop of AgentTurn. Not: variant/mode props inside AgentTurn, or a god
-   component accumulating optional props. */
-export function ThreadView({
-  root,
-  thread,
-  channel,
-  emp,
-  human,
-  resolved,
-  setResolved,
-  onFocus,
-  onOpenTab,
-  onClose,
-  work,
-  repo,
-  onStart,
-  running,
-  onSend,
-  onStop,
-  lastSent,
-  onRetry,
-  onUnqueue,
-  onSendQueued,
-  pending = [],
-  reconnecting,
-  accept,
-  maxFileSize,
-  maxFiles,
-  onAttachError,
-  steer = false,
-  agentWorking = false,
-  onRemovePending,
-  models,
-  onModel,
-  picker,
-  defaultModel,
-  defaultProvider,
-  transcriptNote,
-  mentionables,
-  onSearchCommands,
-  onCommand,
-  modelOpen,
-  onModelOpen,
-  onSearchFiles,
-  scrollTo,
-  onScrolled,
-  draft,
-  onDraftChange,
-  editors,
-  onOpenPath,
-  onRewind,
-  rewindWarning,
-  seedFiles,
-  onSeededFiles,
-  onOpenSession,
-  onAddFolder,
-  onPlan,
-  onCompact,
-  onContinue,
-  onAnswer,
-  onCancel,
-  access,
-  onAccess,
-  onRename,
-  onArchive,
-  findBar,
-}: {
-  root: Extract<Msg, { kind: "msg" }>;
-  thread: Thread;
-  channel: Channel;
-  emp: EmpFn;
-  human: HumanFn;
-  resolved: Record<string, string>;
-  setResolved?: (r: Record<string, string>) => void;
-  onFocus?: () => void;
-  /* Opens Focus on a Workbench tab — makes the turn's "N subagents · Open" / "N files changed"
-     links live in the panel (#317). Absent = those stay in-place / plain text. */
+export interface ThreadViewProps extends ThreadFrameProps {
+  /* Opens the session view on a Workbench tab: the work strip's buttons and the
+     turn's "N subagents · Open" / "N files changed" links (#317). Absent = no
+     strip, and those links stay in-place / plain text. The expand control
+     itself is the peek header's Widen — the thread draws none. */
   onOpenTab?: (t: WbTab) => void;
+  /* The app can open pages in a LilOS Browser tab (desktop): the work strip
+     offers it. */
+  browser?: boolean;
   /* Esc → close the panel (issue #195 AC-1); absent → Esc does nothing (D-#19). */
   onClose?: () => void;
-  work: Work | null;
   repo?: string;
-  onStart?: () => void;
-  running: boolean;
-  /* Return a promise to delay clearing the composer draft until it resolves;
-     a rejected send keeps the text (issue #103, AC-5). */
-  onSend: (text: string, files?: AttachedFile[]) => void | Promise<unknown>;
-  onStop?: () => void;
-  /* Host-held composer draft for this conversation (issue #103); omitted, the
-     composer keeps its own state. */
-  draft?: string;
-  onDraftChange?: (v: string) => void;
-  /* ↑ recall for the thread composer: the host's last sent message in this
-     conversation (issue #104 AC-5). */
-  lastSent?: string;
-  /* Engine-reported models + pick handler (issue #30); no onModel → no picker (D-#19). */
-  models?: ModelOption[];
-  onModel?: (c: ModelChoice) => void;
-  /* Refresh / Edit models… / provider names — each renders only with its handler. */
-  picker?: ModelPickerExtras;
-  /* The engine's `models.list.default` — the unpinned-employee pick (#92 AC-5). */
-  defaultModel?: string;
-  /* The default's provider — a `{provider?, id}` pair disambiguates a shared id. */
-  defaultProvider?: string;
-  onRetry?: (empId: string) => void;
-  onUnqueue?: (i: number) => void;
-  onSendQueued?: (i: number) => void;
-  /* Messages sent while the turn runs that the agent hasn't read yet. They wait in the tray above the
-     composer; `steer` (engine declared session.steer) only changes when they get read (issue #9).
-     A `{text, removable}` row the engine already holds hides its Edit/Remove (#315). */
-  pending?: QueuedTrayItem[];
-  /* #557: the relay socket is down and the client is redialing — a thin
-     "Reconnecting…" line over the composer; the send waits and lands once
-     the socket is back. */
-  reconnecting?: boolean;
-  /* Composer attachment types the host accepts (e.g. "image/*"); absent = no attach UI. */
-  accept?: string;
-  /* Attachment byte cap + count cap + where rejections surface (issue #31). */
-  maxFileSize?: number;
-  maxFiles?: number;
-  onAttachError?: (message: string) => void;
-  steer?: boolean;
-  /* #308: the running turn is engine-initiated (a leg) — Enter queues,
-     and the composer names whose work it is instead of offering to
-     steer. */
-  agentWorking?: boolean;
-  onRemovePending?: (i: number) => void;
-  /* A note on the transcript's state — the kind picks the slot (#532):
-     "trimmed" heads the transcript (#431 — history missing above the
-     first entry); "unavailable" tails it (#28 — the live tail can't
-     replay). */
-  transcriptNote?: TranscriptNote;
-  /* os.editors result + the os.open call bound to the session folder
-     (issue #110): the folder badge gains an "Open in …/Reveal in Finder"
-     menu only when both are passed (D-#19). */
-  editors?: OsEditor[];
+  /* os.open call bound to the session folder (issue #110): the folder badge
+     gains an "Open in …/Reveal in Finder" menu only with `editors` too. */
   onOpenPath?: (path: string, app: OsApp, line?: number) => void;
-  /* `@` menu sections (#105): employees for mention; a file/dir search for
-     the Files section — passed only when the session has a folder (cwd). */
-  mentionables?: Employee[];
-  onSearchFiles?: (query: string) => Promise<FileMention[]>;
-  /* The `/` menu's provider (engine commands + skills) and the host's claim
-     hook for app-owned command sends; modelOpen controls the picker the
-     `/model` send opens. */
-  onSearchCommands?: (query: string) => Promise<SlashItem[]>;
-  onCommand?: (name: string, args: string) => boolean;
-  modelOpen?: boolean;
-  onModelOpen?: (open: boolean) => void;
-  /* A message id to bring into view — set when the user opens a search hit
-     (issue #138 AC-3): scrolls the message center into view and flashes it
-     briefly. Retried while replies stream in. */
-  scrollTo?: string;
-  /* Fired once the scroll happened; the host clears `scrollTo` there. */
-  onScrolled?: () => void;
-  /* #134 "Rewind to here" on every user row (root included): the host drops
-     the message + everything after and restores the folder to the pre-turn
-     checkpoint. Disabled while a turn runs (AC-5). */
-  onRewind?: (messageId: string) => void;
-  /* AC-5: when another session shares this folder a click must confirm first
-     — the string names the sharer. */
-  rewindWarning?: string;
-  /* AC-4: rewound message images re-entering the composer — forwarded to the
-     Composer's `seedFiles`. */
-  seedFiles?: AttachedFile[];
-  onSeededFiles?: () => void;
-  /* A subagent row that is another employee links to their session (issue #170). */
-  onOpenSession?: (employeeId: string, session: string) => void;
   /* #581: a folder-less DM thread can pick a real folder — the host moves
      the session there (the pick is only offered where the engine can move). */
   onAddFolder?: () => void;
-  /* #560: the meter's Compact now — passed only when the engine declares
-     `compact`; disabled while a turn runs. Continue opens a fresh session
-     on the same folder (offered only when the meter reads Full). */
-  onCompact?: () => void;
-  onContinue?: () => void;
-  /* Plan card decisions (issue #175). */
-  onPlan?: (a: PlanAction, planId: string) => void;
-  /* #420: question-ask answer/cancel — passed, the handler owns the
-     resolved write (the card locks as "Sending…" until it lands). */
-  onAnswer?: (q: QuestionAsk, a: QuestionAnswer) => void;
-  onCancel?: (q: QuestionAsk) => void;
-  /* #106: the thread's access level + toggle → the composer pill.
-     Both or neither (D-#19: no access record, no control). */
-  access?: ConversationAccess;
-  onAccess?: (a: ConversationAccess) => void;
-  /* Rename the title in place / put the thread away (true) or back (false):
-     the header's ⋯ menu draws the items whose handler is passed, none → no
-     menu. `thread.archived` says which way Archive reads. */
-  onRename?: (title: string) => void;
-  onArchive?: (archived: boolean) => void;
-  /* #554: the host's wired find bar, rendered as an overlay inside the
-     conversation scrollport (desktop ⌘F); absent = no find UI. */
-  findBar?: ReactNode;
-}) {
-  const lead = thread.replies.find((r) => emp(r.from));
-  const leadEmp = lead ? emp(lead.from) : undefined;
+}
+
+/* The right-panel frame around the conversation — channel threads AND DM sessions (issue #19).
+   The employee turns render through the shared AgentTurn (identical to Focus); the person's own
+   turns through UserTurn. DM-ness comes only from channel.dm — never the display name (AC-3).
+   D-#19: a control renders only when its handler is passed, so the app shows only working
+   surfaces (no placeholder buttons). Conversation UI = shared pieces (AgentTurn, UserTurn,
+   TurnList, ThreadComposer, cards) + thin frames (ThreadView, FocusView); a frame-only feature
+   is a piece the frame adds, never a prop of AgentTurn. Not: variant/mode props inside
+   AgentTurn, or a god component accumulating optional props. */
+export function ThreadView(props: ThreadViewProps) {
+  const {
+    root,
+    thread,
+    channel,
+    emp,
+    human,
+    resolved,
+    setResolved,
+    onOpenTab,
+    threadStatus,
+    browser = false,
+    onClose,
+    work,
+    repo,
+    onStart,
+    running,
+    models,
+    defaultModel,
+    defaultProvider,
+    transcriptNote,
+    editors,
+    onOpenPath,
+    onRewind,
+    rewindWarning,
+    onAddFolder,
+    onCompact,
+    onContinue,
+    onRename,
+    onArchive,
+    findBar,
+    scrollTo,
+    onScrolled,
+    pending = [],
+  } = props;
+  const leadEmp = leadOf(props.lead, thread.replies, emp);
   const isDM = !!channel.dm;
   const { input: titleInput, menu: threadMenu } = useRenameMenu({
     title: thread.title || plain(root.text),
     archived: thread.archived,
+    inputClassName: "h-11 [font-size:28px]",
     onRename,
     onArchive,
   });
-  /* The panel is one UI layer: Esc closes it only while it is the top-most
-     surface (an open dialog or menu above it keeps Esc, #576), and while
-     top-most it owns the surface keys — ⌘. stops a running turn, ↵/⌫
-     answer the newest pending approval/plan card (#558). */
-  const keyAsk = pendingAsk(thread.replies, resolved, !!onPlan);
-  const viewer = human(VIEWER_ID)?.name ?? "you";
-  useUiLayer({
+  const keyTarget = useThreadKeys({
+    thread,
+    resolved,
+    setResolved,
+    human,
+    onPlan: props.onPlan,
+    running,
+    onStop: props.onStop,
     onEscape: onClose,
-    onKey: (e) =>
-      askKeyDown(e, {
-        ask: keyAsk,
-        viewer,
-        resolved,
-        setResolved,
-        onPlan,
-        running,
-        onStop,
-      }),
   });
-  /* The id the hint lives under — approval cards match on ask id, plan
-     cards on plan id. */
-  const keyTarget = keyAsk
-    ? keyAsk.kind === "approval"
-      ? keyAsk.reply.approval?.id
-      : keyAsk.reply.plan?.id
-    : undefined;
-  const channelLabel = isDM ? `DM · ${channel.name}` : `#${channel.name}`;
+  const folder = !!thread.ws || !!work?.path;
+  const { replies, pr, jobs } = thread;
+  const prPending = pr?.checks.some((c) => c.status === "pending");
+  const stripTabs = useMemo(
+    () => workTabs({ replies, pr, jobs }, { folder, browser, prPending }),
+    [replies, pr, jobs, folder, browser, prPending],
+  );
   const startCardOpen = openStartRequest(thread, resolved);
-  /* #138 AC-3: jump-to-hit — scroll the message into view, flash it, hand
-     back control. Waits for the row to render (history may still load).
-     #570: `landJump` releases the bottom pin before the native write (an
-     in-flight spring would overwrite it before its scroll event lands an
-     escape) and keeps the row landed while born-stubs hydrate around it. */
   const bodyRef = useRef<HTMLDivElement>(null);
-  const convPin = useRef<ConversationPin | null>(null);
-  const [flash, setFlash] = useState<string | null>(null);
-  const flashedRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!scrollTo) {
-      flashedRef.current = null;
-      return;
-    }
-    if (flashedRef.current === scrollTo) return;
-    const el = bodyRef.current?.querySelector(
-      `[data-msg="${CSS.escape(scrollTo)}"]`,
-    );
-    if (!el) return;
-    flashedRef.current = scrollTo;
-    landJump(el, convPin.current);
-    setFlash(scrollTo);
-    onScrolled?.();
-  }, [scrollTo, thread.replies, onScrolled]);
-  /* The flash window lives in its own effect — the scroll effect's cleanup
-     would cancel it when onScrolled clears scrollTo. */
-  useEffect(() => {
-    if (!flash) return;
-    const t = setTimeout(() => setFlash(null), 1800);
-    return () => clearTimeout(t);
-  }, [flash]);
-  /* #420 + #583 AC-1: a live reply parked on ANY open ask (question,
-     approval, plan) is WAITING, not working — the composer placeholder
-     says what it waits on. A question ask also parks the composer itself
-     (Send, not Stop — Hermes FIX #515); an approval/plan-parked turn is
-     still interruptible and steerable, so it keeps Stop (⌘.), steers and
-     the running hint — only the placeholder names the wait. `waitingOn`
-     carries the ask kind so the placeholder names it. */
-  const waitingReply = thread.replies.find(
-    (r) => r.live && r.phase === "waiting",
-  );
-  const waiting = running && !!waitingReply;
-  const parkedOnQuestion = waiting && waitingReply?.waitingOn === "question";
+  const jump = useJumpToHit({
+    scope: bodyRef,
+    scrollTo,
+    replies,
+    onScrolled,
+  });
   /* #583 AC-3: background processes still running under this thread. */
-  const runningJobs =
-    thread.jobs?.filter((j) => j.status === "running").length ?? 0;
-  const status: ChatStatus = running
-    ? parkedOnQuestion
-      ? "ready"
-      : thread.replies.some((r) => r.live && r.phase === "submitted")
-        ? "submitted"
-        : "streaming"
-    : "ready";
-  /* #419: the Retry lives on the last TURN — system notes (a failed turn's
-     error row) sit below it and don't count. */
-  const lastTurnIdx = thread.replies.reduce(
-    (a, r, i) => (emp(r.from) ? i : a),
-    -1,
-  );
-  /* #430: row handlers ride a ref rewritten each render — the memoized
-     TurnRow never sees a fresh callback identity, and its reads are always
-     the latest closures. */
-  const actsRef = useRef<TurnActs>({});
-  actsRef.current = {
-    onRetry,
+  const runningJobs = jobs?.filter((j) => j.status === "running").length ?? 0;
+  const win = useTurnWindow({ frame: "panel", replies, emp });
+  const acts = useTurnActs({
+    onRetry: props.onRetry,
     onOpen: onOpenTab,
-    onOpenSession,
-    onPlan,
+    onOpenSession: props.onOpenSession,
+    onPlan: props.onPlan,
     onRewind,
     setResolved,
     onStart,
-    onAnswer,
-    onCancel,
-  };
-  const lazyRows = thread.replies.length > TURN_LAZY_AFTER;
-  /* #570: a lazy thread opens on its tail — rows above `tailStart` never
-     mount on first paint; they start as estimated-height stubs and the
-     observer mounts them at the window edge. */
-  const estHeights = useMemo(
-    () =>
-      lazyRows
-        ? thread.replies.map((r) => estTurnHeight(r, !!emp(r.from), "panel"))
-        : [],
-    [lazyRows, thread.replies, emp],
-  );
-  const tailStart = openTailStart(estHeights);
-  /* A scrollTo open skips the pin — keyed on the jump REQUEST, not the
-     row's presence: `initial` is read once at mount and the replies are
-     still streaming then, so an engaged pin would sweep the port to the
-     bottom before `landJump` could even run (ac-570: the mount's instant
-     chase plus near-bottom re-arms dragged the jump's landing back to
-     the bottom every frame). A stale id pays a top-open instead — the
-     rare case, and readable — rather than a broken jump every time. */
+    onAnswer: props.onAnswer,
+    onCancel: props.onCancel,
+  });
   return (
     <div ref={bodyRef} className="flex min-h-0 flex-1 flex-col">
-      <div className="lilos-drag flex shrink-0 items-center gap-2 border-b px-4 py-2.5">
-        <div className="min-w-0">
-          <div className="flex items-center gap-1.5 font-semibold">
-            {/* #137 AC-4: the session's title (placeholder → engine-written)
-                leads the header; untitled threads keep the kind label. */}
-            {titleInput ?? (
-              <span className="truncate" data-session-title>
-                {thread.title || "Thread"}
-              </span>
-            )}
-            {work?.ticket && (
-              <span className="shrink-0 font-mono text-muted-foreground text-xs">
-                · {work.ticket}
-              </span>
-            )}
-          </div>
-          <div
-            className="truncate text-muted-foreground text-xs"
-            title={`Thread ${thread.session}`}
-          >
-            {channelLabel}
-            {leadEmp && !isDM && ` · ${leadEmp.name}`}
-            {isDM && !work && !repo && !thread.ws && onAddFolder && (
-              /* #581 AC-2: a folder-less DM session gets a real "Add a
-                 folder" affordance — picking one moves the session there.
-                 Inline so the header keeps its two-row height (#602). */
-              <>
-                {" · "}
-                <button
-                  type="button"
-                  onClick={onAddFolder}
-                  data-add-folder
-                  className="font-medium text-foreground/80 underline decoration-dotted underline-offset-2 hover:text-foreground"
-                >
-                  Add a folder
-                </button>
-              </>
-            )}
-            {/* #583 AC-3: a live background job says so right under the
-                title — "1 running in background". */}
-            {runningJobs > 0 && (
-              <span data-bg-jobs className="text-work">
-                {" "}
-                · {runningJobs} running in background
-              </span>
-            )}
-          </div>
-          {/* A folder-less DM session is a plain chat — no folder label
-              at all (#196). */}
-          {thread.ws ? (
-            <WsBadge
-              ws={thread.ws}
-              openMenu={
-                onOpenPath
-                  ? {
-                      editors: editors ?? [],
-                      onOpen: (app) => onOpenPath(".", app),
-                    }
-                  : undefined
-              }
-            />
-          ) : isDM && !work && !repo ? null : (
-            <WorkspaceBadge work={work} repo={repo} />
-          )}
-        </div>
-        <div className="ml-auto flex shrink-0 items-center gap-0.5">
-          {thread.usage && leadEmp && (
-            /* The SESSION's model — never the employee's (#294): the panel
-               and Focus resolve through the same helper and the window comes
-               engine-reported on the usage/catalog, not an employee row. */
-            <SessionUsage
-              usage={thread.usage}
-              model={sessionModelId(
-                thread,
-                leadEmp.model,
-                models,
-                defaultModel,
-                defaultProvider,
-              )}
-              models={models}
-              onCompact={onCompact}
-              compactDisabled={running}
-              onContinue={onContinue}
-            />
-          )}
-          {!work && !isDM && onStart && (
-            // While the request card below is open the header button must not compete with it (issue
-            // #15): disabled + tooltip. The title lives on the wrapper because the disabled button
-            // itself ignores pointer events.
-            <span
-              className="ml-1 inline-flex shrink-0"
-              title={
-                startCardOpen
-                  ? "Answer the request below"
-                  : "New ticket + worktree for this thread"
-              }
-            >
-              <Button
-                size="sm"
-                onClick={onStart}
-                disabled={startCardOpen}
-                data-startwork-header
-              >
-                <PlayIcon />
-                Start work
-              </Button>
-            </span>
-          )}
-          {threadMenu}
-          {onFocus && (
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="ml-0.5"
-              title="Focus"
-              aria-label="Focus"
-              onClick={onFocus}
-            >
-              <Maximize2Icon />
-            </Button>
-          )}
-          {/* #577 AC-2: a visible ✕ — the way back to the DM list beside
-              Esc (which the same onClose owns). */}
-          {onClose && (
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="ml-0.5"
-              title="Close"
-              aria-label="Close thread panel"
-              onClick={onClose}
-            >
-              <XIcon />
-            </Button>
-          )}
-        </div>
-      </div>
       {/* #570: the first pin on a lazy thread must land instantly — the
           default smooth sweep would scroll through the whole stub field
           and mount every row it passes, recreating the open-time freeze.
           A scrollTo open skips the pin outright (initial=false): the jump
           would otherwise race the pin's first write before the escape
           check lands. `resize` stays smooth: the streaming chase is
-          unchanged. */}
+          unchanged. `initial` is read once at mount while the replies are
+          still streaming, so it keys on the jump REQUEST, not the row's
+          presence: an engaged pin would sweep the port to the bottom before
+          `landJump` could run. A stale id pays a top-open instead — the
+          rare case, and readable — rather than a broken jump every time. */}
       <Conversation
         className="min-h-0"
-        pinRef={convPin}
-        initial={scrollTo ? false : lazyRows ? "instant" : "smooth"}
+        pinRef={jump.pin}
+        initial={scrollTo ? false : win.lazyRows ? "instant" : "smooth"}
       >
         {/* The composer sits below the scroller in normal flow — nothing
             overlays the last turn, so only a small bottom pad is needed;
             the question card's Skip row stays fully visible on its own row
             (#515, #602). No decision-card pad here (unlike Focus): the
             composer's own margin already supplies the #649 clearance, and
-            a wider pad pushed the at-rest band past #602's 24px. */}
-        <ConversationContent className="gap-0 p-0 pt-2 pb-3">
-          {transcriptNote?.kind === "trimmed" && (
-            <TranscriptNoteRow note={transcriptNote} />
-          )}
-          <div
-            data-msg={root.id}
-            className={cn(
-              "transition-colors duration-500",
-              flash === root.id && "bg-amber-100 dark:bg-amber-900/40",
-            )}
-          >
-            <Row from={root.from} emp={emp} human={human}>
-              <Who id={root.from} time={root.time} emp={emp} human={human} />
-              <Body text={root.text} />
-              {root.attachments && <AttachmentChips files={root.attachments} />}
-              <div className="text-muted-foreground text-xs">
-                opened thread{" "}
-                <code className="rounded bg-muted px-1">{thread.session}</code>
-              </div>
-              {onRewind && root.id && human(root.from) && (
-                <RewindHover
-                  running={running}
-                  warning={rewindWarning}
-                  onRewind={() => onRewind(root.id ?? "")}
+            a wider pad pushed the at-rest band past #602's 24px. The
+            column is the prototype's: 720px, 32px gutters, 28px between
+            turns — the header is its first child and scrolls with it. */}
+        <ConversationContent className="mx-auto w-full max-w-[720px] gap-7 p-0 px-8 pb-3">
+          <ThreadHeader
+            session={false}
+            title={thread.title || "Thread"}
+            titleInput={titleInput}
+            kicker={threadKicker({
+              title: `Thread ${thread.session}`,
+              channel: isDM ? undefined : `#${channel.name}`,
+              folder: panelFolder({
+                thread,
+                work,
+                repo,
+                isDM,
+                onAddFolder,
+                openMenu: onOpenPath
+                  ? {
+                      editors: editors ?? [],
+                      onOpen: (app) => onOpenPath(".", app),
+                    }
+                  : undefined,
+              }),
+            })}
+            status={threadStatus}
+            started={root.time}
+            turns={sentTurns(root.from, thread, human)}
+            note={
+              /* #583 AC-3: a live background job says so right under the
+                 title — "1 running in background". */
+              runningJobs > 0 ? (
+                <span data-bg-jobs className="text-work">
+                  {" "}
+                  · {runningJobs} running in background
+                </span>
+              ) : undefined
+            }
+            meter={
+              thread.usage && leadEmp ? (
+                /* The SESSION's model — never the employee's (#294): the
+                   panel and Focus resolve through the same helper and the
+                   window comes engine-reported on the usage/catalog, not
+                   an employee row. */
+                <SessionUsage
+                  usage={thread.usage}
+                  model={sessionModelId(
+                    thread,
+                    leadEmp.model,
+                    models,
+                    defaultModel,
+                    defaultProvider,
+                  )}
+                  models={models}
+                  onCompact={onCompact}
+                  compactDisabled={running}
+                  onContinue={onContinue}
                 />
-              )}
-            </Row>
-          </div>
-          <div className="my-1 flex items-center gap-2 px-3 text-muted-foreground text-xs sm:px-5">
-            {/* #585: system notes aren't replies — the count skips them. */}
-            <span>
-              {thread.replies.filter((r) => !r.system).length}{" "}
-              {thread.replies.filter((r) => !r.system).length === 1
-                ? "reply"
-                : "replies"}
-            </span>
-            <span className="h-px flex-1 bg-border" />
-          </div>
-          {thread.replies.map((r, i) => (
-            /* Employee turns render through the one shared AgentTurn — same DOM as Focus,
-               wrapped in the row's padding/hover chrome only (issue #19). The
-               data-msg wrapper is the search-hit scroll/flash anchor (#138).
-               #430: memoized per row — a delta re-renders only the turn it
-               touched; long threads hold far-off-screen rows as stubs. */
-            <TurnRow
-              key={r.turnId ?? r.id ?? i}
-              frame="panel"
-              r={r}
-              i={i}
-              lastTurn={i === lastTurnIdx}
-              lastRow={i === thread.replies.length - 1}
-              flashed={flash === r.id}
-              lazy={lazyRows}
-              startHeld={i < tailStart}
-              estHeight={estHeights[i]}
-              scrollTarget={scrollTo === r.id}
-              running={running}
-              emp={emp}
-              human={human}
-              resolved={resolved}
-              work={work}
-              repo={repo}
-              models={models}
-              rewindWarning={rewindWarning}
-              keyTarget={keyTarget}
-              acts={actsRef}
-            />
-          ))}
-          {transcriptNote?.kind === "unavailable" && (
-            /* Same outer insets as the #28 note this replaces — the panel's
-               content column carries no horizontal padding. */
-            <TranscriptNoteRow
-              note={transcriptNote}
-              className="mx-3 my-2 sm:mx-5"
-            />
-          )}
+              ) : undefined
+            }
+            start={
+              !work && !isDM && onStart ? (
+                <StartWork onStart={onStart} yields={startCardOpen} />
+              ) : undefined
+            }
+            menu={threadMenu}
+            close={
+              /* #577 AC-2: a visible ✕ — the way back to the DM list beside
+                 Esc (which the same onClose owns). */
+              onClose ? (
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="ml-0.5"
+                  title="Close"
+                  aria-label="Close thread panel"
+                  onClick={onClose}
+                >
+                  <XIcon />
+                </Button>
+              ) : undefined
+            }
+            strip={onOpenTab && { tabs: stripTabs, onOpen: onOpenTab }}
+          />
+          <TurnList
+            frame="panel"
+            root={root}
+            thread={thread}
+            emp={emp}
+            human={human}
+            resolved={resolved}
+            work={work}
+            repo={repo}
+            models={models}
+            pr={pr}
+            prAuthor={leadEmp?.name ?? pr?.author}
+            running={running}
+            flash={jump.flash}
+            win={win}
+            scrollTo={scrollTo}
+            rewindWarning={rewindWarning}
+            keyTarget={keyTarget}
+            acts={acts}
+            onRewind={onRewind}
+            transcriptNote={transcriptNote}
+          />
           {work?.by && (
-            <div className="mx-3 my-2 rounded-lg border border-emerald-200 bg-emerald-50/40 p-3 text-xs sm:mx-5">
-              <div className="flex items-center gap-1.5 font-medium text-emerald-900">
-                <PlayIcon className="size-3.5" />
+            <div className="rounded-[10px] border border-[var(--v3-line)] px-4 py-3.5 text-[13.5px]">
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <CheckIcon className="size-3.5 text-emerald-600 dark:text-emerald-400" />
                 {work.by} started work · {work.ticket}
               </div>
               <ul className="mt-2 space-y-1 text-muted-foreground">
-                <li className="flex gap-1.5">
-                  <CheckIcon className="mt-0.5 size-3.5 shrink-0 text-emerald-600" />
+                <li>
                   Ticket{" "}
-                  <span className="font-mono text-foreground">
+                  <span className="font-mono text-[12.5px] text-foreground">
                     {work.ticket}
                   </span>{" "}
                   created from this thread
                 </li>
                 {work.branch && (
-                  <li className="flex gap-1.5">
-                    <CheckIcon className="mt-0.5 size-3.5 shrink-0 text-emerald-600" />
-                    <span className="min-w-0 break-all font-mono">
-                      git worktree add .lilos/wt/{work.ticket.toLowerCase()} -b{" "}
-                      {work.branch}
-                    </span>
+                  <li className="min-w-0 break-all font-mono text-[12.5px]">
+                    git worktree add .lilos/wt/{work.ticket.toLowerCase()} -b{" "}
+                    {work.branch}
                   </li>
                 )}
                 {work.branch && (
-                  <li className="flex gap-1.5">
-                    <CheckIcon className="mt-0.5 size-3.5 shrink-0 text-emerald-600" />
-                    Thread <span className="font-mono">{thread.session}</span>{" "}
+                  <li>
+                    Thread{" "}
+                    <span className="font-mono text-[12.5px]">
+                      {thread.session}
+                    </span>{" "}
                     moved to the worktree. Same thread, no history lost.
                   </li>
                 )}
@@ -675,7 +304,7 @@ export function ThreadView({
             it while an open card intersects the port (FIX #515 r4). */}
         <QuestionAwareScrollButton />
         <FindUnstubNudge />
-        <FindUnstubAnchor lazy={lazyRows} />
+        <FindUnstubAnchor lazy={win.lazyRows} />
         {findBar}
         {/* The not-sent tray and pending-steer chips grow the composer area below; re-stick so the
            stopped turn + tray are both fully visible (issue #15). Inside <Conversation> so it can
@@ -684,108 +313,19 @@ export function ThreadView({
           signal={`${(thread.queue ?? []).length}:${pending.length}`}
         />
       </Conversation>
-      <Composer
-        placeholder={
-          running
-            ? waiting
-              ? waitingComposer(
-                  leadEmp?.name ?? "Employee",
-                  waitingReply?.waitingOn,
-                ).placeholder
-              : runningComposer(
-                  leadEmp?.name ?? "Employee",
-                  steer,
-                  agentWorking,
-                ).placeholder
-            : `Reply to ${leadEmp?.name ?? "the employee"}…`
-        }
-        employees={mentionables ?? []}
-        onSearchFiles={onSearchFiles}
-        onSearchCommands={onSearchCommands}
-        onCommand={onCommand}
-        hint={
-          running
-            ? parkedOnQuestion
-              ? waitingComposer(
-                  leadEmp?.name ?? "Employee",
-                  waitingReply?.waitingOn,
-                ).hint
-              : runningComposer(
-                  leadEmp?.name ?? "Employee",
-                  steer,
-                  agentWorking,
-                ).hint
-            : work?.branch
-              ? `Edits go to ⎇ ${work.branch}`
-              : work
-                ? "Ticket only. No repo on this channel."
-                : repo
-                  ? "Read-only on main. Start work to edit code."
-                  : isDM
-                    ? `Reply to ${leadEmp?.name ?? "the employee"}…`
-                    : `thread ${thread.session}`
-        }
-        onSend={onSend}
-        draft={draft}
-        onDraftChange={onDraftChange}
-        seedFiles={seedFiles}
-        onSeededFiles={onSeededFiles}
-        status={status}
-        lastSent={lastSent}
-        accept={accept}
-        maxFileSize={maxFileSize}
-        maxFiles={maxFiles}
-        onAttachError={onAttachError}
-        onStop={onStop}
-        tools={
-          <>
-            {onModel && models?.length ? (
-              <ModelPicker
-                value={sessionChoice(
-                  thread,
-                  leadEmp?.model,
-                  models,
-                  defaultModel,
-                  defaultProvider,
-                )}
-                models={models}
-                onChoice={onModel}
-                open={modelOpen}
-                onOpenChange={onModelOpen}
-                {...picker}
-              />
-            ) : undefined}
-            {access !== undefined && onAccess ? (
-              <AccessPill access={access} onAccess={onAccess} />
-            ) : undefined}
-          </>
-        }
-        queued={
-          <>
-            {reconnecting && <ReconnectingLine />}
-            {/* Every mid-turn send waits here until the agent reads it — steer or not (issue #9). */}
-            <QueuedTray
-              items={pending}
-              steer={steer}
-              name={leadEmp?.name}
-              onRemove={onRemovePending}
-              onEdit={
-                onRemovePending && onDraftChange
-                  ? (i) => {
-                      onDraftChange(
-                        pending[i] ? queuedItemText(pending[i]) : "",
-                      );
-                      onRemovePending(i);
-                    }
-                  : undefined
-              }
-            />
-            <NotSentTray
-              items={thread.queue ?? []}
-              onSend={onSendQueued}
-              onRemove={onUnqueue}
-            />
-          </>
+      <ThreadComposer
+        {...props}
+        lead={leadEmp}
+        idleHint={
+          work?.branch
+            ? `Edits go to ⎇ ${work.branch}`
+            : work
+              ? "Ticket only. No repo on this channel."
+              : repo
+                ? "Read-only on main. Start work to edit code."
+                : isDM
+                  ? `Message ${leadEmp?.name ?? "the employee"}…`
+                  : `thread ${thread.session}`
         }
       />
     </div>

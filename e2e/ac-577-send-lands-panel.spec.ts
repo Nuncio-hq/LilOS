@@ -5,6 +5,7 @@ import {
   bootStack,
   openDefaultAgent,
   panelIntoFocus,
+  panelOutOfFocus,
   pickPorts,
   type Stack,
   startChat,
@@ -15,17 +16,16 @@ import {
  * Issue #577 — where a new message lands and the way back (decided with
  * Oscar 2026-10-07): a new send STAYS on the list with the thread open
  * in the side panel, like the prototype — no jump to Focus. Focus opens
- * only when Oscar asks (widen the peek, or the panel's Focus button). The
- * panel gets a visible ✕ back to the list, the trail's first crumb names
- * where it returns to, and Focus has ONE back control whose label matches
- * where it goes.
+ * only when Oscar asks (widen the peek). The panel gets a visible ✕ back to
+ * the list, the trail's first crumb names where it returns to, and Focus has
+ * ONE back control — the peek header's Narrow, the thread has none of its own.
  *
  *   AC-1 a new send and opening a thread land in the same view — the list
  *       with the thread panel; never a straight jump to Focus.
  *   AC-2 the panel has a visible ✕ that returns to the list; the trail's
  *       "Threads" crumb is the labelled way back too.
- *   AC-3 Focus has one back control whose label matches where it goes
- *       ("Back to DM" → the thread beside the list).
+ *   AC-3 Focus has one back control, the peek's Narrow, and it lands on
+ *       the thread beside the list.
  *
  * v3: the list is the Threads page, the panel is the side peek
  * (`#?page=threads&open=thread:<id>`) and Focus is the widened peek
@@ -92,7 +92,7 @@ test("AC-1 a new send lands on the list with the thread in the panel — no jump
   await page.screenshot({ path: `${SHOTS}/ac-1-open-same-view.png` });
 });
 
-test("AC-2 the panel's ✕ and the labelled trail crumb are the ways back to the list", async ({
+test("AC-2 the panel's ✕ is the way back to the list; the trail's first crumb is context, not a second close", async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -113,18 +113,18 @@ test("AC-2 the panel's ✕ and the labelled trail crumb are the ways back to the
   await expect(panel(page)).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-2-panel-reopened.png` });
 
-  /* …and the trail's first crumb is labelled with where it goes back to
-     ("Threads", not a bare icon): it shuts the panel the same way. */
-  const crumb = v3Peek(page)
-    .getByRole("navigation", { name: "Trail" })
-    .getByRole("button", { name: "Threads" });
-  await expect(crumb).toBeVisible();
-  await crumb.click();
+  /* …and the trail's first crumb says where it goes back to ("Threads") as
+     plain text — not a second close button beside the ✕, which closes it
+     the same way again. */
+  const trail = v3Peek(page).getByRole("navigation", { name: "Trail" });
+  await expect(trail).toContainText("Threads");
+  await expect(trail.getByRole("button", { name: "Threads" })).toHaveCount(0);
+  await v3Peek(page).getByTitle("Close (Esc)").click();
   await expect(page).toHaveURL(LIST_URL, { timeout: 15_000 });
   await expect(panel(page)).toHaveCount(0);
 });
 
-test("AC-3 Focus has one back control, labelled for where it goes", async ({
+test("AC-3 Focus has one back control: the peek header's Narrow, none in the thread", async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -135,23 +135,25 @@ test("AC-3 Focus has one back control, labelled for where it goes", async ({
   /* Focus opens only when asked — widening is the one door in. */
   await panelIntoFocus(page);
   await expect(page).toHaveURL(FOCUS_URL);
-  // One way out of the session view itself: a single back control saying
-  // where it lands.
-  const back = page.getByRole("button", { name: "Back to DM" });
+  // One way out of the session view itself: the peek header's Narrow,
+  // which says where it lands.
+  const back = v3Peek(page).getByTitle("Narrow, back beside the page", {
+    exact: true,
+  });
   await expect(back).toBeVisible({ timeout: 15_000 });
   await expect(back).toHaveCount(1);
-  // The old affordances are gone — no second way out to learn.
+  // The old affordances are gone — the thread draws no second way out (or
+  // in: no Focus button) to learn.
   await expect(page.getByTitle("Exit focus")).toHaveCount(0);
-  /* …and inside the session view it is the only go-back affordance
-     (accessible name, since the visible span just says "Default"). */
+  await expect(page.getByTitle("Back to DM")).toHaveCount(0);
   await expect(
-    panel(page).getByRole("button", { name: /back|exit|close/i }),
-  ).toHaveCount(1);
+    panel(page).getByRole("button", { name: /back|exit|close|focus|widen/i }),
+  ).toHaveCount(0);
   await page.screenshot({ path: `${SHOTS}/ac-3-one-back.png` });
 
-  /* "Back to DM" lands on the view the send left — the list with the
-     thread still open beside it — not a third, unnamed view. */
-  await back.click();
+  /* Narrow lands on the view the send left — the list with the thread
+     still open beside it — not a third, unnamed view. */
+  await panelOutOfFocus(page);
   await expect(page).toHaveURL(PANEL_URL, { timeout: 15_000 });
   await expect(panel(page)).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-3-back-to-dm.png` });

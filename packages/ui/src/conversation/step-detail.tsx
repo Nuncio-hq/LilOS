@@ -1,12 +1,13 @@
-import { Terminal, TerminalContent } from "../components/ai-elements/terminal";
 import { stripAnsi } from "../lib/helpers";
 import type { Step } from "../types";
 import { DiffView } from "../workbench/diff-view";
 
-/* What an expanded tool step shows — the thing itself, not its raw JSON:
-   an edit is its coloured diff, a command is a small terminal with its
-   output, a read or search is the path/pattern and what came back. Any
-   other tool lists its inputs as plain key/value lines. */
+/* What an expanded step shows — the thing itself, not its raw JSON:
+   an edit is its coloured diff, a command is its line and output in a quiet
+   mono box, a read or search is the path/pattern and what came back. Any
+   other tool lists its inputs as plain key/value lines. Output boxes are
+   height-bounded with their own scroll (#305) and wrap long unbroken tokens
+   instead of spilling out of the column. */
 
 const LOOKED_AT: Record<string, string> = {
   read_file: "Read",
@@ -15,19 +16,19 @@ const LOOKED_AT: Record<string, string> = {
   view_image: "Looked at",
 };
 
+const OUTPUT =
+  "max-h-64 overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-all rounded-[7px] bg-[var(--v3-soft)] px-3 py-2 font-mono text-[12px] text-muted-foreground leading-[1.7]";
+
 export function StepDetail({ s }: { s: Step }) {
   if (s.diff) return <DiffView d={s.diff} collapsible={false} />;
 
   const command = s.input.command;
   if (typeof command === "string")
     return (
-      <Terminal
-        output={`\u001b[36m$ ${command}\u001b[0m${s.output ? `\n${s.output}` : ""}`}
-        isStreaming={!!s.running}
-        className="rounded-xl border-0"
-      >
-        <TerminalContent className="max-h-64 p-3 text-[12px] leading-5" />
-      </Terminal>
+      <div className={OUTPUT}>
+        <div className="text-foreground">$ {command}</div>
+        {s.output && stripAnsi(s.output)}
+      </div>
     );
 
   const subject = s.input.path ?? s.input.pattern ?? s.input.query;
@@ -41,7 +42,7 @@ export function StepDetail({ s }: { s: Step }) {
           <span className="shrink-0 text-muted-foreground">
             {LOOKED_AT[s.tool] ?? "On"}
           </span>
-          <code className="min-w-0 truncate rounded-md bg-accent px-1.5 py-0.5 font-mono text-[12px]">
+          <code className="min-w-0 truncate rounded-[5px] bg-[var(--v3-soft)] px-1.5 py-0.5 font-mono text-[12px]">
             {String(subject)}
           </code>
         </div>

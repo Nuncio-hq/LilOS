@@ -141,7 +141,7 @@ test("AC-1: Cmd+F mounts held rows — a held row's text enters the DOM; the lap
     });
   /* Lazy rows whose held flag contradicts their box vs the port's
      OBSERVED boundary — its rect inflated by the row observer's
-     rootMargin (LAZY_MARGIN in turn-rows.tsx), which is the hold
+     rootMargin (LAZY_MARGIN in lazy-shell.tsx), which is the hold
      boundary the port-rooted observer actually enforces (±1 px edge
      rows are IO-tie territory and don't count). */
   const badBoxRows = () =>

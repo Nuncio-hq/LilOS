@@ -7,7 +7,6 @@
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { Composer } from "../src/chat/composer";
-import { FocusComposer } from "../src/chat/focus-composer";
 
 /* happy-dom does not implement every browser API the vendored components touch. */
 if (typeof globalThis.ResizeObserver === "undefined") {
@@ -105,14 +104,14 @@ describe("issue #130 refused send keeps the draft", () => {
     expect(box(r.container).value).toBe("");
   });
 
-  test("AC-3c FocusComposer dedupes Enter-Enter while a send is in flight", async () => {
+  test("AC-3c dedupes Enter-Enter while a send is in flight with no attachments enabled", async () => {
     let release: () => void = () => {};
     const onSend = vi.fn(() => new Promise<void>((res) => (release = res)));
     const r = render(
-      <FocusComposer
-        running={false}
+      <Composer
         status="ready"
         placeholder="Steer…"
+        employees={[]}
         hint=""
         onSend={onSend}
       />,

@@ -16,6 +16,7 @@ import {
   threadUrl,
   v3Peek,
 } from "./helpers/stack";
+import { openWorkbench } from "./helpers/workbench";
 
 /**
  * Issue #590 — desktop polish on the thread surfaces:
@@ -157,10 +158,12 @@ test("AC-2 at 1024px the header names the employee, the composer stays one row, 
   await panelIntoFocus(page);
   const session = v3Peek(page);
 
-  /* The header names the employee — "DM · <name>" sits beside the avatar. */
-  await expect(session.locator("header")).toContainText(/DM · \w+/, {
-    timeout: 15_000,
-  });
+  /* The peek's trail names the employee ("Default · Chat") — the header
+     under it does not say it a second time. */
+  await expect(
+    session.getByRole("navigation", { name: "Trail" }),
+  ).toContainText(/\w+ · Chat/, { timeout: 15_000 });
+  await expect(session.locator("header")).not.toContainText(/Chat · \w+/);
   await page.screenshot({ path: `${SHOTS}/ac-2-header-1024.png` });
 
   /* Composer controls stay on one row — nothing overflows the footer's
@@ -178,19 +181,10 @@ test("AC-2 at 1024px the header names the employee, the composer stays one row, 
   /* Workbench tabs that fold to icons still announce themselves — a title
      tooltip per icon-only tab (the strip marks folded tabs .wb-fold). The
      panel's open state is seeded at session-view mount, which can precede
-     the conversation's folder landing — open it via the header toggle when
-     the strip isn't up already. */
+     the conversation's folder landing — the work strip's tab opens it
+     either way (an open panel stays as it is). */
   const wbTabs = session.locator("[data-wb-tab]");
-  const wbToggle = session
-    .locator("header")
-    .getByTitle("Workbench", { exact: true });
-  await expect(wbToggle).toBeVisible({ timeout: 30_000 });
-  /* The seeded-open check can race the mount — a first click lands before
-     wbOpen seeds and toggles it back off. Click until the strip shows. */
-  for (let i = 0; i < 4 && !(await wbTabs.first().isVisible()); i++) {
-    await wbToggle.click();
-    await page.waitForTimeout(1500);
-  }
+  await openWorkbench(page);
   await expect(wbTabs.first()).toBeVisible({ timeout: 45_000 });
   const folded = session.locator("[data-wb-tab].wb-fold");
   await expect(folded.first()).toBeVisible({ timeout: 15_000 });

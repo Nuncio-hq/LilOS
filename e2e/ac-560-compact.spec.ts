@@ -10,6 +10,7 @@ import {
   threadUrl,
   v3Peek,
 } from "./helpers/stack";
+import { hideWorkbench, wbPanel, workStrip } from "./helpers/workbench";
 
 /**
  * Issue #560 — context-full UX: the engine's `session.compact` rides the
@@ -132,4 +133,96 @@ test("AC: context-limit failure offers Compact now + Continue in a new session",
   } finally {
     relay.close();
   }
+});
+
+/* #770 design: the thread header (title and all) scrolls away with the
+   conversation, but the work strip and the context meter must not go with
+   it — in a long thread pinned to its newest turn a slim bar at the top of
+   the column carries them, so Compact now is a hover away, never a scroll.
+   Each control exists exactly once: in the header while it shows, in the
+   bar after. */
+test("AC: in a long thread the work strip and Compact now stay on screen", async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  /* Tall `md: table` turns (ac-431): four overflow the scroller at any
+     viewport the specs use, so the thread opens pinned to its end. */
+  const grown = await growDmThread(
+    stack,
+    Array.from({ length: 4 }, (_, i) => `md: table — turn ${i + 1}`),
+  );
+  await skipFirstRun(page);
+  await page.goto(threadUrl(stack.webUrl, grown.conversationId));
+  const peek = v3Peek(page);
+  const header = peek.locator("[data-thread-header]");
+  const bar = peek.locator("[data-thread-bar]");
+  const meter = page.getByRole("button", { name: /Context used:/ });
+  const strip = page.locator("[data-work-strip]");
+  await expect(peek.locator("[data-agentturn]")).toHaveCount(4, {
+    timeout: 60_000,
+  });
+
+  /* The title is above the fold; the bar names it small and carries the
+     strip, the meter and the ⋯ menu — all in view, nothing scrolled. */
+  await expect(header).not.toBeInViewport({ timeout: 15_000 });
+  await expect(bar).toBeVisible();
+  await expect(bar.getByTitle(/./).first()).toBeVisible();
+  await expect(bar.locator("[data-work-strip]")).toBeInViewport({ ratio: 1 });
+  await expect(
+    bar.getByRole("button", { name: /Context used:/ }),
+  ).toBeInViewport({ ratio: 1 });
+  await expect(
+    bar.getByRole("button", { name: "Thread actions" }),
+  ).toBeVisible();
+  await expect(meter).toHaveCount(1);
+  await expect(strip).toHaveCount(1);
+
+  /* Compact now is reachable straight from here: hover, and the thread never
+     had to scroll UP to the control (Playwright scrolls a target into view
+     first when it is off screen; the pin only ever moves down as the
+     content settles). */
+  const log = peek.getByRole("log");
+  const top = () => log.evaluate((el) => el.firstElementChild?.scrollTop ?? 0);
+  const before = await top();
+  await meter.hover();
+  await expect(page.locator("[data-compact-now]")).toBeVisible();
+  await expect(page.locator("[data-compact-now]")).toBeInViewport();
+  expect(await top()).toBeGreaterThanOrEqual(before);
+  await page.mouse.move(0, 0);
+
+  /* Back at the top the header holds them again — still one of each. */
+  await log.hover();
+  await page.mouse.wheel(0, -20_000);
+  await expect(header).toBeInViewport({ timeout: 15_000 });
+  await expect(bar).toHaveCount(0);
+  await expect(header.locator("[data-work-strip]")).toBeVisible();
+  await expect(
+    header.getByRole("button", { name: /Context used:/ }),
+  ).toBeVisible();
+  await expect(meter).toHaveCount(1);
+  await expect(strip).toHaveCount(1);
+
+  /* The widened session view is the same column: its strip (while the
+     Workbench is hidden) and meter ride the bar too. */
+  await page.goto(threadUrl(stack.webUrl, grown.conversationId, true));
+  await expect(page.locator("[data-agentturn]")).toHaveCount(4, {
+    timeout: 60_000,
+  });
+  const sessionBar = page.locator("[data-thread-bar]");
+  await expect(page.locator("[data-thread-header]")).not.toBeInViewport({
+    timeout: 15_000,
+  });
+  await expect(
+    sessionBar.getByRole("button", { name: /Context used:/ }),
+  ).toBeInViewport({
+    ratio: 1,
+  });
+  if (await wbPanel(page).isVisible()) await hideWorkbench(page).click();
+  await expect(sessionBar.locator("[data-work-strip]")).toBeInViewport({
+    ratio: 1,
+  });
+  await sessionBar.locator('[data-work-tab="details"]').click();
+  await expect(wbPanel(page)).toBeVisible();
+  await expect(workStrip(page)).toHaveCount(0);
+  await expect(meter).toHaveCount(1);
 });

@@ -72,6 +72,7 @@ export type DesktopShortcutAction =
   | "back"
   | "forward"
   | "shortcuts"
+  | "toggle-sidebar"
   | `employee-${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9}`;
 
 /** The app's stored theme — the window's appearance must match it or the

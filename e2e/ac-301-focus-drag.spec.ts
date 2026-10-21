@@ -4,7 +4,7 @@ import { expect, type Page, test } from "@playwright/test";
 import { launchDesktop } from "./helpers/electron";
 import {
   bootStack,
-  panelIntoFocus,
+  panelFocusReady,
   pickPorts,
   type Stack,
   v3Peek,
@@ -12,23 +12,24 @@ import {
 } from "./helpers/stack";
 
 /**
- * Issue #301 — the Focus expand/collapse button lands dead on first click:
- * the thread panel ⇄ Focus swap mounts a fresh `.lilos-drag` header with the
- * toggle at the same spot the cursor is already over, and the OS-side
- * draggable-region map isn't recomputed until a pointer event forces it —
- * the click is swallowed as a window drag. In v3 the swap is the side peek's
- * thread panel ⇄ session view (`full=1`): both views keep their own
- * `.lilos-drag` header inside `[data-thread-panel]`.
+ * Issue #301 — the Focus expand/collapse button landed dead on first click:
+ * the thread panel ⇄ Focus swap mounted a fresh `.lilos-drag` header with the
+ * toggle at the same spot the cursor was already over, and the OS-side
+ * draggable-region map wasn't recomputed until a pointer event forced it —
+ * the click was swallowed as a window drag. In v3 the swap is the side peek's
+ * thread panel ⇄ session view (`full=1`), and the one control for it is the
+ * peek header's Widen/Narrow (the thread draws no expand button of its own,
+ * and its header scrolls with the conversation rather than being a drag
+ * strip), which swap at the same spot.
  *
  * What this spec can and cannot prove: Playwright's `page.mouse.click`
  * dispatches synthetic events that never reach the native NSView hit-test,
  * so no synthetic click can *fail* the way Oscar's real one did. What it
- * CAN assert end to end is the fix's mechanism: a MutationObserver watching
- * `style` mutations on `.lilos-drag` elements proves `watchDragRegions()`
- * actually re-pushed the region map after the swap (the flip is a real
- * two-frame DOM diff), and `elementFromPoint` + computed `-webkit-app-region`
- * prove the control sits in a no-drag rect in CSS terms. The real-click
- * repro before/after the fix is the screencapture evidence on the PR.
+ * CAN assert end to end is that the control sits in a no-drag rect in CSS
+ * terms (`-webkit-app-region` is never `drag` there) and that
+ * `elementFromPoint` at its centre is the button — for Widen, and for the
+ * Narrow that takes its place — and that a first synthetic click at that
+ * point, with no prior mouse-out, does the swap both ways.
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -87,50 +88,31 @@ test("#301 Focus toggle stays clickable across the panel ⇄ Focus header swap",
     await v3Peek(win).getByRole("button", { name: "Send" }).click();
     await expectPanelUrl(win);
 
-    /* #577: a send lands on the panel — step into the session view and back
-       so the Expand button sits at the spot the next click will land (the
-       session view's one back control is "Back to DM"). */
-    await panelIntoFocus(win);
-    await win.getByTitle("Back to DM", { exact: true }).click();
-    await expectPanelUrl(win);
-
-    const expand = win
-      .locator("[data-thread-panel]")
-      .getByTitle("Focus", { exact: true });
-    await expect(expand).toBeVisible({ timeout: 30_000 });
-
-    // Count every inline-style mutation the region watcher performs on a
-    // .lilos-drag element — proof the OS map was re-pushed after a swap,
-    // installed BEFORE the click that mounts Focus.
-    await win.evaluate(() => {
-      (window as unknown as { __regionFlips: number }).__regionFlips = 0;
-      const mo = new MutationObserver((muts) => {
-        for (const m of muts)
-          if (m.target instanceof Element && m.target.closest(".lilos-drag"))
-            (window as unknown as { __regionFlips: number }).__regionFlips += 1;
-      });
-      mo.observe(document.documentElement, {
-        subtree: true,
-        attributes: true,
-        attributeFilter: ["style"],
-      });
+    /* #577: a send lands on the panel. The peek header's Widen sits at the
+       spot the click will land, and Narrow takes the same spot once the
+       session view is up — the swap the cursor never leaves. */
+    const peek = v3Peek(win);
+    const widen = peek.getByTitle("Widen over the page", { exact: true });
+    const narrow = peek.getByTitle("Narrow, back beside the page", {
+      exact: true,
     });
+    await panelFocusReady(win);
+    await expect(widen).toBeVisible({ timeout: 30_000 });
 
-    // The control must sit in a no-drag rect inside its drag strip.
+    // The control must sit in a no-drag rect: not inside any drag strip.
     await expect
-      .poll(() => appRegion(win, "[data-thread-panel] .lilos-drag"))
-      .toBe("drag");
-    await expect
-      .poll(() => appRegion(win, 'button[title="Focus"]'))
-      .toBe("no-drag");
-    const box1 = await expand.boundingBox();
-    if (!box1) throw new Error("expand button has no box");
+      .poll(() => appRegion(win, 'button[title="Widen over the page"]'))
+      .not.toBe("drag");
+    const box1 = await widen.boundingBox();
+    if (!box1) throw new Error("widen button has no box");
     const cx = box1.x + box1.width / 2;
     const cy = box1.y + box1.height / 2;
     const hit = await win.evaluate(
       ([x, y]) => {
         const el = document.elementFromPoint(x, y);
-        return el?.closest('button[title="Focus"]') ? "button" : "other";
+        return el?.closest('button[title="Widen over the page"]')
+          ? "button"
+          : "other";
       },
       [cx, cy] as const,
     );
@@ -139,32 +121,21 @@ test("#301 Focus toggle stays clickable across the panel ⇄ Focus header swap",
     // Synthetic click #1 at that point, no prior mouse-out — mounts Focus.
     await win.mouse.click(cx, cy);
     await expect(win).toHaveURL(FULL_URL, { timeout: 30_000 });
-    /* #577: the swapped-in control is the one back control, "Back to
-       DM" — same header spot as the old Exit-focus affordance. */
-    const collapse = win.getByTitle("Back to DM", { exact: true });
-    await expect(collapse).toBeVisible({ timeout: 30_000 });
-
-    // The watcher's recompute ran against the newly mounted header…
+    // The swapped-in control is the one way back, at the same header spot.
+    await expect(narrow).toBeVisible({ timeout: 30_000 });
     await expect
       .poll(() =>
-        win.evaluate(
-          () => (window as unknown as { __regionFlips: number }).__regionFlips,
-        ),
+        appRegion(win, 'button[title="Narrow, back beside the page"]'),
       )
-      .toBeGreaterThan(0);
-    // …and the fresh button is again a no-drag rect at the same spot.
-    await expect
-      .poll(() => appRegion(win, "[data-thread-panel] > header"))
-      .toBe("drag");
-    await expect
-      .poll(() => appRegion(win, 'button[title="Back to DM"]'))
-      .toBe("no-drag");
-    const box2 = await collapse.boundingBox();
-    if (!box2) throw new Error("back button has no box");
+      .not.toBe("drag");
+    const box2 = await narrow.boundingBox();
+    if (!box2) throw new Error("narrow button has no box");
     const hit2 = await win.evaluate(
       ([x, y]) => {
         const el = document.elementFromPoint(x, y);
-        return el?.closest('button[title="Back to DM"]') ? "button" : "other";
+        return el?.closest('button[title="Narrow, back beside the page"]')
+          ? "button"
+          : "other";
       },
       [box2.x + box2.width / 2, box2.y + box2.height / 2] as const,
     );
@@ -174,7 +145,7 @@ test("#301 Focus toggle stays clickable across the panel ⇄ Focus header swap",
     // Click #2, back to the panel — same coordinates, still no mouse-out.
     await win.mouse.click(box2.x + box2.width / 2, box2.y + box2.height / 2);
     await expectPanelUrl(win);
-    await expect(expand).toBeVisible({ timeout: 30_000 });
+    await expect(widen).toBeVisible({ timeout: 30_000 });
   } finally {
     await app.close();
   }

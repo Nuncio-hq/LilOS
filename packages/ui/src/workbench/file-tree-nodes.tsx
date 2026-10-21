@@ -1,4 +1,4 @@
-import { FileCodeIcon, FilePenIcon } from "lucide-react";
+import { FileTextIcon } from "lucide-react";
 import { memo } from "react";
 import {
   FileTreeFile,
@@ -14,6 +14,18 @@ import { OpenPathButton } from "./open-path";
 
 const TREE_CHUNK = 50;
 const TREE_ROW_PX = 26;
+
+/* The prototype's compact row: 26px, 13px quiet text, --v3-hover on hover.
+   FileTreeFile merges className after its own classes, so these win. */
+const FILE_ROW =
+  "h-[26px] gap-1.5 rounded-md px-1.5 py-0 text-[13px] text-muted-foreground hover:bg-[var(--v3-hover)] hover:text-foreground";
+
+/* FileTreeFolder only exposes className on its outer wrapper; its header
+   row, folder icon and indent guide are reached by selector. Same look as
+   FILE_ROW, the blue folder icon goes neutral, and the guide is a
+   hairline at a 12px indent. */
+const FOLDER_ROW =
+  "text-[13px] text-muted-foreground [&>div:first-child]:h-[26px] [&>div:first-child]:gap-1.5 [&>div:first-child]:rounded-md [&>div:first-child]:px-1.5 [&>div:first-child]:py-0 [&>div:first-child:hover]:bg-[var(--v3-hover)] [&>div:first-child:hover]:text-foreground [&_.text-blue-500]:text-muted-foreground [&_.border-l]:border-[var(--v3-line)] [&_.ml-4]:ml-[9px] [&_.pl-2]:pl-1.5";
 
 /* #547 AC-5: memoized — feed-event renders hit the Workbench constantly,
    and a plain re-render reconciles every row. Props are stable
@@ -47,7 +59,12 @@ export const TreeNodes = memo(function TreeNodes({
   const renderKid = (k: TreeNode) => {
     if (included && !included.has(k.path)) return null;
     return k.children.size > 0 ? (
-      <FileTreeFolder key={k.path} path={k.path} name={k.name}>
+      <FileTreeFolder
+        key={k.path}
+        path={k.path}
+        name={k.name}
+        className={FOLDER_ROW}
+      >
         <TreeNodes
           node={k}
           changed={changed}
@@ -64,36 +81,45 @@ export const TreeNodes = memo(function TreeNodes({
         /* #547 AC-5: content-visibility skips layout/paint for rows
                outside the viewport — un-hiding a 2,000-row panel only
                lays out the ~30 on screen (reopen→row <50 ms). */
-        className="content-auto [contain-intrinsic-size:auto_26px]"
+        className={cn(
+          "content-auto [contain-intrinsic-size:auto_26px]",
+          FILE_ROW,
+        )}
       >
         <span className="size-4 shrink-0" />
         <FileTreeIcon>
-          {changed.has(k.path) ? (
-            <FilePenIcon className="size-4 text-amber-600" />
-          ) : (
-            <FileCodeIcon className="size-4 text-muted-foreground" />
-          )}
+          <FileTextIcon className="size-4 text-muted-foreground" />
         </FileTreeIcon>
-        <FileTreeName className={cn(changed.has(k.path) && "font-medium")}>
+        <FileTreeName
+          className={cn(
+            "min-w-0 flex-1",
+            changed.has(k.path) && "font-medium text-foreground",
+          )}
+        >
           {k.name}
         </FileTreeName>
         {changed.has(k.path) && (
+          // A dot, not a letter chip: status colour is the only signal left.
           <span
+            role="img"
+            aria-label={
+              changed.get(k.path)!.status === "added" ? "Added" : "Modified"
+            }
+            title={
+              changed.get(k.path)!.status === "added" ? "Added" : "Modified"
+            }
             className={cn(
+              "size-1.5 shrink-0 rounded-full",
               changed.get(k.path)!.status === "added"
-                ? "text-emerald-600"
-                : "text-amber-600",
-              "pl-2 font-mono text-[10px]",
-              !openPath && "ml-auto",
+                ? "bg-emerald-500"
+                : "bg-amber-500",
             )}
-          >
-            {changed.get(k.path)!.status === "added" ? "A" : "M"}
-          </span>
+          />
         )}
         {openPath && (
           // The row itself selects on click — keep the menu from doing so.
           <span
-            className="ml-auto pl-1"
+            className="pl-1"
             onClick={(e) => e.stopPropagation()}
             onKeyDown={(e) => e.stopPropagation()}
           >

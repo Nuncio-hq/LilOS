@@ -21,9 +21,10 @@ import {
  * (onboarded, nothing stored) shows the same prefilled identity without
  * re-running first run. (Settings editing is #132 — out of this slice.)
  *
- * v3 surfaces that carry the identity: the sidebar header (company), the top
- * bar's breadcrumb (company), Home's greeting ("Good …, <name>") and the
- * author line of the user's own turn in the thread panel.
+ * v3 surfaces that carry the identity: the sidebar header (company; the top
+ * bar names it only while the sidebar is hidden), Home's greeting
+ * ("Good …, <name>") and the author line of the user's own turn in the
+ * thread panel.
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
@@ -103,9 +104,12 @@ test("AC-2 first run folds name+company into the Welcome, prefilled; AC-1 the ch
     // Every surface renders the stored identity (AC-1).
     await expect(greeting(page)).toContainText("Ada", { timeout: 30_000 });
     await expect(sidebarHeader(page)).toContainText("Ada Labs");
-    await expect(page.getByRole("button", { name: "Ada Labs" })).toBeVisible();
+    // The company shows once: the top bar's breadcrumb starts at the page.
+    await expect(page.locator("[data-v3-topbar]")).not.toContainText(
+      "Ada Labs",
+    );
 
-    // The user's own message row (`data-msg`; `data-userturn` is only the session view's) is authored "Ada" in the thread panel.
+    // The user's own message (`data-msg` wrapping the `data-userturn` bubble) is authored "Ada" in the thread panel — the name is on the line under the bubble, read by assistive tech.
     await v3Sidebar(page)
       .getByRole("button", { name: /Default/ })
       .click();

@@ -1,9 +1,4 @@
-import {
-  CheckIcon,
-  MessageCircleQuestionIcon,
-  SendIcon,
-  XIcon,
-} from "lucide-react";
+import { CheckIcon, SendIcon, XIcon } from "lucide-react";
 import {
   type ComponentProps,
   type ReactNode,
@@ -22,10 +17,11 @@ import {
 } from "../components/ai-elements/confirmation";
 import { ConversationScrollButton } from "../components/ai-elements/conversation";
 import { MessageResponse } from "../components/ai-elements/message";
-import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { cn } from "../lib/utils";
 import type { QuestionAsk } from "../types";
+import { StatusPill } from "../v3/v3-marks";
+import { CARD, CARD_HEAD, CardButton, CardLink, RECEIPT } from "./card-bits";
 
 /* What the card hands back: options answer with their wire id, free text
    with the typed string; `label` is the human wording the receipt shows. */
@@ -379,14 +375,7 @@ export function QuestionCard({
   return (
     <Confirmation
       ref={cardRef}
-      className={cn(
-        "mt-1 scroll-mt-2",
-        done
-          ? cancelled
-            ? "border-red-200"
-            : "border-emerald-200"
-          : "border-amber-300 bg-amber-50/50",
-      )}
+      className={cn("scroll-mt-2", done ? RECEIPT : CARD)}
       data-ask-id={q.id}
       data-question-card
       data-ask-state={done ? "resolved" : "open"}
@@ -395,12 +384,14 @@ export function QuestionCard({
         done ? { id: q.id, approved: !cancelled, reason: done } : { id: q.id }
       }
     >
-      <ConfirmationTitle className="flex flex-wrap items-center gap-1.5 pr-2 font-medium text-foreground">
+      <ConfirmationTitle className={CARD_HEAD}>
         <ConfirmationRequest>
-          <MessageCircleQuestionIcon className="size-3.5 text-primary" />
-          {interactive
-            ? "Question for you"
-            : `Question · only ${viewer} can answer`}
+          <StatusPill status="needs" />
+          <span>
+            {interactive
+              ? "Question for you"
+              : `Question · only ${viewer} can answer`}
+          </span>
         </ConfirmationRequest>
         <ConfirmationAccepted>
           <CheckIcon className="size-3.5 text-emerald-600" />
@@ -413,7 +404,7 @@ export function QuestionCard({
       </ConfirmationTitle>
       <ConfirmationRequest>
         <div className="space-y-2.5">
-          <MessageResponse className="lilos-prose text-foreground text-sm leading-snug">
+          <MessageResponse className="lilos-prose text-[14.5px] text-foreground leading-normal">
             {q.question}
           </MessageResponse>
           {options.length > 0 && (
@@ -431,45 +422,44 @@ export function QuestionCard({
               )}
             >
               {options.map((o) => (
-                <Button
+                <button
                   key={o.id}
-                  variant="outline"
-                  size="sm"
+                  type="button"
                   disabled={!interactive || !!pending}
-                  className="h-auto justify-start px-3 py-2 text-left whitespace-normal"
+                  className="w-full rounded-[7px] border border-[var(--v3-line)] px-3 py-2 text-left transition-[background,transform] hover:bg-[var(--v3-hover)] active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50"
                   onClick={() => pick({ value: o.id, label: o.label })}
                 >
                   <span className="flex min-w-0 flex-col gap-0.5">
                     <MessageResponse
-                      className="lilos-prose text-sm"
+                      className="lilos-prose font-medium text-[13.5px]"
                       components={INLINE_COMPONENTS}
                     >
                       {o.label}
                     </MessageResponse>
                     {o.description && (
                       <MessageResponse
-                        className="lilos-prose font-normal text-muted-foreground text-xs"
+                        className="lilos-prose font-normal text-[12.5px] text-muted-foreground"
                         components={INLINE_COMPONENTS}
                       >
                         {o.description}
                       </MessageResponse>
                     )}
                   </span>
-                </Button>
+                </button>
               ))}
             </div>
           )}
           {hidden > 0 && (
             /* Options the cap hid — the count tells you the list scrolls
                (Hermes FIX #515 r3). */
-            <div className="px-1 text-muted-foreground text-xs">
+            <div className="px-1 text-[12.5px] text-muted-foreground">
               +{hidden} more
             </div>
           )}
           {interactive && (
-            /* Two rows, one height (h-8): the free-text field rides full
-               width with Answer at its end; Skip is a secondary button on
-               the row below, right-aligned like the phone (FIX #515 r3).
+            /* Two rows, one height (h-7): the free-text field rides full
+               width with Answer at its end; Skip is a quiet button on the
+               row below, right-aligned like the phone (FIX #515 r3).
                data-question-actions: the "input and Skip stay visible"
                anchor the arrival-align is tested against (FIX r5). */
             <div data-question-actions className="flex flex-col gap-2">
@@ -490,38 +480,35 @@ export function QuestionCard({
                       options.length ? "Or type your own…" : "Type your answer…"
                     }
                     aria-label="Your answer"
-                    className="min-w-0 flex-1"
+                    className="h-7 min-w-0 flex-1 rounded-[7px] border-foreground/15 bg-background px-2.5 text-[13px] md:text-[13px] dark:bg-background"
                   />
-                  {/* Field-height (h-8), clearly inert while empty, solid
-                      accent once there's text (FIX #515). */}
-                  <Button
+                  {/* Field-height, clearly inert while empty, ink-filled once
+                      there's text (FIX #515). */}
+                  <CardButton
                     type="submit"
-                    variant={draft.trim() ? "default" : "outline"}
+                    primary={!!draft.trim()}
                     disabled={!!pending || !draft.trim()}
-                    className="shrink-0"
                   >
                     <SendIcon className="size-3.5" />
                     Answer
-                  </Button>
+                  </CardButton>
                 </form>
               )}
               <div className="flex items-center justify-end gap-2">
                 {pending && (
-                  <span className="text-muted-foreground text-xs">
+                  <span className="text-[12.5px] text-muted-foreground">
                     Sending…
                   </span>
                 )}
                 {/* Skip is secondary — it says what it does: the asking
                     agent decides instead. */}
-                <Button
-                  variant="secondary"
-                  className="shrink-0"
+                <CardLink
                   disabled={!!pending}
                   title={`Skip — ${who} decides for you`}
                   onClick={cancel}
                 >
                   Skip — let {who} decide
-                </Button>
+                </CardLink>
               </div>
             </div>
           )}

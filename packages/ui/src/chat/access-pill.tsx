@@ -37,7 +37,7 @@ export function AccessPill({
           : "Ask — the agent asks before risky commands. Click to switch to Full access."
       }
       className={cn(
-        "shrink gap-1.5 text-foreground/80 text-xs",
+        "h-6 shrink gap-1.5 rounded-md px-1.5 font-normal text-[12.5px] text-muted-foreground hover:bg-[var(--v3-hover)] hover:text-foreground",
         /* The ghost variant's hover:text-foreground must not mute the
            warning: Full stays orange on hover too (Codex-style). */
         full &&

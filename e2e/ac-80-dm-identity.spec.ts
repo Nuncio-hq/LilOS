@@ -6,22 +6,23 @@ import { bootStack, pickPorts, skipFirstRun, startChat } from "./helpers/stack";
 
 /**
  * Issue #80 — thread identity + streaming markdown. AC-1 asserts the user's
- * message avatar is the signed-in person's own (their initial on a colour,
- * never the anonymous grey "Y") and that the same person reads the same on
- * the other v3 surface that draws them. AC-2 asserts markdown renders
+ * message is the signed-in person's own (named with their name, never "You")
+ * and that the same person reads the same on the other v3 surface that draws
+ * them. AC-2 asserts markdown renders
  * mid-stream (the prompt's `slow:` directive stretches its own text
  * phase so the stream is observable — #432; no stack-wide tick). AC-3
  * captures both in the Electron desktop app.
  *
- * v3: the message row is the thread panel's row beside Threads (the shared
- * feed `Row`: avatar + Who line + text); a send lands there, so no DM feed or
- * "N replies" chip is needed to reach it. The old assertion that the row's
- * avatar IS the sidebar footer's avatar has no v3 counterpart: the v3 sidebar
- * has no me-row footer, and the only other place v3 draws the signed-in
- * person is the People org chart's "Chairman" chip (a different avatar
- * component: initial on the neutral foreground chip). So "one identity" is
- * asserted as same name + same initial across the two surfaces, not same
- * colour (see the report: the two surfaces colour the person differently).
+ * v3: the message is the thread panel's right-aligned bubble beside Threads
+ * (`data-userturn`: no avatar — your own messages carry only the time line,
+ * whose name is read by assistive tech, so "named, never You" is asserted on
+ * its text); a send lands there, so no DM feed or "N replies" chip is needed
+ * to reach it. The old assertion that the row's avatar IS the sidebar
+ * footer's avatar has no v3 counterpart: the v3 sidebar has no me-row footer,
+ * and the only other place v3 draws the signed-in person is the People org
+ * chart's "Chairman" chip (initial on the neutral foreground chip). So "one
+ * identity" is asserted as the same name on both surfaces and the chip's
+ * initial being that name's first letter.
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
@@ -41,28 +42,20 @@ const STREAM_PROMPT = `slow:75 ${PROMPT}`;
 const STREAM_PROMPT_DESKTOP = `slow:150 ${PROMPT}`;
 const AGENT = { id: "default", name: "Default" };
 
-/* The grid row the user's message renders in (avatar + Who + text) — Row's
-   root is `group relative grid`, distinct from the agent-turn's group wrap.
-   Scoped to the thread panel's message rows: the Threads list beside the
-   peek has avatars of its own. */
+/* The bubble the user's message renders in. Scoped to the thread panel: the
+   Threads list beside the peek has avatars of its own. */
 const userRow = (page: Page, text: string) =>
   page
-    .locator("[data-thread-panel] [data-msg] > div.group.grid")
-    .filter({ has: page.locator('[data-slot="avatar-fallback"]') })
+    .locator("[data-thread-panel] [data-userturn]")
     .filter({ hasText: text })
     .last();
 
-const bg = (loc: Locator) =>
-  loc.evaluate((el) => getComputedStyle(el).backgroundColor);
-
-/* The user's row avatar is the signed-in person's: their initial, on a colour
-   that is not the anonymous fallback's near-white grey (bg-muted ≈
-   oklch(0.97 0 0)). Returns the avatar's initial for the cross-surface check. */
-async function expectOwnAvatar(row: Locator): Promise<string> {
-  const rowFb = row.locator('[data-slot="avatar-fallback"]');
-  await expect(rowFb).toHaveText("O");
-  expect(await bg(rowFb)).not.toBe("oklch(0.97 0 0)");
-  return (await rowFb.textContent()) ?? "";
+/* The user's message is the signed-in person's: named with their name, not
+   the anonymous "You". Returns the initial the other surface must show. */
+async function expectOwnIdentity(row: Locator): Promise<string> {
+  await expect(row).toContainText("Oscar");
+  await expect(row).not.toContainText("You");
+  return "O";
 }
 
 /* The People org chart's "Chairman" chip is the signed-in person's other
@@ -86,7 +79,7 @@ async function expectChairmanIsSamePerson(
 
 test.describe.configure({ mode: "serial" });
 
-test("AC-1 the user's message avatar is their own identity (not a grey 'Y')", async ({
+test("AC-1 the user's message is their own identity (named, never 'You')", async ({
   page,
 }) => {
   // bootStack + send need headroom under parallel load.
@@ -105,10 +98,7 @@ test("AC-1 the user's message avatar is their own identity (not a grey 'Y')", as
        is already rendered. */
     const row = userRow(page, PROMPT);
     await expect(row).toBeVisible({ timeout: 30_000 });
-    const initial = await expectOwnAvatar(row);
-    // The Who line names the signed-in human, not "You".
-    await expect(row).toContainText("Oscar");
-    await expect(row).not.toContainText("You");
+    const initial = await expectOwnIdentity(row);
     // …and the other surface that draws the same person agrees.
     await expectChairmanIsSamePerson(page, stack.webUrl, initial);
   } finally {
@@ -168,10 +158,10 @@ test("AC-3 desktop app: same identity + streaming markdown in Electron", async (
     });
     try {
       await startChat(win, stack.webUrl, AGENT, STREAM_PROMPT_DESKTOP);
-      // AC-1 in the desktop window: the user's row avatar is their own.
+      // AC-1 in the desktop window: the user's message is their own.
       const row = userRow(win, PROMPT);
       await expect(row).toBeVisible({ timeout: 30_000 });
-      const initial = await expectOwnAvatar(row);
+      const initial = await expectOwnIdentity(row);
       await electronScreenshot(app, win, `${SHOTS}/ac-3-desktop-avatar.png`);
       // AC-2 in the desktop window: markdown mid-stream. The send already
       // opened the thread in the panel — no session to reopen.

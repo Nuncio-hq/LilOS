@@ -370,8 +370,11 @@ export function V3People({
         ]}
         value={view}
         onChange={(v) => go({ page: "people", view: v })}
+        /* The org chart has its own "Hire an agent" tile; the table has none,
+           so only the table carries the link — one entry per view. */
         right={
-          act.hire && (
+          act.hire &&
+          view === "table" && (
             <button
               type="button"
               onClick={() => go({ page: "hire" })}

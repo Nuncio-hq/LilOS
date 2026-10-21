@@ -1,4 +1,4 @@
-import { shouldClearPending } from "@lilos/client-runtime";
+import { shouldClearPending, threadStatus } from "@lilos/client-runtime";
 import type { Conversation } from "@lilos/contracts/app";
 import { draftKey, useDraft } from "@lilos/ui";
 import type { Channel, Msg, Thread, Work } from "@lilos/ui/types";
@@ -19,8 +19,14 @@ import { useAtom } from "../lib/hooks";
 import { hostOsOpen } from "../lib/host";
 import { clock, sessionLabel, threadUsage, toUiEmployee } from "../lib/mapping";
 import { osFullName, osHome, profile } from "../lib/me";
-import { engine, relay, workbenchRequests } from "../lib/runtime";
+import {
+  engine,
+  relay,
+  sessionSignals,
+  workbenchRequests,
+} from "../lib/runtime";
 import { sayError } from "../lib/toast";
+import { V3_STATUS } from "../v3/threads";
 import { EMPTY_FEED, NO_ASKS } from "./empties";
 import { fileSearch, sessionCommands } from "./searchers";
 import {
@@ -75,6 +81,7 @@ export function useThreadWith(
      shows the thin "Reconnecting…" line so a send made in the window reads
      as waiting, not lost. */
   const reconnecting = useAtom(relay.state) === "reconnecting";
+  const signals = useAtom(sessionSignals);
   const wbSpots = useAtom(workbenchRequests);
   const { engineDown } = useEngineStatus();
   const { empFn, mentionables } = useEmployeeLookup(employees, engineDown);
@@ -234,6 +241,8 @@ export function useThreadWith(
     empFn,
     mentionables,
     rootMsg,
+    status:
+      V3_STATUS[threadStatus(conv, model, sid ? signals[sid] : undefined)],
     thread,
     resolved: resolvedReceipts(asksHere),
     running,

@@ -117,9 +117,11 @@ test("tray reserves its height: the approval card stays answerable with a waitin
 /* #371: the tray's amber text was unreadable in dark mode — text-amber-950 and
    text-amber-800 were never remapped under .dark, so the queued item painted
    ~1.4:1 and the subtitle ~2.5:1. This spec measures the real computed colors
-   in a browser: the queued text, subtitle, index, header and both action icons
-   must hold WCAG AA 4.5:1 against the effective tray background in dark, and
-   light mode must keep exactly its original palette. */
+   in a browser: the queued text, the "Queued · … reads this" line, the index
+   and both action icons must hold WCAG AA 4.5:1 against the effective tray
+   background in dark, and light mode is pinned to its palette. The v3 tray is
+   quiet and neutral (muted line over `--v3-soft` rows, colour is for status),
+   so the old amber header + subtitle pair is one line now. */
 const SHOTS = path.join(repo, "test-results", "ac-371");
 
 type RGBA = { r: number; g: number; b: number; a: number };
@@ -178,8 +180,7 @@ const measureTray = (page: Page): Promise<ContrastRow[]> =>
       return 0.2126 * f(c.r) + 0.7152 * f(c.g) + 0.0722 * f(c.b);
     };
     const checks: { name: string; sel: string }[] = [
-      { name: "header", sel: "[data-queued] .text-amber-900" },
-      { name: "subtitle", sel: "[data-queued-when]" },
+      { name: "header", sel: "[data-queued-when]" },
       { name: "index", sel: "[data-queued] li .font-mono" },
       { name: "queued text", sel: "[data-queued] li .truncate" },
       { name: "edit icon", sel: "[data-queued-edit]" },
@@ -272,6 +273,9 @@ test("tray text holds WCAG AA in dark and keeps its palette in light (#371)", as
     await expect(openCard(page)).toBeVisible({ timeout: 30_000 });
     await send(page, "first waiting nudge");
     await expect(tray(page)).toBeVisible();
+    // Two rows: the index only numbers a list, never a lone item.
+    await send(page, "second waiting nudge");
+    await expect(tray(page).locator("li")).toHaveCount(2);
 
     const html = page.locator("html");
     for (const scheme of ["light", "dark"] as const) {
@@ -307,8 +311,8 @@ test("tray text holds WCAG AA in dark and keeps its palette in light (#371)", as
         });
       }
     }
-    // Light mode must not change: the classes still resolve to their light
-    // palette values (the fix only adds .dark rules and a dark: variant).
+    // Light mode is pinned to the quiet v3 palette: muted line and index,
+    // foreground item text, muted action icons.
     await page.emulateMedia({ colorScheme: "light" });
     await expect(html).not.toHaveClass(/dark/);
     const light = Object.fromEntries(
@@ -321,10 +325,9 @@ test("tray text holds WCAG AA in dark and keeps its palette in light (#371)", as
         `${name} must keep its light-mode color`,
       ).toBe(`${rgb[0]},${rgb[1]},${rgb[2]}`);
     };
-    expectInk("header", [123, 51, 6]); // amber-900
-    expectInk("subtitle", [151, 60, 0]); // amber-800
-    expectInk("index", [187, 77, 0]); // amber-700
-    expectInk("queued text", [70, 25, 1]); // amber-950
+    expectInk("header", [134, 134, 139]); // muted-foreground
+    expectInk("index", [134, 134, 139]); // muted-foreground
+    expectInk("queued text", [29, 29, 31]); // foreground
     expectInk("edit icon", [134, 134, 139]); // muted-foreground
     expectInk("remove icon", [134, 134, 139]); // muted-foreground
   } finally {

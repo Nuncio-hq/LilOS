@@ -192,8 +192,12 @@ test("⌘K searches and jumps; with no CEO behind it there is no draft to make",
     { timeout: 30_000 },
   );
 
-  // The bar says Search, and so does the palette: no CEO to ask.
-  await expect(page.getByRole("button", { name: /^Search…/ })).toBeVisible();
+  // Search is the sidebar's one row (the top bar never repeats it, nor an
+  // "Ask the CEO" box), and with no CEO to ask the palette says Search too.
+  await expect(
+    v3Sidebar(page).getByRole("button", { name: /^Search/ }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Search/ })).toHaveCount(1);
   await expect(page.getByText("Ask the CEO anything…")).toHaveCount(0);
   await page.keyboard.press("ControlOrMeta+k");
   await expect(palette(page)).toBeVisible();

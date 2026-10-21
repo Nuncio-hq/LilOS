@@ -164,8 +164,8 @@ const canon = (el: Element) =>
 const agentTurns = (c: HTMLElement) =>
   Array.from(c.querySelectorAll("[data-agentturn]"));
 
-/* All tool steps of a turn collapse into ONE block with a single trigger; expanding it reveals
-   every step's tool card. */
+/* All the work of a turn collapses into ONE "Worked …" line; expanding it reveals
+   every step's row. */
 function expectTaskBlock(turn: Element, steps: number) {
   const blocks = turn.querySelectorAll("[data-tasksteps]");
   expect(blocks.length).toBe(1);
@@ -174,7 +174,10 @@ function expectTaskBlock(turn: Element, steps: number) {
     ":scope > [data-slot='collapsible-trigger']",
   );
   if (!trigger) throw new Error("collapsible trigger missing");
-  expect(trigger.textContent).toContain(`${steps} steps`);
+  expect(trigger.textContent).toContain("Worked");
+  expect(trigger.textContent).toContain(
+    "read 1 file, edited 1 file, ran 1 command",
+  );
   expect(trigger.getAttribute("aria-expanded")).toBe("false");
   fireEvent.click(trigger);
   expect(trigger.getAttribute("aria-expanded")).toBe("true");
@@ -184,7 +187,10 @@ function expectTaskBlock(turn: Element, steps: number) {
   expect(tools.length).toBe(steps);
   const stepList = stepTurn.steps;
   if (!stepList) throw new Error("stepTurn.steps missing");
-  for (const s of stepList) expect(block.textContent).toContain(s.tool);
+  for (const s of stepList)
+    expect(block.textContent).toContain(
+      String(s.input.path ?? s.input.command),
+    );
 }
 
 describe("issue #19 — one conversation from shared pieces", () => {
@@ -225,12 +231,15 @@ describe("issue #19 — one conversation from shared pieces", () => {
       />,
     );
     expect(within(notDm.container).getByText("Thread")).toBeTruthy();
-    expect(within(notDm.container).getByText(/#DM tooling/)).toBeTruthy();
+    expect(
+      within(notDm.container).getByText(/Thread · #DM tooling/),
+    ).toBeTruthy();
     cleanup();
-    // dm:true → Thread frame (one word per concept, #582), DM label, no Start work affordance.
+    // dm:true → Thread frame (one word per concept, #582), no "Chat · agent" kicker (the side peek's trail names the agent; no DM channel wording), no Start work affordance.
     const dm = render(<ThreadView {...panelProps} channel={dmChannel} />);
     expect(within(dm.container).getByText("Thread")).toBeTruthy();
-    expect(within(dm.container).getByText(/DM · Builder/)).toBeTruthy();
+    expect(within(dm.container).queryByText(/Chat · Builder/)).toBeNull();
+    expect(dm.container.textContent).not.toMatch(/DM ·/);
     expect(
       within(dm.container).queryByRole("button", { name: /Start work/ }),
     ).toBeNull();
@@ -279,12 +288,12 @@ describe("issue #19 — one conversation from shared pieces", () => {
       /Review & start/,
       /^Once$/,
       /* #578: the affordance is the row's hover "Rewind" button now. */
-      /^Rewind$/,
+      /^Rewind to here$/,
     ])
       expect(qf.queryByRole("button", { name })).toBeNull();
     expect(qf.queryByText(/Add a comment/)).toBeNull();
     // icon buttons whose only accessible handle is the title
-    // (#577: the single back control is labelled "Back to …", not Exit focus)
+    // (#577: no back control in the thread at all — the peek header's Narrow is the one way back)
     expect(quietFocus.container.querySelector('[title^="Back to"]')).toBeNull();
     expect(
       quietFocus.container.querySelector('[title="Workspace"]'),
@@ -295,7 +304,7 @@ describe("issue #19 — one conversation from shared pieces", () => {
       <ThreadView
         {...panelProps}
         channel={channel}
-        onFocus={() => {}}
+        onOpenTab={() => {}}
         onStart={() => {}}
         onStop={() => {}}
         onRetry={() => {}}
@@ -306,7 +315,11 @@ describe("issue #19 — one conversation from shared pieces", () => {
     );
     const wp = within(wiredPanel.container);
     expect(wp.getByRole("button", { name: /Start work/ })).toBeTruthy();
-    expect(wp.getByRole("button", { name: "Focus" })).toBeTruthy();
+    // the work strip: one button per kind of work, each opens the session on that tab
+    expect(wp.getByRole("navigation", { name: "Thread work" })).toBeTruthy();
+    expect(wp.getByRole("button", { name: /Details/ })).toBeTruthy();
+    // …and no expand button of its own — the peek header's Widen is the one
+    expect(wp.queryByRole("button", { name: "Focus" })).toBeNull();
     expect(wp.getByRole("button", { name: /^Once$/ })).toBeTruthy();
     expect(wp.getByRole("button", { name: /Not yet/ })).toBeTruthy();
     expect(
@@ -369,16 +382,17 @@ describe("issue #19 — one conversation from shared pieces", () => {
     /* One "Rewind" hover trigger per user message (#134, moved to the row
        by #578) — the fixture thread has several, so any-of proves it. */
     expect(
-      wf.getAllByRole("button", { name: /^Rewind$/ }).length,
+      wf.getAllByRole("button", { name: /^Rewind to here$/ }).length,
     ).toBeGreaterThan(0);
     expect(wf.getByRole("button", { name: /gpt-test-1/ })).toBeTruthy();
     /* PR tab resolves async off the host probe, then its merge control shows. */
     const prTab = await wf.findByRole("tab", { name: /PR #12/ });
     fireEvent.click(prTab);
     await wf.findByRole("button", { name: /Squash and merge/ });
+    // no second way out of the session view beside the peek's Narrow
     expect(
       wiredFocus.container.querySelector('[title="Back to #engineering"]'),
-    ).toBeTruthy();
+    ).toBeNull();
   });
 });
 
@@ -423,7 +437,9 @@ describe("issue #196 — a folder-less DM session is a plain chat", () => {
     expect(focus.container.querySelector("[data-wsbadge]")).toBeNull();
     expect(focus.container.textContent).not.toMatch(/read-only/i);
     expect(focus.container.textContent).not.toContain("no git repo");
-    expect(within(focus.container).getByText("Reply to Builder…")).toBeTruthy();
+    expect(
+      within(focus.container).getByPlaceholderText("Message Builder…"),
+    ).toBeTruthy();
   });
 
   test("AC-2 Focus keeps today's folder surfaces: ws badge, branch chip, no-git-repo chip", () => {
@@ -464,7 +480,9 @@ describe("issue #196 — a folder-less DM session is a plain chat", () => {
     expect(dm.container.querySelector("[data-wsbadge]")).toBeNull();
     expect(dm.container.textContent).not.toContain("discussion");
     expect(dm.container.textContent).not.toMatch(/read-only/i);
-    expect(within(dm.container).getByText("Reply to Builder…")).toBeTruthy();
+    expect(
+      within(dm.container).getByPlaceholderText("Message Builder…"),
+    ).toBeTruthy();
   });
 
   test("AC-2 a channel thread keeps the read-only chip and main hint", () => {

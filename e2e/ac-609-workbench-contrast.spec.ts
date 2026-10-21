@@ -14,6 +14,7 @@ import {
   startFolderlessChat,
   threadUrl,
 } from "./helpers/stack";
+import { openWorkbench as openWb } from "./helpers/workbench";
 
 /**
  * Issue #609 — dark-mode Workbench ink read dark-on-dark:
@@ -90,20 +91,11 @@ const send = async (page: Page, text: string) => {
 const turns = (page: Page) => page.locator("[data-agentturn]");
 const turnSettled = (page: Page) => expectSettled(turns(page).last(), 90_000);
 
-const workbenchToggle = (page: Page) =>
-  page.getByTitle("Workbench", { exact: true });
 const tab = (page: Page, name: RegExp | string) =>
   page.getByRole("tab", { name });
 
 const openWorkbench = async (page: Page, firstTab: RegExp | string) => {
-  await expect(workbenchToggle(page)).toBeVisible({ timeout: 30_000 });
-  if (
-    !(await tab(page, firstTab)
-      .isVisible()
-      .catch(() => false))
-  ) {
-    await workbenchToggle(page).click();
-  }
+  await openWb(page);
   await expect(tab(page, firstTab)).toBeVisible({ timeout: 15_000 });
 };
 

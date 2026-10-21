@@ -12,6 +12,7 @@ import {
   type Stack,
   startChatInFolder,
 } from "./helpers/stack";
+import { openWorkbench } from "./helpers/workbench";
 
 /* Issue #326 — the Workbench tab strip must never hard-clip a tab label.
    With the folder tabs plus Background and Subagents the strip no longer fits
@@ -72,16 +73,10 @@ async function openFocus(page: Page) {
   );
   await panelIntoFocus(page);
   /* The panel's open state is seeded at session-view mount, which can precede
-     the conversation's folder landing, and a first toggle click that lands
-     before the seed toggles it back off (ac-590) — click until the strip
-     shows. Below ~lg it starts closed and the header toggle opens its
-     overlay. */
-  const toggle = page.getByTitle("Workbench", { exact: true });
-  await expect(toggle).toBeVisible({ timeout: 30_000 });
-  for (let i = 0; i < 4 && !(await list(page).isVisible()); i++) {
-    await toggle.click();
-    await page.waitForTimeout(1500);
-  }
+     the conversation's folder landing — opening through the work strip's own
+     tab is idempotent, so there is no toggle to race. Below ~lg the panel
+     starts closed and the strip's tab opens its overlay. */
+  await openWorkbench(page);
   await expect(list(page)).toBeVisible({ timeout: 30_000 });
 }
 
@@ -181,13 +176,7 @@ test("AC: no tab clips at 1288 / 900 / ~1040px; collapsed tabs keep icon + count
 
   // 900px window: the Workbench is the overlay strip — still nothing clips.
   await page.setViewportSize({ width: 900, height: 700 });
-  if (
-    !(await list(page)
-      .isVisible()
-      .catch(() => false))
-  ) {
-    await page.getByTitle("Workbench", { exact: true }).click();
-  }
+  await openWorkbench(page);
   await expectNoClippedTab(page);
   await page.screenshot({ path: `${SHOTS}/ac-900.png` });
 

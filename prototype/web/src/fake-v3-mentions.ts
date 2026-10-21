@@ -65,11 +65,14 @@ const FILES: Record<string, string[]> = {
   "~/Research/heardback": RESEARCH,
 }
 
+/** Every path in a project folder ("src/app.ts"; folders end with "/"): what its Files tab lists. */
+export const folderFiles = (folder: string): string[] => FILES[folder] ?? []
+
 /** Files and folders of `folder` matching what follows an `@`: names that
     start with the query first, then paths that merely contain it. */
 export function fakeFiles(folder: string, query: string): FileMention[] {
   const q = query.trim().toLowerCase()
-  const all = FILES[folder] ?? []
+  const all = folderFiles(folder)
   const starts = all.filter((p) => (p.replace(/\/$/, "").split("/").pop() ?? p).toLowerCase().startsWith(q))
   const rest = all.filter((p) => !starts.includes(p) && p.toLowerCase().includes(q))
   return [...starts, ...rest].slice(0, 8).map((p) => ({

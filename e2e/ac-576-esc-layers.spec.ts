@@ -5,6 +5,7 @@ import {
   bootStack,
   openDefaultAgent,
   panelIntoFocus,
+  panelOutOfFocus,
   pickPorts,
   type Stack,
   skipFirstRun,
@@ -109,7 +110,7 @@ test("AC-576-2 Esc closes the top-most surface only — menu → dialog → thre
 
   // Dialog level: the shortcut list opens over the thread; Esc closes only
   // the dialog.
-  await page.getByRole("button", { name: "Back to DM" }).click();
+  await panelOutOfFocus(page);
   await expect(page).toHaveURL(/open=thread:[^&]+$/);
   await page.keyboard.press("Meta+/");
   const dialog = page.locator("[data-shortcuts-dialog]");
@@ -130,9 +131,9 @@ test("AC-576-2 Esc closes the top-most surface only — menu → dialog → thre
   // The held turn kept running through every close — it was never stopped.
   await page.goto(threadUrl(stackA.webUrl, conv, true));
   /* The held turn is still running after every close — the composer says
-     "…is working. Enter steers this turn…" and nothing was interrupted. */
+     "Message X… it reads this at the next step" and nothing was interrupted. */
   await expect(
-    page.getByPlaceholder(/is working\. Enter steers this turn/),
+    page.getByPlaceholder(/it reads this at the next step/),
   ).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText(STOPPED)).toHaveCount(0);
 });

@@ -304,7 +304,7 @@ export function PromptInputAttachment({
   return (
     <PromptInputHoverCard>
       <HoverCardTrigger render={<div className={cn(
-                      "group relative flex h-8 cursor-pointer select-none items-center gap-1.5 rounded-md border border-border px-1.5 font-medium text-sm transition-all hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50",
+                      "group relative flex h-7 max-w-full cursor-pointer select-none items-center gap-1.5 rounded-md border border-[var(--v3-line)] px-1.5 text-[12.5px] transition-colors hover:bg-[var(--v3-hover)]",
                       className
                     )} key={data.id} {...props} />}><div className="relative size-5 shrink-0">
                       <div className="absolute inset-0 flex size-5 items-center justify-center overflow-hidden rounded bg-background transition-opacity group-hover:opacity-0">
@@ -799,7 +799,13 @@ export const PromptInput = ({
         ref={formRef}
         {...props}
       >
-        <InputGroup className="overflow-hidden">{children}</InputGroup>
+        <InputGroup
+          // Its own slot: specs and styles find the message box by it, apart from every other input group.
+          data-slot="composer-box"
+          className="overflow-hidden rounded-xl border-[var(--v3-line)] bg-transparent has-disabled:bg-transparent has-disabled:opacity-100 dark:bg-transparent dark:has-disabled:bg-transparent px-3.5 pt-3 pb-2.5 shadow-none focus-within:border-foreground/30 has-[[data-slot=input-group-control]:focus-visible]:border-foreground/30 has-[[data-slot=input-group-control]:focus-visible]:ring-0"
+        >
+          {children}
+        </InputGroup>
       </form>
     </>
   );
@@ -917,7 +923,10 @@ export const PromptInputTextarea = ({
 
   return (
     <InputGroupTextarea
-      className={cn("field-sizing-content max-h-48 min-h-16", className)}
+      className={cn(
+        "field-sizing-content max-h-[180px] min-h-6 px-0 py-0 text-[14.5px] leading-normal md:text-[14.5px]",
+        className
+      )}
       name="message"
       onCompositionEnd={() => setIsComposing(false)}
       onCompositionStart={() => setIsComposing(true)}
@@ -957,7 +966,10 @@ export const PromptInputFooter = ({
 }: PromptInputFooterProps) => (
   <InputGroupAddon
     align="block-end"
-    className={cn("justify-between gap-1", className)}
+    className={cn(
+      "mt-2 justify-between gap-1 px-0 py-0 pb-0 has-[>button]:ml-0",
+      className
+    )}
     {...props}
   />
 );

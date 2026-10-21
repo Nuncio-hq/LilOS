@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { type V3Nav, V3Shell, navFromParams, paramsFromNav, paramsText } from "@lilos/ui"
+import { type ToastNotice, ToastView, type V3Nav, V3Shell, navFromParams, paramsFromNav, paramsText } from "@lilos/ui"
 import { V3_DATA, v3Draft } from "./fake-v3"
 import { v3Reply } from "./fake-v3-reply"
 import { StatusBanner, StatusDetails } from "./status-host"
+import { MockThread } from "./thread/mock-thread"
+import { type Toast, makeThreadSeams } from "./thread/seams"
 import { makeActions } from "./v3-engine/actions"
 
 /* The prototype's one screen: the calm company. The URL mirrors where you
@@ -28,7 +30,7 @@ const pinned = new URLSearchParams(location.search).get("theme")
 if (pinned === "dark" || pinned === "light") localStorage.setItem("lilos-theme", pinned)
 
 export default function V3App() {
-  const [toast, setToast] = useState<string | null>(null)
+  const [toast, setToast] = useState<ToastNotice | null>(null)
   const [nav, setNav] = useState(navFromUrl)
   // Every move becomes a history entry; Back/Forward read it back.
   useEffect(() => {
@@ -41,9 +43,22 @@ export default function V3App() {
     window.addEventListener("popstate", onPop)
     return () => window.removeEventListener("popstate", onPop)
   }, [])
-  const onToast = useCallback((text: string) => {
-    setToast(text)
-    window.setTimeout(() => setToast((t) => (t === text ? null : t)), 2600)
+  // With an action ("Undo") the notice stays long enough to use it, and using it clears it.
+  const onToast = useCallback<Toast>((text, opts) => {
+    const { action } = opts ?? {}
+    const notice: ToastNotice = {
+      text,
+      error: opts?.error,
+      action: action && {
+        label: action.label,
+        run: () => {
+          action.run()
+          setToast(null)
+        },
+      },
+    }
+    setToast(notice)
+    window.setTimeout(() => setToast((t) => (t === notice ? null : t)), action ? 10_000 : 2600)
   }, [])
   /* The mock company lives here, beside its engine: the shell is controlled
      (the real app gives it relay data instead). Timers in the chat
@@ -64,6 +79,11 @@ export default function V3App() {
       }),
     [onToast],
   )
+  // What the thread view needs beyond the actions (send with files, edits to the record).
+  const seams = useMemo(
+    () => makeThreadSeams({ setData, getData: () => dataRef.current, actions, toast: onToast }),
+    [actions, onToast],
+  )
   return (
     <>
       <V3Shell
@@ -72,14 +92,19 @@ export default function V3App() {
         nav={nav}
         onNav={setNav}
         draft={v3Draft}
+        // The real thread view on mock data; widened, it is the session (chat beside its work).
+        renderThread={(p) => (
+          <MockThread
+            {...p}
+            seams={seams}
+            session={nav.full === true}
+            onSession={(open) => setNav((n) => ({ ...n, full: open }))}
+          />
+        )}
         banner={<StatusBanner data={data} onDetails={() => setStatus(true)} />}
       />
       {status && <StatusDetails data={data} onClose={() => setStatus(false)} onCopied={() => onToast("Diagnostics copied")} />}
-      {toast && (
-        <div className="lilos-rise fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full bg-foreground px-4 py-2 text-[13px] text-background shadow-lg">
-          {toast}
-        </div>
-      )}
+      {toast && <ToastView toast={toast} />}
     </>
   )
 }

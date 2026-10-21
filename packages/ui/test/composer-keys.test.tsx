@@ -6,7 +6,6 @@
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { Composer } from "../src/chat/composer";
-import { FocusComposer } from "../src/chat/focus-composer";
 import type { Employee } from "../src/types";
 
 /* happy-dom does not implement every browser API the vendored components touch. */
@@ -161,13 +160,13 @@ describe("issue #576 composer keys — Esc never stops", () => {
     expect(stop.getAttribute("title")).not.toContain("Esc");
   });
 
-  test("AC-576-7 FocusComposer: Esc never stops; ⌘. does", () => {
+  test("AC-576-7 in one running composer (the Focus view's steer box): Esc never stops; ⌘. does", () => {
     const onStop = vi.fn();
     const c = render(
-      <FocusComposer
-        running={true}
+      <Composer
         status="streaming"
         placeholder="Continue…"
+        employees={[]}
         hint=""
         onSend={() => {}}
         onStop={onStop}

@@ -15,18 +15,20 @@ import {
   bootStack,
   openSession,
   panelIntoFocus,
+  panelOutOfFocus,
   pickPorts,
   type Stack,
   startChatInFolder,
   startFolderlessChat,
   threadUrl,
 } from "./helpers/stack";
+import { openWorkbench, workbenchOffered } from "./helpers/workbench";
 
 /**
  * Issue #114 — the session view + Workbench in the real app (apps/web), on
  * the real stack (relay + harness + vite dev, engine-fake): a session opens
- * in the side peek beside Threads (#195), and widening it (the panel's Focus
- * or the peek's Widen, `full=1` in the hash) is the session view — chat
+ * in the side peek beside Threads (#195), and widening it (the peek's Widen,
+ * `full=1` in the hash) is the session view — chat
  * beside the Workbench, whose Changes (git.diff), Files (fs.tree/fs.read)
  * and PR (forge.pr/comment/merge) tabs read the session's real folder —
  * here a tmp git repo served by the stateful fake `gh`
@@ -170,9 +172,6 @@ const THREAD_URL = /open=([^&]*,)?thread:[^&,]+$/;
 
 /* AC-1's repo session: later tests reopen it as the session view. */
 let checkInConv: string;
-// exact: title substring-match would also hit "Hide workbench" when open.
-const workbenchToggle = (page: Page) =>
-  page.getByTitle("Workbench", { exact: true });
 const tab = (page: Page, name: RegExp | string) =>
   page.getByRole("tab", { name });
 
@@ -182,8 +181,8 @@ test("AC-1 a session opens beside Threads; Widen reaches the session view; Esc/B
   test.setTimeout(120_000);
   checkInConv = await startSession(page, repoDir, "check in");
   /* A send STAYS on Threads with the thread open in the side peek; the
-     session view (chat beside the Workbench) opens only from the panel's
-     Focus, so every way back out still lands on the same open thread. */
+     session view (chat beside the Workbench) opens only by widening the
+     peek, so every way back out still lands on the same open thread. */
   await expect(page).toHaveURL(THREAD_URL, { timeout: 30_000 });
   await expect(page).not.toHaveURL(FOCUS_URL);
   const sentPanel = page.locator("[data-thread-panel]");
@@ -191,15 +190,14 @@ test("AC-1 a session opens beside Threads; Widen reaches the session view; Esc/B
     timeout: 30_000,
   });
   await page.screenshot({ path: `${SHOTS}/ac-1-send-panel.png` });
-  await sentPanel.getByTitle("Focus", { exact: true }).click();
-  await expect(page).toHaveURL(FOCUS_URL, { timeout: 30_000 });
-  await expect(workbenchToggle(page)).toBeVisible();
+  await panelIntoFocus(page, FOCUS_URL);
+  await expect(workbenchOffered(page)).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-1-focus.png` });
 
   // Reload stays in the session view (the URL carries it).
   await page.reload();
   await expect(page).toHaveURL(FOCUS_URL);
-  await expect(workbenchToggle(page)).toBeVisible({ timeout: 30_000 });
+  await expect(workbenchOffered(page)).toBeVisible({ timeout: 30_000 });
   await expect(
     page.locator("[data-thread-panel]").getByText("check in").first(),
   ).toBeVisible({ timeout: 30_000 });
@@ -231,17 +229,16 @@ test("AC-1 a session opens beside Threads; Widen reaches the session view; Esc/B
   await page.screenshot({ path: `${SHOTS}/ac-1-esc-dm.png` });
 
   /* Clicking the session's row re-opens the thread (not the session view);
-     the panel's Focus is the way into the session view; the session view's
-     back arrow returns to the thread. */
+     widening the peek is the way into the session view; the peek's Narrow
+     returns to the thread. */
   await page
     .locator("main")
     .getByRole("button", { name: /check in/i })
     .first()
     .click();
   await expect(page).toHaveURL(THREAD_URL);
-  await panel.getByTitle("Focus", { exact: true }).click();
-  await expect(page).toHaveURL(FOCUS_URL);
-  await page.getByTitle("Back to DM").click();
+  await panelIntoFocus(page, FOCUS_URL);
+  await panelOutOfFocus(page);
   await expect(page).toHaveURL(THREAD_URL);
   await expect(page).not.toHaveURL(FOCUS_URL);
   await page.screenshot({ path: `${SHOTS}/ac-1-back-panel.png` });
@@ -487,7 +484,12 @@ test("AC-5 the PR tab reads checks + comments through forge.pr; comment and merg
   });
   await expect(page.getByText(/gh failed:/)).toHaveCount(0);
   await expect(page.getByText(/fake gh: boom/)).toHaveCount(0);
-  await page.getByText("Details").click();
+  /* The Workbench's own Details tab (and the header's strip) share the word —
+     the disclosure is the one button named Details inside the tab panel. */
+  await page
+    .getByRole("tabpanel")
+    .getByRole("button", { name: "Details" })
+    .click();
   await expect(page.getByText(/fake gh: boom/)).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-5-gh-error.png` });
   rmSync(failPath);
@@ -501,7 +503,7 @@ test("AC-6 tabs render only when their host method answers; a session without a 
   // only the Files tab renders. Browser/Terminal never render in this slice.
   await startSession(page, plainDir, "check the folder");
   await panelIntoFocus(page);
-  await expect(workbenchToggle(page)).toBeVisible({ timeout: 30_000 });
+  await expect(workbenchOffered(page)).toBeVisible({ timeout: 30_000 });
   await expect(tab(page, "Files")).toBeVisible({ timeout: 30_000 });
   await expect(tab(page, /Changes/)).toHaveCount(0);
   await expect(tab(page, /PR/)).toHaveCount(0);
@@ -522,7 +524,7 @@ test("AC-6 tabs render only when their host method answers; a session without a 
   );
   await page.goto(threadUrl(stack.webUrl, chatConv));
   await panelIntoFocus(page);
-  await expect(workbenchToggle(page)).toBeVisible({ timeout: 30_000 });
+  await expect(workbenchOffered(page)).toBeVisible({ timeout: 30_000 });
   /* The panel opens on demand here — auto-open at ≥lg is for a panel that
      already has content to show (a folder, or live engine work). */
   if (
@@ -530,7 +532,7 @@ test("AC-6 tabs render only when their host method answers; a session without a 
       .isVisible()
       .catch(() => false))
   ) {
-    await workbenchToggle(page).click();
+    await openWorkbench(page);
   }
   await expect(tab(page, "Background")).toBeVisible({ timeout: 30_000 });
   await expect(tab(page, /^(Changes|Files|Terminal|Preview|PR)$/)).toHaveCount(

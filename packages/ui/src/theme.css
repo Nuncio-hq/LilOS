@@ -721,48 +721,7 @@
 }
 
 /* ---- Apple-native surfaces (issue #223) ----
-   The composer is a floating glass capsule like the mobile app's: every
-   PromptInput is an input group wrapping a textarea, so style it once here. */
-[data-slot="input-group"]:has(textarea) {
-  border-radius: 22px;
-  border-color: var(--border);
-  background: var(--glass);
-  backdrop-filter: blur(24px) saturate(1.6);
-  -webkit-backdrop-filter: blur(24px) saturate(1.6);
-  /* The fill snaps to the theme token instead of fading: mid-fade between
-     the near-opaque light glass and the near-clear dark one the capsule
-     reads as a light block over the dark field (#508). */
-  transition-property:
-    color, border-color, outline-color, text-decoration-color, fill, stroke,
-    --tw-gradient-from, --tw-gradient-via, --tw-gradient-to;
-  box-shadow:
-    0 1px 2px rgb(0 0 0 / 4%),
-    0 8px 28px -12px rgb(0 0 0 / 18%);
-}
-.dark [data-slot="input-group"]:has(textarea) {
-  box-shadow:
-    0 1px 2px rgb(0 0 0 / 30%),
-    0 10px 30px -12px rgb(0 0 0 / 60%);
-}
-[data-slot="input-group"]:has(textarea):focus-within {
-  border-color: color-mix(in srgb, var(--primary) 45%, transparent);
-  box-shadow:
-    0 0 0 4px color-mix(in srgb, var(--primary) 14%, transparent),
-    0 8px 28px -12px rgb(0 0 0 / 18%);
-}
-/* Round send/stop buttons, like iMessage. */
-[data-slot="input-group"]:has(textarea) button[type="submit"] {
-  border-radius: 9999px;
-}
-/* Disabled send: opacity-dimming the teal disc reads as dark-on-dark (#261).
-   A neutral disc + legible arrow keeps it visible without faking an enabled
-   state — and lifts icon-vs-disc contrast past WCAG AA in both themes. */
-[data-slot="input-group"]:has(textarea) button[type="submit"]:disabled {
-  opacity: 1;
-  background: color-mix(in srgb, var(--foreground) 10%, transparent);
-  color: color-mix(in srgb, var(--foreground) 70%, transparent);
-}
-/* Popovers, menus and dialogs float as frosted glass. */
+   Popovers, menus and dialogs float as frosted glass. */
 [data-slot="popover-content"],
 [data-slot="dropdown-menu-content"],
 [data-slot="hover-card-content"] {
@@ -909,14 +868,6 @@ button:not(:disabled):active,
     --lilos-life-angle: 360deg;
   }
 }
-/* The composer grows a little once there's a draft: the rule keys off the
-   draft, not focus, so the box never shifts under a pointer click. */
-[data-slot="input-group"]:has(textarea) textarea {
-  transition: min-height 0.3s cubic-bezier(0.2, 0.9, 0.25, 1.1);
-}
-[data-slot="input-group"]:has(textarea:not(:placeholder-shown)) textarea {
-  min-height: 4.5rem;
-}
 @media (prefers-reduced-motion: reduce) {
   .lilos-orb-blobs,
   .lilos-orb-ring,
@@ -968,19 +919,23 @@ form:has(textarea:not(:placeholder-shown), [aria-label="Stop (⌘.)"])
    Notion-like: warm paper, ink text, hairlines instead of boxes, serif page
    titles over a sans body. No shadows except the ⌘K palette; colour only on
    status. */
-.lilos-v3 {
+/* The surface tokens live on :root, not .lilos-v3: portaled menus, dialogs and
+   the popped-out browser window render outside the shell and still need them. */
+:root {
   --v3-side: oklch(0.982 0.002 90);
   --v3-main: oklch(1 0 0);
   --v3-soft: oklch(0.975 0.002 90);
   --v3-line: color-mix(in oklch, var(--foreground) 9%, transparent);
   --v3-hover: color-mix(in oklch, var(--foreground) 5%, transparent);
-  font-variant-numeric: tabular-nums;
-  -webkit-font-smoothing: antialiased;
 }
-.dark .lilos-v3 {
+.dark {
   --v3-side: oklch(0.2 0.003 90);
   --v3-main: oklch(0.225 0.003 90);
   --v3-soft: oklch(0.255 0.003 90);
+}
+.lilos-v3 {
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
 }
 .lilos-v3-serif {
   font-family: Charter, "Iowan Old Style", Palatino, Georgia, serif;

@@ -1,5 +1,5 @@
 import type { AppMessage, Conversation, Employee } from "@lilos/contracts/app";
-import type { PlanAction, QueuedTrayItem } from "@lilos/ui";
+import type { PlanAction, QueuedTrayItem, V3Status } from "@lilos/ui";
 import type {
   AttachedFile,
   Channel,
@@ -34,6 +34,8 @@ export interface ThreadData {
 
   rootMsg: Extract<Msg, { kind: "msg" }>;
   thread: Thread;
+  /** The one status word the header pill shows (`threadStatus`, D-#33). */
+  status: V3Status;
   /** askId → receipt label of a resolved card. */
   resolved: Record<string, string>;
 

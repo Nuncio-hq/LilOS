@@ -18,10 +18,8 @@ import {
   goalOf,
   projectOf,
 } from "./v3-model";
-import { PeekWidth } from "./v3-open-record";
 import type { V3PageProps, V3RecordRoute } from "./v3-page-types";
 import { V3ProjectPage } from "./v3-project";
-import { V3ThreadPage } from "./v3-thread";
 import { V3TicketPage } from "./v3-ticket";
 
 /** A record's name in the trail: short enough to fit four in a row. */
@@ -62,9 +60,13 @@ export function V3Peek({
   onFull,
   onClose,
   renderThread,
+  width,
 }: V3PageProps & {
   trail: V3RecordRoute[];
   full: boolean;
+  /** Its width beside the page, in px (the shell's, from the divider).
+      Widened, the peek covers the page and ignores it. */
+  width: number;
   /** The page beside the peek, named at the head of the trail. */
   pageName: string;
   onBack: () => void;
@@ -72,8 +74,8 @@ export function V3Peek({
   /** Widen over the page (a session) or narrow back beside it. */
   onFull: (full: boolean) => void;
   onClose: () => void;
-  /** The app's own thread view, shown instead of the v3 one (see V3Shell). */
-  renderThread?: (props: V3PageProps & { id: string }) => ReactNode;
+  /** The app's thread view for a thread record (see V3Shell). */
+  renderThread: (props: V3PageProps & { id: string }) => ReactNode;
 }) {
   const top = trail[trail.length - 1];
   // Keyed by record: a new record mounts fresh, so it opens at its top.
@@ -84,11 +86,10 @@ export function V3Peek({
   return (
     <aside
       aria-label="Opened record"
+      style={full ? undefined : { width }}
       className={cn(
         "z-20 flex min-w-0 flex-col border-[var(--v3-line)] bg-[var(--v3-main)]",
-        full
-          ? "absolute inset-0"
-          : "w-[min(760px,58%)] min-w-[520px] shrink-0 border-l",
+        full ? "absolute inset-0" : "shrink-0 border-l",
       )}
     >
       <div className="flex h-[46px] shrink-0 items-center gap-1.5 border-[var(--v3-line)] border-b px-2.5 text-[13.5px] text-muted-foreground">
@@ -105,13 +106,8 @@ export function V3Peek({
           aria-label="Trail"
           className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden"
         >
-          <button
-            type="button"
-            onClick={onClose}
-            className="shrink-0 truncate hover:text-foreground"
-          >
-            {pageName}
-          </button>
+          {/* Where you came from, as context: the ✕ is the one way to close. */}
+          <span className="shrink-0 truncate">{pageName}</span>
           {trail.map((r, i) => (
             <Fragment key={`${r.page}:${r.id}`}>
               <ChevronRightIcon className="size-3.5 shrink-0 opacity-50" />
@@ -152,25 +148,18 @@ export function V3Peek({
           <XIcon />
         </button>
       </div>
-      <PeekWidth.Provider value={{ full, setFull: onFull }}>
-        <div
-          data-v3-scroller
-          key={key}
-          className="lilos-v3-line-in @container min-h-0 flex-1 overflow-y-auto"
-        >
-          {top.page === "thread" &&
-            (renderThread ? (
-              renderThread({ ...props, id: top.id })
-            ) : (
-              <V3ThreadPage {...props} id={top.id} />
-            ))}
-          {top.page === "newchat" && <V3DraftChat {...props} id={top.id} />}
-          {top.page === "ticket" && <V3TicketPage {...props} id={top.id} />}
-          {top.page === "agent" && <V3AgentPage {...props} id={top.id} />}
-          {top.page === "goal" && <V3GoalPage {...props} id={top.id} />}
-          {top.page === "project" && <V3ProjectPage {...props} id={top.id} />}
-        </div>
-      </PeekWidth.Provider>
+      <div
+        data-v3-scroller
+        key={key}
+        className="lilos-v3-line-in @container min-h-0 flex-1 overflow-y-auto"
+      >
+        {top.page === "thread" && renderThread({ ...props, id: top.id })}
+        {top.page === "newchat" && <V3DraftChat {...props} id={top.id} />}
+        {top.page === "ticket" && <V3TicketPage {...props} id={top.id} />}
+        {top.page === "agent" && <V3AgentPage {...props} id={top.id} />}
+        {top.page === "goal" && <V3GoalPage {...props} id={top.id} />}
+        {top.page === "project" && <V3ProjectPage {...props} id={top.id} />}
+      </div>
     </aside>
   );
 }

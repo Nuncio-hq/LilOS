@@ -64,11 +64,7 @@ test("Threads page: with no thread open the page fills the window (no empty righ
     // reserved-but-empty column. (This thread has no folder, so the
     // Workbench stays hidden; AC-114 covers the Workbench layout.)
     await startChat(page, stack.webUrl, agent, PROMPT);
-    await page
-      .locator("[data-thread-panel]")
-      .getByTitle("Focus", { exact: true })
-      .click();
-    await expect(page).toHaveURL(/[#&]full=1(&|$)/, { timeout: 30_000 });
+    await panelIntoFocus(page);
     expect(await rightGapSettled(page, v3Peek(page))).toBeLessThanOrEqual(3);
 
     // The plain thread URL still gives the quick-peek panel (right column).
@@ -130,9 +126,9 @@ test("AC-660 the page's main pane stays mounted through send → Focus", async (
     await panelIntoFocus(page);
     // Wait for the Focus surface itself — with the summary held back this
     // settles only once the delayed row lands and Focus takes the pane.
-    await expect(page.getByRole("button", { name: /back to dm/i })).toBeVisible(
-      { timeout: 30_000 },
-    );
+    await expect(v3Peek(page).locator("[data-thread]")).toBeVisible({
+      timeout: 30_000,
+    });
 
     // The pane element measured before the send must still be mounted:
     // a remount here is what detached the node and null'd boundingBox.

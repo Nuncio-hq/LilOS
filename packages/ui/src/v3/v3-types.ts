@@ -243,9 +243,8 @@ export type V3Turn = {
   /** The message that started the turn. `by` is an agent id or "you";
      `files` are what you attached to it (text may then be empty). */
   prompt?: { by: string; at: string; text: string; files?: AttachedFile[] };
-  /** Folded turns show this line instead of their steps. */
+  /** What a turn that has no answer did, in one line. */
   summary?: string;
-  facts?: string;
   steps?: V3Step[];
   /** The agent's reply, markdown. */
   answer?: string;
@@ -306,7 +305,6 @@ export type V3Thread = {
   askId?: string;
   stuck?: { what: string; detail: string[] };
   plan?: { text: string; state: "done" | "current" | "todo" }[];
-  changes?: { path: string; add: number; del: number }[];
   helpers?: { text: string; took: string }[];
   /** The thread's folder as it is now: what the agent changed, ran and opened. */
   workbench?: V3Workbench;

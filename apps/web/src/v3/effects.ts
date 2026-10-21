@@ -15,7 +15,6 @@ import {
   sessionSignals,
 } from "../lib/runtime";
 import { isSettingsShortcut } from "../settings/state";
-import { watchBrowserTabs } from "./browser";
 import { v3DataStore } from "./data";
 import { openThread, v3Nav } from "./nav";
 import { threadOnScreen, visibleNav } from "./shown";
@@ -54,12 +53,16 @@ export function useShellEffects({
   move,
   openSearch,
   openShortcuts,
+  toggleSidebar,
 }: {
   /** A move from the nav the shell draws (root.tsx), not the raw hash. */
   move: (update: (nav: V3Nav) => V3Nav) => void;
   /** Ask the shell for ⌘K when a native menu consumed the chord. */
   openSearch: () => void;
   openShortcuts: () => void;
+  /** Ask the shell to hide or show its sidebar: ⌘\ arrives only as a menu
+     action on desktop (the shell binds the chord itself on the web). */
+  toggleSidebar: () => void;
 }): void {
   /* #572: the thread on screen earns an engine feed (the session watch's
      scope head) and the read watermark follows it; leaving releases it. */
@@ -70,9 +73,8 @@ export function useShellEffects({
       openConversation.set(undefined);
     };
   }, []);
-  /* LilOS Browser (desktop): relay roster → host, host tabs → v3. */
+  /* LilOS Browser (desktop): relay roster → host. The thread's Browser tab reads the host itself. */
   useBrowserContextPush();
-  useEffect(() => watchBrowserTabs(), []);
   // Recents for the new-chat folder chip.
   useEffect(() => void refreshFolders().catch(() => {}), []);
 
@@ -188,6 +190,7 @@ export function useShellEffects({
       }
       if (action === "quick-switcher") openSearch();
       else if (action === "shortcuts") openShortcuts();
+      else if (action === "toggle-sidebar") toggleSidebar();
       else if (action === "back") history.back();
       else if (action === "forward") history.forward();
       else if (action === "new-session") {
@@ -220,5 +223,5 @@ export function useShellEffects({
       offShortcut?.();
       offSettings?.();
     };
-  }, [move, openSearch, openShortcuts]);
+  }, [move, openSearch, openShortcuts, toggleSidebar]);
 }

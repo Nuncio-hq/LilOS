@@ -27,7 +27,8 @@ function publish(scope: string, next: DiffComment[]): void {
   for (const fn of subs.get(scope) ?? []) fn();
 }
 
-export function useDiffComments(scope: string): {
+/** The per-session review-comment store `useDiffComments` returns. */
+export interface DiffCommentsStore {
   comments: DiffComment[];
   add: (c: Omit<DiffComment, "id">) => void;
   edit: (id: string, text: string) => void;
@@ -43,7 +44,9 @@ export function useDiffComments(scope: string): {
   /** The diff moved: drop resolved markers whose file's patch changed,
       pending notes whose file left the diff or whose anchor vanished. */
   prune: (diffs: Diff[]) => void;
-} {
+}
+
+export function useDiffComments(scope: string): DiffCommentsStore {
   const comments = useSyncExternalStore(
     useCallback(
       (on) => {

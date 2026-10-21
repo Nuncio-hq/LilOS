@@ -1,10 +1,11 @@
 import { agentNameOf, agentOf, type V3Data, type V3DataActions, type V3Thread } from "@lilos/ui"
+import { decidePlan, hasPlan } from "../thread/mock-plans"
 import { cancelTurn } from "./chat-sim"
 import { type Engine, ticketPatch, threadPatch } from "./context"
 
 /* What waits on you and what you do about a ticket: approvals and questions,
    stopping a hand, handing a ticket to someone else, commenting on it. */
-export function askActions({ setData, toast }: Engine): Pick<
+export function askActions({ setData, getData, toast }: Engine): Pick<
   V3DataActions,
   "approve" | "deny" | "answer" | "stop" | "handOff" | "comment"
 > {
@@ -19,6 +20,8 @@ export function askActions({ setData, toast }: Engine): Pick<
           : s,
     );
   };
+  const isPlan = (askId: string) =>
+    getData().threads.some((t) => t.askId === askId && hasPlan(t.id));
   const resolve = (
     askId: string,
     outcome: "yes" | "no" | string,
@@ -48,7 +51,9 @@ export function askActions({ setData, toast }: Engine): Pick<
             ],
           })
         : d.tickets;
-      const threads = threadPatch(d, (t) => t.askId === askId, {
+      // A plan waiting for your OK carries on or ends as the plan card says;
+      // any other thread picks up its own next step.
+      const resumed: Partial<V3Thread> = {
         status: closes ? "done" : "working",
         askId: undefined,
         unseen: false,
@@ -71,7 +76,14 @@ export function askActions({ setData, toast }: Engine): Pick<
               ],
             },
         summary: closes ? word : undefined,
-      });
+      };
+      const threads = d.threads.map((t) =>
+        t.askId !== askId
+          ? t
+          : hasPlan(t.id)
+            ? decidePlan(t, yes ? "approve" : "reject")
+            : { ...t, ...resumed },
+      );
       return {
         ...d,
         asks: d.asks.filter((a) => a.id !== askId),
@@ -93,20 +105,28 @@ export function askActions({ setData, toast }: Engine): Pick<
 
   return {
     approve: (id, always) => {
+      const plan = isPlan(id);
       resolve(
         id,
         "yes",
         always ? "Approved, and allowed next time without asking" : "Approved",
       );
       toast(
-        always
-          ? "Approved · next time it won’t ask"
-          : "Approved · the agent carries on",
+        plan
+          ? "Plan approved · the agent carries on"
+          : always
+            ? "Approved · next time it won’t ask"
+            : "Approved · the agent carries on",
       );
     },
     deny: (id) => {
+      const plan = isPlan(id);
       resolve(id, "no", "Denied");
-      toast("Denied · the CEO takes the other route");
+      toast(
+        plan
+          ? "Plan rejected · nothing was touched"
+          : "Denied · the CEO takes the other route",
+      );
     },
     answer: (id, option) => {
       resolve(id, option, `You chose ${option}`);
@@ -187,7 +207,6 @@ export function askActions({ setData, toast }: Engine): Pick<
           },
           tail: ["Read the last thread’s searches", "Switching approach…"],
           plan: [{ text: "Take over from the last hand", state: "current" }],
-          changes: [],
           turns: [
             {
               n: 1,

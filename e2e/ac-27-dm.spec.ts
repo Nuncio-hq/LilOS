@@ -133,7 +133,11 @@ test("AC-3 DM message opens a session; reply streams with reasoning + tool steps
   // with a reasoning block and collapsed tool steps.
   const turn = page.locator("[data-agentturn]").first();
   await expect(turn).toBeVisible({ timeout: 30_000 });
-  await expect(turn.getByText(/Thinking…|Thought for \d+s/)).toBeVisible({
+  /* The work fold's one line says "thought for Ns" and its open body
+     repeats it as "Thought for Ns" — either one proves the reasoning ran. */
+  await expect(
+    turn.getByText(/Thinking…|[Tt]hought for \d+s/).first(),
+  ).toBeVisible({
     timeout: 60_000,
   });
   await expect(turn.locator("[data-tasksteps]")).toBeVisible({
@@ -577,6 +581,14 @@ test("AC-7 real-app build: every visible control has a working handler", async (
           await page.mouse.click(5, 5);
           await page.keyboard.press("Escape");
         }
+        // The sidebar's own "Hide sidebar" is one of the controls swept: it
+        // hides the sidebar (inert, so every control after it would be
+        // skipped and the Default row unreachable). The top bar's toggle
+        // docks it again and the sweep carries on through the rest.
+        const dock = page
+          .locator("[data-v3-topbar]")
+          .getByRole("button", { name: "Show sidebar" });
+        if (await dock.isVisible().catch(() => false)) await dock.click();
         await page.waitForTimeout(60);
       }
     };

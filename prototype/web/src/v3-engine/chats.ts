@@ -70,7 +70,6 @@ export function chatActions({ setData, getData, reply, toast }: Engine): Pick<
         context: 2,
         model: modelLabel(getData(), model, pick),
         folder: project?.folder ?? folder ?? "~",
-        changes: [],
         turns: [],
       };
       // The next chat with this agent starts where this one ran, and ↑ in its
@@ -113,7 +112,6 @@ export function chatActions({ setData, getData, reply, toast }: Engine): Pick<
             : t,
         ),
       }));
-      toast("Rewound · files and conversation are back to before that message");
     },
     renameThread: (threadId, title) => {
       const next = title.trim();

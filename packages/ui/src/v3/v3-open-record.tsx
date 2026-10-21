@@ -16,14 +16,6 @@ export function useOpenRecord() {
     open?.page === page && open.id === id;
 }
 
-/** The side peek's width, for the record inside it. A thread widens it into
-   a session (chat on the left, its work on the right) and narrows it back
-   beside the list; null when the record is not in a peek. */
-export const PeekWidth = createContext<{
-  full: boolean;
-  setFull: (full: boolean) => void;
-} | null>(null);
-
 /** The mark for an open row: a quiet tint and an ink bar on its left edge. */
 export const OPEN_ROW =
   "bg-[var(--v3-hover)] shadow-[inset_2px_0_0_var(--foreground)]";

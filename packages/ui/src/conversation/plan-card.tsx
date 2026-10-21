@@ -2,15 +2,14 @@ import {
   ArrowUpRightIcon,
   CheckIcon,
   ChevronRightIcon,
-  CircleCheckIcon,
   CircleDotIcon,
   ListChecksIcon,
-  TriangleAlertIcon,
 } from "lucide-react";
 import { useState } from "react";
-import { Button } from "../components/ui/button";
 import { cn } from "../lib/utils";
 import type { Plan, PlanStep } from "../types";
+import { DOT, INK, StatusPill } from "../v3/v3-marks";
+import { CardButton, CardLink, KEY_HINT } from "./card-bits";
 
 /* The plan an employee proposes before touching code (issue #175), as a card under its
    turn. Proposed: goal, numbered steps with the files each touches, risks, and the three
@@ -28,18 +27,18 @@ export function planProgress(p: Plan) {
 function StepMark({ s, n }: { s: PlanStep; n: number }) {
   if (s.status === "completed")
     return (
-      <span className="grid size-5 shrink-0 place-items-center rounded-full bg-emerald-500/15 text-emerald-600">
-        <CheckIcon className="size-3" />
+      <span className="grid size-5 shrink-0 place-items-center">
+        <CheckIcon className={cn("size-3.5", INK.done)} />
       </span>
     );
   if (s.status === "in_progress")
     return (
-      <span className="grid size-5 shrink-0 place-items-center rounded-full bg-work/15 text-work">
-        <CircleDotIcon className="size-3 animate-pulse" />
+      <span className="grid size-5 shrink-0 place-items-center">
+        <CircleDotIcon className={cn("size-3.5 animate-pulse", INK.working)} />
       </span>
     );
   return (
-    <span className="grid size-5 shrink-0 place-items-center rounded-full border font-mono text-[10.5px] text-muted-foreground">
+    <span className="grid size-5 shrink-0 place-items-center rounded-full border border-[var(--v3-line)] font-mono text-[10.5px] text-muted-foreground">
       {n}
     </span>
   );
@@ -67,7 +66,7 @@ export function PlanSteps({ plan }: { plan: Plan }) {
                 {s.files.map((f) => (
                   <code
                     key={f}
-                    className="rounded bg-muted px-1 py-px font-mono text-[11px] text-muted-foreground"
+                    className="rounded-[5px] bg-[var(--v3-soft)] px-1 py-px font-mono text-[11px] text-muted-foreground"
                   >
                     {f}
                   </code>
@@ -81,13 +80,11 @@ export function PlanSteps({ plan }: { plan: Plan }) {
   );
 }
 
+/* Risks sit under the steps behind a hairline — a note, not a warning box. */
 export function PlanRisks({ risks }: { risks: string[] }) {
   return (
-    <div className="rounded-lg bg-amber-500/8 px-3 py-2 text-[12.5px] text-amber-800 dark:text-amber-300">
-      <p className="mb-0.5 flex items-center gap-1.5 font-medium">
-        <TriangleAlertIcon className="size-3.5" />
-        Risks
-      </p>
+    <div className="border-[var(--v3-line)] border-t pt-2.5 text-[13px] text-muted-foreground">
+      <p className="mb-0.5 font-medium text-foreground">Risks</p>
       <ul className="list-disc space-y-0.5 pl-5">
         {risks.map((r) => (
           <li key={r}>{r}</li>
@@ -98,7 +95,7 @@ export function PlanRisks({ risks }: { risks: string[] }) {
 }
 
 /* Where the card is in its life: waiting on you, working, done, stopped mid-way, or
-   superseded. Done folds to one green line (plans: with the goal) — tap for the steps. */
+   superseded. Done folds to one quiet line (plans: with the goal) — tap for the steps. */
 function planPhase(p: Plan) {
   const { done, total } = planProgress(p);
   if (p.status === "proposed") return "waiting";
@@ -112,38 +109,35 @@ function Status({ plan }: { plan: Plan }) {
   const { done, total } = planProgress(plan);
   switch (planPhase(plan)) {
     case "waiting":
-      return (
-        <span className="flex items-center gap-1.5 rounded-full bg-primary/12 px-2 py-0.5 font-semibold text-[11.5px] text-tint-text">
-          <span className="size-1.5 animate-pulse rounded-full bg-primary" />
-          Waiting for you
-        </span>
-      );
+      return <StatusPill status="needs" label="Waiting for you" />;
     case "working":
       return (
-        <span className="font-medium font-mono text-[12px] text-work">
+        <span
+          className={cn("font-medium font-mono text-[12.5px]", INK.working)}
+        >
           {done}/{total}
         </span>
       );
     case "done":
       return (
-        <span className="font-medium text-[12px] text-emerald-600">
+        <span className="text-[12.5px] text-muted-foreground">
           {total}/{total} done
         </span>
       );
     case "stopped":
       return (
-        <span className="text-[12px] text-muted-foreground">
+        <span className="text-[12.5px] text-muted-foreground">
           Stopped · {done}/{total}
         </span>
       );
     case "replaced":
       return (
-        <span className="text-[12px] text-muted-foreground">
+        <span className="text-[12.5px] text-muted-foreground">
           Replaced by v{plan.version + 1}
         </span>
       );
     default:
-      return <span className="text-[12px] text-red-600">Rejected</span>;
+      return <span className={cn("text-[12.5px]", INK.failed)}>Rejected</span>;
   }
 }
 
@@ -169,6 +163,7 @@ export function PlanCard({
   const [open, setOpen] = useState<boolean | null>(null);
   const { pct } = planProgress(plan);
   const shown = !folded || !!open;
+  const quiet = muted || (folded && !shown);
   const name = tasks
     ? "Tasks"
     : `Plan${plan.version > 1 ? ` v${plan.version}` : ""}`;
@@ -177,47 +172,41 @@ export function PlanCard({
       data-plan={plan.id}
       data-planstatus={plan.status}
       data-planphase={phase}
+      // A folded plan is a quiet receipt line; the hairline appears with the steps.
       className={cn(
-        "w-full max-w-xl overflow-hidden rounded-xl border bg-background",
-        phase === "waiting" &&
-          "border-primary/40 shadow-[0_0_0_4px] shadow-primary/8",
-        finished && "border-emerald-500/30 bg-emerald-500/[0.04]",
-        muted && "bg-muted/30",
+        "w-full",
+        shown && "rounded-[10px] border border-[var(--v3-line)]",
       )}
     >
       <button
         type="button"
         disabled={!folded}
         onClick={() => setOpen(!shown)}
+        aria-expanded={folded ? shown : undefined}
         className={cn(
-          "flex w-full items-center gap-2 px-3.5 text-left",
-          folded && !shown ? "py-2.5" : "pt-3 pb-2",
+          "flex w-full items-center gap-2 text-left text-[13.5px]",
+          folded && !shown ? "py-1" : "px-4 pt-3.5 pb-2.5",
         )}
       >
         {finished ? (
-          <CircleCheckIcon className="size-4 shrink-0 text-emerald-600" />
+          <CheckIcon className="size-3.5 shrink-0 text-emerald-600" />
         ) : (
-          <ListChecksIcon
-            className={cn(
-              "size-4 shrink-0",
-              muted ? "text-muted-foreground" : "text-foreground",
-            )}
-          />
+          <ListChecksIcon className="size-3.5 shrink-0 text-muted-foreground" />
         )}
         <span
           className={cn(
-            "shrink-0 font-semibold text-[13.5px]",
-            muted && "text-muted-foreground",
+            "shrink-0",
+            quiet ? "text-muted-foreground" : "font-medium text-foreground",
           )}
         >
           {finished ? `${name} done` : name}
         </span>
         {folded && !shown && plan.goal ? (
-          <span className="min-w-0 truncate text-[12.5px] text-muted-foreground">
+          <span className="min-w-0 truncate text-muted-foreground">
             · {plan.goal}
           </span>
         ) : (
-          <span className="shrink-0 text-[12px] text-muted-foreground">
+          <span className="shrink-0 text-muted-foreground">
             · {plan.steps.length} {tasks ? "tasks" : "steps"}
           </span>
         )}
@@ -234,17 +223,20 @@ export function PlanCard({
         </span>
       </button>
       {(phase === "working" || phase === "stopped") && (
-        <div className="mx-3.5 mb-2 h-1 overflow-hidden rounded-full bg-muted">
+        <div className="mx-4 mb-2.5 h-1 overflow-hidden rounded-full bg-[var(--v3-soft)]">
           <div
-            className="h-full rounded-full bg-emerald-500 transition-[width] duration-500"
+            className={cn(
+              "h-full rounded-full transition-[width] duration-500",
+              DOT.working,
+            )}
             style={{ width: `${pct}%` }}
           />
         </div>
       )}
       {shown && (
-        <div className="space-y-3 px-3.5 pb-3.5">
+        <div className="space-y-3 px-4 pb-3.5">
           {plan.goal && (
-            <p className="text-[13.5px] leading-5">
+            <p className="text-[13.5px] leading-normal">
               <span className="text-muted-foreground">Goal · </span>
               {plan.goal}
             </p>
@@ -254,46 +246,37 @@ export function PlanCard({
             <PlanRisks risks={plan.risks} />
           )}
           {(phase === "waiting" && onAction) || (onOpen && !muted) ? (
-            <div className="flex flex-wrap items-center gap-2 pt-1">
-              {phase === "waiting" && onAction && (
-                <>
-                  <Button
-                    size="sm"
-                    onClick={() => onAction("approve", plan.id)}
-                  >
-                    Approve
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => onAction("change", plan.id)}
-                  >
-                    Change…
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="text-muted-foreground"
-                    onClick={() => onAction("reject", plan.id)}
-                  >
-                    Reject
-                  </Button>
-                </>
-              )}
+            <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
               {onOpen && !muted && (
                 <button
                   type="button"
                   onClick={onOpen}
-                  className="ml-auto flex items-center gap-0.5 text-[12px] text-muted-foreground hover:text-foreground"
+                  className="mr-auto flex items-center gap-0.5 text-[12.5px] text-muted-foreground hover:text-foreground"
                 >
                   Open in Workbench
                   <ArrowUpRightIcon className="size-3" />
                 </button>
               )}
+              {phase === "waiting" && onAction && (
+                <>
+                  <CardLink onClick={() => onAction("reject", plan.id)}>
+                    Reject
+                  </CardLink>
+                  <CardButton onClick={() => onAction("change", plan.id)}>
+                    Change…
+                  </CardButton>
+                  <CardButton
+                    primary
+                    onClick={() => onAction("approve", plan.id)}
+                  >
+                    Approve
+                  </CardButton>
+                </>
+              )}
             </div>
           ) : null}
           {phase === "waiting" && keyHint && (
-            <div data-ask-keyhint className="text-[11px] text-muted-foreground">
+            <div data-ask-keyhint className={KEY_HINT}>
               Answer from the keyboard: ↵ Approve · ⌫ Reject
             </div>
           )}
