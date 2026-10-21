@@ -24,53 +24,26 @@ import {
  */
 
 /**
- * Live-socket entry. `onEngineEvent` stays synchronous for replay.
- *
- * #814 / #572: SessionWatch seeds `running` from `state === "active"`
- * at boot, because a cold client has no broadcast history. The
- * completion used to be published first and the idle write
- * fire-and-forgotten after it, so a list in that gap — a loaded boot,
- * a second window — attached `events.since` for a turn that had
- * already ended. Commit idle before anyone can observe the event.
- * The caller's chain holds the next event so a new turn's `active`
- * write cannot land underneath this one. A failure to write still
- * publishes the event: losing the completion is worse than a stale row.
+ * Feed listeners and the relay re-publish. This is the moment a phone
+ * or a cold SessionWatch can observe the event. A live `turn.completed`
+ * must not reach it until finishTurn has posted the reply and written
+ * the row (#814).
  */
-export async function deliverLiveEngineEvent(
-  this: HarnessCtx,
-  event: EngineEvent,
-): Promise<void> {
-  if (event.type === "turn.completed") {
-    const convId = this.conversationBySession.get(event.sessionId);
-    const binding = convId ? this.bindings.get(convId) : undefined;
-    if (binding && binding.runningTurnId === event.payload.turnId) {
-      await this.updateConversation(binding.conversationId, {
-        state: "idle",
-      }).catch((error) =>
-        this.opts.log.warn("idle before turn.completed failed", {
-          error: String(error),
-        }),
-      );
-    }
-  }
-  this.onEngineEvent(event);
-}
-
-export function onEngineEvent(this: HarnessCtx, event: EngineEvent) {
-  for (const fn of this.feedListeners) {
+function publishEngineEvent(ctx: HarnessCtx, event: EngineEvent): void {
+  for (const fn of ctx.feedListeners) {
     try {
       fn(event);
     } catch {
       // a feed subscriber must never break event dispatch
     }
   }
-  const convId = this.conversationBySession.get(event.sessionId);
+  const convId = ctx.conversationBySession.get(event.sessionId);
   /* Live stream for paired phones (D-#157): every engine event of a
      conversation-bound session is re-published on the relay, which
      re-emits it on the conversation's channel. Errors are swallowed —
      the phone heals itself via `session.events` replay. */
   if (convId) {
-    this.opts.relay
+    ctx.opts.relay
       .request("engine.event", {
         conversationId: convId,
         sessionId: event.sessionId,
@@ -78,7 +51,7 @@ export function onEngineEvent(this: HarnessCtx, event: EngineEvent) {
       })
       .catch(() => {});
   }
-  const binding = convId ? this.bindings.get(convId) : undefined;
+  const binding = convId ? ctx.bindings.get(convId) : undefined;
   if (binding && event.seq > binding.lastSeq) binding.lastSeq = event.seq;
   /* #346: an event from the session proves it is alive — reset the
      reaper clock and drop the suspended mark; the session.started/
@@ -87,6 +60,53 @@ export function onEngineEvent(this: HarnessCtx, event: EngineEvent) {
     binding.lastActivity = Date.now();
     binding.suspended = false;
   }
+}
+
+/**
+ * Live-socket entry. `onEngineEvent` stays synchronous for replay.
+ *
+ * #814 / #572: SessionWatch seeds `running` from `state === "active"`
+ * at boot, because a cold client has no broadcast history. Publishing
+ * the completion before the row is idle lets a list in that gap attach
+ * `events.since` for a turn that already ended.
+ *
+ * A bare `{state: idle}` before finishTurn is the wrong write: the
+ * scheduler records a failed run as finished and then ignores the real
+ * one; the fold unmounts a root-prompt turn until the reply lands
+ * (#659); `runningTurnId` stays set across that round trip, so Stop and
+ * a queued send aim at a turn that ended; and the unawaited finishTurn
+ * clobbers a following `turn.started`. Finish first — the reply, then
+ * one conversations.update that carries idle together with the failure
+ * — and only then publish. The caller's chain holds the next event
+ * across that await. A failure to finish still publishes: losing the
+ * completion is worse than a stale row.
+ */
+export async function deliverLiveEngineEvent(
+  this: HarnessCtx,
+  event: EngineEvent,
+): Promise<void> {
+  if (event.type === "turn.completed") {
+    const convId = this.conversationBySession.get(event.sessionId);
+    const binding = convId ? this.bindings.get(convId) : undefined;
+    if (binding) {
+      try {
+        await this.finishTurn(binding, event);
+      } catch (error) {
+        this.opts.log.warn("finish turn before turn.completed failed", {
+          error: String(error),
+        });
+      }
+    }
+    publishEngineEvent(this, event);
+    return;
+  }
+  this.onEngineEvent(event);
+}
+
+export function onEngineEvent(this: HarnessCtx, event: EngineEvent) {
+  publishEngineEvent(this, event);
+  const convId = this.conversationBySession.get(event.sessionId);
+  const binding = convId ? this.bindings.get(convId) : undefined;
   switch (event.type) {
     case "turn.started": {
       if (!binding) return;
@@ -466,6 +486,11 @@ export function onEngineEvent(this: HarnessCtx, event: EngineEvent) {
       }
       break;
     case "turn.completed":
+      /* Replay only. Live completions finish and await in
+         `deliverLiveEngineEvent` before they publish, and never reach
+         this case. Replay stays synchronous — the next event can run
+         while this promise is in flight — so finishTurn's ownsRow
+         check still keeps a later turn's row. */
       if (binding) void this.finishTurn(binding, event);
       break;
     default:

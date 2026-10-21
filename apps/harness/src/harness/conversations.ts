@@ -121,7 +121,9 @@ export async function postSystem(
   text: string,
   dedupeKey?: string,
 ) {
-  this.relayWrite(`system note "${text.slice(0, 24)}"`, () =>
+  /* Awaited so finishTurn's note is on the channel before the idle
+     write (#814). A caller that does not await still fires the post. */
+  await this.relayWriteAwaited(`system note "${text.slice(0, 24)}"`, () =>
     this.opts.relay.request("messages.post", {
       channelId: target.channelId,
       conversationId: target.conversationId,

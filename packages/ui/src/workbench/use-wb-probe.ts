@@ -137,6 +137,22 @@ export function useWbProbe({
   const viewFileRef = useRef(viewFile);
   viewFileRef.current = viewFile;
   const skipFolderWrites = useRef(0);
+  /* #814: the generation that drops an older git-status round has to
+     outlive this effect. `running` flipping restarts it (and the 3s
+     poll); effect-local counters start again at 0, so the round that
+     saw the new branch and the one still in flight from before the
+     flip compare equal and the older status can land last. One slot
+     per folder: a late land for the folder we left still writes that
+     folder's cache, and does not compete with the new folder. */
+  const probeGen = useRef(
+    new Map<
+      string,
+      {
+        landed: Partial<Record<keyof WbProbeData, number>>;
+        next: number;
+      }
+    >(),
+  );
   useEffect(() => {
     if (prevCwd.current === liveCwd) return;
     prevCwd.current = liveCwd;
@@ -167,9 +183,14 @@ export function useWbProbe({
        older `git status` land after the round that saw the new branch.
        That put the Create PR form back on the default branch after the
        checkout had already moved. A later round always wins; an older
-       one is dropped, including its cache write. */
-    const landedGen: Partial<Record<keyof WbProbeData, number>> = {};
-    let nextGen = 0;
+       one is dropped, including its cache write. The counters live in
+       `probeGen` so the restart does not hand both rounds generation 1. */
+    const existing = probeGen.current.get(cwd);
+    const gens = existing ?? {
+      landed: {},
+      next: 0,
+    };
+    if (!existing) probeGen.current.set(cwd, gens);
     /* #544: reads land independently — every merge also writes the
        per-folder cache, so a land that resolves after unmount still warms
        the next mount's first frame. `pr` stays on the #429 funnel below:
@@ -209,8 +230,8 @@ export function useWbProbe({
     ) =>
       (read ?? Promise.resolve(null))
         .then((v) => {
-          if ((landedGen[key] ?? -1) > gen) return;
-          landedGen[key] = gen;
+          if ((gens.landed[key] ?? -1) > gen) return;
+          gens.landed[key] = gen;
           if (v != null) {
             if (
               (key === "files" || key === "diffs") &&
@@ -221,13 +242,13 @@ export function useWbProbe({
           merge({ [key]: v ?? null } as Partial<WbProbeData>);
         })
         .catch(() => {
-          if ((landedGen[key] ?? -1) > gen) return;
-          landedGen[key] = gen;
+          if ((gens.landed[key] ?? -1) > gen) return;
+          gens.landed[key] = gen;
           if (keepLastKnown(key)) return;
           merge({ [key]: null } as Partial<WbProbeData>);
         });
     const round = () => {
-      const gen = ++nextGen;
+      const gen = ++gens.next;
       return Promise.all([
         land("files", host.tree(cwd), gen),
         land("diffs", host.diff(cwd), gen),

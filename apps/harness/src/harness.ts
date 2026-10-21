@@ -92,7 +92,7 @@ import {
   pushEmployeeNow,
   sweepNow,
 } from "./harness/now-line";
-import { flushOutbox, relayWrite } from "./harness/outbox";
+import { flushOutbox, relayWrite, relayWriteAwaited } from "./harness/outbox";
 import {
   drainQueue,
   enqueueOrPrompt,
@@ -746,6 +746,7 @@ Object.assign(Harness.prototype, {
   wireScheduler,
   reconcileAsks,
   relayWrite,
+  relayWriteAwaited,
   resolveEmployee,
   resyncBinding,
   rewindConversation,

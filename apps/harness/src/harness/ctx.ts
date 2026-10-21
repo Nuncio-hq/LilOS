@@ -275,6 +275,8 @@ export interface HarnessCtx {
   describeAndHire(conn: EngineConnection): Promise<void>;
   resyncBinding(binding: SessionBinding): Promise<void>;
   relayWrite(label: string, run: () => Promise<unknown>): void;
+  /** Awaited relay write (#814): the reply lands before the idle row. */
+  relayWriteAwaited(label: string, run: () => Promise<unknown>): Promise<void>;
   flushOutbox(): Promise<void>;
   applyReplay(binding: SessionBinding, replay: EventsSinceResult): void;
   markTurnInterrupted(binding: SessionBinding, turnId: string): Promise<void>;

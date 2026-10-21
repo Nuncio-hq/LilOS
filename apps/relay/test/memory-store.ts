@@ -701,8 +701,9 @@ export function createMemoryStore(): RelayStore {
       const mark = finishMarks.get(conversationId);
       if (mark && mark.sessionId === sessionId && eventSeq <= mark.seq) return;
       /* Same stamp rule as the real store (#563): strictly past every mark
-         seen — the finish's own channel writes land after its engine
-         event, so `lastSeq` alone could equal `readSeq` and miss. */
+         seen. A quiet channel would stamp at lastSeq and miss, and a
+         reply posted before the event (#814) is already in lastSeq, so
+         +1 still sits past it. */
       const stamp =
         Math.max(
           channels.get(conversation.channelId)?.lastSeq ?? 0,
