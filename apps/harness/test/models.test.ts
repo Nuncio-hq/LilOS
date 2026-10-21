@@ -580,11 +580,11 @@ describe("fallback model (#790)", () => {
           (m) =>
             m.authorKind === "system" &&
             m.conversationId === conversation.id &&
-            m.text.includes("unreachable"),
+            m.text.includes("didn't answer"),
         );
       }, "fallback note");
       expect(note?.text).toBe(
-        "Fake Large was unreachable; this turn ran on Fake Opus 2 (fallback)",
+        "Fake Large didn't answer (connection error); Fake Opus 2 answered this turn",
       );
       const answer = await waitFor(async () => {
         const { messages } = await listMessages(w.user, channel.id);
@@ -597,8 +597,81 @@ describe("fallback model (#790)", () => {
       }, "fallback answer");
       expect(answer?.model).toBe("fake/opus-2");
       expect(answer?.provider).toBe("fake");
+
+      await w.user.request("messages.post", {
+        channelId: channel.id,
+        conversationId: conversation.id,
+        text: "fallback: once more",
+        authorKind: "user",
+      });
+      const again = await waitFor(async () => {
+        const { messages } = await listMessages(w.user, channel.id);
+        return messages.find(
+          (m) =>
+            m.authorKind === "employee" &&
+            m.conversationId === conversation.id &&
+            m.text.includes("once more"),
+        );
+      }, "second fallback answer");
+      expect(again?.model).toBe("fake/opus-2");
+      const { messages } = await listMessages(w.user, channel.id);
+      const notes = messages.filter(
+        (m) =>
+          m.authorKind === "system" &&
+          m.conversationId === conversation.id &&
+          m.text.includes("didn't answer"),
+      );
+      expect(notes).toHaveLength(1);
+
       const after = await getConversation(w.user, conversation.id);
       expect(after?.model).toBe(before?.model);
+    } finally {
+      await w.cleanup();
+    }
+  });
+
+  it("a same-model provider switch names both providers once", async () => {
+    const w = await setupWorld();
+    try {
+      const { channel, conversation } = await openDmConversation(w.user);
+      await waitFor(async () => {
+        const { messages } = await listMessages(w.user, channel.id);
+        return messages.some(
+          (m) =>
+            m.authorKind === "employee" && m.conversationId === conversation.id,
+        )
+          ? true
+          : undefined;
+      }, "first answer");
+      await w.user.request("messages.post", {
+        channelId: channel.id,
+        conversationId: conversation.id,
+        text: "provider-fallback: other side",
+        authorKind: "user",
+      });
+      const note = await waitFor(async () => {
+        const { messages } = await listMessages(w.user, channel.id);
+        return messages.find(
+          (m) =>
+            m.authorKind === "system" &&
+            m.conversationId === conversation.id &&
+            m.text.includes("didn't answer"),
+        );
+      }, "provider fallback note");
+      expect(note?.text).toBe(
+        "Fake Large (fake) didn't answer (rate limit); Fake Large (other) answered this turn",
+      );
+      const answer = await waitFor(async () => {
+        const { messages } = await listMessages(w.user, channel.id);
+        return messages.find(
+          (m) =>
+            m.authorKind === "employee" &&
+            m.conversationId === conversation.id &&
+            m.text.includes("other side"),
+        );
+      }, "provider fallback answer");
+      expect(answer?.model).toBe("fake-large");
+      expect(answer?.provider).toBe("other");
     } finally {
       await w.cleanup();
     }

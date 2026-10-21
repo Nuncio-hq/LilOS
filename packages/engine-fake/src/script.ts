@@ -79,9 +79,10 @@ export interface FakeScript {
      turn ends (agent-initiated — a queued-steer drain / result delivery,
      not a user turn). `leg:` scripts arm one. */
   leg?: string;
-  /** #790: this turn's answer ran on another model. The session's pick
-      stays; the engine notes it and stamps `turn.completed`. */
-  fallbackTo?: { model: string; provider?: string };
+  /** #790: this turn's answer ran on another route. The session's pick
+      stays; the engine reports it on `turn.model` and does not word the
+      note. `reason` is the plain cause, when the script has one. */
+  fallbackTo?: { model: string; provider?: string; reason?: string };
 }
 
 const EDIT_ASK =
@@ -188,7 +189,27 @@ export function scriptFor(
         "The primary model did not answer, so this turn runs on the fallback.",
       steps: [],
       text: fb[1].trim() || "Answered on the fallback model.",
-      fallbackTo: { model: "fake/opus-2", provider: "fake" },
+      fallbackTo: {
+        model: "fake/opus-2",
+        provider: "fake",
+        reason: "connection error",
+      },
+    };
+  }
+
+  /* `provider-fallback:` — same model id, a different provider. The
+     labels collide once the provider prefix is stripped (#790). */
+  const pfb = /^provider-fallback:\s*(.*)$/is.exec(q);
+  if (pfb) {
+    return {
+      reasoning: "The primary provider did not answer.",
+      steps: [],
+      text: pfb[1].trim() || "Answered on another provider.",
+      fallbackTo: {
+        model: "fake-large",
+        provider: "other",
+        reason: "rate limit",
+      },
     };
   }
 

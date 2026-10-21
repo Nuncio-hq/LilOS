@@ -1588,6 +1588,55 @@
                     },
                     "type": {
                       "type": "string",
+                      "const": "turn.model"
+                    },
+                    "payload": {
+                      "type": "object",
+                      "properties": {
+                        "turnId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "model": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "provider": {
+                          "type": "string"
+                        },
+                        "reason": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "turnId",
+                        "model"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "seq",
+                    "sessionId",
+                    "type",
+                    "payload"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "seq": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "sessionId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "type": {
+                      "type": "string",
                       "const": "turn.completed"
                     },
                     "payload": {
@@ -1654,12 +1703,6 @@
                         },
                         "errorCode": {
                           "type": "number"
-                        },
-                        "model": {
-                          "type": "string"
-                        },
-                        "provider": {
-                          "type": "string"
                         }
                       },
                       "required": [
@@ -4395,6 +4438,55 @@
               },
               "type": {
                 "type": "string",
+                "const": "turn.model"
+              },
+              "payload": {
+                "type": "object",
+                "properties": {
+                  "turnId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "model": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "provider": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "turnId",
+                  "model"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "seq",
+              "sessionId",
+              "type",
+              "payload"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "sessionId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "type": {
+                "type": "string",
                 "const": "turn.completed"
               },
               "payload": {
@@ -4461,12 +4553,6 @@
                   },
                   "errorCode": {
                     "type": "number"
-                  },
-                  "model": {
-                    "type": "string"
-                  },
-                  "provider": {
-                    "type": "string"
                   }
                 },
                 "required": [

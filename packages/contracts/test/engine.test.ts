@@ -106,6 +106,7 @@ describe("engine wire contract", () => {
       "session.compacted",
       "turn.steered",
       "plan.updated",
+      "turn.model",
       "turn.completed",
       "subagent.started",
       "subagent.completed",

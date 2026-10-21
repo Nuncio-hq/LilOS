@@ -186,7 +186,8 @@ test("AC-7 model display names — picker groups and the turn footer", async ({
   const turn = page.locator("[data-agentturn]").first();
   await expect(turn).toBeVisible({ timeout: 30_000 });
   // A finished turn's footer names the model, same label as the picker.
-  await expect(turn).toContainText("· Fake Large", { timeout: 60_000 });
+  await expect(turn).toContainText("Fake Large", { timeout: 60_000 });
+  await expect(turn).not.toContainText("· Fake Large");
   await expect(turn).not.toContainText("fake-large");
   // Thread-composer picker: provider group headings are display names, not slugs.
   const trigger = page

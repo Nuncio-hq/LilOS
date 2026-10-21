@@ -28,7 +28,6 @@ import {
   EVENT_LOG_CAP,
   type EventsSinceParams,
   type FileDiff,
-  fallbackTurnNote,
   IMAGE_PROMPT_CAPABILITY,
   type InterruptParams,
   type JobStatus,
@@ -1465,17 +1464,15 @@ export class FakeEngine {
       fast: s.fast,
       ...(ref ? { ref } : {}),
     });
-    /* #790: the note lands after turn.started, while the pick stays.
-       The footer reads the model stamped on turn.completed. */
+    /* #790: report the route that answered. The session's pick stays;
+       the harness decides whether this is a fallback and words the note. */
     if (script.fallbackTo) {
-      const named = (id: string) =>
-        MODEL_CATALOG.find((m) => m.id === id)?.name ?? id;
       const target = script.fallbackTo;
-      this.emit(s, "session.note", {
-        text: fallbackTurnNote(
-          named(s.model ?? DEFAULT_MODEL),
-          named(target.model),
-        ),
+      this.emit(s, "turn.model", {
+        turnId,
+        model: target.model,
+        ...(target.provider ? { provider: target.provider } : {}),
+        ...(target.reason ? { reason: target.reason } : {}),
       });
     }
     /* A stop landing inside the `slowstart` wait must not resurrect a
@@ -2058,14 +2055,6 @@ export class FakeEngine {
       turnId,
       stopReason,
       usage: s.usage,
-      ...(script.fallbackTo && stopReason === "end_turn"
-        ? {
-            model: script.fallbackTo.model,
-            ...(script.fallbackTo.provider
-              ? { provider: script.fallbackTo.provider }
-              : {}),
-          }
-        : {}),
     });
     if (s.state !== "closed") this.setState(s, "idle");
     this.autoTitle(s, "llm", promptText);

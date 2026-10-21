@@ -358,27 +358,36 @@ export const TurnCompletedPayload = z.strictObject({
       BACKEND_DOWN -32006) — lets the harness pick the typed failure
       surface instead of guessing from `error` text. */
   errorCode: z.number().optional(),
-  /** The model this turn actually ran on when the engine switched
-      mid-turn (#790). Absent: the `turn.started` pick still stands —
-      a deliberate switch the engine already reported is not restamped. */
-  model: z.string().optional(),
-  /** Provider of `model` when the engine reported one with the switch. */
-  provider: z.string().optional(),
 });
 
 /**
- * Thread note when a turn ran on another model (#790). `fromName` /
- * `toName` are display names. `reason` is the engine's own short cause
- * ("rate limit", "request timeout"); absent when it only reported the
- * model that ran.
+ * The route now answering a turn (#790). Adapters report what ran —
+ * mid-turn, as soon as they know — and nothing else. The harness decides
+ * whether that route is a fallback and writes the thread note; the
+ * client folds `model` onto the turn so the footer names who answered.
+ * `reason` is the engine's own short cause ("rate limit", "connection
+ * error"), when it gave one.
+ */
+export const TurnModelPayload = z.strictObject({
+  turnId: TurnId,
+  model: z.string().min(1),
+  provider: z.string().optional(),
+  reason: z.string().optional(),
+});
+export type TurnModelPayload = z.infer<typeof TurnModelPayload>;
+
+/**
+ * Thread note when a turn ran on another route (#790). `fromName` /
+ * `toName` are catalog display names (raw ids when the catalog has no
+ * name, or when the two names collide). `reason` is the engine's cause.
  */
 export function fallbackTurnNote(
   fromName: string,
   toName: string,
   reason?: string,
 ): string {
-  const why = reason ? `was unreachable (${reason})` : "was unreachable";
-  return `${fromName} ${why}; this turn ran on ${toName} (fallback)`;
+  const why = reason ? ` (${reason})` : "";
+  return `${fromName} didn't answer${why}; ${toName} answered this turn`;
 }
 
 /** type -> payload map. The registry below is generated from this union. */
@@ -472,6 +481,12 @@ export const EngineEvent = z.discriminatedUnion("type", [
     sessionId: SessionId,
     type: z.literal("plan.updated"),
     payload: PlanUpdatedPayload,
+  }),
+  z.strictObject({
+    seq: Seq,
+    sessionId: SessionId,
+    type: z.literal("turn.model"),
+    payload: TurnModelPayload,
   }),
   z.strictObject({
     seq: Seq,

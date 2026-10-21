@@ -22,10 +22,14 @@ export async function finishTurn(
   const { turnId, stopReason } = event.payload;
   const text = binding.textByTurn.get(turnId) ?? "";
   const pick = binding.pickByTurn.get(turnId);
-  /* #790: turn.completed names the model that actually ran when the
-     engine fell back. Absent, the turn.started pick still stands. */
-  const ranModel = event.payload.model ?? pick?.model;
-  const ranProvider = event.payload.provider ?? pick?.provider;
+  /* #790: `turn.model` already rewrote this pick to the route that
+     answered, when it differed. The posted answer reads the pick; the
+     conversation's model is untouched. A turn that finished on the
+     requested route forgets the last explained fallback. */
+  const ranModel = pick?.model;
+  const ranProvider = pick?.provider;
+  if (!binding.fellBackThisTurn) binding.lastFallback = undefined;
+  binding.fellBackThisTurn = false;
   binding.textByTurn.delete(turnId);
   binding.pickByTurn.delete(turnId);
   binding.runningTurnId = undefined;

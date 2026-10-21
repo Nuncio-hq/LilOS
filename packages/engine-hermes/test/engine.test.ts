@@ -2701,6 +2701,24 @@ describe("engine-hermes #790: a provider fallback is visible", () => {
       .filter((e) => e.type === "session.note")
       .map((e) => (e.payload as { text: string }).text);
 
+  const turnModels = (h: Harness) =>
+    h.events
+      .filter((e) => e.type === "turn.model")
+      .map((e) => {
+        const p = e.payload as {
+          turnId: string;
+          model: string;
+          provider?: string;
+          reason?: string;
+        };
+        return {
+          turnId: p.turnId,
+          model: p.model,
+          ...(p.provider ? { provider: p.provider } : {}),
+          ...(p.reason ? { reason: p.reason } : {}),
+        };
+      });
+
   test("the status notice names both models; the pick stays", async () => {
     const { gw, h } = setup();
     const { sessionId } = await start(h, {
@@ -2719,15 +2737,18 @@ describe("engine-hermes #790: a provider fallback is visible", () => {
       usage: { input: 10, output: 5, model: "devin-claude-opus-5-5" },
     });
     await p;
-    expect(notes(h)).toEqual([
-      "Qwen3.8 Flash Next was unreachable (request timeout); this turn ran on Devin Claude Opus 5 5 (fallback)",
+    expect(notes(h)).toEqual([]);
+    expect(turnModels(h)).toEqual([
+      {
+        turnId: "t1",
+        model: "devin-claude-opus-5-5",
+        provider: "cpa-others",
+        reason: "request timeout",
+      },
     ]);
     const done = h.events.find((e) => e.type === "turn.completed");
-    expect(done?.payload).toMatchObject({
-      model: "devin-claude-opus-5-5",
-      provider: "cpa-others",
-      stopReason: "end_turn",
-    });
+    expect(done?.payload).toMatchObject({ stopReason: "end_turn" });
+    expect(done?.payload).not.toHaveProperty("model");
     const p2 = promptAsync(h, sessionId);
     const started2 = await h.waitEvent(
       (e) =>
@@ -2739,7 +2760,7 @@ describe("engine-hermes #790: a provider fallback is visible", () => {
     );
     gw.complete(gw.lastSid);
     await p2;
-    expect(notes(h)).toHaveLength(1);
+    expect(turnModels(h)).toHaveLength(1);
   });
 
   test("usage.model alone is enough when no notice arrived", async () => {
@@ -2755,15 +2776,14 @@ describe("engine-hermes #790: a provider fallback is visible", () => {
       usage: { input: 10, output: 5, model: "devin-claude-opus-5-5" },
     });
     await p;
-    expect(notes(h)).toEqual([
-      "Qwen3.8 Flash Next was unreachable; this turn ran on Devin Claude Opus 5 5 (fallback)",
+    expect(notes(h)).toEqual([]);
+    expect(turnModels(h)).toEqual([
+      { turnId: "t1", model: "devin-claude-opus-5-5" },
     ]);
     const done = h.events.find((e) => e.type === "turn.completed");
     if (!done) throw new Error("turn.completed missing");
-    expect((done.payload as { model?: string }).model).toBe(
-      "devin-claude-opus-5-5",
-    );
-    expect((done.payload as { provider?: string }).provider).toBeUndefined();
+    expect(done.payload).not.toHaveProperty("model");
+    expect(done.payload).not.toHaveProperty("provider");
   });
 
   test("a session.info that names the new model is a switch, not a fallback", async () => {
@@ -2789,9 +2809,117 @@ describe("engine-hermes #790: a provider fallback is visible", () => {
     });
     await p;
     expect(notes(h)).toEqual([]);
+    expect(turnModels(h)).toEqual([]);
     const done = h.events.find((e) => e.type === "turn.completed");
     if (!done) throw new Error("turn.completed missing");
-    expect((done.payload as { model?: string }).model).toBeUndefined();
+    expect(done.payload).not.toHaveProperty("model");
+  });
+
+  test("settled session.info does not hide the fallback or replace the pick", async () => {
+    const { gw, h } = setup();
+    const { sessionId } = await start(h, {
+      model: "qwen3.8-flash-next",
+      provider: "hpc",
+    });
+    pin(gw, "qwen3.8-flash-next", "hpc");
+    const p = promptAsync(h, sessionId);
+    await h.waitEvent((e) => e.type === "turn.started");
+    let release: () => void = () => {};
+    gw.titleGate = new Promise<void>((r) => {
+      release = r;
+    });
+    gw.complete(gw.lastSid, {
+      usage: { input: 10, output: 5, model: "devin-claude-opus-5-5" },
+    });
+    gw.emit(gw.lastSid, "session.info", {
+      model: "devin-claude-opus-5-5",
+      provider: "cpa-others",
+    });
+    release();
+    await p;
+    expect(turnModels(h)).toEqual([
+      { turnId: "t1", model: "devin-claude-opus-5-5" },
+    ]);
+    const p2 = promptAsync(h, sessionId);
+    const started2 = await h.waitEvent(
+      (e) =>
+        e.type === "turn.started" &&
+        (e.payload as { turnId?: string }).turnId === "t2",
+    );
+    expect((started2.payload as { model?: string }).model).toBe(
+      "qwen3.8-flash-next",
+    );
+    expect((started2.payload as { provider?: string }).provider).toBe("hpc");
+    gw.complete(gw.lastSid);
+    await p2;
+  });
+
+  test("a session with no explicit model still reports a turn-1 fallback", async () => {
+    const { gw, h } = setup();
+    const { sessionId } = await start(h);
+    const p = promptAsync(h, sessionId);
+    const started = await h.waitEvent((e) => e.type === "turn.started");
+    expect((started.payload as { model?: string }).model).toBeUndefined();
+    let release: () => void = () => {};
+    gw.titleGate = new Promise<void>((r) => {
+      release = r;
+    });
+    gw.complete(gw.lastSid, {
+      usage: { input: 10, output: 5, model: "devin-claude-opus-5-5" },
+    });
+    gw.emit(gw.lastSid, "session.info", {
+      model: "devin-claude-opus-5-5",
+      provider: "cpa-others",
+    });
+    release();
+    await p;
+    expect(turnModels(h)).toEqual([
+      { turnId: "t1", model: "stub-model-a" },
+      { turnId: "t1", model: "devin-claude-opus-5-5" },
+    ]);
+    const p2 = promptAsync(h, sessionId);
+    const started2 = await h.waitEvent(
+      (e) =>
+        e.type === "turn.started" &&
+        (e.payload as { turnId?: string }).turnId === "t2",
+    );
+    expect((started2.payload as { model?: string }).model).toBe("stub-model-a");
+    gw.complete(gw.lastSid);
+    await p2;
+  });
+
+  test("a provider-only switch reports the new provider", async () => {
+    const { gw, h } = setup();
+    const { sessionId } = await start(h, {
+      model: "qwen3.8-flash-next",
+      provider: "hpc",
+    });
+    pin(gw, "qwen3.8-flash-next", "hpc");
+    const p = promptAsync(h, sessionId);
+    await h.waitEvent((e) => e.type === "turn.started");
+    gw.emit(gw.lastSid, "status.update", {
+      kind: "lifecycle",
+      text: "⚠️ Model fallback: qwen3.8-flash-next via hpc unavailable (rate limit); using qwen3.8-flash-next via cpa-others.",
+    });
+    gw.complete(gw.lastSid);
+    await p;
+    expect(turnModels(h)).toEqual([
+      {
+        turnId: "t1",
+        model: "qwen3.8-flash-next",
+        provider: "cpa-others",
+        reason: "rate limit",
+      },
+    ]);
+    const p2 = promptAsync(h, sessionId);
+    const started2 = await h.waitEvent(
+      (e) =>
+        e.type === "turn.started" &&
+        (e.payload as { turnId?: string }).turnId === "t2",
+    );
+    expect((started2.payload as { provider?: string }).provider).toBe("hpc");
+    gw.complete(gw.lastSid);
+    await p2;
   });
 
   test("a top-level fallback_model on session.usage notes the turn", async () => {
@@ -2810,13 +2938,16 @@ describe("engine-hermes #790: a provider fallback is visible", () => {
     });
     gw.complete(gw.lastSid);
     await p;
-    expect(notes(h)[0]).toContain("Devin Claude Opus 5 5");
-    expect(notes(h)[0]).toContain("(fallback)");
+    expect(notes(h)).toEqual([]);
+    expect(turnModels(h)).toEqual([
+      {
+        turnId: "t1",
+        model: "devin-claude-opus-5-5",
+        provider: "cpa-others",
+      },
+    ]);
     const done = h.events.find((e) => e.type === "turn.completed");
-    expect(done?.payload).toMatchObject({
-      model: "devin-claude-opus-5-5",
-      provider: "cpa-others",
-    });
+    expect(done?.payload).not.toHaveProperty("model");
   });
 
   test("parseFallbackNotice keeps the switch and drops other status lines", () => {

@@ -21,7 +21,6 @@ import {
   type EngineRequest,
   EVENT_LOG_CAP,
   type EventsSinceParams,
-  fallbackTurnNote,
   type InterruptParams,
   type Job,
   type JobStatus,
@@ -79,7 +78,6 @@ import {
   parseToolResultJson,
   subagentKey,
 } from "./mapping.js";
-import { displayModelName } from "./model-label.js";
 import { ensureLilosBackend, logSessionTools } from "./plugin-tools.js";
 import { SessionRegistry } from "./registry.js";
 import {
@@ -2590,20 +2588,13 @@ export class HermesEngine {
          (kind:"process", notify_on_complete delivery). Reconcile the
          registry rows so the job row lands job.exited (#179). */
       case "status.update": {
-        /* D-#790: a provider fallback arrives as this notice, not as a
-           typed event. Parsed before the kind switches — a warning-kind
-           replay of the same sentence still counts, and compaction text
-           does not match. */
+        /* #790: Hermes reports a fallback as this notice
+           (`agent/chat_completion_helpers.py`, via status.update) — not
+           the "Fallback activated" log line. The adapter only reports
+           the route; the harness decides whether it is a fallback. */
         if (typeof p.text === "string") {
           const notice = parseFallbackNotice(p.text);
-          if (notice)
-            this.noteRanOn(s, {
-              from: notice.fromModel,
-              fromProvider: notice.fromProvider,
-              to: notice.toModel,
-              toProvider: notice.toProvider,
-              reason: notice.reason || undefined,
-            });
+          if (notice) this.reportFallbackNotice(s, notice);
         }
         if (p.kind === "process") {
           void this.syncJobs(s);
@@ -2651,22 +2642,44 @@ export class HermesEngine {
            queued model switch as `pending_model_switch` fields already
            folded into `model`/`provider` here. `reasoning_effort` "" means
            provider default (unset); `fast` is the resolved tier boolean. */
-        /* A session.info during the open turn that names a different
-           model is a deliberate switch (deferred config.set applies
-           inside the turn, after turn.started). usage.model then matching
-           it is that switch, not a fallback (D-#560). Fallback does not
-           re-emit session.info. */
-        if (typeof p.model === "string" && p.model) {
-          if (
+        /* #790: Hermes' settled session.info
+           (`prompt_turn.py` `_emit_settled_session_info`) arrives while
+           completeTurn is still awaiting session.title, and it still
+           names the fallback route. That echo is not a deliberate
+           switch and must not become the session's model — the primary
+           is restored at the next turn (`agent/turn_context.py`).
+           Outside that window, a session.info that names a different
+           route is a deferred config.set (D-#560): remember it so a
+           later usage.model matching it is not reported as a fallback.
+           A session that started with no explicit model learns its
+           route from the first in-turn session.info and reports it, so
+           a later fallback is a second report rather than the only one. */
+        const infoModel = typeof p.model === "string" ? p.model : "";
+        const infoProvider =
+          typeof p.provider === "string" && p.provider ? p.provider : undefined;
+        const isFallbackEcho =
+          s.settlingTurn || (!!s.ranOn && infoModel === s.ranOn.model);
+        if (infoModel && !isFallbackEcho) {
+          if (!s.announcedModel && (s.turn || s.legTurnId)) {
+            s.announcedModel = infoModel;
+            if (infoProvider) s.announcedProvider ??= infoProvider;
+            this.reportTurnModel(s, {
+              model: infoModel,
+              ...(s.announcedProvider ? { provider: s.announcedProvider } : {}),
+            });
+          } else if (
             (s.turn || s.legTurnId) &&
             s.announcedModel &&
-            p.model !== s.announcedModel
-          )
-            s.explainedModel = p.model;
-          s.model = p.model;
+            (infoModel !== s.announcedModel ||
+              (!!infoProvider &&
+                !!s.announcedProvider &&
+                infoProvider !== s.announcedProvider))
+          ) {
+            s.explainedModel = infoModel;
+          }
+          s.model = infoModel;
         }
-        if (typeof p.provider === "string" && p.provider)
-          s.provider = p.provider;
+        if (infoProvider && !isFallbackEcho) s.provider = infoProvider;
         if (typeof p.reasoning_effort === "string")
           s.effort = p.reasoning_effort || undefined;
         if (typeof p.fast === "boolean") s.fast = p.fast;
@@ -2689,21 +2702,21 @@ export class HermesEngine {
            `usage.model` waits for message.complete — a mid-turn tick
            can race the session.info that explains a deliberate switch. */
         const fb = p.fallback_model;
-        if (
-          typeof fb === "string" &&
-          fb &&
-          s.announcedModel &&
-          fb !== s.announcedModel
-        ) {
+        if (typeof fb === "string" && fb) {
           const provider =
             typeof p.provider === "string" && p.provider
               ? p.provider
               : undefined;
-          this.noteRanOn(s, {
-            from: s.announcedModel,
-            to: fb,
-            ...(provider ? { toProvider: provider } : {}),
-          });
+          const modelChanged = !s.announcedModel || fb !== s.announcedModel;
+          const providerChanged =
+            !!provider &&
+            !!s.announcedProvider &&
+            provider !== s.announcedProvider;
+          if (modelChanged || providerChanged)
+            this.reportTurnModel(s, {
+              model: fb,
+              ...(provider ? { provider } : {}),
+            });
         }
         break;
       }
@@ -2774,18 +2787,19 @@ export class HermesEngine {
       s.usage = { ...s.usage, context: used };
   }
 
-  /** The model `turn.started` just announced. Cleared with the turn's
-      fallback bookkeeping so the next turn starts clean. */
+  /** The route `turn.started` just announced. Cleared with the turn's
+      report bookkeeping so the next turn starts clean. */
   private markTurnAnnounced(s: Session) {
     s.announcedModel = s.model;
+    s.announcedProvider = s.provider;
     s.explainedModel = undefined;
     s.ranOn = undefined;
   }
 
   /**
-   * D-#790: one note + the model the turn actually ran on. Hermes
-   * `hermes serve` (0b8dee00) already sends both, and neither is the
-   * log line "Fallback activated" (`agent/chat_completion_helpers.py:1904`,
+   * Report the route a turn is answering (#790). Hermes `hermes serve`
+   * (0b8dee00) already says so, and neither signal is the log line
+   * "Fallback activated" (`agent/chat_completion_helpers.py:1904`,
    * logger only):
    * - `status.update` text from `_emit_pending_fallback_notice`
    *   (`agent/status_output.py:219`, called at
@@ -2799,35 +2813,67 @@ export class HermesEngine {
    * A top-level `fallback_model` exists on the session-authority frame
    * (`gateway/session_usage.py:81`) and is read if present. The embedded
    * ticker LilOS receives does not send it.
-   * Idempotent: the notice, the ticker, and the completion can all name
-   * the same switch. `s.model` is not rewritten — the next turn.started
-   * still announces the user's pick.
+   * The same route twice (notice, then usage.model) reports once.
+   * `s.model` is not rewritten — the next turn.started still announces
+   * the user's pick. Wording and "is this a fallback?" belong to the
+   * harness.
    */
-  private noteRanOn(
+  private reportTurnModel(
     s: Session,
-    o: {
-      from: string;
-      to: string;
-      fromProvider?: string;
-      toProvider?: string;
-      reason?: string;
+    o: { model: string; provider?: string; reason?: string },
+  ) {
+    const turnId = s.turn?.turnId ?? s.legTurnId;
+    if (!turnId) return;
+    const model = o.model.trim();
+    if (!model) return;
+    const provider = o.provider?.trim() || undefined;
+    if (
+      s.ranOn?.model === model &&
+      (s.ranOn.provider ?? undefined) === provider
+    )
+      return;
+    s.ranOn = { model, ...(provider ? { provider } : {}) };
+    s.emit("turn.model", {
+      turnId,
+      model,
+      ...(provider ? { provider } : {}),
+      ...(o.reason ? { reason: o.reason } : {}),
+    });
+  }
+
+  /** A parsed fallback notice. When the turn never announced a model,
+      the notice's "from" route is reported first so a later "to" is a
+      change rather than the only route the harness has seen. */
+  private reportFallbackNotice(
+    s: Session,
+    notice: {
+      fromModel: string;
+      fromProvider: string;
+      reason: string;
+      toModel: string;
+      toProvider: string;
     },
   ) {
-    if (s.ranOn) return;
-    const from = o.from.trim();
-    const to = o.to.trim();
-    if (!from || !to) return;
-    const fromProvider = o.fromProvider?.trim() || undefined;
-    const toProvider = o.toProvider?.trim() || undefined;
-    if (from === to && fromProvider === toProvider) return;
-    s.ranOn = { model: to, ...(toProvider ? { provider: toProvider } : {}) };
-    s.emit("session.note", {
-      text: fallbackTurnNote(
-        fallbackLabel(from, fromProvider, to, toProvider),
-        fallbackLabel(to, toProvider, from, fromProvider),
-        o.reason,
-      ),
-    });
+    if (!s.announcedModel && (s.turn || s.legTurnId)) {
+      s.announcedModel = notice.fromModel;
+      if (notice.fromProvider) s.announcedProvider ??= notice.fromProvider;
+      this.reportTurnModel(s, {
+        model: notice.fromModel,
+        ...(notice.fromProvider ? { provider: notice.fromProvider } : {}),
+      });
+    }
+    const modelChanged =
+      !s.announcedModel || notice.toModel !== s.announcedModel;
+    const providerChanged =
+      !!s.announcedProvider &&
+      !!notice.toProvider &&
+      notice.toProvider !== s.announcedProvider;
+    if (modelChanged || providerChanged)
+      this.reportTurnModel(s, {
+        model: notice.toModel,
+        ...(notice.toProvider ? { provider: notice.toProvider } : {}),
+        ...(notice.reason ? { reason: notice.reason } : {}),
+      });
   }
 
   /**
@@ -2840,91 +2886,92 @@ export class HermesEngine {
        message.complete must not stamp `lastTurnId` or emit a bogus
        turn.completed on a settled turn (it used to). */
     if (!turn && !s.legTurnId) return;
-    const legId = s.legTurnId;
-    /* The turn's last segment closes unsealed (no interim follows the
-       final message) — the #414 tracker must not leak it into the next
-       turn's first seal. */
-    s.streamedText = "";
-    /* A post-turn leg closes under its own minted id — the leg's
-       turn.completed must not stamp the settled prompt turn's id (a
-       second `turn.completed` on t1 used to reopen/merge it). */
-    const completedId = turn?.turnId ?? s.legTurnId ?? s.lastTurnId;
-    s.lastTurnId = completedId;
-    if (s.driver === "ws") {
-      try {
-        const r = (await this.gw("session.title", {
-          session_id: s.runtimeSid,
-        })) as { session_key?: unknown };
-        if (typeof r.session_key === "string") {
-          this.bumpRef(s, r.session_key);
-        }
-      } catch {
-        /* best effort: session.info events still catch most rotations */
-      }
-    }
-    /* #482: if the backend died during that await, markBackendDown already
-       settled this turn (refusal emit + done reject + error state). Emitting
-       again would double `turn.completed` on one turnId AND flip state back
-       to idle mid-outage — the feed would call a refused turn successful. */
-    if (turn ? s.turn !== turn : s.legTurnId !== legId) return;
-    const { stopReason } = mapStopReason(p.status);
-    const usage = mapUsage(p.usage);
-    if (usage) {
-      /* A completion that omits occupancy/window keeps what mid-turn
-         session.usage/session.info ticks last reported — the same
-         preserve endAcpTurn applies on the ACP path (#415). */
-      if (usage.context === undefined && s.usage?.context !== undefined)
-        usage.context = s.usage.context;
-      if (
-        usage.contextWindow === undefined &&
-        s.usage?.contextWindow !== undefined
-      )
-        usage.contextWindow = s.usage.contextWindow;
-      s.usage = usage;
-    }
-    const errText = typeof p.error === "string" ? p.error : undefined;
-    /* #560: a turn that died on the context window gets the typed code —
-       the thread offers Compact now / a fresh session instead of a bare
-       retry. Provider texts vary; the matcher lives in contracts next to
-       the code so the harness reads the same surface untyped engines
-       leave. */
-    const errCode =
-      errText && CONTEXT_LIMIT_TEXT.test(errText)
-        ? RPC_ERRORS.CONTEXT_LIMIT
-        : undefined;
-    /* After the session.title await, so a session.info that arrived
-       during it (a deferred switch) is visible and is not read as a
-       fallback. A status notice or fallback_model already set ranOn. */
+    /* Snapshot usage.model before the session.title await. The settled
+       session.info lands during that await and must not be able to
+       suppress this reading (#790). */
     const reported = usageModelOf(p.usage);
-    if (
-      !s.ranOn &&
-      reported &&
-      s.announcedModel &&
-      reported !== s.announcedModel &&
-      reported !== s.explainedModel
-    )
-      this.noteRanOn(s, { from: s.announcedModel, to: reported });
-    const ran = s.ranOn;
-    s.emit("turn.completed", {
-      turnId: completedId,
-      stopReason,
-      ...(usage ? { usage } : {}),
-      ...(errText ? { error: errText } : {}),
-      ...(errCode !== undefined ? { errorCode: errCode } : {}),
-      ...(ran
-        ? {
-            model: ran.model,
-            ...(ran.provider ? { provider: ran.provider } : {}),
+    s.settlingTurn = true;
+    try {
+      const legId = s.legTurnId;
+      /* The turn's last segment closes unsealed (no interim follows the
+         final message) — the #414 tracker must not leak it into the next
+         turn's first seal. */
+      s.streamedText = "";
+      /* A post-turn leg closes under its own minted id — the leg's
+         turn.completed must not stamp the settled prompt turn's id (a
+         second `turn.completed` on t1 used to reopen/merge it). */
+      const completedId = turn?.turnId ?? s.legTurnId ?? s.lastTurnId;
+      s.lastTurnId = completedId;
+      if (s.driver === "ws") {
+        try {
+          const r = (await this.gw("session.title", {
+            session_id: s.runtimeSid,
+          })) as { session_key?: unknown };
+          if (typeof r.session_key === "string") {
+            this.bumpRef(s, r.session_key);
           }
-        : {}),
-    });
-    s.turn = undefined;
-    s.legTurnId = undefined;
-    if (s.state !== "closed") {
-      cancelAllAsks(s);
-      s.setState(s.openRequests.size ? "waiting" : "idle");
+        } catch {
+          /* best effort: session.info events still catch most rotations */
+        }
+      }
+      /* #482: if the backend died during that await, markBackendDown already
+         settled this turn (refusal emit + done reject + error state). Emitting
+         again would double `turn.completed` on one turnId AND flip state back
+         to idle mid-outage — the feed would call a refused turn successful. */
+      if (turn ? s.turn !== turn : s.legTurnId !== legId) return;
+      const { stopReason } = mapStopReason(p.status);
+      const usage = mapUsage(p.usage);
+      if (usage) {
+        /* A completion that omits occupancy/window keeps what mid-turn
+           session.usage/session.info ticks last reported — the same
+           preserve endAcpTurn applies on the ACP path (#415). */
+        if (usage.context === undefined && s.usage?.context !== undefined)
+          usage.context = s.usage.context;
+        if (
+          usage.contextWindow === undefined &&
+          s.usage?.contextWindow !== undefined
+        )
+          usage.contextWindow = s.usage.contextWindow;
+        s.usage = usage;
+      }
+      const errText = typeof p.error === "string" ? p.error : undefined;
+      /* #560: a turn that died on the context window gets the typed code —
+         the thread offers Compact now / a fresh session instead of a bare
+         retry. Provider texts vary; the matcher lives in contracts next to
+         the code so the harness reads the same surface untyped engines
+         leave. */
+      const errCode =
+        errText && CONTEXT_LIMIT_TEXT.test(errText)
+          ? RPC_ERRORS.CONTEXT_LIMIT
+          : undefined;
+      /* A deliberate switch recorded before this await still suppresses.
+         The settled echo cannot: settlingTurn kept it from setting
+         explainedModel. A notice or fallback_model already reported. */
+      if (
+        reported &&
+        s.announcedModel &&
+        reported !== s.announcedModel &&
+        reported !== s.explainedModel &&
+        s.ranOn?.model !== reported
+      )
+        this.reportTurnModel(s, { model: reported });
+      s.emit("turn.completed", {
+        turnId: completedId,
+        stopReason,
+        ...(usage ? { usage } : {}),
+        ...(errText ? { error: errText } : {}),
+        ...(errCode !== undefined ? { errorCode: errCode } : {}),
+      });
+      s.turn = undefined;
+      s.legTurnId = undefined;
+      if (s.state !== "closed") {
+        cancelAllAsks(s);
+        s.setState(s.openRequests.size ? "waiting" : "idle");
+      }
+      turn?.resolve({ turnId: turn.turnId, stopReason });
+    } finally {
+      s.settlingTurn = false;
     }
-    turn?.resolve({ turnId: turn.turnId, stopReason });
   }
 
   private onServerRequest(r: {
@@ -3146,22 +3193,4 @@ function usageModelOf(usage: unknown): string | undefined {
   if (typeof usage !== "object" || usage === null) return undefined;
   const model = (usage as { model?: unknown }).model;
   return typeof model === "string" && model.trim() ? model.trim() : undefined;
-}
-
-/** Display name for a fallback note. Same label on both sides means the
-    ids differ only by provider — say which. */
-function fallbackLabel(
-  model: string,
-  provider: string | undefined,
-  other: string,
-  otherProvider: string | undefined,
-): string {
-  const name = displayModelName(model);
-  if (
-    provider &&
-    name === displayModelName(other) &&
-    provider !== otherProvider
-  )
-    return `${name} (${provider})`;
-  return name;
 }

@@ -148,11 +148,18 @@ export class Session {
   ephemeral?: boolean;
   /** Model `turn.started` announced for the open turn (#790). */
   announcedModel?: string;
+  /** Provider `turn.started` announced. A same-id provider switch is
+      still a different route. */
+  announcedProvider?: string;
   /** A `session.info` during this turn named this model — a deliberate
       switch, not a provider fallback. */
   explainedModel?: string;
-  /** Model and provider this turn actually ran on after a fallback. */
+  /** Last route reported on `turn.model` for the open turn. */
   ranOn?: { model: string; provider?: string };
+  /** Set while `completeTurn` awaits `session.title`. Hermes' settled
+      `session.info` lands in that window and still names the fallback
+      route; it must not become the session's model (#790). */
+  settlingTurn = false;
 
   /** Stable LilOS subagentId for a wire-level child key. */
   subagentId(key: string): string {

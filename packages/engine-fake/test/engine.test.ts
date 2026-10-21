@@ -1325,18 +1325,23 @@ describe("engine-fake #573: session.stop forgets the session", () => {
     expect(res.stopReason).toBe("end_turn");
     const started = events.filter((e) => e.type === "turn.started");
     expect(started[0]?.payload.model).toBe("fake-large");
-    const notes = events.filter((e) => e.type === "session.note");
-    expect(notes.map((e) => e.payload.text)).toEqual([
-      "Fake Large was unreachable; this turn ran on Fake Opus 2 (fallback)",
+    expect(events.filter((e) => e.type === "session.note")).toEqual([]);
+    const reported = events.filter((e) => e.type === "turn.model");
+    expect(reported.map((e) => e.payload)).toEqual([
+      {
+        turnId: started[0]?.payload.turnId,
+        model: "fake/opus-2",
+        provider: "fake",
+        reason: "connection error",
+      },
     ]);
     const done = events.find((e) => e.type === "turn.completed");
-    expect(done?.payload.model).toBe("fake/opus-2");
-    expect(done?.payload.provider).toBe("fake");
+    expect(done?.payload.model).toBeUndefined();
     expect(done?.payload.stopReason).toBe("end_turn");
     await promptText(c, sessionId, "still here");
     const startedAgain = events.filter((e) => e.type === "turn.started");
     expect(startedAgain[1]?.payload.model).toBe("fake-large");
-    expect(events.filter((e) => e.type === "session.note")).toHaveLength(1);
+    expect(events.filter((e) => e.type === "turn.model")).toHaveLength(1);
     c.close();
   });
 });
