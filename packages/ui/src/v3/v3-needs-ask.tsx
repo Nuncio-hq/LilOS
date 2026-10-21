@@ -57,9 +57,16 @@ export function OpenAsk({
       </div>
       <div className="mt-0.5 flex items-center gap-2 text-[13px] text-muted-foreground">
         <AgentAvatar data={data} agent={from} size={18} />
-        <span>{from?.name ?? FORMER_AGENT}</span>
-        {from?.id === data.ceoId && <CeoMark />}
+        {/* One text run, so it reads "Default asks", not "Defaultasks": the
+           flex gap spaces it on screen but not for a screen reader. */}
         <span>
+          {from?.name ?? FORMER_AGENT}
+          {from?.id === data.ceoId && (
+            <>
+              {" "}
+              <CeoMark />
+            </>
+          )}{" "}
           asks · waiting {ago(ask.waiting)}
           {goal && ` · goal ${goal.title}`}
         </span>
