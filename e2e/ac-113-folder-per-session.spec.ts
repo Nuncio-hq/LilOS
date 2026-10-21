@@ -422,10 +422,19 @@ test("AC-5 projects persist across reload in the order they were made; the New p
     dialog.locator(`[data-discovered="${shown(repoDir)}"]`),
   ).toBeVisible();
   // One spelling (D-#771): a thread started from the project's folder bumped
-  // the recents row already there, so the repo is offered once, not twice.
-  await expect(
-    dialog.locator("[data-discovered]").filter({ hasText: "lilos-repo-a" }),
-  ).toHaveCount(1);
+  // the recents row already there, so this repo is offered once, not as `~/…`
+  // and `/…` too. By path, not name: the runner process also loads this file,
+  // so another `lilos-repo-a` can sit under ~/repos and be discovered.
+  const spellings = await dialog
+    .locator("[data-discovered]")
+    .evaluateAll(
+      (els, paths) =>
+        els.filter((el) =>
+          paths.includes(el.getAttribute("data-discovered") ?? ""),
+        ).length,
+      [shown(repoDir), repoDir, `${repoDir}/`],
+    );
+  expect(spellings).toBe(1);
   await expect(
     dialog.locator(`[data-discovered="${shown(goneDir)}"]`),
   ).toHaveCount(0);
