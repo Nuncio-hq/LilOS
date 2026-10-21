@@ -96,7 +96,9 @@ test("a ticket from the owner and from an agent lands on Work and its project", 
   });
   await main(page).getByRole("button", { name: "New" }).click();
   const draft = v3Peek(page);
-  await expect(draft.getByText("New chat")).toBeVisible({ timeout: 30_000 });
+  await expect(draft.getByText("New chat", { exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
   await expect(draft.getByRole("heading", { level: 1 })).toHaveText(agent.name);
   await expect(draft.getByText("Turn it into a ticket")).toHaveCount(0);
 
