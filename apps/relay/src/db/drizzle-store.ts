@@ -127,6 +127,15 @@ const rowToConversation = (row: ConversationRow): Conversation => {
   };
 };
 
+type EmployeeRow = typeof schema.employees.$inferSelect;
+/* SQLite NULL means "reports to the owner" (D-#775). The contract field is
+   optional, not nullable — fold null to absent at the boundary, the same
+   way a conversation's projectId is folded. */
+const rowToEmployee = (row: EmployeeRow): Employee => {
+  const { reportsTo, ...rest } = row;
+  return reportsTo ? { ...rest, reportsTo } : rest;
+};
+
 type ScheduledTaskRow = typeof schema.scheduledTasks.$inferSelect;
 const rowToScheduledTask = (row: ScheduledTaskRow): ScheduledTask => ({
   id: row.id,
@@ -302,16 +311,16 @@ export function createDrizzleStore(db: Db): RelayStore {
         .select()
         .from(schema.employees)
         .orderBy(asc(schema.employees.createdAt))
-        .all();
+        .all()
+        .map(rowToEmployee);
     },
     async getEmployee(id) {
-      return (
-        db
-          .select()
-          .from(schema.employees)
-          .where(eq(schema.employees.id, id))
-          .get() ?? null
-      );
+      const row = db
+        .select()
+        .from(schema.employees)
+        .where(eq(schema.employees.id, id))
+        .get();
+      return row ? rowToEmployee(row) : null;
     },
     async createEmployee(input) {
       const employee: Employee = {
@@ -329,7 +338,7 @@ export function createDrizzleStore(db: Db): RelayStore {
         .where(eq(schema.employees.id, id))
         .returning()
         .get();
-      return updated ?? null;
+      return updated ? rowToEmployee(updated) : null;
     },
     async removeEmployee(id) {
       return db.transaction((tx) => {
@@ -339,6 +348,13 @@ export function createDrizzleStore(db: Db): RelayStore {
           .where(eq(schema.employees.id, id))
           .get();
         if (!employee) return null;
+        /* Dependents point back at this row. Clear them first (they report
+           to the owner again) — foreign keys are on, so the delete would
+           fail while anyone still names this id (D-#775). */
+        tx.update(schema.employees)
+          .set({ reportsTo: null })
+          .where(eq(schema.employees.reportsTo, id))
+          .run();
         const channelIds = tx
           .select({ id: schema.channels.id })
           .from(schema.channels)
@@ -373,7 +389,7 @@ export function createDrizzleStore(db: Db): RelayStore {
             .run();
         }
         tx.delete(schema.employees).where(eq(schema.employees.id, id)).run();
-        return { employee, channelIds };
+        return { employee: rowToEmployee(employee), channelIds };
       });
     },
     async listChannels() {

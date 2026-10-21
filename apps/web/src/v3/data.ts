@@ -32,6 +32,7 @@ import { modelLabel, modelRowStore } from "./models";
 import { profileStore } from "./profiles";
 import { v3SettingsSlice } from "./settings-data";
 import { lastChats, v3ArchivedThreads, v3Asks, v3Threads } from "./threads";
+import { type WeekCounts, weekByAgent } from "./week";
 
 /* The company as the relay knows it, in the shape the v3 pages read. A
    computed store: pages re-render when the company changes, not on every
@@ -90,12 +91,15 @@ function toAgent(
   runtime: string | undefined,
   profile: AgentDescriptor | undefined,
   lastChat: V3Agent["lastChat"],
+  week: WeekCounts,
 ): V3Agent {
   return {
     id: e.id,
     name: e.name,
     tone: toneOf(e.name),
     role: e.role,
+    /* Absent reports to the owner; the page shows the profile name (D-#775). */
+    ...(e.reportsTo ? { reportsTo: e.reportsTo } : {}),
     hired: new Date(e.createdAt).toLocaleDateString([], {
       day: "numeric",
       month: "short",
@@ -111,6 +115,9 @@ function toAgent(
       .split(/\n{2,}/)
       .map((p) => p.trim())
       .filter(Boolean),
+    /* Always present, including zeros: the column is a real count (D-#19).
+       Stuck is not part of it — Conversation has no such mark (issue #772). */
+    weekThreads: week,
   };
 }
 
@@ -209,6 +216,7 @@ export function v3DataStore(): ReadableAtom<V3Data> {
       };
       const reachable = folderRows.filter((f) => !f.missing);
       const chats = lastChats(src);
+      const weeks = weekByAgent(src);
       return {
         company: companyName,
         me,
@@ -219,6 +227,7 @@ export function v3DataStore(): ReadableAtom<V3Data> {
             engine || undefined,
             profiles.byProfile[e.profile],
             chats.get(e.id),
+            weeks.get(e.id) ?? { finished: 0, failed: 0 },
           ),
         ),
         connectors: [],

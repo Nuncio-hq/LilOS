@@ -797,7 +797,24 @@ describe("AC-1 thread tools over the gateway (issue #340)", () => {
   });
 
   it("team_list returns the roster", async () => {
-    const ops = fakeAppOps([], { conversationId: "conv-s-team" });
+    const ops = fakeAppOps([], {
+      conversationId: "conv-s-team",
+      employees: [
+        {
+          id: "emp-fake",
+          name: "Ada",
+          role: "Engineer",
+          status: "online",
+          profile: "default",
+          model: "fake-1",
+          now: "",
+          instructions: "",
+          respondTo: "me",
+          createdAt: 1,
+          reportsTo: "emp-boss",
+        },
+      ],
+    });
     const { scope } = makeScope("s-team", { appOps: ops });
     const api = await serveGateway({
       sessions: [{ scope, token: "t-team" }],
@@ -810,6 +827,7 @@ describe("AC-1 thread tools over the gateway (issue #340)", () => {
           role: "Engineer",
           status: "online",
           model: "fake-1",
+          reportsTo: "emp-boss",
         }),
       ]);
     } finally {

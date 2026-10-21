@@ -338,4 +338,70 @@ describe("employees lifecycle + engine passthrough (#29)", () => {
     await raw.connection.receive(req("agents.list"));
     expect(errorData(raw.frames, lastId())).toBe("unauthenticated");
   });
+
+  it("reportsTo links an employee, rejects self, cycles and unknown ids, and clears when the manager is removed", async () => {
+    const relay = newRelay();
+    await engineHost(relay);
+    const user = await helloed(relay);
+    const ada = await hire(user.connection, user.frames, "Ada");
+    const bea = await hire(user.connection, user.frames, "Bea");
+
+    const listed = async () => {
+      const { employees } = (
+        await call(user.connection, user.frames, "employees.list")
+      ).result as { employees: { id: string; reportsTo?: string }[] };
+      return employees;
+    };
+
+    await call(user.connection, user.frames, "employees.update", {
+      id: bea.employee.id,
+      reportsTo: ada.employee.id,
+    });
+    expect(
+      (await listed()).find((e) => e.id === bea.employee.id)?.reportsTo,
+    ).toBe(ada.employee.id);
+
+    await user.connection.receive(
+      req("employees.update", {
+        id: ada.employee.id,
+        reportsTo: ada.employee.id,
+      }),
+    );
+    expect(errorData(user.frames, lastId())).toBe("invalid_params");
+
+    await user.connection.receive(
+      req("employees.update", {
+        id: ada.employee.id,
+        reportsTo: bea.employee.id,
+      }),
+    );
+    expect(errorData(user.frames, lastId())).toBe("invalid_params");
+
+    await user.connection.receive(
+      req("employees.update", {
+        id: ada.employee.id,
+        reportsTo: "emp_missing",
+      }),
+    );
+    expect(errorData(user.frames, lastId())).toBe("not_found");
+
+    await call(user.connection, user.frames, "employees.update", {
+      id: bea.employee.id,
+      reportsTo: null,
+    });
+    expect(
+      (await listed()).find((e) => e.id === bea.employee.id)?.reportsTo,
+    ).toBeUndefined();
+
+    await call(user.connection, user.frames, "employees.update", {
+      id: bea.employee.id,
+      reportsTo: ada.employee.id,
+    });
+    await call(user.connection, user.frames, "employees.remove", {
+      id: ada.employee.id,
+    });
+    expect(
+      (await listed()).find((e) => e.id === bea.employee.id)?.reportsTo,
+    ).toBeUndefined();
+  });
 });

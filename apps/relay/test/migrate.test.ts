@@ -67,8 +67,8 @@ describe("relay migrations", () => {
     // on employees; v27 adds #136's scheduled_tasks table + the
     // conversation's scheduled marker; v28 adds D-#771's projects table +
     // the conversation's project_id; v29 adds D-#773's why / if_yes / if_no;
-    // v30 adds D-#772's stuck mark.
-    expect(out.version).toBe(30);
+    // v30 adds D-#772's stuck mark; v31 adds D-#775's reports_to.
+    expect(out.version).toBe(31);
     expect(out.askCols).toContain("hire");
     expect(out.askCols).toContain("why");
     expect(out.askCols).toContain("if_yes");
@@ -101,6 +101,7 @@ describe("relay migrations", () => {
     expect(out.tables).toContain("device_push");
     expect(out.tables).toContain("engine_event_marks");
     expect(out.empCols).toContain("muted");
+    expect(out.empCols).toContain("reports_to");
     expect(out.msgIdx).toContain("messages_conversation_seq");
     expect(out.msgIdx).not.toContain("messages_conversation");
     // …and keeps everything v6 shipped.

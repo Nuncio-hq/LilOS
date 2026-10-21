@@ -260,7 +260,7 @@ export function createGatewayApprovalOps(
       /* The card states the values, not just the fields — a rename to
          "CEO" must not read the same as one to "junior". */
       const fields = Object.entries(p)
-        .map(([k, v]) => `${k}: ${String(v)}`)
+        .map(([k, v]) => `${k}: ${v === null ? "owner" : String(v)}`)
         .join(", ");
       await gate({
         command: `team_update ${fields}`,
@@ -306,6 +306,9 @@ export function createGatewayApprovalOps(
           ...(p.instructions !== undefined
             ? { instructions: p.instructions }
             : {}),
+          /* Who they report to lives only on the company record (D-#775).
+             The engine profile has no such field. null clears it. */
+          ...(p.reportsTo !== undefined ? { reportsTo: p.reportsTo } : {}),
         },
       );
       return updated.employee;

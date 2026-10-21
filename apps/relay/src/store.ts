@@ -94,6 +94,8 @@ export function deriveProjectKey(
   return key;
 }
 
+/** A hire. `reportsTo` is not set here: a new person reports to the owner
+    until `employees.update` says otherwise (D-#775). */
 interface NewEmployee {
   name: string;
   role: string;
@@ -105,7 +107,10 @@ interface NewEmployee {
   respondTo: RespondTo;
 }
 
-type EmployeePatchInput = Partial<NewEmployee>;
+/** `reportsTo: null` clears the link (back to the owner). */
+type EmployeePatchInput = Partial<NewEmployee> & {
+  reportsTo?: string | null;
+};
 
 export interface ConversationPatch {
   title?: string;

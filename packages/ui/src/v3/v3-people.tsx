@@ -1,16 +1,11 @@
-import { LayoutListIcon, NetworkIcon, PlusIcon } from "lucide-react";
+import { LayoutListIcon, NetworkIcon } from "lucide-react";
 import { cn } from "../lib/utils";
 import { Meter, Page, Tabs, Title } from "./v3-bits";
 import type { V3Data } from "./v3-data-types";
-import {
-  AgentAvatar,
-  Avatar,
-  CeoMark,
-  StatusDot,
-  StatusPill,
-} from "./v3-marks";
+import { AgentAvatar, CeoMark, INK, StatusPill } from "./v3-marks";
 import { agentStatus, agentThread, agentTicket } from "./v3-model";
 import { RowButton } from "./v3-open-record";
+import { OrgChart } from "./v3-org";
 import type { V3PageProps } from "./v3-page-types";
 import type { V3Agent } from "./v3-types";
 
@@ -134,19 +129,7 @@ function PersonRow({
       </span>
       {cols.week && (
         <span className={cn(WIDE, "text-[13px] text-muted-foreground")}>
-          {a.week && (
-            <>
-              {a.week.done} done
-              {a.week.stuck > 0 && (
-                <>
-                  {" · "}
-                  <span className="text-red-600 dark:text-red-300">
-                    {a.week.stuck} stuck
-                  </span>
-                </>
-              )}
-            </>
-          )}
+          <WeekBits a={a} />
         </span>
       )}
       {cols.spend &&
@@ -179,7 +162,7 @@ function Table({
 }) {
   const agents = data.agents.filter((a) => a.kind !== "outside");
   const workers = data.agents.filter((a) => a.kind === "outside");
-  const week = data.agents.some((a) => a.week);
+  const week = data.agents.some((a) => a.week || a.weekThreads);
   const spend = data.agents.some((a) => a.kind !== "outside" && a.spend);
   const cols: Cols = { week, spend, grid: GRIDS[`${week}-${spend}`] };
   const hasCeo = data.agents.some((a) => a.id === data.ceoId);
@@ -227,121 +210,40 @@ function Table({
   );
 }
 
-/** A node in the tree: a small bordered box, one click to the agent. */
-function Node({
-  data,
-  a,
-  go,
-}: { data: V3Data; a: V3Agent } & Pick<V3PageProps, "go">) {
-  const now = nowOf(data, a);
-  return (
-    <button
-      type="button"
-      onClick={() => go({ page: "agent", id: a.id })}
-      className="w-[132px] rounded-lg border border-[var(--v3-line)] bg-background px-2.5 py-2 text-left transition-colors hover:bg-[var(--v3-hover)]"
-    >
-      <span className="flex items-center gap-2">
-        <AgentAvatar data={data} agent={a} size={22} />
-        <span className="min-w-0">
-          <span className="flex items-center gap-1">
-            <span className="truncate font-medium text-[13.5px] text-foreground">
-              {a.name}
-            </span>
-            {a.id === data.ceoId && <CeoMark />}
-          </span>
-          <span className="block truncate text-[12px] text-muted-foreground">
-            {a.role}
-          </span>
-        </span>
-      </span>
-      <span className="mt-2 flex items-start gap-1.5 text-[12px] text-muted-foreground leading-snug">
-        <StatusDot status={agentStatus(data, a.id)} className="mt-[5px]" />
-        <span className="line-clamp-2">{now.text}</span>
-      </span>
-    </button>
-  );
-}
-
-const LINE = "bg-[var(--v3-line)]";
-
-function OrgChart({ data, go, act }: Pick<V3PageProps, "data" | "go" | "act">) {
-  // Whoever holds the position is the root; everyone else, outside workers
-  // included, hangs under it. With no such position everyone reports to you,
-  // so the agents sit in one row below the Chairman.
-  const ceo = data.agents.find((a) => a.id === data.ceoId);
-  const reports = data.agents.filter((a) => a.id !== ceo?.id);
-  const slots = reports.length + (act.hire ? 1 : 0);
-
-  return (
-    // The tree is wider than a narrow pane: scroll it from its left edge
-    // (w-max + mx-auto centres it only when it fits).
-    <div className="mt-10 overflow-x-auto pb-4">
-      <div className="mx-auto flex w-max flex-col items-center">
-        <div className="flex w-[120px] items-center gap-2 rounded-lg border border-[var(--v3-line)] bg-[var(--v3-soft)] px-2.5 py-2">
-          <Avatar name={data.me} tone="n" size={22} />
-          <span className="min-w-0">
-            <span className="block truncate font-medium text-[13.5px] text-foreground">
-              {data.me}
-            </span>
-            <span className="block text-[12px] text-muted-foreground">
-              Chairman
-            </span>
-          </span>
-        </div>
-        {(ceo || slots > 0) && <span className={cn("h-6 w-px", LINE)} />}
-        {ceo && (
+/** This week's threads when the app counted them; otherwise the prototype's
+    ticket week. Colour is only the status word (failed, stuck). */
+function WeekBits({ a }: { a: V3Agent }) {
+  const w = a.weekThreads;
+  if (w) {
+    return (
+      <>
+        {w.finished} finished
+        {w.failed > 0 && (
           <>
-            <Node data={data} a={ceo} go={go} />
-            {slots > 0 && <span className={cn("h-6 w-px", LINE)} />}
+            {" · "}
+            <span className={INK.failed}>{w.failed} failed</span>
           </>
         )}
-        <div className="flex">
-          {reports.map((a, i) => (
-            <div
-              key={a.id}
-              className="relative flex w-[140px] flex-col items-center pt-6"
-            >
-              {/* Each child draws its half of the bar above it, plus its own
-                  stem; the row's last child closes the bar when no Hire slot
-                  follows it, and a lone child needs no bar. */}
-              {slots > 1 && (
-                <span
-                  className={cn(
-                    "absolute top-0 h-px",
-                    LINE,
-                    i === 0
-                      ? "left-1/2 right-0"
-                      : i === slots - 1
-                        ? "left-0 w-1/2"
-                        : "left-0 right-0",
-                  )}
-                />
-              )}
-              <span className={cn("absolute top-0 h-6 w-px", LINE)} />
-              <Node data={data} a={a} go={go} />
-            </div>
-          ))}
-          {act.hire && (
-            <div className="relative flex w-[140px] flex-col items-center pt-6">
-              {slots > 1 && (
-                <span
-                  className={cn("absolute top-0 left-0 h-px w-1/2", LINE)}
-                />
-              )}
-              <span className={cn("absolute top-0 h-6 w-px", LINE)} />
-              <button
-                type="button"
-                onClick={() => go({ page: "hire" })}
-                className="flex h-[74px] w-[120px] flex-col items-center justify-center gap-1 rounded-lg border border-[var(--v3-line)] border-dashed text-[13px] text-muted-foreground transition-colors hover:bg-[var(--v3-hover)] hover:text-foreground"
-              >
-                <PlusIcon className="size-4" />
-                Hire an agent
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
+        {w.stuck !== undefined && w.stuck > 0 && (
+          <>
+            {" · "}
+            <span className={INK.stuck}>{w.stuck} stuck</span>
+          </>
+        )}
+      </>
+    );
+  }
+  if (!a.week) return null;
+  return (
+    <>
+      {a.week.done} done
+      {a.week.stuck > 0 && (
+        <>
+          {" · "}
+          <span className={INK.stuck}>{a.week.stuck} stuck</span>
+        </>
+      )}
+    </>
   );
 }
 

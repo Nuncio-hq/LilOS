@@ -826,7 +826,7 @@
     },
     {
       "name": "team_list",
-      "description": "The company roster: every employee's name, role, status and model.",
+      "description": "The company roster: every employee's name, role, status, model, and who they report to.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -863,6 +863,10 @@
                 },
                 "model": {
                   "type": "string"
+                },
+                "reportsTo": {
+                  "type": "string",
+                  "minLength": 1
                 }
               },
               "required": [
@@ -1928,7 +1932,7 @@
     },
     {
       "name": "team_update",
-      "description": "Ask the user to update your own employee record — name, role, model or instructions. Never edits another employee. Waits for approval.",
+      "description": "Ask the user to update your own employee record — name, role, model, instructions, or who you report to. Never edits another employee. Waits for approval.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1945,6 +1949,17 @@
           },
           "instructions": {
             "type": "string"
+          },
+          "reportsTo": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false
@@ -1972,6 +1987,10 @@
               },
               "instructions": {
                 "type": "string"
+              },
+              "reportsTo": {
+                "type": "string",
+                "minLength": 1
               }
             },
             "required": [

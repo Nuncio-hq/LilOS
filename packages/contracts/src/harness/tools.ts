@@ -304,6 +304,8 @@ export const TeamListResult = z.object({
       role: z.string(),
       status: EmployeeStatus,
       model: z.string(),
+      /** Set when they report to an employee; absent means the owner (D-#775). */
+      reportsTo: z.string().min(1).optional(),
     }),
   ),
 });
@@ -337,8 +339,9 @@ export type TeamHireResult = z.infer<typeof TeamHireResult>;
 
 /**
  * `team_update` — edit the calling employee's own record (name, role,
- * model, instructions). The employee id comes from the session binding,
- * never from a param: an agent cannot edit a colleague.
+ * model, instructions, who they report to). The employee id comes from
+ * the session binding, never from a param: an agent cannot edit a
+ * colleague. `reportsTo: null` reports to the owner again (D-#775).
  */
 export const TeamUpdateParams = z
   .strictObject({
@@ -346,6 +349,7 @@ export const TeamUpdateParams = z
     role: z.string().optional(),
     model: z.string().optional(),
     instructions: z.string().optional(),
+    reportsTo: z.string().min(1).nullable().optional(),
   })
   .refine((p) => Object.values(p).some((v) => v !== undefined), {
     message: "at least one field to change",
@@ -358,6 +362,8 @@ export const TeamUpdateResult = z.object({
     role: z.string(),
     model: z.string(),
     instructions: z.string(),
+    /** Set when they report to an employee; absent means the owner (D-#775). */
+    reportsTo: z.string().min(1).optional(),
   }),
 });
 export type TeamUpdateResult = z.infer<typeof TeamUpdateResult>;
@@ -664,7 +670,7 @@ export const LILOS_TOOLS: Record<string, LilosToolContract> = {
   team_list: {
     params: TeamListParams,
     result: TeamListResult,
-    doc: "The company roster: every employee's name, role, status and model.",
+    doc: "The company roster: every employee's name, role, status, model, and who they report to.",
     area: "team",
     access: "read",
   },
@@ -728,7 +734,7 @@ export const LILOS_TOOLS: Record<string, LilosToolContract> = {
   team_update: {
     params: TeamUpdateParams,
     result: TeamUpdateResult,
-    doc: "Ask the user to update your own employee record — name, role, model or instructions. Never edits another employee. Waits for approval.",
+    doc: "Ask the user to update your own employee record — name, role, model, instructions, or who you report to. Never edits another employee. Waits for approval.",
     area: "team",
     access: "approval",
   },

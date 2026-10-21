@@ -33,6 +33,11 @@ export const employees = sqliteTable("employees", {
   /** #561 AC-3: per-employee notification mute — relay-owned, read by the
       push fan-out and broadcast to the apps. */
   muted: integer("muted", { mode: "boolean" }).notNull().default(false),
+  /** Who this person reports to (D-#775). NULL means the owner — there is
+      no owner row to point at, and the name shown is the profile's, never
+      a hardcoded one. A self-reference would be a cycle; the directory
+      rejects those before a write. */
+  reportsTo: text("reports_to").references((): AnySQLiteColumn => employees.id),
   createdAt: integer("created_at").notNull(),
 });
 

@@ -76,6 +76,20 @@ export function agentThread(d: V3Data, agentId: string): V3Thread | undefined {
   const mine = d.threads.filter((t) => t.agentId === agentId);
   return [...mine].sort((a, b) => urgency(a.status) - urgency(b.status))[0];
 }
+/** Agents whose boss is `managerId` (absent = the owner). A `reportsTo`
+    that names nobody is the owner too (D-#775): the row is gone, so they
+    report up. Order is the roster's order. */
+export function reportsOf(
+  agents: readonly V3Agent[],
+  managerId?: string,
+): V3Agent[] {
+  const ids = new Set(agents.map((a) => a.id));
+  return agents.filter((a) => {
+    const boss = a.reportsTo && ids.has(a.reportsTo) ? a.reportsTo : undefined;
+    return boss === managerId;
+  });
+}
+
 /** An agent's status is its current thread's; a finished or absent thread
    means the agent is idle until it gets the next ticket. */
 export function agentStatus(d: V3Data, agentId: string): V3Status {

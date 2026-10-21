@@ -12,8 +12,44 @@ import {
 } from "@lilos/contracts/app";
 import { resolveUnderHome } from "@lilos/host";
 import { projectFolderOf } from "../projects";
+import type { RelayStore } from "../store";
 import type { RelayCtx } from "./ctx";
 import { badParams, JsonRpcCode, RpcError } from "./rpc";
+
+/** `reportsTo` is an employee id, never this row, and the chain from the
+    manager must not come back here (D-#775). Unknown id is not_found so it
+    matches every other missing employee; a cycle is invalid_params. */
+async function assertReportsTo(
+  store: RelayStore,
+  employeeId: string,
+  reportsTo: string,
+): Promise<void> {
+  if (reportsTo === employeeId) {
+    throw new RpcError(
+      JsonRpcCode.invalidParams,
+      "invalid_params",
+      "an employee cannot report to itself",
+    );
+  }
+  const manager = await store.getEmployee(reportsTo);
+  if (!manager) {
+    throw new RpcError(JsonRpcCode.notFound, "not_found", "manager not found");
+  }
+  const seen = new Set<string>([employeeId]);
+  let cur: string | undefined = reportsTo;
+  while (cur) {
+    if (seen.has(cur)) {
+      throw new RpcError(
+        JsonRpcCode.invalidParams,
+        "invalid_params",
+        "reportsTo would cycle",
+      );
+    }
+    seen.add(cur);
+    cur = (cur === reportsTo ? manager : await store.getEmployee(cur))
+      ?.reportsTo;
+  }
+}
 
 /**
  * Moved verbatim out of `../session.ts`'s handle() (#441) — case
@@ -51,6 +87,8 @@ export async function handleDirectory(c: RelayCtx): Promise<false | undefined> {
       const parsed = EmployeesUpdateParams.safeParse(params);
       if (!parsed.success) throw badParams(parsed.error.issues);
       const { id: employeeId, ...patch } = parsed.data;
+      if (typeof patch.reportsTo === "string")
+        await assertReportsTo(store, employeeId, patch.reportsTo);
       const employee = await store.updateEmployee(employeeId, patch);
       if (!employee) {
         throw new RpcError(

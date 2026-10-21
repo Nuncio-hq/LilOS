@@ -38,6 +38,10 @@ export const Employee = z.object({
      and the Mac posts no banners. Optional so pre-#561 rows and fixtures
      read as unmuted. */
   muted: z.boolean().optional(),
+  /** Who this person reports to: an employee id. Absent means the owner,
+      shown by the profile name — never a stored owner id or a hardcoded
+      name (D-#775). */
+  reportsTo: z.string().min(1).optional(),
   createdAt: Timestamp,
 });
 export type Employee = z.infer<typeof Employee>;

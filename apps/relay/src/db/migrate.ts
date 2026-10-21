@@ -425,6 +425,15 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
     version: 30,
     statements: [`ALTER TABLE conversations ADD COLUMN stuck TEXT`],
   },
+  {
+    /* D-#775: who an employee reports to. NULL means the owner (shown by
+       the profile name — no owner id is stored). Applied after #801's
+       stuck mark (v30). */
+    version: 31,
+    statements: [
+      `ALTER TABLE employees ADD COLUMN reports_to TEXT REFERENCES employees(id)`,
+    ],
+  },
 ];
 
 /**

@@ -211,10 +211,11 @@ export type V3Data = {
   company: string;
   me: string;
   today: string;
-  /** CEO is a position: the agent holding it. Everyone else reports to it.
-     Absent when the company has no such position (the real app has none
-     yet): no crown, no "reports to", no "Make CEO", and new chats start
-     with the first agent. */
+  /** CEO is a position: the agent holding it, shown with a crown. Who
+      someone reports to is `reportsTo` (D-#775), not this position.
+      Absent when the company has no such position (the real app has none
+      yet): no crown, no "Make CEO", and new chats start with the first
+      agent. */
   ceoId?: string;
   agents: V3Agent[];
   connectors: V3ConnectorDef[];

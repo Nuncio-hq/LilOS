@@ -510,6 +510,50 @@ describe("approval-gated gateway tools", () => {
     }
   });
 
+  it("team_update reportsTo asks, then applies or clears to the owner", async () => {
+    const v = await world();
+    try {
+      const seen = new Set<string>();
+      const { employee: other } = await v.w.user.request<{
+        employee: Employee;
+      }>("employees.create", { name: "Bea", role: "ops" });
+
+      const call = v.client.teamUpdate({ reportsTo: other.id });
+      const ask = await v.nextAsk(seen);
+      seen.add(ask.id);
+      if (ask.request.kind !== "approval") throw new Error("not approval");
+      expect(ask.request.description ?? "").toContain(other.id);
+      const mid = (await v.employees()).find(
+        (e) => e.id === v.binding.employeeId,
+      );
+      expect(mid?.reportsTo).toBeUndefined();
+      await v.answer(ask.id, "once");
+      expect((await call).employee.reportsTo).toBe(other.id);
+
+      const denied = v.client.teamUpdate({ reportsTo: null });
+      const ask2 = await v.nextAsk(seen);
+      seen.add(ask2.id);
+      if (ask2.request.kind !== "approval") throw new Error("not approval");
+      expect(ask2.request.description ?? "").toContain("owner");
+      await v.answer(ask2.id, "deny");
+      await expect(denied).rejects.toThrow();
+      expect(
+        (await v.employees()).find((e) => e.id === v.binding.employeeId)
+          ?.reportsTo,
+      ).toBe(other.id);
+
+      const clear = v.client.teamUpdate({ reportsTo: null });
+      const ask3 = await v.nextAsk(seen);
+      seen.add(ask3.id);
+      await v.answer(ask3.id, "once");
+      expect((await clear).employee.reportsTo).toBeUndefined();
+    } finally {
+      v.gw.server.close();
+      await v.scope.close();
+      await v.w.cleanup();
+    }
+  });
+
   it("folder_add: approve lands the recents row, decline doesn't", async () => {
     const v = await world();
     try {

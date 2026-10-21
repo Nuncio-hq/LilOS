@@ -176,7 +176,11 @@ export function createMemoryStore(): RelayStore {
     async updateEmployee(id, patch) {
       const employee = employees.get(id);
       if (!employee) return null;
-      Object.assign(employee, patch);
+      const { reportsTo, ...rest } = patch;
+      Object.assign(employee, rest);
+      /* null clears the link (back to the owner). undefined leaves it. */
+      if (reportsTo === null) delete employee.reportsTo;
+      else if (typeof reportsTo === "string") employee.reportsTo = reportsTo;
       return employee;
     },
     async removeEmployee(id) {
@@ -209,6 +213,10 @@ export function createMemoryStore(): RelayStore {
          their `scheduled` marker like any other leftover row. */
       for (const [tid, task] of scheduledTasks) {
         if (task.employeeId === id) scheduledTasks.delete(tid);
+      }
+      /* Whoever reported to this person reports to the owner again (D-#775). */
+      for (const other of employees.values()) {
+        if (other.reportsTo === id) delete other.reportsTo;
       }
       employees.delete(id);
       return { employee, channelIds: [...channelIds] };

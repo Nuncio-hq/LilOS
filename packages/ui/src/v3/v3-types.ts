@@ -49,7 +49,8 @@ export type V3Agent = {
   /** Avatar colour. */
   tone: V3Tone;
   role: string;
-  /** Agent id; absent = reports to you (the CEO does). */
+  /** Employee id this agent reports to. Absent, or an id that is gone:
+      the owner, shown by the profile name (D-#775). */
   reportsTo?: string;
   /** Absent: a LilOS agent (a runtime + model working in a folder).
      "outside": an always-on bot the CEO reaches through a connector; its look
@@ -89,6 +90,10 @@ export type V3Agent = {
   suggestion?: { text: string; after: string };
   memory?: { text: string; source: string }[];
   week?: { done: number; typical: string; stuck: number; handed: number };
+  /** Threads finished or failed since Monday, from the same status the
+      Threads page uses. `stuck` is set only when a conversation carries
+      that mark (issue #772); until then it is absent. */
+  weekThreads?: { finished: number; failed: number; stuck?: number };
   /** Idle agents: what wakes them next. */
   next?: string;
 };
