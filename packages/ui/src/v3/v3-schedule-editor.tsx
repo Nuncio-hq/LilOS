@@ -4,7 +4,7 @@ import { cn } from "../lib/utils";
 import { Btn } from "./v3-bits";
 import type { V3Data, V3Schedule } from "./v3-data-types";
 import { EscLayer } from "./v3-keys";
-import { AgentAvatar, ProjectMark } from "./v3-marks";
+import { AgentAvatar, CeoMark, ProjectMark } from "./v3-marks";
 import { agentOf, defaultAgent } from "./v3-model";
 import type { V3Actions } from "./v3-page-types";
 import {
@@ -178,6 +178,7 @@ export function ScheduleEditor({
               >
                 <AgentAvatar data={data} agent={a} size={16} />
                 {a.name}
+                {a.id === data.ceoId && <CeoMark />}
               </Chip>
             ))}
         </div>

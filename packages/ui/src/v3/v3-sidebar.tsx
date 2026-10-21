@@ -126,8 +126,9 @@ export function V3Sidebar({
             )
           }
         />
-        {/* Inbox, Work and Goals come with tickets (M2): hidden, not empty. */}
-        {data.features.tickets && (
+        {/* Inbox, Work and Goals come with tickets (M2). Inbox stays hidden
+            until it has updates — an empty inbox is not a place to open. */}
+        {data.features.tickets && data.updates.length > 0 && (
           <Item
             icon={<InboxIcon />}
             label="Inbox"

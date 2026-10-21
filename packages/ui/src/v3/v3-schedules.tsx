@@ -10,7 +10,7 @@ import { useState } from "react";
 import { cn } from "../lib/utils";
 import { Btn, Section } from "./v3-bits";
 import type { V3Schedule } from "./v3-data-types";
-import { AgentAvatar, StatusPill } from "./v3-marks";
+import { AgentAvatar, CeoMark, StatusPill } from "./v3-marks";
 import { agentOf, FORMER_AGENT, projectOf } from "./v3-model";
 import type { V3PageProps } from "./v3-page-types";
 import { ScheduleEditor } from "./v3-schedule-editor";
@@ -101,7 +101,12 @@ function Row({
             )}
           </div>
           <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13.5px] text-muted-foreground">
-            {!agentId && <span>{agent?.name ?? FORMER_AGENT}</span>}
+            {!agentId && (
+              <span className="inline-flex items-center gap-1.5">
+                {agent?.name ?? FORMER_AGENT}
+                {agent && agent.id === data.ceoId && <CeoMark />}
+              </span>
+            )}
             {project ? (
               <span>{project.name}</span>
             ) : (

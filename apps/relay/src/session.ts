@@ -20,6 +20,7 @@ import { createLogTail, type LogTail } from "./logtail";
 import type { PairingService } from "./pairing";
 import type { PushFanout } from "./push";
 import { handleAsks } from "./session/asks";
+import { handleCeo } from "./session/ceo";
 import { handleChannel } from "./session/channel";
 import { handleConversations } from "./session/conversations";
 import type { RelayCtx, RelaySharedCtx } from "./session/ctx";
@@ -38,6 +39,7 @@ import {
 } from "./session/rpc";
 import { handleSchedules } from "./session/schedules";
 import { handleSettings } from "./session/settings";
+import { handleTickets } from "./session/tickets";
 import { handleTurns } from "./session/turns";
 import type { RejectedHandshake } from "./status";
 import type { RelayStore } from "./store";
@@ -157,6 +159,7 @@ const METHOD_HANDLERS: ReadonlyMap<
   ["employees.create", handleDirectory],
   ["employees.update", handleDirectory],
   ["employees.remove", handleDirectory],
+  ["company.setCeo", handleCeo],
   ["channels.list", handleDirectory],
   ["folders.list", handleDirectory],
   ["folders.add", handleDirectory],
@@ -168,6 +171,14 @@ const METHOD_HANDLERS: ReadonlyMap<
   ["channels.openDm", handleDirectory],
   ["projects.list", handleProjects],
   ["projects.create", handleProjects],
+  ["goals.list", handleTickets],
+  ["goals.create", handleTickets],
+  ["tickets.list", handleTickets],
+  ["tickets.read", handleTickets],
+  ["tickets.create", handleTickets],
+  ["tickets.update", handleTickets],
+  ["tickets.assign", handleTickets],
+  ["tickets.comment", handleTickets],
   ["conversations.list", handleConversations],
   ["conversations.summaries", handleConversations],
   ["conversations.open", handleConversations],

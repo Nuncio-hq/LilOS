@@ -204,6 +204,8 @@ export const AppMethod = z.enum([
   "conversations.prs",
   "system.status",
   "employees.remove",
+  /* One write: the CEO position and the reportsTo edges that follow it (D-#778). */
+  "company.setCeo",
   /* LilOS-owned client settings (engine keeps no such state): a generic KV
      store — model visibility picks, UI prefs the app wants shared across
      surfaces and restarts. */
@@ -294,6 +296,16 @@ export const AppMethod = z.enum([
      is no update/remove (nothing renames or retires a project yet). */
   "projects.list",
   "projects.create",
+  /* Goals and tickets (D-#776). The relay owns the records. Assign is the
+     checkout: one transaction sets the owner and opens their thread. */
+  "goals.list",
+  "goals.create",
+  "tickets.list",
+  "tickets.read",
+  "tickets.create",
+  "tickets.update",
+  "tickets.assign",
+  "tickets.comment",
 ]);
 export type AppMethod = z.infer<typeof AppMethod>;
 
@@ -432,6 +444,22 @@ export type EmployeesUpdateParams = z.infer<typeof EmployeesUpdateParams>;
  */
 export const EmployeesRemoveParams = z.object({ id: z.string().min(1) });
 export type EmployeesRemoveParams = z.infer<typeof EmployeesRemoveParams>;
+
+/**
+ * Give one employee the CEO position (D-#778). The relay sets `ceoId` and
+ * re-points `reportsTo` in the same write: the new CEO reports to the
+ * owner, and everyone who reported to the previous CEO or to the owner
+ * now reports to them. `employees` is only the rows whose link changed.
+ */
+export const CompanySetCeoParams = z.strictObject({
+  employeeId: z.string().min(1),
+});
+export type CompanySetCeoParams = z.infer<typeof CompanySetCeoParams>;
+export const CompanySetCeoResult = z.object({
+  ceoId: z.string().min(1),
+  employees: z.array(Employee),
+});
+export type CompanySetCeoResult = z.infer<typeof CompanySetCeoResult>;
 
 export const EmployeeResult = z.object({ employee: Employee });
 
@@ -1429,6 +1457,10 @@ export const AppEventMethod = z.enum([
   /* A project appeared or was created (D-#771) — every client's project
      list refreshes live, including the one a first-use open made. */
   "project.upserted",
+  /* A goal or ticket was written (D-#776), including the ones a finished
+     ticket wakes. */
+  "goal.upserted",
+  "ticket.upserted",
 ]);
 export type AppEventMethod = z.infer<typeof AppEventMethod>;
 

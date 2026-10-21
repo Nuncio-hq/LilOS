@@ -10,11 +10,10 @@ import {
 } from "./helpers/stack";
 
 /**
- * Nothing the app cannot do is drawn (real stack: relay + harness on
- * engine-fake, where there is no ticket backend). No Work, Goals or Inbox in
- * the sidebar and no way into them by link, no "Give a ticket", no ticket,
- * goal or CEO copy on the pages that are there; and ⌘K is a search that
- * jumps, not a CEO to draft work for.
+ * Tickets are on (D-#776), so Work and Goals are in the sidebar and their
+ * links open those pages. Inbox stays hidden until it has updates. There is
+ * still no CEO, so "Ask the CEO" is absent and ⌘K stays a search.
+ * "Make CEO" is the position on an agent's page (D-#778).
  */
 
 let stack: Stack;
@@ -30,11 +29,9 @@ test.afterAll(async () => {
 test.describe.configure({ mode: "serial" });
 
 const main = (page: Page) => page.locator("#v3-main");
-/** Words that belong to the ticket backend (M2) and to the CEO position. */
-const TICKET_WORDS = /\b(tickets?|goals?|inbox|CEO)\b/i;
 const palette = (page: Page) => page.getByRole("dialog", { name: "Search" });
 
-test("the sidebar offers Work, Goals and Inbox to nobody, and a link to them lands on Home", async ({
+test("the sidebar offers Work and Goals, and a link opens that page", async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -57,22 +54,16 @@ test("the sidebar offers Work, Goals and Inbox to nobody, and a link to them lan
   await expect(side.getByText("People", { exact: true })).toBeVisible();
   await expect(side.getByRole("button", { name: /Default/ })).toBeVisible();
 
-  // What it does not: no entry, no count, no trace.
-  for (const name of ["Work", "Goals", "Inbox"])
+  for (const name of ["Work", "Goals"])
     await expect(
       side.getByRole("button", { name: new RegExp(`^${name}`) }),
-    ).toHaveCount(0);
+    ).toBeVisible();
+  await expect(side.getByRole("button", { name: /^Inbox/ })).toHaveCount(0);
   await expect(side.getByText("Projects", { exact: true })).toHaveCount(0);
 
-  // A link to those pages is not a dead end: it lands on Home, and a ticket
-  // or goal link opens no record beside it. (A project is not gated: it is
-  // a folder, see ac-771.)
   const links: [string, string][] = [
-    ["#?page=work", "Good afternoon"],
-    ["#?page=inbox", "Good afternoon"],
-    ["#?page=goals", "Good afternoon"],
-    ["#?page=work&open=ticket:HB-12", "Good afternoon"],
-    ["#?page=goals&open=goal:g1", "Good afternoon"],
+    ["#?page=work", "Work"],
+    ["#?page=goals", "Goals"],
   ];
   for (const [link, heading] of links) {
     await page.goto(`${stack.webUrl}/${link}`);
@@ -81,13 +72,18 @@ test("the sidebar offers Work, Goals and Inbox to nobody, and a link to them lan
       heading,
       { timeout: 30_000 },
     );
-    await expect(v3Peek(page)).toHaveCount(0);
   }
+  await page.goto(`${stack.webUrl}/#?page=work&open=ticket:HB-12`);
+  await expect(v3Peek(page)).toContainText("Ticket not found.", {
+    timeout: 30_000,
+  });
+  await page.goto(`${stack.webUrl}/#?page=goals&open=goal:g1`);
+  await expect(v3Peek(page)).toContainText("Goal not found.", {
+    timeout: 30_000,
+  });
 });
 
-test("no ticket, goal or CEO copy on the pages that exist, and no 'Give a ticket'", async ({
-  page,
-}) => {
+test("no CEO copy, and a person can be given a ticket", async ({ page }) => {
   test.setTimeout(180_000);
   await openDefaultAgent(page, stack.webUrl);
   await startChat(page, stack.webUrl, agent, "Say hello then list files");
@@ -95,21 +91,21 @@ test("no ticket, goal or CEO copy on the pages that exist, and no 'Give a ticket
     v3Peek(page).getByRole("button", { name: "Copy" }).first(),
   ).toBeVisible({ timeout: 60_000 });
 
-  // Home: no Goals section, no CEO briefing line.
   await page.goto(`${stack.webUrl}/#?page=home`);
   await expect(page.getByRole("heading", { level: 1 })).toContainText(
     "Good afternoon",
     { timeout: 30_000 },
   );
   const sections = main(page).getByRole("heading", { level: 3 });
-  await expect(sections).toContainText(["Needs you", "Team"]);
-  await expect(sections.filter({ hasText: "Goals" })).toHaveCount(0);
+  await expect(sections.filter({ hasText: "Goals" })).toBeVisible();
   await expect(main(page)).toContainText("Nothing needs you.");
+  await expect(main(page).getByText("Ask the CEO")).toHaveCount(0);
 
   // Every page and view the sidebar leads to, plus a person's page and the
   // new-chat draft beside People: none of them carries the words.
   const pages: [string, string][] = [
     ["#?page=home", "Good afternoon"],
+    ["#?page=inbox", "Good afternoon"],
     ["#?page=needs", "Needs you"],
     ["#?page=threads", "Threads"],
     ["#?page=threads&view=all", "Threads"],
@@ -120,7 +116,6 @@ test("no ticket, goal or CEO copy on the pages that exist, and no 'Give a ticket
     ["#?page=settings&view=general", "Settings"],
     ["#?page=settings&view=engine", "Settings"],
     ["#?page=settings&view=phone", "Settings"],
-    // The role blurbs on Hire and the explainer name no ticket, goal or CEO.
     ["#?page=hire", "Hire an agent"],
     ["#?page=guide", "How the company works"],
     [`#?page=people&open=agent:${encodeURIComponent(agent.id)}`, "People"],
@@ -140,14 +135,12 @@ test("no ticket, goal or CEO copy on the pages that exist, and no 'Give a ticket
       await expect(
         v3Peek(page).getByPlaceholder(`Message ${agent.name}…`),
       ).toBeVisible();
-    const text = await page.locator("body").innerText();
-    expect(
-      text,
-      `${link} mentions tickets, goals, an inbox or a CEO`,
-    ).not.toMatch(TICKET_WORDS);
+    await expect(page.getByText("Ask the CEO")).toHaveCount(0);
+    /* Make CEO lives on the agent's page only (D-#778). */
+    if (!link.includes("open=agent"))
+      await expect(page.getByText("Make CEO")).toHaveCount(0);
   }
 
-  // A person's page offers Message, and no way to hand them a ticket.
   await page.goto(
     `${stack.webUrl}/#?page=people&open=agent:${encodeURIComponent(agent.id)}`,
   );
@@ -158,24 +151,19 @@ test("no ticket, goal or CEO copy on the pages that exist, and no 'Give a ticket
   });
   await expect(
     v3Peek(page).getByRole("button", { name: "Give a ticket" }),
-  ).toHaveCount(0);
-  await expect(
-    page.getByRole("button", { name: /give a ticket/i }),
-  ).toHaveCount(0);
+  ).toBeVisible();
   await expect(
     v3Peek(page).getByRole("button", { name: "Make CEO" }),
-  ).toHaveCount(0);
+  ).toBeVisible();
 
-  // Hire offers real roles (so the blurbs were drawn, not the "not available"
-  // note), and How it works explains what is there today.
   await page.goto(`${stack.webUrl}/#?page=hire`);
-  await expect(main(page).getByText("opens a PR for every change")).toBeVisible(
+  await expect(main(page).getByText("opens a PR for every ticket")).toBeVisible(
     {
       timeout: 30_000,
     },
   );
   await page.goto(`${stack.webUrl}/#?page=guide`);
-  await expect(main(page).getByText("Settings → Phone")).toBeVisible({
+  await expect(main(page).getByText("One piece of work")).toBeVisible({
     timeout: 30_000,
   });
 });
@@ -207,7 +195,6 @@ test("⌘K searches and jumps; with no CEO behind it there is no draft to make",
   );
   await expect(box).toBeFocused();
 
-  // Nothing typed: places to go, no "Try" suggestions, no Work.
   await expect(
     palette(page).getByRole("button", { name: /^Needs you/ }),
   ).toBeVisible();
@@ -216,7 +203,7 @@ test("⌘K searches and jumps; with no CEO behind it there is no draft to make",
   ).toBeVisible();
   await expect(
     palette(page).getByRole("button", { name: /^Work/ }),
-  ).toHaveCount(0);
+  ).toBeVisible();
   await expect(palette(page).getByText("Try", { exact: true })).toHaveCount(0);
 
   // Typed text that matches nothing is not a request to a CEO: Enter does

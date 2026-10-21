@@ -4,12 +4,23 @@ import type {
   Conversation,
   ConversationSummary,
   Employee,
+  Goal,
   MessageSearchHit,
   ProfileSettings,
   ScheduledTask,
   SystemStatusResult,
+  Ticket,
 } from "@lilos/contracts/app";
-import type { SessionBinding } from "@lilos/contracts/harness";
+import { CEO_SETTING_KEY } from "@lilos/contracts/app";
+import type {
+  SessionBinding,
+  TicketAssignParams,
+  TicketCommentParams,
+  TicketCreateParams,
+  TicketReadParams,
+  TicketUpdateParams,
+  TicketUpdateResult,
+} from "@lilos/contracts/harness";
 import type { ForgePrListItem } from "@lilos/contracts/host";
 import type { AppOps } from "@lilos/surfaces";
 import type { Logger } from "../log";
@@ -120,6 +131,45 @@ export function createAppOps(deps: {
         return r.tasks;
       },
       projects: () => listProjects(relay),
+      /* D-#776: ticket writes do not ask. The bound employee is the comment
+         author — the tool has no `by` for a model to fill in. */
+      goals: async () => {
+        const r = await relay.request<{ goals: Goal[] }>("goals.list", {});
+        return r.goals;
+      },
+      tickets: async (project?: string) => {
+        const r = await relay.request<{ tickets: Ticket[] }>("tickets.list", {
+          ...(project ? { project } : {}),
+        });
+        return r.tickets;
+      },
+      readTicket: async (p: TicketReadParams) => {
+        const r = await relay.request<{ ticket: Ticket }>("tickets.read", p);
+        return r.ticket;
+      },
+      createTicket: async (p: TicketCreateParams) => {
+        const r = await relay.request<{ ticket: Ticket }>("tickets.create", p);
+        return r.ticket;
+      },
+      updateTicket: async (p: TicketUpdateParams) =>
+        relay.request<TicketUpdateResult>("tickets.update", p),
+      assignTicket: async (p: TicketAssignParams) => {
+        const r = await relay.request<{
+          ticket: Ticket;
+          conversation: Conversation;
+        }>("tickets.assign", p);
+        return {
+          ticket: r.ticket,
+          thread: { id: r.conversation.id, title: r.conversation.title },
+        };
+      },
+      commentTicket: async (p: TicketCommentParams) => {
+        const r = await relay.request<{ ticket: Ticket }>("tickets.comment", {
+          ...p,
+          by: binding.employeeId,
+        });
+        return r.ticket;
+      },
       status: () =>
         relay.request<SystemStatusResult>("system.status", { logLines: 0 }),
       profile: async () => {
@@ -134,6 +184,13 @@ export function createAppOps(deps: {
           conversationId: binding.conversationId,
           target,
         });
+      },
+      /* The live holder. Call time reads this; the start snapshot is separate (D-#778). */
+      ceoId: async () => {
+        const r = await relay.request<{ value: unknown }>("settings.get", {
+          key: CEO_SETTING_KEY,
+        });
+        return typeof r.value === "string" && r.value ? r.value : undefined;
       },
       ...createGatewayApprovalOps({
         relay,

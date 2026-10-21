@@ -38,9 +38,11 @@ import type { V3Agent, V3ConnectorDef } from "./v3-types";
    outside worker gets the same page minus everything LilOS runs (runtime,
    model, skills, spend, instructions, memory): LilOS only watches it.
    What the app cannot tell (runtime, schedule, skills, spend, memory, week)
-   or cannot change (connectors, rules, the CEO position, editing, removing)
-   is left out, never shown as a made-up value or a dead control. Editing
-   and removing live in v3-agent-edit / v3-agent-remove. */
+   or cannot change (connectors, rules, editing, removing) is left out,
+   never shown as a made-up value or a dead control. Make CEO is the
+   owner's way to move the position (D-#778), including the first time
+   there is no holder yet. Editing and removing live in v3-agent-edit /
+   v3-agent-remove. */
 
 const STATE_WORD: Record<V3ConnectorDef["state"], string> = {
   ready: "Ready",
@@ -150,7 +152,7 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
                   Give a ticket
                 </Btn>
               )}
-              {!outside && ceo && !holdsCeo && act.makeCeo && (
+              {!outside && !holdsCeo && act.makeCeo && (
                 <button
                   type="button"
                   title={`Move the CEO position to ${agent.name}`}

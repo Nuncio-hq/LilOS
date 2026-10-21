@@ -14,12 +14,27 @@ import type {
 import type {
   AskParams,
   AskToolResult,
+  GoalCreateParams,
+  GoalCreateResult,
+  GoalListResult,
   ProjectCreateParams,
   ScheduleCreateParams,
   ScheduleUpdateParams,
   SessionBinding,
   TeamHireParams,
+  TeamSetCeoParams,
   TeamUpdateParams,
+  TicketAssignParams,
+  TicketAssignResult,
+  TicketCommentParams,
+  TicketCommentResult,
+  TicketCreateParams,
+  TicketCreateResult,
+  TicketListResult,
+  TicketReadParams,
+  TicketReadResult,
+  TicketUpdateParams,
+  TicketUpdateResult,
   ViewerBrowserInputEvent,
 } from "@lilos/contracts/harness";
 import type { ForgePrListItem } from "@lilos/contracts/host";
@@ -134,6 +149,10 @@ export interface AppOps {
   }): Promise<{ conversation: Conversation; message: AppMessage }>;
   /** Hire an employee (`agents.create`? + `employees.create` + `channels.openDm` on approve). */
   hireEmployee(p: TeamHireParams): Promise<Employee>;
+  /** Give an employee the CEO position (`company.setCeo` on approve, D-#778). */
+  setCeo(employeeId: string): Promise<{ ceoId: string }>;
+  /** The employee who holds the CEO position, if the company has one (D-#778). */
+  ceoId(): Promise<string | undefined>;
   /** Edit the calling employee's own record (`employees.update` + `agents.update` on approve). */
   updateSelf(p: TeamUpdateParams): Promise<Employee>;
   /** Add a folder to recent folders (`folders.add` on approve). */
@@ -149,6 +168,16 @@ export interface AppOps {
   /** Make a project of a folder (`projects.create` on approve); a folder
       that already has a project answers it. */
   createProject(p: ProjectCreateParams): Promise<Project>;
+  /** Goals (D-#776). `createGoal` always asks (D-#341). */
+  goals(): Promise<GoalListResult["goals"]>;
+  createGoal(p: GoalCreateParams): Promise<GoalCreateResult["goal"]>;
+  /** Ticket writes do not ask (#746). Assign opens the owner's thread. */
+  tickets(project?: string): Promise<TicketListResult["tickets"]>;
+  readTicket(p: TicketReadParams): Promise<TicketReadResult["ticket"]>;
+  createTicket(p: TicketCreateParams): Promise<TicketCreateResult["ticket"]>;
+  updateTicket(p: TicketUpdateParams): Promise<TicketUpdateResult>;
+  assignTicket(p: TicketAssignParams): Promise<TicketAssignResult>;
+  commentTicket(p: TicketCommentParams): Promise<TicketCommentResult["ticket"]>;
   /**
    * `ask` (D-#773): post a question or a once/deny approval and wait.
    * A decline throws `SurfaceError("declined")`.
@@ -167,6 +196,12 @@ export interface SurfaceScopeOptions {
   appOps?: AppOps;
   /** Who/what the session is bound to (employee/channel/conversation) — #337. */
   binding?: SessionBinding;
+  /**
+   * True when this session's employee held the CEO position at session
+   * start (D-#778). The offered tool list and the host-policy brief use
+   * this snapshot; call time re-reads `appOps.ceoId()`.
+   */
+  ceoAtStart?: boolean;
   /** Scrollback cap; default 400 KB like the spike's ring. */
   termTailBytes?: number;
   runTimeoutMs?: number;

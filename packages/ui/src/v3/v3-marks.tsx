@@ -1,3 +1,4 @@
+import { createContext } from "react";
 import { cn } from "../lib/utils";
 import type { V3Data } from "./v3-data-types";
 import type { V3Agent, V3Status, V3Tone } from "./v3-types";
@@ -174,6 +175,13 @@ export function AgentAvatar({
     />
   );
 }
+
+/**
+ * Who holds the CEO position, when a v3 shell is mounted (D-#778).
+ * A shared turn reads it so the chip sits on that name without a
+ * frame prop. Absent outside the shell, so nothing draws.
+ */
+export const CeoEmployeeContext = createContext<string | undefined>(undefined);
 
 /** The crown beside whoever holds the CEO position. */
 export function CeoMark({ className }: { className?: string }) {

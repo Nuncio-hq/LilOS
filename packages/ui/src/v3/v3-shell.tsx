@@ -8,11 +8,14 @@ import {
 } from "react";
 import { foreignOverlayOpen } from "../chat/ui-layers";
 import { ConversationReflowKey } from "../components/ai-elements/conversation";
+import { draftKey, setDraft } from "../lib/drafts";
 import { useTheme } from "../shell/use-theme";
 import type { Theme } from "../types";
 import type { V3Data, V3Draft } from "./v3-data-types";
 import { EscLayer } from "./v3-keys";
 import { SIDEBAR_W, shellSizes, useLayoutPrefs } from "./v3-layout-prefs";
+import { CeoEmployeeContext } from "./v3-marks";
+import { defaultAgent } from "./v3-model";
 import { step } from "./v3-nav";
 import { OpenRecord } from "./v3-open-record";
 import type {
@@ -208,9 +211,36 @@ export function V3Shell({
     return () => window.removeEventListener("keydown", onKey);
   }, [palette, closePeek, toggleSidebar]);
 
+  /* The prototype passes `draft`: ⌘K is the CEO. The real app does not,
+     so asking opens a new chat with the CEO (or the default agent until
+     one is named, #778) and the words are already in the box. No agents:
+     the new-chat page's empty state, never Search. From inside the peek
+     the draft extends the trail; from the page it starts one. */
+  const openAsk = useCallback(
+    (text: string | undefined, from: "page" | "peek") => {
+      if (draft) {
+        setPalette(text ?? "");
+        return;
+      }
+      const ceo =
+        data.agents.find((a) => a.id === data.ceoId) ?? defaultAgent(data);
+      const go = from === "peek" ? goFromPeek : goFromPage;
+      if (!ceo) {
+        go({ page: "newchat", id: "none" });
+        return;
+      }
+      if (text) setDraft(draftKey.dm(ceo.id), text);
+      go({ page: "newchat", id: ceo.id });
+    },
+    [data, draft, goFromPage, goFromPeek],
+  );
   const act = useMemo<V3Actions>(
-    () => ({ ...actions, ask: (text) => setPalette(text ?? "") }),
-    [actions],
+    () => ({ ...actions, ask: (text) => openAsk(text, "page") }),
+    [actions, openAsk],
+  );
+  const peekAct = useMemo<V3Actions>(
+    () => ({ ...act, ask: (text) => openAsk(text, "peek") }),
+    [act, openAsk],
   );
 
   const startPlan = (
@@ -248,43 +278,44 @@ export function V3Shell({
       </div>
     );
   return (
-    <OpenRecord.Provider value={top}>
-      <div
-        ref={frame}
-        className="lilos-v3 relative flex h-dvh min-h-0 overflow-hidden bg-[var(--v3-main)] text-[14px] text-foreground"
-      >
-        {popped && palette === null && <EscLayer onEscape={tuckOnEsc} />}
-        <V3Sidebar
-          data={data}
-          page={page}
-          open={top}
-          go={goFromPage}
-          onSearch={() => setPalette("")}
-          dark={dark}
-          onTheme={() => setTheme(dark ? "light" : "dark")}
-          canHire={!!actions.hire}
-          mode={mode}
-          width={side.w}
-          sideRef={pop.side}
-          onToggle={toggleSidebar}
-          onPointerEnter={pop.cancel}
-          onPointerLeave={pop.tuckSoon}
-          onBlur={pop.tuckSoon}
-        />
-        {!hidden && (
-          <ResizeHandle
-            label="Resize sidebar"
-            className="mt-[var(--v3-toolbar-h)]"
-            value={side.w}
-            min={SIDEBAR_W.min}
-            max={side.max}
-            grows="right"
-            edge="before"
-            onChange={prefs.setSidebarW}
-            onReset={() => prefs.setSidebarW(undefined)}
+    <CeoEmployeeContext.Provider value={data.ceoId}>
+      <OpenRecord.Provider value={top}>
+        <div
+          ref={frame}
+          className="lilos-v3 relative flex h-dvh min-h-0 overflow-hidden bg-[var(--v3-main)] text-[14px] text-foreground"
+        >
+          {popped && palette === null && <EscLayer onEscape={tuckOnEsc} />}
+          <V3Sidebar
+            data={data}
+            page={page}
+            open={top}
+            go={goFromPage}
+            onSearch={() => setPalette("")}
+            dark={dark}
+            onTheme={() => setTheme(dark ? "light" : "dark")}
+            canHire={!!actions.hire}
+            mode={mode}
+            width={side.w}
+            sideRef={pop.side}
+            onToggle={toggleSidebar}
+            onPointerEnter={pop.cancel}
+            onPointerLeave={pop.tuckSoon}
+            onBlur={pop.tuckSoon}
           />
-        )}
-        {/* Everything right of the sidebar is one grid on three rows: the
+          {!hidden && (
+            <ResizeHandle
+              label="Resize sidebar"
+              className="mt-[var(--v3-toolbar-h)]"
+              value={side.w}
+              min={SIDEBAR_W.min}
+              max={side.max}
+              grows="right"
+              edge="before"
+              onChange={prefs.setSidebarW}
+              onReset={() => prefs.setSidebarW(undefined)}
+            />
+          )}
+          {/* Everything right of the sidebar is one grid on three rows: the
           toolbar row, a notice (drawn only while something is wrong), the
           page. The page and the side peek sit side by side in it; the peek
           spans all three rows, so its own toolbar items stand in the toolbar
@@ -292,97 +323,105 @@ export function V3Shell({
           Widened, the peek covers the page (still mounted, scroll and all)
           and the toolbar row over it, so closing it puts you exactly where
           you were. */}
-        <div
-          className="grid min-h-0 min-w-0 flex-1 grid-rows-[var(--v3-toolbar-h)_auto_minmax(0,1fr)]"
-          style={{
-            gridTemplateColumns: beside
-              ? `minmax(0,1fr) ${peek.w}px`
-              : "minmax(0,1fr)",
-          }}
-        >
-          <V3TopBar lead={widened ? undefined : shortcuts} />
-          <div className="relative z-30 col-span-full row-start-2">
-            {banner}
-          </div>
-          <main
-            id="v3-main"
-            data-v3-scroller
-            key={JSON.stringify(page)}
-            className="lilos-v3-line-in @container col-start-1 row-start-3 min-h-0 min-w-0 overflow-y-auto"
+          <div
+            className="grid min-h-0 min-w-0 flex-1 grid-rows-[var(--v3-toolbar-h)_auto_minmax(0,1fr)]"
+            style={{
+              gridTemplateColumns: beside
+                ? `minmax(0,1fr) ${peek.w}px`
+                : "minmax(0,1fr)",
+            }}
           >
-            <V3PageView page={page} {...props} />
-          </main>
-          {beside && (
-            <ResizeHandle
-              label="Resize side panel"
-              className="col-start-2 row-span-2 row-start-2"
-              value={peek.w}
-              min={peek.min}
-              max={peek.max}
-              grows="left"
-              edge="after"
-              onChange={prefs.setPeekW}
-              onReset={() => prefs.setPeekW(undefined)}
-            />
-          )}
-          {top && (
-            <V3Peek
-              data={data}
-              lead={widened ? shortcuts : undefined}
-              renderThread={(p) => (
-                /* #315: the panes' widths as one key — the thread re-pins
+            <V3TopBar lead={widened ? undefined : shortcuts} />
+            <div className="relative z-30 col-span-full row-start-2">
+              {banner}
+            </div>
+            <main
+              id="v3-main"
+              data-v3-scroller
+              key={JSON.stringify(page)}
+              className="lilos-v3-line-in @container col-start-1 row-start-3 min-h-0 min-w-0 overflow-y-auto"
+            >
+              <V3PageView page={page} {...props} />
+            </main>
+            {beside && (
+              <ResizeHandle
+                label="Resize side panel"
+                className="col-start-2 row-span-2 row-start-2"
+                value={peek.w}
+                min={peek.min}
+                max={peek.max}
+                grows="left"
+                edge="after"
+                onChange={prefs.setPeekW}
+                onReset={() => prefs.setPeekW(undefined)}
+              />
+            )}
+            {top && (
+              <V3Peek
+                data={data}
+                lead={widened ? shortcuts : undefined}
+                renderThread={(p) => (
+                  /* #315: the panes' widths as one key — the thread re-pins
                    to its bottom in the very commit that moves them (see
                    the guard in conversation.tsx). */
-                <ConversationReflowKey.Provider
-                  value={`${hidden ? 0 : side.w}:${peek.w}:${nav.full ? "full" : "side"}`}
-                >
-                  {renderThread({
-                    ...p,
-                    ...(jump?.threadId === p.id
-                      ? { scrollTo: jump.messageId, onScrolled: clearJump }
-                      : {}),
-                  })}
-                </ConversationReflowKey.Provider>
-              )}
-              go={goFromPeek}
-              act={act}
-              trail={nav.peek}
-              full={!!nav.full}
-              pageName={PAGE_NAME[page.page]}
-              onBack={() =>
-                onNav((n) => ({
-                  ...n,
-                  peek: n.peek.slice(0, -1),
-                  full: n.peek.length > 1 && n.full,
-                }))
+                  <ConversationReflowKey.Provider
+                    value={`${hidden ? 0 : side.w}:${peek.w}:${nav.full ? "full" : "side"}`}
+                  >
+                    {renderThread({
+                      ...p,
+                      ...(jump?.threadId === p.id
+                        ? { scrollTo: jump.messageId, onScrolled: clearJump }
+                        : {}),
+                    })}
+                  </ConversationReflowKey.Provider>
+                )}
+                go={goFromPeek}
+                act={peekAct}
+                trail={nav.peek}
+                full={!!nav.full}
+                pageName={PAGE_NAME[page.page]}
+                onBack={() =>
+                  onNav((n) => ({
+                    ...n,
+                    peek: n.peek.slice(0, -1),
+                    full: n.peek.length > 1 && n.full,
+                  }))
+                }
+                onTrail={(i) =>
+                  onNav((n) => ({ ...n, peek: n.peek.slice(0, i + 1) }))
+                }
+                onFull={(full) => onNav((n) => ({ ...n, full }))}
+                onClose={closePeek}
+              />
+            )}
+          </div>
+          {/* After the toolbar's drag regions: the OS applies them in document
+          order, so this strip must come last to stay the pointer's. */}
+          {hidden && (
+            <SidebarHotZone onEnter={pop.show} onLeave={pop.tuckSoon} />
+          )}
+          {palette !== null && (
+            <V3Palette
+              data={data}
+              seed={palette}
+              draft={draft}
+              /* The app has no draft plan. Ask the CEO reuses openAsk
+                 (D-#778) — the same path as a page's ask, not a second one. */
+              onAskCeo={
+                draft ? undefined : (text) => openAsk(text || undefined, "page")
               }
-              onTrail={(i) =>
-                onNav((n) => ({ ...n, peek: n.peek.slice(0, i + 1) }))
-              }
-              onFull={(full) => onNav((n) => ({ ...n, full }))}
-              onClose={closePeek}
+              onStart={startPlan}
+              onClose={() => setPalette(null)}
+              go={goFromPage}
+              searchMessages={actions.searchMessages}
+              onOpenMessage={(threadId, messageId) => {
+                setJump({ threadId, messageId });
+                goFromPage({ page: "thread", id: threadId });
+              }}
             />
           )}
         </div>
-        {/* After the toolbar's drag regions: the OS applies them in document
-          order, so this strip must come last to stay the pointer's. */}
-        {hidden && <SidebarHotZone onEnter={pop.show} onLeave={pop.tuckSoon} />}
-        {palette !== null && (
-          <V3Palette
-            data={data}
-            seed={palette}
-            draft={draft}
-            onStart={startPlan}
-            onClose={() => setPalette(null)}
-            go={goFromPage}
-            searchMessages={actions.searchMessages}
-            onOpenMessage={(threadId, messageId) => {
-              setJump({ threadId, messageId });
-              goFromPage({ page: "thread", id: threadId });
-            }}
-          />
-        )}
-      </div>
-    </OpenRecord.Provider>
+      </OpenRecord.Provider>
+    </CeoEmployeeContext.Provider>
   );
 }

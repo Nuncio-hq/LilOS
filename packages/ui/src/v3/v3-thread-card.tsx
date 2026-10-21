@@ -4,7 +4,7 @@ import { cn } from "../lib/utils";
 import { Btn, Meter, Spinner, TicketId, useTick } from "./v3-bits";
 import type { V3Data } from "./v3-data-types";
 import { elapsedAt, streamTail, ThreadPill, turnCount } from "./v3-live";
-import { AgentAvatar } from "./v3-marks";
+import { AgentAvatar, CeoMark } from "./v3-marks";
 import { agentOf, FORMER_AGENT, threadTag } from "./v3-model";
 import { useOpenRecord } from "./v3-open-record";
 import type { V3PageProps } from "./v3-page-types";
@@ -126,6 +126,7 @@ function Head({
     <div className="flex items-center gap-2 font-medium text-[13.5px]">
       <AgentAvatar data={data} agent={agent} />
       {agent?.name ?? FORMER_AGENT}
+      {agent?.id === data.ceoId && <CeoMark />}
       {via && (
         <span className="font-normal text-[11.5px] text-muted-foreground/70">
           via {via.label}

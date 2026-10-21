@@ -45,12 +45,16 @@ export const askTag = (d: V3Data, a: V3Ask): string => {
 export const goalOf = (d: V3Data, id: string) =>
   d.goals.find((g) => g.id === id);
 
-/** Threads on a ticket, oldest hand first (start times are zero-padded
-   clock strings, so text order is time order). */
+/** Threads on a ticket, oldest hand first. Clock strings tie inside a
+    minute; `openedAt` breaks that so a reassignment stays after the first hand. */
 export const threadsOf = (d: V3Data, ticketId: string): V3Thread[] =>
   d.threads
     .filter((t) => t.ticketId === ticketId)
-    .sort((a, b) => a.startedAt.localeCompare(b.startedAt));
+    .sort(
+      (a, b) =>
+        a.startedAt.localeCompare(b.startedAt) ||
+        (a.openedAt ?? 0) - (b.openedAt ?? 0),
+    );
 
 /** How urgent a status is on a person, most urgent first: what needs you,
    then what is stuck or running, then what ended. An agent wears its most
@@ -128,12 +132,17 @@ export function agentTicket(d: V3Data, agentId: string): V3Ticket | undefined {
     .sort((a, b) => order.indexOf(a.status) - order.indexOf(b.status))[0];
 }
 
-/** What a ticket waits on, as one plain phrase: "You", "CEO", "HB-11". */
+/** What a ticket waits on, as one plain phrase: "You", "the CEO", "HB-11".
+    No holder stays "the CEO" — never another agent's name (D-#778). */
 export function waitingLabel(d: V3Data, t: V3Ticket): string {
   const w = t.waitingOn;
   if (!w) return "—";
   if (w.kind === "you") return "You";
   if (w.kind === "agent") return agentNameOf(d, w.agentId);
+  if (w.kind === "ceo") {
+    const ceo = d.agents.find((a) => a.id === d.ceoId);
+    return ceo?.name ?? "the CEO";
+  }
   return w.ticketId;
 }
 
@@ -234,6 +243,8 @@ export function resultsToLookAt(data: V3Data): LookAtRow[] {
       title: t.title,
       ticketId: t.id,
       tag: t.id,
+      /* Empty when nobody holds it. The thread's agent is not a stand-in:
+         the row says Unassigned, not Former agent. */
       by: t.owner,
       note: th?.summary ?? (pr ? `PR #${pr.num} · ${pr.branch}` : "Done"),
       minutes: t.doneAgo ?? 0,

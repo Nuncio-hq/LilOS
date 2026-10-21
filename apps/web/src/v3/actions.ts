@@ -35,9 +35,10 @@ import { employeeOfConversation } from "./threads";
 /* What a click in v3 does to the real company. Each action maps to the call
    the pre-v3 screens made (respondToRequest, interruptSession, sendDm, …);
    those already toast their own failures, so the catches here only keep a
-   rejection from going unhandled. An action with no backend (hand-off, rules,
-   comments, plans, CEO, connectors, taking a tab over) is simply not in this
-   object, and the pages do not draw its control. */
+   rejection from going unhandled. An action with no backend (rules, plans,
+   connectors, taking a tab over) is simply not in this object, and the
+   pages do not draw its control. Comments and hand-off call the ticket
+   records (D-#776). The CEO position is `makeCeo` (D-#778). */
 
 const conversationOf = (id: string) =>
   relay.conversations.get().find((c) => c.id === id);
@@ -107,6 +108,27 @@ export function makeV3Actions(caps: V3Capabilities): V3DataActions {
       void interruptSession(threadId).catch((e) =>
         sayError(describeActionError("Couldn't stop the turn", e)),
       ),
+    comment: (ticketId, text) => {
+      void relay
+        .request("tickets.comment", { id: ticketId, text })
+        .catch((e) =>
+          sayError(describeActionError("Couldn't add the update", e)),
+        );
+    },
+    handOff: (ticketId, agentId) => {
+      void relay
+        .request("tickets.assign", { id: ticketId, ownerId: agentId })
+        .catch((e) =>
+          sayError(describeActionError("Couldn't hand the ticket on", e)),
+        );
+    },
+    markDone: (ticketId) => {
+      void relay
+        .request("tickets.update", { id: ticketId, status: "done" })
+        .catch((e) =>
+          sayError(describeActionError("Couldn't mark the ticket done", e)),
+        );
+    },
     message: (threadId, text) => {
       const employeeId = employeeIdOf(threadId);
       if (!employeeId) return;
@@ -231,6 +253,13 @@ export function makeV3Actions(caps: V3Capabilities): V3DataActions {
         throw e;
       }
     },
+    /* The owner's button. The agent's own proposal is `team_set_ceo`, which
+       still asks (D-#341). This call is the user, so it does not. */
+    makeCeo: (agentId) =>
+      toastOnFail(
+        "Couldn't make them CEO",
+        relay.request("company.setCeo", { employeeId: agentId }),
+      ),
     removeAgent: async (id) => {
       try {
         await removeAgent(id);

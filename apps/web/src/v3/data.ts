@@ -19,6 +19,7 @@ import { folders } from "../lib/folders";
 import { currentCompany, currentName, osFullName, profile } from "../lib/me";
 import {
   asks,
+  companyCeoId,
   engine as engineClient,
   engineDefaultModel,
   engineDefaultProvider,
@@ -33,6 +34,7 @@ import { modelLabel, modelRowStore } from "./models";
 import { profileStore } from "./profiles";
 import { v3SettingsSlice } from "./settings-data";
 import { lastChats, v3ArchivedThreads, v3Asks, v3Threads } from "./threads";
+import { v3Goals, v3Tickets } from "./tickets";
 import { type WeekCounts, weekByAgent } from "./week";
 
 /* The company as the relay knows it, in the shape the v3 pages read. A
@@ -183,6 +185,9 @@ export function v3DataStore(): ReadableAtom<V3Data> {
       modelVisibility,
       engineClient.description,
       relay.projects,
+      relay.goals,
+      relay.tickets,
+      companyCeoId,
     ],
     (
       employees,
@@ -205,6 +210,9 @@ export function v3DataStore(): ReadableAtom<V3Data> {
       visibility,
       description,
       projects,
+      goals,
+      tickets,
+      holderId,
     ): V3Data => {
       const src = {
         now,
@@ -223,6 +231,7 @@ export function v3DataStore(): ReadableAtom<V3Data> {
         company: companyName,
         me,
         today: todayText(now),
+        ...(holderId ? { ceoId: holderId } : {}),
         agents: employees.map((e) =>
           toAgent(
             e,
@@ -234,8 +243,8 @@ export function v3DataStore(): ReadableAtom<V3Data> {
         ),
         connectors: [],
         projects: projectRows(projects),
-        goals: [],
-        tickets: [],
+        goals: v3Goals(goals),
+        tickets: v3Tickets(tickets, now),
         threads: v3Threads(src),
         archivedThreads: v3ArchivedThreads(src),
         asks: v3Asks(src),
@@ -279,8 +288,8 @@ export function v3DataStore(): ReadableAtom<V3Data> {
               })),
             }
           : {}),
-        // Work, Goals and Inbox wait for tickets (M2).
-        features: { tickets: false },
+        // Tickets are real records now (D-#776): Work, Goals and Inbox show.
+        features: { tickets: true },
         ...settingsSlice,
       };
     },

@@ -1,3 +1,4 @@
+import { employeeHoldsCeo } from "./ceo-session";
 import type { HarnessCtx, SessionBinding } from "./ctx";
 
 /**
@@ -35,7 +36,12 @@ export async function doRebindConversation(
   const conn = this.engine;
   if (!conn) return;
   const agent = await this.ensureAgent(conn, employee);
-  const surface = this.createSurfaces(binding, conv, employee);
+  const ceoAtStart = await employeeHoldsCeo(
+    this.opts.relay,
+    employee?.id ?? binding.employeeId,
+    this.opts.log,
+  );
+  const surface = this.createSurfaces(binding, conv, employee, ceoAtStart);
   const started = await conn.request<{
     sessionId: string;
     ref?: string;

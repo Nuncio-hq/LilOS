@@ -3,6 +3,7 @@ import { AppMethod } from "../src/app/index.js";
 import {
   AGENT_METHOD_TOOLS,
   APPROVAL_GATED_METHODS,
+  CEO_INSTRUCTIONS,
   HOST_POLICY_MARKER,
   HOST_POLICY_MAX_CHARS,
   HOST_POLICY_VERSION,
@@ -159,5 +160,18 @@ describe("AC-5 host policy renders from the catalog", () => {
     for (const area of ["terminal_*", "browser_*", "workbench_*", "thread_*"]) {
       expect(full).toContain(area);
     }
+  });
+
+  it("adds the CEO brief only for a session that holds the position (D-#778)", () => {
+    const areas = new Set(TOOL_AREAS);
+    const plain = renderHostPolicy(areas);
+    expect(plain).not.toContain(CEO_INSTRUCTIONS);
+    /* The shared area lines never name CEO-only tools, so a non-CEO
+       session does not hear about them (D-#778). */
+    expect(plain).not.toContain("team_set_ceo");
+    expect(plain).not.toContain("ticket_assign");
+    const ceo = renderHostPolicy(areas, { ceo: true });
+    expect(ceo).toContain(CEO_INSTRUCTIONS);
+    expect(ceo.length).toBeLessThanOrEqual(HOST_POLICY_MAX_CHARS);
   });
 });

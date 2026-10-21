@@ -7,6 +7,7 @@ import {
   type BrowserScrollParams,
   type BrowserTypeParams,
   type FolderAddParams,
+  type GoalCreateParams,
   type GuideParams,
   LILOS_TOOLS,
   type ProjectCreateParams,
@@ -14,6 +15,7 @@ import {
   type ScheduleTaskRef,
   type ScheduleUpdateParams,
   type TeamHireParams,
+  type TeamSetCeoParams,
   type TeamUpdateParams,
   type TerminalReadParams,
   type TerminalRunParams,
@@ -23,6 +25,11 @@ import {
   type ThreadSearchParams,
   type ThreadSetTitleParams,
   type ThreadStartParams,
+  type TicketAssignParams,
+  type TicketCommentParams,
+  type TicketCreateParams,
+  type TicketReadParams,
+  type TicketUpdateParams,
 } from "@lilos/contracts/harness";
 import { z } from "zod";
 import { type SurfaceBackend, SurfaceError } from "./backend.js";
@@ -43,6 +50,14 @@ export async function callTool(
     ? LILOS_TOOLS[name]
     : undefined;
   if (!contract) throw new SurfaceError("not_found", `unknown tool: ${name}`);
+  /* Offered from the start snapshot; this is the live check (D-#778). A
+     session that lost the position still lists the tool and fails here. */
+  if (contract.ceoOnly && backend.currentCeoId) {
+    const holder = await backend.currentCeoId();
+    if (!holder || holder !== backend.binding?.employeeId) {
+      throw new SurfaceError("forbidden", `only the CEO can call ${name}`);
+    }
+  }
   const parsed = contract.params.safeParse(args ?? {});
   if (!parsed.success)
     /* prettifyError lists each issue as a line the calling model can act
@@ -119,6 +134,9 @@ export async function callTool(
     case "team_hire":
       result = await backend.teamHire(p as TeamHireParams);
       break;
+    case "team_set_ceo":
+      result = await backend.teamSetCeo(p as TeamSetCeoParams);
+      break;
     case "team_update":
       result = await backend.teamUpdate(p as TeamUpdateParams);
       break;
@@ -130,6 +148,30 @@ export async function callTool(
       break;
     case "project_create":
       result = await backend.projectCreate(p as ProjectCreateParams);
+      break;
+    case "goal_list":
+      result = await backend.goalList();
+      break;
+    case "goal_create":
+      result = await backend.goalCreate(p as GoalCreateParams);
+      break;
+    case "ticket_list":
+      result = await backend.ticketList(p as { project?: string });
+      break;
+    case "ticket_read":
+      result = await backend.ticketRead(p as TicketReadParams);
+      break;
+    case "ticket_create":
+      result = await backend.ticketCreate(p as TicketCreateParams);
+      break;
+    case "ticket_update":
+      result = await backend.ticketUpdate(p as TicketUpdateParams);
+      break;
+    case "ticket_assign":
+      result = await backend.ticketAssign(p as TicketAssignParams);
+      break;
+    case "ticket_comment":
+      result = await backend.ticketComment(p as TicketCommentParams);
       break;
 
     case "thread_post":

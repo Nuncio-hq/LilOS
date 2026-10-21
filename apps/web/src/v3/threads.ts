@@ -71,8 +71,22 @@ function askText(ask: Ask): { title: string; text: string } {
       title: "Review the plan",
       text: "The plan is in the thread; open it to read it before you decide.",
     };
-  /* The command is "The ask" row; a description that already quotes it
-     would say it twice (D-#769), so the title keeps only the rest. */
+  /* An agent-tool approval (D-#341, a `gw-` request) is written for the
+     owner in `description`; its `command` is tool syntax with internal ids,
+     not for a person. The first sentence is the title, the rest "The ask"
+     (all of it when the title had to cut the sentence). */
+  if (ask.requestId.startsWith("gw-") && r.description?.trim()) {
+    const desc = r.description.trim();
+    const line = desc.split("\n")[0].trim();
+    const end = /[.!?](?=\s|$)/.exec(line);
+    const first = end ? line.slice(0, end.index + 1) : line;
+    const title = oneLine(first, 80);
+    const rest = desc.slice(first.length).trim();
+    return { title, text: title === first ? rest || title : desc };
+  }
+  /* An engine approval: the command is "The ask" row; a description that
+     already quotes it would say it twice (D-#769), so the title keeps only
+     the rest. */
   const said = r.description
     ?.replace(r.command, "")
     .replace(/[\s:·–—-]+$/u, "")
@@ -117,9 +131,8 @@ export function v3Asks(src: ThreadSources): V3Ask[] {
     .filter((a) => a.state === "open" && convs.has(a.conversationId))
     .sort((a, b) => a.createdAt - b.createdAt)
     .flatMap((a): V3Ask[] => {
-      const from = owners.get(
-        (convs.get(a.conversationId) as Conversation).channelId,
-      );
+      const conv = convs.get(a.conversationId) as Conversation;
+      const from = owners.get(conv.channelId);
       if (!from) return [];
       const { title, text } = askText(a);
       const r = a.request;
@@ -127,6 +140,7 @@ export function v3Asks(src: ThreadSources): V3Ask[] {
         {
           id: a.id,
           threadId: a.conversationId,
+          ...(conv.ticketId ? { ticketId: conv.ticketId } : {}),
           from,
           kind: r.kind === "question" ? "question" : "approval",
           title,
@@ -261,6 +275,9 @@ function threadRows(src: ThreadSources, archived: boolean): V3Thread[] {
         ...(c.model ? { model: modelLabel(c.model, c.provider) } : {}),
         ...(c.cwd ? { folder: c.cwd } : {}),
         ...(c.projectId ? { projectId: c.projectId } : {}),
+        ...(c.ticketId ? { ticketId: c.ticketId } : {}),
+        /* Same-minute hands share a clock string; the chain stays oldest first. */
+        openedAt: c.createdAt,
         ...(!live && answer?.text
           ? { summary: oneLine(answer.text, 140) }
           : {}),

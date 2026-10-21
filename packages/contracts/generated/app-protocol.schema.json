@@ -412,6 +412,7 @@
         "conversations.prs",
         "system.status",
         "employees.remove",
+        "company.setCeo",
         "settings.get",
         "settings.set",
         "folders.list",
@@ -449,7 +450,15 @@
         "schedules.delete",
         "schedules.runNow",
         "projects.list",
-        "projects.create"
+        "projects.create",
+        "goals.list",
+        "goals.create",
+        "tickets.list",
+        "tickets.read",
+        "tickets.create",
+        "tickets.update",
+        "tickets.assign",
+        "tickets.comment"
       ]
     },
     "AppEventMethod": {
@@ -479,7 +488,9 @@
         "workbench.opened",
         "schedule.upserted",
         "schedule.removed",
-        "project.upserted"
+        "project.upserted",
+        "goal.upserted",
+        "ticket.upserted"
       ]
     },
     "HelloParams": {
@@ -1057,6 +1068,105 @@
       },
       "required": [
         "id"
+      ]
+    },
+    "CompanySetCeoParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "employeeId": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "employeeId"
+      ],
+      "additionalProperties": false
+    },
+    "CompanySetCeoResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "ceoId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "employees": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "role": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "online",
+                  "busy",
+                  "offline"
+                ]
+              },
+              "profile": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              },
+              "now": {
+                "type": "string"
+              },
+              "instructions": {
+                "type": "string"
+              },
+              "respondTo": {
+                "type": "string",
+                "enum": [
+                  "me",
+                  "selected",
+                  "anyone"
+                ]
+              },
+              "muted": {
+                "type": "boolean"
+              },
+              "reportsTo": {
+                "type": "string",
+                "minLength": 1
+              },
+              "createdAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "role",
+              "status",
+              "profile",
+              "model",
+              "now",
+              "instructions",
+              "respondTo",
+              "createdAt"
+            ]
+          }
+        }
+      },
+      "required": [
+        "ceoId",
+        "employees"
       ]
     },
     "EmployeeResult": {
@@ -1778,6 +1888,10 @@
           "type": "string",
           "minLength": 1
         },
+        "ticketId": {
+          "type": "string",
+          "minLength": 1
+        },
         "workspace": {
           "oneOf": [
             {
@@ -2139,6 +2253,10 @@
                 "minLength": 1
               },
               "projectId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "ticketId": {
                 "type": "string",
                 "minLength": 1
               },
@@ -2579,6 +2697,10 @@
               "minLength": 1
             },
             "projectId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "ticketId": {
               "type": "string",
               "minLength": 1
             },
@@ -3189,6 +3311,10 @@
               "minLength": 1
             },
             "projectId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "ticketId": {
               "type": "string",
               "minLength": 1
             },
@@ -4777,6 +4903,10 @@
               "type": "string",
               "minLength": 1
             },
+            "ticketId": {
+              "type": "string",
+              "minLength": 1
+            },
             "workspace": {
               "oneOf": [
                 {
@@ -5518,6 +5648,10 @@
                     "minLength": 1
                   },
                   "projectId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "ticketId": {
                     "type": "string",
                     "minLength": 1
                   },
@@ -8056,6 +8190,10 @@
               "type": "string",
               "minLength": 1
             },
+            "ticketId": {
+              "type": "string",
+              "minLength": 1
+            },
             "workspace": {
               "oneOf": [
                 {
@@ -9104,6 +9242,2648 @@
       },
       "required": [
         "project"
+      ]
+    },
+    "Goal": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "projectId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "due": {
+          "type": "string"
+        },
+        "why": {
+          "type": "string"
+        },
+        "ownerId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "createdAt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "projectId",
+        "due",
+        "why",
+        "createdAt"
+      ]
+    },
+    "GoalsListParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "GoalsListResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "goals": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1
+              },
+              "projectId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "due": {
+                "type": "string"
+              },
+              "why": {
+                "type": "string"
+              },
+              "ownerId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "createdAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "projectId",
+              "due",
+              "why",
+              "createdAt"
+            ]
+          }
+        }
+      },
+      "required": [
+        "goals"
+      ]
+    },
+    "GoalsCreateParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "project": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "due": {
+          "type": "string"
+        },
+        "why": {
+          "type": "string"
+        },
+        "ownerId": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "project",
+        "title"
+      ],
+      "additionalProperties": false
+    },
+    "GoalResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "goal": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1
+            },
+            "projectId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "due": {
+              "type": "string"
+            },
+            "why": {
+              "type": "string"
+            },
+            "ownerId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "createdAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "id",
+            "title",
+            "projectId",
+            "due",
+            "why",
+            "createdAt"
+          ]
+        }
+      },
+      "required": [
+        "goal"
+      ]
+    },
+    "GoalUpsertedEvent": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "goal": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1
+            },
+            "projectId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "due": {
+              "type": "string"
+            },
+            "why": {
+              "type": "string"
+            },
+            "ownerId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "createdAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "id",
+            "title",
+            "projectId",
+            "due",
+            "why",
+            "createdAt"
+          ]
+        }
+      },
+      "required": [
+        "goal"
+      ]
+    },
+    "Ticket": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "number": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "projectId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "goalId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ownerId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "planned",
+            "working",
+            "waiting",
+            "needs",
+            "stuck",
+            "done",
+            "failed"
+          ]
+        },
+        "waitingOn": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "you"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "ceo"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "agent"
+                },
+                "agentId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "why": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "agentId"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "ticket"
+                },
+                "ticketId": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "kind",
+                "ticketId"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "progress": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "string",
+                "minLength": 1
+              },
+              "done": {
+                "type": "boolean"
+              },
+              "by": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "text",
+              "done"
+            ]
+          }
+        },
+        "result": {
+          "type": "object",
+          "properties": {
+            "pr": {
+              "type": "object",
+              "properties": {
+                "num": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "branch": {
+                  "type": "string"
+                },
+                "add": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "del": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "num",
+                "branch",
+                "add",
+                "del"
+              ]
+            },
+            "files": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "note": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "note"
+                ]
+              }
+            }
+          }
+        },
+        "updates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "authorKind": {
+                "type": "string",
+                "enum": [
+                  "user",
+                  "employee",
+                  "system"
+                ]
+              },
+              "by": {
+                "type": "string",
+                "minLength": 1
+              },
+              "at": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "authorKind",
+              "at",
+              "text"
+            ]
+          }
+        },
+        "stuckWhy": {
+          "type": "string"
+        },
+        "startsAt": {
+          "type": "string"
+        },
+        "statusAt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "doneAt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "createdAt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "id",
+        "number",
+        "title",
+        "projectId",
+        "status",
+        "progress",
+        "updates",
+        "statusAt",
+        "createdAt"
+      ]
+    },
+    "TicketsListParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "project": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "TicketsListResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "tickets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "number": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1
+              },
+              "projectId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "goalId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "ownerId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "planned",
+                  "working",
+                  "waiting",
+                  "needs",
+                  "stuck",
+                  "done",
+                  "failed"
+                ]
+              },
+              "waitingOn": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "you"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "ceo"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "agent"
+                      },
+                      "agentId": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "why": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "agentId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "ticket"
+                      },
+                      "ticketId": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "ticketId"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              },
+              "progress": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "text": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "done": {
+                      "type": "boolean"
+                    },
+                    "by": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "text",
+                    "done"
+                  ]
+                }
+              },
+              "result": {
+                "type": "object",
+                "properties": {
+                  "pr": {
+                    "type": "object",
+                    "properties": {
+                      "num": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "branch": {
+                        "type": "string"
+                      },
+                      "add": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "del": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": [
+                      "num",
+                      "branch",
+                      "add",
+                      "del"
+                    ]
+                  },
+                  "files": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "note": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "note"
+                      ]
+                    }
+                  }
+                }
+              },
+              "updates": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "authorKind": {
+                      "type": "string",
+                      "enum": [
+                        "user",
+                        "employee",
+                        "system"
+                      ]
+                    },
+                    "by": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "at": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "authorKind",
+                    "at",
+                    "text"
+                  ]
+                }
+              },
+              "stuckWhy": {
+                "type": "string"
+              },
+              "startsAt": {
+                "type": "string"
+              },
+              "statusAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "doneAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "createdAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "id",
+              "number",
+              "title",
+              "projectId",
+              "status",
+              "progress",
+              "updates",
+              "statusAt",
+              "createdAt"
+            ]
+          }
+        }
+      },
+      "required": [
+        "tickets"
+      ]
+    },
+    "TicketsReadParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "TicketResultEnvelope": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "ticket": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "number": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1
+            },
+            "projectId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "goalId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "ownerId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "planned",
+                "working",
+                "waiting",
+                "needs",
+                "stuck",
+                "done",
+                "failed"
+              ]
+            },
+            "waitingOn": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "you"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "ceo"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "agent"
+                    },
+                    "agentId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "why": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "agentId"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "ticket"
+                    },
+                    "ticketId": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "ticketId"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "progress": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "done": {
+                    "type": "boolean"
+                  },
+                  "by": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "text",
+                  "done"
+                ]
+              }
+            },
+            "result": {
+              "type": "object",
+              "properties": {
+                "pr": {
+                  "type": "object",
+                  "properties": {
+                    "num": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "branch": {
+                      "type": "string"
+                    },
+                    "add": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "del": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "num",
+                    "branch",
+                    "add",
+                    "del"
+                  ]
+                },
+                "files": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "note": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "note"
+                    ]
+                  }
+                }
+              }
+            },
+            "updates": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "authorKind": {
+                    "type": "string",
+                    "enum": [
+                      "user",
+                      "employee",
+                      "system"
+                    ]
+                  },
+                  "by": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "at": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "authorKind",
+                  "at",
+                  "text"
+                ]
+              }
+            },
+            "stuckWhy": {
+              "type": "string"
+            },
+            "startsAt": {
+              "type": "string"
+            },
+            "statusAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "doneAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "createdAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "id",
+            "number",
+            "title",
+            "projectId",
+            "status",
+            "progress",
+            "updates",
+            "statusAt",
+            "createdAt"
+          ]
+        }
+      },
+      "required": [
+        "ticket"
+      ]
+    },
+    "TicketsCreateParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "project": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "goalId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ownerId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "planned",
+            "working",
+            "waiting",
+            "needs",
+            "stuck",
+            "done",
+            "failed"
+          ]
+        },
+        "waitingOn": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "you"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "ceo"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "agent"
+                },
+                "agentId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "why": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "agentId"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "ticket"
+                },
+                "ticketId": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "kind",
+                "ticketId"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "progress": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "string",
+                "minLength": 1
+              },
+              "done": {
+                "type": "boolean"
+              },
+              "by": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "text",
+              "done"
+            ]
+          }
+        },
+        "startsAt": {
+          "type": "string"
+        },
+        "stuckWhy": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "project",
+        "title"
+      ],
+      "additionalProperties": false
+    },
+    "TicketsUpdateParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "goalId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "planned",
+            "working",
+            "waiting",
+            "needs",
+            "stuck",
+            "done",
+            "failed"
+          ]
+        },
+        "waitingOn": {
+          "anyOf": [
+            {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "you"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "ceo"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "agent"
+                    },
+                    "agentId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "why": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "agentId"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "ticket"
+                    },
+                    "ticketId": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "ticketId"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "progress": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "string",
+                "minLength": 1
+              },
+              "done": {
+                "type": "boolean"
+              },
+              "by": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "text",
+              "done"
+            ]
+          }
+        },
+        "result": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "pr": {
+                  "type": "object",
+                  "properties": {
+                    "num": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "branch": {
+                      "type": "string"
+                    },
+                    "add": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "del": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "num",
+                    "branch",
+                    "add",
+                    "del"
+                  ]
+                },
+                "files": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "note": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "note"
+                    ]
+                  }
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "startsAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "stuckWhy": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "TicketsChangedResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "tickets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "number": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1
+              },
+              "projectId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "goalId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "ownerId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "planned",
+                  "working",
+                  "waiting",
+                  "needs",
+                  "stuck",
+                  "done",
+                  "failed"
+                ]
+              },
+              "waitingOn": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "you"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "ceo"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "agent"
+                      },
+                      "agentId": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "why": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "agentId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "ticket"
+                      },
+                      "ticketId": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "ticketId"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              },
+              "progress": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "text": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "done": {
+                      "type": "boolean"
+                    },
+                    "by": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "text",
+                    "done"
+                  ]
+                }
+              },
+              "result": {
+                "type": "object",
+                "properties": {
+                  "pr": {
+                    "type": "object",
+                    "properties": {
+                      "num": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "branch": {
+                        "type": "string"
+                      },
+                      "add": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "del": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": [
+                      "num",
+                      "branch",
+                      "add",
+                      "del"
+                    ]
+                  },
+                  "files": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "note": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "note"
+                      ]
+                    }
+                  }
+                }
+              },
+              "updates": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "authorKind": {
+                      "type": "string",
+                      "enum": [
+                        "user",
+                        "employee",
+                        "system"
+                      ]
+                    },
+                    "by": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "at": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "authorKind",
+                    "at",
+                    "text"
+                  ]
+                }
+              },
+              "stuckWhy": {
+                "type": "string"
+              },
+              "startsAt": {
+                "type": "string"
+              },
+              "statusAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "doneAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "createdAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "id",
+              "number",
+              "title",
+              "projectId",
+              "status",
+              "progress",
+              "updates",
+              "statusAt",
+              "createdAt"
+            ]
+          }
+        }
+      },
+      "required": [
+        "tickets"
+      ]
+    },
+    "TicketsAssignParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ownerId": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "id",
+        "ownerId"
+      ],
+      "additionalProperties": false
+    },
+    "TicketsAssignResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "ticket": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "number": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1
+            },
+            "projectId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "goalId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "ownerId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "planned",
+                "working",
+                "waiting",
+                "needs",
+                "stuck",
+                "done",
+                "failed"
+              ]
+            },
+            "waitingOn": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "you"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "ceo"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "agent"
+                    },
+                    "agentId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "why": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "agentId"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "ticket"
+                    },
+                    "ticketId": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "ticketId"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "progress": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "done": {
+                    "type": "boolean"
+                  },
+                  "by": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "text",
+                  "done"
+                ]
+              }
+            },
+            "result": {
+              "type": "object",
+              "properties": {
+                "pr": {
+                  "type": "object",
+                  "properties": {
+                    "num": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "branch": {
+                      "type": "string"
+                    },
+                    "add": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "del": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "num",
+                    "branch",
+                    "add",
+                    "del"
+                  ]
+                },
+                "files": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "note": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "note"
+                    ]
+                  }
+                }
+              }
+            },
+            "updates": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "authorKind": {
+                    "type": "string",
+                    "enum": [
+                      "user",
+                      "employee",
+                      "system"
+                    ]
+                  },
+                  "by": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "at": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "authorKind",
+                  "at",
+                  "text"
+                ]
+              }
+            },
+            "stuckWhy": {
+              "type": "string"
+            },
+            "startsAt": {
+              "type": "string"
+            },
+            "statusAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "doneAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "createdAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "id",
+            "number",
+            "title",
+            "projectId",
+            "status",
+            "progress",
+            "updates",
+            "statusAt",
+            "createdAt"
+          ]
+        },
+        "conversation": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "channelId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "rootMessageId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "engineRef": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "state": {
+              "type": "string",
+              "enum": [
+                "idle",
+                "active",
+                "closed"
+              ]
+            },
+            "title": {
+              "type": "string"
+            },
+            "titleSource": {
+              "default": "auto",
+              "type": "string",
+              "enum": [
+                "auto",
+                "user"
+              ]
+            },
+            "model": {
+              "type": "string",
+              "minLength": 1
+            },
+            "provider": {
+              "type": "string"
+            },
+            "effort": {
+              "type": "string"
+            },
+            "fast": {
+              "type": "boolean"
+            },
+            "cwd": {
+              "type": "string",
+              "minLength": 1
+            },
+            "projectId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "ticketId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "workspace": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "const": "new"
+                    },
+                    "repoPath": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "branch": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "base": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "mode",
+                    "repoPath",
+                    "branch",
+                    "base"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "const": "existing"
+                    },
+                    "repoPath": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "branch": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "mode",
+                    "repoPath",
+                    "branch"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "access": {
+              "default": "ask",
+              "type": "string",
+              "enum": [
+                "ask",
+                "full"
+              ]
+            },
+            "archived": {
+              "type": "boolean"
+            },
+            "deliveredSeq": {
+              "default": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "life": {
+              "type": "string",
+              "enum": [
+                "open",
+                "closed"
+              ]
+            },
+            "usage": {
+              "type": "object",
+              "properties": {
+                "input": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "output": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "reasoning": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "cache": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "context": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "contextWindow": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "input",
+                "output",
+                "reasoning",
+                "cache"
+              ]
+            },
+            "turnFailure": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "model",
+                    "sleep",
+                    "generic",
+                    "context"
+                  ]
+                },
+                "text": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "kind",
+                "text"
+              ],
+              "additionalProperties": false
+            },
+            "turnStopped": {
+              "type": "boolean"
+            },
+            "stuck": {
+              "type": "object",
+              "properties": {
+                "reason": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "reason"
+              ]
+            },
+            "stuckAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "bgJobs": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "readSeq": {
+              "default": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "finishedSeq": {
+              "default": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "scheduled": {
+              "type": "object",
+              "properties": {
+                "taskId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "taskId",
+                "name"
+              ]
+            },
+            "createdAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "id",
+            "channelId",
+            "rootMessageId",
+            "engineRef",
+            "state",
+            "title",
+            "archived",
+            "createdAt"
+          ]
+        },
+        "rootMessage": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "channelId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "authorId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "text": {
+              "type": "string"
+            },
+            "seq": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "createdAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "conversationId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "authorKind": {
+              "type": "string",
+              "enum": [
+                "user",
+                "employee",
+                "system"
+              ]
+            },
+            "attachments": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "mimeType": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "sizeBytes": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "mimeType",
+                  "sizeBytes"
+                ]
+              }
+            },
+            "model": {
+              "type": "string",
+              "minLength": 1
+            },
+            "provider": {
+              "type": "string"
+            },
+            "effort": {
+              "type": "string"
+            },
+            "fast": {
+              "type": "boolean"
+            },
+            "rewound": {
+              "default": false,
+              "type": "boolean"
+            },
+            "dropped": {
+              "default": false,
+              "type": "boolean"
+            },
+            "removed": {
+              "default": false,
+              "type": "boolean"
+            },
+            "claimed": {
+              "default": false,
+              "type": "boolean"
+            },
+            "checkpoint": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "channelId",
+            "authorId",
+            "text",
+            "seq",
+            "createdAt",
+            "conversationId",
+            "authorKind"
+          ]
+        }
+      },
+      "required": [
+        "ticket",
+        "conversation",
+        "rootMessage"
+      ]
+    },
+    "TicketsCommentParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "by": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "id",
+        "text"
+      ],
+      "additionalProperties": false
+    },
+    "TicketUpsertedEvent": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "ticket": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "number": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1
+            },
+            "projectId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "goalId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "ownerId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "planned",
+                "working",
+                "waiting",
+                "needs",
+                "stuck",
+                "done",
+                "failed"
+              ]
+            },
+            "waitingOn": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "you"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "ceo"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "agent"
+                    },
+                    "agentId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "why": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "agentId"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "ticket"
+                    },
+                    "ticketId": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "ticketId"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "progress": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "done": {
+                    "type": "boolean"
+                  },
+                  "by": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "text",
+                  "done"
+                ]
+              }
+            },
+            "result": {
+              "type": "object",
+              "properties": {
+                "pr": {
+                  "type": "object",
+                  "properties": {
+                    "num": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "branch": {
+                      "type": "string"
+                    },
+                    "add": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "del": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "num",
+                    "branch",
+                    "add",
+                    "del"
+                  ]
+                },
+                "files": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "note": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "note"
+                    ]
+                  }
+                }
+              }
+            },
+            "updates": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "authorKind": {
+                    "type": "string",
+                    "enum": [
+                      "user",
+                      "employee",
+                      "system"
+                    ]
+                  },
+                  "by": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "at": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "authorKind",
+                  "at",
+                  "text"
+                ]
+              }
+            },
+            "stuckWhy": {
+              "type": "string"
+            },
+            "startsAt": {
+              "type": "string"
+            },
+            "statusAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "doneAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "createdAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "id",
+            "number",
+            "title",
+            "projectId",
+            "status",
+            "progress",
+            "updates",
+            "statusAt",
+            "createdAt"
+          ]
+        }
+      },
+      "required": [
+        "ticket"
       ]
     },
     "ConversationModelRequestedEvent": {

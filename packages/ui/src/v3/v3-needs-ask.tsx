@@ -1,7 +1,7 @@
 import { cn } from "../lib/utils";
 import { ago, Btn, Meter } from "./v3-bits";
 import type { V3Ask, V3Data } from "./v3-data-types";
-import { AgentAvatar, StatusPill } from "./v3-marks";
+import { AgentAvatar, CeoMark, StatusPill } from "./v3-marks";
 import { agentOf, askTag, FORMER_AGENT, goalOf, ticketOf } from "./v3-model";
 import type { V3PageProps, V3Route } from "./v3-page-types";
 
@@ -57,8 +57,17 @@ export function OpenAsk({
       </div>
       <div className="mt-0.5 flex items-center gap-2 text-[13px] text-muted-foreground">
         <AgentAvatar data={data} agent={from} size={18} />
+        {/* One text run, so it reads "Default asks", not "Defaultasks": the
+           flex gap spaces it on screen but not for a screen reader. */}
         <span>
-          {from?.name ?? FORMER_AGENT} asks · waiting {ago(ask.waiting)}
+          {from?.name ?? FORMER_AGENT}
+          {from?.id === data.ceoId && (
+            <>
+              {" "}
+              <CeoMark />
+            </>
+          )}{" "}
+          asks · waiting {ago(ask.waiting)}
           {goal && ` · goal ${goal.title}`}
         </span>
       </div>

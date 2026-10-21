@@ -11,9 +11,18 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "../lib/utils";
-import { ago, Btn, Diff, Page, Prop, Section, span, Title } from "./v3-bits";
+import {
+  Btn,
+  Diff,
+  Page,
+  Prop,
+  relativeTime,
+  Section,
+  span,
+  Title,
+} from "./v3-bits";
 import type { V3Data } from "./v3-data-types";
-import { AgentAvatar, Avatar, StatusPill } from "./v3-marks";
+import { AgentAvatar, Avatar, CeoMark, StatusPill } from "./v3-marks";
 import {
   agentNameOf,
   agentOf,
@@ -26,7 +35,14 @@ import {
 import { RowButton } from "./v3-open-record";
 import type { V3PageProps, V3Route } from "./v3-page-types";
 import { viaOf } from "./v3-rows";
-import { AskNote, link, Person, StuckNote, WaitingOn } from "./v3-ticket-notes";
+import {
+  AskNote,
+  link,
+  Person,
+  StuckNote,
+  TicketMoves,
+  WaitingOn,
+} from "./v3-ticket-notes";
 import type { V3Ticket } from "./v3-types";
 
 /* One ticket as a Notion page: properties, the hands it passed through, steps
@@ -80,6 +96,7 @@ function Hands({
                 <span className="flex items-center gap-2 text-[13.5px] font-medium">
                   <AgentAvatar data={data} agent={a} />
                   {a?.name ?? FORMER_AGENT}
+                  {a?.id === data.ceoId && <CeoMark />}
                 </span>
                 <span className="w-full truncate">{th.title}</span>
                 <span className="text-muted-foreground">
@@ -132,10 +149,12 @@ function Progress({ data, t }: { data: V3Data; t: V3Ticket }) {
               )}
             >
               {s.text}
-              <span className="text-muted-foreground/70">
-                {" "}
-                · {s.by === "you" ? data.me : agentNameOf(data, s.by)}
-              </span>
+              {s.by && (
+                <span className="text-muted-foreground/70">
+                  {" "}
+                  · {s.by === "you" ? data.me : agentNameOf(data, s.by)}
+                </span>
+              )}
             </span>
             <span
               className={cn(
@@ -200,13 +219,26 @@ function Updates({
   return (
     <>
       <Section title="Updates" count={t.updates.length || undefined} />
-      {t.updates.map((u) => {
-        const you = u.by === "you";
-        const by = you ? undefined : agentOf(data, u.by);
-        const name = you ? data.me : (by?.name ?? FORMER_AGENT);
+      {t.updates.map((u, i) => {
+        /* LilOS wrote it (a blocker finished). No person, no face. */
+        if (u.authorKind === "system") {
+          return (
+            <div key={`system-${i}`} className="py-2.5">
+              <div className="text-[13.5px] text-muted-foreground/70">
+                {relativeTime(u.ago)}
+              </div>
+              <p className="mt-0.5 text-[14.5px] leading-[1.55]">{u.text}</p>
+            </div>
+          );
+        }
+        const you = u.authorKind === "user" || u.by === "you";
+        const by = you || !u.by ? undefined : agentOf(data, u.by);
+        const name = you ? data.me : u.by ? (by?.name ?? FORMER_AGENT) : "";
         return (
           <div key={`${u.by}-${u.ago}-${u.text}`} className="flex gap-3 py-2.5">
-            {you ? (
+            {!name ? (
+              <span className="mt-0.5 size-6 shrink-0 rounded-full bg-muted" />
+            ) : you ? (
               <Avatar name={name} tone="n" size={24} className="mt-0.5" />
             ) : (
               <AgentAvatar
@@ -218,9 +250,12 @@ function Updates({
             )}
             <div>
               <div className="text-[13.5px]">
-                <b className="mr-2 font-semibold">{name}</b>
+                {name && <b className="mr-2 font-semibold">{name}</b>}
+                {!you && by?.id === data.ceoId && (
+                  <CeoMark className="mr-2 align-middle" />
+                )}
                 <span className="text-muted-foreground/70">
-                  {ago(u.ago)} ago
+                  {relativeTime(u.ago)}
                 </span>
               </div>
               <p className="mt-0.5 text-[14.5px] leading-[1.55]">{u.text}</p>
@@ -238,9 +273,6 @@ function Updates({
             placeholder="Add a comment…"
             className="min-w-0 flex-1 bg-transparent text-[14px] outline-none placeholder:text-muted-foreground/70"
           />
-          <span className="shrink-0 text-[13px] text-muted-foreground/70">
-            Type @ to ask an agent
-          </span>
         </div>
       )}
     </>
@@ -278,10 +310,11 @@ export function V3TicketPage({
       <Title kicker={project ? `${t.id} · ${project.name}` : t.id}>
         {t.title}
       </Title>
-      <div className="mb-2 flex">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
         <Btn small onClick={() => act.ask(`About ${t.id}: `)}>
           {data.ceoId ? "Ask the CEO about this" : "Ask about this"}
         </Btn>
+        <TicketMoves data={data} t={t} act={act} />
       </div>
       <div className="mt-1.5 mb-1">
         <Prop icon={<span className="size-4" />} label="Status">
@@ -291,18 +324,22 @@ export function V3TicketPage({
           )}
           {t.status === "done" && (
             <span className="text-muted-foreground">
-              {ago(t.doneAgo ?? 0)} ago
+              {relativeTime(t.doneAgo ?? 0)}
             </span>
           )}
         </Prop>
         <WaitingOn data={data} t={t} go={go} />
         <Prop icon={<UserIcon />} label="Owner">
-          <RowButton
-            onClick={() => go({ page: "agent", id: t.owner })}
-            className="py-1"
-          >
-            <Person data={data} id={t.owner} />
-          </RowButton>
+          {t.owner ? (
+            <RowButton
+              onClick={() => go({ page: "agent", id: t.owner })}
+              className="py-1"
+            >
+              <Person data={data} id={t.owner} />
+            </RowButton>
+          ) : (
+            <Person data={data} id="" />
+          )}
         </Prop>
         {t.reviewer && (
           <Prop icon={<EyeIcon />} label="Reviewer">

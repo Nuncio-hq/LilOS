@@ -1,9 +1,11 @@
 export * from "./browser";
+export * from "./ceo";
 export * from "./desktop";
 export * from "./domain";
 export * from "./project";
 export { appProtocol, appProtocolSchemas } from "./registry";
 export * from "./schedule";
 export * from "./slash";
+export * from "./ticket";
 export * from "./update";
 export * from "./wire";

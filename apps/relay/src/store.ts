@@ -12,6 +12,7 @@ import type {
   ConversationSummary,
   Employee,
   EmployeeStatus,
+  Goal,
   MessageAttachment,
   MessageSearchHit,
   MessagesSearchParams,
@@ -25,6 +26,10 @@ import type {
   ScheduledRunRecord,
   ScheduledTask,
   TaskSchedule,
+  Ticket,
+  TicketStatus,
+  TicketStep,
+  TicketWaitingOn,
   TurnFailure,
   WorkspaceIntent,
 } from "@lilos/contracts/app";
@@ -55,6 +60,41 @@ export interface NewProject {
   about?: string;
   /** Stamp for a backfilled project: when its oldest thread opened. */
   createdAt?: number;
+}
+
+/** A goal the relay creates (D-#776). `ownerId` absent means the human. */
+export interface NewGoal {
+  projectId: string;
+  title: string;
+  due?: string;
+  why?: string;
+  ownerId?: string;
+}
+
+/** Fields a ticket create may set. Status defaults from `waitingOn`. */
+export interface NewTicket {
+  projectId: string;
+  /** The project's key — the id is `${key}-${number}`. */
+  projectKey: string;
+  title: string;
+  goalId?: string;
+  ownerId?: string;
+  status?: TicketStatus;
+  waitingOn?: TicketWaitingOn;
+  progress?: TicketStep[];
+  startsAt?: string;
+  stuckWhy?: string;
+}
+
+export interface TicketPatch {
+  title?: string;
+  goalId?: string | null;
+  status?: TicketStatus;
+  waitingOn?: TicketWaitingOn | null;
+  progress?: TicketStep[];
+  result?: Ticket["result"] | null;
+  startsAt?: string | null;
+  stuckWhy?: string | null;
 }
 
 /** A project's name when none is given: the folder's last segment; the home
@@ -94,8 +134,10 @@ export function deriveProjectKey(
   return key;
 }
 
-/** A hire. `reportsTo` is not set here: a new person reports to the owner
-    until `employees.update` says otherwise (D-#775). */
+/** A hire. When a CEO holds the position, `createEmployee` defaults
+    `reportsTo` to that id — the same thing the Hire page says (D-#778).
+    With no CEO, a new person reports to the owner until `employees.update`
+    says otherwise (D-#775). */
 interface NewEmployee {
   name: string;
   role: string;
@@ -179,6 +221,9 @@ export interface OpenConversationInput {
   /** The project the relay filed this thread under (D-#771), resolved from
       `workspace.repoPath ?? cwd` before landing; absent = a plain chat. */
   projectId?: string;
+  /** The ticket this thread is a hand of (D-#776). Only `tickets.assign`
+      sets it — a normal open is not on a ticket. */
+  ticketId?: string;
   /** The access level stamped at open (#106) — the relay resolves
       `params.access ?? Settings' defaultAccess ?? "ask"` before landing. */
   access?: ConversationAccess;
@@ -350,10 +395,26 @@ export interface RelayStore {
    * conversations, messages, asks) in one step. The engine profile is never
    * touched — engines own profiles; the relay only drops its own records.
    * Returns the deleted row + removed channel ids, or null when unknown.
+   * `clearedCeo` is true when this person held the position: the same
+   * write drops `ceoId` (D-#778).
    */
-  removeEmployee(
-    id: string,
-  ): Promise<{ employee: Employee; channelIds: string[] } | null>;
+  removeEmployee(id: string): Promise<{
+    employee: Employee;
+    channelIds: string[];
+    clearedCeo: boolean;
+  } | null>;
+  /**
+   * One write for the CEO position (D-#778): `ceoId` in the settings KV
+   * and the `reportsTo` edges that follow it. `changed` is false when
+   * this employee already holds it (no events). `employees` is only the
+   * rows whose link changed. Null when the employee does not exist.
+   * Throws `CeoGraphError` if the result would cycle.
+   */
+  setCeo(employeeId: string): Promise<{
+    ceoId: string;
+    employees: Employee[];
+    changed: boolean;
+  } | null>;
 
   listChannels(): Promise<AppChannel[]>;
   getChannel(id: string): Promise<AppChannel | null>;
@@ -389,6 +450,41 @@ export interface RelayStore {
   ensureProject(
     input: NewProject,
   ): Promise<{ project: Project; created: boolean }>;
+
+  /* --------------------- goals and tickets (D-#776) -------------------- */
+  listGoals(): Promise<Goal[]>;
+  createGoal(input: NewGoal): Promise<Goal>;
+  listTickets(projectId?: string): Promise<Ticket[]>;
+  getTicket(id: string): Promise<Ticket | null>;
+  /** Allocates the project's next number inside the write. */
+  createTicket(input: NewTicket): Promise<Ticket>;
+  /**
+   * Apply a field write. When the ticket becomes done, every ticket waiting
+   * on it moves in the same transaction. The first row is the one written;
+   * the rest are the waiters.
+   */
+  updateTicket(id: string, patch: TicketPatch): Promise<Ticket[] | null>;
+  /**
+   * Checkout: set the owner and open their thread in one transaction.
+   * `channelId` is the owner's channel, opened before this call. A planned
+   * ticket becomes working. Reassigning adds another thread; the previous
+   * hand stays.
+   */
+  assignTicket(input: {
+    id: string;
+    ownerId: string;
+    channelId: string;
+    /** Resolved like `conversations.open`: the company's default, else ask. */
+    access?: ConversationAccess;
+  }): Promise<{
+    ticket: Ticket;
+    conversation: Conversation;
+    rootMessage: AppMessage;
+  } | null>;
+  commentTicket(
+    id: string,
+    update: { by: string; text: string },
+  ): Promise<Ticket | null>;
 
   listConversations(query: ListConversationsQuery): Promise<Conversation[]>;
   /**

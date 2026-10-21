@@ -5,19 +5,26 @@ import type {
   Conversation,
   ConversationSummary,
   Employee,
+  Goal,
   MessageSearchHit,
   ProfileSettings,
   Project,
   ScheduledTask,
   SystemStatusResult,
+  Ticket,
   WorkbenchOpenTarget,
 } from "@lilos/contracts/app";
 import type {
+  GoalCreateParams,
   ProjectCreateParams,
   ScheduleCreateParams,
   ScheduleUpdateParams,
   TeamHireParams,
   TeamUpdateParams,
+  TicketAssignParams,
+  TicketCommentParams,
+  TicketCreateParams,
+  TicketUpdateParams,
   ViewerBrowserInputEvent,
 } from "@lilos/contracts/harness";
 import type { ForgePrListItem } from "@lilos/contracts/host";
@@ -178,6 +185,9 @@ export function fakeAppOps(
     projects?: Project[];
     /** `"decline"` makes every approval op throw `declined` — nothing applies. */
     approve?: "once" | "decline";
+    /** Live CEO holder. Defaults to the bound fake employee so existing
+        direct calls of CEO-only tools still pass (D-#778). */
+    ceoId?: string;
   } = {},
 ): AppOps & {
   posted: string[];
@@ -195,6 +205,8 @@ export function fakeAppOps(
   const asks: string[] = [];
   const started: Array<{ text: string; title?: string; project?: string }> = [];
   const projectRows: Project[] = [...(opts.projects ?? [])];
+  const goalRows: Goal[] = [];
+  const ticketRows: Ticket[] = [];
   /* The fake's gate: the real impl posts an ask and waits; here the
      recorded command stands in for the card and `approve` answers it. */
   const gate = (command: string) => {
@@ -408,6 +420,13 @@ export function fakeAppOps(
       employees.push(employee);
       return employee;
     },
+    async setCeo(employeeId: string) {
+      gate(`team_set_ceo ${employeeId}`);
+      return { ceoId: employeeId };
+    },
+    async ceoId() {
+      return opts.ceoId ?? "emp-fake";
+    },
     async updateSelf(p: TeamUpdateParams) {
       gate(`team_update ${Object.keys(p).join(", ")}`);
       const self = employees[0];
@@ -486,6 +505,111 @@ export function fakeAppOps(
       };
       projectRows.push(project);
       return project;
+    },
+    async goals() {
+      return goalRows;
+    },
+    async createGoal(p: GoalCreateParams) {
+      const project = projectRows.find(
+        (r) => r.id === p.project || r.key === p.project,
+      );
+      if (!project) throw new SurfaceError("not_found", "project not found");
+      if (
+        p.ownerId &&
+        opts.employees &&
+        !opts.employees.some((e) => e.id === p.ownerId)
+      ) {
+        throw new SurfaceError("not_found", "employee not found");
+      }
+      gate(`goal_create ${p.title}`);
+      const goal: Goal = {
+        id: `goal-${goalRows.length + 1}`,
+        title: p.title,
+        projectId: project?.id ?? p.project,
+        due: p.due ?? "",
+        why: p.why ?? "",
+        ...(p.ownerId ? { ownerId: p.ownerId } : {}),
+        createdAt: Date.now(),
+      };
+      goalRows.push(goal);
+      return goal;
+    },
+    async tickets(project?: string) {
+      const id = project
+        ? projectRows.find((r) => r.id === project || r.key === project)?.id
+        : undefined;
+      return ticketRows.filter((t) => (id ? t.projectId === id : true));
+    },
+    async readTicket(p: { id: string }) {
+      const ticket = ticketRows.find((t) => t.id === p.id);
+      if (!ticket) throw new Error(`unknown ticket ${p.id}`);
+      return ticket;
+    },
+    async createTicket(p: TicketCreateParams) {
+      const project =
+        projectRows.find((r) => r.id === p.project || r.key === p.project) ??
+        projectRows[0];
+      const n =
+        ticketRows.filter((t) => t.projectId === project?.id).length + 1;
+      const ticket: Ticket = {
+        id: `${project?.key ?? "T"}-${n}`,
+        number: n,
+        title: p.title,
+        projectId: project?.id ?? p.project,
+        ...(p.goalId ? { goalId: p.goalId } : {}),
+        ...(p.ownerId ? { ownerId: p.ownerId } : {}),
+        status: p.status ?? (p.waitingOn?.kind === "you" ? "needs" : "planned"),
+        ...(p.waitingOn ? { waitingOn: p.waitingOn } : {}),
+        progress: p.progress ?? [],
+        updates: [],
+        ...(p.startsAt ? { startsAt: p.startsAt } : {}),
+        ...(p.stuckWhy ? { stuckWhy: p.stuckWhy } : {}),
+        statusAt: Date.now(),
+        createdAt: Date.now(),
+      };
+      ticketRows.push(ticket);
+      return ticket;
+    },
+    async updateTicket(p: TicketUpdateParams) {
+      const ticket = ticketRows.find((t) => t.id === p.id);
+      if (!ticket) throw new Error(`unknown ticket ${p.id}`);
+      if (p.title !== undefined) ticket.title = p.title;
+      if (p.status !== undefined) ticket.status = p.status;
+      if (p.waitingOn === null) delete ticket.waitingOn;
+      else if (p.waitingOn !== undefined) ticket.waitingOn = p.waitingOn;
+      if (p.progress !== undefined) ticket.progress = p.progress;
+      if (p.goalId === null) delete ticket.goalId;
+      else if (p.goalId !== undefined) ticket.goalId = p.goalId;
+      if (p.result === null) delete ticket.result;
+      else if (p.result !== undefined) ticket.result = p.result;
+      if (p.startsAt === null) delete ticket.startsAt;
+      else if (p.startsAt !== undefined) ticket.startsAt = p.startsAt;
+      if (p.stuckWhy === null) delete ticket.stuckWhy;
+      else if (p.stuckWhy !== undefined) ticket.stuckWhy = p.stuckWhy;
+      return { tickets: [ticket] };
+    },
+    async assignTicket(p: TicketAssignParams) {
+      const ticket = ticketRows.find((t) => t.id === p.id);
+      if (!ticket) throw new Error(`unknown ticket ${p.id}`);
+      ticket.ownerId = p.ownerId;
+      if (ticket.status === "planned") ticket.status = "working";
+      return {
+        ticket,
+        thread: { id: `conv-${p.id}`, title: ticket.title },
+      };
+    },
+    async commentTicket(p: TicketCommentParams) {
+      const ticket = ticketRows.find((t) => t.id === p.id);
+      if (!ticket) throw new Error(`unknown ticket ${p.id}`);
+      const by = opts.employees?.[0]?.id ?? "you";
+      ticket.updates.push({
+        id: `upd-${ticket.updates.length + 1}`,
+        authorKind: by === "you" ? "user" : "employee",
+        by,
+        at: Date.now(),
+        text: p.text,
+      });
+      return ticket;
     },
   };
 }

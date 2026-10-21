@@ -8,7 +8,7 @@ import {
 import type { ReactNode } from "react";
 import { cn } from "../lib/utils";
 import { Btn, Page, Section, Tabs, Title } from "./v3-bits";
-import { AgentAvatar, DOT } from "./v3-marks";
+import { AgentAvatar, CeoMark, DOT } from "./v3-marks";
 import {
   asleepAgents,
   defaultAgent,
@@ -163,6 +163,7 @@ function ByAgent(p: V3PageProps) {
                 <span className="flex items-center gap-2">
                   <AgentAvatar data={data} agent={a} />
                   {a.name}
+                  {a.id === data.ceoId && <CeoMark />}
                   <span className="font-normal text-[13px] text-muted-foreground">
                     {a.role}
                   </span>

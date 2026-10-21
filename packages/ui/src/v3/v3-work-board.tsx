@@ -1,6 +1,6 @@
 import { cn } from "../lib/utils";
 import { ago } from "./v3-bits";
-import { AgentAvatar, INK, StatusDot } from "./v3-marks";
+import { AgentAvatar, CeoMark, INK, StatusDot } from "./v3-marks";
 import { agentOf, FORMER_AGENT } from "./v3-model";
 import { useOpenRecord } from "./v3-open-record";
 import type { V3Status, V3Ticket } from "./v3-types";
@@ -48,7 +48,7 @@ export function BoardView({ data, go, tickets }: WorkViewProps) {
             </div>
             <div className="flex flex-col gap-2">
               {rows.map((t) => {
-                const owner = agentOf(data, t.owner);
+                const owner = t.owner ? agentOf(data, t.owner) : undefined;
                 return (
                   <button
                     type="button"
@@ -67,10 +67,13 @@ export function BoardView({ data, go, tickets }: WorkViewProps) {
                       {t.title}
                     </span>
                     <span className="flex items-center gap-1.5 text-[12.5px] text-muted-foreground">
-                      <AgentAvatar data={data} agent={owner} size={18} />
+                      {t.owner && (
+                        <AgentAvatar data={data} agent={owner} size={18} />
+                      )}
                       <span className="truncate">
-                        {owner?.name ?? FORMER_AGENT}
+                        {t.owner ? (owner?.name ?? FORMER_AGENT) : "Unassigned"}
                       </span>
+                      {owner?.id === data.ceoId && <CeoMark />}
                       <span
                         className={cn(
                           "ml-auto shrink-0",

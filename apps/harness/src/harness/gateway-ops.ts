@@ -5,13 +5,16 @@ import type {
   AskHireProposal,
   Conversation,
   Employee,
+  Goal,
   Project,
   RecentFolder,
   ScheduledTask,
 } from "@lilos/contracts/app";
+import { CEO_SETTING_KEY } from "@lilos/contracts/app";
 import type { AgentDescriptor } from "@lilos/contracts/engine";
 import type {
   AskParams,
+  GoalCreateParams,
   ProjectCreateParams,
   ScheduleCreateParams,
   ScheduleUpdateParams,
@@ -112,9 +115,11 @@ export function createGatewayApprovalOps(
   AppOps,
   | "startThread"
   | "hireEmployee"
+  | "setCeo"
   | "updateSelf"
   | "addFolder"
   | "createProject"
+  | "createGoal"
   | "scheduleCreate"
   | "scheduleUpdate"
   | "scheduleDelete"
@@ -282,6 +287,40 @@ export function createGatewayApprovalOps(
       return employee;
     },
 
+    /* The position, not a persona (D-#778). Unknown, or already the holder:
+       say so before any card. The card names who receives it; the relay
+       re-points reportsTo only after "once". */
+    setCeo: async (employeeId: string) => {
+      const { employees } = await relay.request<{ employees: Employee[] }>(
+        "employees.list",
+        {},
+      );
+      const who = employees.find((e) => e.id === employeeId);
+      if (!who) {
+        throw new SurfaceError(
+          "not_found",
+          `employee not found: ${employeeId}`,
+        );
+      }
+      const current = await relay.request<{ value: unknown }>("settings.get", {
+        key: CEO_SETTING_KEY,
+      });
+      if (current.value === employeeId) {
+        throw new SurfaceError(
+          "invalid_params",
+          `${who.name} already holds the CEO position`,
+        );
+      }
+      await gate({
+        command: `team_set_ceo ${employeeId}`,
+        description: `Give the CEO position to ${who.name}. Everyone who reported to the previous CEO or to the owner then reports to them; they report to the owner.`,
+      });
+      const r = await relay.request<{ ceoId: string }>("company.setCeo", {
+        employeeId,
+      });
+      return { ceoId: r.ceoId };
+    },
+
     updateSelf: async (p: TeamUpdateParams) => {
       if (typeof p.reportsTo === "string") {
         const { employees } = await relay.request<{ employees: Employee[] }>(
@@ -369,6 +408,38 @@ export function createGatewayApprovalOps(
         ...(p.about !== undefined ? { about: p.about } : {}),
       });
       return r.project;
+    },
+
+    /* D-#341 / D-#776: a goal always asks, including one the caller would
+       own. The project (and owner, when named) is checked before the card
+       so a bad write never opens an ask. The card names the project. */
+    createGoal: async (p: GoalCreateParams) => {
+      const projects = await listProjects(relay);
+      const project = projects.find(
+        (x) => x.id === p.project || x.key === p.project,
+      );
+      if (!project) throw new SurfaceError("not_found", "project not found");
+      if (p.ownerId) {
+        const { employees } = await relay.request<{ employees: Employee[] }>(
+          "employees.list",
+          {},
+        );
+        if (!employees.some((e) => e.id === p.ownerId)) {
+          throw new SurfaceError("not_found", "employee not found");
+        }
+      }
+      await gate({
+        command: `goal_create ${p.title}`,
+        description: `Add a goal "${p.title}" on ${project.name}${p.why ? ` — ${p.why}` : ""}.`,
+      });
+      const r = await relay.request<{ goal: Goal }>("goals.create", {
+        project: p.project,
+        title: p.title,
+        ...(p.due !== undefined ? { due: p.due } : {}),
+        ...(p.why !== undefined ? { why: p.why } : {}),
+        ...(p.ownerId !== undefined ? { ownerId: p.ownerId } : {}),
+      });
+      return r.goal;
     },
 
     scheduleCreate: async (p: ScheduleCreateParams) => {

@@ -3,11 +3,15 @@ import { z } from "zod";
 import { buildSchemaDoc } from "../scripts/gen-schemas.js";
 import {
   BrowserClickParams,
+  GoalCreateParams,
   harnessProtocol,
   LILOS_TOOLS,
   PreviewTarget,
   TerminalRunParams,
   ThreadPostParams,
+  TicketCommentParams,
+  TicketCreateParams,
+  TicketUpdateParams,
   ViewerClientMsg,
   ViewerServerMsg,
 } from "../src/harness/index.js";
@@ -24,6 +28,8 @@ describe("AC-2 tool surface contracts", () => {
       "browser_type",
       "context",
       "folder_add",
+      "goal_create",
+      "goal_list",
       "guide",
       "project_create",
       "project_list",
@@ -35,6 +41,7 @@ describe("AC-2 tool surface contracts", () => {
       "team_hire",
 
       "team_list",
+      "team_set_ceo",
       "team_update",
       "terminal_read",
       "terminal_run",
@@ -46,6 +53,12 @@ describe("AC-2 tool surface contracts", () => {
       "thread_search",
       "thread_set_title",
       "thread_start",
+      "ticket_assign",
+      "ticket_comment",
+      "ticket_create",
+      "ticket_list",
+      "ticket_read",
+      "ticket_update",
       "workbench_open",
       "workbench_previews",
     ]);
@@ -188,6 +201,29 @@ describe("AC-5 preview discovery contract", () => {
     expect(
       PreviewTarget.safeParse({ url: "http://x", via: "lsof" }).success,
     ).toBe(false);
+  });
+});
+
+describe("ticket and goal writes reject a blank title or comment", () => {
+  it("trims, and a whitespace-only value never parses", () => {
+    expect(
+      GoalCreateParams.parse({ project: "lil", title: "  Ship  " }).title,
+    ).toBe("Ship");
+    expect(
+      GoalCreateParams.safeParse({ project: "lil", title: "   " }).success,
+    ).toBe(false);
+    expect(
+      TicketCreateParams.safeParse({ project: "lil", title: " " }).success,
+    ).toBe(false);
+    expect(
+      TicketUpdateParams.safeParse({ id: "LIL-1", title: "\n" }).success,
+    ).toBe(false);
+    expect(
+      TicketCommentParams.safeParse({ id: "LIL-1", text: "  " }).success,
+    ).toBe(false);
+    expect(TicketCommentParams.parse({ id: "LIL-1", text: "  hi " }).text).toBe(
+      "hi",
+    );
   });
 });
 

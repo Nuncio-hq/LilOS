@@ -329,7 +329,8 @@ export function Diff({ add, del }: { add: number; del: number }) {
   );
 }
 
-/** Minutes → "now" · "12m" · "2h" · "3d". */
+/** Minutes → "now" · "12m" · "2h" · "3d". A duration, not a phrase:
+    callers that want "5m ago" use `relativeTime`. */
 export const ago = (m: number) =>
   m < 1
     ? "now"
@@ -338,6 +339,12 @@ export const ago = (m: number) =>
       : m < 1440
         ? `${Math.round(m / 60)}h`
         : `${Math.round(m / 1440)}d`;
+
+/** Minutes as a phrase: "just now", "5m ago", "2h ago", "3d ago".
+    The words include "ago". Writing `${ago(m)} ago` made "now ago"
+    wherever a clock was under a minute (#800, ticket updates). */
+export const relativeTime = (m: number) =>
+  m < 1 ? "just now" : `${ago(m)} ago`;
 
 /** Minutes → "1h 50m". */
 export const span = (m: number) =>

@@ -1,7 +1,7 @@
 import { cn } from "../lib/utils";
-import { ago, Btn, Meter, Page, Section, Title } from "./v3-bits";
+import { ago, Btn, Meter, Page, relativeTime, Section, Title } from "./v3-bits";
 import type { V3Data } from "./v3-data-types";
-import { AgentAvatar, StatusDot, StatusPill } from "./v3-marks";
+import { AgentAvatar, CeoMark, StatusDot, StatusPill } from "./v3-marks";
 import {
   agentNameOf,
   agentOf,
@@ -241,6 +241,7 @@ export function V3Home({ data, go, act }: V3PageProps) {
               <span className="flex items-center gap-[9px] font-medium text-foreground">
                 <AgentAvatar data={data} agent={a} />
                 {a.name}
+                {a.id === data.ceoId && <CeoMark />}
               </span>
               <span>
                 <StatusPill status={r.status} />
@@ -317,12 +318,12 @@ export function V3Home({ data, go, act }: V3PageProps) {
                     {r.title}
                   </div>
                   <div className="mt-px truncate text-[13px] text-muted-foreground">
-                    {r.tag} · {agentNameOf(data, r.by)}
+                    {r.tag} · {r.by ? agentNameOf(data, r.by) : "Unassigned"}
                     {r.note && ` · ${r.note}`}
                   </div>
                 </div>
                 <span className="shrink-0 text-[13px] text-muted-foreground/70">
-                  {r.minutes < 1 ? "just now" : `${ago(r.minutes)} ago`}
+                  {relativeTime(r.minutes)}
                 </span>
               </RowButton>
             ))}

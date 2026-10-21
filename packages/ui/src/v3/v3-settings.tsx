@@ -2,7 +2,7 @@ import { PlusIcon } from "lucide-react";
 import { useState } from "react";
 import { cn } from "../lib/utils";
 import { Btn, Page, Tabs, Title } from "./v3-bits";
-import { AgentAvatar, Avatar } from "./v3-marks";
+import { AgentAvatar, Avatar, CeoMark } from "./v3-marks";
 import type { V3PageProps } from "./v3-page-types";
 import { EnginePane } from "./v3-settings-engine";
 import { GeneralPane } from "./v3-settings-panes";
@@ -185,6 +185,7 @@ function ConnectorRow({
               >
                 <AgentAvatar data={data} agent={a} size={16} />
                 {a.name}
+                {a.id === data.ceoId && <CeoMark />}
               </button>
             );
           })}
