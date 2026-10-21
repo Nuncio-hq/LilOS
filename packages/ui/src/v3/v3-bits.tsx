@@ -140,7 +140,11 @@ export function Title({
   );
 }
 
-/** Section header: title, a quiet count, and an optional link on the right. */
+/** Section header: title, a quiet count, and an optional link on the right.
+    A count of 0 is left out (D-#769): the empty line under the heading
+    already says there is nothing, so "Needs you 0" above "Nothing needs
+    you." would say it twice. A positive count stays. A count that is not
+    a bare number ("2 more") stays. */
 export function Section({
   title,
   count,
@@ -154,6 +158,7 @@ export function Section({
   onLink?: () => void;
   className?: string;
 }) {
+  const quiet = count === 0 || count === "0" ? undefined : count;
   return (
     <h3
       className={cn(
@@ -162,9 +167,9 @@ export function Section({
       )}
     >
       {title}
-      {count !== undefined && (
+      {quiet !== undefined && (
         <small className="font-normal text-[13px] text-muted-foreground/70">
-          {count}
+          {quiet}
         </small>
       )}
       {link && (
