@@ -1,5 +1,5 @@
 /* Shared agent-chat building blocks — THE chat with an agent. Both the thread panel (ThreadView, also used
-   for DM sessions) and the Focus workbench (AgentTurn / FocusComposer) render steers, the waiting and
+   for DM sessions) and the Focus workbench (AgentTurn / the same Composer) render steers, the waiting and
    not-sent trays, and the running-state composer hints from here, so the two surfaces can never drift. Chat is the important
    part; everything else inherits it. */
 import {

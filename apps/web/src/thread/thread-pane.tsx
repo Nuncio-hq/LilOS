@@ -1,5 +1,4 @@
 import type { AppMessage } from "@lilos/contracts/app";
-import { MAX_ATTACHMENTS_PER_MESSAGE } from "@lilos/contracts/app";
 import { ThreadView } from "@lilos/ui";
 import type { WbTab } from "@lilos/ui/types";
 import { DesktopFindBar } from "../lib/desktop-find";
@@ -87,7 +86,6 @@ export function ThreadPane({
       )}
       <ThreadView
         {...sharedViewProps(d)}
-        maxFiles={MAX_ATTACHMENTS_PER_MESSAGE}
         onModel={d.models ? d.onModel : undefined}
         onOpenSession={sessionOpener(d, nav)}
         onOpenTab={onOpenTab}
@@ -98,9 +96,6 @@ export function ThreadPane({
            keeps work=null for DM by design, so the gate is the
            conversation's cwd itself. */
         onAddFolder={conv.cwd ? undefined : () => d.setMoveFolderOpen(true)}
-        mentionables={d.mentionables}
-        onSearchFiles={d.searchFiles}
-        onSearchCommands={d.searchCommands}
         scrollTo={scrollTo}
         onScrolled={onScrolled}
         work={null}

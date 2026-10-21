@@ -104,9 +104,13 @@ export function planOf(t: V3Thread, turn: V3Turn): Plan | undefined {
   };
 }
 
+/** The turn with the highest number (turns are stored newest first). */
+export const newestTurn = (t: V3Thread): V3Turn | undefined =>
+  t.turns.reduce<V3Turn | undefined>((a, u) => (!a || u.n > a.n ? u : a), undefined);
+
 /** The thread has a plan the card can still decide. */
 export function planWaiting(t: V3Thread): boolean {
-  const newest = [...t.turns].sort((a, b) => b.n - a.n)[0];
+  const newest = newestTurn(t);
   return !!newest && planOf(t, newest)?.status === "proposed";
 }
 
@@ -116,7 +120,7 @@ export const hasPlan = (threadId: string): boolean => threadId in PROPOSALS;
 /** The thread after you decide its plan: Approve sets the first step running, Reject ends it. */
 export function decidePlan(t: V3Thread, action: "approve" | "reject"): V3Thread {
   if (action === "reject") return { ...t, status: "done", askId: undefined, quote: undefined, summary: PLAN_REJECTED };
-  const newest = [...t.turns].sort((a, b) => b.n - a.n)[0];
+  const newest = newestTurn(t);
   const first = newest && planOf(t, newest)?.steps[0]?.text;
   return {
     ...t,
@@ -135,7 +139,6 @@ export function reviseTurn(t: V3Thread, text: string, at: string): V3Thread {
   return {
     ...t,
     turns: [
-      ...t.turns,
       {
         n,
         from: `you at ${at}`,
@@ -143,15 +146,16 @@ export function reviseTurn(t: V3Thread, text: string, at: string): V3Thread {
         prompt: { by: "you", at, text },
         answer: "I’ve added that to the plan. Nothing is touched until you approve it.",
       },
+      ...t.turns,
     ],
   };
 }
 
 /** A message sent while a plan waits: it waits on the turn, as one sent mid-turn does. */
 export function queueOnNewest(t: V3Thread, text: string, at: string): V3Thread {
-  const newest = Math.max(...t.turns.map((u) => u.n));
+  const newest = newestTurn(t);
   return {
     ...t,
-    turns: t.turns.map((u) => (u.n === newest ? { ...u, queued: [...(u.queued ?? []), { at, text }] } : u)),
+    turns: t.turns.map((u) => (u === newest ? { ...u, queued: [...(u.queued ?? []), { at, text }] } : u)),
   };
 }

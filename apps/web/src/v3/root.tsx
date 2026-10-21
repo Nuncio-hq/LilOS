@@ -18,9 +18,9 @@ import { visibleNav } from "./shown";
    you are is the URL hash, a control exists only when the engine can do it).
    V3Shell runs on the relay's company: the nav is nav.ts, the data one
    computed store (data.ts), every click an action (actions.ts). The thread
-   beside a page is the app's own thread view until the v3 conversation runs
-   on engine events (#770). Not: a second UI, a route per record, placeholder
-   controls. */
+   in the peek and widened is ThreadPanel: the one v3 thread view, running on
+   engine events (#770). Not: a second UI, a route per record, placeholder or
+   duplicate controls. */
 
 function Company() {
   const nav = useAtom(v3Nav);

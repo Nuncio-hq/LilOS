@@ -182,6 +182,7 @@ export function PlanCard({
         type="button"
         disabled={!folded}
         onClick={() => setOpen(!shown)}
+        aria-expanded={folded ? shown : undefined}
         className={cn(
           "flex w-full items-center gap-2 text-left text-[13.5px]",
           folded && !shown ? "py-1" : "px-4 pt-3.5 pb-2.5",

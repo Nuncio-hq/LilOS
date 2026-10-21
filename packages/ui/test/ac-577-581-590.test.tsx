@@ -16,7 +16,6 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { Composer } from "../src/chat/composer";
-import { FocusComposer } from "../src/chat/focus-composer";
 import { AddFolderDialog } from "../src/dialogs/add-folder-dialog";
 import { FocusView } from "../src/focus/focus-view";
 import { SessionUsage } from "../src/focus/session-usage";
@@ -268,11 +267,12 @@ describe("issue #590 — desktop polish", () => {
     expect(ta.selectionStart).toBe("Change the plan: ".length);
   });
 
-  test("AC-1 the Focus composer lands the same caret", async () => {
+  test("AC-1 the composer lands the same caret while a turn runs (the Focus view's steer box)", async () => {
     const r = render(
-      <FocusComposer
-        running={false}
+      <Composer
+        status="streaming"
         placeholder="Reply…"
+        employees={[]}
         hint=""
         draft=""
         onDraftChange={() => {}}
@@ -282,9 +282,10 @@ describe("issue #590 — desktop polish", () => {
     const ta = r.container.querySelector("textarea")!;
     await act(async () => {
       r.rerender(
-        <FocusComposer
-          running={false}
+        <Composer
+          status="streaming"
           placeholder="Reply…"
+          employees={[]}
           hint=""
           draft="Change the plan: "
           onDraftChange={() => {}}

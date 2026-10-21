@@ -64,6 +64,8 @@ export function Workbench({
   caps,
   onSuggest,
   onPr,
+  model,
+  models,
 }: WorkbenchProps) {
   const a = useMemo(() => sessionArtifacts(thread), [thread]);
   const jobs = thread.jobs ?? [];
@@ -359,7 +361,7 @@ export function Workbench({
         </TabsContent>
       )}
 
-      {plan && (
+      {allowed.plan && (
         <TabsContent value="plan" className="min-h-0 flex-1">
           <PlanPanel plans={plans} />
         </TabsContent>
@@ -393,6 +395,8 @@ export function Workbench({
             thread.branch
           }
           startedAt={thread.replies[0]?.time}
+          model={model}
+          models={models}
         />
       </TabsContent>
     </Tabs>

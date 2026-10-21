@@ -45,6 +45,7 @@ export function PrCommits({
             type="button"
             className={ICON_BTN}
             title="Copy hash"
+            aria-label="Copy hash"
             onClick={() => navigator.clipboard?.writeText(c.hash)}
           >
             <CopyIcon className="size-3.5" />

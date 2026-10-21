@@ -1,9 +1,10 @@
 // @vitest-environment happy-dom
-/* Issue #80, ui layer: AC-1 the user's messages carry the person's own avatar
-   (one Human identity, high-contrast fallback or image) and
-   AC-2 a mid-stream reply renders markdown as it arrives, on the same code
-   path as the finished render. (The sidebar-footer half of AC-1 went with
-   the old sidebar.) */
+/* Issue #80, ui layer: AC-1 the human avatar renders the person's own
+   identity (one Human identity, high-contrast fallback or image) and AC-2 a
+   mid-stream reply renders markdown as it arrives, on the same code path as
+   the finished render. (AC-1's user-message-row half went with
+   `feed/row.tsx` in #770, when `UserTurn` became an avatar-less bubble; its
+   sidebar-footer half went with the old sidebar.) */
 import { cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test } from "vitest";
 import { AgentTurn } from "../src/conversation/turns";

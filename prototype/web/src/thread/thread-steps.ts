@@ -1,9 +1,9 @@
-import type { Diff, Step, V3Attachment, V3Step, V3StepKind, V3Workbench } from "@lilos/ui"
+import type { Diff, Step, V3Attachment, V3Step, V3StepKind, V3Thread, V3Workbench } from "@lilos/ui"
 
 /* The prototype's mock steps (V3Step: a verb, a target, a count) in the shape
    the real thread view reads (Step: a tool call with input and output).
    Nothing is invented: the target becomes the call's argument, the meta its
-   output, and a diff is attached only where the mock workbench has one. */
+   output, and a diff is attached only where the mock workbench or the turn has one. */
 
 /** A unified patch from the mock's diff lines, with its hunk header. */
 export function patchOf(lines: { kind: "add" | "del" | "ctx"; text: string }[]): string {
@@ -22,6 +22,29 @@ export function diffsOf(wb: V3Workbench | undefined): Diff[] {
     del: d.del,
     patch: patchOf(d.lines),
   }))
+}
+
+type DiffAttachment = Extract<V3Attachment, { kind: "diff" }>
+
+const diffOfAttachment = (a: DiffAttachment): Diff => ({
+  path: a.path,
+  status: "modified",
+  add: a.add,
+  del: a.del,
+  patch: patchOf(a.lines),
+})
+
+/** Every file the thread changed: the workbench's, and the diffs its turns carried (newest wins). */
+export function changedOf(t: V3Thread): Diff[] {
+  const out = diffsOf(t.workbench)
+  const seen = new Set(out.map((d) => d.path))
+  for (const turn of [...t.turns].sort((a, b) => b.n - a.n))
+    for (const a of turn.attachments ?? [])
+      if (a.kind === "diff" && !seen.has(a.path)) {
+        seen.add(a.path)
+        out.push(diffOfAttachment(a))
+      }
+  return out
 }
 
 const TOOL = {
@@ -77,13 +100,7 @@ export function attachmentSteps(
   const extra: Step[] = []
   for (const a of attachments ?? []) {
     if (a.kind === "diff" && !steps.some((s) => s.diff?.path === a.path)) {
-      const diff: Diff = {
-        path: a.path,
-        status: "modified",
-        add: a.add,
-        del: a.del,
-        patch: patchOf(a.lines),
-      }
+      const diff = diffOfAttachment(a)
       extra.push({
         tool: "patch",
         input: { path: a.path },

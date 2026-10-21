@@ -30,7 +30,7 @@ let listening = false;
 /** A matching overlay element that no registered layer owns — the composer's
  *  `@` menu, a Base UI popover/select, a vendored dialog. Those components
  *  handle Esc internally; the stack must not eat their key. */
-function foreignOverlayOpen(): boolean {
+export function foreignOverlayOpen(): boolean {
   /* Only a visible, unowned overlay is foreign — Base UI keeps closed
        menus/popovers mounted while they animate out, and counting them
        would swallow Esc meant for the layer underneath. */

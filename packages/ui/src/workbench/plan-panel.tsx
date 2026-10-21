@@ -101,6 +101,7 @@ function Older({ p }: { p: Plan }) {
       <button
         type="button"
         onClick={() => setOpen(!open)}
+        aria-expanded={open}
         className="flex w-full items-center gap-2 rounded-[10px] px-3.5 py-2.5 text-left text-[13px] text-muted-foreground hover:bg-[var(--v3-hover)]"
       >
         <ChevronRightIcon

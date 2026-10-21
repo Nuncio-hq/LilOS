@@ -1,171 +1,33 @@
+import { PlayIcon } from "lucide-react";
 import {
-  CircleDashedIcon,
-  FileDiffIcon,
-  FolderTreeIcon,
-  GitMergeIcon,
-  GitPullRequestIcon,
-  GlobeIcon,
-  InfoIcon,
-  ListChecksIcon,
-  type LucideIcon,
-  MonitorPlayIcon,
-  NetworkIcon,
-  PlayIcon,
-  SquareTerminalIcon,
-  TimerIcon,
-} from "lucide-react";
-import type { ReactNode } from "react";
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { Button } from "../components/ui/button";
 import { cn } from "../lib/utils";
-import type { PullRequest, Thread, WbTab } from "../types";
+import type { Thread, WbTab } from "../types";
 import { StatusPill } from "../v3/v3-marks";
 import type { V3Status } from "../v3/v3-types";
-import { turnChangedFiles } from "../workbench/artifacts";
+import { type HeaderTab, WorkStrip } from "./work-strip";
 
 /* The head of a conversation — shared by the panel (ThreadView, beside the
    list) and the session view (FocusView), drawn once so the two can't drift:
-   kicker line, serif title, status line, and in the panel the work strip.
-   It is the first child of the conversation's scroller, so it scrolls away
-   with the thread instead of holding a bar over it. */
+   kicker line, serif title, status line, and the work strip. It is the first
+   child of the conversation's scroller, so it scrolls away with the thread
+   (the title goes with it). What must stay reachable does not: once the
+   header is out of view a slim bar sticks to the top of the column with the
+   title (small), the work strip, the context meter and the ⋯ menu. Those
+   controls live in ONE place at a time — the header while it shows, the bar
+   after — so there is never a second copy to hover, click or find. */
 
-export type HeaderTab = {
-  id: WbTab;
-  label: string;
-  meta?: string;
-  /** Stands in for the kind's own icon — the PR tab wears its state. */
-  icon?: ReactNode;
-};
-
-const ICON: Record<WbTab, LucideIcon> = {
-  browser: GlobeIcon,
-  changes: FileDiffIcon,
-  files: FolderTreeIcon,
-  terminal: SquareTerminalIcon,
-  preview: MonitorPlayIcon,
-  pr: GitPullRequestIcon,
-  background: TimerIcon,
-  plan: ListChecksIcon,
-  subagents: NetworkIcon,
-  details: InfoIcon,
-};
-
-/* The PR as the one word and icon its state reads: merged, closed, checks
-   running, draft, or ready. The strip's PR tab carries it — the header has
-   no chip of its own, so the PR is named once. */
-function prState(
-  pr: PullRequest,
-  pending: boolean,
-): { word: string; icon: ReactNode } {
-  const cls = "size-3.5";
-  if (pr.status === "merged")
-    return {
-      word: "merged",
-      icon: <GitMergeIcon className={cn(cls, "text-violet-600")} />,
-    };
-  if (pr.status === "closed")
-    return {
-      word: "closed",
-      icon: <GitPullRequestIcon className={cn(cls, "text-zinc-500")} />,
-    };
-  if (pending)
-    return {
-      word: "checks",
-      icon: (
-        <CircleDashedIcon
-          className={cn(cls, "animate-spin text-work [animation-duration:3s]")}
-        />
-      ),
-    };
-  return {
-    word: pr.draft ? "draft" : "ready",
-    icon: <GitPullRequestIcon className={cn(cls, "text-emerald-600")} />,
-  };
-}
-
-/* The kinds of work this thread has, in the strip's order. Folder work
-   (Changes, Files, Terminal, Preview) needs a folder; PR and Background
-   appear once the session has one; the Browser only where the app can open
-   pages (desktop); Details is always there. `prPending`: the PR's checks
-   are still running. */
-export function workTabs(
-  thread: Pick<Thread, "replies" | "pr" | "jobs">,
-  opts: { folder: boolean; browser: boolean; prPending?: boolean },
-): HeaderTab[] {
-  const tabs: HeaderTab[] = [];
-  if (opts.folder) {
-    const changed = new Set(
-      thread.replies.flatMap((r) => [...turnChangedFiles(r)]),
-    ).size;
-    tabs.push(
-      {
-        id: "changes",
-        label: "Changes",
-        meta: changed ? String(changed) : undefined,
-      },
-      { id: "files", label: "Files" },
-      { id: "terminal", label: "Terminal" },
-      { id: "preview", label: "Preview" },
-    );
-  }
-  if (thread.pr) {
-    const { word, icon } = prState(thread.pr, !!opts.prPending);
-    tabs.push({
-      id: "pr",
-      label: "PR",
-      meta: `#${thread.pr.number} · ${word}`,
-      icon,
-    });
-  }
-  if (thread.jobs?.length)
-    tabs.push({
-      id: "background",
-      label: "Background",
-      meta: String(thread.jobs.length),
-    });
-  if (opts.browser) tabs.push({ id: "browser", label: "Browser" });
-  tabs.push({ id: "details", label: "Details" });
-  return tabs;
-}
-
-/** Under the header while the chat sits beside the list: one quiet button
-    per kind of work; any of them opens the session view on that tab. */
-export function WorkStrip({
-  tabs,
-  onOpen,
-}: {
+export type WorkStripProps = {
   tabs: HeaderTab[];
   onOpen: (tab: WbTab) => void;
-}) {
-  return (
-    <nav
-      aria-label="Thread work"
-      data-work-strip
-      className="mt-4 flex flex-wrap items-center gap-x-0.5 gap-y-1 border-[var(--v3-line)] border-b pb-3"
-    >
-      {tabs.map((t) => {
-        const Icon = ICON[t.id];
-        return (
-          <button
-            key={t.id}
-            type="button"
-            data-work-tab={t.id}
-            title={`Open ${t.label} beside the chat`}
-            onClick={() => onOpen(t.id)}
-            className="inline-flex h-[26px] items-center gap-1.5 rounded-md px-2 text-[12.5px] text-muted-foreground transition-colors hover:bg-[var(--v3-hover)] hover:text-foreground"
-          >
-            {t.icon ?? <Icon className="size-3.5" />}
-            {t.label}
-            {t.meta && (
-              <span className="text-muted-foreground/70 tabular-nums">
-                {t.meta}
-              </span>
-            )}
-          </button>
-        );
-      })}
-    </nav>
-  );
-}
+};
 
 /** How many messages the person has sent — root included; system notes and
     the agent's own turns don't count. */
@@ -213,6 +75,79 @@ export function StartWork({
   );
 }
 
+/* The nearest ancestor that scrolls — the conversation's port. */
+function scrollParent(el: HTMLElement): HTMLElement | null {
+  for (let p = el.parentElement; p; p = p.parentElement) {
+    const y = getComputedStyle(p).overflowY;
+    if (y === "auto" || y === "scroll") return p;
+  }
+  return null;
+}
+
+/* True once `ref`'s element has scrolled out of its port off the top. An
+   element with no box (hidden panel) is not "scrolled away". */
+function useScrolledAway(ref: RefObject<HTMLElement | null>): boolean {
+  const [away, setAway] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    /* The callback gets every record queued since the last frame, oldest
+       first — the first-observation record and the pin's scroll can arrive
+       together, and only the newest says where the header is now. */
+    const io = new IntersectionObserver(
+      (entries) => {
+        const e = entries[entries.length - 1];
+        setAway(
+          !e.isIntersecting &&
+            e.boundingClientRect.height > 0 &&
+            e.boundingClientRect.bottom <= (e.rootBounds?.top ?? 0),
+        );
+      },
+      { root: scrollParent(el) },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [ref]);
+  return away;
+}
+
+/* The slim bar. It has no height of its own (a zero-height sticky row whose
+   bar hangs from it), so showing or hiding it never moves a turn; `-mb-7`
+   cancels the column's `gap-7` after that empty row. The `bar` container
+   lets the strip show labels only when there is room. */
+function ThreadBar({
+  title,
+  strip,
+  meter,
+  menu,
+}: {
+  title: string;
+  strip?: WorkStripProps;
+  meter?: ReactNode;
+  menu?: ReactNode;
+}) {
+  return (
+    <div className="@container/bar sticky top-0 z-20 -mb-7 h-0">
+      <div
+        data-thread-bar
+        className="-mx-8 absolute inset-x-0 top-0 flex h-10 items-center gap-1.5 border-[var(--v3-line)] border-b bg-[var(--v3-main)] px-8"
+      >
+        <div className="min-w-0 flex-1">
+          <span
+            title={title}
+            className="hidden truncate font-medium text-[13px] text-foreground @[20rem]/bar:block"
+          >
+            {title}
+          </span>
+        </div>
+        {strip && <WorkStrip {...strip} compact />}
+        {meter}
+        {menu}
+      </div>
+    </div>
+  );
+}
+
 export function ThreadHeader({
   session,
   title,
@@ -222,7 +157,10 @@ export function ThreadHeader({
   started,
   turns,
   note,
-  aside,
+  meter,
+  start,
+  menu,
+  close,
   strip,
 }: {
   /** The session view's narrower column: the title is 24px, not 30px. */
@@ -237,57 +175,89 @@ export function ThreadHeader({
   turns?: number;
   /** A live note after the facts ("1 running in background"). */
   note?: ReactNode;
-  /** The right of the status line: the context meter, Start work, ⋯. */
-  aside?: ReactNode;
-  strip?: ReactNode;
+  /** The right of the status line, in this order: the context meter, Start
+      work, the ⋯ menu, the close ✕. The meter and the menu follow the
+      reader to the sticky bar; Start work and ✕ stay with the header. */
+  meter?: ReactNode;
+  start?: ReactNode;
+  menu?: ReactNode;
+  close?: ReactNode;
+  /** The work strip; absent = the thread has no way to open work. */
+  strip?: WorkStripProps;
 }) {
+  const header = useRef<HTMLElement>(null);
+  const away = useScrolledAway(header);
+  /* The header keeps its height while its controls sit in the bar: it is
+     above the fold, and a header that shrank would pull every turn under it
+     up the screen. */
+  const natural = useRef(0);
+  useLayoutEffect(() => {
+    if (!away && header.current) natural.current = header.current.offsetHeight;
+  });
+  const here = !away;
+  const aside = (here && (meter || menu)) || start || close;
   return (
-    <header data-thread-header className="pt-7">
-      {kicker && (
-        <div
-          className={cn(
-            "text-muted-foreground",
-            session ? "mb-1.5 text-[13px]" : "mb-2 text-[13.5px]",
-          )}
-        >
-          {kicker}
-        </div>
+    <>
+      {away && (
+        <ThreadBar title={title} strip={strip} meter={meter} menu={menu} />
       )}
-      {titleInput ? (
-        <div className={cn("flex", session ? "mb-3" : "mb-3.5")}>
-          {titleInput}
-        </div>
-      ) : (
-        <h1
-          data-session-title
-          title={title}
-          className={cn(
-            "lilos-v3-serif break-words font-bold text-foreground leading-[1.15]",
-            session ? "mb-3 text-[24px] leading-[1.2]" : "mb-3.5 text-[30px]",
+      <header
+        ref={header}
+        data-thread-header
+        className="pt-7"
+        style={away ? { minHeight: natural.current } : undefined}
+      >
+        {kicker && (
+          <div
+            className={cn(
+              "text-muted-foreground",
+              session ? "mb-1.5 text-[13px]" : "mb-2 text-[13.5px]",
+            )}
+          >
+            {kicker}
+          </div>
+        )}
+        {titleInput ? (
+          <div className={cn("flex", session ? "mb-3" : "mb-3.5")}>
+            {titleInput}
+          </div>
+        ) : (
+          <h1
+            data-session-title
+            title={title}
+            className={cn(
+              "lilos-v3-serif break-words font-bold text-foreground leading-[1.15]",
+              session ? "mb-3 text-[24px] leading-[1.2]" : "mb-3.5 text-[30px]",
+            )}
+          >
+            {title}
+          </h1>
+        )}
+        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2 text-[13.5px] text-muted-foreground">
+          {status && (
+            <StatusPill
+              status={status}
+              label={status === "done" ? "Finished" : undefined}
+            />
           )}
-        >
-          {title}
-        </h1>
-      )}
-      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2 text-[13.5px] text-muted-foreground">
-        {status && (
-          <StatusPill
-            status={status}
-            label={status === "done" ? "Finished" : undefined}
-          />
-        )}
-        <span>
-          {started ? `Started ${started}` : null}
-          {turns
-            ? `${started ? " · " : ""}${turns} ${turns === 1 ? "turn" : "turns"}`
-            : null}
-          {note}
-        </span>
-        {aside && (
-          <span className="ml-auto flex items-center gap-1">{aside}</span>
-        )}
-      </div>
-      {strip}
-    </header>
+          <span>
+            {started ? `Started ${started}` : null}
+            {turns
+              ? `${started ? " · " : ""}${turns} ${turns === 1 ? "turn" : "turns"}`
+              : null}
+            {note}
+          </span>
+          {aside && (
+            <span className="ml-auto flex items-center gap-1">
+              {here && meter}
+              {start}
+              {here && menu}
+              {close}
+            </span>
+          )}
+        </div>
+        {here && strip && <WorkStrip {...strip} />}
+      </header>
+    </>
   );
 }

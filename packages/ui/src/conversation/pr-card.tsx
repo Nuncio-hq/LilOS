@@ -5,9 +5,12 @@ import {
   GitMergeIcon,
   GitPullRequestIcon,
 } from "lucide-react";
+import { cn } from "../lib/utils";
 import type { PullRequest } from "../types";
 
-/* The PR card an agent posts under the turn that opened the PR. */
+/* The PR card an agent posts under the turn that opened the PR. With no
+   `onOpen` (a frame that cannot open the PR tab) it is a plain card — no
+   button, hover or chevron, since a control exists only with its handler. */
 export function PrCard({
   pr,
   author,
@@ -15,17 +18,12 @@ export function PrCard({
 }: {
   pr: PullRequest;
   author: string;
-  onOpen: () => void;
+  onOpen?: () => void;
 }) {
   const pending = pr.checks.filter((c) => c.status === "pending").length;
   const merged = pr.status === "merged";
-  return (
-    <button
-      type="button"
-      onClick={onOpen}
-      data-prcard
-      className="flex w-full max-w-lg items-center gap-3 rounded-[10px] border border-[var(--v3-line)] px-3.5 py-3 text-left transition-colors hover:bg-[var(--v3-hover)]"
-    >
+  const body = (
+    <>
       {merged ? (
         <GitMergeIcon className="size-4 shrink-0 text-muted-foreground" />
       ) : (
@@ -54,7 +52,25 @@ export function PrCard({
           )}
         </span>
       </span>
-      <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground/70" />
+      {onOpen && (
+        <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground/70" />
+      )}
+    </>
+  );
+  const card =
+    "flex w-full max-w-lg items-center gap-3 rounded-[10px] border border-[var(--v3-line)] px-3.5 py-3 text-left";
+  return onOpen ? (
+    <button
+      type="button"
+      onClick={onOpen}
+      data-prcard
+      className={cn(card, "transition-colors hover:bg-[var(--v3-hover)]")}
+    >
+      {body}
     </button>
+  ) : (
+    <div data-prcard className={card}>
+      {body}
+    </div>
   );
 }

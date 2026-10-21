@@ -29,6 +29,7 @@ export function StepRow({ s }: { s: Step }) {
       <button
         type="button"
         disabled={!hasBody}
+        aria-expanded={hasBody ? open : undefined}
         onClick={() => setOpen(!open)}
         className="group/step flex min-h-[30px] w-full min-w-0 items-center gap-2.5 rounded-[7px] px-1.5 text-left text-[13.5px] transition-colors hover:bg-[var(--v3-hover)] disabled:hover:bg-transparent"
       >

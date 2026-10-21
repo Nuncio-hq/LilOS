@@ -1,5 +1,6 @@
 import { WorkflowIcon } from "lucide-react";
 import type { ReactNode } from "react";
+import { effortLabel } from "../chat/model-picker";
 import { ScrollArea } from "../components/ui/scroll-area";
 import {
   contextShare,
@@ -8,7 +9,7 @@ import {
 } from "../lib/context-window";
 import { prettyPath } from "../lib/helpers";
 import { cn } from "../lib/utils";
-import type { Employee, Thread } from "../types";
+import type { Employee, ModelOption, Thread } from "../types";
 import { threadPlans } from "./plan-panel";
 import { sessionSubagents } from "./subagents-panel";
 import { PlanDot, WbHead } from "./wb-bits";
@@ -49,6 +50,8 @@ export function DetailsPanel({
   folder,
   branch,
   startedAt,
+  model,
+  models,
 }: {
   thread: Thread;
   lead?: Employee;
@@ -57,15 +60,31 @@ export function DetailsPanel({
   branch?: string;
   /** Clock time of the thread's first message. */
   startedAt?: string;
+  /** The thread's resolved model id (`sessionModelId` at the call site) —
+      the one the header meter reads, so both surfaces agree (#294). Absent
+      = the thread's own pick. */
+  model?: string;
+  /** Catalog to resolve the model's display name + its reported window. */
+  models?: ModelOption[];
 }) {
   const plan = planRows(thread);
   const done = plan.filter((p) => p.status === "completed").length;
   const helpers = sessionSubagents(thread);
+  const modelId = model ?? thread.model;
   const used = contextUsedOf(thread.usage);
-  const { tokens: window } = contextWindowOf(thread.usage, thread.model);
+  /* Same inputs as the header meter's `SessionUsage`: the resolved model
+     and the catalog, so one thread never reads two percentages (#294). */
+  const { tokens: window } = contextWindowOf(thread.usage, modelId, models);
   const share = thread.usage ? Math.round(contextShare(used, window) * 100) : 0;
-  const model = thread.model
-    ? [thread.model, thread.effort].filter(Boolean).join(" · ")
+  /* The catalog's display name, never the wire id; effort reads as the
+     picker and the agent turn word it ("Extra high", not `xhigh`). */
+  const modelRow = modelId
+    ? [
+        models?.find((m) => m.id === modelId)?.name ?? modelId,
+        thread.effort ? effortLabel(thread.effort) : undefined,
+      ]
+        .filter(Boolean)
+        .join(" · ")
     : undefined;
   /* The current step is the first one not yet done — only one at a time. */
   const stepState = (s: string, i: number) =>
@@ -81,7 +100,7 @@ export function DetailsPanel({
         className="mx-auto w-full max-w-[560px] px-6 pt-4 pb-10 text-[13px]"
       >
         {lead && <Kv k="Agent">{lead.name}</Kv>}
-        {model && <Kv k="Model">{model}</Kv>}
+        {modelRow && <Kv k="Model">{modelRow}</Kv>}
         {folder && (
           <Kv k="Folder">
             <span className={mono} dir="rtl" title={folder}>

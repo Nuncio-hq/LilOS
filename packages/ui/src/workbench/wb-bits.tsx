@@ -159,8 +159,8 @@ export function WbNothingToShow({
     <div className="flex min-h-0 flex-1 items-center justify-center p-6 text-center text-muted-foreground text-xs">
       {folderless ? (
         <p>
-          Nothing to show — a process, helper or plan lists here once the
-          session has one.
+          Nothing to show — a process, helper or plan lists here once the thread
+          has one.
         </p>
       ) : (
         <p>

@@ -11,7 +11,7 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, test } from "vitest";
-import { FocusComposer } from "../src/chat/focus-composer";
+import { Composer } from "../src/chat/composer";
 import {
   choiceFor,
   ModelPicker,
@@ -361,19 +361,77 @@ describe("model picker v2", () => {
 
   test("AC-3 the composer shows no picker without a handler or a model list", () => {
     const props = {
-      running: false,
       placeholder: "Message…",
+      employees: [],
       hint: "",
       onSend: () => {},
     };
-    const off = render(<FocusComposer {...props} />);
+    const off = render(<Composer {...props} />);
     expect(
       off.container.querySelector('[data-slot="model-picker-trigger"]'),
     ).toBeNull();
-    const noHandler = render(<FocusComposer {...props} models={MODELS} />);
+    const noHandler = render(<Composer {...props} models={MODELS} />);
     expect(
       noHandler.container.querySelector('[data-slot="model-picker-trigger"]'),
     ).toBeNull();
+  });
+
+  test("the one Composer draws the picker between the attach button and the tools slot", () => {
+    /* Narrow thread and widened Focus both render this Composer: the picker
+       sits right after the paperclip and before the host's pills. */
+    const r = render(
+      <Composer
+        placeholder="Message…"
+        employees={[]}
+        hint=""
+        accept="image/*"
+        models={MODELS}
+        onModel={() => {}}
+        tools={<span data-testid="tools-slot">pills</span>}
+      />,
+    );
+    const trigger = r.container.querySelector(
+      '[data-slot="model-picker-trigger"]',
+    ) as HTMLElement;
+    const attach = r.container.querySelector(
+      '[aria-label="Attach files"]',
+    ) as HTMLElement;
+    const tools = r.getByTestId("tools-slot");
+    expect(trigger).toBeTruthy();
+    expect(
+      attach.compareDocumentPosition(trigger) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      trigger.compareDocumentPosition(tools) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  test("the Composer's picker defaults to the first model, shows the session's pick, and forwards the open state", async () => {
+    const opens: boolean[] = [];
+    const view = (extra: Partial<Parameters<typeof Composer>[0]> = {}) => (
+      <Composer
+        placeholder="Message…"
+        employees={[]}
+        hint=""
+        models={MODELS}
+        onModel={() => {}}
+        onModelOpen={(o) => opens.push(o)}
+        {...extra}
+      />
+    );
+    const r = render(view());
+    expect(trigger().textContent).toContain("Qwen");
+    r.rerender(view({ choice: choiceFor("claude-test-4.5", MODELS) }));
+    expect(trigger().textContent).toContain("Claude test 4.5");
+
+    /* The trigger reports through onModelOpen; modelOpen drives it from the
+       host (`/model` opens the picker). */
+    await open();
+    expect(opens).toEqual([true]);
+    expect(body().querySelector('input[type="range"]')).toBeNull();
+    await act(async () => r.rerender(view({ modelOpen: true })));
+    expect(body().querySelector('input[type="range"]')).not.toBeNull();
   });
 
   test("the slider has exactly the steps the engine reported for THIS model", async () => {

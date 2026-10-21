@@ -69,6 +69,7 @@ export function MergeBox({
         type="button"
         className="flex h-10 w-full items-center gap-2 px-4 text-left text-[13.5px] hover:bg-[var(--v3-hover)]"
         onClick={onToggle}
+        aria-expanded={open}
       >
         {merged ? (
           <GitMergeIcon className="size-4 text-violet-600 dark:text-violet-400" />

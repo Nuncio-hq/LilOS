@@ -1,9 +1,11 @@
 // @vitest-environment happy-dom
-/* Issue #71, ui layer: AC-1 avatar-less feed rows keep the content column at
-   full width, AC-2 the employee avatar is a colour orb toned by name (no
-   image), AC-4 a waiting surface says "needs you" / "Waiting for approval".
-   (AC-3 `· now:` and the DM-list / sidebar "!" badge belonged to the old DM
-   home and sidebar, which are gone.) */
+/* Issue #71, ui layer: AC-2 the employee avatar is a colour orb toned by name
+   (no image), AC-4 a waiting surface says "needs you" / "Waiting for
+   approval". (AC-1's avatar-less `Row` column-width check went with
+   `feed/row.tsx` in #770, when turns became a full-width `AgentTurn` and a
+   right-aligned `UserTurn` bubble with no avatar grid to keep wide. AC-3
+   `· now:` and the DM-list / sidebar "!" badge belonged to the old DM home
+   and sidebar, which are gone.) */
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, test } from "vitest";
 import { ModelPicker } from "../src/chat/model-picker";

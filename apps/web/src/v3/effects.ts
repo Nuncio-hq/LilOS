@@ -15,7 +15,6 @@ import {
   sessionSignals,
 } from "../lib/runtime";
 import { isSettingsShortcut } from "../settings/state";
-import { watchBrowserTabs } from "./browser";
 import { v3DataStore } from "./data";
 import { openThread, v3Nav } from "./nav";
 import { threadOnScreen, visibleNav } from "./shown";
@@ -74,9 +73,8 @@ export function useShellEffects({
       openConversation.set(undefined);
     };
   }, []);
-  /* LilOS Browser (desktop): relay roster → host, host tabs → v3. */
+  /* LilOS Browser (desktop): relay roster → host. The thread's Browser tab reads the host itself. */
   useBrowserContextPush();
-  useEffect(() => watchBrowserTabs(), []);
   // Recents for the new-chat folder chip.
   useEffect(() => void refreshFolders().catch(() => {}), []);
 

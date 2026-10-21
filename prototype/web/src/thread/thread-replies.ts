@@ -81,8 +81,10 @@ function agentReply(c: Ctx, turn: V3Turn, newest: boolean, text: string): Reply 
     stepOf({ ...s, running: s.running && working }, diffs, working && s.running ? c.live : undefined),
   )
   const steps = [...tools, ...attachmentSteps(turn.attachments, tools)]
-  const ask = newest ? c.ask : undefined
   const proposed = planOf(t, turn)
+  // A plan waiting for you is the thread's ask (Needs lists it as an approval); its own card is the
+  // one place to decide it, so the generic approval card does not stack under it.
+  const ask = newest && proposed?.status !== "proposed" ? c.ask : undefined
   // A proposed plan parks the turn like a question does.
   const planAsk = working && proposed?.status === "proposed"
   // An answered ask stays on its card as a receipt; the turn is no longer parked on it.
@@ -174,8 +176,9 @@ export function turnRows(c: Ctx, turn: V3Turn, opts: { newest: boolean; opening:
       text: prompt.text,
       ...(prompt.files?.length ? { attachments: prompt.files } : {}),
     })
-  // With no prompt the opening turn's summary is the root message itself.
-  const text = turn.answer ?? (opening && !prompt ? undefined : turn.summary) ?? ""
+  // The opening turn's prompt is the thread's root message (the view draws it); a turn with
+  // none (an agent opened the thread) is the agent's own reply, never your bubble.
+  const text = turn.answer ?? turn.summary ?? ""
   const hasWork = !!turn.steps?.length || !!turn.attachments?.length || (newest && c.running)
   if (text || hasWork || (newest && c.ask)) rows.push(agentReply(c, turn, newest, text))
   return rows

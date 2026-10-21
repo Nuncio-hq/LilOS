@@ -8,15 +8,15 @@ import {
   type V3PageProps,
   type WbTab,
 } from "@lilos/ui"
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { nowClock } from "../v3-engine/chat-sim"
 import { MockBrowser } from "./mock-browser"
 import { mockHost } from "./mock-host"
-import { PLAN_CHANGE_PREFIX, isPlanChange, planWaiting, queueOnNewest, reviseTurn } from "./mock-plans"
+import { PLAN_CHANGE_PREFIX, isPlanChange, newestTurn, planWaiting, queueOnNewest, reviseTurn } from "./mock-plans"
 import { useMockSurfaces } from "./mock-surfaces"
 import { pickLabel } from "./model-pick"
 import type { ThreadSeams } from "./seams"
-import { threadModel } from "./thread-model"
+import { stopJob, threadModel } from "./thread-model"
 import { turnOf } from "./thread-replies"
 
 /* The real thread view (ThreadView beside a page, FocusView widened into the
@@ -95,13 +95,15 @@ function Body({
       }),
     [data, t, live, ask, resolved, liveLines, shown],
   )
-  const wb = t?.workbench
   const pr = model?.thread.pr
   const say = seams.toast
+  // The host reads the thread as it is now, so a turn that lands later still shows its changes.
+  const latest = useRef(t)
+  if (t) latest.current = t
   // The host keeps what you do in the folder (a commit, a PR): one per thread.
   // biome-ignore lint/correctness/useExhaustiveDependencies: the mock folder is read once per thread
-  const host = useMemo(() => (t ? mockHost(t, pr, say) : undefined), [id, wb, say])
-  const surfaces = useMockSurfaces(wb)
+  const host = useMemo(() => (t ? mockHost(() => latest.current ?? t, pr, say) : undefined), [id, say])
+  const surfaces = useMockSurfaces(t)
 
   if (!t || !model || !host)
     return (
@@ -155,12 +157,22 @@ function Body({
   }
   // The newest turn's unread messages: waiting while it runs, "not sent" once a Stop left them.
   const dropQueued = (i: number) =>
-    seams.patch(t.id, (th) => ({
-      ...th,
-      turns: th.turns.map((u, k) =>
-        k === 0 ? { ...u, queued: u.queued?.filter((_, j) => j !== i) } : u,
-      ),
-    }))
+    seams.patch(t.id, (th) => {
+      const newest = newestTurn(th)
+      return {
+        ...th,
+        turns: th.turns.map((u) => (u === newest ? { ...u, queued: u.queued?.filter((_, j) => j !== i) } : u)),
+      }
+    })
+  // What the composer reaches for in both frames: @files, /commands, and the people to mention.
+  const onSearchFiles =
+    act.searchFiles && t.folder
+      ? (q: string) => act.searchFiles?.(t.folder ?? "", q) ?? Promise.resolve([])
+      : undefined
+  const onSearchCommands = act.searchCommands
+    ? (q: string) =>
+        act.searchCommands?.({ agentId: t.agentId, folder: t.folder }, q) ?? Promise.resolve([])
+    : undefined
   const shared = {
     root,
     thread,
@@ -210,7 +222,7 @@ function Body({
     onRemovePending: dropQueued,
     onUnqueue: dropQueued,
     onSendQueued: (i: number) => {
-      const text = t.turns[0]?.queued?.[i]?.text
+      const text = newestTurn(t)?.queued?.[i]?.text
       dropQueued(i)
       if (text) seams.send(t.id, text)
     },
@@ -237,16 +249,12 @@ function Body({
     },
     scrollTo,
     onScrolled,
+    lead,
+    maxFiles: limits?.maxFiles,
+    mentionables: model.mentionables,
+    onSearchFiles,
+    onSearchCommands,
   }
-  const mentionables = model.mentionables
-  const onSearchFiles =
-    act.searchFiles && t.folder
-      ? (q: string) => act.searchFiles?.(t.folder ?? "", q) ?? Promise.resolve([])
-      : undefined
-  const onSearchCommands = act.searchCommands
-    ? (q: string) =>
-        act.searchCommands?.({ agentId: t.agentId, folder: t.folder }, q) ?? Promise.resolve([])
-    : undefined
   const onOpenPath = (path: string, app: string) => say(`Opened ${path} in ${app}`)
 
   return (
@@ -255,7 +263,6 @@ function Body({
         <FocusView
           bare
           {...shared}
-          lead={lead}
           work={model.work}
           threadStatus={t.status}
           onBack={() => onSession(false)}
@@ -265,10 +272,7 @@ function Body({
           browser={act.browserOpen ? <MockBrowser data={data} act={act} threadId={t.id} /> : undefined}
           initialTab={tab}
           onTab={setTab}
-          onStopJob={(jobId) => {
-            const job = thread.jobs?.find((j) => j.id === jobId)
-            if (job) act.message(t.id, `Stop \`${job.command}\``)
-          }}
+          onStopJob={(jobId) => seams.patch(t.id, (th) => stopJob(th, jobId))}
           caps={{ plan: true, subagents: true, background: true }}
           onSuggest={(files) => `Update ${files.join(", ")}`.slice(0, 72)}
           onOpenPath={onOpenPath}
@@ -277,10 +281,6 @@ function Body({
         <ThreadView
           {...shared}
           work={t.ticketId ? model.work : null}
-          maxFiles={limits?.maxFiles}
-          mentionables={mentionables}
-          onSearchFiles={onSearchFiles}
-          onSearchCommands={onSearchCommands}
           onOpenPath={onOpenPath}
           threadStatus={t.status}
           browser={!!act.browserOpen}

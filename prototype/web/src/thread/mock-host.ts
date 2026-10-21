@@ -6,12 +6,16 @@ import type {
   PullRequest,
   V3Thread,
 } from "@lilos/ui"
-import { diffsOf } from "./thread-steps"
+import { folderFiles } from "../fake-v3-mentions"
+import { changedOf } from "./thread-steps"
 
-/* The host seam (files, diff, git, forge) over a thread's mock workbench: the
+/* The host seam (files, diff, git, forge) over a thread's mock folder: the
    same accessors the app backs with the Mac's folder and `gh`. The folder is
    the mock's, so commit, push and Open PR change it the way the real ones
-   would: the diff empties, the branch gets a commit, the PR tab appears. */
+   would: the diff empties, the branch gets a commit, the PR tab appears. A
+   thread without a recorded workbench still has its project's files and the
+   diffs its turns carried. `latest` is the thread as it is now: a turn that
+   lands after the host was made still shows its changes. */
 
 const METHODS = [
   "git.commit",
@@ -22,14 +26,15 @@ const METHODS = [
 ]
 
 export function mockHost(
-  t: V3Thread,
+  latest: () => V3Thread,
   pr: PullRequest | undefined,
   say: (text: string) => void,
 ): HostAccessors {
-  const wb = t.workbench
-  const repo = (t.folder ?? "").split("/").filter(Boolean).pop() ?? "repo"
-  let diffs: Diff[] = diffsOf(wb)
-  let branch = t.branch ?? "main"
+  const first = latest()
+  const repo = (first.folder ?? "").split("/").filter(Boolean).pop() ?? "repo"
+  const committed = new Set<string>()
+  const diffs = (): Diff[] => changedOf(latest()).filter((d) => !committed.has(d.path))
+  let branch = first.branch ?? "main"
   let pushed: string | null = null
   let current = pr
   let commits: GitCommit[] = []
@@ -37,10 +42,13 @@ export function mockHost(
   const withComments = (p: PullRequest): PullRequest => ({ ...p, comments: [...p.comments, ...comments] })
 
   return {
-    tree: async () => (wb ? wb.files.map((f) => f.replace(/\/$/, "")) : []),
-    diff: async () => diffs,
+    tree: async () => {
+      const t = latest()
+      return (t.workbench?.files ?? folderFiles(t.folder ?? "")).map((f) => f.replace(/\/$/, ""))
+    },
+    diff: async () => diffs(),
     read: async (_cwd, path) => {
-      const content = wb?.fileText[path]
+      const content = latest().workbench?.fileText[path]
       return content === undefined ? null : { content, binary: false, truncated: false }
     },
     pr: async () =>
@@ -65,8 +73,8 @@ export function mockHost(
     methods: async () => new Set(METHODS),
     status: async () => ({
       branch,
-      clean: diffs.length === 0,
-      files: diffs.map((d) => ({ path: d.path, status: d.status === "added" ? "A" : "M" })),
+      clean: diffs().length === 0,
+      files: diffs().map((d) => ({ path: d.path, status: d.status === "added" ? "A" : "M" })),
     }),
     branches: async () => ({
       current: branch,
@@ -76,7 +84,7 @@ export function mockHost(
     }),
     log: async () => commits,
     commit: async (_cwd, files, message) => {
-      const done = diffs.filter((d) => files.includes(d.path))
+      const done = diffs().filter((d) => files.includes(d.path))
       commits = [
         {
           hash: Math.random().toString(16).slice(2, 9),
@@ -85,7 +93,7 @@ export function mockHost(
         },
         ...commits,
       ]
-      diffs = diffs.filter((d) => !files.includes(d.path))
+      for (const d of done) committed.add(d.path)
     },
     push: async () => {
       pushed = `origin/${branch}`

@@ -13,8 +13,8 @@ import { describe, expect, test } from "vitest";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const theme = readFileSync(join(ROOT, "packages/ui/src/theme.css"), "utf8");
-const focusComposer = readFileSync(
-  join(ROOT, "packages/ui/src/chat/focus-composer.tsx"),
+const composer = readFileSync(
+  join(ROOT, "packages/ui/src/chat/composer.tsx"),
   "utf8",
 );
 const promptInput = readFileSync(
@@ -24,9 +24,10 @@ const promptInput = readFileSync(
 
 describe("issue #508", () => {
   test("AC-1 the running composer's box paints no fill in either theme, and the stylesheet never re-dresses it", () => {
-    // The Focus running/steer composer renders inside the message box:
-    // FocusComposer → PromptInput → InputGroup (data-slot="composer-box").
-    expect(focusComposer).toContain("<PromptInput");
+    // The running/steer composer is the one Composer (the Focus view renders
+    // it too), inside the message box:
+    // Composer → PromptInput → InputGroup (data-slot="composer-box").
+    expect(composer).toContain("<PromptInput");
     const box = /<InputGroup[\s\S]*?\{children\}/.exec(promptInput)?.[0] ?? "";
     expect(box).toContain('data-slot="composer-box"');
 

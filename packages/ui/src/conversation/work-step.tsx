@@ -102,9 +102,10 @@ export function WorkStep({
   return (
     <Collapsible>
       <CollapsibleTrigger
+        disabled={!hasBody}
         className={cn(
           "group/step -ml-1.5 flex min-h-[30px] w-[calc(100%+0.375rem)] items-center gap-2.5 rounded-md px-1.5 text-left text-[13.5px] hover:bg-[var(--v3-hover)]",
-          !hasBody && "cursor-default",
+          !hasBody && "cursor-default hover:bg-transparent",
         )}
       >
         {running ? (

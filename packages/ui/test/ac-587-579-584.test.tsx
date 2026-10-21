@@ -8,7 +8,7 @@ import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { FocusView } from "../src/focus/focus-view";
 import { setDraft } from "../src/lib/drafts";
-import { WorkStrip, workTabs } from "../src/thread/thread-header";
+import { WorkStrip, workTabs } from "../src/thread/work-strip";
 import type {
   Channel,
   EmpFn,

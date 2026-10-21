@@ -11,6 +11,7 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
+  useRef,
 } from "react";
 import {
   type StickToBottomState,
@@ -147,6 +148,16 @@ const SCROLL_KEYS = new Set([
    apart, so 300 ms bridges the gaps without lingering once it ends. */
 const HYDRATION_QUIET_MS = 300;
 
+/* #315: the shell's pane geometry as one value (sidebar width, peek width,
+   widened or not). The shell lays its panes out from React state measured on
+   a ResizeObserver, so a window resize reaches the thread in TWO steps: the
+   page shrinks first, then a commit sets the peek's new width — and a read
+   in the gap before the next frame sees the re-wrapped turns while the pin
+   has not followed. A change here lands in that same commit; the guard
+   holds the bottom synchronously from a layout effect, so nothing — paint
+   or a layout read — sees the last card below the fold. */
+export const ConversationReflowKey = createContext("");
+
 /* #626: the library's upward-scroll escape rides a setTimeout(1) that a
    post-resize `resizeDifference` window can swallow — then `isAtBottom`
    stays stale-true and the still-running bottom-lock spring physically
@@ -168,8 +179,14 @@ const HYDRATION_QUIET_MS = 300;
    drop-window fix stands). */
 const ConversationEscapeGuard = (): null => {
   const pin = useContext(ConversationPin);
-  const { scrollRef, contentRef, state, stopScroll } =
+  const { scrollRef, contentRef, state, stopScroll, scrollToBottom } =
     useStickToBottomContext();
+  const reflowKey = useContext(ConversationReflowKey);
+  const holdRef = useRef<(() => void) | null>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the key IS the trigger
+  useLayoutEffect(() => {
+    holdRef.current?.();
+  }, [reflowKey]);
   useEffect(() => {
     const sc = scrollRef.current;
     if (!sc || !pin) return;
@@ -364,7 +381,39 @@ const ConversationEscapeGuard = (): null => {
        content resize that triggered them (the library's observer runs
        first, so its re-pin is already visible here). */
     const content = contentRef.current;
-    const ro = new ResizeObserver(onScroll);
+    /* A REFLOW is not growth (#315): when the port's WIDTH changes — the
+       window or a divider narrows the side peek — every turn re-wraps taller
+       in one step, and the library chases that with its smooth spring. For
+       half a second the last card (an approval's Approve row) sat below the
+       fold, under the composer's tray, though the tray reserves its own
+       height. A reader pinned to the bottom stays pinned across a reflow:
+       land on the new bottom in the frame the layout changed, before paint.
+       Streaming growth keeps its smooth chase; a reader who scrolled away
+       (escape flags, a jump or find hold) is never moved. */
+    let lastWidth = sc.clientWidth;
+    const holdOnReflow = () => {
+      const width = sc.clientWidth;
+      if (width === lastWidth) return;
+      lastWidth = width;
+      if (
+        !state.isAtBottom ||
+        state.escapedFromLock ||
+        escaped.v ||
+        pin.jumping.v ||
+        findAnchorActive(state)
+      )
+        return;
+      /* Even an "instant" scrollToBottom hops through a rAF, so the write
+         is synchronous (as ConversationKeepBottom's); the call keeps the
+         library's bottom-lock bookkeeping and ends its in-flight spring. */
+      void scrollToBottom({ animation: "instant" });
+      sc.scrollTop = sc.scrollHeight;
+    };
+    holdRef.current = holdOnReflow;
+    const ro = new ResizeObserver(() => {
+      holdOnReflow();
+      onScroll();
+    });
     if (content) ro.observe(content);
     /* The port's own box can settle after the pin lands — the composer
        region below it (trays, the ↓ gutter) mounts late and shrinks
@@ -464,6 +513,7 @@ const ConversationEscapeGuard = (): null => {
       pin.armReinstate = undefined;
       pin.isClampTop = undefined;
       pin.noteMax = undefined;
+      holdRef.current = null;
       sc.removeEventListener("scroll", onScroll);
       sc.removeEventListener("wheel", onWheel);
       sc.removeEventListener("touchmove", onTouchMove);
@@ -473,7 +523,7 @@ const ConversationEscapeGuard = (): null => {
       if (patched) Reflect.deleteProperty(sc, "scrollTop");
       if (!findAnchorActive(state)) sc.style.overflowAnchor = "";
     };
-  }, [pin, scrollRef, contentRef, state, stopScroll]);
+  }, [pin, scrollRef, contentRef, state, stopScroll, scrollToBottom]);
   return null;
 };
 

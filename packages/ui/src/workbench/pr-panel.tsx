@@ -176,6 +176,7 @@ export function PrPanel({
                 type="button"
                 className={cn(ICON_BTN, "ml-auto")}
                 title="Copy PR link"
+                aria-label="Copy PR link"
                 onClick={() => {
                   navigator.clipboard?.writeText(url);
                   say?.("PR link copied");

@@ -6,6 +6,8 @@ import {
   useRef,
   useState,
 } from "react";
+import { foreignOverlayOpen } from "../chat/ui-layers";
+import { ConversationReflowKey } from "../components/ai-elements/conversation";
 import { useTheme } from "../shell/use-theme";
 import type { Theme } from "../types";
 import type { V3Data, V3Draft } from "./v3-data-types";
@@ -14,6 +16,7 @@ import { V3Guide } from "./v3-guide";
 import { V3Hire } from "./v3-hire";
 import { V3Home } from "./v3-home";
 import { V3Inbox } from "./v3-inbox";
+import { EscLayer } from "./v3-keys";
 import { SIDEBAR_W, shellSizes, useLayoutPrefs } from "./v3-layout-prefs";
 import { step } from "./v3-nav";
 import { V3Needs } from "./v3-needs";
@@ -178,6 +181,17 @@ export function V3Shell({
   }, [sidebarRequest, toggleSidebar]);
 
   const { popped, tuck } = pop;
+  /* Esc over a floating sidebar tucks it. It is a layer, not a bubble-phase
+     branch: a widened thread under it is a layer too and takes Esc in the
+     capture phase first — narrowing the page while the sidebar stayed open.
+     Keyboard focus inside the sidebar would be lost with it: hand it to the
+     bar's toggle, where the sidebar's controls were one tab away. */
+  const tuckOnEsc = useCallback(() => {
+    const inside = document.activeElement?.closest("aside");
+    tuck();
+    if (inside && inside === pop.side.current)
+      document.querySelector<HTMLElement>("[data-v3-topbar] button")?.focus();
+  }, [tuck, pop.side]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // A panel that already used the key (its own Esc) keeps it to itself.
@@ -196,26 +210,25 @@ export function V3Shell({
         toggleSidebar();
         return;
       }
-      // Esc closes what floats first (a popped-out sidebar), then the peek,
-      // unless you are typing or the palette owns Esc.
+      /* Esc closes the peek unless you are typing, the palette owns Esc, or
+         a menu/popover/dialog of the thread is open: that overlay closes on
+         this very key and must not take the peek with it (the layer stack
+         leaves such a key unhandled for the overlay, so it reaches us). */
       const typing = (e.target as HTMLElement | null)?.closest(
         "input, textarea",
       );
-      if (e.key !== "Escape" || palette !== null || typing) return;
-      if (popped) {
-        // Keyboard focus inside it would be lost with it: hand it to the
-        // bar's toggle, where the sidebar's controls were one tab away.
-        const inside = (e.target as HTMLElement | null)?.closest("aside");
-        tuck();
-        if (inside && inside === pop.side.current)
-          document
-            .querySelector<HTMLElement>("[data-v3-topbar] button")
-            ?.focus();
-      } else closePeek();
+      if (
+        e.key !== "Escape" ||
+        palette !== null ||
+        typing ||
+        foreignOverlayOpen()
+      )
+        return;
+      closePeek();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [palette, closePeek, popped, tuck, pop.side, toggleSidebar]);
+  }, [palette, closePeek, toggleSidebar]);
 
   const act = useMemo<V3Actions>(
     () => ({ ...actions, ask: (text) => setPalette(text ?? "") }),
@@ -255,6 +268,7 @@ export function V3Shell({
         ref={frame}
         className="lilos-v3 relative flex h-dvh min-h-0 overflow-hidden bg-[var(--v3-main)] text-[14px] text-foreground"
       >
+        {popped && palette === null && <EscLayer onEscape={tuckOnEsc} />}
         <V3Sidebar
           data={data}
           page={page}
@@ -343,14 +357,21 @@ export function V3Shell({
               <V3Peek
                 data={data}
                 width={peek.w}
-                renderThread={(p) =>
-                  renderThread({
-                    ...p,
-                    ...(jump?.threadId === p.id
-                      ? { scrollTo: jump.messageId, onScrolled: clearJump }
-                      : {}),
-                  })
-                }
+                renderThread={(p) => (
+                  /* #315: the panes' widths as one key — the thread re-pins
+                     to its bottom in the very commit that moves them (see
+                     the guard in conversation.tsx). */
+                  <ConversationReflowKey.Provider
+                    value={`${hidden ? 0 : side.w}:${peek.w}:${nav.full ? "full" : "side"}`}
+                  >
+                    {renderThread({
+                      ...p,
+                      ...(jump?.threadId === p.id
+                        ? { scrollTo: jump.messageId, onScrolled: clearJump }
+                        : {}),
+                    })}
+                  </ConversationReflowKey.Provider>
+                )}
                 go={goFromPeek}
                 act={act}
                 trail={nav.peek}

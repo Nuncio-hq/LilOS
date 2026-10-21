@@ -1,21 +1,34 @@
-import type { FocusView, V3Workbench } from "@lilos/ui"
+import type { FocusView, V3Thread, V3Workbench } from "@lilos/ui"
 import { type ComponentProps, useMemo, useRef, useState } from "react"
+import { folderFiles } from "../fake-v3-mentions"
 
 /* The live-surface seam (a terminal and a page): the app backs it with the
    harness's PTY and browser. Here the terminal replays the commands the
-   mock workbench recorded and then answers like a small shell, and the
-   preview is a drawn page for the dev server the agent started. The first
-   keystroke takes the terminal from the agent, like the real surface does. */
+   thread ran (its workbench's record, else the `run` steps of its turns) and
+   then answers like a small shell, and the preview is a drawn page for the
+   dev server the agent started. Every thread with a folder has them, as in
+   the app. The first keystroke takes the terminal from the agent, like the
+   real surface does. */
 
 export type LiveSurfaces = NonNullable<ComponentProps<typeof FocusView>["surfaces"]>
 
 const PROMPT = "\u001b[90m$ \u001b[0m"
 
-function replay(wb: V3Workbench): string {
-  const ran = wb.terminal
-    .map((c) => `${PROMPT}${c.cmd}\r\n${c.lines.join("\r\n")}\r\n`)
-    .join("")
-  return ran + (wb.terminal.at(-1)?.running ? "" : PROMPT)
+type Ran = V3Workbench["terminal"]
+
+/** What the thread's terminal has run. */
+function ranOf(t: V3Thread): Ran {
+  if (t.workbench) return t.workbench.terminal
+  return [...t.turns]
+    .sort((a, b) => a.n - b.n)
+    .flatMap((u) =>
+      (u.steps ?? []).filter((s) => s.kind === "run").map((s) => ({ cmd: s.target, lines: s.meta ? [s.meta] : [] })),
+    )
+}
+
+function replay(ran: Ran): string {
+  const out = ran.map((c) => `${PROMPT}${c.cmd}\r\n${c.lines.join("\r\n")}\r\n`).join("")
+  return out + (ran.at(-1)?.running ? "" : PROMPT)
 }
 
 function drawFrame(title: string, url: string, w: number, h: number): string {
@@ -39,8 +52,10 @@ function drawFrame(title: string, url: string, w: number, h: number): string {
 /** Where a real browser ends up: scheme filled in. */
 const landed = (raw: string) => (/^https?:\/\//.test(raw) ? raw : `https://${raw}`)
 
-export function useMockSurfaces(wb: V3Workbench | undefined): LiveSurfaces | undefined {
-  const [text, setText] = useState(() => (wb ? replay(wb) : ""))
+export function useMockSurfaces(t: V3Thread | undefined): LiveSurfaces | undefined {
+  const wb = t?.workbench
+  const folder = t?.folder
+  const [text, setText] = useState(() => (t ? replay(ranOf(t)) : ""))
   const [control, setControl] = useState<"agent" | "user">("agent")
   const [page, setPage] = useState({ width: 1280, height: 800 })
   const [url, setUrl] = useState<string | null>(wb?.preview?.url ?? null)
@@ -51,10 +66,11 @@ export function useMockSurfaces(wb: V3Workbench | undefined): LiveSurfaces | und
     [url, page],
   )
   return useMemo(() => {
-    if (!wb) return undefined
+    if (!folder) return undefined
+    const files = wb?.files ?? folderFiles(folder)
     const answer = (cmd: string): string => {
       if (cmd.startsWith("echo ")) return cmd.slice(5)
-      if (cmd === "ls") return wb.files.filter((f) => !f.slice(0, -1).includes("/")).join("  ")
+      if (cmd === "ls") return files.filter((f) => !f.slice(0, -1).includes("/")).join("  ")
       return cmd ? `${cmd}: command not found` : ""
     }
     return {
@@ -64,7 +80,7 @@ export function useMockSurfaces(wb: V3Workbench | undefined): LiveSurfaces | und
       frame,
       page,
       url,
-      previews: wb.preview ? [{ url: wb.preview.url, via: "marker" as const }] : [],
+      previews: wb?.preview ? [{ url: wb.preview.url, via: "marker" as const }] : [],
       activity: [],
       sendInput(data) {
         setControl("user")
@@ -72,24 +88,24 @@ export function useMockSurfaces(wb: V3Workbench | undefined): LiveSurfaces | und
           if (ch === "\r" || ch === "\n") {
             const cmd = line.current.trim()
             line.current = ""
-            setText((t) => `${t}\r\n${answer(cmd)}\r\n${PROMPT}`)
+            setText((out) => `${out}\r\n${answer(cmd)}\r\n${PROMPT}`)
           } else if (ch === "\x7f") {
             line.current = line.current.slice(0, -1)
-            setText((t) => `${t}\b \b`)
+            setText((out) => `${out}\b \b`)
           } else if (ch >= " ") {
             line.current += ch
-            setText((t) => t + ch)
+            setText((out) => out + ch)
           }
         }
       },
       releaseTerminal() {
         setControl("agent")
-        setText((t) => `${t}\u001b[2m back to the agent\u001b[0m\r\n${PROMPT}`)
+        setText((out) => `${out}\u001b[2m back to the agent\u001b[0m\r\n${PROMPT}`)
       },
       resize: () => {},
       navigate: (u) => setUrl(landed(u)),
       resizeBrowser: (width, height) => setPage({ width, height }),
       input: () => {},
     }
-  }, [wb, text, control, frame, page, url])
+  }, [wb, folder, text, control, frame, page, url])
 }

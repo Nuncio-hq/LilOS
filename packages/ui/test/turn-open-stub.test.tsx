@@ -21,9 +21,8 @@ import {
   estTurnHeight,
   OPEN_TAIL_PX,
   openTailStart,
-  type TurnActs,
-  TurnRow,
-} from "../src/conversation/turn-rows";
+} from "../src/conversation/turn-lazy";
+import { type TurnActs, TurnRow } from "../src/conversation/turn-rows";
 import type { EmpFn, HumanFn, Reply } from "../src/types";
 
 if (typeof globalThis.ResizeObserver === "undefined") {

@@ -83,6 +83,14 @@ function jobsOf(t: V3Thread, wb: V3Workbench | undefined): BackgroundJob[] {
   }))
 }
 
+/** The thread after you stop one of its background jobs (`id` is one `jobsOf` made): it ends cleanly. */
+export function stopJob(t: V3Thread, id: string): V3Thread {
+  const wb = t.workbench
+  if (!wb) return t
+  const at = Number(id.split(":").at(-1))
+  return { ...t, workbench: { ...wb, jobs: wb.jobs.map((j, i) => (i === at ? { ...j, state: "done" as const } : j)) } }
+}
+
 /** The thread's own people: you, and whoever else wrote a prompt (the CEO, a hand-off). */
 function peopleOf(data: V3Data, t: V3Thread): HumanFn {
   const others = new Set(t.turns.flatMap((x) => (x.prompt && x.prompt.by !== "you" ? [x.prompt.by] : [])))
@@ -135,12 +143,14 @@ export function threadModel(
         ...(first.prompt.files?.length ? { attachments: first.prompt.files } : {}),
       }
     : {
-        // A thread the agent opened: its own opening line is the root.
+        // A thread an agent opened, or one rewound to nothing, has no message of yours to open on:
+        // the root is empty (the view draws no bubble, the header still reads when it began, and
+        // it is not a turn you sent) and the agent's own opening line is its first reply.
         kind: "msg",
         id: `${t.id}:root`,
         from: lead.id,
         time: first ? turnTime(t, first) : t.startedAt,
-        text: first?.summary ?? first?.answer ?? t.summary ?? t.title,
+        text: "",
       }
 
   const replies: Reply[] = turns.flatMap((turn) =>

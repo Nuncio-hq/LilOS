@@ -11,7 +11,15 @@ import {
   PromptInputTools,
 } from "../components/ai-elements/prompt-input";
 import { HermesAvatar } from "../shell/avatars";
-import type { AttachedFile, Employee, FileMention, SlashItem } from "../types";
+import type {
+  AttachedFile,
+  Employee,
+  FileMention,
+  ModelChoice,
+  ModelOption,
+  ModelPickerExtras,
+  SlashItem,
+} from "../types";
 import { useComposerMenus } from "./composer-menus";
 import {
   AttachButton,
@@ -22,6 +30,7 @@ import {
 } from "./composer-parts";
 import { MentionPopup, SlashPopup } from "./composer-popups";
 import { parseSlashDraft } from "./composer-slash";
+import { choiceFor, ModelPicker } from "./model-picker";
 
 export function Composer({
   placeholder,
@@ -32,6 +41,12 @@ export function Composer({
   onStop,
   lastSent,
   tools,
+  choice,
+  models,
+  onModel,
+  picker,
+  modelOpen,
+  onModelOpen,
   queued,
   accept,
   maxFileSize,
@@ -55,7 +70,19 @@ export function Composer({
   /* ↑ in an empty composer recalls this — the last message you sent here
      (issue #104). Computed by the host; absent = ↑ stays a caret move. */
   lastSent?: string;
+  /* Extra pills next to the attach button (e.g. #106's AccessPill). */
   tools?: React.ReactNode;
+  /* The session's model pick; defaults to the first model. */
+  choice?: ModelChoice;
+  models?: ModelOption[];
+  /* No onModel (or no models) → no model picker: the control needs its
+     handler (issue #19). */
+  onModel?: (c: ModelChoice) => void;
+  /* Refresh / Edit models… / provider names — each renders only with its handler. */
+  picker?: ModelPickerExtras;
+  /* Controlled open on the model picker — `/model` opens it. */
+  modelOpen?: boolean;
+  onModelOpen?: (open: boolean) => void;
   queued?: React.ReactNode;
   /* File search for the `@` menu's Files section (#105): called with the text
      typed after `@`, returns matching files/dirs of the session's folder.
@@ -221,6 +248,16 @@ export function Composer({
               truncates away before a control ever drops to a second line. */}
               <PromptInputTools className="min-w-0 flex-1 overflow-hidden">
                 {accept && <AttachButton />}
+                {onModel && models?.length ? (
+                  <ModelPicker
+                    value={choice ?? choiceFor(models[0].id, models)}
+                    models={models}
+                    onChoice={onModel}
+                    open={modelOpen}
+                    onOpenChange={onModelOpen}
+                    {...picker}
+                  />
+                ) : null}
                 {tools}
                 <span className="lilos-hint hidden truncate pl-1 text-[12.5px] text-muted-foreground">
                   {hint}

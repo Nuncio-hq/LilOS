@@ -5,6 +5,7 @@ import type {
   HostAccessors,
   HumanFn,
   MergeMethod,
+  ModelOption,
   OsApp,
   OsEditor,
   PullRequest,
@@ -45,10 +46,14 @@ export type WorkbenchProps = {
   live?: LiveSurfaces;
   /** A turn is running — Changes/Files poll while the agent edits (#114 AC-3). */
   running?: boolean;
-  /** A user send is relay-accepted but the feed hasn't surfaced a turn for
-      it yet (#315's waiting tray). The ship bar hides Suggest across that
-      gap — turn start lags the relay message that already renders (#396). */
-  sendPending?: boolean;
+  /** The thread's resolved model id (`sessionModelId` at the call site) —
+      the Details tab shows it and reads its context window the same way
+      the header meter does, so one thread never shows two percentages
+      (#294). */
+  model?: string;
+  /** Model catalog: the Details tab's display name for `model` + its
+      reported context window. */
+  models?: ModelOption[];
   /** The engine declares `steer`: Send-to-agent labels the mid-turn route
       (issue #108); absent → plain "Send". */
   steer?: boolean;

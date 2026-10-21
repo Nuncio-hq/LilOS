@@ -41,7 +41,6 @@ export function SessionPane({
     <FocusView
       bare
       {...sharedViewProps(d)}
-      lead={d.uiEmp}
       work={d.work}
       onOpenSession={sessionOpener(d, nav)}
       onStopJob={d.onStopJob}

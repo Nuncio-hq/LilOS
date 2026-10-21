@@ -110,12 +110,19 @@ test("AC-3 the thread header hides `· now:` when the employee has none", async 
   page,
 }) => {
   await chatDefault(page, "Say hello then list files");
-  // The thread panel's header is the old DM header: title row, then the quiet
-  // line under it (kind · employee · folder link).
+  const peek = v3Peek(page);
+  /* The peek's trail names the employee ("Default · Chat"); the header under
+     it carries only what the trail lacks — the thread's own quiet line (the
+     folder link) — and never repeats the agent (#770). */
+  await expect(peek.getByRole("navigation", { name: "Trail" })).toContainText(
+    `${AGENT.name} · Chat`,
+    { timeout: 30_000 },
+  );
   const subtitle = page.locator("[data-thread-panel] [title^='Thread ']");
   await expect(subtitle).toBeVisible({ timeout: 30_000 });
-  await expect(subtitle).toContainText(AGENT.name);
+  // The employee has no `now:` — nothing in the header may claim one.
   await expect(subtitle).not.toContainText("now:");
+  await expect(peek.locator("[data-thread-header]")).not.toContainText("now:");
   await page.screenshot({ path: `${SHOTS}/ac-3-header.png` });
 });
 
