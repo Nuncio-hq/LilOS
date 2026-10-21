@@ -1,8 +1,10 @@
 import { spawnSync } from "node:child_process";
 import {
   mkdirSync,
+  mkdtempSync,
   readdirSync,
   readFileSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
@@ -15,7 +17,12 @@ import {
   manifestIsStale,
   PLUGIN_DIR,
 } from "../scripts/gen-plugin-hash.js";
-import { listPluginFiles, pluginContentHash } from "../src/plugin-hash.js";
+import {
+  listPluginFiles,
+  pluginContentHash,
+  pluginCopyFilter,
+  renderPluginHashManifest,
+} from "../src/plugin-hash.js";
 
 /**
  * D-#817: the shipped plugin's content hash is the Connect refresh key.
@@ -76,47 +83,77 @@ describe("D-#817 shipped plugin content hash", () => {
     );
     expect(fresh.status).toBe(0);
 
-    // A manifest that no longer matches the shipped tree is what CI rejects.
-    // The equality test above is what fails when the plugin itself changes.
-    const original = readFileSync(MANIFEST_PATH, "utf8");
+    // A manifest that no longer matches the tree is what CI rejects.
+    // This uses a temp manifest — the tracked file is not rewritten.
+    const dir = mkdtempSync(join(tmpdir(), "lilos817-manifest-"));
     try {
-      writeFileSync(MANIFEST_PATH, "stale\n");
-      expect(manifestIsStale()).toBe(true);
-      const stale = spawnSync(
-        "bun",
-        ["packages/engine-hermes/scripts/gen-plugin-hash.ts", "--check"],
-        { cwd: ROOT },
+      const plugin = join(dir, "lilos");
+      mkdirSync(plugin);
+      writeFileSync(join(plugin, "plugin.yaml"), "name: lilos\n");
+      const manifest = join(dir, "lilos.content-hash");
+      writeFileSync(manifest, "stale\n");
+      expect(manifestIsStale(manifest, plugin)).toBe(true);
+      writeFileSync(manifest, renderPluginHashManifest(plugin));
+      expect(manifestIsStale(manifest, plugin)).toBe(false);
+      expect(readFileSync(MANIFEST_PATH, "utf8")).toBe(
+        renderPluginHashManifest(PLUGIN_DIR),
       );
-      expect(stale.status).toBe(1);
     } finally {
-      writeFileSync(MANIFEST_PATH, original);
+      rmSync(dir, { recursive: true, force: true });
     }
-    expect(manifestIsStale()).toBe(false);
   });
 
   test("the hash is sorted paths plus bytes; cache files do not change it", () => {
-    const dir = join(tmpdir(), `lilos817-${process.pid}-a`);
-    const other = join(tmpdir(), `lilos817-${process.pid}-b`);
-    mkdirSync(join(dir, "nested"), { recursive: true });
-    mkdirSync(join(other, "nested"), { recursive: true });
-    writeFileSync(join(dir, "b.txt"), "beta");
-    writeFileSync(join(dir, "nested", "a.txt"), "alpha");
-    // Opposite write order, same bytes.
-    writeFileSync(join(other, "nested", "a.txt"), "alpha");
-    writeFileSync(join(other, "b.txt"), "beta");
-    expect(pluginContentHash(dir)).toBe(pluginContentHash(other));
-    expect(listPluginFiles(dir)).toEqual(["b.txt", "nested/a.txt"]);
+    const root = mkdtempSync(join(tmpdir(), "lilos817-hash-"));
+    const dir = join(root, "a");
+    const other = join(root, "b");
+    try {
+      mkdirSync(join(dir, "nested"), { recursive: true });
+      mkdirSync(join(other, "nested"), { recursive: true });
+      writeFileSync(join(dir, "b.txt"), "beta");
+      writeFileSync(join(dir, "nested", "a.txt"), "alpha");
+      // Opposite write order, same bytes.
+      writeFileSync(join(other, "nested", "a.txt"), "alpha");
+      writeFileSync(join(other, "b.txt"), "beta");
+      expect(pluginContentHash(dir)).toBe(pluginContentHash(other));
+      expect(listPluginFiles(dir)).toEqual(["b.txt", "nested/a.txt"]);
 
-    const before = pluginContentHash(dir);
-    writeFileSync(join(dir, "b.txt"), "BETA");
-    expect(pluginContentHash(dir)).not.toBe(before);
+      const before = pluginContentHash(dir);
+      writeFileSync(join(dir, "b.txt"), "BETA");
+      expect(pluginContentHash(dir)).not.toBe(before);
 
-    writeFileSync(join(dir, "b.txt"), "beta");
-    mkdirSync(join(dir, "__pycache__"), { recursive: true });
-    writeFileSync(join(dir, "__pycache__", "b.cpython-313.pyc"), "junk");
-    writeFileSync(join(dir, ".DS_Store"), "junk");
-    writeFileSync(join(dir, "extra.pyc"), "junk");
-    expect(pluginContentHash(dir)).toBe(before);
-    expect(pluginContentHash(join(dir, "missing"))).toBeUndefined();
+      writeFileSync(join(dir, "b.txt"), "beta");
+      mkdirSync(join(dir, "__pycache__"), { recursive: true });
+      writeFileSync(join(dir, "__pycache__", "b.cpython-313.pyc"), "junk");
+      writeFileSync(join(dir, ".DS_Store"), "junk");
+      writeFileSync(join(dir, "extra.pyc"), "junk");
+      expect(pluginContentHash(dir)).toBe(before);
+      expect(pluginContentHash(join(dir, "missing"))).toBeUndefined();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("an empty directory is not a plugin hash", () => {
+    const dir = mkdtempSync(join(tmpdir(), "lilos817-empty-"));
+    try {
+      expect(pluginContentHash(dir)).toBeUndefined();
+      mkdirSync(join(dir, "__pycache__"));
+      writeFileSync(join(dir, "__pycache__", "x.pyc"), "junk");
+      writeFileSync(join(dir, ".DS_Store"), "junk");
+      writeFileSync(join(dir, "loose.pyc"), "junk");
+      expect(listPluginFiles(dir)).toEqual([]);
+      expect(pluginContentHash(dir)).toBeUndefined();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("pluginCopyFilter skips cache files and Finder noise", () => {
+    expect(pluginCopyFilter("/tmp/plugin/__pycache__")).toBe(false);
+    expect(pluginCopyFilter("/tmp/plugin/__init__.pyc")).toBe(false);
+    expect(pluginCopyFilter("/tmp/plugin/.DS_Store")).toBe(false);
+    expect(pluginCopyFilter("/tmp/plugin/__init__.py")).toBe(true);
+    expect(pluginCopyFilter("/tmp/plugin/catalog.json")).toBe(true);
   });
 });

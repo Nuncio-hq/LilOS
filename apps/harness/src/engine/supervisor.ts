@@ -72,6 +72,11 @@ export class EngineSupervisor {
   private probeMisses = 0;
   /** Probe-driven not-running state — cleared on the next healthy probe. */
   private probeDown = false;
+  /** D-#817: the next child exit is a plugin refresh, not a crash. */
+  private deliberateRestart = false;
+  /** A refresh was requested before the child existed (boot timed out
+   *  while a copy was still running). Kill once it comes up. */
+  private pluginRefreshPending = false;
 
   constructor(options: EngineSupervisorOptions) {
     this.opts = {
@@ -115,6 +120,25 @@ export class EngineSupervisor {
   /** The supervised engine process (undefined for external engines). */
   get process(): EngineProcess | undefined {
     return this.launched?.process;
+  }
+
+  /**
+   * D-#817: replace the engine process so it imports the plugin Connect
+   * just wrote. Hermes keeps an already-imported module until the process
+   * is replaced. Not a crash — the crash budget is unchanged and the
+   * relaunch is immediate. If the child is not up yet, remember and kill
+   * it on the next connect so a late boot copy cannot stick.
+   */
+  restartForPluginRefresh(): void {
+    if (this.stopping) return;
+    const proc = this.launched?.process;
+    if (!proc || !this.procAlive) {
+      this.pluginRefreshPending = true;
+      return;
+    }
+    this.pluginRefreshPending = false;
+    this.deliberateRestart = true;
+    proc.kill();
   }
 
   /** Self-heal on demand (e.g. a new user message lands while down). */
@@ -210,6 +234,14 @@ export class EngineSupervisor {
     proc.exited.then((exit: EngineExit) => {
       this.procAlive = false;
       if (this.stopping || this.state.current === "stopped") return;
+      if (this.deliberateRestart) {
+        this.deliberateRestart = false;
+        this.state.conn?.close();
+        this.state.conn = undefined;
+        this.stopProbe();
+        this.relaunchAfter(0, "lilos plugin refreshed");
+        return;
+      }
       const uptime = Date.now() - this.startedAt;
       if (uptime > this.opts.stableAfterMs) this.crashCount = 0;
       else this.crashCount += 1;
@@ -373,6 +405,9 @@ export class EngineSupervisor {
     this.set("running", this.opts.launcher.name);
     this.armProbe(conn);
     this.opts.onConnection(conn, reconnect);
+    if (this.pluginRefreshPending && !this.stopping) {
+      this.restartForPluginRefresh();
+    }
   }
 
   /** Socket dropped but the process is alive: bounded reconnect on same url. */

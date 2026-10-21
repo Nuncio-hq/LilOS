@@ -23,6 +23,7 @@ export {
   listPluginFiles,
   PLUGIN_CONTENT_HASH_FILE,
   pluginContentHash,
+  pluginCopyFilter,
   renderPluginHashManifest,
 } from "./plugin-hash.js";
 export {

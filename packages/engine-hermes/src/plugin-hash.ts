@@ -15,12 +15,17 @@
  * (`lilos.content-hash`, a sibling of the installed directory) lives
  * outside the tree, so it is not an input and cannot be a fixed point.
  *
+ * An empty directory is not a plugin. Hashing it as sha256("") would look
+ * like a real install, and Connect would treat a missing ship as up to
+ * date. `pluginContentHash` returns undefined for a missing, unreadable,
+ * or empty tree (junk-only counts as empty) so nothing is copied.
+ *
  * Not: the hand-bumped `version` string, hashing only `catalog.json`, or a
  * hash file inside the tree (it would be copied with the plugin).
  */
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative, sep } from "node:path";
+import { basename, join, relative, sep } from "node:path";
 
 /** Sibling of an installed `plugins/lilos` directory. The receipt Connect
  *  writes after a copy. Not an input to the hash. */
@@ -54,13 +59,16 @@ export function listPluginFiles(dir: string): string[] {
 }
 
 /** sha256 hex of sorted relative paths + contents. Undefined when `dir`
- *  is missing, not a directory, or unreadable — a missing install is not
- *  an empty plugin. */
+ *  is missing, not a directory, unreadable, or has no shipped files — a
+ *  missing install is not an empty plugin, and an empty ship is not a
+ *  hash Connect can match (D-#817). */
 export function pluginContentHash(dir: string): string | undefined {
   try {
     if (!statSync(dir).isDirectory()) return undefined;
+    const files = listPluginFiles(dir);
+    if (files.length === 0) return undefined;
     const hash = createHash("sha256");
-    for (const rel of listPluginFiles(dir)) {
+    for (const rel of files) {
       hash.update(rel);
       hash.update("\0");
       hash.update(readFileSync(join(dir, ...rel.split("/"))));
@@ -70,6 +78,16 @@ export function pluginContentHash(dir: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+/** `cpSync` filter. False skips the path. The same junk the hash ignores
+ *  must not be copied into a profile or the app bundle — hashing skips it,
+ *  but copying it still dirties the install (D-#817). */
+export function pluginCopyFilter(src: string): boolean {
+  const base = basename(src);
+  if (SKIP_DIR.has(base) || SKIP_FILE.has(base)) return false;
+  if (base.endsWith(".pyc")) return false;
+  return true;
 }
 
 /** Committed manifest beside the shipped plugin (not inside it). The hex

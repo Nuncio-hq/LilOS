@@ -6,6 +6,7 @@ import { scrubLilosEnv } from "@lilos/contracts/env";
 import {
   PLUGIN_CONTENT_HASH_FILE,
   pluginContentHash,
+  pluginCopyFilter,
 } from "@lilos/engine-hermes";
 import type { Logger } from "./log";
 
@@ -19,7 +20,11 @@ import type { Logger } from "./log";
  * (AC-1). Without approval nothing is touched and every profile row just
  * reads "not-connected" (AC-7). One approval covers every profile LilOS
  * manages, including one hired later — `employee.upserted` reconciles, and
- * so do startup and the timer. Connect is not approved again per hire.
+ * so do startup and the timer. A trigger that lands while a pass is in
+ * flight queues one follow-up instead of being dropped. The default Hermes
+ * home is refreshed even when no employee is named `default`: `hermes
+ * serve` boots there, and a later clone copies that tree. Connect is not
+ * approved again per hire.
  *
  * The latest rows ride `harness.report` so relay `system.status` answers
  * "which employees aren't connected" for the Connect surfaces. On any row
@@ -58,6 +63,13 @@ export interface ConnectDeps extends ConnectBaseDeps {
   pluginSrc: string;
   /** Extra env for `hermes -p` calls — must match the engine's env. */
   env?: Record<string, string>;
+  /** Shipped-tree hash. Defaults to `pluginContentHash`. One call per
+   *  pass — the per-profile loop must not re-read the bundle (D-#817). */
+  hashPlugin?: (dir: string) => string | undefined;
+  /** A pass replaced installed plugin bytes. The harness restarts a
+   *  running engine once it is idle so the next thread imports the new
+   *  tools (D-#817). Not called when every tree already matched. */
+  onPluginCopied?: () => void;
   log: Logger;
   /** Injectable subprocess runner for tests. */
   run?: (
@@ -114,6 +126,10 @@ abstract class ConnectBase<D extends ConnectBaseDeps> {
      a stale in-flight roster can't resurrect the row (#413). */
   private readonly removedEmployeeIds = new Set<string>();
   private inflight?: Promise<void>;
+  /** A trigger arrived during `inflight`. One follow-up re-reads the
+   *  roster; dropping it left a hire stale until the 30s timer, and
+   *  session.start could win that race (D-#817). */
+  private again = false;
   private lastSignature = "[]";
 
   constructor(protected readonly deps: D) {}
@@ -123,19 +139,40 @@ abstract class ConnectBase<D extends ConnectBaseDeps> {
     return [...this.rows.values()].map((row) => ({ ...row }));
   }
 
-  /** Serialized reconcile — event triggers collapse into one pass. */
+  /** One pass at a time. A call during a pass queues one follow-up and
+   *  waits for it — the caller (a hire's first session) must not resume
+   *  on the roster the in-flight pass already snapshotted (D-#817). */
   reconcile(): Promise<void> {
-    this.inflight ??= this.reconcileInner()
-      .then(() => this.emitIfChanged())
-      .catch((error) =>
+    if (this.inflight) {
+      this.again = true;
+      return this.inflight;
+    }
+    const run = this.drain();
+    this.inflight = run;
+    void run.finally(() => {
+      if (this.inflight === run) this.inflight = undefined;
+    });
+    return run;
+  }
+
+  private async drain(): Promise<void> {
+    for (;;) {
+      this.again = false;
+      try {
+        await this.reconcileInner();
+        this.emitIfChanged();
+      } catch (error) {
         this.deps.log?.warn("connect reconcile failed", {
           error: String(error),
-        }),
-      )
-      .finally(() => {
-        this.inflight = undefined;
-      });
-    return this.inflight;
+        });
+      }
+      if (!this.again) {
+        // Microtasks queued by the pass (a hire event) must be able to
+        // set `again` before this pass is declared the last one.
+        await Promise.resolve();
+        if (!this.again) return;
+      }
+    }
   }
 
   /** `employee.removed` only carries the id — drop via the last map. */
@@ -209,6 +246,9 @@ abstract class ConnectBase<D extends ConnectBaseDeps> {
 }
 
 export class HermesConnect extends ConnectBase<ConnectDeps> {
+  /** Plugins enable already ran for the default home this process. */
+  private defaultPluginReady = false;
+
   constructor(deps: ConnectDeps) {
     super(deps);
   }
@@ -219,7 +259,12 @@ export class HermesConnect extends ConnectBase<ConnectDeps> {
 
   protected async reconcileInner(): Promise<void> {
     const ok = await this.approved();
+    // One read of the bundle per pass. An empty or missing ship hashes
+    // undefined and copies nothing (D-#817).
+    const hash = this.deps.hashPlugin ?? pluginContentHash;
+    const shipped = ok ? hash(this.deps.pluginSrc) : undefined;
     const byProfile = await this.employeeRoster();
+    let copied = false;
 
     for (const [profile, e] of byProfile) {
       if (this.wasRemoved(e.id)) continue;
@@ -231,7 +276,17 @@ export class HermesConnect extends ConnectBase<ConnectDeps> {
         row.state = "not-connected";
         continue;
       }
-      this.connect(profile, row);
+      if (this.connect(profile, row, shipped)) copied = true;
+    }
+
+    if (!ok && this.defaultPluginReady) {
+      // We enabled lilos on the default home while approved. Turn that
+      // back off without touching the user's tool-search config — this
+      // home is not an employee row.
+      this.hermes(["-p", "default", "plugins", "disable", "lilos"]);
+      this.defaultPluginReady = false;
+    } else if (ok && !byProfile.has("default") && shipped !== undefined) {
+      if (this.refreshDefaultHome(shipped)) copied = true;
     }
 
     // An employee removed between events still gets disabled, never deleted.
@@ -241,6 +296,8 @@ export class HermesConnect extends ConnectBase<ConnectDeps> {
         this.disable(profile);
       this.rows.delete(profile);
     }
+
+    if (copied) this.deps.onPluginCopied?.();
   }
 
   /** Hermes' profile home layout: the built-in `default` profile's home is
@@ -252,75 +309,121 @@ export class HermesConnect extends ConnectBase<ConnectDeps> {
       : join(this.deps.hermesHome, "profiles", profile);
   }
 
-  /** Install + enable the plugin on one profile.
+  /** Install + enable the plugin on one profile. True when this call
+   *  replaced the installed bytes.
    *  D-#817: the refresh key is the shipped directory's content hash, not
    *  `plugin.yaml` `version`. Every roster profile hits this on each
    *  reconcile — a hire after approval included (`employee.upserted`,
-   *  startup, the 30s timer). The owner is not asked again. Hermes may
-   *  have cloned an older tree that still says the same version
-   *  (`ensureAgent`'s `clone_from`); the hash is what recopies it. A home
-   *  that does not exist yet stays not-connected until a later pass. */
-  private connect(profile: string, row: Row): void {
+   *  startup, the 30s timer). The owner is not asked again. UI hire and
+   *  team_hire call `agents.create` before `employees.create` and do not
+   *  pass `clone_from`; the home can still hold a stale same-version tree
+   *  (or be created a moment later by `ensureAgent`). The hash is what
+   *  recopies it. A home that does not exist yet stays not-connected until
+   *  a later pass. `shipped` is the one hash computed for this pass. */
+  private connect(
+    profile: string,
+    row: Row,
+    shipped: string | undefined,
+  ): boolean {
     const home = this.profileHome(profile);
     if (!existsSync(home)) {
       // Profile not materialized on disk yet — Hermes creates the home on
       // first use; retry on the next reconcile instead of failing.
       row.state = "not-connected";
-      return;
+      return false;
     }
-    const target = join(home, "plugins", "lilos");
-    const shipped = pluginContentHash(this.deps.pluginSrc);
     if (shipped === undefined) {
       row.state = "failed";
       row.reason = "couldn't read the bundled LilOS plugin";
-      return;
+      return false;
     }
+    const target = join(home, "plugins", "lilos");
     // Same version string is not "up to date". Hash the files we copy.
-    const installed = pluginContentHash(target);
-    const needsCopy = shipped !== installed;
+    const needsCopy = pluginContentHash(target) !== shipped;
     if (needsCopy) {
       row.state = "updating";
       row.reason = undefined;
       try {
-        // Replace, don't merge: a file the new plugin dropped must not
-        // stay behind and keep the next hash from matching.
-        mkdirSync(join(home, "plugins"), { recursive: true });
-        rmSync(target, { recursive: true, force: true });
-        cpSync(this.deps.pluginSrc, target, { recursive: true });
-        writeFileSync(
-          join(home, "plugins", PLUGIN_CONTENT_HASH_FILE),
-          `${shipped}\n`,
-        );
+        this.replacePlugin(home, shipped);
       } catch (error) {
         row.state = "failed";
         row.reason = `couldn't install the LilOS plugin: ${String(error)}`;
-        return;
+        return false;
       }
     }
-    if (row.state === "connected" && !needsCopy) return;
+    if (row.state === "connected" && !needsCopy) return false;
     const result = this.hermes(["-p", profile, "plugins", "enable", "lilos"]);
     if (result === undefined) {
       row.state = "failed";
       row.reason = "Hermes isn't installed on this Mac";
-      return;
+      return needsCopy;
     }
     if (result.status !== 0) {
       row.state = "failed";
       row.reason = `plugins enable failed: ${result.out.slice(-200)}`;
-      return;
+      return needsCopy;
     }
     if (!this.toolSearch(profile, "off")) {
       row.state = "failed";
       row.reason = "couldn't disable Hermes tool search for this profile";
-      return;
+      return needsCopy;
     }
     if (!this.browserToolset(profile, true)) {
       row.state = "failed";
       row.reason = "couldn't disable Hermes' browser toolset for this profile";
-      return;
+      return needsCopy;
     }
     row.state = "connected";
     row.reason = undefined;
+    return needsCopy;
+  }
+
+  /** D-#817: `hermes serve` boots under the default home, and a later
+   *  `clone_from` copies it. No employee has to be named `default` for
+   *  that tree to matter. Refresh its plugin without a Connect row — this
+   *  is not an employee. Returns whether the bytes changed. */
+  private refreshDefaultHome(shipped: string): boolean {
+    const home = this.deps.hermesHome;
+    if (!existsSync(home)) return false;
+    const needsCopy =
+      pluginContentHash(join(home, "plugins", "lilos")) !== shipped;
+    if (needsCopy) {
+      try {
+        this.replacePlugin(home, shipped);
+      } catch (error) {
+        this.deps.log.warn("default home plugin refresh failed", {
+          error: String(error),
+        });
+        return false;
+      }
+    }
+    if (!needsCopy && this.defaultPluginReady) return false;
+    const result = this.hermes(["-p", "default", "plugins", "enable", "lilos"]);
+    if (result === undefined || result.status !== 0) {
+      this.deps.log.warn("default home plugins enable failed", {
+        out: result?.out.slice(-200),
+      });
+      return needsCopy;
+    }
+    this.defaultPluginReady = true;
+    return needsCopy;
+  }
+
+  /** Replace `plugins/lilos`. A file the new plugin dropped must not stay
+   *  behind and keep the next hash from matching. Cache and Finder junk
+   *  are not part of the ship (D-#817). */
+  private replacePlugin(home: string, shipped: string): void {
+    const target = join(home, "plugins", "lilos");
+    mkdirSync(join(home, "plugins"), { recursive: true });
+    rmSync(target, { recursive: true, force: true });
+    cpSync(this.deps.pluginSrc, target, {
+      recursive: true,
+      filter: pluginCopyFilter,
+    });
+    writeFileSync(
+      join(home, "plugins", PLUGIN_CONTENT_HASH_FILE),
+      `${shipped}\n`,
+    );
   }
 
   /** `plugins disable` — never delete the profile or the plugin dir. */

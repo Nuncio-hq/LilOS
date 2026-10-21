@@ -256,6 +256,13 @@ export async function bindConversation(
 
   const employee = await this.resolveEmployee(conv);
   const agent = await this.ensureAgent(conn, employee);
+  /* D-#817: the profile's plugin has to be the shipped tree before
+     session.start — Hermes imports it for this thread. UI hire and
+     team_hire call agents.create (no clone_from) before employees.create,
+     so the home can already hold a stale same-version copy; ensureAgent
+     may also have just created the home. A reconcile already in flight
+     queues one follow-up, and this wait includes that pass. */
+  if (this.opts.connect) await this.opts.connect.reconcile();
   const binding: SessionBinding = {
     conversationId: conv.id,
     channelId,

@@ -52,8 +52,9 @@ export function onRelayEvent(
     }
     case "employee.upserted": {
       // D-#817: one Connect approval covers a later hire. This reconcile
-      // copies the shipped plugin (content hash, not plugin.yaml version);
-      // the owner is not asked again.
+      // copies the shipped plugin (content hash, not plugin.yaml version).
+      // A pass already running queues one follow-up instead of dropping
+      // the hire; bind awaits reconcile before the first session.start.
       void this.opts.connect?.reconcile();
       break;
     }

@@ -25,9 +25,15 @@ export const PLUGIN_DIR = join(
 /** Sibling of `plugin/lilos/`, not a file the reconciler copies. */
 export const MANIFEST_PATH = join(dirname(PLUGIN_DIR), "lilos.content-hash");
 
-export const manifestIsStale = (): boolean =>
-  !existsSync(MANIFEST_PATH) ||
-  readFileSync(MANIFEST_PATH, "utf8") !== renderPluginHashManifest(PLUGIN_DIR);
+/** `manifestPath` defaults to the committed file. Tests pass a temp path
+ *  so a stale-manifest check never rewrites `plugin/lilos.content-hash`
+ *  (D-#817). */
+export const manifestIsStale = (
+  manifestPath = MANIFEST_PATH,
+  pluginDir = PLUGIN_DIR,
+): boolean =>
+  !existsSync(manifestPath) ||
+  readFileSync(manifestPath, "utf8") !== renderPluginHashManifest(pluginDir);
 
 const isMain =
   process.argv[1] !== undefined &&
