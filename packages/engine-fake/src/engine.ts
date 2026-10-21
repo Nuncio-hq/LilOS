@@ -1470,8 +1470,12 @@ export class FakeEngine {
     if (script.fallbackTo) {
       const named = (id: string) =>
         MODEL_CATALOG.find((m) => m.id === id)?.name ?? id;
+      const target = script.fallbackTo;
       this.emit(s, "session.note", {
-        text: fallbackTurnNote(named(s.model), named(script.fallbackTo.model)),
+        text: fallbackTurnNote(
+          named(s.model ?? DEFAULT_MODEL),
+          named(target.model),
+        ),
       });
     }
     /* A stop landing inside the `slowstart` wait must not resurrect a
