@@ -29,6 +29,7 @@ import { handleHarness } from "./session/harness";
 import { handleHostEvents } from "./session/host-events";
 import { handleMessages } from "./session/messages";
 import { handlePairing } from "./session/pairing";
+import { handleProjects } from "./session/projects";
 import {
   badParams,
   type HostRecord,
@@ -165,6 +166,8 @@ const METHOD_HANDLERS: ReadonlyMap<
   ["profile.get", handleDirectory],
   ["profile.update", handleDirectory],
   ["channels.openDm", handleDirectory],
+  ["projects.list", handleProjects],
+  ["projects.create", handleProjects],
   ["conversations.list", handleConversations],
   ["conversations.summaries", handleConversations],
   ["conversations.open", handleConversations],

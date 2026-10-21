@@ -8,6 +8,7 @@ import {
   type FolderAddParams,
   type GuideParams,
   LILOS_TOOLS,
+  type ProjectCreateParams,
   type ScheduleCreateParams,
   type ScheduleTaskRef,
   type ScheduleUpdateParams,
@@ -119,6 +120,12 @@ export async function callTool(
       break;
     case "folder_add":
       result = await backend.folderAdd(p as FolderAddParams);
+      break;
+    case "project_list":
+      result = await backend.projectList();
+      break;
+    case "project_create":
+      result = await backend.projectCreate(p as ProjectCreateParams);
       break;
 
     case "thread_post":

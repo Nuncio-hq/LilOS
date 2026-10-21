@@ -22,7 +22,7 @@ export interface TaskSchedulerDeps {
   /** Check period — runs are due to the minute; anything below ~30s is plenty. */
   intervalMs: number;
   log: Logger;
-  /** Open the task's run as a DM session (conversations.open + stamp the
+  /** Open the task's run as a thread (conversations.open + stamp the
       row). `due.at` is the slot's epoch ms, `due.key` its dedupe leg. */
   fire: (
     task: ScheduledTask,

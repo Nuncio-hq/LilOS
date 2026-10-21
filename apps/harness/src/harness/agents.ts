@@ -94,10 +94,12 @@ export function sessionParams(
   const provider = conv?.provider ?? base.provider;
   const effort = conv?.effort ?? base.effort;
   const fast = conv?.fast ?? base.fast;
-  // D-#113: the session's folder is owned by the conversation —
-  // `conversations.open { cwd }`, stored nullable on the relay row — and the
-  // engine gets it as `cwd` on `session.start`; absent → the harness default
-  // workdir. A live move goes through `session.moveWorkspace` (D-#581).
+  // D-#113: a thread owns its folder through its project — the folder is
+  // the conversation's `cwd` (`conversations.open { cwd }`, stored nullable
+  // on the relay row), and a folder used for the first time becomes a project
+  // (the relay files it, D-#771). The engine gets it as `cwd` on
+  // `session.start`; absent = a plain chat → the harness default workdir. A
+  // live move goes through `session.moveWorkspace` (D-#581).
   // Not: a per-employee fixed workdir — one employee works many folders.
   const cwd = expandPath(conv?.cwd ?? this.opts.workdir, this.home);
   return {

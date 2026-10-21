@@ -6,6 +6,7 @@ import type { Engine } from "./context"
 import { peopleActions } from "./people"
 import { phoneActions } from "./phone"
 import { planActions } from "./plan"
+import { projectActions } from "./projects"
 import { scheduleActions } from "./schedules"
 import { searchActions } from "./search"
 import { settingsActions } from "./settings"
@@ -20,6 +21,7 @@ export function makeActions(engine: Engine): V3DataActions {
     ...chatActions(engine),
     ...peopleActions(engine),
     ...planActions(engine),
+    ...projectActions(engine),
     ...scheduleActions(engine),
     ...browserActions(engine),
     ...phoneActions(engine),

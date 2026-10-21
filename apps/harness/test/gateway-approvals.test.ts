@@ -3,6 +3,7 @@ import type {
   Ask,
   Conversation,
   Employee,
+  Project,
 } from "@lilos/contracts/app";
 import { SessionSurfaces, toolBackend } from "@lilos/surfaces";
 import { describe, expect, it } from "vitest";
@@ -32,8 +33,24 @@ describe("approval-gated gateway tools", () => {
       channelId: channel.id,
       conversationId: conversation.id,
     };
+    /* The harness's relay, recording every request it makes — the tests
+       assert what the agent's call really put on the wire (a `cwd`, never a
+       project id) and what it did NOT send before the user answered. */
+    const sent: { method: string; params: unknown }[] = [];
+    const recording = new Proxy(w.harnessRelay, {
+      get(target, prop) {
+        if (prop === "request") {
+          return (method: string, params?: Record<string, unknown>) => {
+            sent.push({ method, params });
+            return target.request(method, params);
+          };
+        }
+        const value = Reflect.get(target, prop);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
     const appOps = createAppOps({
-      relay: w.harnessRelay,
+      relay: recording,
       runningTurnId: () => "turn-1",
       log: w.log,
     })("s1", binding);
@@ -80,6 +97,20 @@ describe("approval-gated gateway tools", () => {
       }>("employees.list", {});
       return employees;
     };
+    const projects = async () => {
+      const { projects } = await w.user.request<{ projects: Project[] }>(
+        "projects.list",
+        {},
+      );
+      return projects;
+    };
+    const makeProject = async (folder: string, name?: string) => {
+      const { project } = await w.user.request<{ project: Project }>(
+        "projects.create",
+        { folder, ...(name ? { name } : {}) },
+      );
+      return project;
+    };
     return {
       w,
       binding,
@@ -91,6 +122,9 @@ describe("approval-gated gateway tools", () => {
       conversations,
       employees,
       asks,
+      sent,
+      projects,
+      makeProject,
     };
   }
 
@@ -124,6 +158,249 @@ describe("approval-gated gateway tools", () => {
       await v.answer(ask2.id, "deny");
       await expect(call2).rejects.toThrow();
       expect((await v.conversations()).length).toBe(before + 1);
+    } finally {
+      v.gw.server.close();
+      await v.scope.close();
+      await v.w.cleanup();
+    }
+  });
+
+  it("thread_start with no project: a plain chat — no cwd on the wire, no DM in the card", async () => {
+    const v = await world();
+    try {
+      const seen = new Set<string>();
+      const call = v.client.threadStart({ text: "just thinking out loud" });
+      const ask = await v.nextAsk(seen);
+      if (ask.request.kind !== "approval") throw new Error("not approval");
+      expect(ask.request.description).toContain("Start a new thread");
+      expect(ask.request.description).toContain("plain chat");
+      expect(ask.request.description).toContain("just thinking out loud");
+      expect(ask.request.description).not.toMatch(/\bDM\b/);
+      await v.answer(ask.id, "once");
+      const res = await call;
+
+      const open = v.sent.find((s) => s.method === "conversations.open");
+      expect(open?.params).toEqual({
+        channelId: v.binding.channelId,
+        authorId: v.binding.employeeId,
+        text: "just thinking out loud",
+      });
+      const conv = (await v.conversations()).find(
+        (c) => c.id === res.conversation.id,
+      );
+      expect(conv?.cwd).toBeUndefined();
+      expect(conv?.projectId).toBeUndefined();
+      // Asking and starting a plain chat created no project.
+      expect(await v.projects()).toEqual([]);
+    } finally {
+      v.gw.server.close();
+      await v.scope.close();
+      await v.w.cleanup();
+    }
+  });
+
+  it("thread_start with a project id or a lowercase key: the project's folder is the cwd and the relay files it", async () => {
+    const v = await world();
+    try {
+      const shop = await v.makeProject("/work/shop", "Shop");
+      const lab = await v.makeProject("/work/lab", "Lab");
+      expect(shop.key).not.toBe(lab.key);
+      const seen = new Set<string>();
+
+      const byId = v.client.threadStart({
+        text: "start with the cart",
+        project: shop.id,
+      });
+      const askId = await v.nextAsk(seen);
+      seen.add(askId.id);
+      if (askId.request.kind !== "approval") throw new Error("not approval");
+      // The card names the project and its folder.
+      expect(askId.request.description).toContain("Shop");
+      expect(askId.request.description).toContain("/work/shop");
+      expect(askId.request.description).toContain("start with the cart");
+      expect(askId.request.description).not.toMatch(/\bDM\b/);
+      // Nothing is opened before "once".
+      expect(v.sent.some((s) => s.method === "conversations.open")).toBe(false);
+      await v.answer(askId.id, "once");
+      const first = await byId;
+
+      const byKey = v.client.threadStart({
+        text: "and the checkout",
+        title: "Checkout",
+        project: lab.key.toLowerCase(),
+      });
+      const askKey = await v.nextAsk(seen);
+      seen.add(askKey.id);
+      await v.answer(askKey.id, "once");
+      const second = await byKey;
+
+      /* What went on the wire: the folder as `cwd` and nothing project-ish —
+         no id, no key (the relay files the thread, D-#771). Channel and author
+         still come from the binding. */
+      const opens = v.sent.filter((s) => s.method === "conversations.open");
+      expect(opens.map((o) => o.params)).toEqual([
+        {
+          channelId: v.binding.channelId,
+          authorId: v.binding.employeeId,
+          text: "start with the cart",
+          cwd: "/work/shop",
+        },
+        {
+          channelId: v.binding.channelId,
+          authorId: v.binding.employeeId,
+          text: "and the checkout",
+          title: "Checkout",
+          cwd: "/work/lab",
+        },
+      ]);
+
+      const convs = await v.conversations();
+      const a = convs.find((c) => c.id === first.conversation.id);
+      const b = convs.find((c) => c.id === second.conversation.id);
+      expect(a).toMatchObject({ cwd: "/work/shop", projectId: shop.id });
+      expect(b).toMatchObject({ cwd: "/work/lab", projectId: lab.id });
+      // No project was created along the way.
+      expect((await v.projects()).map((p) => p.id)).toEqual([shop.id, lab.id]);
+    } finally {
+      v.gw.server.close();
+      await v.scope.close();
+      await v.w.cleanup();
+    }
+  });
+
+  it("thread_start with an unknown project errors before any ask opens", async () => {
+    const v = await world();
+    try {
+      const shop = await v.makeProject("/work/shop", "Shop");
+      const before = (await v.conversations()).length;
+
+      const err = await v.client
+        .threadStart({ text: "hello", project: "NOPE" })
+        .then(
+          () => undefined,
+          (e: Error) => e,
+        );
+      expect(err).toBeInstanceOf(Error);
+      // The message names the value and the keys that do exist.
+      expect(err?.message).toContain('"NOPE"');
+      expect(err?.message).toContain(shop.key);
+      expect(err?.message).toContain("project_list");
+
+      // Nothing reached the user and nothing was opened.
+      expect(await v.asks("open")).toEqual([]);
+      expect(v.sent.some((s) => s.method === "asks.open")).toBe(false);
+      expect(v.sent.some((s) => s.method === "conversations.open")).toBe(false);
+      expect((await v.conversations()).length).toBe(before);
+
+      // With no projects at all the error says so (and still asks nothing).
+      const v2 = await world();
+      try {
+        const err2 = await v2.client
+          .threadStart({ text: "hello", project: "X" })
+          .then(
+            () => undefined,
+            (e: Error) => e,
+          );
+        expect(err2?.message).toContain("there are no projects yet");
+        expect(await v2.asks("open")).toEqual([]);
+      } finally {
+        v2.gw.server.close();
+        await v2.scope.close();
+        await v2.w.cleanup();
+      }
+    } finally {
+      v.gw.server.close();
+      await v.scope.close();
+      await v.w.cleanup();
+    }
+  });
+
+  it("thread_start into a project: a decline opens nothing", async () => {
+    const v = await world();
+    try {
+      const shop = await v.makeProject("/work/shop", "Shop");
+      const before = (await v.conversations()).length;
+      const call = v.client.threadStart({ text: "nope", project: shop.key });
+      const ask = await v.nextAsk(new Set());
+      await v.answer(ask.id, "deny");
+      await expect(call).rejects.toThrow(/declined/);
+      expect(v.sent.some((s) => s.method === "conversations.open")).toBe(false);
+      expect((await v.conversations()).length).toBe(before);
+    } finally {
+      v.gw.server.close();
+      await v.scope.close();
+      await v.w.cleanup();
+    }
+  });
+
+  it("project_list: answers the relay's list and raises no ask", async () => {
+    const v = await world();
+    try {
+      expect((await v.client.projectList()).projects).toEqual([]);
+      const shop = await v.makeProject("/work/shop", "Shop");
+      const lab = await v.makeProject("/work/lab");
+      expect(lab.name).toBe("lab");
+      const listed = (await v.client.projectList()).projects;
+      expect(listed).toEqual(await v.projects());
+      expect(listed.map((p) => p.id)).toEqual([shop.id, lab.id]);
+      expect(await v.asks("open")).toEqual([]);
+      expect(v.sent.some((s) => s.method === "asks.open")).toBe(false);
+    } finally {
+      v.gw.server.close();
+      await v.scope.close();
+      await v.w.cleanup();
+    }
+  });
+
+  it("project_create: the ask names folder, name and about; nothing is made before once; deny makes nothing", async () => {
+    const v = await world();
+    try {
+      const seen = new Set<string>();
+      const call = v.client.projectCreate({
+        folder: "/work/shop",
+        name: "Shop",
+        about: "the storefront",
+      });
+      const ask = await v.nextAsk(seen);
+      seen.add(ask.id);
+      expect(ask.request.kind).toBe("approval");
+      if (ask.request.kind !== "approval") throw new Error("not approval");
+      expect(ask.request.options).toEqual(["once", "deny"]);
+      expect(ask.request.command).toContain("/work/shop");
+      expect(ask.request.description).toContain("/work/shop");
+      expect(ask.request.description).toContain("Shop");
+      expect(ask.request.description).toContain("the storefront");
+      // The ask is up and the call is waiting: nothing exists yet.
+      expect(await v.projects()).toEqual([]);
+      expect(v.sent.some((s) => s.method === "projects.create")).toBe(false);
+
+      await v.answer(ask.id, "once");
+      const made = await call;
+      expect(made.project).toMatchObject({
+        name: "Shop",
+        folder: "/work/shop",
+        about: "the storefront",
+      });
+      expect(await v.projects()).toEqual([made.project]);
+
+      // A folder that already has a project answers it — still asked first.
+      const again = v.client.projectCreate({ folder: "/work/shop" });
+      const askAgain = await v.nextAsk(seen);
+      seen.add(askAgain.id);
+      await v.answer(askAgain.id, "once");
+      expect((await again).project).toEqual(made.project);
+      expect((await v.projects()).length).toBe(1);
+
+      // Deny: the card goes up, the user refuses, nothing is created.
+      const denied = v.client.projectCreate({ folder: "/work/nope" });
+      const askDeny = await v.nextAsk(seen);
+      seen.add(askDeny.id);
+      await v.answer(askDeny.id, "deny");
+      await expect(denied).rejects.toThrow(/declined/);
+      expect((await v.projects()).map((p) => p.folder)).toEqual(["/work/shop"]);
+      expect(v.sent.filter((s) => s.method === "projects.create").length).toBe(
+        2,
+      );
     } finally {
       v.gw.server.close();
       await v.scope.close();

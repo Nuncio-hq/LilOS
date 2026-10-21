@@ -5,9 +5,10 @@ import { Icon } from "../components/icon";
 import { Orb } from "../components/orb";
 import type { SessionListGroups, SessionListRow } from "./types";
 
-/* One session row: the employee's orb, the session title, then employee ·
-   folder · state and the live line (current step / open ask). An unread
-   finished row leads with the blue dot — "done since you last looked". */
+/* One thread row: the employee's orb, the thread title, then employee ·
+   project · state and the live line (current step / open ask). A plain chat
+   has no project to name. An unread finished row leads with the blue dot —
+   "done since you last looked". */
 function SessionItem({
   r,
   onOpen,
@@ -18,7 +19,7 @@ function SessionItem({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${r.title}, ${r.employeeName}, ${r.state}`}
+      accessibilityLabel={`${r.title}, ${r.employeeName}${r.project ? `, ${r.project}` : ""}, ${r.state}`}
       onPress={() => onOpen(r)}
       className="flex-row items-center gap-3 px-4 py-2.5 active:opacity-70"
     >
@@ -40,7 +41,7 @@ function SessionItem({
         <View className="flex-row items-center gap-1">
           {r.unread && <View className="size-2 rounded-full bg-primary" />}
           <AppText size="xs" tone="muted" numberOfLines={1} className="flex-1">
-            {[r.employeeName, r.folder, r.state].filter(Boolean).join(" · ")}
+            {[r.employeeName, r.project, r.state].filter(Boolean).join(" · ")}
           </AppText>
         </View>
         {r.live ? (
@@ -80,9 +81,8 @@ function Group({
   );
 }
 
-/* The cross-employee session list: every session grouped Needs you /
-   Working / Recently finished (unread first). Rows are DM sessions — a tap
-   opens the thread. */
+/* The cross-agent thread list: every thread grouped Needs you / Working /
+   Recently finished (unread first). A tap opens the thread. */
 export function SessionsScreen({
   groups,
   onOpen,
@@ -100,14 +100,14 @@ export function SessionsScreen({
       contentInsetAdjustmentBehavior="automatic"
       contentContainerClassName="pb-10"
     >
-      <LargeTitle title="Sessions" />
+      <LargeTitle title="Threads" />
       {empty ? (
         <View className="items-center gap-2 px-8 pt-20">
           <Icon name="checklist" size={34} tone="muted-foreground" />
-          <AppText weight="semibold">No sessions yet</AppText>
+          <AppText weight="semibold">No threads yet</AppText>
           <AppText size="sm" tone="muted" className="text-center">
-            DM an employee to start a session — working, waiting and finished
-            sessions list here.
+            Message an agent to start a thread — working, waiting and finished
+            threads list here.
           </AppText>
         </View>
       ) : (

@@ -289,6 +289,11 @@ export const AppMethod = z.enum([
   "schedules.update",
   "schedules.delete",
   "schedules.runNow",
+  /* Projects (D-#771): the folders the company works in. The relay files
+     a thread into its folder's project, creating it on first use; there
+     is no update/remove (nothing renames or retires a project yet). */
+  "projects.list",
+  "projects.create",
 ]);
 export type AppMethod = z.infer<typeof AppMethod>;
 
@@ -419,7 +424,7 @@ export const EmployeesUpdateParams = z.object({
 export type EmployeesUpdateParams = z.infer<typeof EmployeesUpdateParams>;
 
 /**
- * Remove deletes only the LilOS record (employee + its DM channel,
+ * Remove deletes only the LilOS record (employee + its channel,
  * conversations, messages, asks). The linked engine profile is never
  * touched — engines own profiles; there is no profile-delete call anywhere.
  */
@@ -431,7 +436,9 @@ export const EmployeeResult = z.object({ employee: Employee });
 export const ChannelsListParams = z.object({}).strict();
 export const ChannelsListResult = z.object({ channels: z.array(AppChannel) });
 
-/** Get-or-create the DM channel with one employee. */
+/** Get-or-create the employee's internal channel. The wire name predates
+    retiring DMs as a product concept (D-#25); it stays so paired phones
+    keep working. */
 export const ChannelsOpenDmParams = z.object({ employeeId: z.string().min(1) });
 export type ChannelsOpenDmParams = z.infer<typeof ChannelsOpenDmParams>;
 export const ChannelResult = z.object({ channel: AppChannel });
@@ -519,8 +526,11 @@ export const ConversationsOpenParams = z
     provider: z.string().optional(),
     effort: z.string().optional(),
     fast: z.boolean().optional(),
-    /** Folder the session works in (#113); absent = harness default workdir.
-        For a workstream open (#156) this is the worktree path. */
+    /** Folder the session works in (#113); absent = a plain chat in the
+        harness default workdir. The relay files the thread in this folder's
+        project, creating it on first use (D-#771); a workstream open (#156)
+        sends the worktree path here and files under `workspace.repoPath`'s
+        project. Clients send a folder, never a project id. */
     cwd: z.string().min(1).optional(),
     /** Workstream mode (#156): `new` asks the harness to create `cwd` as a
         worktree of `workspace.repoPath` before `session.start`; `existing`
@@ -538,7 +548,7 @@ export const ConversationsOpenParams = z
      */
     dedupeKey: z.string().min(1).max(200).optional(),
     /** Host-only (#136): the scheduled task this run was fired for — the
-        DM marks the session and the chip opens the task. */
+        thread is marked and the chip opens the task. */
     scheduled: z
       .object({ taskId: z.string().min(1), name: z.string() })
       .optional(),
@@ -578,7 +588,7 @@ export const ConversationsUpdateParams = z.object({
   /** Host-only (#346): the engine session's life — `closed` once suspended,
       back to `open` when it reopens. `running` is derived client-side. */
   life: ConversationLife.optional(),
-  /** Host-only (#419): the last turn's failure the DM card shows —
+  /** Host-only (#419): the last turn's failure the thread row's card shows —
       `null` clears it (the next `turn.started` erases the card). */
   turnFailure: TurnFailure.nullable().optional(),
   /** Host-only (#583): the last turn ended stopped — `null` clears it
@@ -1404,6 +1414,9 @@ export const AppEventMethod = z.enum([
      every client's task list refresh live (#136). */
   "schedule.upserted",
   "schedule.removed",
+  /* A project appeared or was created (D-#771) — every client's project
+     list refreshes live, including the one a first-use open made. */
+  "project.upserted",
 ]);
 export type AppEventMethod = z.infer<typeof AppEventMethod>;
 
@@ -1556,7 +1569,7 @@ export const WorkbenchOpenParams = z.strictObject({
 export type WorkbenchOpenParams = z.infer<typeof WorkbenchOpenParams>;
 
 /**
- * An employee asked to show something in its DM's Workbench (#340): desktop
+ * An employee asked to show something in its thread's Workbench (#340): desktop
  * opens the panel on the target's tab, the phone renders a tappable card in
  * the thread that opens the same view.
  */
@@ -1695,7 +1708,7 @@ export type HostChangedEvent = z.infer<typeof HostChangedEvent>;
 
 /**
  * Broadcast when the per-profile Connect rows the relay serves on
- * `system.status` change (#413): the DM notice and Settings → Engine read
+ * `system.status` change (#413): the thread notice and Settings → Engine read
  * them live instead of waiting for the next status poll. `connect` absent
  * = the host stopped reporting rows — clients clear their copy. A later
  * `system.status` answer stays authoritative and replaces the patched rows.

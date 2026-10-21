@@ -180,4 +180,20 @@ describe("AC-3/AC-4 folders.add — device peers may only write home paths", () 
       folder: { path: "/tmp/anywhere" },
     });
   });
+
+  it("a token peer's typed absolute path is stored in the projects' spelling (D-#771)", async () => {
+    const home = mkhome();
+    const { relay, store } = newWorld(home);
+    const mac = await helloedToken(relay);
+
+    /* Typed absolute, with a trailing slash: stored as `~/…`, the spelling a
+       project of that folder has — one recents row, not two. */
+    await mac.connection.receive(
+      req("folders.add", { path: `${home}/repos/crew/` }),
+    );
+    await mac.connection.receive(req("folders.add", { path: "~/repos/crew" }));
+    expect((await store.listRecentFolders()).map((f) => f.path)).toEqual([
+      "~/repos/crew",
+    ]);
+  });
 });

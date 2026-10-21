@@ -5,6 +5,7 @@ import {
   EmployeeStatus,
   WorkbenchOpenTarget,
 } from "../app/domain.js";
+import { Project } from "../app/project.js";
 import { ScheduledTask, TaskSchedule } from "../app/schedule.js";
 import { MessageSearchHit, StatusComponent } from "../app/wire.js";
 import { ConversationAccess } from "../engine/approvals.js";
@@ -45,6 +46,7 @@ export const TOOL_AREAS = [
   "thread",
   "team",
   "folder",
+  "project",
   "workbench",
   "browser",
   "terminal",
@@ -191,12 +193,12 @@ export const ContextResult = z.object({
     profile: z.string(),
     model: z.string(),
   }),
-  /** The DM between the employee and the user. */
+  /** The employee's channel — the internal routing scope, not a place. */
   channel: z.object({
     id: z.string().min(1),
     kind: z.string(),
   }),
-  /** This session's thread in that DM. */
+  /** This session's thread in that channel. */
   thread: z.object({
     id: z.string().min(1),
     title: z.string(),
@@ -247,7 +249,7 @@ export type ContextResult = z.infer<typeof ContextResult>;
 /** `guide` — the LilOS docs shipped with the app (#340 AC-3). */
 export const GUIDE_TOPICS = [
   "overview",
-  "dm-and-threads",
+  "threads",
   "employees",
   "approvals",
   "workbench",
@@ -356,9 +358,9 @@ export type FolderAddResult = z.infer<typeof FolderAddResult>;
 /* ---------------------------------- thread -------------------------------- */
 
 /**
- * The session's own thread (its DM with the user): the gateway binds the
- * conversation from the session record — the agent can never address another
- * thread. LilOS never stores transcripts.
+ * The session's own thread: the gateway binds the conversation from the
+ * session record — the agent can never address another thread. LilOS never
+ * stores transcripts.
  */
 export const ThreadPostParams = z.strictObject({
   text: z.string().min(1),
@@ -370,8 +372,8 @@ export const ThreadPostResult = z.object({
 export type ThreadPostResult = z.infer<typeof ThreadPostResult>;
 
 export const ThreadReadParams = z.strictObject({
-  /** Which thread of this DM — a conversation id or its exact title.
-      Default: this session's own thread. Never another DM's. */
+  /** Which of your threads — a conversation id or its exact title.
+      Default: this session's own thread. Never another employee's. */
   thread: z.string().min(1).optional(),
   /** Newest-N cap after filtering; the backend default applies when omitted. */
   limit: z.int().min(1).optional(),
@@ -444,13 +446,18 @@ export const ThreadPrsResult = z.object({
 export type ThreadPrsResult = z.infer<typeof ThreadPrsResult>;
 
 /**
- * `thread_start` — open a new thread in this DM with a first message
- * from the employee. The ask names the title and the opening text; on
- * approval the relay runs `conversations.open` scoped to the bound channel.
+ * `thread_start` — open a new thread with a first message from the
+ * employee. The ask names the title, the opening text and the project; on
+ * approval the relay runs `conversations.open` scoped to the bound channel,
+ * with the project's folder as the thread's `cwd` (the relay files it
+ * there, D-#771). No `project` = a plain chat.
  */
 export const ThreadStartParams = z.strictObject({
   text: z.string().min(1),
   title: z.string().min(1).optional(),
+  /** A project's id or key (`project_list`); its folder becomes the new
+      thread's working folder. Omitted → a plain chat. */
+  project: z.string().min(1).optional(),
 });
 export type ThreadStartParams = z.infer<typeof ThreadStartParams>;
 export const ThreadStartResult = z.object({
@@ -461,6 +468,25 @@ export const ThreadStartResult = z.object({
   message: AppMessage,
 });
 export type ThreadStartResult = z.infer<typeof ThreadStartResult>;
+
+/* --------------------------------- project -------------------------------- */
+
+/** `project_list` — the company's projects: the folders it works in. */
+export const ProjectListParams = z.strictObject({});
+export type ProjectListParams = z.infer<typeof ProjectListParams>;
+export const ProjectListResult = z.object({ projects: z.array(Project) });
+export type ProjectListResult = z.infer<typeof ProjectListResult>;
+
+/** `project_create` — propose a project for a folder; nothing is made until
+    the user approves. A folder that already has a project answers it. */
+export const ProjectCreateParams = z.strictObject({
+  folder: z.string().min(1),
+  name: z.string().min(1).optional(),
+  about: z.string().optional(),
+});
+export type ProjectCreateParams = z.infer<typeof ProjectCreateParams>;
+export const ProjectCreateResult = z.object({ project: Project });
+export type ProjectCreateResult = z.infer<typeof ProjectCreateResult>;
 
 /* --------------------------------- schedule ------------------------------- */
 
@@ -593,14 +619,14 @@ export const LILOS_TOOLS: Record<string, LilosToolContract> = {
   context: {
     params: ContextParams,
     result: ContextResult,
-    doc: "Who and where this session is: the employee record, DM, thread, folder, context usage { used, window }, the user's name, Mac status and attached tool areas.",
+    doc: "Who and where this session is: the employee record, channel, thread, folder, context usage { used, window }, the user's name, Mac status and attached tool areas.",
     area: "root",
     access: "read",
   },
   guide: {
     params: GuideParams,
     result: GuideResult,
-    doc: "LilOS docs shipped with the app — pass a topic (overview, dm-and-threads, employees, approvals, workbench, mobile, gateway); none returns the index.",
+    doc: "LilOS docs shipped with the app — pass a topic (overview, threads, employees, approvals, workbench, mobile, gateway); none returns the index.",
     area: "root",
     access: "read",
   },
@@ -621,21 +647,21 @@ export const LILOS_TOOLS: Record<string, LilosToolContract> = {
   thread_read: {
     params: ThreadReadParams,
     result: ThreadReadResult,
-    doc: "Read the visible messages of a thread in this DM — the session's own unless `thread` names another by id or title; `before`/`afterSeq` window it.",
+    doc: "Read the visible messages of one of your threads — the session's own unless `thread` names another by id or title; `before`/`afterSeq` window it.",
     area: "thread",
     access: "read",
   },
   thread_list: {
     params: ThreadListParams,
     result: ThreadListResult,
-    doc: "The threads in this DM — title, state, last activity and linked PRs.",
+    doc: "Your threads — title, state, last activity and linked PRs.",
     area: "thread",
     access: "read",
   },
   thread_search: {
     params: ThreadSearchParams,
     result: ThreadSearchResult,
-    doc: "Search messages inside this DM (the relay's FTS index).",
+    doc: "Search messages across your threads (the relay's FTS index).",
     area: "thread",
     access: "read",
   },
@@ -657,7 +683,7 @@ export const LILOS_TOOLS: Record<string, LilosToolContract> = {
   thread_start: {
     params: ThreadStartParams,
     result: ThreadStartResult,
-    doc: "Ask the user to start a new thread in this DM with `text` as its first message (optional `title`). Waits for approval; company changes always ask.",
+    doc: "Ask the user to start a new thread with `text` as its first message (optional `title`; optional `project` — an id or key from project_list — whose folder it works in, else a plain chat). Waits for approval; company changes always ask.",
     area: "thread",
     access: "approval",
   },
@@ -680,6 +706,20 @@ export const LILOS_TOOLS: Record<string, LilosToolContract> = {
     result: FolderAddResult,
     doc: "Ask the user to add a folder to the recent-folders list so it can be picked for a session. Waits for approval.",
     area: "folder",
+    access: "approval",
+  },
+  project_list: {
+    params: ProjectListParams,
+    result: ProjectListResult,
+    doc: "The company's projects — name, key, folder, about. Pass a project's id or key to thread_start.",
+    area: "project",
+    access: "read",
+  },
+  project_create: {
+    params: ProjectCreateParams,
+    result: ProjectCreateResult,
+    doc: "Ask the user to make a project of a folder (optional name, about). A folder that already has a project answers it. Waits for approval; returns the project record.",
+    area: "project",
     access: "approval",
   },
   schedule_list: {
@@ -713,7 +753,7 @@ export const LILOS_TOOLS: Record<string, LilosToolContract> = {
   schedule_run_now: {
     params: ScheduleTaskRef,
     result: ScheduleTaskResult,
-    doc: "Fire one of your scheduled tasks now — a session opens in this DM at once. Asks the user to approve.",
+    doc: "Fire one of your scheduled tasks now — a session opens at once. Asks the user to approve.",
     area: "schedule",
     access: "approval",
   },

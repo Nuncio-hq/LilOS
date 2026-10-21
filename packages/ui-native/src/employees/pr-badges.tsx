@@ -218,7 +218,7 @@ export function PrCard({ pr }: { pr: PullRequestRef }) {
   );
 }
 
-/** A DM row's PR line. One PR says its state in words ("#96 Draft ·
+/** A thread row's PR line. One PR says its state in words ("#96 Draft ·
     checks failing"); several show as badges, open first, then "+N". */
 export function PrLine({ prs }: { prs: PullRequestRef[] }) {
   if (prs.length === 1) {

@@ -72,9 +72,10 @@ export async function describeAndHire(
         ...(agent.soul ? { instructions: agent.soul } : {}),
       },
     );
-    // The web hire path opens the DM channel up front so the employee's DM
-    // never renders a perpetual skeleton (hireEmployee); the first-run
-    // hire does the same (#193). `channels.openDm` is idempotent.
+    // The web hire path opens the employee's channel (the relay's internal
+    // routing scope, D-#25) up front so its first thread never waits on one
+    // (hireEmployee); the first-run hire does the same (#193).
+    // `channels.openDm` is idempotent.
     await this.opts.relay.request("channels.openDm", {
       employeeId: created.employee.id,
     });

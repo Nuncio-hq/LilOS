@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { type ToastNotice, ToastView, type V3Nav, V3Shell, navFromParams, paramsFromNav, paramsText } from "@lilos/ui"
 import { V3_DATA, v3Draft } from "./fake-v3"
 import { v3Reply } from "./fake-v3-reply"
+import { FolderDialog } from "./folder-host"
 import { StatusBanner, StatusDetails } from "./status-host"
 import { MockThread } from "./thread/mock-thread"
 import { type Toast, makeThreadSeams } from "./thread/seams"
@@ -66,8 +67,9 @@ export default function V3App() {
   const [data, setData] = useState(V3_DATA)
   const dataRef = useRef(data)
   dataRef.current = data
-  // The system status dialog is the app's, beside the shell (the real app hosts it too).
+  // The system status and folder dialogs are the app's, beside the shell (the real app hosts them too).
   const [status, setStatus] = useState(false)
+  const [asking, setAsking] = useState<((path: string) => void) | null>(null)
   const actions = useMemo(
     () =>
       makeActions({
@@ -76,6 +78,8 @@ export default function V3App() {
         reply: v3Reply,
         toast: onToast,
         openStatus: () => setStatus(true),
+        // A function in state: wrapped so React keeps it instead of calling it.
+        askForFolder: (onPick) => setAsking(() => onPick),
       }),
     [onToast],
   )
@@ -104,6 +108,7 @@ export default function V3App() {
         banner={<StatusBanner data={data} onDetails={() => setStatus(true)} />}
       />
       {status && <StatusDetails data={data} onClose={() => setStatus(false)} onCopied={() => onToast("Diagnostics copied")} />}
+      {asking && <FolderDialog onPick={asking} onClose={() => setAsking(null)} />}
       {toast && <ToastView toast={toast} />}
     </>
   )

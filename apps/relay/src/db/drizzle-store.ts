@@ -10,6 +10,7 @@ import type {
   PairedDevice,
   PendingTurn,
   ProfileSettings,
+  Project,
   PushPrefs,
   RecentFolder,
   ScheduledRunRecord,
@@ -57,6 +58,7 @@ import type {
   ListMessagesQuery,
   NewAsk,
   NewPairedDevice,
+  NewProject,
   NewScheduledTask,
   OpenConversationInput,
   RelayStore,
@@ -64,10 +66,12 @@ import type {
   ScheduledTaskPatch,
 } from "../store";
 import {
+  deriveProjectKey,
   NO_FOLDER_DEDUPE_LIKE,
   newId,
   noFolderDedupeKey,
   openTitle,
+  projectNameFor,
   searchTerms,
   titlePatch,
 } from "../store";
@@ -98,6 +102,7 @@ const rowToConversation = (row: ConversationRow): Conversation => {
     effort: row.effort ?? undefined,
     fast: row.fast ?? undefined,
     cwd: row.cwd ?? undefined,
+    projectId: row.projectId ?? undefined,
     /* JSON workstream pick (#156); rows opened before v13 have no column
        value — absent, not null. */
     workspace: row.workspace
@@ -345,7 +350,7 @@ export function createDrizzleStore(db: Db): RelayStore {
           tx.delete(schema.asks)
             .where(inArray(schema.asks.channelId, channelIds))
             .run();
-          /* An employee's tasks die with it — the DM sessions they opened
+          /* An employee's tasks die with it — the threads they opened
              keep the `scheduled` marker like any other leftover row. */
           tx.delete(schema.scheduledTasks)
             .where(eq(schema.scheduledTasks.employeeId, id))
@@ -477,7 +482,7 @@ export function createDrizzleStore(db: Db): RelayStore {
       const sqlite = db.$client;
       const convCols = `id, channel_id AS channelId,
         root_message_id AS rootMessageId, engine_ref AS engineRef, state,
-        model, provider, effort, fast, cwd, workspace, access, title,
+        model, provider, effort, fast, cwd, project_id AS projectId, workspace, access, title,
         title_source AS titleSource, archived, delivered_seq AS deliveredSeq,
         usage, usage_session_id AS usageSessionId, usage_seq AS usageSeq,
         life, turn_failure AS turnFailure,
@@ -698,6 +703,53 @@ export function createDrizzleStore(db: Db): RelayStore {
         .get();
       return row ? rowToScheduledTask(row) : null;
     },
+    async listProjects(): Promise<Project[]> {
+      return db
+        .select()
+        .from(schema.projects)
+        .orderBy(asc(schema.projects.createdAt), sql`rowid`)
+        .all();
+    },
+    async getProject(id: string): Promise<Project | null> {
+      return (
+        db
+          .select()
+          .from(schema.projects)
+          .where(eq(schema.projects.id, id))
+          .get() ?? null
+      );
+    },
+    async ensureProject(input: NewProject) {
+      /* One sync transaction = the atomic get-or-create: the unique
+         indexes on folder and key back it, and nothing awaits between the
+         read and the insert. */
+      return db.transaction((tx) => {
+        const existing = tx
+          .select()
+          .from(schema.projects)
+          .where(eq(schema.projects.folder, input.folder))
+          .get();
+        if (existing) return { project: existing, created: false };
+        const taken = new Set(
+          tx
+            .select({ key: schema.projects.key })
+            .from(schema.projects)
+            .all()
+            .map((r) => r.key),
+        );
+        const name = input.name ?? projectNameFor(input.folder);
+        const project: Project = {
+          id: newId("proj"),
+          name,
+          key: deriveProjectKey(name, taken),
+          folder: input.folder,
+          about: input.about ?? "",
+          createdAt: input.createdAt ?? now(),
+        };
+        tx.insert(schema.projects).values(project).run();
+        return { project, created: true };
+      });
+    },
     async listRecentFolders(): Promise<RecentFolder[]> {
       return db
         .select()
@@ -811,6 +863,9 @@ export function createDrizzleStore(db: Db): RelayStore {
           ...openTitle(input),
           access: input.access ?? "ask",
           ...(input.cwd !== undefined ? { cwd: input.cwd } : {}),
+          ...(input.projectId !== undefined
+            ? { projectId: input.projectId }
+            : {}),
           ...(input.workspace !== undefined
             ? { workspace: input.workspace }
             : {}),
@@ -864,6 +919,16 @@ export function createDrizzleStore(db: Db): RelayStore {
           .where(eq(schema.messages.id, rootMessage.id))
           .run();
         return { conversation, rootMessage, created: true };
+      });
+    },
+    async setConversationProjects(filings) {
+      db.transaction((tx) => {
+        for (const { conversationId, projectId } of filings) {
+          tx.update(schema.conversations)
+            .set({ projectId })
+            .where(eq(schema.conversations.id, conversationId))
+            .run();
+        }
       });
     },
     async updateConversation(id, patch: ConversationPatch) {

@@ -1,3 +1,4 @@
+import type { SFSymbol } from "expo-symbols";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import {
   KeyboardAvoidingView,
@@ -25,12 +26,16 @@ import type {
   SessionTurn,
 } from "./types";
 
-/* A DM with one employee, as a Mail-style list of its threads: each message
-   you send opens a thread, and the threads group by what they need from
-   you — Needs you, Working, Didn't finish, Done — newest first inside each
-   group. Tap a thread to open it (approve there, with the context in view).
-   The floating glass composer starts a new thread. The header is the native
-   nav bar (see DmHeaderTitle). */
+/* One agent's threads, as a Mail-style list: each message you send opens a
+   thread, and the threads group by what they need from you — Needs you,
+   Working, Didn't finish, Done — newest first inside each group. Tap a
+   thread to open it (approve there, with the context in view). Each row
+   names its project (D-#771), nothing for a plain chat. The floating glass
+   composer starts a new thread. The header is the native nav bar (see
+   DmHeaderTitle).
+
+   `Dm` stays in the names: the per-agent channel is the relay's internal
+   routing scope, not something the user sees (D-#771). */
 
 export function EmployeeDmScreen({
   name,
@@ -185,7 +190,7 @@ export function EmployeeDmScreen({
             <View className="flex-1 items-center justify-center gap-3 px-10">
               <Orb tone={tone} size={64} />
               <AppText tone="muted" className="text-center text-[15px]">
-                {`Each message opens its own thread.\nAsk ${name} something below.`}
+                {`No threads with ${name} yet.\nEach message opens its own thread.`}
               </AppText>
             </View>
           )}
@@ -264,7 +269,7 @@ export function EmployeeDmScreen({
 
 /* One thread, like a message in Mail: a state mark in the gutter (teal dot
    = needs you, pulsing blue = working), title + time, what it needs or said
-   last, then where it runs and how many replies. */
+   last, then its project, the branch it works on and how many replies. */
 function ThreadRow({
   t,
   last,
@@ -292,7 +297,7 @@ function ThreadRow({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${t.title}, ${stateLabel(t.state)}. ${body}`}
+      accessibilityLabel={`${t.title}${t.project ? `, ${t.project}` : ""}, ${stateLabel(t.state)}. ${body}`}
       onPress={onPress}
       className="flex-row pl-4 active:bg-fill"
     >
@@ -344,20 +349,9 @@ function ThreadRow({
           </Text>
         )}
         <View className="mt-0.5 flex-row items-center gap-2">
-          {t.folder && (
-            <View className="min-w-0 shrink flex-row items-center gap-1">
-              <Icon
-                name="arrow.triangle.branch"
-                size={11}
-                tone="muted-foreground"
-              />
-              <Text
-                numberOfLines={1}
-                className="shrink text-[13px] text-muted-foreground"
-              >
-                {t.branch ?? t.folder}
-              </Text>
-            </View>
+          {t.project && <MetaChip icon="folder" text={t.project} />}
+          {t.branch && (
+            <MetaChip icon="arrow.triangle.branch" text={t.branch} />
           )}
           {t.added !== undefined && (
             <Text
@@ -384,6 +378,20 @@ function ThreadRow({
         )}
       </View>
     </Pressable>
+  );
+}
+
+function MetaChip({ icon, text }: { icon: SFSymbol; text: string }) {
+  return (
+    <View className="min-w-0 shrink flex-row items-center gap-1">
+      <Icon name={icon} size={11} tone="muted-foreground" />
+      <Text
+        numberOfLines={1}
+        className="shrink text-[13px] text-muted-foreground"
+      >
+        {text}
+      </Text>
+    </View>
   );
 }
 

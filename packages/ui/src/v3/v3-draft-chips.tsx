@@ -1,79 +1,91 @@
-import { FolderIcon, MessageSquareIcon, PencilLineIcon } from "lucide-react";
+import { MessageSquareIcon, PencilLineIcon } from "lucide-react";
 import { choiceFor, ModelPicker } from "../chat/model-picker";
 import type { ModelChoice } from "../types";
 import { ChipMenu } from "./v3-chip-menu";
 import type { V3Data } from "./v3-data-types";
+import { ProjectMark } from "./v3-marks";
 import type { V3Actions } from "./v3-page-types";
+import type { V3Project } from "./v3-types";
 
 /* The new chat's three working-conditions chips that are not about who: where
-   it works, which model (the full picker where the app has the engine's
-   catalog), and how much it may do without asking. */
+   it works (a project, or nowhere), which model (the full picker where the app
+   has the engine's catalog), and how much it may do without asking. */
 
-/** The folder menu's "No folder": a chat that works in no folder, not even
-    the newest recent. A real folder path is never empty, so it cannot clash. */
-export const NO_FOLDER = "";
-/** The menu row that opens the app's own Add a folder dialog. */
-const ADD_FOLDER = "\u0000add-folder";
+/** The project menu's "No project": a plain chat, working in no folder. A real
+    project id is never empty, so it cannot clash. */
+export const NO_PROJECT = "";
+/** The menu row that asks for a folder and makes a project of it. */
+const NEW_PROJECT = "\u0000new-project";
 
-type Folders = NonNullable<V3Data["folders"]>;
-
-export function FolderChip({
-  folders,
+export function ProjectChip({
+  projects,
+  project,
   folder,
   onPick,
-  onAdd,
+  onNew,
 }: {
-  folders: Folders;
-  /** The chosen folder; absent = No folder. */
-  folder?: Folders[number];
-  onPick: (path: string) => void;
-  /** Opens the app's Add a folder dialog and picks what it added. */
-  onAdd?: () => void;
+  projects: V3Project[];
+  /** The chosen project; absent = No project (just chat). */
+  project?: V3Project;
+  /** What the app knows of the chosen project's folder (`data.folders`). */
+  folder?: NonNullable<V3Data["folders"]>[number];
+  onPick: (projectId: string) => void;
+  /** Asks for a folder and makes a project of it, then picks that project. */
+  onNew?: () => void;
 }) {
   return (
     <>
       <ChipMenu
-        title={`Folder · ${folder ? folder.path : "none"}`}
-        value={folder ? folder.path : NO_FOLDER}
-        onPick={(id) => (id === ADD_FOLDER ? onAdd?.() : onPick(id))}
+        title={`Project · ${project ? project.folder : "none"}`}
+        value={project ? project.id : NO_PROJECT}
+        onPick={(id) => (id === NEW_PROJECT ? onNew?.() : onPick(id))}
         label={
-          <>
-            <FolderIcon className="size-3.5 shrink-0" />
-            <span className="truncate">
-              {folder ? folder.label : "No folder"}
-            </span>
-          </>
+          project ? (
+            <>
+              <ProjectMark
+                name={project.name}
+                tone={project.tone}
+                className="size-4 text-[9px]"
+              />
+              <span className="truncate">{project.name}</span>
+            </>
+          ) : (
+            <>
+              <MessageSquareIcon className="size-3.5 shrink-0" />
+              <span className="truncate">No project</span>
+            </>
+          )
         }
         options={[
-          ...folders.map((f) => ({
-            id: f.path,
+          ...projects.map((p) => ({
+            id: p.id,
             node: (
               <>
-                <FolderIcon className="size-3.5 shrink-0" />
-                <span className="shrink-0">{f.label}</span>
-                {f.path !== f.label && (
-                  <span className="truncate font-mono text-[12px] text-muted-foreground/70">
-                    {f.path}
-                  </span>
-                )}
+                <ProjectMark name={p.name} tone={p.tone} />
+                <span className="shrink-0">{p.name}</span>
+                <span className="truncate font-mono text-[12px] text-muted-foreground/70">
+                  {p.folder}
+                </span>
               </>
             ),
           })),
           {
-            id: NO_FOLDER,
+            id: NO_PROJECT,
             node: (
               <>
                 <MessageSquareIcon className="size-3.5 shrink-0" />
-                <span className="truncate">No folder · just chat</span>
+                <span className="truncate">No project · just chat</span>
               </>
             ),
           },
-          ...(onAdd
+          ...(onNew
             ? [
                 {
-                  id: ADD_FOLDER,
+                  id: NEW_PROJECT,
                   action: true,
-                  node: <span className="truncate">Add a folder…</span>,
+                  node: (
+                    <span className="truncate">New project from a folder…</span>
+                  ),
                 },
               ]
             : []),

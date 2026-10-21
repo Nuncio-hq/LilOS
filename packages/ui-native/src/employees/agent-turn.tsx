@@ -62,7 +62,7 @@ function markProse(text: string, mark?: string) {
 }
 
 /* #555: the search hit's term emphasised inside the row it opened on —
-   the same Mark the DM hit list uses on its snippet. */
+   the same Mark the agent's thread list uses on its snippet. */
 function markSpans(text: string, mark?: string): ReactNode {
   const q = mark?.trim().toLowerCase();
   if (!q) return text;

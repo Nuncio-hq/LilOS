@@ -88,18 +88,18 @@ async function openFolderless(page: Page, text: string) {
   return conv;
 }
 
-/** The new-chat draft's Folder chip after a reload — the app reads the
-    recents when it mounts, so a reload is what proves the pick persisted. */
+/** The new-chat draft's Project chip after a reload — the app reads the
+    company when it mounts, so a reload is what proves the pick persisted. */
 async function draftFolderChip(page: Page) {
   await page.goto(`${stack.webUrl}/#?page=threads&open=newchat:default`);
   await page.reload();
-  const chip = v3Peek(page).getByTitle(/^Folder · /);
+  const chip = v3Peek(page).getByTitle(/^Project · /);
   await expect(chip).toBeVisible({ timeout: 30_000 });
   return chip;
 }
 
-/** Start a chat from the draft with the Folder chip set to `choice` (a folder
-    name, or "No folder"); then the page is left on the thread. */
+/** Start a chat from the draft with the Project chip set to `choice` (a
+    project's name, or "No project"); then the page is left on the thread. */
 async function chatFromDraft(page: Page, choice: RegExp, text: string) {
   const chip = await draftFolderChip(page);
   await chip.click();
@@ -160,21 +160,21 @@ test("AC-1 the new-chat folder follows the last session's folder — a move coun
   });
   await page.screenshot({ path: `${SHOTS}/ac-1-last-folder-remembered.png` });
 
-  /* Leg 3 — pick "No folder", send: after a reload the pick is still
-     "No folder" (it used to silently reselect the newest folder). */
-  await chatFromDraft(page, /No folder/, "folder-less by choice");
-  await expect(await draftFolderChip(page)).toContainText("No folder", {
+  /* Leg 3 — pick "No project", send: after a reload the pick is still
+     "No project" (it used to silently reselect the newest folder). */
+  await chatFromDraft(page, /No project/, "folder-less by choice");
+  await expect(await draftFolderChip(page)).toContainText("No project", {
     timeout: 30_000,
   });
 
-  /* Leg 4 — a folder pick takes the pick back, and "No folder" again after
-     it: the folder session in between must not stick the pick on the folder. */
+  /* Leg 4 — a project pick takes the pick back, and "No project" again after
+     it: the project session in between must not stick the pick on it. */
   await chatFromDraft(page, new RegExp(otherName), "back in a folder");
   await expect(await draftFolderChip(page)).toContainText(otherName, {
     timeout: 30_000,
   });
-  await chatFromDraft(page, /No folder/, "folder-less again");
-  await expect(await draftFolderChip(page)).toContainText("No folder", {
+  await chatFromDraft(page, /No project/, "folder-less again");
+  await expect(await draftFolderChip(page)).toContainText("No project", {
     timeout: 30_000,
   });
   await page.screenshot({ path: `${SHOTS}/ac-1-no-folder-remembered.png` });

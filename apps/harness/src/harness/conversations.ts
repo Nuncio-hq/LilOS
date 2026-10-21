@@ -67,7 +67,7 @@ export async function findConversation(
   if (found) return found;
   // conversation.updated is a live-only emit; a subscribe that lands after
   // the open races it away — so query the relay directly instead of only
-  // trusting the atom. (AC-2/AC-4: first DM on a fresh channel, or events
+  // trusting the atom. (AC-2/AC-4: first thread on a fresh channel, or events
   // missed while asleep, must still bind.)
   try {
     const listed = await this.opts.relay.request<{
@@ -93,16 +93,16 @@ export async function updateConversation(
     fast?: boolean | null;
     deliveredSeq?: number;
     life?: ConversationLife;
-    /** #419: stamp the last turn's failure (DM alert card); `null`
+    /** #419: stamp the last turn's failure (thread alert card); `null`
         clears it. */
     turnFailure?: TurnFailure | null;
     /** #581: the thread's working folder — `conversations.moveFolder`
         writes it after re-homing the session; `null` clears it. */
     cwd?: string | null;
-    /** #583: the last turn ended stopped (DM row word); `null` clears
+    /** #583: the last turn ended stopped (thread row word); `null` clears
         it on the next `turn.started`. */
     turnStopped?: boolean | null;
-    /** #583: running background-job count (DM row badge + session-feed
+    /** #583: running background-job count (thread row badge + session-feed
         seed); `null` clears it. */
     bgJobs?: number | null;
   },

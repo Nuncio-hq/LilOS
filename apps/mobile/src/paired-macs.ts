@@ -71,7 +71,7 @@ export async function touchMac(id: string): Promise<void> {
 }
 
 /** AC-6: Forget drops the credential AND the cached directory. #600: and
-   the DM picks — a fresh pairing must not inherit the old Mac's folder
+   the composer picks — a fresh pairing must not inherit the old Mac's folder
    and model choices (previously only the demo reset them). */
 export async function forgetMacs(
   clearCache: () => Promise<void>,

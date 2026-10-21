@@ -2,7 +2,7 @@ import { cn } from "../lib/utils";
 import { ago, Spinner, TicketId } from "./v3-bits";
 import type { V3Data } from "./v3-data-types";
 import { AgentAvatar, StatusDot, StatusPill } from "./v3-marks";
-import { agentOf, FORMER_AGENT, ticketOf } from "./v3-model";
+import { agentOf, FORMER_AGENT, threadTag, ticketOf } from "./v3-model";
 import { RowButton } from "./v3-open-record";
 import type { V3Route } from "./v3-page-types";
 import type { V3Agent, V3ConnectorDef, V3Thread, V3Ticket } from "./v3-types";
@@ -102,15 +102,20 @@ export function ThreadRow({
   thread,
   go,
   byAgent,
+  inProject,
 }: {
   data: V3Data;
   thread: V3Thread;
   go: (r: V3Route) => void;
   /** Name the agent instead of the ticket's owner-less context. */
   byAgent?: boolean;
+  /** Listed on its own project's page: the page already says the project, so
+     only a ticket tags the row. */
+  inProject?: boolean;
 }) {
   const who = agentOf(data, thread.agentId);
   const ticket = thread.ticketId ? ticketOf(data, thread.ticketId) : undefined;
+  const tag = inProject ? thread.ticketId : threadTag(data, thread);
   return (
     <RowButton
       opens={{ page: "thread", id: thread.id }}
@@ -126,10 +131,14 @@ export function ThreadRow({
       </span>
       <span className="min-w-0 flex-1 truncate text-foreground">
         {thread.title}
-        <span className="ml-2.5 text-[12.5px] text-muted-foreground/70">
-          {thread.ticketId ?? "Chat"}
-          {ticket && ticket.title !== thread.title ? ` · ${ticket.title}` : ""}
-        </span>
+        {tag && (
+          <span className="ml-2.5 text-[12.5px] text-muted-foreground/70">
+            {tag}
+            {ticket && ticket.title !== thread.title
+              ? ` · ${ticket.title}`
+              : ""}
+          </span>
+        )}
       </span>
       {byAgent && (
         <span className="w-[100px] shrink-0 text-[13.5px] text-muted-foreground @min-[680px]:w-[170px]">

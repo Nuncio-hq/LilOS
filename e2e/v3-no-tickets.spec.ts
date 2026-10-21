@@ -64,16 +64,15 @@ test("the sidebar offers Work, Goals and Inbox to nobody, and a link to them lan
     ).toHaveCount(0);
   await expect(side.getByText("Projects", { exact: true })).toHaveCount(0);
 
-  // A link to those pages is not a dead end: it lands on Home, and a ticket,
-  // goal or project link opens no record beside it (a project link over a
-  // real page, Threads, keeps the page and drops only the record).
+  // A link to those pages is not a dead end: it lands on Home, and a ticket
+  // or goal link opens no record beside it. (A project is not gated: it is
+  // a folder, see ac-771.)
   const links: [string, string][] = [
     ["#?page=work", "Good afternoon"],
     ["#?page=inbox", "Good afternoon"],
     ["#?page=goals", "Good afternoon"],
     ["#?page=work&open=ticket:HB-12", "Good afternoon"],
     ["#?page=goals&open=goal:g1", "Good afternoon"],
-    ["#?page=threads&open=project:p1", "Threads"],
   ];
   for (const [link, heading] of links) {
     await page.goto(`${stack.webUrl}/${link}`);

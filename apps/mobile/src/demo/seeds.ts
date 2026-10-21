@@ -470,7 +470,7 @@ export const DEMO_SEEDS: SeedConversation[] = [
             {
               tool: "terminal",
               arg: "gh run view 36304038507 --log-failed",
-              output: "ac-83 › DM feed row avatar · timeout 30000ms",
+              output: "ac-83 › thread feed row avatar · timeout 30000ms",
             },
             {
               tool: "read_file",
@@ -504,7 +504,7 @@ export const DEMO_SEEDS: SeedConversation[] = [
               tool: "terminal",
               arg: "git log -3 --oneline -- e2e/ac-80.spec.ts",
               output:
-                "982f9ab DM feed row: avatar sits a line above\n5536c54 DM: user's own avatar is a faint grey Y",
+                "982f9ab thread feed row: avatar sits a line above\n5536c54 thread: user's own avatar is a faint grey Y",
             },
             {
               tool: "read_file",
@@ -519,7 +519,7 @@ export const DEMO_SEEDS: SeedConversation[] = [
               kind: "approval",
               command: "bunx playwright test ac-80 --repeat-each 20",
               description:
-                "Wants to re-run the flaky DM identity test 20× to prove the fix.",
+                "Wants to re-run the flaky thread identity test 20× to prove the fix.",
               options: [...APPROVAL_OPTS],
             },
             onApprove: FLAKE_YES,
@@ -868,7 +868,7 @@ export const RESUME_ON_OPEN: Record<
           tool: "terminal",
           arg: "bunx playwright test ac-83",
           output:
-            "✗ ac-83 › DM feed row avatar\n  locator('img.avatar') resolved to 2 elements\n\n1 failed · 12 passed (21.4s)",
+            "✗ ac-83 › thread feed row avatar\n  locator('img.avatar') resolved to 2 elements\n\n1 failed · 12 passed (21.4s)",
           ms: 2200,
         },
         {

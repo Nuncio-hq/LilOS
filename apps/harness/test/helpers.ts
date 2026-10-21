@@ -340,7 +340,8 @@ export async function setupWorld(opts: WorldOptions = {}): Promise<World> {
   };
 }
 
-/** Open a DM channel as the user; returns the channel. */
+/** Open the employee's channel (the wire `channels.openDm` — the relay's
+    internal routing scope) as the user; returns the channel. */
 export async function openDm(user: RelayClient) {
   const { employee } = await user.request<{ employee: { id: string } }>(
     "employees.create",
@@ -352,7 +353,7 @@ export async function openDm(user: RelayClient) {
   return channel;
 }
 
-/** Open a DM as the user; returns employee + channel ids. */
+/** Same, plus the employee: returns employee + channel ids. */
 export async function openDmConversation(user: RelayClient) {
   const { employee } = await user.request<{ employee: { id: string } }>(
     "employees.create",

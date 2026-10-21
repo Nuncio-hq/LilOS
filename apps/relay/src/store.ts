@@ -18,6 +18,7 @@ import type {
   PairedDevice,
   PendingTurn,
   ProfileSettings,
+  Project,
   PushPrefs,
   RecentFolder,
   RespondTo,
@@ -43,6 +44,55 @@ import type {
 export const NO_FOLDER_DEDUPE_LIKE = "sys:%:no-folder";
 export const noFolderDedupeKey = (key: string | null | undefined): boolean =>
   !!key && key.startsWith("sys:") && key.endsWith(":no-folder");
+
+/** A project as the relay creates it (D-#771). */
+export interface NewProject {
+  /** The canonical `~`-collapsed spelling (`projectFolderOf`) — the unique key
+      of the record, the same one the recents list uses. */
+  folder: string;
+  /** Defaults to the folder's basename. */
+  name?: string;
+  about?: string;
+  /** Stamp for a backfilled project: when its oldest thread opened. */
+  createdAt?: number;
+}
+
+/** A project's name when none is given: the folder's last segment; the home
+    folder itself (`~`) has no segment worth showing, so it is "Home". */
+export function projectNameFor(folder: string): string {
+  if (folder === "~") return "Home";
+  return folder.replace(/\/+$/, "").split("/").pop() || folder;
+}
+
+/**
+ * The short tag a project gets from its name (D-#771): one word → its first
+ * three letters ("LilOS" → "LIL"), several → their initials ("Heard Back" →
+ * "HB"), uppercased, ASCII only; a name with no letters or digits is "P".
+ * A tag already taken gets a counter ("LIL2") so keys stay unique without
+ * ever renaming the older project. Shared by both stores.
+ */
+export function deriveProjectKey(
+  name: string,
+  taken: ReadonlySet<string>,
+): string {
+  const words = name
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .split(/[^A-Za-z0-9]+/)
+    .filter(Boolean);
+  const base = (
+    words.length > 1
+      ? words
+          .slice(0, 3)
+          .map((w) => w[0])
+          .join("")
+      : (words[0] ?? "").slice(0, 3)
+  ).toUpperCase();
+  const stem = base || "P";
+  let key = stem;
+  for (let n = 2; taken.has(key); n++) key = `${stem}${n}`;
+  return key;
+}
 
 interface NewEmployee {
   name: string;
@@ -80,12 +130,15 @@ export interface ConversationPatch {
   /** The engine session's life (#346): `open`/`closed` — `running` is a
       client-derived state and never lands on the row. */
   life?: ConversationLife;
-  /** Host-only (#419): stamp the last turn's failure for the DM alert
+  /** Host-only (#419): stamp the last turn's failure for the thread's alert
       card; `null` clears it (next `turn.started`). */
   turnFailure?: TurnFailure | null;
   /** Host-only (#581): the thread's working folder — `conversations.moveFolder`
       writes it after re-homing the session; `null` clears it. */
   cwd?: string | null;
+  /** The project the thread lives in (D-#771) — relay-set when `cwd` lands
+      (open, move, backfill), never a wire field; `null` = a plain chat. */
+  projectId?: string | null;
   /** #583: the last turn ended stopped — host-written, same lifecycle
       as `turnFailure`. */
   turnStopped?: boolean | null;
@@ -116,6 +169,9 @@ export interface OpenConversationInput {
   /** Workstream pick stamped at open (#156): new/existing worktree of
       `repoPath`; absent = `cwd` is the folder itself. */
   workspace?: WorkspaceIntent;
+  /** The project the relay filed this thread under (D-#771), resolved from
+      `workspace.repoPath ?? cwd` before landing; absent = a plain chat. */
+  projectId?: string;
   /** The access level stamped at open (#106) — the relay resolves
       `params.access ?? Settings' defaultAccess ?? "ask"` before landing. */
   access?: ConversationAccess;
@@ -124,7 +180,7 @@ export interface OpenConversationInput {
       dedupes on — so a resend answers the stored thread. */
   dedupeKey?: string;
   /** Host-only (#136): the scheduled task the run was fired for — the
-      DM marks the session and the chip opens the task. */
+      thread is marked and the chip opens the task. */
   scheduled?: { taskId: string; name: string };
 }
 
@@ -279,7 +335,7 @@ export interface RelayStore {
     patch: EmployeePatchInput,
   ): Promise<Employee | null>;
   /**
-   * Deletes the employee plus its whole LilOS-side graph (DM channel,
+   * Deletes the employee plus its whole LilOS-side graph (channel,
    * conversations, messages, asks) in one step. The engine profile is never
    * touched — engines own profiles; the relay only drops its own records.
    * Returns the deleted row + removed channel ids, or null when unknown.
@@ -290,13 +346,13 @@ export interface RelayStore {
 
   listChannels(): Promise<AppChannel[]>;
   getChannel(id: string): Promise<AppChannel | null>;
-  /** Get-or-create the DM channel with this employee. */
+  /** Get-or-create the employee's internal channel (the wire's "dm" kind). */
   openDmChannel(
     employeeId: string,
   ): Promise<{ channel: AppChannel; created: boolean }>;
 
   /* --------------------- scheduled tasks (#136) ---------------------- */
-  /** Every task, or one employee's — the host reads all, the app its DM's. */
+  /** Every task, or one employee's — the host reads all, the app its own. */
   listScheduledTasks(employeeId?: string): Promise<ScheduledTask[]>;
   getScheduledTask(id: string): Promise<ScheduledTask | null>;
   createScheduledTask(input: NewScheduledTask): Promise<ScheduledTask>;
@@ -306,6 +362,22 @@ export interface RelayStore {
   ): Promise<ScheduledTask | null>;
   /** Returns the removed task so subscribers can be told, null when unknown. */
   deleteScheduledTask(id: string): Promise<ScheduledTask | null>;
+
+  /* ------------------------- projects (D-#771) ------------------------- */
+  /** Every project, oldest first. */
+  listProjects(): Promise<Project[]>;
+  getProject(id: string): Promise<Project | null>;
+  /**
+   * Get-or-create the project for `folder` (already in the canonical
+   * spelling — `projectFolderOf` normalizes). One atomic step, so two opens
+   * into a new folder
+   * can never make two projects: `created: false` answers the stored row
+   * unchanged (name/about are only applied on create). The key is derived
+   * from the name and made unique here.
+   */
+  ensureProject(
+    input: NewProject,
+  ): Promise<{ project: Project; created: boolean }>;
 
   listConversations(query: ListConversationsQuery): Promise<Conversation[]>;
   /**
@@ -343,6 +415,14 @@ export interface RelayStore {
     id: string,
     patch: ConversationPatch,
   ): Promise<Conversation | null>;
+  /**
+   * File many threads in one transaction (the boot backfill, D-#771): one
+   * commit instead of one fsync per thread on an install with thousands.
+   * Unknown conversation ids are skipped.
+   */
+  setConversationProjects(
+    filings: readonly { conversationId: string; projectId: string }[],
+  ): Promise<void>;
   /**
    * Persist a turn.completed's usage on the conversation row (#300) — the
    * context meter's numbers, kept off the event stream so a dead engine

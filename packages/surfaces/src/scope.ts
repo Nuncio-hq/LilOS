@@ -2,6 +2,7 @@ import type { Conversation, WorkbenchOpenTarget } from "@lilos/contracts/app";
 import {
   type FolderAddParams,
   HOST_POLICY_VERSION,
+  type ProjectCreateParams,
   type ScheduleCreateParams,
   type ScheduleTaskRef,
   type ScheduleUpdateParams,
@@ -105,15 +106,15 @@ export class SessionSurfaces implements ViewerScope {
       "terminal",
       "workbench",
       /* `root` is always-on (#340): `guide` is useful unbound and `context`
-         reports a clean `unavailable` without a DM — same shape as
+         reports a clean `unavailable` without a bound thread — same shape as
          `workbench_open` on an unbound session. */
       "root",
       // browser_* only when a real browser can attach — never advertised otherwise.
       ...(opts.createBrowser ? (["browser"] as const) : []),
-      // thread_* / team_* / folder_* / schedule_* only when the session
-      // is bound to a DM.
+      // thread_* / team_* / folder_* / project_* / schedule_* only when the
+      // session is bound to an employee's thread.
       ...(opts.appOps
-        ? (["thread", "team", "folder", "schedule"] as const)
+        ? (["thread", "team", "folder", "project", "schedule"] as const)
         : []),
     ]);
     this.cols = opts.cols ?? 110;
@@ -446,8 +447,9 @@ export class SessionSurfaces implements ViewerScope {
     return this.appOps;
   }
 
-  /** `thread` param resolution: id or exact title, inside this DM only —
-      absent = the session's own thread (the binding names it, never the agent). */
+  /** `thread` param resolution: id or exact title, among the bound employee's
+      threads only — absent = the session's own thread (the binding names it,
+      never the agent). */
   private async resolveThread(ref?: string): Promise<Conversation> {
     const ops = this.requireAppOps();
     const convs = await ops.listThreads();
@@ -458,8 +460,8 @@ export class SessionSurfaces implements ViewerScope {
       throw new SurfaceError(
         "not_found",
         ref
-          ? `no thread "${ref}" in this DM — threads elsewhere are out of scope`
-          : "this session's thread is not in its DM",
+          ? `no thread "${ref}" among your threads — threads elsewhere are out of scope`
+          : "this session's thread is not among your threads",
       );
     }
     return conv;
@@ -551,9 +553,13 @@ export class SessionSurfaces implements ViewerScope {
   threadStart(p: ThreadStartParams) {
     return this.tracked("thread_start", p.text.slice(0, 60), async () => {
       const ops = this.requireAppOps();
+      /* `project` is forwarded verbatim: the app leg resolves it against
+         the relay's project list (before the ask opens) — the folder, not
+         the agent, decides where the thread files (D-#771). */
       const { conversation, message } = await ops.startThread({
         text: p.text,
         ...(p.title !== undefined ? { title: p.title } : {}),
+        ...(p.project !== undefined ? { project: p.project } : {}),
       });
       return {
         conversation: { id: conversation.id, title: conversation.title },
@@ -603,6 +609,26 @@ export class SessionSurfaces implements ViewerScope {
     });
   }
 
+  /* ----------------------------- project ops -------------------------------- */
+
+  /** `project_list` (D-#771): the company's projects — read-only, so an
+      agent can name one in `thread_start`. */
+  projectList() {
+    return this.tracked("project_list", "", async () => {
+      const ops = this.requireAppOps();
+      return { projects: await ops.projects() };
+    });
+  }
+
+  /** `project_create`: the ask (and the write) live in the app leg; a folder
+      that already has a project answers that project. */
+  projectCreate(p: ProjectCreateParams) {
+    return this.tracked("project_create", p.folder, async () => {
+      const ops = this.requireAppOps();
+      return { project: await ops.createProject(p) };
+    });
+  }
+
   /* ------------------------------ root ops ---------------------------------- */
 
   context() {
@@ -641,6 +667,9 @@ export class SessionSurfaces implements ViewerScope {
               profile: "",
               model: conv?.model ?? "",
             },
+        /* The employee's channel is internal routing scope, not a place the
+           agent or user sees (D-#25); the wire kind stays "dm" so older
+           consumers keep parsing. */
         channel: { id: b?.channelId ?? "", kind: "dm" },
         thread: conv
           ? {
@@ -731,7 +760,7 @@ export class SessionSurfaces implements ViewerScope {
     return this.tracked("schedule_list", "", async () => {
       const ops = this.requireAppOps();
       const employeeId = this.binding?.employeeId;
-      if (!employeeId) throw new Error("not bound to an employee's DM");
+      if (!employeeId) throw new Error("not bound to an employee");
       return { tasks: await ops.scheduledTasks(employeeId) };
     });
   }

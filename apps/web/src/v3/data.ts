@@ -3,9 +3,16 @@ import {
   type Employee,
   MAX_ATTACHMENT_BYTES,
   MAX_ATTACHMENTS_PER_MESSAGE,
+  type Project,
 } from "@lilos/contracts/app";
 import type { AgentDescriptor, DescribeResult } from "@lilos/contracts/engine";
-import { folderLabel, type V3Agent, type V3Data, type V3Tone } from "@lilos/ui";
+import {
+  folderLabel,
+  type V3Agent,
+  type V3Data,
+  type V3Project,
+  type V3Tone,
+} from "@lilos/ui";
 import { atom, computed, onMount, type ReadableAtom } from "nanostores";
 import { folders } from "../lib/folders";
 import { currentCompany, currentName, osFullName, profile } from "../lib/me";
@@ -29,8 +36,8 @@ import { lastChats, v3ArchivedThreads, v3Asks, v3Threads } from "./threads";
 /* The company as the relay knows it, in the shape the v3 pages read. A
    computed store: pages re-render when the company changes, not on every
    streamed word (see `statusKey`). What the relay cannot tell stays absent
-   (no projects, tickets, goals, updates, spend, skills, memory, CEO) and the
-   pages hide those parts. */
+   (no tickets, goals, updates, spend, skills, memory, CEO) and the pages hide
+   those parts. */
 
 /* Minute clock for "minutes running": one timer, only while something reads. */
 const minute = atom(Date.now());
@@ -41,13 +48,29 @@ onMount(minute, () => {
 
 const TONES: V3Tone[] = ["c", "b", "r", "m", "s", "d"];
 
-/** Employees have no colour of their own: a stable one from the name, so a
-    person looks the same on every screen (31-polynomial hash). */
+/** Employees and projects have no colour of their own: a stable one from the
+    name (or a project's id), so a person or a project looks the same on every
+    screen (31-polynomial hash). */
 function toneOf(name: string): V3Tone {
   let x = 0;
   for (const ch of name.toLowerCase())
     x = (Math.imul(x, 31) + ch.charCodeAt(0)) >>> 0;
   return TONES[x % TONES.length];
+}
+
+/** The relay's projects, oldest first so the sidebar only ever grows at its
+    end. */
+export function projectRows(projects: readonly Project[]): V3Project[] {
+  return [...projects]
+    .sort((a, b) => a.createdAt - b.createdAt)
+    .map((p) => ({
+      id: p.id,
+      name: p.name,
+      key: p.key,
+      tone: toneOf(p.id),
+      folder: p.folder,
+      about: p.about,
+    }));
 }
 
 /** The engine can re-read its model catalog: its `models` capability says
@@ -150,6 +173,7 @@ export function v3DataStore(): ReadableAtom<V3Data> {
       engineProviders,
       modelVisibility,
       engineClient.description,
+      relay.projects,
     ],
     (
       employees,
@@ -171,6 +195,7 @@ export function v3DataStore(): ReadableAtom<V3Data> {
       providers,
       visibility,
       description,
+      projects,
     ): V3Data => {
       const src = {
         now,
@@ -197,7 +222,7 @@ export function v3DataStore(): ReadableAtom<V3Data> {
           ),
         ),
         connectors: [],
-        projects: [],
+        projects: projectRows(projects),
         goals: [],
         tickets: [],
         threads: v3Threads(src),

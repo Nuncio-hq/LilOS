@@ -70,11 +70,11 @@ export type V3Agent = {
      new-chat picker starts on it with its own effort. Absent: the engine's
      default model. */
   modelId?: string;
-  /** Your newest chat with this agent, by when it began: where it ran (absent
-     = in no folder) and the first message you wrote, as you wrote it. The new
-     chat starts in the same folder, and ↑ in its empty box brings the message
-     back. Absent: no chat yet. */
-  lastChat?: { folder?: string; opener?: string };
+  /** Your newest chat with this agent, by when it began: the project it
+     lived in (absent = a plain chat) and the first message you wrote, as you
+     wrote it. The next new chat starts in the same project (or none), and ↑
+     in its empty box brings the message back. Absent: no chat yet. */
+  lastChat?: { projectId?: string; opener?: string };
   /** What the agent is for, in a line: the engine profile's description,
      where the engine lets the app write one. Absent: none set. */
   description?: string;
@@ -270,7 +270,8 @@ export type V3Thread = {
   id: string;
   /** Absent = a chat, not tied to a ticket. */
   ticketId?: string;
-  /** Chats: the project whose folder the agent works in. */
+  /** The project the thread lives in (D-#771), whose folder the agent works
+     in; absent = a plain chat, which works in no folder. */
   projectId?: string;
   agentId: string;
   /** This hand's job on the ticket ("Build two variants"), or the chat's topic. */

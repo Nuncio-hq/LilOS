@@ -6,9 +6,11 @@ import type { HarnessCtx } from "./ctx";
 /**
  * Scheduled tasks (#136): the TaskScheduler owns the due decision; these
  * methods own the relay round-trips. A run IS a `conversations.open` on the
- * employee's DM channel — the message pipeline that delivers any user's
- * prompt picks it up the same way, so approvals, notifications and badges
- * need no special-casing.
+ * employee's channel (the relay's internal routing scope, D-#25) — the
+ * message pipeline that delivers any user's prompt picks it up the same way,
+ * so approvals, notifications and badges need no special-casing. A task's
+ * `folder` rides as `cwd`, so the relay files the run in that folder's
+ * project like any other thread (D-#771).
  *
  * Dedupe legs: `sched:<taskId>:run:<slotMs>` for a schedule slot and
  * `sched:<taskId>:req:<requestedAt>` for Run-now — slot-stable so a relay
@@ -91,8 +93,9 @@ export async function fireScheduledTask(
   task: ScheduledTask,
   due: { at: number; key: string },
 ): Promise<void> {
-  /* The task opens on the employee's DM; the channel may not exist yet if
-     the human has never opened the DM — create it like `channels.openDm`. */
+  /* The task opens on the employee's channel; it may not exist yet if the
+     employee was never opened — create it like `channels.openDm` (the wire
+     name of the per-employee routing channel, kind "dm"). */
   let channel = this.opts.relay.channels
     .get()
     .find(
@@ -120,7 +123,7 @@ export async function fireScheduledTask(
     scheduled: { taskId: task.id, name: task.name },
   });
   /* lastFiredAt advances the coalescing anchor; lastRun links the row to
-     the DM session the UI opens and tracks. */
+     the thread the UI opens and tracks. */
   await this.opts.relay.request("schedules.update", {
     id: task.id,
     lastFiredAt: Date.now(),
@@ -147,7 +150,7 @@ export async function skipScheduledRun(
   });
 }
 
-/** A run's session changed in the DM (`conversation.updated` dispatch):
+/** A run's thread changed (`conversation.updated` dispatch):
     the first `active` means the run is really going; `idle`/`closed` after
     `running` is its result — the task row carries it for the last-run text. */
 export async function onScheduledConversationUpdate(

@@ -93,6 +93,14 @@ describe("visibleNav", () => {
     };
     expect(visibleNav(nav, false)).toBe(nav);
   });
+
+  test("a project is a folder, not a ticket: its record is drawn without tickets", () => {
+    const nav: V3Nav = {
+      page: { page: "threads" },
+      peek: [{ page: "project", id: "p1" }],
+    };
+    expect(visibleNav(nav, false)).toBe(nav);
+  });
 });
 
 describe("modelLabel", () => {

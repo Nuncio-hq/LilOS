@@ -21,7 +21,7 @@ import type { DmRoutes } from "../routes";
    the listing under the Mac's home. A null readDir is the sheet's
    "Can't reach the Mac right now." state (AC-5). Use → `folders.add`, a
    recents + probes resync, the composer pick, then both sheets close back
-   to the DM (prototype BrowseMac). */
+   to the agent's thread list (prototype BrowseMac). */
 
 export function BrowseMac({
   navigation,

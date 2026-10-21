@@ -9,6 +9,8 @@ import {
   type FolderAddResult,
   type GuideResult,
   LILOS_TOOLS,
+  type ProjectCreateResult,
+  type ProjectListResult,
   type ScheduleCreateParams,
   type ScheduleDeletedResult,
   type ScheduleListResult,
@@ -130,6 +132,9 @@ export function toolBackend(opts: ToolClientOptions): SurfaceBackend {
     teamHire: (p) => call("team_hire", p) as Promise<TeamHireResult>,
     teamUpdate: (p) => call("team_update", p) as Promise<TeamUpdateResult>,
     folderAdd: (p) => call("folder_add", p) as Promise<FolderAddResult>,
+    projectList: () => call("project_list", {}) as Promise<ProjectListResult>,
+    projectCreate: (p) =>
+      call("project_create", p) as Promise<ProjectCreateResult>,
   };
 }
 

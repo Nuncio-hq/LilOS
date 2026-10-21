@@ -3,7 +3,7 @@ import { ConversationAccess } from "../engine/approvals";
 import { Timestamp } from "./domain";
 
 /**
- * Scheduled tasks (issue #136): a prompt that opens a new DM session for an
+ * Scheduled tasks (issue #136): a prompt that opens a new thread for an
  * employee on a schedule. The relay owns the task records (D-#25); the
  * engine host owns the clock and fires each run as a `conversations.open`.
  *
@@ -36,7 +36,7 @@ export type TaskSchedule = z.infer<typeof TaskSchedule>;
 export const ScheduledRunResult = z.enum(["running", "finished", "failed"]);
 export type ScheduledRunResult = z.infer<typeof ScheduledRunResult>;
 
-/** The task's latest run — `conversationId` is the run's session in the DM. */
+/** The task's latest run — `conversationId` is the run's thread. */
 export const ScheduledRunRecord = z.object({
   /** Epoch ms the run opened. */
   at: Timestamp,

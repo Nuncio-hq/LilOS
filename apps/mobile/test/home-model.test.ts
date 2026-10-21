@@ -6,6 +6,7 @@ import type {
   Conversation,
   ConversationSummary,
   Employee,
+  Project,
 } from "@lilos/contracts/app";
 import { describe, expect, it } from "vitest";
 import {
@@ -21,6 +22,7 @@ import {
   openAsks,
   toApproval,
   toEmployeeRow,
+  toSessionGroups,
 } from "../src/home-model";
 
 /* Home's derivation from wire data (#155): employees/channels/conversations/
@@ -131,6 +133,7 @@ const wire = (over: Partial<HomeWire> = {}): HomeWire => ({
   conversations: [],
   summaries: [],
   asks: [],
+  projects: [],
   online: true,
   ...over,
 });
@@ -259,7 +262,7 @@ describe("home-model (#155)", () => {
     expect(row?.command).toBeUndefined();
   });
 
-  it("AC-4 the ask's DM channel resolves the employee a tap opens", () => {
+  it("AC-4 the ask's agent channel resolves the employee a tap opens", () => {
     const w = wire({
       employees: [emp("e1")],
       channels: [ch("ch1", "e1"), ch("ch2", "e2")],
@@ -371,7 +374,7 @@ describe("home-model (#155)", () => {
     }
   });
 
-  it("AC-1 every DM channel gets a subscription so asks and turns arrive live", () => {
+  it("AC-1 every per-agent channel gets a subscription so asks and turns arrive live", () => {
     const subscribed: string[] = [];
     const client = {
       channelMessages: (channelId: string) => subscribed.push(channelId),
@@ -407,7 +410,7 @@ describe("home-model (#155)", () => {
     expect(toApproval(question, w, NOW).primary).toBeUndefined();
   });
 
-  it("#595 AC-1: a plan ask's Review lands DM-under-Thread", () => {
+  it("#595 AC-1: a plan ask's Review lands thread-list-under-Thread", () => {
     const plan = ask("a1", "ch1", "c1", NOW - 60_000, {
       request: { kind: "plan", planId: "p-1" },
     });
@@ -420,7 +423,7 @@ describe("home-model (#155)", () => {
     expect(askThreadTarget(plan, wire())).toBeUndefined();
   });
 
-  it("#596 AC-1: a push/deep link's Thread lands DM-under-Thread too", () => {
+  it("#596 AC-1: a push/deep link's Thread lands thread-list-under-Thread too", () => {
     const w = wire({
       channels: [ch("ch1", "e1")],
       conversations: [conv("c1", "ch1")],
@@ -429,12 +432,37 @@ describe("home-model (#155)", () => {
       employeeId: "e1",
       conversationId: "c1",
     });
-    /* An id the wire doesn't know yet can't name a DM — the caller pushes
+    /* An id the wire doesn't know yet can't name an agent — the caller pushes
        Thread alone and its own loading/gone state takes over. */
     expect(deepThreadTarget("nope", w)).toBeUndefined();
     expect(
       deepThreadTarget("c1", wire({ conversations: [conv("c1", "ch1")] })),
     ).toBeUndefined();
+  });
+
+  it("D-#771: the cross-agent thread list names each thread's project, nothing for a plain chat", () => {
+    const lil: Project = {
+      id: "p-lil",
+      name: "LilOS",
+      key: "LIL",
+      folder: "/work/LilOS",
+      about: "",
+      createdAt: 1,
+    };
+    const w = wire({
+      employees: [emp("e1")],
+      channels: [ch("ch1", "e1")],
+      projects: [lil],
+      conversations: [
+        conv("c-proj", "ch1", { title: "In a project", projectId: lil.id }),
+        conv("c-plain", "ch1", { title: "Plain chat" }),
+      ],
+    });
+    const rows = toSessionGroups(w, NOW).finished;
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    expect(byId.get("c-proj")?.project).toBe("LilOS");
+    expect(byId.get("c-plain")).toBeDefined();
+    expect(byId.get("c-plain")).not.toHaveProperty("project");
   });
 });
 

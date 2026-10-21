@@ -17,6 +17,7 @@ import {
   defaultAgent,
   goalOf,
   projectOf,
+  threadTag,
 } from "./v3-model";
 import type { V3PageProps, V3RecordRoute } from "./v3-page-types";
 import { V3ProjectPage } from "./v3-project";
@@ -29,9 +30,7 @@ function label(d: V3Data, r: V3RecordRoute) {
     const t =
       d.threads.find((x) => x.id === r.id) ??
       d.archivedThreads?.find((x) => x.id === r.id);
-    return t
-      ? `${agentNameOf(d, t.agentId)} · ${t.ticketId ?? "Chat"}`
-      : "Thread";
+    return t ? `${agentNameOf(d, t.agentId)} · ${threadTag(d, t)}` : "Thread";
   }
   if (r.page === "agent") return agentNameOf(d, r.id);
   if (r.page === "newchat") {

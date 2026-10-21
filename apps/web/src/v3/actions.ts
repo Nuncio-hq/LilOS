@@ -42,7 +42,7 @@ import { employeeOfConversation } from "./threads";
 const conversationOf = (id: string) =>
   relay.conversations.get().find((c) => c.id === id);
 
-/** The employee whose DM holds this conversation. */
+/** The employee whose channel holds this conversation. */
 function employeeIdOf(conversationId: string): string | undefined {
   const conv = conversationOf(conversationId);
   return conv && employeeOfConversation(conv, relay.channels.get());
@@ -135,7 +135,9 @@ export function makeV3Actions(caps: V3Capabilities): V3DataActions {
            dedupes on the relay instead of opening a second thread. Files
            ride the key, so two file-only sends never collide. */
         sendKeyForSend(`dm:${agentId}`, draftKey.dm(agentId), text, files),
-        // No folder chosen = no cwd: a chat that only talks.
+        /* A project's folder is the cwd, and the relay files the thread
+           under the project that owns it (D-#771); a plain chat sends none,
+           so it only talks. */
         folder,
         access,
       );
@@ -152,7 +154,16 @@ export function makeV3Actions(caps: V3Capabilities): V3DataActions {
        agent's profile and the folder the chat will run in (folder-local
        skills ride the cwd). Engines without `commands` get no menu (D-#19). */
     ...(caps.commands ? { searchCommands: draftCommands } : {}),
-    addFolder: askForFolder,
+    /* "New project from a folder…": the app's own folder dialog, then the
+       relay makes the folder's project (or answers the one it has). The new
+       project is in `relay.projects` by the time `onCreated` runs. */
+    newProject: (onCreated) =>
+      askForFolder((path) =>
+        toastOnFail(
+          "Couldn't create the project",
+          relay.createProject({ folder: path }).then((p) => onCreated(p.id)),
+        ),
+      ),
     setModelVisibility: (v) =>
       toastOnFail("Couldn't update the model list", setModelVisibility(v)),
     refreshModels: () =>

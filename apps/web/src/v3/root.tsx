@@ -98,7 +98,7 @@ function Company() {
           onClose={() => setShortcuts(false)}
         />
       )}
-      {/* The new chat's "Add a folder…" opens this. */}
+      {/* The new chat's "New project from a folder…" opens this. */}
       <AddFolderHost />
       {/* The banner's Details and first run's "See status" open this one. */}
       <StatusDetails />

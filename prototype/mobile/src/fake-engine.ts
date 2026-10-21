@@ -127,7 +127,7 @@ export const $employees = computed($threads, (threads): EmployeeRow[] =>
       ticket: state === "idle" ? undefined : e.ticket,
       when: ask ? ask.age : live || fresh ? "now" : e.when,
       unseen: mine.some((t) => t.unseen) || undefined,
-      // Several threads waiting: the count is what sends you into the DM.
+      // Several threads waiting: the count is what sends you into the agent.
       now: ask
         ? asks.length > 1
           ? `${asks.length} need you`
@@ -166,7 +166,7 @@ export const $sessionGroups = computed(
         employeeName: t.employee.name,
         tone: t.employee.tone,
         title: t.title,
-        folder: t.folder?.name,
+        project: t.folder?.name,
         when: t.when,
       };
       if (t.state === "needs-you") {
@@ -206,7 +206,7 @@ export const $projects = computed($employees, (emps): ProjectGroup[] => {
   }));
 });
 
-/** One employee's DM: each session summarised as a card. */
+/** One agent's threads: each summarised as a card. */
 export function turnsOf(threads: ThreadDetail[], employeeId: string) {
   return threads
     .filter((t) => t.employee.id === employeeId)
@@ -222,7 +222,7 @@ export function turnsOf(threads: ThreadDetail[], employeeId: string) {
         title: t.title,
         state: t.state,
         when: t.when,
-        folder: t.folder?.name,
+        project: t.folder?.name,
         branch: t.branch?.name,
         added: edits.length
           ? edits.reduce((n, s) => n + (s.add ?? 0), 0)
@@ -477,7 +477,7 @@ async function run(tid: string, s: Script, eid?: string) {
     if (err instanceof Failed && g === gen) {
       /* #555: the turn died on an engine error — the card keeps what it
          did, the failure line carries the reason, the thread reads
-         "failed" (and the DM row reads the reason, #592). */
+         "failed" (and the thread row reads the reason, #592). */
       set((e) => ({
         ...e,
         live: false,
@@ -773,7 +773,7 @@ export function retryTurn(tid: string) {
   );
 }
 
-/** #555: message search inside one employee's DM (web: messages.search,
+/** #555: message search inside one agent's threads (web: messages.search,
     #138). Case-insensitive substring over user + agent text; the hit's
     snippet is a window around the first match. */
 export function searchDm(employeeId: string, query: string): DmMessageHit[] {
@@ -805,7 +805,7 @@ export function searchDm(employeeId: string, query: string): DmMessageHit[] {
   return hits;
 }
 
-/** A new session from a DM: it opens as a thread and starts working. */
+/** A new thread from the agent's list: it opens and starts working. */
 export function startSession(
   employeeId: string,
   text: string,
@@ -1173,7 +1173,7 @@ const CI: Script = {
       tool: "terminal",
       arg: "bunx playwright test ac-83",
       output:
-        "✗ ac-83 › DM feed row avatar\n  locator('img.avatar') resolved to 2 elements\n\n1 failed · 12 passed (21.4s)",
+        "✗ ac-83 › thread feed row avatar\n  locator('img.avatar') resolved to 2 elements\n\n1 failed · 12 passed (21.4s)",
       ms: 2800,
     },
     {

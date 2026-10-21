@@ -5,11 +5,13 @@ import type {
   AskHireProposal,
   Conversation,
   Employee,
+  Project,
   RecentFolder,
   ScheduledTask,
 } from "@lilos/contracts/app";
 import type { AgentDescriptor } from "@lilos/contracts/engine";
 import type {
+  ProjectCreateParams,
   ScheduleCreateParams,
   ScheduleUpdateParams,
   SessionBinding,
@@ -54,6 +56,13 @@ export interface GatewayApprovalDeps {
       turn they were raised in). */
   runningTurnId: () => string | undefined;
   log: Logger;
+}
+
+/** The relay's project list — what `project_list` answers and what
+    `thread_start`'s `project` resolves against (D-#771). */
+export async function listProjects(relay: RelayClient): Promise<Project[]> {
+  const r = await relay.request<{ projects: Project[] }>("projects.list", {});
+  return r.projects;
 }
 
 const profileSlug = (name: string): string =>
@@ -104,6 +113,7 @@ export function createGatewayApprovalOps(
   | "hireEmployee"
   | "updateSelf"
   | "addFolder"
+  | "createProject"
   | "scheduleCreate"
   | "scheduleUpdate"
   | "scheduleDelete"
@@ -145,12 +155,47 @@ export function createGatewayApprovalOps(
     }
   };
 
+  /** `thread_start`'s `project`: a project's id (exact) or key (any case),
+      resolved against the relay's list. Runs BEFORE the ask opens, so an
+      unknown value costs the user no card; the error names the value and
+      the keys that do exist so the agent can correct itself. */
+  const resolveProject = async (ref: string): Promise<Project> => {
+    const projects = await listProjects(relay);
+    const wanted = ref.trim();
+    const hit =
+      projects.find((p) => p.id === wanted) ??
+      projects.find((p) => p.key.toLowerCase() === wanted.toLowerCase());
+    if (hit) return hit;
+    const keys = projects.map((p) => p.key);
+    throw new SurfaceError(
+      "not_found",
+      `no project "${ref}" — pass a project's id or key from project_list (${
+        keys.length > 0
+          ? `available keys: ${keys.join(", ")}`
+          : "there are no projects yet; project_create makes one"
+      }), or leave project out for a plain chat`,
+    );
+  };
+
   return {
-    startThread: async (p: { text: string; title?: string }) => {
+    startThread: async (p: {
+      text: string;
+      title?: string;
+      project?: string;
+    }) => {
+      const project =
+        p.project !== undefined ? await resolveProject(p.project) : undefined;
+      const titled = p.title ? ` titled "${p.title}"` : "";
       await gate({
-        command: `thread_start ${p.title ?? p.text.slice(0, 60)}`,
-        description: `Start a new thread in this DM${p.title ? ` titled "${p.title}"` : ""} with the message:\n\n${p.text}`,
+        command: `thread_start ${p.title ?? p.text.slice(0, 60)}${project ? ` (${project.key})` : ""}`,
+        description: project
+          ? `Start a new thread in ${project.name} (${project.folder})${titled} with the message:\n\n${p.text}`
+          : `Start a new thread${titled} (a plain chat, no project) with the message:\n\n${p.text}`,
       });
+      /* The folder is the only thing sent: the relay files the thread in
+         the project that owns `cwd` (D-#771), and no `cwd` = a plain chat
+         in the default workdir. Channel and author come from the binding —
+         never from the agent (D-#341). */
       const r = await relay.request<{
         conversation: Conversation;
         rootMessage: AppMessage;
@@ -159,6 +204,7 @@ export function createGatewayApprovalOps(
         authorId: binding.employeeId,
         text: p.text,
         ...(p.title !== undefined ? { title: p.title } : {}),
+        ...(project ? { cwd: project.folder } : {}),
       });
       return { conversation: r.conversation, message: r.rootMessage };
     },
@@ -274,6 +320,19 @@ export function createGatewayApprovalOps(
       return r.folder;
     },
 
+    createProject: async (p: ProjectCreateParams) => {
+      await gate({
+        command: `project_create ${p.folder}${p.name ? ` (${p.name})` : ""}`,
+        description: `Make a project of ${p.folder}${p.name ? ` named "${p.name}"` : ""}${p.about ? ` — ${p.about}` : ""}. Threads started in it work in that folder. A folder that already has a project keeps that one.`,
+      });
+      const r = await relay.request<{ project: Project }>("projects.create", {
+        folder: p.folder,
+        ...(p.name !== undefined ? { name: p.name } : {}),
+        ...(p.about !== undefined ? { about: p.about } : {}),
+      });
+      return r.project;
+    },
+
     scheduleCreate: async (p: ScheduleCreateParams) => {
       await gate({
         command: `schedule_create ${p.name}`,
@@ -313,7 +372,7 @@ export function createGatewayApprovalOps(
     scheduleRunNow: async (id: string) => {
       await gate({
         command: `schedule_run_now ${id}`,
-        description: `Run scheduled task ${id} now — a session opens in this DM at once.`,
+        description: `Run scheduled task ${id} now — a new thread opens at once.`,
       });
       const r = await relay.request<{ task: ScheduledTask }>(
         "schedules.runNow",

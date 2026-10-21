@@ -28,6 +28,8 @@ import {
   type PairingOffer,
   type ProfileSettings,
   ProfileUpdatedEvent,
+  type Project,
+  ProjectUpsertedEvent,
   type RequestId,
   type RpcError,
   SystemStatusResult,
@@ -209,6 +211,10 @@ const DEFAULT_MAX_DELAY_MS = 4_000;
 export class RelayClient {
   readonly state: WritableAtom<RelayConnectionState> = atom("idle");
   readonly employees: WritableAtom<Employee[]> = atom([]);
+  /** The company's projects (D-#771) — empty until the first directory
+      refresh, and on a relay that predates `projects.list`; live via
+      `project.upserted` (including the one a first-use open creates). */
+  readonly projects: WritableAtom<Project[]> = atom([]);
   readonly channels: WritableAtom<AppChannel[]> = atom([]);
   readonly conversations: WritableAtom<Conversation[]> = atom([]);
   /** True once the first directory refresh has landed — until then the list
@@ -480,6 +486,32 @@ export class RelayClient {
   async removeEmployee(id: string): Promise<void> {
     await this.request("employees.remove", { id });
     this.employees.set(this.employees.get().filter((e) => e.id !== id));
+  }
+
+  /** Get-or-create the project for a folder; a folder that already has one
+      answers it. The `project.upserted` broadcast lands the same row in
+      every other window — this call upserts locally so the caller can use
+      it at once. */
+  async createProject(input: {
+    name?: string;
+    folder: string;
+    about?: string;
+  }): Promise<Project> {
+    const { project } = await this.request<{ project: Project }>(
+      "projects.create",
+      input,
+    );
+    this.upsertProject(project);
+    return project;
+  }
+
+  private upsertProject(project: Project): void {
+    const list = this.projects.get();
+    this.projects.set(
+      list.some((p) => p.id === project.id)
+        ? list.map((p) => (p.id === project.id ? project : p))
+        : [...list, project],
+    );
   }
 
   /**
@@ -992,6 +1024,16 @@ export class RelayClient {
     }>("conversations.summaries", { includeArchived: true }).catch(
       () => undefined,
     );
+    /* Projects ride alongside the directory, never inside it: a relay that
+       predates `projects.list` (capability by presence, D-#19) or a slow
+       answer must not hold the whole directory at "Loading…" — same rule
+       as the summaries. Projects are never removed, so the answer merges
+       into whatever `project.upserted` already delivered. */
+    this.request<{ projects: Project[] }>("projects.list", {})
+      .then(({ projects }) => {
+        for (const project of projects) this.upsertProject(project);
+      })
+      .catch(() => {});
     try {
       const [
         employees,
@@ -1004,7 +1046,7 @@ export class RelayClient {
       ] = await Promise.all([
         this.request<{ employees: Employee[] }>("employees.list", {}),
         this.request<{ channels: AppChannel[] }>("channels.list", {}),
-        // Archived included: the DM list renders its own Archived section.
+        // Archived included: the thread list renders its own Archived section.
         this.request<{ conversations: Conversation[] }>("conversations.list", {
           includeArchived: true,
         }),
@@ -1192,7 +1234,7 @@ export class RelayClient {
       }
       case "connect.changed": {
         /* #413: the Connect rows live on `system.status` — patch the atom in
-           place so the DM notice and Settings → Engine update now instead of
+           place so the thread notice and Settings → Engine update now instead of
            on the next poll. `connect` absent clears the rows; the next
            poll's result replaces the patch wholesale. Nothing to patch
            before the first fetch — that poll already carries the rows. */
@@ -1225,6 +1267,10 @@ export class RelayClient {
                 e.id === event.employee.id ? event.employee : e,
               ),
         );
+        return;
+      }
+      case "project.upserted": {
+        this.upsertProject(ProjectUpsertedEvent.parse(params).project);
         return;
       }
       case "employee.removed": {
@@ -1329,7 +1375,7 @@ export class RelayClient {
         this.setChannelSynced(event.channelId, true, event.lastSeq);
         /* conversation.updated rides this subscription only: a conversation
            that went active between the directory refresh and the subscribe
-           (e.g. a brand-new DM's first turn) would stay stale in the atom.
+           (e.g. a brand-new thread's first turn) would stay stale in the atom.
            Re-pull the channel's conversations once the replay window closes. */
         void this.refreshChannelConversations(event.channelId).catch(() => {});
         return;
@@ -1459,7 +1505,7 @@ export class RelayClient {
         );
         if (sIdx === -1) {
           /* A conversation this client has never summarized — fetch just
-             its row (#571) so the DM list gains it (root + preview)
+             its row (#571) so the thread list gains it (root + preview)
              without re-listing every summary. */
           void this.refreshSummary(event.conversation.id);
         } else {
@@ -1490,7 +1536,7 @@ export class RelayClient {
        emitted between the directory read and this subscribe going live
        (a reload landing mid-turn misses the turn-end patch) is lost for
        good, and the summary rows embed their own copy of the
-       conversation, so a DM row's turnFailure/turnStopped/state would
+       conversation, so a thread row's turnFailure/turnStopped/state would
        stay stale forever. Re-read the channel's summaries too, not just
        its conversations: also covers a conv opened in the gap and drops
        rows whose conv is gone. The summaries pull is newer than every

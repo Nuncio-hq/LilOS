@@ -1362,7 +1362,7 @@
           "type": "string",
           "enum": [
             "overview",
-            "dm-and-threads",
+            "threads",
             "employees",
             "approvals",
             "workbench",

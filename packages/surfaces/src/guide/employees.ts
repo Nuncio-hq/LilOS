@@ -19,7 +19,7 @@ What Oscar sees:
   the model each employee runs on.
 - Hiring/editing happens in the app (the Hire page, the Edit button on an
   agent's page): it writes the LilOS record and the engine profile together.
-- Removing an employee deletes its DMs and record; the engine profile is
+- Removing an employee deletes its threads and record; the engine profile is
   never deleted by LilOS.
 
 Tools that apply:

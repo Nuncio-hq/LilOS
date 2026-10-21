@@ -13,7 +13,7 @@ import {
 } from "../src/harness/index.js";
 
 describe("AC-2 tool surface contracts", () => {
-  it("exposes browser + terminal + workbench + thread + team + root ops", () => {
+  it("exposes browser + terminal + workbench + thread + team + project + root ops", () => {
     expect(Object.keys(LILOS_TOOLS).sort()).toEqual([
       "browser_click",
       "browser_eval",
@@ -24,6 +24,8 @@ describe("AC-2 tool surface contracts", () => {
       "context",
       "folder_add",
       "guide",
+      "project_create",
+      "project_list",
       "schedule_create",
       "schedule_delete",
       "schedule_list",

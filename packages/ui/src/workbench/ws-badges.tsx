@@ -14,12 +14,13 @@ export type OpenMenuFor = {
   onOpen: (app: OsApp) => void;
 };
 
+/* The badge says where inside the folder the session works (branch, mode),
+   not the folder's name: a thread's project is the peek's trail right above
+   (D-#771, D-#769: one place for it), and the full path is the tooltip. */
 function WsBadgeContent({ ws }: { ws: Workspace }) {
-  const f = { project: ws.project };
   return (
     <>
       <FolderIcon className="size-3 shrink-0" />
-      <span className="shrink-0">{f?.project}</span>
       {ws.branch && (
         <>
           {ws.mode === "direct" ? (
@@ -31,7 +32,8 @@ function WsBadgeContent({ ws }: { ws: Workspace }) {
         </>
       )}
       <span className="shrink-0 opacity-70">
-        · {ws.mode === "direct" ? "direct" : "worktree"}
+        {ws.branch && "· "}
+        {ws.mode === "direct" ? "direct" : "worktree"}
       </span>
     </>
   );

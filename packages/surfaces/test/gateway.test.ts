@@ -109,6 +109,8 @@ describe("AC-2 MCP over streamable HTTP", () => {
       expect(names).toContain("workbench_previews");
       expect(names.some((n) => n.startsWith("browser_"))).toBe(false);
       expect(names.some((n) => n.startsWith("thread_"))).toBe(false);
+      // The project area rides with the app leg, never without it (D-#771).
+      expect(names.some((n) => n.startsWith("project_"))).toBe(false);
       // Catalog entries carry the schema the client needs.
       const run = msg.result.tools.find((t) => t.name === "terminal_run")!;
       expect(run).toMatchObject({
@@ -549,7 +551,7 @@ describe("#611 constant-time bearer compares", () => {
 });
 
 /* ------------------------------------------------------------------ */
-/* Issue #340 AC-1 — the DM tools over the real gateway (engine-fake     */
+/* Issue #340 AC-1 — the thread tools over the real gateway (engine-fake  */
 /* session): every tool's happy path plus the scope limit.               */
 /* ------------------------------------------------------------------ */
 
@@ -581,7 +583,7 @@ async function dmCall(
 const dmPayload = (m: ToolMsg) =>
   JSON.parse(m.result!.content[0].text) as Record<string, unknown>;
 
-/** A second thread in the same DM for read/list/search coverage. */
+/** A second thread of the same employee for read/list/search coverage. */
 const otherConv = (channelId: string): Conversation => ({
   id: "conv-other",
   channelId,
@@ -621,7 +623,7 @@ const msg = (
     createdAt: at,
   }) as const;
 
-describe("AC-1 DM tools over the gateway (issue #340)", () => {
+describe("AC-1 thread tools over the gateway (issue #340)", () => {
   it("lilos_context answers who and where the session is", async () => {
     const ops = fakeAppOps([], {
       conversationId: "conv-s-ctx",
@@ -664,7 +666,13 @@ describe("AC-1 DM tools over the gateway (issue #340)", () => {
       ).toBeGreaterThan(0);
       expect(r.hostPolicyVersion).toBe(HOST_POLICY_VERSION);
       expect(r.areas).toEqual(
-        expect.arrayContaining(["root", "thread", "team", "workbench"]),
+        expect.arrayContaining([
+          "root",
+          "thread",
+          "team",
+          "project",
+          "workbench",
+        ]),
       );
     } finally {
       api.server.close();
@@ -728,7 +736,7 @@ describe("AC-1 DM tools over the gateway (issue #340)", () => {
     }
   });
 
-  it("AC-1 the dm-and-threads guide says when to raise a full context (issue #559)", async () => {
+  it("AC-1 the threads guide says when to raise a full context (issue #559)", async () => {
     const { scope } = makeScope("s-guide-usage");
     const api = await serveGateway({
       sessions: [{ scope, token: "t-guide-usage" }],
@@ -736,7 +744,7 @@ describe("AC-1 DM tools over the gateway (issue #340)", () => {
     try {
       const r = dmPayload(
         await dmCall(api.baseUrl, "t-guide-usage", "guide", {
-          topic: "dm-and-threads",
+          topic: "threads",
         }),
       );
       expect(r.body).toContain("usage");
@@ -757,7 +765,7 @@ describe("AC-1 DM tools over the gateway (issue #340)", () => {
       expect(idx.topic).toBe("index");
       for (const topic of [
         "overview",
-        "dm-and-threads",
+        "threads",
         "employees",
         "approvals",
         "workbench",
@@ -851,7 +859,7 @@ describe("AC-1 DM tools over the gateway (issue #340)", () => {
     }
   });
 
-  it("thread_read windows the bound DM and never another", async () => {
+  it("thread_read windows the employee's own threads and never another's", async () => {
     const ops = fakeAppOps(
       [
         msg("m1", "chan-s-rd", "conv-s-rd", 1, "plan the launch", 10),
@@ -881,7 +889,7 @@ describe("AC-1 DM tools over the gateway (issue #340)", () => {
         1, 2, 4,
       ]);
 
-      // Another thread of the same DM — by id or by exact title.
+      // Another of the employee's threads — by id or by exact title.
       const byId = dmPayload(
         await dmCall(api.baseUrl, "t-rd", "thread_read", {
           thread: "conv-other",
@@ -918,18 +926,18 @@ describe("AC-1 DM tools over the gateway (issue #340)", () => {
         2, 4,
       ]);
 
-      // A thread outside this DM is not_found — never silently readable.
+      // A thread outside the employee's own is not_found — never silently readable.
       const theft = await dmCall(api.baseUrl, "t-rd", "thread_read", {
         thread: "conv-elsewhere",
       });
       expect(theft.result?.isError).toBe(true);
-      expect(theft.result?.content[0].text).toContain("in this DM");
+      expect(theft.result?.content[0].text).toContain("among your threads");
     } finally {
       api.server.close();
     }
   });
 
-  it("thread_search stays inside the DM", async () => {
+  it("thread_search stays inside the employee's own threads", async () => {
     const ops = fakeAppOps(
       [
         msg("m1", "chan-s-se", "conv-s-se", 1, "ship the launch page", 10),
@@ -1104,8 +1112,8 @@ describe("AC-1 DM tools over the gateway (issue #340)", () => {
     }
   });
 
-  it("thread/team tools are refused outside the session's areas", async () => {
-    // Lean scope: terminal + workbench + root — no DM binding, no thread/team.
+  it("thread/team/project tools are refused outside the session's areas", async () => {
+    // Lean scope: terminal + workbench + root — no bound thread, no thread/team.
     const { scope } = makeScope("s-dmlean");
     const api = await serveGateway({
       sessions: [{ scope, token: "t-lean" }],
@@ -1119,6 +1127,9 @@ describe("AC-1 DM tools over the gateway (issue #340)", () => {
         "thread_post",
         "thread_set_title",
         "thread_prs",
+        "thread_start",
+        "project_list",
+        "project_create",
       ]) {
         const r = await dmCall(api.baseUrl, "t-lean", name, {});
         expect(r.error?.code).toBe(-32602);
@@ -1133,7 +1144,7 @@ describe("AC-1 DM tools over the gateway (issue #340)", () => {
         });
         expect(rest.status).toBe(404);
       }
-      // workbench_open stays advertised but reports cleanly when no DM bound.
+      // workbench_open stays advertised but reports cleanly when no thread is bound.
       const wb = await dmCall(api.baseUrl, "t-lean", "workbench_open", {
         diff: true,
       });
@@ -1142,6 +1153,92 @@ describe("AC-1 DM tools over the gateway (issue #340)", () => {
       const ctx = await dmCall(api.baseUrl, "t-lean", "context", {});
       expect(ctx.result?.isError).toBe(true);
       expect(ctx.result?.content[0].text).toContain("no conversation");
+    } finally {
+      api.server.close();
+    }
+  });
+
+  it("project_list answers the company's projects", async () => {
+    const lil = {
+      id: "proj-1",
+      name: "LilOS",
+      key: "LIL",
+      folder: "/Users/o/LilOS",
+      about: "the app",
+      createdAt: 1,
+    };
+    const ops = fakeAppOps([], {
+      conversationId: "conv-s-pl",
+      projects: [lil],
+    });
+    const { scope } = makeScope("s-pl", { appOps: ops });
+    const api = await serveGateway({
+      sessions: [{ scope, token: "t-pl" }],
+    });
+    try {
+      const r = dmPayload(
+        await dmCall(api.baseUrl, "t-pl", "project_list", {}),
+      );
+      expect(r.projects).toEqual([lil]);
+      // It is a read: no ask was raised.
+      expect(ops.asks).toEqual([]);
+    } finally {
+      api.server.close();
+    }
+  });
+
+  it("project_create asks first and answers the project; strict params", async () => {
+    const ops = fakeAppOps([], { conversationId: "conv-s-pc" });
+    const { scope } = makeScope("s-pc", { appOps: ops });
+    const api = await serveGateway({
+      sessions: [{ scope, token: "t-pc" }],
+    });
+    try {
+      const r = dmPayload(
+        await dmCall(api.baseUrl, "t-pc", "project_create", {
+          folder: "/Users/o/shop",
+          name: "Shop",
+          about: "the storefront",
+        }),
+      );
+      expect(r.project).toMatchObject({
+        name: "Shop",
+        key: "SHOP",
+        folder: "/Users/o/shop",
+        about: "the storefront",
+      });
+      expect(ops.asks).toEqual(["project_create /Users/o/shop"]);
+      // A bad shape is a params error, nothing asked (an unknown key and a
+      // missing folder both fail the strict contract).
+      for (const args of [{ name: "x" }, { folder: "/a", id: "p1" }]) {
+        const bad = await dmCall(api.baseUrl, "t-pc", "project_create", args);
+        expect(bad.result?.isError).toBe(true);
+        expect(bad.result?.content[0].text).toContain("invalid params");
+      }
+      expect(ops.asks.length).toBe(1);
+    } finally {
+      api.server.close();
+    }
+  });
+
+  it("thread_start forwards `project` verbatim; omitted stays omitted", async () => {
+    const ops = fakeAppOps([], { conversationId: "conv-s-ts" });
+    const { scope } = makeScope("s-ts", { appOps: ops });
+    const api = await serveGateway({
+      sessions: [{ scope, token: "t-ts" }],
+    });
+    try {
+      await dmCall(api.baseUrl, "t-ts", "thread_start", {
+        text: "ship it",
+        title: "Ship",
+        project: "lil",
+      });
+      await dmCall(api.baseUrl, "t-ts", "thread_start", { text: "just chat" });
+      expect(ops.started).toEqual([
+        { text: "ship it", title: "Ship", project: "lil" },
+        { text: "just chat" },
+      ]);
+      expect("project" in ops.started[1]).toBe(false);
     } finally {
       api.server.close();
     }

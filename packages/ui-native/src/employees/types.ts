@@ -109,7 +109,6 @@ export type TurnFailure = {
 /** #344 (web: SessionLife): whether the engine session holds the Mac. */
 export type SessionLife = "running" | "open" | "closed";
 
-/** One DM row: your message and the session it opened, summarised. */
 /** A pull request a session opened (web: PullRequest, trimmed to what the
     phone shows). A session can open several; newest last. */
 export type PullRequestRef = {
@@ -128,8 +127,9 @@ export type SessionTurn = {
   title: string;
   state: SessionState;
   when: string;
-  /** Project the session runs in ("LilOS"); absent = just chat. */
-  folder?: string;
+  /** The name of the project the thread lives in (D-#771); absent = a
+      plain chat. */
+  project?: string;
   branch?: string;
   added?: number;
   removed?: number;
@@ -349,7 +349,7 @@ export type ThreadDetail = {
   id: string;
   title: string;
   state: SessionState;
-  /** #563: finished while unseen — the DM card + home row carry the dot. */
+  /** #563: finished while unseen — the thread row + home row carry the dot. */
   unseen?: boolean;
   /** #592: the last turn's failure — the header chip reads amber
       "Mac went to sleep" for sleep interrupts. */
@@ -358,7 +358,7 @@ export type ThreadDetail = {
       offers "Queue" instead of "Steer" (web: runningComposer agentWork). */
   agentWorking?: boolean;
   employee: { id: string; name: string; tone: OrbTone };
-  /** DM list time: "Mon", "Yesterday", "4m", "now". */
+  /** Thread list time: "Mon", "Yesterday", "4m", "now". */
   when: string;
   /** Thread info: "Yesterday 17:02". */
   started: string;
@@ -446,9 +446,9 @@ export type MacDir = {
   folders: { name: string; path: string; branch?: string }[];
 };
 
-/** #555: a message-search hit inside a thread (web: MessageHit). The DM
-    screen lists these under their thread; a tap opens the thread scrolled
-    to `entryId`. */
+/** #555: a message-search hit inside a thread (web: MessageHit). The agent's
+    thread list shows these under their thread; a tap opens the thread
+    scrolled to `entryId`. */
 export type DmMessageHit = {
   threadId: string;
   /** The hit's thread — the row heads it like web's hit group title. */
@@ -464,7 +464,7 @@ export type DmMessageHit = {
   query?: string;
 };
 
-/** One row in the cross-employee Sessions list (web: SessionRowVm). The
+/** One row in the cross-agent thread list (web: SessionRowVm). The
     `tone` is the employee's orb tone — the avatar is the employee's. */
 export type SessionListRow = {
   /** The conversation the row opens. */
@@ -473,8 +473,8 @@ export type SessionListRow = {
   employeeName: string;
   tone: OrbTone;
   title: string;
-  /** Project folder the session works in; absent = just chat. */
-  folder?: string;
+  /** The thread's project name (D-#771); absent = a plain chat. */
+  project?: string;
   state: SessionState;
   /** The live line for in-flight rows: the current step for working
       sessions, the open ask for needs-you rows. */
@@ -485,7 +485,7 @@ export type SessionListRow = {
   unread?: boolean;
 };
 
-/** The Sessions screen's three groups — same split as web's SessionsHome. */
+/** The thread list's three groups — same split as web's SessionsHome. */
 export type SessionListGroups = {
   needsYou: SessionListRow[];
   running: SessionListRow[];

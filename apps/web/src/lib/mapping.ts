@@ -142,7 +142,7 @@ function toSubagent(
       : {}),
     /* Another employee's helper links to its own session (D-#25): the
        engine reports its profile ref; the ui row needs the LilOS employee
-       id (avatar + DM route), which `resolveEmployee` maps. */
+       id (avatar + chat route), which `resolveEmployee` maps. */
     ...(s.employee
       ? {
           employee: {
@@ -775,7 +775,7 @@ export function sessionLabel(ref: string): string {
 }
 
 /**
- * The DM home feed: one Msg row per conversation (root user message). Pass
+ * The thread home feed: one Msg row per conversation (root user message). Pass
  * `mergeTurns` output as `replies` so engine turns show as rich cards.
  */
 export function toFeed(

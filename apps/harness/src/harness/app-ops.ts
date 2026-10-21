@@ -13,14 +13,15 @@ import type { SessionBinding } from "@lilos/contracts/harness";
 import type { ForgePrListItem } from "@lilos/contracts/host";
 import type { AppOps } from "@lilos/surfaces";
 import type { Logger } from "../log";
-import { createGatewayApprovalOps } from "./gateway-ops";
+import { createGatewayApprovalOps, listProjects } from "./gateway-ops";
 
 /**
  * The `appOps` factory behind `serveSurfaces` — every op talks to the relay
  * through the same methods the app uses, scoped to the bound
- * channel/conversation by the session's binding (the agent never passes an
- * id). `runningTurnId` resolves the live engine turn lazily so approval asks
- * bind to the turn that raised them.
+ * employee/channel/conversation by the session's binding (the agent never
+ * passes an id). The channel is the relay's internal routing scope, not a
+ * place the agent or user sees (D-#25). `runningTurnId` resolves the live
+ * engine turn lazily so approval asks bind to the turn that raised them.
  */
 export function createAppOps(deps: {
   relay: RelayClient;
@@ -57,7 +58,7 @@ export function createAppOps(deps: {
         );
         return page.messages;
       },
-      /* DM tools: the rest of the app leg — same relay methods the app
+      /* Thread tools: the rest of the app leg — same relay methods the app
          uses, scoped to the bound channel/conversation by the binding. */
       listThreads: async () => {
         const r = await relay.request<{ conversations: Conversation[] }>(
@@ -118,6 +119,7 @@ export function createAppOps(deps: {
         );
         return r.tasks;
       },
+      projects: () => listProjects(relay),
       status: () =>
         relay.request<SystemStatusResult>("system.status", { logLines: 0 }),
       profile: async () => {

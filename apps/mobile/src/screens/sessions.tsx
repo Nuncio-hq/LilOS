@@ -5,9 +5,9 @@ import { toSessionGroups } from "../home-model";
 import type { Props } from "../routes";
 import { useHomeWire, useNowMs } from "./home";
 
-/* Every session across employees — needs you / working / recently finished
-   (unread first). A row pushes the thread with its DM underneath, the same
-   landing an ask's Open takes. */
+/* Every thread across agents — needs you / working / recently finished
+   (unread first). A row pushes the thread over its agent's thread list, the
+   same landing an ask's Open takes. */
 export function Sessions({ navigation }: Props<"Sessions">) {
   const { wire } = useHomeWire();
   const nowMs = useNowMs();

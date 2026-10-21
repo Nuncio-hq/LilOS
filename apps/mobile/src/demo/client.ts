@@ -18,6 +18,7 @@ import type {
   Employee,
   PairedDevice,
   ProfileSettings,
+  Project,
   WelcomeResult,
 } from "@lilos/contracts/app";
 import type {
@@ -29,6 +30,7 @@ import type {
 import type { ForgePrListItem } from "@lilos/contracts/host";
 import { atom, type WritableAtom } from "nanostores";
 import type { TurnCtx } from "./engine";
+import { filingFolder, projectForFolder } from "./projects";
 import { handleRequest } from "./requests";
 import {
   DEMO_SEEDS,
@@ -91,6 +93,9 @@ const DEMO_SESSION_PFX = "ses_demo_";
 export class DemoClient {
   readonly state: WritableAtom<RelayConnectionState> = atom("idle");
   readonly employees: WritableAtom<Employee[]> = atom([]);
+  /** The company's projects (D-#771), made the way the relay makes them:
+     a thread's folder becomes a project on first use. */
+  readonly projects: WritableAtom<Project[]> = atom([]);
   readonly channels: WritableAtom<AppChannel[]> = atom([]);
   readonly conversations: WritableAtom<Conversation[]> = atom([]);
   readonly conversationSummaries: WritableAtom<ConversationSummary[]> = atom(
@@ -441,10 +446,40 @@ export class DemoClient {
     this.conversationSummaries.set(list.map((x, i) => (i === idx ? next : x)));
   }
 
+  /* ---------- projects (D-#771) ---------- */
+
+  /** The project for `folder` — made on first use, like the relay — and
+     announced the way the relay does. */
+  projectAt(
+    folder: string,
+    fields: { name?: string; about?: string } = {},
+  ): Project {
+    const { project, created } = projectForFolder(
+      this.projects.get(),
+      folder,
+      Date.now(),
+      fields,
+    );
+    if (created) {
+      this.projects.set([...this.projects.get(), project]);
+      this.fire("project.upserted", { project });
+    }
+    return project;
+  }
+
+  /** The id a thread files under, or undefined for a plain chat. */
+  private projectIdOf(
+    conv: Pick<Conversation, "cwd" | "workspace">,
+  ): string | undefined {
+    const folder = filingFolder(conv);
+    return folder ? this.projectAt(folder).id : undefined;
+  }
+
   /* ---------- seeded history ---------- */
 
   private async seedConv(seed: SeedConversation, now: number): Promise<void> {
     const createdAt = now - seed.ageMin * 60_000;
+    const projectId = this.projectIdOf(seed);
     const conv: DemoConv = {
       conv: {
         id: seed.id,
@@ -462,6 +497,7 @@ export class DemoClient {
         createdAt,
         ...(seed.cwd ? { cwd: seed.cwd } : {}),
         ...(seed.workspace ? { workspace: seed.workspace } : {}),
+        ...(projectId ? { projectId } : {}),
         ...(seed.model ? { model: seed.model } : {}),
         ...(seed.provider ? { provider: seed.provider } : {}),
         ...(seed.effort ? { effort: seed.effort } : {}),
@@ -571,6 +607,7 @@ export class DemoClient {
     fast?: boolean;
   }): DemoConv {
     const id = `c-${++this.convCounter}`;
+    const projectId = this.projectIdOf(params);
     const conv: DemoConv = {
       conv: {
         id,
@@ -588,6 +625,7 @@ export class DemoClient {
         createdAt: Date.now(),
         ...(params.cwd ? { cwd: params.cwd } : {}),
         ...(params.workspace ? { workspace: params.workspace } : {}),
+        ...(projectId ? { projectId } : {}),
         ...(params.model ? { model: params.model } : {}),
         ...(params.provider ? { provider: params.provider } : {}),
         ...(params.effort ? { effort: params.effort } : {}),

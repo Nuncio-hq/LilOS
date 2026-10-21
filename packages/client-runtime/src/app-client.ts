@@ -15,6 +15,7 @@ export type AppClient = Pick<
   RelayClient,
   | "state"
   | "employees"
+  | "projects"
   | "channels"
   | "conversations"
   | "conversationSummaries"

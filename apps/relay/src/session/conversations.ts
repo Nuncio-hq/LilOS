@@ -13,19 +13,21 @@ import {
   ConversationsSetModelParams,
   ConversationsSummariesParams,
   ConversationsUpdateParams,
+  type Project,
 } from "@lilos/contracts/app";
 import {
   ConversationAccess,
   type ConversationAccess as ConversationAccessT,
 } from "@lilos/contracts/engine";
 import type { ForgePrsResult } from "@lilos/contracts/host";
+import { openFolderOf, projectFolderOf } from "../projects";
 import type { ConversationPatch } from "../store";
 import { noFolderDedupeKey } from "../store";
 import type { RelayCtx } from "./ctx";
 import { badParams, JsonRpcCode, RpcError } from "./rpc";
 
 /* #660 e2e knob: hold `conversations.summaries` answers — the client's
-   `openConv` lands late, so a DM send → /focus rides the whole
+   `openConv` lands late, so a thread send → /focus rides the whole
    summary-fetch window the CI flake sampled inside. `0`/unset = no hold. */
 const SUMMARY_DELAY_MS = Number(process.env.LILOS_SUMMARY_DELAY_MS ?? 0) || 0;
 
@@ -44,6 +46,8 @@ export async function handleConversations(
     params,
     store,
     storeAttachments,
+    homeDir,
+    broadcast,
     dropAttachments,
     emit,
     emitMessage,
@@ -100,9 +104,21 @@ export async function handleConversations(
         parsed.data.access ??
         (storedDefault.success ? storedDefault.data : "ask");
       try {
+        /* D-#771: file the thread under its folder's project — created on
+           first use, announced before the thread so a client that gets the
+           conversation already has its project. The client sent a folder,
+           never a project id; no folder → a plain chat. */
+        const folder = openFolderOf(parsed.data, homeDir);
+        const filing = folder
+          ? await store.ensureProject({ folder })
+          : undefined;
+        if (filing?.created) {
+          broadcast("project.upserted", { project: filing.project });
+        }
         const { conversation, rootMessage, created } =
           await store.openConversation({
             ...parsed.data,
+            projectId: filing?.project.id,
             /* The scheduled marker is host-authored — a client-supplied
                one would fake a task's run and hijack its lastRun stamps. */
             scheduled: isHost(peer) ? parsed.data.scheduled : undefined,
@@ -179,10 +195,29 @@ export async function handleConversations(
             }
           : {}),
       };
+      /* D-#771: `cwd` is how a thread moves between projects —
+         `conversations.moveFolder` lands here through the harness's
+         host-only `cwd` write — so the filing follows it: the new
+         folder's project (created on first use), or a plain chat when the
+         folder is cleared. A moved workstream thread files under the
+         folder it moved to, not its stale `workspace.repoPath`. */
+      let created: Project | undefined;
+      if ("cwd" in rest && (await store.getConversation(conversationId))) {
+        if (typeof rest.cwd === "string") {
+          const filing = await store.ensureProject({
+            folder: projectFolderOf(rest.cwd, homeDir),
+          });
+          patch.projectId = filing.project.id;
+          if (filing.created) created = filing.project;
+        } else {
+          patch.projectId = null;
+        }
+      }
       const conversation = await store.updateConversation(
         conversationId,
         patch,
       );
+      if (created) broadcast("project.upserted", { project: created });
       if (!conversation) {
         throw new RpcError(
           JsonRpcCode.notFound,
@@ -302,7 +337,10 @@ export async function handleConversations(
       /* Move a thread's working folder (#581): the engine host owns the
          path boundary + the session re-home (session.moveWorkspace) and
          writes the landed `cwd` back through conversations.update — same
-         callHost pattern as conversations.rewind. */
+         callHost pattern as conversations.rewind. That `cwd` write is also
+         where the thread is re-filed under the new folder's project
+         (D-#771, see conversations.update), so the re-read below already
+         carries the new `projectId`. */
       const parsed = ConversationsMoveFolderParams.safeParse(params);
       if (!parsed.success) throw badParams(parsed.error.issues);
       const conversation = await store.getConversation(

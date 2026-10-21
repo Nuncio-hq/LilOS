@@ -9,6 +9,7 @@ import type {
   PairedDevice,
   PendingTurn,
   ProfileSettings,
+  Project,
   RecentFolder,
   ScheduledTask,
 } from "@lilos/contracts/app";
@@ -18,14 +19,17 @@ import type {
   AppendMessageInput,
   DevicePush,
   NewPairedDevice,
+  NewProject,
   RelayStore,
 } from "../src/store";
 import {
+  deriveProjectKey,
   markSnippet,
   messageMatchesTerms,
   newId,
   noFolderDedupeKey,
   openTitle,
+  projectNameFor,
   searchTerms,
   titlePatch,
 } from "../src/store";
@@ -54,6 +58,7 @@ export function createMemoryStore(): RelayStore {
   const folders = new Map<string, RecentFolder>();
   const settings = new Map<string, unknown>();
   const scheduledTasks = new Map<string, ScheduledTask>();
+  const projects = new Map<string, Project>();
   let profile: ProfileSettings = {};
   const grants = new Map<
     string,
@@ -284,6 +289,32 @@ export function createMemoryStore(): RelayStore {
       scheduledTasks.delete(id);
       return task;
     },
+    async listProjects() {
+      return [...projects.values()].sort((a, b) => a.createdAt - b.createdAt);
+    },
+    async getProject(id) {
+      return projects.get(id) ?? null;
+    },
+    async ensureProject(input: NewProject) {
+      const existing = [...projects.values()].find(
+        (p) => p.folder === input.folder,
+      );
+      if (existing) return { project: existing, created: false };
+      const name = input.name ?? projectNameFor(input.folder);
+      const project: Project = {
+        id: newId("proj"),
+        name,
+        key: deriveProjectKey(
+          name,
+          new Set([...projects.values()].map((p) => p.key)),
+        ),
+        folder: input.folder,
+        about: input.about ?? "",
+        createdAt: input.createdAt ?? now(),
+      };
+      projects.set(project.id, project);
+      return { project, created: true };
+    },
     async listRecentFolders() {
       return [...folders.values()].sort((a, b) => b.lastUsedAt - a.lastUsedAt);
     },
@@ -357,6 +388,9 @@ export function createMemoryStore(): RelayStore {
         engineRef: null,
         state: "idle",
         ...(input.cwd !== undefined ? { cwd: input.cwd } : {}),
+        ...(input.projectId !== undefined
+          ? { projectId: input.projectId }
+          : {}),
         ...(input.workspace !== undefined
           ? { workspace: input.workspace }
           : {}),
@@ -392,6 +426,12 @@ export function createMemoryStore(): RelayStore {
       conversation.rootMessageId = rootMessage.id;
       return { conversation, rootMessage, created: true };
     },
+    async setConversationProjects(filings) {
+      for (const { conversationId, projectId } of filings) {
+        const conversation = conversations.get(conversationId);
+        if (conversation) conversation.projectId = projectId;
+      }
+    },
     async updateConversation(id, patch) {
       const conversation = conversations.get(id);
       if (!conversation) return null;
@@ -414,6 +454,8 @@ export function createMemoryStore(): RelayStore {
         "turnFailure",
         "turnStopped",
         "bgJobs",
+        "cwd",
+        "projectId",
       ] as const) {
         if (patch[k] === null) {
           delete (conversation as Record<string, unknown>)[k];

@@ -3,9 +3,9 @@ import { atom } from "nanostores";
 
 /* #556 AC-2: composer drafts, per conversation and device-local — a
    half-typed reply survives leaving the thread and iOS killing the app.
-   `thread:<conversationId>` for thread composers, `dm:<employeeId>` for a
-   DM's new-thread box. Plain AsyncStorage like the caches: a draft is not
-   a secret. */
+   `thread:<conversationId>` for thread composers, `dm:<employeeId>` for an
+   agent's new-thread box (`dm:` is the per-agent channel's internal key,
+   D-#771). Plain AsyncStorage like the caches: a draft is not a secret. */
 const KEY = "lilos.drafts.v1";
 const DEBOUNCE_MS = 300;
 

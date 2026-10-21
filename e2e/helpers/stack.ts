@@ -563,11 +563,12 @@ export async function openNewChat(
 }
 
 /**
- * `startChat` bound to `folder`: the draft's Folder chip picks among the
- * app's recents, so the folder is added to them over the relay first and the
- * page reloaded (the shell reads the recents when it mounts). Past first run;
- * resolves once the draft has swapped for its thread and returns that
- * conversation's id.
+ * `startChat` bound to `folder`: the draft's Project chip picks the folder's
+ * project (D-#771), which the relay makes over the wire first (the folder
+ * joins the recents too, as a person adding it would) and the page reloaded
+ * (the shell reads the company when it mounts). Past first run; resolves
+ * once the draft has swapped for its thread and returns that conversation's
+ * id.
  */
 export async function startChatInFolder(
   page: playwright.Page,
@@ -580,12 +581,13 @@ export async function startChatInFolder(
   await skipFirstRun(page);
   await page.goto(`${stack.webUrl}/`);
   await relayRpc(page, stack, "folders.add", { path: folder });
+  await relayRpc(page, stack, "projects.create", { folder });
   await page.goto(
     `${stack.webUrl}/#?page=threads&open=newchat:${encodeURIComponent(agent.id)}`,
   );
   await page.reload();
   const peek = v3Peek(page);
-  const chip = peek.getByTitle(/^Folder · /);
+  const chip = peek.getByTitle(/^Project · /);
   await expect(chip).toBeVisible({ timeout: 30_000 });
   const base = path.basename(folder);
   await chip.click();
@@ -650,11 +652,10 @@ export async function openSession(
 /**
  * A chat in NO folder, started over the relay with no draft: exactly what a
  * send does (`channels.openDm` + `conversations.open` with no `cwd`). The
- * draft's Folder chip does offer "No folder · just chat", but the newest
- * recent is pre-picked once the app has any, so a spec that only needs a
- * folder-less thread (not the pick itself) skips choosing it. Resolves with
- * the new conversation's id; the page is left on `stack.webUrl` past first
- * run.
+ * draft's Project chip does offer "No project · just chat", but it opens on
+ * where the agent's last chat ran, so a spec that only needs a plain chat
+ * (not the pick itself) skips choosing it. Resolves with the new
+ * conversation's id; the page is left on `stack.webUrl` past first run.
  */
 export async function startFolderlessChat(
   page: playwright.Page,

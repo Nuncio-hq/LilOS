@@ -20,7 +20,8 @@ import { toModelCatalog } from "./dm-model";
 import { resetDrafts } from "./draft-store";
 import { watchPrs } from "./prs";
 
-/* Shared DM state (#156): open asks, folder recents, the engine model
+/* Shared agent-thread-list state (#156; `Dm` is the per-agent channel's
+   internal name, D-#771): open asks, folder recents, the engine model
    catalog, the composer's per-employee picks, and opens the phone itself
    sent (the "submitted" window before a summary row exists). Each watcher
    runs once per RelayClient — a re-paired Mac gets a fresh one. */
@@ -51,9 +52,9 @@ export const $pendingOpens = atom<
   Map<string, { conversation: Conversation; root: AppMessage }>
 >(new Map());
 
-/* #600: a send in flight before `conversations.open` answers — the DM
-   shows the row at once instead of an empty beat after the draft clears.
-   Keyed by employee: one compose box per DM. */
+/* #600: a send in flight before `conversations.open` answers — the thread
+   list shows the row at once instead of an empty beat after the draft
+   clears. Keyed by employee: one compose box per agent. */
 export const $sendingDm = atom<Map<string, { text: string; at: number }>>(
   new Map(),
 );

@@ -4,6 +4,7 @@ import type {
   Conversation,
   ConversationSummary,
   FoldersDetailResult,
+  Project,
   RecentFolder,
   WorkspaceIntent,
 } from "@lilos/contracts/app";
@@ -22,11 +23,13 @@ import type {
   WorkspacePick,
 } from "@lilos/ui-native";
 import { hasProviderLogo } from "@lilos/ui-native/provider-logos";
+import { projectNameOf } from "./mapping";
 
-/* Wire data -> ui-native DM view models (#156). Pure: no stores, no imports
-   beyond contracts + ui-native types — every rule is unit-tested in
-   test/dm-model.test.ts. Mirrors the web's DM list rules (apps/web) and the
-   prototype's turnsOf/statusOf shapes. */
+/* Wire data -> ui-native thread-list view models (#156). Pure: no stores, no
+   react-native — every rule is unit-tested in test/dm-model.test.ts. Mirrors
+   the web's thread-list rules (apps/web) and the prototype's
+   turnsOf/statusOf shapes. `Dm` in the names is the per-agent channel's
+   internal name, not a product concept (D-#771). */
 
 /** Last path segment — the picker's `project` label for a real folder. */
 export function folderLeaf(path: string): string {
@@ -136,7 +139,7 @@ export function askApproval(
 /* ------------------------------ the rows -------------------------------- */
 
 export type DmCtx = {
-  /** The DM channel id — summaries from other channels never enter. */
+  /** The agent's channel id — summaries from other channels never enter. */
   channelId: string;
   employee: { id: string; name: string; tone: OrbTone };
   /** Open asks on this channel (the needs-you set). */
@@ -148,7 +151,10 @@ export type DmCtx = {
   >;
   /** Each conversation's PRs (#159) — absent key = nothing to show (AC-4). */
   prs?: Readonly<Record<string, PullRequestRef[]>>;
-  /* #600: the DM's own send in flight (conversations.open hasn't
+  /** The company's projects (D-#771): a row names its project, nothing for
+     a plain chat. Absent = none known yet. */
+  projects?: readonly Project[];
+  /* #600: the agent's own send in flight (conversations.open hasn't
      answered) — the row shows at once, before even a pending marker can
      exist. */
   sending?: { text: string; at: number };
@@ -169,6 +175,7 @@ function toSessionTurn(s: ConversationSummary, ctx: DmCtx): SessionTurn {
     (a) => a.state === "open" && a.conversationId === conv.id,
   );
   const preview = lastWords(s);
+  const project = projectNameOf(conv, ctx.projects ?? []);
   return {
     id: conv.id,
     prompt: s.root.text,
@@ -185,7 +192,7 @@ function toSessionTurn(s: ConversationSummary, ctx: DmCtx): SessionTurn {
           ? "open"
           : (conv.life ?? "open"),
     when: timeLabel(s.last.createdAt, ctx.now),
-    ...(convFolderLabel(conv) ? { folder: convFolderLabel(conv) } : {}),
+    ...(project ? { project } : {}),
     ...(conv.workspace?.branch ? { branch: conv.workspace.branch } : {}),
     ...(ctx.prs?.[conv.id]?.length ? { prs: ctx.prs[conv.id] } : {}),
     ...(s.messageCount > 1 ? { replies: s.messageCount - 1 } : {}),
@@ -239,6 +246,7 @@ export function toSessionTurns(
     if (p.conversation.channelId !== ctx.channelId || p.conversation.archived)
       continue;
     if (summaries.some((s) => s.conversation.id === id)) continue;
+    const project = projectNameOf(p.conversation, ctx.projects ?? []);
     rows.push({
       at: p.conversation.createdAt,
       turn: {
@@ -250,9 +258,7 @@ export function toSessionTurns(
         life: "running",
         when: timeLabel(p.conversation.createdAt, ctx.now),
         live: "Working…",
-        ...(convFolderLabel(p.conversation)
-          ? { folder: convFolderLabel(p.conversation) }
-          : {}),
+        ...(project ? { project } : {}),
         ...(p.conversation.workspace?.branch
           ? { branch: p.conversation.workspace.branch }
           : {}),
@@ -291,12 +297,6 @@ export function headerStatus(turns: { state: string }[]): string {
 }
 
 /* ------------------------------- pickers -------------------------------- */
-
-/** A workstream-opened row labels its repo (cwd is the `.lilos/wt` dir). */
-function convFolderLabel(conv: Conversation): string | undefined {
-  const path = conv.workspace?.repoPath ?? conv.cwd;
-  return path ? folderLeaf(path) : undefined;
-}
 
 /**
  * `folders.list` recents + per-folder `folders.detail` probes -> picker

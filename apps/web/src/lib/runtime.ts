@@ -153,7 +153,7 @@ export async function bootRuntime(cfg: LilosConfig): Promise<void> {
   initConnect();
   /* #563: the read watermark rides the relay — start stamping on open. */
   watchReadWatermark();
-  watchDmChannels();
+  watchEmployeeChannels();
 }
 
 /**
@@ -392,17 +392,19 @@ function watchReadWatermark(): void {
   relay.conversations.subscribe(stamp);
 }
 
-let dmSubWatchStarted = false;
+let channelSubWatchStarted = false;
 /* #563: `conversation.updated` — the dot's finish stamp AND its clear —
-   rides the channel subscription only, and the DM page subscribes just
-   the open channel. Subscribing every DM channel at boot keeps the
+   rides the channel subscription only, and a thread view subscribes just
+   the open channel. Subscribing every employee's channel at boot keeps the
    sidebar's dots live off the feed (a finish lands while Home or another
-   DM is on screen, and a markRead on another client clears here too) —
-   the same thing the phone's `ensureChannelSubscriptions` does.
+   thread is on screen, and a markRead on another client clears here too) —
+   the same thing the phone's `ensureChannelSubscriptions` does. The channel
+   is the relay's internal routing scope for one employee's threads (D-#25;
+   the wire still calls its kind "dm"), never something the user sees.
    `channelMessages` is idempotent and its intent survives reconnects. */
-function watchDmChannels(): void {
-  if (dmSubWatchStarted) return;
-  dmSubWatchStarted = true;
+function watchEmployeeChannels(): void {
+  if (channelSubWatchStarted) return;
+  channelSubWatchStarted = true;
   relay.channels.subscribe((channels) => {
     for (const c of channels) if (c.kind === "dm") relay.channelMessages(c.id);
   });

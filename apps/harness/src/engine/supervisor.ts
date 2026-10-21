@@ -89,7 +89,7 @@ export class EngineSupervisor {
 
   /* Every transition leaves through onState → relay `harness.report`
      (harness.ts) → `system.status` → client-runtime status.ts (plain rows)
-     → the status dialog and the DM composer note. `detail` is the user's
+     → the status dialog and the thread composer note. `detail` is the user's
      only explanation of a start failure, so it stays the verbatim reason. */
   private set(state: EngineHostState, detail?: string) {
     this.state.current = state;

@@ -361,7 +361,7 @@ export async function dispatchPrompt(
       `Engine error: ${detail}`,
       `sys:${binding.conversationId}:${message.id}:engine-error`,
     );
-    /* #419: the prompt never made a turn — the DM card carries the
+    /* #419: the prompt never made a turn — the thread card carries the
        failure so the thread isn't silent + Retry has a surface. */
     await this.updateConversation(binding.conversationId, {
       turnFailure: { kind: "generic", text: `Engine error: ${detail}` },

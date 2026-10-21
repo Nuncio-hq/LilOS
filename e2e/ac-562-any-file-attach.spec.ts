@@ -31,8 +31,8 @@ import {
  * ac-112 (image attachments) and ac-113 (folder picking).
  *
  * v3: the first message is written in the new-chat draft beside Threads: its
- * paperclip stages the files (chips in `[data-staged]`) and its Folder chip
- * picks `repoDir` or "No folder · just chat". A reply from the thread
+ * paperclip stages the files (chips in `[data-staged]`) and its Project chip
+ * picks `repoDir`'s project or "No project · just chat". A reply from the thread
  * composer in the peek takes files the same way.
  */
 const SHOTS = path.join(
@@ -82,28 +82,33 @@ const draftBox = (page: Page) =>
 /** The draft's staged files, and the line that says what was left out. */
 const staged = (page: Page) => draft(page).locator("[data-staged]");
 
-/** The new-chat draft with Default, its Folder chip set to `choice`: the
-    folder's name, or "No folder". The folder joins the app's recents over
-    the relay first and the page reloads (the shell reads them on mount). */
+/** The new-chat draft with Default, its Project chip set to `choice`: the
+    folder's project (its name), or "No project". The folder becomes a
+    project over the relay first and the page reloads (the shell reads the
+    company on mount). */
 async function openDraft(page: Page, choice: "repo" | "none") {
   await skipFirstRun(page);
   await page.goto(`${stack.webUrl}/`);
   await relayRpc(page, stack, "folders.add", { path: repoDir });
+  await relayRpc(page, stack, "projects.create", { folder: repoDir });
   await page.goto(
     `${stack.webUrl}/#?page=threads&open=newchat:${DEFAULT_AGENT.id}`,
   );
   await page.reload();
-  const chip = draft(page).getByTitle(/^Folder · /);
+  const chip = draft(page).getByTitle(/^Project · /);
   await expect(chip).toBeVisible({ timeout: 30_000 });
   await chip.click();
   await draft(page)
     .getByRole("menuitemradio", {
-      name: choice === "repo" ? /repo-a/ : /No folder/,
+      name: choice === "repo" ? /repo-a/ : /No project/,
     })
     .click();
-  await expect(chip).toContainText(choice === "repo" ? "repo-a" : "No folder", {
-    timeout: 15_000,
-  });
+  await expect(chip).toContainText(
+    choice === "repo" ? "repo-a" : "No project",
+    {
+      timeout: 15_000,
+    },
+  );
   await expect(draftBox(page)).toBeVisible();
 }
 

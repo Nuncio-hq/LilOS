@@ -43,7 +43,8 @@ async function openDmChannel(employeeId: string): Promise<AppChannel> {
 }
 
 /**
- * Send a message in the employee's DM. Without a conversation the post opens
+ * Send a message to an employee (through its internal channel, which only
+ * routes). Without a conversation the post opens
  * a fresh one (conversations.open); with one it's a thread reply — and while
  * that conversation's engine turn is running the harness steers it
  * (capability `steer`) or queues it as the next prompt. `files` are the
@@ -68,7 +69,9 @@ export async function sendDm(
       resend so a stored-but-unanswered first attempt dedupes on the
       relay instead of double-posting. */
   dedupeKey?: string,
-  /** Folder the new session works in (#113); ignored on thread replies. */
+  /** Folder the new thread works in (#113): the relay files it under that
+      folder's project, creating the project on first use (D-#771); ignored on
+      thread replies. */
   cwd?: string,
   /** #106: the access level the fresh conversation opens on — the
       composer's pill choice; absent → the relay applies Settings'
@@ -185,7 +188,7 @@ const CONNECTION_LOST =
   "LilOS lost its connection to the agent. Try again in a moment.";
 
 /**
- * One plain line for a failed DM action (#423 AC-1): transport trouble
+ * One plain line for a failed thread action (#423 AC-1): transport trouble
  * reads as reconnecting / no answer, the engine host being gone reads as
  * a lost connection, and a relay-side reason rides through as-is — the
  * toast always says why in words a user can act on. `action` is the
@@ -228,7 +231,7 @@ export function describeActionError(action: string, e: unknown): string {
 }
 
 /**
- * Fire-and-forget a DM action that can reject: the rejection becomes a
+ * Fire-and-forget a thread action that can reject: the rejection becomes a
  * toast instead of landing nowhere (#423 AC-1). Actions that answer with
  * their own error UI (asks.respond's line, a failed send's draft) keep
  * their own wording — this is for calls that had NO visible outcome.

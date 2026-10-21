@@ -5,6 +5,7 @@ import type {
   Conversation,
   ConversationSummary,
   Employee,
+  Project,
 } from "@lilos/contracts/app";
 import {
   DmHeaderTitle,
@@ -61,15 +62,18 @@ import { $connections } from "../paired-macs";
 import { $prs, refreshPrsFor } from "../prs";
 import type { DmRoutes } from "../routes";
 
-/* The employee's DM (#156): the real relay's conversation.summaries grouped
-   Needs you / Working / Done, live over the channel subscription + ask
-   events, and the glass composer opens a new thread (conversations.open)
-   with the picked folder + model. Mapping rules live in ../dm-model.ts. */
+/* One agent's threads (#156): the real relay's conversation.summaries
+   grouped Needs you / Working / Done, live over the channel subscription +
+   ask events, and the glass composer opens a new thread (conversations.open)
+   with the picked folder + model. Each row names its project (D-#771). The
+   route and store keep their `Dm` names: the per-agent channel is internal
+   routing, not a DM the user sees. Mapping rules live in ../dm-model.ts. */
 
 type Nav = NativeStackNavigationProp<DmRoutes>;
 
 const $noEmployees = atom<Employee[]>([]);
 const $noChannels = atom<AppChannel[]>([]);
+const $noProjects = atom<Project[]>([]);
 const $noSummaries = atom<ConversationSummary[]>([]);
 const $noConversations = atom<Conversation[]>([]);
 const $linkIdle =
@@ -99,6 +103,7 @@ export function Dm({
   const channels = useStore(client?.channels ?? $noChannels);
   const summaries = useStore(client?.conversationSummaries ?? $noSummaries);
   const conversations = useStore(client?.conversations ?? $noConversations);
+  const projects = useStore(client?.projects ?? $noProjects);
   const clientState = useStore(client?.state ?? $linkIdle);
   const link = useStore($link);
   const demo = useStore($demo);
@@ -130,7 +135,7 @@ export function Dm({
   const [files, setFiles] = useState<PickedFile[]>([]);
   const opening = useRef(false);
 
-  /* Seed asks/recents/models once per client; resubscribe the DM channel.
+  /* Seed asks/recents/models once per client; resubscribe the agent's channel.
      `$welcome` feeds the catalog's engineHost fallback (#483). */
   useEffect(() => {
     if (!client) return;
@@ -150,7 +155,7 @@ export function Dm({
     [conversations, channel?.id],
   );
 
-  // Refresh each visible thread's PRs when the DM opens (#159 AC-5:
+  // Refresh each visible thread's PRs when the list opens (#159 AC-5:
   // thread-open trigger; turn-end refreshes run through watchPrs).
   useEffect(() => {
     if (!client || !channel || !threadKey) return;
@@ -160,7 +165,7 @@ export function Dm({
     );
   }, [client, channel, threadKey]);
 
-  /* First visit for an employee with no DM yet: open one (idempotent).
+  /* First visit for an employee with no channel yet: open one (idempotent).
      Retries whenever the link comes back ready. */
   const [dmError, setDmError] = useState<string | undefined>();
   useEffect(() => {
@@ -183,7 +188,7 @@ export function Dm({
 
   useEffect(() => {
     if (!dmError) return;
-    Alert.alert("Couldn't open this DM", dmError, [
+    Alert.alert("Couldn't open this agent's threads", dmError, [
       { text: "OK", onPress: () => setDmError(undefined) },
     ]);
   }, [dmError]);
@@ -213,6 +218,7 @@ export function Dm({
         openAsks,
         pending,
         prs: prsMap,
+        projects,
         ...(sending.get(employeeId)
           ? { sending: sending.get(employeeId) }
           : {}),
@@ -430,7 +436,7 @@ export function Dm({
       onDraftChange={(text) => setDraft(`dm:${employeeId}`, text)}
       onPickFolder={() => navigation.navigate("FolderPicker", { employeeId })}
       commands={commandRows.length ? commandRows : undefined}
-      /* `/model` opens the sheet the DM already owns — never a session. */
+      /* `/model` opens the sheet this list already owns — never a session. */
       onCommand={(name) => {
         if (name !== "model" || !catalog.models.length) return false;
         navigation.navigate("ModelPicker", { employeeId });
@@ -503,7 +509,7 @@ export function ModelPicker({
   const conversations = useStore(client?.conversations ?? $noConversations);
   const employee = employees.find((e) => e.id === employeeId);
   /* Thread scope (#157 AC-5): a conversationId pins this conversation via
-     conversations.setModel; the employee-scope pick stays the DM default. */
+     conversations.setModel; the employee-scope pick stays the default. */
   const conv = conversations.find((c) => c.id === conversationId);
   const catalog = useStore($catalog);
   const visibility = useStore($modelVisibility);
@@ -545,7 +551,7 @@ export function ModelPicker({
         void Haptics.selectionAsync();
         /* Thread scope asked for but the conversation isn't in the client
            yet (pending-open window): a pick here must not silently land as
-           the employee's DM default. */
+           the employee's default. */
         if (conversationId !== undefined) {
           if (conv && client) {
             setPicked(p);

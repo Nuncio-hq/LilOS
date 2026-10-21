@@ -2,7 +2,7 @@ import { cn } from "../lib/utils";
 import { ago, Btn, Meter } from "./v3-bits";
 import type { V3Ask, V3Data } from "./v3-data-types";
 import { AgentAvatar, StatusPill } from "./v3-marks";
-import { agentOf, FORMER_AGENT, goalOf, ticketOf } from "./v3-model";
+import { agentOf, askTag, FORMER_AGENT, goalOf, ticketOf } from "./v3-model";
 import type { V3PageProps, V3Route } from "./v3-page-types";
 
 /* The open ask on the Needs you page: the card with its four answers (ask,
@@ -50,7 +50,7 @@ export function OpenAsk({
     <div className="my-3 mb-1 rounded-[10px] border border-[var(--v3-line)] px-[18px] pt-4 pb-3.5">
       <div className="flex items-baseline gap-2.5 font-semibold text-[17px] text-foreground">
         <span className="font-normal text-[14px] text-muted-foreground/70">
-          {ask.ticketId ?? "Chat"}
+          {askTag(data, ask)}
         </span>
         {ask.title}
         <StatusPill status="needs" className="ml-auto self-center" />

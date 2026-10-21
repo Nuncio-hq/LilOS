@@ -75,7 +75,7 @@ export async function saveAgent(
 }
 
 /**
- * Remove deletes the LilOS record and its DM channel, conversations and
+ * Remove deletes the LilOS record and its channel, conversations and
  * scheduled tasks — never the engine profile (D-#29); there is no
  * profile-delete call anywhere. The relay broadcasts the removed record and
  * channels but not the tasks it deleted with them, so the app's copy of the

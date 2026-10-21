@@ -7,8 +7,8 @@ import { Page, Title } from "./v3-bits";
 import { ChipMenu } from "./v3-chip-menu";
 import { Composer } from "./v3-composer";
 import type { V3Data } from "./v3-data-types";
-import { FolderChip, ModelChip, NO_FOLDER } from "./v3-draft-chips";
-import { AgentAvatar, ProjectMark } from "./v3-marks";
+import { ModelChip, NO_PROJECT, ProjectChip } from "./v3-draft-chips";
+import { AgentAvatar } from "./v3-marks";
 import { agentOf, defaultAgent, projectOf, ticketOf } from "./v3-model";
 import type { V3PageProps } from "./v3-page-types";
 import type { V3Agent } from "./v3-types";
@@ -19,38 +19,33 @@ import type { V3Agent } from "./v3-types";
    text and open a tiny menu to change. Sending starts a thread with no ticket
    and takes the draft's place on the trail; "Make it a ticket" comes later.
    The models on offer are the app's (`modelChoices`); where it works is a
-   project, or, in a company without projects, one of the app's folders, or
-   no folder at all (a chat that only talks). This box is the first-message
-   composer, so it keeps what the old home composer had, each only where the
-   app can do it: files on the first message (paste, drop, paperclip), the
-   draft kept per agent across reloads, ↑ for your last opener, `@` for people
-   and files of the folder, `/` for the engine's commands, the full model
-   picker and the Ask / Full access pill. */
+   project (D-#771), or no project at all (a chat that only talks), and a
+   folder the company has no project for yet becomes one from the same menu.
+   This box is the first-message composer, so it keeps what the old home
+   composer had, each only where the app can do it: files on the first message
+   (paste, drop, paperclip), the draft kept per agent across reloads, ↑ for
+   your last opener, `@` for people and files of the folder, `/` for the
+   engine's commands, the full model picker and the Ask / Full access pill. */
 
-/** Where an agent usually works: the project of its most recent thread (a
-    chat names its project; a ticket's hand uses the ticket's), else the
+/** Where this agent's chats usually go. Where its last one ran: a plain chat
+    counts, since "No project" is a choice that must not slide back to a
+    project on its own. With no chat yet, the project of its most recent thread
+    (a chat names its project; a ticket's hand uses the ticket's), else the
     first project. Start times are zero-padded clocks, so text order is time. */
-function usualProject(data: V3Data, agentId: string): string {
+function usualProject(data: V3Data, agent: V3Agent): string {
+  if (agent.lastChat) {
+    const last = agent.lastChat.projectId;
+    return last && projectOf(data, last) ? last : NO_PROJECT;
+  }
   let best: { at: string; project: string } | undefined;
   for (const t of data.threads) {
-    if (t.agentId !== agentId) continue;
+    if (t.agentId !== agent.id) continue;
     const project =
       t.projectId ?? (t.ticketId ? ticketOf(data, t.ticketId)?.projectId : "");
     if (!project || !projectOf(data, project)) continue;
     if (!best || t.startedAt > best.at) best = { at: t.startedAt, project };
   }
-  return best?.project ?? data.projects[0]?.id ?? "";
-}
-
-/** Where this agent's chats usually go, as its last one did: that chat's
-    folder, or "No folder" when it had none or the app no longer lists it.
-    With no chat yet, the newest recent folder. */
-function usualFolder(data: V3Data, agent: V3Agent): string {
-  const folders = data.folders ?? [];
-  if (!agent.lastChat) return folders[0]?.path ?? NO_FOLDER;
-  return (
-    folders.find((f) => f.path === agent.lastChat?.folder)?.path ?? NO_FOLDER
-  );
+  return best?.project ?? data.projects[0]?.id ?? NO_PROJECT;
 }
 
 export function V3DraftChat(props: V3PageProps & { id: string }) {
@@ -87,20 +82,8 @@ function DraftChat({
   const agent = agentOf(data, agentId) ?? fallback;
   // Project and model follow the agent until you choose one yourself.
   const [chosenProject, setProject] = useState<string>();
-  const projectId = chosenProject ?? usualProject(data, agent.id);
+  const projectId = chosenProject ?? usualProject(data, agent);
   const project = projectOf(data, projectId);
-  // A company with no projects yet picks among the app's recent folders.
-  const folders = data.folders ?? [];
-  const [chosenFolder, setFolder] = useState<string>();
-  // A pick whose folder the app no longer lists is as good as none.
-  const picked =
-    chosenFolder === NO_FOLDER || folders.some((f) => f.path === chosenFolder)
-      ? chosenFolder
-      : undefined;
-  const folderPath = picked ?? usualFolder(data, agent);
-  const folder = project
-    ? undefined
-    : folders.find((f) => f.path === folderPath);
   const [chosenModel, setModel] = useState<string>();
   // An outside worker has no model of its own: no chip, and none sent.
   const outside = agent.kind === "outside";
@@ -136,12 +119,12 @@ function DraftChat({
   const edit = (text: string) => {
     if (!(sending.current && text === "")) setDraft(text);
   };
-  /* `@` and `/` read the folder the chat will run in (a project's own, else the
-     picked one); without one there are no files to offer. Stable identities:
-     the menus search when they change. */
+  /* `@` and `/` read the folder the chat will run in (its project's); without
+     one there are no files to offer. Stable identities: the menus search when
+     they change. */
   const searchFiles = act.searchFiles;
   const searchCommands = act.searchCommands;
-  const folderPathNow = project?.folder ?? folder?.path;
+  const folderPathNow = project?.folder;
   const onSearchFiles = useMemo(
     () =>
       searchFiles && folderPathNow
@@ -179,8 +162,10 @@ function DraftChat({
       }
       const thread = await act.startChat({
         agentId: agent.id,
+        // The relay files the thread from the folder it is sent (D-#771);
+        // a plain chat sends none.
         projectId: project?.id,
-        folder: folder?.path,
+        folder: project?.folder,
         model,
         ...(pick && !outside ? { pick } : {}),
         ...(data.chatAccess ? { access } : {}),
@@ -231,44 +216,13 @@ function DraftChat({
           ),
         }))}
       />
-      {project ? (
-        <ChipMenu
-          title={`Project · ${project.folder}`}
-          value={project.id}
-          onPick={setProject}
-          label={
-            <>
-              <ProjectMark
-                name={project.name}
-                tone={project.tone}
-                className="size-4 text-[9px]"
-              />
-              <span className="truncate">{project.name}</span>
-            </>
-          }
-          options={data.projects.map((p) => ({
-            id: p.id,
-            node: (
-              <>
-                <ProjectMark name={p.name} tone={p.tone} />
-                <span className="shrink-0">{p.name}</span>
-                <span className="truncate font-mono text-[12px] text-muted-foreground/70">
-                  {p.folder}
-                </span>
-              </>
-            ),
-          }))}
-        />
-      ) : (
-        folders.length > 0 && (
-          <FolderChip
-            folders={folders}
-            folder={folder}
-            onPick={setFolder}
-            onAdd={act.addFolder ? () => act.addFolder?.(setFolder) : undefined}
-          />
-        )
-      )}
+      <ProjectChip
+        projects={data.projects}
+        project={project}
+        folder={project && data.folders?.find((f) => f.path === project.folder)}
+        onPick={setProject}
+        onNew={act.newProject && (() => act.newProject?.(setProject))}
+      />
       {!outside && (
         <ModelChip
           data={data}
@@ -332,7 +286,7 @@ function DraftChat({
           data={data}
           agent={agent}
           model={model}
-          folder={project?.folder ?? folder?.path}
+          folder={project?.folder}
           value={draft}
           onChange={edit}
           inputRef={input}

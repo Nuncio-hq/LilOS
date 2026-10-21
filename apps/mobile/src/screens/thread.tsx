@@ -461,7 +461,7 @@ export function Thread({
     ? findModel(catalog.models, threadPick)
     : undefined;
   const provider = catalog.providers.find((p) => p.id === modelRow?.provider);
-  /* #483: same contract as the DM composer — a confirmed-empty catalog
+  /* #483: same contract as the new-thread composer — a confirmed-empty catalog
      keeps a disabled "Models unavailable" chip whose press retries. */
   const modelChip = catalog.models.length
     ? threadPick
@@ -617,7 +617,7 @@ export function Thread({
                 testID="thread-gone-back"
                 onPress={() => {
                   if (goneEmployeeId) {
-                    /* The DM for this employee is already under the Thread
+                    /* The employee's thread list is already under the Thread
                        (pushThread stacked it); popTo drops the dead
                        Thread and lands on it. */
                     navigation.popTo("Dm", { employeeId: goneEmployeeId });
@@ -819,7 +819,7 @@ export function Plan({
 }
 
 /** #181 — one helper of this thread: brief, steps, report; an employee
-    helper's sheet links to its own DM thread (D-#25 — a link, never a copy). */
+    helper's sheet links to its own thread (D-#25 — a link, never a copy). */
 export function Subagent({
   navigation,
   route,

@@ -8,13 +8,12 @@ import type { V3Data, V3Nav } from "@lilos/ui";
    on purpose: no DOM, no stores. */
 
 /** Work, Goals and Inbox wait for tickets (M2): a link to one lands on Home
-    and a ticket, goal or project record is not opened. */
+    and a ticket or goal record is not opened. A project is not gated: it is
+    a folder the company works in (D-#771), with its threads, tickets or not. */
 export function visibleNav(nav: V3Nav, tickets: boolean): V3Nav {
   if (tickets) return nav;
   const gated = ["work", "inbox", "goals"].includes(nav.page.page);
-  const peek = nav.peek.filter(
-    (r) => r.page !== "ticket" && r.page !== "goal" && r.page !== "project",
-  );
+  const peek = nav.peek.filter((r) => r.page !== "ticket" && r.page !== "goal");
   if (!gated && peek.length === nav.peek.length) return nav;
   return { ...nav, page: gated ? { page: "home" } : nav.page, peek };
 }

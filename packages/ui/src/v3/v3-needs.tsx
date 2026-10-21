@@ -4,8 +4,10 @@ import { INK, StatusDot } from "./v3-marks";
 import {
   agentNameOf,
   agentOf,
+  askTag,
   FORMER_AGENT,
   threadsOf,
+  threadTag,
   ticketOf,
 } from "./v3-model";
 import { CHIP, OpenAsk } from "./v3-needs-ask";
@@ -107,6 +109,8 @@ export function V3Needs({ data, go, act }: V3PageProps) {
       key: string;
       title: string;
       ticketId?: string;
+      /** Where it lives, in a word: its ticket, its project, or "Chat". */
+      tag: string;
       by: string;
       note: string;
       minutes: number;
@@ -121,6 +125,7 @@ export function V3Needs({ data, go, act }: V3PageProps) {
         key: th.id,
         title: th.title,
         ticketId: th.ticketId,
+        tag: threadTag(data, th),
         by: th.agentId,
         note: th.quote ? `“${th.quote}”` : (th.summary ?? ""),
         minutes: t?.doneAgo ?? t?.since ?? 0,
@@ -141,6 +146,7 @@ export function V3Needs({ data, go, act }: V3PageProps) {
         key: t.id,
         title: t.title,
         ticketId: t.id,
+        tag: t.id,
         by: t.owner,
         note: th?.summary ?? (pr ? `PR #${pr.num} · ${pr.branch}` : "Done"),
         minutes: t.doneAgo ?? 0,
@@ -219,7 +225,7 @@ export function V3Needs({ data, go, act }: V3PageProps) {
                   onClick={() => setSelected(a.id)}
                   meta={
                     <>
-                      {a.ticketId ?? "Chat"} ·{" "}
+                      {askTag(data, a)} ·{" "}
                       <b className="font-medium text-foreground">
                         {from?.name ?? FORMER_AGENT}
                       </b>{" "}
@@ -304,7 +310,7 @@ export function V3Needs({ data, go, act }: V3PageProps) {
                 }}
                 meta={
                   <>
-                    {r.ticketId ?? "Chat"} ·{" "}
+                    {r.tag} ·{" "}
                     <b className="font-medium text-foreground">
                       {agentNameOf(data, r.by)}
                     </b>

@@ -42,21 +42,27 @@ export const Employee = z.object({
 });
 export type Employee = z.infer<typeof Employee>;
 
-/** Only `dm` exists today; new kinds bump the protocol version. */
+/** Only `dm` exists today; new kinds bump the protocol version. The wire
+    name is kept for protocol compatibility — the product has no DMs
+    (D-#25): it is the routing scope of one employee's threads. */
 export const ChannelKind = z.enum(["dm"]);
 export type ChannelKind = z.infer<typeof ChannelKind>;
 
 /**
- * A DM channel is the private channel between the user and one employee
- * (D-#25: DM = private channel with exactly one employee; the relay keeps
- * one DM per employee via the `channels_dm_employee` unique index). Another
- * employee joins a thread only as a helper in their own session — a link,
- * never a member. Not: group DMs.
+ * One internal channel per employee (D-#25): purely the routing scope for
+ * that employee's messages, asks and engine events — clients subscribe to
+ * every channel and never show it as a place. The product concept is the
+ * thread, in a project or a plain chat (D-#771). The relay keeps one per
+ * employee via the `channels_dm_employee` unique index. Another employee
+ * joins a thread only as a helper in their own session — a link, never a
+ * member. Not: DMs or group chats as something the user sees, and not
+ * renamed on the wire (`channels.openDm`, kind `"dm"`) — that would break
+ * paired phones for a label nobody reads.
  */
 export const AppChannel = z.object({
   id: z.string().min(1),
   kind: ChannelKind,
-  /** The employee this DM is with. Required while `dm` is the only kind. */
+  /** The employee this channel routes for. Required while `dm` is the only kind. */
   employeeId: z.string().min(1),
   /** Highest seq assigned in this channel (0 = no messages yet). */
   lastSeq: z.int().min(0),
@@ -68,8 +74,9 @@ export type AppChannel = z.infer<typeof AppChannel>;
  * A conversation is a thread inside a channel; each conversation maps to
  * exactly one engine session via `engineRef` (D-#25; set by the harness
  * once the engine session exists — `null` until then; a rebind swaps it
- * for a fresh session, still one at a time). Not: threads detached from
- * sessions.
+ * for a fresh session, still one at a time) with one agent, and lives in a
+ * project or is a plain chat (D-#771). Not: threads detached from
+ * sessions, or a thread in two projects.
  */
 export const ConversationState = z.enum(["idle", "active", "closed"]);
 export type ConversationState = z.infer<typeof ConversationState>;
@@ -169,6 +176,13 @@ export const Conversation = z.object({
    * worktree path; `workspace.repoPath` is the picked folder.
    */
   cwd: z.string().min(1).optional(),
+  /**
+   * The project this thread lives in (D-#771); absent = a plain chat. Set
+   * only by the relay, from the folder the thread opens or moves into —
+   * a workstream thread (`cwd` = its worktree) files under `repoPath`'s
+   * project. Clients send a `cwd`, never a project id.
+   */
+  projectId: z.string().min(1).optional(),
   /** Workstream mode stamped at open (#156); absent = direct/just chat. */
   workspace: WorkspaceIntent.optional(),
   /**
@@ -204,12 +218,12 @@ export const Conversation = z.object({
    */
   usage: Usage.optional(),
   /**
-   * The last turn's failure (#419) — the DM session row's alert card.
+   * The last turn's failure (#419) — the thread row's alert card.
    * Absent once a turn started fresh or no turn has failed yet.
    */
   turnFailure: TurnFailure.optional(),
   /**
-   * The last turn ended stopped (#583) — the DM session row's "stopped"
+   * The last turn ended stopped (#583) — the thread row's "stopped"
    * word. Same lifecycle as `turnFailure`: host-written at turn end,
    * cleared on the next `turn.started`. A released or replayed session's
    * row still shows it once the live turn model is gone.
@@ -245,7 +259,7 @@ export const Conversation = z.object({
    */
   finishedSeq: z.int().min(0).default(0),
   /**
-   * Set on a session a scheduled task opened (#136): the DM marks it and
+   * Set on a session a scheduled task opened (#136): the thread is marked and
    * the chip opens the task. Host-stamped at `conversations.open`.
    */
   scheduled: z
@@ -585,7 +599,7 @@ export type PushPrefs = z.infer<typeof PushPrefs>;
 /* ----------------------- workbench targets (#340) ----------------------- */
 
 /**
- * What `workbench_open` shows in a DM's Workbench — the tab plus the focus
+ * What `workbench_open` shows in a thread's Workbench — the tab plus the focus
  * inside it. `{file, line?}` opens that file — on Changes when it is a
  * changed file, otherwise on the Files tab — scrolled to `line` when given;
  * `{diff, path?}` opens Changes, filtered to `path` when given; `{pr}`

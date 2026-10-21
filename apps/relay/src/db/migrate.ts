@@ -297,7 +297,7 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
   },
   {
     /* #419: the last turn's failure (JSON TurnFailure: kind + text) — the
-       DM session row's alert card, host-written and cleared on the next
+       thread row's alert card, host-written and cleared on the next
        turn.started. */
     version: 19,
     statements: [`ALTER TABLE conversations ADD COLUMN turn_failure TEXT`],
@@ -323,7 +323,7 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
     ],
   },
   {
-    /* #583: the last turn ended stopped — the DM session row's "stopped"
+    /* #583: the last turn ended stopped — the thread row's "stopped"
        word survives a released/replayed session (the live turn model is
        gone). Host-written, cleared on the next `turn.started` — same
        lifecycle as v19's turn_failure. */
@@ -331,7 +331,7 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
     statements: [`ALTER TABLE conversations ADD COLUMN turn_stopped INTEGER`],
   },
   {
-    /* #583 AC-3: running background-job count — the DM session row's
+    /* #583 AC-3: running background-job count — the thread row's
        "N in background" badge and the session-watch seed survive a
        released session (the live job model is gone). Host-written on
        `job.started`/`job.exited` — same lifecycle as v19's turn_failure. */
@@ -364,7 +364,7 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
   {
     /* #136: scheduled tasks — relay-owned records the host's clock fires
        as `conversations.open`; `conversations.scheduled` marks a run's
-       session so the DM shows where it came from. */
+       session so the thread shows where it came from. */
     version: 27,
     statements: [
       `CREATE TABLE scheduled_tasks (
@@ -385,6 +385,28 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
       `CREATE INDEX scheduled_tasks_employee
         ON scheduled_tasks(employee_id)`,
       `ALTER TABLE conversations ADD COLUMN scheduled TEXT`,
+    ],
+  },
+  {
+    /* D-#771: projects — a folder the company works in, unique by folder
+       and by key. A thread points at its project (`project_id`, NULL = a
+       plain chat). The columns only; filing the existing conversations is
+       the boot backfill (`apps/relay/src/projects.ts`), because it needs
+       the Mac's home folder to put every cwd into the one `~/x` spelling. */
+    version: 28,
+    statements: [
+      `CREATE TABLE projects (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        key TEXT NOT NULL,
+        folder TEXT NOT NULL,
+        about TEXT NOT NULL DEFAULT '',
+        created_at INTEGER NOT NULL
+      )`,
+      `CREATE UNIQUE INDEX projects_key ON projects(key)`,
+      `CREATE UNIQUE INDEX projects_folder ON projects(folder)`,
+      `ALTER TABLE conversations ADD COLUMN project_id TEXT REFERENCES projects(id)`,
+      `CREATE INDEX conversations_project ON conversations(project_id)`,
     ],
   },
 ];

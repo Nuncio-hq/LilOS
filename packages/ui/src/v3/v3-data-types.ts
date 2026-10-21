@@ -239,10 +239,10 @@ export type V3Data = {
   /** Openers a new chat offers as one-click prompts. Absent: none (the
      real app has no source for them yet). */
   starters?: string[];
-  /** Folders a new chat can work in when the company has no projects yet:
-     the app's recent folders. Absent = no folder choice. Unreachable folders
-     are left out. The draft opens on the folder of the agent's `lastChat`,
-     or on "No folder" when that chat had none. */
+  /** What the app knows of the folders it has been given (its recents):
+     what a project's folder looks like in the new chat's box (its branch),
+     and the places a schedule can run in when the company has no projects
+     yet. Absent = nothing known. Unreachable folders are left out. */
   folders?: {
     path: string;
     label: string;

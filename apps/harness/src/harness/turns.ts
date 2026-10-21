@@ -90,7 +90,7 @@ export async function finishTurn(
   }
   this.updateConversation(binding.conversationId, {
     state: "idle",
-    /* #419: the DM session card's failure — the turn model carries it
+    /* #419: the thread session card's failure — the turn model carries it
        too, but the row keeps it across a session rebind/reload. A
        backend-death turn was already stamped by surfaceBackendDown. */
     ...(event.payload.error && event.payload.errorCode !== BACKEND_DOWN

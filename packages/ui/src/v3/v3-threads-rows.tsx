@@ -2,8 +2,9 @@ import { ChevronRightIcon } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { cn } from "../lib/utils";
 import { Meter, span, TicketId } from "./v3-bits";
+import type { V3Data } from "./v3-data-types";
 import { ThreadPill } from "./v3-live";
-import { agentOf } from "./v3-model";
+import { agentOf, threadTag } from "./v3-model";
 import { RowButton } from "./v3-open-record";
 import type { V3PageProps } from "./v3-page-types";
 import { AgentName } from "./v3-rows";
@@ -18,17 +19,20 @@ import type { V3Thread } from "./v3-types";
 
 type Row = V3PageProps & { t: V3Thread; archived?: boolean };
 
-/** The title with its ticket tag; the input while it is being renamed. */
+/** The title with its tag (ticket or project); the input while it is being
+    renamed. */
 function RowTitle({
+  data,
   t,
   editing,
 }: {
+  data: V3Data;
   t: V3Thread;
   editing: ReactNode | undefined;
 }) {
   return (
     <span className="flex min-w-0 items-center">
-      <TicketId id={t.ticketId ?? "Chat"} className="shrink-0" />
+      <TicketId id={threadTag(data, t)} className="shrink-0" />
       {editing ?? <span className="truncate">{t.title}</span>}
     </span>
   );
@@ -37,6 +41,7 @@ function RowTitle({
 /** One row: the thread's title (renameable), then `children` (its cells),
     then the menu. `grid` names the columns. */
 function ThreadRow({
+  data,
   t,
   go,
   act,
@@ -67,7 +72,7 @@ function ThreadRow({
           className,
         )}
       >
-        <RowTitle t={t} editing={input} />
+        <RowTitle data={data} t={t} editing={input} />
         {children}
         <span className="flex justify-end">{menu}</span>
       </RowButton>

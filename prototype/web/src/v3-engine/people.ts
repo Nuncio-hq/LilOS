@@ -175,7 +175,7 @@ export function peopleActions({ setData, getData, toast }: Engine): Pick<
       const profile = getData().agents.find((a) => a.id === id)?.profile;
       const threadIds = new Set(getData().threads.filter((t) => t.agentId === id).map((t) => t.id));
       for (const t of threadIds) cancelTurn(t);
-      // The real relay deletes the agent's DMs and scheduled jobs with it;
+      // The real relay deletes the agent's threads and scheduled jobs with it;
       // tickets it owned stay, and read "Former agent".
       setData((d) => ({
         ...d,

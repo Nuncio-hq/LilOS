@@ -447,7 +447,9 @@
         "schedules.create",
         "schedules.update",
         "schedules.delete",
-        "schedules.runNow"
+        "schedules.runNow",
+        "projects.list",
+        "projects.create"
       ]
     },
     "AppEventMethod": {
@@ -476,7 +478,8 @@
         "engine.event",
         "workbench.opened",
         "schedule.upserted",
-        "schedule.removed"
+        "schedule.removed",
+        "project.upserted"
       ]
     },
     "HelloParams": {
@@ -1737,6 +1740,10 @@
           "type": "string",
           "minLength": 1
         },
+        "projectId": {
+          "type": "string",
+          "minLength": 1
+        },
         "workspace": {
           "oneOf": [
             {
@@ -2077,6 +2084,10 @@
                 "type": "boolean"
               },
               "cwd": {
+                "type": "string",
+                "minLength": 1
+              },
+              "projectId": {
                 "type": "string",
                 "minLength": 1
               },
@@ -2496,6 +2507,10 @@
               "type": "boolean"
             },
             "cwd": {
+              "type": "string",
+              "minLength": 1
+            },
+            "projectId": {
               "type": "string",
               "minLength": 1
             },
@@ -3066,6 +3081,10 @@
               "type": "boolean"
             },
             "cwd": {
+              "type": "string",
+              "minLength": 1
+            },
+            "projectId": {
               "type": "string",
               "minLength": 1
             },
@@ -4621,6 +4640,10 @@
               "type": "string",
               "minLength": 1
             },
+            "projectId": {
+              "type": "string",
+              "minLength": 1
+            },
             "workspace": {
               "oneOf": [
                 {
@@ -5341,6 +5364,10 @@
                     "type": "boolean"
                   },
                   "cwd": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "projectId": {
                     "type": "string",
                     "minLength": 1
                   },
@@ -7822,6 +7849,10 @@
               "type": "string",
               "minLength": 1
             },
+            "projectId": {
+              "type": "string",
+              "minLength": 1
+            },
             "workspace": {
               "oneOf": [
                 {
@@ -8620,6 +8651,211 @@
       },
       "required": [
         "employeeId"
+      ]
+    },
+    "Project": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "key": {
+          "type": "string",
+          "pattern": "^[A-Z0-9]{1,8}$"
+        },
+        "folder": {
+          "type": "string",
+          "minLength": 1
+        },
+        "about": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "key",
+        "folder",
+        "about",
+        "createdAt"
+      ]
+    },
+    "ProjectsListParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "ProjectsListResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "projects": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "key": {
+                "type": "string",
+                "pattern": "^[A-Z0-9]{1,8}$"
+              },
+              "folder": {
+                "type": "string",
+                "minLength": 1
+              },
+              "about": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "key",
+              "folder",
+              "about",
+              "createdAt"
+            ]
+          }
+        }
+      },
+      "required": [
+        "projects"
+      ]
+    },
+    "ProjectsCreateParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "folder": {
+          "type": "string",
+          "minLength": 1
+        },
+        "about": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "folder"
+      ]
+    },
+    "ProjectResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "project": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "key": {
+              "type": "string",
+              "pattern": "^[A-Z0-9]{1,8}$"
+            },
+            "folder": {
+              "type": "string",
+              "minLength": 1
+            },
+            "about": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "key",
+            "folder",
+            "about",
+            "createdAt"
+          ]
+        }
+      },
+      "required": [
+        "project"
+      ]
+    },
+    "ProjectUpsertedEvent": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "project": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "key": {
+              "type": "string",
+              "pattern": "^[A-Z0-9]{1,8}$"
+            },
+            "folder": {
+              "type": "string",
+              "minLength": 1
+            },
+            "about": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "key",
+            "folder",
+            "about",
+            "createdAt"
+          ]
+        }
+      },
+      "required": [
+        "project"
       ]
     },
     "ConversationModelRequestedEvent": {

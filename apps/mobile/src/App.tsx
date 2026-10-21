@@ -779,7 +779,7 @@ export default function App() {
                 <Stack.Screen
                   name="Sessions"
                   component={Sessions}
-                  options={{ title: "Sessions" }}
+                  options={{ title: "Threads" }}
                 />
                 <Stack.Screen name="Dm" component={Dm} options={CHAT_HEADER} />
                 <Stack.Screen
