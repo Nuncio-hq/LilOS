@@ -2,7 +2,7 @@ import { type ReactNode, useState } from "react";
 import { cn } from "../lib/utils";
 import { ago, TicketId } from "./v3-bits";
 import type { V3Data } from "./v3-data-types";
-import { AgentAvatar, INK, ProjectMark, StatusPill } from "./v3-marks";
+import { AgentAvatar, CeoMark, INK, ProjectMark, StatusPill } from "./v3-marks";
 import { agentNameOf, agentOf, FORMER_AGENT, projectOf } from "./v3-model";
 import { RowButton } from "./v3-open-record";
 import type { V3Route } from "./v3-page-types";
@@ -46,6 +46,7 @@ export function Who({ data, id }: { data: V3Data; id: string }) {
     <span className="flex min-w-0 items-center gap-2 font-medium">
       <AgentAvatar data={data} agent={a} />
       <span className="truncate">{a?.name ?? FORMER_AGENT}</span>
+      {a?.id === data.ceoId && <CeoMark />}
     </span>
   );
 }

@@ -616,11 +616,14 @@ export async function openDefaultAgent(
   await page.goto(`${webUrl}/`);
   const row = v3Sidebar(page).getByRole("button", { name: /default/i });
   await expect(row).toBeVisible({ timeout });
-  const name = (await row.innerText())
+  /* The last line is the name. The avatar's letter is the line above it,
+     and the CEO chip is its own word once someone holds the position
+     (D-#778) — drop that word, keep the name. */
+  const lines = (await row.innerText())
     .split("\n")
     .map((l) => l.trim())
-    .filter(Boolean)
-    .pop() as string;
+    .filter((l) => l.length > 0 && l !== "CEO");
+  const name = (lines.pop() ?? "").replace(/\s+CEO$/, "").trim();
   await row.click();
   await expect(page).toHaveURL(/open=agent:[^&,]+/);
   const id = decodeURIComponent(

@@ -1844,7 +1844,7 @@
     },
     {
       "name": "team_hire",
-      "description": "Ask the user to hire an employee (name, role, model, instructions; `profile` reuses an existing engine profile). Waits for approval; returns the new employee record.",
+      "description": "Ask the user to hire an employee (name, role, model, instructions; `profile` reuses an existing engine profile). Waits for approval; returns the new employee record. Every agent may propose a hire, and a company with no CEO still can.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1928,6 +1928,46 @@
       "_meta": {
         "lilos/area": "team",
         "lilos/access": "approval"
+      }
+    },
+    {
+      "name": "team_set_ceo",
+      "description": "Ask the user to give the CEO position to an employee. Everyone who reported to the previous CEO or to the owner then reports to them; they report to the owner. Waits for approval.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "employeeId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "employeeId"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ceoId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "ceoId"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "_meta": {
+        "lilos/area": "team",
+        "lilos/access": "approval",
+        "lilos/ceoOnly": true
       }
     },
     {
@@ -3900,7 +3940,7 @@
     },
     {
       "name": "ticket_assign",
-      "description": "Give a ticket to one employee (ownerId, or \"ceo\" for whoever stands in). Does not ask. Sets the owner and opens their thread in one step. Assigning again adds the next hand's thread.",
+      "description": "Give a ticket to one employee (ownerId, or \"ceo\" for whoever stands in). Handing a ticket to an agent is the CEO's job: only the holder's session is offered this, and with no CEO it is offered to nobody. Does not ask. Sets the owner and opens their thread in one step. Assigning again adds the next hand's thread.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -4216,7 +4256,8 @@
       },
       "_meta": {
         "lilos/area": "ticket",
-        "lilos/access": "write"
+        "lilos/access": "write",
+        "lilos/ceoOnly": true
       }
     },
     {

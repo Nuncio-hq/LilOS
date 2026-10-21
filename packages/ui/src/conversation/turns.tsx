@@ -1,4 +1,5 @@
 import { CopyIcon, RefreshCcwIcon } from "lucide-react";
+import { useContext } from "react";
 import { SteerRows } from "../chat/agent-chat";
 import { effortLabel } from "../chat/model-picker";
 import {
@@ -13,6 +14,7 @@ import { withFileMentionChips } from "../lib/mentions";
 import { HermesAvatar } from "../shell/avatars";
 import type { EmpFn, HumanFn, ModelOption, Reply, WbTab } from "../types";
 import { VIEWER_ID } from "../types";
+import { CeoEmployeeContext, CeoMark } from "../v3/v3-marks";
 import { turnChangedFiles } from "../workbench/artifacts";
 import { type PlanAction, PlanCard } from "./plan-card";
 import { SubagentsLink, TurnSubagents } from "./subagents";
@@ -71,6 +73,8 @@ export function AgentTurn({
   keyTarget?: string;
 }) {
   const e = emp(r.from);
+  /* The position, not a turn variant: the shell names the holder (D-#778). */
+  const ceoId = useContext(CeoEmployeeContext);
   const steps = r.steps ?? [];
   const files = turnChangedFiles(r).size;
   /* "Working" until the answer starts; then the fold reads "Worked". */
@@ -160,6 +164,7 @@ export function AgentTurn({
         >
           <HermesAvatar name={e?.name} className="size-5" />
           <span className="font-medium text-foreground">{e?.name}</span>
+          {e?.id === ceoId && <CeoMark />}
           {r.time && (
             <span className="text-[12px] text-muted-foreground/70">
               {r.time}

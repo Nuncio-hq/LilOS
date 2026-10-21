@@ -250,6 +250,8 @@ export function createSurfaces(
   binding: SessionBinding,
   conv: Conversation | undefined,
   employee: Employee | undefined,
+  /* Snapshot taken by the caller immediately before session.start (D-#778). */
+  ceoAtStart = false,
 ): { session: string; mcpServer?: McpServer } | undefined {
   const surfaces = this.opts.surfaces;
   if (!surfaces) return undefined;
@@ -261,6 +263,7 @@ export function createSurfaces(
   try {
     const handle = surfaces.create({
       cwd: binding.cwd,
+      ceoAtStart,
       ...(employeeId && employee
         ? {
             binding: {

@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
-import { LILOS_TOOLS } from "@lilos/contracts/harness";
+import { LILOS_TOOLS, toolsForSession } from "@lilos/contracts/harness";
 import { describe, expect, it } from "vitest";
 import { SessionSurfaces } from "../src/index.js";
 import {
@@ -92,8 +92,10 @@ describe("AC-2 MCP server: tools/list + tools/call over real stdio", () => {
       const list = (await request("tools/list")) as {
         tools: { name: string; description: string }[];
       };
+      /* This session did not start as CEO, so the CEO-only tools stay
+         off the list (D-#778). The gateway is what this process asked. */
       expect(list.tools.map((t) => t.name).sort()).toEqual(
-        Object.keys(LILOS_TOOLS).sort(),
+        toolsForSession(scope.areas, false).sort(),
       );
       expect(list.tools[0].description).toBeTruthy();
 

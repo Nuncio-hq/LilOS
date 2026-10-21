@@ -64,6 +64,8 @@ export class SessionSurfaces implements ViewerScope {
   /** Areas this session really has — drives `tools/list` + the host policy. */
   readonly areas: ReadonlySet<ToolArea>;
   readonly binding?: SessionBinding;
+  /** Snapshot from session start (D-#778). Default false: no CEO tools. */
+  readonly ceoAtStart: boolean;
 
   private readonly spawnPty: PtySpawner;
   private readonly createBrowser?: () => Promise<BrowserDriver>;
@@ -108,6 +110,7 @@ export class SessionSurfaces implements ViewerScope {
     this.createBrowser = opts.createBrowser;
     this.appOps = opts.appOps;
     this.binding = opts.binding;
+    this.ceoAtStart = opts.ceoAtStart === true;
     this.areas = new Set<ToolArea>([
       // The PTY is always spawned; the preview scanner rides on its output.
       "terminal",
@@ -589,6 +592,11 @@ export class SessionSurfaces implements ViewerScope {
     });
   }
 
+  /** Live holder. Absent app ops (an unbound session) means nobody holds it. */
+  currentCeoId(): Promise<string | undefined> {
+    return this.appOps?.ceoId() ?? Promise.resolve(undefined);
+  }
+
   teamHire(p: TeamHireParams) {
     return this.tracked("team_hire", `${p.name} (${p.role})`, async () => {
       const ops = this.requireAppOps();
@@ -602,6 +610,13 @@ export class SessionSurfaces implements ViewerScope {
           model: e.model,
         },
       };
+    });
+  }
+
+  teamSetCeo(p: { employeeId: string }) {
+    return this.tracked("team_set_ceo", p.employeeId, async () => {
+      const ops = this.requireAppOps();
+      return await ops.setCeo(p.employeeId);
     });
   }
 

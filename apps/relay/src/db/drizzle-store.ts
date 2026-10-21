@@ -23,12 +23,16 @@ import type {
 } from "@lilos/contracts/app";
 import {
   AskHireProposal,
+  assertReportsAcyclic,
+  CEO_SETTING_KEY,
+  reportsToAfterCeo,
   TicketResult,
   TicketStatus,
   TicketStep,
   TicketWaitingOn,
   toSummaryMessage,
   toSummaryPreview,
+  withReportsTo,
 } from "@lilos/contracts/app";
 import { equalSecret } from "@lilos/contracts/auth";
 import {
@@ -530,10 +534,37 @@ export function createDrizzleStore(db: Db): RelayStore {
       return row ? rowToEmployee(row) : null;
     },
     async createEmployee(input) {
+      /* A holder already in the seat: the new person reports to them,
+         matching the Hire page (D-#778). No holder, they report to the
+         owner (D-#775). A stale ceoId that names nobody is ignored. */
+      let reportsTo: string | undefined;
+      const stored = db
+        .select()
+        .from(schema.settings)
+        .where(eq(schema.settings.key, CEO_SETTING_KEY))
+        .get();
+      if (stored) {
+        try {
+          const value = JSON.parse(stored.value) as unknown;
+          if (
+            typeof value === "string" &&
+            db
+              .select({ id: schema.employees.id })
+              .from(schema.employees)
+              .where(eq(schema.employees.id, value))
+              .get()
+          ) {
+            reportsTo = value;
+          }
+        } catch {
+          reportsTo = undefined;
+        }
+      }
       const employee: Employee = {
         id: newId("emp"),
         createdAt: now(),
         ...input,
+        ...(reportsTo ? { reportsTo } : {}),
       };
       db.insert(schema.employees).values(employee).run();
       return employee;
@@ -596,8 +627,81 @@ export function createDrizzleStore(db: Db): RelayStore {
             .run();
         }
         tx.delete(schema.employees).where(eq(schema.employees.id, id)).run();
-        return { employee: rowToEmployee(employee), channelIds };
+        /* The holder leaving clears the position in this same write
+           (D-#778). A later settings.changed is the session's job. */
+        let clearedCeo = false;
+        const stored = tx
+          .select()
+          .from(schema.settings)
+          .where(eq(schema.settings.key, CEO_SETTING_KEY))
+          .get();
+        if (stored) {
+          try {
+            const value = JSON.parse(stored.value) as unknown;
+            if (value === id) {
+              tx.delete(schema.settings)
+                .where(eq(schema.settings.key, CEO_SETTING_KEY))
+                .run();
+              clearedCeo = true;
+            }
+          } catch {
+            clearedCeo = false;
+          }
+        }
+        return { employee: rowToEmployee(employee), channelIds, clearedCeo };
       });
+    },
+    async setCeo(employeeId) {
+      const target = db
+        .select()
+        .from(schema.employees)
+        .where(eq(schema.employees.id, employeeId))
+        .get();
+      if (!target) return null;
+      const stored = db
+        .select()
+        .from(schema.settings)
+        .where(eq(schema.settings.key, CEO_SETTING_KEY))
+        .get();
+      let oldCeoId: string | undefined;
+      if (stored) {
+        try {
+          const value = JSON.parse(stored.value) as unknown;
+          if (typeof value === "string") oldCeoId = value;
+        } catch {
+          oldCeoId = undefined;
+        }
+      }
+      /* Already the holder: the edges are the ones the last write left. */
+      if (oldCeoId === employeeId) {
+        return { ceoId: employeeId, employees: [], changed: false };
+      }
+      const all = db.select().from(schema.employees).all().map(rowToEmployee);
+      const patches = reportsToAfterCeo(all, oldCeoId, employeeId);
+      /* Refuse before the transaction so a cycle never lands (D-#778). */
+      assertReportsAcyclic(withReportsTo(all, patches));
+      const employees = db.transaction((tx) => {
+        const changed: Employee[] = [];
+        for (const patch of patches) {
+          const updated = tx
+            .update(schema.employees)
+            .set({ reportsTo: patch.reportsTo })
+            .where(eq(schema.employees.id, patch.id))
+            .returning()
+            .get();
+          if (updated) changed.push(rowToEmployee(updated));
+        }
+        const serialized = JSON.stringify(employeeId);
+        tx.insert(schema.settings)
+          .values({ key: CEO_SETTING_KEY, value: serialized })
+          .onConflictDoUpdate({
+            target: schema.settings.key,
+            set: { value: serialized },
+          })
+          .run();
+        return changed;
+      });
+      return { ceoId: employeeId, employees, changed: true };
     },
     async listChannels() {
       return db

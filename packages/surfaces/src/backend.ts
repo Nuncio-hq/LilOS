@@ -30,6 +30,8 @@ import type {
   TeamHireParams,
   TeamHireResult,
   TeamListResult,
+  TeamSetCeoParams,
+  TeamSetCeoResult,
   TeamUpdateParams,
   TeamUpdateResult,
   TerminalReadResult,
@@ -102,6 +104,7 @@ export interface SurfaceBackend {
   scheduleDelete(p: ScheduleTaskRef): Promise<ScheduleDeletedResult>;
   scheduleRunNow(p: ScheduleTaskRef): Promise<ScheduleTaskResult>;
   teamHire(p: TeamHireParams): Promise<TeamHireResult>;
+  teamSetCeo(p: TeamSetCeoParams): Promise<TeamSetCeoResult>;
   teamUpdate(p: TeamUpdateParams): Promise<TeamUpdateResult>;
   folderAdd(p: FolderAddParams): Promise<FolderAddResult>;
   projectList(): Promise<ProjectListResult>;
@@ -122,6 +125,9 @@ export interface SurfaceBackend {
   threadSetTitle(p: ThreadSetTitleParams): Promise<ThreadSetTitleResult>;
   threadPrs(): Promise<ThreadPrsResult>;
   threadStart(p: ThreadStartParams): Promise<ThreadStartResult>;
+  /** Present on a session scope. Call time uses it to refuse a CEO-only tool (D-#778). */
+  readonly binding?: SessionBinding;
+  currentCeoId?(): Promise<string | undefined>;
 }
 
 /**
@@ -136,6 +142,8 @@ export interface ViewerScope extends SurfaceBackend {
   readonly areas: ReadonlySet<ToolArea>;
   /** Who/what the session is bound to (employee, channel, conversation). */
   readonly binding?: SessionBinding;
+  /** Snapshot: this session's employee held the CEO position at start (D-#778). */
+  readonly ceoAtStart: boolean;
   /** Page-space input (viewer takeover) — CDP Input.dispatch* territory. */
   browserInput(evt: ViewerBrowserInputEvent): void;
   terminalInput(data: string): void;
@@ -204,7 +212,9 @@ export class SurfaceError extends Error {
       /** A Workbench user holds the terminal (issue #56) → HTTP 409. */
       | "user_control"
       /** The user declined an approval-gated company change. */
-      | "declined",
+      | "declined"
+      /** A CEO-only tool called by a session that does not hold the position (D-#778). */
+      | "forbidden",
     message: string,
   ) {
     super(message);

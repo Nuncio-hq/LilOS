@@ -469,6 +469,13 @@ ${tail}`,
           steps.push({ tool: tool("thread_start"), input, output: "" });
           break;
         }
+        case "set-ceo":
+          steps.push({
+            tool: tool("team_set_ceo"),
+            input: { employeeId: arg.trim() },
+            output: "",
+          });
+          break;
         case "hire": {
           /* `name | role | model | instructions` — last part optional. */
           const [name, role, model, ...instr] = arg

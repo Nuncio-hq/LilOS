@@ -20,6 +20,7 @@ import { createLogTail, type LogTail } from "./logtail";
 import type { PairingService } from "./pairing";
 import type { PushFanout } from "./push";
 import { handleAsks } from "./session/asks";
+import { handleCeo } from "./session/ceo";
 import { handleChannel } from "./session/channel";
 import { handleConversations } from "./session/conversations";
 import type { RelayCtx, RelaySharedCtx } from "./session/ctx";
@@ -158,6 +159,7 @@ const METHOD_HANDLERS: ReadonlyMap<
   ["employees.create", handleDirectory],
   ["employees.update", handleDirectory],
   ["employees.remove", handleDirectory],
+  ["company.setCeo", handleCeo],
   ["channels.list", handleDirectory],
   ["folders.list", handleDirectory],
   ["folders.add", handleDirectory],

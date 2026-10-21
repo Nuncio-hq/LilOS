@@ -19,6 +19,7 @@ import { folders } from "../lib/folders";
 import { currentCompany, currentName, osFullName, profile } from "../lib/me";
 import {
   asks,
+  companyCeoId,
   engine as engineClient,
   engineDefaultModel,
   engineDefaultProvider,
@@ -186,6 +187,7 @@ export function v3DataStore(): ReadableAtom<V3Data> {
       relay.projects,
       relay.goals,
       relay.tickets,
+      companyCeoId,
     ],
     (
       employees,
@@ -210,6 +212,7 @@ export function v3DataStore(): ReadableAtom<V3Data> {
       projects,
       goals,
       tickets,
+      holderId,
     ): V3Data => {
       const src = {
         now,
@@ -228,6 +231,7 @@ export function v3DataStore(): ReadableAtom<V3Data> {
         company: companyName,
         me,
         today: todayText(now),
+        ...(holderId ? { ceoId: holderId } : {}),
         agents: employees.map((e) =>
           toAgent(
             e,

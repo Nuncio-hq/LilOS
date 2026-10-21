@@ -1,15 +1,15 @@
 import { CornerDownLeftIcon, SparklesIcon } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "../lib/utils";
 import { Btn, Kbd, Spinner } from "./v3-bits";
 import type { V3Data, V3Draft } from "./v3-data-types";
-import { Avatar } from "./v3-marks";
+import { AgentAvatar, Avatar, CeoMark } from "./v3-marks";
 import type { V3Actions, V3Route } from "./v3-page-types";
 import { MessageHitRow, useMessageHits } from "./v3-palette-messages";
 import { Footer, PlanView } from "./v3-palette-plan";
 
 type Plan = Extract<V3Draft, { kind: "plan" }>;
-type Jump = { label: string; hint: string; route: V3Route };
+type Jump = { label: ReactNode; hint: string; route: V3Route };
 
 const TRY = [
   "Launch QRit Pro on Product Hunt next Tuesday",
@@ -28,6 +28,7 @@ export function V3Palette({
   data,
   seed,
   draft,
+  onAskCeo,
   onStart,
   onClose,
   go,
@@ -36,8 +37,10 @@ export function V3Palette({
 }: {
   data: V3Data;
   seed: string;
-  /** The CEO behind it; absent, ⌘K only searches and jumps. */
+  /** The prototype's CEO: a reply or a draft plan. Absent in the app. */
   draft?: (text: string, data: V3Data) => V3Draft;
+  /** Opens a thread with the holder (D-#778). Absent, ⌘K only searches. */
+  onAskCeo?: (text: string) => void;
   onStart: (plan: Plan, text: string) => void;
   onClose: () => void;
   go: (r: V3Route) => void;
@@ -87,7 +90,12 @@ export function V3Palette({
         .filter((a) => hit(a.name) || hit(a.role))
         .map(
           (a): Jump => ({
-            label: a.name,
+            label: (
+              <span className="inline-flex min-w-0 items-center gap-1.5">
+                <span className="truncate">{a.name}</span>
+                {a.id === data.ceoId && <CeoMark />}
+              </span>
+            ),
             hint: a.role,
             route: { page: "agent", id: a.id },
           }),
@@ -127,10 +135,13 @@ export function V3Palette({
 
   const messages = useMessageHits(text, searchMessages, data);
 
-  /* With a CEO, the first rows ask it (the typed line, or the suggestions
-     when nothing is typed); the rest jump, then the messages found. Without
-     one, every row jumps. */
-  const lead = draft ? (text.trim() ? 1 : TRY.length) : 0;
+  /* A holder plus a way to reach them: the prototype drafts a plan, the
+     app opens a thread (D-#778). Without a holder, every row jumps.
+     One Ask row: the app always, the prototype once there is text. */
+  const holderAgent = data.agents.find((a) => a.id === data.ceoId);
+  const canAsk = !!holderAgent && (!!draft || !!onAskCeo);
+  const showAsk = (canAsk && !draft) || (!!draft && text.trim().length > 0);
+  const lead = showAsk ? 1 : draft && !text.trim() ? TRY.length : 0;
   const rows = lead + jumps.length + messages.length;
 
   const submit = (line: string) => {
@@ -145,7 +156,11 @@ export function V3Palette({
 
   const pick = (i: number) => {
     if (i < lead) {
-      submit(text.trim() ? text : TRY[i]);
+      if (draft) submit(text.trim() ? text : TRY[i]);
+      else {
+        onAskCeo?.(text.trim());
+        onClose();
+      }
       return;
     }
     const jump = jumps[i - lead];
@@ -175,7 +190,7 @@ export function V3Palette({
     >
       <div
         role="dialog"
-        aria-label={draft ? "Ask the CEO" : "Search"}
+        aria-label={canAsk ? "Ask the CEO" : "Search"}
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
           if (e.key === "Escape") onClose();
@@ -216,9 +231,11 @@ export function V3Palette({
               }
             }}
             placeholder={
-              draft
+              canAsk && draft
                 ? "Ask the CEO anything, or give the company work…"
-                : "Search people, threads, projects…"
+                : canAsk
+                  ? "Ask the CEO, or search people, threads, projects…"
+                  : "Search people, threads, projects…"
             }
             className="min-w-0 flex-1 bg-transparent text-[16px] outline-none placeholder:text-muted-foreground/70"
           />
@@ -227,20 +244,26 @@ export function V3Palette({
 
         {phase === "input" && (
           <div className="max-h-[52vh] overflow-y-auto p-2">
-            {!draft ? null : text.trim() ? (
+            {showAsk ? (
               <Row
                 on={sel === 0}
                 onClick={() => pick(0)}
                 onHover={() => setSel(0)}
               >
-                <Avatar name="CEO" tone="c" size={18} />
+                <AgentAvatar data={data} agent={holderAgent} size={18} />
                 <span className="min-w-0 flex-1 truncate">
-                  Ask the CEO:{" "}
-                  <span className="font-medium">“{text.trim()}”</span>
+                  {text.trim() ? (
+                    <>
+                      Ask the CEO:{" "}
+                      <span className="font-medium">“{text.trim()}”</span>
+                    </>
+                  ) : (
+                    "Ask the CEO"
+                  )}
                 </span>
                 <CornerDownLeftIcon className="size-3.5 text-muted-foreground" />
               </Row>
-            ) : (
+            ) : draft && !text.trim() ? (
               <>
                 <Group>Try</Group>
                 {TRY.map((t, i) => (
@@ -255,7 +278,7 @@ export function V3Palette({
                   </Row>
                 ))}
               </>
-            )}
+            ) : null}
             {jumps.length > 0 && <Group>Go to</Group>}
             {jumps.map((j, i) => {
               const idx = lead + i;

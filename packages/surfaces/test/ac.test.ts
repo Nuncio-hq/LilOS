@@ -18,6 +18,8 @@ function makeScope(overrides: {
   spawner?: FakePtySpawner;
   createBrowser?: () => Promise<FakeBrowser>;
   browserOpTimeoutMs?: number;
+  /** This session held the CEO position at start (D-#778). */
+  ceoAtStart?: boolean;
 }) {
   const spawner = overrides.spawner ?? new FakePtySpawner();
   const browser = overrides.browser ?? new FakeBrowser();
@@ -33,6 +35,7 @@ function makeScope(overrides: {
       channelId: "c1",
       conversationId: "conv1",
     },
+    ...(overrides.ceoAtStart ? { ceoAtStart: true } : {}),
     ...(overrides.browserOpTimeoutMs !== undefined
       ? { browserOpTimeoutMs: overrides.browserOpTimeoutMs }
       : {}),
@@ -243,7 +246,7 @@ describe("AC-2 one op set: dispatch, HTTP tool API, client", () => {
 describe("approval-gated tools: dispatch + areas + declined over HTTP", () => {
   it("the ops round-trip when the gate approves; `folder` and `project` are areas", async () => {
     const appOps = fakeAppOps();
-    const { scope } = makeScope({ appOps });
+    const { scope } = makeScope({ appOps, ceoAtStart: true });
     expect(scope.areas.has("folder")).toBe(true);
     expect(scope.areas.has("project")).toBe(true);
     const gw = await serveGateway({ sessions: [{ scope, token: "tok" }] });
@@ -322,6 +325,47 @@ describe("approval-gated tools: dispatch + areas + declined over HTTP", () => {
       expect(convs.threads.length).toBe(1);
     } finally {
       gw.server.close();
+      await scope.close();
+    }
+  });
+});
+
+describe("CEO-only tools (D-#778)", () => {
+  const setCeo = { employeeId: "emp-other" };
+
+  it("is not offered to a session that did not start as CEO", async () => {
+    const appOps = fakeAppOps();
+    const { scope } = makeScope({ appOps });
+    const gw = await serveGateway({ sessions: [{ scope, token: "tok" }] });
+    try {
+      const res = await fetch(`${gw.baseUrl}/tools/team_set_ceo`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: "Bearer tok",
+          [SESSION_HEADER]: "s1",
+        },
+        body: JSON.stringify(setCeo),
+      });
+      expect(res.status).toBe(404);
+      expect(appOps.asks).toEqual([]);
+    } finally {
+      gw.server.close();
+      await scope.close();
+    }
+  });
+
+  it("rejects the call once the position has moved", async () => {
+    const appOps = fakeAppOps([], { ceoId: "someone-else" });
+    const { scope } = makeScope({ appOps, ceoAtStart: true });
+    try {
+      await expect(
+        callTool(scope, "team_set_ceo", setCeo),
+      ).rejects.toMatchObject({
+        code: "forbidden",
+      });
+      expect(appOps.asks).toEqual([]);
+    } finally {
       await scope.close();
     }
   });

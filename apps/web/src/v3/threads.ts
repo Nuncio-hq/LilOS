@@ -71,8 +71,22 @@ function askText(ask: Ask): { title: string; text: string } {
       title: "Review the plan",
       text: "The plan is in the thread; open it to read it before you decide.",
     };
-  /* The command is "The ask" row; a description that already quotes it
-     would say it twice (D-#769), so the title keeps only the rest. */
+  /* An agent-tool approval (D-#341, a `gw-` request) is written for the
+     owner in `description`; its `command` is tool syntax with internal ids,
+     not for a person. The first sentence is the title, the rest "The ask"
+     (all of it when the title had to cut the sentence). */
+  if (ask.requestId.startsWith("gw-") && r.description?.trim()) {
+    const desc = r.description.trim();
+    const line = desc.split("\n")[0].trim();
+    const end = /[.!?](?=\s|$)/.exec(line);
+    const first = end ? line.slice(0, end.index + 1) : line;
+    const title = oneLine(first, 80);
+    const rest = desc.slice(first.length).trim();
+    return { title, text: title === first ? rest || title : desc };
+  }
+  /* An engine approval: the command is "The ask" row; a description that
+     already quotes it would say it twice (D-#769), so the title keeps only
+     the rest. */
   const said = r.description
     ?.replace(r.command, "")
     .replace(/[\s:·–—-]+$/u, "")

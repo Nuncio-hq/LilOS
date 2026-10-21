@@ -325,7 +325,9 @@ export type TeamListResult = z.infer<typeof TeamListResult>;
  * `team_hire` — propose a hire; the ask card carries the draft and
  * nothing is written until the user approves. `profile` names an existing
  * engine profile to reuse — omitted, the apply creates one from the draft
- * (`agents.create`) the way the hire dialog does.
+ * (`agents.create`) the way the hire dialog does. Hiring stays open to
+ * every agent, including a company with no CEO yet, and always asks the
+ * owner (D-#341).
  */
 export const TeamHireParams = z.strictObject({
   name: z.string().min(1),
@@ -346,6 +348,22 @@ export const TeamHireResult = z.object({
   }),
 });
 export type TeamHireResult = z.infer<typeof TeamHireResult>;
+
+/**
+ * `team_set_ceo` — propose giving the CEO position to an employee (D-#778).
+ * The ask waits; `company.setCeo` runs only after the user approves.
+ * The caller's session must be the current holder's. With no CEO, this
+ * tool is offered to nobody — the owner appoints the first holder in the
+ * app (D-#778).
+ */
+export const TeamSetCeoParams = z.strictObject({
+  employeeId: z.string().min(1),
+});
+export type TeamSetCeoParams = z.infer<typeof TeamSetCeoParams>;
+export const TeamSetCeoResult = z.object({
+  ceoId: z.string().min(1),
+});
+export type TeamSetCeoResult = z.infer<typeof TeamSetCeoResult>;
 
 /**
  * `team_update` — edit the calling employee's own record (name, role,
@@ -670,6 +688,12 @@ export interface LilosToolContract {
   doc: string;
   area: ToolArea;
   access: ToolAccess;
+  /**
+   * Offered only to a session whose employee held the CEO position when
+   * the session started, and rejected at call time unless they still do
+   * (D-#778). Absent on every other tool.
+   */
+  ceoOnly?: boolean;
 }
 
 export const LILOS_TOOLS: Record<string, LilosToolContract> = {
@@ -831,9 +855,18 @@ export const LILOS_TOOLS: Record<string, LilosToolContract> = {
   team_hire: {
     params: TeamHireParams,
     result: TeamHireResult,
-    doc: "Ask the user to hire an employee (name, role, model, instructions; `profile` reuses an existing engine profile). Waits for approval; returns the new employee record.",
+    doc: "Ask the user to hire an employee (name, role, model, instructions; `profile` reuses an existing engine profile). Waits for approval; returns the new employee record. Every agent may propose a hire, and a company with no CEO still can.",
     area: "team",
     access: "approval",
+  },
+  team_set_ceo: {
+    params: TeamSetCeoParams,
+    result: TeamSetCeoResult,
+    doc: "Ask the user to give the CEO position to an employee. Everyone who reported to the previous CEO or to the owner then reports to them; they report to the owner. Waits for approval.",
+    area: "team",
+    access: "approval",
+    /* Moving the position is the holder's proposal, and it still asks the owner. */
+    ceoOnly: true,
   },
   team_update: {
     params: TeamUpdateParams,
@@ -908,9 +941,11 @@ export const LILOS_TOOLS: Record<string, LilosToolContract> = {
   ticket_assign: {
     params: TicketAssignParams,
     result: TicketAssignResult,
-    doc: 'Give a ticket to one employee (ownerId, or "ceo" for whoever stands in). Does not ask. Sets the owner and opens their thread in one step. Assigning again adds the next hand\'s thread.',
+    doc: "Give a ticket to one employee (ownerId, or \"ceo\" for whoever stands in). Handing a ticket to an agent is the CEO's job: only the holder's session is offered this, and with no CEO it is offered to nobody. Does not ask. Sets the owner and opens their thread in one step. Assigning again adds the next hand's thread.",
     area: "ticket",
     access: "write",
+    /* #746: the CEO assigns. D2 builds on this gate (D-#778). */
+    ceoOnly: true,
   },
   ticket_comment: {
     params: TicketCommentParams,
@@ -964,6 +999,22 @@ export function toolsForAreas(areas: ReadonlySet<ToolArea>): LilosToolName[] {
   );
 }
 
+/**
+ * What one session is offered (D-#778). `ceoAtStart` is the snapshot from
+ * session start: `team_set_ceo` and `ticket_assign` are absent unless this
+ * session's employee held the position then. With no CEO, they are offered
+ * to nobody — the owner does those in the app. `team_hire` is not in that
+ * set. Call time checks the live holder separately.
+ */
+export function toolsForSession(
+  areas: ReadonlySet<ToolArea>,
+  ceoAtStart: boolean,
+): LilosToolName[] {
+  return toolsForAreas(areas).filter(
+    (name) => ceoAtStart || !LILOS_TOOLS[name].ceoOnly,
+  );
+}
+
 /* --------------------------- catalog rendering -------------------------- */
 
 /**
@@ -984,6 +1035,7 @@ export function catalogRows(names: readonly string[]) {
       _meta: {
         "lilos/area": contract.area,
         "lilos/access": contract.access,
+        ...(contract.ceoOnly ? { "lilos/ceoOnly": true } : {}),
       },
     };
   });

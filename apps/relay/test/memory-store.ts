@@ -15,7 +15,14 @@ import type {
   ScheduledTask,
   Ticket,
 } from "@lilos/contracts/app";
-import { toSummaryMessage, toSummaryPreview } from "@lilos/contracts/app";
+import {
+  assertReportsAcyclic,
+  CEO_SETTING_KEY,
+  reportsToAfterCeo,
+  toSummaryMessage,
+  toSummaryPreview,
+  withReportsTo,
+} from "@lilos/contracts/app";
 import { equalSecret } from "@lilos/contracts/auth";
 import type {
   AppendMessageInput,
@@ -237,10 +244,16 @@ export function createMemoryStore(): RelayStore {
       return employees.get(id) ?? null;
     },
     async createEmployee(input) {
+      const stored = settings.get(CEO_SETTING_KEY);
+      const reportsTo =
+        typeof stored === "string" && employees.has(stored)
+          ? stored
+          : undefined;
       const employee: Employee = {
         id: newId("emp"),
         createdAt: now(),
         ...input,
+        ...(reportsTo ? { reportsTo } : {}),
       };
       employees.set(employee.id, employee);
       return employee;
@@ -291,7 +304,33 @@ export function createMemoryStore(): RelayStore {
         if (other.reportsTo === id) delete other.reportsTo;
       }
       employees.delete(id);
-      return { employee, channelIds: [...channelIds] };
+      const clearedCeo = settings.get(CEO_SETTING_KEY) === id;
+      if (clearedCeo) settings.delete(CEO_SETTING_KEY);
+      return { employee, channelIds: [...channelIds], clearedCeo };
+    },
+    async setCeo(employeeId) {
+      if (!employees.has(employeeId)) return null;
+      const stored = settings.get(CEO_SETTING_KEY);
+      const oldCeoId = typeof stored === "string" ? stored : undefined;
+      if (oldCeoId === employeeId) {
+        return { ceoId: employeeId, employees: [], changed: false };
+      }
+      const all = [...employees.values()].map((e) => ({
+        id: e.id,
+        reportsTo: e.reportsTo,
+      }));
+      const patches = reportsToAfterCeo(all, oldCeoId, employeeId);
+      assertReportsAcyclic(withReportsTo(all, patches));
+      const changed: Employee[] = [];
+      for (const patch of patches) {
+        const row = employees.get(patch.id);
+        if (!row) continue;
+        if (patch.reportsTo === null) delete row.reportsTo;
+        else row.reportsTo = patch.reportsTo;
+        changed.push(row);
+      }
+      settings.set(CEO_SETTING_KEY, employeeId);
+      return { ceoId: employeeId, employees: changed, changed: true };
     },
     async listChannels() {
       return [...channels.values()].sort((a, b) => a.createdAt - b.createdAt);

@@ -41,6 +41,7 @@ describe("AC-2 tool surface contracts", () => {
       "team_hire",
 
       "team_list",
+      "team_set_ceo",
       "team_update",
       "terminal_read",
       "terminal_run",

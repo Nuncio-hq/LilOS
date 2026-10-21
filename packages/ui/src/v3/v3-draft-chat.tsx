@@ -8,7 +8,7 @@ import { ChipMenu } from "./v3-chip-menu";
 import { Composer } from "./v3-composer";
 import type { V3Data } from "./v3-data-types";
 import { ModelChip, NO_PROJECT, ProjectChip } from "./v3-draft-chips";
-import { AgentAvatar } from "./v3-marks";
+import { AgentAvatar, CeoMark } from "./v3-marks";
 import { agentOf, defaultAgent, projectOf, ticketOf } from "./v3-model";
 import type { V3PageProps } from "./v3-page-types";
 import type { V3Agent } from "./v3-types";
@@ -209,6 +209,7 @@ function DraftChat({
             <>
               <AgentAvatar data={data} agent={a} size={18} />
               <span className="shrink-0">{a.name}</span>
+              {a.id === data.ceoId && <CeoMark />}
               <span className="truncate text-[12.5px] text-muted-foreground/70">
                 {a.role}
               </span>
@@ -252,6 +253,9 @@ function DraftChat({
         <div className="min-w-0 flex-1">
           <Title small kicker="New chat">
             {agent.name}
+            {agent.id === data.ceoId && (
+              <CeoMark className="ml-2.5 align-middle" />
+            )}
           </Title>
         </div>
       </div>
