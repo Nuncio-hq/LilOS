@@ -30,7 +30,6 @@ import { handleHostEvents } from "./session/host-events";
 import { handleMessages } from "./session/messages";
 import { handlePairing } from "./session/pairing";
 import { handleProjects } from "./session/projects";
-import { handleTickets } from "./session/tickets";
 import {
   badParams,
   type HostRecord,
@@ -39,6 +38,7 @@ import {
 } from "./session/rpc";
 import { handleSchedules } from "./session/schedules";
 import { handleSettings } from "./session/settings";
+import { handleTickets } from "./session/tickets";
 import { handleTurns } from "./session/turns";
 import type { RejectedHandshake } from "./status";
 import type { RelayStore } from "./store";
