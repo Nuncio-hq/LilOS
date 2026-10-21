@@ -38,6 +38,7 @@ export function ResizeHandle({
   edge,
   onChange,
   onReset,
+  className,
 }: {
   label: string;
   value: number;
@@ -51,6 +52,9 @@ export function ResizeHandle({
   edge: "before" | "after";
   onChange: (width: number) => void;
   onReset: () => void;
+  /** Where the divider sits in its container (the shell starts it below the
+      toolbar row, which is not for resizing). */
+  className?: string;
 }) {
   const [dragging, setDragging] = useState(false);
   const start = useRef({ x: 0, w: 0 });
@@ -67,7 +71,7 @@ export function ResizeHandle({
   const move = (w: number) => onChange(clamp(w, min, max));
 
   return (
-    <div className="relative z-30 w-0 shrink-0">
+    <div className={cn("relative z-30 w-0 shrink-0", className)}>
       <div
         role="separator"
         aria-orientation="vertical"

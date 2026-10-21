@@ -1,6 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
+import { TOOLBAR_HEIGHT } from "../apps/desktop/src/window-chrome";
 import { launchDesktop } from "./helpers/electron";
 import {
   bootStack,
@@ -17,10 +18,10 @@ import {
  * toggle at the same spot the cursor was already over, and the OS-side
  * draggable-region map wasn't recomputed until a pointer event forced it —
  * the click was swallowed as a window drag. In v3 the swap is the side peek's
- * thread panel ⇄ session view (`full=1`), and the one control for it is the
- * peek header's Widen/Narrow (the thread draws no expand button of its own,
- * and its header scrolls with the conversation rather than being a drag
- * strip), which swap at the same spot.
+ * thread panel ⇄ session view (`full=1`), and the one control for it is
+ * Widen/Narrow in the peek's segment of the toolbar row (#797; the thread
+ * draws no expand button of its own, and its header scrolls with the
+ * conversation rather than being a drag strip), which swap at the same spot.
  *
  * What this spec can and cannot prove: Playwright's `page.mouse.click`
  * dispatches synthetic events that never reach the native NSView hit-test,
@@ -105,6 +106,12 @@ test("#301 Focus toggle stays clickable across the panel ⇄ Focus header swap",
       .not.toBe("drag");
     const box1 = await widen.boundingBox();
     if (!box1) throw new Error("widen button has no box");
+    // It sits in the toolbar row: centred on it, under the lights' line.
+    expect(box1.y + box1.height / 2).toBe(TOOLBAR_HEIGHT / 2);
+    // One Widen on the screen, never a second one in the page.
+    await expect(
+      win.getByRole("button", { name: /^(widen|narrow)/i }),
+    ).toHaveCount(1);
     const cx = box1.x + box1.width / 2;
     const cy = box1.y + box1.height / 2;
     const hit = await win.evaluate(

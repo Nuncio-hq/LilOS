@@ -927,6 +927,9 @@ form:has(textarea:not(:placeholder-shown), [aria-label="Stop (⌘.)"])
   --v3-soft: oklch(0.975 0.002 90);
   --v3-line: color-mix(in oklch, var(--foreground) 9%, transparent);
   --v3-hover: color-mix(in oklch, var(--foreground) 5%, transparent);
+  /* The window's one toolbar row (packages/ui v3-topbar.tsx): compact here;
+     the Mac app's 52px is set in apps/web/src/index.css under html[data-desktop]. */
+  --v3-toolbar-h: 44px;
 }
 .dark {
   --v3-side: oklch(0.2 0.003 90);

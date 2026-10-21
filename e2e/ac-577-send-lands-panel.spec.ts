@@ -142,6 +142,14 @@ test("AC-3 Focus has one back control: the peek header's Narrow, none in the thr
   });
   await expect(back).toBeVisible({ timeout: 15_000 });
   await expect(back).toHaveCount(1);
+  // One Narrow and one ✕ on the whole screen: the toolbar row's, over the
+  // peek (#797) — the thread and the page draw none of their own.
+  await expect(
+    page.getByRole("button", { name: /^(widen|narrow)/i }),
+  ).toHaveCount(1);
+  await expect(
+    page.getByRole("button", { name: "Close", exact: true }),
+  ).toHaveCount(1);
   // The old affordances are gone — the thread draws no second way out (or
   // in: no Focus button) to learn.
   await expect(page.getByTitle("Exit focus")).toHaveCount(0);

@@ -75,7 +75,7 @@ describe("desktop chrome attributes", () => {
 });
 
 describe("desktop chrome stylesheet", () => {
-  test("AC-1 the sidebar's first row reserves the traffic-light inset on desktop only", () => {
+  test("AC-1 the toolbar row is 52px and its leading segment reserves the traffic-light inset on desktop only", () => {
     // One shared reserve — no second magic number — set only outside full
     // screen (the OS hides the lights there).
     expect(css).toMatch(/--lilos-traffic-inset:\s*88px/);
@@ -83,8 +83,10 @@ describe("desktop chrome stylesheet", () => {
       /html\[data-desktop\]:not\(\[data-fullscreen\]\)\s*\{[^}]*--lilos-traffic-inset/,
     );
     expect(css).toMatch(
-      /html\[data-desktop\]:not\(\[data-fullscreen\]\)\s*\.lilos-v3\s*>\s*aside:first-child\s*>\s*div:first-child\s*\{[^}]*padding-left:\s*var\(--lilos-traffic-inset\)/,
+      /html\[data-desktop\]:not\(\[data-fullscreen\]\)\s*\[data-toolbar-lead\]\s*\{[^}]*padding-left:\s*var\(--lilos-traffic-inset\)/,
     );
+    // The Mac app's row; a browser keeps the theme's compact one.
+    expect(css).toMatch(/html\[data-desktop\]\s*\{[^}]*--v3-toolbar-h:\s*52px/);
   });
 
   test("AC-3 header rows are drag regions with interactive children exempt", () => {

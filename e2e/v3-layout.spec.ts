@@ -45,11 +45,9 @@ const widthOf = async (el: Locator) => (await el.boundingBox())?.width ?? 0;
 const main = (page: Page) => page.locator("#v3-main");
 const topBar = (page: Page) => page.locator("[data-v3-topbar]");
 
-/** The company's name at the head of the sidebar (after its mark). */
+/** The company's name: the sidebar's Company section label (#797). */
 const companyName = async (page: Page) =>
-  (
-    await v3Sidebar(page).locator("> div span.truncate").first().innerText()
-  ).trim();
+  (await v3Sidebar(page).locator("[data-company-label]").innerText()).trim();
 
 /** Where the company's name is on screen (the hidden sidebar's copy is not). */
 const visibleCompany = (page: Page, company: string) =>
@@ -237,9 +235,12 @@ test("the sidebar hides, pops out over the page from the left edge, tucks away, 
   await expect(sideSep(page)).toHaveCount(0);
   await expect.poll(async () => (await main(page).boundingBox())?.x).toBe(0);
   expect(await stored(page, HIDDEN_KEY)).toBe("1");
-  // The top bar now carries what the sidebar did: its toggle, Search and the
-  // company; the page and the peek are where they were.
-  await expect(topBar(page)).toContainText(company);
+  // The toolbar now carries what the sidebar did: its toggle and Search —
+  // not the company, which is the sidebar's section label and so is on
+  // screen nowhere while the sidebar is hidden; the page and the peek are
+  // where they were.
+  await expect(visibleCompany(page, company)).toHaveCount(0);
+  await expect(topBar(page)).not.toContainText(company);
   await expect(
     topBar(page).getByRole("button", { name: "Show sidebar" }),
   ).toBeVisible();
@@ -254,7 +255,9 @@ test("the sidebar hides, pops out over the page from the left edge, tucks away, 
   await page.reload();
   await expect(v3Peek(page)).toBeVisible({ timeout: 30_000 });
   await expect(v3Sidebar(page)).toBeHidden();
-  await expect(topBar(page)).toContainText(company);
+  await expect(
+    topBar(page).getByRole("button", { name: "Show sidebar" }),
+  ).toBeVisible();
 
   // Pointer at the left edge: it slides out over the page, which never moves.
   const hiddenMain = await main(page).boundingBox();
@@ -350,7 +353,7 @@ test("⌘\\ hides and shows the sidebar", async ({ page }) => {
   await expect.poll(() => stored(page, HIDDEN_KEY)).toBeNull();
 });
 
-test("each control appears once: one Search, one Widen/Narrow, the company named once", async ({
+test("each control appears once: one Search, one sidebar toggle, one Widen/Narrow, the company named once", async ({
   page,
 }) => {
   test.setTimeout(180_000);
@@ -360,37 +363,53 @@ test("each control appears once: one Search, one Widen/Narrow, the company named
     timeout: 30_000,
   });
   const company = await companyName(page);
+  const toggles = page.getByRole("button", { name: /^(hide|show) sidebar$/i });
 
-  // Sidebar shown: Search is the sidebar's row, the bar has none and does not
-  // repeat the company; the peek has one Widen and one Close.
+  // Sidebar shown: Search is the sidebar's row, the toolbar has none and does
+  // not name the company (the sidebar's section label does, once); the
+  // sidebar's toggle is the only one; the peek has one Widen and one Close.
   await expect(page.getByRole("button", { name: /^Search/ })).toHaveCount(1);
   await expect(
     v3Sidebar(page).getByRole("button", { name: /^Search/ }),
   ).toBeVisible();
-  await expect(topBar(page)).not.toContainText(company);
+  await expect(toggles).toHaveCount(1);
+  await expect(
+    v3Sidebar(page).getByRole("button", { name: "Hide sidebar" }),
+  ).toBeVisible();
+  for (const bar of await page.locator("[data-toolbar]").all())
+    await expect(bar).not.toContainText(company);
   await expect(visibleCompany(page, company)).toHaveCount(1);
+  await expect(v3Sidebar(page).locator("[data-company-label]")).toHaveText(
+    company,
+  );
   await expect(page.getByRole("button", { name: /widen|narrow/i })).toHaveCount(
     1,
   );
+  await expect(
+    page.getByRole("button", { name: "Close", exact: true }),
+  ).toHaveCount(1);
   await expect(
     v3Peek(page).getByRole("button", { name: "Close", exact: true }),
   ).toHaveCount(1);
   await page.screenshot({ path: "test-results/v3-layout/once-docked.png" });
 
-  // Sidebar hidden: the one Search is now the bar's icon, and the company is
-  // named by the bar alone.
+  // Sidebar hidden: the one Search is now the toolbar's icon and the one
+  // toggle its "Show sidebar" beside it; the company is on screen nowhere.
   await page.keyboard.press("ControlOrMeta+Backslash");
   await expect(v3Sidebar(page)).toBeHidden();
   await expect(page.getByRole("button", { name: /^Search/ })).toHaveCount(1);
   await expect(
     topBar(page).getByRole("button", { name: "Search", exact: true }),
   ).toBeVisible();
-  await expect(visibleCompany(page, company)).toHaveCount(1);
-  await expect(topBar(page)).toContainText(company);
+  await expect(toggles).toHaveCount(1);
+  await expect(
+    topBar(page).getByRole("button", { name: "Show sidebar" }),
+  ).toBeVisible();
+  await expect(visibleCompany(page, company)).toHaveCount(0);
   await expect(page.getByRole("button", { name: /widen|narrow/i })).toHaveCount(
     1,
   );
-  // The bar's Search is the same palette.
+  // The toolbar's Search is the same palette.
   await topBar(page)
     .getByRole("button", { name: "Search", exact: true })
     .click();

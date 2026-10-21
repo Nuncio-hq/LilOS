@@ -51,8 +51,10 @@ function storedSettings(home: string): Record<string, string> {
   return JSON.parse(out.stdout.trim() || "{}") as Record<string, string>;
 }
 
-/** The company's mark + name at the head of the sidebar. */
-const sidebarHeader = (page: Page) => v3Sidebar(page).locator("> div").first();
+/** The company's name: the sidebar's Company section label (#797 took it out
+ *  of the toolbar — it names the section that holds the company's work). */
+const companyLabel = (page: Page) =>
+  v3Sidebar(page).locator("[data-company-label]");
 
 const greeting = (page: Page) =>
   page.getByRole("heading", { level: 1, name: /^Good \w+, / });
@@ -103,8 +105,9 @@ test("AC-2 first run folds name+company into the Welcome, prefilled; AC-1 the ch
 
     // Every surface renders the stored identity (AC-1).
     await expect(greeting(page)).toContainText("Ada", { timeout: 30_000 });
-    await expect(sidebarHeader(page)).toContainText("Ada Labs");
-    // The company shows once: the top bar's breadcrumb starts at the page.
+    await expect(companyLabel(page)).toHaveText("Ada Labs");
+    // The company shows once: the toolbar names nothing, the page names
+    // itself.
     await expect(page.locator("[data-v3-topbar]")).not.toContainText(
       "Ada Labs",
     );
@@ -157,7 +160,7 @@ test("AC-4 an existing install without stored values shows the prefilled identit
       page.getByRole("heading", { name: "Welcome to LilOS" }),
     ).toHaveCount(0);
     await expect(page.locator("[data-first-run-step]")).toHaveCount(0);
-    await expect(sidebarHeader(page)).toContainText("Test's Co");
+    await expect(companyLabel(page)).toHaveText("Test's Co");
     await expect(greeting(page)).toContainText("Test User");
     await page.screenshot({ path: `${SHOTS}/ac-4-existing-install.png` });
   } finally {

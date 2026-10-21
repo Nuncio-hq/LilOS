@@ -95,7 +95,7 @@ export function ThreadView(props: ThreadViewProps) {
   const { input: titleInput, menu: threadMenu } = useRenameMenu({
     title: thread.title || plain(root.text),
     archived: thread.archived,
-    inputClassName: "h-11 [font-size:28px]",
+    inputClassName: "h-8 [font-size:22px]",
     onRename,
     onArchive,
   });

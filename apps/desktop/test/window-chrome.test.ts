@@ -2,7 +2,8 @@ import { DESKTOP_FULLSCREEN_CHANNEL } from "@lilos/contracts/app";
 import { describe, expect, it } from "vitest";
 import {
   nativeWindowChrome,
-  SIDEBAR_HEADER_HEIGHT,
+  TOOLBAR_HEIGHT,
+  TRAFFIC_LIGHT_SIZE,
   watchWindowChrome,
 } from "../src/window-chrome";
 
@@ -11,14 +12,12 @@ import {
  * named tests; the on-screen evidence lives in e2e/ac-232-window-chrome.
  */
 describe("window chrome options", () => {
-  it("AC-1 hides the title bar and insets the traffic lights", () => {
+  it("AC-1 hides the title bar and centres the traffic lights on the toolbar row", () => {
     const opts = nativeWindowChrome();
     expect(opts.titleBarStyle).toBe("hiddenInset");
-    // The lights centre on the sidebar header's 56px row.
-    const y = opts.trafficLightPosition?.y ?? 0;
-    expect(y).toBeGreaterThanOrEqual(16);
-    expect(y).toBeLessThanOrEqual(SIDEBAR_HEADER_HEIGHT / 2);
-    const x = opts.trafficLightPosition?.x ?? 0;
+    // The buttons sit centred in the 52px toolbar row (#797).
+    const { x = 0, y = 0 } = opts.trafficLightPosition ?? {};
+    expect(y + TRAFFIC_LIGHT_SIZE / 2).toBe(TOOLBAR_HEIGHT / 2);
     expect(x).toBeGreaterThanOrEqual(8);
     expect(x).toBeLessThanOrEqual(24);
   });
