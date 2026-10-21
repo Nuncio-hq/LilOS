@@ -105,41 +105,67 @@ describe("week counts", () => {
     expect(counts.get("emp1")).toBeUndefined();
   });
 
-  test("a running thread the host marked stuck counts as stuck, not finished", () => {
-    const reason = "Same web search 6 times";
+  test("stuckAt this week counts after recovery, and still as finished or failed", () => {
     const counts = weekByAgent({
       ...src([
+        /* Recovered: the live mark is gone, the stamp remains. */
+        conv({ id: "recovered", stuckAt: start + 2_000, finishedSeq: 2 }),
+        conv({
+          id: "bad",
+          finishedSeq: 2,
+          turnFailure: { kind: "generic", text: "nope" },
+          stuckAt: start + 50,
+        }),
+        /* Still running and marked. Stuck, not also finished. */
         conv({
           id: "loop",
           engineRef: "s-stuck",
           state: "active",
-          stuck: { reason },
+          stuck: { reason: "Same web search 6 times" },
+          stuckAt: start + 3_000,
           finishedSeq: 3,
         }),
-        /* A mark on a turn that is not running is not Stuck. This one
-           finished, so it counts there. */
+      ]),
+      signals: { "s-stuck": { running: true, openRequests: new Map() } },
+    });
+    expect(counts.get("emp1")).toEqual({ finished: 1, failed: 1, stuck: 3 });
+  });
+
+  test("a live mark with no stamp, a stamp before Monday, or an archived thread does not count", () => {
+    const counts = weekByAgent({
+      ...src([
         conv({
-          id: "stale",
-          stuck: { reason },
+          id: "live-no-stamp",
+          engineRef: "s1",
+          state: "active",
+          stuck: { reason: "Same web search 6 times" },
+        }),
+        conv({
+          id: "last-week",
+          createdAt: start - 5_000,
+          stuckAt: start - 1,
           finishedSeq: 2,
         }),
         conv({
-          id: "old",
+          id: "gone",
+          archived: true,
+          stuckAt: start + 10,
+          finishedSeq: 2,
+        }),
+        /* Opened last week, stuck this week: the stamp counts, the finish does not. */
+        conv({
+          id: "old-stuck-now",
           createdAt: start - 5_000,
-          engineRef: "s-old",
-          state: "active",
-          stuck: { reason },
+          stuckAt: start + 100,
+          finishedSeq: 3,
         }),
       ]),
-      signals: {
-        "s-stuck": { running: true, openRequests: new Map() },
-        "s-old": { running: true, openRequests: new Map() },
-      },
+      signals: { s1: { running: true, openRequests: new Map() } },
     });
-    expect(counts.get("emp1")).toEqual({ finished: 1, failed: 0, stuck: 1 });
+    expect(counts.get("emp1")).toEqual({ finished: 0, failed: 0, stuck: 1 });
   });
 
-  test("an open ask beats the stuck mark, so that thread is not stuck this week", () => {
+  test("an open ask does not drop a stuckAt from this week", () => {
     const counts = weekByAgent({
       ...src([
         conv({
@@ -147,11 +173,12 @@ describe("week counts", () => {
           engineRef: "s1",
           state: "active",
           stuck: { reason: "Same web search 6 times" },
+          stuckAt: start + 500,
         }),
       ]),
       signals: { s1: { running: true, openRequests: new Map() } },
       asks: [{ id: "a1", conversationId: "ask", state: "open" } as Ask],
     });
-    expect(counts.get("emp1")).toBeUndefined();
+    expect(counts.get("emp1")).toEqual({ finished: 0, failed: 0, stuck: 1 });
   });
 });

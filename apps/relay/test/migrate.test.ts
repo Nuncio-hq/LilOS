@@ -67,7 +67,8 @@ describe("relay migrations", () => {
     // on employees; v27 adds #136's scheduled_tasks table + the
     // conversation's scheduled marker; v28 adds D-#771's projects table +
     // the conversation's project_id; v29 adds D-#773's why / if_yes / if_no;
-    // v30 adds D-#772's stuck mark; v31 adds D-#775's reports_to.
+    // v30 adds D-#772's stuck mark; v31 adds D-#775's reports_to and
+    // conversations.stuck_at (issue #775).
     expect(out.version).toBe(31);
     expect(out.askCols).toContain("hire");
     expect(out.askCols).toContain("why");
@@ -89,6 +90,7 @@ describe("relay migrations", () => {
     expect(out.colsAt7).toContain("turn_stopped");
     expect(out.colsAt7).toContain("bg_jobs");
     expect(out.colsAt7).toContain("stuck");
+    expect(out.colsAt7).toContain("stuck_at");
     expect(out.colsAt7).toContain("read_seq");
     expect(out.colsAt7).toContain("finished_seq");
     expect(out.colsAt7).toContain("project_id");

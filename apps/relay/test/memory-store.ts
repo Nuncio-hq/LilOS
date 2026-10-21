@@ -444,6 +444,10 @@ export function createMemoryStore(): RelayStore {
       const conversation = conversations.get(id);
       if (!conversation) return null;
       patch = titlePatch(patch, conversation);
+      /* Issue #775: stamp stuckAt only on unset → set. Captured before the
+         null-clear below deletes the live mark and drops the patch key. */
+      const hadStuck = conversation.stuck != null;
+      const marking = patch.stuck != null;
       // The delivery watermark only moves forward — a slower write must not
       // re-owe a later message its prompt.
       if (patch.deliveredSeq !== undefined) {
@@ -472,6 +476,7 @@ export function createMemoryStore(): RelayStore {
         }
       }
       Object.assign(conversation, patch);
+      if (marking && !hadStuck) conversation.stuckAt = now();
       return conversation;
     },
     async recordTurnUsage({ conversationId, sessionId, seq, usage }) {

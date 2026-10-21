@@ -93,10 +93,14 @@ const rowToConversation = (row: ConversationRow): Conversation => {
     usageSeq: _seq,
     finishedSessionId: _fsid,
     finishedEventSeq: _fseq,
+    stuckAt,
     ...rest
   } = row;
   return {
     ...rest,
+    /* Issue #775: NULL means never stuck. The contract field is optional,
+       not nullable — a null on the wire would fail the conversation parse. */
+    ...(stuckAt != null ? { stuckAt } : {}),
     model: row.model ?? undefined,
     provider: row.provider ?? undefined,
     effort: row.effort ?? undefined,
@@ -510,6 +514,7 @@ export function createDrizzleStore(db: Db): RelayStore {
         usage, usage_session_id AS usageSessionId, usage_seq AS usageSeq,
         life, turn_failure AS turnFailure,
         turn_stopped AS turnStopped, bg_jobs AS bgJobs, stuck,
+        stuck_at AS stuckAt,
         read_seq AS readSeq, finished_seq AS finishedSeq,
         finished_session_id AS finishedSessionId,
         finished_event_seq AS finishedEventSeq,
@@ -988,6 +993,20 @@ export function createDrizzleStore(db: Db): RelayStore {
          the column holds its JSON like `workspace`/`usage` — serialize at
          the boundary, `null` clears. */
       const { turnFailure, stuck, ...cols } = patch;
+      /* Issue #775: stamp stuckAt only when stuck goes unset → set. A
+         clear leaves the stamp; a rewrite while it is still set is not a
+         new episode; the next unset → set overwrites it. The host patch
+         cannot carry the stamp. */
+      let stuckAtStamp: number | undefined;
+      if (stuck != null) {
+        const current = db
+          .select({ stuck: schema.conversations.stuck })
+          .from(schema.conversations)
+          .where(eq(schema.conversations.id, id))
+          .get();
+        if (!current) return null;
+        if (!current.stuck) stuckAtStamp = now();
+      }
       const updated = db
         .update(schema.conversations)
         .set({
@@ -999,10 +1018,11 @@ export function createDrizzleStore(db: Db): RelayStore {
               }
             : {}),
           /* D-#772: same boundary as turnFailure — the column holds JSON,
-             `null` clears. */
+             `null` clears. The stamp beside it is not cleared. */
           ...(stuck !== undefined
             ? { stuck: stuck === null ? null : JSON.stringify(stuck) }
             : {}),
+          ...(stuckAtStamp !== undefined ? { stuckAt: stuckAtStamp } : {}),
         })
         .where(eq(schema.conversations.id, id))
         .returning()

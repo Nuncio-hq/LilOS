@@ -211,7 +211,8 @@ function Table({
 }
 
 /** This week's threads when the app counted them; otherwise the prototype's
-    ticket week. Colour is only the status word (failed, stuck). */
+    ticket week. Stuck is stuckAt this week, not the live status pill.
+    Colour is only a count above zero. */
 function WeekBits({ a }: { a: V3Agent }) {
   const w = a.weekThreads;
   if (w) {

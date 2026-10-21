@@ -117,8 +117,8 @@ function toAgent(
       .map((p) => p.trim())
       .filter(Boolean),
     /* Always present, including zeros: the column is a real count (D-#19).
-       Stuck is `threadStatus === "stuck"` (D-#772), the same word Threads
-       shows, counted for this week with finished and failed (issue #775). */
+       Stuck counts threads whose stuckAt falls this week (issue #775),
+       including ones that have recovered. Colour is only a count above zero. */
     weekThreads: week,
   };
 }

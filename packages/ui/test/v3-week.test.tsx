@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
-/* This week's stuck count is drawn like failed: the number is always on an
+/* This week's stuck count is threads whose stuckAt falls this week, including
+   one that has recovered. It is drawn like failed: the number is always on an
    agent's page, the word only when it is above zero on People, and the
    colour only then. */
 import { cleanup, render, screen } from "@testing-library/react";

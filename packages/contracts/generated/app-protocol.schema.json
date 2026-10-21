@@ -1936,6 +1936,11 @@
             "reason"
           ]
         },
+        "stuckAt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
         "bgJobs": {
           "type": "integer",
           "minimum": 0,
@@ -2294,6 +2299,11 @@
                 "required": [
                   "reason"
                 ]
+              },
+              "stuckAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
               },
               "bgJobs": {
                 "type": "integer",
@@ -2729,6 +2739,11 @@
               "required": [
                 "reason"
               ]
+            },
+            "stuckAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
             },
             "bgJobs": {
               "type": "integer",
@@ -3334,6 +3349,11 @@
               "required": [
                 "reason"
               ]
+            },
+            "stuckAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
             },
             "bgJobs": {
               "type": "integer",
@@ -4915,6 +4935,11 @@
                 "reason"
               ]
             },
+            "stuckAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
             "bgJobs": {
               "type": "integer",
               "minimum": 0,
@@ -5653,6 +5678,11 @@
                     "required": [
                       "reason"
                     ]
+                  },
+                  "stuckAt": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
                   },
                   "bgJobs": {
                     "type": "integer",
@@ -8183,6 +8213,11 @@
               "required": [
                 "reason"
               ]
+            },
+            "stuckAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
             },
             "bgJobs": {
               "type": "integer",

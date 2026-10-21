@@ -154,6 +154,11 @@ export const conversations = sqliteTable(
         sentence the card and the push say. Host-written; null once the
         next step differs, a new message lands, or the turn stops. */
     stuck: text("stuck"),
+    /** Epoch ms when `stuck` last went from unset to set (issue #775).
+        Relay-written on that transition; a clear leaves it; a later
+        episode overwrites it. The week's stuck count reads this, not
+        the live mark. */
+    stuckAt: integer("stuck_at"),
     /** The user's read watermark (#563): the channel seq up to which they have
         opened this thread. `conversations.markRead` stamps
         max(channel lastSeq, finishedSeq); compared against `finishedSeq`

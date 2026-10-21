@@ -5,10 +5,11 @@ import type { V3PageProps } from "./v3-page-types";
 import { TicketRow } from "./v3-rows";
 import type { V3Agent, V3Ticket } from "./v3-types";
 
-/* This week on an agent's page. Real threads use `weekThreads` (finished,
-   failed, stuck — the same status Threads uses). The prototype's ticket
-   week stays when that count is absent. A section with neither is not
-   drawn (D-#19). Colour is only a count above zero. */
+/* This week on an agent's page. Real threads use `weekThreads`: finished
+   and failed from the same status Threads uses, stuck from stuckAt this
+   week (a recovered thread still counts). The prototype's ticket week
+   stays when that count is absent. A section with neither is not drawn
+   (D-#19). Colour is only a count above zero. */
 
 function Stat({
   value,

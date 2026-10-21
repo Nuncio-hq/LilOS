@@ -14,8 +14,9 @@ import {
 /**
  * Issue #775 — People. One test per acceptance criterion, on the real stack.
  * Statuses come from the same derivation as Threads. Week counts are threads
- * finished, failed, or stuck since Monday. Stuck is a `stuck:` turn: six
- * identical searches, then the turn holds (engine-fake).
+ * finished or failed since Monday, plus threads whose stuckAt falls this
+ * week. `stuck: clear` marks a thread and then recovers it; the week number
+ * still counts that thread. The live Stuck pill does not.
  *
  * Instructions: soul is not a field of `session.start`. The next thread's
  * `session.started` names the profile, and `agents.describe` of that profile
@@ -74,20 +75,23 @@ test("statuses and this week's finished, failed, and stuck counts match Threads"
       v3Peek(page).getByRole("button", { name: /^stop/i }),
     ).toBeVisible({ timeout: 30_000 });
 
-    await startChat(page, stack.webUrl, agent, "stuck:");
+    await startChat(page, stack.webUrl, agent, "stuck: clear");
     await expect(page.locator("[data-stuck]")).toContainText(
       "Same web search 6 times",
       { timeout: 20_000 },
     );
+    /* The different step clears the mark. The stamp stays, so the week
+       still counts this thread once the card is gone. */
+    await expect(page.locator("[data-stuck]")).toBeHidden({ timeout: 20_000 });
 
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`${stack.webUrl}/#?page=people`);
     const row = main(page).getByRole("button", {
       name: new RegExp(agent.name, "i"),
     });
-    /* Stuck outranks a turn that is still working, so the row wears Stuck
-       and names that thread. */
-    await expect(row).toContainText("Stuck");
+    /* The hold thread is the live one, so the row wears Working. The week
+       word is the lowercase count, not that pill. */
+    await expect(row).toContainText("Working");
     await expect(row).toContainText(/\d+ finished/, { timeout: 20_000 });
     await expect(row).toContainText(/\d+ failed/);
     await expect(row).toContainText(/\d+ stuck/);
@@ -121,9 +125,11 @@ test("statuses and this week's finished, failed, and stuck counts match Threads"
     await expect(
       block.getByRole("button").filter({ hasText: "Working" }),
     ).toContainText(/release note/i);
+    /* Recovered: Threads has no Stuck row. The week number above is the
+       stamp, so it is not this count. */
     await expect(
       block.getByRole("button").filter({ hasText: "Stuck" }),
-    ).toHaveCount(stuck);
+    ).toHaveCount(0);
   } finally {
     await stack.stop();
   }

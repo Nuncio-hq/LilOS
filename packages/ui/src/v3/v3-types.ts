@@ -90,8 +90,9 @@ export type V3Agent = {
   suggestion?: { text: string; after: string };
   memory?: { text: string; source: string }[];
   week?: { done: number; typical: string; stuck: number; handed: number };
-  /** Threads finished, failed, or stuck since Monday, from the same status
-      the Threads page uses. Colour is only a count above zero. */
+  /** Threads finished or failed since Monday, and threads whose stuckAt
+      falls in that week even after they recover. Colour is only a count
+      above zero. */
   weekThreads?: { finished: number; failed: number; stuck: number };
   /** Idle agents: what wakes them next. */
   next?: string;
