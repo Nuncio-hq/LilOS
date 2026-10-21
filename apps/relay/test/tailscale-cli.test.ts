@@ -1,8 +1,15 @@
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  advertisedPairingHost,
   resolveTailscaleBin,
   resolveTailscaleProbe,
   TAILSCALE_CLI_CANDIDATES,
@@ -17,8 +24,8 @@ const LAUNCHD_PATH = "/usr/bin:/bin:/usr/sbin:/sbin";
 
 const STATUS = JSON.stringify({
   Self: {
-    DNSName: "oscar-m5pro.tail0000.ts.net.",
-    TailscaleIPs: ["100.94.230.13", "fd7a:115c:a1e0::1"],
+    DNSName: "mac.example.ts.net.",
+    TailscaleIPs: ["100.64.1.2", "fd7a:115c:a1e0::1"],
   },
 });
 
@@ -26,7 +33,7 @@ const STATUS = JSON.stringify({
  * A fake of the binary inside Tailscale.app: without TAILSCALE_BE_CLI it
  * behaves like the real one under launchd and tries to start the GUI.
  */
-function fakeCli(dir: string, name: string): string {
+function fakeCli(dir: string, name: string, json = STATUS): string {
   const path = join(dir, name);
   writeFileSync(
     path,
@@ -36,7 +43,7 @@ if [ "$TAILSCALE_BE_CLI" != "1" ]; then
   exit 1
 fi
 cat <<'JSON'
-${STATUS}
+${json}
 JSON
 `,
   );
@@ -68,8 +75,8 @@ describe("#203 Tailscale CLI outside PATH", () => {
     await expect(probe()).resolves.toEqual({
       ok: true,
       self: {
-        dnsName: "oscar-m5pro.tail0000.ts.net",
-        ipv4s: ["100.94.230.13"],
+        dnsName: "mac.example.ts.net",
+        ipv4s: ["100.64.1.2"],
       },
     });
   });
@@ -113,12 +120,12 @@ describe("#203 Tailscale CLI outside PATH", () => {
           ],
           utun4: [
             {
-              address: "100.94.230.13",
+              address: "100.64.1.2",
               netmask: "255.255.255.255",
               family: "IPv4",
               mac: "00:00:00:00:00:00",
               internal: false,
-              cidr: "100.94.230.13/32",
+              cidr: "100.64.1.2/32",
             },
           ],
         }),
@@ -126,7 +133,7 @@ describe("#203 Tailscale CLI outside PATH", () => {
     );
     await expect(probe()).resolves.toEqual({
       ok: true,
-      self: { ipv4s: ["100.94.230.13"] },
+      self: { ipv4s: ["100.64.1.2"] },
     });
   });
 
@@ -159,17 +166,172 @@ describe("#203 Tailscale CLI outside PATH", () => {
         interfaces: () => ({
           utun4: [
             {
-              address: "100.94.230.13",
+              address: "100.64.1.2",
               netmask: "255.255.255.255",
               family: "IPv4",
               mac: "00:00:00:00:00:00",
               internal: false,
-              cidr: "100.94.230.13/32",
+              cidr: "100.64.1.2/32",
             },
           ],
         }),
       },
     );
     await expect(probe()).resolves.toEqual({ ok: false, reason: "missing" });
+  });
+});
+
+/**
+ * #803: which host the pairing QR names. iOS ATS allows `*.ts.net` and
+ * RFC 1918, not 100.64.0.0/10, and the exception list is not widened.
+ */
+describe("#803 pairing address", () => {
+  it("MagicDNS known → the ts.net name, not the 100.x address", () => {
+    expect(
+      advertisedPairingHost({
+        dnsName: "mac.example.ts.net",
+        ipv4s: ["100.64.1.2"],
+      }),
+    ).toBe("mac.example.ts.net");
+  });
+
+  it("only a 100.x IP known → that literal", () => {
+    /* Documented degraded case: no MagicDNS name (interface fallback,
+       CLI down, MagicDNS off). The QR carries the CGNAT literal. iOS ATS
+       refuses it (NSURLError -1022). We do not invent a hostname. */
+    expect(advertisedPairingHost({ ipv4s: ["100.64.1.2"] })).toBe("100.64.1.2");
+  });
+
+  it("a LAN address is unchanged when no MagicDNS name is known", () => {
+    expect(advertisedPairingHost({ ipv4s: ["192.168.1.20"] })).toBe(
+      "192.168.1.20",
+    );
+    expect(
+      advertisedPairingHost({
+        dnsName: "mac.tailnet.test",
+        ipv4s: ["192.168.1.20"],
+      }),
+    ).toBe("mac.tailnet.test");
+  });
+
+  it("a CGNAT pin with no name learns *.ts.net from tailscale status --json", async () => {
+    const bin = fakeCli(
+      dir,
+      "tailscale",
+      JSON.stringify({
+        Self: {
+          DNSName: "Mac.Example.ts.net.",
+          TailscaleIPs: ["100.99.8.7"],
+        },
+      }),
+    );
+    const probe = resolveTailscaleProbe({
+      LILOS_RELAY_TAILSCALE_IP: "100.64.1.2",
+      LILOS_TAILSCALE_BIN: bin,
+    });
+    const result = await probe();
+    expect(result).toEqual({
+      ok: true,
+      self: { ipv4s: ["100.64.1.2"], dnsName: "mac.example.ts.net" },
+    });
+    if (result.ok) {
+      expect(advertisedPairingHost(result.self)).toBe("mac.example.ts.net");
+    }
+  });
+
+  it("a CGNAT pin and no CLI keeps the literal (still a bind, not down)", async () => {
+    const probe = resolveTailscaleProbe({
+      LILOS_RELAY_TAILSCALE_IP: "100.64.1.2",
+      LILOS_TAILSCALE_BIN: join(dir, "missing-tailscale"),
+    });
+    const result = await probe();
+    expect(result).toEqual({
+      ok: true,
+      self: { ipv4s: ["100.64.1.2"] },
+    });
+    if (result.ok) {
+      expect(advertisedPairingHost(result.self)).toBe("100.64.1.2");
+    }
+  });
+
+  it("a CGNAT pin whose status has no MagicDNS name keeps the literal", async () => {
+    const bin = fakeCli(
+      dir,
+      "tailscale",
+      JSON.stringify({
+        Self: { DNSName: "mac.tailnet.test.", TailscaleIPs: ["100.64.1.2"] },
+      }),
+    );
+    const probe = resolveTailscaleProbe({
+      LILOS_RELAY_TAILSCALE_IP: "100.64.1.2",
+      LILOS_TAILSCALE_BIN: bin,
+    });
+    const result = await probe();
+    expect(result).toEqual({
+      ok: true,
+      self: { ipv4s: ["100.64.1.2"] },
+    });
+    if (result.ok) {
+      expect(advertisedPairingHost(result.self)).toBe("100.64.1.2");
+    }
+  });
+
+  it("status --json without a *.ts.net name does not invent one", async () => {
+    const bin = fakeCli(
+      dir,
+      "tailscale",
+      JSON.stringify({
+        Self: { DNSName: "", TailscaleIPs: ["100.64.1.2"] },
+      }),
+    );
+    const probe = resolveTailscaleProbe(
+      { PATH: LAUNCHD_PATH, LILOS_TAILSCALE_BIN: bin },
+      { candidates: [] },
+    );
+    const result = await probe();
+    expect(result).toEqual({
+      ok: true,
+      self: { ipv4s: ["100.64.1.2"] },
+    });
+    if (result.ok) {
+      expect(advertisedPairingHost(result.self)).toBe("100.64.1.2");
+    }
+  });
+
+  it("a LAN pin does not consult tailscale", async () => {
+    const marker = join(dir, "cli-was-run");
+    const bin = join(dir, "tailscale");
+    writeFileSync(bin, `#!/bin/sh\ntouch '${marker}'\nexit 1\n`);
+    chmodSync(bin, 0o755);
+    const probe = resolveTailscaleProbe({
+      LILOS_RELAY_TAILSCALE_IP: "192.168.1.20",
+      LILOS_TAILSCALE_BIN: bin,
+    });
+    await expect(probe()).resolves.toEqual({
+      ok: true,
+      self: { ipv4s: ["192.168.1.20"] },
+    });
+    expect(existsSync(marker)).toBe(false);
+  });
+
+  it("an explicit name on a CGNAT pin is the QR host and skips status", async () => {
+    const marker = join(dir, "cli-was-run");
+    const bin = join(dir, "tailscale");
+    writeFileSync(bin, `#!/bin/sh\ntouch '${marker}'\nexit 1\n`);
+    chmodSync(bin, 0o755);
+    const probe = resolveTailscaleProbe({
+      LILOS_RELAY_TAILSCALE_IP: "100.64.1.2",
+      LILOS_RELAY_TAILSCALE_NAME: "mac.example.ts.net",
+      LILOS_TAILSCALE_BIN: bin,
+    });
+    const result = await probe();
+    expect(result).toEqual({
+      ok: true,
+      self: { ipv4s: ["100.64.1.2"], dnsName: "mac.example.ts.net" },
+    });
+    if (result.ok) {
+      expect(advertisedPairingHost(result.self)).toBe("mac.example.ts.net");
+    }
+    expect(existsSync(marker)).toBe(false);
   });
 });

@@ -18,7 +18,12 @@ export type PairedMac = {
   /** Stable key — the relay-issued device id. */
   id: string;
   name: string;
-  /** `host:port` the pairing offer advertised; dialed as `ws://host/ws`. */
+  /**
+   * `host:port` the pairing offer advertised; dialed as `ws://host/ws`
+   * and `http://host/pair/exchange`. Stored verbatim (D-#803): a `*.ts.net`
+   * name stays that name. Replacing it with the 100.x address it resolves
+   * to is the URL iOS ATS rejects.
+   */
   host: string;
   route: Route;
   pairedAt: number;

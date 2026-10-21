@@ -11,7 +11,8 @@ import {
  * relay's install token never appears in this flow.
  *
  * `baseUrl` is `http(s)://<host>:<port>` — the pairing URL's `host` param
- * (Tailscale MagicDNS name or CGNAT IP) with a scheme.
+ * with a scheme. The relay puts a `*.ts.net` name there when it knows one
+ * (D-#803). A CGNAT IP is only the no-name case, which iOS ATS rejects.
  *
  * #593: `signal` carries the screen's Cancel and its ~15s timeout.
  */

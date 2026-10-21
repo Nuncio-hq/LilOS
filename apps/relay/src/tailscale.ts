@@ -13,10 +13,62 @@ import { networkInterfaces } from "node:os";
  */
 
 export interface TailscaleSelf {
-  /** MagicDNS name (what the QR advertises) when the tailnet assigns one. */
+  /**
+   * MagicDNS name (`*.ts.net`) when the tailnet assigns one. This is what
+   * the pairing QR advertises (D-#803). Absent when only an IP is known.
+   */
   dnsName?: string;
   /** This Mac's CGNAT Tailscale IPv4s — the addresses we can bind. */
   ipv4s: string[];
+}
+
+/**
+ * A name iOS ATS already allows via the app's `ts.net` exception
+ * (NSIncludesSubdomains). One or more labels, then `.ts.net`. The trailing
+ * dot on `Self.DNSName` is stripped first. A raw IP, a dev-seam host, or
+ * anything else is not MagicDNS — ATS would not allow it either, and we
+ * do not widen the exception list (D-#803).
+ */
+const MAGIC_DNS_RE =
+  /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+ts\.net$/;
+
+function magicDnsName(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  const name = raw.trim().replace(/\.$/, "").toLowerCase();
+  return MAGIC_DNS_RE.test(name) ? name : undefined;
+}
+
+/**
+ * Host the pairing QR carries, and that the phone stores and dials
+ * (D-#803). iOS App Transport Security allows the existing `*.ts.net`
+ * exception and RFC 1918 (`NSAllowsLocalNetworking`). It cannot list
+ * Tailscale's CGNAT range (100.64.0.0/10), so `http://100.x/pair/exchange`
+ * fails NSURLError -1022. The listener still binds the IP; only the name
+ * in the QR changes.
+ *
+ * The name becomes known the way this file already learns tailnet
+ * identity, not by a new channel:
+ *   1. `LILOS_RELAY_TAILSCALE_NAME` — the dev/test seam. Any host the
+ *      operator pinned (including a non-`ts.net` stand-in) is used as
+ *      given, so LAN e2e keeps advertising that name.
+ *   2. `tailscale status --json` → `Self.DNSName`, and only when that
+ *      value is a `*.ts.net` name. A pinned `LILOS_RELAY_TAILSCALE_IP`
+ *      inside 100.64.0.0/10 with no name still runs this probe, so
+ *      pinning the CGNAT address does not force the QR onto the literal.
+ *      A LAN pin does not: that address is the stand-in on machines
+ *      without tailscaled, ATS already allows it, and looking up a real
+ *      tailnet name would replace it.
+ *
+ * Only a 100.x literal and no name (interface fallback, CLI down,
+ * MagicDNS off, or a status name that is not `*.ts.net`): the QR carries
+ * the literal. That is the degraded case. The phone cannot finish
+ * pairing until a name is known. We do not invent a hostname, and we do
+ * not log the name — it identifies the tailnet.
+ */
+export function advertisedPairingHost(self: TailscaleSelf): string {
+  const pinned = self.dnsName?.trim().replace(/\.$/, "");
+  if (pinned) return pinned;
+  return self.ipv4s[0] ?? "";
 }
 
 const TAILSCALE_STATUS_TIMEOUT_MS = 1_500;
@@ -56,8 +108,10 @@ function parseTailscaleStatus(raw: string): TailscaleSelf | null {
   const self = (parsed as { Self?: unknown }).Self;
   if (typeof self !== "object" || self === null) return { ipv4s: [] };
   const dnsRaw = (self as { DNSName?: unknown }).DNSName;
-  const dnsName =
-    typeof dnsRaw === "string" ? dnsRaw.trim().replace(/\.$/, "") : undefined;
+  /* Only a *.ts.net name is MagicDNS. Anything else stays off the QR:
+     ATS would refuse it the same way it refuses the 100.x literal, and
+     the fix is not a broader exception (D-#803). */
+  const dnsName = typeof dnsRaw === "string" ? magicDnsName(dnsRaw) : undefined;
   const ipsRaw = (self as { TailscaleIPs?: unknown }).TailscaleIPs;
   const ipv4s = Array.isArray(ipsRaw)
     ? ipsRaw.filter(
@@ -193,8 +247,9 @@ type Interfaces = ReturnType<typeof networkInterfaces>;
 
 /**
  * No CLI at all: read this Mac's interfaces for a CGNAT IPv4 (#203). Gives
- * an IP but no MagicDNS name. Never loopback (D-#153): only 100.64.0.0/10
- * addresses qualify.
+ * an IP but no MagicDNS name, so the QR falls through to that literal
+ * (D-#803, the degraded case — iOS ATS will refuse it). Never loopback
+ * (D-#153): only 100.64.0.0/10 addresses qualify.
  */
 export function tailscaleFromInterfaces(
   ifaces: Interfaces = networkInterfaces(),
@@ -213,10 +268,13 @@ export function tailscaleFromInterfaces(
  * Resolve which probe the relay uses. `LILOS_RELAY_TAILSCALE_IP` (with
  * optional `LILOS_RELAY_TAILSCALE_NAME`) pins a static self-identity — the
  * dev/test seam for machines without tailscaled (CI, this repo's e2e).
- * `LILOS_TAILSCALE_BIN` overrides the binary path (a fake CLI in tests).
- * The default is the real CLI probe, with the binary found at a known
- * install location rather than on PATH (#203). Only when no CLI exists at
- * all does it fall back to this Mac's interfaces.
+ * A pin inside 100.64.0.0/10 with no name still asks `tailscale status
+ * --json` for the MagicDNS name (D-#803); a LAN pin does not, so the
+ * stand-in address e2e binds is the address the QR shows. `LILOS_TAILSCALE_BIN`
+ * overrides the binary path (a fake CLI in tests). The default is the real
+ * CLI probe, with the binary found at a known install location rather than
+ * on PATH (#203). Only when no CLI exists at all does it fall back to this
+ * Mac's interfaces.
  */
 export function resolveTailscaleProbe(
   env: Record<string, string | undefined> = process.env,
@@ -226,12 +284,15 @@ export function resolveTailscaleProbe(
     interfaces?: () => Interfaces;
   } = {},
 ): () => Promise<TailscaleProbeResult> {
-  const ip = env.LILOS_RELAY_TAILSCALE_IP;
-  if (ip) {
-    const name = env.LILOS_RELAY_TAILSCALE_NAME;
+  const ip = env.LILOS_RELAY_TAILSCALE_IP?.trim();
+  const pinnedName = env.LILOS_RELAY_TAILSCALE_NAME?.trim().replace(/\.$/, "");
+  /* Explicit name, or a pin outside 100.64.0.0/10 (the LAN stand-in):
+     static identity, no CLI. A 100.x pin with no name falls through so
+     status can still supply the MagicDNS host (D-#803). */
+  if (ip && (pinnedName || !isTailscaleIpv4Address(ip))) {
     return async () => ({
       ok: true,
-      self: { ipv4s: [ip], ...(name ? { dnsName: name } : {}) },
+      self: { ipv4s: [ip], ...(pinnedName ? { dnsName: pinnedName } : {}) },
     });
   }
   const pinned = env.LILOS_TAILSCALE_BIN;
@@ -239,6 +300,13 @@ export function resolveTailscaleProbe(
     // Resolved per probe: installing Tailscale while LilOS runs just works.
     const bin = pinned ?? resolveTailscaleBin(deps.candidates, deps.exists);
     const result = await probeTailscale(bin, env);
+    if (ip) {
+      const dnsName = result.ok ? result.self.dnsName : undefined;
+      return {
+        ok: true,
+        self: { ipv4s: [ip], ...(dnsName ? { dnsName } : {}) },
+      };
+    }
     if (result.ok || result.reason !== "missing" || pinned) return result;
     const self = tailscaleFromInterfaces(
       deps.interfaces ? deps.interfaces() : undefined,
