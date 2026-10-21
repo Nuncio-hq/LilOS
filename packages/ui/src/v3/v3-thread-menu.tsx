@@ -69,13 +69,6 @@ export function ThreadMenu({
       </button>
       {open && (
         <>
-          <button
-            type="button"
-            tabIndex={-1}
-            aria-label="Close thread actions"
-            onClick={() => setOpen(false)}
-            className="fixed inset-0 z-10 cursor-default"
-          />
           <div
             ref={list}
             role="menu"

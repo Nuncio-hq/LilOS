@@ -16,7 +16,7 @@ import { V3AgentPage } from "../src/v3/v3-agent";
 import type { V3Data } from "../src/v3/v3-data-types";
 import { V3DraftChat } from "../src/v3/v3-draft-chat";
 import type { V3Actions } from "../src/v3/v3-page-types";
-import { useRenameMenu } from "../src/v3/v3-thread-menu";
+import { ThreadMenu, useRenameMenu } from "../src/v3/v3-thread-menu";
 import type { V3Agent } from "../src/v3/v3-types";
 
 if (typeof globalThis.ResizeObserver === "undefined") {
@@ -249,6 +249,48 @@ describe("a schedule being written", () => {
     ).toBeNull();
     expect(shell.closePeek).not.toHaveBeenCalled();
     shell.off();
+  });
+});
+
+/* A row's ⋯ menu inside the Threads list: the list is a container-query box,
+   which confined the old full-screen click catcher to itself, so a second
+   row's menu opened on top of the first and neither would close. */
+describe("thread row menus", () => {
+  const rows = () =>
+    render(
+      <div style={{ containerType: "inline-size" }}>
+        <ThreadMenu onRename={vi.fn()} onArchive={vi.fn()} />
+        <ThreadMenu onRename={vi.fn()} onArchive={vi.fn()} />
+        <p>elsewhere</p>
+      </div>,
+    );
+  const menus = () => screen.queryAllByRole("menu");
+
+  test("opening another row's menu closes the first: one menu at a time", () => {
+    rows();
+    const [first, second] = screen.getAllByRole("button", {
+      name: "Thread actions",
+    });
+    fireEvent.click(first);
+    expect(menus()).toHaveLength(1);
+    fireEvent.pointerDown(second);
+    fireEvent.click(second);
+    expect(menus()).toHaveLength(1);
+    expect(first.getAttribute("aria-expanded")).toBe("false");
+    expect(second.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  test("a press anywhere outside closes it; its own trigger toggles it", () => {
+    rows();
+    const [first] = screen.getAllByRole("button", { name: "Thread actions" });
+    fireEvent.click(first);
+    fireEvent.pointerDown(screen.getByText("elsewhere"));
+    expect(menus()).toHaveLength(0);
+    fireEvent.click(first);
+    expect(menus()).toHaveLength(1);
+    fireEvent.pointerDown(first);
+    fireEvent.click(first);
+    expect(menus()).toHaveLength(0);
   });
 });
 

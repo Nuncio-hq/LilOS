@@ -74,13 +74,6 @@ export function Connectors({
         </button>
         {open && (
           <>
-            <button
-              type="button"
-              tabIndex={-1}
-              aria-label="Close menu"
-              onClick={() => setOpen(false)}
-              className="fixed inset-0 z-10 cursor-default"
-            />
             <div
               ref={list}
               role="menu"
