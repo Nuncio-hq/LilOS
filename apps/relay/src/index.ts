@@ -33,7 +33,7 @@ import { createPairingService } from "./pairing";
 import { backfillProjects } from "./projects";
 import { createPushFanout } from "./push";
 import { createRelay, type PhoneAccess } from "./session";
-import { resolveTailscaleProbe } from "./tailscale";
+import { advertisedPairingHost, resolveTailscaleProbe } from "./tailscale";
 
 /** Release version — stamped at bundle build time (#35); repo builds report package.json's. */
 const releaseVersion = process.env.LILOS_RELEASE_VERSION ?? packageJson.version;
@@ -224,8 +224,9 @@ const phoneAccess: PhoneAccess = {
         relay.log(`tailscale bind ${bindIp}:${config.port} failed: ${err}`);
         return null;
       }
-      // MagicDNS name over raw IP in the QR host when the tailnet has one.
-      tailscaleAdvertised = probe.self.dnsName ?? bindIp;
+      /* D-#803: the QR names the MagicDNS host when the probe has one.
+         The listener still binds bindIp (CGNAT, or the LAN stand-in). */
+      tailscaleAdvertised = advertisedPairingHost(probe.self);
       await store.setSetting(PHONE_ACCESS_SETTING, true);
       relay.log(
         `tailscale listener on http://${bindIp}:${tailscaleServer.port}`,
