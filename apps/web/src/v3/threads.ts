@@ -61,14 +61,23 @@ function askText(ask: Ask): { title: string; text: string } {
       title: `Hire ${ask.hire.name}`,
       text: `${ask.hire.name} · ${ask.hire.role} on ${ask.hire.model || "the engine's default model"}`,
     };
-  if (r.kind === "question") return { title: "A question", text: r.question };
+  // The question is the title; "The ask" row only adds the full text when
+  // the title had to cut it (the card hides a row equal to its title).
+  if (r.kind === "question")
+    return { title: oneLine(r.question, 80), text: r.question };
   if (r.kind === "plan")
     return {
       title: "Review the plan",
       text: "The plan is in the thread; open it to read it before you decide.",
     };
+  /* The command is "The ask" row; a description that already quotes it
+     would say it twice (D-#769), so the title keeps only the rest. */
+  const said = r.description
+    ?.replace(r.command, "")
+    .replace(/[\s:·–—-]+$/u, "")
+    .trim();
   return {
-    title: oneLine(r.description ?? "Approve a command", 80),
+    title: oneLine(said || "Approve a command", 80),
     text: r.command,
   };
 }

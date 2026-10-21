@@ -349,7 +349,7 @@ export function V3Needs({ data, go, act }: V3PageProps) {
                 }
               >
                 <span className="shrink-0 text-[13px] text-muted-foreground/70">
-                  {ago(r.minutes)} ago
+                  {r.minutes < 1 ? "just now" : `${ago(r.minutes)} ago`}
                 </span>
               </Item>
             ))}
