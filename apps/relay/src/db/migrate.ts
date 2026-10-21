@@ -499,6 +499,16 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
       `CREATE INDEX company_updates_created ON company_updates(created_at)`,
     ],
   },
+  {
+    /* D-#777: a wake is a flag on the message, and the conversation that
+       holds one is the standing CEO thread. Behaviour reads the columns.
+       The machine lines stay text the model reads. */
+    version: 34,
+    statements: [
+      `ALTER TABLE messages ADD COLUMN ceo_wake INTEGER NOT NULL DEFAULT 0`,
+      `ALTER TABLE conversations ADD COLUMN ceo_thread INTEGER NOT NULL DEFAULT 0`,
+    ],
+  },
 ];
 
 /**

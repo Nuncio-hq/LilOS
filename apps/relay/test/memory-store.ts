@@ -159,6 +159,7 @@ export function createMemoryStore(): RelayStore {
       removed: false,
       claimed: false,
       text: input.text,
+      ...(input.ceoWake ? { ceoWake: true as const } : {}),
       ...(input.model !== undefined ? { model: input.model } : {}),
       ...(input.provider !== undefined ? { provider: input.provider } : {}),
       ...(input.effort !== undefined ? { effort: input.effort } : {}),
@@ -168,6 +169,10 @@ export function createMemoryStore(): RelayStore {
       attachments: input.attachments,
     };
     messages.set(message.id, message);
+    if (input.ceoWake && input.conversationId) {
+      const conversation = conversations.get(input.conversationId);
+      if (conversation) conversation.ceoThread = true;
+    }
     if (noFolderDedupeKey(input.dedupeKey)) hiddenIds.add(message.id);
     if (input.dedupeKey) {
       dedupe.set(`${input.channelId}|${input.dedupeKey}`, message.id);
@@ -206,6 +211,7 @@ export function createMemoryStore(): RelayStore {
       ...(input.cwd !== undefined ? { cwd: input.cwd } : {}),
       ...(input.projectId !== undefined ? { projectId: input.projectId } : {}),
       ...(input.ticketId !== undefined ? { ticketId: input.ticketId } : {}),
+      ...(input.ceoWake ? { ceoThread: true as const } : {}),
       ...(input.workspace !== undefined ? { workspace: input.workspace } : {}),
       ...openTitle(input),
       archived: false,
@@ -231,6 +237,7 @@ export function createMemoryStore(): RelayStore {
       authorId: input.authorId,
       authorKind: input.authorKind ?? "user",
       text: input.text,
+      ...(input.ceoWake ? { ceoWake: true as const } : {}),
       attachments: input.attachments,
       dedupeKey: input.dedupeKey,
     });
@@ -621,7 +628,7 @@ export function createMemoryStore(): RelayStore {
           all.find((m) => m.id === conversation.rootMessageId);
         const last = convMessages.at(-1) ?? all.at(-1);
         if (!root || !last) continue;
-        const answer = convMessages.find((m) => m.authorKind !== "user");
+        const answer = convMessages.find((m) => m.authorKind === "employee");
         summaries.push({
           conversation,
           root: toSummaryMessage(root),
@@ -690,7 +697,7 @@ export function createMemoryStore(): RelayStore {
     },
     async recordConversationFinish({ conversationId, sessionId, eventSeq }) {
       const conversation = conversations.get(conversationId);
-      if (!conversation) return;
+      if (!conversation || conversation.ceoThread) return;
       const mark = finishMarks.get(conversationId);
       if (mark && mark.sessionId === sessionId && eventSeq <= mark.seq) return;
       /* Same stamp rule as the real store (#563): strictly past every mark
@@ -848,7 +855,7 @@ export function createMemoryStore(): RelayStore {
         if (!channel) continue;
         const owed = conversationMessages(conversation.id).filter(
           (m) =>
-            m.authorKind === "user" &&
+            (m.authorKind === "user" || m.ceoWake === true) &&
             !m.rewound &&
             !m.dropped &&
             !m.removed &&

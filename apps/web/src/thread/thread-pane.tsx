@@ -96,7 +96,13 @@ export function ThreadPane({
            project (D-#771); same thread, same memory. The panel
            keeps work=null for chats by design, so the gate is the
            conversation's cwd itself. */
-        onAddFolder={conv.cwd ? undefined : () => d.setMoveFolderOpen(true)}
+        /* The standing CEO thread is not a plain chat. "Add a folder"
+           is that invitation, so it stays off this thread (D-#777). */
+        onAddFolder={
+          conv.cwd || conv.ceoThread
+            ? undefined
+            : () => d.setMoveFolderOpen(true)
+        }
         scrollTo={scrollTo}
         onScrolled={onScrolled}
         work={null}

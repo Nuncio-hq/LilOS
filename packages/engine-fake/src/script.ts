@@ -240,6 +240,32 @@ export function scriptFor(
         });
         continue;
       }
+      const open = /^ticket (\S+) still open after the thread finished\b/.exec(
+        line,
+      );
+      if (open) {
+        const id = open[1] ?? "";
+        steps.push({
+          tool: toolName("ticket_read"),
+          input: { id },
+          output: "",
+        });
+        steps.push({
+          tool: toolName("ticket_update"),
+          input: { id, status: "done" },
+          output: "",
+        });
+        steps.push({
+          tool: toolName("update_post"),
+          input: {
+            kind: "finished",
+            text: `Closed ${id}. The thread finished with it still open.`,
+            ticketId: id,
+          },
+          output: "",
+        });
+        continue;
+      }
       const ask = /^ask ticket (\S+)$/.exec(line);
       if (ask) {
         steps.push({
@@ -266,6 +292,26 @@ export function scriptFor(
       reasoning: "A wake lists what changed. Act on every line.",
       steps,
       text: "Done.",
+    };
+  }
+
+  /* A hand-off opens the worker's thread with `<id>: <title>`. Taking
+     the ticket marks it working, so that opening turn is not "forgot
+     ticket_update". A later turn that never calls the tool is the wake
+     (D-#777). */
+  const handed = /^([A-Z0-9]+-\d+): \S/.exec(prompt.trim());
+  if (handed) {
+    const id = handed[1] ?? "";
+    return {
+      reasoning: "The ticket was handed over. Mark it working.",
+      steps: [
+        {
+          tool: "mcp__lilos__ticket_update",
+          input: { id, status: "working" },
+          output: "",
+        },
+      ],
+      text: `Working on ${id}.`,
     };
   }
 

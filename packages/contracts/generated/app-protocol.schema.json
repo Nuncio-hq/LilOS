@@ -1895,6 +1895,10 @@
           "type": "string",
           "minLength": 1
         },
+        "ceoThread": {
+          "type": "boolean",
+          "const": true
+        },
         "workspace": {
           "oneOf": [
             {
@@ -2262,6 +2266,10 @@
               "ticketId": {
                 "type": "string",
                 "minLength": 1
+              },
+              "ceoThread": {
+                "type": "boolean",
+                "const": true
               },
               "workspace": {
                 "oneOf": [
@@ -2634,6 +2642,10 @@
             "system"
           ]
         },
+        "ceoWake": {
+          "type": "boolean",
+          "const": true
+        },
         "titleSource": {
           "type": "string",
           "const": "user"
@@ -2717,6 +2729,10 @@
             "ticketId": {
               "type": "string",
               "minLength": 1
+            },
+            "ceoThread": {
+              "type": "boolean",
+              "const": true
             },
             "workspace": {
               "oneOf": [
@@ -2977,6 +2993,10 @@
                 "employee",
                 "system"
               ]
+            },
+            "ceoWake": {
+              "type": "boolean",
+              "const": true
             },
             "attachments": {
               "type": "array",
@@ -3331,6 +3351,10 @@
             "ticketId": {
               "type": "string",
               "minLength": 1
+            },
+            "ceoThread": {
+              "type": "boolean",
+              "const": true
             },
             "workspace": {
               "oneOf": [
@@ -3792,6 +3816,10 @@
             "system"
           ]
         },
+        "ceoWake": {
+          "type": "boolean",
+          "const": true
+        },
         "attachments": {
           "type": "array",
           "items": {
@@ -3961,6 +3989,10 @@
                   "system"
                 ]
               },
+              "ceoWake": {
+                "type": "boolean",
+                "const": true
+              },
               "attachments": {
                 "type": "array",
                 "items": {
@@ -4076,6 +4108,10 @@
             "system"
           ]
         },
+        "ceoWake": {
+          "type": "boolean",
+          "const": true
+        },
         "attachments": {
           "maxItems": 10,
           "type": "array",
@@ -4175,6 +4211,10 @@
                 "employee",
                 "system"
               ]
+            },
+            "ceoWake": {
+              "type": "boolean",
+              "const": true
             },
             "attachments": {
               "type": "array",
@@ -4921,6 +4961,10 @@
               "type": "string",
               "minLength": 1
             },
+            "ceoThread": {
+              "type": "boolean",
+              "const": true
+            },
             "workspace": {
               "oneOf": [
                 {
@@ -5217,6 +5261,10 @@
                 "system"
               ]
             },
+            "ceoWake": {
+              "type": "boolean",
+              "const": true
+            },
             "attachments": {
               "type": "array",
               "items": {
@@ -5340,6 +5388,10 @@
                   "employee",
                   "system"
                 ]
+              },
+              "ceoWake": {
+                "type": "boolean",
+                "const": true
               },
               "attachments": {
                 "type": "array",
@@ -5669,6 +5721,10 @@
                     "type": "string",
                     "minLength": 1
                   },
+                  "ceoThread": {
+                    "type": "boolean",
+                    "const": true
+                  },
                   "workspace": {
                     "oneOf": [
                       {
@@ -5965,6 +6021,10 @@
                       "system"
                     ]
                   },
+                  "ceoWake": {
+                    "type": "boolean",
+                    "const": true
+                  },
                   "attachments": {
                     "type": "array",
                     "items": {
@@ -6088,6 +6148,10 @@
                         "employee",
                         "system"
                       ]
+                    },
+                    "ceoWake": {
+                      "type": "boolean",
+                      "const": true
                     },
                     "attachments": {
                       "type": "array",
@@ -7708,6 +7772,10 @@
                 "system"
               ]
             },
+            "ceoWake": {
+              "type": "boolean",
+              "const": true
+            },
             "attachments": {
               "type": "array",
               "items": {
@@ -7842,6 +7910,10 @@
                 "employee",
                 "system"
               ]
+            },
+            "ceoWake": {
+              "type": "boolean",
+              "const": true
             },
             "attachments": {
               "type": "array",
@@ -7986,6 +8058,10 @@
                   "employee",
                   "system"
                 ]
+              },
+              "ceoWake": {
+                "type": "boolean",
+                "const": true
               },
               "attachments": {
                 "type": "array",
@@ -8207,6 +8283,10 @@
             "ticketId": {
               "type": "string",
               "minLength": 1
+            },
+            "ceoThread": {
+              "type": "boolean",
+              "const": true
             },
             "workspace": {
               "oneOf": [
@@ -11282,6 +11362,10 @@
               "type": "string",
               "minLength": 1
             },
+            "ceoThread": {
+              "type": "boolean",
+              "const": true
+            },
             "workspace": {
               "oneOf": [
                 {
@@ -11541,6 +11625,10 @@
                 "employee",
                 "system"
               ]
+            },
+            "ceoWake": {
+              "type": "boolean",
+              "const": true
             },
             "attachments": {
               "type": "array",

@@ -143,6 +143,14 @@ export async function handleConversations(
               isHost(peer) && parsed.data.authorKind === "system"
                 ? "system"
                 : "user",
+            /* D-#777: same host gate as messages.post. A client flag is
+               dropped, and a user root is never a wake. */
+            ceoWake:
+              isHost(peer) &&
+              parsed.data.authorKind === "system" &&
+              parsed.data.ceoWake === true
+                ? true
+                : undefined,
           });
         /* #552: a dedupe hit answers the stored thread and announces
            nothing again — the retry's attachment blobs are dropped

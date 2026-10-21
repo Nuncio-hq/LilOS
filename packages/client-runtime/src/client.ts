@@ -1688,7 +1688,9 @@ export class RelayClient {
        response already contains this message — and carries flags a patch
        can't (`root.rewound` after a rewind-to-root, the true count).
        Cancelling it would strand that state (#134 AC-5). */
-    const isAnswer = message.authorKind !== "user";
+    /* The first employee reply, not the system root. A CEO wake is a
+       system message and must not become the thread's summary (D-#777). */
+    const isAnswer = message.authorKind === "employee";
     this.conversationSummaries.set(
       summaries.map((s) =>
         s.conversation.id === convId && s.last.seq < message.seq

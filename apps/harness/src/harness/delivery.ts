@@ -12,14 +12,11 @@ import type { HarnessCtx, SessionBinding } from "./ctx";
  * `Object.assign` at the bottom of `../harness.ts`.
  */
 
-/** The owner's sends start turns. A CEO wake does too: it is stored as a
-    system note so the thread does not show the owner typing it, and the
-    engine still receives the machine lines (D-#777). */
+/** The owner's sends start turns. A CEO wake does too, by the `ceoWake`
+    flag: the text is what the model reads, and the flag is what delivers
+    it (D-#777). */
 function promptsEngine(message: AppMessage): boolean {
-  if (message.authorKind === "user") return true;
-  return (
-    message.authorKind === "system" && message.text.startsWith("CEO wake.")
-  );
+  return message.authorKind === "user" || message.ceoWake === true;
 }
 
 /** Run `fn` after the conversation's earlier delivery work, in arrival order. */

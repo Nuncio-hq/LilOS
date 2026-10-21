@@ -17,6 +17,10 @@ export interface CeoLoop {
       overwrite a change that landed while the first read was in flight. */
   touched: boolean;
   sawActive: boolean;
+  /** `turnFailure.text` already on the standing thread when this wake
+      was posted. A later, different text means the prompt failed before
+      `turn.started` (D-#777). */
+  failureAtDeliver?: string;
   ready: Promise<void>;
   resolveReady: () => void;
 }
@@ -58,6 +62,7 @@ export function forgetStanding(state: CeoLoop): void {
   state.threadId = undefined;
   state.openingChannelId = undefined;
   state.sawActive = false;
+  state.failureAtDeliver = undefined;
 }
 
 /** Busy means a send now would join a turn already going: the row is

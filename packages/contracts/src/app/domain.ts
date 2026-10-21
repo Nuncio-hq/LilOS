@@ -193,6 +193,13 @@ export const Conversation = z.object({
    * to at most one ticket. The next hand is a new thread on the same ticket.
    */
   ticketId: z.string().min(1).optional(),
+  /**
+   * The standing CEO thread (D-#777). The relay sets it when it stores a
+   * `ceoWake` message here. Turns on this thread never notify and never
+   * count as unseen: the owner reads them as updates. Absent on every
+   * other thread. Clients cannot set it.
+   */
+  ceoThread: z.literal(true).optional(),
   /** Workstream mode stamped at open (#156); absent = direct/just chat. */
   workspace: WorkspaceIntent.optional(),
   /**
@@ -357,6 +364,12 @@ export const AppMessage = z.object({
   /** Thread this message belongs to; `null` = top-level channel message. */
   conversationId: z.string().min(1).nullable(),
   authorKind: AuthorKind,
+  /**
+   * A CEO wake (D-#777). Present only when true. The engine reads `text`;
+   * delivery, the LilOS note, and a restart's pending turns key off this
+   * flag. The relay sets it, and only for a host system message.
+   */
+  ceoWake: z.literal(true).optional(),
   /** Attachment refs for display; bytes are fetched per id. */
   attachments: z.array(MessageAttachment).optional(),
   /**
@@ -430,6 +443,8 @@ export const SummaryMessage = z.object({
   authorId: z.string().min(1),
   authorKind: AuthorKind,
   text: z.string(),
+  /** The row is a CEO wake (D-#777). Same flag as `AppMessage.ceoWake`. */
+  ceoWake: z.literal(true).optional(),
   seq: z.int().min(1),
   createdAt: Timestamp,
   /** The hidden row still headlines its summary (a rewind to the root);
@@ -454,6 +469,7 @@ export function toSummaryMessage(m: AppMessage): SummaryMessage {
     authorId: m.authorId,
     authorKind: m.authorKind,
     text: m.text,
+    ...(m.ceoWake ? { ceoWake: true as const } : {}),
     seq: m.seq,
     createdAt: m.createdAt,
     ...(m.rewound ? { rewound: true as const } : {}),

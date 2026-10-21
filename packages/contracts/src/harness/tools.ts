@@ -969,8 +969,6 @@ export const LILOS_TOOLS: Record<string, LilosToolContract> = {
     area: "ticket",
     access: "write",
   },
-  /* Same area as the other ticket writes so the shared host policy does
-     not grow a line. CEO-only, and not named in that policy (D-#777). */
   update_post: {
     params: UpdatePostParams,
     result: UpdatePostResult,

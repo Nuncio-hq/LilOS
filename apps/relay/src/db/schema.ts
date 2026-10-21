@@ -110,6 +110,11 @@ export const conversations = sqliteTable(
     /** The ticket this thread is a hand of (D-#776); null = not on a ticket.
         One column, so a thread links to at most one ticket. */
     ticketId: text("ticket_id").references(() => tickets.id),
+    /** The standing CEO thread (D-#777). Set when a ceo-wake message is
+        stored on this row. */
+    ceoThread: integer("ceo_thread", { mode: "boolean" })
+      .notNull()
+      .default(false),
     /** Workstream mode stamped at open (#156): JSON WorkspaceIntent; null =
         direct folder / just chat. */
     workspace: text("workspace"),
@@ -315,6 +320,9 @@ export const messages = sqliteTable(
     authorKind: text("author_kind", {
       enum: ["user", "employee", "system"],
     }).notNull(),
+    /** A CEO wake (D-#777). The text is what the model reads; this flag
+        is what the product keys off. */
+    ceoWake: integer("ceo_wake", { mode: "boolean" }).notNull().default(false),
     text: text("text").notNull(),
     /** Display refs JSON (`MessageAttachment[]`); bytes live outside the row. */
     attachments: text("attachments"),

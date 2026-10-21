@@ -12,7 +12,7 @@
  */
 export const CEO_WAKE_COALESCE_MS = 1_500;
 
-export type CeoWakeReason = "done" | "stuck" | "ask" | "schedule";
+export type CeoWakeReason = "done" | "stuck" | "ask" | "schedule" | "open";
 
 export interface CeoWakeEvent {
   reason: CeoWakeReason;
@@ -142,6 +142,13 @@ export function formatCeoWake(events: readonly CeoWakeEvent[]): string {
       );
     } else if (event.reason === "ask" && event.ticketId) {
       lines.push(`- ask ticket ${event.ticketId}`);
+    } else if (event.reason === "open" && event.ticketId) {
+      /* The worker's turn ended and nobody called ticket_update. The
+         line tells the CEO to check, then close the ticket or hand it
+         on (D-#777). */
+      lines.push(
+        `- ticket ${event.ticketId} still open after the thread finished: check it, then close it or hand it on`,
+      );
     } else if (event.reason === "schedule") {
       const text = (event.text ?? "").replace(/\s+/g, " ").trim();
       lines.push(`- schedule ${text}`.trimEnd());
@@ -150,10 +157,10 @@ export function formatCeoWake(events: readonly CeoWakeEvent[]): string {
   return lines.join("\n");
 }
 
-/** The system note the CEO thread shows. Null when `text` is not a wake,
-    so an ordinary system line is left as it was written. */
-export function ceoWakeNote(text: string): string | null {
-  if (!text.startsWith("CEO wake.")) return null;
+/** The LilOS note for a wake whose message is already marked `ceoWake`.
+    Callers decide that from the flag. This only renders the stored
+    lines, so a prefix match is not what makes a wake a wake (D-#777). */
+export function ceoWakeNote(text: string): string {
   const bits: string[] = [];
   for (const raw of text.split("\n").slice(1)) {
     const line = raw.replace(/^- /, "").trim();
@@ -177,6 +184,13 @@ export function ceoWakeNote(text: string): string | null {
     const ask = /^ask ticket (\S+)$/.exec(line);
     if (ask?.[1]) {
       bits.push(`${ask[1]} was answered`);
+      continue;
+    }
+    const open = /^ticket (\S+) still open after the thread finished\b/.exec(
+      line,
+    );
+    if (open?.[1]) {
+      bits.push(`${open[1]} finished with the ticket still open`);
       continue;
     }
     const sched = /^schedule (.*)$/.exec(line);

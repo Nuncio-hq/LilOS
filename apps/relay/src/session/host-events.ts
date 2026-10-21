@@ -117,7 +117,9 @@ export async function handleHostEvents(
           (event.type === "turn.completed" &&
             event.payload.stopReason !== "cancelled") ||
           (event.type === "session.state" && event.payload.state === "error");
-        if (finished) {
+        /* D-#777: the standing thread's turns are the owner's updates.
+           They do not stamp unseen, and they do not push. */
+        if (finished && !conversation.ceoThread) {
           /* Snapshotted before the write: the compare below must see the
              pre-stamp value — stores that mutate in place would otherwise
              make "stamp landed" undetectable. */
@@ -141,9 +143,15 @@ export async function handleHostEvents(
         }
         /* #161: turn.completed / session.state-error transitions push;
            the fan-out's seq watermark drops replays. */
-        options.push
-          ?.engineEvent(conversation, parsed.data.sessionId, parsed.data.event)
-          .catch((error) => log(`push fan-out failed: ${error}`));
+        if (!conversation.ceoThread) {
+          options.push
+            ?.engineEvent(
+              conversation,
+              parsed.data.sessionId,
+              parsed.data.event,
+            )
+            .catch((error) => log(`push fan-out failed: ${error}`));
+        }
       }
       respond(peer, id, { ok: true });
       return;

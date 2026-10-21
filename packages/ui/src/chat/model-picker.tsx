@@ -36,6 +36,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "../components/ui/popover";
+import { catalogModelName } from "../lib/model-name";
 import { cn } from "../lib/utils";
 import type {
   ModelChoice,
@@ -410,7 +411,10 @@ export function ModelPicker({
           }
         >
           <ModelLogo provider={cur?.provider} logo={logoOf(cur?.provider)} />
-          <span className="max-w-36 truncate">{cur?.name ?? value.model}</span>
+          <span className="max-w-36 truncate">
+            {catalogModelName(value.model, merged, value.provider) ??
+              value.model}
+          </span>
           {effort && <span data-effort>· {effortLabel(effort)}</span>}
           {fast && (
             <ZapIcon
@@ -498,7 +502,8 @@ export function ModelPicker({
                 />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm">
-                    {cur?.name ?? value.model}
+                    {catalogModelName(value.model, merged, value.provider) ??
+                      value.model}
                   </span>
                   {cur?.provider && (
                     <span className="block truncate text-muted-foreground text-xs">

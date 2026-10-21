@@ -589,6 +589,9 @@ export const ConversationsOpenParams = z
     /** Host-only (D-#777): the standing CEO thread's root is a system
         note, not the owner typing. A client-supplied kind is ignored. */
     authorKind: z.enum(["user", "system"]).optional(),
+    /** Host-only (D-#777): this open is a CEO wake. Ignored unless the
+        host also sends `authorKind: "system"`. */
+    ceoWake: z.literal(true).optional(),
     /** Host-only (D-#777): stamp the title as the user's so the engine's
         auto-title cannot rename it. Clients already get "user". */
     titleSource: z.literal("user").optional(),
@@ -692,6 +695,9 @@ export const MessagesPostParams = z.object({
   text: z.string(),
   authorId: z.string().min(1).default("user"),
   authorKind: AuthorKind.default("user"),
+  /** Host-only (D-#777): this post is a CEO wake. Ignored unless the
+      host also sends `authorKind: "system"`. */
+  ceoWake: z.literal(true).optional(),
   attachments: AttachmentsField,
   /** Engine `turn.started.model` — set by the host on employee answers. */
   model: z.string().min(1).optional(),

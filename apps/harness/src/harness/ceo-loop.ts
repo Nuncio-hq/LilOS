@@ -165,7 +165,30 @@ async function runDeliver(
   }
 }
 
+/** A worker's turn just finished and the ticket is still open because
+    this turn never called `ticket_update`. One wake per that edge, not
+    for the CEO's own threads. Coalesced with everything else (D-#777). */
+function noteWorkerFinished(ctx: HarnessCtx, conv: Conversation): void {
+  const prev = ctx.conversationFromAtom(conv.id);
+  if (prev?.state !== "active" || conv.state !== "idle") return;
+  if (!conv.ticketId || conv.ceoThread) return;
+  const state = ceoLoop(ctx);
+  if (state.threadId && conv.id === state.threadId) return;
+  const binding = ctx.bindings.get(conv.id);
+  const touched = binding?.ticketTouched === true;
+  if (binding) binding.ticketTouched = false;
+  if (touched) return;
+  const employeeId = binding?.employeeId ?? ctx.employeeIdFor(conv);
+  if (state.ceoId && employeeId === state.ceoId) return;
+  const ticket = ctx.opts.relay.tickets
+    .get()
+    .find((t) => t.id === conv.ticketId);
+  if (!ticket || ticket.status === "done" || ticket.status === "failed") return;
+  void noteCeoWake(ctx, { reason: "open", ticketId: conv.ticketId });
+}
+
 export function ceoOnConversation(ctx: HarnessCtx, conv: Conversation): void {
+  noteWorkerFinished(ctx, conv);
   const state = ceoLoop(ctx);
   const opening =
     state.openingChannelId !== undefined &&
@@ -183,6 +206,19 @@ export function ceoOnConversation(ctx: HarnessCtx, conv: Conversation): void {
     return;
   }
   if (conv.state !== "idle" && conv.state !== "closed") return;
+  /* The prompt failed before `turn.started`, so this thread never went
+     active. The queue still has to leave `running` (D-#777). */
+  if (
+    state.wakes.isRunning &&
+    !state.sawActive &&
+    conv.turnFailure &&
+    conv.turnFailure.text !== state.failureAtDeliver
+  ) {
+    state.failureAtDeliver = conv.turnFailure.text;
+    const next = state.wakes.settled();
+    if (next) void runDeliver(ctx, next);
+    return;
+  }
   if (state.sawActive && state.wakes.isRunning) {
     state.sawActive = false;
     const next = state.wakes.settled();

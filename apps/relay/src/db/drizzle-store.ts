@@ -118,10 +118,14 @@ const rowToConversation = (row: ConversationRow): Conversation => {
     finishedSessionId: _fsid,
     finishedEventSeq: _fseq,
     stuckAt,
+    ceoThread,
     ...rest
   } = row;
   return {
     ...rest,
+    /* D-#777: the column is 0/1. The contract is literal true, so a
+       false must not cross the wire. */
+    ...(ceoThread ? { ceoThread: true as const } : {}),
     /* Issue #775: NULL means never stuck. The contract field is optional,
        not nullable — a null on the wire would fail the conversation parse. */
     ...(stuckAt != null ? { stuckAt } : {}),
@@ -186,23 +190,33 @@ const rowToScheduledTask = (row: ScheduledTaskRow): ScheduledTask => ({
 
 type MessageRow = typeof schema.messages.$inferSelect;
 /** Rows carry attachment refs as JSON text; the domain object unpacks them. */
-const rowToMessage = (row: MessageRow): AppMessage => ({
-  ...row,
-  model: row.model ?? undefined,
-  provider: row.provider ?? undefined,
-  effort: row.effort ?? undefined,
-  fast: row.fast ?? undefined,
-  checkpoint: row.checkpoint ?? undefined,
-  attachments: row.attachments
-    ? (JSON.parse(row.attachments) as MessageAttachment[])
-    : undefined,
-});
-const messageToRow = (message: AppMessage) => ({
-  ...message,
-  attachments: message.attachments?.length
-    ? JSON.stringify(message.attachments)
-    : null,
-});
+const rowToMessage = (row: MessageRow): AppMessage => {
+  const { ceoWake, ...rest } = row;
+  return {
+    ...rest,
+    /* D-#777: omit the flag unless this row is a wake. `false` would
+       fail the literal-true contract. */
+    ...(ceoWake ? { ceoWake: true as const } : {}),
+    model: row.model ?? undefined,
+    provider: row.provider ?? undefined,
+    effort: row.effort ?? undefined,
+    fast: row.fast ?? undefined,
+    checkpoint: row.checkpoint ?? undefined,
+    attachments: row.attachments
+      ? (JSON.parse(row.attachments) as MessageAttachment[])
+      : undefined,
+  };
+};
+const messageToRow = (message: AppMessage & { dedupeKey?: string | null }) => {
+  const { ceoWake, ...rest } = message;
+  return {
+    ...rest,
+    ceoWake: ceoWake === true,
+    attachments: message.attachments?.length
+      ? JSON.stringify(message.attachments)
+      : null,
+  };
+};
 
 type AskRow = typeof schema.asks.$inferSelect;
 const rowToAsk = (row: AskRow): Ask => ({
@@ -374,6 +388,7 @@ export function createDrizzleStore(db: Db): RelayStore {
       removed: false,
       claimed: false,
       text: input.text,
+      ...(input.ceoWake ? { ceoWake: true as const } : {}),
       ...(input.model !== undefined ? { model: input.model } : {}),
       ...(input.provider !== undefined ? { provider: input.provider } : {}),
       ...(input.effort !== undefined ? { effort: input.effort } : {}),
@@ -384,6 +399,14 @@ export function createDrizzleStore(db: Db): RelayStore {
       attachments: input.attachments,
     };
     db.insert(schema.messages).values(messageToRow(message)).run();
+    /* D-#777: storing a wake marks the conversation as the standing
+       thread, including one opened before this flag existed. */
+    if (input.ceoWake && input.conversationId) {
+      db.update(schema.conversations)
+        .set({ ceoThread: true })
+        .where(eq(schema.conversations.id, input.conversationId))
+        .run();
+    }
     const { dedupeKey: _dedupeKey, ...appMessage } = message;
     return { message: appMessage, created: true };
   };
@@ -461,6 +484,7 @@ export function createDrizzleStore(db: Db): RelayStore {
       removed: false,
       claimed: false,
       text: input.text,
+      ...(input.ceoWake ? { ceoWake: true as const } : {}),
       seq: bumped.seq,
       createdAt: now(),
       attachments: input.attachments,
@@ -486,6 +510,7 @@ export function createDrizzleStore(db: Db): RelayStore {
       ...(input.cwd !== undefined ? { cwd: input.cwd } : {}),
       ...(input.projectId !== undefined ? { projectId: input.projectId } : {}),
       ...(input.ticketId !== undefined ? { ticketId: input.ticketId } : {}),
+      ...(input.ceoWake ? { ceoThread: true as const } : {}),
       ...(input.workspace !== undefined ? { workspace: input.workspace } : {}),
       archived: false,
       deliveredSeq: 0,
@@ -517,6 +542,8 @@ export function createDrizzleStore(db: Db): RelayStore {
         turnFailure: conversation.turnFailure
           ? JSON.stringify(conversation.turnFailure)
           : null,
+        /* The domain flag is literal true. The column is 0/1. */
+        ceoThread: conversation.ceoThread === true,
       })
       .run();
     /* The picker's folder bumps recents — a `.lilos/wt/*` run dir never
@@ -840,7 +867,7 @@ export function createDrizzleStore(db: Db): RelayStore {
       const convCols = `id, channel_id AS channelId,
         root_message_id AS rootMessageId, engine_ref AS engineRef, state,
         model, provider, effort, fast, cwd, project_id AS projectId,
-        ticket_id AS ticketId, workspace, access, title,
+        ticket_id AS ticketId, ceo_thread AS ceoThread, workspace, access, title,
         title_source AS titleSource, archived, delivered_seq AS deliveredSeq,
         usage, usage_session_id AS usageSessionId, usage_seq AS usageSeq,
         life, turn_failure AS turnFailure,
@@ -877,12 +904,13 @@ export function createDrizzleStore(db: Db): RelayStore {
           /* #583: raw SQL returns the 0/1 integer — coerce like `fast` so
              the boolean schema doesn't see a number. */
           turnStopped: r.turnStopped == null ? null : !!r.turnStopped,
+          ceoThread: !!r.ceoThread,
         } as ConversationRow),
       );
       if (convs.length === 0) return [];
       const msgCols = `id, channel_id AS channelId,
         conversation_id AS conversationId, author_id AS authorId,
-        author_kind AS authorKind, text, attachments, model, provider,
+        author_kind AS authorKind, ceo_wake AS ceoWake, text, attachments, model, provider,
         effort, fast, seq, dedupe_key AS dedupeKey, rewound, dropped,
         removed, claimed, checkpoint, created_at AS createdAt`;
       const msgRows = (
@@ -902,6 +930,7 @@ export function createDrizzleStore(db: Db): RelayStore {
               dropped: !!r.dropped,
               removed: !!r.removed,
               claimed: !!r.claimed,
+              ceoWake: !!r.ceoWake,
             }) as MessageRow,
         );
       const convIds = convs.map((c) => c.id);
@@ -921,7 +950,7 @@ export function createDrizzleStore(db: Db): RelayStore {
             .query(
               `SELECT conversation_id AS convId,
                       SUM(CASE WHEN ${visible} THEN 1 ELSE 0 END) AS visibleCount,
-                      MIN(CASE WHEN ${visible} AND author_kind <> 'user' THEN seq END) AS firstAnswerSeq,
+                      MIN(CASE WHEN ${visible} AND author_kind = 'employee' THEN seq END) AS firstAnswerSeq,
                       MAX(CASE WHEN ${visible} THEN seq END) AS lastVisibleSeq,
                       MAX(CASE WHEN ${dedupeVisible} THEN seq END) AS lastAnySeq
                FROM messages
@@ -1444,6 +1473,7 @@ export function createDrizzleStore(db: Db): RelayStore {
         .select({
           lastSeq: schema.channels.lastSeq,
           readSeq: schema.conversations.readSeq,
+          ceoThread: schema.conversations.ceoThread,
         })
         .from(schema.conversations)
         .innerJoin(
@@ -1453,6 +1483,8 @@ export function createDrizzleStore(db: Db): RelayStore {
         .where(eq(schema.conversations.id, conversationId))
         .get();
       if (!row) return;
+      /* D-#777: the standing thread's turns are updates, not unseen. */
+      if (row.ceoThread) return;
       const stamp = Math.max(row.lastSeq, row.readSeq) + 1;
       db.update(schema.conversations)
         .set({
@@ -2027,7 +2059,7 @@ export function createDrizzleStore(db: Db): RelayStore {
           .map(rowToMessage)
           .filter(
             (m) =>
-              m.authorKind === "user" &&
+              (m.authorKind === "user" || m.ceoWake === true) &&
               !m.rewound &&
               !m.dropped &&
               !m.removed &&

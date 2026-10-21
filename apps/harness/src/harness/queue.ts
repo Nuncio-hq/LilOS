@@ -62,8 +62,12 @@ export function enqueueOrPrompt(
     /* A `/` send is never a steer: injecting the command's text into the
        running turn would corrupt it. It queues and execs when the lane
        frees — engines without `commands` send it as a normal prompt. */
+    /* A wake never steers, even when the owner's turn won the race.
+       Steering it would bury the machine lines in that turn. Only a
+       user message steers (D-#777). */
     if (
       conn &&
+      message.authorKind === "user" &&
       this.hasCapability("steer") &&
       !message.attachments?.length &&
       !binding.heldPick &&

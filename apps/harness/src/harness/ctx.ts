@@ -132,6 +132,9 @@ export interface SessionBinding {
   /** The conversation's pick before `heldPick`'s intent was written —
       restored when the held apply fails so a dead pick can't linger. */
   heldPickPrev?: ConversationPickPatch;
+  /** This turn called `ticket_update` (D-#777). Cleared on `turn.started`.
+      A thread that goes idle without it, ticket still open, wakes the CEO. */
+  ticketTouched?: boolean;
   /** #106: the conversation's access level at last seen — `full` routes
       every `approval` request.opened through autoApprove instead of the
       card path; `conversation.updated` refreshes it mid-turn. */

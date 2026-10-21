@@ -378,7 +378,13 @@ export function systemFacing(m: ReplySource): {
   if (m.authorKind !== "system") {
     return { from: m.authorId, text: m.text, system: false };
   }
-  return { from: "", text: ceoWakeNote(m.text) ?? m.text, system: true };
+  /* The flag decides. An ordinary system line keeps the text it was
+     written with (D-#777). */
+  return {
+    from: "",
+    text: m.ceoWake ? ceoWakeNote(m.text) : m.text,
+    system: true,
+  };
 }
 
 const messageReply = (m: ReplySource): Reply => {
@@ -844,7 +850,10 @@ export function toFeed(
       ...(conv.bgJobs ? { bgJobs: conv.bgJobs } : {}),
       /* #563: a turn end stamped past the user's read watermark dots the
          card — opening the thread stamps `readSeq` and it clears. */
-      ...(conv.finishedSeq > conv.readSeq ? { unseen: true } : {}),
+      /* D-#777: the standing thread's turns are updates, never unseen. */
+      ...(conv.finishedSeq > conv.readSeq && !conv.ceoThread
+        ? { unseen: true }
+        : {}),
       /* #136: a scheduled task opened this session — the row's chip names
          it and opens the task. */
       ...(conv.scheduled

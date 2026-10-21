@@ -86,9 +86,18 @@ export async function handleMessages(c: RelayCtx): Promise<false | undefined> {
         );
       }
       const attachments = await storeAttachments(parsed.data.attachments);
+      /* D-#777: a client cannot mark a wake. Only the host, and only on
+         a system message, so a user send cannot become one. */
+      const ceoWake =
+        isHost(peer) &&
+        parsed.data.authorKind === "system" &&
+        parsed.data.ceoWake === true
+          ? (true as const)
+          : undefined;
       try {
         const { message, created } = await store.appendMessage({
           ...parsed.data,
+          ...(ceoWake ? { ceoWake } : { ceoWake: undefined }),
           attachments,
         });
         // A dedupe hit is a no-op retry: answer with the stored message,

@@ -59,12 +59,20 @@ export async function deliverCeoWake(
   if (!current && state.threadId) forgetStanding(state);
   if (current) {
     state.sawActive = false;
+    /* Clear a previous failure first, and remember that it is gone. A
+       prompt that fails before `turn.started` writes a new one; that
+       difference is what settles the queue (D-#777). */
+    if (current.turnFailure) {
+      await ctx.updateConversation(current.id, { turnFailure: null });
+    }
+    state.failureAtDeliver = undefined;
     await ctx.opts.relay.request("messages.post", {
       channelId: current.channelId,
       conversationId: current.id,
       text,
       authorId: "system",
       authorKind: "system",
+      ceoWake: true,
     });
     await stampFired(ctx, events);
     return;
@@ -85,7 +93,9 @@ export async function deliverCeoWake(
      the stored thread and does not post this wake, which wedges the
      queue (D-#777). */
   state.sawActive = false;
+  state.failureAtDeliver = undefined;
   state.openingChannelId = channel.id;
+  const captured = ceoId;
   const opened = await ctx.opts.relay.request<{ conversation: Conversation }>(
     "conversations.open",
     {
@@ -95,14 +105,30 @@ export async function deliverCeoWake(
       titleSource: "user",
       authorId: "system",
       authorKind: "system",
+      ceoWake: true,
     },
   );
+  /* The holder can change while this open is in flight. The event may
+     already have named the row; do not stamp it onto the new CEO, and
+     do not leave the old id in settings (D-#777). */
   state.openingChannelId = undefined;
+  if (state.ceoId !== captured) {
+    if (state.wakes.isRunning) state.wakes.fail();
+    return;
+  }
   state.threadId = opened.conversation.id;
   await ctx.opts.relay.request("settings.set", {
     key: CEO_THREAD_KEY,
     value: opened.conversation.id,
   });
+  if (state.ceoId !== captured) {
+    forgetStanding(state);
+    await ctx.opts.relay.request("settings.set", {
+      key: CEO_THREAD_KEY,
+      value: null,
+    });
+    return;
+  }
   await stampFired(ctx, events);
   /* A turn that finished before this returned already went idle. The
      event landed first and sawActive is set; release the queue here. */

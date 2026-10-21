@@ -432,6 +432,10 @@
                 "system"
               ]
             },
+            "ceoWake": {
+              "type": "boolean",
+              "const": true
+            },
             "attachments": {
               "type": "array",
               "items": {
@@ -625,6 +629,10 @@
                   "employee",
                   "system"
                 ]
+              },
+              "ceoWake": {
+                "type": "boolean",
+                "const": true
               },
               "attachments": {
                 "type": "array",

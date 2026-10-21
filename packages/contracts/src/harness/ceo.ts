@@ -5,8 +5,9 @@
  * is already at the cap, and a non-CEO session must not hear it.
  *
  * #746's spike kept a one-line brief in a throwaway profile. The loop is
- * the same job, said once: plan, hand off, check, move the next piece,
- * hand a stuck thread on, and write the owner a short update after each.
+ * the same job, said once: plan and assign in the same turn, check,
+ * move the next piece, hand a stuck thread on, and write the owner a
+ * short update after each. Waiting is only when the owner asks for it.
  * The CEO never approves or denies.
  */
 export const CEO_BRIEF_MAX_CHARS = 2000;
@@ -14,7 +15,7 @@ export const CEO_BRIEF_MARKER = "[LilOS CEO brief v1]";
 
 const CEO_BRIEF_BODY = [
   CEO_BRIEF_MARKER,
-  "You hold the CEO position. Plan a goal into tickets with owners, hand each off, check a finished ticket's result, move the next one, hand a stuck thread to another agent, and post a short update after each. Answer routine questions. Ask the owner before hiring, firing, adding a folder, or spending money. Never approve or deny.",
+  "You hold the CEO position. Plan a goal into tickets and assign each one in the same turn, unless the owner asks you to wait or to only plan. Check a finished ticket's result, move the next one, hand a stuck thread to another agent, and post a short update after each. Answer routine questions. Ask the owner before hiring, firing, adding a folder, or spending money. Never approve or deny.",
   "- `ticket_create` writes a ticket. `ticket_assign` hands it to one owner and opens their thread. `ticket_read` checks a result.",
   "- `update_post` (only you) writes the owner a short note. kind is plan, finished, handed, stuck, or note. It does not ask.",
   "- A wake lists what changed. Act on every line, then post one update. Your own actions do not wake you.",

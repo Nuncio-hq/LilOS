@@ -13,6 +13,7 @@ import {
   stopCeoLoop,
   wireCeoLoop,
 } from "../src/harness/ceo-loop";
+import { ceoLoop } from "../src/harness/ceo-state";
 import type { HarnessCtx, SessionBinding } from "../src/harness/ctx";
 import {
   beginStuckTurn,
@@ -40,6 +41,8 @@ function world(opts?: {
   threadEmployee?: string;
   employees?: { id: string; name?: string }[];
   failPostOnce?: { n: number };
+  tickets?: { id: string; status: string }[];
+  holdOpen?: Promise<void>;
 }) {
   const ceo = opts?.ceo === undefined ? "ceo" : opts.ceo;
   const calls: Call[] = [];
@@ -80,7 +83,7 @@ function world(opts?: {
       relay: {
         channels: { get: () => channels },
         employees: { get: () => employees },
-        tickets: { get: () => [] },
+        tickets: { get: () => opts?.tickets ?? [] },
         request: async (method: string, params: Record<string, unknown>) => {
           calls.push({ method, params: params ?? {} });
           if (method === "settings.get") {
@@ -97,6 +100,7 @@ function world(opts?: {
             return { message: { id: "m1" } };
           }
           if (method === "conversations.open") {
+            if (opts?.holdOpen) await opts.holdOpen;
             const id = `opened-${calls.length}`;
             const conv = {
               id,
@@ -104,6 +108,7 @@ function world(opts?: {
               title: params.title as string,
               state: "idle",
               archived: false,
+              ...(params.ceoWake === true ? { ceoThread: true as const } : {}),
             } as Conversation;
             convs.set(id, conv);
             return { conversation: conv };
@@ -172,6 +177,7 @@ describe("CEO loop", () => {
     expect(open?.params.titleSource).toBe("user");
     expect(open?.params.title).toBe("CEO");
     expect(String(open?.params.text).startsWith("CEO wake.")).toBe(true);
+    expect(open?.params.ceoWake).toBe(true);
     expect(calls.some((c) => c.method === "messages.post")).toBe(false);
   });
 
@@ -228,6 +234,7 @@ describe("CEO loop", () => {
     expect(post?.params.authorKind).toBe("system");
     expect(post?.params.authorId).toBe("system");
     expect(String(post?.params.text).startsWith("CEO wake.")).toBe(true);
+    expect(post?.params.ceoWake).toBe(true);
   });
 
   it("re-arms after a failed post", async () => {
@@ -376,5 +383,98 @@ describe("CEO loop", () => {
       prompt: "no",
     } as ScheduledTask);
     expect(other).toBe(false);
+  });
+
+  it("wakes when a worker finishes with the ticket still open", async () => {
+    vi.useFakeTimers();
+    const { ctx, calls, convs, bindings } = world({
+      tickets: [{ id: "T-9", status: "working" }],
+    });
+    await boot(ctx);
+    const conv = {
+      id: "work",
+      channelId: "ch-owner",
+      ticketId: "T-9",
+      title: "Page",
+      state: "active",
+      archived: false,
+    } as Conversation;
+    convs.set(conv.id, conv);
+    bindings.set(conv.id, {
+      conversationId: conv.id,
+      employeeId: "owner",
+    } as SessionBinding);
+    ceoOnConversation(ctx, { ...conv, state: "idle" });
+    await fire();
+    expect(posted(calls)).toHaveLength(1);
+    const text = String(posted(calls)[0]?.params.text);
+    expect(text).toContain(
+      "ticket T-9 still open after the thread finished: check it, then close it or hand it on",
+    );
+    expect(posted(calls)[0]?.params.ceoWake).toBe(true);
+
+    /* The CEO's own thread, a turn that called ticket_update, and a
+       ticket already done do not wake. */
+    const own = {
+      ...conv,
+      id: "own",
+      channelId: "ch-ceo",
+      state: "active" as const,
+    };
+    convs.set(own.id, own);
+    ceoOnConversation(ctx, { ...own, state: "idle" });
+    const worker = bindings.get(conv.id);
+    if (!worker) throw new Error("missing worker binding");
+    worker.ticketTouched = true;
+    convs.set(conv.id, { ...conv, state: "active" });
+    ceoOnConversation(ctx, { ...conv, state: "idle" });
+    expect(ceoLoop(ctx).wakes.hasPending).toBe(false);
+    expect(posted(calls)).toHaveLength(1);
+  });
+
+  it("settles a wake whose prompt fails before the turn starts", async () => {
+    vi.useFakeTimers();
+    const { ctx, calls, convs } = world({ threadId: "t1" });
+    await boot(ctx);
+    await noteCeoWake(ctx, { reason: "done", ticketId: "T-1" });
+    await fire();
+    expect(posted(calls)).toHaveLength(1);
+    await noteCeoWake(ctx, { reason: "ask", ticketId: "T-2" });
+    const standing = convs.get("t1");
+    if (!standing) throw new Error("missing standing thread");
+    ceoOnConversation(ctx, {
+      ...standing,
+      state: "idle",
+      turnFailure: { kind: "generic", text: "prompt failed" },
+    });
+    await micro();
+    expect(posted(calls)).toHaveLength(2);
+    expect(String(posted(calls)[1]?.params.text)).toContain("ask ticket T-2");
+  });
+
+  it("does not stamp the previous CEO's thread when the holder changes during open", async () => {
+    vi.useFakeTimers();
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { ctx, calls } = world({ holdOpen: held });
+    await boot(ctx);
+    await noteCeoWake(ctx, { reason: "done", ticketId: "T-1" });
+    const started = vi.advanceTimersByTimeAsync(CEO_WAKE_COALESCE_MS);
+    await micro();
+    ceoOnSettings(ctx, { key: CEO_SETTING_KEY, value: "b" });
+    release();
+    await started;
+    await micro();
+    expect(ceoLoop(ctx).threadId).toBeUndefined();
+    expect(
+      calls.some(
+        (c) =>
+          c.method === "settings.set" &&
+          c.params.key === CEO_THREAD_KEY &&
+          typeof c.params.value === "string",
+      ),
+    ).toBe(false);
   });
 });

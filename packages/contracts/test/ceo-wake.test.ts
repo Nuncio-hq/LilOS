@@ -107,7 +107,16 @@ describe("CEO wakes", () => {
     expect(ceoWakeNote(text)).toBe(
       "LilOS: LIL-1 is done · LIL-2 is next · LIL-9 is stuck",
     );
-    expect(ceoWakeNote("Handed to Blair")).toBeNull();
+    /* Rendering only. A caller that has not seen `ceoWake` does not
+       ask for a note, so this is not a detector. */
+    expect(ceoWakeNote("Handed to Blair")).toBe("LilOS: wake");
+    const open = formatCeoWake([{ reason: "open", ticketId: "LIL-4", at: 0 }]);
+    expect(open).toContain(
+      "- ticket LIL-4 still open after the thread finished: check it, then close it or hand it on",
+    );
+    expect(ceoWakeNote(open)).toBe(
+      "LilOS: LIL-4 finished with the ticket still open",
+    );
   });
 
   it("puts a busy batch back ready, and a failed batch behind a new window", () => {

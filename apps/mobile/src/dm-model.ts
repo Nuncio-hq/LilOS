@@ -9,6 +9,7 @@ import type {
   WorkspaceIntent,
 } from "@lilos/contracts/app";
 import type { ModelsListResult } from "@lilos/contracts/engine";
+import { ceoWakeNote } from "@lilos/contracts/harness";
 import type {
   Approval,
   FolderOption,
@@ -161,9 +162,15 @@ export type DmCtx = {
   now: number;
 };
 
+/** A wake shows as the LilOS note. Everything else shows its text (D-#777). */
+const shown = (m: { ceoWake?: true; text: string }): string =>
+  m.ceoWake ? ceoWakeNote(m.text) : m.text;
+
 /** The employee's last words on the thread — the row's preview line. */
 const lastWords = (s: ConversationSummary): string | undefined =>
-  s.last.authorKind !== "user" ? s.last.text : s.firstAnswer?.text;
+  s.last.authorKind !== "user"
+    ? shown(s.last)
+    : s.firstAnswer && shown(s.firstAnswer);
 
 function toSessionTurn(s: ConversationSummary, ctx: DmCtx): SessionTurn {
   const conv = s.conversation;
@@ -178,8 +185,8 @@ function toSessionTurn(s: ConversationSummary, ctx: DmCtx): SessionTurn {
   const project = projectNameOf(conv, ctx.projects ?? []);
   return {
     id: conv.id,
-    prompt: s.root.text,
-    title: conv.title || s.root.text,
+    prompt: shown(s.root),
+    title: conv.title || shown(s.root),
     state,
     /* #346 AC-4 — sessionLife's rule in this file's one derivation spot:
        a turn working (or a send still landing) is running; an ask waiting
@@ -203,7 +210,10 @@ function toSessionTurn(s: ConversationSummary, ctx: DmCtx): SessionTurn {
     ...(conv.turnFailure ? { failure: conv.turnFailure } : {}),
     /* #563: a turn end stamped past the user's read watermark dots the row —
        opening the thread clears it on every device. */
-    ...(conv.finishedSeq > conv.readSeq ? { unseen: true } : {}),
+    /* D-#777: the standing thread's turns are updates, never unseen. */
+    ...(conv.finishedSeq > conv.readSeq && !conv.ceoThread
+      ? { unseen: true }
+      : {}),
     ...(ask
       ? {
           approval: askApproval(ask, {
@@ -251,8 +261,8 @@ export function toSessionTurns(
       at: p.conversation.createdAt,
       turn: {
         id,
-        prompt: p.root.text,
-        title: p.conversation.title || p.root.text,
+        prompt: shown(p.root),
+        title: p.conversation.title || shown(p.root),
         state: "working",
         /* #346 AC-4: a send in flight is running — toSessionTurn's rule. */
         life: "running",
