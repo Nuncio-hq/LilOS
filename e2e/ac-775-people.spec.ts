@@ -293,6 +293,9 @@ test("the org chart reflects reportsTo, and the owner is the profile name", asyn
     await page.goto(`${stack.webUrl}/#?page=people&view=org`);
     await page.reload();
     const ownerNode = main(page).locator("[data-reports-to='owner']");
+    await expect(
+      main(page).getByRole("button", { name: /Hire an agent/ }),
+    ).toHaveCount(0);
     await expect(ownerNode).toHaveCount(1);
     await expect(ownerNode).toContainText(agent.name);
     const under = main(page).locator(`[data-reports-to="${agent.id}"]`);

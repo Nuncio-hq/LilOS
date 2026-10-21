@@ -1,4 +1,3 @@
-import { PlusIcon } from "lucide-react";
 import { cn } from "../lib/utils";
 import type { V3Data } from "./v3-data-types";
 import { AgentAvatar, Avatar, CeoMark, StatusDot } from "./v3-marks";
@@ -11,7 +10,8 @@ import type { V3Agent } from "./v3-types";
    never a hardcoded one, and not the CEO position. The crown is only a
    mark. A cycle is rejected by the relay; the walk still stops at a repeat
    so a bad row cannot hang the page, and anyone the walk never reaches
-   is drawn under the owner rather than dropped. */
+   is drawn under the owner rather than dropped. Hire is not a node
+   (D-#769): the sidebar is the only control. */
 
 const LINE = "bg-[var(--v3-line)]";
 
@@ -160,14 +160,11 @@ function Bar({ i, slots }: { i: number; slots: number }) {
 function Row({
   data,
   go,
-  act,
   parentId,
-  hire,
   seen,
   extra,
-}: Pick<V3PageProps, "data" | "go" | "act"> & {
+}: Pick<V3PageProps, "data" | "go"> & {
   parentId?: string;
-  hire: boolean;
   seen: Set<string>;
   extra?: V3Agent[];
 }) {
@@ -175,13 +172,9 @@ function Row({
     ...reportsOf(data.agents, parentId).filter((a) => !seen.has(a.id)),
     ...(extra ?? []),
   ];
-  const showHire = hire && !!act.hire;
-  const slots = kids.length + (showHire ? 1 : 0);
+  const slots = kids.length;
   if (slots === 0) return null;
   const boss = parentId ?? "owner";
-  /* Hire sits where a new person lands: under the CEO when that position
-     exists, otherwise under the owner. */
-  const hireUnder = data.agents.find((a) => a.id === data.ceoId)?.id;
   return (
     <>
       <span className={cn("h-6 w-px", LINE)} />
@@ -197,42 +190,16 @@ function Row({
               <Bar i={i} slots={slots} />
               <span className={cn("absolute top-0 h-6 w-px", LINE)} />
               <Node data={data} a={a} boss={boss} go={go} />
-              <Row
-                data={data}
-                go={go}
-                act={act}
-                parentId={a.id}
-                hire={a.id === hireUnder}
-                seen={next}
-              />
+              <Row data={data} go={go} parentId={a.id} seen={next} />
             </div>
           );
         })}
-        {showHire && (
-          <div className="relative flex w-max min-w-[140px] flex-col items-center pt-6">
-            <Bar i={kids.length} slots={slots} />
-            <span className={cn("absolute top-0 h-6 w-px", LINE)} />
-            <button
-              type="button"
-              onClick={() => go({ page: "hire" })}
-              className="flex h-[74px] w-[120px] flex-col items-center justify-center gap-1 rounded-lg border border-[var(--v3-line)] border-dashed text-[13px] text-muted-foreground transition-colors hover:bg-[var(--v3-hover)] hover:text-foreground"
-            >
-              <PlusIcon className="size-4" />
-              Hire an agent
-            </button>
-          </div>
-        )}
       </div>
     </>
   );
 }
 
-export function OrgChart({
-  data,
-  go,
-  act,
-}: Pick<V3PageProps, "data" | "go" | "act">) {
-  const ceo = data.agents.some((a) => a.id === data.ceoId);
+export function OrgChart({ data, go }: Pick<V3PageProps, "data" | "go">) {
   return (
     <div className="mt-10 overflow-x-auto pb-4">
       <div className="mx-auto flex w-max flex-col items-center">
@@ -240,8 +207,6 @@ export function OrgChart({
         <Row
           data={data}
           go={go}
-          act={act}
-          hire={!ceo}
           seen={new Set()}
           extra={entryPoints(data.agents)}
         />

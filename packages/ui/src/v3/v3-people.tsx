@@ -266,6 +266,8 @@ export function V3People({
           ` and ${workers} outside ${workers === 1 ? "worker" : "workers"}`}
         . {ceo && `${ceo.name} holds the CEO position. `}You are the Chairman.
       </p>
+      {/* Hire lives only in the sidebar (D-#769), the same place as Search.
+          A header link or an org-chart node would be a second control. */}
       <Tabs
         tabs={[
           { id: "table" as const, label: "Table", icon: <LayoutListIcon /> },
@@ -273,25 +275,11 @@ export function V3People({
         ]}
         value={view}
         onChange={(v) => go({ page: "people", view: v })}
-        /* The org chart has its own "Hire an agent" tile; the table has none,
-           so only the table carries the link — one entry per view. */
-        right={
-          act.hire &&
-          view === "table" && (
-            <button
-              type="button"
-              onClick={() => go({ page: "hire" })}
-              className="hover:text-foreground"
-            >
-              + Hire an agent
-            </button>
-          )
-        }
       />
       {view === "table" ? (
         <Table data={data} go={go} canConnect={!!act.addConnector} />
       ) : (
-        <OrgChart data={data} go={go} act={act} />
+        <OrgChart data={data} go={go} />
       )}
     </Page>
   );

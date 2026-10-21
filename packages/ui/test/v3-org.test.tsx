@@ -5,7 +5,6 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test } from "vitest";
 import type { V3Data } from "../src/v3/v3-data-types";
 import { OrgChart } from "../src/v3/v3-org";
-import type { V3Actions } from "../src/v3/v3-page-types";
 import type { V3Agent } from "../src/v3/v3-types";
 
 afterEach(cleanup);
@@ -37,7 +36,6 @@ describe("org chart cycles", () => {
       <OrgChart
         data={data([agent("A", "B"), agent("B", "C"), agent("C", "B")])}
         go={() => {}}
-        act={{} as V3Actions}
       />,
     );
     const buttons = screen.getAllByRole("button");
@@ -47,5 +45,6 @@ describe("org chart cycles", () => {
     expect(reports(/^A/)).toBe("B");
     expect(reports(/^B/)).toBe("owner");
     expect(reports(/^C/)).toBe("B");
+    expect(screen.queryByRole("button", { name: /Hire an agent/ })).toBeNull();
   });
 });
