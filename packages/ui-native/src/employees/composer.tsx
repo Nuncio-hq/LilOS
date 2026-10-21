@@ -1,5 +1,13 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import {
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  type TextStyle,
+  View,
+  type ViewStyle,
+} from "react-native";
 import { Glass } from "../components/glass";
 import { attachmentIcon, Icon, useThemeColor } from "../components/icon";
 import { ProviderLogo } from "../components/provider-logo";
@@ -27,6 +35,20 @@ function parseSlashDraft(text: string): { name: string; args: string } | null {
   if (!m?.[1]) return null;
   return { name: m[1].toLowerCase(), args: m[2]?.trim() ?? "" };
 }
+
+/* #802: a folder · branch chip beside the model chip is wider than this
+   row on a 402 pt phone, and on any narrower one. Yoga's flexShrink
+   defaults to 0, so the chips kept their labels and pushed Send past the
+   right edge. The row may be narrower than that content; each chip shrinks
+   and its label stays one line (tail ellipsis) before Send moves. Send and
+   Stop do not shrink. Threads in a project and plain chats share this row. */
+const composerRowStyle = { minWidth: 0 } satisfies ViewStyle;
+const composerChipStyle = { flexShrink: 1, minWidth: 0 } satisfies ViewStyle;
+const composerChipLabelStyle = {
+  flexShrink: 1,
+  minWidth: 0,
+} satisfies TextStyle;
+const composerTrailingStyle = { flexShrink: 0 } satisfies ViewStyle;
 
 /* The conversation's composer: one Liquid Glass capsule floating over the
    bottom of the chat (content scrolls on under it), input on top and the
@@ -218,7 +240,10 @@ export function Composer({
             ))}
           </View>
         )}
-        <View className="mt-2 flex-row items-center gap-1.5">
+        <View
+          className="mt-2 flex-row items-center gap-1.5"
+          style={composerRowStyle}
+        >
           {onAttach && (
             <Pressable
               accessibilityRole="button"
@@ -258,6 +283,7 @@ export function Composer({
               {...(stopHint ? { accessibilityHint: stopHint } : {})}
               disabled={!!stopHint}
               onPress={onStop}
+              style={composerTrailingStyle}
               className={`size-8 items-center justify-center rounded-full ${stopHint ? "bg-muted" : "bg-foreground active:opacity-70"}`}
             >
               <View
@@ -270,6 +296,7 @@ export function Composer({
               accessibilityLabel="Send"
               disabled={!ready}
               onPress={send}
+              style={composerTrailingStyle}
               className={`size-8 items-center justify-center rounded-full ${ready ? "bg-primary" : "bg-fill"}`}
             >
               <Icon
@@ -366,6 +393,7 @@ function Chip({
         ? { accessibilityHint: "Double-tap to retry loading models" }
         : {})}
       onPress={onPress}
+      style={composerChipStyle}
       /* Unavailable: no max-width cap (the fixed label is short) and no
          opacity-50 — an all-grey error reads as inactive. Amber content +
          a brighter retry glyph carry the warning; the whole chip still
@@ -382,7 +410,9 @@ function Chip({
       )}
       <Text
         numberOfLines={1}
-        className={`shrink font-medium text-[13px] ${unavailable ? "text-warning" : "text-subtle-foreground"}`}
+        ellipsizeMode="tail"
+        style={composerChipLabelStyle}
+        className={`font-medium text-[13px] ${unavailable ? "text-warning" : "text-subtle-foreground"}`}
       >
         {label}
       </Text>
