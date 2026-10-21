@@ -82,18 +82,21 @@ export async function finishTurn(
       binding,
       `Error: ${event.payload.error}`,
       `sys:${binding.conversationId}:${source}:error`,
+      true,
     );
   } else if (!hasAnswer && stopReason === "cancelled") {
     await this.postSystem(
       binding,
       "Stopped.",
       `sys:${binding.conversationId}:${source}:stopped`,
+      true,
     );
   } else if (!hasAnswer) {
     await this.postSystem(
       binding,
       "(the engine ended the turn silently)",
       `sys:${binding.conversationId}:${source}:silent`,
+      true,
     );
   }
   /* D-#772: the watch was reset with runningTurnId, before the awaits.

@@ -481,5 +481,7 @@ export interface HarnessCtx {
     target: { channelId: string; conversationId: string },
     text: string,
     dedupeKey?: string,
+    /** Wait until the note lands (#814). Default fires and returns. */
+    wait?: boolean,
   ): Promise<void>;
 }
