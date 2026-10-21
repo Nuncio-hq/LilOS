@@ -9,12 +9,14 @@
 /* Tailwind v4 only scans what it's told about: the UI components now live in packages/ui. */
 @source "../../../packages/ui/src";
 
-/* ── Native macOS window chrome (#232) ─────────────────────────────────────
+/* ── Native macOS window chrome (#232, #797) ───────────────────────────────
    Every Electron window uses the hiddenInset title bar: the traffic lights
-   sit inside the sidebar's 56px first row, the window's "sidebar" vibrancy
-   shows through wherever the page is transparent, and header rows drag the
-   window. All of it is scoped to html[data-desktop] — a plain browser tab is
-   unchanged (AC-5). */
+   sit inside the v3 shell's one toolbar row (52px, centred on it — the same
+   number as TOOLBAR_HEIGHT in apps/desktop/src/window-chrome.ts), the
+   window's "sidebar" vibrancy shows through wherever the page is transparent,
+   and the toolbar's segments drag the window. All of it is scoped to
+   html[data-desktop] — a plain browser tab is unchanged (AC-5), with the
+   compact row the theme gives it. */
 
 /* Vibrancy paints through wherever the page is transparent; the theme gives
    body an opaque fill, so under Electron the document itself must stay clear
@@ -25,10 +27,14 @@ html[data-desktop] body {
 
 /* The lights end ~x=78 worst case (inset x 16 + a cluster that measures
    ~52-62px across macOS versions/displays — TRAFFIC_LIGHTS_END in
-   apps/desktop/src/window-chrome.ts): the leftmost row reserves their strip
-   plus the ~10px macOS leaves before content — and drops it in full screen,
-   where the OS hides them and an empty gap would remain (AC-1, AC-4). One var
-   so every edge case shares the same reserve (#295). */
+   apps/desktop/src/window-chrome.ts): the toolbar segment at the window's
+   left edge reserves their strip plus the ~10px macOS leaves before content —
+   and drops it in full screen, where the OS hides them and an empty gap would
+   remain (AC-1, AC-4). One var so every edge case shares the same reserve
+   (#295). */
+html[data-desktop] {
+  --v3-toolbar-h: 52px;
+}
 html[data-desktop]:not([data-fullscreen]) {
   --lilos-traffic-inset: 88px;
 }
@@ -55,37 +61,32 @@ html[data-desktop]
   -webkit-app-region: no-drag;
 }
 
-/* v3: the sidebar's first row sits where the traffic lights are — it takes
-   the same inset and drags the window like a title bar (`lilos-drag` on the
-   row: its toggle stays clickable). Only the shell's own sidebar: the side
-   peek's aside is deeper in the tree. The sidebar stays the shell's first
-   child whether it is docked, hidden or popped out over the page. */
-html[data-desktop] .lilos-v3 > aside:first-child > div:first-child {
-  min-height: 56px;
-}
-html[data-desktop]:not([data-fullscreen])
-  .lilos-v3
-  > aside:first-child
-  > div:first-child {
+/* v3: the toolbar's segments drag the window like a title bar (`lilos-drag`:
+   their buttons stay clickable). The sidebar's own segment sits where the
+   lights are — the sidebar stays the shell's first child whether it is docked,
+   hidden or popped out over the page — and so does whichever segment leads
+   the page while the sidebar is hidden (`data-toolbar-lead`: the page's, or
+   the side peek's once widened over it): both take the same inset. */
+html[data-desktop]:not([data-fullscreen]) [data-toolbar-lead] {
   padding-left: var(--lilos-traffic-inset);
 }
 
-/* v3: the top bar is as tall as the lights' row, so its text lines up with
-   the sidebar's company name beside it. While the sidebar is hidden the
-   lights sit over the bar's left end: it keeps clear of them with the same
-   reserve, and stays a drag region (its controls opt out, above). */
-html[data-desktop] .lilos-v3-bar {
-  min-height: 56px;
-}
-html[data-desktop]:not([data-fullscreen]) .lilos-v3-bar[data-sidebar-hidden] {
-  padding-left: var(--lilos-traffic-inset);
+/* The OS applies drag regions in document order — a later `drag` wins over an
+   earlier `no-drag`. A popped-out sidebar comes first in the document but
+   floats over the page's toolbar segments, which would take its toggle back
+   as window-drag space; while it floats they hand the strip over. */
+html[data-desktop]
+  .lilos-v3:has(> aside[data-sidebar="popped"])
+  > div
+  [data-toolbar] {
+  -webkit-app-region: no-drag;
 }
 
 /* First run has no sidebar: its own strip above Welcome (v3-shell.tsx) is
    the lights' row and drags the window, so the window can be moved while
    setting up. A browser tab gives it no height. */
 html[data-desktop] .lilos-v3 > .lilos-drag {
-  min-height: 56px;
+  min-height: var(--v3-toolbar-h);
 }
 
 /* #554 ⌘F: the DOM find paints matches through the Custom Highlight API —

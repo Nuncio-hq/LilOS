@@ -43,7 +43,9 @@ export function useSidebarPopout(hidden: boolean) {
 }
 
 /** The thin strip at the window's left edge that wakes a hidden sidebar. It
-    opts out of the window drag region so the pointer events reach it. */
+    opts out of the window drag region so the pointer events reach it, and the
+    shell draws it after the toolbar (the OS applies drag regions in document
+    order, so the later `no-drag` wins where they overlap). */
 export function SidebarHotZone({
   onEnter,
   onLeave,

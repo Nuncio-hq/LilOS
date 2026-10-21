@@ -38,7 +38,7 @@ export function FocusHeader({
   const isDM = !!channel.dm;
   const { input: titleInput, menu: threadMenu } = useRenameMenu({
     title: thread.title || plain(root.text),
-    inputClassName: "h-9 [font-size:24px]",
+    inputClassName: "h-8 [font-size:20px]",
     archived: thread.archived,
     onRename: p.onRename,
     onArchive: p.onArchive,

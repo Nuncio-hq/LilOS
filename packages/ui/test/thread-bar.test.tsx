@@ -65,11 +65,11 @@ describe("thread bar", () => {
     fire([IN_VIEW]);
     expect(bar()).toBeNull();
     expect(buttons(header())).toEqual([
+      "Details",
       "Meter",
       "Start work",
       "Menu",
       "Close",
-      "Details",
     ]);
   });
 
@@ -142,5 +142,62 @@ describe("thread bar", () => {
         (b) => b.textContent,
       ),
     ).toEqual(["Meter", "Menu"]);
+  });
+});
+
+/* #797: the header is the title and ONE line — status · started · turns on
+   the left, the work strip and the meter and ⋯ on the right — not a stack of
+   rows. (Wide or narrow, which row the strip takes is a container query the
+   test DOM does not run; what it can pin is who shares the line.) */
+describe("header line", () => {
+  function line() {
+    const r = render(
+      <ThreadHeader
+        session={false}
+        title="Fix the flaky test"
+        status="working"
+        started="11:02"
+        turns={3}
+        meter={<button type="button">Meter</button>}
+        menu={<button type="button">Menu</button>}
+        strip={{
+          tabs: [
+            { id: "changes", label: "Changes", meta: "2" },
+            { id: "pr", label: "PR", meta: "#12 · merged" },
+            { id: "details", label: "Details" },
+          ],
+          onOpen: () => {},
+        }}
+      />,
+    );
+    fire([IN_VIEW]);
+    return r;
+  }
+
+  test("the facts, the strip, the meter and ⋯ share one row under the title", () => {
+    const r = line();
+    const strip = r.container.querySelector("[data-work-strip]");
+    const row = strip?.parentElement;
+    expect(row?.textContent).toContain("Started 11:02 · 3 turns");
+    expect(row?.textContent).toContain("Meter");
+    expect(row?.textContent).toContain("Menu");
+    // The title is above that row, not in it.
+    expect(row?.textContent).not.toContain("Fix the flaky test");
+    expect(r.container.querySelector("[data-session-title]")).not.toBeNull();
+  });
+
+  test("where labels step aside to icons a count stays, a label-long meta goes", () => {
+    const r = line();
+    const tab = (id: string) =>
+      r.container.querySelector(`[data-work-tab="${id}"]`);
+    const quiet = (el: Element | null | undefined) =>
+      el?.className.includes("sr-only");
+    // Every button keeps its name (the label is still in the DOM)…
+    expect(quiet(tab("changes")?.children[1])).toBe(true);
+    expect(tab("changes")?.textContent).toBe("Changes2");
+    // …a bare number is a count and stays beside the icon…
+    expect(quiet(tab("changes")?.children[2])).toBe(false);
+    // …"#12 · merged" is as long as a label and steps aside with it.
+    expect(quiet(tab("pr")?.children[2])).toBe(true);
   });
 });

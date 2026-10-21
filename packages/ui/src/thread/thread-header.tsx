@@ -16,13 +16,15 @@ import { type HeaderTab, WorkStrip } from "./work-strip";
 
 /* The head of a conversation — shared by the panel (ThreadView, beside the
    list) and the session view (FocusView), drawn once so the two can't drift:
-   kicker line, serif title, status line, and the work strip. It is the first
-   child of the conversation's scroller, so it scrolls away with the thread
-   (the title goes with it). What must stay reachable does not: once the
-   header is out of view a slim bar sticks to the top of the column with the
-   title (small), the work strip, the context meter and the ⋯ menu. Those
-   controls live in ONE place at a time — the header while it shows, the bar
-   after — so there is never a second copy to hover, click or find. */
+   the serif title (the folder/branch kicker at its right), then ONE line —
+   status · started · turns on the left, the work strip and the context meter
+   and ⋯ on the right. It is the first child of the conversation's scroller,
+   so it scrolls away with the thread (the title goes with it). What must
+   stay reachable does not: once the header is out of view a slim bar sticks
+   to the top of the column with the title (small), the work strip, the
+   context meter and the ⋯ menu. Those controls live in ONE place at a time —
+   the header while it shows, the bar after — so there is never a second
+   copy to hover, click or find. */
 
 export type WorkStripProps = {
   tabs: HeaderTab[];
@@ -140,7 +142,7 @@ function ThreadBar({
             {title}
           </span>
         </div>
-        {strip && <WorkStrip {...strip} compact />}
+        {strip && <WorkStrip {...strip} placement="bar" />}
         {meter}
         {menu}
       </div>
@@ -163,7 +165,7 @@ export function ThreadHeader({
   close,
   strip,
 }: {
-  /** The session view's narrower column: the title is 24px, not 30px. */
+  /** The session view's narrower column: the title is 20px, not 22px. */
   session: boolean;
   title: string;
   /** Replaces the title while it is being renamed. */
@@ -175,8 +177,8 @@ export function ThreadHeader({
   turns?: number;
   /** A live note after the facts ("1 running in background"). */
   note?: ReactNode;
-  /** The right of the status line, in this order: the context meter, Start
-      work, the ⋯ menu, the close ✕. The meter and the menu follow the
+  /** The right end of the facts line, in this order: the context meter,
+      Start work, the ⋯ menu, the close ✕. The meter and the menu follow the
       reader to the sticky bar; Start work and ✕ stay with the header. */
   meter?: ReactNode;
   start?: ReactNode;
@@ -201,62 +203,74 @@ export function ThreadHeader({
       {away && (
         <ThreadBar title={title} strip={strip} meter={meter} menu={menu} />
       )}
+      {/* No top strip of its own: the window's toolbar is right above, so a
+          10px pad is all the title needs. `-mb-3` takes 12px off the column's
+          28px gap, so the first turn starts 16px under the line. */}
       <header
         ref={header}
         data-thread-header
-        className="pt-7"
+        className="-mb-3 pt-2.5"
         style={away ? { minHeight: natural.current } : undefined}
       >
-        {kicker && (
-          <div
-            className={cn(
-              "text-muted-foreground",
-              session ? "mb-1.5 text-[13px]" : "mb-2 text-[13.5px]",
-            )}
-          >
-            {kicker}
-          </div>
-        )}
-        {titleInput ? (
-          <div className={cn("flex", session ? "mb-3" : "mb-3.5")}>
-            {titleInput}
-          </div>
-        ) : (
-          <h1
-            data-session-title
-            title={title}
-            className={cn(
-              "lilos-v3-serif break-words font-bold text-foreground leading-[1.15]",
-              session ? "mb-3 text-[24px] leading-[1.2]" : "mb-3.5 text-[30px]",
-            )}
-          >
-            {title}
-          </h1>
-        )}
-        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2 text-[13.5px] text-muted-foreground">
-          {status && (
-            <StatusPill
-              status={status}
-              label={status === "done" ? "Finished" : undefined}
-            />
+        {/* The kicker rides the title's row, right-aligned, and gives way
+            first: its basis is small, so it only drops below when the title
+            leaves it under 8rem, and a branch name truncates before that. */}
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+          {titleInput ? (
+            <div className="flex min-w-0 flex-[1_1_14rem]">{titleInput}</div>
+          ) : (
+            <h1
+              data-session-title
+              title={title}
+              className={cn(
+                "lilos-v3-serif min-w-0 flex-[0_1_auto] break-words font-bold text-foreground",
+                /* The size first: twMerge drops a `leading-*` that came before
+                   a `text-[Npx]`. */
+                session
+                  ? "text-[20px] leading-[1.2]"
+                  : "text-[22px] leading-[1.2]",
+              )}
+            >
+              {title}
+            </h1>
           )}
-          <span>
-            {started ? `Started ${started}` : null}
-            {turns
-              ? `${started ? " · " : ""}${turns} ${turns === 1 ? "turn" : "turns"}`
-              : null}
-            {note}
-          </span>
-          {aside && (
-            <span className="ml-auto flex items-center gap-1">
-              {here && meter}
-              {start}
-              {here && menu}
-              {close}
-            </span>
+          {kicker && (
+            <div className="min-w-0 flex-[1_1_8rem] text-right text-[12.5px] text-muted-foreground">
+              {kicker}
+            </div>
           )}
         </div>
-        {here && strip && <WorkStrip {...strip} />}
+        {/* The `line` container: wide, status · started · turns, then the
+            work strip, then the meter and ⋯, in one row; narrow, the strip
+            drops to a row of its own (work-strip.tsx owns that switch). */}
+        <div className="@container/line mt-1">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[13px] text-muted-foreground @[30rem]/line:flex-nowrap">
+            <div className="flex min-w-0 flex-1 items-baseline gap-x-2">
+              {status && (
+                <StatusPill
+                  status={status}
+                  label={status === "done" ? "Finished" : undefined}
+                />
+              )}
+              <span className="min-w-0">
+                {started ? `Started ${started}` : null}
+                {turns
+                  ? `${started ? " · " : ""}${turns} ${turns === 1 ? "turn" : "turns"}`
+                  : null}
+                {note}
+              </span>
+            </div>
+            {here && strip && <WorkStrip {...strip} />}
+            {aside && (
+              <span className="flex shrink-0 items-center gap-1">
+                {here && meter}
+                {start}
+                {here && menu}
+                {close}
+              </span>
+            )}
+          </div>
+        </div>
       </header>
     </>
   );

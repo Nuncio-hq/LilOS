@@ -21,6 +21,7 @@ import {
 import type { V3PageProps, V3RecordRoute } from "./v3-page-types";
 import { V3ProjectPage } from "./v3-project";
 import { V3TicketPage } from "./v3-ticket";
+import { toolbarBtn } from "./v3-topbar";
 
 /** A record's name in the trail: short enough to fit four in a row. */
 function label(d: V3Data, r: V3RecordRoute) {
@@ -44,10 +45,14 @@ function label(d: V3Data, r: V3RecordRoute) {
 }
 
 /* The side peek: whatever you opened, beside the page you opened it from.
-   Its header carries the trail (every record you went through, each one a
-   step back), so thread → ticket → agent never loses the thread you started
-   on. Esc closes it; the page beside it never moved. Widened, it covers the
-   page (still mounted underneath) until you narrow or close it. */
+   Its toolbar segment carries the trail (every record you went through, each
+   one a step back), so thread → ticket → agent never loses the thread you
+   started on. Esc closes it; the page beside it never moved. Widened, it
+   covers the page (still mounted underneath) until you narrow or close it.
+   It is one <aside> that starts at the window's top: its first row IS the
+   toolbar row (D-#232, #797) — no header row of its own below one — and it
+   takes the shell's rows as a subgrid, so a notice between the toolbar and
+   the page (v3-banner) stays visible above it, widened or not. */
 export function V3Peek({
   data,
   go,
@@ -55,20 +60,20 @@ export function V3Peek({
   trail,
   full,
   pageName,
+  lead,
   onBack,
   onTrail,
   onFull,
   onClose,
   renderThread,
-  width,
 }: V3PageProps & {
   trail: V3RecordRoute[];
   full: boolean;
-  /** Its width beside the page, in px (the shell's, from the divider).
-      Widened, the peek covers the page and ignores it. */
-  width: number;
   /** The page beside the peek, named at the head of the trail. */
   pageName: string;
+  /** Widened over a hidden sidebar, this is the leftmost segment of the
+      toolbar: it leads with what the sidebar left there (toggle, Search). */
+  lead?: ReactNode;
   onBack: () => void;
   onTrail: (index: number) => void;
   /** Widen over the page (a session) or narrow back beside it. */
@@ -81,22 +86,27 @@ export function V3Peek({
   // Keyed by record: a new record mounts fresh, so it opens at its top.
   const key = `${top.page}:${top.id}`;
   const props = { data, go, act };
-  const iconBtn =
-    "grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-[var(--v3-hover)] hover:text-foreground [&_svg]:size-4";
   return (
     <aside
       aria-label="Opened record"
-      style={full ? undefined : { width }}
       className={cn(
-        "z-20 flex min-w-0 flex-col border-[var(--v3-line)] bg-[var(--v3-main)]",
-        full ? "absolute inset-0" : "shrink-0 border-l",
+        "z-20 row-span-3 row-start-1 grid min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-subgrid border-[var(--v3-line)] bg-[var(--v3-main)]",
+        full ? "col-span-full col-start-1" : "col-start-2 border-l",
       )}
     >
-      <div className="flex h-[46px] shrink-0 items-center gap-1.5 border-[var(--v3-line)] border-b px-2.5 text-[13.5px] text-muted-foreground">
+      <div
+        data-toolbar
+        data-toolbar-lead={lead ? "" : undefined}
+        className={cn(
+          "lilos-drag row-start-1 flex items-center gap-1.5 pr-2.5 text-[13.5px] text-muted-foreground",
+          lead ? "pl-3.5" : "pl-2.5",
+        )}
+      >
+        {lead}
         <button
           type="button"
           onClick={onBack}
-          className={iconBtn}
+          className={toolbarBtn}
           title="Back one step"
           aria-label="Back one step"
         >
@@ -130,7 +140,7 @@ export function V3Peek({
         <button
           type="button"
           onClick={() => onFull(!full)}
-          className={iconBtn}
+          className={toolbarBtn}
           title={full ? "Narrow, back beside the page" : "Widen over the page"}
           aria-label={
             full ? "Narrow, back beside the page" : "Widen over the page"
@@ -141,7 +151,7 @@ export function V3Peek({
         <button
           type="button"
           onClick={onClose}
-          className={iconBtn}
+          className={toolbarBtn}
           title="Close (Esc)"
           aria-label="Close"
         >
@@ -151,7 +161,7 @@ export function V3Peek({
       <div
         data-v3-scroller
         key={key}
-        className="lilos-v3-line-in @container min-h-0 flex-1 overflow-y-auto"
+        className="lilos-v3-line-in @container row-start-3 min-h-0 overflow-y-auto"
       >
         {top.page === "thread" && renderThread({ ...props, id: top.id })}
         {top.page === "newchat" && <V3DraftChat {...props} id={top.id} />}

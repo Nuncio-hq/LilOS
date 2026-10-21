@@ -56,9 +56,10 @@
       .step.now .t { font-weight: 600; }
       .step.done .t { color: #777; }
       /* #232: the window has no title bar — this strip under the inset
-         traffic lights is the drag region. Content sits below it. */
+         traffic lights is the drag region. Content sits below it. 52px is
+         TOOLBAR_HEIGHT (window-chrome.ts), the row the lights centre on. */
       #drag-strip {
-        position: fixed; top: 0; left: 0; right: 0; height: 56px;
+        position: fixed; top: 0; left: 0; right: 0; height: 52px;
         -webkit-app-region: drag;
       }
       html[data-desktop] body { background: transparent; }
@@ -75,7 +76,7 @@
         document.body.style.margin = "0 28px 28px";
         const pad = (fs) => {
           document.documentElement.toggleAttribute("data-fullscreen", fs);
-          document.body.style.paddingTop = fs ? "16px" : "56px";
+          document.body.style.paddingTop = fs ? "16px" : "52px";
         };
         pad(window.lilos.fullscreen?.current() ?? false);
         window.lilos.fullscreen?.onChange?.(pad);
