@@ -79,6 +79,9 @@ export interface FakeScript {
      turn ends (agent-initiated — a queued-steer drain / result delivery,
      not a user turn). `leg:` scripts arm one. */
   leg?: string;
+  /** #790: this turn's answer ran on another model. The session's pick
+      stays; the engine notes it and stamps `turn.completed`. */
+  fallbackTo?: { model: string; provider?: string };
 }
 
 const EDIT_ASK =
@@ -175,6 +178,19 @@ export function scriptFor(
     .trim()
     .replace(/[?.!]+$/, "");
   const tail = `I'm in \`${cwd}\` on ⎇ \`${branch}\`. Tell me what to change and I'll edit there.`;
+
+  /* `fallback:` — the primary did not answer; the turn runs on a fixed
+     other catalog model. The session's pick is unchanged (#790). */
+  const fb = /^fallback:\s*(.*)$/is.exec(q);
+  if (fb) {
+    return {
+      reasoning:
+        "The primary model did not answer, so this turn runs on the fallback.",
+      steps: [],
+      text: fb[1].trim() || "Answered on the fallback model.",
+      fallbackTo: { model: "fake/opus-2", provider: "fake" },
+    };
+  }
 
   /* `leg:` — the engine opens its own follow-up leg after the answer
      (#308: agent-initiated, no ref) and delivers this text there. */

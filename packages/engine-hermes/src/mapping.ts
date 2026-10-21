@@ -42,6 +42,40 @@ export function mapUsage(u: unknown): Usage | undefined {
   };
 }
 
+/**
+ * Hermes fallback notice (`hermes serve`, hermes-agent 0b8dee00).
+ * `try_activate_fallback` buffers
+ * `⚠️ Model fallback: {old} via {oldProvider} unavailable ({reason}); using {new} via {newProvider}.`
+ * (`agent/chat_completion_helpers.py:2088`) and
+ * `_emit_pending_fallback_notice` (`agent/status_output.py:219`, called
+ * from `agent/turn_final_response.py:154`) sends it as `status.update`
+ * kind `lifecycle` (`tui_gateway/agent_callbacks.py:110`). A rate-limit
+ * cooldown may append a second sentence; it is not part of the switch.
+ * Returns undefined for every other status line (compaction, goals, …).
+ */
+const FALLBACK_NOTICE =
+  /^(?:⚠️\s*)?Model fallback:\s*(.+?)\s+via\s+(.+?)\s+unavailable\s+\(([^)]*)\);\s*using\s+(.+?)\s+via\s+([^.]+)\./;
+
+export function parseFallbackNotice(text: string):
+  | {
+      fromModel: string;
+      fromProvider: string;
+      reason: string;
+      toModel: string;
+      toProvider: string;
+    }
+  | undefined {
+  const m = FALLBACK_NOTICE.exec(text.trim());
+  if (!m) return undefined;
+  const fromModel = m[1].trim();
+  const fromProvider = m[2].trim();
+  const reason = m[3].trim();
+  const toModel = m[4].trim();
+  const toProvider = m[5].trim();
+  if (!fromModel || !toModel) return undefined;
+  return { fromModel, fromProvider, reason, toModel, toProvider };
+}
+
 /** Hermes `TurnStatus` -> protocol `StopReason`. */
 export function mapStopReason(status: unknown): {
   stopReason: StopReason;

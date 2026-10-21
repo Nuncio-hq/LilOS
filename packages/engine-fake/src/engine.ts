@@ -28,6 +28,7 @@ import {
   EVENT_LOG_CAP,
   type EventsSinceParams,
   type FileDiff,
+  fallbackTurnNote,
   IMAGE_PROMPT_CAPABILITY,
   type InterruptParams,
   type JobStatus,
@@ -1464,6 +1465,15 @@ export class FakeEngine {
       fast: s.fast,
       ...(ref ? { ref } : {}),
     });
+    /* #790: the note lands after turn.started, while the pick stays.
+       The footer reads the model stamped on turn.completed. */
+    if (script.fallbackTo) {
+      const named = (id: string) =>
+        MODEL_CATALOG.find((m) => m.id === id)?.name ?? id;
+      this.emit(s, "session.note", {
+        text: fallbackTurnNote(named(s.model), named(script.fallbackTo.model)),
+      });
+    }
     /* A stop landing inside the `slowstart` wait must not resurrect a
        closed session — the turn still mints and cancels on its first
        paced sleep, but the state machine stays closed. */
@@ -2040,7 +2050,19 @@ export class FakeEngine {
     // Clear the turn BEFORE turn.completed — observers reacting to the
     // event (e.g. draining a queued prompt) must see the session free.
     s.turn = undefined;
-    this.emit(s, "turn.completed", { turnId, stopReason, usage: s.usage });
+    this.emit(s, "turn.completed", {
+      turnId,
+      stopReason,
+      usage: s.usage,
+      ...(script.fallbackTo && stopReason === "end_turn"
+        ? {
+            model: script.fallbackTo.model,
+            ...(script.fallbackTo.provider
+              ? { provider: script.fallbackTo.provider }
+              : {}),
+          }
+        : {}),
+    });
     if (s.state !== "closed") this.setState(s, "idle");
     this.autoTitle(s, "llm", promptText);
     // A steer that never hit a boundary becomes the next turn's input — never

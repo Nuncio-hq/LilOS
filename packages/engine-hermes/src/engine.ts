@@ -21,6 +21,7 @@ import {
   type EngineRequest,
   EVENT_LOG_CAP,
   type EventsSinceParams,
+  fallbackTurnNote,
   type InterruptParams,
   type Job,
   type JobStatus,
@@ -74,9 +75,11 @@ import {
   mapSubagentStatus,
   mapToolStatus,
   mapUsage,
+  parseFallbackNotice,
   parseToolResultJson,
   subagentKey,
 } from "./mapping.js";
+import { displayModelName } from "./model-label.js";
 import { ensureLilosBackend, logSessionTools } from "./plugin-tools.js";
 import { SessionRegistry } from "./registry.js";
 import {
@@ -1075,6 +1078,7 @@ export class HermesEngine {
       ...(s.fast !== undefined ? { fast: s.fast } : {}),
       ...(p.ref ? { ref: p.ref } : {}),
     });
+    this.markTurnAnnounced(s);
     s.setState("running");
 
     try {
@@ -2140,6 +2144,7 @@ export class HermesEngine {
       ...(s.fast !== undefined ? { fast: s.fast } : {}),
       ...(queued?.ref ? { ref: queued.ref } : {}),
     });
+    this.markTurnAnnounced(s);
     if (s.state !== "closed") s.setState("running");
   }
 
@@ -2388,6 +2393,7 @@ export class HermesEngine {
             ...(queued?.ref ? { ref: queued.ref } : {}),
             ...(queued ? {} : { initiatedBy: "agent" as const }),
           });
+          this.markTurnAnnounced(s);
         }
         s.setState("running");
         break;
@@ -2584,6 +2590,21 @@ export class HermesEngine {
          (kind:"process", notify_on_complete delivery). Reconcile the
          registry rows so the job row lands job.exited (#179). */
       case "status.update": {
+        /* D-#790: a provider fallback arrives as this notice, not as a
+           typed event. Parsed before the kind switches — a warning-kind
+           replay of the same sentence still counts, and compaction text
+           does not match. */
+        if (typeof p.text === "string") {
+          const notice = parseFallbackNotice(p.text);
+          if (notice)
+            this.noteRanOn(s, {
+              from: notice.fromModel,
+              fromProvider: notice.fromProvider,
+              to: notice.toModel,
+              toProvider: notice.toProvider,
+              reason: notice.reason || undefined,
+            });
+        }
         if (p.kind === "process") {
           void this.syncJobs(s);
           break;
@@ -2630,7 +2651,20 @@ export class HermesEngine {
            queued model switch as `pending_model_switch` fields already
            folded into `model`/`provider` here. `reasoning_effort` "" means
            provider default (unset); `fast` is the resolved tier boolean. */
-        if (typeof p.model === "string" && p.model) s.model = p.model;
+        /* A session.info during the open turn that names a different
+           model is a deliberate switch (deferred config.set applies
+           inside the turn, after turn.started). usage.model then matching
+           it is that switch, not a fallback (D-#560). Fallback does not
+           re-emit session.info. */
+        if (typeof p.model === "string" && p.model) {
+          if (
+            (s.turn || s.legTurnId) &&
+            s.announcedModel &&
+            p.model !== s.announcedModel
+          )
+            s.explainedModel = p.model;
+          s.model = p.model;
+        }
         if (typeof p.provider === "string" && p.provider)
           s.provider = p.provider;
         if (typeof p.reasoning_effort === "string")
@@ -2649,6 +2683,28 @@ export class HermesEngine {
          the window moves on config changes that emit no session.info. */
       case "session.usage": {
         this.mirrorUsageContext(s, p.usage);
+        /* The session-authority ticker puts `fallback_model` on the
+           frame (`gateway/session_usage.py`). hermes serve's embedded
+           ticker does not; honour it when a build sends it. Nested
+           `usage.model` waits for message.complete — a mid-turn tick
+           can race the session.info that explains a deliberate switch. */
+        const fb = p.fallback_model;
+        if (
+          typeof fb === "string" &&
+          fb &&
+          s.announcedModel &&
+          fb !== s.announcedModel
+        ) {
+          const provider =
+            typeof p.provider === "string" && p.provider
+              ? p.provider
+              : undefined;
+          this.noteRanOn(s, {
+            from: s.announcedModel,
+            to: fb,
+            ...(provider ? { toProvider: provider } : {}),
+          });
+        }
         break;
       }
       /* #137 AC-1: `session.title` events are Hermes' persisted auto-title
@@ -2718,6 +2774,62 @@ export class HermesEngine {
       s.usage = { ...s.usage, context: used };
   }
 
+  /** The model `turn.started` just announced. Cleared with the turn's
+      fallback bookkeeping so the next turn starts clean. */
+  private markTurnAnnounced(s: Session) {
+    s.announcedModel = s.model;
+    s.explainedModel = undefined;
+    s.ranOn = undefined;
+  }
+
+  /**
+   * D-#790: one note + the model the turn actually ran on. Hermes
+   * `hermes serve` (0b8dee00) already sends both, and neither is the
+   * log line "Fallback activated" (`agent/chat_completion_helpers.py:1904`,
+   * logger only):
+   * - `status.update` text from `_emit_pending_fallback_notice`
+   *   (`agent/status_output.py:219`, called at
+   *   `agent/turn_final_response.py:154`), built at
+   *   `agent/chat_completion_helpers.py:2088`, emitted by
+   *   `tui_gateway/server.py:871`.
+   * - `message.complete`'s `usage.model` (`server.py:1389` `_get_usage`,
+   *   `prompt_turn.py:918`). `bind_route_entry` (`agent/route_binding.py:74`)
+   *   swaps `agent.model` for this turn; the next turn restores the
+   *   primary, so the composer's pick stays.
+   * A top-level `fallback_model` exists on the session-authority frame
+   * (`gateway/session_usage.py:81`) and is read if present. The embedded
+   * ticker LilOS receives does not send it.
+   * Idempotent: the notice, the ticker, and the completion can all name
+   * the same switch. `s.model` is not rewritten — the next turn.started
+   * still announces the user's pick.
+   */
+  private noteRanOn(
+    s: Session,
+    o: {
+      from: string;
+      to: string;
+      fromProvider?: string;
+      toProvider?: string;
+      reason?: string;
+    },
+  ) {
+    if (s.ranOn) return;
+    const from = o.from.trim();
+    const to = o.to.trim();
+    if (!from || !to) return;
+    const fromProvider = o.fromProvider?.trim() || undefined;
+    const toProvider = o.toProvider?.trim() || undefined;
+    if (from === to && fromProvider === toProvider) return;
+    s.ranOn = { model: to, ...(toProvider ? { provider: toProvider } : {}) };
+    s.emit("session.note", {
+      text: fallbackTurnNote(
+        fallbackLabel(from, fromProvider, to, toProvider),
+        fallbackLabel(to, toProvider, from, fromProvider),
+        o.reason,
+      ),
+    });
+  }
+
   /**
    * Turn end: poll `session.title` for a silent ref rotation (auto-compress
    * emits no `session.info`), emit ref change, then `turn.completed`.
@@ -2780,12 +2892,31 @@ export class HermesEngine {
       errText && CONTEXT_LIMIT_TEXT.test(errText)
         ? RPC_ERRORS.CONTEXT_LIMIT
         : undefined;
+    /* After the session.title await, so a session.info that arrived
+       during it (a deferred switch) is visible and is not read as a
+       fallback. A status notice or fallback_model already set ranOn. */
+    const reported = usageModelOf(p.usage);
+    if (
+      !s.ranOn &&
+      reported &&
+      s.announcedModel &&
+      reported !== s.announcedModel &&
+      reported !== s.explainedModel
+    )
+      this.noteRanOn(s, { from: s.announcedModel, to: reported });
+    const ran = s.ranOn;
     s.emit("turn.completed", {
       turnId: completedId,
       stopReason,
       ...(usage ? { usage } : {}),
       ...(errText ? { error: errText } : {}),
       ...(errCode !== undefined ? { errorCode: errCode } : {}),
+      ...(ran
+        ? {
+            model: ran.model,
+            ...(ran.provider ? { provider: ran.provider } : {}),
+          }
+        : {}),
     });
     s.turn = undefined;
     s.legTurnId = undefined;
@@ -3007,4 +3138,30 @@ function todoStatus(status: unknown): PlanStepStatus {
   )
     return status;
   return "pending";
+}
+
+/** `usage.model` on a Hermes completion or tick. Absent or blank is not
+    a report — existing completions that omit the field stay quiet. */
+function usageModelOf(usage: unknown): string | undefined {
+  if (typeof usage !== "object" || usage === null) return undefined;
+  const model = (usage as { model?: unknown }).model;
+  return typeof model === "string" && model.trim() ? model.trim() : undefined;
+}
+
+/** Display name for a fallback note. Same label on both sides means the
+    ids differ only by provider — say which. */
+function fallbackLabel(
+  model: string,
+  provider: string | undefined,
+  other: string,
+  otherProvider: string | undefined,
+): string {
+  const name = displayModelName(model);
+  if (
+    provider &&
+    name === displayModelName(other) &&
+    provider !== otherProvider
+  )
+    return `${name} (${provider})`;
+  return name;
 }

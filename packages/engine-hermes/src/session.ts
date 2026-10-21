@@ -146,6 +146,13 @@ export class Session {
       Flagged so machinery that walks real sessions (registry writes,
       gateway asks) treats it accordingly. */
   ephemeral?: boolean;
+  /** Model `turn.started` announced for the open turn (#790). */
+  announcedModel?: string;
+  /** A `session.info` during this turn named this model — a deliberate
+      switch, not a provider fallback. */
+  explainedModel?: string;
+  /** Model and provider this turn actually ran on after a fallback. */
+  ranOn?: { model: string; provider?: string };
 
   /** Stable LilOS subagentId for a wire-level child key. */
   subagentId(key: string): string {

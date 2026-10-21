@@ -551,3 +551,56 @@ describe("model pick wire path (issue #30)", () => {
     }
   }, 20_000);
 });
+
+describe("fallback model (#790)", () => {
+  it("the thread notes the model that ran; the conversation pick stays", async () => {
+    const w = await setupWorld();
+    try {
+      const { channel, conversation } = await openDmConversation(w.user);
+      await waitFor(async () => {
+        const { messages } = await listMessages(w.user, channel.id);
+        return messages.some(
+          (m) =>
+            m.authorKind === "employee" && m.conversationId === conversation.id,
+        )
+          ? true
+          : undefined;
+      }, "first answer");
+      const before = await getConversation(w.user, conversation.id);
+
+      await w.user.request("messages.post", {
+        channelId: channel.id,
+        conversationId: conversation.id,
+        text: "fallback: check the model",
+        authorKind: "user",
+      });
+      const note = await waitFor(async () => {
+        const { messages } = await listMessages(w.user, channel.id);
+        return messages.find(
+          (m) =>
+            m.authorKind === "system" &&
+            m.conversationId === conversation.id &&
+            m.text.includes("unreachable"),
+        );
+      }, "fallback note");
+      expect(note?.text).toBe(
+        "Fake Large was unreachable; this turn ran on Fake Opus 2 (fallback)",
+      );
+      const answer = await waitFor(async () => {
+        const { messages } = await listMessages(w.user, channel.id);
+        return messages.find(
+          (m) =>
+            m.authorKind === "employee" &&
+            m.conversationId === conversation.id &&
+            m.text.includes("check the model"),
+        );
+      }, "fallback answer");
+      expect(answer?.model).toBe("fake/opus-2");
+      expect(answer?.provider).toBe("fake");
+      const after = await getConversation(w.user, conversation.id);
+      expect(after?.model).toBe(before?.model);
+    } finally {
+      await w.cleanup();
+    }
+  });
+});

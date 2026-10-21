@@ -225,8 +225,8 @@ export function onEngineEvent(this: HarnessCtx, event: EngineEvent) {
       break;
     }
     case "session.note":
-      /* Engine-authored note (e.g. a deferred model switch that failed at
-         turn start — "Couldn't switch to X — staying on Y"). Surfaced as a
+      /* Engine-authored note (a deferred model switch that failed at
+         turn start, or a provider fallback — #790). Surfaced as a
          system message; deduped by seq AND session — a rebound session
          restarts its seq at 1 (#92). */
       if (binding) {

@@ -22,6 +22,10 @@ export async function finishTurn(
   const { turnId, stopReason } = event.payload;
   const text = binding.textByTurn.get(turnId) ?? "";
   const pick = binding.pickByTurn.get(turnId);
+  /* #790: turn.completed names the model that actually ran when the
+     engine fell back. Absent, the turn.started pick still stands. */
+  const ranModel = event.payload.model ?? pick?.model;
+  const ranProvider = event.payload.provider ?? pick?.provider;
   binding.textByTurn.delete(turnId);
   binding.pickByTurn.delete(turnId);
   binding.runningTurnId = undefined;
@@ -47,8 +51,8 @@ export async function finishTurn(
         authorKind: "employee",
         authorId: employeeId,
         text: text.trim(),
-        ...(pick?.model ? { model: pick.model } : {}),
-        ...(pick?.provider ? { provider: pick.provider } : {}),
+        ...(ranModel ? { model: ranModel } : {}),
+        ...(ranProvider ? { provider: ranProvider } : {}),
         ...(pick?.effort ? { effort: pick.effort } : {}),
         ...(pick?.fast !== undefined ? { fast: pick.fast } : {}),
         dedupeKey: `answer:${binding.conversationId}:${source}`,

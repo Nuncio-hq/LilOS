@@ -6,6 +6,7 @@ import { Harness } from "@lilos/engine-conformance";
 import { describe, expect, test } from "vitest";
 import { HermesEngine } from "../src/engine.js";
 import { RpcError } from "../src/errors.js";
+import { parseFallbackNotice } from "../src/mapping.js";
 import { connectInMemory } from "../src/transport.js";
 import { FakeGateway } from "./fake-gateway.js";
 
@@ -2683,5 +2684,159 @@ describe("engine-hermes #584: the session.ask throwaway evicts like a stopped se
     await until(() => engine.sessionCount === 0);
     expect(engine.sessionIdFor(askSid)).toBeUndefined();
     expect(gw.closedSessions).toContain(askSid);
+  });
+});
+
+describe("engine-hermes #790: a provider fallback is visible", () => {
+  const NOTICE =
+    "⚠️ Model fallback: qwen3.8-flash-next via hpc unavailable (request timeout); using devin-claude-opus-5-5 via cpa-others.";
+
+  function pin(gw: FakeGateway, model: string, provider: string) {
+    gw.sessionModels.set(gw.lastSid, model);
+    gw.sessionProviders.set(gw.lastSid, provider);
+  }
+
+  const notes = (h: Harness) =>
+    h.events
+      .filter((e) => e.type === "session.note")
+      .map((e) => (e.payload as { text: string }).text);
+
+  test("the status notice names both models; the pick stays", async () => {
+    const { gw, h } = setup();
+    const { sessionId } = await start(h, {
+      model: "qwen3.8-flash-next",
+      provider: "hpc",
+    });
+    pin(gw, "qwen3.8-flash-next", "hpc");
+    const p = promptAsync(h, sessionId);
+    await h.waitEvent((e) => e.type === "turn.started");
+    gw.emit(gw.lastSid, "status.update", {
+      kind: "compacting",
+      text: "compacting context (50% of 262000)",
+    });
+    gw.emit(gw.lastSid, "status.update", { kind: "lifecycle", text: NOTICE });
+    gw.complete(gw.lastSid, {
+      usage: { input: 10, output: 5, model: "devin-claude-opus-5-5" },
+    });
+    await p;
+    expect(notes(h)).toEqual([
+      "Qwen3.8 Flash Next was unreachable (request timeout); this turn ran on Devin Claude Opus 5 5 (fallback)",
+    ]);
+    const done = h.events.find((e) => e.type === "turn.completed");
+    expect(done?.payload).toMatchObject({
+      model: "devin-claude-opus-5-5",
+      provider: "cpa-others",
+      stopReason: "end_turn",
+    });
+    const p2 = promptAsync(h, sessionId);
+    const started2 = await h.waitEvent(
+      (e) =>
+        e.type === "turn.started" &&
+        (e.payload as { turnId?: string }).turnId === "t2",
+    );
+    expect((started2.payload as { model?: string }).model).toBe(
+      "qwen3.8-flash-next",
+    );
+    gw.complete(gw.lastSid);
+    await p2;
+    expect(notes(h)).toHaveLength(1);
+  });
+
+  test("usage.model alone is enough when no notice arrived", async () => {
+    const { gw, h } = setup();
+    const { sessionId } = await start(h, {
+      model: "qwen3.8-flash-next",
+      provider: "hpc",
+    });
+    pin(gw, "qwen3.8-flash-next", "hpc");
+    const p = promptAsync(h, sessionId);
+    await h.waitEvent((e) => e.type === "turn.started");
+    gw.complete(gw.lastSid, {
+      usage: { input: 10, output: 5, model: "devin-claude-opus-5-5" },
+    });
+    await p;
+    expect(notes(h)).toEqual([
+      "Qwen3.8 Flash Next was unreachable; this turn ran on Devin Claude Opus 5 5 (fallback)",
+    ]);
+    const done = h.events.find((e) => e.type === "turn.completed");
+    if (!done) throw new Error("turn.completed missing");
+    expect((done.payload as { model?: string }).model).toBe(
+      "devin-claude-opus-5-5",
+    );
+    expect((done.payload as { provider?: string }).provider).toBeUndefined();
+  });
+
+  test("a session.info that names the new model is a switch, not a fallback", async () => {
+    const { gw, h } = setup();
+    const { sessionId } = await start(h, {
+      model: "qwen3.8-flash-next",
+      provider: "hpc",
+    });
+    pin(gw, "qwen3.8-flash-next", "hpc");
+    const p = promptAsync(h, sessionId);
+    const started = await h.waitEvent((e) => e.type === "turn.started");
+    expect((started.payload as { model?: string }).model).toBe(
+      "qwen3.8-flash-next",
+    );
+    /* The gateway reports the switch on session.info (deferred config.set).
+       usage.model then matching it is that switch, not a fallback. */
+    gw.emit(gw.lastSid, "session.info", {
+      model: "devin-claude-opus-5-5",
+      provider: "cpa-others",
+    });
+    gw.complete(gw.lastSid, {
+      usage: { input: 10, output: 5, model: "devin-claude-opus-5-5" },
+    });
+    await p;
+    expect(notes(h)).toEqual([]);
+    const done = h.events.find((e) => e.type === "turn.completed");
+    if (!done) throw new Error("turn.completed missing");
+    expect((done.payload as { model?: string }).model).toBeUndefined();
+  });
+
+  test("a top-level fallback_model on session.usage notes the turn", async () => {
+    const { gw, h } = setup();
+    const { sessionId } = await start(h, {
+      model: "qwen3.8-flash-next",
+      provider: "hpc",
+    });
+    pin(gw, "qwen3.8-flash-next", "hpc");
+    const p = promptAsync(h, sessionId);
+    await h.waitEvent((e) => e.type === "turn.started");
+    gw.emit(gw.lastSid, "session.usage", {
+      fallback_model: "devin-claude-opus-5-5",
+      provider: "cpa-others",
+      usage: { context_used: 20, context_max: 262_000 },
+    });
+    gw.complete(gw.lastSid);
+    await p;
+    expect(notes(h)[0]).toContain("Devin Claude Opus 5 5");
+    expect(notes(h)[0]).toContain("(fallback)");
+    const done = h.events.find((e) => e.type === "turn.completed");
+    expect(done?.payload).toMatchObject({
+      model: "devin-claude-opus-5-5",
+      provider: "cpa-others",
+    });
+  });
+
+  test("parseFallbackNotice keeps the switch and drops other status lines", () => {
+    expect(parseFallbackNotice(NOTICE)).toEqual({
+      fromModel: "qwen3.8-flash-next",
+      fromProvider: "hpc",
+      reason: "request timeout",
+      toModel: "devin-claude-opus-5-5",
+      toProvider: "cpa-others",
+    });
+    expect(
+      parseFallbackNotice(
+        `${NOTICE} Primary retry eligible in ~30 s; recovery is not guaranteed.`,
+      )?.toProvider,
+    ).toBe("cpa-others");
+    expect(
+      parseFallbackNotice("compacting context (50% of 262000)"),
+    ).toBeUndefined();
+    expect(
+      parseFallbackNotice("Fallback activated: a → b (c)"),
+    ).toBeUndefined();
   });
 });

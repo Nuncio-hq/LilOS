@@ -358,7 +358,28 @@ export const TurnCompletedPayload = z.strictObject({
       BACKEND_DOWN -32006) — lets the harness pick the typed failure
       surface instead of guessing from `error` text. */
   errorCode: z.number().optional(),
+  /** The model this turn actually ran on when the engine switched
+      mid-turn (#790). Absent: the `turn.started` pick still stands —
+      a deliberate switch the engine already reported is not restamped. */
+  model: z.string().optional(),
+  /** Provider of `model` when the engine reported one with the switch. */
+  provider: z.string().optional(),
 });
+
+/**
+ * Thread note when a turn ran on another model (#790). `fromName` /
+ * `toName` are display names. `reason` is the engine's own short cause
+ * ("rate limit", "request timeout"); absent when it only reported the
+ * model that ran.
+ */
+export function fallbackTurnNote(
+  fromName: string,
+  toName: string,
+  reason?: string,
+): string {
+  const why = reason ? `was unreachable (${reason})` : "was unreachable";
+  return `${fromName} ${why}; this turn ran on ${toName} (fallback)`;
+}
 
 /** type -> payload map. The registry below is generated from this union. */
 export const EngineEvent = z.discriminatedUnion("type", [
