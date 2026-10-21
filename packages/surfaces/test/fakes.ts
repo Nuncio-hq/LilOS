@@ -168,6 +168,8 @@ export function fakeAppOps(
     titleSource?: "auto" | "user";
     /** Seed `Conversation.usage` on the bound thread (#559). */
     usage?: Conversation["usage"];
+    /** Seed the stuck mark (D-#772). */
+    stuck?: Conversation["stuck"];
     status?: SystemStatusResult;
     profile?: ProfileSettings;
     /** `schedule_list` answers (#136). */
@@ -219,6 +221,7 @@ export function fakeAppOps(
     finishedSeq: 0,
     createdAt: 1,
     ...(opts.usage ? { usage: opts.usage } : {}),
+    ...(opts.stuck ? { stuck: opts.stuck } : {}),
   };
   const convs: Conversation[] = [bound, ...(opts.conversations ?? [])];
   const employees: Employee[] = opts.employees ?? [

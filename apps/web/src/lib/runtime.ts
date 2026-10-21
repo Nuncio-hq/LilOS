@@ -5,12 +5,13 @@ import {
   type SessionModel,
   SessionReducer,
 } from "@lilos/client-runtime";
-import type {
-  Ask,
-  EngineHostStatus,
-  SystemStatusResult,
-  WelcomeResult,
-  WorkbenchOpenTarget,
+import {
+  type Ask,
+  type EngineHostStatus,
+  PUSH_STUCK_SETTING,
+  type SystemStatusResult,
+  type WelcomeResult,
+  type WorkbenchOpenTarget,
 } from "@lilos/contracts/app";
 import type {
   ConversationAccess,
@@ -20,7 +21,7 @@ import type {
 } from "@lilos/contracts/engine";
 import type { ModelVisibility } from "@lilos/ui";
 import { atom, computed, type ReadableAtom } from "nanostores";
-import { defaultAccess, defaultEditor } from "../settings/state";
+import { defaultAccess, defaultEditor, pushStuck } from "../settings/state";
 import type { LilosConfig } from "./config";
 import { initConnect } from "./connect";
 import { hostUser, initHost } from "./host";
@@ -148,7 +149,13 @@ export async function bootRuntime(cfg: LilosConfig): Promise<void> {
         (value as ConversationAccess | undefined) === "full" ? "full" : "ask",
       );
     }
+    if (key === PUSH_STUCK_SETTING) pushStuck.set(value === true);
   });
+  /* D-#772: Stuck pushes stay off until Settings → Phone turns them on. */
+  void relay
+    .request<{ value: unknown }>("settings.get", { key: PUSH_STUCK_SETTING })
+    .then((r) => pushStuck.set(r.value === true))
+    .catch(() => {});
   // #339: the Connect approval flag + its settings.changed follow-up.
   initConnect();
   /* #563: the read watermark rides the relay — start stamping on open. */

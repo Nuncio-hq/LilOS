@@ -28,6 +28,7 @@ import {
   defaultEditor,
   enginePolicyOf,
   enginePolicyPick,
+  pushStuck,
 } from "../settings/state";
 import { modelLabel, modelRows } from "./models";
 import {
@@ -134,6 +135,9 @@ function build(): Slice {
   return {
     settings: {
       approvals: defaultAccess.get(),
+      /* D-#772: only the kind this pane can change. The phone's own
+         registration still gates the older kinds (D-#161). */
+      push: { stuck: pushStuck.get() },
       ...(policy ? { enginePolicy: policy } : {}),
       ...(editor && editors
         ? { editor: editor.name, editors: editors.map((e) => e.name) }
@@ -176,6 +180,7 @@ function build(): Slice {
 const INITIAL: Slice = {
   settings: {
     approvals: "ask",
+    push: { stuck: false },
     models: [],
     engine: { name: "Engine", unnamed: true, state: "starting" },
     relay: { state: "starting" },
@@ -207,6 +212,7 @@ onMount(slice, () => {
     $scheduledTasks,
     defaultAccess,
     defaultEditor,
+    pushStuck,
     enginePolicyPick,
     engineClient.description,
     modelVisibility,

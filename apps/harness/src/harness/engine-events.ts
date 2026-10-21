@@ -4,6 +4,7 @@ import {
   fmtTokens,
 } from "@lilos/contracts/engine";
 import type { HarnessCtx, SessionBinding } from "./ctx";
+import { beginStuckTurn, noteStuckTool, stuckOnNewMessage } from "./stuck";
 
 /**
  * engine -> relay: the `onEngineEvent` switch — turn
@@ -162,7 +163,10 @@ export function onEngineEvent(this: HarnessCtx, event: EngineEvent) {
            that made it this far worked. Same for the stopped word. */
         turnFailure: null,
         turnStopped: null,
+        /* D-#772: a new turn starts clear. The quiet window arms below. */
+        stuck: null,
       }).catch(() => {});
+      beginStuckTurn(this, binding);
       /* #422: a turn is running but named no step yet — the header reads
          "thinking" until the first tool.started replaces it. Waits stay:
          applyReplay raises openRequests before replaying this event, and
@@ -279,6 +283,16 @@ export function onEngineEvent(this: HarnessCtx, event: EngineEvent) {
         );
         binding.nowStep = `${event.payload.tool} ${arg}`.trim();
         this.noteNow(binding);
+        noteStuckTool(
+          this,
+          binding,
+          {
+            tool: event.payload.tool,
+            input: event.payload.input,
+            at: Date.now(),
+          },
+          event.payload.parentToolCallId !== undefined,
+        );
       }
       break;
     case "request.opened":
@@ -377,6 +391,8 @@ export function onEngineEvent(this: HarnessCtx, event: EngineEvent) {
            ack to claim; a landed steer is delivered, never parked. */
         if (idx >= 0) binding.steerPending.splice(idx, 1);
         else binding.steerLanded.push(event.payload.text);
+        /* D-#772: a message that landed clears the mark and the count. */
+        stuckOnNewMessage(this, binding);
       }
       break;
     case "turn.completed":

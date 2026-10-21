@@ -412,6 +412,8 @@ export const ThreadReadResult = z.object({
     title: z.string(),
     /** The thread's access level (#106) — `ask` = approvals reach the user. */
     access: ConversationAccess,
+    /** Set while the running turn is stuck (D-#772), with the plain reason. */
+    stuck: z.object({ reason: z.string().min(1) }).optional(),
   }),
   messages: z.array(AppMessage),
 });

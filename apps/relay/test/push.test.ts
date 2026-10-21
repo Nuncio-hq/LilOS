@@ -984,4 +984,30 @@ describe("per-employee mute (#561 AC-3)", () => {
     );
     expect(sent).toHaveLength(1);
   });
+
+  it("D-#772 a stuck mark pushes only when Phone → Stuck is on", async () => {
+    const { relay, pairing, sent } = newWorld();
+    const host = await registeredHost(relay);
+    const { conversation } = await setupConversation(host);
+    const phone = await helloedDevice(pairing, relay);
+    await registerPush(phone);
+    const mark = (stuck: { reason: string } | null) =>
+      host.connection.receive(
+        req("conversations.update", {
+          conversationId: conversation.id,
+          stuck,
+        }),
+      );
+    await mark({ reason: "Same web search 6 times" });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(sent).toHaveLength(0);
+
+    await host.connection.receive(
+      req("settings.set", { key: "push.stuck", value: true }),
+    );
+    await mark(null);
+    await mark({ reason: "Same web search 6 times" });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(sent.map((m) => m.body)).toEqual(["Same web search 6 times"]);
+  });
 });

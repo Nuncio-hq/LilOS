@@ -22,6 +22,7 @@ import { sessionModelId } from "../lib/context-window";
 import type { OsApp, WbTab } from "../types";
 import { useRenameMenu } from "../v3/v3-thread-menu";
 import type { ThreadFrameProps } from "./frame-props";
+import { focusThreadComposer, StuckCard } from "./stuck-card";
 import { ThreadComposer } from "./thread-composer";
 import { StartWork, sentTurns, ThreadHeader } from "./thread-header";
 import { panelFolder, threadKicker } from "./thread-kicker";
@@ -313,6 +314,13 @@ export function ThreadView(props: ThreadViewProps) {
           signal={`${(thread.queue ?? []).length}:${pending.length}`}
         />
       </Conversation>
+      {thread.stuck && (
+        <StuckCard
+          reason={thread.stuck}
+          onStop={props.onStop}
+          onMessage={() => focusThreadComposer(bodyRef.current)}
+        />
+      )}
       <ThreadComposer
         {...props}
         lead={leadEmp}

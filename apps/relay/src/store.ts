@@ -144,6 +144,8 @@ export interface ConversationPatch {
   turnStopped?: boolean | null;
   /** #583: running background-job count — host-written, same lifecycle. */
   bgJobs?: number | null;
+  /** Host-only (D-#772): the running turn is stuck; `null` clears it. */
+  stuck?: { reason: string } | null;
 }
 
 export interface OpenConversationInput {

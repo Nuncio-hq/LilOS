@@ -1,9 +1,10 @@
-import type {
-  Ask,
-  Conversation,
-  Employee,
-  PushKind,
-  PushPrefs,
+import {
+  type Ask,
+  type Conversation,
+  type Employee,
+  PUSH_STUCK_SETTING,
+  type PushKind,
+  type PushPrefs,
 } from "@lilos/contracts/app";
 import type { EngineEvent } from "@lilos/contracts/engine";
 import type { RelayStore } from "./store";
@@ -75,6 +76,9 @@ export interface PushFanout {
       is at the Mac" so pushes stay off the phone; `false` (idle/locked)
       clears it early instead of waiting the presence window out. */
   setMacPresence(active: boolean): void;
+  /** D-#772: a thread just became stuck. Sends only when Settings →
+      Phone → Stuck is on (`PUSH_STUCK_SETTING`). */
+  threadStuck(conversation: Conversation, reason: string): Promise<void>;
 }
 
 /** Ask reason as the push body — mirrors `dm-model.ts askReason` (AC-3). */
@@ -135,6 +139,11 @@ const prefFor = (prefs: PushPrefs, kind: PushKind): boolean => {
       return prefs.completed;
     case "failed":
       return prefs.failed;
+    /* D-#772: the Mac's Phone → Stuck switch is the gate, checked before
+       `fan`. A registered phone is not asked again — the kind defaults
+       off there, not in this per-device list. */
+    case "stuck":
+      return true;
   }
 };
 
@@ -336,6 +345,13 @@ export function createPushFanout(options: {
 
     setMacPresence(active) {
       macActiveAt = active ? now() : undefined;
+    },
+
+    async threadStuck(conversation, reason) {
+      /* Absent is off: a phone is not told a thread is stuck until the
+         owner turns the switch on. */
+      if ((await store.getSetting(PUSH_STUCK_SETTING)) !== true) return;
+      await fan("stuck", conversation, reason);
     },
   };
 }

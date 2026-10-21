@@ -180,6 +180,8 @@ export function useThreadWith(
        engine declared `background_jobs` (uiJobs is empty otherwise — and
        the tab hides itself when it is). */
     ...(uiJobs.length ? { jobs: uiJobs } : {}),
+    /* D-#772: the chat's red card. The header's word comes from threadStatus. */
+    ...(conv.stuck ? { stuck: conv.stuck.reason } : {}),
     /* #579 AC-1: the header's "PR #N" chip — the Workbench probe's live
        read wins once it reports; the conversations.prs list fills in before
        it does (undefined probe = not answered yet). */

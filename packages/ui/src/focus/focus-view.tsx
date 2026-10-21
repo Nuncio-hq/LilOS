@@ -18,6 +18,7 @@ import {
 import { sessionModelId } from "../lib/context-window";
 import { cn } from "../lib/utils";
 import { MainPane } from "../shell/main-pane";
+import { focusThreadComposer, StuckCard } from "../thread/stuck-card";
 import { ThreadComposer } from "../thread/thread-composer";
 import { Workbench } from "../workbench/workbench";
 import { FocusHeader } from "./focus-header";
@@ -277,6 +278,13 @@ export function FocusView(props: FocusViewProps) {
               signal={`${(thread.queue ?? []).length}:${plan.todos.length}:${pendingSteers.length}:${running}:${plan.open}`}
             />
           </Conversation>
+          {thread.stuck && (
+            <StuckCard
+              reason={thread.stuck}
+              onStop={props.onStop}
+              onMessage={() => focusThreadComposer(turnsRef.current)}
+            />
+          )}
           <ThreadComposer
             {...props}
             lead={lead}

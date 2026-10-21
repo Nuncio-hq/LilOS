@@ -56,10 +56,10 @@ const HOME = ${JSON.stringify(home)};
 const db = open27(":memory:");
 const colsAt27 = db.query("PRAGMA table_info(conversations)").all().map((c) => c.name);
 
-applyMigrations(db); // v28 projects, then v29 ask lines
+applyMigrations(db); // through v30 (v28 projects, v29 ask lines, v30 stuck)
 const store = createDrizzleStore(drizzle(db, { schema }));
 const versionAfter = db.query("PRAGMA user_version").get().user_version;
-const colsAt28 = db.query("PRAGMA table_info(conversations)").all().map((c) => c.name);
+const colsAfter = db.query("PRAGMA table_info(conversations)").all().map((c) => c.name);
 const tables = db.query("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((t) => t.name);
 const indexes = db.query("SELECT name FROM sqlite_master WHERE type = 'index'").all().map((t) => t.name);
 
@@ -80,7 +80,7 @@ const summaries = await store.listConversationSummaries({ includeArchived: true 
 const summaryFiled = Object.fromEntries(summaries.map((s) => [s.conversation.id, s.conversation.projectId ?? null]));
 
 console.log(JSON.stringify({
-  versionAfter, colsAt27, colsAt28, tables, indexes,
+  versionAfter, colsAt27, colsAfter, tables, indexes,
   first, second, projects, filed, projectsSame: JSON.stringify(projects) === JSON.stringify(projectsAfter),
   again: { created: again.created, id: again.project.id },
   clash: { created: clash.created, key: clash.project.key, name: clash.project.name },
@@ -91,7 +91,7 @@ console.log(JSON.stringify({
 interface Out {
   versionAfter: number;
   colsAt27: string[];
-  colsAt28: string[];
+  colsAfter: string[];
   tables: string[];
   indexes: string[];
   first: { filed: number; created: number };
@@ -120,8 +120,11 @@ describe("projects migration + backfill on the real store (D-#771)", () => {
 
     // The migration adds the table, the column and their indexes.
     expect(out.colsAt27).not.toContain("project_id");
-    expect(out.versionAfter).toBe(29);
-    expect(out.colsAt28).toContain("project_id");
+    expect(out.colsAt27).not.toContain("stuck");
+    /* v28 filed projects; v29 (D-#773) adds ask lines; v30 (D-#772) adds stuck. */
+    expect(out.versionAfter).toBe(30);
+    expect(out.colsAfter).toContain("project_id");
+    expect(out.colsAfter).toContain("stuck");
     expect(out.tables).toContain("projects");
     for (const index of [
       "projects_key",

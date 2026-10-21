@@ -456,6 +456,7 @@ export function createMemoryStore(): RelayStore {
         "bgJobs",
         "cwd",
         "projectId",
+        "stuck",
       ] as const) {
         if (patch[k] === null) {
           delete (conversation as Record<string, unknown>)[k];

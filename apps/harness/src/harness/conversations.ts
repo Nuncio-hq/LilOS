@@ -105,6 +105,8 @@ export async function updateConversation(
     /** #583: running background-job count (thread row badge + session-feed
         seed); `null` clears it. */
     bgJobs?: number | null;
+    /** D-#772: the running turn is stuck; `null` clears it. */
+    stuck?: { reason: string } | null;
   },
 ) {
   await this.opts.relay.request("conversations.update", {

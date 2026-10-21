@@ -419,6 +419,12 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
       `ALTER TABLE asks ADD COLUMN if_no TEXT`,
     ],
   },
+  {
+    /* D-#772: the running turn's stuck mark, JSON `{reason}`.
+       Version 30: #800 takes 29 (Needs you) and merges first. */
+    version: 30,
+    statements: [`ALTER TABLE conversations ADD COLUMN stuck TEXT`],
+  },
 ];
 
 /**

@@ -86,13 +86,14 @@ export type V3ConnectRow = {
 };
 
 export type V3Settings = {
-  /** What the phone is told about. Absent: the app sends no pushes, so
-     there is nothing to choose. */
+  /** What the phone is told about. A missing key is a kind this app does
+     not offer here (D-#19). The real app offers `stuck` (D-#772); the
+     prototype also offers the others. Absent entirely: no section. */
   push?: {
-    needsYou: boolean;
-    finished: boolean;
-    stuck: boolean;
-    failed: boolean;
+    needsYou?: boolean;
+    finished?: boolean;
+    stuck?: boolean;
+    failed?: boolean;
   };
   /** Ask before risky commands, or let agents run anything. */
   approvals: "ask" | "full";

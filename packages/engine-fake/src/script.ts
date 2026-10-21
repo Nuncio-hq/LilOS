@@ -57,6 +57,9 @@ export interface FakeStep {
   subagents?: FakeSubagent[];
   /** #179: this call leaves a background process running (job.* events). */
   job?: FakeJob;
+  /** Wait this long before the call starts — a test can see the state
+      the earlier calls produced (D-#772's clear). */
+  pauseBeforeMs?: number;
   diff?: {
     path: string;
     status: "added" | "modified" | "deleted";
@@ -83,6 +86,8 @@ export interface FakeScript {
       stays; the engine reports it on `turn.model` and does not word the
       note. `reason` is the plain cause, when the script has one. */
   fallbackTo?: { model: string; provider?: string; reason?: string };
+  /** Hold the turn open after the steps until interrupt (D-#772). */
+  hold?: boolean;
 }
 
 const EDIT_ASK =
@@ -210,6 +215,34 @@ export function scriptFor(
         provider: "other",
         reason: "rate limit",
       },
+    };
+  }
+
+  /* `stuck:` — six identical web searches, then hold the turn so a test
+     can see Stuck. `stuck: clear` does the six, pauses, then one
+     different call, which clears the mark (D-#772). */
+  const stuck = /^stuck:(?:\s+(clear))?\s*$/i.exec(q);
+  if (stuck) {
+    const query = "journaling creators 5k–50k";
+    const search = (): FakeStep => ({
+      tool: "web_search",
+      input: { query },
+      output: "0 new",
+    });
+    const steps = Array.from({ length: 6 }, search);
+    if (stuck[1]) {
+      steps.push({
+        tool: "read_file",
+        input: { path: "creators.csv" },
+        output: "7 rows",
+        pauseBeforeMs: 4000,
+      });
+    }
+    return {
+      reasoning: "Searching again for the same creators.",
+      steps,
+      text: stuck[1] ? "A different page this time." : "",
+      hold: !stuck[1],
     };
   }
 

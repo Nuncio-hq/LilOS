@@ -1586,6 +1586,10 @@ export class FakeEngine {
       }
       s.turn.phase = "tools";
       for (const step of script.steps) {
+        if (step.pauseBeforeMs) {
+          await new Promise((r) => setTimeout(r, step.pauseBeforeMs));
+          if (s.turn?.interrupted) throw new Interrupted();
+        }
         this.drainSteers(s, turnId);
         const toolCallId = `c${++s.toolCounter}`;
         this.emit(s, "tool.started", {
@@ -1683,6 +1687,15 @@ export class FakeEngine {
           });
           this.startJobPump(s, job);
         }
+      }
+      /* D-#772: the steps have landed and the turn stays running until
+         Stop. Interrupt resolves the hold; the next sleep then cancels. */
+      if (script.hold) {
+        await new Promise<void>((resolve) => {
+          s.holdTurn = resolve;
+        });
+        s.holdTurn = undefined;
+        await this.sleep(s);
       }
       this.drainSteers(s, turnId);
       s.turn.phase = "text";

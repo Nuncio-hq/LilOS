@@ -1,4 +1,5 @@
 import { RelayError } from "@lilos/client-runtime";
+import { PUSH_STUCK_SETTING } from "@lilos/contracts/app";
 import { pairingUrl, type V3DataActions } from "@lilos/ui";
 import {
   setApprovalPolicy,
@@ -104,6 +105,14 @@ export const v3SettingsActions: Mine = {
       .catch(() => sayError("Couldn't turn off phone access — try again.")),
 
   saveSettings: (patch) => {
+    if (patch.push && typeof patch.push.stuck === "boolean")
+      toastOnFail(
+        "Couldn't save that setting",
+        relay.request("settings.set", {
+          key: PUSH_STUCK_SETTING,
+          value: patch.push.stuck,
+        }),
+      );
     if (patch.approvals)
       toastOnFail(
         "Couldn't save that setting",

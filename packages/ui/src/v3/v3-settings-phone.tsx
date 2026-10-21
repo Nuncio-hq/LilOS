@@ -334,17 +334,17 @@ export function PhonePane({ data, act }: V3PageProps) {
           )}
       </div>
 
-      {push && (
+      {push && PUSH.some((p) => typeof push[p.key] === "boolean") && (
         <>
           <Section title="Notifications" />
           <p className="mb-1 text-[13px] text-muted-foreground">
             What your phone is told about. Quiet unless something needs you.
           </p>
-          {PUSH.map((p) => (
+          {PUSH.filter((p) => typeof push[p.key] === "boolean").map((p) => (
             <Row key={p.key} title={p.title} hint={p.hint}>
               <Switch
                 label={`${p.title} notifications`}
-                on={push[p.key]}
+                on={push[p.key] === true}
                 onChange={(on) =>
                   act.saveSettings({ push: { ...push, [p.key]: on } })
                 }

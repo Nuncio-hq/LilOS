@@ -597,6 +597,12 @@ export const ConversationsUpdateParams = z.object({
   /** Host-only (#583): running background-job count — the row's badge
       and the session-watch seed. */
   bgJobs: z.number().int().nonnegative().nullable().optional(),
+  /** Host-only (D-#772): the running turn is stuck, with the plain
+      reason. `null` clears it. */
+  stuck: z
+    .object({ reason: z.string().min(1) })
+    .nullable()
+    .optional(),
 });
 export type ConversationsUpdateParams = z.infer<
   typeof ConversationsUpdateParams

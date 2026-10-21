@@ -230,6 +230,13 @@ export const Conversation = z.object({
    */
   turnStopped: z.boolean().optional(),
   /**
+   * The running turn is stuck (D-#772): a plain reason ("Same web search
+   * 6 times", "No new step for 20 minutes"). The host writes it and
+   * clears it (`null` on the update) when the next step differs, a new
+   * message lands, or the turn is stopped. Absent = not stuck.
+   */
+  stuck: z.object({ reason: z.string().min(1) }).optional(),
+  /**
    * Count of this session's still-running background jobs (#583 AC-3).
    * Same lifecycle as `turnStopped`: host-written on `job.started` /
    * `job.exited`, so the row's "N in background" badge — and the
@@ -588,6 +595,10 @@ export const PushKind = z.enum([
   "waiting_for_input",
   "completed",
   "failed",
+  /* D-#772: a thread marked stuck. Off until Settings → Phone turns
+     `PUSH_STUCK_SETTING` on — unlike the four above, which default on
+     in the phone's own registration. */
+  "stuck",
 ]);
 export type PushKind = z.infer<typeof PushKind>;
 
@@ -603,6 +614,10 @@ export const PushPrefs = z.object({
   failed: z.boolean(),
 });
 export type PushPrefs = z.infer<typeof PushPrefs>;
+
+/** D-#772: relay settings key for Settings → Phone → Stuck. Absent or
+    anything other than `true` means the phone is not told. */
+export const PUSH_STUCK_SETTING = "push.stuck";
 
 /* ----------------------- workbench targets (#340) ----------------------- */
 

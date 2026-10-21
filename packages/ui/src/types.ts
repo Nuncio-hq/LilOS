@@ -366,6 +366,9 @@ export type Thread = {
   ws?: Workspace;
   /** Background processes of this session (issue #170), newest last. */
   jobs?: BackgroundJob[];
+  /** D-#772: set while the running turn is stuck — the plain reason the
+      chat's one red card shows. */
+  stuck?: string;
 };
 export type Work = {
   ticket: string;
