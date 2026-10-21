@@ -581,6 +581,12 @@ describe("approval-gated gateway tools", () => {
       const { employee: other } = await v.w.user.request<{
         employee: Employee;
       }>("employees.create", { name: "Bea", role: "ops" });
+      /* A hire while this session holds the seat reports to them (D-#778).
+         Point Bea at the owner first, or the caller reporting to her cycles. */
+      await v.w.user.request("employees.update", {
+        id: other.id,
+        reportsTo: null,
+      });
 
       const call = v.client.teamUpdate({ reportsTo: other.id });
       const ask = await v.nextAsk(seen);
