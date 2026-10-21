@@ -16,6 +16,7 @@ import type { V3Ticket } from "./v3-types";
 export const link = "border-foreground/25 border-b hover:border-foreground/60";
 
 export function Person({ data, id }: { data: V3Data; id: string }) {
+  if (!id) return <span className="text-muted-foreground">Unassigned</span>;
   if (id === "you") return <span className="font-medium">{data.me}</span>;
   const a = agentOf(data, id);
   return (

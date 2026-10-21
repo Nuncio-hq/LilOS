@@ -5,6 +5,7 @@ import type {
   Conversation,
   ConversationSummary,
   Employee,
+  Goal,
   MessageSearchHit,
   PairedDevice,
   PendingTurn,
@@ -12,15 +13,20 @@ import type {
   Project,
   RecentFolder,
   ScheduledTask,
+  Ticket,
 } from "@lilos/contracts/app";
 import { toSummaryMessage, toSummaryPreview } from "@lilos/contracts/app";
 import { equalSecret } from "@lilos/contracts/auth";
 import type {
   AppendMessageInput,
   DevicePush,
+  NewGoal,
   NewPairedDevice,
   NewProject,
+  NewTicket,
+  OpenConversationInput,
   RelayStore,
+  TicketPatch,
 } from "../src/store";
 import {
   deriveProjectKey,
@@ -33,6 +39,14 @@ import {
   searchTerms,
   titlePatch,
 } from "../src/store";
+import {
+  applyWrite,
+  checkout,
+  finish,
+  initialStatus,
+  wakeWaiter,
+  withUpdate,
+} from "../src/work";
 
 export type { RelayStore };
 
@@ -59,6 +73,8 @@ export function createMemoryStore(): RelayStore {
   const settings = new Map<string, unknown>();
   const scheduledTasks = new Map<string, ScheduledTask>();
   const projects = new Map<string, Project>();
+  const goals = new Map<string, Goal>();
+  const tickets = new Map<string, Ticket>();
   let profile: ProfileSettings = {};
   const grants = new Map<
     string,
@@ -156,6 +172,61 @@ export function createMemoryStore(): RelayStore {
       )
       .sort((a, b) => a.seq - b.seq);
   const visible = (list: AppMessage[]) => list.filter((m) => !m.rewound);
+
+  const openConversationSync = (input: OpenConversationInput) => {
+    /* #552: the open's key rides the root message's (channelId,
+         dedupeKey) slot — a stored-but-unanswered resend answers the
+         stored thread. */
+    if (input.dedupeKey) {
+      const storedId = dedupe.get(`${input.channelId}|${input.dedupeKey}`);
+      const stored = storedId ? messages.get(storedId) : undefined;
+      const conv = stored?.conversationId
+        ? conversations.get(stored.conversationId)
+        : undefined;
+      if (stored && conv) {
+        return { conversation: conv, rootMessage: stored, created: false };
+      }
+    }
+    const conversation: Conversation = {
+      id: newId("conv"),
+      channelId: input.channelId,
+      rootMessageId: "",
+      engineRef: null,
+      state: "idle",
+      ...(input.cwd !== undefined ? { cwd: input.cwd } : {}),
+      ...(input.projectId !== undefined ? { projectId: input.projectId } : {}),
+      ...(input.ticketId !== undefined ? { ticketId: input.ticketId } : {}),
+      ...(input.workspace !== undefined ? { workspace: input.workspace } : {}),
+      ...openTitle(input),
+      archived: false,
+      deliveredSeq: 0,
+      readSeq: 0,
+      finishedSeq: 0,
+      access: input.access ?? "ask",
+      createdAt: now(),
+      ...(input.model !== undefined ? { model: input.model } : {}),
+      ...(input.provider !== undefined ? { provider: input.provider } : {}),
+      ...(input.effort !== undefined ? { effort: input.effort } : {}),
+      ...(input.fast !== undefined ? { fast: input.fast } : {}),
+      ...(input.scheduled !== undefined ? { scheduled: input.scheduled } : {}),
+    };
+    conversations.set(conversation.id, conversation);
+    /* The picker's folder bumps recents — a `.lilos/wt/*` run dir never
+         makes the list (#156). */
+    const bump = input.workspace?.repoPath ?? input.cwd;
+    if (bump !== undefined) touchFolder(bump);
+    const { message: rootMessage } = appendMessage({
+      channelId: input.channelId,
+      conversationId: conversation.id,
+      authorId: input.authorId,
+      authorKind: "user",
+      text: input.text,
+      attachments: input.attachments,
+      dedupeKey: input.dedupeKey,
+    });
+    conversation.rootMessageId = rootMessage.id;
+    return { conversation, rootMessage, created: true };
+  };
 
   return {
     async listEmployees() {
@@ -323,6 +394,125 @@ export function createMemoryStore(): RelayStore {
       projects.set(project.id, project);
       return { project, created: true };
     },
+    async listGoals() {
+      return [...goals.values()].sort((a, b) => a.createdAt - b.createdAt);
+    },
+    async createGoal(input: NewGoal) {
+      const goal: Goal = {
+        id: newId("goal"),
+        title: input.title,
+        projectId: input.projectId,
+        due: input.due ?? "",
+        why: input.why ?? "",
+        ...(input.ownerId ? { ownerId: input.ownerId } : {}),
+        createdAt: now(),
+      };
+      goals.set(goal.id, goal);
+      return goal;
+    },
+    async listTickets(projectId?: string) {
+      return [...tickets.values()]
+        .filter((t) => (projectId ? t.projectId === projectId : true))
+        .sort((a, b) => a.createdAt - b.createdAt);
+    },
+    async getTicket(id: string) {
+      return tickets.get(id) ?? null;
+    },
+    async createTicket(input: NewTicket) {
+      const taken = [...tickets.values()].filter(
+        (t) => t.projectId === input.projectId,
+      );
+      const number = taken.reduce((m, t) => Math.max(m, t.number), 0) + 1;
+      const at = now();
+      const status = initialStatus(input);
+      const done = status === "done";
+      const ticket: Ticket = {
+        id: `${input.projectKey}-${number}`,
+        number,
+        title: input.title,
+        projectId: input.projectId,
+        ...(input.goalId ? { goalId: input.goalId } : {}),
+        ...(input.ownerId ? { ownerId: input.ownerId } : {}),
+        status,
+        ...(!done && input.waitingOn ? { waitingOn: input.waitingOn } : {}),
+        progress: input.progress ?? [],
+        updates: [],
+        ...(input.stuckWhy ? { stuckWhy: input.stuckWhy } : {}),
+        ...(input.startsAt ? { startsAt: input.startsAt } : {}),
+        statusAt: at,
+        ...(done ? { doneAt: at } : {}),
+        createdAt: at,
+      };
+      tickets.set(ticket.id, ticket);
+      return ticket;
+    },
+    async updateTicket(id: string, patch: TicketPatch) {
+      const before = tickets.get(id);
+      if (!before) return null;
+      const at = now();
+      let next = applyWrite(before, patch, at);
+      const changed: Ticket[] = [];
+      if (next.status === "done" && before.status !== "done") {
+        next = finish(next, at);
+        for (const waiter of tickets.values()) {
+          if (
+            waiter.waitingOn?.kind === "ticket" &&
+            waiter.waitingOn.ticketId === id
+          ) {
+            const moved = wakeWaiter(waiter, next, at, {
+              id: newId("upd"),
+              by: next.ownerId ?? "you",
+              at,
+              text: "",
+            });
+            tickets.set(moved.id, moved);
+            changed.push(moved);
+          }
+        }
+      }
+      tickets.set(next.id, next);
+      return [next, ...changed];
+    },
+    async assignTicket(input: {
+      id: string;
+      ownerId: string;
+      channelId: string;
+    }) {
+      /* No await: the owner write and the new thread land together (D-#776).
+         The owner's channel was opened before this call. */
+      const before = tickets.get(input.id);
+      const project = before ? projects.get(before.projectId) : undefined;
+      if (!before || !project) return null;
+      const ticket = checkout(before, input.ownerId, now());
+      tickets.set(ticket.id, ticket);
+      const opened = openConversationSync({
+        channelId: input.channelId,
+        title: ticket.title,
+        titleSource: "user",
+        text: `${ticket.id}: ${ticket.title}`,
+        authorId: "user",
+        cwd: project.folder,
+        projectId: project.id,
+        ticketId: ticket.id,
+      });
+      return {
+        ticket,
+        conversation: opened.conversation,
+        rootMessage: opened.rootMessage,
+      };
+    },
+    async commentTicket(id: string, update: { by: string; text: string }) {
+      const before = tickets.get(id);
+      if (!before) return null;
+      const ticket = withUpdate(before, {
+        id: newId("upd"),
+        by: update.by,
+        at: now(),
+        text: update.text,
+      });
+      tickets.set(ticket.id, ticket);
+      return ticket;
+    },
     async listRecentFolders() {
       return [...folders.values()].sort((a, b) => b.lastUsedAt - a.lastUsedAt);
     },
@@ -376,63 +566,7 @@ export function createMemoryStore(): RelayStore {
       return summaries;
     },
     async openConversation(input) {
-      /* #552: the open's key rides the root message's (channelId,
-         dedupeKey) slot — a stored-but-unanswered resend answers the
-         stored thread. */
-      if (input.dedupeKey) {
-        const storedId = dedupe.get(`${input.channelId}|${input.dedupeKey}`);
-        const stored = storedId ? messages.get(storedId) : undefined;
-        const conv = stored?.conversationId
-          ? conversations.get(stored.conversationId)
-          : undefined;
-        if (stored && conv) {
-          return { conversation: conv, rootMessage: stored, created: false };
-        }
-      }
-      const conversation: Conversation = {
-        id: newId("conv"),
-        channelId: input.channelId,
-        rootMessageId: "",
-        engineRef: null,
-        state: "idle",
-        ...(input.cwd !== undefined ? { cwd: input.cwd } : {}),
-        ...(input.projectId !== undefined
-          ? { projectId: input.projectId }
-          : {}),
-        ...(input.workspace !== undefined
-          ? { workspace: input.workspace }
-          : {}),
-        ...openTitle(input),
-        archived: false,
-        deliveredSeq: 0,
-        readSeq: 0,
-        finishedSeq: 0,
-        access: input.access ?? "ask",
-        createdAt: now(),
-        ...(input.model !== undefined ? { model: input.model } : {}),
-        ...(input.provider !== undefined ? { provider: input.provider } : {}),
-        ...(input.effort !== undefined ? { effort: input.effort } : {}),
-        ...(input.fast !== undefined ? { fast: input.fast } : {}),
-        ...(input.scheduled !== undefined
-          ? { scheduled: input.scheduled }
-          : {}),
-      };
-      conversations.set(conversation.id, conversation);
-      /* The picker's folder bumps recents — a `.lilos/wt/*` run dir never
-         makes the list (#156). */
-      const bump = input.workspace?.repoPath ?? input.cwd;
-      if (bump !== undefined) touchFolder(bump);
-      const { message: rootMessage } = appendMessage({
-        channelId: input.channelId,
-        conversationId: conversation.id,
-        authorId: input.authorId,
-        authorKind: "user",
-        text: input.text,
-        attachments: input.attachments,
-        dedupeKey: input.dedupeKey,
-      });
-      conversation.rootMessageId = rootMessage.id;
-      return { conversation, rootMessage, created: true };
+      return openConversationSync(input);
     },
     async setConversationProjects(filings) {
       for (const { conversationId, projectId } of filings) {

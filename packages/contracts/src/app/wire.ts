@@ -294,6 +294,16 @@ export const AppMethod = z.enum([
      is no update/remove (nothing renames or retires a project yet). */
   "projects.list",
   "projects.create",
+  /* Goals and tickets (D-#776). The relay owns the records. Assign is the
+     checkout: one transaction sets the owner and opens their thread. */
+  "goals.list",
+  "goals.create",
+  "tickets.list",
+  "tickets.read",
+  "tickets.create",
+  "tickets.update",
+  "tickets.assign",
+  "tickets.comment",
 ]);
 export type AppMethod = z.infer<typeof AppMethod>;
 
@@ -1429,6 +1439,10 @@ export const AppEventMethod = z.enum([
   /* A project appeared or was created (D-#771) — every client's project
      list refreshes live, including the one a first-use open made. */
   "project.upserted",
+  /* A goal or ticket was written (D-#776), including the ones a finished
+     ticket wakes. */
+  "goal.upserted",
+  "ticket.upserted",
 ]);
 export type AppEventMethod = z.infer<typeof AppEventMethod>;
 

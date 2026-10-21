@@ -68,8 +68,9 @@ describe("relay migrations", () => {
     // conversation's scheduled marker; v28 adds D-#771's projects table +
     // the conversation's project_id; v29 adds D-#773's why / if_yes / if_no;
     // v30 adds D-#772's stuck mark; v31 adds D-#775's reports_to and
-    // conversations.stuck_at (issue #775).
-    expect(out.version).toBe(31);
+    // conversations.stuck_at (issue #775); v32 adds D-#776's goals, tickets
+    // and conversations.ticket_id.
+    expect(out.version).toBe(32);
     expect(out.askCols).toContain("hire");
     expect(out.askCols).toContain("why");
     expect(out.askCols).toContain("if_yes");
@@ -98,6 +99,9 @@ describe("relay migrations", () => {
     expect(out.tables).toContain("profile");
     expect(out.tables).toContain("messages_fts");
     expect(out.tables).toContain("projects");
+    expect(out.tables).toContain("goals");
+    expect(out.tables).toContain("tickets");
+    expect(out.colsAt7).toContain("ticket_id");
     expect(out.tables).toContain("pairing_grants");
     expect(out.tables).toContain("paired_devices");
     expect(out.tables).toContain("device_push");

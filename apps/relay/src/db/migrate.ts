@@ -439,6 +439,49 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
       `ALTER TABLE conversations ADD COLUMN stuck_at INTEGER`,
     ],
   },
+  {
+    /* D-#776: goals and tickets. A ticket id is the project's key plus
+       `number` (unique per project). Checklist, result, waiting-on and
+       updates are JSON, the same way a conversation keeps `workspace`.
+       `conversations.ticket_id` is the hand: one column, so a thread links
+       to at most one ticket; many threads may name one ticket. */
+    version: 32,
+    statements: [
+      `CREATE TABLE goals (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        project_id TEXT NOT NULL REFERENCES projects(id),
+        due TEXT NOT NULL DEFAULT '',
+        why TEXT NOT NULL DEFAULT '',
+        owner_id TEXT,
+        created_at INTEGER NOT NULL
+      )`,
+      `CREATE INDEX goals_project ON goals(project_id)`,
+      `CREATE TABLE tickets (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL REFERENCES projects(id),
+        number INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        goal_id TEXT REFERENCES goals(id),
+        owner_id TEXT,
+        status TEXT NOT NULL,
+        waiting_on TEXT,
+        progress TEXT NOT NULL DEFAULT '[]',
+        result TEXT,
+        updates TEXT NOT NULL DEFAULT '[]',
+        stuck_why TEXT,
+        starts_at TEXT,
+        status_at INTEGER NOT NULL,
+        done_at INTEGER,
+        created_at INTEGER NOT NULL
+      )`,
+      `CREATE UNIQUE INDEX tickets_project_number ON tickets(project_id, number)`,
+      `CREATE INDEX tickets_project ON tickets(project_id)`,
+      `CREATE INDEX tickets_goal ON tickets(goal_id)`,
+      `ALTER TABLE conversations ADD COLUMN ticket_id TEXT REFERENCES tickets(id)`,
+      `CREATE INDEX conversations_ticket ON conversations(ticket_id)`,
+    ],
+  },
 ];
 
 /**

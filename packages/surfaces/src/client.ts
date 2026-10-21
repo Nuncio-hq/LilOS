@@ -8,16 +8,16 @@ import {
   type BrowserTypeResult,
   type ContextResult,
   type FolderAddResult,
+  type GoalCreateParams,
+  type GoalCreateResult,
+  type GoalListResult,
   type GuideResult,
   LILOS_TOOLS,
   type ProjectCreateResult,
   type ProjectListResult,
-  type ScheduleCreateParams,
   type ScheduleDeletedResult,
   type ScheduleListResult,
-  type ScheduleTaskRef,
   type ScheduleTaskResult,
-  type ScheduleUpdateParams,
   type TeamHireResult,
   type TeamListResult,
   type TeamUpdateResult,
@@ -31,6 +31,18 @@ import {
   type ThreadSearchResult,
   type ThreadSetTitleResult,
   type ThreadStartResult,
+  type TicketAssignParams,
+  type TicketAssignResult,
+  type TicketCommentParams,
+  type TicketCommentResult,
+  type TicketCreateParams,
+  type TicketCreateResult,
+  type TicketListParams,
+  type TicketListResult,
+  type TicketReadParams,
+  type TicketReadResult,
+  type TicketUpdateParams,
+  type TicketUpdateResult,
   TOOL_PATH_PREFIX,
   type ViewerClientMsg,
   ViewerServerMsg,
@@ -137,6 +149,21 @@ export function toolBackend(opts: ToolClientOptions): SurfaceBackend {
     projectList: () => call("project_list", {}) as Promise<ProjectListResult>,
     projectCreate: (p) =>
       call("project_create", p) as Promise<ProjectCreateResult>,
+    goalList: () => call("goal_list", {}) as Promise<GoalListResult>,
+    goalCreate: (p: GoalCreateParams) =>
+      call("goal_create", p) as Promise<GoalCreateResult>,
+    ticketList: (p: TicketListParams) =>
+      call("ticket_list", p) as Promise<TicketListResult>,
+    ticketRead: (p: TicketReadParams) =>
+      call("ticket_read", p) as Promise<TicketReadResult>,
+    ticketCreate: (p: TicketCreateParams) =>
+      call("ticket_create", p) as Promise<TicketCreateResult>,
+    ticketUpdate: (p: TicketUpdateParams) =>
+      call("ticket_update", p) as Promise<TicketUpdateResult>,
+    ticketAssign: (p: TicketAssignParams) =>
+      call("ticket_assign", p) as Promise<TicketAssignResult>,
+    ticketComment: (p: TicketCommentParams) =>
+      call("ticket_comment", p) as Promise<TicketCommentResult>,
   };
 }
 

@@ -507,6 +507,37 @@ ${tail}`,
         case "context":
           steps.push({ tool: tool("context"), input: {}, output: "" });
           break;
+        /* Ticket writes (D-#776) — the real tool, not a stubbed RPC. */
+        case "ticket": {
+          /* `project | title` */
+          const [project, title] = arg.split("|").map((s) => s.trim());
+          steps.push({
+            tool: tool("ticket_create"),
+            input: { project, title },
+            output: "",
+          });
+          break;
+        }
+        case "ticket-assign": {
+          const [id, ownerId] = arg.split("|").map((s) => s.trim());
+          steps.push({
+            tool: tool("ticket_assign"),
+            input: { id, ownerId },
+            output: "",
+          });
+          break;
+        }
+        case "ticket-update": {
+          const [id, ...pairs] = arg.split("|").map((s) => s.trim());
+          const input: Record<string, unknown> = { id };
+          for (const pair of pairs) {
+            const i = pair.indexOf("=");
+            if (i > 0)
+              input[pair.slice(0, i).trim()] = pair.slice(i + 1).trim();
+          }
+          steps.push({ tool: tool("ticket_update"), input, output: "" });
+          break;
+        }
       }
     }
     return {

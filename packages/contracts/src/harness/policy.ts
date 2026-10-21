@@ -11,7 +11,7 @@ import type { ToolArea } from "./tools.js";
  * stale prompt is diagnosable. Kept under 2000 chars: it rides in every
  * engine context.
  */
-export const HOST_POLICY_VERSION = 6;
+export const HOST_POLICY_VERSION = 7;
 export const HOST_POLICY_MAX_CHARS = 2000;
 export const HOST_POLICY_MARKER = `[LilOS host policy v${HOST_POLICY_VERSION}]`;
 
@@ -26,6 +26,8 @@ const TOOL_AREA_ORDER: readonly ToolArea[] = [
   "workbench",
   "folder",
   "project",
+  "ticket",
+  "goal",
   "schedule",
 ];
 
@@ -39,12 +41,17 @@ const AREA_LINES: Record<ToolArea, string> = {
     "- `ask`: ask the user and wait (`why`, `ifYes`, `ifNo`).",
   ].join("\n"),
   thread:
-    "- `thread_*`: your threads with the user — `thread_read`/`thread_search`/`thread_list`/`thread_prs`, `thread_post` to answer, `thread_set_title` to retitle yours while its title is auto, `thread_start` to ask for a new thread. Posting lands a real message; it is always allowed here and never possible in anyone else's thread.",
+    "- `thread_*`: your threads only — read, search, list, prs; post and retitle yours while the title is auto; `thread_start` asks. Never another session's thread.",
   team: "- `team_*`: the roster — `team_list` reads; `team_hire` and `team_update` (your own record only) ask the user to approve.",
   folder:
     "- `folder_*`: `folder_add` asks the user to add a folder you name to the recents.",
   project:
     "- `project_*`: the company's folders — `project_list` reads; `project_create` asks the user to approve.",
+  /* D-#776: ticket writes do not ask (#746). goal_create does, unless the
+     caller owns the goal — the harness skips that one gate. Two areas so
+     each tool name is <area>_<action>. */
+  ticket: "- `ticket_*`: company tickets. Writes do not ask.",
+  goal: "- `goal_*`: company goals. `goal_create` asks unless you own the goal.",
   schedule:
     "- `schedule_*`: your scheduled tasks — `schedule_list` reads; writes ask the user to approve.",
   workbench:

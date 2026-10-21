@@ -28,8 +28,12 @@ import {
   type PairingOffer,
   type ProfileSettings,
   ProfileUpdatedEvent,
+  type Goal,
+  GoalUpsertedEvent,
   type Project,
   ProjectUpsertedEvent,
+  type Ticket,
+  TicketUpsertedEvent,
   type RequestId,
   type RpcError,
   SystemStatusResult,
@@ -215,6 +219,11 @@ export class RelayClient {
       refresh, and on a relay that predates `projects.list`; live via
       `project.upserted` (including the one a first-use open creates). */
   readonly projects: WritableAtom<Project[]> = atom([]);
+  /** Goals and tickets (D-#776). Empty until the directory refresh, and on
+      a relay that predates the methods. Live via `goal.upserted` /
+      `ticket.upserted`. */
+  readonly goals: WritableAtom<Goal[]> = atom([]);
+  readonly tickets: WritableAtom<Ticket[]> = atom([]);
   readonly channels: WritableAtom<AppChannel[]> = atom([]);
   readonly conversations: WritableAtom<Conversation[]> = atom([]);
   /** True once the first directory refresh has landed — until then the list
@@ -525,6 +534,24 @@ export class RelayClient {
       list.some((p) => p.id === project.id)
         ? list.map((p) => (p.id === project.id ? project : p))
         : [...list, project],
+    );
+  }
+
+  private upsertGoal(goal: Goal): void {
+    const list = this.goals.get();
+    this.goals.set(
+      list.some((g) => g.id === goal.id)
+        ? list.map((g) => (g.id === goal.id ? goal : g))
+        : [...list, goal],
+    );
+  }
+
+  private upsertTicket(ticket: Ticket): void {
+    const list = this.tickets.get();
+    this.tickets.set(
+      list.some((t) => t.id === ticket.id)
+        ? list.map((t) => (t.id === ticket.id ? ticket : t))
+        : [...list, ticket],
     );
   }
 
@@ -1048,6 +1075,18 @@ export class RelayClient {
         for (const project of projects) this.upsertProject(project);
       })
       .catch(() => {});
+    /* Same rule as projects: a relay that predates goals/tickets, or a slow
+       answer, must not hold the directory at "Loading…". */
+    this.request<{ goals: Goal[] }>("goals.list", {})
+      .then(({ goals }) => {
+        for (const goal of goals) this.upsertGoal(goal);
+      })
+      .catch(() => {});
+    this.request<{ tickets: Ticket[] }>("tickets.list", {})
+      .then(({ tickets }) => {
+        for (const ticket of tickets) this.upsertTicket(ticket);
+      })
+      .catch(() => {});
     try {
       const [
         employees,
@@ -1285,6 +1324,14 @@ export class RelayClient {
       }
       case "project.upserted": {
         this.upsertProject(ProjectUpsertedEvent.parse(params).project);
+        return;
+      }
+      case "goal.upserted": {
+        this.upsertGoal(GoalUpsertedEvent.parse(params).goal);
+        return;
+      }
+      case "ticket.upserted": {
+        this.upsertTicket(TicketUpsertedEvent.parse(params).ticket);
         return;
       }
       case "employee.removed": {

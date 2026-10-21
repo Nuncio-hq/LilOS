@@ -111,12 +111,11 @@ test("AC-2 sidebar shows People + status only (no channels/projects/tickets)", a
     timeout: 30_000,
   });
   await expect(sidebar.getByText("People")).toBeVisible();
-  /* v3 names tickets "Work" and the inbox "Inbox"; both, Goals and Projects
-     stay out of the sidebar while the company has no tickets (M2). The old
-     sidebar's "Company" was a destination — in v3 it is the heading that
-     holds Threads, so it is not in this list any more. */
-  for (const label of ["Inbox", "Work", "Goals", "Projects"])
-    await expect(sidebar.getByText(label, { exact: true })).toHaveCount(0);
+  /* Work, Goals and Inbox show with tickets (D-#776). Projects stays out
+     until a project exists. */
+  for (const label of ["Inbox", "Work", "Goals"])
+    await expect(sidebar.getByText(label, { exact: true })).toBeVisible();
+  await expect(sidebar.getByText("Projects", { exact: true })).toHaveCount(0);
   await page.screenshot({ path: `${SHOTS}/ac-2-sidebar.png` });
 });
 

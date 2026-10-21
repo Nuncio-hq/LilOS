@@ -261,6 +261,9 @@ function threadRows(src: ThreadSources, archived: boolean): V3Thread[] {
         ...(c.model ? { model: modelLabel(c.model, c.provider) } : {}),
         ...(c.cwd ? { folder: c.cwd } : {}),
         ...(c.projectId ? { projectId: c.projectId } : {}),
+        ...(c.ticketId ? { ticketId: c.ticketId } : {}),
+        /* Same-minute hands share a clock string; the chain stays oldest first. */
+        openedAt: c.createdAt,
         ...(!live && answer?.text
           ? { summary: oneLine(answer.text, 140) }
           : {}),

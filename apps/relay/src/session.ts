@@ -30,6 +30,7 @@ import { handleHostEvents } from "./session/host-events";
 import { handleMessages } from "./session/messages";
 import { handlePairing } from "./session/pairing";
 import { handleProjects } from "./session/projects";
+import { handleTickets } from "./session/tickets";
 import {
   badParams,
   type HostRecord,
@@ -168,6 +169,14 @@ const METHOD_HANDLERS: ReadonlyMap<
   ["channels.openDm", handleDirectory],
   ["projects.list", handleProjects],
   ["projects.create", handleProjects],
+  ["goals.list", handleTickets],
+  ["goals.create", handleTickets],
+  ["tickets.list", handleTickets],
+  ["tickets.read", handleTickets],
+  ["tickets.create", handleTickets],
+  ["tickets.update", handleTickets],
+  ["tickets.assign", handleTickets],
+  ["tickets.comment", handleTickets],
   ["conversations.list", handleConversations],
   ["conversations.summaries", handleConversations],
   ["conversations.open", handleConversations],

@@ -288,6 +288,9 @@ export type V3Thread = {
      rows by this; a ticket's age is a different clock and may be absent. */
   doneAgo?: number;
   startedAt: string;
+  /** When the thread opened, epoch ms. Hands that share a clock minute
+      sort by this so the chain stays oldest first (D-#776). */
+  openedAt?: number;
   /** Minutes running (or ran). */
   minutes: number;
   /** Empty when the app does not carry the conversation's turns (the real

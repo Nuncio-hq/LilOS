@@ -58,7 +58,7 @@ export function TicketRow({
   /** Show who holds the ticket (omit on an agent's own page). */
   owner?: boolean;
 }) {
-  const who = agentOf(data, ticket.owner);
+  const who = ticket.owner ? agentOf(data, ticket.owner) : undefined;
   return (
     <RowButton
       opens={{ page: "ticket", id: ticket.id }}
@@ -71,8 +71,8 @@ export function TicketRow({
       </span>
       {owner && (
         <span className="flex w-[108px] shrink-0 items-center gap-2 text-[13.5px] text-muted-foreground">
-          <AgentAvatar data={data} agent={who} size={18} />
-          {who?.name ?? FORMER_AGENT}
+          {ticket.owner && <AgentAvatar data={data} agent={who} size={18} />}
+          {ticket.owner ? (who?.name ?? FORMER_AGENT) : "Unassigned"}
         </span>
       )}
       <span className="w-[96px] shrink-0">

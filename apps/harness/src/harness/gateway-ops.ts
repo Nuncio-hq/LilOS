@@ -5,6 +5,7 @@ import type {
   AskHireProposal,
   Conversation,
   Employee,
+  Goal,
   Project,
   RecentFolder,
   ScheduledTask,
@@ -12,6 +13,7 @@ import type {
 import type { AgentDescriptor } from "@lilos/contracts/engine";
 import type {
   AskParams,
+  GoalCreateParams,
   ProjectCreateParams,
   ScheduleCreateParams,
   ScheduleUpdateParams,
@@ -115,6 +117,7 @@ export function createGatewayApprovalOps(
   | "updateSelf"
   | "addFolder"
   | "createProject"
+  | "createGoal"
   | "scheduleCreate"
   | "scheduleUpdate"
   | "scheduleDelete"
@@ -369,6 +372,26 @@ export function createGatewayApprovalOps(
         ...(p.about !== undefined ? { about: p.about } : {}),
       });
       return r.project;
+    },
+
+    /* D-#776: a goal the caller owns is their own record, so it does not
+       ask. Any other owner — including none, which means the human — is a
+       company write and waits. The catalog stays `approval` either way. */
+    createGoal: async (p: GoalCreateParams) => {
+      if (p.ownerId !== binding.employeeId) {
+        await gate({
+          command: `goal_create ${p.title}`,
+          description: `Add a goal "${p.title}"${p.why ? ` — ${p.why}` : ""}.`,
+        });
+      }
+      const r = await relay.request<{ goal: Goal }>("goals.create", {
+        project: p.project,
+        title: p.title,
+        ...(p.due !== undefined ? { due: p.due } : {}),
+        ...(p.why !== undefined ? { why: p.why } : {}),
+        ...(p.ownerId !== undefined ? { ownerId: p.ownerId } : {}),
+      });
+      return r.goal;
     },
 
     scheduleCreate: async (p: ScheduleCreateParams) => {

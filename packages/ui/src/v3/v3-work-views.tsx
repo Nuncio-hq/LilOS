@@ -38,6 +38,9 @@ function Since({ t }: { t: V3Ticket }) {
 }
 
 export function Who({ data, id }: { data: V3Data; id: string }) {
+  if (!id) {
+    return <span className="truncate text-muted-foreground">Unassigned</span>;
+  }
   const a = agentOf(data, id);
   return (
     <span className="flex min-w-0 items-center gap-2 font-medium">

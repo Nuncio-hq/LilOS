@@ -107,6 +107,9 @@ export const conversations = sqliteTable(
     /** The project the thread lives in (D-#771); null = a plain chat.
         Relay-set from the folder at open/move (and the boot backfill). */
     projectId: text("project_id").references(() => projects.id),
+    /** The ticket this thread is a hand of (D-#776); null = not on a ticket.
+        One column, so a thread links to at most one ticket. */
+    ticketId: text("ticket_id").references(() => tickets.id),
     /** Workstream mode stamped at open (#156): JSON WorkspaceIntent; null =
         direct folder / just chat. */
     workspace: text("workspace"),
@@ -182,6 +185,62 @@ export const conversations = sqliteTable(
   (t) => [
     index("conversations_channel").on(t.channelId),
     index("conversations_project").on(t.projectId),
+    index("conversations_ticket").on(t.ticketId),
+  ],
+);
+
+/**
+ * Goals (D-#776): what the company wants. `owner_id` null means the human.
+ * Progress is not stored — it is the goal's tickets, done over all.
+ */
+export const goals = sqliteTable(
+  "goals",
+  {
+    id: text("id").primaryKey(),
+    title: text("title").notNull(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id),
+    due: text("due").notNull().default(""),
+    why: text("why").notNull().default(""),
+    ownerId: text("owner_id"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [index("goals_project").on(t.projectId)],
+);
+
+/**
+ * Tickets (D-#776): one piece of work, one owner, one status. `id` is
+ * `${project.key}-${number}`. Waiting-on, checklist, result and updates are
+ * JSON. No foreign key on the owner: a removed employee must not block the
+ * row; the app shows them as gone.
+ */
+export const tickets = sqliteTable(
+  "tickets",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id),
+    number: integer("number").notNull(),
+    title: text("title").notNull(),
+    goalId: text("goal_id").references(() => goals.id),
+    ownerId: text("owner_id"),
+    status: text("status").notNull(),
+    waitingOn: text("waiting_on"),
+    progress: text("progress").notNull().default("[]"),
+    result: text("result"),
+    updates: text("updates").notNull().default("[]"),
+    stuckWhy: text("stuck_why"),
+    startsAt: text("starts_at"),
+    statusAt: integer("status_at").notNull(),
+    doneAt: integer("done_at"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [
+    uniqueIndex("tickets_project_number").on(t.projectId, t.number),
+    index("tickets_project").on(t.projectId),
+    index("tickets_goal").on(t.goalId),
   ],
 );
 

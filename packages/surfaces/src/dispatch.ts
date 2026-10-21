@@ -7,6 +7,7 @@ import {
   type BrowserScrollParams,
   type BrowserTypeParams,
   type FolderAddParams,
+  type GoalCreateParams,
   type GuideParams,
   LILOS_TOOLS,
   type ProjectCreateParams,
@@ -23,6 +24,11 @@ import {
   type ThreadSearchParams,
   type ThreadSetTitleParams,
   type ThreadStartParams,
+  type TicketAssignParams,
+  type TicketCommentParams,
+  type TicketCreateParams,
+  type TicketReadParams,
+  type TicketUpdateParams,
 } from "@lilos/contracts/harness";
 import { z } from "zod";
 import { type SurfaceBackend, SurfaceError } from "./backend.js";
@@ -130,6 +136,30 @@ export async function callTool(
       break;
     case "project_create":
       result = await backend.projectCreate(p as ProjectCreateParams);
+      break;
+    case "goal_list":
+      result = await backend.goalList();
+      break;
+    case "goal_create":
+      result = await backend.goalCreate(p as GoalCreateParams);
+      break;
+    case "ticket_list":
+      result = await backend.ticketList(p as { project?: string });
+      break;
+    case "ticket_read":
+      result = await backend.ticketRead(p as TicketReadParams);
+      break;
+    case "ticket_create":
+      result = await backend.ticketCreate(p as TicketCreateParams);
+      break;
+    case "ticket_update":
+      result = await backend.ticketUpdate(p as TicketUpdateParams);
+      break;
+    case "ticket_assign":
+      result = await backend.ticketAssign(p as TicketAssignParams);
+      break;
+    case "ticket_comment":
+      result = await backend.ticketComment(p as TicketCommentParams);
       break;
 
     case "thread_post":
