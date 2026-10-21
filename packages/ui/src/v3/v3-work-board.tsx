@@ -48,7 +48,7 @@ export function BoardView({ data, go, tickets }: WorkViewProps) {
             </div>
             <div className="flex flex-col gap-2">
               {rows.map((t) => {
-                const owner = agentOf(data, t.owner);
+                const owner = t.owner ? agentOf(data, t.owner) : undefined;
                 return (
                   <button
                     type="button"
@@ -67,9 +67,11 @@ export function BoardView({ data, go, tickets }: WorkViewProps) {
                       {t.title}
                     </span>
                     <span className="flex items-center gap-1.5 text-[12.5px] text-muted-foreground">
-                      <AgentAvatar data={data} agent={owner} size={18} />
+                      {t.owner && (
+                        <AgentAvatar data={data} agent={owner} size={18} />
+                      )}
                       <span className="truncate">
-                        {owner?.name ?? FORMER_AGENT}
+                        {t.owner ? (owner?.name ?? FORMER_AGENT) : "Unassigned"}
                       </span>
                       <span
                         className={cn(

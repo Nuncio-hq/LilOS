@@ -5,6 +5,7 @@ import type {
   AskHireProposal,
   Conversation,
   Employee,
+  Goal,
   Project,
   RecentFolder,
   ScheduledTask,
@@ -12,6 +13,7 @@ import type {
 import type { AgentDescriptor } from "@lilos/contracts/engine";
 import type {
   AskParams,
+  GoalCreateParams,
   ProjectCreateParams,
   ScheduleCreateParams,
   ScheduleUpdateParams,
@@ -115,6 +117,7 @@ export function createGatewayApprovalOps(
   | "updateSelf"
   | "addFolder"
   | "createProject"
+  | "createGoal"
   | "scheduleCreate"
   | "scheduleUpdate"
   | "scheduleDelete"
@@ -369,6 +372,38 @@ export function createGatewayApprovalOps(
         ...(p.about !== undefined ? { about: p.about } : {}),
       });
       return r.project;
+    },
+
+    /* D-#341 / D-#776: a goal always asks, including one the caller would
+       own. The project (and owner, when named) is checked before the card
+       so a bad write never opens an ask. The card names the project. */
+    createGoal: async (p: GoalCreateParams) => {
+      const projects = await listProjects(relay);
+      const project = projects.find(
+        (x) => x.id === p.project || x.key === p.project,
+      );
+      if (!project) throw new SurfaceError("not_found", "project not found");
+      if (p.ownerId) {
+        const { employees } = await relay.request<{ employees: Employee[] }>(
+          "employees.list",
+          {},
+        );
+        if (!employees.some((e) => e.id === p.ownerId)) {
+          throw new SurfaceError("not_found", "employee not found");
+        }
+      }
+      await gate({
+        command: `goal_create ${p.title}`,
+        description: `Add a goal "${p.title}" on ${project.name}${p.why ? ` — ${p.why}` : ""}.`,
+      });
+      const r = await relay.request<{ goal: Goal }>("goals.create", {
+        project: p.project,
+        title: p.title,
+        ...(p.due !== undefined ? { due: p.due } : {}),
+        ...(p.why !== undefined ? { why: p.why } : {}),
+        ...(p.ownerId !== undefined ? { ownerId: p.ownerId } : {}),
+      });
+      return r.goal;
     },
 
     scheduleCreate: async (p: ScheduleCreateParams) => {

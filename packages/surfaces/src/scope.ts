@@ -2,6 +2,7 @@ import type { Conversation, WorkbenchOpenTarget } from "@lilos/contracts/app";
 import {
   type AskParams,
   type FolderAddParams,
+  type GoalCreateParams,
   HOST_POLICY_VERSION,
   type ProjectCreateParams,
   type ScheduleCreateParams,
@@ -13,6 +14,11 @@ import {
   type ThreadReadParams,
   type ThreadSetTitleResult,
   type ThreadStartParams,
+  type TicketAssignParams,
+  type TicketCommentParams,
+  type TicketCreateParams,
+  type TicketReadParams,
+  type TicketUpdateParams,
   type ToolArea,
   type ViewerBrowserInputEvent,
 } from "@lilos/contracts/harness";
@@ -112,10 +118,18 @@ export class SessionSurfaces implements ViewerScope {
       "root",
       // browser_* only when a real browser can attach — never advertised otherwise.
       ...(opts.createBrowser ? (["browser"] as const) : []),
-      // thread_* / team_* / folder_* / project_* / schedule_* only when the
-      // session is bound to an employee's thread.
+      // thread_* / team_* / folder_* / project_* / ticket_* / goal_* /
+      // schedule_* only when the session is bound to an employee's thread.
       ...(opts.appOps
-        ? (["thread", "team", "folder", "project", "schedule"] as const)
+        ? ([
+            "thread",
+            "team",
+            "folder",
+            "project",
+            "ticket",
+            "goal",
+            "schedule",
+          ] as const)
         : []),
     ]);
     this.cols = opts.cols ?? 110;
@@ -634,6 +648,64 @@ export class SessionSurfaces implements ViewerScope {
     return this.tracked("project_create", p.folder, async () => {
       const ops = this.requireAppOps();
       return { project: await ops.createProject(p) };
+    });
+  }
+
+  /* ------------------------------ work ops ---------------------------------- */
+
+  goalList() {
+    return this.tracked("goal_list", "", async () => {
+      const ops = this.requireAppOps();
+      return { goals: await ops.goals() };
+    });
+  }
+
+  goalCreate(p: GoalCreateParams) {
+    return this.tracked("goal_create", p.title, async () => {
+      const ops = this.requireAppOps();
+      return { goal: await ops.createGoal(p) };
+    });
+  }
+
+  ticketList(p: { project?: string }) {
+    return this.tracked("ticket_list", p.project ?? "", async () => {
+      const ops = this.requireAppOps();
+      return { tickets: await ops.tickets(p.project) };
+    });
+  }
+
+  ticketRead(p: TicketReadParams) {
+    return this.tracked("ticket_read", p.id, async () => {
+      const ops = this.requireAppOps();
+      return { ticket: await ops.readTicket(p) };
+    });
+  }
+
+  ticketCreate(p: TicketCreateParams) {
+    return this.tracked("ticket_create", p.title, async () => {
+      const ops = this.requireAppOps();
+      return { ticket: await ops.createTicket(p) };
+    });
+  }
+
+  ticketUpdate(p: TicketUpdateParams) {
+    return this.tracked("ticket_update", p.id, async () => {
+      const ops = this.requireAppOps();
+      return ops.updateTicket(p);
+    });
+  }
+
+  ticketAssign(p: TicketAssignParams) {
+    return this.tracked("ticket_assign", p.id, async () => {
+      const ops = this.requireAppOps();
+      return ops.assignTicket(p);
+    });
+  }
+
+  ticketComment(p: TicketCommentParams) {
+    return this.tracked("ticket_comment", p.id, async () => {
+      const ops = this.requireAppOps();
+      return { ticket: await ops.commentTicket(p) };
     });
   }
 

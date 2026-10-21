@@ -7,6 +7,14 @@ import {
 } from "../app/domain.js";
 import { Project } from "../app/project.js";
 import { ScheduledTask, TaskSchedule } from "../app/schedule.js";
+import {
+  Goal as GoalSchema,
+  TicketResult as TicketResultSchema,
+  Ticket as TicketSchema,
+  TicketStatus,
+  TicketStep,
+  TicketWaitingOn,
+} from "../app/ticket.js";
 import { MessageSearchHit, StatusComponent } from "../app/wire.js";
 import { ConversationAccess } from "../engine/approvals.js";
 import { ForgePrListItem } from "../host/forge.js";
@@ -47,6 +55,8 @@ export const TOOL_AREAS = [
   "team",
   "folder",
   "project",
+  "ticket",
+  "goal",
   "workbench",
   "browser",
   "terminal",
@@ -518,6 +528,100 @@ export type ProjectCreateParams = z.infer<typeof ProjectCreateParams>;
 export const ProjectCreateResult = z.object({ project: Project });
 export type ProjectCreateResult = z.infer<typeof ProjectCreateResult>;
 
+/* ---------------------------------- work ---------------------------------- */
+
+/**
+ * Tickets and goals (D-#776). Ticket writes do not ask — the company plan
+ * (#746) is that creating and updating tickets never asks. `goal_create`
+ * always asks (D-#341): a goal changes the company, including one the
+ * caller would own. The owner's own `goals.create` from the app does not
+ * go through this tool.
+ */
+
+export const GoalListParams = z.strictObject({});
+export type GoalListParams = z.infer<typeof GoalListParams>;
+export const GoalListResult = z.object({ goals: z.array(GoalSchema) });
+export type GoalListResult = z.infer<typeof GoalListResult>;
+
+export const GoalCreateParams = z.strictObject({
+  /** A project's id or key. */
+  project: z.string().min(1),
+  /** Trimmed before the approval card: a blank title never opens an ask. */
+  title: z.string().trim().min(1),
+  due: z.string().optional(),
+  why: z.string().optional(),
+  /** Employee id. Omit to propose a goal the human owns. Either way the
+      tool asks before anything is written. */
+  ownerId: z.string().min(1).optional(),
+});
+export type GoalCreateParams = z.infer<typeof GoalCreateParams>;
+export const GoalCreateResult = z.object({ goal: GoalSchema });
+export type GoalCreateResult = z.infer<typeof GoalCreateResult>;
+
+export const TicketListParams = z.strictObject({
+  project: z.string().min(1).optional(),
+});
+export type TicketListParams = z.infer<typeof TicketListParams>;
+export const TicketListResult = z.object({ tickets: z.array(TicketSchema) });
+export type TicketListResult = z.infer<typeof TicketListResult>;
+
+export const TicketReadParams = z.strictObject({ id: z.string().min(1) });
+export type TicketReadParams = z.infer<typeof TicketReadParams>;
+export const TicketReadResult = z.object({ ticket: TicketSchema });
+export type TicketReadResult = z.infer<typeof TicketReadResult>;
+
+export const TicketCreateParams = z.strictObject({
+  project: z.string().min(1),
+  title: z.string().trim().min(1),
+  goalId: z.string().min(1).optional(),
+  ownerId: z.string().min(1).optional(),
+  status: TicketStatus.optional(),
+  waitingOn: TicketWaitingOn.optional(),
+  progress: z.array(TicketStep).optional(),
+  startsAt: z.string().optional(),
+  stuckWhy: z.string().optional(),
+});
+export type TicketCreateParams = z.infer<typeof TicketCreateParams>;
+export const TicketCreateResult = z.object({ ticket: TicketSchema });
+export type TicketCreateResult = z.infer<typeof TicketCreateResult>;
+
+export const TicketUpdateParams = z.strictObject({
+  id: z.string().min(1),
+  title: z.string().trim().min(1).optional(),
+  goalId: z.string().min(1).nullable().optional(),
+  status: TicketStatus.optional(),
+  waitingOn: TicketWaitingOn.nullable().optional(),
+  progress: z.array(TicketStep).optional(),
+  result: TicketResultSchema.nullable().optional(),
+  startsAt: z.string().nullable().optional(),
+  stuckWhy: z.string().nullable().optional(),
+});
+export type TicketUpdateParams = z.infer<typeof TicketUpdateParams>;
+export const TicketUpdateResult = z.object({
+  tickets: z.array(TicketSchema),
+});
+export type TicketUpdateResult = z.infer<typeof TicketUpdateResult>;
+
+export const TicketAssignParams = z.strictObject({
+  id: z.string().min(1),
+  /** Employee id, or "ceo" for whoever stands in until a CEO is named. */
+  ownerId: z.string().min(1),
+});
+export type TicketAssignParams = z.infer<typeof TicketAssignParams>;
+export const TicketAssignResult = z.object({
+  ticket: TicketSchema,
+  thread: z.object({ id: z.string().min(1), title: z.string() }),
+});
+export type TicketAssignResult = z.infer<typeof TicketAssignResult>;
+
+export const TicketCommentParams = z.strictObject({
+  id: z.string().min(1),
+  text: z.string().trim().min(1),
+});
+export type TicketCommentParams = z.infer<typeof TicketCommentParams>;
+export const TicketCommentResult = z.object({ ticket: TicketSchema });
+export type TicketCommentResult = z.infer<typeof TicketCommentResult>;
+
 /* --------------------------------- schedule ------------------------------- */
 
 /** `schedule_list` — this employee's scheduled tasks (#136). */
@@ -758,6 +862,62 @@ export const LILOS_TOOLS: Record<string, LilosToolContract> = {
     doc: "Ask the user to make a project of a folder (optional name, about). A folder that already has a project answers it. Waits for approval; returns the project record.",
     area: "project",
     access: "approval",
+  },
+  goal_list: {
+    params: GoalListParams,
+    result: GoalListResult,
+    doc: "The company's goals — title, project, due, why.",
+    area: "goal",
+    access: "read",
+  },
+  goal_create: {
+    params: GoalCreateParams,
+    result: GoalCreateResult,
+    doc: "Propose a goal (project id or key, title, optional due and why). Always asks before it is written. Returns the goal.",
+    area: "goal",
+    access: "approval",
+  },
+  ticket_list: {
+    params: TicketListParams,
+    result: TicketListResult,
+    doc: "The company's tickets. Optional project (id or key) limits the list.",
+    area: "ticket",
+    access: "read",
+  },
+  ticket_read: {
+    params: TicketReadParams,
+    result: TicketReadResult,
+    doc: "One ticket: status, owner, what it waits on, checklist, result, updates.",
+    area: "ticket",
+    access: "read",
+  },
+  ticket_create: {
+    params: TicketCreateParams,
+    result: TicketCreateResult,
+    doc: "Create a ticket in a project (id or key). Does not ask. An owner is recorded; assigning them is ticket_assign, which opens their thread.",
+    area: "ticket",
+    access: "write",
+  },
+  ticket_update: {
+    params: TicketUpdateParams,
+    result: TicketUpdateResult,
+    doc: "Change a ticket's title, status, waiting-on, checklist, or result. Does not ask and does not change the owner. Returns every ticket the write moved, including one that was waiting on a ticket you just finished.",
+    area: "ticket",
+    access: "write",
+  },
+  ticket_assign: {
+    params: TicketAssignParams,
+    result: TicketAssignResult,
+    doc: 'Give a ticket to one employee (ownerId, or "ceo" for whoever stands in). Does not ask. Sets the owner and opens their thread in one step. Assigning again adds the next hand\'s thread.',
+    area: "ticket",
+    access: "write",
+  },
+  ticket_comment: {
+    params: TicketCommentParams,
+    result: TicketCommentResult,
+    doc: "Add an update on a ticket, as yourself. Does not ask.",
+    area: "ticket",
+    access: "write",
   },
   schedule_list: {
     params: ScheduleListParams,

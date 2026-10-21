@@ -11,6 +11,9 @@ import type {
   ContextResult,
   FolderAddParams,
   FolderAddResult,
+  GoalCreateParams,
+  GoalCreateResult,
+  GoalListResult,
   GuideParams,
   GuideResult,
   PreviewTarget,
@@ -43,6 +46,18 @@ import type {
   ThreadSetTitleResult,
   ThreadStartParams,
   ThreadStartResult,
+  TicketAssignParams,
+  TicketAssignResult,
+  TicketCommentParams,
+  TicketCommentResult,
+  TicketCreateParams,
+  TicketCreateResult,
+  TicketListParams,
+  TicketListResult,
+  TicketReadParams,
+  TicketReadResult,
+  TicketUpdateParams,
+  TicketUpdateResult,
   ToolArea,
   ViewerBrowserInputEvent,
   WorkbenchOpenResult,
@@ -91,6 +106,14 @@ export interface SurfaceBackend {
   folderAdd(p: FolderAddParams): Promise<FolderAddResult>;
   projectList(): Promise<ProjectListResult>;
   projectCreate(p: ProjectCreateParams): Promise<ProjectCreateResult>;
+  goalList(): Promise<GoalListResult>;
+  goalCreate(p: GoalCreateParams): Promise<GoalCreateResult>;
+  ticketList(p: TicketListParams): Promise<TicketListResult>;
+  ticketRead(p: TicketReadParams): Promise<TicketReadResult>;
+  ticketCreate(p: TicketCreateParams): Promise<TicketCreateResult>;
+  ticketUpdate(p: TicketUpdateParams): Promise<TicketUpdateResult>;
+  ticketAssign(p: TicketAssignParams): Promise<TicketAssignResult>;
+  ticketComment(p: TicketCommentParams): Promise<TicketCommentResult>;
 
   threadPost(p: { text: string }): Promise<ThreadPostResult>;
   threadRead(p: ThreadReadParams): Promise<ThreadReadResult>;

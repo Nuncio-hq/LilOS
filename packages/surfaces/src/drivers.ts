@@ -14,12 +14,26 @@ import type {
 import type {
   AskParams,
   AskToolResult,
+  GoalCreateParams,
+  GoalCreateResult,
+  GoalListResult,
   ProjectCreateParams,
   ScheduleCreateParams,
   ScheduleUpdateParams,
   SessionBinding,
   TeamHireParams,
   TeamUpdateParams,
+  TicketAssignParams,
+  TicketAssignResult,
+  TicketCommentParams,
+  TicketCommentResult,
+  TicketCreateParams,
+  TicketCreateResult,
+  TicketListResult,
+  TicketReadParams,
+  TicketReadResult,
+  TicketUpdateParams,
+  TicketUpdateResult,
   ViewerBrowserInputEvent,
 } from "@lilos/contracts/harness";
 import type { ForgePrListItem } from "@lilos/contracts/host";
@@ -149,6 +163,16 @@ export interface AppOps {
   /** Make a project of a folder (`projects.create` on approve); a folder
       that already has a project answers it. */
   createProject(p: ProjectCreateParams): Promise<Project>;
+  /** Goals (D-#776). `createGoal` always asks (D-#341). */
+  goals(): Promise<GoalListResult["goals"]>;
+  createGoal(p: GoalCreateParams): Promise<GoalCreateResult["goal"]>;
+  /** Ticket writes do not ask (#746). Assign opens the owner's thread. */
+  tickets(project?: string): Promise<TicketListResult["tickets"]>;
+  readTicket(p: TicketReadParams): Promise<TicketReadResult["ticket"]>;
+  createTicket(p: TicketCreateParams): Promise<TicketCreateResult["ticket"]>;
+  updateTicket(p: TicketUpdateParams): Promise<TicketUpdateResult>;
+  assignTicket(p: TicketAssignParams): Promise<TicketAssignResult>;
+  commentTicket(p: TicketCommentParams): Promise<TicketCommentResult["ticket"]>;
   /**
    * `ask` (D-#773): post a question or a once/deny approval and wait.
    * A decline throws `SurfaceError("declined")`.

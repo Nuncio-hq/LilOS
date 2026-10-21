@@ -38,7 +38,12 @@ function onScreenThread(): ReadableAtom<string | undefined> {
 /** The agent ⌘N starts a chat with: the one on screen (an open agent, a new
     chat, or the agent behind the open thread), else the first one. */
 function currentAgentId(): string | undefined {
-  const nav = visibleNav(v3Nav.get(), v3DataStore().get().features.tickets);
+  const company = v3DataStore().get();
+  const nav = visibleNav(
+    v3Nav.get(),
+    company.features.tickets,
+    company.updates.length > 0,
+  );
   const top = nav.peek[nav.peek.length - 1];
   if (top?.page === "agent" || top?.page === "newchat") return top.id;
   if (top?.page === "thread") {

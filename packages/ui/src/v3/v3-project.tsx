@@ -46,7 +46,10 @@ export function V3ProjectPage({ data, go, id }: V3PageProps & { id: string }) {
   const pastShown = allPast ? past : past.slice(0, PAST_SHOWN);
   // Who is on it: the owners of its open tickets and whoever has a live thread.
   const onIt = [
-    ...new Set([...open.map((t) => t.owner), ...live.map((t) => t.agentId)]),
+    ...new Set([
+      ...open.map((t) => t.owner).filter((id) => id.length > 0),
+      ...live.map((t) => t.agentId),
+    ]),
   ];
   const people = onIt.flatMap((id) => agentOf(data, id) ?? []);
   // A fired agent can still hold an open ticket: it is on the project, but

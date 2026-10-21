@@ -160,6 +160,26 @@ const appOps: AppOps = {
   createProject: async () => {
     throw new Error("not exercised in this script");
   },
+  goals: async () => [],
+  createGoal: async () => {
+    throw new Error("not exercised in this script");
+  },
+  tickets: async () => [],
+  readTicket: async () => {
+    throw new Error("not exercised in this script");
+  },
+  createTicket: async () => {
+    throw new Error("not exercised in this script");
+  },
+  updateTicket: async () => {
+    throw new Error("not exercised in this script");
+  },
+  assignTicket: async () => {
+    throw new Error("not exercised in this script");
+  },
+  commentTicket: async () => {
+    throw new Error("not exercised in this script");
+  },
   startThread: async () => {
     throw new Error("not exercised in this script");
   },

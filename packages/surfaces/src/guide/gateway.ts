@@ -14,7 +14,8 @@ import {
  *
  * Which areas a session actually has is decided in SessionSurfaces
  * (`scope.ts`): `root`, `terminal` and `workbench` always; `browser` when
- * one can launch; `thread`, `team`, `folder`, `project` and `schedule` on a
+ * one can launch; `thread`, `team`, `folder`, `project`, `ticket`, `goal`
+ * and `schedule` on a
  * session bound to an employee's thread. The closing sentence states that.
  * The names above it come from the catalog, not from this sentence.
  */
@@ -76,6 +77,6 @@ ${renderGatewayTools()}
 
 A session only sees the areas it has attached: \`root\`, \`terminal\` and
 \`workbench\` always; \`browser\` when a browser can launch; \`thread\`,
-\`team\`, \`folder\`, \`project\` and \`schedule\` when the session is bound to
-an employee's thread.`,
+\`team\`, \`folder\`, \`project\`, \`ticket\`, \`goal\` and \`schedule\` when the session is bound
+to an employee's thread.`,
 };

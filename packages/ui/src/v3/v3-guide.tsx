@@ -12,16 +12,12 @@ import {
   goalOf,
   goalProgress,
   threadsOf,
-  ticketOf,
 } from "./v3-model";
 import { RowButton } from "./v3-open-record";
 import type { V3PageProps } from "./v3-page-types";
 
 /* The explainer: five levels, a hand-off chain, how a thread lives. All
    examples come from live data so the page matches what you see elsewhere. */
-
-const EXAMPLE_TICKET = "HB-12";
-const EXAMPLE_THREAD = "t-lil81";
 
 function Lbl({ children }: { children: string }) {
   return (
@@ -48,11 +44,18 @@ export function V3Guide(props: V3PageProps) {
 }
 
 function V3GuideTickets({ data, go }: V3PageProps) {
-  const ticket = ticketOf(data, EXAMPLE_TICKET);
-  const hops = threadsOf(data, EXAMPLE_TICKET);
-  const goal = ticket?.goalId ? goalOf(data, ticket.goalId) : undefined;
+  /* A real ticket, preferring one that changed hands (more than one
+     thread). The goal and thread examples fall back to the first of each
+     when the ticket has none. A count of zero is left off the row. */
+  const ticket =
+    data.tickets.find((t) => threadsOf(data, t.id).length > 1) ??
+    data.tickets.find((t) => threadsOf(data, t.id).length > 0) ??
+    data.tickets[0];
+  const hops = ticket ? threadsOf(data, ticket.id) : [];
+  const goal =
+    (ticket?.goalId ? goalOf(data, ticket.goalId) : undefined) ?? data.goals[0];
   const goalCount = goal ? goalProgress(data, goal.id).total : 0;
-  const thread = data.threads.find((t) => t.id === EXAMPLE_THREAD);
+  const thread = hops[0] ?? data.threads[0];
   // Turns the app does not carry (empty) leave their counts out, never 0.
   const turn = thread?.turns[0];
   const run =
@@ -65,7 +68,7 @@ function V3GuideTickets({ data, go }: V3PageProps) {
     {
       name: "Goal",
       eg: goal?.title ?? "A goal",
-      n: `${goalCount} tickets`,
+      n: goalCount > 0 ? `${goalCount} tickets` : "",
       df: hasCeo
         ? "What the company wants. The CEO splits it into tickets."
         : "What the company wants, split into tickets.",
@@ -73,8 +76,8 @@ function V3GuideTickets({ data, go }: V3PageProps) {
     },
     {
       name: "Ticket",
-      eg: ticket ? `${ticket.id} ${ticket.title}` : EXAMPLE_TICKET,
-      n: `${hops.length} threads`,
+      eg: ticket ? `${ticket.id} ${ticket.title}` : "A ticket",
+      n: hops.length > 0 ? `${hops.length} threads` : "",
       df: "One piece of work: one owner, one status at a time.",
       go: ticket ? () => go({ page: "ticket", id: ticket.id }) : undefined,
     },
@@ -145,39 +148,46 @@ function V3GuideTickets({ data, go }: V3PageProps) {
         })}
       </div>
 
-      <Section title={`${EXAMPLE_TICKET} changed hands ${hops.length} times`} />
-      <div className="mt-2 flex items-stretch @max-[760px]:flex-col">
-        {hops.map((t, i) => {
-          const a = agentOf(data, t.agentId);
-          const turns =
-            t.turns.length > 0 ? Math.max(...t.turns.map((x) => x.n)) : 0;
-          return (
-            <div key={t.id} className="flex min-w-0 flex-1 items-stretch">
-              {i > 0 && (
-                <span className="grid w-7 shrink-0 place-items-center text-muted-foreground/70">
-                  <ArrowRightIcon className="size-4" />
-                </span>
-              )}
-              <button
-                type="button"
-                onClick={() => go({ page: "thread", id: t.id })}
-                className="flex min-w-0 flex-1 flex-col items-start gap-1 rounded-[10px] border border-[var(--v3-line)] px-3.5 py-3 text-left text-[13px] hover:bg-[var(--v3-hover)]"
-              >
-                <span className="flex items-center gap-2 text-[13.5px]">
-                  <AgentAvatar data={data} agent={a} />
-                  {a?.name ?? FORMER_AGENT}
-                </span>
-                <span>{t.title}</span>
-                <span className="text-muted-foreground">
-                  {span(t.minutes)}
-                  {turns > 0 && ` · ${turns} ${turns === 1 ? "turn" : "turns"}`}
-                </span>
-                <ThreadPill status={t.status} />
-              </button>
-            </div>
-          );
-        })}
-      </div>
+      {ticket && hops.length > 1 && (
+        <>
+          <Section
+            title={`${ticket.id} changed hands ${Math.max(hops.length - 1, 0)} times`}
+          />
+          <div className="mt-2 flex items-stretch @max-[760px]:flex-col">
+            {hops.map((t, i) => {
+              const a = agentOf(data, t.agentId);
+              const turns =
+                t.turns.length > 0 ? Math.max(...t.turns.map((x) => x.n)) : 0;
+              return (
+                <div key={t.id} className="flex min-w-0 flex-1 items-stretch">
+                  {i > 0 && (
+                    <span className="grid w-7 shrink-0 place-items-center text-muted-foreground/70">
+                      <ArrowRightIcon className="size-4" />
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => go({ page: "thread", id: t.id })}
+                    className="flex min-w-0 flex-1 flex-col items-start gap-1 rounded-[10px] border border-[var(--v3-line)] px-3.5 py-3 text-left text-[13px] hover:bg-[var(--v3-hover)]"
+                  >
+                    <span className="flex items-center gap-2 text-[13.5px]">
+                      <AgentAvatar data={data} agent={a} />
+                      {a?.name ?? FORMER_AGENT}
+                    </span>
+                    <span>{t.title}</span>
+                    <span className="text-muted-foreground">
+                      {span(t.minutes)}
+                      {turns > 0 &&
+                        ` · ${turns} ${turns === 1 ? "turn" : "turns"}`}
+                    </span>
+                    <ThreadPill status={t.status} />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
 
       <Section title="The life of a thread" />
       <Flow>

@@ -507,6 +507,46 @@ ${tail}`,
         case "context":
           steps.push({ tool: tool("context"), input: {}, output: "" });
           break;
+        /* Ticket writes (D-#776) — the real tool, not a stubbed RPC. */
+        case "ticket": {
+          /* `project | title` plus optional `you`, `ceo`, `ticket:<id>`,
+             `owner:<id>` — the real ticket_create, including who it waits on. */
+          const [project, title, ...rest] = arg.split("|").map((s) => s.trim());
+          const input: Record<string, unknown> = { project, title };
+          for (const part of rest) {
+            if (part === "you") input.waitingOn = { kind: "you" };
+            else if (part === "ceo") input.waitingOn = { kind: "ceo" };
+            else if (part.startsWith("ticket:"))
+              input.waitingOn = { kind: "ticket", ticketId: part.slice(7) };
+            else if (part.startsWith("owner:")) input.ownerId = part.slice(6);
+          }
+          steps.push({
+            tool: tool("ticket_create"),
+            input,
+            output: "",
+          });
+          break;
+        }
+        case "ticket-assign": {
+          const [id, ownerId] = arg.split("|").map((s) => s.trim());
+          steps.push({
+            tool: tool("ticket_assign"),
+            input: { id, ownerId },
+            output: "",
+          });
+          break;
+        }
+        case "ticket-update": {
+          const [id, ...pairs] = arg.split("|").map((s) => s.trim());
+          const input: Record<string, unknown> = { id };
+          for (const pair of pairs) {
+            const i = pair.indexOf("=");
+            if (i > 0)
+              input[pair.slice(0, i).trim()] = pair.slice(i + 1).trim();
+          }
+          steps.push({ tool: tool("ticket_update"), input, output: "" });
+          break;
+        }
       }
     }
     return {

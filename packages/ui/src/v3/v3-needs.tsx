@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { foreignOverlayOpen } from "../chat/ui-layers";
-import { ago, Btn, Page, Section, Title } from "./v3-bits";
+import { ago, Btn, Page, relativeTime, Section, Title } from "./v3-bits";
 import { INK, StatusDot } from "./v3-marks";
 import {
   agentNameOf,
@@ -244,9 +244,13 @@ export function V3Needs({ data, go, act }: V3PageProps) {
                   meta={
                     <>
                       {t.id} ·{" "}
-                      <b className="font-medium text-foreground">
-                        {agentNameOf(data, t.owner)}
-                      </b>{" "}
+                      {t.owner ? (
+                        <b className="font-medium text-foreground">
+                          {agentNameOf(data, t.owner)}
+                        </b>
+                      ) : (
+                        "Unassigned"
+                      )}{" "}
                       · <span className={INK.stuck}>{t.stuckWhy}</span>
                     </>
                   }
@@ -289,15 +293,19 @@ export function V3Needs({ data, go, act }: V3PageProps) {
                 meta={
                   <>
                     {r.tag} ·{" "}
-                    <b className="font-medium text-foreground">
-                      {agentNameOf(data, r.by)}
-                    </b>
+                    {r.by ? (
+                      <b className="font-medium text-foreground">
+                        {agentNameOf(data, r.by)}
+                      </b>
+                    ) : (
+                      "Unassigned"
+                    )}
                     {r.note && ` · ${r.note}`}
                   </>
                 }
               >
                 <span className="shrink-0 text-[13px] text-muted-foreground/70">
-                  {r.minutes < 1 ? "just now" : `${ago(r.minutes)} ago`}
+                  {relativeTime(r.minutes)}
                 </span>
               </Item>
             ))}

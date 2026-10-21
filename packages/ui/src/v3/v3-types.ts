@@ -150,7 +150,9 @@ export type V3Goal = {
 export type V3WaitingOn =
   | { kind: "you"; askId: string }
   | { kind: "agent"; agentId: string; why: string }
-  | { kind: "ticket"; ticketId: string };
+  | { kind: "ticket"; ticketId: string }
+  /** The role, not a person. Shown as whoever holds the seat. */
+  | { kind: "ceo" };
 
 export type V3ProgressStep = {
   text: string;
@@ -160,8 +162,10 @@ export type V3ProgressStep = {
 };
 
 export type V3Comment = {
-  /** Agent id, or "you". */
-  by: string;
+  /** `system` is LilOS and names nobody. Absent is a person: `by` names them. */
+  authorKind?: "user" | "employee" | "system";
+  /** Agent id, or "you". Absent for a system note. */
+  by?: string;
   /** Minutes ago. */
   ago: number;
   text: string;
@@ -288,6 +292,9 @@ export type V3Thread = {
      rows by this; a ticket's age is a different clock and may be absent. */
   doneAgo?: number;
   startedAt: string;
+  /** When the thread opened, epoch ms. Hands that share a clock minute
+      sort by this so the chain stays oldest first (D-#776). */
+  openedAt?: number;
   /** Minutes running (or ran). */
   minutes: number;
   /** Empty when the app does not carry the conversation's turns (the real

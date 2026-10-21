@@ -8,11 +8,13 @@ import {
 } from "react";
 import { foreignOverlayOpen } from "../chat/ui-layers";
 import { ConversationReflowKey } from "../components/ai-elements/conversation";
+import { draftKey, setDraft } from "../lib/drafts";
 import { useTheme } from "../shell/use-theme";
 import type { Theme } from "../types";
 import type { V3Data, V3Draft } from "./v3-data-types";
 import { EscLayer } from "./v3-keys";
 import { SIDEBAR_W, shellSizes, useLayoutPrefs } from "./v3-layout-prefs";
+import { defaultAgent } from "./v3-model";
 import { step } from "./v3-nav";
 import { OpenRecord } from "./v3-open-record";
 import type {
@@ -208,9 +210,36 @@ export function V3Shell({
     return () => window.removeEventListener("keydown", onKey);
   }, [palette, closePeek, toggleSidebar]);
 
+  /* The prototype passes `draft`: ⌘K is the CEO. The real app does not,
+     so asking opens a new chat with the CEO (or the default agent until
+     one is named, #778) and the words are already in the box. No agents:
+     the new-chat page's empty state, never Search. From inside the peek
+     the draft extends the trail; from the page it starts one. */
+  const openAsk = useCallback(
+    (text: string | undefined, from: "page" | "peek") => {
+      if (draft) {
+        setPalette(text ?? "");
+        return;
+      }
+      const ceo =
+        data.agents.find((a) => a.id === data.ceoId) ?? defaultAgent(data);
+      const go = from === "peek" ? goFromPeek : goFromPage;
+      if (!ceo) {
+        go({ page: "newchat", id: "none" });
+        return;
+      }
+      if (text) setDraft(draftKey.dm(ceo.id), text);
+      go({ page: "newchat", id: ceo.id });
+    },
+    [data, draft, goFromPage, goFromPeek],
+  );
   const act = useMemo<V3Actions>(
-    () => ({ ...actions, ask: (text) => setPalette(text ?? "") }),
-    [actions],
+    () => ({ ...actions, ask: (text) => openAsk(text, "page") }),
+    [actions, openAsk],
+  );
+  const peekAct = useMemo<V3Actions>(
+    () => ({ ...act, ask: (text) => openAsk(text, "peek") }),
+    [act, openAsk],
   );
 
   const startPlan = (
@@ -345,7 +374,7 @@ export function V3Shell({
                 </ConversationReflowKey.Provider>
               )}
               go={goFromPeek}
-              act={act}
+              act={peekAct}
               trail={nav.peek}
               full={!!nav.full}
               pageName={PAGE_NAME[page.page]}

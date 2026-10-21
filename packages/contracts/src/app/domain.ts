@@ -187,6 +187,12 @@ export const Conversation = z.object({
    * project. Clients send a `cwd`, never a project id.
    */
   projectId: z.string().min(1).optional(),
+  /**
+   * The ticket this thread is a hand of (D-#776). Absent = not on a ticket.
+   * Relay-set, and only by `tickets.assign`: one column, so a thread links
+   * to at most one ticket. The next hand is a new thread on the same ticket.
+   */
+  ticketId: z.string().min(1).optional(),
   /** Workstream mode stamped at open (#156); absent = direct/just chat. */
   workspace: WorkspaceIntent.optional(),
   /**

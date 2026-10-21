@@ -38,6 +38,7 @@ import {
 } from "./session/rpc";
 import { handleSchedules } from "./session/schedules";
 import { handleSettings } from "./session/settings";
+import { handleTickets } from "./session/tickets";
 import { handleTurns } from "./session/turns";
 import type { RejectedHandshake } from "./status";
 import type { RelayStore } from "./store";
@@ -168,6 +169,14 @@ const METHOD_HANDLERS: ReadonlyMap<
   ["channels.openDm", handleDirectory],
   ["projects.list", handleProjects],
   ["projects.create", handleProjects],
+  ["goals.list", handleTickets],
+  ["goals.create", handleTickets],
+  ["tickets.list", handleTickets],
+  ["tickets.read", handleTickets],
+  ["tickets.create", handleTickets],
+  ["tickets.update", handleTickets],
+  ["tickets.assign", handleTickets],
+  ["tickets.comment", handleTickets],
   ["conversations.list", handleConversations],
   ["conversations.summaries", handleConversations],
   ["conversations.open", handleConversations],

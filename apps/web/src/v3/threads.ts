@@ -117,9 +117,8 @@ export function v3Asks(src: ThreadSources): V3Ask[] {
     .filter((a) => a.state === "open" && convs.has(a.conversationId))
     .sort((a, b) => a.createdAt - b.createdAt)
     .flatMap((a): V3Ask[] => {
-      const from = owners.get(
-        (convs.get(a.conversationId) as Conversation).channelId,
-      );
+      const conv = convs.get(a.conversationId) as Conversation;
+      const from = owners.get(conv.channelId);
       if (!from) return [];
       const { title, text } = askText(a);
       const r = a.request;
@@ -127,6 +126,7 @@ export function v3Asks(src: ThreadSources): V3Ask[] {
         {
           id: a.id,
           threadId: a.conversationId,
+          ...(conv.ticketId ? { ticketId: conv.ticketId } : {}),
           from,
           kind: r.kind === "question" ? "question" : "approval",
           title,
@@ -261,6 +261,9 @@ function threadRows(src: ThreadSources, archived: boolean): V3Thread[] {
         ...(c.model ? { model: modelLabel(c.model, c.provider) } : {}),
         ...(c.cwd ? { folder: c.cwd } : {}),
         ...(c.projectId ? { projectId: c.projectId } : {}),
+        ...(c.ticketId ? { ticketId: c.ticketId } : {}),
+        /* Same-minute hands share a clock string; the chain stays oldest first. */
+        openedAt: c.createdAt,
         ...(!live && answer?.text
           ? { summary: oneLine(answer.text, 140) }
           : {}),

@@ -30,11 +30,12 @@ function Company() {
      the gated page (drawn as Home) would write `page=work` back into the
      URL. */
   const { tickets } = data.features;
-  const shown = visibleNav(nav, tickets);
+  const hasUpdates = data.updates.length > 0;
+  const shown = visibleNav(nav, tickets, hasUpdates);
   const move = useCallback(
     (update: (n: V3Nav) => V3Nav) =>
-      moveNav((raw) => update(visibleNav(raw, tickets))),
-    [tickets],
+      moveNav((raw) => update(visibleNav(raw, tickets, hasUpdates))),
+    [tickets, hasUpdates],
   );
   const description = useAtom(engine.description);
   // #115/D-#19: Hire exists only while the engine can create agents; the new

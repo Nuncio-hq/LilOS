@@ -54,6 +54,14 @@ export const AGENT_METHOD_TOOLS: Record<string, string> = {
   "schedules.runNow": "schedule_run_now",
   "projects.list": "project_list",
   "projects.create": "project_create",
+  "goals.list": "goal_list",
+  "goals.create": "goal_create",
+  "tickets.list": "ticket_list",
+  "tickets.read": "ticket_read",
+  "tickets.create": "ticket_create",
+  "tickets.update": "ticket_update",
+  "tickets.assign": "ticket_assign",
+  "tickets.comment": "ticket_comment",
 } as const;
 
 /**

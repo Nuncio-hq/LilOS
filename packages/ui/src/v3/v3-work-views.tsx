@@ -38,6 +38,9 @@ function Since({ t }: { t: V3Ticket }) {
 }
 
 export function Who({ data, id }: { data: V3Data; id: string }) {
+  if (!id) {
+    return <span className="truncate text-muted-foreground">Unassigned</span>;
+  }
   const a = agentOf(data, id);
   return (
     <span className="flex min-w-0 items-center gap-2 font-medium">
@@ -78,26 +81,29 @@ type Group = {
   note: (t: V3Ticket) => ReactNode;
 };
 
-/** Group tickets by what each one is waiting on; empty groups drop out. */
+/** One group per ticket, and the group follows status so the Board's
+    columns agree. Waiting is split by who it waits on. Empty groups drop. */
 function groupTickets(data: V3Data, tickets: V3Ticket[]): Group[] {
   const none = () => null;
+  const placed = new Set<string>();
+  const claim = (pred: (t: V3Ticket) => boolean) => {
+    const rows = tickets.filter((t) => !placed.has(t.id) && pred(t));
+    for (const t of rows) placed.add(t.id);
+    return rows;
+  };
   const groups: Group[] = [];
-  const you = tickets.filter(
-    (t) => t.status === "needs" || t.waitingOn?.kind === "you",
-  );
   groups.push({
     key: "you",
     label: "Waiting on you",
     status: "needs",
-    rows: you,
+    rows: claim((t) => t.status === "needs"),
     note: none,
   });
 
-  const waiting = tickets.filter(
-    (t) => t.status === "waiting" && !you.includes(t),
-  );
   const byAgent = new Map<string, V3Ticket[]>();
-  for (const t of waiting) {
+  for (const t of claim(
+    (t) => t.status === "waiting" && t.waitingOn?.kind === "agent",
+  )) {
     if (t.waitingOn?.kind !== "agent") continue;
     byAgent.set(t.waitingOn.agentId, [
       ...(byAgent.get(t.waitingOn.agentId) ?? []),
@@ -114,10 +120,19 @@ function groupTickets(data: V3Data, tickets: V3Ticket[]): Group[] {
     });
   }
   groups.push({
+    key: "ceo",
+    label: "Waiting on the CEO",
+    status: "waiting",
+    rows: claim((t) => t.status === "waiting" && t.waitingOn?.kind === "ceo"),
+    note: none,
+  });
+  groups.push({
     key: "ticket",
     label: "Waiting on another ticket",
     status: "waiting",
-    rows: waiting.filter((t) => t.waitingOn?.kind === "ticket"),
+    rows: claim(
+      (t) => t.status === "waiting" && t.waitingOn?.kind === "ticket",
+    ),
     note: (t) =>
       t.waitingOn?.kind === "ticket" ? `after ${t.waitingOn.ticketId}` : null,
   });
@@ -125,14 +140,14 @@ function groupTickets(data: V3Data, tickets: V3Ticket[]): Group[] {
     key: "other",
     label: "Waiting",
     status: "waiting",
-    rows: waiting.filter((t) => !t.waitingOn),
+    rows: claim((t) => t.status === "waiting"),
     note: none,
   });
   groups.push({
     key: "stuck",
     label: "Not moving",
     status: "stuck",
-    rows: tickets.filter((t) => t.status === "stuck" || t.status === "failed"),
+    rows: claim((t) => t.status === "stuck" || t.status === "failed"),
     note: (t) => (
       <span className={cn(INK.stuck, "opacity-80")}>{t.stuckWhy}</span>
     ),
@@ -141,21 +156,21 @@ function groupTickets(data: V3Data, tickets: V3Ticket[]): Group[] {
     key: "moving",
     label: "Moving",
     status: "working",
-    rows: tickets.filter((t) => t.status === "working"),
+    rows: claim((t) => t.status === "working"),
     note: none,
   });
   groups.push({
     key: "scheduled",
     label: "Scheduled",
     status: "planned",
-    rows: tickets.filter((t) => t.status === "planned"),
+    rows: claim((t) => t.status === "planned"),
     note: (t) => (t.startsAt ? `starts ${t.startsAt}` : null),
   });
   groups.push({
     key: "done",
     label: "Done today",
     status: "done",
-    rows: tickets.filter((t) => t.status === "done" && (t.doneAgo ?? 0) < 1440),
+    rows: claim((t) => t.status === "done" && (t.doneAgo ?? 0) < 1440),
     folded: true,
     note: none,
   });

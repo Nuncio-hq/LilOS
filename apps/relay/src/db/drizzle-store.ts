@@ -6,6 +6,7 @@ import type {
   Conversation,
   ConversationSummary,
   Employee,
+  Goal,
   MessageAttachment,
   PairedDevice,
   PendingTurn,
@@ -16,11 +17,16 @@ import type {
   ScheduledRunRecord,
   ScheduledTask,
   TaskSchedule,
+  Ticket,
   TurnFailure,
   WorkspaceIntent,
 } from "@lilos/contracts/app";
 import {
   AskHireProposal,
+  TicketResult,
+  TicketStatus,
+  TicketStep,
+  TicketWaitingOn,
   toSummaryMessage,
   toSummaryPreview,
 } from "@lilos/contracts/app";
@@ -57,13 +63,16 @@ import type {
   ListMessagesPage,
   ListMessagesQuery,
   NewAsk,
+  NewGoal,
   NewPairedDevice,
   NewProject,
   NewScheduledTask,
+  NewTicket,
   OpenConversationInput,
   RelayStore,
   ResolveAskInput,
   ScheduledTaskPatch,
+  TicketPatch,
 } from "../store";
 import {
   deriveProjectKey,
@@ -75,6 +84,16 @@ import {
   searchTerms,
   titlePatch,
 } from "../store";
+import {
+  applyWrite,
+  checkout,
+  commentUpdate,
+  finish,
+  initialStatus,
+  parseUpdates,
+  wakeWaiter,
+  withUpdate,
+} from "../work";
 import * as schema from "./schema";
 
 /* The drizzle handle keeps a typed `$client` back-reference to the raw
@@ -107,6 +126,7 @@ const rowToConversation = (row: ConversationRow): Conversation => {
     fast: row.fast ?? undefined,
     cwd: row.cwd ?? undefined,
     projectId: row.projectId ?? undefined,
+    ticketId: row.ticketId ?? undefined,
     /* JSON workstream pick (#156); rows opened before v13 have no column
        value — absent, not null. */
     workspace: row.workspace
@@ -210,6 +230,59 @@ const rowToDevice = (row: PairedDeviceRow): PairedDevice => ({
 });
 
 type ProfileRow = typeof schema.profile.$inferSelect;
+type GoalRow = typeof schema.goals.$inferSelect;
+/* NULL owner means the human (D-#776). The contract field is optional. */
+const rowToGoal = (row: GoalRow): Goal => {
+  const { ownerId, ...rest } = row;
+  return ownerId ? { ...rest, ownerId } : rest;
+};
+
+type TicketRow = typeof schema.tickets.$inferSelect;
+const rowToTicket = (row: TicketRow): Ticket => {
+  const waiting = row.waitingOn
+    ? TicketWaitingOn.parse(JSON.parse(row.waitingOn))
+    : undefined;
+  const result = row.result
+    ? TicketResult.parse(JSON.parse(row.result))
+    : undefined;
+  return {
+    id: row.id,
+    number: row.number,
+    title: row.title,
+    projectId: row.projectId,
+    ...(row.goalId ? { goalId: row.goalId } : {}),
+    ...(row.ownerId ? { ownerId: row.ownerId } : {}),
+    status: TicketStatus.parse(row.status),
+    ...(waiting ? { waitingOn: waiting } : {}),
+    progress: TicketStep.array().parse(JSON.parse(row.progress)),
+    ...(result ? { result } : {}),
+    updates: parseUpdates(row.updates),
+    ...(row.stuckWhy ? { stuckWhy: row.stuckWhy } : {}),
+    ...(row.startsAt ? { startsAt: row.startsAt } : {}),
+    statusAt: row.statusAt,
+    ...(row.doneAt != null ? { doneAt: row.doneAt } : {}),
+    createdAt: row.createdAt,
+  };
+};
+const ticketToRow = (t: Ticket): typeof schema.tickets.$inferInsert => ({
+  id: t.id,
+  projectId: t.projectId,
+  number: t.number,
+  title: t.title,
+  goalId: t.goalId ?? null,
+  ownerId: t.ownerId ?? null,
+  status: t.status,
+  waitingOn: t.waitingOn ? JSON.stringify(t.waitingOn) : null,
+  progress: JSON.stringify(t.progress),
+  result: t.result ? JSON.stringify(t.result) : null,
+  updates: JSON.stringify(t.updates),
+  stuckWhy: t.stuckWhy ?? null,
+  startsAt: t.startsAt ?? null,
+  statusAt: t.statusAt,
+  doneAt: t.doneAt ?? null,
+  createdAt: t.createdAt,
+});
+
 const rowToProfile = (row: ProfileRow): ProfileSettings => ({
   userName: row.userName ?? undefined,
   companyName: row.companyName ?? undefined,
@@ -308,6 +381,136 @@ export function createDrizzleStore(db: Db): RelayStore {
       )
       .orderBy(asc(schema.messages.seq))
       .all();
+
+  const openConversationTx = (
+    tx: Parameters<Parameters<Db["transaction"]>[0]>[0],
+    input: OpenConversationInput,
+  ) => {
+    /* #552: the open's key rides the root message's (channelId,
+           dedupeKey) index — the same slot appendMessage dedupes on — so
+           a stored-but-unanswered resend returns the stored thread. */
+    if (input.dedupeKey) {
+      const stored = tx
+        .select()
+        .from(schema.messages)
+        .where(
+          and(
+            eq(schema.messages.channelId, input.channelId),
+            eq(schema.messages.dedupeKey, input.dedupeKey),
+          ),
+        )
+        .get();
+      const conversation = stored?.conversationId
+        ? tx
+            .select()
+            .from(schema.conversations)
+            .where(eq(schema.conversations.id, stored.conversationId))
+            .get()
+        : undefined;
+      if (stored && conversation) {
+        return {
+          conversation: rowToConversation(conversation),
+          rootMessage: rowToMessage(stored),
+          created: false,
+        };
+      }
+    }
+    const conversationId = newId("conv");
+    const bumped = tx
+      .update(schema.channels)
+      .set({ lastSeq: sql`${schema.channels.lastSeq} + 1` })
+      .where(eq(schema.channels.id, input.channelId))
+      .returning({ seq: schema.channels.lastSeq })
+      .get();
+    if (!bumped) throw new Error(`unknown channel ${input.channelId}`);
+    const rootMessage: AppMessage = {
+      id: newId("msg"),
+      channelId: input.channelId,
+      conversationId,
+      authorId: input.authorId,
+      authorKind: "user",
+      rewound: false,
+      dropped: false,
+      removed: false,
+      claimed: false,
+      text: input.text,
+      seq: bumped.seq,
+      createdAt: now(),
+      attachments: input.attachments,
+    };
+    // conversations.rootMessageId ↔ messages.conversationId are mutually
+    // dependent FKs: insert the message unattributed, then the
+    // conversation, then point the message at it — one transaction.
+    tx.insert(schema.messages)
+      .values({
+        ...messageToRow(rootMessage),
+        conversationId: null,
+        dedupeKey: input.dedupeKey ?? null,
+      })
+      .run();
+    const conversation: Conversation = {
+      id: conversationId,
+      channelId: input.channelId,
+      rootMessageId: rootMessage.id,
+      engineRef: null,
+      state: "idle",
+      ...openTitle(input),
+      access: input.access ?? "ask",
+      ...(input.cwd !== undefined ? { cwd: input.cwd } : {}),
+      ...(input.projectId !== undefined ? { projectId: input.projectId } : {}),
+      ...(input.ticketId !== undefined ? { ticketId: input.ticketId } : {}),
+      ...(input.workspace !== undefined ? { workspace: input.workspace } : {}),
+      archived: false,
+      deliveredSeq: 0,
+      readSeq: 0,
+      finishedSeq: 0,
+      createdAt: now(),
+      ...(input.model !== undefined ? { model: input.model } : {}),
+      ...(input.provider !== undefined ? { provider: input.provider } : {}),
+      ...(input.effort !== undefined ? { effort: input.effort } : {}),
+      ...(input.fast !== undefined ? { fast: input.fast } : {}),
+      ...(input.scheduled !== undefined ? { scheduled: input.scheduled } : {}),
+    };
+    tx.insert(schema.conversations)
+      .values({
+        ...conversation,
+        /* D-#772: a new thread isn't stuck. The domain field is the
+               parsed mark; the column is its JSON, so the spread can't
+               carry the object through. */
+        stuck: null,
+        scheduled: conversation.scheduled
+          ? JSON.stringify(conversation.scheduled)
+          : null,
+        workspace: conversation.workspace
+          ? JSON.stringify(conversation.workspace)
+          : null,
+        usage: conversation.usage ? JSON.stringify(conversation.usage) : null,
+        /* #419: the domain object holds TurnFailure; the column its
+               JSON — absent rows stay NULL. */
+        turnFailure: conversation.turnFailure
+          ? JSON.stringify(conversation.turnFailure)
+          : null,
+      })
+      .run();
+    /* The picker's folder bumps recents — a `.lilos/wt/*` run dir never
+           makes the list (#156). */
+    const bump = input.workspace?.repoPath ?? input.cwd;
+    if (bump !== undefined) {
+      const stamp = nextFolderStamp(tx);
+      tx.insert(schema.recentFolders)
+        .values({ path: bump, lastUsedAt: stamp })
+        .onConflictDoUpdate({
+          target: schema.recentFolders.path,
+          set: { lastUsedAt: stamp },
+        })
+        .run();
+    }
+    tx.update(schema.messages)
+      .set({ conversationId })
+      .where(eq(schema.messages.id, rootMessage.id))
+      .run();
+    return { conversation, rootMessage, created: true };
+  };
 
   return {
     async listEmployees() {
@@ -509,7 +712,8 @@ export function createDrizzleStore(db: Db): RelayStore {
       const sqlite = db.$client;
       const convCols = `id, channel_id AS channelId,
         root_message_id AS rootMessageId, engine_ref AS engineRef, state,
-        model, provider, effort, fast, cwd, project_id AS projectId, workspace, access, title,
+        model, provider, effort, fast, cwd, project_id AS projectId,
+        ticket_id AS ticketId, workspace, access, title,
         title_source AS titleSource, archived, delivered_seq AS deliveredSeq,
         usage, usage_session_id AS usageSessionId, usage_seq AS usageSeq,
         life, turn_failure AS turnFailure,
@@ -778,6 +982,178 @@ export function createDrizzleStore(db: Db): RelayStore {
         return { project, created: true };
       });
     },
+    async listGoals(): Promise<Goal[]> {
+      return db
+        .select()
+        .from(schema.goals)
+        .orderBy(asc(schema.goals.createdAt), sql`rowid`)
+        .all()
+        .map(rowToGoal);
+    },
+    async createGoal(input: NewGoal): Promise<Goal> {
+      const goal: Goal = {
+        id: newId("goal"),
+        title: input.title,
+        projectId: input.projectId,
+        due: input.due ?? "",
+        why: input.why ?? "",
+        ...(input.ownerId ? { ownerId: input.ownerId } : {}),
+        createdAt: now(),
+      };
+      db.insert(schema.goals)
+        .values({ ...goal, ownerId: goal.ownerId ?? null })
+        .run();
+      return goal;
+    },
+    async listTickets(projectId?: string): Promise<Ticket[]> {
+      const q = db
+        .select()
+        .from(schema.tickets)
+        .orderBy(asc(schema.tickets.createdAt), sql`rowid`);
+      const rows = projectId
+        ? q.where(eq(schema.tickets.projectId, projectId)).all()
+        : q.all();
+      return rows.map(rowToTicket);
+    },
+    async getTicket(id: string): Promise<Ticket | null> {
+      const row = db
+        .select()
+        .from(schema.tickets)
+        .where(eq(schema.tickets.id, id))
+        .get();
+      return row ? rowToTicket(row) : null;
+    },
+    async createTicket(input: NewTicket): Promise<Ticket> {
+      return db.transaction((tx) => {
+        const taken = tx
+          .select({ n: schema.tickets.number })
+          .from(schema.tickets)
+          .where(eq(schema.tickets.projectId, input.projectId))
+          .all();
+        const number = taken.reduce((m, r) => Math.max(m, r.n), 0) + 1;
+        const at = now();
+        const settled = initialStatus(input);
+        const ticket: Ticket = {
+          id: `${input.projectKey}-${number}`,
+          number,
+          title: input.title,
+          projectId: input.projectId,
+          ...(input.goalId ? { goalId: input.goalId } : {}),
+          ...(input.ownerId ? { ownerId: input.ownerId } : {}),
+          status: settled.status,
+          ...(settled.waitingOn ? { waitingOn: settled.waitingOn } : {}),
+          progress: input.progress ?? [],
+          updates: [],
+          ...(input.stuckWhy ? { stuckWhy: input.stuckWhy } : {}),
+          ...(input.startsAt ? { startsAt: input.startsAt } : {}),
+          statusAt: at,
+          ...(settled.status === "done" ? { doneAt: at } : {}),
+          createdAt: at,
+        };
+        tx.insert(schema.tickets).values(ticketToRow(ticket)).run();
+        return ticket;
+      });
+    },
+    async updateTicket(
+      id: string,
+      patch: TicketPatch,
+    ): Promise<Ticket[] | null> {
+      return db.transaction((tx) => {
+        const row = tx
+          .select()
+          .from(schema.tickets)
+          .where(eq(schema.tickets.id, id))
+          .get();
+        if (!row) return null;
+        const before = rowToTicket(row);
+        const at = now();
+        let next = applyWrite(before, patch, at);
+        const changed: Ticket[] = [];
+        if (next.status === "done" && before.status !== "done") {
+          next = finish(next, at);
+          for (const other of tx.select().from(schema.tickets).all()) {
+            const waiter = rowToTicket(other);
+            if (
+              waiter.waitingOn?.kind === "ticket" &&
+              waiter.waitingOn.ticketId === id
+            ) {
+              const moved = wakeWaiter(waiter, next, at, newId("upd"));
+              tx.update(schema.tickets)
+                .set(ticketToRow(moved))
+                .where(eq(schema.tickets.id, moved.id))
+                .run();
+              changed.push(moved);
+            }
+          }
+        }
+        tx.update(schema.tickets)
+          .set(ticketToRow(next))
+          .where(eq(schema.tickets.id, id))
+          .run();
+        return [next, ...changed];
+      });
+    },
+    async assignTicket(input: {
+      id: string;
+      ownerId: string;
+      channelId: string;
+      access?: OpenConversationInput["access"];
+    }) {
+      /* Channel already exists. Owner + thread are one transaction (D-#776). */
+      return db.transaction((tx) => {
+        const row = tx
+          .select()
+          .from(schema.tickets)
+          .where(eq(schema.tickets.id, input.id))
+          .get();
+        if (!row) return null;
+        const project = tx
+          .select()
+          .from(schema.projects)
+          .where(eq(schema.projects.id, row.projectId))
+          .get();
+        if (!project) return null;
+        const at = now();
+        const ticket = checkout(rowToTicket(row), input.ownerId, at);
+        tx.update(schema.tickets)
+          .set(ticketToRow(ticket))
+          .where(eq(schema.tickets.id, ticket.id))
+          .run();
+        const opened = openConversationTx(tx, {
+          channelId: input.channelId,
+          title: ticket.title,
+          titleSource: "user",
+          text: `${ticket.id}: ${ticket.title}`,
+          authorId: "user",
+          cwd: project.folder,
+          projectId: project.id,
+          ticketId: ticket.id,
+          ...(input.access !== undefined ? { access: input.access } : {}),
+        });
+        return {
+          ticket,
+          conversation: opened.conversation,
+          rootMessage: opened.rootMessage,
+        };
+      });
+    },
+    async commentTicket(id: string, update: { by: string; text: string }) {
+      const row = db
+        .select()
+        .from(schema.tickets)
+        .where(eq(schema.tickets.id, id))
+        .get();
+      if (!row) return null;
+      const ticket = withUpdate(
+        rowToTicket(row),
+        commentUpdate(newId("upd"), update.by, update.text, now()),
+      );
+      db.update(schema.tickets)
+        .set(ticketToRow(ticket))
+        .where(eq(schema.tickets.id, id))
+        .run();
+      return ticket;
+    },
     async listRecentFolders(): Promise<RecentFolder[]> {
       return db
         .select()
@@ -819,139 +1195,7 @@ export function createDrizzleStore(db: Db): RelayStore {
       return this.getProfile();
     },
     async openConversation(input: OpenConversationInput) {
-      return db.transaction((tx) => {
-        /* #552: the open's key rides the root message's (channelId,
-           dedupeKey) index — the same slot appendMessage dedupes on — so
-           a stored-but-unanswered resend returns the stored thread. */
-        if (input.dedupeKey) {
-          const stored = tx
-            .select()
-            .from(schema.messages)
-            .where(
-              and(
-                eq(schema.messages.channelId, input.channelId),
-                eq(schema.messages.dedupeKey, input.dedupeKey),
-              ),
-            )
-            .get();
-          const conversation = stored?.conversationId
-            ? tx
-                .select()
-                .from(schema.conversations)
-                .where(eq(schema.conversations.id, stored.conversationId))
-                .get()
-            : undefined;
-          if (stored && conversation) {
-            return {
-              conversation: rowToConversation(conversation),
-              rootMessage: rowToMessage(stored),
-              created: false,
-            };
-          }
-        }
-        const conversationId = newId("conv");
-        const bumped = tx
-          .update(schema.channels)
-          .set({ lastSeq: sql`${schema.channels.lastSeq} + 1` })
-          .where(eq(schema.channels.id, input.channelId))
-          .returning({ seq: schema.channels.lastSeq })
-          .get();
-        if (!bumped) throw new Error(`unknown channel ${input.channelId}`);
-        const rootMessage: AppMessage = {
-          id: newId("msg"),
-          channelId: input.channelId,
-          conversationId,
-          authorId: input.authorId,
-          authorKind: "user",
-          rewound: false,
-          dropped: false,
-          removed: false,
-          claimed: false,
-          text: input.text,
-          seq: bumped.seq,
-          createdAt: now(),
-          attachments: input.attachments,
-        };
-        // conversations.rootMessageId ↔ messages.conversationId are mutually
-        // dependent FKs: insert the message unattributed, then the
-        // conversation, then point the message at it — one transaction.
-        tx.insert(schema.messages)
-          .values({
-            ...messageToRow(rootMessage),
-            conversationId: null,
-            dedupeKey: input.dedupeKey ?? null,
-          })
-          .run();
-        const conversation: Conversation = {
-          id: conversationId,
-          channelId: input.channelId,
-          rootMessageId: rootMessage.id,
-          engineRef: null,
-          state: "idle",
-          ...openTitle(input),
-          access: input.access ?? "ask",
-          ...(input.cwd !== undefined ? { cwd: input.cwd } : {}),
-          ...(input.projectId !== undefined
-            ? { projectId: input.projectId }
-            : {}),
-          ...(input.workspace !== undefined
-            ? { workspace: input.workspace }
-            : {}),
-          archived: false,
-          deliveredSeq: 0,
-          readSeq: 0,
-          finishedSeq: 0,
-          createdAt: now(),
-          ...(input.model !== undefined ? { model: input.model } : {}),
-          ...(input.provider !== undefined ? { provider: input.provider } : {}),
-          ...(input.effort !== undefined ? { effort: input.effort } : {}),
-          ...(input.fast !== undefined ? { fast: input.fast } : {}),
-          ...(input.scheduled !== undefined
-            ? { scheduled: input.scheduled }
-            : {}),
-        };
-        tx.insert(schema.conversations)
-          .values({
-            ...conversation,
-            /* D-#772: a new thread isn't stuck. The domain field is the
-               parsed mark; the column is its JSON, so the spread can't
-               carry the object through. */
-            stuck: null,
-            scheduled: conversation.scheduled
-              ? JSON.stringify(conversation.scheduled)
-              : null,
-            workspace: conversation.workspace
-              ? JSON.stringify(conversation.workspace)
-              : null,
-            usage: conversation.usage
-              ? JSON.stringify(conversation.usage)
-              : null,
-            /* #419: the domain object holds TurnFailure; the column its
-               JSON — absent rows stay NULL. */
-            turnFailure: conversation.turnFailure
-              ? JSON.stringify(conversation.turnFailure)
-              : null,
-          })
-          .run();
-        /* The picker's folder bumps recents — a `.lilos/wt/*` run dir never
-           makes the list (#156). */
-        const bump = input.workspace?.repoPath ?? input.cwd;
-        if (bump !== undefined) {
-          const stamp = nextFolderStamp(tx);
-          tx.insert(schema.recentFolders)
-            .values({ path: bump, lastUsedAt: stamp })
-            .onConflictDoUpdate({
-              target: schema.recentFolders.path,
-              set: { lastUsedAt: stamp },
-            })
-            .run();
-        }
-        tx.update(schema.messages)
-          .set({ conversationId })
-          .where(eq(schema.messages.id, rootMessage.id))
-          .run();
-        return { conversation, rootMessage, created: true };
-      });
+      return db.transaction((tx) => openConversationTx(tx, input));
     },
     async setConversationProjects(filings) {
       db.transaction((tx) => {
