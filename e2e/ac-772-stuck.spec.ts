@@ -1,5 +1,7 @@
+import { mkdirSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import os from "node:os";
+import path from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 import {
   bootStack,
@@ -24,6 +26,12 @@ import {
 test.describe.configure({ timeout: 180_000 });
 
 const REASON = "Same web search 6 times";
+const SHOTS = path.join("test-results", "ac772");
+mkdirSync(SHOTS, { recursive: true });
+
+async function shot(page: Page, name: string) {
+  await page.screenshot({ path: path.join(SHOTS, name), fullPage: true });
+}
 
 function lanAddress(): string | undefined {
   const physical: string[] = [];
@@ -90,7 +98,11 @@ function rpc(
     const sock = new WebSocket(wsUrl);
     const send = (id: number, m: string, p: Record<string, unknown>) =>
       sock.send(JSON.stringify({ jsonrpc: "2.0", id, method: m, params: p }));
-    sock.onerror = () => reject(new Error("ws error"));
+    sock.onerror = () => reject(new Error(`ws error ${wsUrl}`));
+    sock.onclose = (ev) => {
+      if (ev.code !== 1000)
+        reject(new Error(`ws closed ${ev.code} ${ev.reason} ${wsUrl}`));
+    };
     sock.onmessage = (ev) => {
       const msg = JSON.parse(String(ev.data)) as {
         id?: number;
@@ -115,7 +127,7 @@ function rpc(
 /** A paired phone with push registered, so a stuck mark has somewhere to go. */
 async function registerPhone(stack: Stack, lan: string) {
   const offered = await rpc(
-    stack.relayWs,
+    `${stack.relayWs}?token=${encodeURIComponent(stack.relayToken)}`,
     {
       protocolVersion: 1,
       token: stack.relayToken,
@@ -134,8 +146,12 @@ async function registerPhone(stack: Stack, lan: string) {
       name: "E2E iPhone",
     }),
   }).then((r) => r.json() as Promise<{ deviceId: string; credential: string }>);
+  const deviceQuery = new URLSearchParams({
+    deviceId: exchanged.deviceId,
+    credential: exchanged.credential,
+  });
   await rpc(
-    stack.relayWs,
+    `${stack.relayWs}?${deviceQuery}`,
     {
       protocolVersion: 1,
       deviceId: exchanged.deviceId,
@@ -190,6 +206,7 @@ test("six identical searches show Stuck with the reason, above a working thread"
   await startChat(page, stack.webUrl, agent, "LILOS_TURN_HOLD");
   await startChat(page, stack.webUrl, agent, "stuck:");
   await expect(card(page)).toContainText(REASON, { timeout: 20_000 });
+  await shot(page, "1-repeat-shows-stuck.png");
   await expect(
     card(page).getByRole("button", { name: "Stop", exact: true }),
   ).toBeVisible();
@@ -216,7 +233,9 @@ test("a different step clears Stuck", async ({ page }) => {
   const agent = await agentOf(page);
   await startChat(page, stack.webUrl, agent, "stuck: clear");
   await expect(card(page)).toContainText(REASON, { timeout: 20_000 });
+  await shot(page, "2-before-clear.png");
   await expect(card(page)).toBeHidden({ timeout: 20_000 });
+  await shot(page, "2-cleared.png");
 });
 
 test("Stop on the card stops the turn", async ({ page }) => {
@@ -226,6 +245,7 @@ test("Stop on the card stops the turn", async ({ page }) => {
   await expect(card(page)).toContainText(REASON, { timeout: 20_000 });
   await card(page).getByRole("button", { name: "Stop", exact: true }).click();
   await expect(card(page)).toBeHidden({ timeout: 15_000 });
+  await shot(page, "3-stopped.png");
   await expect(
     page
       .locator("[data-thread-panel]")
@@ -247,6 +267,7 @@ test("a push when Stuck is on, and none when it is off", async ({ page }) => {
   await expect(sw).toHaveAttribute("aria-checked", "false");
   await sw.click();
   await expect(sw).toHaveAttribute("aria-checked", "true");
+  await shot(page, "4-phone-stuck-on.png");
 
   await startChat(page, stack.webUrl, agent, "stuck:");
   await expect(card(page)).toContainText(REASON, { timeout: 20_000 });
