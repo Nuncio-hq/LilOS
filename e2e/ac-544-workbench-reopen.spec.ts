@@ -115,7 +115,7 @@ test.describe.configure({ mode: "serial" });
 const REORDER = "feedHold=turn.completed:400";
 
 /* A new session in `dir`, the way a person starts one: the new-chat draft's
-   folder chip, then Send (the folder joins the recents over the relay
+   project chip, then Send (the folder becomes a project over the relay
    first). The page loads with the reorder knob — a query parameter, so it
    rides every hash navigation after it — and the thread opens beside
    Threads. An id that names nobody opens the draft on the default agent. */
@@ -124,10 +124,11 @@ async function startSession(page: Page, dir: string, text: string) {
   const app = `${stack.webUrl}/?${REORDER}`;
   await page.goto(app);
   await relayRpc(page, stack, "folders.add", { path: dir });
+  await relayRpc(page, stack, "projects.create", { folder: dir });
   await page.goto(`${app}#?page=threads&open=newchat:default`);
   await page.reload();
   const peek = v3Peek(page);
-  const chip = peek.getByTitle(/^Folder · /);
+  const chip = peek.getByTitle(/^Project · /);
   await expect(chip).toBeVisible({ timeout: 30_000 });
   await chip.click();
   await peek

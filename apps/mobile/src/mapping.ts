@@ -1,7 +1,9 @@
 import { PairingExchangeFailed, RelayError } from "@lilos/client-runtime";
 import {
   type AppChannel,
+  type Conversation,
   MAX_ATTACHMENT_BYTES,
+  type Project,
   ProtocolVersionMismatch,
 } from "@lilos/contracts/app";
 import type {
@@ -27,15 +29,30 @@ export function toneOf(id: string): OrbTone {
 }
 
 /**
- * Channels only exist as employee-bound DMs on the wire today (`kind: "dm"`),
- * so Home's Slack-style sections stay empty — the screen hides the header
- * when there's nothing to list rather than drawing an empty "Channels".
+ * The wire's only channel kind is the per-agent routing channel (`kind:
+ * "dm"`, D-#771), which the phone never shows as a channel — so Home's
+ * Slack-style sections stay empty and the screen hides the header when
+ * there's nothing to list rather than drawing an empty "Channels".
  */
 export function toHomeChannels(_channels: AppChannel[]): {
   company: ChannelRow[];
   projects: ProjectGroup[];
 } {
   return { company: [], projects: [] };
+}
+
+/**
+ * A thread row's project label (D-#771): the name of the project its
+ * `projectId` points at, nothing for a plain chat. The relay files every
+ * thread, so an id the list doesn't know yet (the `project.upserted` event
+ * is still in flight) just shows no label for that beat.
+ */
+export function projectNameOf(
+  conv: Pick<Conversation, "projectId">,
+  projects: readonly Project[],
+): string | undefined {
+  if (!conv.projectId) return undefined;
+  return projects.find((p) => p.id === conv.projectId)?.name;
 }
 
 /** #593: an exchange error → the Connecting screen's next state. Every

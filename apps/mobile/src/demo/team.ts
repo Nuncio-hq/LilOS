@@ -62,6 +62,8 @@ export function demoEmployees(createdAt: number): Employee[] {
   }));
 }
 
+/* One channel per agent, as the relay keeps it: the routing scope of that
+   agent's threads. The wire still calls the kind "dm" (D-#771). */
 export function demoChannels(
   createdAt: number,
   lastSeqs: Record<string, number>,
@@ -338,6 +340,6 @@ export const DEMO_PRS: Record<string, ForgePrListItem[]> = {
     }),
   ],
   "s-flake": [
-    demoPr(86, "DM feed: avatar above the name row", { checks: "pending" }),
+    demoPr(86, "Thread feed: avatar above the name row", { checks: "pending" }),
   ],
 };

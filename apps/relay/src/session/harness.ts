@@ -129,7 +129,7 @@ export async function handleHarness(c: RelayCtx): Promise<false | undefined> {
         host.engine = parsed.data.engine;
         host.lastReportAt = now();
         if (parsed.data.status) {
-          /* #413: the DM notice and Settings → Engine read `connect` off
+          /* #413: the thread notice and Settings → Engine read `connect` off
              `system.status` — push the rows live when they change instead
              of leaving surfaces on the next poll. */
           const prev = connectSignature(host.status?.connect);

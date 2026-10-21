@@ -202,7 +202,7 @@ export const SubagentStartedPayload = z.strictObject({
   startedAt: z.int().min(0).optional(),
   /**
    * Set when the helper is another employee the engine can name — the app
-   * renders their avatar and links "Open session" to `sessionRef`'s DM
+   * renders their avatar and links "Open session" to `sessionRef`'s thread
    * (D-#25: a link, never a copy of their turns).
    */
   employee: z

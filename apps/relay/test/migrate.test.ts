@@ -65,8 +65,9 @@ describe("relay migrations", () => {
     // read watermark + finish stamp (and their store-internal fence);
     // v25 adds the asks' hire-draft column; v26 adds #561's muted flag
     // on employees; v27 adds #136's scheduled_tasks table + the
-    // conversation's scheduled marker.
-    expect(out.version).toBe(27);
+    // conversation's scheduled marker; v28 adds D-#771's projects table +
+    // the conversation's project_id.
+    expect(out.version).toBe(28);
     expect(out.askCols).toContain("hire");
     expect(out.msgCols).toContain("dropped");
     expect(out.msgCols).toContain("removed");
@@ -85,9 +86,11 @@ describe("relay migrations", () => {
     expect(out.colsAt7).toContain("bg_jobs");
     expect(out.colsAt7).toContain("read_seq");
     expect(out.colsAt7).toContain("finished_seq");
+    expect(out.colsAt7).toContain("project_id");
     expect(out.tables).toContain("settings");
     expect(out.tables).toContain("profile");
     expect(out.tables).toContain("messages_fts");
+    expect(out.tables).toContain("projects");
     expect(out.tables).toContain("pairing_grants");
     expect(out.tables).toContain("paired_devices");
     expect(out.tables).toContain("device_push");

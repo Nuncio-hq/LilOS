@@ -5,14 +5,16 @@ export type SetData = (fn: (d: V3Data) => V3Data) => void
 
 /* What every area of the mock engine needs from the prototype shell: the
    company's records (read now, rewritten through `setData`), the chat
-   simulator's reply script, the toast, and the system status dialog the app
-   draws beside the shell. */
+   simulator's reply script, the toast, and the two dialogs the app draws
+   beside the shell (the system status, and the folder picker). */
 export type Engine = {
   setData: SetData
   getData: () => V3Data
   reply: ReplyFn
   toast: (t: string) => void
   openStatus: () => void
+  /** Opens the folder picker; `onPick` gets the path chosen. Closing it says nothing. */
+  askForFolder: (onPick: (path: string) => void) => void
 }
 
 export const ticketPatch = (

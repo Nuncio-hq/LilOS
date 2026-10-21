@@ -6,7 +6,12 @@ import {
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 
 /* Route table + the container ref, shared by App.tsx and the screens so a
-   screen can navigate without importing App (that would be a cycle). */
+   screen can navigate without importing App (that would be a cycle).
+
+   `Dm*` names (the `Dm` route, `DmRoutes`, the dm-* modules) are the
+   per-agent channel's internal name: the relay keeps one channel per agent
+   as its routing scope, kept on the wire for compatibility (D-#771). The
+   user sees an agent's threads, never a DM. */
 
 export type Routes = {
   Welcome: undefined;
@@ -21,12 +26,12 @@ export type Routes = {
   Connected: undefined;
   Tabs: NavigatorScreenParams<TabRoutes>;
   Mac: undefined;
-  /** An employee's DM; `{ employeeId }` selects whose. */
+  /** An agent's thread list; `{ employeeId }` selects whose. */
   Dm: { employeeId: string };
-  /* Every session across employees — pushed over Home like the web's
-     /sessions view over the DM pane. */
+  /* Every thread across agents — pushed over Home like the web's threads
+     view over the page. */
   Sessions: undefined;
-  /* The DM slice's stack routes (#156); #157 adds ThreadInfo + the
+  /* The thread-list slice's stack routes (#156); #157 adds ThreadInfo + the
      thread-scoped model pick (conversationId present = thread scope).
      `employeeId` is the employee the push/ask resolved this thread to —
      the gone card's "Back to <employee>" uses it once the thread itself
@@ -50,7 +55,7 @@ export type Routes = {
   ModelPicker: { employeeId: string; conversationId?: string };
 };
 
-/* The DM stack as the dm/thread screens see it. */
+/* The agent thread-list stack as the dm/thread screens see it. */
 export type DmRoutes = Pick<
   Routes,
   | "Dm"

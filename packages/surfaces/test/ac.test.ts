@@ -241,10 +241,11 @@ describe("AC-2 one op set: dispatch, HTTP tool API, client", () => {
 });
 
 describe("approval-gated tools: dispatch + areas + declined over HTTP", () => {
-  it("the four ops round-trip when the gate approves; `folder` is an area", async () => {
+  it("the ops round-trip when the gate approves; `folder` and `project` are areas", async () => {
     const appOps = fakeAppOps();
     const { scope } = makeScope({ appOps });
     expect(scope.areas.has("folder")).toBe(true);
+    expect(scope.areas.has("project")).toBe(true);
     const gw = await serveGateway({ sessions: [{ scope, token: "tok" }] });
     const client = toolBackend({
       baseUrl: gw.baseUrl,
@@ -265,11 +266,34 @@ describe("approval-gated tools: dispatch + areas + declined over HTTP", () => {
       expect(u.employee.role).toBe("lead");
       const f = await client.folderAdd({ path: "~/x" });
       expect(f.folder.path).toBe("~/x");
+      const none = await client.projectList();
+      expect(none.projects).toEqual([]);
+      const made = await client.projectCreate({
+        folder: "/Users/o/shop",
+        name: "Shop",
+      });
+      expect(made.project).toMatchObject({ name: "Shop", key: "SHOP" });
+      expect((await client.projectList()).projects).toEqual([made.project]);
+      // A folder that already has a project answers that project.
+      const again = await client.projectCreate({ folder: "/Users/o/shop" });
+      expect(again.project.id).toBe(made.project.id);
+      const inProject = await client.threadStart({
+        text: "go",
+        project: made.project.key,
+      });
+      expect(inProject.conversation.id).toBeTruthy();
+      expect(appOps.started.at(-1)).toEqual({
+        text: "go",
+        project: "SHOP",
+      });
       expect(appOps.asks).toEqual([
         "thread_start T",
         "team_hire Bea (designer)",
         "team_update role",
         "folder_add ~/x",
+        "project_create /Users/o/shop",
+        "project_create /Users/o/shop",
+        "thread_start go in SHOP",
       ]);
     } finally {
       gw.server.close();
@@ -288,7 +312,11 @@ describe("approval-gated tools: dispatch + areas + declined over HTTP", () => {
     });
     try {
       await expect(client.folderAdd({ path: "~/x" })).rejects.toThrow(/403/);
-      expect(appOps.asks.length).toBe(1);
+      await expect(client.projectCreate({ folder: "/x" })).rejects.toThrow(
+        /403/,
+      );
+      expect(appOps.asks.length).toBe(2);
+      expect(appOps.projectRows).toEqual([]);
       // Decline changed nothing — the fake's only thread is still the seed.
       const convs = await client.threadList();
       expect(convs.threads.length).toBe(1);

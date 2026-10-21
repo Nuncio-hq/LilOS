@@ -5,12 +5,14 @@ import type {
   Employee,
   MessageSearchHit,
   ProfileSettings,
+  Project,
   RecentFolder,
   ScheduledTask,
   SystemStatusResult,
   WorkbenchOpenTarget,
 } from "@lilos/contracts/app";
 import type {
+  ProjectCreateParams,
   ScheduleCreateParams,
   ScheduleUpdateParams,
   SessionBinding,
@@ -74,30 +76,33 @@ export type PtySpawner = (
 ) => PtyHandle;
 
 /**
- * The app leg (#340): every DM/company read or write the DM tools make —
- * backed by the relay in production. Domain-shaped ops only; tool semantics
- * (windows, name resolution, roll-ups) live in `SessionSurfaces` so tests
- * exercise them through one fake.
+ * The app leg (#340): every channel/company read or write the thread tools
+ * make — backed by the relay in production. Domain-shaped ops only; tool
+ * semantics (windows, name resolution, roll-ups) live in `SessionSurfaces`
+ * so tests exercise them through one fake.
  */
 export interface AppOps {
   postMessage(text: string): Promise<AppMessage>;
-  /** Full visible history of one thread in the bound DM, seq-ascending.
+  /** Full visible history of one thread of the bound employee, seq-ascending.
       `conversationId` omitted = the bound thread itself. */
   readConversation(opts?: {
     conversationId?: string;
     afterSeq?: number;
   }): Promise<AppMessage[]>;
-  /** Every conversation in the bound DM (`conversations.list`). */
+  /** Every conversation of the bound employee (`conversations.list` on its
+      channel — the internal routing scope, D-#25). */
   listThreads(): Promise<Conversation[]>;
-  /** List-row detail for the bound DM's threads (`conversations.summaries`). */
+  /** List-row detail for the bound employee's threads (`conversations.summaries`). */
   threadSummaries(): Promise<ConversationSummary[]>;
   /** The company roster (`employees.list`). */
   employees(): Promise<Employee[]>;
   /** The bound employee's scheduled tasks (`schedules.list`). */
   scheduledTasks(employeeId: string): Promise<ScheduledTask[]>;
-  /** PRs linked to a thread of the bound DM (`conversations.prs`). */
+  /** The company's projects (`projects.list`, D-#771). */
+  projects(): Promise<Project[]>;
+  /** PRs linked to a thread of the bound employee (`conversations.prs`). */
   threadPrs(conversationId: string): Promise<ForgePrListItem[]>;
-  /** FTS search inside the bound DM (`messages.search`). */
+  /** FTS search over the bound employee's threads (`messages.search`). */
   searchMessages(query: string, limit?: number): Promise<MessageSearchHit[]>;
   /** Rename the bound thread; "user_title" when the user's title wins (#137). */
   setThreadTitle(
@@ -107,7 +112,7 @@ export interface AppOps {
   status(): Promise<SystemStatusResult>;
   /** `profile.get` — the signed-in human's LilOS identity. */
   profile(): Promise<ProfileSettings>;
-  /** Emit `workbench.opened` on the bound DM (`workbench.open`). */
+  /** Emit `workbench.opened` on the bound thread's channel (`workbench.open`). */
   openWorkbench(target: WorkbenchOpenTarget): Promise<void>;
   /**
    * Approval-gated company writes: each op posts the ask card itself
@@ -115,10 +120,15 @@ export interface AppOps {
    * layer never sees an unapproved write. A `declined` outcome throws
    * `SurfaceError("declined", …)`.
    */
-  /** Start a new thread in the bound DM (`conversations.open` on approve). */
+  /** Start a new thread for the bound employee (`conversations.open` on
+      approve). `project` is a project's id or key (D-#771): the op resolves
+      it against `projects.list` and opens the thread with that project's
+      folder as its `cwd`; omitted → a plain chat. An unknown value throws
+      before any ask opens. */
   startThread(p: {
     text: string;
     title?: string;
+    project?: string;
   }): Promise<{ conversation: Conversation; message: AppMessage }>;
   /** Hire an employee (`agents.create`? + `employees.create` + `channels.openDm` on approve). */
   hireEmployee(p: TeamHireParams): Promise<Employee>;
@@ -134,6 +144,9 @@ export interface AppOps {
   scheduleDelete(id: string): Promise<void>;
   /** Fire a scheduled task now (`schedules.runNow` on approve). */
   scheduleRunNow(id: string): Promise<ScheduledTask>;
+  /** Make a project of a folder (`projects.create` on approve); a folder
+      that already has a project answers it. */
+  createProject(p: ProjectCreateParams): Promise<Project>;
 }
 
 export interface SurfaceScopeOptions {

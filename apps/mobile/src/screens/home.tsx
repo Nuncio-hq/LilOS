@@ -5,6 +5,7 @@ import type {
   Conversation,
   ConversationSummary,
   Employee,
+  Project,
 } from "@lilos/contracts/app";
 import {
   ApprovalsSheet,
@@ -32,12 +33,15 @@ import { nav } from "../routes";
 import { ago } from "../time";
 
 /* The app tabs after pairing (#155): Home (live employees + channels),
-   Activity (every open ask), the Needs-you bottom accessory, and the DM
-   route. Wire data reaches the screens through home-model only. */
+   Activity (every open ask), the Needs-you bottom accessory, and the agent
+   thread-list route (`Dm` — the per-agent channel is internal routing, not a
+   DM the user sees, D-#771). Wire data reaches the screens through
+   home-model only. */
 
 const $noEmployees = atom<Employee[]>([]);
 const $noChannels = atom<AppChannel[]>([]);
 const $noConversations = atom<Conversation[]>([]);
+const $noProjects = atom<Project[]>([]);
 const $noSummaries = atom<ConversationSummary[]>([]);
 const $noAsks = atom<Ask[]>([]);
 
@@ -56,6 +60,7 @@ export function useHomeWire(): {
   const employees = useStore(client?.employees ?? $noEmployees);
   const channels = useStore(client?.channels ?? $noChannels);
   const conversations = useStore(client?.conversations ?? $noConversations);
+  const projects = useStore(client?.projects ?? $noProjects);
   const summaries = useStore(client?.conversationSummaries ?? $noSummaries);
   const asks = useStore(client?.asks ?? $noAsks);
   return useMemo(
@@ -69,6 +74,7 @@ export function useHomeWire(): {
         employees,
         channels,
         conversations,
+        projects,
         summaries,
         asks,
         /* #591+#597: live data only while online/reconnecting — offline and
@@ -77,7 +83,16 @@ export function useHomeWire(): {
         online: !linkUnreachable(link),
       },
     }),
-    [client, link, employees, channels, conversations, summaries, asks],
+    [
+      client,
+      link,
+      employees,
+      channels,
+      conversations,
+      projects,
+      summaries,
+      asks,
+    ],
   );
 }
 
@@ -92,8 +107,9 @@ export function useNowMs(): number {
   return now;
 }
 
-/* ask/turn events ride `channel.subscribe` only — subscribe every DM channel
-   once (idempotent; intent survives reconnects through resubscribeAll). */
+/* ask/turn events ride `channel.subscribe` only — subscribe every per-agent
+   channel once (idempotent; intent survives reconnects through
+   resubscribeAll). */
 function useLiveChannels(
   client: AppClient | undefined,
   channels: AppChannel[],
@@ -159,7 +175,8 @@ export function NeedsYouSlot({
     [wire, nowMs],
   );
   /* #595: a plan ask's Review opens the plan where it lives — the
-     asking thread, with the DM underneath so Back returns to it. */
+     asking thread, with the agent's thread list underneath so Back returns
+     to it. */
   const openPlanThread = (askId: string) => {
     const ask = wire.asks.find((a) => a.id === askId);
     const target = ask && askThreadTarget(ask, wire);
@@ -200,7 +217,7 @@ export function Activity() {
     [wire, nowMs],
   );
   /* #594/#595: Open and a plan's Review share one landing — the asking
-     thread pushed over its DM, so Back returns to the DM. */
+     thread pushed over its agent's thread list, so Back returns to it. */
   const openAskThread = (askId: string) => {
     const ask = wire.asks.find((a) => a.id === askId);
     const target = ask && askThreadTarget(ask, wire);

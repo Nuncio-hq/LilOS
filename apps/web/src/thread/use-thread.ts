@@ -63,7 +63,7 @@ import { useThreadRewind } from "./use-thread-rewind";
  * routing is the caller's: nothing here navigates.
  *
  * `folds` is the caller's fold pass (`useConvFolds`) so a surface that also
- * lists conversations (the DM page) folds each one once.
+ * lists conversations (a thread list) folds each one once.
  */
 export function useThreadWith(
   conv: Conversation | undefined,
@@ -367,7 +367,7 @@ export function useThreadWith(
     historyFailed: folds.historyFailed,
     retryHistory: folds.retryHistory,
     /* AC-3: a subagent row for another employee opens their own session in
-       their DM (D-#25) — resolve the engine sessionRef to its conversation. */
+       its thread (D-#25) — resolve the engine sessionRef to its conversation. */
     resolveSession: (empRef, sessionRef) => {
       const target = folds.summaries.find(
         (s) => s.conversation.engineRef === sessionRef,

@@ -10,7 +10,8 @@ import { z } from "zod";
 export const SessionBinding = z.strictObject({
   /** Employee record the session runs as. */
   employeeId: z.string().min(1),
-  /** Channel the thread lives in (the employee's DM channel). */
+  /** Channel the thread lives in — the employee's internal routing scope
+      (D-#25), never a place the user or agent sees. */
   channelId: z.string().min(1),
   /** The conversation this session's `thread_*` tools read and post to. */
   conversationId: z.string().min(1),

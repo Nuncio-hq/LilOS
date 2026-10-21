@@ -479,7 +479,7 @@
     },
     {
       "name": "context",
-      "description": "Who and where this session is: the employee record, DM, thread, folder, context usage { used, window }, the user's name, Mac status and attached tool areas.",
+      "description": "Who and where this session is: the employee record, channel, thread, folder, context usage { used, window }, the user's name, Mac status and attached tool areas.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -712,7 +712,7 @@
     },
     {
       "name": "guide",
-      "description": "LilOS docs shipped with the app — pass a topic (overview, dm-and-threads, employees, approvals, workbench, mobile, gateway); none returns the index.",
+      "description": "LilOS docs shipped with the app — pass a topic (overview, threads, employees, approvals, workbench, mobile, gateway); none returns the index.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -721,7 +721,7 @@
             "type": "string",
             "enum": [
               "overview",
-              "dm-and-threads",
+              "threads",
               "employees",
               "approvals",
               "workbench",
@@ -990,7 +990,7 @@
     },
     {
       "name": "thread_read",
-      "description": "Read the visible messages of a thread in this DM — the session's own unless `thread` names another by id or title; `before`/`afterSeq` window it.",
+      "description": "Read the visible messages of one of your threads — the session's own unless `thread` names another by id or title; `before`/`afterSeq` window it.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1193,7 +1193,7 @@
     },
     {
       "name": "thread_list",
-      "description": "The threads in this DM — title, state, last activity and linked PRs.",
+      "description": "Your threads — title, state, last activity and linked PRs.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1339,7 +1339,7 @@
     },
     {
       "name": "thread_search",
-      "description": "Search messages inside this DM (the relay's FTS index).",
+      "description": "Search messages across your threads (the relay's FTS index).",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1576,7 +1576,7 @@
     },
     {
       "name": "thread_start",
-      "description": "Ask the user to start a new thread in this DM with `text` as its first message (optional `title`). Waits for approval; company changes always ask.",
+      "description": "Ask the user to start a new thread with `text` as its first message (optional `title`; optional `project` — an id or key from project_list — whose folder it works in, else a plain chat). Waits for approval; company changes always ask.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1586,6 +1586,10 @@
             "minLength": 1
           },
           "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "project": {
             "type": "string",
             "minLength": 1
           }
@@ -1965,6 +1969,154 @@
       },
       "_meta": {
         "lilos/area": "folder",
+        "lilos/access": "approval"
+      }
+    },
+    {
+      "name": "project_list",
+      "description": "The company's projects — name, key, folder, about. Pass a project's id or key to thread_start.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "projects": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "key": {
+                  "type": "string",
+                  "pattern": "^[A-Z0-9]{1,8}$"
+                },
+                "folder": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "about": {
+                  "type": "string"
+                },
+                "createdAt": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "key",
+                "folder",
+                "about",
+                "createdAt"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "projects"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "_meta": {
+        "lilos/area": "project",
+        "lilos/access": "read"
+      }
+    },
+    {
+      "name": "project_create",
+      "description": "Ask the user to make a project of a folder (optional name, about). A folder that already has a project answers it. Waits for approval; returns the project record.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "folder": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "about": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "folder"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "key": {
+                "type": "string",
+                "pattern": "^[A-Z0-9]{1,8}$"
+              },
+              "folder": {
+                "type": "string",
+                "minLength": 1
+              },
+              "about": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "key",
+              "folder",
+              "about",
+              "createdAt"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "project"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "_meta": {
+        "lilos/area": "project",
         "lilos/access": "approval"
       }
     },
@@ -2604,7 +2756,7 @@
     },
     {
       "name": "schedule_run_now",
-      "description": "Fire one of your scheduled tasks now — a session opens in this DM at once. Asks the user to approve.",
+      "description": "Fire one of your scheduled tasks now — a session opens at once. Asks the user to approve.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",

@@ -151,8 +151,8 @@ type Routes = {
   Connected: undefined;
   Tabs: NavigatorScreenParams<TabRoutes>;
   Dm: { employeeId: string };
-  /* Every session across employees — pushed over Home like web's
-     /sessions view over the DM pane. */
+  /* Every thread across agents — pushed over Home like web's threads
+     view over the page. */
   Sessions: undefined;
   Thread: { id: string; scrollTo?: string; hitQuery?: string };
   ThreadInfo: { id: string };
@@ -168,7 +168,7 @@ type Routes = {
   FolderPicker: undefined;
   /** Browse the Mac for another folder. */
   BrowseMac: undefined;
-  /** No thread = the next DM session's model. */
+  /** No thread = the next new thread's model. */
   ModelPicker: { thread?: string };
 };
 /* The app's three tabs: the system's glass tab bar (iOS 26), with the
@@ -557,7 +557,7 @@ function decide(approvalId: string, approved: boolean) {
 }
 
 function soon(what: string) {
-  Alert.alert(`${what} come next`, "This round covers employees and DMs.");
+  Alert.alert(`${what} come next`, "This round covers employees and threads.");
 }
 
 function Dm({ navigation, route }: Props<"Dm">) {
@@ -610,7 +610,7 @@ function Dm({ navigation, route }: Props<"Dm">) {
       onPickFolder={() => navigation.navigate("FolderPicker")}
       onPickModel={() => navigation.navigate("ModelPicker", {})}
       commands={ENGINE_COMMANDS}
-      /* `/model` opens the sheet the DM already owns — the same claim
+      /* `/model` opens the sheet this list already owns — the same claim
          the web composer makes; it never starts a session. */
       onCommand={(name) => {
         if (name !== "model") return false;
@@ -630,8 +630,8 @@ function Dm({ navigation, route }: Props<"Dm">) {
   );
 }
 
-/* The DM header's status line counts threads: "2 need you" first, since
-   that's what you open a DM to find. */
+/* The agent thread list's header status counts threads: "2 need you" first,
+   since that's what you open an agent to find. */
 function statusOf(turns: { state: string }[]) {
   const needs = turns.filter((t) => t.state === "needs-you").length;
   const working = turns.filter((t) => t.state === "working").length;
@@ -860,7 +860,7 @@ function FolderPicker({ navigation }: Props<"FolderPicker">) {
 }
 
 /* Any folder on the Mac: picking one adds it to the list and selects it,
-   then closes both sheets back to the DM. */
+   then closes both sheets back to the agent's thread list. */
 function BrowseMac({ navigation }: Props<"BrowseMac">) {
   const mac = useStore($connections)[0];
   return (
@@ -979,7 +979,7 @@ function confirmForget() {
   );
 }
 
-/* Jump from a request to its DM, and into the thread that asked. */
+/* Jump from a request to its agent's thread list, and into the thread that asked. */
 function openApproval(id: string) {
   const a = $approvals.get().find((x) => x.id === id);
   const t = $threads
@@ -1226,7 +1226,7 @@ export default function App() {
               <Stack.Screen
                 name="Sessions"
                 component={Sessions}
-                options={{ title: "Sessions" }}
+                options={{ title: "Threads" }}
               />
               <Stack.Screen name="Dm" component={Dm} options={CHAT_HEADER} />
               <Stack.Screen

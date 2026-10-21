@@ -23,13 +23,14 @@ import {
  * a tmp root; repoDir is a git repo on branch `trunk` so the header badge
  * and the engine-fake `I'm in <cwd>` echo are both real assertions.
  *
- * v3 has two folder surfaces instead of the old composer picker: the
- * new-chat draft's Folder chip (a menu of the app's recents, newest first;
- * unreachable folders are left out) and a folder-less thread's "Add a
- * folder" button, which opens the in-app dialog and MOVES that session into
- * the pick. "No folder · just chat" is the draft's last menu entry (AC-6 picks
- * it); the folder-less threads the other legs start from skip the draft and
- * open over the relay (startFolderlessChat).
+ * v3 has two folder surfaces: the new-chat draft's Project chip (a menu of
+ * the company's projects, and "New project from a folder…", whose dialog
+ * leads with the recents still on disk) and a folder-less thread's "Add a
+ * folder" button, which opens the in-app dialog and MOVES that thread into
+ * the pick; the relay files it under that folder's project (D-#771). "No
+ * project · just chat" is the draft menu's other entry (AC-6 picks it); the
+ * plain threads the other legs start from skip the draft and open over the
+ * relay (startFolderlessChat).
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
@@ -93,16 +94,20 @@ async function openFolderless(page: Page, text: string, query = "") {
   });
 }
 
-/** The new-chat draft's Folder chip. The app reads the recents when it
+/** The new-chat draft's Project chip. The app reads the company when it
     mounts, so a reload is what proves what the relay holds. */
-async function draftFolderChip(page: Page) {
+async function draftProjectChip(page: Page) {
   await skipFirstRun(page);
   await page.goto(`${stack.webUrl}/#?page=threads&open=newchat:default`);
   await page.reload();
-  const chip = v3Peek(page).getByTitle(/^Folder · /);
+  const chip = v3Peek(page).getByTitle(/^Project · /);
   await expect(chip).toBeVisible({ timeout: 30_000 });
   return chip;
 }
+
+/** The peek's trail: where the thread lives, in one place (D-#769). */
+const trailOf = (page: Page) =>
+  v3Peek(page).getByRole("navigation", { name: "Trail" });
 
 /** Type `dir` into the open dialog, wait for its folder card, Add. */
 async function addViaDialog(page: Page, dir: string, info: string) {
@@ -171,10 +176,12 @@ test("AC-2 + #208 AC-1 a folder-less thread offers Add a folder; it opens the in
     shown(repoDir),
     { timeout: 30_000 },
   );
-  await expect(panel(page).locator("[data-wsbadge]")).toContainText(
-    "lilos-repo-a",
-    { timeout: 15_000 },
-  );
+  await expect(trailOf(page)).toContainText("lilos-repo-a", {
+    timeout: 15_000,
+  });
+  await expect(panel(page).locator("[data-wsbadge]")).toContainText("direct", {
+    timeout: 15_000,
+  });
   await expect(panel(page).locator("[data-add-folder]")).toHaveCount(0);
   // The OS-panel bridge was never consulted (#208 AC-5).
   const pickFolderCalls = await page.evaluate(() => {
@@ -213,17 +220,18 @@ test("opening a thread never scans the disk — git.discoverRepos runs only on A
     .toBe(true);
 });
 
-test("AC-3 the folder menu and the session header offer direct mode only (no worktree items)", async ({
+test("AC-3 the project menu and the session header offer direct mode only (no worktree items)", async ({
   page,
 }) => {
   await skipFirstRun(page);
   await page.goto(`${stack.webUrl}/`);
   await relayRpc(page, stack, "folders.add", { path: shown(repoDir) });
-  const chip = await draftFolderChip(page);
+  await relayRpc(page, stack, "projects.create", { folder: shown(repoDir) });
+  const chip = await draftProjectChip(page);
   await chip.click();
   const peek = v3Peek(page);
   const menu = peek.getByRole("menu");
-  // The recents menu lists folders and nothing else — no branch list, no
+  // The menu lists projects and nothing else — no branch list, no
   // workstream or worktree choices.
   await expect(
     menu.getByRole("menuitemradio", { name: /lilos-repo-a/ }),
@@ -240,8 +248,7 @@ test("AC-3 the folder menu and the session header offer direct mode only (no wor
   // Direct mode: the checked-out branch is a static label of the header
   // badge — nothing on the page checks a branch out or promises a worktree.
   const badge = panel(page).locator("[data-wsbadge]");
-  await expect(badge).toContainText("lilos-repo-a", { timeout: 15_000 });
-  await expect(badge).toContainText("trunk");
+  await expect(badge).toContainText("trunk", { timeout: 15_000 });
   await expect(badge).toContainText("direct");
   await expect(page.getByText(/Edit .* directly/)).toHaveCount(0);
   await expect(page.getByText("New workstream from")).toHaveCount(0);
@@ -291,25 +298,27 @@ test("AC-4 + AC-7 a session picked on the repo runs there; the header shows fold
   await expect(
     panel(page).getByText("on ⎇", { exact: false }).last(),
   ).toBeVisible();
-  // AC-7: header badge = folder name + real branch.
+  // AC-7: the header names the project in its trail and the badge the real
+  // branch (never the folder's name a second time, D-#769).
   const badge = panel(page).locator("[data-wsbadge]");
-  await expect(badge).toContainText("lilos-repo-a", { timeout: 15_000 });
-  await expect(badge).toContainText("trunk");
+  await expect(badge).toContainText("trunk", { timeout: 15_000 });
+  await expect(badge).not.toContainText("lilos-repo-a");
+  await expect(trailOf(page)).toContainText("lilos-repo-a");
   await page.screenshot({ path: `${SHOTS}/ac-4-7-header.png` });
 });
 
-test("AC-6 a new chat pre-selects the last session's folder; a no-folder session is a plain chat (#196)", async ({
+test("AC-6 a new chat pre-selects the last session's project; a no-project session is a plain chat (#196)", async ({
   page,
 }) => {
-  // Last session ran in repoDir → the draft's Folder chip comes up on it.
-  const chip = await draftFolderChip(page);
+  // Last session ran in repoDir → the draft's Project chip comes up on it.
+  const chip = await draftProjectChip(page);
   await expect(chip).toContainText("lilos-repo-a", { timeout: 15_000 });
-  // …but a folder is never required: pick "No folder · just chat" and send.
+  // …but a project is never required: pick "No project · just chat" and send.
   await chip.click();
   await v3Peek(page)
-    .getByRole("menuitemradio", { name: /No folder/ })
+    .getByRole("menuitemradio", { name: /No project/ })
     .click();
-  await expect(chip).toContainText("No folder", { timeout: 15_000 });
+  await expect(chip).toContainText("No project", { timeout: 15_000 });
   await v3Peek(page)
     .getByPlaceholder("Message Default…")
     .fill("no folder please");
@@ -361,11 +370,12 @@ test("AC-6 a new chat pre-selects the last session's folder; a no-folder session
   await replyBox.fill("");
 });
 
-test("AC-5 recents persist across reload, newest first; a deleted folder is not offered and can't be picked", async ({
+test("AC-5 projects persist across reload in the order they were made; the New project dialog offers the reachable recents, never a deleted folder", async ({
   page,
 }) => {
   // Add two more folders through the dialog (each moves a folder-less thread
-  // there and joins the recents): one kept, one deleted after.
+  // there; the relay files it under that folder's project and the folder
+  // joins the recents): one kept, one deleted after.
   for (const dir of [plainDir, goneDir]) {
     await openFolderless(page, `park in ${path.basename(dir)}`);
     await panel(page).locator("[data-add-folder]").click();
@@ -373,24 +383,39 @@ test("AC-5 recents persist across reload, newest first; a deleted folder is not 
   }
   rmSync(goneDir, { recursive: true, force: true });
 
-  const chip = await draftFolderChip(page);
-  /* The menu lists the reachable recents newest first: plain (added after
-     repo's session), then repo. The deleted folder was added last, and is
-     the only thing a missing-folder check can be about: v3 leaves an
-     unreachable folder out of the menu entirely (and skips it as the
-     default pick) instead of listing it disabled. */
-  /* The chip follows the last chat (#581): that was a thread moved into the
-     folder deleted since, which is not offered, so the pick is "No folder". */
-  await expect(chip).toContainText("No folder", { timeout: 15_000 });
+  const chip = await draftProjectChip(page);
+  /* The chip follows the last chat (#581): that was parked in the folder
+     deleted since. A project is a record the company keeps, so it is still
+     one, and the menu lists all three in the order they were made. */
+  await expect(chip).toContainText("lilos-gone-c", { timeout: 15_000 });
   await chip.click();
   const items = v3Peek(page).getByRole("menuitemradio");
-  await expect(items.filter({ hasText: "lilos-plain-b" })).toHaveCount(1);
-  await expect(items.filter({ hasText: "lilos-repo-a" })).toHaveCount(1);
-  await expect(items.filter({ hasText: "lilos-gone-c" })).toHaveCount(0);
+  for (const name of ["lilos-repo-a", "lilos-plain-b", "lilos-gone-c"])
+    await expect(items.filter({ hasText: name })).toHaveCount(1);
   const order = await items.allInnerTexts();
   const at = (name: string) => order.findIndex((t) => t.includes(name));
-  expect(at("lilos-plain-b")).toBeGreaterThanOrEqual(0);
-  expect(at("lilos-plain-b")).toBeLessThan(at("lilos-repo-a"));
+  expect(at("lilos-repo-a")).toBeGreaterThanOrEqual(0);
+  expect(at("lilos-repo-a")).toBeLessThan(at("lilos-plain-b"));
+  expect(at("lilos-plain-b")).toBeLessThan(at("lilos-gone-c"));
+  await page.screenshot({ path: `${SHOTS}/ac-5-projects.png` });
+
+  /* "New project from a folder…" opens the app's own dialog; its "Found"
+     chips lead with the recents that are still on disk — the kept folders —
+     and the deleted one is not offered. */
+  await v3Peek(page)
+    .getByRole("menuitem", { name: "New project from a folder…" })
+    .click();
+  const dialog = dialogOf(page);
+  await expect(dialog).toBeVisible();
+  await expect(
+    dialog.locator(`[data-discovered="${shown(plainDir)}"]`),
+  ).toBeVisible({ timeout: 15_000 });
+  await expect(
+    dialog.locator(`[data-discovered="${shown(repoDir)}"]`),
+  ).toBeVisible();
+  await expect(
+    dialog.locator(`[data-discovered="${shown(goneDir)}"]`),
+  ).toHaveCount(0);
   await page.screenshot({ path: `${SHOTS}/ac-5-recents-missing.png` });
 });
 

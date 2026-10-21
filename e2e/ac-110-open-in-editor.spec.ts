@@ -91,7 +91,7 @@ async function sessionOnRepo(page: Page) {
     "hello — give me a session",
   );
   const badge = page.locator("[data-wsbadge]");
-  await expect(badge).toContainText("lilos-repo-110", { timeout: 15_000 });
+  await expect(badge).toContainText("direct", { timeout: 15_000 });
   return badge;
 }
 
@@ -195,7 +195,7 @@ test("AC-5 without os.open the badge is a plain label; without editors the menu 
     return route.continue();
   });
   const badge = await sessionOnRepo(page);
-  await expect(badge).toContainText("lilos-repo-110");
+  await expect(badge).toContainText("trunk");
   await expect(badge).not.toHaveRole("button");
   await expect(page.locator("[data-openpath]")).toHaveCount(0);
   await page.screenshot({ path: `${SHOTS}/ac-5-no-osopen.png` });
@@ -215,7 +215,7 @@ test("AC-5 without os.open the badge is a plain label; without editors the menu 
   });
   await page.reload();
   const badge2 = page.locator("[data-wsbadge]");
-  await expect(badge2).toContainText("lilos-repo-110", { timeout: 15_000 });
+  await expect(badge2).toContainText("direct", { timeout: 15_000 });
   await expect(badge2).toHaveRole("button");
   await badge2.click();
   const menu2 = await openMenuSettled(page);

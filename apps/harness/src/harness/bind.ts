@@ -151,7 +151,9 @@ export async function bindingFor(
   return pending;
 }
 
-/** D-#25: one conversation = one engine session. The harness alone writes
+/** D-#25: a thread is one engine session with one agent — in a project or a
+    plain chat, never a DM (the employee's channel is the relay's internal
+    routing scope only). The harness alone writes
     `engineRef` (the relay refuses it from any other peer) — reattach the
     stored ref, else `session.start` a new one and stamp it. */
 export async function bindConversation(

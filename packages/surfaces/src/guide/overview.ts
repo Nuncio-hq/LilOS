@@ -8,17 +8,19 @@ export const overview = {
 the shared workplace.
 
 What Oscar sees:
-- One desktop window: a sidebar (channels, projects, employees), DM threads
-  in the middle, and a Workbench panel that opens when a session is focused.
-- Employees in the roster are agents running on the installed engine; each
-  DM is the private channel between Oscar and one employee.
-- A thread inside a DM is one engine session: it has a title, a folder it
-  works in, a model, and its own terminal/browser/workbench surfaces.
+- One desktop window: a sidebar (channels, projects, employees), threads in
+  the middle, and a Workbench panel that opens when a session is focused.
+- Employees in the roster are agents running on the installed engine; Oscar
+  talks to one by starting a thread with it.
+- A thread is one engine session with one agent: it has a title, a model and
+  its own terminal/browser/workbench surfaces. It lives in a project — a
+  folder the company works in — or is a plain chat with no folder.
 
 Tools that apply:
 - \`context\` — who and where the calling session is right now.
 - \`guide\` — this documentation (call with a topic for a page).
 - \`team_list\` — the company roster.
-- Everything else hangs off the session's surfaces: \`thread_*\` (the DM),
-  \`workbench_*\`, \`browser_*\`, \`terminal_*\`.`,
+- \`project_list\` — the company's projects (folders).
+- Everything else hangs off the session's surfaces: \`thread_*\` (your
+  threads), \`project_*\`, \`workbench_*\`, \`browser_*\`, \`terminal_*\`.`,
 };

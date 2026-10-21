@@ -38,6 +38,14 @@ import {
   WorkbenchOpenTarget,
   WorkspaceIntent,
 } from "./domain";
+import {
+  Project,
+  ProjectResult,
+  ProjectsCreateParams,
+  ProjectsListParams,
+  ProjectsListResult,
+  ProjectUpsertedEvent,
+} from "./project";
 import { UpdateFeed, UpdateRelease } from "./update";
 import { APP_PROTOCOL_VERSION } from "./version";
 import {
@@ -283,6 +291,13 @@ export const appProtocolSchemas = {
   ChannelRemovedEvent,
   EmployeeUpsertedEvent,
   EmployeeRemovedEvent,
+  /* projects (D-#771) */
+  Project,
+  ProjectsListParams,
+  ProjectsListResult,
+  ProjectsCreateParams,
+  ProjectResult,
+  ProjectUpsertedEvent,
   ConversationModelRequestedEvent,
   ProfileUpdatedEvent,
   SettingsGetParams,

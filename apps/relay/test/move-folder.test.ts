@@ -1,3 +1,4 @@
+import { ConversationResult, ProjectUpsertedEvent } from "@lilos/contracts/app";
 import { describe, expect, it } from "vitest";
 import type { createRelay, RelayWsPeer } from "../src/session";
 import {
@@ -173,6 +174,40 @@ describe("conversations.moveFolder (#581)", () => {
     expect(note.conversationId).toBe(conversation.id);
     expect(note.text).toContain("~/code/app");
     expect(channel.id).toBeTruthy();
+  });
+
+  it("D-#771 files the moved thread under the destination folder's project, created on first use", async () => {
+    const relay = newRelay({ homeDir: "/Users/ada" });
+    const user = await helloed(relay);
+    const host = await fakeHost(relay);
+    const { conversation } = await setupConversation(user);
+    user.frames.length = 0;
+
+    await moveFolder(
+      user,
+      host,
+      { conversationId: conversation.id, path: "~/code/app" },
+      async () => {
+        await hostUpdate(host, {
+          conversationId: conversation.id,
+          cwd: "~/code/app",
+        });
+        await host.answer("conversations.moveFolder", {
+          result: { cwd: "/Users/ada/code/app", engineMoved: true },
+        });
+      },
+    );
+
+    // A folder-less thread is a plain chat; moving it into a folder files
+    // it, announcing the project the folder just became.
+    const upserted = eventsNamed(user.frames, "project.upserted");
+    expect(upserted).toHaveLength(1);
+    const { project } = ProjectUpsertedEvent.parse(upserted[0].params);
+    expect(project.folder).toBe("/Users/ada/code/app");
+    const moved = ConversationResult.parse(
+      resultOf(user.frames, lastId()).result,
+    ).conversation;
+    expect(moved).toMatchObject({ cwd: "~/code/app", projectId: project.id });
   });
 
   it("an engine that could not re-home reports the next-turn wording, not a fake move", async () => {

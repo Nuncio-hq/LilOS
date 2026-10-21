@@ -8,6 +8,7 @@ import {
   agentStatus,
   agentThread,
   agentTicket,
+  askTag,
   FORMER_AGENT,
   goalProgress,
   projectOf,
@@ -162,8 +163,8 @@ export function V3Home({ data, go, act }: V3PageProps) {
                   {ask.title}
                 </div>
                 <div className="mt-px text-[13px] text-muted-foreground">
-                  {ask.ticketId ?? "Chat"} · {agentNameOf(data, ask.from)} ·
-                  waiting {ago(ask.waiting)}
+                  {askTag(data, ask)} · {agentNameOf(data, ask.from)} · waiting{" "}
+                  {ago(ask.waiting)}
                 </div>
               </div>
               {/* Buttons act on the ask; the row itself opens the full page. */}

@@ -300,6 +300,20 @@ export async function handleRequest(
       return { ok: true };
     case "employees.list":
       return { employees: client.employees.get() };
+    case "projects.list":
+      return { projects: client.projects.get() };
+    case "projects.create": {
+      const folder = as<string>(params, "folder");
+      if (!folder) throw new RelayError("bad params", "bad_params");
+      const name = as<string>(params, "name");
+      const about = as<string>(params, "about");
+      return {
+        project: client.projectAt(folder, {
+          ...(name ? { name } : {}),
+          ...(about ? { about } : {}),
+        }),
+      };
+    }
     case "conversations.list":
       return { conversations: client.conversations.get() };
     case "summaries.list":

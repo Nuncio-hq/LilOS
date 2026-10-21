@@ -353,9 +353,9 @@ export type SessionAskResult = z.infer<typeof SessionAskResult>;
 /* D-#179: subagent runs and background jobs exist only as engine events
    (`subagent.*`, `job.*`) and `jobs.*` answers — LilOS stores no job or
    subagent state. A helper that is another employee surfaces as
-   `subagent.started.employee` + a session link in its DM (D-#25). Job output
-   lives in engine memory (a rolling tail); after a reconnect the list comes
-   from `jobs.list`, never a LilOS copy. Not: a LilOS-side jobs/subagents
+   `subagent.started.employee` + a session link to its thread (D-#25). Job
+   output lives in engine memory (a rolling tail); after a reconnect the list
+   comes from `jobs.list`, never a LilOS copy. Not: a LilOS-side jobs/subagents
    table, or a copy of a helper's turns. */
 /** One row of `jobs.list` — the engine-owned truth a client re-reads after
     a reconnect (job.* events are the live stream, this is the snapshot). */

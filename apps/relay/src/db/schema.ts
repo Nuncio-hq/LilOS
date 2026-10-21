@@ -9,8 +9,9 @@ import {
 
 /**
  * Relay storage: LilOS domain objects only (D-#25). The relay owns
- * employees, DM channels, conversations, and visible messages — it does NOT
- * store engine transcripts (tools, reasoning); the engine owns those.
+ * employees, their internal channels, projects, conversations, and visible
+ * messages — it does NOT store engine transcripts (tools, reasoning); the
+ * engine owns those.
  * Not: a transcript copy in LilOS — it would drift from the engine's, and
  * sensitive reasoning data would sit at rest here. `schema.test.ts` fails
  * on any transcript-shaped column.
@@ -50,6 +51,29 @@ export const channels = sqliteTable(
   (t) => [uniqueIndex("channels_dm_employee").on(t.kind, t.employeeId)],
 );
 
+/**
+ * Projects (D-#771): a folder the company works in. `folder` is an absolute
+ * path and unique — one project per folder — and `key` is the unique short
+ * uppercase tag. Rows are only ever created by the relay itself (first use
+ * of a folder, `projects.create`); nothing renames or deletes them yet, so
+ * a thread's `project_id` never dangles.
+ */
+export const projects = sqliteTable(
+  "projects",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    key: text("key").notNull(),
+    folder: text("folder").notNull(),
+    about: text("about").notNull().default(""),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [
+    uniqueIndex("projects_key").on(t.key),
+    uniqueIndex("projects_folder").on(t.folder),
+  ],
+);
+
 export const conversations = sqliteTable(
   "conversations",
   {
@@ -75,6 +99,9 @@ export const conversations = sqliteTable(
     /** Folder the session runs in (issue #113); null = harness default dir.
         For a workstream open (#156) this is the worktree path. */
     cwd: text("cwd"),
+    /** The project the thread lives in (D-#771); null = a plain chat.
+        Relay-set from the folder at open/move (and the boot backfill). */
+    projectId: text("project_id").references(() => projects.id),
     /** Workstream mode stamped at open (#156): JSON WorkspaceIntent; null =
         direct folder / just chat. */
     workspace: text("workspace"),
@@ -109,13 +136,13 @@ export const conversations = sqliteTable(
         never crosses the wire; it's derived client-side. */
     life: text("life", { enum: ["open", "closed"] }),
     /** The last turn's failure (#419): JSON TurnFailure {kind, text} —
-        the DM session row's alert card; host-written, cleared on the
+        the thread row's alert card; host-written, cleared on the
         next `turn.started`. */
     turnFailure: text("turn_failure"),
-    /** The last turn ended stopped (#583): the DM session row's "stopped"
+    /** The last turn ended stopped (#583): the thread row's "stopped"
         word; same host-written lifecycle as `turn_failure`. */
     turnStopped: integer("turn_stopped", { mode: "boolean" }),
-    /** Running background-job count (#583): the DM session row's
+    /** Running background-job count (#583): the thread row's
         "N in background" badge; same host-written lifecycle. */
     bgJobs: integer("bg_jobs"),
     /** The user's read watermark (#563): the channel seq up to which they have
@@ -138,12 +165,15 @@ export const conversations = sqliteTable(
     scheduled: text("scheduled"),
     createdAt: integer("created_at").notNull(),
   },
-  (t) => [index("conversations_channel").on(t.channelId)],
+  (t) => [
+    index("conversations_channel").on(t.channelId),
+    index("conversations_project").on(t.projectId),
+  ],
 );
 
 /**
  * Scheduled tasks (#136): one row per employee task — a prompt that opens a
- * new DM session on a schedule. The relay owns the record (D-#25); the
+ * new thread on a schedule. The relay owns the record (D-#25); the
  * engine host owns the clock: `last_fired_at` is its "runs after this"
  * anchor and `requested_at` carries Run-now clicks, so a slept-through slot
  * lands once on the next tick and a click while the host was down still
@@ -168,7 +198,7 @@ export const scheduledTasks = sqliteTable(
     paused: integer("paused", { mode: "boolean" }).notNull().default(false),
     lastFiredAt: integer("last_fired_at"),
     requestedAt: integer("requested_at"),
-    /** JSON `ScheduledRunRecord` — the latest run's DM session + outcome. */
+    /** JSON `ScheduledRunRecord` — the latest run's thread + outcome. */
     lastRun: text("last_run"),
     /** Epoch ms a run was skipped: the previous run was still going (AC-4). */
     skippedAt: integer("skipped_at"),

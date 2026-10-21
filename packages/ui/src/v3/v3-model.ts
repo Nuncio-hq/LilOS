@@ -1,4 +1,4 @@
-import type { V3Data } from "./v3-data-types";
+import type { V3Ask, V3Data } from "./v3-data-types";
 import type { V3Agent, V3Status, V3Thread, V3Ticket } from "./v3-types";
 
 /* Lookups every v3 page shares. Pure; the shell owns the data. */
@@ -25,6 +25,21 @@ export const ticketOf = (d: V3Data, id: string): V3Ticket | undefined =>
 
 export const projectOf = (d: V3Data, id: string) =>
   d.projects.find((p) => p.id === id);
+
+/** What a thread is filed under, as a short label: its ticket, else the
+   project it lives in, else "Chat" (a plain chat, in no project). The trail,
+   the rows and the cards all say it the same way. */
+export const threadTag = (d: V3Data, t: V3Thread): string =>
+  t.ticketId ??
+  (t.projectId ? projectOf(d, t.projectId)?.name : undefined) ??
+  "Chat";
+
+/** The same label for an ask: its ticket, else where the thread it was asked
+   in lives. */
+export const askTag = (d: V3Data, a: V3Ask): string => {
+  const thread = d.threads.find((t) => t.id === a.threadId);
+  return a.ticketId ?? (thread ? threadTag(d, thread) : "Chat");
+};
 
 export const goalOf = (d: V3Data, id: string) =>
   d.goals.find((g) => g.id === id);

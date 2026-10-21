@@ -5,8 +5,8 @@ import { describe, expect, it } from "vitest";
 
 /* #247: the real app adopts the prototype's chrome — Home starts under the
    status bar (no nav header, the Mac moved to Settings), the Settings Mac
-   row carries the live link and opens the Mac sheet, and DM rows keep the
-   "!" needs-you badge + trimmed meta. These are navigator-prop wirings in
+   row carries the live link and opens the Mac sheet, and thread rows keep
+   the "!" needs-you badge + trimmed meta. These are navigator-prop wirings in
    repo files — the same kind of repo-state assertion release.test.ts makes
    for the release path. */
 
@@ -59,23 +59,26 @@ describe("#247 AC-2 — Settings Mac row carries the live link", () => {
   });
 });
 
-describe("#247 AC-5 — DM rows keep the needs-you badge + trimmed meta", () => {
-  /* Landed with the DM screen itself (#235/#292): pinned here so a later
-     ui-native refactor can't quietly regress it. */
-  it("StateMark draws needs-you and the meta line is branch-or-folder", () => {
+describe("#247 AC-5 — thread rows keep the needs-you badge + trimmed meta", () => {
+  /* Landed with the agent's thread list itself (#235/#292): pinned here so a
+     later ui-native refactor can't quietly regress it. D-#771: the meta line
+     names the thread's project and the branch it works on. */
+  it("StateMark draws needs-you and the meta line is project-then-branch", () => {
     const dm = read("packages/ui-native/src/employees/dm-screen.tsx");
     const mark = dm.slice(dm.indexOf("function StateMark"));
     expect(mark).toContain('state === "needs-you"');
     expect(mark).toContain("bg-primary-foreground"); // the drawn "!" strokes
-    expect(dm).toContain("t.branch ?? t.folder");
+    expect(dm).toContain('<MetaChip icon="folder" text={t.project} />');
+    expect(dm).toContain('icon="arrow.triangle.branch" text={t.branch}');
   });
 });
 
-describe("#594 — Activity Open pushes DM then Thread", () => {
+describe("#594 — Activity Open pushes the thread list then Thread", () => {
   /* #594 AC-1: a request's **Open** landed on the employee's thread list and
      left the asking thread to hunt for by hand. It now resolves the channel
-     via `askThreadTarget` and pushes the DM under the asking thread — the
-     same landing a plan's Review already used, and Back returns to the DM. */
+     via `askThreadTarget` and pushes the thread list under the asking
+     thread — the same landing a plan's Review already used, and Back
+     returns to the list. */
   const home = read("apps/mobile/src/screens/home.tsx");
   const activity = home.slice(home.indexOf("export function Activity"));
 
@@ -90,7 +93,7 @@ describe("#594 — Activity Open pushes DM then Thread", () => {
     expect(thread).toBeGreaterThan(dm);
   });
 
-  it("Back returns to the DM — Thread is pushed, never reset or replaced", () => {
+  it("Back returns to the thread list — Thread is pushed, never reset or replaced", () => {
     expect(activity).not.toContain("nav.reset");
     expect(activity).not.toContain("nav.replace");
   });
@@ -126,12 +129,12 @@ describe("#373 — the chat nav bar paints a blur backdrop under itself", () => 
   });
 });
 
-describe("#596 — push/deep links stack DM under Thread; loading & gone states", () => {
+describe("#596 — push/deep links stack the thread list under Thread; loading & gone states", () => {
   const push = read("apps/mobile/src/push.ts");
   const thread = read("apps/mobile/src/screens/thread.tsx");
 
-  it("AC-1 the tap path pushes the DM before the Thread (Back → DM)", () => {
-    /* The DM can't stack until the wire names its employee — the tap waits
+  it("AC-1 the tap path pushes the thread list before the Thread (Back → list)", () => {
+    /* The list can't stack until the wire names its employee — the tap waits
        on deepThreadTarget, never a bare Thread. */
     expect(push).toContain("deepThreadTarget");
     const dmAt = push.indexOf('navigate("Dm"');

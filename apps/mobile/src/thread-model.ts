@@ -47,7 +47,7 @@ import {
 
 /** #181: engine `employeeRef`/`sessionRef` -> the row's employee + thread
    link. The default keeps refs as plain labels (unknown profiles, the
-   helper's DM not yet seen). */
+   helper's thread not yet seen). */
 type ResolveEmployee = (link: {
   employeeRef: string;
   sessionRef: string;
@@ -764,7 +764,7 @@ export function toThreadDetail(opts: {
       .map((m) => m.text.trim()),
     ...(opts.rewound?.texts ?? []),
   ]);
-  /* #181 AC-2: a helper that is another employee links to their DM thread —
+  /* #181 AC-2: a helper that is another employee links to their thread —
      the engine's profile ref -> Employee.profile, its sessionRef -> the
      conversation bound to that session. */
   const resolveEmployee: ResolveEmployee = ({ employeeRef, sessionRef }) => {

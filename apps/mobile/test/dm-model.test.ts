@@ -3,6 +3,7 @@ import type {
   Ask,
   Conversation,
   ConversationSummary,
+  Project,
   RecentFolder,
 } from "@lilos/contracts/app";
 import { describe, expect, it } from "vitest";
@@ -21,8 +22,8 @@ import {
 } from "../src/dm-model";
 
 /* dm-model maps the relay's ConversationSummary rows (+ open asks, pending
-   sends) onto the ui-native DM list: Needs you / Working / Done. Pure module —
-   every rule below is pinned by a test. */
+   sends) onto the ui-native thread list of one agent: Needs you / Working /
+   Done. Pure module — every rule below is pinned by a test. */
 
 const T0 = Date.parse("2026-09-29T12:00:00Z");
 
@@ -111,16 +112,27 @@ const ask = (id: string, over: Partial<Ask> = {}): Ask => ({
   ...over,
 });
 
+/* D-#771: a project is the folder a thread lives in; the row names it. */
+const LIL: Project = {
+  id: "p-lil",
+  name: "LilOS",
+  key: "LIL",
+  folder: "/work/LilOS",
+  about: "",
+  createdAt: T0,
+};
+
 const CTX = {
   channelId: "ch-dm",
   employee: { id: "builder", name: "Builder", tone: "blue" as const },
   openAsks: [] as Ask[],
   pending: new Map<string, { conversation: Conversation; root: AppMessage }>(),
+  projects: [LIL],
   now: T0,
 };
 
-describe("AC-1: threads come from conversations.summaries for the DM channel, grouped by state", () => {
-  it("AC-1 keeps only the DM channel's conversations, oldest first (the screen reverses per group)", () => {
+describe("AC-1: threads come from conversations.summaries for the agent's channel, grouped by state", () => {
+  it("AC-1 keeps only the agent's channel conversations, oldest first (the screen reverses per group)", () => {
     const turns = toSessionTurns(
       [
         summary("new", {}, { last: { createdAt: T0 } }),
@@ -200,12 +212,12 @@ describe("AC-1: threads come from conversations.summaries for the DM channel, gr
     expect(turns).toHaveLength(0);
   });
 
-  it("AC-1 carries title, last words, folder and reply count on the row", () => {
+  it("AC-1 carries title, last words, project and reply count on the row", () => {
     const turns = toSessionTurns(
       [
         summary(
           "c1",
-          { title: "Fix the flapper", cwd: "~/Desktop/LilOS" },
+          { title: "Fix the flapper", cwd: LIL.folder, projectId: LIL.id },
           {
             root: { text: "please fix" },
             last: { authorKind: "employee", text: "fixed it" },
@@ -219,8 +231,39 @@ describe("AC-1: threads come from conversations.summaries for the DM channel, gr
     expect(t?.title).toBe("Fix the flapper");
     expect(t?.prompt).toBe("please fix");
     expect(t?.preview).toBe("fixed it");
-    expect(t?.folder).toBe("LilOS");
+    expect(t?.project).toBe("LilOS");
     expect(t?.replies).toBe(3);
+  });
+
+  it("D-#771: a plain chat names no project; an id the list lacks names none either", () => {
+    const turns = toSessionTurns(
+      [
+        summary("plain", { title: "Just chatting" }),
+        summary("unknown", { projectId: "p-not-loaded-yet" }),
+      ],
+      CTX,
+    );
+    expect(turns.map((t) => t.project)).toEqual([undefined, undefined]);
+    expect(Object.keys(turns[0] ?? {})).not.toContain("project");
+  });
+
+  it("D-#771: a send still landing shows its project too (pending open)", () => {
+    const opened = conv("c-new", { projectId: LIL.id, cwd: LIL.folder });
+    const root = msg("c-new-root", { conversationId: "c-new", text: "hello" });
+    const turns = toSessionTurns([], {
+      ...CTX,
+      pending: new Map([["c-new", { conversation: opened, root }]]),
+    });
+    expect(turns[0]?.project).toBe("LilOS");
+  });
+
+  it("D-#771: no projects known yet (the list is still loading) names none", () => {
+    const { projects: _projects, ...noProjects } = CTX;
+    const turns = toSessionTurns(
+      [summary("c1", { projectId: LIL.id })],
+      noProjects,
+    );
+    expect(turns[0]?.project).toBeUndefined();
   });
 });
 
@@ -517,14 +560,17 @@ describe("AC-4: folder picker lists real folders + the three workspace modes", (
     ).toEqual({});
   });
 
-  it("AC-4 a workstream thread row labels the repo + its ws/ branch", () => {
+  it("AC-4 a workstream thread row names its project + its ws/ branch", () => {
+    /* The relay files a workstream thread under the repo folder's project,
+       not under the worktree its cwd points at. */
     const turns = toSessionTurns(
       [
         summary("c-ws", {
-          cwd: "~/Desktop/Work/LilOS/.lilos/wt/fix-login",
+          projectId: LIL.id,
+          cwd: "/work/LilOS/.lilos/wt/fix-login",
           workspace: {
             mode: "new",
-            repoPath: "~/Desktop/Work/LilOS",
+            repoPath: "/work/LilOS",
             branch: "ws/fix-login",
             base: "main",
           },
@@ -532,12 +578,12 @@ describe("AC-4: folder picker lists real folders + the three workspace modes", (
       ],
       CTX,
     );
-    expect(turns[0]?.folder).toBe("LilOS");
+    expect(turns[0]?.project).toBe("LilOS");
     expect(turns[0]?.branch).toBe("ws/fix-login");
   });
 });
 
-describe("AC-5: an empty DM renders the empty-thread state", () => {
+describe("AC-5: an agent with no threads renders the empty-thread state", () => {
   it("AC-5 yields no rows and an Idle header when the channel has no threads", () => {
     const turns = toSessionTurns([], CTX);
     expect(turns).toEqual([]);
@@ -607,7 +653,7 @@ describe("dm-model helpers", () => {
     ).toBe("working");
   });
 
-  it("#592 AC-1: the DM row carries the failure kind + reason", () => {
+  it("#592 AC-1: the thread row carries the failure kind + reason", () => {
     const turns = toSessionTurns(
       [
         summary("c1", {
@@ -802,7 +848,7 @@ describe("#346 AC-4: the ring reads real session life", () => {
   });
 });
 
-/* #592 reviewer fix — a failed or stopped thread is not Done: the DM
+/* #592 reviewer fix — a failed or stopped thread is not Done: the list
    groups them under "Didn't finish" above Done, and a sleep interrupt
    reads "Mac went to sleep" (amber, same copy as the harness's post). */
 import {

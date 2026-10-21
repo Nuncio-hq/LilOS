@@ -57,7 +57,7 @@ export async function refreshConversationPrs(
   }
 }
 
-/** Refresh each conversation's PRs (a DM list opening). Bounded by the
+/** Refresh each conversation's PRs (a thread list opening). Bounded by the
    thread count the employee has; in-flight calls dedupe themselves. */
 export function refreshPrsFor(
   client: AppClient,

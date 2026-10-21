@@ -100,18 +100,19 @@ async function settled(page: Page) {
 const draftBox = (page: Page) =>
   v3Peek(page).getByPlaceholder(`Message ${DEFAULT_AGENT.name}…`);
 
-/** The draft with Default open, its Folder chip on the fixture repo (which
-    joins the app's recents over the relay first; the page reloads, the app
-    reads them at mount). */
+/** The draft with Default open, its Project chip on the fixture repo (which
+    becomes a project over the relay first; the page reloads, the app reads
+    the company at mount). */
 async function openDraftInRepo(page: Page) {
   await skipFirstRun(page);
   await page.goto(`${stack.webUrl}/`);
   await relayRpc(page, stack, "folders.add", { path: repoDir });
+  await relayRpc(page, stack, "projects.create", { folder: repoDir });
   await page.goto(
     `${stack.webUrl}/#?page=threads&open=newchat:${DEFAULT_AGENT.id}`,
   );
   await page.reload();
-  const chip = v3Peek(page).getByTitle(/^Folder · /);
+  const chip = v3Peek(page).getByTitle(/^Project · /);
   await expect(chip).toBeVisible({ timeout: 30_000 });
   await chip.click();
   await v3Peek(page)
@@ -175,15 +176,18 @@ function waitForFileSearch(page: Page, query: string) {
 test("AC-2 with no folder picked the @ menu has an Employees section only (D-#19)", async ({
   page,
 }) => {
-  /* A company with no recent folders: the draft shows no Folder chip, so the
-     chat has no session folder — and no Files section to search. This runs
-     first, before any test adds the fixture repo to the recents. */
+  /* A company with no projects: the draft's Project chip says "No project",
+     so the chat has no session folder — and no Files section to search. This
+     runs first, before any test makes the fixture repo a project. */
   await skipFirstRun(page);
   await page.goto(`${stack.webUrl}/#?page=threads&open=newchat:default`);
   await expect(v3Peek(page).getByPlaceholder("Message Default…")).toBeVisible({
     timeout: 30_000,
   });
-  await expect(v3Peek(page).getByTitle(/^Folder · /)).toHaveCount(0);
+  await expect(v3Peek(page).getByTitle(/^Project · /)).toHaveAttribute(
+    "title",
+    "Project · none",
+  );
   await startChat(page, stack.webUrl, DEFAULT_AGENT, "open a thread");
   await settled(page);
   const mention = replyBox(page);
@@ -331,14 +335,14 @@ test("AC-2 the first message's @ menu has People only without a folder to search
   await expect(
     page.locator('[data-mention-section="employees"]'),
   ).toBeVisible();
-  // The chip says "No folder" or is absent: either way there is nothing to
+  // The chip says "No project" or is absent: either way there is nothing to
   // search, so no Files section.
-  const chip = v3Peek(page).getByTitle(/^Folder · /);
+  const chip = v3Peek(page).getByTitle(/^Project · /);
   if (await chip.count()) {
     await draftBox(page).press("Escape");
     await chip.click();
     await v3Peek(page)
-      .getByRole("menuitemradio", { name: /No folder/ })
+      .getByRole("menuitemradio", { name: /No project/ })
       .click();
     await draftBox(page).fill("");
     await draftBox(page).pressSequentially("@");

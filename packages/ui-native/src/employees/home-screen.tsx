@@ -44,7 +44,7 @@ export function EmployeesHomeScreen({
   onOpenMac: () => void;
   onOpenEmployee: (id: string) => void;
   onOpenChannel: (id: string) => void;
-  /* The cross-employee Sessions list — a pinned entry at the top of Home,
+  /* The cross-agent thread list — a pinned entry at the top of Home,
      like web's sidebar item. `count` is the needs-you total. */
   sessions?: { count?: number; onOpen: () => void };
   /** #591: second line under "Can't reach" — the last-known disclosure
@@ -102,14 +102,14 @@ export function EmployeesHomeScreen({
       {sessions && (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`Sessions${sessions.count ? `, ${sessions.count} need you` : ""}`}
+          accessibilityLabel={`Threads${sessions.count ? `, ${sessions.count} need you` : ""}`}
           onPress={sessions.onOpen}
           className="mx-4 mt-2 flex-row items-center gap-3 rounded-2xl bg-card px-4 py-3 active:opacity-70"
           style={{ borderCurve: "continuous" }}
         >
           <Icon name="checklist" size={17} weight="medium" />
           <AppText size="sm" weight="semibold" className="flex-1">
-            Sessions
+            Threads
           </AppText>
           {sessions.count ? (
             <View className="min-w-5 items-center rounded-full bg-primary px-1.5 py-0.5">

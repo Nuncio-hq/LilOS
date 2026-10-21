@@ -4,13 +4,14 @@ import type {
   Conversation,
   ConversationSummary,
   Employee,
+  Project,
 } from "@lilos/contracts/app";
 import type {
   Approval,
   EmployeeRow,
   SessionListGroups,
 } from "@lilos/ui-native";
-import { toneOf } from "./mapping";
+import { projectNameOf, toneOf } from "./mapping";
 
 /**
  * Home's derivation from wire data (#155): the relay's employees/channels/
@@ -23,6 +24,8 @@ export type HomeWire = {
   employees: Employee[];
   channels: AppChannel[];
   conversations: Conversation[];
+  /* D-#771: the thread rows' project labels. */
+  projects: Project[];
   summaries: ConversationSummary[];
   asks: Ask[];
   /* #591: false = everything below is last-known (cached) state — rows
@@ -37,7 +40,9 @@ export function openAsks(asks: Ask[]): Ask[] {
     .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
 }
 
-/** The one DM channel an employee owns (`channels.openDm` is get-or-create). */
+/** The one per-agent channel an employee owns (`channels.openDm` is
+    get-or-create). The wire keeps the `dm` name for compatibility; the
+    channel is internal routing, never shown as a DM (D-#771). */
 export function dmChannelFor(
   channels: AppChannel[],
   employeeId: string,
@@ -66,8 +71,8 @@ function ageLabel(createdAt: number, nowMs: number): string {
   return `${Math.floor(hours / 24)}d`;
 }
 
-/** #595: where a plan ask's **Review** lands — the employee's DM pushed
-    under the asking thread (Back returns to the DM). Undefined when the
+/** #595: where a plan ask's **Review** lands — the employee's thread list
+    pushed under the asking thread (Back returns to it). Undefined when the
     ask's channel is gone from the wire — the surface falls back to
     Activity instead of a dead end. */
 export function askThreadTarget(
@@ -81,11 +86,11 @@ export function askThreadTarget(
   return { employeeId, conversationId: ask.conversationId };
 }
 
-/** #596: where a push/deep link lands — the employee's DM pushed under the
-   thread, the same landing an ask's Open/Review takes (Back returns to the
-   DM). Undefined while the wire can't name the conversation's employee —
-   the caller then pushes Thread alone and its loading/gone states cover
-   the gap. */
+/** #596: where a push/deep link lands — the employee's thread list pushed
+   under the thread, the same landing an ask's Open/Review takes (Back
+   returns to the list). Undefined while the wire can't name the
+   conversation's employee — the caller then pushes Thread alone and its
+   loading/gone states cover the gap. */
 export function deepThreadTarget(
   conversationId: string,
   wire: Pick<HomeWire, "channels" | "conversations">,
@@ -146,7 +151,7 @@ export function toApproval(ask: Ask, wire: HomeWire, nowMs: number): Approval {
 }
 
 /**
- * An employee as a Home row: any open ask on its DM channel wins over an
+ * An employee as a Home row: any open ask on its channel wins over an
  * active turn, which wins over the stored `status`/`now` the relay keeps.
  * Several asks collapse to "N need you" like the prototype's `statusOf`.
  */
@@ -167,8 +172,8 @@ export function toEmployeeRow(
     name: e.name,
     role: e.role,
     tone: toneOf(e.id),
-    /* #563: any of this DM's threads finished past the read watermark dots
-       the employee — opening the thread clears it on every device. */
+    /* #563: any of this agent's threads finished past the read watermark
+       dots the employee — opening the thread clears it on every device. */
     unseen:
       (channel !== undefined &&
         wire.conversations.some(
@@ -225,7 +230,7 @@ export interface ChannelSubscriber {
 /**
  * `channel.subscribe` is the only relay path `ask.opened`/`ask.resolved`/
  * `conversation.updated`/`message.created` notifications ride on, so Home
- * subscribes every DM channel. `channelMessages` is idempotent and its
+ * subscribes every per-agent channel. `channelMessages` is idempotent and its
  * subscription intent survives reconnects — safe to call on every refresh.
  */
 export function ensureChannelSubscriptions(
@@ -235,11 +240,11 @@ export function ensureChannelSubscriptions(
   for (const channel of channels) client.channelMessages(channel.id);
 }
 
-/* The cross-employee Sessions screen (web: sessions.ts / SessionsHome):
-   every non-archived DM conversation in one list — open asks first ("needs
-   you"), then active sessions ("working"), then the rest, with the unread
-   watermark (finishedSeq > readSeq) leading "recently finished". The group
-   split follows the same rules `toEmployeeRow` applies per employee, so the
+/* The cross-agent thread list (web: sessions.ts / SessionsHome): every
+   non-archived thread in one list — open asks first ("needs you"), then
+   active threads ("working"), then the rest, with the unread watermark
+   (finishedSeq > readSeq) leading "recently finished". The group split
+   follows the same rules `toEmployeeRow` applies per employee, so the
    needs-you count is the sum of the employee ask rows. */
 export function toSessionGroups(
   wire: HomeWire,
@@ -266,13 +271,14 @@ export function toSessionGroups(
     const employee = employeeId ? empById.get(employeeId) : undefined;
     if (!employee) continue;
     const ask = asksByConv.get(c.id)?.[0];
+    const project = projectNameOf(c, wire.projects);
     const base = {
       id: c.id,
       employeeId: employee.id,
       employeeName: employee.name,
       tone: toneOf(employee.id),
       title: sessionLabel(c.id, wire),
-      folder: c.cwd,
+      ...(project ? { project } : {}),
       when: ageLabel(lastOf(c.id) || c.createdAt, nowMs),
       unread: c.finishedSeq > c.readSeq,
     };

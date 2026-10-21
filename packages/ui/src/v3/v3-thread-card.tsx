@@ -5,7 +5,7 @@ import { Btn, Meter, Spinner, TicketId, useTick } from "./v3-bits";
 import type { V3Data } from "./v3-data-types";
 import { elapsedAt, streamTail, ThreadPill, turnCount } from "./v3-live";
 import { AgentAvatar } from "./v3-marks";
-import { agentOf, FORMER_AGENT } from "./v3-model";
+import { agentOf, FORMER_AGENT, threadTag } from "./v3-model";
 import { useOpenRecord } from "./v3-open-record";
 import type { V3PageProps } from "./v3-page-types";
 import { viaOf } from "./v3-rows";
@@ -212,7 +212,7 @@ export function ThreadCard({
             className="mr-1.5 inline-block size-[7px] rounded-full bg-sky-600 dark:bg-sky-400"
           />
         )}
-        <TicketId id={ticketId ?? "Chat"} className="mr-2 font-normal" />
+        <TicketId id={threadTag(data, t)} className="mr-2 font-normal" />
         {t.title}
       </div>
 

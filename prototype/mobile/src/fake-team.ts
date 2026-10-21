@@ -194,7 +194,7 @@ export const PROVIDERS: ModelProviderRow[] = [
   },
 ];
 
-/** The next DM session's pick: starts at the employee default (web rule). */
+/** The next thread's pick: starts at the employee default (web rule). */
 /** Folders sessions can run in; "Other folder on the Mac…" adds to it. */
 export const $folders = atom<FolderOption[]>(FOLDERS);
 
@@ -230,7 +230,8 @@ export const APPROVALS: Approval[] = [
     employee: "Reviewer",
     tone: "violet",
     session: "ac-80 flake",
-    reason: "Wants to re-run the flaky DM identity test 20× to prove the fix.",
+    reason:
+      "Wants to re-run the flaky thread identity test 20× to prove the fix.",
     command: "bunx playwright test ac-80 --repeat-each 20",
     age: "2m",
   },
@@ -589,7 +590,7 @@ export const THREADS: ThreadDetail[] = [
             id: "1",
             tool: "terminal",
             arg: "gh run view 36304038507 --log-failed",
-            output: "ac-83 › DM feed row avatar · timeout 30000ms",
+            output: "ac-83 › thread feed row avatar · timeout 30000ms",
           },
           {
             id: "2",
@@ -666,7 +667,7 @@ export const THREADS: ThreadDetail[] = [
         kind: "user",
         id: "u1",
         time: "17:02",
-        text: "Cache the embedding lookups — the DM search re-fetches every keystroke.",
+        text: "Cache the embedding lookups — the thread search re-fetches every keystroke.",
       },
       {
         kind: "agent",
@@ -708,7 +709,7 @@ export const THREADS: ThreadDetail[] = [
     prs: [
       {
         number: 86,
-        title: "DM feed: avatar above the name row",
+        title: "Thread feed: avatar above the name row",
         status: "open",
         checks: "pending",
       },
@@ -733,7 +734,7 @@ export const THREADS: ThreadDetail[] = [
             tool: "terminal",
             arg: "git log -3 --oneline -- e2e/ac-80.spec.ts",
             output:
-              "982f9ab DM feed row: avatar sits a line above\n5536c54 DM: user's own avatar is a faint grey Y",
+              "982f9ab thread feed row: avatar sits a line above\n5536c54 thread: user's own avatar is a faint grey Y",
           },
           {
             id: "2",

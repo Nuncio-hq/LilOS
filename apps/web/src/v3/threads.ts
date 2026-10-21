@@ -84,8 +84,9 @@ export interface ThreadSources {
   asks: readonly Ask[];
 }
 
-/** The employee a conversation belongs to: its DM channel's one employee. For
-    one conversation; a pass over many builds `ownersOf` once instead. */
+/** The employee a conversation belongs to: the one its channel routes for
+    (the channel is internal routing, never a place, D-#25). For one
+    conversation; a pass over many builds `ownersOf` once instead. */
 export function employeeOfConversation(
   c: Conversation,
   channels: readonly AppChannel[],
@@ -136,13 +137,14 @@ export function v3Asks(src: ThreadSources): V3Ask[] {
 }
 
 /** Each agent's newest chat by when it began (archived ones count: the old
-    home composer followed the last session whatever became of it): where it
-    ran, and, from the newest chat whose first message you wrote (a scheduled
-    run's was not), that message. The new-chat box starts in that folder (no
-    `cwd` is "No folder") and ↑ brings the message back (#104, #581). */
+    home composer followed the last session whatever became of it): the
+    project it lived in and, from the newest chat whose first message you
+    wrote (a scheduled run's was not), that message. The new-chat box starts
+    in that project (a plain chat has none, so "No project") and ↑ brings the
+    message back (#104, #581, D-#771). */
 export function lastChats(
   src: ThreadSources,
-): Map<string, { folder?: string; opener?: string }> {
+): Map<string, { projectId?: string; opener?: string }> {
   const summaries = new Map(src.summaries.map((s) => [s.conversation.id, s]));
   const owners = ownersOf(src.channels);
   const byAgent = new Map<string, Conversation[]>();
@@ -153,14 +155,14 @@ export function lastChats(
     if (list) list.push(c);
     else byAgent.set(agentId, [c]);
   }
-  const out = new Map<string, { folder?: string; opener?: string }>();
+  const out = new Map<string, { projectId?: string; opener?: string }>();
   for (const [agentId, convs] of byAgent) {
     convs.sort((a, b) => b.createdAt - a.createdAt);
     const opener = convs
       .map((c) => summaries.get(c.id)?.root)
       .find((m) => m?.authorKind === "user" && m.text)?.text;
     out.set(agentId, {
-      ...(convs[0].cwd ? { folder: convs[0].cwd } : {}),
+      ...(convs[0].projectId ? { projectId: convs[0].projectId } : {}),
       ...(opener ? { opener } : {}),
     });
   }
@@ -233,6 +235,7 @@ function threadRows(src: ThreadSources, archived: boolean): V3Thread[] {
         ...(context !== undefined ? { context } : {}),
         ...(c.model ? { model: modelLabel(c.model, c.provider) } : {}),
         ...(c.cwd ? { folder: c.cwd } : {}),
+        ...(c.projectId ? { projectId: c.projectId } : {}),
         ...(!live && answer?.text
           ? { summary: oneLine(answer.text, 140) }
           : {}),

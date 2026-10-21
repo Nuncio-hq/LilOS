@@ -31,7 +31,7 @@ const THREAD_ROUTES = new Set<keyof Routes>([
   "Subagent",
   "Background",
   /* Thread-scoped when opened with a conversationId — the param check in
-     visibleConversationId yields null for the DM-scoped form. */
+     visibleConversationId yields null for the agent-scoped form. */
   "ModelPicker",
 ]);
 

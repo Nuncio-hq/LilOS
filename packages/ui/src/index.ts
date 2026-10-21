@@ -16,7 +16,10 @@ export { FindBar } from "./conversation/find-bar";
 export { setFindSessionOpen } from "./conversation/find-unstub";
 export type { PlanAction } from "./conversation/plan-card";
 // dialogs
-export { AddFolderDialog } from "./dialogs/add-folder-dialog";
+export {
+  AddFolderDialog,
+  NEW_PROJECT_COPY,
+} from "./dialogs/add-folder-dialog";
 export { pairingUrl } from "./dialogs/pairing";
 // focus mode
 export { FocusView } from "./focus/focus-view";

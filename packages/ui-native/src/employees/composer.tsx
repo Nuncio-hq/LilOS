@@ -30,8 +30,8 @@ function parseSlashDraft(text: string): { name: string; args: string } | null {
 
 /* The conversation's composer: one Liquid Glass capsule floating over the
    bottom of the chat (content scrolls on under it), input on top and the
-   session's context under it. DM: folder + model (a new session picks
-   both). Thread: model only (the session's folder is fixed). */
+   session's context under it. New-thread box: folder + model (a new
+   session picks both). Thread: model only (the session's folder is fixed). */
 export function Composer({
   placeholder,
   folder,

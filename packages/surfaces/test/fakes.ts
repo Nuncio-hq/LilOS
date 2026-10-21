@@ -7,11 +7,13 @@ import type {
   Employee,
   MessageSearchHit,
   ProfileSettings,
+  Project,
   ScheduledTask,
   SystemStatusResult,
   WorkbenchOpenTarget,
 } from "@lilos/contracts/app";
 import type {
+  ProjectCreateParams,
   ScheduleCreateParams,
   ScheduleUpdateParams,
   TeamHireParams,
@@ -157,7 +159,7 @@ export function fakeAppOps(
     /** The bound thread's id — the scope's binding.conversationId. */
     conversationId?: string;
     channelId?: string;
-    /** Extra threads in this DM (the bound one is always seeded). */
+    /** Extra threads of this employee (the bound one is always seeded). */
     conversations?: Conversation[];
     employees?: Employee[];
     /** Per-conversation PR rows (`forge.prs` answers). */
@@ -170,6 +172,8 @@ export function fakeAppOps(
     profile?: ProfileSettings;
     /** `schedule_list` answers (#136). */
     scheduledTasks?: ScheduledTask[];
+    /** `project_list` answers (D-#771). */
+    projects?: Project[];
     /** `"decline"` makes every approval op throw `declined` — nothing applies. */
     approve?: "once" | "decline";
   } = {},
@@ -178,11 +182,17 @@ export function fakeAppOps(
   titled: string[];
   opened: WorkbenchOpenTarget[];
   asks: string[];
+  /** What `startThread` was called with — `project` is forwarded verbatim. */
+  started: Array<{ text: string; title?: string; project?: string }>;
+  /** The live project list (`createProject` appends to it). */
+  projectRows: Project[];
 } {
   const posted: string[] = [];
   const titled: string[] = [];
   const opened: WorkbenchOpenTarget[] = [];
   const asks: string[] = [];
+  const started: Array<{ text: string; title?: string; project?: string }> = [];
+  const projectRows: Project[] = [...(opts.projects ?? [])];
   /* The fake's gate: the real impl posts an ask and waits; here the
      recorded command stands in for the card and `approve` answers it. */
   const gate = (command: string) => {
@@ -219,7 +229,7 @@ export function fakeAppOps(
       status: "online",
       profile: "default",
       model: "fake-1",
-      now: "DM tools",
+      now: "thread tools",
       instructions: "",
       respondTo: "me",
       createdAt: 1,
@@ -242,6 +252,8 @@ export function fakeAppOps(
     titled,
     opened,
     asks,
+    started,
+    projectRows,
     async postMessage(text: string) {
       posted.push(text);
       const msg = {
@@ -304,6 +316,9 @@ export function fakeAppOps(
         (t) => t.employeeId === employeeId,
       );
     },
+    async projects() {
+      return projectRows;
+    },
     async threadPrs(conversationId: string) {
       return opts.prs?.[conversationId] ?? [];
     },
@@ -344,8 +359,11 @@ export function fakeAppOps(
     },
     /* Approval-gated writes: recorded on `asks`, applied only when the
        fake approves. */
-    async startThread(p: { text: string; title?: string }) {
-      gate(`thread_start ${p.title ?? p.text.slice(0, 60)}`);
+    async startThread(p: { text: string; title?: string; project?: string }) {
+      started.push(p);
+      gate(
+        `thread_start ${p.title ?? p.text.slice(0, 60)}${p.project !== undefined ? ` in ${p.project}` : ""}`,
+      );
       const conversation: Conversation = {
         ...bound,
         id: `conv${convs.length + 1}`,
@@ -436,6 +454,27 @@ export function fakeAppOps(
     async addFolder(path: string) {
       gate(`folder_add ${path}`);
       return { path, lastUsedAt: Date.now() };
+    },
+    async createProject(p: ProjectCreateParams) {
+      gate(`project_create ${p.folder}`);
+      /* The relay's rule: a folder that already has a project answers it. */
+      const existing = projectRows.find((r) => r.folder === p.folder);
+      if (existing) return existing;
+      const name = p.name ?? p.folder.split("/").filter(Boolean).at(-1) ?? "x";
+      const project: Project = {
+        id: `proj-${projectRows.length + 1}`,
+        name,
+        key:
+          name
+            .replace(/[^A-Za-z0-9]/g, "")
+            .toUpperCase()
+            .slice(0, 8) || "X",
+        folder: p.folder,
+        about: p.about ?? "",
+        createdAt: Date.now(),
+      };
+      projectRows.push(project);
+      return project;
     },
   };
 }

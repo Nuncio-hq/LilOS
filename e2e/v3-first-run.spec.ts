@@ -88,7 +88,7 @@ test("a fresh home: Welcome, a real engine check, then Home with the first agent
     await side.getByRole("button", { name: /Ada/ }).click();
     await expect(v3Peek(page)).toContainText("Fake Reasoning");
     await v3Peek(page).getByRole("button", { name: "Message" }).click();
-    await expect(v3Peek(page).getByTitle(/^Folder · /)).toHaveAttribute(
+    await expect(v3Peek(page).getByTitle(/^Project · /)).toHaveAttribute(
       "title",
       new RegExp(path.basename(folder)),
     );

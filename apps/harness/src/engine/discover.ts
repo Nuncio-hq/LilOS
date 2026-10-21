@@ -9,7 +9,7 @@ import { join } from "node:path";
  * `~/.lilos/hermes-bin`, the known install locations, then every PATH dir.
  *
  * Errors are deliberately plain sentences ("Hermes not found at …"): they
- * surface verbatim in the status dialog and DM composer.
+ * surface verbatim in the status dialog and thread composer.
  */
 
 export interface HermesDiscoveryOptions {

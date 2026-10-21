@@ -91,9 +91,10 @@ export function ThreadPane({
         onOpenTab={onOpenTab}
         browser={window.lilos?.browser != null}
         onClose={onClose}
-        /* #581 AC-2: a folder-less DM thread gets "Add a folder" — the pick
-           moves the session there (same thread, same memory). The panel
-           keeps work=null for DM by design, so the gate is the
+        /* #581 AC-2: a folder-less (plain chat) thread gets "Add a folder" —
+           the pick moves the session there and files it under that folder's
+           project (D-#771); same thread, same memory. The panel
+           keeps work=null for chats by design, so the gate is the
            conversation's cwd itself. */
         onAddFolder={conv.cwd ? undefined : () => d.setMoveFolderOpen(true)}
         scrollTo={scrollTo}

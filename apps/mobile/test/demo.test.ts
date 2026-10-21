@@ -1,5 +1,5 @@
 import type { AppClient } from "@lilos/client-runtime";
-import type { Ask } from "@lilos/contracts/app";
+import type { Ask, Conversation, Project } from "@lilos/contracts/app";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /* #168 AC-6: the demo data source never opens a socket or hits the network —
@@ -49,6 +49,7 @@ vi.mock("react-native", () => ({
 
 import { DemoClient } from "../src/demo/client";
 import { $demo, enterDemo, exitDemo } from "../src/demo/lifecycle";
+import { toSessionTurns } from "../src/dm-model";
 import { $asks, $folders, $wbCards, watchDm } from "../src/dm-store";
 import { $client, $link, $welcome } from "../src/link";
 import { $phase } from "../src/paired-macs";
@@ -95,6 +96,7 @@ describe("demo data source (#168)", () => {
     for (const member of [
       "state",
       "employees",
+      "projects",
       "channels",
       "conversations",
       "conversationSummaries",
@@ -138,6 +140,99 @@ describe("demo data source (#168)", () => {
         models: unknown[];
       };
       expect(models.models.length).toBeGreaterThan(3);
+      c.close();
+    });
+  });
+
+  it("files threads into projects like the relay and rows name them (D-#771)", async () => {
+    await noNetwork(async () => {
+      const c = client();
+      await c.connect();
+      const { projects } = await c.request<{ projects: Project[] }>(
+        "projects.list",
+        {},
+      );
+      /* Every seeded thread with a folder lives in one folder: one project;
+         the folder-less ones stay plain chats. */
+      expect(projects.map((p) => p.name)).toEqual(["LilOS"]);
+      const lil = projects[0];
+      expect(lil?.key).toBe("LIL");
+      const convs = c.conversations.get();
+      expect(convs.some((x) => x.projectId)).toBe(true);
+      expect(convs.some((x) => !x.projectId)).toBe(true);
+      expect(
+        convs.every((x) => x.projectId === (x.cwd ? lil?.id : undefined)),
+      ).toBe(true);
+      /* A workstream thread (cwd = its worktree) files under the repo. */
+      expect(convs.find((x) => x.workspace?.repoPath)?.projectId).toBe(lil?.id);
+
+      /* The agent screen's rows: Builder's folder threads name LilOS. */
+      const rows = toSessionTurns(c.conversationSummaries.get(), {
+        channelId: "ch-builder",
+        employee: { id: "builder", name: "Builder", tone: "blue" },
+        openAsks: [],
+        pending: new Map(),
+        projects: c.projects.get(),
+        now: Date.now(),
+      });
+      expect(rows.length).toBeGreaterThan(0);
+      const byId = new Map(convs.map((x) => [x.id, x]));
+      for (const row of rows) {
+        expect(row.project, row.title).toBe(
+          byId.get(row.id)?.projectId ? "LilOS" : undefined,
+        );
+      }
+      expect(rows.some((r) => r.project === "LilOS")).toBe(true);
+      c.close();
+    });
+  });
+
+  it("projects.create answers a folder's project once; a first-use open files a new one (D-#771)", async () => {
+    await noNetwork(async () => {
+      const c = client();
+      await c.connect();
+      const events: Project[] = [];
+      c.onEvent((method, params) => {
+        const project = params.project;
+        if (method === "project.upserted" && project) {
+          events.push(project as Project);
+        }
+      });
+      const lil = c.projects.get()[0];
+      const again = await c.request<{ project: Project }>("projects.create", {
+        folder: lil?.folder,
+        name: "Renamed",
+      });
+      expect(again.project.id).toBe(lil?.id);
+      expect(again.project.name).toBe("LilOS");
+      expect(c.projects.get()).toHaveLength(1);
+      expect(events).toEqual([]);
+
+      /* New chat with a folder nobody used: the folder becomes a project
+         (name = its basename, a fresh key) and the thread files under it. */
+      const opened = await c.request<{ conversation: Conversation }>(
+        "conversations.open",
+        {
+          channelId: "ch-builder",
+          text: "hello",
+          cwd: "~/Code/QRit",
+        },
+      );
+      const qrit = c.projects
+        .get()
+        .find((p) => p.folder === "~/Code/QRit");
+      expect(qrit?.name).toBe("QRit");
+      expect(qrit?.key).toBe("QRI");
+      expect(opened.conversation.projectId).toBe(qrit?.id);
+      expect(events.map((p) => p.id)).toEqual([qrit?.id]);
+
+      /* No folder: a plain chat, no project made. */
+      const plain = await c.request<{ conversation: Conversation }>(
+        "conversations.open",
+        { channelId: "ch-builder", text: "just chatting" },
+      );
+      expect(plain.conversation.projectId).toBeUndefined();
+      expect(c.projects.get()).toHaveLength(2);
       c.close();
     });
   });

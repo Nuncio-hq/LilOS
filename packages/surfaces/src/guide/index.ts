@@ -1,10 +1,10 @@
 import type { GuideTopic } from "@lilos/contracts/harness";
 import { approvals } from "./approvals.js";
-import { dmAndThreads } from "./dm-and-threads.js";
 import { employees } from "./employees.js";
 import { gateway } from "./gateway.js";
 import { mobile } from "./mobile.js";
 import { overview } from "./overview.js";
+import { threads } from "./threads.js";
 import { workbench } from "./workbench.js";
 
 /**
@@ -15,7 +15,7 @@ import { workbench } from "./workbench.js";
  */
 export const GUIDES: Record<GuideTopic, { title: string; body: string }> = {
   overview,
-  "dm-and-threads": dmAndThreads,
+  threads,
   employees,
   approvals,
   workbench,

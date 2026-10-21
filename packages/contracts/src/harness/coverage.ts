@@ -52,6 +52,8 @@ export const AGENT_METHOD_TOOLS: Record<string, string> = {
   "schedules.update": "schedule_update",
   "schedules.delete": "schedule_delete",
   "schedules.runNow": "schedule_run_now",
+  "projects.list": "project_list",
+  "projects.create": "project_create",
 } as const;
 
 /**
@@ -131,7 +133,7 @@ export const NOT_AGENT_FACING: Record<string, string> = {
   "agents.describe":
     "agent profile detail feeds the user's hire/edit dialogs; the caller's own profile surfaces through `context`",
   "channels.openDm":
-    "opening a DM is a company change — the user does it, or it rides inside team_hire's approved apply",
+    "the per-employee channel is internal routing, not a place — it is made with the employee, inside team_hire's approved apply",
   /* Non-image bytes land in the session folder and the prompt names their
      paths — the agent reads them with its normal file tools, so it never
      needs this method itself. */

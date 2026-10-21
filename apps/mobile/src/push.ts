@@ -166,10 +166,11 @@ export const requestPushPermission = async ({
   }
 };
 
-/* #596 AC-1: the thread opens pushed over its own DM — Back returns to the
-   DM, the same landing an ask's Open/Review takes. The employee resolves
-   from the wire: a hydrated cache resolves at cold start, a thread created
-   while the app was closed resolves once the first sync lands. */
+/* #596 AC-1: the thread opens pushed over its agent's thread list — Back
+   returns to the list, the same landing an ask's Open/Review takes. The
+   employee resolves from the wire: a hydrated cache resolves at cold start,
+   a thread created while the app was closed resolves once the first sync
+   lands. */
 const pushThread = (conversationId: string, payloadEmployeeId?: string) => {
   const client = $client.get();
   const target =
@@ -180,7 +181,7 @@ const pushThread = (conversationId: string, payloadEmployeeId?: string) => {
     });
   /* AC-2b: the wire resolution wins when it exists; the payload's own
      employeeId is the fallback — the only id a gone-by-tap-time thread
-     can still name. Either way the DM stacks under the Thread and the
+     can still name. Either way the thread list stacks under the Thread and the
      gone card's "Back to <employee>" has somewhere to land. */
   const employeeId = target?.employeeId ?? payloadEmployeeId;
   if (employeeId) nav.navigate("Dm", { employeeId });
@@ -190,7 +191,7 @@ const pushThread = (conversationId: string, payloadEmployeeId?: string) => {
   });
 };
 
-/* The tap waits only for what the DM needs: resolvable now, or the first
+/* The tap waits only for what the thread list needs: resolvable now, or the first
    directory sync concluded (a miss still opens — the thread's own "gone"
    state is the answer), or the link already gave up. */
 const threadTargetReady = (conversationId: string): boolean => {
@@ -223,7 +224,7 @@ const openPushThread = (
     pushThread(conversationId, payloadEmployeeId);
   } else {
     /* Cold start, mid-onboarding, or still syncing: hold it until the
-       stack — and the DM underneath it — can be pushed. */
+       stack — and the thread list underneath it — can be pushed. */
     pendingThread = {
       conversationId,
       ...(payloadEmployeeId ? { employeeId: payloadEmployeeId } : {}),
@@ -305,7 +306,7 @@ export function initPush(): void {
        (a held tap opens Thread alone rather than waiting forever). */
     drainPendingThread();
   });
-  /* #596: the DM under the thread only exists once the first directory
+  /* #596: the thread list under the thread only exists once the first directory
      sync lands — re-drain when it does. `.subscribe` fires the current
      value immediately, so a client that already exists still arms it. */
   const clientSub = $client.subscribe((client) => {

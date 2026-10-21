@@ -49,7 +49,7 @@ export function isHermesVersionSupported(version: string): boolean {
 }
 
 /**
- * The exact sentence the status dialog and DM composer show (AC-1). Plain on
+ * The exact sentence the status dialog and thread composer show (AC-1). Plain on
  * purpose — it surfaces verbatim, so it names the found version, the
  * minimum, and the one command that fixes it.
  */

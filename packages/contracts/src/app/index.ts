@@ -1,6 +1,7 @@
 export * from "./browser";
 export * from "./desktop";
 export * from "./domain";
+export * from "./project";
 export { appProtocol, appProtocolSchemas } from "./registry";
 export * from "./schedule";
 export * from "./slash";

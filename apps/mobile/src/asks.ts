@@ -11,7 +11,7 @@ import { describeError } from "./mapping";
    (prototype/mobile/src/App.tsx `decide`): the tap haptics first — success
    on approve, warning on deny — then the wire call. The resolved ask lands
    back in the shared atoms so every surface (thread card, Activity sheet,
-   Needs-you accessory, DM grouping) folds within one update. */
+   Needs-you accessory, agent thread list) folds within one update. */
 
 /* #601: the phone sends the option tapped — the ask's own
    `request.options` list is the boundary, like the Mac card (contracts:

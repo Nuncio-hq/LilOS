@@ -8,12 +8,14 @@ import {
 } from "../workbench/ws-badges";
 
 /* The header's kicker line: where the thread works — `Thread · #channel` for
-   a channel thread, then the folder/branch. Who it is with and which ticket
-   it is on are the side peek's breadcrumb right above ("Builder · LIL-81",
-   "Default · Chat"), so the line never says them again. No channel and no
-   folder: no line at all. The folder part is the same quiet badge the panel
-   and the session view always had (it keeps the open-in-editor menu); only
-   the surrounding chrome is gone. */
+   a channel thread, then the folder/branch. Who it is with and what it is
+   filed under (its ticket, its project, or "Chat" for a plain chat) are the
+   side peek's breadcrumb right above ("Builder · LIL-81", "Default · LilOS",
+   "Default · Chat"), so the line never says them again, not even the
+   project's name (D-#771). No channel and no folder: no line at all. The
+   folder part is the same quiet badge the panel and the session view always
+   had (it keeps the open-in-editor menu); only the surrounding chrome is
+   gone. */
 
 export function threadKicker({
   channel,
@@ -36,9 +38,10 @@ export function threadKicker({
   );
 }
 
-/** The panel's folder part: the session's folder badge; a folder-less DM
-    gets the quiet "Add a folder" link instead (#581 AC-2 — picking one moves
-    the session there; none at all when the host can't move). */
+/** The panel's folder part: the session's folder badge; a folder-less thread
+    (a plain chat) gets the quiet "Add a folder" link instead (#581 AC-2 —
+    picking one moves the thread there, and the relay files it under that
+    folder's project; none at all when the host can't move). */
 export function panelFolder({
   thread,
   work,
@@ -55,8 +58,7 @@ export function panelFolder({
   openMenu?: OpenMenuFor;
 }): ReactNode {
   if (thread.ws) return <WsBadge ws={thread.ws} openMenu={openMenu} />;
-  /* A folder-less DM session is a plain chat — no folder label at all
-     (#196). */
+  /* A folder-less thread is a plain chat — no folder label at all (#196). */
   if (isDM && !work && !repo)
     return onAddFolder ? <AddFolder onClick={onAddFolder} /> : null;
   return <WorkspaceBadge work={work} repo={repo} />;
@@ -104,8 +106,8 @@ export function focusFolder({
         no git repo
       </span>
     );
-  /* A folder-less DM session is a plain chat — no repo exists to be
-     read-only on, so no label at all (#196). */
+  /* A folder-less thread is a plain chat — no repo exists to be read-only
+     on, so no label at all (#196). */
   if (isDM) return null;
   return (
     <span className="inline-flex items-center gap-1">

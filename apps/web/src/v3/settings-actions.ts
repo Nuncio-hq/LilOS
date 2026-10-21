@@ -162,7 +162,10 @@ export const v3SettingsActions: Mine = {
         avatarColor: DEFAULT_AVATAR_COLOR,
       }),
       firstAgent(agentName, agentModel),
-      folder ? addFolder(folder) : Promise.resolve(),
+      // The first folder is the company's first project (D-#771).
+      folder
+        ? addFolder(folder).then(() => relay.createProject({ folder }))
+        : Promise.resolve(),
     ]);
     const failed = steps.filter((s) => s.status === "rejected").length;
     // Only when nothing saved does the welcome stay (it says so itself).

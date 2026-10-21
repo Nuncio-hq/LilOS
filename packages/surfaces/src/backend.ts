@@ -12,6 +12,9 @@ import type {
   GuideParams,
   GuideResult,
   PreviewTarget,
+  ProjectCreateParams,
+  ProjectCreateResult,
+  ProjectListResult,
   ScheduleCreateParams,
   ScheduleDeletedResult,
   ScheduleListResult,
@@ -83,6 +86,8 @@ export interface SurfaceBackend {
   teamHire(p: TeamHireParams): Promise<TeamHireResult>;
   teamUpdate(p: TeamUpdateParams): Promise<TeamUpdateResult>;
   folderAdd(p: FolderAddParams): Promise<FolderAddResult>;
+  projectList(): Promise<ProjectListResult>;
+  projectCreate(p: ProjectCreateParams): Promise<ProjectCreateResult>;
 
   threadPost(p: { text: string }): Promise<ThreadPostResult>;
   threadRead(p: ThreadReadParams): Promise<ThreadReadResult>;

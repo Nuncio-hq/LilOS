@@ -17,6 +17,14 @@ import { baseName, parentOf, plural } from "../lib/helpers";
 import { cn } from "../lib/utils";
 import type { Folder, FsDir } from "../types";
 
+/** The dialog's words when it makes a project of the folder (the new chat's
+    "New project from a folder…"), instead of just adding it. */
+export const NEW_PROJECT_COPY = {
+  title: "New project from a folder",
+  hint: "a project is a folder the company works in",
+  add: "Create project",
+};
+
 /* Add a local folder to a project. Browse or type a path (complete.path), see whether it is a repo and on which
    branch (projects.for_cwd), then attach it: projects.add_folder { id, path } or projects.create { name, folders }.
    `fs` is the machine's folder listing (gateway data in the real app; mock in the prototype) passed in. */
@@ -29,6 +37,7 @@ export function AddFolderDialog({
   onClose,
   onAdd,
   onNeedDir,
+  copy,
 }: {
   folders: Folder[];
   /* Project targets (prototype #18). Absent = plain "add a folder"
@@ -44,7 +53,11 @@ export function AddFolderDialog({
      app answers with a host `fs.list` (real app: the harness). Without it the
      dialog renders purely off `fs` (mock). */
   onNeedDir?: (path: string) => void;
+  /* Its own words where the dialog serves something other than "add a folder"
+     (the new chat's "New project from a folder…"). */
+  copy?: { title: string; hint: string; add: string };
 }) {
+  const title = copy?.title ?? "Add a folder";
   /* #581 AC-3: open with NOTHING picked (home listing, Add disabled until
      a real dir resolves) — a default like ~/Desktop reads as a selection
      the user never made. */
@@ -84,7 +97,7 @@ export function AddFolderDialog({
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="Add a folder"
+        aria-label={title}
         ref={layerRef}
         className="flex max-h-[90dvh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border bg-background shadow-2xl"
         onClick={(e) => e.stopPropagation()}
@@ -92,9 +105,9 @@ export function AddFolderDialog({
       >
         <div className="flex items-center gap-2 border-b px-5 py-3">
           <FolderPlusIcon className="size-4" />
-          <div className="font-semibold">Add a folder</div>
+          <div className="font-semibold">{title}</div>
           <span className="text-muted-foreground text-xs">
-            sessions can run in it
+            {copy?.hint ?? "sessions can run in it"}
           </span>
           <Button
             variant="ghost"
@@ -365,7 +378,7 @@ export function AddFolderDialog({
             data-addbtn
           >
             {projects === undefined
-              ? "Add folder"
+              ? (copy?.add ?? "Add folder")
               : target === "__new"
                 ? `Create ${projName}`
                 : `Add to ${projName}`}

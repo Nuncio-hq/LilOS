@@ -14,9 +14,9 @@ import {
  *
  * Which areas a session actually has is decided in SessionSurfaces
  * (`scope.ts`): `root`, `terminal` and `workbench` always; `browser` when
- * one can launch; `thread`, `team`, `folder` and `schedule` on a DM
- * binding. The closing sentence states that. The names above it come from
- * the catalog, not from this sentence.
+ * one can launch; `thread`, `team`, `folder`, `project` and `schedule` on a
+ * session bound to an employee's thread. The closing sentence states that.
+ * The names above it come from the catalog, not from this sentence.
  */
 function renderGatewayTools(): string {
   const grouped = new Map<ToolArea, { name: string; approval: boolean }[]>(
@@ -62,8 +62,8 @@ MCP (streamable HTTP + \`lilos mcp\` stdio), the \`lilos\` CLI and the engine's
 own plugin (Hermes shows them as \`lilos_*\`).
 
 What Oscar sees:
-- Employees answering from real app state — the roster, the DM's threads,
-  the Workbench — not from hallucinated URLs or ids.
+- Employees answering from real app state — the roster, their threads, the
+  projects, the Workbench — not from hallucinated URLs or ids.
 - Every session's tools are scoped to its own surfaces: the bearer token is
   the identity, and an agent can never address another session's browser,
   terminal or thread.
@@ -74,5 +74,6 @@ ${renderGatewayTools()}
 
 A session only sees the areas it has attached: \`root\`, \`terminal\` and
 \`workbench\` always; \`browser\` when a browser can launch; \`thread\`,
-\`team\`, \`folder\` and \`schedule\` when the session is bound to a DM.`,
+\`team\`, \`folder\`, \`project\` and \`schedule\` when the session is bound to
+an employee's thread.`,
 };

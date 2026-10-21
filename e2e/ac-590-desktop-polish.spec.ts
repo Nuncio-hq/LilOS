@@ -158,11 +158,15 @@ test("AC-2 at 1024px the header names the employee, the composer stays one row, 
   await panelIntoFocus(page);
   const session = v3Peek(page);
 
-  /* The peek's trail names the employee ("Default · Chat") — the header
-     under it does not say it a second time. */
+  /* The peek's trail names the employee and, once the thread moved into the
+     folder, its project ("Default · lilos-…") — the header under it does
+     not say it a second time. */
   await expect(
     session.getByRole("navigation", { name: "Trail" }),
-  ).toContainText(/\w+ · Chat/, { timeout: 15_000 });
+  ).toContainText(/\w+ · \S+/, { timeout: 15_000 });
+  await expect(
+    session.getByRole("navigation", { name: "Trail" }),
+  ).not.toContainText("Chat", { timeout: 15_000 });
   await expect(session.locator("header")).not.toContainText(/Chat · \w+/);
   await page.screenshot({ path: `${SHOTS}/ac-2-header-1024.png` });
 

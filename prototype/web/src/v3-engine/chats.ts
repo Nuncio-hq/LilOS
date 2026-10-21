@@ -54,7 +54,7 @@ export function chatActions({ setData, getData, reply, toast }: Engine): Pick<
     },
     // The access the chat opens on (Ask / Full access) is the engine's to
     // enforce; the mock agent runs the same script either way.
-    startChat: ({ agentId, projectId, folder, model, pick, text, files }) => {
+    startChat: ({ agentId, projectId, model, pick, text, files }) => {
       const project = getData().projects.find((p) => p.id === projectId);
       // A message of files alone is named by them.
       const said = text || (files ?? []).map((f) => f.name).join(", ");
@@ -69,16 +69,20 @@ export function chatActions({ setData, getData, reply, toast }: Engine): Pick<
         step: 0,
         context: 2,
         model: modelLabel(getData(), model, pick),
-        folder: project?.folder ?? folder ?? "~",
+        // A plain chat works in no folder; a project's chat in the project's.
+        ...(project ? { folder: project.folder } : {}),
         turns: [],
       };
-      // The next chat with this agent starts where this one ran, and ↑ in its
-      // empty box brings this message back.
+      // The next chat with this agent starts where this one ran (a plain chat
+      // counts: it stays "No project"), and ↑ in its empty box brings this
+      // message back.
       setData((d) => ({
         ...d,
         threads: [chat, ...d.threads],
         agents: d.agents.map((a) =>
-          a.id === agentId ? { ...a, lastChat: { folder: project?.folder ?? folder, ...(text ? { opener: text } : {}) } } : a,
+          a.id === agentId
+            ? { ...a, lastChat: { ...(projectId ? { projectId } : {}), ...(text ? { opener: text } : {}) } }
+            : a,
         ),
       }));
       runTurn(setData, getData, reply, chat, text, files);

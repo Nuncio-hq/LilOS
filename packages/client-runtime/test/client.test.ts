@@ -1608,3 +1608,88 @@ describe("ws upgrade credential (#625)", () => {
     }
   });
 });
+
+/* D-#771: the relay's projects ride beside the directory — filled by
+   `projects.list`, kept live by `project.upserted`, never holding the
+   directory (a relay that predates projects just leaves them empty). */
+describe("projects atom (D-#771)", () => {
+  const project = {
+    id: "proj_1",
+    name: "LilOS",
+    key: "LIL",
+    folder: "/Users/ada/Code/LilOS",
+    about: "",
+    createdAt: 1,
+  };
+
+  it("fills from projects.list on connect without holding the directory", async () => {
+    const { client, socket } = makeClient();
+    await connectClient(client, () => socket);
+    // Every directory read but projects.list is answered: the directory is
+    // ready while the projects are still on their way…
+    socket.respondTo("conversations.summaries", { summaries: [] });
+    socket.respondTo("profile.get", { profile: {} });
+    socket.respondTo("devices.list", { devices: [] });
+    socket.respondTo("asks.list", { asks: [] });
+    await vi.waitFor(() => expect(client.directoryReady.get()).toBe(true));
+    expect(client.projects.get()).toEqual([]);
+    // …and the answer fills the atom.
+    socket.respondTo("projects.list", { projects: [project] });
+    await vi.waitFor(() => expect(client.projects.get()).toEqual([project]));
+    client.close();
+  });
+
+  it("project.upserted appends a new project and replaces a known one", async () => {
+    const { client, socket } = makeClient();
+    await connectClient(client, () => socket);
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "project.upserted",
+      params: { project },
+    });
+    expect(client.projects.get().map((p) => p.id)).toEqual(["proj_1"]);
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "project.upserted",
+      params: { project: { ...project, about: "The company OS." } },
+    });
+    expect(client.projects.get()).toHaveLength(1);
+    expect(client.projects.get()[0]?.about).toBe("The company OS.");
+    // A late projects.list answer merges — it never drops what the
+    // broadcast already delivered.
+    socket.respondTo("projects.list", {
+      projects: [{ ...project, id: "proj_0", key: "OLD", folder: "/x" }],
+    });
+    await vi.waitFor(() =>
+      expect(client.projects.get().map((p) => p.id)).toEqual([
+        "proj_1",
+        "proj_0",
+      ]),
+    );
+    client.close();
+  });
+
+  it("a relay without projects.list leaves the atom empty and the directory intact", async () => {
+    const { client, socket } = makeClient();
+    await connectClient(client, () => socket);
+    socket.failTo("projects.list", { code: -32601, message: "unknown method" });
+    await Promise.resolve();
+    expect(client.projects.get()).toEqual([]);
+    expect(client.state.get()).toBe("ready");
+    client.close();
+  });
+
+  it("createProject asks projects.create and keeps the answer", async () => {
+    const { client, socket } = makeClient();
+    await connectClient(client, () => socket);
+    const pending = client.createProject({ folder: "~/Code/LilOS" });
+    socket.respondTo("projects.create", { project });
+    await expect(pending).resolves.toEqual(project);
+    expect(client.projects.get()).toEqual([project]);
+    const sent = socket.sent
+      .map((raw) => JSON.parse(raw) as { method?: string; params?: unknown })
+      .find((f) => f.method === "projects.create");
+    expect(sent?.params).toEqual({ folder: "~/Code/LilOS" });
+    client.close();
+  });
+});

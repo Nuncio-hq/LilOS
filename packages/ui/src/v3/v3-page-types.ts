@@ -74,11 +74,12 @@ export type V3Actions = {
   message: (threadId: string, text: string) => void;
   /** Opens a new chat thread with an agent and returns its id, so the caller
      can show it where the draft was. Resolves undefined when the chat could
-     not start (the app has already said why); the draft stays. `folder` is a
-     path from `data.folders`, for a company without projects; absent when
-     "No folder" was chosen (a chat with no working folder). `files` are what
-     was attached (bytes as data URLs, like the chat composer's); `text` may
-     then be empty. */
+     not start (the app has already said why); the draft stays. `projectId`
+     is the picked project and `folder` its folder: the app sends the folder
+     (the relay files the thread under the project that owns it, D-#771),
+     and both are absent for a plain chat, which works in no folder. `files`
+     are what was attached (bytes as data URLs, like the chat composer's);
+     `text` may then be empty. */
   startChat: (chat: {
     agentId: string;
     projectId?: string;
@@ -108,10 +109,12 @@ export type V3Actions = {
   /** Re-reads the engine's model catalog; rejects when it failed (the app has
      already said why). Present only where `modelCatalog.refreshable`. */
   refreshModels?: () => Promise<void>;
-  /** Opens the app's Add a folder dialog; once a folder is added (and is in
-     `data.folders`) `onAdded` gets its path. Closing the dialog says nothing.
-     Absent: the folder menu only offers the folders it has. */
-  addFolder?: (onAdded: (path: string) => void) => void;
+  /** "New project from a folder…": the app asks for a folder (its own
+     dialog), makes a project of it (a folder that already has one answers
+     that project) and calls `onCreated` with its id once it is in
+     `data.projects`. Closing the dialog says nothing. Absent: the project
+     menu has no such row. */
+  newProject?: (onCreated: (projectId: string) => void) => void;
   markSeen: (threadId: string) => void;
   /** Hires an agent and returns its id, so the Hire page can open it. Rejects
      when the hire failed (the app has already said why). Absent while the

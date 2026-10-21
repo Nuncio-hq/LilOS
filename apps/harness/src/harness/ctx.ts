@@ -146,7 +146,7 @@ export interface SessionBinding {
   /** #422: bumped on every now-state mutation — the freshness key when
       several sessions of one employee race for the line. */
   nowAt: number;
-  /** #422: the DM channel's employee, resolved at bind — the atom can lag
+  /** #422: the thread channel's employee, resolved at bind — the atom can lag
       the RPC view, so the now-line never re-derives it per event. */
   employeeId?: string;
   /** #346 AC-3: epoch ms of the session's last engine event — the
@@ -157,7 +157,7 @@ export interface SessionBinding {
   /** #346 AC-3: subagent ids still running — a session under one never
       suspends, even when the parent turn is quiet. */
   openSubagents: Set<string>;
-  /** #583 AC-3: background job ids still running — the DM row's
+  /** #583 AC-3: background job ids still running — the thread row's
       "N in background" count stamps onto the conversation so the badge
       and the session feed outlive a released session. */
   runningJobs: Set<string>;
@@ -437,13 +437,13 @@ export interface HarnessCtx {
       fast?: boolean | null;
       deliveredSeq?: number;
       life?: ConversationLife;
-      /** #419: stamp the last turn's failure (DM alert card); `null`
+      /** #419: stamp the last turn's failure (thread alert card); `null`
           clears it. */
       turnFailure?: TurnFailure | null;
       /** #581: the thread's working folder — `conversations.moveFolder`
           writes it after re-homing the session; `null` clears it. */
       cwd?: string | null;
-      /** #583: the last turn ended stopped (DM row word); `null` clears
+      /** #583: the last turn ended stopped (thread row word); `null` clears
           it on the next `turn.started`. */
       turnStopped?: boolean | null;
       /** #583: running background-job count — the row's badge; `null`
