@@ -157,16 +157,18 @@ export type V3Ask = {
   from: string;
   kind: "approval" | "question";
   title: string;
-  /** Minutes waiting. */
+  /** Minutes waiting. Prototype rows sort by this when `at` is absent. */
   waiting: number;
+  /** When the ask opened (ms). Real asks sort by this, oldest first. */
+  at?: number;
   ask: string;
-  /* The agent's own reasons and what each answer would do come from the
-     CEO's briefing; without one these stay absent and the page hides them. */
+  /* Lines the ask carries. A gateway ask may set them; an engine approval
+     leaves them absent and the page hides the rows. */
   why?: string;
   ifYes?: string;
   ifNo?: string;
   spend?: { amount: number; used: number; cap: number };
-  /** Offered as "let this agent do it without asking next time". */
+  /** Shown only when the engine offers to allow the command next time. */
   allowRule?: string;
   /** Question answers; the first is what happens by default. */
   options?: string[];

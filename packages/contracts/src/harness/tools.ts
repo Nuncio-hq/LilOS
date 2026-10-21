@@ -270,6 +270,28 @@ export const GuideResult = z.object({
 });
 export type GuideResult = z.infer<typeof GuideResult>;
 
+/**
+ * `ask` (D-#773) — wait on the user. `why`, `ifYes` and `ifNo` are the
+ * Needs you lines. `options` makes it a question; without them it is an
+ * approval (once/deny). An engine approval keeps its command and does
+ * not use these fields.
+ */
+export const AskParams = z.strictObject({
+  question: z.string().min(1),
+  why: z.string().min(1).optional(),
+  ifYes: z.string().min(1).optional(),
+  ifNo: z.string().min(1).optional(),
+  options: z.array(z.string().min(1)).min(1).optional(),
+});
+export type AskParams = z.infer<typeof AskParams>;
+export const AskToolResult = z.object({
+  /** The user agreed. A denial throws `declined` and never returns `"no"`. */
+  outcome: z.literal("yes"),
+  /** The chosen option's label, when the ask was a question. */
+  answer: z.string().min(1).optional(),
+});
+export type AskToolResult = z.infer<typeof AskToolResult>;
+
 /* ---------------------------------- team ---------------------------------- */
 
 export const TeamListParams = z.strictObject({});
@@ -629,6 +651,13 @@ export const LILOS_TOOLS: Record<string, LilosToolContract> = {
     doc: "LilOS docs shipped with the app — pass a topic (overview, threads, employees, approvals, workbench, mobile, gateway); none returns the index.",
     area: "root",
     access: "read",
+  },
+  ask: {
+    params: AskParams,
+    result: AskToolResult,
+    doc: "Ask the user and wait. Optional why, ifYes and ifNo are the lines Needs you shows. With options, the user picks one; without them, they approve or deny.",
+    area: "root",
+    access: "write",
   },
   team_list: {
     params: TeamListParams,

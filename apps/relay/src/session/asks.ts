@@ -20,7 +20,7 @@ export async function handleAsks(c: RelayCtx): Promise<false | undefined> {
     options,
     store,
     log,
-    emit,
+    broadcast,
     requireHost,
     respond,
   } = c;
@@ -31,7 +31,13 @@ export async function handleAsks(c: RelayCtx): Promise<false | undefined> {
       requireHost(peer);
       const { ask, created } = await store.createAsk(parsed.data);
       if (created) {
-        emit(ask.channelId, "ask.opened", {
+        /* D-#773: Needs you is one company-wide list. Channel subscribers
+           used to be the only listeners, so each client derived its inbox
+           per thread. A broadcast reaches every helloed client; a late
+           joiner still gets the channel's current asks from
+           `channel.subscribe`. Do not also emit — a subscribed peer would
+           see the ask twice. */
+        broadcast("ask.opened", {
           channelId: ask.channelId,
           ask,
         });
@@ -97,7 +103,7 @@ export async function handleAsks(c: RelayCtx): Promise<false | undefined> {
         answer: parsed.data.answer,
       });
       if (ask) {
-        emit(ask.channelId, "ask.resolved", {
+        broadcast("ask.resolved", {
           channelId: ask.channelId,
           ask,
         });

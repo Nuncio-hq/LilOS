@@ -143,6 +143,7 @@ describe("AC-2 MCP server: tools/list + tools/call over real stdio", () => {
       // terminal + workbench + the always-on root area (#340).
       expect(list.tools.map((t) => t.name).sort()).toEqual(
         [
+          "ask",
           "context",
           "guide",
           "terminal_read",

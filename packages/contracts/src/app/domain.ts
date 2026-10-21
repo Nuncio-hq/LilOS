@@ -484,6 +484,14 @@ export const Ask = z.object({
   /** Engine request id the harness echoes back in `request.respond`. */
   requestId: z.string().min(1),
   request: EngineRequest,
+  /**
+   * Gateway `ask` lines (D-#773): why this is asked, and what yes and no
+   * do. Absent on an engine approval — that ask keeps its command on
+   * `request`. No deadline.
+   */
+  why: z.string().min(1).optional(),
+  ifYes: z.string().min(1).optional(),
+  ifNo: z.string().min(1).optional(),
   /** Structured hire draft when the ask proposes a hire. */
   hire: AskHireProposal.optional(),
   state: AskState,

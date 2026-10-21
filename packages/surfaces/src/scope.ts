@@ -1,5 +1,6 @@
 import type { Conversation, WorkbenchOpenTarget } from "@lilos/contracts/app";
 import {
+  type AskParams,
   type FolderAddParams,
   HOST_POLICY_VERSION,
   type ProjectCreateParams,
@@ -730,6 +731,15 @@ export class SessionSurfaces implements ViewerScope {
       if (!page)
         throw new SurfaceError("not_found", `unknown guide topic "${p.topic}"`);
       return { topic: p.topic, title: page.title, body: page.body };
+    });
+  }
+
+  /* `ask` waits on the user (D-#773). Unbound sessions have no thread to
+     put the card on. */
+  ask(p: AskParams) {
+    return this.tracked("ask", p.question.slice(0, 60), async () => {
+      const ops = this.requireAppOps();
+      return ops.askUser(p);
     });
   }
 

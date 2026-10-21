@@ -762,6 +762,69 @@
       }
     },
     {
+      "name": "ask",
+      "description": "Ask the user and wait. Optional why, ifYes and ifNo are the lines Needs you shows. With options, the user picks one; without them, they approve or deny.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string",
+            "minLength": 1
+          },
+          "why": {
+            "type": "string",
+            "minLength": 1
+          },
+          "ifYes": {
+            "type": "string",
+            "minLength": 1
+          },
+          "ifNo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "options": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "required": [
+          "question"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "const": "yes"
+          },
+          "answer": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "outcome"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "_meta": {
+        "lilos/area": "root",
+        "lilos/access": "write"
+      }
+    },
+    {
       "name": "team_list",
       "description": "The company roster: every employee's name, role, status and model.",
       "inputSchema": {

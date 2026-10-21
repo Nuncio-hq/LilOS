@@ -32,9 +32,9 @@ export function OpenAsk({
   const ticket = ask.ticketId ? ticketOf(data, ask.ticketId) : undefined;
   const goal = ticket?.goalId ? goalOf(data, ticket.goalId) : undefined;
   const isQuestion = ask.kind === "question";
-  // The agent's reasons come from the CEO's briefing; without one, no row.
+  // A missing line is not a row. Hide "The ask" when it repeats the title.
   const rows: [string, string | undefined, boolean?][] = [
-    ["The ask", ask.ask],
+    ["The ask", ask.ask === ask.title ? undefined : ask.ask],
     ["Why", ask.why],
     [isQuestion ? "If yes" : "If you approve", ask.ifYes],
     [isQuestion ? "If no" : "If you deny", ask.ifNo, true],

@@ -428,17 +428,26 @@ export class SessionWatch {
     const reqs = new Map(
       l.model.openRequests.map((r) => [r.requestId, r.request]),
     );
-    const sameReqs = (m: Map<string, EngineRequest>) =>
-      m.size === reqs.size && [...reqs.keys()].every((id) => m.has(id));
+    /* Gateway asks (`gw-…`) are relay rows, not engine requests, so the
+       feed never lists them. Dropping them here is how a desktop
+       notification loses an open gateway ask. Engine requests still take
+       the feed's set — a relay row the engine already resolved must go. */
+    const asks = new Map(reqs);
+    for (const [id, request] of e.askRequests)
+      if (id.startsWith("gw-")) asks.set(id, request);
+    const same = (
+      a: Map<string, EngineRequest>,
+      b: Map<string, EngineRequest>,
+    ) => a.size === b.size && [...b.keys()].every((id) => a.has(id));
     if (
       e.running === running &&
-      sameReqs(e.feedRequests) &&
-      sameReqs(e.askRequests)
+      same(e.feedRequests, reqs) &&
+      same(e.askRequests, asks)
     )
       return;
     e.running = running;
     e.feedRequests = reqs;
-    e.askRequests = new Map(reqs);
+    e.askRequests = asks;
     this.publish(sid);
     this.evaluate();
   }

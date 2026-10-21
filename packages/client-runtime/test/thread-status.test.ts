@@ -32,6 +32,12 @@ const model = (patch: Partial<SessionModel>): SessionModel =>
   ({ openRequests: [], live: undefined, ...patch }) as unknown as SessionModel;
 
 describe("threadStatus", () => {
+  it("a relay ask with no engine request is needs you", () => {
+    expect(
+      threadStatus(conv({ state: "active" }), undefined, signal(true, 0), 1),
+    ).toBe("needs");
+  });
+
   it("an open request beats a running turn: needs you", () => {
     expect(
       threadStatus(conv({ state: "active" }), undefined, signal(true, 1)),

@@ -240,6 +240,44 @@ describe("#572 AC-1 feeds attach only for the open, running, or asking", () => {
     expect(attached(engine)).toEqual(["s2"]);
   });
 
+  it("reconcile keeps an open gateway ask the engine feed does not carry", () => {
+    /* A gateway ask's id starts with gw- and never shows up in the engine
+       model. Replacing the relay set with the feed used to drop it, so a
+       desktop notification lost the ask. An engine ask the feed has
+       already resolved still drops. */
+    const c = conv("c1", "s1", { state: "active" });
+    const { engine, signals } = setup(
+      [c],
+      [ask("a-gw", "c1", "gw-1"), ask("a-eng", "c1", "r-1")],
+    );
+    expect([...(signals.get().s1?.openRequests.keys() ?? [])].sort()).toEqual([
+      "gw-1",
+      "r-1",
+    ]);
+    settleFeed(
+      engine,
+      "s1",
+      model({
+        sessionId: "s1",
+        openRequests: [
+          {
+            requestId: "eng-9",
+            turnId: "t1",
+            request: {
+              kind: "approval",
+              command: "ls",
+              options: ["once"],
+            },
+          },
+        ],
+      }),
+    );
+    expect([...(signals.get().s1?.openRequests.keys() ?? [])].sort()).toEqual([
+      "eng-9",
+      "gw-1",
+    ]);
+  });
+
   it("AC-1 archived or closed conversations never attach", () => {
     const convs = [
       conv("arch", "s-arch", { archived: true, state: "active" }),

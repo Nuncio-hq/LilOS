@@ -345,4 +345,49 @@ describe("relay harness surface (#26)", () => {
     expect(downs).toHaveLength(1);
     expect((downs[0].params as { connected: boolean }).connected).toBe(false);
   });
+
+  it("broadcasts an ask to a helloed client that is not subscribed, with why, ifYes and ifNo", async () => {
+    const relay = newRelay();
+    const host = await helloed(relay);
+    const other = await helloed(relay);
+    const { channel, conversation } = await dmWithConversation(
+      host.connection,
+      host.frames,
+    );
+    await host.connection.receive(
+      req("harness.register", { protocolVersion: 1, version: "0.0.0-test" }),
+    );
+    other.frames.length = 0;
+    await host.connection.receive(
+      req("asks.open", {
+        channelId: channel.id,
+        conversationId: conversation.id,
+        turnId: "t1",
+        requestId: "r-why",
+        request: {
+          kind: "approval",
+          command: "Ship it",
+          description: "Ship it",
+          options: ["once", "deny"],
+        },
+        why: "Readers asked",
+        ifYes: "It ships",
+        ifNo: "It waits",
+      }),
+    );
+    const opened = eventsNamed(other.frames, "ask.opened");
+    expect(opened).toHaveLength(1);
+    const ask = (opened[0].params as { ask: AskLines }).ask;
+    expect(ask.why).toBe("Readers asked");
+    expect(ask.ifYes).toBe("It ships");
+    expect(ask.ifNo).toBe("It waits");
+    expect(ask.request).toMatchObject({ command: "Ship it" });
+  });
 });
+
+type AskLines = {
+  why?: string;
+  ifYes?: string;
+  ifNo?: string;
+  request: { command?: string };
+};

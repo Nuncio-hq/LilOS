@@ -279,6 +279,9 @@ export type V3Thread = {
   status: V3Status;
   /** Finished since you last looked. */
   unseen?: boolean;
+  /** Minutes since this thread finished. Needs you sorts finished-not-seen
+     rows by this; a ticket's age is a different clock and may be absent. */
+  doneAgo?: number;
   startedAt: string;
   /** Minutes running (or ran). */
   minutes: number;

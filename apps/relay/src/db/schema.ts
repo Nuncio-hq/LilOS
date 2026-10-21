@@ -276,6 +276,10 @@ export const asks = sqliteTable(
     requestId: text("request_id").notNull(),
     request: text("request").notNull(),
     hire: text("hire"),
+    /* D-#773: gateway ask lines. Null on an engine approval. */
+    why: text("why"),
+    ifYes: text("if_yes"),
+    ifNo: text("if_no"),
     state: text("state", { enum: ["open", "resolved"] })
       .notNull()
       .default("open"),
