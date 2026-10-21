@@ -4,7 +4,13 @@ import {
   fmtTokens,
 } from "@lilos/contracts/engine";
 import type { HarnessCtx, SessionBinding } from "./ctx";
-import { beginStuckTurn, noteStuckTool, stuckOnNewMessage } from "./stuck";
+import {
+  beginStuckTurn,
+  noteStuckProgress,
+  noteStuckTool,
+  resumeStuckWatch,
+  stuckOnNewMessage,
+} from "./stuck";
 
 /**
  * engine -> relay: the `onEngineEvent` switch — turn
@@ -209,9 +215,12 @@ export function onEngineEvent(this: HarnessCtx, event: EngineEvent) {
     case "subagent.started":
       /* #346 AC-3: a session under a running subagent never suspends. */
       binding?.openSubagents.add(event.payload.subagentId);
+      /* D-#772: a helper working is progress. The quiet window resets. */
+      if (binding) noteStuckProgress(this, binding);
       break;
     case "subagent.completed":
       binding?.openSubagents.delete(event.payload.subagentId);
+      if (binding) noteStuckProgress(this, binding);
       break;
     /* #583 AC-3: a live background job stamps its count on the row — the
        badge and the session feed it keeps alive survive a released
@@ -222,8 +231,13 @@ export function onEngineEvent(this: HarnessCtx, event: EngineEvent) {
       this.updateConversation(binding.conversationId, {
         bgJobs: binding.runningJobs.size,
       });
+      /* D-#772: a job starting is a new step, same as its later output. */
+      noteStuckProgress(this, binding);
       break;
     }
+    case "job.output":
+      if (binding) noteStuckProgress(this, binding);
+      break;
     case "job.exited": {
       if (!binding) break;
       if (binding.runningJobs.delete(event.payload.jobId))
@@ -253,12 +267,17 @@ export function onEngineEvent(this: HarnessCtx, event: EngineEvent) {
       }
       break;
     case "turn.delta":
-      if (binding && event.payload.stream === "text") {
-        binding.textByTurn.set(
-          event.payload.turnId,
-          (binding.textByTurn.get(event.payload.turnId) ?? "") +
-            event.payload.delta,
-        );
+      if (binding) {
+        if (event.payload.stream === "text") {
+          binding.textByTurn.set(
+            event.payload.turnId,
+            (binding.textByTurn.get(event.payload.turnId) ?? "") +
+              event.payload.delta,
+          );
+        }
+        /* D-#772: a streaming command is still moving. The quiet window
+           resets on the delta, not only when the next tool starts. */
+        noteStuckProgress(this, binding);
       }
       break;
     /* #431: a replayed finished turn's streams in one frame — replace
@@ -294,6 +313,10 @@ export function onEngineEvent(this: HarnessCtx, event: EngineEvent) {
           event.payload.parentToolCallId !== undefined,
         );
       }
+      break;
+    case "tool.completed":
+      /* D-#772: the call finishing is progress, including a nested one. */
+      if (binding) noteStuckProgress(this, binding);
       break;
     case "request.opened":
       if (binding) {
@@ -331,6 +354,9 @@ export function onEngineEvent(this: HarnessCtx, event: EngineEvent) {
       if (binding) {
         binding.nowWaits.delete(event.payload.requestId);
         this.noteNow(binding);
+        /* D-#772: the quiet window resumes only once nothing is left
+           waiting on the user. The wait itself is not quiet time. */
+        resumeStuckWatch(this, binding);
       }
       void this.onEngineRequestResolved(
         event.sessionId,

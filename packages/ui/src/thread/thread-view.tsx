@@ -311,7 +311,7 @@ export function ThreadView(props: ThreadViewProps) {
            stopped turn + tray are both fully visible (issue #15). Inside <Conversation> so it can
            use the stick-to-bottom context. */}
         <ConversationKeepBottom
-          signal={`${(thread.queue ?? []).length}:${pending.length}`}
+          signal={`${(thread.queue ?? []).length}:${pending.length}:${thread.stuck ?? ""}`}
         />
       </Conversation>
       {thread.stuck && (

@@ -21,11 +21,6 @@ export const defaultEditor = atom<string | null>(null);
  *  remembers a previous session's level. */
 export const defaultAccess = atom<ConversationAccess>("ask");
 
-/** D-#772: Settings → Phone → Stuck (relay key `push.stuck`). Off until
-    the owner turns it on — a stuck thread does not buzz the phone before
-    that. */
-export const pushStuck = atom(false);
-
 /** The engine approval policy the user picked this session. The engine's
  *  own value only reaches us on `describe` (at reconnect), so a pick stands
  *  here until then; `undefined` = trust the declared `detail.current`. */

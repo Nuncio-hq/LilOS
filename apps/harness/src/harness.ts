@@ -136,6 +136,7 @@ import {
   seqOfMessage,
   stopOwns,
 } from "./harness/stops";
+import { stopStuckWatches } from "./harness/stuck";
 import {
   aliasSurfaces,
   createSurfaces,
@@ -487,6 +488,8 @@ export class Harness {
   async stop(): Promise<void> {
     this.reaper.stop();
     this.scheduler?.stop();
+    /* D-#772: a quiet timer must not fire after the harness stops. */
+    stopStuckWatches(this.bindings.values());
     for (const t of this.earlyFlushTimers.values()) clearTimeout(t);
     this.earlyFlushTimers.clear();
     for (const unsub of this.unsubs.splice(0)) unsub();

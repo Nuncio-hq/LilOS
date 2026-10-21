@@ -587,37 +587,36 @@ export type EngineHostStatus = z.infer<typeof EngineHostStatus>;
 
 /**
  * Push kinds a phone can toggle individually (#161): the two attention
- * transitions (an ask the user must approve, an ask waiting on input) and
- * the two terminal ones (turn completed, turn/session failed).
+ * transitions (an ask the user must approve, an ask waiting on input),
+ * the two terminal ones (turn completed, turn/session failed), and a
+ * thread marked stuck (D-#772).
  */
 export const PushKind = z.enum([
   "needs_approval",
   "waiting_for_input",
   "completed",
   "failed",
-  /* D-#772: a thread marked stuck. Off until Settings → Phone turns
-     `PUSH_STUCK_SETTING` on — unlike the four above, which default on
-     in the phone's own registration. */
+  /* D-#772: a thread marked stuck. The phone registers this with its
+     other prefs; absent means off. */
   "stuck",
 ]);
 export type PushKind = z.infer<typeof PushKind>;
 
 /**
- * Per-kind push toggles a device registers with the relay (#161): the relay
- * fans a transition out only to registrations whose flag for that kind is
- * on. All four default on when the phone first registers.
+ * Per-kind push toggles a device registers with the relay (#161, D-#772):
+ * the relay fans a transition out only to registrations whose flag for
+ * that kind is on. The four attention and terminal kinds default on when
+ * the phone first registers. `stuck` defaults off — a phone is not told
+ * a thread is stuck until that phone turns it on.
  */
 export const PushPrefs = z.object({
   needsApproval: z.boolean(),
   waitingForInput: z.boolean(),
   completed: z.boolean(),
   failed: z.boolean(),
+  stuck: z.boolean().default(false),
 });
 export type PushPrefs = z.infer<typeof PushPrefs>;
-
-/** D-#772: relay settings key for Settings → Phone → Stuck. Absent or
-    anything other than `true` means the phone is not told. */
-export const PUSH_STUCK_SETTING = "push.stuck";
 
 /* ----------------------- workbench targets (#340) ----------------------- */
 

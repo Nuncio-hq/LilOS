@@ -157,6 +157,15 @@ export function useThreadWith(
     aux.jobsCapable,
   );
 
+  /* D-#773: an open relay ask is Needs you even with no engine request.
+     D-#772: the stuck card below uses this same status, so Needs you wins. */
+  const openAsks = asksHere.filter((a) => a.state === "open").length;
+  const liveStatus = threadStatus(
+    conv,
+    model,
+    sid ? signals[sid] : undefined,
+    openAsks,
+  );
   const thread: Thread = {
     /* #586: the tag is display-only (the session row resolves on the full
        engineRef) — the TAIL is the unique part of a Hermes ref. */
@@ -180,8 +189,11 @@ export function useThreadWith(
        engine declared `background_jobs` (uiJobs is empty otherwise — and
        the tab hides itself when it is). */
     ...(uiJobs.length ? { jobs: uiJobs } : {}),
-    /* D-#772: the chat's red card. The header's word comes from threadStatus. */
-    ...(conv.stuck ? { stuck: conv.stuck.reason } : {}),
+    /* D-#772: the chat's red card, only while the thread's status is
+       stuck. A stale mark on a finished turn does not draw it. */
+    ...(liveStatus === "stuck" && conv.stuck
+      ? { stuck: conv.stuck.reason }
+      : {}),
     /* #579 AC-1: the header's "PR #N" chip — the Workbench probe's live
        read wins once it reports; the conversations.prs list fills in before
        it does (undefined probe = not answered yet). */
@@ -243,15 +255,7 @@ export function useThreadWith(
     empFn,
     mentionables,
     rootMsg,
-    status:
-      V3_STATUS[
-        threadStatus(
-          conv,
-          model,
-          sid ? signals[sid] : undefined,
-          asksHere.filter((a) => a.state === "open").length,
-        )
-      ],
+    status: V3_STATUS[liveStatus],
     thread,
     resolved: resolvedReceipts(asksHere),
     running,

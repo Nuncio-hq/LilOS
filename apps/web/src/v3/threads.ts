@@ -267,9 +267,12 @@ function threadRows(src: ThreadSources, archived: boolean): V3Thread[] {
         ...(ask
           ? { askId: ask.id, quote: oneLine(askText(ask).text, 140) }
           : {}),
-        /* D-#772: the live card's reason. Threads already floats `stuck`
-           above working (RANK). */
-        ...(c.stuck ? { stuck: { what: c.stuck.reason, detail: [] } } : {}),
+        /* D-#772: the live card's reason, only while the status is stuck.
+           Threads already floats `stuck` above working (RANK). A mark left
+           on a finished turn does not draw the card. */
+        ...(status === "stuck" && c.stuck
+          ? { stuck: { what: c.stuck.reason, detail: [] } }
+          : {}),
       },
     });
   }

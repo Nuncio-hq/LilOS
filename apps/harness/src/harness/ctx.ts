@@ -148,6 +148,14 @@ export interface SessionBinding {
   stuckReason?: string;
   /** Quiet-window timer. A new step replaces it. */
   stuckTimer?: ReturnType<typeof setTimeout>;
+  /** Latest progress that is not itself a counted call (a delta, a nested
+      tool, a subagent, a job). The quiet clock uses the later of this,
+      the last call, and the turn start. */
+  stuckProgress?: number;
+  /** An approval or a question is open — the quiet window does not run. */
+  stuckPaused?: boolean;
+  /** Replaying engine events: record, don't publish, judge once after. */
+  stuckDefer?: boolean;
   /** #422: engine requests currently waiting on the user —
       requestId -> its wait line. */
   nowWaits: Map<string, string>;

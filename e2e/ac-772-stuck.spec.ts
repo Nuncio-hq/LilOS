@@ -16,7 +16,8 @@ import {
  *   AC-1 six identical tool calls → Stuck, with the reason
  *   AC-2 a different step clears it
  *   AC-3 Stop on the card stops the turn
- *   AC-4 a push when Settings → Phone → Stuck is on, none when it is off
+ *   AC-4 a push when the phone's Stuck pref is on, none when it is off
+ *   a new message clears the card and the turn goes on
  *
  * The push lands on the relay's Expo sender. LILOS_EXPO_ENDPOINT points
  * that at a collector this file owns — the same seam the relay uses for
@@ -124,8 +125,9 @@ function rpc(
   });
 }
 
-/** A paired phone with push registered, so a stuck mark has somewhere to go. */
-async function registerPhone(stack: Stack, lan: string) {
+/** A paired phone with push registered, so a stuck mark has somewhere to go.
+    `stuck` is that phone's own preference (D-#772) and starts off. */
+async function registerPhone(stack: Stack, lan: string, stuck = false) {
   const offered = await rpc(
     `${stack.relayWs}?token=${encodeURIComponent(stack.relayToken)}`,
     {
@@ -166,14 +168,17 @@ async function registerPhone(stack: Stack, lan: string) {
         waitingForInput: true,
         completed: true,
         failed: true,
+        stuck,
       },
     },
   );
+  return { register: (on: boolean) => registerPhone(stack, lan, on) };
 }
 
 let stack: Stack;
 let sink: { got: PushMsg[]; close: () => Promise<void> };
 let lan: string;
+let phone: { register: (stuck: boolean) => Promise<unknown> } | undefined;
 
 test.beforeAll(async () => {
   lan = lanAddress() ?? "";
@@ -184,7 +189,7 @@ test.beforeAll(async () => {
     LILOS_RELAY_TAILSCALE_NAME: "mac.tailnet.test",
     LILOS_EXPO_ENDPOINT: sink.url,
   });
-  await registerPhone(stack, lan);
+  phone = await registerPhone(stack, lan, false);
 });
 
 test.afterAll(async () => {
@@ -210,6 +215,11 @@ test("six identical searches show Stuck with the reason, above a working thread"
   await expect(
     card(page).getByRole("button", { name: "Stop", exact: true }),
   ).toBeVisible();
+  await expect(
+    page
+      .locator("[data-thread-panel]")
+      .getByRole("button", { name: "Stop (⌘.)" }),
+  ).toHaveCount(0);
   await expect(
     card(page).getByRole("button", { name: "Message", exact: true }),
   ).toBeVisible();
@@ -253,7 +263,23 @@ test("Stop on the card stops the turn", async ({ page }) => {
   ).toHaveCount(0);
 });
 
-test("a push when Stuck is on, and none when it is off", async ({ page }) => {
+test("a new message clears Stuck and the turn goes on", async ({ page }) => {
+  test.skip(!lan, "no LAN address for the phone-pairing stand-in");
+  const agent = await agentOf(page);
+  await startChat(page, stack.webUrl, agent, "stuck:");
+  await expect(card(page)).toContainText(REASON, { timeout: 20_000 });
+  const panel = page.locator("[data-thread-panel]");
+  await panel.locator("textarea").fill("keep going");
+  /* A running turn's send pill says Queue: the message still enters the turn. */
+  await panel.getByRole("button", { name: "Queue" }).click();
+  await expect(card(page)).toBeHidden({ timeout: 15_000 });
+  await expect(panel).toContainText("keep going");
+  await expect(panel.getByRole("button", { name: "Stop (⌘.)" })).toHaveCount(0);
+});
+
+test("a push when the phone's Stuck pref is on, and none when it is off", async ({
+  page,
+}) => {
   test.skip(!lan, "no LAN address for the phone-pairing stand-in");
   const agent = await agentOf(page);
   const before = sink.got.length;
@@ -262,18 +288,13 @@ test("a push when Stuck is on, and none when it is off", async ({ page }) => {
   await page.waitForTimeout(500);
   expect(sink.got.slice(before)).toEqual([]);
 
-  await page.goto(`${stack.webUrl}/#?page=settings&view=phone`);
-  const sw = page.getByRole("switch", { name: "Stuck notifications" });
-  await expect(sw).toHaveAttribute("aria-checked", "false");
-  await sw.click();
-  await expect(sw).toHaveAttribute("aria-checked", "true");
-  await shot(page, "4-phone-stuck-on.png");
-
+  await phone?.register(true);
   await startChat(page, stack.webUrl, agent, "stuck:");
   await expect(card(page)).toContainText(REASON, { timeout: 20_000 });
+  await shot(page, "4-phone-stuck-on.png");
   await expect
-    .poll(() => sink.got.some((m) => m.body?.includes(REASON)), {
+    .poll(() => sink.got.filter((m) => m.body?.includes(REASON)).length, {
       timeout: 10_000,
     })
-    .toBe(true);
+    .toBe(1);
 });

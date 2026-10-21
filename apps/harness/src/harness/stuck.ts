@@ -3,9 +3,13 @@ import type { HarnessCtx, SessionBinding } from "./ctx";
 /**
  * D-#772: one place for the numbers. Six of the same call is a loop a
  * person would already have stopped — five can still be a retry. Twenty
- * minutes without a new step is a stall, not a slow tool: a step that
- * starts resets the clock. Both marks clear on a different step, a new
- * message, or Stop (the callers).
+ * minutes without a new step is a stall, not a slow tool. Any sign the
+ * turn is moving resets that clock: a top-level tool call, and also a
+ * streamed delta, a tool finishing, a nested tool, a subagent event, or
+ * a background job starting or writing. The clock does not run while the
+ * turn waits on the user (an open approval or question). Both marks clear
+ * on a different step, a new message, or Stop (the callers). The phone's
+ * Stuck notification is that phone's own preference and starts off.
  */
 export const STUCK_REPEAT = 6;
 export const STUCK_QUIET_MS = 20 * 60 * 1000;
@@ -58,19 +62,30 @@ function stable(value: unknown): string {
 
 /**
  * The plain reason, or nothing when the turn is moving. A repeat wins
- * over a quiet window: the loop is the more specific thing to say.
+ * over a quiet window: the loop is the more specific thing to say. The
+ * quiet clock starts at the later of the last counted call, the turn's
+ * start, and the last progress that wasn't itself a counted call. While
+ * `waiting`, the quiet window does not run.
  */
 export function stuckReason(input: {
   calls: StuckCall[];
   now: number;
   startedAt: number;
+  progressAt?: number;
+  waiting?: boolean;
 }): string | undefined {
   const tail = identicalTail(input.calls);
   if (tail >= STUCK_REPEAT) {
     const last = input.calls.at(-1);
     if (last) return `Same ${toolWords(last.tool)} ${tail} times`;
   }
-  const lastAt = input.calls.at(-1)?.at ?? input.startedAt;
+  if (input.waiting) return undefined;
+  const lastCall = input.calls.at(-1)?.at;
+  const lastAt = Math.max(
+    lastCall ?? input.startedAt,
+    input.startedAt,
+    input.progressAt ?? 0,
+  );
   const quiet = input.now - lastAt;
   if (quiet >= STUCK_QUIET_MS) {
     const mins = Math.floor(quiet / 60_000);
@@ -84,12 +99,15 @@ function dropTimer(binding: SessionBinding) {
   binding.stuckTimer = undefined;
 }
 
-/** Drop the watch without writing. The caller's own patch clears the row. */
+/** Drop the watch without writing. The caller's own patch clears the row.
+    A replay in progress (`stuckDefer`) stays deferred. */
 export function resetStuckWatch(binding: SessionBinding) {
   dropTimer(binding);
   binding.stuckCalls = [];
   binding.stuckSince = undefined;
   binding.stuckReason = undefined;
+  binding.stuckProgress = undefined;
+  binding.stuckPaused = false;
 }
 
 function publish(
@@ -97,6 +115,7 @@ function publish(
   binding: SessionBinding,
   reason: string | undefined,
 ) {
+  if (binding.stuckDefer) return;
   if (reason === binding.stuckReason) return;
   if (!reason && binding.stuckReason === undefined) return;
   binding.stuckReason = reason;
@@ -114,6 +133,8 @@ function consider(ctx: HarnessCtx, binding: SessionBinding, now: number) {
     calls: binding.stuckCalls ?? [],
     now,
     startedAt: binding.stuckSince ?? now,
+    progressAt: binding.stuckProgress,
+    waiting: binding.stuckPaused === true,
   });
   publish(ctx, binding, reason);
 }
@@ -122,10 +143,17 @@ function consider(ctx: HarnessCtx, binding: SessionBinding, now: number) {
     a test must not keep the process alive for twenty minutes. */
 function armQuiet(ctx: HarnessCtx, binding: SessionBinding) {
   dropTimer(binding);
-  if (binding.stopRequested || !binding.runningTurnId) return;
+  if (
+    binding.stuckPaused ||
+    binding.stuckDefer ||
+    binding.stopRequested ||
+    !binding.runningTurnId
+  )
+    return;
   const timer = setTimeout(() => {
     binding.stuckTimer = undefined;
-    if (binding.stopRequested || !binding.runningTurnId) return;
+    if (binding.stuckPaused || binding.stopRequested || !binding.runningTurnId)
+      return;
     consider(ctx, binding, Date.now());
   }, STUCK_QUIET_MS);
   if (typeof timer === "object" && timer && "unref" in timer) timer.unref();
@@ -133,51 +161,146 @@ function armQuiet(ctx: HarnessCtx, binding: SessionBinding) {
 }
 
 /** A turn started: the previous mark is cleared by that update's `stuck:
-    null`. Arm the quiet window from now. */
+    null`. Arm the quiet window from now. During a replay, record only. */
 export function beginStuckTurn(
   ctx: HarnessCtx,
   binding: SessionBinding,
   at = Date.now(),
 ) {
+  /* A wait opened before this turn's `turn.started` (a replay raises
+     open requests first) must stay paused. The map survives the reset. */
+  const waiting = binding.nowWaits.size > 0;
   resetStuckWatch(binding);
   binding.stuckSince = at;
+  binding.stuckPaused = waiting;
   armQuiet(ctx, binding);
 }
 
-/** A top-level tool call. Nested calls (a helper's own steps) don't
-    count: the thread is stuck when its own step repeats. */
+/** A top-level tool call. Nested calls are progress — they reset the
+    quiet window — but they don't count toward the repeat: the thread is
+    stuck when its own step repeats. */
 export function noteStuckTool(
   ctx: HarnessCtx,
   binding: SessionBinding,
   call: StuckCall,
   nested: boolean,
 ) {
-  if (nested || binding.stopRequested || !binding.runningTurnId) return;
+  if (binding.stopRequested || !binding.runningTurnId) return;
+  if (nested) {
+    noteStuckProgress(ctx, binding, call.at);
+    return;
+  }
   const calls = binding.stuckCalls ?? [];
   calls.push(call);
   if (calls.length > CALL_CAP) calls.splice(0, calls.length - CALL_CAP);
   binding.stuckCalls = calls;
+  if (binding.stuckDefer) return;
   consider(ctx, binding, call.at);
+  if (!binding.stuckPaused) armQuiet(ctx, binding);
+}
+
+/** A streamed delta, a tool finishing, a nested tool, a subagent event,
+    or a job starting or writing. Resets the quiet window. Not a repeat. */
+export function noteStuckProgress(
+  ctx: HarnessCtx,
+  binding: SessionBinding,
+  at = Date.now(),
+) {
+  if (binding.stopRequested || !binding.runningTurnId) return;
+  binding.stuckProgress = at;
+  if (binding.stuckDefer || binding.stuckPaused) return;
+  consider(ctx, binding, at);
   armQuiet(ctx, binding);
 }
 
-/** Stop, or the session going away: the mark leaves with the turn. */
-export function clearStuck(ctx: HarnessCtx, binding: SessionBinding) {
-  const had = binding.stuckReason;
+/** An approval or a question is open: the quiet window does not run. */
+export function pauseStuckWatch(ctx: HarnessCtx, binding: SessionBinding) {
+  binding.stuckPaused = true;
+  dropTimer(binding);
+  if (binding.stuckDefer) return;
+  consider(ctx, binding, Date.now());
+}
+
+/** The last wait closed. The time spent waiting is not quiet. */
+export function resumeStuckWatch(
+  ctx: HarnessCtx,
+  binding: SessionBinding,
+  at = Date.now(),
+) {
+  if (binding.nowWaits.size > 0) return;
+  binding.stuckPaused = false;
+  binding.stuckProgress = Math.max(binding.stuckProgress ?? 0, at);
+  if (binding.stuckDefer || binding.stopRequested || !binding.runningTurnId)
+    return;
+  consider(ctx, binding, at);
+  armQuiet(ctx, binding);
+}
+
+/** Replay records calls and progress, then judges once. A turn that is
+    no longer running is not marked and not pushed; a mark left on the
+    row from before the restart is cleared. */
+export function finishStuckReplay(ctx: HarnessCtx, binding: SessionBinding) {
+  binding.stuckDefer = false;
+  if (binding.stopRequested || !binding.runningTurnId) {
+    void clearStuck(ctx, binding);
+    return;
+  }
+  if (binding.nowWaits.size > 0) {
+    binding.stuckPaused = true;
+    dropTimer(binding);
+  }
+  consider(ctx, binding, Date.now());
+  if (!binding.stuckPaused) armQuiet(ctx, binding);
+}
+
+/** Stop, the session going away, or a restart that found a stale row:
+    the mark leaves with the turn. Memory being empty is not "not stuck"
+    — the row is read. */
+export function clearStuck(
+  ctx: HarnessCtx,
+  binding: SessionBinding,
+): Promise<void> {
+  const had = binding.stuckReason !== undefined;
   resetStuckWatch(binding);
-  if (had)
-    void ctx
-      .updateConversation(binding.conversationId, { stuck: null })
-      .catch((error) =>
-        ctx.opts.log.warn("stuck clear failed", { error: String(error) }),
-      );
+  return persistClear(ctx, binding, had);
+}
+
+async function persistClear(
+  ctx: HarnessCtx,
+  binding: SessionBinding,
+  had: boolean,
+) {
+  let persisted = false;
+  try {
+    const cached = ctx.conversationFromAtom(binding.conversationId);
+    const conv = cached ?? (await ctx.findConversation(binding.conversationId));
+    persisted = conv?.stuck !== undefined;
+  } catch (error) {
+    ctx.opts.log.warn("stuck read failed", { error: String(error) });
+    if (!had) return;
+    persisted = true;
+  }
+  if (!had && !persisted) return;
+  await ctx
+    .updateConversation(binding.conversationId, { stuck: null })
+    .catch((error) =>
+      ctx.opts.log.warn("stuck clear failed", { error: String(error) }),
+    );
 }
 
 /** A new message while the turn runs. The count starts over; the same
-    loop can mark the thread again. */
+    loop can mark the thread again. A wait that is still open stays paused. */
 export function stuckOnNewMessage(ctx: HarnessCtx, binding: SessionBinding) {
-  clearStuck(ctx, binding);
+  const paused = binding.stuckPaused === true || binding.nowWaits.size > 0;
+  void clearStuck(ctx, binding);
   if (!binding.runningTurnId || binding.stopRequested) return;
   binding.stuckSince = Date.now();
+  binding.stuckPaused = paused;
+  if (paused || binding.stuckDefer) return;
   armQuiet(ctx, binding);
+}
+
+/** `Harness.stop`: a quiet timer must not fire after the process stops. */
+export function stopStuckWatches(bindings: Iterable<SessionBinding>) {
+  for (const binding of bindings) resetStuckWatch(binding);
 }

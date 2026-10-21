@@ -10,16 +10,18 @@ import {
   setPushPref,
 } from "./push";
 
-/* AC-6: the four per-kind toggles + the OS-permission state, rendered as
-   one Settings section. Toggles apply locally and re-register the prefs on
+/* AC-6: the per-kind toggles + the OS-permission state, rendered as one
+   Settings section. Toggles apply locally and re-register the prefs on
    the relay; a denied permission can't be re-asked in-app, so the row
-   explains and jumps to iOS Settings. */
+   explains and jumps to iOS Settings. Stuck (D-#772) sits with the others
+   and starts off — this phone owns that preference. */
 
 const KINDS: { key: keyof PushPrefs; label: string }[] = [
   { key: "needsApproval", label: "Needs approval" },
   { key: "waitingForInput", label: "Waiting for input" },
   { key: "completed", label: "Completed" },
   { key: "failed", label: "Failed" },
+  { key: "stuck", label: "Stuck" },
 ];
 
 export function PushSettingsSection() {

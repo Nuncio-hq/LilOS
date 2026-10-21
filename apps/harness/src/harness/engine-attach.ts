@@ -10,6 +10,7 @@ import {
   SESSION_NOT_FOUND,
 } from "../engine/client";
 import type { HarnessCtx, SessionBinding } from "./ctx";
+import { clearStuck, finishStuckReplay } from "./stuck";
 
 /**
  * Engine (re)attach: describe + first-run hire, per-binding
@@ -127,6 +128,9 @@ export function applyReplay(
   if (replay.snapshot.turn) {
     binding.runningTurnId = replay.snapshot.turn.turnId;
   }
+  /* D-#772: record the replay, then judge once. Publishing per event
+     would mark a finished turn stuck and push while the log plays back. */
+  binding.stuckDefer = true;
   for (const open of replay.openRequests) {
     void this.openAsk(binding, open.turnId, open.requestId, open.request).catch(
       () => {},
@@ -163,6 +167,10 @@ export function applyReplay(
   ) {
     void this.markTurnInterrupted(binding, watchedTurnId);
   }
+  /* After the lost-turn check: a vanished turn has already cleared
+     `runningTurnId`, so this does not mark it. A turn the snapshot still
+     shows running is judged once, from the calls the replay recorded. */
+  finishStuckReplay(this, binding);
 }
 
 /** End a turn that vanished across a gap — surface interrupted + Retry. */
@@ -180,11 +188,15 @@ export async function markTurnInterrupted(
     binding.nowStep = undefined;
     binding.nowWaits.clear();
     this.noteNow(binding);
+    /* D-#772: the turn is gone, so the mark is too — including one this
+       process never held in memory. */
+    void clearStuck(this, binding);
     /* D-#419: the lost turn's event log orphans with this session (the
        rebind swaps engineRef), so the failure card can't ride the turn
        — stamp it on the conversation; the next turn.started clears it. */
     await this.updateConversation(binding.conversationId, {
       state: "idle",
+      stuck: null,
       turnFailure: {
         kind: "sleep",
         /* #592: user-facing copy — the phone's amber chip says "Mac went
@@ -218,8 +230,12 @@ export async function surfaceBackendDown(
   binding: SessionBinding,
   sourceId: string,
 ): Promise<void> {
+  /* D-#772: the backend dying ends the turn. Clear the mark and its timer
+     even when this process restarted and only the row still says stuck. */
+  void clearStuck(this, binding);
   await this.updateConversation(binding.conversationId, {
     state: "idle",
+    stuck: null,
     turnFailure: {
       kind: "sleep",
       text: "Stopped partway — your Mac went to sleep. Send a message to pick up where it left off.",

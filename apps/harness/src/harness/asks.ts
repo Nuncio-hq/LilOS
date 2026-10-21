@@ -4,6 +4,7 @@ import { engineErrorCode } from "../engine/client";
 import type { HarnessCtx, SessionBinding } from "./ctx";
 import { waitLine } from "./now-line";
 import { isTransientRelayError, REQUEST_NOT_FOUND } from "./rpc";
+import { pauseStuckWatch } from "./stuck";
 
 /**
  * Engine asks: relay ask cards, #106 full-access auto-approve,
@@ -27,6 +28,9 @@ export async function openAsk(
      your approval" (replays through applyReplay land here too). */
   binding.nowWaits.set(requestId, waitLine(request));
   this.noteNow(binding);
+  /* D-#772: the turn is waiting on the user, so the quiet window pauses.
+     A full-access approval never reaches here — the user is not waiting. */
+  pauseStuckWatch(this, binding);
   const key = `${binding.sessionId}:${requestId}`;
   const open = async () => {
     const result = await this.opts.relay.request<{ ask: Ask }>("asks.open", {

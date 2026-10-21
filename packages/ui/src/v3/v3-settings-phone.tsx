@@ -203,11 +203,6 @@ const PUSH: {
     title: "Needs you",
     hint: "An agent asks a question or wants approval.",
   },
-  {
-    key: "stuck",
-    title: "Stuck",
-    hint: "An agent cannot get past something on its own.",
-  },
   { key: "failed", title: "Failed", hint: "A run ended in an error." },
   { key: "finished", title: "Finished", hint: "A ticket is done and checked." },
 ];

@@ -1,5 +1,6 @@
 import type { AppMessage } from "@lilos/contracts/app";
 import type { HarnessCtx, SessionBinding } from "./ctx";
+import { stuckOnNewMessage } from "./stuck";
 
 /**
  * The per-binding send lane: consume-or-queue, steer-or-queue,
@@ -45,6 +46,10 @@ export function enqueueOrPrompt(
   }
   binding.consumed.add(message.id);
   if (binding.runningTurnId) {
+    /* D-#772: a message that enters a running turn clears Stuck here,
+       whether it steers or queues. `turn.steered` clears again once a
+       steer lands; a queued send never gets that event. */
+    stuckOnNewMessage(this, binding);
     // Capability `steer` (#9): a mid-turn user message steers the running
     // turn; without it the message queues as the next prompt.
     // `session.steer` carries text only — a mid-turn message with

@@ -125,6 +125,8 @@ export function ThreadComposer({
       maxFiles={p.maxFiles}
       onAttachError={p.onAttachError}
       onStop={p.onStop}
+      /* D-#772: while the stuck card shows, it owns Stop. ⌘. still works. */
+      hideStop={!!thread.stuck}
       models={p.models}
       onModel={p.onModel}
       picker={p.picker}

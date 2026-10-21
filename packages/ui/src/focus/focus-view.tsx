@@ -275,7 +275,7 @@ export function FocusView(props: FocusViewProps) {
             {/* Not-sent tray / plan tray / steer chips grow the area below the conversation;
                 re-stick so everything stays visible without scrolling (issue #15). */}
             <ConversationKeepBottom
-              signal={`${(thread.queue ?? []).length}:${plan.todos.length}:${pendingSteers.length}:${running}:${plan.open}`}
+              signal={`${(thread.queue ?? []).length}:${plan.todos.length}:${pendingSteers.length}:${running}:${plan.open}:${thread.stuck ?? ""}`}
             />
           </Conversation>
           {thread.stuck && (

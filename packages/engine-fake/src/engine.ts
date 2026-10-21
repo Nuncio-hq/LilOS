@@ -218,6 +218,9 @@ interface FakeSession {
       releases it (interrupt or session stop) — a test asserting the running
       state never races the script's length. */
   holdTurn?: () => void;
+  /** D-#772: the `stuck:` hold releases on a steer, so the turn continues.
+      `LILOS_TURN_HOLD` does not — that hold is the test's running window. */
+  holdReleasesOnSteer?: boolean;
   /** #432: a `slow[:ms]` prompt's pacing override, set per turn — the spec
       needing a running window marks its prompt instead of slowing the whole
       engine (the old `ENGINE_FAKE_TICK`). The leg a slow turn arms inherits
@@ -917,6 +920,9 @@ export class FakeEngine {
     /* A steer is a user turn the agent heard mid-run — counted so a rewind
        drops it like a prompt (#134). */
     s.userTurns.push(p.text);
+    /* D-#772: a steer into a held `stuck:` turn releases the hold. Left
+       held, the turn never continues and the card never leaves. */
+    if (s.holdReleasesOnSteer) s.holdTurn?.();
     return { status: "steered" as const };
   }
 
@@ -1691,10 +1697,12 @@ export class FakeEngine {
       /* D-#772: the steps have landed and the turn stays running until
          Stop. Interrupt resolves the hold; the next sleep then cancels. */
       if (script.hold) {
+        s.holdReleasesOnSteer = true;
         await new Promise<void>((resolve) => {
           s.holdTurn = resolve;
         });
         s.holdTurn = undefined;
+        s.holdReleasesOnSteer = false;
         await this.sleep(s);
       }
       this.drainSteers(s, turnId);

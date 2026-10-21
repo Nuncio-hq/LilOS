@@ -87,12 +87,11 @@ export type V3ConnectRow = {
 
 export type V3Settings = {
   /** What the phone is told about. A missing key is a kind this app does
-     not offer here (D-#19). The real app offers `stuck` (D-#772); the
-     prototype also offers the others. Absent entirely: no section. */
+     not offer here (D-#19). The phone owns these, Stuck included (D-#772);
+     this Mac does not offer a Stuck switch. Absent entirely: no section. */
   push?: {
     needsYou?: boolean;
     finished?: boolean;
-    stuck?: boolean;
     failed?: boolean;
   };
   /** Ask before risky commands, or let agents run anything. */
