@@ -296,7 +296,7 @@ describe("issue #590 — desktop polish", () => {
     expect(ta.selectionStart).toBe("Change the plan: ".length);
   });
 
-  test("AC-2 the Focus header names the employee", () => {
+  test("AC-2 the Focus header does not repeat who the thread is with (the peek's trail names it)", () => {
     const r = render(
       <FocusView
         root={root}
@@ -312,9 +312,8 @@ describe("issue #590 — desktop polish", () => {
       />,
     );
     const header = r.container.querySelector("header")!;
-    expect(header.textContent).toContain("Builder");
-    // The kicker reads "Chat · Builder" — no DM channel wording.
-    expect(header.textContent).toContain("Chat · Builder");
+    // No "Chat · Builder" kicker — and never DM channel wording.
+    expect(header.textContent).not.toContain("Chat · Builder");
     expect(header.textContent).not.toContain("DM");
   });
 

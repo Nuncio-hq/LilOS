@@ -291,9 +291,7 @@ export function V3Shell({
             the sidebar is hidden), so a notice goes below it, above the page. */}
           <V3TopBar
             company={data.company}
-            pageName={PAGE_NAME[page.page]}
             hidden={hidden}
-            askCeo={!!draft}
             onHome={() => goFromPage({ page: "home" })}
             onShowSidebar={toggleSidebar}
             onSearch={() => setPalette("")}

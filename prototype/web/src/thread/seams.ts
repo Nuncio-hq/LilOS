@@ -2,12 +2,17 @@ import type { AttachedFile, V3Data, V3DataActions, V3Thread } from "@lilos/ui"
 import { runTurn } from "../v3-engine/chat-sim"
 import { v3Reply } from "../fake-v3-reply"
 
+/** A one-line notice. `error` gives it the destructive accent; one `action` ("Undo") keeps it up 10 s instead of 2.6 s. */
+export type ToastAction = { label: string; run: () => void }
+export type Toast = (text: string, opts?: { error?: boolean; action?: ToastAction }) => void
+
 /* What the mock thread view needs beyond the shell's actions: sending with
    attachments (the shell's `message` carries text only), small edits to the
-   thread record (model pick, compaction, a queued message taken back), and
-   the one-line notices. Backed by the same mock engine as everything else. */
+   thread record (model pick, compaction, a queued message taken back, a plan
+   decided), and the one-line notices. Backed by the same mock engine as
+   everything else. */
 export type ThreadSeams = {
-  toast: (text: string) => void
+  toast: Toast
   send: (threadId: string, text: string, files?: AttachedFile[]) => void
   patch: (threadId: string, fn: (t: V3Thread) => V3Thread) => void
 }
@@ -16,7 +21,7 @@ export function makeThreadSeams(engine: {
   setData: (fn: (d: V3Data) => V3Data) => void
   getData: () => V3Data
   actions: V3DataActions
-  toast: (text: string) => void
+  toast: Toast
 }): ThreadSeams {
   const { setData, getData, actions, toast } = engine
   return {

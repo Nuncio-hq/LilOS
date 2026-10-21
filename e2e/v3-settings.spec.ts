@@ -123,7 +123,8 @@ test("General and Engine & models show the real company and engine; what you cha
   await settings(page, "engine");
   await expect(main(page)).toContainText("Engine-fake", { timeout: 30_000 });
   await expect(main(page)).toContainText("0.0.0");
-  await expect(main(page).getByText("Running")).toHaveCount(2);
+  // "Running" is said once — by the engine's card, not again under Status.
+  await expect(main(page).getByText("Running")).toHaveCount(1);
   const relayRow = main(page)
     .getByText("Local relay", { exact: true })
     .locator("../..");

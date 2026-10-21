@@ -800,7 +800,7 @@ export const PromptInput = ({
         {...props}
       >
         <InputGroup
-          // Not "input-group": theme.css dresses that slot as the old glass capsule.
+          // Its own slot: specs and styles find the message box by it, apart from every other input group.
           data-slot="composer-box"
           className="overflow-hidden rounded-xl border-[var(--v3-line)] bg-transparent has-disabled:bg-transparent has-disabled:opacity-100 dark:bg-transparent dark:has-disabled:bg-transparent px-3.5 pt-3 pb-2.5 shadow-none focus-within:border-foreground/30 has-[[data-slot=input-group-control]:focus-visible]:border-foreground/30 has-[[data-slot=input-group-control]:focus-visible]:ring-0"
         >

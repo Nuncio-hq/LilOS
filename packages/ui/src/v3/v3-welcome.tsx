@@ -136,9 +136,9 @@ export function V3Welcome({ data, go, act }: V3PageProps) {
         </p>
         <Steps steps={steps.map((s) => s.label)} at={step} />
 
+        {/* The stepper above marks the current step by name; the step opens
+            straight on its own words, not a heading that says it again. */}
         <div key={id} className="lilos-v3-line-in min-h-[300px]">
-          <h2 className="font-semibold text-[17px]">{steps[step].label}</h2>
-
           {id === "you" && (
             <>
               <Field

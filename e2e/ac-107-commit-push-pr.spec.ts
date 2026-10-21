@@ -19,6 +19,7 @@ import {
   type Stack,
   startChatInFolder,
 } from "./helpers/stack";
+import { openWorkbench, workbenchOffered } from "./helpers/workbench";
 
 /**
  * Issue #107 — Workbench → Changes commits, pushes and opens a PR without
@@ -293,7 +294,7 @@ test("AC-2 (#584) Suggest is a side request: no user message, no turn; fills the
     .then(() => true)
     .catch(() => false);
   if (!changesThere) {
-    await page.getByTitle("Workbench", { exact: true }).click();
+    await openWorkbench(page, "changes");
     await expect(tab(page, /Changes/)).toBeVisible({ timeout: 30_000 });
   }
   await tab(page, /Changes/).click();
@@ -547,9 +548,7 @@ test("AC-6 a folder that is not a git repo shows no ship bar and no Changes/PR t
   test.setTimeout(180_000);
   await startSession(page, plainDir, "plain folder session");
   await panelIntoFocus(page);
-  await expect(page.getByTitle("Workbench", { exact: true })).toBeVisible({
-    timeout: 30_000,
-  });
+  await expect(workbenchOffered(page)).toBeVisible({ timeout: 30_000 });
   await expect(tab(page, "Files")).toBeVisible({ timeout: 30_000 });
   await expect(tab(page, /Changes/)).toHaveCount(0);
   await expect(tab(page, /PR/)).toHaveCount(0);

@@ -106,13 +106,8 @@ export function V3Peek({
           aria-label="Trail"
           className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden"
         >
-          <button
-            type="button"
-            onClick={onClose}
-            className="shrink-0 truncate hover:text-foreground"
-          >
-            {pageName}
-          </button>
+          {/* Where you came from, as context: the ✕ is the one way to close. */}
+          <span className="shrink-0 truncate">{pageName}</span>
           {trail.map((r, i) => (
             <Fragment key={`${r.page}:${r.id}`}>
               <ChevronRightIcon className="size-3.5 shrink-0 opacity-50" />

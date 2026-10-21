@@ -245,3 +245,36 @@ describe("AC-3: turn end collapses unless the user opened it", () => {
     vi.useRealTimers();
   });
 });
+
+describe("the fold's files entry is the one way to the changes", () => {
+  const edits = [step("patch"), step("read"), step("patch")];
+
+  test("'edited N files' says how many files changed and opens Changes; the rest of the line still folds", () => {
+    const open = vi.fn();
+    const { container } = render(
+      <TurnWork steps={edits} dur={5} changed={2} onOpenChanges={open} />,
+    );
+    const link = container.querySelector("[data-files-changed]");
+    expect(link?.textContent).toBe("edited 2 files");
+    fireEvent.click(link as Element);
+    expect(open).toHaveBeenCalledTimes(1);
+    // The link sits between two triggers; clicking it does not fold the block.
+    expect(
+      container
+        .querySelector('[data-slot="collapsible-trigger"]')
+        ?.getAttribute("aria-expanded"),
+    ).not.toBe("true");
+    // The whole line reads as one sentence.
+    expect(container.textContent).toContain(
+      "Worked 5s · read 1 file, edited 2 files",
+    );
+  });
+
+  test("no Workbench to open: the fact is plain text, not a link", () => {
+    const { container } = render(
+      <TurnWork steps={edits} dur={5} changed={2} />,
+    );
+    expect(container.querySelector("[data-files-changed]")).toBeNull();
+    expect(container.textContent).toContain("edited 2 files");
+  });
+});

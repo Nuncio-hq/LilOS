@@ -9,6 +9,7 @@ import {
   type V3Workbench,
   VIEWER_ID,
 } from "@lilos/ui"
+import { planOf } from "./mock-plans"
 import { modelPick } from "./model-pick"
 import { attachedLine, attachmentSteps, diffsOf, isTool, stepOf } from "./thread-steps"
 
@@ -81,8 +82,11 @@ function agentReply(c: Ctx, turn: V3Turn, newest: boolean, text: string): Reply 
   )
   const steps = [...tools, ...attachmentSteps(turn.attachments, tools)]
   const ask = newest ? c.ask : undefined
+  const proposed = planOf(t, turn)
+  // A proposed plan parks the turn like a question does.
+  const planAsk = working && proposed?.status === "proposed"
   // An answered ask stays on its card as a receipt; the turn is no longer parked on it.
-  const waiting = working && !!ask && !ask.receipt
+  const waiting = working && ((!!ask && !ask.receipt) || planAsk)
   const streaming = !!turn.streaming && working
   const phase = phaseOf(c, newest, { working, waiting, streaming, tools: steps.length, think: think.length })
   const secs = working ? undefined : seconds(turn.took)
@@ -102,6 +106,7 @@ function agentReply(c: Ctx, turn: V3Turn, newest: boolean, text: string): Reply 
     phase,
     ...(working ? { live: true, postAttach: true } : {}),
     ...(waiting && ask ? { waitingOn: ask.ask.kind } : {}),
+    ...(planAsk ? { waitingOn: "plan" as const } : {}),
     ...(phase === "failed" ? { error: t.summary ?? "The turn failed" } : {}),
     ...(secs !== undefined ? { dur: secs } : {}),
     ...(ask?.ask.kind === "approval"
@@ -125,18 +130,21 @@ function agentReply(c: Ctx, turn: V3Turn, newest: boolean, text: string): Reply 
           },
         }
       : {}),
-    // The mock keeps one plan and one helper list per thread: they belong to its newest turn.
-    ...(newest && t.plan
-      ? {
-          plan: {
-            id: `${t.id}:plan`,
-            kind: "tasks" as const,
-            version: 1,
-            steps: t.plan.map((p) => ({ text: p.text, status: planStatus[p.state] })),
-            status: "approved" as const,
-          },
-        }
-      : {}),
+    // A thread with a plan to decide carries it on the turn that proposed it; the mock otherwise
+    // keeps one task list and one helper list per thread: they belong to its newest turn.
+    ...(proposed
+      ? { plan: proposed }
+      : newest && t.plan
+        ? {
+            plan: {
+              id: `${t.id}:plan`,
+              kind: "tasks" as const,
+              version: 1,
+              steps: t.plan.map((p) => ({ text: p.text, status: planStatus[p.state] })),
+              status: "approved" as const,
+            },
+          }
+        : {}),
     ...(newest && t.helpers?.length
       ? {
           subagents: t.helpers.map((h, i) => ({

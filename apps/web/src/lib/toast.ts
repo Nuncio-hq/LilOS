@@ -1,9 +1,9 @@
 import { atom } from "nanostores";
 
 /**
- * One-line notice floating above the composer's area, bottom-center —
- * the same affordance the prototype uses (prototype/web/src/App.tsx
- * `say`). Rendered once by the app shell.
+ * One-line notice floating above the composer's area, bottom-center. Drawn
+ * by the ToastView `@lilos/ui` shares with the prototype, rendered once by
+ * the app shell.
  */
 export interface Toast {
   text: string;

@@ -1,10 +1,4 @@
-import {
-  CheckIcon,
-  CircleDotIcon,
-  ListTodoIcon,
-  PanelRightCloseIcon,
-  PanelRightOpenIcon,
-} from "lucide-react";
+import { CheckIcon, CircleDotIcon, ListTodoIcon } from "lucide-react";
 import {
   type ReactNode,
   useCallback,
@@ -45,7 +39,6 @@ import {
   QueueSectionLabel,
   QueueSectionTrigger,
 } from "../components/ai-elements/queue";
-import { Button } from "../components/ui/button";
 import { askKeyDown, pendingAsk } from "../conversation/ask-keys";
 import { openStartRequest } from "../conversation/cards";
 import { FindUnstubAnchor, FindUnstubNudge } from "../conversation/find-unstub";
@@ -70,14 +63,13 @@ import { cn } from "../lib/utils";
 import { readWbCache } from "../lib/wb-probe-cache";
 import { MainPane } from "../shell/main-pane";
 import {
-  PrChip,
   StartWork,
   sentTurns,
   ThreadHeader,
   WorkStrip,
   workTabs,
 } from "../thread/thread-header";
-import { focusFolder, Kicker } from "../thread/thread-kicker";
+import { focusFolder, threadKicker } from "../thread/thread-kicker";
 import type {
   AttachedFile,
   Channel,
@@ -399,7 +391,7 @@ export function FocusView({
   const wbSend = useCallback((t: string) => onSend(t), [onSend]);
   /* #547 AC-1: a Focus remount (Esc out/in, session switch and back)
      reseeds the picked tab from the folder's cache entry — only a panel
-     toggle was covered before. A `?tab=` deep link still wins. A
+     reopen was covered before. A `?tab=` deep link still wins. A
      cache-seeded pick counts as a pick, so follow must start disarmed —
      otherwise the lastDone/liveKey effects below re-apply "changes" on
      mount and stomp it before the first paint. */
@@ -516,9 +508,11 @@ export function FocusView({
   /* #583 AC-3: background processes still running under this thread. */
   const runningJobs =
     thread.jobs?.filter((j) => j.status === "running").length ?? 0;
-  // The latest approved plan / task list (issue #175), else the engine's session todos.
-  const fromPlan = planTodos(thread);
-  const todos = fromPlan.length ? fromPlan : (thread.todos ?? []);
+  /* The pinned tray carries only the engine's own session todos. An approved
+     plan or task list (issue #175) is already a card in its turn and the
+     Workbench's Plan tab; a tray repeating it under the chat said the same
+     list twice. */
+  const todos = planTodos(thread).length ? [] : (thread.todos ?? []);
   const queue = thread.queue ?? [];
   const pendingSteers = pending ?? [];
   // The open "asks to start work" card, if any, is the single start-work entry point (issue #15).
@@ -712,14 +706,14 @@ export function FocusView({
   /* #543: the Workbench exists for EVERY session — the app passes `host`
      unconditionally now (the accessors are folder-independent; every call
      takes the cwd). Folder-bound tabs still need a real folder — that's
-     per-tab inside the Workbench. The toggle renders only when a tab could
-     show (D-#19): a folder session can always ask the host; a folderless
+     per-tab inside the Workbench. The work strip renders only when a tab
+     could show (D-#19): a folder session can always ask the host; a folderless
      session needs an engine tab (a declared background_jobs capability via
      `onStopJob`, jobs, helpers, a plan — or the `?tab=subagents` deep
      link); a channel thread keeps its mock tabs. Once opened, the
      Workbench reports its settled tab set — a folder session whose host
      answered nothing and has no engine work reports empty, which hides the
-     toggle (AC-5) — except while the panel is already open, where its
+     strip (AC-5) — except while the panel is already open, where its
      "Nothing to show" line answers instead of a vanishing aside. */
   const [wbReported, setWbReported] = useState<WbTab[] | null>(null);
   useEffect(() => {
@@ -852,15 +846,20 @@ export function FocusView({
         }
       : undefined;
   /* The work strip stands in for the panel while it is closed: any tab on it
-     opens the Workbench there; open, the panel's own tab row takes over. */
+     opens the Workbench there; open, the panel's own tab row takes over (and
+     its close hides it again) — the header carries no toggle of its own. */
   const { replies, jobs } = thread;
   const stripTabs = useMemo(
     () =>
       workTabs(
         { replies, pr, jobs },
-        { folder: !!thread.ws || !!work?.path, browser: browser != null },
+        {
+          folder: !!thread.ws || !!work?.path,
+          browser: browser != null,
+          prPending,
+        },
       ),
-    [replies, pr, jobs, thread.ws, work?.path, browser],
+    [replies, pr, jobs, thread.ws, work?.path, browser, prPending],
   );
   return (
     <MainPane bare={bare}>
@@ -905,20 +904,16 @@ export function FocusView({
                 session
                 title={thread.title || plain(root.text)}
                 titleInput={titleInput}
-                kicker={
-                  <Kicker
-                    title={`Thread ${thread.session}`}
-                    agent={lead?.name}
-                    channel={isDM ? undefined : `#${channel.name}`}
-                    ticket={work?.ticket || undefined}
-                    folder={focusFolder({
-                      thread,
-                      work,
-                      isDM,
-                      openMenu: folderMenu,
-                    })}
-                  />
-                }
+                kicker={threadKicker({
+                  title: `Thread ${thread.session}`,
+                  channel: isDM ? undefined : `#${channel.name}`,
+                  folder: focusFolder({
+                    thread,
+                    work,
+                    isDM,
+                    openMenu: folderMenu,
+                  }),
+                })}
                 status={threadStatus}
                 started={root.time}
                 turns={sentTurns(root.from, thread, human)}
@@ -960,32 +955,13 @@ export function FocusView({
                     {!work && !isDM && onStart && (
                       <StartWork onStart={onStart} yields={startCardOpen} />
                     )}
-                    {/* #579: no "Open PR" button — asking the employee IS the way to
-                       open one. A session that already has a PR shows its link chip. */}
-                    {pr && (
-                      <PrChip
-                        pr={pr}
-                        pending={!!prPending}
-                        onClick={() => pickTab("pr")}
-                      />
-                    )}
                     {threadMenu}
-                    {wbAvailable && (
-                      <Button
-                        variant={wbOpen ? "secondary" : "ghost"}
-                        size="icon-sm"
-                        title="Workbench"
-                        onClick={() => wbFlip(!wbOpenWanted.current)}
-                      >
-                        {wbOpen ? (
-                          <PanelRightCloseIcon />
-                        ) : (
-                          <PanelRightOpenIcon />
-                        )}
-                      </Button>
-                    )}
                   </>
                 }
+                /* #579: no "Open PR" button — asking the employee IS the way
+                   to open one. A session that has a PR shows it once, as the
+                   strip's PR tab (state in its label), and the panel's own PR
+                   tab once open. */
                 strip={
                   wbAvailable &&
                   !wbOpen && <WorkStrip tabs={stripTabs} onOpen={pickTab} />

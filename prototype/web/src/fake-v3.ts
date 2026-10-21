@@ -1,4 +1,5 @@
 import type { V3Data, V3Draft, V3Profile } from "@lilos/ui"
+import { ATTENTION_ASKS, ATTENTION_THREADS } from "./fake-v3-attention"
 import { CONNECTORS, OUTSIDE_THREADS, OUTSIDE_TICKETS, OUTSIDE_WORKERS } from "./fake-v3-outside"
 import { MODEL_OPTIONS, MODEL_PROVIDERS, MODEL_VISIBILITY, modelIdOf } from "./fake-v3-models"
 import { BROWSER, DEVICES, SCHEDULES, SETTINGS, WORKBENCHES } from "./fake-v3-tools"
@@ -761,11 +762,11 @@ export const V3_DATA: V3Data = {
   projects: PROJECTS,
   goals: GOALS,
   tickets: [...TICKETS, ...OUTSIDE_TICKETS],
-  threads: [...THREADS, ...OUTSIDE_THREADS].map((t) =>
+  threads: [...THREADS, ...ATTENTION_THREADS, ...OUTSIDE_THREADS].map((t) =>
     WORKBENCHES[t.id] ? { ...t, workbench: WORKBENCHES[t.id] } : t,
   ),
   archivedThreads: [],
-  asks: ASKS,
+  asks: [...ASKS, ...ATTENTION_ASKS],
   updates: UPDATES,
   schedules: SCHEDULES,
   browser: BROWSER,

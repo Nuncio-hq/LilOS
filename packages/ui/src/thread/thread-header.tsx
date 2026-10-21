@@ -28,7 +28,13 @@ import { turnChangedFiles } from "../workbench/artifacts";
    It is the first child of the conversation's scroller, so it scrolls away
    with the thread instead of holding a bar over it. */
 
-export type HeaderTab = { id: WbTab; label: string; meta?: string };
+export type HeaderTab = {
+  id: WbTab;
+  label: string;
+  meta?: string;
+  /** Stands in for the kind's own icon — the PR tab wears its state. */
+  icon?: ReactNode;
+};
 
 const ICON: Record<WbTab, LucideIcon> = {
   browser: GlobeIcon,
@@ -43,13 +49,47 @@ const ICON: Record<WbTab, LucideIcon> = {
   details: InfoIcon,
 };
 
+/* The PR as the one word and icon its state reads: merged, closed, checks
+   running, draft, or ready. The strip's PR tab carries it — the header has
+   no chip of its own, so the PR is named once. */
+function prState(
+  pr: PullRequest,
+  pending: boolean,
+): { word: string; icon: ReactNode } {
+  const cls = "size-3.5";
+  if (pr.status === "merged")
+    return {
+      word: "merged",
+      icon: <GitMergeIcon className={cn(cls, "text-violet-600")} />,
+    };
+  if (pr.status === "closed")
+    return {
+      word: "closed",
+      icon: <GitPullRequestIcon className={cn(cls, "text-zinc-500")} />,
+    };
+  if (pending)
+    return {
+      word: "checks",
+      icon: (
+        <CircleDashedIcon
+          className={cn(cls, "animate-spin text-work [animation-duration:3s]")}
+        />
+      ),
+    };
+  return {
+    word: pr.draft ? "draft" : "ready",
+    icon: <GitPullRequestIcon className={cn(cls, "text-emerald-600")} />,
+  };
+}
+
 /* The kinds of work this thread has, in the strip's order. Folder work
    (Changes, Files, Terminal, Preview) needs a folder; PR and Background
    appear once the session has one; the Browser only where the app can open
-   pages (desktop); Details is always there. */
+   pages (desktop); Details is always there. `prPending`: the PR's checks
+   are still running. */
 export function workTabs(
   thread: Pick<Thread, "replies" | "pr" | "jobs">,
-  opts: { folder: boolean; browser: boolean },
+  opts: { folder: boolean; browser: boolean; prPending?: boolean },
 ): HeaderTab[] {
   const tabs: HeaderTab[] = [];
   if (opts.folder) {
@@ -67,8 +107,15 @@ export function workTabs(
       { id: "preview", label: "Preview" },
     );
   }
-  if (thread.pr)
-    tabs.push({ id: "pr", label: "PR", meta: `#${thread.pr.number}` });
+  if (thread.pr) {
+    const { word, icon } = prState(thread.pr, !!opts.prPending);
+    tabs.push({
+      id: "pr",
+      label: "PR",
+      meta: `#${thread.pr.number} · ${word}`,
+      icon,
+    });
+  }
   if (thread.jobs?.length)
     tabs.push({
       id: "background",
@@ -106,7 +153,7 @@ export function WorkStrip({
             onClick={() => onOpen(t.id)}
             className="inline-flex h-[26px] items-center gap-1.5 rounded-md px-2 text-[12.5px] text-muted-foreground transition-colors hover:bg-[var(--v3-hover)] hover:text-foreground"
           >
-            <Icon className="size-3.5" />
+            {t.icon ?? <Icon className="size-3.5" />}
             {t.label}
             {t.meta && (
               <span className="text-muted-foreground/70 tabular-nums">
@@ -166,38 +213,6 @@ export function StartWork({
   );
 }
 
-/** The session's PR as a status chip: merged, draft, checks running, or
-    ready. Clicking opens the PR tab. */
-export function PrChip({
-  pr,
-  pending,
-  onClick,
-}: {
-  pr: PullRequest;
-  pending: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <Button variant="outline" size="sm" onClick={onClick} data-prchip>
-      {pr.status === "merged" ? (
-        <GitMergeIcon className="text-violet-600" />
-      ) : pending ? (
-        <CircleDashedIcon className="animate-spin text-work [animation-duration:3s]" />
-      ) : (
-        <GitPullRequestIcon className="text-emerald-600" />
-      )}
-      #{pr.number}{" "}
-      {pr.status === "merged"
-        ? "merged"
-        : pr.draft
-          ? "draft"
-          : pending
-            ? "checks"
-            : "ready"}
-    </Button>
-  );
-}
-
 export function ThreadHeader({
   session,
   title,
@@ -215,7 +230,7 @@ export function ThreadHeader({
   title: string;
   /** Replaces the title while it is being renamed. */
   titleInput?: ReactNode;
-  kicker: ReactNode;
+  kicker?: ReactNode;
   status?: V3Status;
   /** When the thread began ("11:02"); empty = not known. */
   started?: string;
@@ -228,14 +243,16 @@ export function ThreadHeader({
 }) {
   return (
     <header data-thread-header className="pt-7">
-      <div
-        className={cn(
-          "text-muted-foreground",
-          session ? "mb-1.5 text-[13px]" : "mb-2 text-[13.5px]",
-        )}
-      >
-        {kicker}
-      </div>
+      {kicker && (
+        <div
+          className={cn(
+            "text-muted-foreground",
+            session ? "mb-1.5 text-[13px]" : "mb-2 text-[13.5px]",
+          )}
+        >
+          {kicker}
+        </div>
+      )}
       {titleInput ? (
         <div className={cn("flex", session ? "mb-3" : "mb-3.5")}>
           {titleInput}

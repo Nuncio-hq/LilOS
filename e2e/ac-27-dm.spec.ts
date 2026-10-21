@@ -581,6 +581,14 @@ test("AC-7 real-app build: every visible control has a working handler", async (
           await page.mouse.click(5, 5);
           await page.keyboard.press("Escape");
         }
+        // The sidebar's own "Hide sidebar" is one of the controls swept: it
+        // hides the sidebar (inert, so every control after it would be
+        // skipped and the Default row unreachable). The top bar's toggle
+        // docks it again and the sweep carries on through the rest.
+        const dock = page
+          .locator("[data-v3-topbar]")
+          .getByRole("button", { name: "Show sidebar" });
+        if (await dock.isVisible().catch(() => false)) await dock.click();
         await page.waitForTimeout(60);
       }
     };

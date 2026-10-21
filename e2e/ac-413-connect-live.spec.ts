@@ -95,18 +95,19 @@ test("AC-1 Welcome's Connect step approves, and Settings reads the same live row
       page.locator("[data-first-run-step][data-state='ok']"),
     ).toHaveCount(2, { timeout: 60_000 });
     await page.getByRole("button", { name: "Next", exact: true }).click();
-    await expect(
-      page.getByRole("heading", { name: /^Connect /, level: 2 }),
-    ).toBeVisible();
+    await expect(page.locator('[aria-current="step"]')).toContainText(
+      /^\d+\s*Connect /,
+    );
     await expect(
       page.locator('[data-connect-state="not-connected"]').first(),
     ).toBeVisible();
     await page.getByRole("button", { name: "Connect", exact: true }).click();
 
     // The approval moved the step on; the same row is live in Settings.
-    await expect(
-      page.getByRole("heading", { name: "Your first agent" }),
-    ).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('[aria-current="step"]')).toContainText(
+      "Your first agent",
+      { timeout: 10_000 },
+    );
     await page.getByRole("button", { name: "Set up later" }).click();
     await openEnginePane(page);
     await expect(

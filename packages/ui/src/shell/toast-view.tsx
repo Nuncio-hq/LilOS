@@ -1,24 +1,32 @@
 import { CircleAlertIcon } from "lucide-react";
 import { useLayoutEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import type { Toast } from "./toast";
 
-/* The one-line notice host, rendered once by the app shell. It floats
-   above whatever bottom-anchored block the screen shows — every composer
-   carries `data-composer` and the gap is measured, so the pill never
-   lands on the toolbar row's controls no matter how tall the trays grow
-   (#423 review: a bare `bottom-5` covered the model chip). With no
-   composer on screen it settles back to the plain bottom offset. It is
-   portaled to <body> because the app frame's backdrop-filter makes it a
-   stacking context: an in-tree z-index could never outrank the popover
-   portal (model picker's card sits at z-50 there). */
+/* The one-line notice host, rendered once by the app shell and by the
+   prototype (the same pill in both). It floats above whatever bottom-anchored
+   block the screen shows — every composer carries `data-composer` and the gap
+   is measured, so the pill never lands on the toolbar row's controls no matter
+   how tall the trays grow (#423 review: a bare `bottom-5` covered the model
+   chip). With no composer on screen it settles back to the plain bottom
+   offset. It is portaled to <body> because the app frame's backdrop-filter
+   makes it a stacking context: an in-tree z-index could never outrank the
+   popover portal (model picker's card sits at z-50 there). */
 const RESTING_PX = 20;
 const GAP_PX = 12;
 /* A dock taller than the viewport could push the pill off the top edge —
    keep at least this much of it on screen. */
 const TOP_RESERVE_PX = 56;
 
-export function ToastView({ toast }: { toast: Toast }) {
+/** What the pill says; the host decides how long it stays. */
+export interface ToastNotice {
+  text: string;
+  /** Failures carry a destructive accent (#423); absent = a neutral note. */
+  error?: boolean;
+  /** A single action the notice offers — "Undo" on a rewind (#578). */
+  action?: { label: string; run: () => void };
+}
+
+export function ToastView({ toast }: { toast: ToastNotice }) {
   const [bottom, setBottom] = useState(RESTING_PX);
   useLayoutEffect(() => {
     const measure = () => {

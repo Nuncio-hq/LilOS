@@ -92,7 +92,7 @@ test("AC-1 a new send lands on the list with the thread in the panel — no jump
   await page.screenshot({ path: `${SHOTS}/ac-1-open-same-view.png` });
 });
 
-test("AC-2 the panel's ✕ and the labelled trail crumb are the ways back to the list", async ({
+test("AC-2 the panel's ✕ is the way back to the list; the trail's first crumb is context, not a second close", async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -113,13 +113,13 @@ test("AC-2 the panel's ✕ and the labelled trail crumb are the ways back to the
   await expect(panel(page)).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-2-panel-reopened.png` });
 
-  /* …and the trail's first crumb is labelled with where it goes back to
-     ("Threads", not a bare icon): it shuts the panel the same way. */
-  const crumb = v3Peek(page)
-    .getByRole("navigation", { name: "Trail" })
-    .getByRole("button", { name: "Threads" });
-  await expect(crumb).toBeVisible();
-  await crumb.click();
+  /* …and the trail's first crumb says where it goes back to ("Threads") as
+     plain text — not a second close button beside the ✕, which closes it
+     the same way again. */
+  const trail = v3Peek(page).getByRole("navigation", { name: "Trail" });
+  await expect(trail).toContainText("Threads");
+  await expect(trail.getByRole("button", { name: "Threads" })).toHaveCount(0);
+  await v3Peek(page).getByTitle("Close (Esc)").click();
   await expect(page).toHaveURL(LIST_URL, { timeout: 15_000 });
   await expect(panel(page)).toHaveCount(0);
 });

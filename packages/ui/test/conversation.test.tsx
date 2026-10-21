@@ -235,10 +235,10 @@ describe("issue #19 — one conversation from shared pieces", () => {
       within(notDm.container).getByText(/Thread · #DM tooling/),
     ).toBeTruthy();
     cleanup();
-    // dm:true → Thread frame (one word per concept, #582), a "Chat · agent" kicker (no DM channel wording), no Start work affordance.
+    // dm:true → Thread frame (one word per concept, #582), no "Chat · agent" kicker (the side peek's trail names the agent; no DM channel wording), no Start work affordance.
     const dm = render(<ThreadView {...panelProps} channel={dmChannel} />);
     expect(within(dm.container).getByText("Thread")).toBeTruthy();
-    expect(within(dm.container).getByText(/Chat · Builder/)).toBeTruthy();
+    expect(within(dm.container).queryByText(/Chat · Builder/)).toBeNull();
     expect(dm.container.textContent).not.toMatch(/DM ·/);
     expect(
       within(dm.container).queryByRole("button", { name: /Start work/ }),

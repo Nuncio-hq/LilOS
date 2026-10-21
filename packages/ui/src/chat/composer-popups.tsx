@@ -1,16 +1,16 @@
 import { FileIcon, FolderIcon, TerminalIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "../lib/utils";
-import { HermesAvatar } from "../shell/avatars";
-import type { Employee } from "../types";
 import type { ComposerMenus } from "./composer-menus";
 
-/* The `@` and `/` menus above the message box, drawn from the state the
+/* The `@` and `/` menus above a message box, drawn from the state the
    composer's menus hook returns. Hairline box, no shadow — the v3 look. The
    markers (`data-mention-*`, `data-slash-command`, the listbox names) are what
-   the specs and the v3 draft composer's menus share. */
+   the specs read. One set of menus serves the thread's composer and the v3
+   draft chat's: each says how a person looks (`avatar`) and what their row
+   adds (`meta`); the rest is the same. */
 
-type Menus = ComposerMenus<Employee>;
+type Person = { id: string; name: string; role: string };
 
 const BOX =
   "absolute bottom-full left-0 z-20 mb-1 max-h-64 w-80 max-w-full overflow-y-auto rounded-lg border border-[var(--v3-line)] bg-background py-1 text-[13.5px]";
@@ -43,12 +43,17 @@ function Section({
   );
 }
 
-export function MentionPopup({
+export function MentionPopup<E extends Person>({
   menus,
   employees,
+  avatar,
+  meta = (e) => `${e.role} · new thread`,
 }: {
-  menus: Menus;
-  employees: Employee[];
+  menus: ComposerMenus<E>;
+  employees: E[];
+  avatar: (e: E) => ReactNode;
+  /** What a person's row says at its right edge. */
+  meta?: (e: E) => string;
 }) {
   const { open, fileHits, active, pick, files } = menus.mention;
   if (!open) return null;
@@ -67,13 +72,9 @@ export function MentionPopup({
               onClick={() => pick({ kind: "emp", employee: e })}
               className={row(active === i)}
             >
-              <HermesAvatar
-                name={e.name}
-                status={e.status}
-                className="size-[18px]"
-              />
+              {avatar(e)}
               <span className="shrink-0">{e.name}</span>
-              <span className={META}>{e.role} · new thread</span>
+              <span className={META}>{meta(e)}</span>
             </button>
           ))}
         </Section>
@@ -118,7 +119,7 @@ export function MentionPopup({
   );
 }
 
-export function SlashPopup({ menus }: { menus: Menus }) {
+export function SlashPopup<E>({ menus }: { menus: ComposerMenus<E> }) {
   const { open, hits, rows, active, pick } = menus.slash;
   if (!open) return null;
   return (

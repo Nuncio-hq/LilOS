@@ -14,12 +14,13 @@ import {
   startFolderlessChat,
   threadUrl,
 } from "./helpers/stack";
+import { openWorkbench, workbenchOffered } from "./helpers/workbench";
 
 /**
  * Issue #543 — the Workbench exists for EVERY session (apps/web, relay +
  * harness on engine-fake):
  *   AC-1 a DM session started with NO folder gets the peek's Widen and
- *       Focus's Workbench toggle like any session; the panel shows only the
+ *       Focus's Workbench strip like any session; the panel shows only the
  *       engine tabs — Subagents + Background (Plan when a turn has one) —
  *       never the empty folder-bound tabs.
  *   AC-2 Background lists running/finished processes with a working Stop;
@@ -28,7 +29,7 @@ import {
  *   AC-3 the turn's "N subagents · Open" link opens Focus on the Subagents
  *       tab from the thread panel too (#319).
  *   AC-4 a folder session is unchanged — every tab, same order.
- *   AC-5 no tab to show → no toggle (D-#19): a folderless session whose
+ *   AC-5 no tab to show → no Workbench entry (D-#19): a folderless session whose
  *       engine declares none of the Workbench capabilities hides it.
  */
 
@@ -84,8 +85,6 @@ const send = async (page: Page, text: string) => {
 const turns = (page: Page) => page.locator("[data-agentturn]");
 const turnSettled = (page: Page) => expectSettled(turns(page).last(), 90_000);
 
-const workbenchToggle = (page: Page) =>
-  page.getByTitle("Workbench", { exact: true });
 const tab = (page: Page, name: RegExp | string) =>
   page.getByRole("tab", { name });
 
@@ -105,7 +104,7 @@ const underlineDrift = (page: Page) =>
       .map((t) => t.textContent ?? "?"),
   );
 
-test("AC-1..3 folderless session: Widen + toggle; only Subagents + Background; helper detail; Stop ends the job; the link lands on Subagents", async ({
+test("AC-1..3 folderless session: Widen + the Workbench strip; only Subagents + Background; helper detail; Stop ends the job; the link lands on Subagents", async ({
   page,
 }) => {
   test.setTimeout(300_000);
@@ -123,17 +122,17 @@ test("AC-1..3 folderless session: Widen + toggle; only Subagents + Background; h
     ),
   );
 
-  // AC-1: the toggle renders — no folder needed. A folderless session's
-  // panel opens on demand (the toggle, a panel link, `workbench.open`) —
+  // AC-1: the work strip renders — no folder needed. A folderless session's
+  // panel opens on demand (a strip tab, a panel link, `workbench.open`) —
   // it auto-opens at ≥lg only when live engine work already shows, so open
   // it here if the helpers haven't landed yet.
-  await expect(workbenchToggle(page)).toBeVisible({ timeout: 30_000 });
+  await expect(workbenchOffered(page)).toBeVisible({ timeout: 30_000 });
   if (
     !(await tab(page, "Subagents")
       .isVisible()
       .catch(() => false))
   ) {
-    await workbenchToggle(page).click();
+    await openWorkbench(page);
   }
 
   // Exactly the engine tabs — no empty Changes/Files/PR/Terminal/Preview.
@@ -228,7 +227,7 @@ test("AC-1..3 folderless session: Widen + toggle; only Subagents + Background; h
       .isVisible({ timeout: 30_000 })
       .catch(() => false))
   ) {
-    await workbenchToggle(page).click();
+    await openWorkbench(page);
   }
   await tab(page, "Background").click();
   await expect(tab(page, "Background")).toHaveAttribute(
@@ -254,7 +253,7 @@ test("AC-4 a folder session is unchanged: every tab renders in the same order", 
   /* A send lands on the thread beside Threads; widening it is the session
      view (chat beside the Workbench). */
   await panelIntoFocus(page);
-  await expect(workbenchToggle(page)).toBeVisible({ timeout: 30_000 });
+  await expect(workbenchOffered(page)).toBeVisible({ timeout: 30_000 });
   /* Changes + Files answer (real fs/git), Background from the capability,
      Subagents once helpers land — PR needs `gh`, absent on this PATH, so it
      shows its error state; the point is folder tabs still render. */
@@ -287,13 +286,13 @@ test("screenshots: folderless Focus on Subagents + Background, light + dark (128
   await send(page, "leave the dev server running in the background");
   await turnSettled(page);
   /* The settled session holds jobs + helpers — entry auto-opens the panel
-     on that content. If it raced, the toggle opens it on demand. */
+     on that content. If it raced, the strip opens it on demand. */
   if (
     !(await tab(page, "Subagents")
       .isVisible()
       .catch(() => false))
   ) {
-    await workbenchToggle(page).click();
+    await openWorkbench(page);
   }
   for (const scheme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme: scheme });
@@ -312,13 +311,13 @@ test("screenshots: folderless Focus on Subagents + Background, light + dark (128
   }
 });
 
-test("AC-5 a session with no tab to show hides the toggle (D-#19)", async ({
+test("AC-5 a session with no tab to show offers no Workbench (D-#19)", async ({
   page,
 }) => {
   test.setTimeout(180_000);
   /* No folder AND an engine declaring none of the Workbench capabilities —
      nothing for any tab to render, so the Workbench reports empty and the
-     toggle stays hidden (folder tabs need a folder; engine tabs need the
+     strip stays away (folder tabs need a folder; engine tabs need the
      caps or rows). */
   const stackB = await bootStack("ac543nocaps", await pickPorts(), {
     LILOS_HIDE_CAPS: "background_jobs,subagents,plan",
@@ -331,7 +330,7 @@ test("AC-5 a session with no tab to show hides the toggle (D-#19)", async ({
     );
     await openFolderless(page, stackB, conv);
     await turnSettled(page);
-    await expect(workbenchToggle(page)).toHaveCount(0);
+    await expect(workbenchOffered(page)).toHaveCount(0);
     await expect(
       tab(
         page,

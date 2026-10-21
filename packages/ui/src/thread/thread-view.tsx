@@ -74,7 +74,7 @@ import {
   WorkStrip,
   workTabs,
 } from "./thread-header";
-import { Kicker, panelFolder } from "./thread-kicker";
+import { panelFolder, threadKicker } from "./thread-kicker";
 
 /* #134/#430: the "Rewind to here" checkpoint lives in
    conversation/turn-rows.tsx so both frames share the memoized row. */
@@ -325,9 +325,10 @@ export function ThreadView({
     : undefined;
   const folder = !!thread.ws || !!work?.path;
   const { replies, pr, jobs } = thread;
+  const prPending = pr?.checks.some((c) => c.status === "pending");
   const stripTabs = useMemo(
-    () => workTabs({ replies, pr, jobs }, { folder, browser }),
-    [replies, pr, jobs, folder, browser],
+    () => workTabs({ replies, pr, jobs }, { folder, browser, prPending }),
+    [replies, pr, jobs, folder, browser, prPending],
   );
   const startCardOpen = openStartRequest(thread, resolved);
   /* #138 AC-3: jump-to-hit — scroll the message into view, flash it, hand
@@ -450,27 +451,23 @@ export function ThreadView({
             session={false}
             title={thread.title || "Thread"}
             titleInput={titleInput}
-            kicker={
-              <Kicker
-                title={`Thread ${thread.session}`}
-                agent={leadEmp?.name}
-                channel={isDM ? undefined : `#${channel.name}`}
-                ticket={work?.ticket || undefined}
-                folder={panelFolder({
-                  thread,
-                  work,
-                  repo,
-                  isDM,
-                  onAddFolder,
-                  openMenu: onOpenPath
-                    ? {
-                        editors: editors ?? [],
-                        onOpen: (app) => onOpenPath(".", app),
-                      }
-                    : undefined,
-                })}
-              />
-            }
+            kicker={threadKicker({
+              title: `Thread ${thread.session}`,
+              channel: isDM ? undefined : `#${channel.name}`,
+              folder: panelFolder({
+                thread,
+                work,
+                repo,
+                isDM,
+                onAddFolder,
+                openMenu: onOpenPath
+                  ? {
+                      editors: editors ?? [],
+                      onOpen: (app) => onOpenPath(".", app),
+                    }
+                  : undefined,
+              }),
+            })}
             status={threadStatus}
             started={root.time}
             turns={sentTurns(root.from, thread, human)}

@@ -108,11 +108,17 @@ const COUNTS: { kind: StepKind; verb: string; one: string; many: string }[] = [
   { kind: "delegate", verb: "delegated ", one: "task", many: "tasks" },
 ];
 
-/** "read 3 files, ran 2 commands, 1 failed" — the facts after "Worked 2m ·". */
-export function stepFacts(steps: Step[]): string[] {
+/** "read 3 files, ran 2 commands, 1 failed" — the facts after "Worked 2m ·".
+    `changed`: how many files the turn really changed (the Workbench's Changes
+    count) — "edited N files" says that number, so the fold and the Changes
+    tab agree, and a turn that changed files by a command still says so. */
+export function stepFacts(steps: Step[], changed = 0): string[] {
   const kinds = steps.map(stepKind);
   const parts = COUNTS.flatMap(({ kind, verb, one, many }) => {
-    const n = kinds.filter((k) => k === kind).length;
+    const n =
+      kind === "edit" && changed > 0
+        ? changed
+        : kinds.filter((k) => k === kind).length;
     return n ? [`${verb}${n} ${n === 1 ? one : many}`] : [];
   });
   const other = kinds.filter((k) => k === "other").length;

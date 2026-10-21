@@ -112,7 +112,6 @@ export function chatActions({ setData, getData, reply, toast }: Engine): Pick<
             : t,
         ),
       }));
-      toast("Rewound · files and conversation are back to before that message");
     },
     renameThread: (threadId, title) => {
       const next = title.trim();

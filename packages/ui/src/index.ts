@@ -35,6 +35,7 @@ export * from "./lib/helpers";
 export { StatusBanner } from "./shell/banner";
 export { ShortcutsDialog } from "./shell/shortcuts-dialog";
 export { StatusDialog } from "./shell/status";
+export { type ToastNotice, ToastView } from "./shell/toast-view";
 // thread panel
 export { ThreadView } from "./thread/thread-view";
 export * from "./types";

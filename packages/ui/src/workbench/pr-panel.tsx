@@ -7,7 +7,7 @@ import {
   GitPullRequestIcon,
   MessageSquareTextIcon,
 } from "lucide-react";
-import { useState } from "react";
+import { type ComponentProps, useState } from "react";
 import { MessageResponse } from "../components/ai-elements/message";
 import { ScrollArea } from "../components/ui/scroll-area";
 import { plural } from "../lib/helpers";
@@ -19,12 +19,14 @@ import type {
   GitCommit,
   HumanFn,
   MergeMethod,
+  PrError,
   PullRequest,
 } from "../types";
 import { DiffStat, DiffView } from "./diff-view";
+import { PrFailure } from "./pr-failure";
 import { MergeBox } from "./pr-merge-box";
 import { ICON_BTN, PrChecks, PrCommits, PrDiscussion } from "./pr-tab-bodies";
-import { CARD, PANEL, WbBtn } from "./wb-bits";
+import { CARD, PANEL, WbBtn, WbEmpty } from "./wb-bits";
 
 /* PR view in the prototype's PrTab shape: one hairline header card (title,
    branch, status, merge box) over a quiet sub-tab strip. */
@@ -253,5 +255,36 @@ export function PrPanel({
         )}
       </div>
     </ScrollArea>
+  );
+}
+
+/** The PR tab's body: the PR; the plain reason `gh` failed, with one next
+    step — raw stderr stays behind Details (#114 AC-5); or none yet. */
+export function PrTabBody({
+  pr,
+  error,
+  branch,
+  onRetry,
+  ...panel
+}: {
+  pr?: PullRequest | null;
+  error?: PrError;
+  /** Named in the "no pull request" line. */
+  branch: string;
+  onRetry: () => void;
+} & Omit<ComponentProps<typeof PrPanel>, "pr">) {
+  if (pr) return <PrPanel pr={pr} {...panel} />;
+  if (error)
+    return (
+      <PrFailure
+        error={error}
+        onRetry={onRetry}
+        employeeName={panel.lead?.name}
+      />
+    );
+  return (
+    <WbEmpty>
+      No pull request on <span className="font-mono">⎇ {branch}</span> yet.
+    </WbEmpty>
   );
 }

@@ -9,7 +9,8 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "../lib/utils";
-import type { ShipBar, ShipError, ShipHandlers } from "../types";
+import type { ShipBar, ShipHandlers } from "../types";
+import { prPrefill, shipText, suggestLine } from "./commit-bar-text";
 import { FIELD, WbBtn } from "./wb-bits";
 
 /* A small muted text action under the bar's buttons (the prototype's
@@ -22,66 +23,6 @@ const LINK =
    accepted #359 design). Presentational: state arrives on `bar`, every
    action is a handler; a missing handler hides its control (D-#19), and
    `isRepo:false` renders nothing (AC-6 — a non-repo folder has no bar). */
-
-/* Plain copy per typed reason — raw stderr stays behind Details (#114 AC-5
-   rule). Unknown reason → the thrown text. #579 AC-2: no copy may ask for
-   a terminal command — each names a next step the user can take (a button
-   on the bar, or asking the employee). */
-const COPY: Record<
-  NonNullable<ShipError["reason"]>,
-  (who: string) => string
-> = {
-  rejected: () =>
-    "The remote has newer commits on this branch — Pull to bring them in (or ask the agent to update), then Push again.",
-  diverged: (who) =>
-    `The branch and its upstream diverged — Pull can't fast-forward. Ask ${who} to update the branch, then try again.`,
-  "no-remote": (who) =>
-    `This folder isn't on GitHub yet. Ask ${who} to publish it.`,
-  auth: (who) =>
-    `Git couldn't sign in to the remote. Ask ${who} to fix the sign-in, then push again.`,
-  conflict: (who) =>
-    `The repo has unmerged paths. Ask ${who} to finish the merge, then try again.`,
-  nothing: () => "Nothing to commit — the selected files have no changes.",
-  exists: () => "A branch with that name already exists — pick another name.",
-  unauthenticated: (who) =>
-    `GitHub isn't signed in on this machine. Ask ${who} to sign in, then try again.`,
-  missing: (who) =>
-    `GitHub CLI isn't installed on this machine. Ask ${who} to install it, then try again.`,
-  other: () => "",
-};
-
-function shipText(error: ShipError, employeeName?: string): string {
-  const known = error.reason && COPY[error.reason];
-  const text = known ? known(employeeName ?? "the employee") : "";
-  return text || error.text || "Something went wrong.";
-}
-
-/* #584: a Suggest answer is one full reply — the commit box takes its
-   first real line, minus markdown dressing (a reply like "> feat: foo" or
-   "`feat: foo`" must land usable). */
-function suggestLine(text: string): string {
-  return (
-    text
-      .split("\n")
-      .map((s) => s.trim().replace(/^>\s*/, "").replace(/^`|`$/g, "").trim())
-      .find(Boolean) ?? ""
-  );
-}
-
-function prPrefill(commits: ShipBar["commits"]): {
-  title: string;
-  body: string;
-} {
-  const first = commits[0]?.message ?? "";
-  const list = commits.map((c) => `- \`${c.hash}\` ${c.message}`).join("\n");
-  return {
-    title: first || "Update",
-    body:
-      "## Summary\n\n" +
-      (first || "Updates from this branch.") +
-      (list ? `\n\n## Commits\n\n${list}` : ""),
-  };
-}
 
 export function CommitBar(props: ShipBar & ShipHandlers) {
   const {

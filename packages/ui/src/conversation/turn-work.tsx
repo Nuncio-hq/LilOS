@@ -26,8 +26,9 @@ import { formatDur, stepFacts, stepNow } from "./work-steps";
    thinking/tools phases, and the first user click wins for the rest of the
    turn, in either direction. */
 
-const ROW =
-  "group -ml-1.5 flex min-h-7 max-w-full items-center gap-1.5 rounded-md px-1.5 text-left text-[13.5px] text-muted-foreground transition-colors hover:bg-[var(--v3-hover)] hover:text-foreground";
+const BOX =
+  "-ml-1.5 flex min-h-7 max-w-full items-center gap-1.5 rounded-md px-1.5 text-left text-[13.5px] text-muted-foreground transition-colors hover:bg-[var(--v3-hover)] hover:text-foreground";
+const ROW = `group ${BOX}`;
 
 /* The hairline the folded rows hang from. */
 const RAIL = "ml-[7px] border-[var(--v3-line)] border-l pl-3.5";
@@ -44,6 +45,8 @@ export function TurnWork({
   autoOpen,
   waitingApproval,
   openKey,
+  changed,
+  onOpenChanges,
 }: {
   steps: Step[];
   /** The turn's reasoning text (`""` while it has only just started). */
@@ -68,6 +71,11 @@ export function TurnWork({
   waitingApproval?: boolean;
   /* Conv-scoped persist key — survives card remounts (#320). */
   openKey?: string;
+  /** Files the turn changed (the Workbench's Changes count): "edited N files"
+      says this number. */
+  changed?: number;
+  /** Opens the Changes tab; absent (no Workbench here) = plain text. */
+  onOpenChanges?: () => void;
 }) {
   const [userSet, setUserSet] = useTurnBlockState<boolean | undefined>(
     openKey,
@@ -99,8 +107,12 @@ export function TurnWork({
 
   const facts = [
     ...(hasReasoning ? [`thought for ${thought || 1}s`] : []),
-    ...stepFacts(steps),
+    ...stepFacts(steps, changed),
   ];
+  /* "edited N files" opens the Changes tab where the host has one: the
+     turn's one files-changed entry (the footer carries none). */
+  const edited = facts.findIndex((f) => f.startsWith("edited "));
+  const link = !working && !!onOpenChanges && (changed ?? 0) > 0 && edited >= 0;
   /* A folded block still says what the turn is blocked on; an open one
      says it on the step's own row, so it isn't repeated up here. */
   const now =
@@ -117,37 +129,73 @@ export function TurnWork({
       data-tasksteps
       className="min-w-0"
     >
-      <CollapsibleTrigger
-        disabled={!foldable}
-        className={cn(ROW, !foldable && "cursor-default hover:bg-transparent")}
-      >
-        <ChevronRightIcon
-          className={cn(
-            "size-3.5 shrink-0 text-muted-foreground/70 transition-transform group-data-[panel-open]:rotate-90",
-            !foldable && "invisible",
-          )}
-        />
-        {working ? (
-          <>
-            <StatusDot status="working" />
-            <span className="font-medium text-foreground">Working</span>{" "}
-            <span className="min-w-0 truncate text-muted-foreground/70">
-              · {now}
-            </span>
-          </>
-        ) : (
-          <>
-            <span className="whitespace-nowrap">
-              Worked{dur ? ` ${formatDur(dur)}` : ""}
-            </span>{" "}
-            {facts.length > 0 && (
-              <span className="min-w-0 truncate text-muted-foreground/70">
-                · {facts.join(", ")}
-              </span>
+      {link ? (
+        /* The line splits around the link (a button never holds another):
+           everything but "edited N files" still toggles the fold. */
+        <div className={BOX}>
+          <CollapsibleTrigger className="group inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap">
+            <ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground/70 transition-transform group-data-[panel-open]:rotate-90" />
+            Worked{dur ? ` ${formatDur(dur)}` : ""}
+          </CollapsibleTrigger>{" "}
+          <span className="flex min-w-0 text-muted-foreground/70">
+            <CollapsibleTrigger className="min-w-0 truncate whitespace-pre">
+              {`· ${facts
+                .slice(0, edited)
+                .map((f) => `${f}, `)
+                .join("")}`}
+            </CollapsibleTrigger>
+            <button
+              type="button"
+              data-files-changed
+              title="Open the changes"
+              onClick={onOpenChanges}
+              className="shrink-0 whitespace-nowrap underline-offset-2 hover:text-foreground hover:underline"
+            >
+              {facts[edited]}
+            </button>
+            {edited < facts.length - 1 && (
+              <CollapsibleTrigger className="min-w-0 truncate whitespace-pre">
+                {`, ${facts.slice(edited + 1).join(", ")}`}
+              </CollapsibleTrigger>
             )}
-          </>
-        )}
-      </CollapsibleTrigger>
+          </span>
+        </div>
+      ) : (
+        <CollapsibleTrigger
+          disabled={!foldable}
+          className={cn(
+            ROW,
+            !foldable && "cursor-default hover:bg-transparent",
+          )}
+        >
+          <ChevronRightIcon
+            className={cn(
+              "size-3.5 shrink-0 text-muted-foreground/70 transition-transform group-data-[panel-open]:rotate-90",
+              !foldable && "invisible",
+            )}
+          />
+          {working ? (
+            <>
+              <StatusDot status="working" />
+              <span className="font-medium text-foreground">Working</span>{" "}
+              <span className="min-w-0 truncate text-muted-foreground/70">
+                · {now}
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="whitespace-nowrap">
+                Worked{dur ? ` ${formatDur(dur)}` : ""}
+              </span>{" "}
+              {facts.length > 0 && (
+                <span className="min-w-0 truncate text-muted-foreground/70">
+                  · {facts.join(", ")}
+                </span>
+              )}
+            </>
+          )}
+        </CollapsibleTrigger>
+      )}
       {/* Not a Collapsible: the steps panel alone unmounts on close. */}
       {hasReasoning && (
         <div ref={held} className={RAIL}>

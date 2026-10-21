@@ -395,6 +395,6 @@ test("each control appears once: one Search, one Widen/Narrow, the company named
     .getByRole("button", { name: "Search", exact: true })
     .click();
   await expect(page.getByRole("dialog", { name: "Search" })).toBeVisible();
-  // No "Ask the CEO" box: this app has no CEO draft to offer.
+  // The bar has no "Ask the CEO" box, and this app has no CEO draft to offer.
   await expect(page.getByText("Ask the CEO anything…")).toHaveCount(0);
 });

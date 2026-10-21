@@ -84,10 +84,14 @@ export function Choice({
   );
 }
 
-/** The step indicator: numbers joined by hairlines; labels when there is room. */
+/** The step indicator: numbers joined by hairlines; labels when there is room,
+    and the current step's always (it is the step's only title). */
 export function Steps({ steps, at }: { steps: string[]; at: number }) {
   return (
-    <ol className="mt-6 mb-8 flex items-center gap-2 text-[13px]">
+    <ol
+      aria-label="Steps"
+      className="mt-6 mb-8 flex items-center gap-2 text-[13px]"
+    >
       {steps.map((s, i) => (
         <li
           key={s}
@@ -110,8 +114,8 @@ export function Steps({ steps, at }: { steps: string[]; at: number }) {
           </span>
           <span
             className={cn(
-              "hidden whitespace-nowrap @min-[520px]:inline",
-              i === at && "font-medium",
+              "whitespace-nowrap",
+              i === at ? "font-medium" : "hidden @min-[520px]:inline",
             )}
           >
             {s}

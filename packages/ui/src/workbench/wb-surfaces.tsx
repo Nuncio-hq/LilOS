@@ -15,13 +15,14 @@ import {
   WebPreviewNavigationButton,
   WebPreviewUrl,
 } from "../components/ai-elements/web-preview";
+import { LivePreview, type LiveSurfaces, LiveTerminal } from "./live";
 import { Quiet, WbBtn } from "./wb-bits";
 
 /* Terminal and Preview without live harness surfaces (the prototype / a
    thread with no host): the transcript the steps already carried, and an
    honest "no dev server" line. With surfaces wired, live.tsx renders them. */
 
-export function StepTerminal({
+function StepTerminal({
   output,
   running,
   cwd,
@@ -63,7 +64,7 @@ export function StepTerminal({
   );
 }
 
-export function IdlePreview({
+function IdlePreview({
   cwd,
   employeeName,
   onReload,
@@ -98,5 +99,65 @@ export function IdlePreview({
         )}
       </div>
     </WebPreview>
+  );
+}
+
+/** The Terminal tab's body: the live PTY when surfaces are wired, otherwise
+    the transcript the steps carried. */
+export function TerminalSurface({
+  live,
+  cwd,
+  agentName,
+  output,
+  running,
+  readOnly,
+}: {
+  live?: LiveSurfaces;
+  cwd: string;
+  agentName?: string;
+  output: string;
+  running: boolean;
+  readOnly: boolean;
+}) {
+  return live ? (
+    <LiveTerminal live={live} cwd={cwd} agentName={agentName} />
+  ) : (
+    <StepTerminal
+      output={output}
+      running={running}
+      cwd={cwd}
+      readOnly={readOnly}
+    />
+  );
+}
+
+/** The Preview tab's body: the live screencast when surfaces are wired,
+    otherwise the honest "no dev server" line with its two next steps. */
+export function PreviewSurface({
+  live,
+  cwd,
+  agentName,
+  say,
+  onSend,
+}: {
+  live?: LiveSurfaces;
+  cwd: string;
+  agentName?: string;
+  say?: (t: string) => void;
+  onSend?: (t: string) => void;
+}) {
+  return live ? (
+    <LivePreview live={live} />
+  ) : (
+    <IdlePreview
+      cwd={cwd}
+      employeeName={agentName}
+      onReload={say && (() => say("Reload (prototype)"))}
+      onAskDevServer={
+        onSend &&
+        (() =>
+          onSend("Start the dev server in the background and give me the URL"))
+      }
+    />
   );
 }

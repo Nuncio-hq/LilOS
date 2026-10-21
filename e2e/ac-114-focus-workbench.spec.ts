@@ -22,6 +22,7 @@ import {
   startFolderlessChat,
   threadUrl,
 } from "./helpers/stack";
+import { openWorkbench, workbenchOffered } from "./helpers/workbench";
 
 /**
  * Issue #114 — the session view + Workbench in the real app (apps/web), on
@@ -171,9 +172,6 @@ const THREAD_URL = /open=([^&]*,)?thread:[^&,]+$/;
 
 /* AC-1's repo session: later tests reopen it as the session view. */
 let checkInConv: string;
-// exact: title substring-match would also hit "Hide workbench" when open.
-const workbenchToggle = (page: Page) =>
-  page.getByTitle("Workbench", { exact: true });
 const tab = (page: Page, name: RegExp | string) =>
   page.getByRole("tab", { name });
 
@@ -193,13 +191,13 @@ test("AC-1 a session opens beside Threads; Widen reaches the session view; Esc/B
   });
   await page.screenshot({ path: `${SHOTS}/ac-1-send-panel.png` });
   await panelIntoFocus(page, FOCUS_URL);
-  await expect(workbenchToggle(page)).toBeVisible();
+  await expect(workbenchOffered(page)).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-1-focus.png` });
 
   // Reload stays in the session view (the URL carries it).
   await page.reload();
   await expect(page).toHaveURL(FOCUS_URL);
-  await expect(workbenchToggle(page)).toBeVisible({ timeout: 30_000 });
+  await expect(workbenchOffered(page)).toBeVisible({ timeout: 30_000 });
   await expect(
     page.locator("[data-thread-panel]").getByText("check in").first(),
   ).toBeVisible({ timeout: 30_000 });
@@ -505,7 +503,7 @@ test("AC-6 tabs render only when their host method answers; a session without a 
   // only the Files tab renders. Browser/Terminal never render in this slice.
   await startSession(page, plainDir, "check the folder");
   await panelIntoFocus(page);
-  await expect(workbenchToggle(page)).toBeVisible({ timeout: 30_000 });
+  await expect(workbenchOffered(page)).toBeVisible({ timeout: 30_000 });
   await expect(tab(page, "Files")).toBeVisible({ timeout: 30_000 });
   await expect(tab(page, /Changes/)).toHaveCount(0);
   await expect(tab(page, /PR/)).toHaveCount(0);
@@ -526,7 +524,7 @@ test("AC-6 tabs render only when their host method answers; a session without a 
   );
   await page.goto(threadUrl(stack.webUrl, chatConv));
   await panelIntoFocus(page);
-  await expect(workbenchToggle(page)).toBeVisible({ timeout: 30_000 });
+  await expect(workbenchOffered(page)).toBeVisible({ timeout: 30_000 });
   /* The panel opens on demand here — auto-open at ≥lg is for a panel that
      already has content to show (a folder, or live engine work). */
   if (
@@ -534,7 +532,7 @@ test("AC-6 tabs render only when their host method answers; a session without a 
       .isVisible()
       .catch(() => false))
   ) {
-    await workbenchToggle(page).click();
+    await openWorkbench(page);
   }
   await expect(tab(page, "Background")).toBeVisible({ timeout: 30_000 });
   await expect(tab(page, /^(Changes|Files|Terminal|Preview|PR)$/)).toHaveCount(

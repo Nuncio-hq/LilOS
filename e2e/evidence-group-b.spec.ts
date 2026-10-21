@@ -14,6 +14,7 @@ import {
   startFolderlessChat,
   threadUrl,
 } from "./helpers/stack";
+import { openWorkbench, workbenchOffered } from "./helpers/workbench";
 
 /**
  * Evidence capture for Group B (#587/#579/#584) — the Workbench/PR PR.
@@ -142,21 +143,14 @@ const sendTurn = async (page: Page, text: string) => {
   return turn;
 };
 
-/** Workbench open: auto-opens ≥lg once it has content. Post-reload the
-   panel is open but its strip stays hidden while the probe round runs —
-   wait for a tab before deciding, otherwise a toggle click during probing
-   would close an opening panel (the previous flake). */
+/** Workbench open: auto-opens ≥lg once it has content. The work strip's tab
+   opens it when it did not (idempotent: an opening panel is left alone, so
+   there is no toggle click to close it mid-probe — the previous flake). */
 async function openTab(page: Page, name: RegExp | string) {
-  const up = await expect(page.locator("[data-wb-tab]").first())
-    .toBeVisible({ timeout: 45_000 })
-    .then(() => true)
-    .catch(() => false);
-  if (!up) {
-    await page.getByTitle("Workbench", { exact: true }).click();
-    await expect(page.locator("[data-wb-tab]").first()).toBeVisible({
-      timeout: 45_000,
-    });
-  }
+  await openWorkbench(page, "details", 45_000);
+  await expect(page.locator("[data-wb-tab]").first()).toBeVisible({
+    timeout: 45_000,
+  });
   await expect(tab(page, name)).toBeVisible({ timeout: 30_000 });
   await tab(page, name).click();
 }
@@ -300,10 +294,13 @@ for (const s of SIZES) {
       );
       const nudge = await sendTurn(page, "Add a changelog note");
       await allowAllWhile(page, expectSettled(nudge));
-      await expect(page.locator("[data-prchip]")).toBeVisible({
-        timeout: 30_000,
-      });
-      await expect(page.locator("[data-prchip]")).toContainText("#12");
+      /* The PR is named once: the work strip's PR tab while the panel is
+         hidden, the panel's own PR tab once it is open — no header chip. */
+      const prEntry = page.locator(
+        '[data-work-tab="pr"]:visible, [data-wb-tab="pr"]:visible',
+      );
+      await expect(prEntry).toHaveCount(1, { timeout: 30_000 });
+      await expect(prEntry).toContainText("#12");
       await expect(page.getByRole("button", { name: /open pr/i })).toHaveCount(
         0,
       );
@@ -347,16 +344,8 @@ for (const s of SIZES) {
       );
       await page.goto(threadUrl(stack.webUrl, chatConv));
       await panelIntoFocus(page);
-      await expect(page.getByTitle("Workbench", { exact: true })).toBeVisible({
-        timeout: 30_000,
-      });
-      const stripUp = await expect(tab(page, "Background"))
-        .toBeVisible({ timeout: 30_000 })
-        .then(() => true)
-        .catch(() => false);
-      if (!stripUp) {
-        await page.getByTitle("Workbench", { exact: true }).click();
-      }
+      await expect(workbenchOffered(page)).toBeVisible({ timeout: 30_000 });
+      await openWorkbench(page);
       await expect(tab(page, "Background")).toBeVisible({ timeout: 30_000 });
       await expect(tab(page, "Subagents")).toBeVisible();
       await expect(tab(page, "Plan")).toBeVisible();

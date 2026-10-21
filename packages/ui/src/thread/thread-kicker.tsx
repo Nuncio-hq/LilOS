@@ -7,38 +7,31 @@ import {
   WsBadge,
 } from "../workbench/ws-badges";
 
-/* The header's kicker line: `Chat · {agent} · {folder}`, or
-   `Thread · {agent} on {ticket}` for a ticketed thread. The folder part is
-   the same quiet badge the panel and the session view always had (it keeps
-   the open-in-editor menu); only the surrounding chrome is gone. */
+/* The header's kicker line: where the thread works — `Thread · #channel` for
+   a channel thread, then the folder/branch. Who it is with and which ticket
+   it is on are the side peek's breadcrumb right above ("Builder · LIL-81",
+   "Default · Chat"), so the line never says them again. No channel and no
+   folder: no line at all. The folder part is the same quiet badge the panel
+   and the session view always had (it keeps the open-in-editor menu); only
+   the surrounding chrome is gone. */
 
-export function Kicker({
-  agent,
-  ticket,
+export function threadKicker({
   channel,
   folder,
   title,
 }: {
-  agent?: string;
-  ticket?: string;
   /** A thread in a channel (not a one-to-one chat) names it — "#engineering". */
   channel?: string;
   /** The folder/branch part, already drawn; absent = none to show. */
   folder?: ReactNode;
   title?: string;
-}) {
+}): ReactNode {
+  if (!channel && !folder) return undefined;
   return (
     <span title={title}>
-      {ticket || channel ? "Thread" : "Chat"}
-      {channel && ` · ${channel}`}
-      {agent && ` · ${agent}`}
-      {ticket && (
-        <>
-          {" on "}
-          <span className="font-mono">{ticket}</span>
-        </>
-      )}
-      {folder && <> · {folder}</>}
+      {channel && `Thread · ${channel}`}
+      {channel && folder && " · "}
+      {folder}
     </span>
   );
 }

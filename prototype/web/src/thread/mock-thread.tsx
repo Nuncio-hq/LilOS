@@ -2,17 +2,20 @@ import {
   type AttachedFile,
   FocusView,
   type ModelChoice,
+  type PlanAction,
   ThreadView,
   type V3Ask,
   type V3PageProps,
   type WbTab,
 } from "@lilos/ui"
 import { useEffect, useMemo, useState } from "react"
+import { nowClock } from "../v3-engine/chat-sim"
 import { MockBrowser } from "./mock-browser"
 import { mockHost } from "./mock-host"
+import { PLAN_CHANGE_PREFIX, isPlanChange, planWaiting, queueOnNewest, reviseTurn } from "./mock-plans"
 import { useMockSurfaces } from "./mock-surfaces"
-import type { ThreadSeams } from "./seams"
 import { pickLabel } from "./model-pick"
+import type { ThreadSeams } from "./seams"
 import { threadModel } from "./thread-model"
 import { turnOf } from "./thread-replies"
 
@@ -115,9 +118,40 @@ function Body({
     const n = turnOf(messageId)
     const turn = t.turns.find((x) => x.n === n)
     if (!turn?.prompt) return
+    // The rewind applies at once; Undo (10 s, as in the app) puts the thread, the draft and the chips back.
+    const before = { thread: t, draft }
     setDraft(turn.prompt.text)
     setSeed(turn.prompt.files)
     act.rewind?.(t.id, n)
+    say("Turn rewound — Undo brings the messages and file changes back (10 s).", {
+      action: {
+        label: "Undo",
+        run: () => {
+          seams.patch(t.id, () => before.thread)
+          setDraft(before.draft)
+          setSeed(undefined)
+        },
+      },
+    })
+  }
+  // Approve, Reject and Change on a plan waiting for you; Change starts your reply in the box.
+  const onPlan = (action: PlanAction) => {
+    if (action === "change") {
+      setDraft(PLAN_CHANGE_PREFIX)
+      return
+    }
+    // An untouched "Change the plan: " goes with the decision.
+    if (draft === PLAN_CHANGE_PREFIX) setDraft("")
+    // The plan is the thread's ask: deciding it here, on its Threads card or on Needs is one act.
+    if (!t.askId) return
+    if (action === "approve") act.approve(t.askId)
+    else act.deny(t.askId)
+  }
+  // A send that keeps the "Change the plan: " prefix answers the plan; any other message waits for your decision.
+  const sendHere = (text: string, files?: AttachedFile[]) => {
+    if (isPlanChange(t, text)) return seams.patch(t.id, (th) => reviseTurn(th, text.trim(), nowClock()))
+    if (planWaiting(t)) return seams.patch(t.id, (th) => queueOnNewest(th, text, nowClock()))
+    seams.send(t.id, text, files)
   }
   // The newest turn's unread messages: waiting while it runs, "not sent" once a Stop left them.
   const dropQueued = (i: number) =>
@@ -171,7 +205,7 @@ function Body({
     },
     onRename: act.renameThread && ((title: string) => act.renameThread?.(t.id, title)),
     onArchive: act.archiveThread && ((to: boolean) => act.archiveThread?.(t.id, to)),
-    onSend: (text: string, files?: AttachedFile[]) => seams.send(t.id, text, files),
+    onSend: sendHere,
     pending: model.pending,
     onRemovePending: dropQueued,
     onUnqueue: dropQueued,
@@ -189,6 +223,7 @@ function Body({
     lastSent: model.lastSent,
     onRetry: model.lastSent ? () => seams.send(t.id, model.lastSent ?? "") : undefined,
     onRewind: act.rewind && rewindTurn,
+    onPlan,
     seedFiles: seed,
     onSeededFiles: () => setSeed(undefined),
     editors: EDITORS,

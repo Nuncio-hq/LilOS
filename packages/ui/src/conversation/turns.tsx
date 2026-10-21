@@ -9,7 +9,6 @@ import {
   MessageResponse,
 } from "../components/ai-elements/message";
 import { Shimmer } from "../components/ai-elements/shimmer";
-import { plural } from "../lib/helpers";
 import { withFileMentionChips } from "../lib/mentions";
 import { HermesAvatar } from "../shell/avatars";
 import type { EmpFn, HumanFn, ModelOption, Reply, WbTab } from "../types";
@@ -132,6 +131,8 @@ export function AgentTurn({
           }
           waitingApproval={r.waitingOn === "approval"}
           openKey={r.turnId && `${r.turnId}:steps`}
+          changed={files}
+          onOpenChanges={onOpen ? () => onOpen("changes") : undefined}
         />
       )}
       {/* With a Workbench the helpers live on its Subagents tab (#317); the turn only points there. */}
@@ -257,28 +258,8 @@ export function AgentTurn({
                 {r.fast && " · Fast"}
               </span>
             )}
-            {steps.length > 0 && (
-              <span>
-                {r.model && "· "}
-                {plural(steps.length, "step")}
-              </span>
-            )}
-            {files > 0 &&
-              (onOpen ? (
-                <button
-                  type="button"
-                  className="underline-offset-2 hover:text-foreground hover:underline"
-                  onClick={() => onOpen("changes")}
-                >
-                  {(r.model || steps.length > 0) && "· "}
-                  {plural(files, "file")} changed
-                </button>
-              ) : (
-                <span>
-                  {(r.model || steps.length > 0) && "· "}
-                  {plural(files, "file")} changed
-                </span>
-              ))}
+            {/* No step count and no files entry: the "Worked …" fold above says
+                what the turn did, and its "edited N files" opens Changes. */}
             <MessageActions className="ml-auto opacity-0 transition-opacity group-hover:opacity-100">
               {r.text && (
                 <MessageAction

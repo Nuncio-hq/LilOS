@@ -56,8 +56,9 @@ const appRegion = (page: Page, selector: string) =>
 /** The sidebar's first row: where the traffic lights sit. */
 const SIDEBAR_HEADER = ".lilos-v3 > aside:first-child > div:first-child";
 const sidebarHeader = (page: Page) => page.locator(SIDEBAR_HEADER);
-/** The shell's own top bar (the page; the company and Search while the sidebar
-    is hidden) — a `.lilos-drag` strip in the column beside the sidebar, above
+/** The shell's own top bar (empty while the sidebar is docked; the toggle,
+    Search and the company while it is hidden) — a `.lilos-drag` strip in the
+    column beside the sidebar, above
     the page and the side peek. */
 const TOP_BAR = ".lilos-v3 > div > .lilos-drag";
 
@@ -236,8 +237,8 @@ test("AC-3 header strips drag the window, buttons inside still work", async () =
     const box = await sidebarHeader(win).boundingBox();
     if (!box) throw new Error("sidebar header has no box");
     expect(await regionAt(box.x + 4, box.y + box.height / 2)).toBe("drag");
-    // The top bar docked is the page's name and nothing else: its middle is
-    // window-draggable space too.
+    // The top bar docked is empty (the page names itself, Search is the
+    // sidebar's): all of it is window-draggable space.
     const bar = await win.locator(TOP_BAR).boundingBox();
     if (!bar) throw new Error("top bar has no box");
     expect(await regionAt(bar.x + bar.width / 2, bar.y + bar.height / 2)).toBe(

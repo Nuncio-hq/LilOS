@@ -2,8 +2,10 @@
    `transition-colors` fades `background-color` across the theme flip
    (~150ms), so anything captured right after `.dark` lands sees a mid-fade
    light fill (~rgb 197 over the dark field) and the chip label, hint and
-   placeholder sit on it at ~1.3:1. The dark token existed all along — the
-   fix is the fill snapping to it instead of fading there. */
+   placeholder sit on it at ~1.3:1. The v3 message box has no fill of its own
+   (the page shows through it), so there is nothing left to fade; this pins
+   that: the box stays fill-less in both themes, and no stylesheet rule dresses
+   it as glass again. */
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,49 +21,27 @@ const promptInput = readFileSync(
   join(ROOT, "packages/ui/src/components/ai-elements/prompt-input.tsx"),
   "utf8",
 );
-const inputGroup = readFileSync(
-  join(ROOT, "packages/ui/src/components/ui/input-group.tsx"),
-  "utf8",
-);
-
-/* The body of a `selector { … }` rule in theme.css. */
-const rule = (sel: string) => {
-  const esc = sel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const m = theme.match(new RegExp(`${esc}\\s*\\{([^}]*)\\}`));
-  if (!m) throw new Error(`no rule for ${sel} in theme.css`);
-  return m[1];
-};
-
-const CAPSULE = '[data-slot="input-group"]:has(textarea)';
 
 describe("issue #508", () => {
-  test("AC-1 the running composer's capsule is the input-group and its fill snaps to the dark token", () => {
-    // The Focus running/steer composer renders inside the themed capsule:
-    // FocusComposer → PromptInput → InputGroup (data-slot="input-group").
+  test("AC-1 the running composer's box paints no fill in either theme, and the stylesheet never re-dresses it", () => {
+    // The Focus running/steer composer renders inside the message box:
+    // FocusComposer → PromptInput → InputGroup (data-slot="composer-box").
     expect(focusComposer).toContain("<PromptInput");
-    expect(promptInput).toContain("<InputGroup");
-    expect(inputGroup).toContain('data-slot="input-group"');
+    const box = /<InputGroup[\s\S]*?\{children\}/.exec(promptInput)?.[0] ?? "";
+    expect(box).toContain('data-slot="composer-box"');
 
-    // The capsule's fill is the theme's `--glass` token (dark pinned under
-    // .dark in the token block); no window-frame override repaints it.
-    expect(rule(CAPSULE)).toContain("background: var(--glass)");
+    /* No fill to fade: transparent at rest, when disabled, and under .dark —
+       the states that would otherwise pick up the input-group's own
+       `dark:bg-input/30` / `has-disabled:bg-input/50`. */
+    expect(box).toContain("bg-transparent");
+    expect(box).toContain("has-disabled:bg-transparent");
+    expect(box).toContain("dark:bg-transparent");
+    expect(box).toContain("dark:has-disabled:bg-transparent");
+
+    /* Nothing in theme.css paints a glass fill over the box or repaints it
+       per window frame: the old capsule rules keyed off the input-group slot
+       and a `.lilos-desktop` override. */
+    expect(theme).not.toMatch(/\[data-slot="(input-group|composer-box)"\]/);
     expect(theme).not.toMatch(/\.lilos-desktop/);
-
-    /* The fill must reach the token instantly, not fade to it: a
-       background-color transition paints the near-opaque light glass for
-       ~150ms after every flip to dark — the light capsule in the issue's
-       screenshots. transition-colors stays for the rest; the fill snaps. */
-    const body = rule(CAPSULE);
-    const props = /transition-property\s*:\s*([^;]+)/.exec(body)?.[1];
-    const shorthand = /(?<!-)transition\s*:\s*([^;]+)/.exec(body)?.[1];
-    const snaps =
-      (props !== undefined &&
-        !/\b(background|background-color|all)\b/.test(props)) ||
-      (shorthand !== undefined && /\bnone\b/.test(shorthand));
-    expect(
-      snaps,
-      "the composer capsule must not transition its background — " +
-        "the fade paints the light glass mid-flip (#508)",
-    ).toBe(true);
   });
 });

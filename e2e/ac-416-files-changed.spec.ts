@@ -14,12 +14,13 @@ import {
 } from "./helpers/stack";
 
 /**
- * Issue #416 — the turn footer's "N files changed" counts the files the
- * turn's write calls actually touched, not just emitted diffs. AC-2 on the
+ * Issue #416 — the turn's "edited N files" (the fold's one files entry, which
+ * opens Changes) counts the files the turn's write calls actually touched,
+ * not just emitted diffs. AC-2 on the
  * real stack (relay + harness + vite dev, engine-fake): the scripted edit
  * turn patches `README.md` (diff) and writes `docs/decisions/0002-notes.md`
  * (no diff — engines that don't inline-diff creates exist, e.g. ACP) —
- * the footer must read "2 files changed", matching Workbench → Changes.
+ * the fold must read "edited 2 files", matching Workbench → Changes.
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
@@ -64,7 +65,7 @@ async function startSession(page: Page, text: string) {
 
 const turns = (page: Page) => page.locator("[data-agentturn]");
 
-test('AC-2 create + edit in one turn → the footer reads "2 files changed"', async ({
+test('AC-2 create + edit in one turn → the fold reads "edited 2 files" and is the link to Changes', async ({
   page,
 }) => {
   test.setTimeout(180_000);
@@ -77,8 +78,17 @@ test('AC-2 create + edit in one turn → the footer reads "2 files changed"', as
   await allowAllWhile(page, expectSettled(turn));
 
   // patch → README.md (diff), write_file → docs/decisions/0002-notes.md
-  // (no diff): the count reads both — one per file the calls touched.
-  const footer = turn.locator("[data-turnsettled]");
-  await expect(footer).toContainText("2 files changed");
+  // (no diff): the count reads both — one per file the calls touched. It is
+  // the fold's one files entry (the footer has none), and opens Changes.
+  const link = turn.locator("[data-files-changed]");
+  await expect(link).toHaveText("edited 2 files");
+  await expect(turn.locator("[data-turnsettled]")).not.toContainText(
+    "files changed",
+  );
+  await link.click();
+  await expect(page.getByRole("tab", { name: /Changes/ })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
   await page.screenshot({ path: `${SHOTS}/ac-2-footer.png` });
 });

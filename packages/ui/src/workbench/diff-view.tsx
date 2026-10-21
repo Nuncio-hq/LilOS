@@ -1,199 +1,24 @@
-import {
-  CheckIcon,
-  ChevronRightIcon,
-  MessageSquarePlusIcon,
-  PencilIcon,
-  Trash2Icon,
-} from "lucide-react";
+import { ChevronRightIcon, MessageSquarePlusIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { useUiLayer } from "../chat/ui-layers";
-import { Button } from "../components/ui/button";
-import { Textarea } from "../components/ui/textarea";
 import { cn } from "../lib/utils";
-import type { Diff, DiffComment } from "../types";
+import type { Diff } from "../types";
+import { CommentEditor, CommentNote } from "./diff-comment-rows";
+import {
+  anchorFor,
+  anchorRow,
+  commentable,
+  coversRow,
+  type DiffCommentsApi,
+  type DiffRow,
+  parsePatch,
+} from "./diff-rows";
 import { OpenPathButton } from "./open-path";
-import { AddDel, CARD, WbBtn } from "./wb-bits";
+import { AddDel, CARD } from "./wb-bits";
 import type { OpenMenuFor } from "./ws-badges";
 
 /* The +added −removed pair; step rows and the PR header share the v3 count. */
 export function DiffStat({ add, del }: { add: number; del: number }) {
   return <AddDel add={add} del={del} />;
-}
-
-/* Unified diff with tinted rows + old/new gutters (GitHub / Devin style) instead of colour-only text. */
-export type DiffRow = {
-  kind: "hunk" | "add" | "del" | "ctx";
-  text: string;
-  a?: number;
-  b?: number;
-};
-function parsePatch(patch: string): DiffRow[] {
-  const rows: DiffRow[] = [];
-  let a = 0,
-    b = 0;
-  for (const line of patch.split("\n")) {
-    const h = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)$/.exec(line);
-    if (h) {
-      a = Number(h[1]);
-      b = Number(h[2]);
-      rows.push({ kind: "hunk", text: line });
-      continue;
-    }
-    if (line.startsWith("+"))
-      rows.push({ kind: "add", text: line.slice(1), b: b++ });
-    else if (line.startsWith("-"))
-      rows.push({ kind: "del", text: line.slice(1), a: a++ });
-    else rows.push({ kind: "ctx", text: line.slice(1), a: a++, b: b++ });
-  }
-  return rows;
-}
-
-const rowMarker = (r: DiffRow) =>
-  r.kind === "add" ? "+" : r.kind === "del" ? "-" : " ";
-
-/* Review comments pinned on diff lines (issue #108, prototype #364).
-   Opt-in: only callers that wire `comments` get the affordances — a
-   control renders only when its handler is passed (D-#19), so step-row
-   and PR-panel diffs stay read-only. */
-export type DiffCommentsApi = {
-  /** This file's comments, pending + resolved. */
-  list: DiffComment[];
-  onAdd: (c: Omit<DiffComment, "id">) => void;
-  onEdit: (id: string, text: string) => void;
-  onDelete: (id: string) => void;
-};
-
-/* Rows a comment can pin to (hunks are headers, not code). */
-const commentable = (r: DiffRow) => r.kind !== "hunk";
-
-/* The anchor a selection of rows [lo..hi] produces: numbered on the side
-   the last selected row carries (deletes anchor on the old-file gutter),
-   quoting every selected row verbatim with its diff marker. */
-function anchorFor(
-  rows: DiffRow[],
-  lo: number,
-  hi: number,
-): Pick<DiffComment, "side" | "start" | "end" | "lines"> {
-  const sel = rows.slice(lo, hi + 1).filter(commentable);
-  const last = sel[sel.length - 1]!;
-  const side = last.b != null ? ("b" as const) : ("a" as const);
-  const nums = sel
-    .map((r) => (side === "b" ? r.b : r.a))
-    .filter((n): n is number => n != null);
-  return {
-    side,
-    start: Math.min(...nums),
-    end: Math.max(...nums),
-    lines: sel.map((r) => `${rowMarker(r)}${r.text}`),
-  };
-}
-
-/* The row a comment renders under: the row carrying its end line on its
-   side. Comments always anchor below their last pinned line. */
-function anchorRow(rows: DiffRow[], c: DiffComment): number {
-  let hit = -1;
-  rows.forEach((r, i) => {
-    const n = c.side === "a" ? r.a : r.b;
-    if (n != null && n === c.end) hit = i;
-  });
-  return hit;
-}
-
-/* Every row a comment's span touches on its numbered side — the marker
-   AC-1 puts on covered lines (pending amber, sent sky). */
-function coversRow(c: DiffComment, r: DiffRow): boolean {
-  const n = c.side === "a" ? r.a : r.b;
-  return n != null && n >= c.start && n <= c.end;
-}
-
-function CommentEditor({
-  rows,
-  lo,
-  hi,
-  initial,
-  onSubmit,
-  onClose,
-}: {
-  rows: DiffRow[];
-  lo: number;
-  hi: number;
-  /** The comment being edited — its own span labels the editor. */
-  initial?: DiffComment;
-  onSubmit: (text: string) => void;
-  onClose: () => void;
-}) {
-  const [text, setText] = useState(initial?.text ?? "");
-  /* Esc must close only this editor, not the Focus/panel layer beneath —
-     register on the layer stack so dispatch stops here (#576). The
-     textarea's own Esc → onClose stays as a harmless duplicate. */
-  useUiLayer({ onEscape: onClose });
-  const a = initial ?? anchorFor(rows, lo, hi);
-  const range =
-    a.start === a.end ? `line ${a.start}` : `lines ${a.start}–${a.end}`;
-  return (
-    <tr data-comment-editor>
-      <td
-        colSpan={3}
-        className="border-[var(--v3-line)] border-t bg-background p-0 font-sans"
-      >
-        <div className="border-l-2 border-l-amber-500 bg-amber-500/[0.06] px-3 py-2">
-          <div className="mb-1 text-[11px] text-muted-foreground">
-            Comment on {range}
-          </div>
-          <Textarea
-            autoFocus
-            data-comment-input
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") onClose();
-              if (e.key === "Enter" && (e.metaKey || e.ctrlKey))
-                text.trim() && onSubmit(text.trim());
-            }}
-            placeholder="Ask or note something about this code…"
-            className="min-h-14 rounded-[7px] border bg-background text-xs"
-          />
-          <div className="mt-1.5 flex items-center gap-1.5">
-            <WbBtn
-              primary
-              data-comment-save
-              disabled={!text.trim()}
-              onClick={() => onSubmit(text.trim())}
-            >
-              {initial ? "Save" : "Comment"}
-            </WbBtn>
-            <WbBtn className="border-transparent" onClick={onClose}>
-              Cancel
-            </WbBtn>
-            <span className="ml-auto text-[10px] text-muted-foreground/70">
-              ⌘⏎ sends · Esc cancels
-            </span>
-          </div>
-        </div>
-      </td>
-    </tr>
-  );
-}
-
-/* How many diff rows the Changes tab paints open before the rest of the
-   files start collapsed. Every row is ~8 DOM nodes: a working tree with
-   hundreds of changed files painted whole (the repo mid-refactor) is
-   ~600k nodes — a multi-second main-thread stall in which no click, tab
-   pick or scroll lands. Collapsed files keep their header (name, stat,
-   Viewed) and open on the chevron. */
-const OPEN_ROW_BUDGET = 1500;
-
-/** The files that start open: in order, until the budget of rows is spent
-    (the first always opens, however long). */
-export function openPaths(diffs: Diff[]): Set<string> {
-  const open = new Set<string>();
-  let rows = 0;
-  for (const d of diffs) {
-    if (rows >= OPEN_ROW_BUDGET) break;
-    open.add(d.path);
-    rows += d.patch.split("\n").length;
-  }
-  return open;
 }
 
 export function DiffView({
@@ -527,83 +352,16 @@ export function DiffView({
                       ]
                     : []),
                   ...commentsHere.map((c) => (
-                    <tr
+                    <CommentNote
                       key={c.id}
-                      data-comment={c.id}
-                      {...(c.resolved ? { "data-resolved": true } : {})}
-                    >
-                      <td
-                        colSpan={3}
-                        className="border-[var(--v3-line)] border-t p-0 font-sans"
-                      >
-                        <div
-                          className={cn(
-                            "flex items-start gap-2 px-3 py-1.5 text-xs",
-                            c.resolved
-                              ? "border-l-2 border-l-sky-500/60 bg-sky-500/[0.05] text-muted-foreground"
-                              : "border-l-2 border-l-amber-500 bg-amber-500/[0.06]",
-                          )}
-                        >
-                          {c.resolved ? (
-                            <CheckIcon className="mt-0.5 size-3.5 shrink-0 text-sky-600" />
-                          ) : (
-                            <MessageSquarePlusIcon className="mt-0.5 size-3.5 shrink-0 text-amber-600" />
-                          )}
-                          <div className="min-w-0 flex-1">
-                            {c.resolved && (
-                              <span
-                                data-sent-pill
-                                className="mr-2 rounded-full bg-sky-500/15 px-1.5 py-px font-medium text-[10px] text-sky-700 dark:text-sky-300"
-                              >
-                                {c.via === "steer"
-                                  ? "Sent · steered"
-                                  : c.via === "queue"
-                                    ? "Sent · queued"
-                                    : "Sent"}
-                              </span>
-                            )}
-                            <span className="mr-2 font-mono text-[10px] text-muted-foreground">
-                              {c.start === c.end
-                                ? `${c.path}:${c.start}`
-                                : `${c.path}:${c.start}–${c.end}`}
-                            </span>
-                            {c.resolved ? (
-                              <span className="italic">{c.text}</span>
-                            ) : (
-                              <span className="whitespace-pre-wrap">
-                                {c.text}
-                              </span>
-                            )}
-                          </div>
-                          {!c.resolved && (
-                            <span className="-mt-1 flex shrink-0 gap-0.5">
-                              <Button
-                                variant="ghost"
-                                size="icon-xs"
-                                title="Edit comment"
-                                data-comment-edit
-                                onClick={() => {
-                                  setEditing(c.id);
-                                  const ri = anchorRow(rows, c);
-                                  setSel({ lo: ri, hi: ri });
-                                }}
-                              >
-                                <PencilIcon />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon-xs"
-                                title="Delete comment"
-                                data-comment-delete
-                                onClick={() => comments?.onDelete(c.id)}
-                              >
-                                <Trash2Icon />
-                              </Button>
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
+                      c={c}
+                      onEdit={() => {
+                        setEditing(c.id);
+                        const ri = anchorRow(rows, c);
+                        setSel({ lo: ri, hi: ri });
+                      }}
+                      onDelete={() => comments?.onDelete(c.id)}
+                    />
                   )),
                 ];
               })}

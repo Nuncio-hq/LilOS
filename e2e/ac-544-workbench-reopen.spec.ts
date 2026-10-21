@@ -13,6 +13,7 @@ import {
   skipFirstRun,
   v3Peek,
 } from "./helpers/stack";
+import { hideWorkbench, workStrip } from "./helpers/workbench";
 
 /**
  * Issue #544 — the Workbench reopens instantly: closing the panel (or
@@ -138,20 +139,21 @@ async function startSession(page: Page, dir: string, text: string) {
   await expect(page).toHaveURL(/open=thread:[^&]+/, { timeout: 30_000 });
 }
 
-const workbenchToggle = (page: Page) =>
-  page.getByTitle("Workbench", { exact: true });
 const tab = (page: Page, name: RegExp | string) =>
   page.getByRole("tab", { name });
 const rows = (page: Page) => page.getByRole("treeitem");
 
-/* Reopen path: close the panel on its toggle, click it back, and assert
-   first-frame rows with a ONE-SHOT count (no polling) — a cold probe could
-   not have produced them yet. Returns the measured reopen→rows ms. */
+/* Reopen path: hide the panel on its own close, click the work strip's Files
+   tab (the tab it was on) back, and assert first-frame rows with a ONE-SHOT
+   count (no polling) — a cold probe could not have produced them yet.
+   Returns the measured reopen→rows ms. */
 async function reopenTimed(page: Page) {
-  await workbenchToggle(page).click();
+  await hideWorkbench(page).click();
   /* #547 AC-5: the panel hides (display:none) rather than unmounting —
-     "closed" = the shell hidden; its rows stay in the DOM. */
+     "closed" = the shell hidden; its rows stay in the DOM. The strip stands
+     in for it from the next frame. */
   await expect(page.locator("[data-wb-shell]")).toBeHidden();
+  await expect(workStrip(page)).toBeVisible();
   /* Reopen + measure in-page: t0 = the click itself, t1 = first treeitem
      in the DOM — the number AC-6 compares before/after (target <50ms).
      `first` = rows present with NO "Reading" hold frame in between — the
@@ -161,7 +163,11 @@ async function reopenTimed(page: Page) {
     () =>
       new Promise<{ first: number; ms: number }>((res) => {
         const t0 = performance.now();
-        (document.querySelector('[title="Workbench"]') as HTMLElement)?.click();
+        (
+          document.querySelector(
+            '[data-work-strip] [data-work-tab="files"]',
+          ) as HTMLElement
+        )?.click();
         let sawHold = false;
         const tick = () => {
           if (document.querySelector("[data-wb-probing]")) sawHold = true;
@@ -226,9 +232,9 @@ test("AC-1/2/4: reopen shows last-known rows on the first frame, no Reading hold
 
   /* Reopen #2 — the open file view comes back on its cached content on the
      first frame (the tree is replaced by the editor, so no row count). */
-  await workbenchToggle(page).click();
+  await hideWorkbench(page).click();
   await expect(page.locator("[data-wb-shell]")).toBeHidden();
-  await workbenchToggle(page).click();
+  await workStrip(page).locator('[data-work-tab="files"]').click();
   await page.evaluate(
     () => new Promise((r) => requestAnimationFrame(() => r(null))),
   );
@@ -242,7 +248,7 @@ test("AC-1/2/4: reopen shows last-known rows on the first frame, no Reading hold
 
   /* Esc out of Focus and back — the remount shows cached data too, and
      #547 AC-1: the picked tab (Files) survives the Focus remount, not
-     only a panel toggle. */
+     only a panel reopen. */
   await page.keyboard.press("Escape");
   await panelIntoFocus(page);
   expect(page.locator("[data-wb-probing]")).toHaveCount(0);

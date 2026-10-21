@@ -1,10 +1,9 @@
-import { ShortcutsDialog, type V3Nav, V3Shell } from "@lilos/ui";
+import { ShortcutsDialog, ToastView, type V3Nav, V3Shell } from "@lilos/ui";
 import { useCallback, useMemo, useState } from "react";
 import { BrowserDock, BrowserWindowApp } from "../lib/browser";
 import { useAtom } from "../lib/hooks";
 import { bootError, booted, engine, relay } from "../lib/runtime";
 import { toast } from "../lib/toast";
-import { ToastView } from "../lib/toast-view";
 import { ThreadPanel } from "../thread/thread-panel";
 import { makeV3Actions } from "./actions";
 import { AddFolderHost } from "./add-folder";

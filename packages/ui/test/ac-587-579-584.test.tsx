@@ -1,13 +1,14 @@
 // @vitest-environment happy-dom
 /* Group B red-first tests — #587 (stable tabs, helpers only under
    Subagents, real git authors, path truncation), #579 (one PR path: no
-   header "Open PR" button, a "PR #N" chip, errors that name a next step
+   header "Open PR" button, a "PR #N" strip tab, errors that name a next step
    instead of a terminal command), #584 (Suggest is a side ask: nothing
    enters the transcript, it survives reloads and works mid-turn). */
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { FocusView } from "../src/focus/focus-view";
 import { setDraft } from "../src/lib/drafts";
+import { WorkStrip, workTabs } from "../src/thread/thread-header";
 import type {
   Channel,
   EmpFn,
@@ -337,15 +338,24 @@ describe("#579 one way to a PR", () => {
     />
   );
 
-  test("AC-1 no header 'Open PR' button; a session with a PR shows a '#N' chip", () => {
+  test("AC-1 no header 'Open PR' button and no header chip; a session with a PR names it once, as the work strip's PR tab", () => {
     const withPr = render(focus({ ...THREAD, pr }));
     expect(withPr.container.textContent).not.toContain("Open PR");
-    const chip = withPr.container.querySelector("[data-prchip]");
-    expect(chip?.textContent).toContain("#12");
+    expect(withPr.container.querySelector("[data-prchip]")).toBeNull();
     withPr.unmount();
-    const without = render(focus(THREAD));
-    expect(without.container.querySelector("[data-prchip]")).toBeNull();
-    expect(without.container.textContent).not.toContain("Open PR");
+    const opts = { folder: false, browser: false };
+    const strip = render(
+      <WorkStrip tabs={workTabs({ ...THREAD, pr }, opts)} onOpen={() => {}} />,
+    );
+    const tabs = strip.container.querySelectorAll('[data-work-tab="pr"]');
+    expect(tabs).toHaveLength(1);
+    // The number and the state — what the header chip used to say.
+    expect(tabs[0]?.textContent).toContain("#12 · ready");
+    strip.unmount();
+    const without = render(
+      <WorkStrip tabs={workTabs(THREAD, opts)} onOpen={() => {}} />,
+    );
+    expect(without.container.querySelector('[data-work-tab="pr"]')).toBeNull();
   });
 
   test("AC-2 ship errors name a next step the user can take — never a command", () => {

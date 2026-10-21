@@ -133,3 +133,41 @@ export function PlanDot({ state }: { state: "done" | "current" | "todo" }) {
     </span>
   );
 }
+
+/** A cold mount's first read round is still in flight: hold the aside. */
+export function WbReading({ cwd }: { cwd: string }) {
+  return (
+    <div
+      data-wb-probing
+      className="flex min-h-0 flex-1 items-center justify-center gap-1.5 p-6 text-center text-muted-foreground text-xs"
+    >
+      Reading <span className="font-mono">{cwd}</span>…
+    </div>
+  );
+}
+
+/** A settled round with no answered method: one plain line, not an empty
+    tab strip. */
+export function WbNothingToShow({
+  folderless,
+  cwd,
+}: {
+  folderless: boolean;
+  cwd: string;
+}) {
+  return (
+    <div className="flex min-h-0 flex-1 items-center justify-center p-6 text-center text-muted-foreground text-xs">
+      {folderless ? (
+        <p>
+          Nothing to show — a process, helper or plan lists here once the
+          session has one.
+        </p>
+      ) : (
+        <p>
+          Nothing to show — the host has no answer for{" "}
+          <span className="font-mono">{cwd}</span>.
+        </p>
+      )}
+    </div>
+  );
+}

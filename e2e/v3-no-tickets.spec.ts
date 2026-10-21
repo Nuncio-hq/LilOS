@@ -192,8 +192,8 @@ test("⌘K searches and jumps; with no CEO behind it there is no draft to make",
     { timeout: 30_000 },
   );
 
-  // Search is the sidebar's one row, and the palette says Search too: with
-  // no CEO to ask, the top bar has no "Ask the CEO" box either.
+  // Search is the sidebar's one row (the top bar never repeats it, nor an
+  // "Ask the CEO" box), and with no CEO to ask the palette says Search too.
   await expect(
     v3Sidebar(page).getByRole("button", { name: /^Search/ }),
   ).toBeVisible();

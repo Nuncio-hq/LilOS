@@ -98,6 +98,19 @@ const send = async (page: Page, text: string) => {
   await box.press("Enter");
 };
 
+/** The newest turn's footer facts ("Fake Reasoning · High · Fast"). The
+ *  footer is a hover line — transparent until the pointer is on the turn — so
+ *  hover it and wait until it is fully shown, as a person reading it would. */
+async function expectFooter(page: Page, facts: string) {
+  const turn = page.locator("[data-agentturn]").last();
+  const footer = turn.locator("[data-turnsettled]");
+  await expect(async () => {
+    await turn.hover();
+    await expect(footer.getByText(facts)).toBeVisible({ timeout: 2_000 });
+    await expect(footer).toHaveCSS("opacity", "1", { timeout: 2_000 });
+  }).toPass({ timeout: 90_000 });
+}
+
 test("AC-1 + AC-5 the new-session composer starts on the employee default and lists every engine model; the session picker groups them by provider", async ({
   page,
 }) => {
@@ -222,12 +235,7 @@ test("AC-3 + AC-4 the next turn runs the picked model + effort + fast; the foote
 
   // The NEXT turn runs the pick — footer = engine turn.started truth.
   await send(page, "what changed?");
-  await expect(
-    page
-      .locator("[data-agentturn]")
-      .last()
-      .getByText("· Fake Reasoning · High · Fast"),
-  ).toBeVisible({ timeout: 90_000 });
+  await expectFooter(page, "Fake Reasoning · High · Fast");
   await expect(triggers(page)).toContainText("Fake Reasoning");
   await page.screenshot({ path: `${SHOTS}/ac-4-footer.png` });
 
@@ -240,9 +248,7 @@ test("AC-3 + AC-4 the next turn runs the picked model + effort + fast; the foote
   await page.keyboard.press("Escape");
   await expect(triggers(page)).toContainText("Fake Opus 2");
   await send(page, "one more thing");
-  await expect(
-    page.locator("[data-agentturn]").last().getByText("· Fake Opus 2 · High"),
-  ).toBeVisible({ timeout: 90_000 });
+  await expectFooter(page, "Fake Opus 2 · High");
   await page.screenshot({ path: `${SHOTS}/ac-8-slash-id.png` });
   expect(errors).toEqual([]);
 });
@@ -278,12 +284,7 @@ test("AC-4 + AC-5 a pick on the new-session composer lands on the FIRST turn; th
   await v3Peek(page).getByRole("button", { name: "Send" }).click();
   await expect(page).toHaveURL(/open=thread:[^&]+/, { timeout: 30_000 });
   // The FIRST turn runs the pick — footer = engine turn.started truth.
-  await expect(
-    page
-      .locator("[data-agentturn]")
-      .last()
-      .getByText("· Fake Reasoning · High · Fast"),
-  ).toBeVisible({ timeout: 90_000 });
+  await expectFooter(page, "Fake Reasoning · High · Fast");
   // The session keeps its pick on its own composer.
   await expect(triggers(page)).toContainText("Fake Reasoning");
   await page.screenshot({ path: `${SHOTS}/ac-4-first-turn-pick.png` });

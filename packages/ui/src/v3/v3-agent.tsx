@@ -94,7 +94,15 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
   const holdsCeo = !!ceo && agent.id === ceo.id;
   // Everyone reports to its holder, the holder to you.
   const boss = ceo && (holdsCeo ? "You" : ceo.name);
-  const reportsTo = boss ? ` · reports to ${boss}` : "";
+  /* The hire dialog seeds the role from the profile's description, so on a
+     real agent they are often the same sentence. Said once: the line under
+     the name keeps it, and the kicker above carries only the rest. */
+  const roleIsDescription =
+    !!agent.description &&
+    agent.role.trim().toLowerCase() === agent.description.trim().toLowerCase();
+  const dotted = (...parts: string[]) => parts.filter(Boolean).join(" · ");
+  const reportsTo = boss ? `reports to ${boss}` : "";
+  const hired = `hired ${agent.hired}`;
   const fmt = (n: number) => (Number.isInteger(n) ? `${n}` : n.toFixed(2));
   // The soonest scheduled job that is not paused: Works says when it is due.
   const nextJob = outside
@@ -109,14 +117,18 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
           <Title
             kicker={
               outside ? (
-                `Outside worker · via ${via?.label ?? "a connector"}${reportsTo}`
+                dotted(
+                  "Outside worker",
+                  `via ${via?.label ?? "a connector"}`,
+                  reportsTo,
+                )
               ) : draft && ed ? (
                 <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
                   <RoleField ed={ed} draft={draft} />
-                  {`${reportsTo} · hired ${agent.hired}`}
+                  {` · ${dotted(reportsTo, hired)}`}
                 </span>
               ) : (
-                `${agent.role}${reportsTo} · hired ${agent.hired}`
+                dotted(roleIsDescription ? "" : agent.role, reportsTo, hired)
               )
             }
           >
@@ -169,7 +181,8 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
           <DescriptionField ed={ed} draft={draft} />
         </div>
       ) : (
-        agent.description && (
+        agent.description &&
+        !(draft && roleIsDescription) && (
           <p className="mb-1 text-[14.5px] text-muted-foreground leading-relaxed">
             {agent.description}
           </p>
