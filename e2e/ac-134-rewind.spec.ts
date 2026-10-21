@@ -115,14 +115,15 @@ let convA = "";
     verbatim (#266), and while it's open getByText strict-matches both —
     the #432 fast tick lands asserts inside that open window. A turn's
     reasoning now lives in its work fold (`[data-tasksteps]`), and the
-    thread's own title (`[data-session-title]`) is derived from the first
-    message — neither is a message row, so both are excluded too. */
+    thread's own title (`[data-session-title]`, repeated in the sticky bar
+    `[data-thread-bar]` once the header scrolls away) is derived from the
+    first message — none of them is a message row, so all are excluded. */
 const rowText = (scope: Locator, text: string | RegExp) =>
   scope
     .getByText(text)
     .and(
       scope.locator(
-        ":not(textarea):not([data-slot='collapsible-content'] *):not([data-tasksteps] *):not([data-session-title])",
+        ":not(textarea):not([data-slot='collapsible-content'] *):not([data-tasksteps] *):not([data-session-title]):not([data-thread-bar] *)",
       ),
     );
 
