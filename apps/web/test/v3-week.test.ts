@@ -1,5 +1,6 @@
 import type {
   AppChannel,
+  Ask,
   Conversation,
   ConversationSummary,
 } from "@lilos/contracts/app";
@@ -71,7 +72,7 @@ describe("week counts", () => {
         }),
       ]),
     );
-    expect(counts.get("emp1")).toEqual({ finished: 1, failed: 1 });
+    expect(counts.get("emp1")).toEqual({ finished: 1, failed: 1, stuck: 0 });
   });
 
   test("before Monday does not count, unless the last message is this week", () => {
@@ -89,7 +90,7 @@ describe("week counts", () => {
         ],
       ),
     );
-    expect(active.get("emp1")).toEqual({ finished: 1, failed: 0 });
+    expect(active.get("emp1")).toEqual({ finished: 1, failed: 0, stuck: 0 });
   });
 
   test("archived, still working, and a stopped turn are not this week's tally", () => {
@@ -100,6 +101,56 @@ describe("week counts", () => {
         conv({ id: "stopped", finishedSeq: 2, turnStopped: true }),
       ]),
       signals: { s1: { running: true, openRequests: new Map() } },
+    });
+    expect(counts.get("emp1")).toBeUndefined();
+  });
+
+  test("a running thread the host marked stuck counts as stuck, not finished", () => {
+    const reason = "Same web search 6 times";
+    const counts = weekByAgent({
+      ...src([
+        conv({
+          id: "loop",
+          engineRef: "s-stuck",
+          state: "active",
+          stuck: { reason },
+          finishedSeq: 3,
+        }),
+        /* A mark on a turn that is not running is not Stuck. This one
+           finished, so it counts there. */
+        conv({
+          id: "stale",
+          stuck: { reason },
+          finishedSeq: 2,
+        }),
+        conv({
+          id: "old",
+          createdAt: start - 5_000,
+          engineRef: "s-old",
+          state: "active",
+          stuck: { reason },
+        }),
+      ]),
+      signals: {
+        "s-stuck": { running: true, openRequests: new Map() },
+        "s-old": { running: true, openRequests: new Map() },
+      },
+    });
+    expect(counts.get("emp1")).toEqual({ finished: 1, failed: 0, stuck: 1 });
+  });
+
+  test("an open ask beats the stuck mark, so that thread is not stuck this week", () => {
+    const counts = weekByAgent({
+      ...src([
+        conv({
+          id: "ask",
+          engineRef: "s1",
+          state: "active",
+          stuck: { reason: "Same web search 6 times" },
+        }),
+      ]),
+      signals: { s1: { running: true, openRequests: new Map() } },
+      asks: [{ id: "a1", conversationId: "ask", state: "open" } as Ask],
     });
     expect(counts.get("emp1")).toBeUndefined();
   });

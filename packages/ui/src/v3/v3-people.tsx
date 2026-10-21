@@ -224,7 +224,7 @@ function WeekBits({ a }: { a: V3Agent }) {
             <span className={INK.failed}>{w.failed} failed</span>
           </>
         )}
-        {w.stuck !== undefined && w.stuck > 0 && (
+        {w.stuck > 0 && (
           <>
             {" · "}
             <span className={INK.stuck}>{w.stuck} stuck</span>

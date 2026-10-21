@@ -5,10 +5,10 @@ import type { V3PageProps } from "./v3-page-types";
 import { TicketRow } from "./v3-rows";
 import type { V3Agent, V3Ticket } from "./v3-types";
 
-/* This week on an agent's page. Real threads use `weekThreads` (finished /
-   failed, and stuck only when the conversation carries that mark). The
-   prototype's ticket week stays when that count is absent. A section with
-   neither is not drawn (D-#19). */
+/* This week on an agent's page. Real threads use `weekThreads` (finished,
+   failed, stuck — the same status Threads uses). The prototype's ticket
+   week stays when that count is absent. A section with neither is not
+   drawn (D-#19). Colour is only a count above zero. */
 
 function Stat({
   value,
@@ -48,25 +48,18 @@ export function AgentWeek({
     return (
       <>
         <Section title="This week" />
-        <div
-          className={cn(
-            "mt-2 grid border-[var(--v3-line)] border-y",
-            w.stuck !== undefined ? "grid-cols-3" : "grid-cols-2",
-          )}
-        >
+        <div className="mt-2 grid grid-cols-3 border-[var(--v3-line)] border-y">
           <Stat value={w.finished} label="threads finished" />
           <Stat
             value={w.failed}
             label="threads failed"
             ink={w.failed > 0 ? INK.failed : undefined}
           />
-          {w.stuck !== undefined && (
-            <Stat
-              value={w.stuck}
-              label="threads stuck"
-              ink={w.stuck > 0 ? INK.stuck : undefined}
-            />
-          )}
+          <Stat
+            value={w.stuck}
+            label="threads stuck"
+            ink={w.stuck > 0 ? INK.stuck : undefined}
+          />
         </div>
       </>
     );

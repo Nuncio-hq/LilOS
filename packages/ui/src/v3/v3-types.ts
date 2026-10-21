@@ -90,10 +90,9 @@ export type V3Agent = {
   suggestion?: { text: string; after: string };
   memory?: { text: string; source: string }[];
   week?: { done: number; typical: string; stuck: number; handed: number };
-  /** Threads finished or failed since Monday, from the same status the
-      Threads page uses. `stuck` is set only when a conversation carries
-      that mark (issue #772); until then it is absent. */
-  weekThreads?: { finished: number; failed: number; stuck?: number };
+  /** Threads finished, failed, or stuck since Monday, from the same status
+      the Threads page uses. Colour is only a count above zero. */
+  weekThreads?: { finished: number; failed: number; stuck: number };
   /** Idle agents: what wakes them next. */
   next?: string;
 };

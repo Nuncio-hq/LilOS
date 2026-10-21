@@ -14,8 +14,8 @@ import {
 /**
  * Issue #775 — People. One test per acceptance criterion, on the real stack.
  * Statuses come from the same derivation as Threads. Week counts are threads
- * finished or failed since Monday; stuck is not counted (Conversation has
- * no stuck mark — that lands with #772).
+ * finished, failed, or stuck since Monday. Stuck is a `stuck:` turn: six
+ * identical searches, then the turn holds (engine-fake).
  *
  * Instructions: soul is not a field of `session.start`. The next thread's
  * `session.started` names the profile, and `agents.describe` of that profile
@@ -39,10 +39,10 @@ async function shot(page: Page, name: string) {
   await page.emulateMedia({ colorScheme: "light" });
 }
 
-test("statuses and this week's finished and failed counts match Threads", async ({
+test("statuses and this week's finished, failed, and stuck counts match Threads", async ({
   page,
 }) => {
-  test.setTimeout(180_000);
+  test.setTimeout(240_000);
   const stack = await bootStack("ac775-week", await pickPorts());
   try {
     const agent = await openDefaultAgent(page, stack.webUrl);
@@ -74,21 +74,38 @@ test("statuses and this week's finished and failed counts match Threads", async 
       v3Peek(page).getByRole("button", { name: /^stop/i }),
     ).toBeVisible({ timeout: 30_000 });
 
+    await startChat(page, stack.webUrl, agent, "stuck:");
+    await expect(page.locator("[data-stuck]")).toContainText(
+      "Same web search 6 times",
+      { timeout: 20_000 },
+    );
+
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`${stack.webUrl}/#?page=people`);
     const row = main(page).getByRole("button", {
       name: new RegExp(agent.name, "i"),
     });
-    await expect(row).toContainText("Working");
-    await expect(row).toContainText(/release note/i);
+    /* Stuck outranks a turn that is still working, so the row wears Stuck
+       and names that thread. */
+    await expect(row).toContainText("Stuck");
     await expect(row).toContainText(/\d+ finished/, { timeout: 20_000 });
     await expect(row).toContainText(/\d+ failed/);
+    await expect(row).toContainText(/\d+ stuck/);
     const text = await row.innerText();
     const finished = Number(/(\d+) finished/.exec(text)?.[1]);
     const failed = Number(/(\d+) failed/.exec(text)?.[1]);
+    const stuck = Number(/(\d+) stuck/.exec(text)?.[1]);
     expect(finished).toBeGreaterThan(0);
     expect(failed).toBeGreaterThan(0);
+    expect(stuck).toBeGreaterThan(0);
     await shot(page, "01-week");
+
+    await row.click();
+    const stat = (label: string) =>
+      main(page).getByText(label, { exact: true }).locator("..").locator("b");
+    await expect(stat("threads stuck")).toHaveText(String(stuck));
+    await expect(stat("threads stuck")).toHaveClass(/text-red-600/);
+    await expect(stat("threads failed")).toHaveClass(/text-red-600/);
 
     await page.goto(`${stack.webUrl}/#?page=threads&view=agent`);
     const block = main(page)
@@ -103,6 +120,9 @@ test("statuses and this week's finished and failed counts match Threads", async 
     await expect(
       block.getByRole("button").filter({ hasText: "Working" }),
     ).toContainText(/release note/i);
+    await expect(
+      block.getByRole("button").filter({ hasText: "Stuck" }),
+    ).toHaveCount(stuck);
   } finally {
     await stack.stop();
   }

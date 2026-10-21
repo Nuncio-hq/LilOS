@@ -117,7 +117,8 @@ function toAgent(
       .map((p) => p.trim())
       .filter(Boolean),
     /* Always present, including zeros: the column is a real count (D-#19).
-       Stuck is not part of it — Conversation has no such mark (issue #772). */
+       Stuck is `threadStatus === "stuck"` (D-#772), the same word Threads
+       shows, counted for this week with finished and failed (issue #775). */
     weekThreads: week,
   };
 }
@@ -228,7 +229,7 @@ export function v3DataStore(): ReadableAtom<V3Data> {
             engine || undefined,
             profiles.byProfile[e.profile],
             chats.get(e.id),
-            weeks.get(e.id) ?? { finished: 0, failed: 0 },
+            weeks.get(e.id) ?? { finished: 0, failed: 0, stuck: 0 },
           ),
         ),
         connectors: [],

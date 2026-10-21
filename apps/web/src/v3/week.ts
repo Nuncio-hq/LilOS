@@ -1,24 +1,24 @@
 import { threadStatus } from "@lilos/client-runtime";
 import type { ThreadSources } from "./threads";
 
-/* Threads finished or failed since Monday, per employee. Status is
-   `threadStatus` (client-runtime, D-#33) — the same derivation Threads
-   uses, not a second one. Activity time is the summary's last message,
-   else the thread's createdAt. Archived threads stay out, the same set
-   Threads shows.
+/* Threads finished, failed, or stuck since Monday, per employee (issue
+   #775). Status is `threadStatus` (client-runtime, D-#33) — the same
+   derivation Threads uses, including an open relay ask, not a second one.
+   Activity time is the summary's last message, else the thread's
+   createdAt. Archived threads stay out, the same set Threads shows.
 
    Finished means the turn completed (`finishedSeq > 0`) and the thread is
    idle or unseen. A stopped turn is not a finished one (`turnStopped`),
    even when an earlier turn completed. Failure is already
-   `threadStatus === "failed"`. Working and needs are in progress, not
-   this week's tally.
-
-   Stuck is left out: Conversation has no stuck mark. That lands with
-   issue #772; until then the count is finished and failed only. */
+   `threadStatus === "failed"`. Stuck is `threadStatus === "stuck"`
+   (D-#772): the host's mark counts only while that turn is still running.
+   A mark left on a turn that has stopped is not stuck. Working and needs
+   are in progress, not this week's tally. */
 
 export interface WeekCounts {
   finished: number;
   failed: number;
+  stuck: number;
 }
 
 /** Monday 00:00 in the local timezone. "This week" runs from there. */
@@ -34,9 +34,17 @@ export function weekByAgent(src: ThreadSources): Map<string, WeekCounts> {
   const start = weekStart(src.now);
   const owners = new Map(src.channels.map((ch) => [ch.id, ch.employeeId]));
   const summaries = new Map(src.summaries.map((s) => [s.conversation.id, s]));
+  const openAsks = new Map<string, number>();
+  for (const ask of src.asks) {
+    if (ask.state !== "open") continue;
+    openAsks.set(
+      ask.conversationId,
+      (openAsks.get(ask.conversationId) ?? 0) + 1,
+    );
+  }
   const out = new Map<string, WeekCounts>();
-  const bump = (id: string, key: "finished" | "failed") => {
-    const row = out.get(id) ?? { finished: 0, failed: 0 };
+  const bump = (id: string, key: keyof WeekCounts) => {
+    const row = out.get(id) ?? { finished: 0, failed: 0, stuck: 0 };
     row[key] += 1;
     out.set(id, row);
   };
@@ -50,8 +58,10 @@ export function weekByAgent(src: ThreadSources): Map<string, WeekCounts> {
       c,
       c.engineRef ? src.models[c.engineRef] : undefined,
       c.engineRef ? src.signals[c.engineRef] : undefined,
+      openAsks.get(c.id) ?? 0,
     );
-    if (status === "failed") bump(agentId, "failed");
+    if (status === "stuck") bump(agentId, "stuck");
+    else if (status === "failed") bump(agentId, "failed");
     else if (
       (status === "idle" || status === "unseen") &&
       c.finishedSeq > 0 &&
