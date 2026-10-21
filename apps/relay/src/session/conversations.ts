@@ -55,6 +55,8 @@ export async function handleConversations(
     isHost,
     callHost,
     respond,
+    options,
+    log,
   } = c;
   switch (method) {
     case "conversations.list": {
@@ -175,15 +177,21 @@ export async function handleConversations(
         "cwd",
         "turnStopped",
         "bgJobs",
+        "stuck",
       ] as const;
       if (HOST_KEYS.some((k) => k in parsed.data) && !isHost(peer)) {
         throw new RpcError(
           JsonRpcCode.forbidden,
           "forbidden",
-          "only the registered engine host may write engineRef/state/model/provider/effort/fast/deliveredSeq/life/turnFailure/cwd/turnStopped/bgJobs",
+          "only the registered engine host may write engineRef/state/model/provider/effort/fast/deliveredSeq/life/turnFailure/cwd/turnStopped/bgJobs/stuck",
         );
       }
       const { conversationId, ...rest } = parsed.data;
+      const before = await store.getConversation(conversationId);
+      /* Captured before the write: the memory store hands back the same
+         object it mutates, so reading `before.stuck` afterwards would
+         already be the new mark and the transition would never push. */
+      const wasStuck = !!before?.stuck;
       /* #137 AC-2: title provenance is caller identity — a host write is
          the engine titling its session ("auto", guarded: never over a
          user name); any other client's title is a rename ("user"). */
@@ -226,6 +234,13 @@ export async function handleConversations(
         );
       }
       emitConversation(conversation.channelId, conversation);
+      /* D-#772: the transition into stuck is the push. A rewrite of the
+         same mark, or a clear, does not buzz again. */
+      if (conversation.stuck && !wasStuck) {
+        options.push
+          ?.threadStuck(conversation, conversation.stuck.reason)
+          .catch((error) => log(`push fan-out failed: ${error}`));
+      }
       respond(peer, id, { conversation });
       return;
     }

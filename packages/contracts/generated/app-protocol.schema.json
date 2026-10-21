@@ -1890,6 +1890,18 @@
         "turnStopped": {
           "type": "boolean"
         },
+        "stuck": {
+          "type": "object",
+          "properties": {
+            "reason": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "reason"
+          ]
+        },
         "bgJobs": {
           "type": "integer",
           "minimum": 0,
@@ -2236,6 +2248,18 @@
               },
               "turnStopped": {
                 "type": "boolean"
+              },
+              "stuck": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "reason"
+                ]
               },
               "bgJobs": {
                 "type": "integer",
@@ -2660,6 +2684,18 @@
             "turnStopped": {
               "type": "boolean"
             },
+            "stuck": {
+              "type": "object",
+              "properties": {
+                "reason": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "reason"
+              ]
+            },
             "bgJobs": {
               "type": "integer",
               "minimum": 0,
@@ -3012,6 +3048,25 @@
               "type": "null"
             }
           ]
+        },
+        "stuck": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "reason": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "reason"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -3233,6 +3288,18 @@
             },
             "turnStopped": {
               "type": "boolean"
+            },
+            "stuck": {
+              "type": "object",
+              "properties": {
+                "reason": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "reason"
+              ]
             },
             "bgJobs": {
               "type": "integer",
@@ -4802,6 +4869,18 @@
             "turnStopped": {
               "type": "boolean"
             },
+            "stuck": {
+              "type": "object",
+              "properties": {
+                "reason": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "reason"
+              ]
+            },
             "bgJobs": {
               "type": "integer",
               "minimum": 0,
@@ -5528,6 +5607,18 @@
                   },
                   "turnStopped": {
                     "type": "boolean"
+                  },
+                  "stuck": {
+                    "type": "object",
+                    "properties": {
+                      "reason": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "reason"
+                    ]
                   },
                   "bgJobs": {
                     "type": "integer",
@@ -8046,6 +8137,18 @@
             },
             "turnStopped": {
               "type": "boolean"
+            },
+            "stuck": {
+              "type": "object",
+              "properties": {
+                "reason": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "reason"
+              ]
             },
             "bgJobs": {
               "type": "integer",

@@ -47,6 +47,7 @@ export function oneLine(text: string, max: number): string {
     seen, or finished and unseen, is `done` (unseen marks the latter). */
 export const V3_STATUS: Record<ThreadStatus, V3Status> = {
   needs: "needs",
+  stuck: "stuck",
   working: "working",
   failed: "failed",
   unseen: "done",
@@ -216,7 +217,8 @@ function threadRows(src: ThreadSources, archived: boolean): V3Thread[] {
       openCount.get(c.id) ?? 0,
     );
     const last = summary?.last.createdAt ?? c.createdAt;
-    const live = status === "working" || status === "needs";
+    const live =
+      status === "working" || status === "needs" || status === "stuck";
     const title =
       c.title.trim() ||
       (summary ? oneLine(summary.root.text, 80) : "") ||
@@ -264,6 +266,12 @@ function threadRows(src: ThreadSources, archived: boolean): V3Thread[] {
           : {}),
         ...(ask
           ? { askId: ask.id, quote: oneLine(askText(ask).text, 140) }
+          : {}),
+        /* D-#772: the live card's reason, only while the status is stuck.
+           Threads already floats `stuck` above working (RANK). A mark left
+           on a finished turn does not draw the card. */
+        ...(status === "stuck" && c.stuck
+          ? { stuck: { what: c.stuck.reason, detail: [] } }
           : {}),
       },
     });

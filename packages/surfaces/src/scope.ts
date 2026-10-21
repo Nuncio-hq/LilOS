@@ -491,7 +491,13 @@ export class SessionSurfaces implements ViewerScope {
       /* #106: the thread's access level — an agent reads whether it will
          be asked before risky actions (never grants it itself). */
       return {
-        thread: { id: conv.id, title: conv.title, access: conv.access },
+        thread: {
+          id: conv.id,
+          title: conv.title,
+          access: conv.access,
+          /* D-#772: stuck, and why, when the host has marked the turn. */
+          ...(conv.stuck ? { stuck: { reason: conv.stuck.reason } } : {}),
+        },
         messages,
       };
     });

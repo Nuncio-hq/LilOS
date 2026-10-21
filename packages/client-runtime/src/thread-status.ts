@@ -11,12 +11,19 @@ import type { SessionModel } from "./turn-model";
  * - `needs`   an open engine request, or an open relay ask (D-#773: a
  *             gateway ask never opens an engine request), is waiting
  *             on the user (a turn parked on it is not "working"),
+ * - `stuck`   the host marked this running turn stuck (D-#772),
  * - `working` a turn is running,
  * - `failed`  the last turn failed (cleared when a turn starts fresh),
  * - `unseen`  a turn finished past the user's read mark (D-#563),
  * - `idle`    everything else.
  */
-export type ThreadStatus = "needs" | "working" | "failed" | "unseen" | "idle";
+export type ThreadStatus =
+  | "needs"
+  | "stuck"
+  | "working"
+  | "failed"
+  | "unseen"
+  | "idle";
 
 /** What the broadcast fold knows about a session nobody is watching. */
 export interface SessionSignalLike {
@@ -60,6 +67,9 @@ export function threadStatus(
 ): ThreadStatus {
   const { running, asks } = liveState(c, model, signal, relayAsks);
   if (asks > 0) return "needs";
+  /* D-#772: the mark only means Stuck while the turn is still running.
+     Stop, a new message, and the next different step clear `c.stuck`. */
+  if (c.stuck && running) return "stuck";
   if (running) return "working";
   if (c.turnFailure) return "failed";
   if (c.finishedSeq > c.readSeq) return "unseen";

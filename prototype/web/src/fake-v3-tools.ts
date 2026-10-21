@@ -218,7 +218,7 @@ export const BROWSER: V3Data["browser"] = {
 export const DEVICES: V3Data["devices"] = [{ id: "d-1", name: "iPhone", model: "iPhone 17 Pro", lastSeen: "4m ago" }]
 
 export const SETTINGS: V3Data["settings"] = {
-  push: { needsYou: true, finished: false, stuck: true, failed: true },
+  push: { needsYou: true, finished: false, failed: true },
   approvals: "ask",
   enginePolicy: "smart",
   editor: "Cursor",

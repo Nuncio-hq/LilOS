@@ -145,6 +145,10 @@ export const conversations = sqliteTable(
     /** Running background-job count (#583): the thread row's
         "N in background" badge; same host-written lifecycle. */
     bgJobs: integer("bg_jobs"),
+    /** The running turn is stuck (D-#772): JSON `{reason}` — the plain
+        sentence the card and the push say. Host-written; null once the
+        next step differs, a new message lands, or the turn stops. */
+    stuck: text("stuck"),
     /** The user's read watermark (#563): the channel seq up to which they have
         opened this thread. `conversations.markRead` stamps
         max(channel lastSeq, finishedSeq); compared against `finishedSeq`

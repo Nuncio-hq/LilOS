@@ -52,6 +52,16 @@ describe("threadStatus", () => {
     expect(threadStatus(conv(), m, undefined)).toBe("needs");
   });
 
+  it("a running turn the host marked stuck is stuck, and needs you wins", () => {
+    const c = conv({
+      state: "active",
+      stuck: { reason: "Same web search 6 times" },
+    });
+    expect(threadStatus(c, undefined, signal(true))).toBe("stuck");
+    expect(threadStatus(c, undefined, signal(true, 1))).toBe("needs");
+    expect(threadStatus(c, undefined, signal(false))).toBe("idle");
+  });
+
   it("a running turn is working, even when the last one failed", () => {
     const c = conv({ turnFailure: { kind: "generic", text: "boom" } });
     expect(threadStatus(c, undefined, signal(true))).toBe("working");

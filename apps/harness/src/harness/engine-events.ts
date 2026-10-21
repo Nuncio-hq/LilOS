@@ -4,6 +4,13 @@ import {
   fmtTokens,
 } from "@lilos/contracts/engine";
 import type { HarnessCtx, SessionBinding } from "./ctx";
+import {
+  beginStuckTurn,
+  noteStuckProgress,
+  noteStuckTool,
+  resumeStuckWatch,
+  stuckOnNewMessage,
+} from "./stuck";
 
 /**
  * engine -> relay: the `onEngineEvent` switch — turn
@@ -162,7 +169,13 @@ export function onEngineEvent(this: HarnessCtx, event: EngineEvent) {
            that made it this far worked. Same for the stopped word. */
         turnFailure: null,
         turnStopped: null,
+        /* D-#772: a live turn starts clear. During replay `stuckDefer`
+           is set and finishStuckReplay is the only writer — a clear
+           here drops a still-stuck mark, and the later re-mark pushes
+           a second time. */
+        ...(binding.stuckDefer ? {} : { stuck: null }),
       }).catch(() => {});
+      beginStuckTurn(this, binding);
       /* #422: a turn is running but named no step yet — the header reads
          "thinking" until the first tool.started replaces it. Waits stay:
          applyReplay raises openRequests before replaying this event, and
@@ -205,9 +218,12 @@ export function onEngineEvent(this: HarnessCtx, event: EngineEvent) {
     case "subagent.started":
       /* #346 AC-3: a session under a running subagent never suspends. */
       binding?.openSubagents.add(event.payload.subagentId);
+      /* D-#772: a helper working is progress. The quiet window resets. */
+      if (binding) noteStuckProgress(this, binding);
       break;
     case "subagent.completed":
       binding?.openSubagents.delete(event.payload.subagentId);
+      if (binding) noteStuckProgress(this, binding);
       break;
     /* #583 AC-3: a live background job stamps its count on the row — the
        badge and the session feed it keeps alive survive a released
@@ -218,8 +234,13 @@ export function onEngineEvent(this: HarnessCtx, event: EngineEvent) {
       this.updateConversation(binding.conversationId, {
         bgJobs: binding.runningJobs.size,
       });
+      /* D-#772: a job starting is a new step, same as its later output. */
+      noteStuckProgress(this, binding);
       break;
     }
+    case "job.output":
+      if (binding) noteStuckProgress(this, binding);
+      break;
     case "job.exited": {
       if (!binding) break;
       if (binding.runningJobs.delete(event.payload.jobId))
@@ -249,12 +270,17 @@ export function onEngineEvent(this: HarnessCtx, event: EngineEvent) {
       }
       break;
     case "turn.delta":
-      if (binding && event.payload.stream === "text") {
-        binding.textByTurn.set(
-          event.payload.turnId,
-          (binding.textByTurn.get(event.payload.turnId) ?? "") +
-            event.payload.delta,
-        );
+      if (binding) {
+        if (event.payload.stream === "text") {
+          binding.textByTurn.set(
+            event.payload.turnId,
+            (binding.textByTurn.get(event.payload.turnId) ?? "") +
+              event.payload.delta,
+          );
+        }
+        /* D-#772: a streaming command is still moving. The quiet window
+           resets on the delta, not only when the next tool starts. */
+        noteStuckProgress(this, binding);
       }
       break;
     /* #431: a replayed finished turn's streams in one frame — replace
@@ -279,7 +305,21 @@ export function onEngineEvent(this: HarnessCtx, event: EngineEvent) {
         );
         binding.nowStep = `${event.payload.tool} ${arg}`.trim();
         this.noteNow(binding);
+        noteStuckTool(
+          this,
+          binding,
+          {
+            tool: event.payload.tool,
+            input: event.payload.input,
+            at: Date.now(),
+          },
+          event.payload.parentToolCallId !== undefined,
+        );
       }
+      break;
+    case "tool.completed":
+      /* D-#772: the call finishing is progress, including a nested one. */
+      if (binding) noteStuckProgress(this, binding);
       break;
     case "request.opened":
       if (binding) {
@@ -317,6 +357,9 @@ export function onEngineEvent(this: HarnessCtx, event: EngineEvent) {
       if (binding) {
         binding.nowWaits.delete(event.payload.requestId);
         this.noteNow(binding);
+        /* D-#772: the quiet window resumes only once nothing is left
+           waiting on the user. The wait itself is not quiet time. */
+        resumeStuckWatch(this, binding);
       }
       void this.onEngineRequestResolved(
         event.sessionId,
@@ -377,6 +420,8 @@ export function onEngineEvent(this: HarnessCtx, event: EngineEvent) {
            ack to claim; a landed steer is delivered, never parked. */
         if (idx >= 0) binding.steerPending.splice(idx, 1);
         else binding.steerLanded.push(event.payload.text);
+        /* D-#772: a message that landed clears the mark and the count. */
+        stuckOnNewMessage(this, binding);
       }
       break;
     case "turn.completed":

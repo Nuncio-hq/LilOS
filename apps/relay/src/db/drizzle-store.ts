@@ -116,6 +116,10 @@ const rowToConversation = (row: ConversationRow): Conversation => {
       : undefined,
     turnStopped: row.turnStopped ?? undefined,
     bgJobs: row.bgJobs ?? undefined,
+    /* JSON `{reason}` (D-#772); absent when the turn isn't stuck. */
+    stuck: row.stuck
+      ? (JSON.parse(row.stuck) as Conversation["stuck"])
+      : undefined,
     /* JSON {taskId, name} — set on sessions a scheduled task opened. */
     scheduled: row.scheduled
       ? (JSON.parse(row.scheduled) as Conversation["scheduled"])
@@ -489,7 +493,7 @@ export function createDrizzleStore(db: Db): RelayStore {
         title_source AS titleSource, archived, delivered_seq AS deliveredSeq,
         usage, usage_session_id AS usageSessionId, usage_seq AS usageSeq,
         life, turn_failure AS turnFailure,
-        turn_stopped AS turnStopped, bg_jobs AS bgJobs,
+        turn_stopped AS turnStopped, bg_jobs AS bgJobs, stuck,
         read_seq AS readSeq, finished_seq AS finishedSeq,
         finished_session_id AS finishedSessionId,
         finished_event_seq AS finishedEventSeq,
@@ -888,6 +892,10 @@ export function createDrizzleStore(db: Db): RelayStore {
         tx.insert(schema.conversations)
           .values({
             ...conversation,
+            /* D-#772: a new thread isn't stuck. The domain field is the
+               parsed mark; the column is its JSON, so the spread can't
+               carry the object through. */
+            stuck: null,
             scheduled: conversation.scheduled
               ? JSON.stringify(conversation.scheduled)
               : null,
@@ -963,7 +971,7 @@ export function createDrizzleStore(db: Db): RelayStore {
       /* turnFailure crosses the patch API as the domain object (#419);
          the column holds its JSON like `workspace`/`usage` — serialize at
          the boundary, `null` clears. */
-      const { turnFailure, ...cols } = patch;
+      const { turnFailure, stuck, ...cols } = patch;
       const updated = db
         .update(schema.conversations)
         .set({
@@ -973,6 +981,11 @@ export function createDrizzleStore(db: Db): RelayStore {
                 turnFailure:
                   turnFailure === null ? null : JSON.stringify(turnFailure),
               }
+            : {}),
+          /* D-#772: same boundary as turnFailure — the column holds JSON,
+             `null` clears. */
+          ...(stuck !== undefined
+            ? { stuck: stuck === null ? null : JSON.stringify(stuck) }
             : {}),
         })
         .where(eq(schema.conversations.id, id))

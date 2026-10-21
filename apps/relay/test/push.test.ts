@@ -32,6 +32,7 @@ const ALL_ON: PushPrefs = {
   waitingForInput: true,
   completed: true,
   failed: true,
+  stuck: true,
 };
 
 const newWorld = (opts?: {
@@ -983,5 +984,30 @@ describe("per-employee mute (#561 AC-3)", () => {
       "req-2",
     );
     expect(sent).toHaveLength(1);
+  });
+
+  it("D-#772 a stuck mark pushes only when that phone's Stuck pref is on", async () => {
+    const { relay, pairing, sent } = newWorld();
+    const host = await registeredHost(relay);
+    const { conversation } = await setupConversation(host);
+    const phone = await helloedDevice(pairing, relay);
+    const token = `ExponentPushToken[${phone.device.id}]`;
+    await registerPush(phone, token, { ...ALL_ON, stuck: false });
+    const mark = (stuck: { reason: string } | null) =>
+      host.connection.receive(
+        req("conversations.update", {
+          conversationId: conversation.id,
+          stuck,
+        }),
+      );
+    await mark({ reason: "Same web search 6 times" });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(sent).toHaveLength(0);
+
+    await registerPush(phone, token, { ...ALL_ON, stuck: true });
+    await mark(null);
+    await mark({ reason: "Same web search 6 times" });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(sent.map((m) => m.body)).toEqual(["Same web search 6 times"]);
   });
 });

@@ -59,6 +59,7 @@ export function Composer({
   onDraftChange,
   seedFiles,
   onSeededFiles,
+  hideStop = false,
 }: {
   placeholder: string;
   employees: Employee[];
@@ -117,6 +118,9 @@ export function Composer({
      `onSeededFiles` so a reseed on the same composer works again. */
   seedFiles?: AttachedFile[];
   onSeededFiles?: () => void;
+  /* D-#772: the stuck card owns the visible Stop. The pill hides; ⌘.
+     still stops, because `busy` (and `onStop`) stay. */
+  hideStop?: boolean;
 }) {
   const [draft, setDraft] = useControllableState({
     prop: draftProp,
@@ -265,7 +269,7 @@ export function Composer({
                 </span>
               </PromptInputTools>
               <ComposerKbd className="hidden @min-[420px]:inline" />
-              {busy && !draft.trim() && onStop ? (
+              {busy && !draft.trim() && onStop && !hideStop ? (
                 <StopPill onStop={onStop} />
               ) : (
                 <SendPill

@@ -15,7 +15,7 @@ import { nav } from "./routes";
  * turns needs-you / done / failed; this module owns the phone's half —
  *
  * - `push.register`: after pairing and on every foreground while online,
- *   the Expo token + the four per-kind toggles are upserted to the relay,
+ *   the Expo token + the per-kind toggles are upserted to the relay,
  *   keyed by the device id the socket already authenticated (AC-1).
  * - Tap → thread: the payload's `conversationId` navigates to Thread —
  *   `getLastNotificationResponseAsync` covers the cold start, the response
@@ -37,9 +37,11 @@ const DEFAULT_PUSH_PREFS: PushPrefs = {
   waitingForInput: true,
   completed: true,
   failed: true,
+  /* D-#772: Stuck starts off. The phone turns it on; the Mac has no switch. */
+  stuck: false,
 };
 
-/** The four toggles + the OS permission, for the Settings section (AC-6). */
+/** The toggles + the OS permission, for the Settings section (AC-6). */
 export const $pushPrefs = atom<PushPrefs>(DEFAULT_PUSH_PREFS);
 export const $pushPermission = atom<"undetermined" | "denied" | "granted">(
   "undetermined",

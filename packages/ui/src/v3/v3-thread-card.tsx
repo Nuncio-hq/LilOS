@@ -67,8 +67,10 @@ function Frame({
   );
 }
 
-/** The soft box with the last two output lines. Lines arrive over time. */
+/** The soft box with the last two output lines. Lines arrive over time.
+    No lines, no box — an empty grey rectangle is not a tail (D-#772). */
 function Tail({ lines }: { lines: { key: string | number; text: string }[] }) {
+  if (lines.length === 0) return null;
   return (
     <div
       className={cn(

@@ -134,6 +134,8 @@ function build(): Slice {
   return {
     settings: {
       approvals: defaultAccess.get(),
+      /* D-#161 / D-#772: the phone registers its own per-kind prefs,
+         Stuck included. This Mac does not offer those switches. */
       ...(policy ? { enginePolicy: policy } : {}),
       ...(editor && editors
         ? { editor: editor.name, editors: editors.map((e) => e.name) }

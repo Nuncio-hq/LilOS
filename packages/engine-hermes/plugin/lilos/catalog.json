@@ -1100,6 +1100,19 @@
                   "ask",
                   "full"
                 ]
+              },
+              "stuck": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "reason"
+                ],
+                "additionalProperties": false
               }
             },
             "required": [

@@ -230,6 +230,13 @@ export const Conversation = z.object({
    */
   turnStopped: z.boolean().optional(),
   /**
+   * The running turn is stuck (D-#772): a plain reason ("Same web search
+   * 6 times", "No new step for 20 minutes"). The host writes it and
+   * clears it (`null` on the update) when the next step differs, a new
+   * message lands, or the turn is stopped. Absent = not stuck.
+   */
+  stuck: z.object({ reason: z.string().min(1) }).optional(),
+  /**
    * Count of this session's still-running background jobs (#583 AC-3).
    * Same lifecycle as `turnStopped`: host-written on `job.started` /
    * `job.exited`, so the row's "N in background" badge — and the
@@ -580,27 +587,34 @@ export type EngineHostStatus = z.infer<typeof EngineHostStatus>;
 
 /**
  * Push kinds a phone can toggle individually (#161): the two attention
- * transitions (an ask the user must approve, an ask waiting on input) and
- * the two terminal ones (turn completed, turn/session failed).
+ * transitions (an ask the user must approve, an ask waiting on input),
+ * the two terminal ones (turn completed, turn/session failed), and a
+ * thread marked stuck (D-#772).
  */
 export const PushKind = z.enum([
   "needs_approval",
   "waiting_for_input",
   "completed",
   "failed",
+  /* D-#772: a thread marked stuck. The phone registers this with its
+     other prefs; absent means off. */
+  "stuck",
 ]);
 export type PushKind = z.infer<typeof PushKind>;
 
 /**
- * Per-kind push toggles a device registers with the relay (#161): the relay
- * fans a transition out only to registrations whose flag for that kind is
- * on. All four default on when the phone first registers.
+ * Per-kind push toggles a device registers with the relay (#161, D-#772):
+ * the relay fans a transition out only to registrations whose flag for
+ * that kind is on. The four attention and terminal kinds default on when
+ * the phone first registers. `stuck` defaults off — a phone is not told
+ * a thread is stuck until that phone turns it on.
  */
 export const PushPrefs = z.object({
   needsApproval: z.boolean(),
   waitingForInput: z.boolean(),
   completed: z.boolean(),
   failed: z.boolean(),
+  stuck: z.boolean().default(false),
 });
 export type PushPrefs = z.infer<typeof PushPrefs>;
 

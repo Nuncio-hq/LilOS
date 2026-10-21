@@ -140,6 +140,22 @@ export interface SessionBinding {
       `thinking` from `turn.started` until the first `tool.started` names a
       step; absent when no turn runs. */
   nowStep?: string;
+  /** D-#772: tool calls of the running turn, newest last. */
+  stuckCalls?: { tool: string; input: unknown; at: number }[];
+  /** When the running turn started, or the last new message — the quiet clock. */
+  stuckSince?: number;
+  /** The reason last written, so a repeat doesn't rewrite the row. */
+  stuckReason?: string;
+  /** Quiet-window timer. A new step replaces it. */
+  stuckTimer?: ReturnType<typeof setTimeout>;
+  /** Latest progress that is not itself a counted call (a delta, a nested
+      tool, a subagent, a job). The quiet clock uses the later of this,
+      the last call, and the turn start. */
+  stuckProgress?: number;
+  /** An approval or a question is open — the quiet window does not run. */
+  stuckPaused?: boolean;
+  /** Replaying engine events: record, don't publish, judge once after. */
+  stuckDefer?: boolean;
   /** #422: engine requests currently waiting on the user —
       requestId -> its wait line. */
   nowWaits: Map<string, string>;
@@ -449,6 +465,8 @@ export interface HarnessCtx {
       /** #583: running background-job count — the row's badge; `null`
           clears it. */
       bgJobs?: number | null;
+      /** D-#772: the running turn is stuck; `null` clears it. */
+      stuck?: { reason: string } | null;
     },
   ): Promise<void>;
   postSystem(

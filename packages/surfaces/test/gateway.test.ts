@@ -870,6 +870,7 @@ describe("AC-1 thread tools over the gateway (issue #340)", () => {
       {
         conversationId: "conv-s-rd",
         conversations: [otherConv("chan-s-rd")],
+        stuck: { reason: "Same web search 6 times" },
       },
     );
     const { scope } = makeScope("s-rd", { appOps: ops });
@@ -885,6 +886,10 @@ describe("AC-1 thread tools over the gateway (issue #340)", () => {
       // #106: thread_read reports the level (read-only — the agent never
       // sets it itself).
       expect((own.thread as { access?: string }).access).toBe("ask");
+      // D-#772: stuck, and the reason, when the host has marked the turn.
+      expect((own.thread as { stuck?: { reason: string } }).stuck).toEqual({
+        reason: "Same web search 6 times",
+      });
       expect((own.messages as { seq: number }[]).map((m) => m.seq)).toEqual([
         1, 2, 4,
       ]);

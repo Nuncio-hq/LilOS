@@ -18,6 +18,11 @@ import {
 import { sessionModelId } from "../lib/context-window";
 import { cn } from "../lib/utils";
 import { MainPane } from "../shell/main-pane";
+import {
+  focusThreadComposer,
+  StuckCard,
+  stuckMessageHandler,
+} from "../thread/stuck-card";
 import { ThreadComposer } from "../thread/thread-composer";
 import { Workbench } from "../workbench/workbench";
 import { FocusHeader } from "./focus-header";
@@ -274,9 +279,20 @@ export function FocusView(props: FocusViewProps) {
             {/* Not-sent tray / plan tray / steer chips grow the area below the conversation;
                 re-stick so everything stays visible without scrolling (issue #15). */}
             <ConversationKeepBottom
-              signal={`${(thread.queue ?? []).length}:${plan.todos.length}:${pendingSteers.length}:${running}:${plan.open}`}
+              signal={`${(thread.queue ?? []).length}:${plan.todos.length}:${pendingSteers.length}:${running}:${plan.open}:${thread.stuck ?? ""}`}
             />
           </Conversation>
+          {thread.stuck && (
+            <StuckCard
+              reason={thread.stuck}
+              onStop={props.onStop}
+              onMessage={stuckMessageHandler(
+                onSend,
+                () => focusThreadComposer(turnsRef.current),
+                surfaces?.termControl === "user",
+              )}
+            />
+          )}
           <ThreadComposer
             {...props}
             lead={lead}

@@ -156,15 +156,8 @@ export function threadModel(
   const replies: Reply[] = turns.flatMap((turn) =>
     turnRows(ctx, turn, { newest: turn === newest, opening: turn === first }),
   )
-  // What the real view has no card for: a loop the CEO is watching, a rewind.
-  if (t.stuck)
-    replies.push({
-      from: "",
-      time: t.now?.elapsed ?? "",
-      id: `${t.id}:stuck`,
-      system: true,
-      text: `Stuck · ${t.stuck.what}. ${t.stuck.detail.join(" · ")}`,
-    })
+  // A rewind has no card of its own. Stuck is the shared card (D-#772):
+  // the thread carries the reason and ThreadView draws it.
   if (t.rewound) {
     const { dropped, files } = t.rewound
     replies.push({
@@ -215,6 +208,8 @@ export function threadModel(
         }
       : {}),
     ...(jobs.length ? { jobs, bgJobs: jobs.filter((j) => j.status === "running").length } : {}),
+    // D-#772: the card only while the status is stuck, same as the app.
+    ...(t.status === "stuck" && t.stuck ? { stuck: t.stuck.what } : {}),
   }
 
   return {

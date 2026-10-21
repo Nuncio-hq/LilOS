@@ -75,6 +75,9 @@ export interface PushFanout {
       is at the Mac" so pushes stay off the phone; `false` (idle/locked)
       clears it early instead of waiting the presence window out. */
   setMacPresence(active: boolean): void;
+  /** D-#772: a thread just became stuck. The phone's own `stuck` pref
+      gates it (default off), same as the other kinds. */
+  threadStuck(conversation: Conversation, reason: string): Promise<void>;
 }
 
 /** Ask reason as the push body — mirrors `dm-model.ts askReason` (AC-3). */
@@ -135,6 +138,10 @@ const prefFor = (prefs: PushPrefs, kind: PushKind): boolean => {
       return prefs.completed;
     case "failed":
       return prefs.failed;
+    /* D-#772: the phone owns this pref and registers it off until it
+       turns the switch on. An older registration that omitted it is off. */
+    case "stuck":
+      return prefs.stuck === true;
   }
 };
 
@@ -336,6 +343,11 @@ export function createPushFanout(options: {
 
     setMacPresence(active) {
       macActiveAt = active ? now() : undefined;
+    },
+
+    async threadStuck(conversation, reason) {
+      /* D-#772: `fan` already drops phones whose `stuck` pref is off. */
+      await fan("stuck", conversation, reason);
     },
   };
 }

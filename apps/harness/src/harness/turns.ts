@@ -2,6 +2,7 @@ import type { Conversation, Employee } from "@lilos/contracts/app";
 import type { EngineEvent, McpServer } from "@lilos/contracts/engine";
 import type { HarnessCtx, SessionBinding } from "./ctx";
 import { BACKEND_DOWN, CONTEXT_LIMIT, CONTEXT_LIMIT_TEXT } from "./rpc";
+import { clearStuck, resetStuckWatch } from "./stuck";
 
 /**
  * Turn completion: the answer post + dedupe, the Stop park
@@ -33,6 +34,10 @@ export async function finishTurn(
   binding.textByTurn.delete(turnId);
   binding.pickByTurn.delete(turnId);
   binding.runningTurnId = undefined;
+  /* D-#772: this turn's watch ends here, before any await. Replay runs
+     the next turn.started while postSystem is still awaiting; resetting
+     after that await would wipe the later turn's watch. */
+  resetStuckWatch(binding);
   this.opts.sleep.release();
   // #422: the turn ended — the header falls back to the role only.
   binding.nowStep = undefined;
@@ -88,9 +93,17 @@ export async function finishTurn(
       `sys:${binding.conversationId}:${source}:silent`,
     );
   }
+  /* D-#772: the watch was reset with runningTurnId, before the awaits.
+     A turn that started during those awaits owns the row — replay plays
+     its turn.started before this continuation. Idle and a stuck clear
+     would mark that live turn finished. During replay finishStuckReplay
+     is the only stuck writer; a clear here would flash the card and
+     push again. */
+  const ownsRow = !binding.runningTurnId;
   this.updateConversation(binding.conversationId, {
-    state: "idle",
-    /* #419: the thread session card's failure — the turn model carries it
+    ...(ownsRow ? { state: "idle" as const } : {}),
+    ...(ownsRow && !binding.stuckDefer ? { stuck: null } : {}),
+    /* #419: the thread's failure card — the turn model carries it
        too, but the row keeps it across a session rebind/reload. A
        backend-death turn was already stamped by surfaceBackendDown. */
     ...(event.payload.error && event.payload.errorCode !== BACKEND_DOWN
@@ -209,6 +222,8 @@ export function scheduleSteerReconcile(
 }
 
 export function unbind(this: HarnessCtx, binding: SessionBinding) {
+  // D-#772: a released session must not fire its quiet timer, or stay stuck.
+  clearStuck(this, binding);
   // #422: this session's line stops counting toward the employee's now.
   binding.nowStep = undefined;
   binding.nowWaits.clear();

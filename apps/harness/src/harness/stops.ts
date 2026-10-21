@@ -1,5 +1,6 @@
 import type { AppMessage } from "@lilos/contracts/app";
 import type { HarnessCtx, SessionBinding } from "./ctx";
+import { clearStuck } from "./stuck";
 
 /**
  * The #403 Stop causal line: seq stamps, re-Send exemptions,
@@ -105,6 +106,8 @@ export async function onInterruptRequested(
     if (afterSeq > prev) this.stopSeqs.set(conversationId, afterSeq);
   }
   const binding = this.bindings.get(conversationId);
+  /* D-#772: Stop clears the mark now, not when the turn later ends. */
+  if (binding) clearStuck(this, binding);
   if (
     !binding ||
     (!binding.runningTurnId && this.sendCanProduceTurn(conversationId))
