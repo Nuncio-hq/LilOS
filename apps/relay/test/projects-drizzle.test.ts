@@ -1,8 +1,9 @@
 /** D-#771 on the REAL (drizzle/sqlite) store: an install already at v27 with
     conversations in two folders, a worktree thread and a folder-less chat
-    upgrades to v28 and is filed by the boot backfill — nothing lost, one
-    project per distinct folder, idempotent on the next boot. Runs under
-    bun:sqlite via a subprocess (vitest itself is Node). */
+    upgrades through v28 (projects) and v29 (ask lines) and is filed by the
+    boot backfill — nothing lost, one project per distinct folder, idempotent
+    on the next boot. Runs under bun:sqlite via a subprocess (vitest itself
+    is Node). */
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { RelayClient } from "@lilos/client-runtime";
@@ -55,7 +56,7 @@ const HOME = ${JSON.stringify(home)};
 const db = open27(":memory:");
 const colsAt27 = db.query("PRAGMA table_info(conversations)").all().map((c) => c.name);
 
-applyMigrations(db); // v28
+applyMigrations(db); // v28 projects, then v29 ask lines
 const store = createDrizzleStore(drizzle(db, { schema }));
 const versionAfter = db.query("PRAGMA user_version").get().user_version;
 const colsAt28 = db.query("PRAGMA table_info(conversations)").all().map((c) => c.name);
@@ -119,7 +120,7 @@ describe("projects migration + backfill on the real store (D-#771)", () => {
 
     // The migration adds the table, the column and their indexes.
     expect(out.colsAt27).not.toContain("project_id");
-    expect(out.versionAfter).toBe(28);
+    expect(out.versionAfter).toBe(29);
     expect(out.colsAt28).toContain("project_id");
     expect(out.tables).toContain("projects");
     for (const index of [
