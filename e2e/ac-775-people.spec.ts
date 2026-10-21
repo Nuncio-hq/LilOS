@@ -101,8 +101,9 @@ test("statuses and this week's finished, failed, and stuck counts match Threads"
     await shot(page, "01-week");
 
     await row.click();
+    /* The agent's page opens in the side peek, beside People. */
     const stat = (label: string) =>
-      main(page).getByText(label, { exact: true }).locator("..").locator("b");
+      v3Peek(page).getByText(label, { exact: true }).locator("..").locator("b");
     await expect(stat("threads stuck")).toHaveText(String(stuck));
     await expect(stat("threads stuck")).toHaveClass(/text-red-600/);
     await expect(stat("threads failed")).toHaveClass(/text-red-600/);
