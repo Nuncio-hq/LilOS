@@ -381,23 +381,21 @@ export function ModelPicker({
           render={
             <PromptInputButton
               size="sm"
-              className="min-w-0 shrink gap-1.5 text-foreground/80 text-xs"
+              className="h-6 min-w-0 shrink gap-1.5 rounded-md px-1.5 font-normal text-[12.5px] text-muted-foreground hover:bg-[var(--v3-hover)] hover:text-foreground aria-expanded:bg-[var(--v3-hover)] aria-expanded:text-foreground"
               data-slot="model-picker-trigger"
             />
           }
         >
           <ModelLogo provider={cur?.provider} logo={logoOf(cur?.provider)} />
           <span className="max-w-36 truncate">{cur?.name ?? value.model}</span>
-          {effort && (
-            <span className="text-foreground/70">· {effortLabel(effort)}</span>
-          )}
+          {effort && <span data-effort>· {effortLabel(effort)}</span>}
           {fast && (
             <ZapIcon
               aria-label="Fast"
               className="size-3 fill-primary text-primary"
             />
           )}
-          <ChevronDownIcon className="size-3" />
+          <ChevronDownIcon className="size-3 opacity-60" />
         </PopoverTrigger>
         <PopoverContent
           side="top"

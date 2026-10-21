@@ -190,11 +190,11 @@ async function openDraft(webUrl: string, page: Page) {
 }
 
 /* The thread panel's own composer, pinned to the panel: the placeholder
-   follows the turn (idle "Reply to…", mid-turn "…is working"/"…is waiting"). */
+   follows the turn (idle "Message X…", mid-turn "Message X… it reads this…"/"…is waiting"). */
 const send = async (page: Page, text = PROMPT) => {
   const box = page
     .locator("[data-thread-panel]")
-    .getByPlaceholder(/Reply to |is working|is waiting/);
+    .getByPlaceholder(/^Message |is waiting/);
   await box.fill(text);
   await box.press("Enter");
 };

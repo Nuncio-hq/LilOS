@@ -390,9 +390,9 @@ export async function bootStack(
  * Deterministic mount signal for the peek panel: `[data-thread-panel]`
  * mounts as an empty shell while the conversation resolves async, so a
  * click waiting only on the shell can outrun the header's render under
- * load (the Focus click's own actionability window then expires first).
- * The session-title row mounts in the same pass as the Focus button —
- * once it's up, the ↗ is there too.
+ * load (the Widen click's own actionability window then expires first).
+ * The session title is the thread header's first row — once it's up, the
+ * conversation is mounted.
  */
 export async function panelFocusReady(
   page: import("@playwright/test").Page,
@@ -444,6 +444,20 @@ export async function panelIntoFocus(
     .getByTitle("Widen over the page", { exact: true })
     .click();
   await expect(page).toHaveURL(focusUrl, { timeout: 30_000 });
+}
+
+/**
+ * The way back: the peek header's Narrow (the session view's one way out,
+ * beside Esc — the thread has no button of its own). Waits for the URL to
+ * drop `full=1`, i.e. the thread beside the page again.
+ */
+export async function panelOutOfFocus(page: playwright.Page): Promise<void> {
+  const { expect } = playwright;
+  await page
+    .getByRole("complementary", { name: "Opened record" })
+    .getByTitle("Narrow, back beside the page", { exact: true })
+    .click();
+  await expect(page).not.toHaveURL(/[#&]full=1(&|$)/, { timeout: 30_000 });
 }
 
 /**
@@ -629,7 +643,7 @@ export async function openSession(
   await expect(
     page
       .locator("[data-thread-panel]")
-      .getByRole("textbox", { name: /Reply to/ }),
+      .getByRole("textbox", { name: /^Message [^…]+…$/ }),
   ).toBeVisible({ timeout: 45_000 });
 }
 

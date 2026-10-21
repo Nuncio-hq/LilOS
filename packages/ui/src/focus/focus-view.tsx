@@ -1,19 +1,9 @@
-import type { ChatStatus } from "ai";
 import {
-  ArrowLeftIcon,
   CheckIcon,
-  CircleDashedIcon,
   CircleDotIcon,
-  EyeIcon,
-  FolderIcon,
-  GitBranchIcon,
-  GitMergeIcon,
-  GitPullRequestIcon,
   ListTodoIcon,
-  MenuIcon,
   PanelRightCloseIcon,
   PanelRightOpenIcon,
-  PlayIcon,
 } from "lucide-react";
 import {
   type ReactNode,
@@ -69,18 +59,25 @@ import { TranscriptNoteRow } from "../conversation/transcript-note";
 import {
   estTurnHeight,
   openTailStart,
-  RewindHover,
   TURN_LAZY_AFTER,
   type TurnActs,
   TurnRow,
 } from "../conversation/turn-rows";
-import { UserTurn } from "../conversation/turns";
+import { UserTurn } from "../conversation/user-turn";
 import { sessionModelId } from "../lib/context-window";
 import { PHASE_LABEL } from "../lib/helpers";
 import { cn } from "../lib/utils";
 import { readWbCache } from "../lib/wb-probe-cache";
-import { HermesAvatar } from "../shell/avatars";
 import { MainPane } from "../shell/main-pane";
+import {
+  PrChip,
+  StartWork,
+  sentTurns,
+  ThreadHeader,
+  WorkStrip,
+  workTabs,
+} from "../thread/thread-header";
+import { focusFolder, Kicker } from "../thread/thread-kicker";
 import type {
   AttachedFile,
   Channel,
@@ -96,7 +93,6 @@ import type {
   Msg,
   OsApp,
   OsEditor,
-  Project,
   PullRequest,
   QuestionAsk,
   ShipBar,
@@ -109,19 +105,18 @@ import type {
 } from "../types";
 import { VIEWER_ID } from "../types";
 import { useRenameMenu } from "../v3/v3-thread-menu";
+import type { V3Status } from "../v3/v3-types";
 import { sessionArtifacts } from "../workbench/artifacts";
 import type { LiveSurfaces } from "../workbench/live";
 import { planTodos, threadPlans } from "../workbench/plan-panel";
 import { sessionSubagents } from "../workbench/subagents-panel";
 import { Workbench } from "../workbench/workbench";
-import { WsBadge } from "../workbench/ws-badges";
 import { SessionUsage } from "./session-usage";
 
 export function FocusView({
   root,
   thread,
   channel,
-  project,
   lead,
   emp,
   human,
@@ -129,7 +124,7 @@ export function FocusView({
   setResolved,
   work,
   onBack,
-  onNav,
+  threadStatus,
   onStart,
   running,
   onSend,
@@ -198,7 +193,6 @@ export function FocusView({
   root: Extract<Msg, { kind: "msg" }>;
   thread: Thread;
   channel: Channel;
-  project?: Project;
   lead?: Employee;
   emp: EmpFn;
   human: HumanFn;
@@ -206,7 +200,8 @@ export function FocusView({
   setResolved?: (r: Record<string, string>) => void;
   work: Work | null;
   onBack?: () => void;
-  onNav?: () => void;
+  /* The thread's one status word — the header's pill (see ThreadView). */
+  threadStatus?: V3Status;
   onStart?: () => void;
   running: boolean;
   /* Return a promise to delay clearing the composer draft until it resolves;
@@ -495,6 +490,7 @@ export function FocusView({
   const isDM = !!channel.dm;
   const { input: titleInput, menu: threadMenu } = useRenameMenu({
     title: thread.title || plain(root.text),
+    inputClassName: "h-9 [font-size:24px]",
     archived: thread.archived,
     onRename,
     onArchive,
@@ -520,13 +516,6 @@ export function FocusView({
   /* #583 AC-3: background processes still running under this thread. */
   const runningJobs =
     thread.jobs?.filter((j) => j.status === "running").length ?? 0;
-  const status: ChatStatus = running
-    ? parkedOnQuestion
-      ? "ready"
-      : live?.phase === "submitted"
-        ? "submitted"
-        : "streaming"
-    : "ready";
   // The latest approved plan / task list (issue #175), else the engine's session todos.
   const fromPlan = planTodos(thread);
   const todos = fromPlan.length ? fromPlan : (thread.todos ?? []);
@@ -720,8 +709,6 @@ export function FocusView({
     };
   }, [wsCwd, editorsProp]);
   const editors = editorsProp ?? hostEditors;
-  const where = isDM ? "Direct" : (project?.name ?? "Company");
-  const chLabel = isDM ? channel.name : `#${channel.name}`;
   /* #543: the Workbench exists for EVERY session — the app passes `host`
      unconditionally now (the accessors are folder-independent; every call
      takes the cwd). Folder-bound tabs still need a real folder — that's
@@ -845,203 +832,38 @@ export function FocusView({
     ],
   );
 
+  /* The folder badge doubles as the open-in-editor / Reveal-in-Finder menu
+     when the host can open paths (#110): the session's own `onOpenPath`, else
+     the host's os.open. */
+  const folderMenu = onOpenPath
+    ? { editors, onOpen: (app: OsApp) => onOpenPath(".", app) }
+    : onOpenPath === undefined && host?.osOpen && thread.ws
+      ? {
+          editors,
+          onOpen: (app: OsApp) =>
+            void host
+              .osOpen?.(thread.ws?.cwd ?? "", ".", app)
+              .catch((e) =>
+                say?.(
+                  `Open failed — ${e instanceof Error ? e.message : String(e)}`,
+                  { error: true },
+                ),
+              ),
+        }
+      : undefined;
+  /* The work strip stands in for the panel while it is closed: any tab on it
+     opens the Workbench there; open, the panel's own tab row takes over. */
+  const { replies, jobs } = thread;
+  const stripTabs = useMemo(
+    () =>
+      workTabs(
+        { replies, pr, jobs },
+        { folder: !!thread.ws || !!work?.path, browser: browser != null },
+      ),
+    [replies, pr, jobs, thread.ws, work?.path, browser],
+  );
   return (
     <MainPane bare={bare}>
-      <header className="lilos-drag flex h-14 shrink-0 items-center gap-2 border-b px-2 sm:px-3">
-        {onNav && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={onNav}
-            title="Sidebar"
-            aria-label="Sidebar"
-          >
-            <MenuIcon />
-          </Button>
-        )}
-        {onBack && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="shrink-0 px-2"
-            onClick={onBack}
-            title={isDM ? "Back to DM" : `Back to ${chLabel}`}
-            aria-label={isDM ? "Back to DM" : `Back to ${chLabel}`}
-          >
-            <ArrowLeftIcon />
-            <span className="hidden sm:inline">{chLabel}</span>
-          </Button>
-        )}
-        <span className="h-5 w-px shrink-0 bg-border" />
-        {lead && (
-          <HermesAvatar
-            name={lead.name}
-            status={lead.status}
-            className="size-7"
-          />
-        )}
-        <div className="min-w-0">
-          {/* #137 AC-4: the session's title (placeholder → engine-written)
-              leads; untitled threads keep the first message. */}
-          {titleInput ?? (
-            <div
-              className="truncate font-semibold"
-              title={thread.title || plain(root.text)}
-              data-session-title
-            >
-              {thread.title || plain(root.text)}
-            </div>
-          )}
-          <div
-            className="flex min-w-0 items-center gap-1.5 text-muted-foreground text-xs"
-            title={`${where} / ${chLabel} · ${lead?.name ?? ""} · ${thread.session}`}
-          >
-            {/* #590 AC-2: the header names the employee at every width —
-                a bare avatar + title read anonymous at 1024px. */}
-            <span className="shrink-0">
-              {isDM ? "DM" : chLabel}
-              {lead ? ` · ${lead.name}` : ""}
-            </span>
-            {/* The session's folder + branch — same badge the thread panel
-                shows (#113); Focus is the session's main view (#114).
-                A folder-less DM session is a plain chat — no repo exists to
-                be read-only on, so no label at all (#196). */}
-            {thread.ws ? (
-              /* Same WsBadge the thread header shows (#113) — with the
-                 open-in-editor / Reveal-in-Finder menu when the host has
-                 os.open (#110); Focus is the session's main view (#114). */
-              <WsBadge
-                ws={thread.ws}
-                openMenu={
-                  onOpenPath
-                    ? { editors, onOpen: (app) => onOpenPath(".", app) }
-                    : onOpenPath === undefined && host?.osOpen
-                      ? {
-                          editors,
-                          onOpen: (app) =>
-                            void host
-                              .osOpen?.(thread.ws!.cwd, ".", app)
-                              .catch((e) =>
-                                say?.(
-                                  `Open failed — ${e instanceof Error ? e.message : String(e)}`,
-                                  { error: true },
-                                ),
-                              ),
-                        }
-                      : undefined
-                }
-              />
-            ) : work?.branch ? (
-              <span className="hidden shrink-0 items-center gap-1 rounded bg-emerald-50 px-1 text-emerald-800 md:flex">
-                <GitBranchIcon className="size-3" />
-                <span className="font-mono">{work.branch}</span>
-              </span>
-            ) : work ? (
-              /* A real folder that isn't a git checkout: writes land there,
-                 "read-only" would lie (#114). */
-              <span className="hidden shrink-0 items-center gap-1 rounded bg-muted px-1 text-muted-foreground md:flex">
-                <FolderIcon className="size-3" />
-                no git repo
-              </span>
-            ) : isDM ? null : (
-              <span className="hidden shrink-0 items-center gap-1 rounded bg-muted px-1 md:flex">
-                <EyeIcon className="size-3" />
-                read-only
-              </span>
-            )}
-          </div>
-        </div>
-        <div className="ml-auto flex shrink-0 items-center gap-1">
-          {running && (
-            <span className="hidden items-center gap-1 text-muted-foreground text-xs sm:flex">
-              <CircleDotIcon className="size-3 animate-pulse text-work" />
-              {live?.phase ? PHASE_LABEL[live.phase] : "working"}
-            </span>
-          )}
-          {/* #583 AC-3: a live background job says so in the header too. */}
-          {runningJobs > 0 && (
-            <span
-              data-bg-jobs
-              className="hidden text-muted-foreground text-xs sm:inline"
-            >
-              · {runningJobs} running in background
-            </span>
-          )}
-          {thread.usage && (
-            <SessionUsage
-              usage={thread.usage}
-              model={model}
-              models={models}
-              onCompact={onCompact}
-              compactDisabled={running}
-              onContinue={onContinue}
-            />
-          )}
-          {!work && !isDM && onStart && (
-            // Same rule as the thread panel (issue #15): while the request card in the conversation
-            // is open, this button yields to it — disabled + tooltip. Wrapper carries the title so
-            // the disabled button's pointer-events:none doesn't swallow the hover.
-            <span
-              className="inline-flex shrink-0"
-              title={
-                startCardOpen
-                  ? "Answer the request below"
-                  : "New ticket + worktree for this thread"
-              }
-            >
-              <Button
-                size="sm"
-                onClick={onStart}
-                disabled={startCardOpen}
-                data-startwork-header
-              >
-                <PlayIcon />
-                <span className="hidden sm:inline">Start work</span>
-              </Button>
-            </span>
-          )}
-          {/* #579: no "Open PR" button — asking the employee IS the way to
-             open one. A session that already has a PR shows its link chip. */}
-          {pr && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => pickTab("pr")}
-              data-prchip
-            >
-              {pr.status === "merged" ? (
-                <GitMergeIcon className="text-violet-600" />
-              ) : prPending ? (
-                <CircleDashedIcon className="animate-spin text-work [animation-duration:3s]" />
-              ) : (
-                <GitPullRequestIcon className="text-emerald-600" />
-              )}
-              <span className="hidden sm:inline">
-                #{pr.number}{" "}
-                {pr.status === "merged"
-                  ? "merged"
-                  : pr.draft
-                    ? "draft"
-                    : prPending
-                      ? "checks"
-                      : "ready"}
-              </span>
-            </Button>
-          )}
-          {threadMenu}
-          {wbAvailable && (
-            <Button
-              variant={wbOpen ? "secondary" : "ghost"}
-              size="icon-sm"
-              title="Workbench"
-              onClick={() => wbFlip(!wbOpenWanted.current)}
-            >
-              {wbOpen ? <PanelRightCloseIcon /> : <PanelRightOpenIcon />}
-            </Button>
-          )}
-        </div>
-      </header>
-
       <div
         className={cn(
           "grid min-h-0 flex-1 grid-cols-1",
@@ -1077,33 +899,118 @@ export function FocusView({
                 supplies the band, and more pad pushes it past #602's 24px. */}
             <ConversationContent
               data-thread
-              className="mx-auto w-full max-w-[46rem] gap-7 px-5 pt-8 pb-3 has-[>:last-child_[data-ask-id],>:last-child_[data-plan]]:pb-5"
+              className="mx-auto w-full max-w-[46rem] gap-7 px-5 pt-0 pb-3 has-[>:last-child_[data-ask-id],>:last-child_[data-plan]]:pb-5"
             >
+              <ThreadHeader
+                session
+                title={thread.title || plain(root.text)}
+                titleInput={titleInput}
+                kicker={
+                  <Kicker
+                    title={`Thread ${thread.session}`}
+                    agent={lead?.name}
+                    channel={isDM ? undefined : `#${channel.name}`}
+                    ticket={work?.ticket || undefined}
+                    folder={focusFolder({
+                      thread,
+                      work,
+                      isDM,
+                      openMenu: folderMenu,
+                    })}
+                  />
+                }
+                status={threadStatus}
+                started={root.time}
+                turns={sentTurns(root.from, thread, human)}
+                note={
+                  <>
+                    {/* The pill already says working/needs you/failed; the
+                        engine's finer phase stands in only without one. */}
+                    {running && !threadStatus && (
+                      <>
+                        {" · "}
+                        <span className="inline-flex items-center gap-1">
+                          <CircleDotIcon className="size-3 animate-pulse text-work" />
+                          {live?.phase ? PHASE_LABEL[live.phase] : "working"}
+                        </span>
+                      </>
+                    )}
+                    {/* #583 AC-3: a live background job says so in the header
+                        too. */}
+                    {runningJobs > 0 && (
+                      <span data-bg-jobs>
+                        {" "}
+                        · {runningJobs} running in background
+                      </span>
+                    )}
+                  </>
+                }
+                aside={
+                  <>
+                    {thread.usage && (
+                      <SessionUsage
+                        usage={thread.usage}
+                        model={model}
+                        models={models}
+                        onCompact={onCompact}
+                        compactDisabled={running}
+                        onContinue={onContinue}
+                      />
+                    )}
+                    {!work && !isDM && onStart && (
+                      <StartWork onStart={onStart} yields={startCardOpen} />
+                    )}
+                    {/* #579: no "Open PR" button — asking the employee IS the way to
+                       open one. A session that already has a PR shows its link chip. */}
+                    {pr && (
+                      <PrChip
+                        pr={pr}
+                        pending={!!prPending}
+                        onClick={() => pickTab("pr")}
+                      />
+                    )}
+                    {threadMenu}
+                    {wbAvailable && (
+                      <Button
+                        variant={wbOpen ? "secondary" : "ghost"}
+                        size="icon-sm"
+                        title="Workbench"
+                        onClick={() => wbFlip(!wbOpenWanted.current)}
+                      >
+                        {wbOpen ? (
+                          <PanelRightCloseIcon />
+                        ) : (
+                          <PanelRightOpenIcon />
+                        )}
+                      </Button>
+                    )}
+                  </>
+                }
+                strip={
+                  wbAvailable &&
+                  !wbOpen && <WorkStrip tabs={stripTabs} onOpen={pickTab} />
+                }
+              />
               {transcriptNote?.kind === "trimmed" && (
                 <TranscriptNoteRow note={transcriptNote} />
               )}
-              <div
-                data-msg={root.id}
-                className={cn(
-                  flashCls(root.id),
-                  onRewind && root.id && human(root.from) && "group relative",
-                )}
-              >
+              <div data-msg={root.id} className={flashCls(root.id)}>
                 <UserTurn
                   from={root.from}
                   time={root.time}
                   text={root.text}
-                  note={`opened thread ${thread.session}`}
                   human={human}
                   attachments={root.attachments}
+                  rewind={
+                    onRewind && root.id && human(root.from)
+                      ? {
+                          running,
+                          warning: rewindWarning,
+                          onRewind: () => onRewind(root.id ?? ""),
+                        }
+                      : undefined
+                  }
                 />
-                {onRewind && root.id && human(root.from) && (
-                  <RewindHover
-                    running={running}
-                    warning={rewindWarning}
-                    onRewind={() => onRewind(root.id ?? "")}
-                  />
-                )}
               </div>
               {/* #430: memoized per row — a delta re-renders only the
                   turn it touched; long threads hold far-off-screen rows
@@ -1236,7 +1143,6 @@ export function FocusView({
             />
             <FocusComposer
               running={running && !parkedOnQuestion}
-              status={status}
               choice={
                 models?.length
                   ? sessionChoice(
@@ -1278,7 +1184,7 @@ export function FocusView({
                           steer,
                           agentWorking,
                         ).placeholder
-                    : `Reply to ${lead?.name ?? "the employee"}…`
+                    : `Message ${lead?.name ?? "the employee"}…`
               }
               hint={
                 running
@@ -1297,7 +1203,7 @@ export function FocusView({
                       : work
                         ? "Edits land in this folder"
                         : isDM
-                          ? `Reply to ${lead?.name ?? "the employee"}…`
+                          ? `Message ${lead?.name ?? "the employee"}…`
                           : "Read-only on main"
               }
               onSend={(t, files) => onSend(t, files)}

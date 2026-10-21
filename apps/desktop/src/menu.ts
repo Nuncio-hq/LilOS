@@ -125,6 +125,10 @@ export function appMenuTemplate(
          their accelerators would consume ⌘+/⌘-/⌘0/⌥⌘I before a focused
          page's view sees them, bypassing the host's zoom state. */
       submenu: [
+        /* ⌘\ hides and shows the v3 sidebar. The accelerator consumes the
+           chord, so the renderer hears it as a shortcut action. */
+        item("Toggle Sidebar", "CmdOrCtrl+\\", "toggle-sidebar"),
+        { type: "separator" },
         {
           id: "browser",
           label: "LilOS Browser",

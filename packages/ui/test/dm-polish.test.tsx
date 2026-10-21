@@ -7,8 +7,8 @@
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, test } from "vitest";
 import { ModelPicker } from "../src/chat/model-picker";
-import { AgentTurn, TurnSteps } from "../src/conversation/turns";
-import { Row } from "../src/feed/row";
+import { TurnWork } from "../src/conversation/turn-work";
+import { AgentTurn } from "../src/conversation/turns";
 import { PHASE_LABEL } from "../src/lib/helpers";
 import { HermesAvatar, orbTone } from "../src/shell/avatars";
 import type { Employee } from "../src/types";
@@ -40,21 +40,7 @@ const EMP: Employee = {
   respondTo: "me",
 };
 
-const emp = (id: string) => (id === EMP.id ? EMP : undefined);
-const human = () => undefined;
-
 describe("issue #71", () => {
-  test("AC-1 a row with no avatar still renders content at the wide column", () => {
-    const { container } = render(
-      <Row from="system" emp={emp} human={human}>
-        <p>notice</p>
-      </Row>,
-    );
-    const grid = container.firstElementChild;
-    const content = grid?.querySelector(".is-assistant");
-    expect(content?.className).toContain("col-start-2");
-  });
-
   test("AC-2 the employee avatar is a colour orb toned by name, no image", () => {
     const { container } = render(<HermesAvatar name="Default" />);
     // No <img> at all — nothing can 404 in apps/web or under file:// in
@@ -74,7 +60,7 @@ describe("issue #71", () => {
 
   test("AC-4 the blocked tool card says `Waiting for approval`", () => {
     const { container } = render(
-      <TurnSteps
+      <TurnWork
         steps={[{ tool: "patch", input: {}, output: "", running: true }]}
         autoOpen
         waitingApproval
@@ -131,11 +117,11 @@ describe("issue #71", () => {
         models={[{ id: "fake-large", name: "Fake Large", provider: "fake" }]}
       />,
     );
-    expect(named.container.textContent).toContain("· Fake Large");
+    expect(named.container.textContent).toContain("Fake Large");
     expect(named.container.textContent).not.toContain("fake-large");
     cleanup();
     // No catalog handed down: fall back to the engine's model id.
     const bare = render(<AgentTurn r={{ ...reply }} emp={emp} last />);
-    expect(bare.container.textContent).toContain("· fake-large");
+    expect(bare.container.textContent).toContain("fake-large");
   });
 });

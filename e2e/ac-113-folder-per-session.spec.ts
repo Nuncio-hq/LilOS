@@ -330,15 +330,15 @@ test("AC-6 a new chat pre-selects the last session's folder; a no-folder session
   await expect(page.locator("[data-wsbadge]")).toHaveCount(0);
   await expect(page.getByText(/read-only/i)).toHaveCount(0);
   // Composer hints reveal once there's a draft — calm at rest (#246), so
-  // type a character first. The composer is named "Reply to …" in the
+  // type a character first. The composer is named "Message …" in the
   // thread beside Threads and in the session view alike.
-  const panelBox = page.getByRole("textbox", { name: /Reply to/ });
+  const panelBox = page.getByRole("textbox", { name: /^Message [^…]+…$/ });
   await panelBox.pressSequentially("x");
-  await expect(page.getByText(/Reply to .*…/).first()).toBeVisible();
+  await expect(page.getByText(/Message .*…/).first()).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-6-no-folder-panel.png` });
   // The session view shows the same no-folder session (Widen the thread).
   await panelIntoFocus(page);
-  const focusBox = page.getByRole("textbox", { name: /Reply to/ });
+  const focusBox = page.getByRole("textbox", { name: /^Message [^…]+…$/ });
   await expect(focusBox).toBeVisible({ timeout: 15_000 });
   await expect(page.locator("[data-wsbadge]")).toHaveCount(0);
   await expect(page.getByText(/read-only/i)).toHaveCount(0);
@@ -347,10 +347,10 @@ test("AC-6 a new chat pre-selects the last session's folder; a no-folder session
   // neutral hint.
   await page.goto(threadUrl(stack.webUrl, conv));
   await page.reload();
-  const replyBox = page.getByRole("textbox", { name: /Reply to/ });
+  const replyBox = page.getByRole("textbox", { name: /^Message [^…]+…$/ });
   await expect(replyBox).toBeVisible({ timeout: 30_000 });
   await replyBox.pressSequentially("x");
-  await expect(page.getByText(/Reply to .*…/).first()).toBeVisible({
+  await expect(page.getByText(/Message .*…/).first()).toBeVisible({
     timeout: 15_000,
   });
   await expect(page.locator("[data-wsbadge]")).toHaveCount(0);

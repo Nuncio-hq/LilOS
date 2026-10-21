@@ -968,19 +968,23 @@ form:has(textarea:not(:placeholder-shown), [aria-label="Stop (⌘.)"])
    Notion-like: warm paper, ink text, hairlines instead of boxes, serif page
    titles over a sans body. No shadows except the ⌘K palette; colour only on
    status. */
-.lilos-v3 {
+/* The surface tokens live on :root, not .lilos-v3: portaled menus, dialogs and
+   the popped-out browser window render outside the shell and still need them. */
+:root {
   --v3-side: oklch(0.982 0.002 90);
   --v3-main: oklch(1 0 0);
   --v3-soft: oklch(0.975 0.002 90);
   --v3-line: color-mix(in oklch, var(--foreground) 9%, transparent);
   --v3-hover: color-mix(in oklch, var(--foreground) 5%, transparent);
-  font-variant-numeric: tabular-nums;
-  -webkit-font-smoothing: antialiased;
 }
-.dark .lilos-v3 {
+.dark {
   --v3-side: oklch(0.2 0.003 90);
   --v3-main: oklch(0.225 0.003 90);
   --v3-soft: oklch(0.255 0.003 90);
+}
+.lilos-v3 {
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
 }
 .lilos-v3-serif {
   font-family: Charter, "Iowan Old Style", Palatino, Georgia, serif;

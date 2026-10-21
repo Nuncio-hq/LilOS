@@ -151,15 +151,18 @@ describe("#587 AC-1 the tab strip's membership is fixed; empty tabs grey, never 
     const names = [...c.container.querySelectorAll("[data-wb-tab]")].map((e) =>
       e.getAttribute("data-wb-tab"),
     );
+    /* The prototype's order (issue #770): Changes · Files · Terminal ·
+       Preview · PR · Background · Plan · Subagents · Browser · Details. */
     expect(names).toEqual([
       "changes",
       "files",
       "terminal",
       "preview",
-      "plan",
-      "background",
-      "subagents",
       "pr",
+      "background",
+      "plan",
+      "subagents",
+      "details",
     ]);
     for (const t of ["plan", "background", "subagents", "pr"]) {
       const el = c.container.querySelector(`[data-wb-tab="${t}"]`);
@@ -186,9 +189,10 @@ describe("#587 AC-1 the tab strip's membership is fixed; empty tabs grey, never 
       "files",
       "terminal",
       "preview",
-      "plan",
-      "background",
       "pr",
+      "background",
+      "plan",
+      "details",
     ]);
   });
 

@@ -1,5 +1,5 @@
 import type { ChatStatus } from "ai";
-import { CheckIcon, Maximize2Icon, PlayIcon, XIcon } from "lucide-react";
+import { CheckIcon, XIcon } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { AccessPill } from "../chat/access-pill";
 import {
@@ -35,13 +35,11 @@ import { TranscriptNoteRow } from "../conversation/transcript-note";
 import {
   estTurnHeight,
   openTailStart,
-  RewindHover,
   TURN_LAZY_AFTER,
   type TurnActs,
   TurnRow,
 } from "../conversation/turn-rows";
-import { AttachmentChips } from "../conversation/turns";
-import { Body, Row, Who } from "../feed/row";
+import { UserTurn } from "../conversation/user-turn";
 import { SessionUsage } from "../focus/session-usage";
 import { sessionModelId } from "../lib/context-window";
 import { cn } from "../lib/utils";
@@ -68,7 +66,15 @@ import type {
 } from "../types";
 import { VIEWER_ID } from "../types";
 import { useRenameMenu } from "../v3/v3-thread-menu";
-import { WorkspaceBadge, WsBadge } from "../workbench/ws-badges";
+import type { V3Status } from "../v3/v3-types";
+import {
+  StartWork,
+  sentTurns,
+  ThreadHeader,
+  WorkStrip,
+  workTabs,
+} from "./thread-header";
+import { Kicker, panelFolder } from "./thread-kicker";
 
 /* #134/#430: the "Rewind to here" checkpoint lives in
    conversation/turn-rows.tsx so both frames share the memoized row. */
@@ -89,8 +95,9 @@ export function ThreadView({
   human,
   resolved,
   setResolved,
-  onFocus,
   onOpenTab,
+  threadStatus,
+  browser = false,
   onClose,
   work,
   repo,
@@ -153,10 +160,17 @@ export function ThreadView({
   human: HumanFn;
   resolved: Record<string, string>;
   setResolved?: (r: Record<string, string>) => void;
-  onFocus?: () => void;
-  /* Opens Focus on a Workbench tab — makes the turn's "N subagents · Open" / "N files changed"
-     links live in the panel (#317). Absent = those stay in-place / plain text. */
+  /* Opens the session view on a Workbench tab: the work strip's buttons and the
+     turn's "N subagents · Open" / "N files changed" links (#317). Absent = no
+     strip, and those links stay in-place / plain text. The expand control
+     itself is the peek header's Widen — the thread draws none. */
   onOpenTab?: (t: WbTab) => void;
+  /* The thread's one status word (client-runtime `threadStatus`, mapped to
+     the shared vocabulary by the host) — the header's pill. Absent = no pill. */
+  threadStatus?: V3Status;
+  /* The app can open pages in a LilOS Browser tab (desktop): the work strip
+     offers it. */
+  browser?: boolean;
   /* Esc → close the panel (issue #195 AC-1); absent → Esc does nothing (D-#19). */
   onClose?: () => void;
   work: Work | null;
@@ -279,6 +293,7 @@ export function ThreadView({
   const { input: titleInput, menu: threadMenu } = useRenameMenu({
     title: thread.title || plain(root.text),
     archived: thread.archived,
+    inputClassName: "h-11 [font-size:28px]",
     onRename,
     onArchive,
   });
@@ -308,7 +323,12 @@ export function ThreadView({
       ? keyAsk.reply.approval?.id
       : keyAsk.reply.plan?.id
     : undefined;
-  const channelLabel = isDM ? `DM · ${channel.name}` : `#${channel.name}`;
+  const folder = !!thread.ws || !!work?.path;
+  const { replies, pr, jobs } = thread;
+  const stripTabs = useMemo(
+    () => workTabs({ replies, pr, jobs }, { folder, browser }),
+    [replies, pr, jobs, folder, browser],
+  );
   const startCardOpen = openStartRequest(thread, resolved);
   /* #138 AC-3: jump-to-hit — scroll the message into view, flash it, hand
      back control. Waits for the row to render (history may still load).
@@ -405,143 +425,6 @@ export function ThreadView({
      rare case, and readable — rather than a broken jump every time. */
   return (
     <div ref={bodyRef} className="flex min-h-0 flex-1 flex-col">
-      <div className="lilos-drag flex shrink-0 items-center gap-2 border-b px-4 py-2.5">
-        <div className="min-w-0">
-          <div className="flex items-center gap-1.5 font-semibold">
-            {/* #137 AC-4: the session's title (placeholder → engine-written)
-                leads the header; untitled threads keep the kind label. */}
-            {titleInput ?? (
-              <span className="truncate" data-session-title>
-                {thread.title || "Thread"}
-              </span>
-            )}
-            {work?.ticket && (
-              <span className="shrink-0 font-mono text-muted-foreground text-xs">
-                · {work.ticket}
-              </span>
-            )}
-          </div>
-          <div
-            className="truncate text-muted-foreground text-xs"
-            title={`Thread ${thread.session}`}
-          >
-            {channelLabel}
-            {leadEmp && !isDM && ` · ${leadEmp.name}`}
-            {isDM && !work && !repo && !thread.ws && onAddFolder && (
-              /* #581 AC-2: a folder-less DM session gets a real "Add a
-                 folder" affordance — picking one moves the session there.
-                 Inline so the header keeps its two-row height (#602). */
-              <>
-                {" · "}
-                <button
-                  type="button"
-                  onClick={onAddFolder}
-                  data-add-folder
-                  className="font-medium text-foreground/80 underline decoration-dotted underline-offset-2 hover:text-foreground"
-                >
-                  Add a folder
-                </button>
-              </>
-            )}
-            {/* #583 AC-3: a live background job says so right under the
-                title — "1 running in background". */}
-            {runningJobs > 0 && (
-              <span data-bg-jobs className="text-work">
-                {" "}
-                · {runningJobs} running in background
-              </span>
-            )}
-          </div>
-          {/* A folder-less DM session is a plain chat — no folder label
-              at all (#196). */}
-          {thread.ws ? (
-            <WsBadge
-              ws={thread.ws}
-              openMenu={
-                onOpenPath
-                  ? {
-                      editors: editors ?? [],
-                      onOpen: (app) => onOpenPath(".", app),
-                    }
-                  : undefined
-              }
-            />
-          ) : isDM && !work && !repo ? null : (
-            <WorkspaceBadge work={work} repo={repo} />
-          )}
-        </div>
-        <div className="ml-auto flex shrink-0 items-center gap-0.5">
-          {thread.usage && leadEmp && (
-            /* The SESSION's model — never the employee's (#294): the panel
-               and Focus resolve through the same helper and the window comes
-               engine-reported on the usage/catalog, not an employee row. */
-            <SessionUsage
-              usage={thread.usage}
-              model={sessionModelId(
-                thread,
-                leadEmp.model,
-                models,
-                defaultModel,
-                defaultProvider,
-              )}
-              models={models}
-              onCompact={onCompact}
-              compactDisabled={running}
-              onContinue={onContinue}
-            />
-          )}
-          {!work && !isDM && onStart && (
-            // While the request card below is open the header button must not compete with it (issue
-            // #15): disabled + tooltip. The title lives on the wrapper because the disabled button
-            // itself ignores pointer events.
-            <span
-              className="ml-1 inline-flex shrink-0"
-              title={
-                startCardOpen
-                  ? "Answer the request below"
-                  : "New ticket + worktree for this thread"
-              }
-            >
-              <Button
-                size="sm"
-                onClick={onStart}
-                disabled={startCardOpen}
-                data-startwork-header
-              >
-                <PlayIcon />
-                Start work
-              </Button>
-            </span>
-          )}
-          {threadMenu}
-          {onFocus && (
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="ml-0.5"
-              title="Focus"
-              aria-label="Focus"
-              onClick={onFocus}
-            >
-              <Maximize2Icon />
-            </Button>
-          )}
-          {/* #577 AC-2: a visible ✕ — the way back to the DM list beside
-              Esc (which the same onClose owns). */}
-          {onClose && (
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="ml-0.5"
-              title="Close"
-              aria-label="Close thread panel"
-              onClick={onClose}
-            >
-              <XIcon />
-            </Button>
-          )}
-        </div>
-      </div>
       {/* #570: the first pin on a lazy thread must land instantly — the
           default smooth sweep would scroll through the whole stub field
           and mount every row it passes, recreating the open-time freeze.
@@ -559,8 +442,94 @@ export function ThreadView({
             the question card's Skip row stays fully visible on its own row
             (#515, #602). No decision-card pad here (unlike Focus): the
             composer's own margin already supplies the #649 clearance, and
-            a wider pad pushed the at-rest band past #602's 24px. */}
-        <ConversationContent className="gap-0 p-0 pt-2 pb-3">
+            a wider pad pushed the at-rest band past #602's 24px. The
+            column is the prototype's: 720px, 32px gutters, 28px between
+            turns — the header is its first child and scrolls with it. */}
+        <ConversationContent className="mx-auto w-full max-w-[720px] gap-7 p-0 px-8 pb-3">
+          <ThreadHeader
+            session={false}
+            title={thread.title || "Thread"}
+            titleInput={titleInput}
+            kicker={
+              <Kicker
+                title={`Thread ${thread.session}`}
+                agent={leadEmp?.name}
+                channel={isDM ? undefined : `#${channel.name}`}
+                ticket={work?.ticket || undefined}
+                folder={panelFolder({
+                  thread,
+                  work,
+                  repo,
+                  isDM,
+                  onAddFolder,
+                  openMenu: onOpenPath
+                    ? {
+                        editors: editors ?? [],
+                        onOpen: (app) => onOpenPath(".", app),
+                      }
+                    : undefined,
+                })}
+              />
+            }
+            status={threadStatus}
+            started={root.time}
+            turns={sentTurns(root.from, thread, human)}
+            note={
+              /* #583 AC-3: a live background job says so right under the
+                 title — "1 running in background". */
+              runningJobs > 0 ? (
+                <span data-bg-jobs className="text-work">
+                  {" "}
+                  · {runningJobs} running in background
+                </span>
+              ) : undefined
+            }
+            aside={
+              <>
+                {thread.usage && leadEmp && (
+                  /* The SESSION's model — never the employee's (#294): the
+                     panel and Focus resolve through the same helper and the
+                     window comes engine-reported on the usage/catalog, not
+                     an employee row. */
+                  <SessionUsage
+                    usage={thread.usage}
+                    model={sessionModelId(
+                      thread,
+                      leadEmp.model,
+                      models,
+                      defaultModel,
+                      defaultProvider,
+                    )}
+                    models={models}
+                    onCompact={onCompact}
+                    compactDisabled={running}
+                    onContinue={onContinue}
+                  />
+                )}
+                {!work && !isDM && onStart && (
+                  <StartWork onStart={onStart} yields={startCardOpen} />
+                )}
+                {threadMenu}
+                {/* #577 AC-2: a visible ✕ — the way back to the DM list beside
+                    Esc (which the same onClose owns). */}
+                {onClose && (
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="ml-0.5"
+                    title="Close"
+                    aria-label="Close thread panel"
+                    onClick={onClose}
+                  >
+                    <XIcon />
+                  </Button>
+                )}
+              </>
+            }
+            strip={
+              onOpenTab && <WorkStrip tabs={stripTabs} onOpen={onOpenTab} />
+            }
+          />
           {transcriptNote?.kind === "trimmed" && (
             <TranscriptNoteRow note={transcriptNote} />
           )}
@@ -571,32 +540,22 @@ export function ThreadView({
               flash === root.id && "bg-amber-100 dark:bg-amber-900/40",
             )}
           >
-            <Row from={root.from} emp={emp} human={human}>
-              <Who id={root.from} time={root.time} emp={emp} human={human} />
-              <Body text={root.text} />
-              {root.attachments && <AttachmentChips files={root.attachments} />}
-              <div className="text-muted-foreground text-xs">
-                opened thread{" "}
-                <code className="rounded bg-muted px-1">{thread.session}</code>
-              </div>
-              {onRewind && root.id && human(root.from) && (
-                <RewindHover
-                  running={running}
-                  warning={rewindWarning}
-                  onRewind={() => onRewind(root.id ?? "")}
-                />
-              )}
-            </Row>
-          </div>
-          <div className="my-1 flex items-center gap-2 px-3 text-muted-foreground text-xs sm:px-5">
-            {/* #585: system notes aren't replies — the count skips them. */}
-            <span>
-              {thread.replies.filter((r) => !r.system).length}{" "}
-              {thread.replies.filter((r) => !r.system).length === 1
-                ? "reply"
-                : "replies"}
-            </span>
-            <span className="h-px flex-1 bg-border" />
+            <UserTurn
+              from={root.from}
+              time={root.time}
+              text={root.text}
+              human={human}
+              attachments={root.attachments}
+              rewind={
+                onRewind && root.id && human(root.from)
+                  ? {
+                      running,
+                      warning: rewindWarning,
+                      onRewind: () => onRewind(root.id ?? ""),
+                    }
+                  : undefined
+              }
+            />
           </div>
           {thread.replies.map((r, i) => (
             /* Employee turns render through the one shared AgentTurn — same DOM as Focus,
@@ -629,41 +588,34 @@ export function ThreadView({
             />
           ))}
           {transcriptNote?.kind === "unavailable" && (
-            /* Same outer insets as the #28 note this replaces — the panel's
-               content column carries no horizontal padding. */
-            <TranscriptNoteRow
-              note={transcriptNote}
-              className="mx-3 my-2 sm:mx-5"
-            />
+            <TranscriptNoteRow note={transcriptNote} />
           )}
           {work?.by && (
-            <div className="mx-3 my-2 rounded-lg border border-emerald-200 bg-emerald-50/40 p-3 text-xs sm:mx-5">
-              <div className="flex items-center gap-1.5 font-medium text-emerald-900">
-                <PlayIcon className="size-3.5" />
+            <div className="rounded-[10px] border border-[var(--v3-line)] px-4 py-3.5 text-[13.5px]">
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <CheckIcon className="size-3.5 text-emerald-600 dark:text-emerald-400" />
                 {work.by} started work · {work.ticket}
               </div>
               <ul className="mt-2 space-y-1 text-muted-foreground">
-                <li className="flex gap-1.5">
-                  <CheckIcon className="mt-0.5 size-3.5 shrink-0 text-emerald-600" />
+                <li>
                   Ticket{" "}
-                  <span className="font-mono text-foreground">
+                  <span className="font-mono text-[12.5px] text-foreground">
                     {work.ticket}
                   </span>{" "}
                   created from this thread
                 </li>
                 {work.branch && (
-                  <li className="flex gap-1.5">
-                    <CheckIcon className="mt-0.5 size-3.5 shrink-0 text-emerald-600" />
-                    <span className="min-w-0 break-all font-mono">
-                      git worktree add .lilos/wt/{work.ticket.toLowerCase()} -b{" "}
-                      {work.branch}
-                    </span>
+                  <li className="min-w-0 break-all font-mono text-[12.5px]">
+                    git worktree add .lilos/wt/{work.ticket.toLowerCase()} -b{" "}
+                    {work.branch}
                   </li>
                 )}
                 {work.branch && (
-                  <li className="flex gap-1.5">
-                    <CheckIcon className="mt-0.5 size-3.5 shrink-0 text-emerald-600" />
-                    Thread <span className="font-mono">{thread.session}</span>{" "}
+                  <li>
+                    Thread{" "}
+                    <span className="font-mono text-[12.5px]">
+                      {thread.session}
+                    </span>{" "}
                     moved to the worktree. Same thread, no history lost.
                   </li>
                 )}
@@ -697,7 +649,7 @@ export function ThreadView({
                   steer,
                   agentWorking,
                 ).placeholder
-            : `Reply to ${leadEmp?.name ?? "the employee"}…`
+            : `Message ${leadEmp?.name ?? "the employee"}…`
         }
         employees={mentionables ?? []}
         onSearchFiles={onSearchFiles}
@@ -722,7 +674,7 @@ export function ThreadView({
                 : repo
                   ? "Read-only on main. Start work to edit code."
                   : isDM
-                    ? `Reply to ${leadEmp?.name ?? "the employee"}…`
+                    ? `Message ${leadEmp?.name ?? "the employee"}…`
                     : `thread ${thread.session}`
         }
         onSend={onSend}

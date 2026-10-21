@@ -1,103 +1,26 @@
 import { useControllableState } from "@radix-ui/react-use-controllable-state";
 import type { ChatStatus } from "ai";
-import {
-  FileIcon,
-  FolderIcon,
-  PaperclipIcon,
-  SquareIcon,
-  TerminalIcon,
-} from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import {
   PromptInput,
   PromptInputAttachment,
   PromptInputAttachments,
   PromptInputBody,
-  PromptInputButton,
   PromptInputFooter,
-  PromptInputSubmit,
   PromptInputTextarea,
   PromptInputTools,
-  usePromptInputAttachments,
 } from "../components/ai-elements/prompt-input";
-import { cn } from "../lib/utils";
-import { HermesAvatar } from "../shell/avatars";
 import type { AttachedFile, Employee, FileMention, SlashItem } from "../types";
 import { useComposerMenus } from "./composer-menus";
+import {
+  AttachButton,
+  ComposerKbd,
+  FileSeeder,
+  SendPill,
+  StopPill,
+} from "./composer-parts";
+import { MentionPopup, SlashPopup } from "./composer-popups";
 import { parseSlashDraft } from "./composer-slash";
-
-/* The paperclip opens the file dialog through PromptInput's attachments context. */
-function AttachButton() {
-  const attachments = usePromptInputAttachments();
-  return (
-    <PromptInputButton
-      onClick={attachments.openFileDialog}
-      aria-label="Attach files"
-      className="text-foreground/70"
-    >
-      <PaperclipIcon />
-    </PromptInputButton>
-  );
-}
-
-/* Send button: enabled when there's text OR at least one attachment chip,
-   and only while no send is in flight. */
-function SendButton({
-  hasDraft,
-  status,
-  sending,
-}: {
-  hasDraft: boolean;
-  status?: ChatStatus;
-  sending: boolean;
-}) {
-  const attachments = usePromptInputAttachments();
-  return (
-    <PromptInputSubmit
-      disabled={sending || (!hasDraft && attachments.files.length === 0)}
-      status={status}
-    />
-  );
-}
-
-/* Rewind prefill (issue #134 AC-4): a user message's stored images come
-   back as real attachment chips — fetched bytes turned back into Files so a
-   resend ships them again untouched. */
-export function FileSeeder({
-  seed,
-  onSeeded,
-}: {
-  seed: AttachedFile[];
-  onSeeded: () => void;
-}) {
-  const attachments = usePromptInputAttachments();
-  useEffect(() => {
-    /* No "already seeded" ref guard: StrictMode's mount→cleanup→mount
-       leaves the first fetch cancelled and the ref set, so the real seed
-       never lands. The second effect's fetch is what must complete. */
-    let cancelled = false;
-    void Promise.all(
-      seed.map(async (f) => {
-        if (!f.url) return null;
-        const blob = await fetch(f.url).then((r) => r.blob());
-        return new File([blob], f.name, { type: f.mediaType });
-      }),
-    )
-      .then((files) => {
-        if (cancelled) return;
-        const ok = files.filter((f): f is File => f !== null);
-        if (ok.length) attachments.add(ok);
-        onSeeded();
-      })
-      .catch(() => onSeeded());
-    return () => {
-      cancelled = true;
-    };
-    // attachments.add is stable; seed identity is the trigger.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [seed]);
-  return null;
-}
 
 export function Composer({
   placeholder,
@@ -184,260 +107,128 @@ export function Composer({
   const sendRef = useRef<Promise<void> | null>(null);
   /* The `@` and `/` menus, their keys and the caret after a pick — shared
      with the v3 composer (composer-menus.ts). */
-  const { wrapRef, onKeyDown, onEdited, slash, mention } = useComposerMenus({
+  const menus = useComposerMenus({
     draft,
     setDraft,
     employees,
     onSearchFiles,
     onSearchCommands,
   });
-  const { open: slashOpen, hits: slashHits, rows: slashRows } = slash;
-  const { open: mentionOpen, fileHits, active } = mention;
-  const slashActive = slash.active;
-  const pickSlash = slash.pick;
-  const pickMention = mention.pick;
   const busy = status === "submitted" || status === "streaming";
   return (
     /* data-composer marks the bottom-anchored block the app's toast clears
-       (queued chips included — they're inside this wrapper). */
+       (queued chips included — they're inside this wrapper). It spans the
+       panel; the inner box is the prototype's column — 720px less its 32px
+       gutters — so the box lines up with the turns above it. Its 4px
+       top margin plus the column's own bottom padding is the whole band
+       between the last turn and the box (#602 caps it at 24px).
+       `@container`: the key hint steps aside when the box is narrow. */
     <div
-      ref={wrapRef}
+      ref={menus.wrapRef}
       data-composer
-      className="relative m-2 mt-1 shrink-0 sm:m-3 sm:mt-2"
+      className="@container mt-1 shrink-0 px-8 pb-4"
     >
-      {queued}
-      {slashOpen && (
-        <div
-          role="listbox"
-          aria-label="Commands"
-          className="absolute bottom-full left-2 z-10 mb-2 max-h-64 w-80 max-w-[calc(100%-1rem)] overflow-y-auto rounded-lg border bg-popover p-1 shadow-lg"
-        >
-          <div className="px-2 pt-1 pb-0.5 font-medium text-[11px] text-muted-foreground uppercase tracking-wide">
-            Commands
-          </div>
-          {slashHits === null ? (
-            <div className="px-2 py-1.5 text-muted-foreground text-xs">
-              Searching…
-            </div>
-          ) : slashRows.length === 0 ? (
-            <div className="px-2 py-1.5 text-muted-foreground text-xs">
-              No matches
-            </div>
-          ) : (
-            slashRows.map((c, i) => (
-              <button
-                key={c.name}
-                type="button"
-                role="option"
-                aria-selected={slashActive === i}
-                data-slash-command={c.name}
-                data-kind={c.kind}
-                onClick={() => pickSlash(c)}
-                className={cn(
-                  "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left",
-                  slashActive === i ? "bg-muted" : "hover:bg-muted",
-                )}
-              >
-                <TerminalIcon className="size-4 shrink-0 text-muted-foreground" />
-                <span className="truncate font-mono text-xs">
-                  /{c.name}
-                  {c.argsHint ? (
-                    <span className="text-muted-foreground"> {c.argsHint}</span>
-                  ) : null}
-                </span>
-                <span className="ml-auto truncate text-muted-foreground text-xs">
-                  {c.description}
-                </span>
-                <span className="shrink-0 rounded-sm border px-1 text-[10px] text-muted-foreground uppercase">
-                  {c.kind}
-                </span>
-              </button>
-            ))
-          )}
-        </div>
-      )}
-      {mentionOpen && (
-        <div
-          role="listbox"
-          aria-label="Mention"
-          className="absolute bottom-full left-2 z-10 mb-2 max-h-64 w-80 max-w-[calc(100%-1rem)] overflow-y-auto rounded-lg border bg-popover p-1 shadow-lg"
-        >
-          {employees.length > 0 && (
-            <div data-mention-section="employees" role="presentation">
-              <div className="px-2 pt-1 pb-0.5 font-medium text-[11px] text-muted-foreground uppercase tracking-wide">
-                Employees
-              </div>
-              {employees.map((e, i) => (
-                <button
-                  key={e.id}
-                  type="button"
-                  role="option"
-                  aria-selected={active === i}
-                  onClick={() => pickMention({ kind: "emp", employee: e })}
-                  className={cn(
-                    "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left",
-                    active === i ? "bg-muted" : "hover:bg-muted",
-                  )}
-                >
-                  <HermesAvatar
-                    name={e.name}
-                    status={e.status}
-                    className="size-5"
-                  />
-                  <span className="font-medium">{e.name}</span>
-                  <span className="ml-auto text-muted-foreground text-xs">
-                    {e.role} · new thread
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
-          {onSearchFiles && (
-            <div data-mention-section="files" role="presentation">
-              <div className="px-2 pt-1 pb-0.5 font-medium text-[11px] text-muted-foreground uppercase tracking-wide">
-                Files
-              </div>
-              {fileHits === null ? (
-                <div className="px-2 py-1.5 text-muted-foreground text-xs">
-                  Searching…
-                </div>
-              ) : fileHits.length === 0 ? (
-                <div className="px-2 py-1.5 text-muted-foreground text-xs">
-                  No matches
-                </div>
-              ) : (
-                fileHits.map((f, j) => {
-                  const i = employees.length + j;
-                  return (
-                    <button
-                      key={f.path}
-                      type="button"
-                      role="option"
-                      aria-selected={active === i}
-                      data-mention-file={f.path}
-                      data-kind={f.kind}
-                      onClick={() => pickMention({ kind: "file", file: f })}
-                      className={cn(
-                        "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left",
-                        active === i ? "bg-muted" : "hover:bg-muted",
-                      )}
-                    >
-                      {f.kind === "dir" ? (
-                        <FolderIcon className="size-4 shrink-0 text-muted-foreground" />
-                      ) : (
-                        <FileIcon className="size-4 shrink-0 text-muted-foreground" />
-                      )}
-                      <span className="truncate font-mono text-xs">
-                        {f.path}
-                        {f.kind === "dir" ? "/" : ""}
-                      </span>
-                    </button>
-                  );
-                })
-              )}
-            </div>
-          )}
-        </div>
-      )}
-      {/* AI Elements prompt-input owns attach UX: pick (hidden input + paperclip), drop on
+      <div className="mx-auto w-full max-w-[656px]">
+        {queued}
+        {/* The menus open over the box itself, never over the trays above it. */}
+        <div className="relative">
+          <SlashPopup menus={menus} />
+          <MentionPopup menus={menus} employees={employees} />
+          {/* AI Elements prompt-input owns attach UX: pick (hidden input + paperclip), drop on
           the form, paste into the textarea, Backspace-on-empty removes the last chip. */}
-      <PromptInput
-        accept={accept}
-        multiple
-        maxFileSize={maxFileSize}
-        maxFiles={maxFiles}
-        onError={
-          onAttachError ? (err) => onAttachError(err.message) : undefined
-        }
-        onSubmit={({ text, files }) => {
-          /* A send already in flight owns the outcome: a second submit (Enter
+          <PromptInput
+            accept={accept}
+            multiple
+            maxFileSize={maxFileSize}
+            maxFiles={maxFiles}
+            onError={
+              onAttachError ? (err) => onAttachError(err.message) : undefined
+            }
+            onSubmit={({ text, files }) => {
+              /* A send already in flight owns the outcome: a second submit (Enter
              pressed twice, a requestSubmit) joins the pending promise instead
              of sending the same draft again (#130 AC-3). */
-          if (sendRef.current) return sendRef.current;
-          const t = text.trim() || draft.trim();
-          if (!t && files.length === 0) return;
-          /* An app-owned `/command` never posts — the host routed it
+              if (sendRef.current) return sendRef.current;
+              const t = text.trim() || draft.trim();
+              if (!t && files.length === 0) return;
+              /* An app-owned `/command` never posts — the host routed it
              (opens its picker/feature) and the box clears like a send. */
-          const cmd = files.length === 0 ? parseSlashDraft(t) : null;
-          if (cmd && onCommand?.(cmd.name, cmd.args)) {
-            if (draftRef.current.trim() === t) setDraft("");
-            return;
-          }
-          const done = onSend?.(
-            t,
-            files.map((f) => ({
-              name: f.filename ?? "attachment",
-              mediaType: f.mediaType ?? "",
-              url: f.url,
-            })),
-          );
-          /* Clear only when the box still holds what was sent — text typed
+              const cmd = files.length === 0 ? parseSlashDraft(t) : null;
+              if (cmd && onCommand?.(cmd.name, cmd.args)) {
+                if (draftRef.current.trim() === t) setDraft("");
+                return;
+              }
+              const done = onSend?.(
+                t,
+                files.map((f) => ({
+                  name: f.filename ?? "attachment",
+                  mediaType: f.mediaType ?? "",
+                  url: f.url,
+                })),
+              );
+              /* Clear only when the box still holds what was sent — text typed
              while an async send is in flight is a new draft, not part of the
              sent message (#103 AC-5). A rejected send keeps everything. */
-          const clearIfUnchanged = () => {
-            if (draftRef.current.trim() === t) setDraft("");
-          };
-          if (done && typeof done.then === "function") {
-            setSending(true);
-            const send = done.then(clearIfUnchanged).finally(() => {
-              sendRef.current = null;
-              setSending(false);
-            });
-            sendRef.current = send;
-            return send;
-          }
-          clearIfUnchanged();
-        }}
-      >
-        {seedFiles?.length && onSeededFiles ? (
-          <FileSeeder seed={seedFiles} onSeeded={onSeededFiles} />
-        ) : null}
-        {accept && (
-          <PromptInputAttachments className="px-3 pt-3 pb-0">
-            {(file) => <PromptInputAttachment data={file} />}
-          </PromptInputAttachments>
-        )}
-        <PromptInputBody>
-          <PromptInputTextarea
-            value={draft}
-            onChange={(e) => {
-              setDraft(e.target.value);
-              onEdited();
+              const clearIfUnchanged = () => {
+                if (draftRef.current.trim() === t) setDraft("");
+              };
+              if (done && typeof done.then === "function") {
+                setSending(true);
+                const send = done.then(clearIfUnchanged).finally(() => {
+                  sendRef.current = null;
+                  setSending(false);
+                });
+                sendRef.current = send;
+                return send;
+              }
+              clearIfUnchanged();
             }}
-            onKeyDown={(e) => onKeyDown(e, { running: busy, onStop, lastSent })}
-            placeholder={placeholder}
-            className="min-h-12"
-          />
-        </PromptInputBody>
-        <PromptInputFooter>
-          {/* #590 AC-2: one row of controls at 1024px — no wrap; the hint
+          >
+            {seedFiles?.length && onSeededFiles ? (
+              <FileSeeder seed={seedFiles} onSeeded={onSeededFiles} />
+            ) : null}
+            {accept && (
+              <PromptInputAttachments className="px-0 pt-0 pb-2">
+                {(file) => <PromptInputAttachment data={file} />}
+              </PromptInputAttachments>
+            )}
+            <PromptInputBody>
+              <PromptInputTextarea
+                value={draft}
+                onChange={(e) => {
+                  setDraft(e.target.value);
+                  menus.onEdited();
+                }}
+                onKeyDown={(e) =>
+                  menus.onKeyDown(e, { running: busy, onStop, lastSent })
+                }
+                placeholder={placeholder}
+              />
+            </PromptInputBody>
+            <PromptInputFooter>
+              {/* #590 AC-2: one row of controls at 1024px — no wrap; the hint
               truncates away before a control ever drops to a second line. */}
-          <PromptInputTools className="min-w-0 overflow-hidden">
-            {accept && <AttachButton />}
-            {tools}
-            <span className="lilos-hint hidden truncate text-muted-foreground text-xs sm:inline">
-              {hint}
-            </span>
-          </PromptInputTools>
-          {busy && !draft.trim() && onStop ? (
-            <PromptInputSubmit
-              status={status}
-              type="button"
-              onClick={onStop}
-              title="Stop (⌘.)"
-              aria-label="Stop (⌘.)"
-            >
-              <SquareIcon className="size-3.5 fill-current" />
-            </PromptInputSubmit>
-          ) : (
-            <SendButton
-              hasDraft={!!draft.trim()}
-              status={busy ? undefined : status}
-              sending={sending}
-            />
-          )}
-        </PromptInputFooter>
-      </PromptInput>
+              <PromptInputTools className="min-w-0 flex-1 overflow-hidden">
+                {accept && <AttachButton />}
+                {tools}
+                <span className="lilos-hint hidden truncate pl-1 text-[12.5px] text-muted-foreground">
+                  {hint}
+                </span>
+              </PromptInputTools>
+              <ComposerKbd className="hidden @min-[420px]:inline" />
+              {busy && !draft.trim() && onStop ? (
+                <StopPill onStop={onStop} />
+              ) : (
+                <SendPill
+                  hasDraft={!!draft.trim()}
+                  working={busy}
+                  sending={sending}
+                />
+              )}
+            </PromptInputFooter>
+          </PromptInput>
+        </div>
+      </div>
     </div>
   );
 }

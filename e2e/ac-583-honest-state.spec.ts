@@ -98,14 +98,14 @@ test("AC-1+#586 the composer names the employee, then says it's waiting for Osca
   await page.goto(`${stack.webUrl}/#?page=threads&open=newchat:default`);
 
   /* #586 AC-1: the idle placeholder names the employee ("Message Default…"
-     on the new-chat draft, "Reply to Default…" inside a thread) — never
+     on the new-chat draft and inside an idle thread alike) — never
      an engine ref like `20261006_…` or `emp_…`. */
   const draft = v3Peek(page).getByPlaceholder(/^Message /);
   await expect(draft).toHaveAttribute("placeholder", /Message Default…/);
   await expect(draft).not.toHaveAttribute("placeholder", /emp_|2026\d{4}/);
   await chat(stack, page, "Say hello once");
   const box = threadBox(page);
-  await expect(box).toHaveAttribute("placeholder", /Reply to Default/, {
+  await expect(box).toHaveAttribute("placeholder", /^Message Default…$/, {
     timeout: 60_000,
   });
   await expect(box).not.toHaveAttribute("placeholder", /emp_|2026\d{4}/);
@@ -249,15 +249,13 @@ test("AC-3 a live background job says so in the thread", async ({ page }) => {
   await page.screenshot({ path: `${SHOTS}/ac-3-background-job.png` });
 });
 
-test("AC-2 the reply count on the thread divider skips system notes", async ({
+test("AC-2 system notes are quiet lines, never replies — and no reply-count chrome", async ({
   page,
 }) => {
   test.setTimeout(180_000);
   /* Full access → the turn carries a LilOS note ("Auto-approved …") beside
-     the agent's reply — the thread divider must count only the replies,
-     skipping the note. (The old row-vs-divider parity is gone with the row's
-     count: v3 rows carry none, so the divider is compared with the turns
-     actually rendered.) */
+     the agent's reply — the note renders as its own quiet line, never as a
+     user/agent turn. (The old divider count is gone with the divider.) */
   await chat(stack, page, "Say hello once");
   /* The pill lives on the thread, so the chat opens first; let that turn
      end or the next send would steer into it instead of starting its own. */
@@ -279,28 +277,21 @@ test("AC-2 the reply count on the thread divider skips system notes", async ({
   await expect(
     page.locator("[data-thread-panel] [data-sysnote]").first(),
   ).toBeVisible({ timeout: 30_000 });
-  const divider = page
-    .locator("[data-thread-panel]")
-    .getByText(/^\d+ repl(?:y|ies)$/);
-  /* The count renders "0 replies" while the opened thread's history is
-     still replaying — wait for the settled non-zero value, not just
-     visibility. */
-  await expect(divider.first()).toHaveText(/^[1-9]\d* repl/, {
-    timeout: 30_000,
-  });
-  const dividerCount = Number(
-    (await divider.first().innerText()).match(/(\d+)/)?.[1],
-  );
-  /* The rows under the divider, minus the opener and minus the system
-     notes: what "N replies" must equal. */
-  const replies = await page.evaluate(() => {
-    const rows = [
+  /* The v3 thread carries no "N replies" divider (nor "opened thread"
+     chrome): a note is a hairline line, not a turn. */
+  await expect(
+    page.locator("[data-thread-panel]").getByText(/^\d+ repl(?:y|ies)$/),
+  ).toHaveCount(0);
+  const noteIsTurn = await page.evaluate(() =>
+    [
       ...document.querySelectorAll(
         "[data-thread-panel] [role='log'] [data-msg]",
       ),
-    ];
-    const notes = rows.filter((r) => r.querySelector("[data-sysnote]")).length;
-    return rows.length - 1 - notes;
-  });
-  expect(dividerCount).toBe(replies);
+    ].some(
+      (row) =>
+        row.querySelector("[data-sysnote]") &&
+        row.querySelector("[data-userturn], [data-agentturn]"),
+    ),
+  );
+  expect(noteIsTurn).toBe(false);
 });

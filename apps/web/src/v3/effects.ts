@@ -54,12 +54,16 @@ export function useShellEffects({
   move,
   openSearch,
   openShortcuts,
+  toggleSidebar,
 }: {
   /** A move from the nav the shell draws (root.tsx), not the raw hash. */
   move: (update: (nav: V3Nav) => V3Nav) => void;
   /** Ask the shell for ⌘K when a native menu consumed the chord. */
   openSearch: () => void;
   openShortcuts: () => void;
+  /** Ask the shell to hide or show its sidebar: ⌘\ arrives only as a menu
+     action on desktop (the shell binds the chord itself on the web). */
+  toggleSidebar: () => void;
 }): void {
   /* #572: the thread on screen earns an engine feed (the session watch's
      scope head) and the read watermark follows it; leaving releases it. */
@@ -188,6 +192,7 @@ export function useShellEffects({
       }
       if (action === "quick-switcher") openSearch();
       else if (action === "shortcuts") openShortcuts();
+      else if (action === "toggle-sidebar") toggleSidebar();
       else if (action === "back") history.back();
       else if (action === "forward") history.forward();
       else if (action === "new-session") {
@@ -220,5 +225,5 @@ export function useShellEffects({
       offShortcut?.();
       offSettings?.();
     };
-  }, [move, openSearch, openShortcuts]);
+  }, [move, openSearch, openShortcuts, toggleSidebar]);
 }

@@ -18,7 +18,7 @@ import {
 /**
  * Issue #543 — the Workbench exists for EVERY session (apps/web, relay +
  * harness on engine-fake):
- *   AC-1 a DM session started with NO folder gets the thread panel's ↗ and
+ *   AC-1 a DM session started with NO folder gets the peek's Widen and
  *       Focus's Workbench toggle like any session; the panel shows only the
  *       engine tabs — Subagents + Background (Plan when a turn has one) —
  *       never the empty folder-bound tabs.
@@ -105,7 +105,7 @@ const underlineDrift = (page: Page) =>
       .map((t) => t.textContent ?? "?"),
   );
 
-test("AC-1..3 folderless session: ↗ + toggle; only Subagents + Background; helper detail; Stop ends the job; the link lands on Subagents", async ({
+test("AC-1..3 folderless session: Widen + toggle; only Subagents + Background; helper detail; Stop ends the job; the link lands on Subagents", async ({
   page,
 }) => {
   test.setTimeout(300_000);

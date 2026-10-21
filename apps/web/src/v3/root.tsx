@@ -53,7 +53,14 @@ function Company() {
   const [shortcuts, setShortcuts] = useState(false);
   const openSearch = useCallback(() => setSearch((n) => n + 1), []);
   const toggleShortcuts = useCallback(() => setShortcuts((o) => !o), []);
-  useShellEffects({ move, openSearch, openShortcuts: toggleShortcuts });
+  const [sidebar, setSidebar] = useState(0);
+  const toggleSidebar = useCallback(() => setSidebar((n) => n + 1), []);
+  useShellEffects({
+    move,
+    openSearch,
+    openShortcuts: toggleShortcuts,
+    toggleSidebar,
+  });
   return (
     <div className="flex h-dvh">
       <div className="min-w-0 flex-1">
@@ -64,6 +71,7 @@ function Company() {
           onNav={move}
           banner={<StatusBanner />}
           searchRequest={search}
+          sidebarRequest={sidebar}
           // The window's vibrancy follows the theme or the sidebar turns
           // unreadable (#232).
           onThemeChange={(theme) => window.lilos?.setThemeSource?.(theme)}

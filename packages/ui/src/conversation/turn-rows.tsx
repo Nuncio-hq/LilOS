@@ -1,4 +1,3 @@
-import { Undo2Icon } from "lucide-react";
 import {
   type MutableRefObject,
   memo,
@@ -10,7 +9,6 @@ import {
   useState,
 } from "react";
 import { ConversationPin } from "../components/ai-elements/conversation";
-import { Body, Row, Who } from "../feed/row";
 import { InlineCodeText } from "../lib/inline-code";
 import { cn } from "../lib/utils";
 import type {
@@ -26,8 +24,10 @@ import type {
 import { ReplyCards } from "./cards";
 import { findAnchorActive, useFindUnstub } from "./find-unstub";
 import type { PlanAction } from "./plan-card";
+import { PrCard } from "./pr-card";
 import type { QuestionAnswer } from "./question-card";
-import { AgentTurn, AttachmentChips, PrCard, UserTurn } from "./turns";
+import { AgentTurn } from "./turns";
+import { UserTurn } from "./user-turn";
 
 /**
  * #430: one reply row, memoized so an incoming delta re-renders only the
@@ -95,13 +95,12 @@ export function estTurnHeight(
 ): number {
   const cpl = frame === "focus" ? 86 : 50;
   if (!agent) {
-    /* Row/UserTurn: who line + wrapped text + attachment chips. */
-    return 46 + estLines(r.text, cpl) * 20 + (r.attachments?.length ? 34 : 0);
+    /* UserTurn: bubble padding + wrapped text + the time line + chips. */
+    return 46 + estLines(r.text, cpl) * 23 + (r.attachments?.length ? 34 : 0);
   }
-  /* AgentTurn: who row + optional reasoning fold + body + cards + footer. */
-  let h = 60 + estLines(r.text, cpl) * 21;
-  if (r.reasoning) h += 30;
-  if (r.steps?.length) h += 36;
+  /* AgentTurn: who row + the one work fold line + body + cards + footer. */
+  let h = 60 + estLines(r.text, cpl) * 24;
+  if (r.reasoning !== undefined || r.steps?.length) h += 36;
   if (r.plan) h += 40 + r.plan.steps.length * 22;
   if (r.approval || r.question) h += 110;
   if (r.startProposal) h += 56;
@@ -137,45 +136,6 @@ export interface TurnActs {
   /** #420: question-ask answer/cancel continuations. */
   onAnswer?: (q: QuestionAsk, a: QuestionAnswer) => void;
   onCancel?: (q: QuestionAsk) => void;
-}
-
-/* #578: rewind moved off the permanent checkpoint row onto a hover
-   affordance on your own message (both frames, root included) — no line
-   above every message, no confirm dialog. One click applies the rewind
-   visually and opens a 10 s Undo toast that is the real safeguard, so a
-   shared folder (`warning`) only names itself in the tooltip, and a running
-   turn still greys the affordance out (#134 AC-5). The wrapper span carries
-   the tooltip because a disabled button swallows pointer events. */
-export function RewindHover({
-  running,
-  warning,
-  onRewind,
-}: {
-  running: boolean;
-  warning?: string;
-  onRewind: () => void;
-}) {
-  const title = running
-    ? "Stop the running turn first"
-    : `Rewind to before this message${warning ? ` — ${warning}` : ""}`;
-  return (
-    <span
-      title={title}
-      className="absolute top-1 right-1.5 z-10 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
-    >
-      <button
-        type="button"
-        data-rewind
-        disabled={running}
-        title={title}
-        onClick={onRewind}
-        className="inline-flex items-center gap-1 rounded-md border bg-background/95 px-1.5 py-0.5 font-medium text-[11px] text-muted-foreground shadow-sm backdrop-blur-sm hover:text-foreground focus-visible:opacity-100 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        <Undo2Icon className="size-3" />
-        Rewind
-      </button>
-    </span>
-  );
 }
 
 /* The settled marker AgentTurn's footer carries — a held stub repeats it
@@ -404,6 +364,21 @@ function LazyShell({
   );
 }
 
+/* A note LilOS wrote into the thread, set between hairlines so it never
+   reads as a message. */
+function SysNote({ children }: { children: ReactNode }) {
+  return (
+    <div
+      data-sysnote
+      className="flex items-center gap-3 text-[12.5px] text-muted-foreground/70"
+    >
+      <span className="h-px flex-1 bg-[var(--v3-line)]" />
+      <span className="max-w-[80%] text-center">{children}</span>
+      <span className="h-px flex-1 bg-[var(--v3-line)]" />
+    </div>
+  );
+}
+
 export interface TurnRowProps {
   /** panel = the DM/thread side panel chrome; focus = the Focus view. */
   frame: "panel" | "focus";
@@ -497,9 +472,10 @@ function TurnRowImpl({
     frame === "focus" && "rounded-lg",
     flashed && "bg-amber-100 dark:bg-amber-900/40",
   );
-  /* #585 AC-1: a LilOS system note is centred between hairlines — never
-     the user's right-aligned bubble and never an agent card. `data-sysnote`
-     is the spec anchor; deduped notes never reach the row at all. */
+  /* #585 AC-1: a LilOS system note is a quiet centred line between
+     hairlines (the prototype's "Opening"/"Rewound" line) — never the user's
+     bubble and never an agent card. `data-sysnote` is the spec anchor;
+     deduped notes never reach the row at all. */
   if (r.system) {
     return (
       <LazyShell
@@ -510,15 +486,11 @@ function TurnRowImpl({
         kind="note"
         settled
       >
-        <div data-sysnote className="flex items-center gap-2 px-3 py-1 sm:px-5">
-          <span className="h-px flex-1 bg-border" />
-          <span className="text-center text-muted-foreground text-xs">
-            {/* #585: `tool …` spans render as code chips, like the
-                assistant's text — never literal backticks. */}
-            <InlineCodeText text={r.text} />
-          </span>
-          <span className="h-px flex-1 bg-border" />
-        </div>
+        <SysNote>
+          {/* #585: `tool …` spans render as code chips, like the
+              assistant's text — never literal backticks. */}
+          <InlineCodeText text={r.text} />
+        </SysNote>
       </LazyShell>
     );
   }
@@ -526,7 +498,9 @@ function TurnRowImpl({
     return (
       <LazyShell
         msgId={r.id}
-        className={cls}
+        /* The column spaces turns 28px apart; an agent's work belongs to
+           the message above it, so it sits closer (the prototype's 16px). */
+        className={cn(cls, "[[data-msg]:has([data-userturn])+&]:-mt-3")}
         lazy={lazy}
         /* A turn row whose phase isn't terminal is still being written:
            `streaming` only covers the text phase, and `live` drops when the
@@ -542,115 +516,66 @@ function TurnRowImpl({
         kind="agent"
         settled={isSettled(r)}
       >
-        {frame === "panel" ? (
-          <div className="group px-3 py-2 hover:bg-muted/40 sm:px-5">
-            <AgentTurn
-              r={r}
-              emp={emp}
-              human={human}
-              last={lastTurn}
-              onRetry={onRetry}
-              models={models}
-              onOpenSession={onOpenSession}
-              onPlan={onPlan}
-              onOpen={onOpen}
-              keyTarget={keyTarget}
-              cards={
-                <ReplyCards
-                  r={r}
-                  i={i}
-                  last={lastRow}
-                  work={work}
-                  repo={repo}
-                  emp={emp}
-                  human={human}
-                  resolved={resolved}
-                  setResolved={setResolved}
-                  onStart={onStart}
-                  onAnswer={onAnswer}
-                  onCancel={onCancel}
-                  keyTarget={keyTarget}
-                />
-              }
-            />
-          </div>
-        ) : (
-          <AgentTurn
-            r={r}
-            emp={emp}
-            human={human}
-            last={lastTurn}
-            onRetry={onRetry}
-            models={models}
-            onOpen={onOpen}
-            onOpenSession={onOpenSession}
-            onPlan={onPlan}
-            keyTarget={keyTarget}
-            cards={
-              <>
-                <ReplyCards
-                  r={r}
-                  i={i}
-                  last={lastRow}
-                  work={work}
-                  repo={repo}
-                  emp={emp}
-                  human={human}
-                  resolved={resolved}
-                  setResolved={setResolved}
-                  onStart={onStart}
-                  onAnswer={onAnswer}
-                  onCancel={onCancel}
-                  keyTarget={keyTarget}
-                />
-                {pr &&
-                  !r.live &&
-                  r.steps?.some((s) =>
-                    String(s.input.command ?? "").startsWith("gh pr create"),
-                  ) && (
-                    <PrCard
-                      pr={pr}
-                      author={prAuthor ?? pr.author}
-                      onOpen={() => onOpen?.("pr")}
-                    />
-                  )}
-              </>
-            }
-          />
-        )}
+        <AgentTurn
+          r={r}
+          emp={emp}
+          human={human}
+          last={lastTurn}
+          onRetry={onRetry}
+          models={models}
+          onOpen={onOpen}
+          onOpenSession={onOpenSession}
+          onPlan={onPlan}
+          keyTarget={keyTarget}
+          cards={
+            <>
+              <ReplyCards
+                r={r}
+                i={i}
+                last={lastRow}
+                work={work}
+                repo={repo}
+                emp={emp}
+                human={human}
+                resolved={resolved}
+                setResolved={setResolved}
+                onStart={onStart}
+                onAnswer={onAnswer}
+                onCancel={onCancel}
+                keyTarget={keyTarget}
+              />
+              {pr &&
+                !r.live &&
+                r.steps?.some((s) =>
+                  String(s.input.command ?? "").startsWith("gh pr create"),
+                ) && (
+                  <PrCard
+                    pr={pr}
+                    author={prAuthor ?? pr.author}
+                    onOpen={() => onOpen?.("pr")}
+                  />
+                )}
+            </>
+          }
+        />
       </LazyShell>
     );
   }
-  const rewind =
-    onRewind && r.id && human(r.from) ? (
-      <RewindHover
-        running={running}
-        warning={rewindWarning}
-        onRewind={() => onRewind(r.id ?? "")}
-      />
-    ) : null;
   /* #550: `from === ""` is the relay's system-note author
-     (`authorKind: "system"` maps to it in mapping.ts) — a muted note
-     line in both frames, never a user-style bubble and never an
-     empty-name message row. */
-  const sysNote =
-    r.from === "" ? (
-      <div
-        data-sysnote
-        className={cn(
-          "w-fit max-w-full rounded bg-muted px-1.5 py-0.5 text-muted-foreground text-xs",
-          frame === "panel" && "mx-3 my-0.5 sm:mx-5",
-        )}
-      >
-        {r.text}
-      </div>
-    ) : null;
+     (`authorKind: "system"` maps to it in mapping.ts) — the same quiet
+     centred line, never a user-style bubble and never an empty-name row. */
+  const rewind =
+    onRewind && r.id && human(r.from)
+      ? {
+          running,
+          warning: rewindWarning,
+          onRewind: () => onRewind(r.id ?? ""),
+        }
+      : undefined;
   return (
     <LazyShell
       msgId={r.id}
-      /* Focus rows anchor the hover affordance to the whole bubble row —
-         `group`/`relative` live here; the panel's Row already carries both. */
-      className={cn(cls, frame === "focus" && rewind && "group relative")}
+      className={cls}
       lazy={lazy}
       keep={scrollTarget || flashed}
       startHeld={startHeld}
@@ -658,27 +583,18 @@ function TurnRowImpl({
       kind={r.from === "" ? "note" : "user"}
       settled={false}
     >
-      {frame === "panel"
-        ? (sysNote ?? (
-            <Row from={r.from} emp={emp} human={human}>
-              <Who id={r.from} time={r.time} emp={emp} human={human} />
-              <Body text={r.text} />
-              {r.attachments && <AttachmentChips files={r.attachments} />}
-              {rewind}
-            </Row>
-          ))
-        : (sysNote ?? (
-            <>
-              <UserTurn
-                from={r.from}
-                time={r.time}
-                text={r.text}
-                human={human}
-                attachments={r.attachments}
-              />
-              {rewind}
-            </>
-          ))}
+      {r.from === "" ? (
+        <SysNote>{r.text}</SysNote>
+      ) : (
+        <UserTurn
+          from={r.from}
+          time={r.time}
+          text={r.text}
+          human={human}
+          attachments={r.attachments}
+          rewind={rewind}
+        />
+      )}
     </LazyShell>
   );
 }

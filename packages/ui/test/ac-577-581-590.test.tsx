@@ -125,7 +125,7 @@ describe("issue #577 — way back", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  test("AC-3 Focus has ONE back control, labelled for where it goes", () => {
+  test("AC-3 Focus draws no back control of its own; Esc is the way out beside the peek's Narrow", () => {
     const onBack = vi.fn();
     const dm = render(
       <FocusView
@@ -142,33 +142,22 @@ describe("issue #577 — way back", () => {
         onBack={onBack}
       />,
     );
-    const back = dm.getByRole("button", { name: "Back to DM" });
-    // One control only — no second "Exit focus" affordance (#577).
+    // The widened peek's Narrow (the shell's header) is the one control; the
+    // thread has neither "Back to …" nor "Exit focus" (#577).
+    expect(dm.queryByRole("button", { name: /^Back to/ })).toBeNull();
     expect(dm.container.querySelectorAll('[title="Exit focus"]').length).toBe(
       0,
     );
     expect(dm.container.textContent).not.toContain("Exit focus");
-    fireEvent.click(back);
-    expect(onBack).toHaveBeenCalledTimes(1);
-    cleanup();
-    const ch = render(
-      <FocusView
-        root={root}
-        thread={thread}
-        channel={channel}
-        lead={BUILDER}
-        emp={emp}
-        human={human}
-        running={false}
-        work={null}
-        resolved={{}}
-        onSend={() => {}}
-        onBack={onBack}
-      />,
+    // Esc still backs out (the layer the shell's Narrow mirrors).
+    document.body.dispatchEvent(
+      new window.KeyboardEvent("keydown", {
+        key: "Escape",
+        bubbles: true,
+        cancelable: true,
+      }),
     );
-    expect(
-      ch.getByRole("button", { name: "Back to #engineering" }),
-    ).toBeTruthy();
+    expect(onBack).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -283,7 +272,6 @@ describe("issue #590 — desktop polish", () => {
     const r = render(
       <FocusComposer
         running={false}
-        status="ready"
         placeholder="Reply…"
         hint=""
         draft=""
@@ -296,7 +284,6 @@ describe("issue #590 — desktop polish", () => {
       r.rerender(
         <FocusComposer
           running={false}
-          status="ready"
           placeholder="Reply…"
           hint=""
           draft="Change the plan: "
@@ -326,7 +313,9 @@ describe("issue #590 — desktop polish", () => {
     );
     const header = r.container.querySelector("header")!;
     expect(header.textContent).toContain("Builder");
-    expect(header.textContent).toContain("DM");
+    // The kicker reads "Chat · Builder" — no DM channel wording.
+    expect(header.textContent).toContain("Chat · Builder");
+    expect(header.textContent).not.toContain("DM");
   });
 
   test("AC-3 the context meter's tooltip names what the % is", () => {

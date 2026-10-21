@@ -25,25 +25,25 @@ export function StepRow({ s }: { s: Step }) {
     s.diff?.status === "added" ? "Created" : (STEP_VERB[s.tool] ?? s.tool);
   const hasBody = !s.running && (!!s.diff || !!s.output);
   return (
-    <div className="relative pl-4 before:absolute before:top-0 before:bottom-0 before:left-[5px] before:w-px before:bg-border last:before:bottom-1/2">
-      <span
-        className={cn(
-          "absolute top-[11px] left-[2px] size-[7px] rounded-full",
-          s.running ? "animate-pulse bg-work" : "bg-emerald-500",
-        )}
-      />
+    <div>
       <button
         type="button"
         disabled={!hasBody}
         onClick={() => setOpen(!open)}
-        className="group/step flex w-full min-w-0 items-center gap-2 rounded-md px-1.5 py-1 text-left text-[13px] hover:bg-muted/60 disabled:hover:bg-transparent"
+        className="group/step flex min-h-[30px] w-full min-w-0 items-center gap-2.5 rounded-[7px] px-1.5 text-left text-[13.5px] transition-colors hover:bg-[var(--v3-hover)] disabled:hover:bg-transparent"
       >
+        <span
+          className={cn(
+            "size-[7px] shrink-0 rounded-full",
+            s.running ? "animate-pulse bg-work" : "bg-muted-foreground/40",
+          )}
+        />
         {s.running ? (
           <Shimmer as="span" duration={1} className="shrink-0 font-medium">
             {verb}
           </Shimmer>
         ) : (
-          <span className="shrink-0 font-medium text-foreground">{verb}</span>
+          <span className="shrink-0 text-muted-foreground">{verb}</span>
         )}
         <code className="min-w-0 truncate font-mono text-[12.5px] text-foreground/70">
           {arg}
@@ -56,7 +56,7 @@ export function StepRow({ s }: { s: Step }) {
           {hasBody && (
             <ChevronRightIcon
               className={cn(
-                "size-3.5 text-muted-foreground transition-transform",
+                "size-3.5 text-muted-foreground/70 transition-transform",
                 open && "rotate-90",
               )}
             />
@@ -68,7 +68,7 @@ export function StepRow({ s }: { s: Step }) {
           {s.diff ? (
             <DiffView d={s.diff} collapsible={false} />
           ) : (
-            <pre className="max-h-56 overflow-auto whitespace-pre-wrap rounded-md bg-zinc-950 p-3 font-mono text-[12px] leading-5 text-zinc-100">
+            <pre className="max-h-56 overflow-auto whitespace-pre-wrap rounded-[7px] bg-[var(--v3-soft)] px-3 py-2 font-mono text-[12px] text-muted-foreground leading-[1.7]">
               {stripAnsi(s.output)}
             </pre>
           )}

@@ -1,15 +1,13 @@
-import { CheckIcon, PlayIcon, ShieldAlertIcon, XIcon } from "lucide-react";
+import { CheckIcon, XIcon } from "lucide-react";
 import { CodeBlock } from "../components/ai-elements/code-block";
 import {
   Confirmation,
   ConfirmationAccepted,
-  ConfirmationAction,
   ConfirmationActions,
   ConfirmationRejected,
   ConfirmationRequest,
   ConfirmationTitle,
 } from "../components/ai-elements/confirmation";
-import { Button } from "../components/ui/button";
 import { HireCardInline } from "../feed/hire-card";
 import { cn } from "../lib/utils";
 import type {
@@ -21,7 +19,16 @@ import type {
   Work,
 } from "../types";
 import { VIEWER_ID } from "../types";
+import { StatusPill } from "../v3/v3-marks";
 import { askHint } from "./ask-keys";
+import {
+  CARD,
+  CARD_HEAD,
+  CardButton,
+  CardLink,
+  KEY_HINT,
+  RECEIPT,
+} from "./card-bits";
 import { type QuestionAnswer, QuestionCard } from "./question-card";
 
 /* The one "asks to start work" request that currently owns the start-work action (issue #15).
@@ -94,70 +101,47 @@ export function ReplyCards({
           return (
             <div
               data-startcard={open ? "open" : "inactive"}
-              className={cn(
-                "mt-1 w-full max-w-md overflow-hidden rounded-lg border",
-                work
-                  ? "border-emerald-200"
-                  : open
-                    ? "border-violet-300"
-                    : "border-border",
-              )}
+              className={cn("mt-1 w-full", open && CARD)}
             >
-              <div
-                className={cn(
-                  "flex items-center gap-2 px-3 py-2 font-medium text-xs",
-                  work
-                    ? "bg-emerald-50 text-emerald-900"
-                    : open
-                      ? "bg-violet-50 text-violet-900"
-                      : "bg-muted/40 text-muted-foreground",
-                )}
-              >
-                {work ? (
-                  <>
-                    <CheckIcon className="size-3.5" />
-                    Started as {work.ticket}
-                  </>
-                ) : open ? (
-                  <>
-                    <PlayIcon className="size-3.5" />
-                    {emp(r.from)?.name} asks to start work
-                  </>
-                ) : (
-                  <>
-                    <CheckIcon className="size-3.5" />
-                    {answered ?? "Superseded by a newer turn"}
-                  </>
-                )}
-              </div>
-              {open && (
-                <div className="space-y-2 p-3">
-                  <div className="font-medium">{r.startProposal.title}</div>
-                  <p className="text-muted-foreground text-xs">
+              {open ? (
+                <>
+                  <div className={CARD_HEAD}>
+                    <StatusPill status="needs" />
+                    <span>{emp(r.from)?.name} asks to start work</span>
+                  </div>
+                  <div className="mt-2.5 text-[14.5px] text-foreground leading-normal">
+                    {r.startProposal.title}
+                  </div>
+                  <p className="mt-1 text-[13.5px] text-muted-foreground leading-normal">
                     {repo
                       ? `New ticket + worktree on ${repo}. This thread moves there.`
                       : "New ticket. No repo on this channel, so no worktree."}
                   </p>
                   {(onStart || setResolved) && (
-                    <div className="flex gap-1.5">
-                      {onStart && (
-                        <Button size="sm" onClick={onStart}>
-                          Review & start
-                        </Button>
-                      )}
+                    <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
                       {setResolved && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
+                        <CardLink
                           onClick={() =>
                             setResolved({ ...resolved, [key]: "Not now" })
                           }
                         >
                           Not yet
-                        </Button>
+                        </CardLink>
+                      )}
+                      {onStart && (
+                        <CardButton primary onClick={onStart}>
+                          Review &amp; start
+                        </CardButton>
                       )}
                     </div>
                   )}
+                </>
+              ) : (
+                <div className={cn(CARD_HEAD, "py-0.5")}>
+                  <CheckIcon className="size-3.5 text-emerald-600" />
+                  {work
+                    ? `Started as ${work.ticket}`
+                    : (answered ?? "Superseded by a newer turn")}
                 </div>
               )}
             </div>
@@ -175,16 +159,17 @@ export function ReplyCards({
           /* #106 AC-4: the card offers the options the engine offered
              (Once / This thread / Always / Deny) — asks stored before
              options existed fall back to the original three. */
-          const actions = a.options?.length
+          const offered = a.options?.length
             ? a.options
             : ["once", "always", "deny"];
+          /* v3 sets the primary answer last, at the right edge. */
+          const actions = [...offered].reverse();
           const actionMeta: Record<
             string,
             {
               label: string;
               title: (command: string) => string;
               resolved: (viewer: string, command: string) => string;
-              ghost?: boolean;
             }
           > = {
             once: {
@@ -209,19 +194,11 @@ export function ReplyCards({
               label: "Deny",
               title: () => "Deny — the agent sees the refusal",
               resolved: (v) => `Denied by ${v}`,
-              ghost: true,
             },
           };
           return (
             <Confirmation
-              className={cn(
-                "mt-1",
-                done
-                  ? done.startsWith("Denied")
-                    ? "border-red-200"
-                    : "border-emerald-200"
-                  : "border-amber-300 bg-amber-50/50",
-              )}
+              className={done ? RECEIPT : CARD}
               data-ask-id={a.id}
               data-ask-state={done ? "resolved" : "open"}
               state={done ? "approval-responded" : "approval-requested"}
@@ -235,10 +212,10 @@ export function ReplyCards({
                   : { id: a.id }
               }
             >
-              <ConfirmationTitle className="flex flex-wrap items-center gap-1.5 pr-2 font-medium text-foreground">
+              <ConfirmationTitle className={CARD_HEAD}>
                 <ConfirmationRequest>
-                  <ShieldAlertIcon className="size-3.5 text-primary" />
-                  Approval needed · only {viewer} can answer
+                  <StatusPill status="needs" />
+                  <span>Approval needed · only {viewer} can answer</span>
                 </ConfirmationRequest>
                 <ConfirmationAccepted>
                   <CheckIcon className="size-3.5 text-emerald-600" />
@@ -272,36 +249,33 @@ export function ReplyCards({
                     {/* The caption must say what the command DOES — when the
                         engine just echoes the command it adds nothing. */}
                     {a.note.trim() && a.note.trim() !== a.command.trim() ? (
-                      <p className="text-muted-foreground text-xs">{a.note}</p>
+                      <p className="text-[13.5px] text-muted-foreground leading-normal">
+                        {a.note}
+                      </p>
                     ) : null}
                   </>
                 )}
               </ConfirmationRequest>
               {setResolved && !a.hire && (
-                <ConfirmationActions className="flex-wrap self-start">
+                <ConfirmationActions className="flex-wrap">
                   {actions.map((opt, i) => {
                     const meta = actionMeta[opt];
                     if (!meta) return null;
                     return (
-                      <ConfirmationAction
+                      <CardButton
                         key={opt}
-                        variant={
-                          meta.ghost ? "ghost" : i === 0 ? undefined : "outline"
-                        }
+                        primary={i === actions.length - 1}
                         title={meta.title(a.command)}
                         onClick={() => answer(meta.resolved(viewer, a.command))}
                       >
                         {meta.label}
-                      </ConfirmationAction>
+                      </CardButton>
                     );
                   })}
                 </ConfirmationActions>
               )}
               {hint && (
-                <div
-                  data-ask-keyhint
-                  className="px-3 pb-2 text-[11px] text-muted-foreground"
-                >
+                <div data-ask-keyhint className={KEY_HINT}>
                   Answer from the keyboard: {hint}
                 </div>
               )}

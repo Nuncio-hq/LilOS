@@ -56,17 +56,28 @@ html[data-desktop]
 }
 
 /* v3: the sidebar's first row sits where the traffic lights are — it takes
-   the same inset and drags the window like a title bar (its text is not
-   interactive). Only the shell's own sidebar: the side peek's aside is deeper
-   in the tree. */
+   the same inset and drags the window like a title bar (`lilos-drag` on the
+   row: its toggle stays clickable). Only the shell's own sidebar: the side
+   peek's aside is deeper in the tree. The sidebar stays the shell's first
+   child whether it is docked, hidden or popped out over the page. */
 html[data-desktop] .lilos-v3 > aside:first-child > div:first-child {
   min-height: 56px;
-  -webkit-app-region: drag;
 }
 html[data-desktop]:not([data-fullscreen])
   .lilos-v3
   > aside:first-child
   > div:first-child {
+  padding-left: var(--lilos-traffic-inset);
+}
+
+/* v3: the top bar is as tall as the lights' row, so its text lines up with
+   the sidebar's company name beside it. While the sidebar is hidden the
+   lights sit over the bar's left end: it keeps clear of them with the same
+   reserve, and stays a drag region (its controls opt out, above). */
+html[data-desktop] .lilos-v3-bar {
+  min-height: 56px;
+}
+html[data-desktop]:not([data-fullscreen]) .lilos-v3-bar[data-sidebar-hidden] {
   padding-left: var(--lilos-traffic-inset);
 }
 

@@ -8,11 +8,15 @@ import {
   SparklesIcon,
 } from "lucide-react";
 import { useState } from "react";
-import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
-import { Textarea } from "../components/ui/textarea";
 import { cn } from "../lib/utils";
 import type { ShipBar, ShipError, ShipHandlers } from "../types";
+import { FIELD, WbBtn } from "./wb-bits";
+
+/* A small muted text action under the bar's buttons (the prototype's
+   "Ask the agent to change…"): no border, so it never competes with the
+   one primary button. */
+const LINK =
+  "inline-flex items-center gap-1.5 text-[12.5px] text-muted-foreground transition-colors enabled:hover:text-foreground [&_svg]:size-3.5";
 
 /* Commit → push → Create PR under the Changes file list (issue #107; the
    accepted #359 design). Presentational: state arrives on `bar`, every
@@ -148,15 +152,16 @@ export function CommitBar(props: ShipBar & ShipHandlers) {
               : null;
 
   /* #393 AC-8: a disabled control must stay readable in dark mode — the
-     bar drops the components' opacity-dim for muted colors instead, and
-     lifts placeholders off muted-foreground. */
+     bar drops WbBtn's opacity-dim for muted colors instead (a disabled
+     primary reads as a plain hairline button), and lifts placeholders off
+     muted-foreground. */
   return (
     <div
       data-shipbar
-      className="shrink-0 border-t bg-background px-3 py-2 [&_button:disabled]:border-border [&_button:disabled]:bg-muted [&_button:disabled]:opacity-100 [&_button:disabled]:text-muted-foreground [&_input::placeholder]:text-foreground/60 [&_input:disabled]:bg-transparent [&_input:disabled]:opacity-100 [&_input:disabled]:text-muted-foreground [&_textarea::placeholder]:text-foreground/60 [&_textarea:disabled]:bg-transparent [&_textarea:disabled]:opacity-100 [&_textarea:disabled]:text-muted-foreground"
+      className="shrink-0 border-[var(--v3-line)] border-t bg-[var(--v3-main)] px-5 pt-3 pb-4 [&_button:disabled]:border-foreground/15 [&_button:disabled]:bg-background [&_button:disabled]:opacity-100 [&_button:disabled]:text-muted-foreground [&_input::placeholder]:text-foreground/60 [&_input:disabled]:bg-transparent [&_input:disabled]:opacity-100 [&_input:disabled]:text-muted-foreground [&_textarea::placeholder]:text-foreground/60 [&_textarea:disabled]:bg-transparent [&_textarea:disabled]:opacity-100 [&_textarea:disabled]:text-muted-foreground"
     >
       {/* header: what the bar acts on + host chrome slot */}
-      <div className="flex items-center gap-2 text-muted-foreground text-xs">
+      <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
         <GitCommitHorizontalIcon className="size-3.5 shrink-0" />
         <span className="truncate">
           {branch ? (
@@ -172,8 +177,10 @@ export function CommitBar(props: ShipBar & ShipHandlers) {
         {upstream && (
           <span
             className={cn(
-              "shrink-0 font-mono text-[10px]",
-              error ? "text-muted-foreground" : "text-emerald-600",
+              "shrink-0 font-mono text-[11px]",
+              error
+                ? "text-muted-foreground"
+                : "text-emerald-600 dark:text-emerald-400",
             )}
           >
             ↑ {upstream}
@@ -185,7 +192,7 @@ export function CommitBar(props: ShipBar & ShipHandlers) {
       {error && (
         <div
           data-shiperror
-          className="mt-2 flex items-start gap-1.5 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1.5 text-destructive text-xs"
+          className="mt-2 flex items-start gap-1.5 rounded-[7px] border border-destructive/40 px-2.5 py-1.5 text-destructive text-[12px]"
         >
           <CircleAlertIcon className="mt-px size-3.5 shrink-0" />
           <div className="min-w-0">
@@ -195,7 +202,7 @@ export function CommitBar(props: ShipBar & ShipHandlers) {
                 <summary className="cursor-pointer text-muted-foreground">
                   Details
                 </summary>
-                <pre className="mt-1 max-h-24 overflow-auto whitespace-pre-wrap font-mono text-[10px]">
+                <pre className="mt-1 max-h-24 overflow-auto whitespace-pre-wrap font-mono text-[11px]">
                   {error.detail}
                 </pre>
               </details>
@@ -205,11 +212,9 @@ export function CommitBar(props: ShipBar & ShipHandlers) {
                 ask-the-agent; Push is never the only obvious action. */}
             {(error.reason === "rejected" || error.reason === "diverged") &&
               (onPull || onAskAgent) && (
-                <div className="mt-2 flex items-center gap-1.5">
+                <div className="mt-2 flex items-center gap-3">
                   {onPull && (
-                    <Button
-                      size="xs"
-                      variant="outline"
+                    <WbBtn
                       data-shippull
                       disabled={busyWith}
                       onClick={() => void onPull()}
@@ -220,19 +225,19 @@ export function CommitBar(props: ShipBar & ShipHandlers) {
                         <ArrowDownToLineIcon />
                       )}
                       Pull
-                    </Button>
+                    </WbBtn>
                   )}
                   {onAskAgent && (
-                    <Button
-                      size="xs"
-                      variant="ghost"
+                    <button
+                      type="button"
                       data-shipask
                       disabled={busyWith}
                       onClick={onAskAgent}
+                      className={LINK}
                     >
                       <SparklesIcon />
                       Ask agent to update
-                    </Button>
+                    </button>
                   )}
                 </div>
               )}
@@ -248,55 +253,57 @@ export function CommitBar(props: ShipBar & ShipHandlers) {
                   required"; the why drops to helper text (AC-8 contrast). */}
               <label
                 htmlFor="ship-branch"
-                className="mb-1 block text-foreground text-xs font-medium"
+                className="mb-1 block font-medium text-[12px] text-foreground"
               >
                 Branch name{" "}
                 <span className="font-normal text-foreground/70">
                   (required)
                 </span>
               </label>
-              <Input
+              <input
                 id="ship-branch"
                 data-shipbranch
                 value={newBranch}
                 onChange={(e) => setNewBranch(e.target.value)}
                 placeholder="feat/my-change"
-                className="font-mono"
+                className={cn(FIELD, "w-full font-mono")}
                 disabled={busyWith}
               />
-              <p className="mt-1 text-foreground/70 text-xs">
+              <p className="mt-1 text-[12px] text-foreground/70">
                 You're on the default branch ({defaultBranch}) — the PR opens
                 from a new one.
               </p>
             </div>
           )}
-          <Input
+          <input
             data-shiptitle
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="PR title"
+            className={cn(FIELD, "w-full")}
             disabled={busyWith}
           />
-          <Textarea
+          <textarea
             data-shipbody
             value={body}
             onChange={(e) => setBody(e.target.value)}
             placeholder="PR body"
             rows={4}
+            className={cn(FIELD, "h-auto w-full resize-y py-1.5")}
             disabled={busyWith}
           />
-          <div className="flex items-center justify-end gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
+          <div className="flex items-center justify-end gap-3">
+            <button
+              type="button"
               onClick={() => setPrOpen(false)}
               disabled={busyWith}
+              className={LINK}
             >
               Cancel
-            </Button>
-            <Button
+            </button>
+            <WbBtn
+              primary
               data-shipcreate
-              size="sm"
               onClick={submitPr}
               disabled={
                 busyWith || !title.trim() || (onDefault && !newBranch.trim())
@@ -308,105 +315,91 @@ export function CommitBar(props: ShipBar & ShipHandlers) {
                 <GitPullRequestIcon />
               )}
               {busyLabel ?? "Create pull request"}
-            </Button>
+            </WbBtn>
           </div>
         </div>
       ) : (
-        <>
-          {/* message row: #584 — Suggest is a side ask (session.ask), not
-              a send: nothing enters the transcript, and it answers while a
-              turn runs (AC-1/AC-2). Its reply fills this box. */}
-          <div className="mt-2 flex items-center gap-2">
-            <Input
-              data-shipmessage
-              value={message}
-              onChange={(e) => onMessage?.(e.target.value)}
-              placeholder="Commit message"
-              className="font-mono"
+        /* message row: #584 — Suggest is a side ask (session.ask), not a
+           send: nothing enters the transcript, and it answers while a turn
+           runs (AC-1/AC-2). Its reply fills this box. One wrapping row, as
+           the prototype's ShipBar: field first, then the actions. */
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <input
+            data-shipmessage
+            value={message}
+            onChange={(e) => onMessage?.(e.target.value)}
+            placeholder="Commit message"
+            className={cn(FIELD, "flex-1 basis-[220px] font-mono")}
+            disabled={busyWith}
+          />
+          {onSuggest && (
+            <WbBtn
+              data-shipsuggest
+              onClick={() =>
+                void Promise.resolve(onSuggest())
+                  .then((s) => {
+                    const line = typeof s === "string" ? suggestLine(s) : "";
+                    if (line) onMessage?.(line);
+                  })
+                  .catch(() => {
+                    /* the bar's error surface already shows it */
+                  })
+              }
+              disabled={busyWith || checked.length === 0}
+              title="Ask the agent for a one-line commit message"
+            >
+              {busy === "suggest" ? (
+                <LoaderCircleIcon className="animate-spin" />
+              ) : (
+                <SparklesIcon />
+              )}
+              {busy === "suggest" ? "Asking…" : "Suggest"}
+            </WbBtn>
+          )}
+          {onCommit && (
+            <WbBtn
+              data-shipcommit
+              onClick={() =>
+                void onCommit(
+                  checked.map((f) => f.path),
+                  message,
+                )
+              }
+              disabled={busyWith || checked.length === 0 || !message.trim()}
+            >
+              {busy === "commit" ? (
+                <LoaderCircleIcon className="animate-spin" />
+              ) : (
+                <GitCommitHorizontalIcon />
+              )}
+              {busy === "commit"
+                ? "Committing…"
+                : `Commit ${checked.length} ${
+                    checked.length === 1 ? "file" : "files"
+                  }`}
+            </WbBtn>
+          )}
+          {onPush && (
+            <WbBtn
+              data-shippush
+              onClick={() => void onPush()}
               disabled={busyWith}
-            />
-            {onSuggest && (
-              <Button
-                variant="outline"
-                size="sm"
-                data-shipsuggest
-                onClick={() =>
-                  void Promise.resolve(onSuggest())
-                    .then((s) => {
-                      const line = typeof s === "string" ? suggestLine(s) : "";
-                      if (line) onMessage?.(line);
-                    })
-                    .catch(() => {
-                      /* the bar's error surface already shows it */
-                    })
-                }
-                disabled={busyWith || checked.length === 0}
-                title="Ask the agent for a one-line commit message"
-              >
-                {busy === "suggest" ? (
-                  <LoaderCircleIcon className="animate-spin" />
-                ) : (
-                  <SparklesIcon />
-                )}
-                {busy === "suggest" ? "Asking…" : "Suggest"}
-              </Button>
-            )}
-          </div>
-          <div className="mt-2 flex items-center justify-end gap-2">
-            {onCommit && (
-              <Button
-                variant="outline"
-                size="sm"
-                data-shipcommit
-                onClick={() =>
-                  void onCommit(
-                    checked.map((f) => f.path),
-                    message,
-                  )
-                }
-                disabled={busyWith || checked.length === 0 || !message.trim()}
-              >
-                {busy === "commit" ? (
-                  <LoaderCircleIcon className="animate-spin" />
-                ) : (
-                  <GitCommitHorizontalIcon />
-                )}
-                {busy === "commit"
-                  ? "Committing…"
-                  : `Commit ${checked.length} ${
-                      checked.length === 1 ? "file" : "files"
-                    }`}
-              </Button>
-            )}
-            {onPush && (
-              <Button
-                variant="outline"
-                size="sm"
-                data-shippush
-                onClick={() => void onPush()}
-                disabled={busyWith}
-              >
-                {busy === "push" ? (
-                  <LoaderCircleIcon className="animate-spin" />
-                ) : (
-                  <ArrowUpIcon />
-                )}
-                {busy === "push" ? "Pushing…" : "Push"}
-              </Button>
-            )}
-            {onCreatePr && (
-              <Button
-                size="sm"
-                data-shippr
-                onClick={openPrForm}
-                disabled={busyWith}
-              >
-                <GitPullRequestIcon />
-                Create PR
-              </Button>
-            )}
-          </div>
-        </>
+            >
+              {busy === "push" ? (
+                <LoaderCircleIcon className="animate-spin" />
+              ) : (
+                <ArrowUpIcon />
+              )}
+              {busy === "push" ? "Pushing…" : "Push"}
+            </WbBtn>
+          )}
+          {onCreatePr && (
+            <WbBtn primary data-shippr onClick={openPrForm} disabled={busyWith}>
+              <GitPullRequestIcon />
+              Create PR
+            </WbBtn>
+          )}
+        </div>
       )}
     </div>
   );

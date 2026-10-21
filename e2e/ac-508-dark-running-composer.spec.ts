@@ -33,16 +33,14 @@ const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
 const repo = path.resolve(here, "..");
 const SHOTS = path.join(repo, "test-results", "ac-508");
 
-/* The running composer is the only capsule carrying a Stop (⌘.) button —
+/* The running composer is the only box carrying a Stop (⌘.) button —
    that scopes every selector to the mid-turn surface, not a sibling one. */
-const CAPSULE = '[data-slot="input-group"]:has([aria-label="Stop (⌘.)"])';
+const CAPSULE = '[data-slot="composer-box"]:has([aria-label="Stop (⌘.)"])';
 
-/* The capsule's fill is the theme's `--glass` token (#fbfbfdd9 / #2c2c2ed9).
-   The old window frame's `.lilos-desktop` override (white at 0.75 / 0.06) went
-   with the pre-v3 shell: v3 draws no such frame, so the token is what the
-   capsule shows. */
-const GLASS_LIGHT = "rgba(251, 251, 253, 0.85)";
-const GLASS_DARK = "rgba(44, 44, 46, 0.85)";
+/* The v3 message box is a hairline box with no fill of its own: the page's
+   `--v3-main` shows through it, so the light-glass-over-dark fade this issue
+   was about cannot recur — there is no fill to fade. */
+const NO_FILL = "rgba(0, 0, 0, 0)";
 
 const CHECKS = [
   { name: "placeholder", sel: `${CAPSULE} textarea`, pseudo: "::placeholder" },
@@ -53,7 +51,7 @@ const CHECKS = [
   },
   {
     name: "chip effort",
-    sel: `${CAPSULE} [data-slot="model-picker-trigger"] .text-foreground\\/70`,
+    sel: `${CAPSULE} [data-slot="model-picker-trigger"] [data-effort]`,
   },
 ];
 
@@ -184,7 +182,7 @@ async function runningFocus(page: Page) {
   /* The issue's exact state: the steer placeholder and the running hint. */
   await expect(page.locator(`${CAPSULE} textarea`)).toHaveAttribute(
     "placeholder",
-    /Enter steers this turn/,
+    /it reads this at the next step/,
   );
   await expect(page.locator(`${CAPSULE} .lilos-hint`)).toHaveText(
     "Enter steers · ⌘. stop",
@@ -211,14 +209,13 @@ test("AC-2 placeholder, hint and chip label hold 4.5:1 in dark; light stays byte
   await runningFocus(page);
   const html = page.locator("html");
 
-  /* Dark first: the fill is read the moment `.dark` lands — before the fix
-     this was mid-fade toward the token (the light capsule in the issue's
-     screenshots). The transition list itself must not carry the fill. */
+  /* Dark first: the box's fill is read the moment `.dark` lands — it has
+     none, so nothing can sit mid-fade as the light capsule did in the
+     issue's screenshots. */
   await page.emulateMedia({ colorScheme: "dark" });
   await expect(html).toHaveClass(/dark/);
   const cap = await capsule(page);
-  expect(cap.transition).not.toMatch(/\b(background|background-color|all)\b/);
-  expect(cap.bg).toBe(GLASS_DARK);
+  expect(cap.bg).toBe(NO_FILL);
   await killMotion(page);
   const dark = await measure(page, CHECKS);
   console.log("#508 composer dark", fmt(dark));
@@ -234,7 +231,7 @@ test("AC-2 placeholder, hint and chip label hold 4.5:1 in dark; light stays byte
   await page.emulateMedia({ colorScheme: "light" });
   await expect(html).not.toHaveClass(/dark/);
   const capLight = await capsule(page);
-  expect(capLight.bg).toBe(GLASS_LIGHT);
+  expect(capLight.bg).toBe(NO_FILL);
   const light = await measure(page, CHECKS);
   console.log("#508 composer light", fmt(light));
   const pin = (name: string, rgb: [number, number, number]) => {
@@ -246,12 +243,10 @@ test("AC-2 placeholder, hint and chip label hold 4.5:1 in dark; light stays byte
   };
   pin("placeholder", [134, 134, 139]);
   pin("hint", [134, 134, 139]);
-  /* The chip inks are translucent, so they composite over the capsule's fill:
-     over `--glass` (252,252,253 once its own 0.85 alpha sits on the page)
-     they land one blue unit under what the old frame's white 0.75 gave
-     (74,74,76 / 95,95,98). Same ink, same byte-exact pin, new backdrop. */
-  pin("chip name", [74, 74, 75]);
-  pin("chip effort", [95, 95, 97]);
+  /* The v3 chips are the quiet muted ink — the prototype's 12.5px row —
+     so the name and the effort read the same grey as the placeholder. */
+  pin("chip name", [134, 134, 139]);
+  pin("chip effort", [134, 134, 139]);
 });
 
 test("AC-3 screenshots of the running composer at the three viewports, light and dark", async ({

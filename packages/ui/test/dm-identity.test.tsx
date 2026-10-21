@@ -7,7 +7,6 @@
 import { cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test } from "vitest";
 import { AgentTurn } from "../src/conversation/turns";
-import { Row } from "../src/feed/row";
 import { HumanAvatar } from "../src/shell/avatars";
 import type { Employee, Human } from "../src/types";
 
@@ -52,22 +51,6 @@ describe("issue #80", () => {
     // white on bg-blue-600 (#2563eb) ≈ 5.17:1 — WCAG AA for normal text.
     expect(fb?.className).toContain("text-white");
     expect(fb?.className).toContain("bg-blue-600");
-  });
-
-  test("AC-1 a user message row wears the person's own avatar", () => {
-    // A different identity than the shipped one proves the row follows the
-    // app's `me`, not a hardcoded initial.
-    const who: Human = { name: "Minh", color: "bg-cyan-600" };
-    const whoFor = (id: string) => (id === "user" ? who : undefined);
-    const { container } = render(
-      <Row from="user" emp={emp} human={whoFor}>
-        <p>hello</p>
-      </Row>,
-    );
-    const rowFb = container.querySelector('[data-slot="avatar-fallback"]');
-    expect(rowFb?.textContent).toBe("M");
-    expect(rowFb?.className).toContain("bg-cyan-600");
-    cleanup();
   });
 
   test("AC-1 a human with an image renders it", async () => {

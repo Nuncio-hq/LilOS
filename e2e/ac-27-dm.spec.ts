@@ -133,7 +133,11 @@ test("AC-3 DM message opens a session; reply streams with reasoning + tool steps
   // with a reasoning block and collapsed tool steps.
   const turn = page.locator("[data-agentturn]").first();
   await expect(turn).toBeVisible({ timeout: 30_000 });
-  await expect(turn.getByText(/Thinking…|Thought for \d+s/)).toBeVisible({
+  /* The work fold's one line says "thought for Ns" and its open body
+     repeats it as "Thought for Ns" — either one proves the reasoning ran. */
+  await expect(
+    turn.getByText(/Thinking…|[Tt]hought for \d+s/).first(),
+  ).toBeVisible({
     timeout: 60_000,
   });
   await expect(turn.locator("[data-tasksteps]")).toBeVisible({

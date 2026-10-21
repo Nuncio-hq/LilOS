@@ -132,7 +132,9 @@ async function chatWithDefault(page: Page, text: string, model: string) {
 
 /** Reply inside the open conversation — same session, a fresh turn. */
 async function replyInSession(page: Page, text: string) {
-  const box = v3Peek(page).getByPlaceholder(/Reply to/);
+  const box = v3Peek(page)
+    .locator("[data-thread-panel]")
+    .getByPlaceholder(/^Message [^…]+…$/);
   await box.fill(text);
   await box.press("Enter");
 }
@@ -257,7 +259,11 @@ test("AC-4 a running session keeps its model; the next new session uses the upda
 
   // A reply in the SAME conversation still runs on the start-time model.
   await page.goto(`${stackA.webUrl}/${threadHash}`);
-  await expect(v3Peek(page).getByPlaceholder(/Reply to/)).toBeVisible({
+  await expect(
+    v3Peek(page)
+      .locator("[data-thread-panel]")
+      .getByPlaceholder(/^Message [^…]+…$/),
+  ).toBeVisible({
     timeout: 30_000,
   });
   await replyInSession(page, "still the old model");

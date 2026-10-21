@@ -2,10 +2,8 @@ import {
   ArrowUpRightIcon,
   BanIcon,
   CheckIcon,
-  ChevronDownIcon,
   ChevronRightIcon,
   CircleDotIcon,
-  NetworkIcon,
   XIcon,
 } from "lucide-react";
 import { useState } from "react";
@@ -32,6 +30,10 @@ import { StepRow } from "../workbench/step-row";
    result line once finished), how long. A subagent opens in place to its own steps + report;
    an employee helper worked in their own session, so its row only links there (onOpenSession,
    rendered only when passed — D-#19). */
+
+/* The prototype's work-fold row: a quiet 13.5px muted line that hovers like a button. */
+const FOLD_ROW =
+  "-ml-1.5 flex min-h-7 w-fit max-w-full items-center gap-1.5 rounded-md px-1.5 text-[13.5px] text-muted-foreground";
 
 const STATUS_ICON: Record<Subagent["status"], React.ReactNode> = {
   running: <CircleDotIcon className="size-3.5 animate-pulse text-work" />,
@@ -79,7 +81,7 @@ export function SubagentRow({
       </span>
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-1.5">
-          <span className="truncate font-medium text-[13px] text-foreground">
+          <span className="truncate font-medium text-[13.5px] text-foreground">
             {helper ? `${helper.name} · ${a.name}` : a.name}
           </span>
           {helper && STATUS_ICON[a.status]}
@@ -89,7 +91,7 @@ export function SubagentRow({
             as="span"
             duration={1.5}
             className={cn(
-              "block truncate text-[12px]",
+              "block truncate text-[12.5px]",
               !a.employee && "font-mono",
             )}
           >
@@ -99,6 +101,7 @@ export function SubagentRow({
           <span
             className={cn(
               "block truncate text-[12.5px] text-muted-foreground",
+              !a.employee && "font-mono",
               a.status === "failed" && "text-red-600",
             )}
           >
@@ -106,7 +109,7 @@ export function SubagentRow({
           </span>
         )}
       </span>
-      <span className="shrink-0 font-mono text-[11.5px] text-muted-foreground">
+      <span className="shrink-0 font-mono text-[12px] text-muted-foreground">
         {a.dur !== undefined && `${a.dur}s`}
       </span>
     </>
@@ -117,14 +120,14 @@ export function SubagentRow({
       <div
         data-subagent={a.id}
         data-status={a.status}
-        className="flex items-center gap-2.5 rounded-lg px-2 py-1.5"
+        className="flex items-center gap-2.5 rounded-[7px] px-2 py-1.5"
       >
         {head}
         {onOpenSession && (
           <button
             type="button"
             onClick={() => onOpenSession(a.employee!.id, a.employee!.session)}
-            className="flex shrink-0 items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[12px] text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="flex shrink-0 items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[12.5px] text-muted-foreground hover:bg-[var(--v3-hover)] hover:text-foreground"
           >
             Open thread
             <ArrowUpRightIcon className="size-3" />
@@ -141,17 +144,17 @@ export function SubagentRow({
       data-subagent={a.id}
       data-status={a.status}
     >
-      <CollapsibleTrigger className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left hover:bg-muted/60">
+      <CollapsibleTrigger className="flex w-full items-center gap-2.5 rounded-[7px] px-2 py-1.5 text-left transition-colors hover:bg-[var(--v3-hover)]">
         {head}
         <ChevronRightIcon
           className={cn(
-            "size-3.5 shrink-0 text-muted-foreground transition-transform",
+            "size-3.5 shrink-0 text-muted-foreground/70 transition-transform",
             open && "rotate-90",
           )}
         />
       </CollapsibleTrigger>
-      <CollapsibleContent className="pt-1 pr-1 pb-2 pl-9">
-        <p className="mb-1.5 text-[12.5px] text-muted-foreground">
+      <CollapsibleContent className="mt-1 mb-2 ml-[17px] border-[var(--v3-line)] border-l pr-1 pl-3.5">
+        <p className="mb-1.5 text-[13.5px] text-muted-foreground">
           <span className="font-medium text-foreground/80">Brief · </span>
           {a.task}
         </p>
@@ -159,7 +162,7 @@ export function SubagentRow({
           <StepRow key={i} s={s} />
         ))}
         {a.result && (
-          <div className="mt-2 rounded-lg bg-muted/50 px-3 py-2 text-[13px]">
+          <div className="mt-2 rounded-[7px] bg-[var(--v3-soft)] px-3 py-2 text-[13.5px]">
             <MessageResponse className="lilos-prose break-words">
               {a.result}
             </MessageResponse>
@@ -201,22 +204,24 @@ export function TurnSubagents({
       onOpenChange={setUserSet}
       data-subagents
     >
-      <TaskTrigger title={title}>
-        <div className="flex w-fit cursor-pointer items-center gap-1.5 text-muted-foreground text-xs transition-colors hover:text-foreground">
-          <NetworkIcon
-            className={cn(
-              "size-3.5",
-              running ? "animate-pulse text-work" : "text-emerald-600",
-            )}
-          />
-          <span>{title}</span>
-          {failed > 0 && (
-            <span className="text-red-600">· {failed} failed</span>
-          )}
-          <ChevronDownIcon className="size-3.5 transition-transform group-data-[panel-open]:rotate-180" />
-        </div>
+      <TaskTrigger
+        title={title}
+        className={cn(
+          FOLD_ROW,
+          "cursor-pointer transition-colors hover:bg-[var(--v3-hover)] hover:text-foreground",
+        )}
+      >
+        <ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground/70 transition-transform group-data-[panel-open]:rotate-90" />
+        <span className={cn("whitespace-nowrap", running > 0 && "text-work")}>
+          {title}
+        </span>
+        {failed > 0 && (
+          <span className="whitespace-nowrap text-red-600">
+            · {failed} failed
+          </span>
+        )}
       </TaskTrigger>
-      <TaskContent className="[&>div]:mt-2 [&>div]:space-y-0.5 [&>div]:pl-2">
+      <TaskContent className="[&>div]:mt-1 [&>div]:ml-[7px] [&>div]:space-y-0.5 [&>div]:border-[var(--v3-line)] [&>div]:border-l [&>div]:pl-3.5">
         {agents.map((a) => (
           <SubagentRow
             key={a.id}
@@ -245,21 +250,24 @@ export function SubagentsLink({
       type="button"
       onClick={onOpen}
       data-subagents-link
-      className="mb-1 flex w-fit items-center gap-1.5 rounded-md text-muted-foreground text-xs transition-colors hover:text-foreground"
+      className={cn(
+        FOLD_ROW,
+        "mb-1 transition-colors hover:bg-[var(--v3-hover)] hover:text-foreground",
+      )}
     >
-      <NetworkIcon
-        className={cn(
-          "size-3.5",
-          running ? "animate-pulse text-work" : "text-emerald-600",
-        )}
-      />
-      <span>{plural(agents.length, "subagent")}</span>
-      {running > 0 && <span className="text-work">· {running} running</span>}
-      {failed > 0 && <span className="text-red-600">· {failed} failed</span>}
-      <span className="flex items-center gap-0.5 font-medium">
-        · Open
-        <ChevronRightIcon className="size-3.5" />
+      <ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground/70" />
+      <span className="whitespace-nowrap">
+        {plural(agents.length, "subagent")}
       </span>
+      {running > 0 && (
+        <span className="whitespace-nowrap text-work">· {running} running</span>
+      )}
+      {failed > 0 && (
+        <span className="whitespace-nowrap text-red-600">
+          · {failed} failed
+        </span>
+      )}
+      <span className="whitespace-nowrap text-muted-foreground/70">· Open</span>
     </button>
   );
 }

@@ -37,17 +37,6 @@ export function streamTail(lines: string[], count: number, max: number) {
   return out;
 }
 
-/** One output line; a leading ✓ is the only colour (it means passed). */
-export function OutLine({ text }: { text: string }) {
-  if (!text.startsWith("✓")) return <>{text}</>;
-  return (
-    <>
-      <span className="text-emerald-600 dark:text-emerald-400">✓</span>
-      {text.slice(1)}
-    </>
-  );
-}
-
 /** How many turns a thread has had, or undefined when the app does not carry
    its turns (then no label may say "0 turns"). */
 export function turnCount(t: V3Thread): number | undefined {

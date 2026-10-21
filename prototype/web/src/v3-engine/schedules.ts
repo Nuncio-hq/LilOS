@@ -55,7 +55,6 @@ export function scheduleActions({ setData, getData, toast }: Engine): Pick<
             model: agent.model,
             folder: project?.folder ?? "~",
             now: { kind: "read", text: "Reading the job", elapsed: "0s" },
-            changes: [],
             turns: [
               {
                 n: 1,

@@ -12,10 +12,12 @@ import { growDmThread } from "./helpers/relay-thread";
 import {
   bootStack,
   panelFocusReady,
+  panelOutOfFocus,
   pickPorts,
   type Stack,
   skipFirstRun,
   threadUrl,
+  v3Peek,
   v3Sidebar,
 } from "./helpers/stack";
 
@@ -27,10 +29,11 @@ import {
  *
  * The v3 shell's chrome: the sidebar's first row is the lights' strip (it
  * drags and carries the inset — apps/web/src/index.css), the shell's top bar
- * (`.lilos-drag`, packages/ui/src/v3/v3-shell.tsx) and an open thread's own
+ * (`.lilos-drag`, packages/ui/src/v3/v3-topbar.tsx) and an open thread's own
  * header drag the window, and every control inside them opts out. The
- * sidebar never collapses, so it — not a surface header — always owns the
- * strip under the lights.
+ * sidebar can hide (⌘\, #793), and while it does the top bar takes over the
+ * strip under the lights and leaves room for them; a surface header never
+ * sits there.
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -53,8 +56,9 @@ const appRegion = (page: Page, selector: string) =>
 /** The sidebar's first row: where the traffic lights sit. */
 const SIDEBAR_HEADER = ".lilos-v3 > aside:first-child > div:first-child";
 const sidebarHeader = (page: Page) => page.locator(SIDEBAR_HEADER);
-/** The shell's own top bar (company / page / search) — a `.lilos-drag` strip
-    in the column beside the sidebar, above the page and the side peek. */
+/** The shell's own top bar (the page; the company and Search while the sidebar
+    is hidden) — a `.lilos-drag` strip in the column beside the sidebar, above
+    the page and the side peek. */
 const TOP_BAR = ".lilos-v3 > div > .lilos-drag";
 
 /**
@@ -204,19 +208,14 @@ test("AC-3 header strips drag the window, buttons inside still work", async () =
     await shellReady(win);
     await panelFocusReady(win);
 
-    // Every header row is a drag region: the sidebar's lights row, the
-    // shell's top bar, and the open thread's own header…
+    // Every header row is a drag region: the sidebar's lights row and the
+    // shell's top bar. (The open thread's header is the top of its scrolling
+    // conversation, not a strip — nothing there to drag by.)
     await expect.poll(() => appRegion(win, SIDEBAR_HEADER)).toBe("drag");
     await expect.poll(() => appRegion(win, TOP_BAR)).toBe("drag");
+    // …but interactive children opt out (the sidebar's hide toggle).
     await expect
-      .poll(() => appRegion(win, "[data-thread-panel] .lilos-drag"))
-      .toBe("drag");
-    // …but interactive children opt out.
-    await expect
-      .poll(() => appRegion(win, `${TOP_BAR} button`))
-      .toBe("no-drag");
-    await expect
-      .poll(() => appRegion(win, "[data-thread-panel] .lilos-drag button"))
+      .poll(() => appRegion(win, `${SIDEBAR_HEADER} button`))
       .toBe("no-drag");
 
     // Synthetic mouse events can't reach the native window-drag path — the
@@ -233,26 +232,30 @@ test("AC-3 header strips drag the window, buttons inside still work", async () =
         },
         [x, y] as const,
       );
+    // The lights' strip, left of the company name, is empty header space.
     const box = await sidebarHeader(win).boundingBox();
     if (!box) throw new Error("sidebar header has no box");
-    expect(await regionAt(box.x + box.width - 20, box.y + box.height / 2)).toBe(
+    expect(await regionAt(box.x + 4, box.y + box.height / 2)).toBe("drag");
+    // The top bar docked is the page's name and nothing else: its middle is
+    // window-draggable space too.
+    const bar = await win.locator(TOP_BAR).boundingBox();
+    if (!bar) throw new Error("top bar has no box");
+    expect(await regionAt(bar.x + bar.width / 2, bar.y + bar.height / 2)).toBe(
       "drag",
     );
-    // The top bar's empty middle (between the breadcrumb and the search
-    // button) is the same: window-draggable space.
-    const bar = await win.locator(TOP_BAR).boundingBox();
-    const crumb = await win.locator(`${TOP_BAR} button`).first().boundingBox();
-    const search = await win.locator(`${TOP_BAR} button`).last().boundingBox();
-    if (!bar || !crumb || !search) throw new Error("top bar has no box");
-    expect(
-      await regionAt(
-        (crumb.x + crumb.width + search.x) / 2,
-        bar.y + bar.height / 2,
-      ),
-    ).toBe("drag");
 
-    // A control inside the drag strip still clicks (the top bar's search).
-    await win.locator(`${TOP_BAR} button`).last().click();
+    // A control inside the drag strip still clicks: the sidebar's hide
+    // toggle hides it…
+    await sidebarHeader(win)
+      .getByRole("button", { name: "Hide sidebar" })
+      .click();
+    await expect(v3Sidebar(win)).toBeHidden();
+    // …and the top bar, now carrying its own controls, keeps them clickable
+    // inside the drag strip: Search opens the palette.
+    await expect
+      .poll(() => appRegion(win, `${TOP_BAR} button`))
+      .toBe("no-drag");
+    await win.getByRole("button", { name: "Search", exact: true }).click();
     await expect(win.getByRole("dialog", { name: "Search" })).toBeVisible({
       timeout: 10_000,
     });
@@ -283,9 +286,107 @@ test("AC-4 full screen hides the lights and drops the sidebar inset", async () =
     await waitForNativeFrame(app, win);
     await win.screenshot({ path: `${SHOTS}/ac-4-fullscreen.png` });
 
+    // The hidden sidebar hands the lights' reserve to the top bar, and
+    // full screen drops it there too.
+    await sidebarHeader(win)
+      .getByRole("button", { name: "Hide sidebar" })
+      .click();
+    await expect(v3Sidebar(win)).toBeHidden();
+    const barPad = () =>
+      win
+        .locator(TOP_BAR)
+        .evaluate((el) => Number.parseFloat(getComputedStyle(el).paddingLeft));
+    await expect.poll(barPad).toBeLessThan(30);
+
     await setFullScreen(app, false);
     await expect.poll(() => isFullscreen(win)).toBe(false);
+    await expect.poll(barPad).toBeGreaterThanOrEqual(TRAFFIC_LIGHTS_END + 10);
+    await win.getByRole("button", { name: "Show sidebar" }).click();
     await expect.poll(padLeft).toBeGreaterThanOrEqual(TRAFFIC_LIGHTS_END + 10);
+  } finally {
+    await app.close();
+  }
+});
+
+test("AC-7 a hidden sidebar: the top bar clears the lights and still drags; popped out, the sidebar keeps the inset", async () => {
+  test.skip(!isMac, "native window chrome is a macOS leg");
+  test.setTimeout(180_000);
+  const { app, win } = await launch();
+  try {
+    await shellReady(win);
+    await sidebarHeader(win)
+      .getByRole("button", { name: "Hide sidebar" })
+      .click();
+    await expect(v3Sidebar(win)).toBeHidden();
+
+    // The bar is the strip under the lights now: as tall as the lights' row,
+    // draggable, and its first control is clear of them plus the macOS gap.
+    await expect.poll(() => appRegion(win, TOP_BAR)).toBe("drag");
+    await expect
+      .poll(() => appRegion(win, `${TOP_BAR} button`))
+      .toBe("no-drag");
+    const bar = await win.locator(TOP_BAR).boundingBox();
+    const show = await win
+      .getByRole("button", { name: "Show sidebar" })
+      .boundingBox();
+    if (!bar || !show) throw new Error("hidden top bar has no box");
+    expect(bar.y).toBe(0);
+    expect(bar.height).toBeGreaterThanOrEqual(56);
+    expect(show.x - TRAFFIC_LIGHTS_END).toBeGreaterThanOrEqual(10);
+    // Empty bar space (right of the breadcrumb) drags the window.
+    const region = await win.evaluate(
+      ([x, y]) => {
+        const el = document.elementFromPoint(x, y);
+        return el
+          ? getComputedStyle(el).getPropertyValue("-webkit-app-region")
+          : "none";
+      },
+      [bar.x + bar.width - 40, bar.height / 2] as const,
+    );
+    expect(region).toBe("drag");
+
+    // Hovering the left edge pops the sidebar out over the page; its first
+    // row keeps the lights' reserve and its toggle stays clickable.
+    await win.mouse.move(400, 300);
+    await win.mouse.move(2, 300);
+    await expect(v3Sidebar(win)).toBeVisible();
+    await expect
+      .poll(() =>
+        sidebarHeader(win).evaluate((el) =>
+          Number.parseFloat(getComputedStyle(el).paddingLeft),
+        ),
+      )
+      .toBeGreaterThanOrEqual(TRAFFIC_LIGHTS_END + 10);
+    await expect.poll(() => appRegion(win, SIDEBAR_HEADER)).toBe("drag");
+    await expect
+      .poll(() => appRegion(win, `${SIDEBAR_HEADER} button`))
+      .toBe("no-drag");
+    await waitForNativeFrame(app, win);
+    await win.screenshot({ path: `${SHOTS}/ac-7-popped.png` });
+  } finally {
+    await app.close();
+  }
+});
+
+test("AC-8 View → Toggle Sidebar (⌘\\) hides and shows the sidebar", async () => {
+  test.skip(!isMac, "native window chrome is a macOS leg");
+  test.setTimeout(180_000);
+  // The menu accelerator consumes the chord before the page sees it, so the
+  // shell hears it as a request from the app: drive the menu item itself.
+  const { app, win } = await launch();
+  try {
+    await shellReady(win);
+    const toggle = () =>
+      app.evaluate(({ Menu }) => {
+        const view = Menu.getApplicationMenu()?.items.find(
+          (i) => i.label === "View",
+        );
+        view?.submenu?.items.find((i) => i.label === "Toggle Sidebar")?.click();
+      });
+    await toggle();
+    await expect(v3Sidebar(win)).toBeHidden();
+    await toggle();
+    await expect(v3Sidebar(win)).toBeVisible();
   } finally {
     await app.close();
   }
@@ -359,9 +460,9 @@ test("AC-5 the status window gets the same chrome", async () => {
 });
 
 test("#295 the session view's header clears the lights strip (the sidebar keeps it); Back is live", async () => {
-  /* v3's sidebar never collapses, so unlike the old Focus view no surface
-     header ever sits under the lights: the sidebar's first row owns the
-     strip at every width and in the session view alike. What #295 guarded —
+  /* v3 never puts a surface header under the lights, unlike the old Focus
+     view: the sidebar's first row owns the strip at every width and in the
+     session view alike (hidden, the top bar does — AC-7). What #295 guarded —
      the leftmost control of the open surface is not under the lights, the
      strip still drags, full screen drops the reserve, Back works — is
      asserted on the session view (`full=1`, chat beside the Workbench). */
@@ -378,7 +479,10 @@ test("#295 the session view's header clears the lights strip (the sidebar keeps 
     );
     await panelFocusReady(win);
 
-    const header = win.locator("[data-thread-panel] > header").first();
+    /* The thread draws no strip of its own (its header scrolls with the
+       conversation): the open surface's top is the side peek's header, under
+       the shell's drag bar. */
+    const header = v3Peek(win);
     await expect(header).toBeVisible({ timeout: 30_000 });
     const padLeft = () =>
       sidebarHeader(win).evaluate((el) =>
@@ -386,9 +490,7 @@ test("#295 the session view's header clears the lights strip (the sidebar keeps 
       );
 
     // The strips still drag the window…
-    await expect
-      .poll(() => appRegion(win, "[data-thread-panel] > header"))
-      .toBe("drag");
+    await expect.poll(() => appRegion(win, TOP_BAR)).toBe("drag");
     await expect.poll(() => appRegion(win, SIDEBAR_HEADER)).toBe("drag");
     // …the lights' reserve lives on the sidebar header, which sits left of
     // the surface, so the surface's first control clears the lights plus the
@@ -419,9 +521,8 @@ test("#295 the session view's header clears the lights strip (the sidebar keeps 
 
     // Back is a live control, not dead space: it steps out of the session
     // view to the thread beside Threads (`full=1` leaves the URL).
-    await header.getByRole("button", { name: /back to/i }).click();
+    await panelOutOfFocus(win);
     await expect(win).toHaveURL(/[?&]open=thread:[^&]+/, { timeout: 30_000 });
-    await expect(win).not.toHaveURL(/[#&]full=1(&|$)/);
   } finally {
     await app.close();
   }

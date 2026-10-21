@@ -34,6 +34,7 @@ const SHORTCUTS: ShortcutRow[] = [
   { keys: "⌘]", action: "Forward" },
   { keys: "⌘/", action: "This list" },
   { keys: "⌘,", action: "Settings" },
+  { keys: "⌘\\", action: "Hide or show the sidebar" },
   { keys: "⌘F", action: "Find in the open thread", desktop: true },
   { keys: "⌘.", action: "Stop the running turn" },
   { keys: "↑", action: "Recall the last sent message (empty composer)" },

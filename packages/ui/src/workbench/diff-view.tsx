@@ -1,6 +1,6 @@
 import {
   CheckIcon,
-  ChevronDownIcon,
+  ChevronRightIcon,
   MessageSquarePlusIcon,
   PencilIcon,
   Trash2Icon,
@@ -12,17 +12,12 @@ import { Textarea } from "../components/ui/textarea";
 import { cn } from "../lib/utils";
 import type { Diff, DiffComment } from "../types";
 import { OpenPathButton } from "./open-path";
+import { AddDel, CARD, WbBtn } from "./wb-bits";
 import type { OpenMenuFor } from "./ws-badges";
 
+/* The +added −removed pair; step rows and the PR header share the v3 count. */
 export function DiffStat({ add, del }: { add: number; del: number }) {
-  return (
-    <span className="inline-flex items-center gap-1 font-mono text-[12px] tabular-nums">
-      <span className="text-emerald-600">+{add}</span>
-      <span className={del ? "text-red-600" : "text-muted-foreground/60"}>
-        −{del}
-      </span>
-    </span>
-  );
+  return <AddDel add={add} del={del} />;
 }
 
 /* Unified diff with tinted rows + old/new gutters (GitHub / Devin style) instead of colour-only text. */
@@ -137,7 +132,10 @@ function CommentEditor({
     a.start === a.end ? `line ${a.start}` : `lines ${a.start}–${a.end}`;
   return (
     <tr data-comment-editor>
-      <td colSpan={3} className="border-t bg-background p-0 font-sans">
+      <td
+        colSpan={3}
+        className="border-[var(--v3-line)] border-t bg-background p-0 font-sans"
+      >
         <div className="border-l-2 border-l-amber-500 bg-amber-500/[0.06] px-3 py-2">
           <div className="mb-1 text-[11px] text-muted-foreground">
             Comment on {range}
@@ -153,20 +151,20 @@ function CommentEditor({
                 text.trim() && onSubmit(text.trim());
             }}
             placeholder="Ask or note something about this code…"
-            className="min-h-14 border bg-background text-xs"
+            className="min-h-14 rounded-[7px] border bg-background text-xs"
           />
           <div className="mt-1.5 flex items-center gap-1.5">
-            <Button
-              size="xs"
+            <WbBtn
+              primary
               data-comment-save
               disabled={!text.trim()}
               onClick={() => onSubmit(text.trim())}
             >
               {initial ? "Save" : "Comment"}
-            </Button>
-            <Button variant="ghost" size="xs" onClick={onClose}>
+            </WbBtn>
+            <WbBtn className="border-transparent" onClick={onClose}>
               Cancel
-            </Button>
+            </WbBtn>
             <span className="ml-auto text-[10px] text-muted-foreground/70">
               ⌘⏎ sends · Esc cancels
             </span>
@@ -276,8 +274,14 @@ export function DiffView({
   const rowTr = (r: DiffRow, i: number) => {
     if (r.kind === "hunk")
       return (
-        <tr key={i} className="bg-blue-500/[0.06] text-blue-700/80">
-          <td colSpan={3} className="px-3 py-0.5 text-[11px]">
+        <tr key={i} className="text-muted-foreground">
+          <td
+            colSpan={3}
+            className={cn(
+              "border-[var(--v3-line)] px-3.5 py-0.5 text-[11px]",
+              i > 0 && "border-t",
+            )}
+          >
             {r.text}
           </td>
         </tr>
@@ -308,8 +312,8 @@ export function DiffView({
         {...(anchor ? { "data-comment-anchor": anchor } : {})}
         className={cn(
           "group",
-          r.kind === "add" && "bg-emerald-500/[0.09]",
-          r.kind === "del" && "bg-red-500/[0.09]",
+          r.kind === "add" && "bg-emerald-500/[0.07]",
+          r.kind === "del" && "bg-red-500/[0.07]",
           inSel && "bg-amber-500/[0.14]",
           comments && "cursor-pointer",
         )}
@@ -326,9 +330,7 @@ export function DiffView({
       >
         <td
           className={cn(
-            "w-9 select-none border-r px-1.5 text-right align-top text-[11px] text-muted-foreground/70 tabular-nums",
-            r.kind === "add" && "border-l-2 border-l-emerald-500",
-            r.kind === "del" && "border-l-2 border-l-red-500",
+            "w-9 select-none border-[var(--v3-line)] border-r px-1.5 text-right align-top text-[11px] text-muted-foreground/70 tabular-nums",
             comments && "cursor-ns-resize",
           )}
           onMouseDown={
@@ -356,7 +358,7 @@ export function DiffView({
           )}
         </td>
         <td
-          className="relative w-9 select-none border-r px-1.5 text-right align-top text-[11px] text-muted-foreground/70 tabular-nums"
+          className="relative w-9 select-none border-[var(--v3-line)] border-r px-1.5 text-right align-top text-[11px] text-muted-foreground/70 tabular-nums"
           onMouseDown={
             comments
               ? (e) => {
@@ -414,44 +416,56 @@ export function DiffView({
     );
   };
 
-  return (
-    <div
-      className="overflow-hidden rounded-lg border bg-background"
-      data-diff={d.path}
+  const pathLabel = (
+    <span
+      title={d.path}
+      className="min-w-0 flex-1 truncate font-mono text-[12px]"
     >
-      <div className="flex h-9 items-center gap-2 bg-muted/40 px-2.5 text-[13px]">
-        {collapsible && (
+      {dir && <span className="text-muted-foreground">{dir}/</span>}
+      <span className="text-foreground">{name}</span>
+    </span>
+  );
+  return (
+    <div className={cn(CARD, "overflow-hidden")} data-diff={d.path}>
+      <div
+        className={cn(
+          "flex items-center gap-2 px-3.5 py-2 transition-colors hover:bg-[var(--v3-hover)]",
+          open && "border-[var(--v3-line)] border-b",
+        )}
+      >
+        {collapsible ? (
           <button
             type="button"
-            className="text-muted-foreground hover:text-foreground"
+            className="flex min-w-0 flex-1 items-center gap-2 text-left"
             onClick={() => setOpen(!open)}
             aria-label="Toggle file"
+            aria-expanded={open}
           >
-            <ChevronDownIcon
+            <ChevronRightIcon
               className={cn(
-                "size-3.5 transition-transform",
-                !open && "-rotate-90",
+                "size-4 shrink-0 text-muted-foreground transition-transform",
+                open && "rotate-90",
               )}
             />
+            {pathLabel}
           </button>
+        ) : (
+          pathLabel
         )}
+        {/* Status is the only colour on the header: a letter, not a filled chip. */}
         <span
           className={cn(
-            "rounded px-1 font-mono font-semibold text-[10px]",
+            "shrink-0 font-mono font-semibold text-[11px]",
             d.status === "added"
-              ? "bg-emerald-500/10 text-emerald-700"
+              ? "text-emerald-600 dark:text-emerald-400"
               : d.status === "deleted"
-                ? "bg-red-500/10 text-red-700"
-                : "bg-amber-500/10 text-amber-700",
+                ? "text-red-600 dark:text-red-400"
+                : "text-amber-600 dark:text-amber-400",
           )}
         >
           {d.status === "added" ? "A" : d.status === "deleted" ? "D" : "M"}
         </span>
-        <span className="min-w-0 truncate">
-          <span className="font-medium">{name}</span>
-          {dir && <span className="ml-1.5 text-muted-foreground">{dir}</span>}
-        </span>
-        <span className="ml-auto flex shrink-0 items-center gap-2.5">
+        <span className="flex shrink-0 items-center gap-2.5">
           {openMenu && (
             <OpenPathButton
               editors={openMenu.editors}
@@ -459,9 +473,9 @@ export function DiffView({
               label={`Open ${d.path} in an editor or Finder`}
             />
           )}
-          <DiffStat add={d.add} del={d.del} />
+          <AddDel add={d.add} del={d.del} />
           {collapsible && (
-            <label className="flex cursor-pointer items-center gap-1.5 border-l pl-2.5 text-muted-foreground text-xs">
+            <label className="flex cursor-pointer items-center gap-1.5 border-[var(--v3-line)] border-l pl-2.5 text-[12px] text-muted-foreground">
               <input
                 type="checkbox"
                 className="size-3.5 accent-foreground"
@@ -477,7 +491,7 @@ export function DiffView({
         </span>
       </div>
       {open && (
-        <div className="overflow-x-auto border-t font-mono text-[12px] leading-5">
+        <div className="overflow-x-auto py-1.5 font-mono text-[12px] leading-[1.65]">
           <table className="w-full border-collapse">
             <tbody>
               {rows.map((r, i) => {
@@ -518,7 +532,10 @@ export function DiffView({
                       data-comment={c.id}
                       {...(c.resolved ? { "data-resolved": true } : {})}
                     >
-                      <td colSpan={3} className="border-t p-0 font-sans">
+                      <td
+                        colSpan={3}
+                        className="border-[var(--v3-line)] border-t p-0 font-sans"
+                      >
                         <div
                           className={cn(
                             "flex items-start gap-2 px-3 py-1.5 text-xs",

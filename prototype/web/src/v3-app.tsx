@@ -3,6 +3,8 @@ import { type V3Nav, V3Shell, navFromParams, paramsFromNav, paramsText } from "@
 import { V3_DATA, v3Draft } from "./fake-v3"
 import { v3Reply } from "./fake-v3-reply"
 import { StatusBanner, StatusDetails } from "./status-host"
+import { MockThread } from "./thread/mock-thread"
+import { makeThreadSeams } from "./thread/seams"
 import { makeActions } from "./v3-engine/actions"
 
 /* The prototype's one screen: the calm company. The URL mirrors where you
@@ -64,6 +66,11 @@ export default function V3App() {
       }),
     [onToast],
   )
+  // What the thread view needs beyond the actions (send with files, edits to the record).
+  const seams = useMemo(
+    () => makeThreadSeams({ setData, getData: () => dataRef.current, actions, toast: onToast }),
+    [actions, onToast],
+  )
   return (
     <>
       <V3Shell
@@ -72,6 +79,15 @@ export default function V3App() {
         nav={nav}
         onNav={setNav}
         draft={v3Draft}
+        // The real thread view on mock data; widened, it is the session (chat beside its work).
+        renderThread={(p) => (
+          <MockThread
+            {...p}
+            seams={seams}
+            session={nav.full === true}
+            onSession={(open) => setNav((n) => ({ ...n, full: open }))}
+          />
+        )}
         banner={<StatusBanner data={data} onDetails={() => setStatus(true)} />}
       />
       {status && <StatusDetails data={data} onClose={() => setStatus(false)} onCopied={() => onToast("Diagnostics copied")} />}

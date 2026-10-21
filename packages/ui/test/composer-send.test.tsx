@@ -111,7 +111,6 @@ describe("issue #130 refused send keeps the draft", () => {
     const r = render(
       <FocusComposer
         running={false}
-        status="ready"
         placeholder="Steer…"
         hint=""
         onSend={onSend}

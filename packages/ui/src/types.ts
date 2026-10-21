@@ -545,7 +545,8 @@ export type WbTab =
   | "background"
   | "subagents"
   | "plan"
-  | "pr";
+  | "pr"
+  | "details";
 
 /* Open-in-editor / Reveal-in-Finder targets (issue #110): the apps os.open
    knows. Editors arrive from os.editors, already in preference order —

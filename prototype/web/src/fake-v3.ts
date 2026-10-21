@@ -357,10 +357,6 @@ const THREADS: V3Data["threads"] = [
       { text: "Pass 15 runs in a row", state: "current" },
       { text: "Open the PR", state: "todo" },
     ],
-    changes: [
-      { path: "packages/ui/src/lib/wb-probe-cache.ts", add: 12, del: 3 },
-      { path: "packages/ui/src/workbench/workbench.tsx", add: 6, del: 1 },
-    ],
     helpers: [{ text: "Search Playwright issues", took: "2m" }],
     turns: [
       {
@@ -388,7 +384,6 @@ const THREADS: V3Data["threads"] = [
         from: "11:20",
         took: "9m",
         prompt: { by: "ceo", at: "11:20", text: "Where's the race? Don't patch yet, just tell me." },
-        facts: "Read 9 files, ran 4 commands and 18 other steps",
         answer:
           "Found it. On reopen, `restoreScroll()` runs as soon as the cache **hydrates**, but the cached file list paints one frame later. When the paint is slow the restore targets a list that is still empty, so it lands at `0`.\n\n```ts\n// workbench.tsx, today\nuseEffect(() => {\n  if (cache.ready) restoreScroll(saved)\n}, [cache.ready])\n```\n\nThe fix is to wait for the first painted frame (`requestAnimationFrame` twice) before restoring. It only touches `workbench.tsx` and the probe cache.",
         attachments: [
@@ -419,7 +414,6 @@ const THREADS: V3Data["threads"] = [
           at: "11:02",
           text: "LIL-81: ac-544 fails on main about one run in seven (AC-6, scroll position). Reproduce it first and tell me how often it fails.",
         },
-        facts: "Ran 5 commands, read 6 files and 11 other steps",
         steps: [
           { kind: "read", target: "e2e/ac-544-workbench-reopen.spec.ts", meta: "212 lines" },
           { kind: "run", target: "playwright test ac-544 --repeat-each=20", meta: "3 of 20 failed · 3m", failed: true },
@@ -458,7 +452,6 @@ const THREADS: V3Data["threads"] = [
       { text: "Check Reviewer's screenshots", state: "todo" },
       { text: "Merge and start HB-13", state: "todo" },
     ],
-    changes: [],
     turns: [
       {
         n: 1,
@@ -496,7 +489,6 @@ const THREADS: V3Data["threads"] = [
       { text: "Get approval to spend", state: "current" },
       { text: "Run 3 days, report Thursday", state: "todo" },
     ],
-    changes: [{ path: "ads/meta-test.json", add: 48, del: 0 }],
     turns: [
       {
         n: 2,
@@ -520,7 +512,6 @@ const THREADS: V3Data["threads"] = [
         took: "30m",
         prompt: { by: "ceo", at: "10:40", text: "HB-11: run a small paid test of the best hooks from HB-9. Pick the three you trust most." },
         answer: "Picked hooks **2, 5 and 11**: they scored highest with readers and each makes a different promise (speed, memory, calm).",
-        facts: "Read 3 files, browsed 6 pages",
       },
     ],
   },
@@ -543,7 +534,6 @@ const THREADS: V3Data["threads"] = [
       { text: "Collect 20 creators", state: "current" },
       { text: "Vet and fill the sheet", state: "todo" },
     ],
-    changes: [{ path: "creators.csv", add: 7, del: 0 }],
     turns: [
       {
         n: 4,
@@ -558,9 +548,9 @@ const THREADS: V3Data["threads"] = [
           { kind: "web", target: "search: journaling creators 5k–50k", meta: "running", running: true },
         ],
       },
-      { n: 3, from: "11:05", took: "15m", prompt: { by: "ceo", at: "11:05", text: "Start with the terms most likely to find mid-size creators." }, answer: "Found **7** creators so far (in the sheet). Results are starting to repeat.", facts: "Browsed 22 pages, edited 1 file", attachments: [{ kind: "sheet", name: "creators.csv", rows: 7 }] },
-      { n: 2, from: "10:56", took: "9m", answer: "Listed 12 search terms, from “journaling creator” to “bullet journal ASMR”.", facts: "4 searches" },
-      { n: 1, from: "asked by CEO at 10:52", took: "4m", prompt: { by: "ceo", at: "10:52", text: "HB-14: find 20 journaling creators with 5k–50k followers. Cite every one." }, answer: "Read the brief and HB-9's hooks. Starting with search terms.", facts: "Read 2 files" },
+      { n: 3, from: "11:05", took: "15m", prompt: { by: "ceo", at: "11:05", text: "Start with the terms most likely to find mid-size creators." }, answer: "Found **7** creators so far (in the sheet). Results are starting to repeat.", attachments: [{ kind: "sheet", name: "creators.csv", rows: 7 }] },
+      { n: 2, from: "10:56", took: "9m", answer: "Listed 12 search terms, from “journaling creator” to “bullet journal ASMR”." },
+      { n: 1, from: "asked by CEO at 10:52", took: "4m", prompt: { by: "ceo", at: "10:52", text: "HB-14: find 20 journaling creators with 5k–50k followers. Cite every one." }, answer: "Read the brief and HB-9's hooks. Starting with search terms." },
     ],
   },
   {
@@ -578,7 +568,6 @@ const THREADS: V3Data["threads"] = [
     branch: "paywall-copy-ab",
     quote: "Copy B reads better and both variants work on device. Ready for sign-off.",
     summary: "Ran both variants in the simulator, took 2 screenshots",
-    changes: [],
     turns: [
       {
         n: 2,
@@ -597,7 +586,7 @@ const THREADS: V3Data["threads"] = [
           { kind: "think", target: "Both render; B's headline wraps cleanly on the SE screen, A's does not." },
         ],
       },
-      { n: 1, from: "asked by CEO at 11:20", took: "10m", prompt: { by: "ceo", at: "11:20", text: "HB-12: check PR #66 on a real device before I sign off." }, answer: "Built `paywall-copy-ab` for the simulator; booting both devices.", facts: "Ran 3 commands" },
+      { n: 1, from: "asked by CEO at 11:20", took: "10m", prompt: { by: "ceo", at: "11:20", text: "HB-12: check PR #66 on a real device before I sign off." }, answer: "Built `paywall-copy-ab` for the simulator; booting both devices." },
     ],
   },
   {
@@ -613,11 +602,6 @@ const THREADS: V3Data["threads"] = [
     folder: "~/Code/heardback",
     branch: "paywall-copy-ab",
     summary: "Edited 7 files, ran 19 commands · 1 failed run",
-    changes: [
-      { path: "src/paywall/variants.ts", add: 142, del: 20 },
-      { path: "src/paywall/Paywall.tsx", add: 58, del: 18 },
-      { path: "src/paywall/copy.ts", add: 14, del: 0 },
-    ],
     turns: [
       {
         n: 6,
@@ -633,7 +617,7 @@ const THREADS: V3Data["threads"] = [
         answer: "Tests are green after one retry: a snapshot still had the old headline. PR **#66** is open with both variants behind the `paywall_copy` flag.",
         attachments: [{ kind: "pr", num: 66, title: "Paywall copy A/B test", branch: "paywall-copy-ab", add: 214, del: 38 }],
       },
-      { n: 5, from: "10:40", took: "22m", prompt: { by: "ceo", at: "10:40", text: "Put the two headlines behind a flag, 50/50." }, answer: "Wired the variant flag to the paywall; assignment is sticky per user.", facts: "Edited 3 files" },
+      { n: 5, from: "10:40", took: "22m", prompt: { by: "ceo", at: "10:40", text: "Put the two headlines behind a flag, 50/50." }, answer: "Wired the variant flag to the paywall; assignment is sticky per user." },
     ],
   },
   {
@@ -648,8 +632,7 @@ const THREADS: V3Data["threads"] = [
     model: "Opus 5.5 · High",
     folder: "~/Code/heardback",
     summary: "Created 4 tickets",
-    changes: [],
-    turns: [{ n: 1, from: "goal Grow HeardBack conversion", took: "5m", summary: "Split the goal into HB-11 … HB-14.", facts: "Created 4 tickets" }],
+    turns: [{ n: 1, from: "goal Grow HeardBack conversion", took: "5m", summary: "Split the goal into HB-11 … HB-14." }],
   },
   {
     id: "t-hb9",
@@ -663,8 +646,7 @@ const THREADS: V3Data["threads"] = [
     model: "Sonnet 5 · Medium",
     folder: "~/Research/heardback",
     summary: "Read 40 pages, ran 6 commands",
-    changes: [{ path: "hooks/scored.csv", add: 50, del: 0 }],
-    turns: [{ n: 1, from: "asked by CEO at 08:10", took: "38m", summary: "Collected and scored 50 hooks.", facts: "Read 40 pages" }],
+    turns: [{ n: 1, from: "asked by CEO at 08:10", took: "38m", summary: "Collected and scored 50 hooks." }],
   },
   {
     id: "t-lil77",
@@ -679,8 +661,7 @@ const THREADS: V3Data["threads"] = [
     folder: "~/Code/LilOS",
     branch: "docs/one-page",
     summary: "Edited 12 files, ran 8 commands",
-    changes: [{ path: "docs/index.html", add: 310, del: 1240 }],
-    turns: [{ n: 1, from: "asked by CEO at 09:15", took: "47m", summary: "PR #64 merged.", facts: "Edited 12 files" }],
+    turns: [{ n: 1, from: "asked by CEO at 09:15", took: "47m", summary: "PR #64 merged." }],
   },
   {
     id: "t-chat-relay",
@@ -694,7 +675,6 @@ const THREADS: V3Data["threads"] = [
     model: "Opus 5.5 · High",
     folder: "~/Code/LilOS",
     summary: "Answered from schema.ts and the decisions page",
-    changes: [],
     turns: [
       {
         n: 1,

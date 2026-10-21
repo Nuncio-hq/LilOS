@@ -67,7 +67,6 @@ export function planRecords(
       },
       tail: ["Read the ticket and the goal", "Planning the first step…"],
       plan: [{ text: t.title, state: "current" }],
-      changes: [],
       turns: [
         {
           n: 1,

@@ -1,4 +1,3 @@
-import { GlobeIcon } from "lucide-react";
 import { useEffect, useRef } from "react";
 import {
   Terminal,
@@ -11,6 +10,7 @@ import {
   WebPreviewNavigation,
   WebPreviewUrl,
 } from "../components/ai-elements/web-preview";
+import { WbBtn } from "./wb-bits";
 
 /**
  * The live harness surfaces the Workbench renders when `live` is passed
@@ -116,16 +116,22 @@ export function LiveTerminal({
       className="min-h-0 flex-1 rounded-none border-0"
     >
       <TerminalHeader className="py-1.5">
-        <TerminalTitle className="text-xs">
+        <TerminalTitle className="text-[12px]">
           <span className="font-mono">{cwd}</span>
           {/* While the human holds the terminal the badge says so (issue #69
               AC-2): amber `you`, not green `live`. */}
           {held ? (
-            <span className="rounded bg-amber-800 px-1 text-[10px] text-amber-100">
+            <span
+              data-term-badge="you"
+              className="font-medium text-[11px] text-amber-400"
+            >
               you
             </span>
           ) : (
-            <span className="rounded bg-emerald-800 px-1 text-[10px]">
+            <span
+              data-term-badge="live"
+              className="font-medium text-[11px] text-emerald-400"
+            >
               live
             </span>
           )}
@@ -133,16 +139,15 @@ export function LiveTerminal({
         {held && (
           <span
             role="status"
-            className="flex items-center gap-2 rounded bg-amber-900/60 px-2 py-0.5 text-[11px] text-amber-100"
+            className="flex items-center gap-2 text-[12px] text-amber-400"
           >
             You&rsquo;re in control — {agentName ?? "the agent"} waits
-            <button
-              type="button"
+            <WbBtn
+              className="h-6 px-2 text-[12px]"
               onClick={live.releaseTerminal}
-              className="rounded bg-amber-100/15 px-1.5 py-0.5 font-medium hover:bg-amber-100/25"
             >
               Return control
-            </button>
+            </WbBtn>
           </span>
         )}
       </TerminalHeader>
@@ -227,9 +232,9 @@ export function LivePreview({ live }: { live: LiveSurfaces }) {
       }}
       className="rounded-none border-0"
     >
-      <WebPreviewNavigation className="p-1.5">
-        <WebPreviewUrl />
-        <span className="rounded bg-emerald-800 px-1.5 py-0.5 text-[10px] text-emerald-100">
+      <WebPreviewNavigation className="gap-2 border-[var(--v3-line)] px-2.5 py-2">
+        <WebPreviewUrl className="h-auto min-w-0 flex-1 rounded-md border-0 bg-[var(--v3-soft)] px-2.5 py-1 font-mono text-[12px] shadow-none focus-visible:ring-1" />
+        <span className="font-medium text-[12px] text-emerald-600 dark:text-emerald-400">
           live
         </span>
       </WebPreviewNavigation>
@@ -276,8 +281,7 @@ export function LivePreview({ live }: { live: LiveSurfaces }) {
             }}
           />
         ) : (
-          <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center text-muted-foreground text-xs">
-            <GlobeIcon className="size-5" />
+          <div className="flex h-full flex-col items-start justify-center gap-3 bg-background p-5 text-[13.5px] text-muted-foreground/70">
             {live.previews.length > 0 ? (
               <>
                 <p>The thread's dev server:</p>
@@ -285,12 +289,12 @@ export function LivePreview({ live }: { live: LiveSurfaces }) {
                   <button
                     key={p.url}
                     type="button"
-                    className="rounded border border-border px-2 py-1 font-mono hover:bg-accent"
+                    className="rounded-[7px] border border-foreground/15 px-2.5 py-1 font-mono text-[12px] text-foreground hover:bg-[var(--v3-hover)]"
                     onClick={() => live.navigate(p.url)}
                     title={`open ${p.url} (found via ${p.via})`}
                   >
                     {p.url}
-                    <span className="ml-1 text-[10px] text-muted-foreground">
+                    <span className="ml-1.5 text-[11px] text-muted-foreground">
                       {p.via}
                     </span>
                   </button>

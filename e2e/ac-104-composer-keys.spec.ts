@@ -111,7 +111,11 @@ test("AC-2 Esc with no turn running does nothing (no Stop → nothing)", async (
   // closes the session view back to the thread — it never touches the turn.
   await draft.fill("Say hello then list files");
   await v3Peek(page).getByRole("button", { name: "Send" }).click();
-  await expect(page.getByPlaceholder(/Reply to /)).toBeVisible({
+  await expect(
+    v3Peek(page)
+      .locator("[data-thread-panel]")
+      .getByPlaceholder(/^Message [^…]+…$/),
+  ).toBeVisible({
     timeout: 90_000,
   });
   // #577: hop into the session view so Esc closes it and lands back on the
@@ -222,7 +226,7 @@ async function ac5Recall(stack: Stack, page: Page, shots: string) {
   // whether the running turn has finished (a steer counts too). The
   // composer placeholder names the state — idle, running or waiting —
   // and never the new-chat draft's "Message Default…".
-  const box = panel.getByPlaceholder(/Reply to |is working|is waiting/);
+  const box = panel.getByPlaceholder(/^Message |is waiting/);
   await box.fill("second reply: make it blue");
   await box.press("Enter");
   await expect(

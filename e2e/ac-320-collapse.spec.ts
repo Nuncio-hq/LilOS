@@ -56,7 +56,7 @@ test("AC-1/2/3 collapsing a running turn's steps stays collapsed; approval stays
     await turn.locator(TRIGGER).first().click();
     await expect(turn.locator(PANEL)).toHaveCount(0);
     // The collapsed header still shows the live state (running tool / pulse).
-    await expect(turn.locator("[data-tasksteps]")).toContainText(/…|steps/);
+    await expect(turn.locator("[data-tasksteps]")).toContainText(/Working · /);
 
     // AC-2: the parked approval renders outside the collapsed block — it's
     // visible and answerable while the steps stay folded.
@@ -81,7 +81,9 @@ test("AC-1/2/3 collapsing a running turn's steps stays collapsed; approval stays
     await expectSettled(turn);
     // More than one step landed while it was collapsed, and at turn end it
     // folded to "N steps" (the user never re-opened it).
-    await expect(turn.locator("[data-tasksteps]")).toContainText(/\d+ steps?/);
+    await expect(turn.locator("[data-tasksteps]")).toContainText(
+      /Worked.*· .*\d+ (?:files?|searche?s?|commands?|pages?|tasks?|steps?|other)/,
+    );
     await expect(turn.locator(PANEL)).toHaveCount(0);
     await page.screenshot({ path: `${SHOTS}/settled-collapsed.png` });
 
@@ -133,7 +135,9 @@ test("AC-3 a user-opened steps block stays open through turn end", async ({
     // row's id swap may remount the card; the persisted collapse state must
     // survive it either way).
     await expect(turn.locator(PANEL)).toBeVisible();
-    await expect(turn.locator("[data-tasksteps]")).toContainText(/\d+ steps?/);
+    await expect(turn.locator("[data-tasksteps]")).toContainText(
+      /Worked.*· .*\d+ (?:files?|searche?s?|commands?|pages?|tasks?|steps?|other)/,
+    );
     await page.screenshot({ path: `${SHOTS}/settled-useropen.png` });
   } finally {
     await stack.stop();
@@ -193,7 +197,7 @@ test("screens: collapsed running block, light + dark, three widths", async ({
     const lightTurn = await collapseTurn();
     await allowAllWhile(page, expectSettled(lightTurn));
     await expect(lightTurn.locator("[data-tasksteps]")).toContainText(
-      /\d+ steps?/,
+      /Worked.*· .*\d+ (?:files?|searche?s?|commands?|pages?|tasks?|steps?|other)/,
     );
     await expect(lightTurn.locator(PANEL)).toHaveCount(0);
     await page.screenshot({ path: `${SHOTS}/settled-1288x700-light.png` });

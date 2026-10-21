@@ -157,8 +157,8 @@ test("AC-2 at 1024px the header names the employee, the composer stays one row, 
   await panelIntoFocus(page);
   const session = v3Peek(page);
 
-  /* The header names the employee — "DM · <name>" sits beside the avatar. */
-  await expect(session.locator("header")).toContainText(/DM · \w+/, {
+  /* The header names the employee — the kicker reads "Chat · <name>". */
+  await expect(session.locator("header")).toContainText(/Chat · \w+/, {
     timeout: 15_000,
   });
   await page.screenshot({ path: `${SHOTS}/ac-2-header-1024.png` });

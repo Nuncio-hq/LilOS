@@ -189,16 +189,14 @@ async function toThreadPanel(page: Page) {
 }
 
 async function toFocus(page: Page) {
-  await page
-    .locator("[data-thread-panel]")
-    .getByRole("button", { name: "Focus", exact: true })
-    .click();
+  await v3Peek(page).getByTitle("Widen over the page", { exact: true }).click();
   await expect(page).toHaveURL(/[#&]full=1(&|$)/);
-  /* The session view mounts a fresh FocusView — wait for its own chrome
-     ("Back to DM") so assertions/screenshots can't race the swap-in frame. */
-  await expect(page.getByRole("button", { name: /back to dm/i })).toBeVisible({
-    timeout: 15_000,
-  });
+  /* The session view mounts a fresh FocusView — wait for the peek's own
+     Narrow (the widened state) so assertions/screenshots can't race the
+     swap-in frame. */
+  await expect(
+    v3Peek(page).getByTitle("Narrow, back beside the page", { exact: true }),
+  ).toBeVisible({ timeout: 15_000 });
 }
 
 /** Kill the relay and wait until the page's socket noticed the drop. */

@@ -166,7 +166,6 @@ describe("issue #576 composer keys — Esc never stops", () => {
     const c = render(
       <FocusComposer
         running={true}
-        status="streaming"
         placeholder="Continue…"
         hint=""
         onSend={() => {}}

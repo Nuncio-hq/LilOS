@@ -187,7 +187,6 @@ export function askActions({ setData, toast }: Engine): Pick<
           },
           tail: ["Read the last thread’s searches", "Switching approach…"],
           plan: [{ text: "Take over from the last hand", state: "current" }],
-          changes: [],
           turns: [
             {
               n: 1,

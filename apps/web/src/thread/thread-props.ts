@@ -17,6 +17,7 @@ export function sharedViewProps(d: ThreadData) {
   return {
     root: d.rootMsg,
     thread: d.thread,
+    threadStatus: d.status,
     channel: d.uiChannel,
     emp: d.empFn,
     human: humanFor,

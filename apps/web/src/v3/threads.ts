@@ -45,7 +45,7 @@ export function oneLine(text: string, max: number): string {
 
 /** ThreadStatus → the shared status word. A thread that finished and is
     seen, or finished and unseen, is `done` (unseen marks the latter). */
-const STATUS: Record<ThreadStatus, V3Status> = {
+export const V3_STATUS: Record<ThreadStatus, V3Status> = {
   needs: "needs",
   working: "working",
   failed: "failed",
@@ -222,7 +222,7 @@ function threadRows(src: ThreadSources, archived: boolean): V3Thread[] {
         id: c.id,
         agentId,
         title,
-        status: STATUS[status],
+        status: V3_STATUS[status],
         ...(status === "unseen" ? { unseen: true } : {}),
         startedAt: clockOrDate(c.createdAt, src.now),
         minutes: Math.max(

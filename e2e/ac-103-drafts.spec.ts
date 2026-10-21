@@ -52,7 +52,7 @@ test.describe.configure({ mode: "serial" });
 const DEFAULT_AGENT = { id: "default", name: "Default" };
 
 /* The thread's reply box in the peek. By textarea, not by placeholder: the
-   placeholder follows the turn ("Reply to…" idle, "…is working" mid-turn) and
+   placeholder follows the turn ("Message X…" idle, "Message X… it reads this…" mid-turn) and
    a draft is typed whatever the turn is doing. */
 const threadComposer = (page: Page) =>
   v3Peek(page).locator("[data-thread-panel] textarea");

@@ -1,18 +1,13 @@
 import { useControllableState } from "@radix-ui/react-use-controllable-state";
-import type { ChatStatus } from "ai";
-import { PaperclipIcon, SquareIcon } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
 import {
   PromptInput,
   PromptInputAttachment,
   PromptInputAttachments,
   PromptInputBody,
-  PromptInputButton,
   PromptInputFooter,
-  PromptInputSubmit,
   PromptInputTextarea,
   PromptInputTools,
-  usePromptInputAttachments,
 } from "../components/ai-elements/prompt-input";
 import type {
   AttachedFile,
@@ -20,28 +15,19 @@ import type {
   ModelOption,
   ModelPickerExtras,
 } from "../types";
-import { FileSeeder } from "./composer";
 import { composerKeyDown } from "./composer-keys";
+import {
+  AttachButton,
+  ComposerKbd,
+  FileSeeder,
+  SendPill,
+  StopPill,
+} from "./composer-parts";
 import { parseSlashDraft } from "./composer-slash";
 import { choiceFor, ModelPicker } from "./model-picker";
 
-/* Same attach UX as the main composer: the paperclip opens PromptInput's file dialog. */
-function FocusAttachButton() {
-  const attachments = usePromptInputAttachments();
-  return (
-    <PromptInputButton
-      onClick={attachments.openFileDialog}
-      aria-label="Attach files"
-      className="text-foreground/70"
-    >
-      <PaperclipIcon />
-    </PromptInputButton>
-  );
-}
-
 export function FocusComposer({
   running,
-  status,
   placeholder,
   hint,
   choice,
@@ -64,7 +50,6 @@ export function FocusComposer({
   tools,
 }: {
   running: boolean;
-  status: ChatStatus;
   placeholder: string;
   hint: string;
   /* The session's pick; defaults to the first model. */
@@ -131,7 +116,7 @@ export function FocusComposer({
   return (
     // While the employee works, Enter steers the turn (session.steer — the default and only behavior;
     // the running-state placeholder/hint come from the shared runningComposer in agent-chat.tsx).
-    <div ref={wrapRef}>
+    <div ref={wrapRef} className="@container">
       <PromptInput
         accept={accept}
         multiple
@@ -180,7 +165,7 @@ export function FocusComposer({
           <FileSeeder seed={seedFiles} onSeeded={onSeededFiles} />
         ) : null}
         {accept && (
-          <PromptInputAttachments className="px-3 pt-3 pb-0">
+          <PromptInputAttachments className="px-0 pt-0 pb-2">
             {(file) => <PromptInputAttachment data={file} />}
           </PromptInputAttachments>
         )}
@@ -195,13 +180,12 @@ export function FocusComposer({
               setDraft,
             })}
             placeholder={placeholder}
-            className="min-h-14"
           />
         </PromptInputBody>
         <PromptInputFooter>
           {/* #590 AC-2: one row of controls — the hint truncates first. */}
-          <PromptInputTools className="min-w-0 overflow-hidden">
-            {accept && <FocusAttachButton />}
+          <PromptInputTools className="min-w-0 flex-1 overflow-hidden">
+            {accept && <AttachButton />}
             {onModel && models?.length ? (
               <ModelPicker
                 value={choice ?? choiceFor(models[0].id, models)}
@@ -213,25 +197,20 @@ export function FocusComposer({
               />
             ) : null}
             {tools}
-            <span className="lilos-hint hidden truncate text-muted-foreground text-xs md:inline">
+            <span className="lilos-hint hidden truncate pl-1 text-[12.5px] text-muted-foreground">
               {hint}
             </span>
           </PromptInputTools>
-          <div className="flex shrink-0 items-center gap-1">
-            {running && !draft.trim() && onStop ? (
-              <PromptInputSubmit
-                status={status}
-                type="button"
-                onClick={onStop}
-                title="Stop (⌘.)"
-                aria-label="Stop (⌘.)"
-              >
-                <SquareIcon className="size-3.5 fill-current" />
-              </PromptInputSubmit>
-            ) : (
-              <PromptInputSubmit disabled={sending || !draft.trim()} />
-            )}
-          </div>
+          <ComposerKbd className="hidden @min-[420px]:inline" />
+          {running && !draft.trim() && onStop ? (
+            <StopPill onStop={onStop} />
+          ) : (
+            <SendPill
+              hasDraft={!!draft.trim()}
+              working={running}
+              sending={sending}
+            />
+          )}
         </PromptInputFooter>
       </PromptInput>
     </div>

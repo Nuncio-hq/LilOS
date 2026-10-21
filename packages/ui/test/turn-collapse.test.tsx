@@ -11,7 +11,8 @@ import {
   ReasoningTrigger,
 } from "../src/components/ai-elements/reasoning";
 import { TurnSubagents } from "../src/conversation/subagents";
-import { AgentTurn, TurnSteps } from "../src/conversation/turns";
+import { TurnWork } from "../src/conversation/turn-work";
+import { AgentTurn } from "../src/conversation/turns";
 import type { EmpFn, Reply, Step, Subagent } from "../src/types";
 
 if (typeof globalThis.ResizeObserver === "undefined") {
@@ -70,27 +71,27 @@ function triggerOf(container: HTMLElement) {
 }
 
 describe("AC-1/2: user collapse beats auto-open while the turn runs", () => {
-  test("TurnSteps: click collapses and it stays collapsed as steps land", () => {
+  test("TurnWork: click collapses and it stays collapsed as steps land", () => {
     const { container, rerender } = render(
-      <TurnSteps steps={[step("patch", true)]} autoOpen />,
+      <TurnWork steps={[step("patch", true)]} autoOpen />,
     );
     // Auto-open as today: the steps panel is in the DOM.
     expect(panel(container)).toBeTruthy();
 
     act(() => fireEvent.click(triggerOf(container)));
-    // Collapsed: the panel unmounts; the header keeps the live "patch…" state.
+    // Collapsed: the panel unmounts; the header keeps the live "Working" state.
     expect(panel(container)).toBeFalsy();
-    expect(container.textContent).toContain("patch…");
+    expect(container.textContent).toContain("Working · Editing patch-cmd");
 
     // Two more steps land — the block must not re-open.
     rerender(
-      <TurnSteps
+      <TurnWork
         steps={[step("patch"), step("read"), step("patch", true)]}
         autoOpen
       />,
     );
     expect(panel(container)).toBeFalsy();
-    expect(container.textContent).toContain("patch…");
+    expect(container.textContent).toContain("Working · Editing patch-cmd");
   });
 
   test("TurnSubagents: same collapse rules", () => {
@@ -128,33 +129,33 @@ describe("AC-1/2: user collapse beats auto-open while the turn runs", () => {
 });
 
 describe("AC-3: turn end collapses unless the user opened it", () => {
-  test("TurnSteps: untouched auto-open collapses at turn end", () => {
+  test("TurnWork: untouched auto-open collapses at turn end", () => {
     const { container, rerender } = render(
-      <TurnSteps steps={[step("patch", true)]} autoOpen />,
+      <TurnWork steps={[step("patch", true)]} autoOpen />,
     );
     expect(panel(container)).toBeTruthy();
-    rerender(<TurnSteps steps={[step("patch")]} autoOpen={false} />);
+    rerender(<TurnWork steps={[step("patch")]} autoOpen={false} />);
     expect(panel(container)).toBeFalsy();
-    expect(container.textContent).toContain("1 step");
+    expect(container.textContent).toContain("Worked · edited 1 file");
   });
 
-  test("TurnSteps: a user-opened block stays open at turn end", () => {
+  test("TurnWork: a user-opened block stays open at turn end", () => {
     const { container, rerender } = render(
-      <TurnSteps steps={[step("patch", true)]} autoOpen />,
+      <TurnWork steps={[step("patch", true)]} autoOpen />,
     );
     // Collapse, then re-open while the turn still runs.
     act(() => fireEvent.click(triggerOf(container)));
     act(() => fireEvent.click(triggerOf(container)));
     expect(panel(container)).toBeTruthy();
 
-    rerender(<TurnSteps steps={[step("patch")]} autoOpen={false} />);
+    rerender(<TurnWork steps={[step("patch")]} autoOpen={false} />);
     expect(panel(container)).toBeTruthy();
   });
 
   test("AgentTurn: user-opened steps survive the live→relay-row id swap", () => {
     /* The web thread keys rows `r.turnId ?? r.id`; the settled card claims its
        relay row id while turnId stays — so AgentTurn must NOT remount (a
-       remount drops TurnSteps' userSet and silently folds a user-opened
+       remount drops TurnWork' userSet and silently folds a user-opened
        block). Rendered through the same list shape thread/focus views use. */
     const live: Reply = {
       id: "live-t1",

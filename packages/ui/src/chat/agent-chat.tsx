@@ -113,7 +113,7 @@ export function ConversationKeepBottom({
    anymore, so nothing is "sent after this turn" and nothing auto-runs: each item waits with visible,
    keyboard-reachable actions — Send (runs it now as a new prompt in this thread) and remove.
    thread.queue holds ONLY these. Used by the thread panel composer and the Focus tray.
-   Action hierarchy (issue #15): Send is THE primary action (solid blue); remove is a neutral muted
+   Action hierarchy (issue #15): Send is THE primary action (the solid ink pill); remove is a neutral muted
    icon that only turns red on hover, so the destructive action never reads as the primary one. */
 export function NotSentTray({
   items,
@@ -128,24 +128,21 @@ export function NotSentTray({
 }) {
   if (!items.length) return null;
   return (
-    <div
-      className="mb-1.5 rounded-lg border border-blue-300 bg-blue-50 px-2.5 py-1.5 text-xs"
-      data-notsent
-    >
-      <div className="mb-1 flex items-center gap-1.5 font-medium text-blue-900">
+    <div className="mb-2 text-[12.5px]" data-notsent>
+      <div className="flex items-center gap-1.5 pb-1 text-muted-foreground">
         <CircleStopIcon className="size-3.5 shrink-0" />
         {items.length} not sent · turn stopped
       </div>
-      <ul>
+      <ul className="space-y-1">
         {items.map((q, i) => (
-          <li key={i} className="flex items-center gap-2 py-0.5">
-            <span className="shrink-0 font-mono text-[10px] text-blue-700">
+          <li
+            key={i}
+            className="flex items-center gap-2 rounded-xl bg-[var(--v3-soft)] px-3 py-1.5 text-[13.5px] text-foreground"
+          >
+            <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
               {i + 1}
             </span>
-            <span
-              className="min-w-0 flex-1 truncate text-blue-950"
-              title={plain(q)}
-            >
+            <span className="min-w-0 flex-1 truncate" title={plain(q)}>
               {plain(q)}
             </span>
             {onSend && (
@@ -153,7 +150,7 @@ export function NotSentTray({
                 type="button"
                 onClick={() => onSend(i)}
                 data-notsent-send={i}
-                className="shrink-0 rounded bg-blue-600 px-2 py-0.5 font-medium text-white hover:bg-blue-700"
+                className="h-6 shrink-0 rounded-[7px] border border-foreground bg-foreground px-2 font-medium text-[12.5px] text-background transition-colors hover:bg-foreground/85"
               >
                 Send
               </button>
@@ -168,7 +165,7 @@ export function NotSentTray({
                         onClick={() => onRemove(i)}
                         aria-label="Remove"
                         data-notsent-remove={i}
-                        className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600 dark:text-blue-300 dark:hover:text-red-900"
+                        className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-[var(--v3-hover)] hover:text-foreground"
                       />
                     }
                   >
@@ -193,7 +190,7 @@ export function NotSentTray({
 export function ReconnectingLine() {
   return (
     <div
-      className="mb-1 flex items-center gap-1.5 px-2 text-amber-800 text-xs dark:text-amber-300"
+      className="mb-1.5 flex items-center gap-1.5 px-0.5 text-[12.5px] text-amber-800 dark:text-amber-300"
       data-reconnecting
       role="status"
     >
@@ -213,7 +210,7 @@ export function ReconnectingLine() {
    · no steer: they run in order, one prompt each, when the turn ends (issue #9).
    Edit pulls an item back into the composer (it leaves the queue); Remove drops it. Neither is a Send:
    sending now is impossible mid-turn — the Stop button stops the turn, and anything still here moves to the not-sent
-   tray. Amber: the "waiting on the turn" family (the landed steer rows share it).
+   tray. Quiet and neutral like the prototype's queued line — colour is for status only.
    Rows are bare strings, or `{text, removable}` (#315): the engine already holds an
    accepted-but-unlanded steer (`removable: false`), so its row lists in the tray but
    Edit/Remove stay hidden. #676: `{files}` carries the send's attachments — an image
@@ -254,31 +251,34 @@ export function QueuedTray({
   const one = items.length === 1;
   return (
     <div
-      className="mb-1.5 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs"
+      className="mb-2 text-[12.5px]"
       data-queued
       data-queued-mode={steer ? "steer" : "next"}
     >
-      <div className="flex items-center gap-1.5 font-medium text-amber-900">
-        <ClockIcon className="size-3.5 shrink-0 animate-pulse" />
-        {items.length} waiting · {name} hasn&apos;t read {one ? "it" : "them"}{" "}
-        yet
+      <div
+        className="flex items-center gap-1.5 pb-1 text-muted-foreground"
+        data-queued-when
+      >
+        <ClockIcon className="size-3.5 shrink-0" />
+        Queued · {name} reads {one ? "this" : "these"}{" "}
+        {steer ? "at the next step" : "after the current turn"}
       </div>
-      <div className="mb-1 pl-5 text-[11px] text-amber-800" data-queued-when>
-        {steer
-          ? `${one ? "Lands" : "Each lands"} at the next step of this turn, or runs next`
-          : `${one ? "Runs" : "Run in order"} when this turn ends`}
-      </div>
-      <ul>
+      <ul className="space-y-1">
         {items.map((q, i) => {
           const files = queuedItemFiles(q);
           return (
-            <li key={i} className="group/q flex items-center gap-2 py-0.5">
-              <span className="shrink-0 font-mono text-[10px] text-amber-700">
-                {i + 1}
-              </span>
+            <li
+              key={i}
+              className="group/q flex items-center gap-2 rounded-xl bg-[var(--v3-soft)] px-3 py-1.5 text-[13.5px] text-foreground"
+            >
+              {!one && (
+                <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+                  {i + 1}
+                </span>
+              )}
               <div className="min-w-0 flex-1">
                 <span
-                  className="block truncate text-amber-950"
+                  className="block truncate"
                   title={plain(queuedItemText(q))}
                 >
                   {plain(queuedItemText(q))}
@@ -295,7 +295,7 @@ export function QueuedTray({
                           onClick={() => onEdit(i)}
                           aria-label="Edit"
                           data-queued-edit={i}
-                          className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:bg-amber-100 hover:text-amber-900 dark:text-amber-300 dark:hover:text-amber-900"
+                          className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-[var(--v3-hover)] hover:text-foreground"
                         />
                       }
                     >
@@ -315,7 +315,7 @@ export function QueuedTray({
                           onClick={() => onRemove(i)}
                           aria-label="Remove"
                           data-queued-remove={i}
-                          className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600 dark:text-amber-300 dark:hover:text-red-900"
+                          className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-[var(--v3-hover)] hover:text-foreground"
                         />
                       }
                     >
@@ -336,17 +336,17 @@ export function QueuedTray({
 /* Running-state composer copy, one source for both surfaces: whether Enter steers the running turn
    or queues for after it depends on the engine's declared steer capability (issue #9). Idle hints
    stay surface-specific at the call sites. `agentWork` (#308): while an engine-initiated leg runs
-   there's no user turn to steer — Enter queues, and the placeholder names whose work it is. */
+   there's no user turn to steer — Enter queues. */
 export const runningComposer = (
   name: string,
   steer: boolean,
   agentWork = false,
 ) => ({
   placeholder: agentWork
-    ? `${name} is working on its own. Enter queues it for when the turn ends…`
+    ? `Message ${name}… working on its own, it reads this when the turn ends`
     : steer
-      ? `${name} is working. Enter steers this turn…`
-      : `${name} is working. Enter queues it for when the turn ends…`,
+      ? `Message ${name}… it reads this at the next step`
+      : `Message ${name}… it reads this after the current turn`,
   hint:
     steer && !agentWork ? "Enter steers · ⌘. stop" : "Enter queues · ⌘. stop",
 });

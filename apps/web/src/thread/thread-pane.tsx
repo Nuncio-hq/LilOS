@@ -53,7 +53,6 @@ export function startFreshOpener(
  */
 export function ThreadPane({
   d,
-  onFocus,
   onOpenTab,
   onClose,
   scrollTo,
@@ -61,9 +60,7 @@ export function ThreadPane({
   nav,
 }: {
   d: ThreadData;
-  /** The header's ↗ — into the session view. */
-  onFocus?: () => void;
-  /** "N subagents · Open" / "N files changed" — the session view on that tab. */
+  /** The work strip, "N subagents · Open" and "N files changed" — the session view on that tab. */
   onOpenTab?: (t: WbTab) => void;
   /** Esc — close the panel. */
   onClose?: () => void;
@@ -94,7 +91,7 @@ export function ThreadPane({
         onModel={d.models ? d.onModel : undefined}
         onOpenSession={sessionOpener(d, nav)}
         onOpenTab={onOpenTab}
-        onFocus={onFocus}
+        browser={window.lilos?.browser != null}
         onClose={onClose}
         /* #581 AC-2: a folder-less DM thread gets "Add a folder" — the pick
            moves the session there (same thread, same memory). The panel

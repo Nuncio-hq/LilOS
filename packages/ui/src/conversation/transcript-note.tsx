@@ -7,9 +7,9 @@ import type { TranscriptNote } from "../types";
    the dashed tail box (#28 is about the live tail). The trimmed divider is
    centered low-emphasis — muted text between hairlines, the same
    vocabulary the transcript's separators use — with ≥24px hairlines so
-   the text can't swallow them. `className` merges into the unavailable
-   box: the views' content columns differ (ThreadView pads nothing, Focus
-   pads px-5), so each keeps its own outer insets. */
+   the text can't swallow them. The column (peek or session) supplies the
+   horizontal insets, so the note carries none. `className` merges into the
+   unavailable box. */
 export function TranscriptNoteRow({
   note,
   className,
@@ -22,11 +22,11 @@ export function TranscriptNoteRow({
       <div
         data-transcript-note
         data-kind="trimmed"
-        className="my-2 flex items-center gap-2 px-3 text-muted-foreground text-xs sm:px-5"
+        className="flex items-center gap-3 text-[12.5px] text-muted-foreground/70"
       >
-        <span className="h-px min-w-6 flex-1 bg-border" />
+        <span className="h-px min-w-6 flex-1 bg-[var(--v3-line)]" />
         <span className="min-w-0 shrink text-center">{note.text}</span>
-        <span className="h-px min-w-6 flex-1 bg-border" />
+        <span className="h-px min-w-6 flex-1 bg-[var(--v3-line)]" />
       </div>
     );
   }
@@ -35,7 +35,7 @@ export function TranscriptNoteRow({
       data-transcript-note
       data-kind="unavailable"
       className={cn(
-        "rounded-lg border border-dashed px-3 py-2 text-muted-foreground text-xs",
+        "rounded-[10px] border border-[var(--v3-line)] border-dashed px-4 py-3 text-[13.5px] text-muted-foreground",
         className,
       )}
     >

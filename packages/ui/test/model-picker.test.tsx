@@ -362,7 +362,6 @@ describe("model picker v2", () => {
   test("AC-3 the composer shows no picker without a handler or a model list", () => {
     const props = {
       running: false,
-      status: "ready" as const,
       placeholder: "Message…",
       hint: "",
       onSend: () => {},
