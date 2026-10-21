@@ -72,7 +72,11 @@ const noDm = async (page: Page) =>
 async function shoot(page: Page, name: string) {
   for (const scheme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme: scheme });
-    await page.screenshot({ path: path.join(SHOTS, `${name}-${scheme}.png`) });
+    // The peek fades in: finish it, so the evidence shows the record itself.
+    await page.screenshot({
+      path: path.join(SHOTS, `${name}-${scheme}.png`),
+      animations: "disabled",
+    });
   }
   await page.emulateMedia({ colorScheme: "light" });
 }

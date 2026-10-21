@@ -241,6 +241,14 @@ test("AC-3 the project menu and the session header offer direct mode only (no wo
   await page.screenshot({ path: `${SHOTS}/ac-3-direct-only.png` });
   await menu.getByRole("menuitemradio", { name: /lilos-repo-a/ }).click();
   await expect(chip).toContainText("lilos-repo-a");
+  // The project's folder is spelled like the recents (`~/…`, D-#771), so the
+  // draft finds it there: the checked-out branch shows beside the Project
+  // chip instead of "direct · no git".
+  await expect(peek.getByTitle(/Direct mode: edits land/)).toContainText(
+    "trunk",
+    { timeout: 15_000 },
+  );
+  await expect(peek.getByText("direct · no git")).toHaveCount(0);
   await peek.getByPlaceholder("Message Default…").fill("direct mode check");
   await peek.getByRole("button", { name: "Send" }).click();
   await expect(page).toHaveURL(/open=thread:[^&]+/, { timeout: 30_000 });
@@ -413,6 +421,11 @@ test("AC-5 projects persist across reload in the order they were made; the New p
   await expect(
     dialog.locator(`[data-discovered="${shown(repoDir)}"]`),
   ).toBeVisible();
+  // One spelling (D-#771): a thread started from the project's folder bumped
+  // the recents row already there, so the repo is offered once, not twice.
+  await expect(
+    dialog.locator("[data-discovered]").filter({ hasText: "lilos-repo-a" }),
+  ).toHaveCount(1);
   await expect(
     dialog.locator(`[data-discovered="${shown(goneDir)}"]`),
   ).toHaveCount(0);

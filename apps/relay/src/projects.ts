@@ -1,5 +1,5 @@
 import type { Project, WorkspaceIntent } from "@lilos/contracts/app";
-import { expandPath } from "@lilos/host";
+import { collapsePath, expandPath } from "@lilos/host";
 import type { RelayStore } from "./store";
 
 /**
@@ -8,15 +8,20 @@ import type { RelayStore } from "./store";
  * `thread_start` — sees the same projects without ever sending a project id:
  * they send the folder they mean (`cwd`) and the relay resolves it here.
  */
-
 /**
- * The folder a project is keyed by: absolute, `~` expanded against the
- * Mac's home, no trailing slash — so `~/Code/LilOS`, `/Users/x/Code/LilOS/`
- * and the project's own stored folder all name the same project.
+ * The ONE spelling a project's folder is stored and compared in: the
+ * `~`-collapsed form every recents writer already uses (`collapsePath`, as
+ * in the harness's move and `folders.add` for a phone), no trailing slash.
+ * A project pick sends `cwd: project.folder`, so the relay's recents bump
+ * lands on the existing row and the UI's folder lookup
+ * (`recents.find(f => f.path === project.folder)`) hits — a second spelling
+ * would list the repo twice. Matching is by this form: `~/Code/LilOS`,
+ * `/Users/x/Code/LilOS/` and the stored folder all name the same project.
+ * Folders outside the home stay absolute.
  */
 export function projectFolderOf(path: string, home: string): string {
   const abs = expandPath(path, home);
-  return abs.length > 1 ? abs.replace(/\/+$/, "") : abs;
+  return collapsePath(abs.length > 1 ? abs.replace(/\/+$/, "") : abs, home);
 }
 
 /**

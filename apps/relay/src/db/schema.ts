@@ -52,8 +52,8 @@ export const channels = sqliteTable(
 );
 
 /**
- * Projects (D-#771): a folder the company works in. `folder` is an absolute
- * path and unique — one project per folder — and `key` is the unique short
+ * Projects (D-#771): a folder the company works in. `folder` is the
+ * `~`-collapsed path recents use (`projectFolderOf`) and unique — one project per folder — and `key` is the unique short
  * uppercase tag. Rows are only ever created by the relay itself (first use
  * of a folder, `projects.create`); nothing renames or deletes them yet, so
  * a thread's `project_id` never dangles.

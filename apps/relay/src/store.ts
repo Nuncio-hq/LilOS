@@ -47,7 +47,8 @@ export const noFolderDedupeKey = (key: string | null | undefined): boolean =>
 
 /** A project as the relay creates it (D-#771). */
 export interface NewProject {
-  /** Absolute path, already normalized — the unique key of the record. */
+  /** The canonical `~`-collapsed spelling (`projectFolderOf`) — the unique key
+      of the record, the same one the recents list uses. */
   folder: string;
   /** Defaults to the folder's basename. */
   name?: string;
@@ -56,8 +57,10 @@ export interface NewProject {
   createdAt?: number;
 }
 
-/** A project's name when none is given: the folder's last segment. */
+/** A project's name when none is given: the folder's last segment; the home
+    folder itself (`~`) has no segment worth showing, so it is "Home". */
 export function projectNameFor(folder: string): string {
+  if (folder === "~") return "Home";
   return folder.replace(/\/+$/, "").split("/").pop() || folder;
 }
 
@@ -365,8 +368,9 @@ export interface RelayStore {
   listProjects(): Promise<Project[]>;
   getProject(id: string): Promise<Project | null>;
   /**
-   * Get-or-create the project for `folder` (an absolute, normalized path —
-   * the caller expands `~`). One atomic step, so two opens into a new folder
+   * Get-or-create the project for `folder` (already in the canonical
+   * spelling — `projectFolderOf` normalizes). One atomic step, so two opens
+   * into a new folder
    * can never make two projects: `created: false` answers the stored row
    * unchanged (name/about are only applied on create). The key is derived
    * from the name and made unique here.

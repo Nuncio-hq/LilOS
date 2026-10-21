@@ -19,8 +19,10 @@ export const Project = z.object({
   name: z.string().min(1),
   /** Unique short tag, derived from the name by the relay. */
   key: ProjectKey,
-  /** Absolute path, unique: one project per folder. A `~/x` pick is
-      expanded against the Mac's home before it is stored or compared. */
+  /** Unique: one project per folder. Stored in the `~`-collapsed spelling
+      the recent-folders list uses (`~/Code/LilOS`; absolute only outside
+      the Mac's home), so a project pick (`cwd: project.folder`) and the
+      recents never list one repo twice. Any spelling sent is normalized. */
   folder: z.string().min(1),
   about: z.string(),
   createdAt: Timestamp,

@@ -392,7 +392,7 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
        and by key. A thread points at its project (`project_id`, NULL = a
        plain chat). The columns only; filing the existing conversations is
        the boot backfill (`apps/relay/src/projects.ts`), because it needs
-       the Mac's home folder to expand `~/x` cwds into project folders. */
+       the Mac's home folder to put every cwd into the one `~/x` spelling. */
     version: 28,
     statements: [
       `CREATE TABLE projects (

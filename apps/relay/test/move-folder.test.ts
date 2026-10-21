@@ -203,7 +203,7 @@ describe("conversations.moveFolder (#581)", () => {
     const upserted = eventsNamed(user.frames, "project.upserted");
     expect(upserted).toHaveLength(1);
     const { project } = ProjectUpsertedEvent.parse(upserted[0].params);
-    expect(project.folder).toBe("/Users/ada/code/app");
+    expect(project.folder).toBe("~/code/app");
     const moved = ConversationResult.parse(
       resultOf(user.frames, lastId()).result,
     ).conversation;

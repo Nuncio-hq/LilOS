@@ -13,7 +13,7 @@ a project or a plain chat; there is no third home.
 
 What Oscar sees:
 - A project is a folder the company works in: a name, a short key like LIL,
-  the folder's absolute path and a line about it. The sidebar lists projects
+  the folder's path (like ~/Code/LilOS) and a line about it. The sidebar lists projects
   with their threads under them; threads with no project are plain chats.
 - A thread in a project works in that project's folder (its working folder
   and Workbench are the project's); a plain chat has no folder of its own and

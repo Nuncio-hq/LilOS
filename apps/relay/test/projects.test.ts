@@ -78,6 +78,8 @@ describe("project keys and names", () => {
   it("names a project after its folder's last segment", () => {
     expect(projectNameFor("/Users/ada/Code/LilOS")).toBe("LilOS");
     expect(projectNameFor("/Users/ada/Code/LilOS/")).toBe("LilOS");
+    expect(projectNameFor("~/Code/LilOS")).toBe("LilOS");
+    expect(projectNameFor("~")).toBe("Home");
     expect(projectNameFor("/")).toBe("/");
   });
 });
@@ -95,7 +97,7 @@ describe("projects.list / projects.create", () => {
     expect(project).toMatchObject({
       name: "LilOS",
       key: "LIL",
-      folder: `${HOME}/Code/LilOS`,
+      folder: "~/Code/LilOS",
       about: "The company OS.",
     });
     expect(project.id).toBeTruthy();
@@ -156,10 +158,26 @@ describe("projects.list / projects.create", () => {
       "projects.create",
       { folder: "~/Code/app" },
     );
-    expect(project.folder).toBe(join(home, "Code", "app"));
+    expect(project.folder).toBe("~/Code/app");
 
     await phone.connection.receive(req("projects.create", { folder: "/etc" }));
     expect(errorData(phone.frames, lastId())).toBe("forbidden");
+  });
+
+  it("stores one spelling: ~-collapsed under the Mac's home, absolute outside it", async () => {
+    const { user } = await setup();
+    const folderOf = async (folder: string) =>
+      (await call<{ project: Project }>(user, "projects.create", { folder }))
+        .project.folder;
+    expect(await folderOf(`${HOME}/Code/a/`)).toBe("~/Code/a");
+    expect(await folderOf("~/Code/a")).toBe("~/Code/a"); // same project
+    expect(await folderOf(HOME)).toBe("~");
+    expect(await folderOf("/opt/shared/repo/")).toBe("/opt/shared/repo");
+    expect(
+      (await call<{ projects: Project[] }>(user, "projects.list")).projects.map(
+        (p) => p.folder,
+      ),
+    ).toEqual(["~/Code/a", "~", "/opt/shared/repo"]);
   });
 });
 
@@ -175,7 +193,7 @@ describe("conversations.open files the thread (D-#771)", () => {
     expect(projects[0]).toMatchObject({
       name: "LilOS",
       key: "LIL",
-      folder: `${HOME}/Code/LilOS`,
+      folder: "~/Code/LilOS",
     });
     expect(first.projectId).toBe(projects[0].id);
 
@@ -185,6 +203,28 @@ describe("conversations.open files the thread (D-#771)", () => {
     });
     expect(second.projectId).toBe(projects[0].id);
     expect(await call(user, "projects.list")).toEqual({ projects });
+  });
+
+  it("a thread started from a project's folder bumps the recents row that is already there, never a second spelling", async () => {
+    const { user, channel } = await setup();
+    // The recents list as the Mac writes it: `~`-collapsed (folders.add,
+    // moveFolder, git.discoverRepos).
+    await call(user, "folders.add", { path: "~/Code/LilOS" });
+    const { project } = await call<{ project: Project }>(
+      user,
+      "projects.create",
+      { folder: `${HOME}/Code/LilOS` },
+    );
+    const recents = async () =>
+      (
+        await call<{ folders: { path: string }[] }>(user, "folders.list")
+      ).folders.map((f) => f.path);
+    // The UI finds the project's folder among the recents by plain equality.
+    expect(await recents()).toContain(project.folder);
+
+    // A project pick sends `cwd: project.folder`.
+    await open(user, channel.id, { cwd: project.folder });
+    expect(await recents()).toEqual(["~/Code/LilOS"]);
   });
 
   it("announces a new project before the thread that created it", async () => {
@@ -233,7 +273,7 @@ describe("conversations.open files the thread (D-#771)", () => {
       user,
       "projects.list",
     );
-    expect(projects.map((p) => p.folder)).toEqual([`${HOME}/Code/LilOS`]);
+    expect(projects.map((p) => p.folder)).toEqual(["~/Code/LilOS"]);
     expect(thread.projectId).toBe(projects[0].id);
     expect(thread.cwd).toBe("~/Code/LilOS/.lilos/wt/fix-login");
   });
@@ -407,8 +447,8 @@ describe("backfillProjects", () => {
     });
     const projects = await store.listProjects();
     expect(projects.map((p) => [p.name, p.key, p.folder])).toEqual([
-      ["LilOS", "LIL", `${HOME}/Code/LilOS`],
-      ["qrit", "QRI", `${HOME}/Code/qrit`],
+      ["LilOS", "LIL", "~/Code/LilOS"],
+      ["qrit", "QRI", "~/Code/qrit"],
     ]);
     const projectOf = async (id: string) =>
       (await store.getConversation(id))?.projectId;

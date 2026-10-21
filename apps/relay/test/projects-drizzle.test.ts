@@ -73,8 +73,8 @@ const projectsAfter = await store.listProjects();
 
 // The real store's get-or-create: same folder → same row; a colliding name
 // gets the next key; the summaries' raw-SQL path carries projectId.
-const again = await store.ensureProject({ folder: HOME + "/Code/LilOS" });
-const clash = await store.ensureProject({ folder: HOME + "/other/lilos" });
+const again = await store.ensureProject({ folder: "~/Code/LilOS" });
+const clash = await store.ensureProject({ folder: "~/other/lilos" });
 const summaries = await store.listConversationSummaries({ includeArchived: true });
 const summaryFiled = Object.fromEntries(summaries.map((s) => [s.conversation.id, s.conversation.projectId ?? null]));
 
@@ -135,8 +135,8 @@ describe("projects migration + backfill on the real store (D-#771)", () => {
     expect(
       out.projects.map((p) => [p.name, p.key, p.folder, p.about, p.createdAt]),
     ).toEqual([
-      ["LilOS", "LIL", `${HOME}/Code/LilOS`, "", 100],
-      ["qrit", "QRI", `${HOME}/Code/qrit`, "", 200],
+      ["LilOS", "LIL", "~/Code/LilOS", "", 100],
+      ["qrit", "QRI", "~/Code/qrit", "", 200],
     ]);
     const [lilos, qrit] = out.projects;
     expect(out.filed).toEqual({
@@ -207,8 +207,8 @@ db.close();`.replace(/\bHOME\b/g, JSON.stringify(macHome)),
 
     const first = await read();
     expect(first.projects.map((p) => [p.name, p.key, p.folder])).toEqual([
-      ["LilOS", "LIL", `${macHome}/Code/LilOS`],
-      ["qrit", "QRI", `${macHome}/Code/qrit`],
+      ["LilOS", "LIL", "~/Code/LilOS"],
+      ["qrit", "QRI", "~/Code/qrit"],
     ]);
     const [lilos, qrit] = first.projects;
     expect(first.filed).toEqual({
