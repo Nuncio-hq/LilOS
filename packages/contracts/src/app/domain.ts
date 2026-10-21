@@ -38,6 +38,10 @@ export const Employee = z.object({
      and the Mac posts no banners. Optional so pre-#561 rows and fixtures
      read as unmuted. */
   muted: z.boolean().optional(),
+  /** Who this person reports to: an employee id. Absent means the owner,
+      shown by the profile name — never a stored owner id or a hardcoded
+      name (D-#775). */
+  reportsTo: z.string().min(1).optional(),
   createdAt: Timestamp,
 });
 export type Employee = z.infer<typeof Employee>;
@@ -236,6 +240,14 @@ export const Conversation = z.object({
    * message lands, or the turn is stopped. Absent = not stuck.
    */
   stuck: z.object({ reason: z.string().min(1) }).optional(),
+  /**
+   * When this thread was last marked stuck, epoch ms (issue #775). The
+   * relay sets it when `stuck` goes from unset to set. Clearing the mark
+   * leaves it; a later episode overwrites it. Absent means never stuck.
+   * Not host-written — `conversations.update` has no field for it, so the
+   * week's tally cannot be backdated from a client.
+   */
+  stuckAt: Timestamp.optional(),
   /**
    * Count of this session's still-running background jobs (#583 AC-3).
    * Same lifecycle as `turnStopped`: host-written on `job.started` /

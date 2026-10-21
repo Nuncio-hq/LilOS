@@ -425,6 +425,20 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
     version: 30,
     statements: [`ALTER TABLE conversations ADD COLUMN stuck TEXT`],
   },
+  {
+    /* D-#775: who an employee reports to. NULL means the owner (shown by
+       the profile name — no owner id is stored). Also conversations.stuck_at
+       (issue #775): epoch ms when `stuck` last went from unset to set. The
+       relay stamps it and never clears it; a later episode overwrites it.
+       The week's stuck tally reads the stamp, not the live mark — a "stuck
+       now" count would repeat the status pill. Applied after #801's stuck
+       mark (v30). No new version: this column belongs to this PR's migration. */
+    version: 31,
+    statements: [
+      `ALTER TABLE employees ADD COLUMN reports_to TEXT REFERENCES employees(id)`,
+      `ALTER TABLE conversations ADD COLUMN stuck_at INTEGER`,
+    ],
+  },
 ];
 
 /**

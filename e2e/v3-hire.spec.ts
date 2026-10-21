@@ -70,7 +70,7 @@ test("Hire a Researcher: the new agent is in the sidebar and People, opened besi
     await expect(v3Peek(page)).toContainText("Researcher");
     await expect(v3Peek(page)).toContainText("Fake Reasoning");
     await expect(v3Peek(page)).toContainText(
-      "You are Nova, the company's researcher.",
+      "You research questions with cited sources and a one-paragraph answer first.",
     );
     await expect(v3Peek(page)).toContainText("Nothing assigned");
 
@@ -80,6 +80,10 @@ test("Hire a Researcher: the new agent is in the sidebar and People, opened besi
     await expect(main(page).getByRole("heading", { level: 1 })).toHaveText(
       "People",
     );
+    /* Hire is the sidebar control only, not a link in this header. */
+    await expect(
+      main(page).getByRole("button", { name: /Hire an agent/ }),
+    ).toHaveCount(0);
     const row = main(page).getByRole("button", { name: /Nova/ });
     await expect(row).toBeVisible();
     await expect(row).toContainText("Researcher");
@@ -125,6 +129,10 @@ test("an engine that cannot create agents has no Hire: not in the sidebar, and i
     await expect(main(page).getByRole("heading", { level: 1 })).toHaveText(
       "People",
     );
+    await expect(
+      main(page).getByRole("button", { name: /Hire an agent/ }),
+    ).toHaveCount(0);
+    await page.goto(`${stack.webUrl}/#?page=people&view=org`);
     await expect(
       main(page).getByRole("button", { name: /Hire an agent/ }),
     ).toHaveCount(0);

@@ -155,6 +155,15 @@ test("AC-1 the sidebar offers Hire, and opens the Hire page, only when the engin
   await expect(
     sidebar.getByRole("button", { name: "Hire an agent" }),
   ).toBeVisible();
+  /* The page header and the org chart do not repeat it (D-#769). */
+  await page.goto(`${stackA.webUrl}/#?page=people`);
+  await expect(
+    page.locator("#v3-main").getByRole("button", { name: /Hire an agent/ }),
+  ).toHaveCount(0);
+  await page.goto(`${stackA.webUrl}/#?page=people&view=org`);
+  await expect(
+    page.locator("#v3-main").getByRole("button", { name: /Hire an agent/ }),
+  ).toHaveCount(0);
   await openHire(page);
   // The role grid is the page's way in (it replaced "Use profile" / "New
   // profile"): every role is a card, the form appears once one is picked.

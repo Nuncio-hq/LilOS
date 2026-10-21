@@ -485,7 +485,21 @@ export class RelayClient {
    */
   async removeEmployee(id: string): Promise<void> {
     await this.request("employees.remove", { id });
-    this.employees.set(this.employees.get().filter((e) => e.id !== id));
+    this.dropEmployee(id);
+  }
+
+  /** Drop the row and clear `reportsTo` on anyone who reported to them.
+      The relay does the same before the delete (D-#775); the atom must
+      not keep a manager id that is gone. */
+  private dropEmployee(id: string): void {
+    this.employees.set(
+      this.employees.get().flatMap((e) => {
+        if (e.id === id) return [];
+        if (e.reportsTo !== id) return [e];
+        const { reportsTo: _gone, ...rest } = e;
+        return [rest];
+      }),
+    );
   }
 
   /** Get-or-create the project for a folder; a folder that already has one
@@ -1275,11 +1289,7 @@ export class RelayClient {
       }
       case "employee.removed": {
         const { employeeId } = params as { employeeId?: string };
-        if (typeof employeeId === "string") {
-          this.employees.set(
-            this.employees.get().filter((e) => e.id !== employeeId),
-          );
-        }
+        if (typeof employeeId === "string") this.dropEmployee(employeeId);
         return;
       }
       case "message.created": {

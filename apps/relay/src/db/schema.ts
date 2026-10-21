@@ -33,6 +33,11 @@ export const employees = sqliteTable("employees", {
   /** #561 AC-3: per-employee notification mute — relay-owned, read by the
       push fan-out and broadcast to the apps. */
   muted: integer("muted", { mode: "boolean" }).notNull().default(false),
+  /** Who this person reports to (D-#775). NULL means the owner — there is
+      no owner row to point at, and the name shown is the profile's, never
+      a hardcoded one. A self-reference would be a cycle; the directory
+      rejects those before a write. */
+  reportsTo: text("reports_to").references((): AnySQLiteColumn => employees.id),
   createdAt: integer("created_at").notNull(),
 });
 
@@ -149,6 +154,11 @@ export const conversations = sqliteTable(
         sentence the card and the push say. Host-written; null once the
         next step differs, a new message lands, or the turn stops. */
     stuck: text("stuck"),
+    /** Epoch ms when `stuck` last went from unset to set (issue #775).
+        Relay-written on that transition; a clear leaves it; a later
+        episode overwrites it. The week's stuck count reads this, not
+        the live mark. */
+    stuckAt: integer("stuck_at"),
     /** The user's read watermark (#563): the channel seq up to which they have
         opened this thread. `conversations.markRead` stamps
         max(channel lastSeq, finishedSeq); compared against `finishedSeq`

@@ -1,0 +1,216 @@
+import { cn } from "../lib/utils";
+import type { V3Data } from "./v3-data-types";
+import { AgentAvatar, Avatar, CeoMark, StatusDot } from "./v3-marks";
+import { agentStatus, agentThread, agentTicket, reportsOf } from "./v3-model";
+import type { V3PageProps } from "./v3-page-types";
+import type { V3Agent } from "./v3-types";
+
+/* Who reports to whom (D-#775). `reportsTo` names an employee; absent, or
+   an id that is gone, means the owner — the profile name on `data.me`,
+   never a hardcoded one, and not the CEO position. The crown is only a
+   mark. A cycle is rejected by the relay; the walk still stops at a repeat
+   so a bad row cannot hang the page, and anyone the walk never reaches
+   is drawn under the owner rather than dropped. Hire is not a node
+   (D-#769): the sidebar is the only control. */
+
+const LINE = "bg-[var(--v3-line)]";
+
+function nowText(data: V3Data, a: V3Agent): string {
+  if (agentStatus(data, a.id) === "idle") return a.next ?? "Nothing assigned";
+  return (
+    agentThread(data, a.id)?.title ?? agentTicket(data, a.id)?.title ?? "—"
+  );
+}
+
+/** Everyone the walk from the owner reaches. */
+function reached(agents: readonly V3Agent[]): Set<string> {
+  const seen = new Set<string>();
+  const walk = (managerId?: string) => {
+    for (const a of reportsOf(agents, managerId)) {
+      if (seen.has(a.id)) continue;
+      seen.add(a.id);
+      walk(a.id);
+    }
+  };
+  walk(undefined);
+  return seen;
+}
+
+/** The employee this one reports to, when that person is still on the roster. */
+function managerId(agents: readonly V3Agent[], id: string): string | undefined {
+  const ids = new Set(agents.map((a) => a.id));
+  const boss = agents.find((a) => a.id === id)?.reportsTo;
+  return boss && ids.has(boss) ? boss : undefined;
+}
+
+/** Walk up `reportsTo` until the walk repeats. That id is in the cycle.
+    Someone who only reports into the cycle is not an entry: picking them
+    first draws them again under the cycle member (roster order A→B, B↔C). */
+function cycleMember(
+  agents: readonly V3Agent[],
+  startId: string,
+): string | undefined {
+  const walked = new Set<string>();
+  let cur: string | undefined = startId;
+  while (cur) {
+    if (walked.has(cur)) return cur;
+    walked.add(cur);
+    cur = managerId(agents, cur);
+  }
+  return undefined;
+}
+
+/** One cycle member per group the owner-walk never reaches. Everyone who
+    reports into that cycle hangs under it, once. */
+function entryPoints(agents: readonly V3Agent[]): V3Agent[] {
+  const seen = reached(agents);
+  const byId = new Map(agents.map((a) => [a.id, a]));
+  const extra: V3Agent[] = [];
+  for (const a of agents) {
+    if (seen.has(a.id)) continue;
+    const entryId = cycleMember(agents, a.id);
+    if (!entryId || seen.has(entryId)) continue;
+    const entry = byId.get(entryId);
+    if (!entry) continue;
+    extra.push(entry);
+    const stack = [entryId];
+    seen.add(entryId);
+    while (stack.length) {
+      const id = stack.pop() as string;
+      for (const kid of reportsOf(agents, id)) {
+        if (seen.has(kid.id)) continue;
+        seen.add(kid.id);
+        stack.push(kid.id);
+      }
+    }
+  }
+  return extra;
+}
+
+function Owner({ data }: { data: V3Data }) {
+  return (
+    <div className="flex w-[120px] items-center gap-2 rounded-lg border border-[var(--v3-line)] bg-[var(--v3-soft)] px-2.5 py-2">
+      <Avatar name={data.me} tone="n" size={22} />
+      <span className="min-w-0">
+        <span className="block truncate font-medium text-[13.5px] text-foreground">
+          {data.me}
+        </span>
+        <span className="block text-[12px] text-muted-foreground">
+          Chairman
+        </span>
+      </span>
+    </div>
+  );
+}
+
+function Node({
+  data,
+  a,
+  boss,
+  go,
+}: { data: V3Data; a: V3Agent; boss: string } & Pick<V3PageProps, "go">) {
+  return (
+    <button
+      type="button"
+      data-reports-to={boss}
+      onClick={() => go({ page: "agent", id: a.id })}
+      className="w-[132px] rounded-lg border border-[var(--v3-line)] bg-background px-2.5 py-2 text-left transition-colors hover:bg-[var(--v3-hover)]"
+    >
+      <span className="flex items-center gap-2">
+        <AgentAvatar data={data} agent={a} size={22} />
+        <span className="min-w-0">
+          <span className="flex items-center gap-1">
+            <span className="truncate font-medium text-[13.5px] text-foreground">
+              {a.name}
+            </span>
+            {a.id === data.ceoId && <CeoMark />}
+          </span>
+          <span className="block truncate text-[12px] text-muted-foreground">
+            {a.role}
+          </span>
+        </span>
+      </span>
+      <span className="mt-2 flex items-start gap-1.5 text-[12px] text-muted-foreground leading-snug">
+        <StatusDot status={agentStatus(data, a.id)} className="mt-[5px]" />
+        <span className="line-clamp-2">{nowText(data, a)}</span>
+      </span>
+    </button>
+  );
+}
+
+/** The bar above one sibling: from its centre to the next sibling's, so a
+    wider subtree still meets its neighbours at the column edge. */
+function Bar({ i, slots }: { i: number; slots: number }) {
+  if (slots <= 1) return null;
+  return (
+    <span
+      className={cn(
+        "absolute top-0 h-px",
+        LINE,
+        i === 0
+          ? "left-1/2 right-0"
+          : i === slots - 1
+            ? "left-0 w-1/2"
+            : "left-0 right-0",
+      )}
+    />
+  );
+}
+
+function Row({
+  data,
+  go,
+  parentId,
+  seen,
+  extra,
+}: Pick<V3PageProps, "data" | "go"> & {
+  parentId?: string;
+  seen: Set<string>;
+  extra?: V3Agent[];
+}) {
+  const kids = [
+    ...reportsOf(data.agents, parentId).filter((a) => !seen.has(a.id)),
+    ...(extra ?? []),
+  ];
+  const slots = kids.length;
+  if (slots === 0) return null;
+  const boss = parentId ?? "owner";
+  return (
+    <>
+      <span className={cn("h-6 w-px", LINE)} />
+      <div className="flex">
+        {kids.map((a, i) => {
+          const next = new Set(seen);
+          next.add(a.id);
+          return (
+            <div
+              key={a.id}
+              className="relative flex w-max min-w-[140px] flex-col items-center pt-6"
+            >
+              <Bar i={i} slots={slots} />
+              <span className={cn("absolute top-0 h-6 w-px", LINE)} />
+              <Node data={data} a={a} boss={boss} go={go} />
+              <Row data={data} go={go} parentId={a.id} seen={next} />
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+export function OrgChart({ data, go }: Pick<V3PageProps, "data" | "go">) {
+  return (
+    <div className="mt-10 overflow-x-auto pb-4">
+      <div className="mx-auto flex w-max flex-col items-center">
+        <Owner data={data} />
+        <Row
+          data={data}
+          go={go}
+          seen={new Set()}
+          extra={entryPoints(data.agents)}
+        />
+      </div>
+    </div>
+  );
+}

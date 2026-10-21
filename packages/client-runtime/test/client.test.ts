@@ -587,6 +587,40 @@ describe("relay -> app requests + employee lifecycle (#29)", () => {
     expect(client.employees.get()).toEqual([]);
   });
 
+  it("removing someone clears reportsTo on the people who reported to them", async () => {
+    const { client, socket } = makeClient();
+    await connectClient(client, () => socket);
+    const ada = empFixture();
+    const bea = empFixture({ id: "e2", name: "Bea", reportsTo: "e1" });
+    const cio = empFixture({ id: "e3", name: "Cio", reportsTo: "e2" });
+    for (const employee of [ada, bea, cio]) {
+      socket.emit({
+        jsonrpc: "2.0",
+        method: "employee.upserted",
+        params: { employee },
+      });
+    }
+
+    socket.emit({
+      jsonrpc: "2.0",
+      method: "employee.removed",
+      params: { employeeId: "e1" },
+    });
+    const afterEvent = client.employees.get();
+    expect(afterEvent.map((e) => e.id)).toEqual(["e2", "e3"]);
+    expect(afterEvent.find((e) => e.id === "e2")).not.toHaveProperty(
+      "reportsTo",
+    );
+    expect(afterEvent.find((e) => e.id === "e3")?.reportsTo).toBe("e2");
+
+    const remove = client.removeEmployee("e2");
+    socket.respondTo("employees.remove", { ok: true });
+    await remove;
+    const left = client.employees.get();
+    expect(left.map((e) => e.id)).toEqual(["e3"]);
+    expect(left[0]).not.toHaveProperty("reportsTo");
+  });
+
   it("channel.removed drops the channel, its conversations, and message state", async () => {
     const { client, socket } = makeClient();
     await connectClient(client, () => socket);

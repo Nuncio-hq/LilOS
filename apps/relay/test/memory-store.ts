@@ -176,7 +176,11 @@ export function createMemoryStore(): RelayStore {
     async updateEmployee(id, patch) {
       const employee = employees.get(id);
       if (!employee) return null;
-      Object.assign(employee, patch);
+      const { reportsTo, ...rest } = patch;
+      Object.assign(employee, rest);
+      /* null clears the link (back to the owner). undefined leaves it. */
+      if (reportsTo === null) delete employee.reportsTo;
+      else if (typeof reportsTo === "string") employee.reportsTo = reportsTo;
       return employee;
     },
     async removeEmployee(id) {
@@ -209,6 +213,10 @@ export function createMemoryStore(): RelayStore {
          their `scheduled` marker like any other leftover row. */
       for (const [tid, task] of scheduledTasks) {
         if (task.employeeId === id) scheduledTasks.delete(tid);
+      }
+      /* Whoever reported to this person reports to the owner again (D-#775). */
+      for (const other of employees.values()) {
+        if (other.reportsTo === id) delete other.reportsTo;
       }
       employees.delete(id);
       return { employee, channelIds: [...channelIds] };
@@ -436,6 +444,10 @@ export function createMemoryStore(): RelayStore {
       const conversation = conversations.get(id);
       if (!conversation) return null;
       patch = titlePatch(patch, conversation);
+      /* Issue #775: stamp stuckAt only on unset → set. Captured before the
+         null-clear below deletes the live mark and drops the patch key. */
+      const hadStuck = conversation.stuck != null;
+      const marking = patch.stuck != null;
       // The delivery watermark only moves forward — a slower write must not
       // re-owe a later message its prompt.
       if (patch.deliveredSeq !== undefined) {
@@ -464,6 +476,7 @@ export function createMemoryStore(): RelayStore {
         }
       }
       Object.assign(conversation, patch);
+      if (marking && !hadStuck) conversation.stuckAt = now();
       return conversation;
     },
     async recordTurnUsage({ conversationId, sessionId, seq, usage }) {

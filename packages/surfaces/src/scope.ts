@@ -603,6 +603,7 @@ export class SessionSurfaces implements ViewerScope {
           role: e.role,
           model: e.model,
           instructions: e.instructions,
+          ...(e.reportsTo ? { reportsTo: e.reportsTo } : {}),
         },
       };
     });
@@ -762,6 +763,7 @@ export class SessionSurfaces implements ViewerScope {
           role: e.role,
           status: e.status,
           model: e.model,
+          ...(e.reportsTo ? { reportsTo: e.reportsTo } : {}),
         })),
       };
     });

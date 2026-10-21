@@ -400,6 +400,8 @@ export const EmployeePatch = z.object({
   /* Per-employee notification mute (#561 AC-3) — relay-stored, honoured by
      pushes and Mac banners alike. */
   muted: z.boolean().optional(),
+  /** An employee id, or null to report to the owner again (D-#775). */
+  reportsTo: z.string().min(1).nullable().optional(),
 });
 export type EmployeePatch = z.infer<typeof EmployeePatch>;
 

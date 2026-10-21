@@ -7,7 +7,6 @@ import {
   PlugIcon,
   SparklesIcon,
 } from "lucide-react";
-import { cn } from "../lib/utils";
 import { Connectors, PILL } from "./v3-agent-connectors";
 import {
   DescriptionField,
@@ -23,12 +22,13 @@ import {
 } from "./v3-agent-edit";
 import { RemoveAgent } from "./v3-agent-remove";
 import { Memory, RuleSuggestion } from "./v3-agent-rules";
+import { AgentWeek } from "./v3-agent-week";
 import { ago, Btn, Meter, Page, Prop, Section, Title } from "./v3-bits";
 import { EscLayer, useFocusBack } from "./v3-keys";
 import { AgentAvatar, Avatar, CeoMark, StatusPill } from "./v3-marks";
-import { agentOf, agentStatus, agentTicket } from "./v3-model";
+import { agentOf, agentStatus, agentThread, agentTicket } from "./v3-model";
 import type { V3PageProps } from "./v3-page-types";
-import { ThreadRow, TicketRow } from "./v3-rows";
+import { ThreadRow } from "./v3-rows";
 import { soonestNext } from "./v3-schedule-text";
 import { AgentSchedules } from "./v3-schedules";
 import type { V3Agent, V3ConnectorDef } from "./v3-types";
@@ -47,17 +47,6 @@ const STATE_WORD: Record<V3ConnectorDef["state"], string> = {
   "signed-out": "Not signed in",
   missing: "Not found",
 };
-
-function Stat({ value, label }: { value: string | number; label: string }) {
-  return (
-    <div className="border-[var(--v3-line)] border-r px-4 py-3 first:pl-0 last:border-r-0">
-      <b className="lilos-v3-serif block font-bold text-[28px] leading-tight text-foreground">
-        {value}
-      </b>
-      <span className="text-[13px] text-muted-foreground">{label}</span>
-    </div>
-  );
-}
 
 export function V3AgentPage(props: V3PageProps & { id: string }) {
   const agent = agentOf(props.data, props.id);
@@ -86,14 +75,18 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
     : undefined;
   const status = agentStatus(data, agent.id);
   const current = status === "idle" ? undefined : agentTicket(data, agent.id);
+  const live =
+    status === "idle" || current ? undefined : agentThread(data, agent.id);
   const tickets = data.tickets.filter((t) => t.owner === agent.id);
   const threads = data.threads.filter((t) => t.agentId === agent.id);
-  // CEO is a position, and the app may have none: then the page says nothing
-  // about who this agent reports to and offers no way to move the position.
   const ceo = data.agents.find((a) => a.id === data.ceoId);
   const holdsCeo = !!ceo && agent.id === ceo.id;
-  // Everyone reports to its holder, the holder to you.
-  const boss = ceo && (holdsCeo ? "You" : ceo.name);
+  // D-#775: reportsTo names an employee. Absent, or an id that is gone,
+  // means the owner — the profile name, never "You" or a hardcoded one.
+  const manager = agent.reportsTo
+    ? data.agents.find((a) => a.id === agent.reportsTo)
+    : undefined;
+  const reportsTo = `reports to ${manager?.name ?? data.me}`;
   /* The hire dialog seeds the role from the profile's description, so on a
      real agent they are often the same sentence. Said once: the line under
      the name keeps it, and the kicker above carries only the rest. */
@@ -101,7 +94,6 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
     !!agent.description &&
     agent.role.trim().toLowerCase() === agent.description.trim().toLowerCase();
   const dotted = (...parts: string[]) => parts.filter(Boolean).join(" · ");
-  const reportsTo = boss ? `reports to ${boss}` : "";
   const hired = `hired ${agent.hired}`;
   const fmt = (n: number) => (Number.isInteger(n) ? `${n}` : n.toFixed(2));
   // The soonest scheduled job that is not paused: Works says when it is due.
@@ -207,6 +199,10 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
                 · {ago(current.since)}
               </span>
             </span>
+          ) : live ? (
+            /* The title says what this agent is on. The Threads list below
+               is the one control that opens it (D-#19). */
+            <span className="truncate text-foreground">{live.title}</span>
           ) : (
             <span className="text-muted-foreground">
               {agent.next ?? "Nothing assigned"}
@@ -308,35 +304,7 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
         </p>
       )}
 
-      {/* No week numbers: the ticket list stands alone under its own name. */}
-      {(agent.week || tickets.length > 0) && (
-        <>
-          <Section title={agent.week ? "This week" : "Tickets"} />
-          {agent.week && (
-            <div className="mt-2 grid grid-cols-4 border-[var(--v3-line)] border-y">
-              <Stat value={agent.week.done} label="tickets done" />
-              <Stat value={agent.week.typical} label="typical ticket" />
-              <Stat value={agent.week.stuck} label="times stuck" />
-              <Stat value={agent.week.handed} label="handed to someone else" />
-            </div>
-          )}
-          <div
-            className={cn(
-              agent.week && "mt-2.5",
-              "border-[var(--v3-line)] border-t",
-            )}
-          >
-            {tickets.length === 0 && (
-              <p className="py-3 text-[14px] text-muted-foreground">
-                No tickets this week.
-              </p>
-            )}
-            {tickets.map((t) => (
-              <TicketRow key={t.id} data={data} ticket={t} go={go} />
-            ))}
-          </div>
-        </>
-      )}
+      <AgentWeek data={data} go={go} agent={agent} tickets={tickets} />
 
       {!outside && (
         <AgentSchedules data={data} go={go} act={act} agentId={agent.id} />

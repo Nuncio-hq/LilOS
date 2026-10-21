@@ -1,4 +1,4 @@
-import type { V3Data, V3Draft, V3Profile } from "@lilos/ui"
+import { HIRE_TEMPLATES, type V3Data, type V3Draft, type V3Profile } from "@lilos/ui"
 import { ATTENTION_ASKS, ATTENTION_THREADS } from "./fake-v3-attention"
 import { CONNECTORS, OUTSIDE_THREADS, OUTSIDE_TICKETS, OUTSIDE_WORKERS } from "./fake-v3-outside"
 import { MODEL_OPTIONS, MODEL_PROVIDERS, MODEL_VISIBILITY, modelIdOf } from "./fake-v3-models"
@@ -772,6 +772,7 @@ export const V3_DATA: V3Data = {
   browser: BROWSER,
   devices: DEVICES,
   modelChoices: ["Opus 5.5 · High", "Sonnet 5 · Medium", "Haiku 5 · Fast"],
+  hireTemplates: HIRE_TEMPLATES,
   // The new-chat box shows the engine's full picker (effort, Fast, Edit models).
   modelCatalog: {
     options: MODEL_OPTIONS,

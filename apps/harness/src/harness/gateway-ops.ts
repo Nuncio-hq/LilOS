@@ -179,6 +179,32 @@ export function createGatewayApprovalOps(
     );
   };
 
+  /* D-#775: self, an unknown id, or a cycle is rejected before the card.
+     An ask that then fails on the relay would already have written the
+     engine profile (soul/model land first). null clears to the owner
+     and needs no lookup. */
+  const assertReportsTo = (employees: Employee[], reportsTo: string): void => {
+    if (reportsTo === binding.employeeId) {
+      throw new SurfaceError(
+        "invalid_params",
+        "an employee cannot report to itself",
+      );
+    }
+    const byId = new Map(employees.map((e) => [e.id, e]));
+    if (!byId.has(reportsTo)) {
+      throw new SurfaceError("not_found", "manager not found");
+    }
+    const seen = new Set<string>([binding.employeeId]);
+    let cur: string | undefined = reportsTo;
+    while (cur) {
+      if (seen.has(cur)) {
+        throw new SurfaceError("invalid_params", "reportsTo would cycle");
+      }
+      seen.add(cur);
+      cur = byId.get(cur)?.reportsTo;
+    }
+  };
+
   return {
     startThread: async (p: {
       text: string;
@@ -257,10 +283,17 @@ export function createGatewayApprovalOps(
     },
 
     updateSelf: async (p: TeamUpdateParams) => {
+      if (typeof p.reportsTo === "string") {
+        const { employees } = await relay.request<{ employees: Employee[] }>(
+          "employees.list",
+          {},
+        );
+        assertReportsTo(employees, p.reportsTo);
+      }
       /* The card states the values, not just the fields — a rename to
          "CEO" must not read the same as one to "junior". */
       const fields = Object.entries(p)
-        .map(([k, v]) => `${k}: ${String(v)}`)
+        .map(([k, v]) => `${k}: ${v === null ? "owner" : String(v)}`)
         .join(", ");
       await gate({
         command: `team_update ${fields}`,
@@ -306,6 +339,9 @@ export function createGatewayApprovalOps(
           ...(p.instructions !== undefined
             ? { instructions: p.instructions }
             : {}),
+          /* Who they report to lives only on the company record (D-#775).
+             The engine profile has no such field. null clears it. */
+          ...(p.reportsTo !== undefined ? { reportsTo: p.reportsTo } : {}),
         },
       );
       return updated.employee;

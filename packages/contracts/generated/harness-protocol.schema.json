@@ -1441,6 +1441,10 @@
               },
               "model": {
                 "type": "string"
+              },
+              "reportsTo": {
+                "type": "string",
+                "minLength": 1
               }
             },
             "required": [

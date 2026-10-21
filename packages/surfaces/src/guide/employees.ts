@@ -23,7 +23,7 @@ What Oscar sees:
   never deleted by LilOS.
 
 Tools that apply:
-- \`team_list\` — the roster as the agent sees it: name, role, status, model.
+- \`team_list\` — the roster as the agent sees it: name, role, status, model, and who they report to.
 - \`context\` — the calling session's own employee record (name, role,
   profile, model) plus its thread.
 - Hiring and editing your own record open an approval ask:

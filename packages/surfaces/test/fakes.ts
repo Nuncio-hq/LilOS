@@ -415,6 +415,8 @@ export function fakeAppOps(
       if (p.role !== undefined) self.role = p.role;
       if (p.model !== undefined) self.model = p.model;
       if (p.instructions !== undefined) self.instructions = p.instructions;
+      if (p.reportsTo === null) delete self.reportsTo;
+      else if (typeof p.reportsTo === "string") self.reportsTo = p.reportsTo;
       return self;
     },
     async scheduleCreate(p: ScheduleCreateParams) {

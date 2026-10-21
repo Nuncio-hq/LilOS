@@ -29,8 +29,8 @@ import type { V3Agent, V3Status } from "./v3-types";
 const COUNT_ORDER: { status: V3Status; word: string }[] = [
   { status: "working", word: "working" },
   { status: "needs", word: "needs you" },
-  /* Stuck only when a thread already wears it. Nothing marks a thread stuck
-     until that slice lands, so the count stays 0 and this row stays hidden. */
+  /* Stuck counts the threads the harness marked (D-#772); like every count
+     on the strip, a zero stays hidden. */
   { status: "stuck", word: "stuck" },
   { status: "idle", word: "idle" },
 ];
