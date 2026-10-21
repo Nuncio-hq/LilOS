@@ -41,7 +41,7 @@ function world(opts?: {
   threadEmployee?: string;
   employees?: { id: string; name?: string }[];
   failPostOnce?: { n: number };
-  tickets?: { id: string; status: string }[];
+  tickets?: { id: string; status: string; ownerId?: string }[];
   holdOpen?: Promise<void>;
 }) {
   const ceo = opts?.ceo === undefined ? "ceo" : opts.ceo;
@@ -387,9 +387,8 @@ describe("CEO loop", () => {
 
   it("wakes when a worker finishes with the ticket still open", async () => {
     vi.useFakeTimers();
-    const { ctx, calls, convs, bindings } = world({
-      tickets: [{ id: "T-9", status: "working" }],
-    });
+    const tickets = [{ id: "T-9", status: "working", ownerId: "owner" }];
+    const { ctx, calls, convs, bindings } = world({ tickets });
     await boot(ctx);
     const conv = {
       id: "work",
@@ -413,8 +412,8 @@ describe("CEO loop", () => {
     );
     expect(posted(calls)[0]?.params.ceoWake).toBe(true);
 
-    /* The CEO's own thread, a turn that called ticket_update, and a
-       ticket already done do not wake. */
+    /* The CEO's own thread, a turn that called ticket_update, a
+       stopped hand-off, and a ticket that already moved do not wake. */
     const own = {
       ...conv,
       id: "own",
@@ -426,6 +425,12 @@ describe("CEO loop", () => {
     const worker = bindings.get(conv.id);
     if (!worker) throw new Error("missing worker binding");
     worker.ticketTouched = true;
+    convs.set(conv.id, { ...conv, state: "active" });
+    ceoOnConversation(ctx, { ...conv, state: "idle" });
+    convs.set(conv.id, { ...conv, state: "active" });
+    ceoOnConversation(ctx, { ...conv, state: "idle", turnStopped: true });
+    const moved = tickets.find((t) => t.id === "T-9");
+    if (moved) moved.ownerId = "other";
     convs.set(conv.id, { ...conv, state: "active" });
     ceoOnConversation(ctx, { ...conv, state: "idle" });
     expect(ceoLoop(ctx).wakes.hasPending).toBe(false);

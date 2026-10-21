@@ -184,6 +184,11 @@ function noteWorkerFinished(ctx: HarnessCtx, conv: Conversation): void {
     .get()
     .find((t) => t.id === conv.ticketId);
   if (!ticket || ticket.status === "done" || ticket.status === "failed") return;
+  /* A Stop is the hand-off interrupting a stuck turn, not a finish.
+     A thread that no longer owns the ticket already handed it on.
+     Either wake would close a ticket the CEO just moved (D-#777). */
+  if (conv.turnStopped) return;
+  if (ticket.ownerId && employeeId && ticket.ownerId !== employeeId) return;
   void noteCeoWake(ctx, { reason: "open", ticketId: conv.ticketId });
 }
 
