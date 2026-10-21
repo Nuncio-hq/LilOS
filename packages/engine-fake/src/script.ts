@@ -216,10 +216,12 @@ export function scriptFor(
         });
         continue;
       }
-      const stuckLine = /^stuck ticket (\S+) hand (\S+)( last)?$/.exec(line);
+      const stuckLine =
+        /^stuck ticket (\S+) hand (\S+)(?: name:(.*?))?( last)?$/.exec(line);
       if (stuckLine) {
         const id = stuckLine[1] ?? "";
-        const lastResort = stuckLine[3] !== undefined;
+        const lastResort = stuckLine[4] !== undefined;
+        const who = stuckLine[3]?.trim();
         steps.push({
           tool: toolName("ticket_assign"),
           input: { id, ownerId: stuckLine[2] },
@@ -231,7 +233,7 @@ export function scriptFor(
             kind: "handed",
             text: lastResort
               ? `Handed ${id} to the CEO. It was stuck.`
-              : `Handed ${id} on. It was stuck.`,
+              : `Handed ${id} to ${who || "the next agent"}. It was stuck.`,
             ticketId: id,
           },
           output: "",

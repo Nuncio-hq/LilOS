@@ -38,7 +38,7 @@ function world(opts?: {
   threadId?: string;
   threadState?: Conversation["state"];
   threadEmployee?: string;
-  employees?: { id: string }[];
+  employees?: { id: string; name?: string }[];
   failPostOnce?: { n: number };
 }) {
   const ceo = opts?.ceo === undefined ? "ceo" : opts.ceo;
@@ -64,7 +64,7 @@ function world(opts?: {
   const employees = opts?.employees ?? [
     { id: "ceo" },
     { id: "owner" },
-    { id: "other" },
+    { id: "other", name: "Other" },
   ];
   const bindings = new Map<string, SessionBinding>();
   const inFlightDeliveries = new Map<string, number>();
@@ -282,7 +282,9 @@ describe("CEO loop", () => {
     await fire();
     expect(posted(calls)).toHaveLength(1);
     const first = posted(calls)[0];
-    expect(String(first?.params.text)).toContain("stuck ticket T-1 hand other");
+    expect(String(first?.params.text)).toContain(
+      "stuck ticket T-1 hand other name:Other",
+    );
     expect(String(first?.params.text)).not.toContain(" last");
     const standing = [...convs.values()].find((c) => c.title === "CEO");
     if (!standing) throw new Error("missing standing thread");

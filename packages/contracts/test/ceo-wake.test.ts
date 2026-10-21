@@ -93,6 +93,17 @@ describe("CEO wakes", () => {
       },
     ]);
     expect(last).toContain("- stuck ticket LIL-9 hand emp_ceo last");
+    const named = formatCeoWake([
+      {
+        reason: "stuck",
+        ticketId: "LIL-9",
+        handTo: "emp_c",
+        handName: "Ink",
+        at: 0,
+      },
+    ]);
+    expect(named).toContain("- stuck ticket LIL-9 hand emp_c name:Ink");
+    expect(ceoWakeNote(named)).toBe("LilOS: LIL-9 is stuck");
     expect(ceoWakeNote(text)).toBe(
       "LilOS: LIL-1 is done · LIL-2 is next · LIL-9 is stuck",
     );

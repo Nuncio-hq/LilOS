@@ -22,6 +22,8 @@ export interface CeoWakeEvent {
   actorId?: string;
   /** Another employee a stuck thread should be handed to. */
   handTo?: string;
+  /** That employee's name, so the update can say who took it. */
+  handName?: string;
   /** The only person left to take it is the CEO. The update says so. */
   lastResort?: boolean;
   /** Tickets waiting on a finish, with the owner to move them to. */
@@ -130,9 +132,13 @@ export function formatCeoWake(events: readonly CeoWakeEvent[]): string {
         lines.push(`- next ${next.ticketId} owner ${next.ownerId}`);
       }
     } else if (event.reason === "stuck" && event.ticketId && event.handTo) {
+      /* `name:` is who should take it. Absent on the last-resort line,
+         which says `last` instead (D-#777). */
+      const name = event.handName?.replace(/\s+/g, " ").trim();
+      const named = name ? ` name:${name}` : "";
       const last = event.lastResort ? " last" : "";
       lines.push(
-        `- stuck ticket ${event.ticketId} hand ${event.handTo}${last}`,
+        `- stuck ticket ${event.ticketId} hand ${event.handTo}${named}${last}`,
       );
     } else if (event.reason === "ask" && event.ticketId) {
       lines.push(`- ask ticket ${event.ticketId}`);
@@ -161,7 +167,9 @@ export function ceoWakeNote(text: string): string | null {
       bits.push(`${next[1]} is next`);
       continue;
     }
-    const stuck = /^stuck ticket (\S+) hand \S+(?: last)?$/.exec(line);
+    const stuck = /^stuck ticket (\S+) hand \S+(?: name:.*)?(?: last)?$/.exec(
+      line,
+    );
     if (stuck?.[1]) {
       bits.push(`${stuck[1]} is stuck`);
       continue;

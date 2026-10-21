@@ -25,7 +25,10 @@ const SHOTS = path.join(HERE, "../test-results/ac-777");
 
 let stack: Stack;
 let agent: { id: string; name: string };
+/** Worker A. The stuck thread is theirs. */
 let worker: { id: string; name: string };
+/** Worker B. A stuck thread is handed here, not to the CEO. */
+let editor: { id: string; name: string };
 let project: { id: string; key: string };
 let goalId: string;
 
@@ -88,9 +91,8 @@ test("a goal given to the CEO becomes tickets with owners in one turn", async ({
   agent = await openDefaultAgent(page, stack.webUrl);
   await ceoIdle(page);
   /* Each repeat gets its own project so the ticket id is free again.
-     The worker is hired once: a second hire would become the hand-off
-     target and the last-resort update would no longer be the one under
-     test. */
+     Both workers are hired once. The stuck hand-off prefers the one
+     who does not own the thread (D-#777). */
   const n = test.info().repeatEachIndex;
   const folder = `${stack.home}/page-${n}`;
   mkdirSync(folder, { recursive: true });
@@ -121,6 +123,21 @@ test("a goal given to the CEO becomes tickets with owners in one turn", async ({
           profile: "builder",
           model: "fake-large",
           instructions: "You write pages.",
+        },
+      )
+    ).employee;
+    editor = (
+      await relayRpc<{ employee: { id: string; name: string } }>(
+        page,
+        stack,
+        "employees.create",
+        {
+          name: "Ink",
+          role: "Editor",
+          status: "online",
+          profile: "builder",
+          model: "fake-large",
+          instructions: "You edit pages.",
         },
       )
     ).employee;
@@ -257,17 +274,19 @@ test("a stuck thread is handed to another agent, with an update", async ({
     timeout: 30_000,
   });
   await shot(page, "3-stuck");
-  await expect(v3Peek(page)).toContainText(`Handed to ${agent.name}`, {
+  await expect(v3Peek(page)).toContainText(`Handed to ${editor.name}`, {
     timeout: 60_000,
   });
+  await shot(page, "3-handed");
   await home(page);
   await expect(main(page)).toContainText(
-    `Handed ${ticket.id} to the CEO. It was stuck.`,
+    `Handed ${ticket.id} to ${editor.name}. It was stuck.`,
     { timeout: 30_000 },
   );
+  await expect(main(page)).not.toContainText("to the CEO");
   await expect(page.getByText("The CEO will handle it.")).toHaveCount(0);
   await ceoIdle(page);
-  await shot(page, "3-handed");
+  await shot(page, "3-update");
 });
 
 test("Home shows the latest update and Inbox lists them", async ({ page }) => {
