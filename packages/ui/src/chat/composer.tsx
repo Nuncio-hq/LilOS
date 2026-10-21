@@ -153,8 +153,9 @@ export function Composer({
        panel; the inner box is the prototype's column — 720px less its 32px
        gutters — so the box lines up with the turns above it. Its 2px
        top margin plus the column's own bottom padding is the whole band
-       between the last turn and the box (#602 caps it at 24px; 4px left
-       Linux font metrics a half pixel over).
+       between the last turn and the box (#602 caps it at 24px). The settled
+       turn's hover line used to hang 20px past that padding — the band the
+       cap measures — and a half-pixel font metric then read 24.5.
        `@container`: the key hint steps aside when the box is narrow. */
     <div
       ref={menus.wrapRef}

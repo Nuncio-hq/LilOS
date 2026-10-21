@@ -187,26 +187,32 @@ const send = async (page: Page, text: string) => {
   await box.press("Enter");
 };
 
-/* Idle = no queued/not-sent rows and the composer is back to its
-   post-turn placeholder (Focus "Continue session…", panel "Message X…") —
-   and stays there. engine-fake's pumpSteers mints a queued steer into a
-   fresh turn in the same tick as turn.completed, so the placeholder can
-   flash idle while a turn is already running; a send landing inside that
-   window is consumed as a `turn.steered` note, never a prompt. Require a
-   stable 600ms idle window before sending the next prompt. */
+/* Idle = the open thread has nothing queued or still streaming, and the
+   last agent turn carries its settled footer — and stays that way.
+   engine-fake's pumpSteers mints a queued steer into a fresh turn in the
+   same tick as turn.completed, so a placeholder can flash the idle copy
+   ("Message X…") while a turn is already running; the running copy
+   ("…it reads this at the next step") is not idle either. A send landing
+   inside that window is consumed as a `turn.steered` note, never a prompt.
+   `data-turnsettled` is the end anchor (text lands earlier). Require a
+   stable 600ms window before sending the next prompt. The poll keeps
+   expect's default 5s: an unpaced turn settles inside it (#807); `slow:`
+   turns are not what this helper waits on. */
 const idle = async (page: Page) => {
   let idleSince: number | null = null;
   await expect
     .poll(async () => {
-      const idleNow = await page.evaluate(
-        () =>
-          !document.querySelector("[data-queued], [data-notsent]") &&
-          [...document.querySelectorAll("textarea")].some(
-            (t) =>
-              t.placeholder.includes("Continue session") ||
-              /^Message [^…]+…$/.test(t.placeholder),
-          ),
-      );
+      const idleNow = await page.evaluate(() => {
+        const root = document.querySelector("[data-thread-panel]");
+        if (!root) return false;
+        if (
+          root.querySelector("[data-queued], [data-notsent], [data-streaming]")
+        )
+          return false;
+        const turns = root.querySelectorAll("[data-agentturn]");
+        const last = turns[turns.length - 1];
+        return !!last && !!last.querySelector("[data-turnsettled]");
+      });
       const now = Date.now();
       if (!idleNow) {
         idleSince = null;

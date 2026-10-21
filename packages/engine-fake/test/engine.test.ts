@@ -44,6 +44,30 @@ describe("engine-fake", () => {
     expect(a.length).toBeGreaterThan(10);
   });
 
+  /* #807: an unpaced turn used to sleep once per word. A default script is
+     a few dozen words, and under load that outlasts a 5s settle poll — the
+     next send then lands as a steer. `slow:` (turnPace) still streams
+     word by word; the default pace emits each stream in one delta. */
+  test("an unpaced turn emits reasoning and text as one delta each", async () => {
+    const c = conn();
+    const deltas: { stream?: string; delta?: string }[] = [];
+    c.onEvent((e) => {
+      if (e.type !== "turn.delta") return;
+      const p = e.payload as { stream?: string; delta?: string };
+      deltas.push(p);
+    });
+    const { sessionId } = (await c.request("session.start", {
+      agent: "builder",
+      cwd: "/tmp/lilos-fake",
+    })) as { sessionId: string };
+    await promptText(c, sessionId, "Explain the relay package");
+    const of = (stream: string) => deltas.filter((d) => d.stream === stream);
+    expect(of("reasoning")).toHaveLength(1);
+    expect(of("text")).toHaveLength(1);
+    expect(of("text")[0]?.delta).toContain("Short answer");
+    c.close();
+  });
+
   test("AC-1 session ids are namespaced per engine run, never reused after restart", async () => {
     const start = async (c: ReturnType<typeof conn>) =>
       (
@@ -928,7 +952,10 @@ describe("engine-fake #431: compact replay + bounded log", () => {
   });
 
   test("eventLogCap bounds the log and events.since reports truncation", async () => {
-    const c = connectFake(new FakeEngine({ tick: 1, eventLogCap: 12 }));
+    /* An unpaced turn is two stream deltas plus the turn frames (#807),
+       so the cap has to sit under that — 12 only overflowed when every
+       word was its own event. */
+    const c = connectFake(new FakeEngine({ tick: 1, eventLogCap: 4 }));
     const { sessionId } = (await c.request("session.start", {
       agent: "builder",
       cwd: "/tmp/lilos-fake",

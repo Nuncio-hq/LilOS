@@ -260,13 +260,24 @@ export function ModelPicker({
   /* The pick writes are async (relay round-trip). While the popover is open,
      the shown state is the user's latest edit — composing off the `value`
      prop would drop an earlier toggle that hasn't echoed back yet. The draft
-     is dropped the moment the prop actually moves (the echo, or an external
-     change): the parent stays authoritative. */
+     drops when the prop catches up to it, or when the session moves to a
+     different model. An earlier write's echo (same model, Fast not yet) is
+     neither: clearing on it made the next slider step compose from the
+     stale echo and send Fast back off (#807, the mid-turn pick). */
   const [picked, setPicked] = useState<ModelChoice | null>(null);
   const [prev, setPrev] = useState(value);
   if (!samePick(value, prev)) {
     setPrev(value);
-    if (picked) setPicked(null);
+    /* Same model still in flight: a partial echo (model landed, Fast or
+       the slider not yet) must not clear the draft. A different model, or
+       an echo that matches the draft, means the prop has caught up. */
+    if (
+      picked &&
+      (samePick(value, picked) ||
+        value.model !== picked.model ||
+        value.provider !== picked.provider)
+    )
+      setPicked(null);
     setRefreshed(false);
   }
   const shown0 = picked ?? value;

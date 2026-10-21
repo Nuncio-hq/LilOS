@@ -487,6 +487,48 @@ describe("model picker v2", () => {
     expect(body().querySelector('button[aria-label="Fast mode"]')).toBeNull();
   });
 
+  /* #807: mid-turn pick. The model write echoes before Fast does. That
+     echo must not wipe the draft, or the next slider step composes from
+     it and sends Fast back off. */
+  test("a model echo without Fast leaves the Fast draft for the next slider step", async () => {
+    const picks: ModelChoice[] = [];
+    const { rerender } = render(
+      <Harness picks={picks} value={choiceFor("qwen", MODELS)} />,
+    );
+    await openModels();
+    await act(async () =>
+      fireEvent.click(
+        headingFor("OpenAI").querySelector("button") as HTMLElement,
+      ),
+    );
+    await act(async () =>
+      fireEvent.click(within(list()).getByText("GPT test 5")),
+    );
+    await act(async () =>
+      fireEvent.click(
+        body().querySelector('button[aria-label="Fast mode"]') as HTMLElement,
+      ),
+    );
+    expect(picks.at(-1)).toMatchObject({ model: "gpt-test-5", fast: true });
+    /* The model write's echo: gpt-test-5 landed, Fast has not. */
+    await act(async () =>
+      rerender(
+        <Harness picks={picks} value={choiceFor("gpt-test-5", MODELS)} />,
+      ),
+    );
+    await act(async () =>
+      fireEvent.keyDown(
+        body().querySelector('input[type="range"]') as HTMLElement,
+        { key: "ArrowRight" },
+      ),
+    );
+    expect(picks.at(-1)).toMatchObject({
+      model: "gpt-test-5",
+      effort: "high",
+      fast: true,
+    });
+  });
+
   test("Refresh / Edit models render only with their handlers (D-#19)", async () => {
     const { unmount } = render(<Harness />);
     await openModels();
