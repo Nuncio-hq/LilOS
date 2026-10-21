@@ -1,5 +1,6 @@
 import type { WorkbenchOpenTarget } from "@lilos/contracts/app";
 import {
+  type AskParams,
   type BrowserClickParams,
   type BrowserEvalParams,
   type BrowserOpenParams,
@@ -93,6 +94,9 @@ export async function callTool(
       break;
     case "guide":
       result = await backend.guide(p as GuideParams);
+      break;
+    case "ask":
+      result = await backend.ask(p as AskParams);
       break;
     case "team_list":
       result = await backend.teamList();

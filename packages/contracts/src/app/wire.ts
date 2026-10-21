@@ -1111,6 +1111,10 @@ export const AsksOpenParams = z.object({
   request: EngineRequest,
   /** Gateway `team_hire` ask: the hire draft the card renders. */
   hire: AskHireProposal.optional(),
+  /** D-#773: optional Needs you lines. Engine approvals omit them. */
+  why: z.string().min(1).optional(),
+  ifYes: z.string().min(1).optional(),
+  ifNo: z.string().min(1).optional(),
 });
 export type AsksOpenParams = z.infer<typeof AsksOpenParams>;
 export const AskResult = z.object({ ask: Ask });

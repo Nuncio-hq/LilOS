@@ -1,5 +1,7 @@
 import type { WorkbenchOpenTarget } from "@lilos/contracts/app";
 import type {
+  AskParams,
+  AskToolResult,
   BrowserClickResult,
   BrowserEvalResult,
   BrowserOpenResult,
@@ -77,6 +79,7 @@ export interface SurfaceBackend {
   workbenchOpen(p: WorkbenchOpenTarget): Promise<WorkbenchOpenResult>;
   context(): Promise<ContextResult>;
   guide(p: GuideParams): Promise<GuideResult>;
+  ask(p: AskParams): Promise<AskToolResult>;
   teamList(): Promise<TeamListResult>;
   scheduleList(): Promise<ScheduleListResult>;
   scheduleCreate(p: ScheduleCreateParams): Promise<ScheduleTaskResult>;

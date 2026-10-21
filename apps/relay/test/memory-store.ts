@@ -595,6 +595,9 @@ export function createMemoryStore(): RelayStore {
         requestId: input.requestId,
         request: input.request,
         ...(input.hire ? { hire: input.hire } : {}),
+        ...(input.why ? { why: input.why } : {}),
+        ...(input.ifYes ? { ifYes: input.ifYes } : {}),
+        ...(input.ifNo ? { ifNo: input.ifNo } : {}),
         state: "open",
         createdAt: now(),
       };

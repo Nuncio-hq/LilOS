@@ -8,8 +8,9 @@ import type { SessionModel } from "./turn-model";
  * client-runtime): no screen keeps its own rule.
  *
  * Precedence, first match wins:
- * - `needs`   an open engine request is waiting on the user (a turn parked
- *             on it is not "working"),
+ * - `needs`   an open engine request, or an open relay ask (D-#773: a
+ *             gateway ask never opens an engine request), is waiting
+ *             on the user (a turn parked on it is not "working"),
  * - `working` a turn is running,
  * - `failed`  the last turn failed (cleared when a turn starts fresh),
  * - `unseen`  a turn finished past the user's read mark (D-#563),
@@ -34,11 +35,14 @@ export function liveState(
   c: Conversation,
   model: SessionModel | undefined,
   signal: SessionSignalLike | undefined,
+  /** Open relay asks on this thread. A gateway ask is not an engine request. */
+  relayAsks = 0,
 ): { running: boolean; asks: number } {
-  if (!c.engineRef) return { running: false, asks: 0 };
+  if (!c.engineRef) return { running: false, asks: relayAsks };
   const asks = Math.max(
     model?.openRequests.length ?? 0,
     signal?.openRequests.size ?? 0,
+    relayAsks,
   );
   const running =
     (model?.live !== undefined && model.live.phase !== "waiting") ||
@@ -52,8 +56,9 @@ export function threadStatus(
   c: Conversation,
   model: SessionModel | undefined,
   signal: SessionSignalLike | undefined,
+  relayAsks = 0,
 ): ThreadStatus {
-  const { running, asks } = liveState(c, model, signal);
+  const { running, asks } = liveState(c, model, signal, relayAsks);
   if (asks > 0) return "needs";
   if (running) return "working";
   if (c.turnFailure) return "failed";

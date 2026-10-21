@@ -23,6 +23,12 @@ describe("gateway guide page lists the catalog (#754)", () => {
     }
   });
 
+  it("names the ask lines why, ifYes and ifNo", () => {
+    expect(body).toContain("why");
+    expect(body).toContain("ifYes");
+    expect(body).toContain("ifNo");
+  });
+
   it("names every approval tool as opening an approval ask", () => {
     const approvals = Object.entries(LILOS_TOOLS)
       .filter(([, tool]) => tool.access === "approval")
