@@ -200,13 +200,9 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
               </span>
             </span>
           ) : live ? (
-            <button
-              type="button"
-              onClick={() => go({ page: "thread", id: live.id })}
-              className="truncate text-foreground underline-offset-2 hover:underline"
-            >
-              {live.title}
-            </button>
+            /* The title says what this agent is on. The Threads list below
+               is the one control that opens it (D-#19). */
+            <span className="truncate text-foreground">{live.title}</span>
           ) : (
             <span className="text-muted-foreground">
               {agent.next ?? "Nothing assigned"}
