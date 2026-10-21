@@ -11,6 +11,7 @@ import type {
   SystemStatusResult,
   Ticket,
 } from "@lilos/contracts/app";
+import { CEO_SETTING_KEY } from "@lilos/contracts/app";
 import type {
   SessionBinding,
   TicketAssignParams,
@@ -183,6 +184,13 @@ export function createAppOps(deps: {
           conversationId: binding.conversationId,
           target,
         });
+      },
+      /* The live holder. Call time reads this; the start snapshot is separate (D-#778). */
+      ceoId: async () => {
+        const r = await relay.request<{ value: unknown }>("settings.get", {
+          key: CEO_SETTING_KEY,
+        });
+        return typeof r.value === "string" && r.value ? r.value : undefined;
       },
       ...createGatewayApprovalOps({
         relay,

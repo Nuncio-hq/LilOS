@@ -273,6 +273,22 @@ export interface FakeEngineOptions {
  * prompt produces a mutating step that asks for approval — the conformance
  * suite exercises that path.
  */
+/** `LILOS_CEO_TOOLS` / `LILOS_CEO_INSTRUCTIONS` on a session's MCP spec (D-#778). */
+function ceoOffer(
+  servers: SessionStartParams["mcpServers"],
+): { ceo: 0 | 1; tools: string } | undefined {
+  for (const server of servers ?? []) {
+    if (!("env" in server) || !Array.isArray(server.env)) continue;
+    const tools = server.env.find((e) => e.name === "LILOS_CEO_TOOLS")?.value;
+    if (tools === undefined) continue;
+    const instructions = server.env.find(
+      (e) => e.name === "LILOS_CEO_INSTRUCTIONS",
+    )?.value;
+    return { ceo: instructions ? 1 : 0, tools };
+  }
+  return undefined;
+}
+
 export class FakeEngine {
   private readonly tick: number;
   private sessions = new Map<string, FakeSession>();
@@ -581,6 +597,15 @@ export class FakeEngine {
       resumed: false,
     };
     this.sessions.set(id, s);
+    /* Tools are not a field of session.started. The harness stamps the
+       offer onto the MCP spec; log it so a test can see what this start
+       received (D-#778). Absent when the spec carries no such env. */
+    const offer = ceoOffer(p.mcpServers);
+    if (offer) {
+      console.log(
+        `session.start agent=${p.agent} ceo=${offer.ceo} ceoTools=${offer.tools}`,
+      );
+    }
     this.emit(s, "session.started", {
       agent: p.agent,
       cwd: p.cwd,

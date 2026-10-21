@@ -4,7 +4,13 @@ import http from "node:http";
 import { fileURLToPath } from "node:url";
 import { equalSecret } from "@lilos/contracts/auth";
 import type { McpServer, McpServerHttp } from "@lilos/contracts/engine";
-import { MCP_PATH, type SessionBinding } from "@lilos/contracts/harness";
+import {
+  CEO_INSTRUCTIONS,
+  LILOS_TOOLS,
+  MCP_PATH,
+  type SessionBinding,
+  toolsForSession,
+} from "@lilos/contracts/harness";
 import {
   type AppOps,
   attachViewer,
@@ -46,6 +52,8 @@ interface CreateSessionInit {
   binding?: SessionBinding;
   /** The engine's own session id, registered as an alias (AC-3). */
   engineSessionId?: string;
+  /** This employee held the CEO position when the caller asked (D-#778). */
+  ceoAtStart?: boolean;
 }
 
 export interface SurfacesServerOptions {
@@ -205,7 +213,22 @@ export async function serveSurfaces(
       spawnPty: options.spawnPty ?? bunPtySpawner,
       appOps: options.appOps?.(session, init.binding),
       binding: init.binding,
+      ceoAtStart: init.ceoAtStart === true,
     });
+    /* What this session is offered, stamped onto the MCP spec so
+       engine-fake can log it from `session.start` (D-#778). The gateway
+       filters `GET /tools` and rejects the call itself — these vars are
+       evidence for the engine, not the gate. Hermes may drop unknown env
+       when it spawns MCP; the offer does not depend on the child seeing them. */
+    const offered = toolsForSession(scope.areas, scope.ceoAtStart);
+    const ceoTools = offered.filter((name) => LILOS_TOOLS[name]?.ceoOnly);
+    const offerEnv = [
+      { name: "LILOS_OFFERED_TOOLS", value: offered.join(",") },
+      { name: "LILOS_CEO_TOOLS", value: ceoTools.join(",") || "-" },
+      ...(scope.ceoAtStart
+        ? [{ name: "LILOS_CEO_INSTRUCTIONS", value: CEO_INSTRUCTIONS }]
+        : []),
+    ];
     const entry = registry.add(scope, {
       engineSessionId: init.engineSessionId,
     });
@@ -225,6 +248,7 @@ export async function serveSurfaces(
               { name: SURFACES_ENV.baseUrl, value: httpUrl },
               { name: SURFACES_ENV.token, value: token },
               { name: SURFACES_ENV.session, value: session },
+              ...offerEnv,
               /* #412: the engine env is allow-listed, so the spawn-marker
                  knob live checks use must be granted explicitly to reach
                  `lilos mcp`. */

@@ -19,7 +19,7 @@ import {
 } from "./v3-attach";
 import { Kbd } from "./v3-bits";
 import type { V3Data } from "./v3-data-types";
-import { AgentAvatar } from "./v3-marks";
+import { AgentAvatar, CeoMark } from "./v3-marks";
 import type { V3Agent } from "./v3-types";
 
 /* One message box for both chat pages: a textarea that grows with the text, a
@@ -142,6 +142,7 @@ export function Composer({
     <>
       <AgentAvatar data={data} agent={agent} size={16} />
       <span className="truncate">{agent.name}</span>
+      {agent.id === data.ceoId && <CeoMark />}
     </>
   );
 

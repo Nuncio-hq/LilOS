@@ -3,6 +3,7 @@ import type { EventsSinceResult } from "@lilos/contracts/engine";
 import { expandPath } from "@lilos/host";
 import { engineErrorCode, SESSION_NOT_FOUND } from "../engine/client";
 import type { ReaperCandidate } from "../reaper";
+import { employeeHoldsCeo } from "./ceo-session";
 import type { HarnessCtx, SessionBinding } from "./ctx";
 
 /**
@@ -219,7 +220,12 @@ export async function bindConversation(
          the alias lands on the next `session.ref.changed` (#339). */
       const employee = await this.resolveEmployee(conv);
       binding.employeeId = employee?.id;
-      const surface = this.createSurfaces(binding, conv, employee);
+      const ceoAtStart = await employeeHoldsCeo(
+        this.opts.relay,
+        employee?.id,
+        this.opts.log,
+      );
+      const surface = this.createSurfaces(binding, conv, employee, ceoAtStart);
       binding.gatewaySession = surface?.session;
       return binding;
     } catch (error) {
@@ -277,7 +283,12 @@ export async function bindConversation(
     suspended: false,
   };
   binding.employeeId = employee?.id;
-  const surface = this.createSurfaces(binding, conv, employee);
+  const ceoAtStart = await employeeHoldsCeo(
+    this.opts.relay,
+    employee?.id,
+    this.opts.log,
+  );
+  const surface = this.createSurfaces(binding, conv, employee, ceoAtStart);
   const started = await conn.request<{
     sessionId: string;
     ref?: string;

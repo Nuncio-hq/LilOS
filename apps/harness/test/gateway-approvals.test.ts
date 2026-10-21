@@ -25,6 +25,10 @@ describe("approval-gated gateway tools", () => {
   async function world() {
     const w = await setupWorld();
     const { employee, channel } = await openDmConversation(w.user);
+    /* team_hire is CEO-only (D-#778). This employee holds the position
+       before the recording proxy, so the hire test's `sent` list stays
+       about the tool call. */
+    await w.user.request("company.setCeo", { employeeId: employee.id });
     const { conversation } = await w.user.request<{
       conversation: Conversation;
     }>("conversations.open", { channelId: channel.id, text: "hi" });
@@ -61,6 +65,7 @@ describe("approval-gated gateway tools", () => {
       spawnPty: new FakePtySpawner().spawn,
       appOps,
       binding,
+      ceoAtStart: true,
     });
     const gw = await serveGateway({ sessions: [{ scope, token: "tok" }] });
     const client = toolBackend({

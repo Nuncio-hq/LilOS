@@ -185,6 +185,9 @@ export function fakeAppOps(
     projects?: Project[];
     /** `"decline"` makes every approval op throw `declined` — nothing applies. */
     approve?: "once" | "decline";
+    /** Live CEO holder. Defaults to the bound fake employee so existing
+        direct calls of CEO-only tools still pass (D-#778). */
+    ceoId?: string;
   } = {},
 ): AppOps & {
   posted: string[];
@@ -416,6 +419,13 @@ export function fakeAppOps(
       };
       employees.push(employee);
       return employee;
+    },
+    async setCeo(employeeId: string) {
+      gate(`team_set_ceo ${employeeId}`);
+      return { ceoId: employeeId };
+    },
+    async ceoId() {
+      return opts.ceoId ?? "emp-fake";
     },
     async updateSelf(p: TeamUpdateParams) {
       gate(`team_update ${Object.keys(p).join(", ")}`);

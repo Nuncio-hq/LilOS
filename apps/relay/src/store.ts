@@ -397,6 +397,18 @@ export interface RelayStore {
   removeEmployee(
     id: string,
   ): Promise<{ employee: Employee; channelIds: string[] } | null>;
+  /**
+   * One write for the CEO position (D-#778): `ceoId` in the settings KV
+   * and the `reportsTo` edges that follow it. `changed` is false when
+   * this employee already holds it (no events). `employees` is only the
+   * rows whose link changed. Null when the employee does not exist.
+   * Throws `CeoGraphError` if the result would cycle.
+   */
+  setCeo(employeeId: string): Promise<{
+    ceoId: string;
+    employees: Employee[];
+    changed: boolean;
+  } | null>;
 
   listChannels(): Promise<AppChannel[]>;
   getChannel(id: string): Promise<AppChannel | null>;

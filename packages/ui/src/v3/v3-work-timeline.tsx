@@ -1,6 +1,6 @@
 import { cn } from "../lib/utils";
 import { span } from "./v3-bits";
-import { AgentAvatar, DOT } from "./v3-marks";
+import { AgentAvatar, CeoMark, DOT } from "./v3-marks";
 import type { V3Status } from "./v3-types";
 import type { WorkViewProps } from "./v3-work-views";
 
@@ -167,6 +167,7 @@ export function TimelineView({ data, go, tickets }: WorkViewProps) {
               >
                 <AgentAvatar data={data} agent={a} />
                 {a.name}
+                {a.id === data.ceoId && <CeoMark />}
               </div>
               <div className="relative flex-1">
                 {placed.map(({ bar, lane }) => (

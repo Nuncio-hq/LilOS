@@ -1927,7 +1927,48 @@
       },
       "_meta": {
         "lilos/area": "team",
-        "lilos/access": "approval"
+        "lilos/access": "approval",
+        "lilos/ceoOnly": true
+      }
+    },
+    {
+      "name": "team_set_ceo",
+      "description": "Ask the user to give the CEO position to an employee. Everyone who reported to the previous CEO or to the owner then reports to them; they report to the owner. Waits for approval.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "employeeId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "employeeId"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ceoId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "ceoId"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "_meta": {
+        "lilos/area": "team",
+        "lilos/access": "approval",
+        "lilos/ceoOnly": true
       }
     },
     {

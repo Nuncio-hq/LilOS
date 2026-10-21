@@ -6,7 +6,7 @@ import {
   renderHostPolicy,
   TOOL_PATH_PREFIX,
   toolListAll,
-  toolsForAreas,
+  toolsForSession,
 } from "@lilos/contracts/harness";
 import type { ViewerScope } from "./backend.js";
 import { SurfaceError } from "./backend.js";
@@ -182,6 +182,7 @@ function surfaceErrorStatus(code: SurfaceError["code"]): number {
     case "user_control":
       return 409;
     case "declined":
+    case "forbidden":
       return 403;
     default:
       return 500;
@@ -191,8 +192,14 @@ function surfaceErrorStatus(code: SurfaceError["code"]): number {
 /** The rendered catalog rows one session sees — shared by `GET /tools` and
     the MCP `tools/list`. Everything renders FROM `LILOS_TOOLS` (D-#36: one
     gateway endpoint, one catalog, scope from the caller's binding). */
+/** Names this session is offered: its areas, minus CEO-only tools unless
+    it held the position at start (D-#778). */
+function offeredNames(scope: ViewerScope): string[] {
+  return toolsForSession(scope.areas, scope.ceoAtStart);
+}
+
 function toolListFor(scope: ViewerScope) {
-  return catalogRows(toolsForAreas(scope.areas));
+  return catalogRows(offeredNames(scope));
 }
 
 const MCP_MAX_BATCH_MESSAGES = 50;
@@ -212,7 +219,9 @@ async function handleMcpRequest(
         buildMcpInitializeResult({
           requestedProtocolVersion: request.params.protocolVersion,
           serverVersion: "1.0.0",
-          instructions: renderHostPolicy(caller.scope.areas),
+          instructions: renderHostPolicy(caller.scope.areas, {
+            ceo: caller.scope.ceoAtStart,
+          }),
         }),
       );
     case "ping":
@@ -230,7 +239,7 @@ async function handleMcpRequest(
             : "Missing tool name.",
         );
       }
-      if (!toolsForAreas(caller.scope.areas).includes(name)) {
+      if (!offeredNames(caller.scope).includes(name)) {
         return jsonRpcError(
           request.id,
           JSON_RPC_INVALID_PARAMS,
@@ -361,7 +370,7 @@ export function gatewayHandler(
     const name = url.pathname.slice(TOOL_PATH_PREFIX.length);
     if (
       !Object.hasOwn(LILOS_TOOLS, name) ||
-      !toolsForAreas(entry.scope.areas).includes(name)
+      !offeredNames(entry.scope).includes(name)
     ) {
       return jsonError(404, "not_found", `unknown tool: ${name}`);
     }

@@ -142,7 +142,8 @@ export type V3Actions = {
   }) => Promise<string>;
   /** Starts a ⌘K draft plan: its tickets (and the threads that can start now). */
   startPlan?: (plan: Extract<V3Draft, { kind: "plan" }>, text: string) => void;
-  /** Moves the CEO position to this agent; everyone else reports to it. */
+  /** Moves the CEO position to this agent (D-#778). The relay re-points
+      who reported to the previous holder or to the owner; a deeper link stays. */
   makeCeo?: (agentId: string) => void;
   /** Saves what changed on an agent: only the fields in `patch` are written.
      Resolves with `confirmModel` (the engine's words) when the engine held a

@@ -59,11 +59,20 @@ try {
   });
   check("POST /surfaces/sessions is not reachable", closed.status === 404);
   const session = server.create({ cwd: process.env.HOME });
+  const envOf = (name: string) =>
+    session.mcpServer && "env" in session.mcpServer
+      ? session.mcpServer.env.find((e) => e.name === name)?.value
+      : undefined;
   check(
     "create session returns mcpServers spec",
     session.mcpServer?.name === "lilos" &&
-      "env" in session.mcpServer &&
-      session.mcpServer.env.length === 3,
+      envOf("LILOS_SURFACES_URL") !== undefined &&
+      envOf("LILOS_TOKEN") !== undefined &&
+      envOf("LILOS_SESSION") !== undefined &&
+      /* The offer is stamped for the engine log. This session is not the
+         CEO, so the CEO-only names are "-" (D-#778). */
+      envOf("LILOS_CEO_TOOLS") === "-" &&
+      (envOf("LILOS_OFFERED_TOOLS") ?? "").includes("terminal_run"),
     JSON.stringify(session.mcpServer),
   );
   check(

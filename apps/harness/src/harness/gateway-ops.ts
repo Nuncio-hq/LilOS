@@ -114,6 +114,7 @@ export function createGatewayApprovalOps(
   AppOps,
   | "startThread"
   | "hireEmployee"
+  | "setCeo"
   | "updateSelf"
   | "addFolder"
   | "createProject"
@@ -283,6 +284,24 @@ export function createGatewayApprovalOps(
       );
       await relay.request("channels.openDm", { employeeId: employee.id });
       return employee;
+    },
+
+    /* The position, not a persona (D-#778). The card names who receives it;
+       the relay re-points reportsTo only after "once". */
+    setCeo: async (employeeId: string) => {
+      const { employees } = await relay.request<{ employees: Employee[] }>(
+        "employees.list",
+        {},
+      );
+      const who = employees.find((e) => e.id === employeeId);
+      await gate({
+        command: `team_set_ceo ${employeeId}`,
+        description: `Give the CEO position to ${who?.name ?? employeeId}. Everyone who reported to the previous CEO or to the owner then reports to them; they report to the owner.`,
+      });
+      const r = await relay.request<{ ceoId: string }>("company.setCeo", {
+        employeeId,
+      });
+      return { ceoId: r.ceoId };
     },
 
     updateSelf: async (p: TeamUpdateParams) => {

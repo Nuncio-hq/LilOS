@@ -23,12 +23,16 @@ import type {
 } from "@lilos/contracts/app";
 import {
   AskHireProposal,
+  assertReportsAcyclic,
+  CEO_SETTING_KEY,
+  reportsToAfterCeo,
   TicketResult,
   TicketStatus,
   TicketStep,
   TicketWaitingOn,
   toSummaryMessage,
   toSummaryPreview,
+  withReportsTo,
 } from "@lilos/contracts/app";
 import { equalSecret } from "@lilos/contracts/auth";
 import {
@@ -598,6 +602,58 @@ export function createDrizzleStore(db: Db): RelayStore {
         tx.delete(schema.employees).where(eq(schema.employees.id, id)).run();
         return { employee: rowToEmployee(employee), channelIds };
       });
+    },
+    async setCeo(employeeId) {
+      const target = db
+        .select()
+        .from(schema.employees)
+        .where(eq(schema.employees.id, employeeId))
+        .get();
+      if (!target) return null;
+      const stored = db
+        .select()
+        .from(schema.settings)
+        .where(eq(schema.settings.key, CEO_SETTING_KEY))
+        .get();
+      let oldCeoId: string | undefined;
+      if (stored) {
+        try {
+          const value = JSON.parse(stored.value) as unknown;
+          if (typeof value === "string") oldCeoId = value;
+        } catch {
+          oldCeoId = undefined;
+        }
+      }
+      /* Already the holder: the edges are the ones the last write left. */
+      if (oldCeoId === employeeId) {
+        return { ceoId: employeeId, employees: [], changed: false };
+      }
+      const all = db.select().from(schema.employees).all().map(rowToEmployee);
+      const patches = reportsToAfterCeo(all, oldCeoId, employeeId);
+      /* Refuse before the transaction so a cycle never lands (D-#778). */
+      assertReportsAcyclic(withReportsTo(all, patches));
+      const employees = db.transaction((tx) => {
+        const changed: Employee[] = [];
+        for (const patch of patches) {
+          const updated = tx
+            .update(schema.employees)
+            .set({ reportsTo: patch.reportsTo })
+            .where(eq(schema.employees.id, patch.id))
+            .returning()
+            .get();
+          if (updated) changed.push(rowToEmployee(updated));
+        }
+        const serialized = JSON.stringify(employeeId);
+        tx.insert(schema.settings)
+          .values({ key: CEO_SETTING_KEY, value: serialized })
+          .onConflictDoUpdate({
+            target: schema.settings.key,
+            set: { value: serialized },
+          })
+          .run();
+        return changed;
+      });
+      return { ceoId: employeeId, employees, changed: true };
     },
     async listChannels() {
       return db

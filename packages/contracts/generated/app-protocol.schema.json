@@ -412,6 +412,7 @@
         "conversations.prs",
         "system.status",
         "employees.remove",
+        "company.setCeo",
         "settings.get",
         "settings.set",
         "folders.list",
@@ -1067,6 +1068,105 @@
       },
       "required": [
         "id"
+      ]
+    },
+    "CompanySetCeoParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "employeeId": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "employeeId"
+      ],
+      "additionalProperties": false
+    },
+    "CompanySetCeoResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "ceoId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "employees": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "role": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "online",
+                  "busy",
+                  "offline"
+                ]
+              },
+              "profile": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              },
+              "now": {
+                "type": "string"
+              },
+              "instructions": {
+                "type": "string"
+              },
+              "respondTo": {
+                "type": "string",
+                "enum": [
+                  "me",
+                  "selected",
+                  "anyone"
+                ]
+              },
+              "muted": {
+                "type": "boolean"
+              },
+              "reportsTo": {
+                "type": "string",
+                "minLength": 1
+              },
+              "createdAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "role",
+              "status",
+              "profile",
+              "model",
+              "now",
+              "instructions",
+              "respondTo",
+              "createdAt"
+            ]
+          }
+        }
+      },
+      "required": [
+        "ceoId",
+        "employees"
       ]
     },
     "EmployeeResult": {

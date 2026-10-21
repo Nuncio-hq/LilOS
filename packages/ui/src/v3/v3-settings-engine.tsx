@@ -2,7 +2,7 @@ import { CopyIcon } from "lucide-react";
 import { Btn, Section, Spinner } from "./v3-bits";
 import { ConnectRows } from "./v3-connect-rows";
 import type { V3Settings } from "./v3-data-types";
-import { AgentAvatar } from "./v3-marks";
+import { AgentAvatar, CeoMark } from "./v3-marks";
 import type { V3PageProps } from "./v3-page-types";
 import {
   EngineFix,
@@ -145,8 +145,9 @@ export function EnginePane({ data, go, act }: V3PageProps) {
         >
           <AgentAvatar data={data} agent={a} size={22} />
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-[14.5px] text-foreground">
+            <span className="flex items-center gap-1.5 truncate text-[14.5px] text-foreground">
               {a.name}
+              {a.id === data.ceoId && <CeoMark />}
             </span>
             {a.runtime && (
               <span className="block truncate font-mono text-[12.5px] text-muted-foreground">

@@ -212,6 +212,8 @@ export interface HarnessOptions {
       cwd?: string;
       binding?: import("@lilos/contracts/harness").SessionBinding;
       engineSessionId?: string;
+      /** Held the CEO position at this session's start (D-#778). */
+      ceoAtStart?: boolean;
     }): { session: string; mcpServer: McpServer };
     bindEngineSession(session: string, engineSessionId: string): boolean;
     destroy(session: string): Promise<boolean>;

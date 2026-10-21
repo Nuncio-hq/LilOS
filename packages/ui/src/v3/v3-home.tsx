@@ -1,7 +1,7 @@
 import { cn } from "../lib/utils";
 import { ago, Btn, Meter, Page, relativeTime, Section, Title } from "./v3-bits";
 import type { V3Data } from "./v3-data-types";
-import { AgentAvatar, StatusDot, StatusPill } from "./v3-marks";
+import { AgentAvatar, CeoMark, StatusDot, StatusPill } from "./v3-marks";
 import {
   agentNameOf,
   agentOf,
@@ -241,6 +241,7 @@ export function V3Home({ data, go, act }: V3PageProps) {
               <span className="flex items-center gap-[9px] font-medium text-foreground">
                 <AgentAvatar data={data} agent={a} />
                 {a.name}
+                {a.id === data.ceoId && <CeoMark />}
               </span>
               <span>
                 <StatusPill status={r.status} />

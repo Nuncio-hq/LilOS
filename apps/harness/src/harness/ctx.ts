@@ -406,6 +406,7 @@ export interface HarnessCtx {
     binding: SessionBinding,
     conv: Conversation | undefined,
     employee: Employee | undefined,
+    ceoAtStart?: boolean,
   ): { session: string; mcpServer?: McpServer } | undefined;
   aliasSurfaces(
     session: string | undefined,

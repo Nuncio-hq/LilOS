@@ -15,6 +15,7 @@ import {
   type ScheduleTaskRef,
   type ScheduleUpdateParams,
   type TeamHireParams,
+  type TeamSetCeoParams,
   type TeamUpdateParams,
   type TerminalReadParams,
   type TerminalRunParams,
@@ -49,6 +50,14 @@ export async function callTool(
     ? LILOS_TOOLS[name]
     : undefined;
   if (!contract) throw new SurfaceError("not_found", `unknown tool: ${name}`);
+  /* Offered from the start snapshot; this is the live check (D-#778). A
+     session that lost the position still lists the tool and fails here. */
+  if (contract.ceoOnly && backend.currentCeoId) {
+    const holder = await backend.currentCeoId();
+    if (!holder || holder !== backend.binding?.employeeId) {
+      throw new SurfaceError("forbidden", `only the CEO can call ${name}`);
+    }
+  }
   const parsed = contract.params.safeParse(args ?? {});
   if (!parsed.success)
     /* prettifyError lists each issue as a line the calling model can act
@@ -124,6 +133,9 @@ export async function callTool(
       break;
     case "team_hire":
       result = await backend.teamHire(p as TeamHireParams);
+      break;
+    case "team_set_ceo":
+      result = await backend.teamSetCeo(p as TeamSetCeoParams);
       break;
     case "team_update":
       result = await backend.teamUpdate(p as TeamUpdateParams);

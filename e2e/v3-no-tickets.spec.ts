@@ -12,8 +12,8 @@ import {
 /**
  * Tickets are on (D-#776), so Work and Goals are in the sidebar and their
  * links open those pages. Inbox stays hidden until it has updates. There is
- * still no CEO (that position is a later slice): no "Ask the CEO", no
- * "Make CEO", and ⌘K stays a search.
+ * still no CEO, so "Ask the CEO" is absent and ⌘K stays a search.
+ * "Make CEO" is the position on an agent's page (D-#778).
  */
 
 let stack: Stack;
@@ -136,7 +136,9 @@ test("no CEO copy, and a person can be given a ticket", async ({ page }) => {
         v3Peek(page).getByPlaceholder(`Message ${agent.name}…`),
       ).toBeVisible();
     await expect(page.getByText("Ask the CEO")).toHaveCount(0);
-    await expect(page.getByText("Make CEO")).toHaveCount(0);
+    /* Make CEO lives on the agent's page only (D-#778). */
+    if (!link.includes("open=agent"))
+      await expect(page.getByText("Make CEO")).toHaveCount(0);
   }
 
   await page.goto(
@@ -152,7 +154,7 @@ test("no CEO copy, and a person can be given a ticket", async ({ page }) => {
   ).toBeVisible();
   await expect(
     v3Peek(page).getByRole("button", { name: "Make CEO" }),
-  ).toHaveCount(0);
+  ).toBeVisible();
 
   await page.goto(`${stack.webUrl}/#?page=hire`);
   await expect(main(page).getByText("opens a PR for every ticket")).toBeVisible(

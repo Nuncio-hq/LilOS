@@ -40,6 +40,8 @@ export const AGENT_METHOD_TOOLS: Record<string, string> = {
   "employees.list": "team_list",
   "employees.create": "team_hire",
   "employees.update": "team_update",
+  /* The position moves through one relay op; the agent proposes it and waits (D-#778). */
+  "company.setCeo": "team_set_ceo",
   "agents.create": "team_hire",
   "agents.update": "team_update",
   "system.status": "context",

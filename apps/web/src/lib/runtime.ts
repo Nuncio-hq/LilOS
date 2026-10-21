@@ -5,12 +5,13 @@ import {
   type SessionModel,
   SessionReducer,
 } from "@lilos/client-runtime";
-import type {
-  Ask,
-  EngineHostStatus,
-  SystemStatusResult,
-  WelcomeResult,
-  WorkbenchOpenTarget,
+import {
+  type Ask,
+  CEO_SETTING_KEY,
+  type EngineHostStatus,
+  type SystemStatusResult,
+  type WelcomeResult,
+  type WorkbenchOpenTarget,
 } from "@lilos/contracts/app";
 import type {
   ConversationAccess,
@@ -132,6 +133,13 @@ export async function bootRuntime(cfg: LilosConfig): Promise<void> {
       if (r.value === "ask" || r.value === "full") defaultAccess.set(r.value);
     })
     .catch(() => {});
+  /* The CEO position (D-#778), same KV, same follow. */
+  void relay
+    .request<{ value: unknown }>("settings.get", { key: CEO_SETTING_KEY })
+    .then((r) => {
+      companyCeoId.set(typeof r.value === "string" ? r.value : undefined);
+    })
+    .catch(() => {});
   relay.onEvent((method, params) => {
     if (method !== "settings.changed") return;
     const { key, value } = params as { key?: string; value?: unknown };
@@ -147,6 +155,9 @@ export async function bootRuntime(cfg: LilosConfig): Promise<void> {
       defaultAccess.set(
         (value as ConversationAccess | undefined) === "full" ? "full" : "ask",
       );
+    }
+    if (key === CEO_SETTING_KEY) {
+      companyCeoId.set(typeof value === "string" ? value : undefined);
     }
   });
   // #339: the Connect approval flag + its settings.changed follow-up.
@@ -194,6 +205,9 @@ export const modelVisibility = atom<ModelVisibility>({
   providers: [],
   models: [],
 });
+
+/** Who holds the CEO position (D-#778). Absent until `company.setCeo`. */
+export const companyCeoId = atom<string | undefined>(undefined);
 
 /* `host.changed` lands at harness.register while the engine is still
    starting, so a catalog refresh re-asks a bounded number of times before

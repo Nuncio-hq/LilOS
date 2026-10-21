@@ -348,6 +348,21 @@ export const TeamHireResult = z.object({
 export type TeamHireResult = z.infer<typeof TeamHireResult>;
 
 /**
+ * `team_set_ceo` — propose giving the CEO position to an employee (D-#778).
+ * The ask waits; `company.setCeo` runs only after the user approves.
+ * The caller's session must be the current holder's (the first holder is
+ * appointed in the app, where no agent session has the tool yet).
+ */
+export const TeamSetCeoParams = z.strictObject({
+  employeeId: z.string().min(1),
+});
+export type TeamSetCeoParams = z.infer<typeof TeamSetCeoParams>;
+export const TeamSetCeoResult = z.object({
+  ceoId: z.string().min(1),
+});
+export type TeamSetCeoResult = z.infer<typeof TeamSetCeoResult>;
+
+/**
  * `team_update` — edit the calling employee's own record (name, role,
  * model, instructions, who they report to). The employee id comes from
  * the session binding, never from a param: an agent cannot edit a
@@ -670,6 +685,12 @@ export interface LilosToolContract {
   doc: string;
   area: ToolArea;
   access: ToolAccess;
+  /**
+   * Offered only to a session whose employee held the CEO position when
+   * the session started, and rejected at call time unless they still do
+   * (D-#778). Absent on every other tool.
+   */
+  ceoOnly?: boolean;
 }
 
 export const LILOS_TOOLS: Record<string, LilosToolContract> = {
@@ -834,6 +855,17 @@ export const LILOS_TOOLS: Record<string, LilosToolContract> = {
     doc: "Ask the user to hire an employee (name, role, model, instructions; `profile` reuses an existing engine profile). Waits for approval; returns the new employee record.",
     area: "team",
     access: "approval",
+    /* The owner works with the CEO (#746). A worker must not propose a hire. */
+    ceoOnly: true,
+  },
+  team_set_ceo: {
+    params: TeamSetCeoParams,
+    result: TeamSetCeoResult,
+    doc: "Ask the user to give the CEO position to an employee. Everyone who reported to the previous CEO or to the owner then reports to them; they report to the owner. Waits for approval.",
+    area: "team",
+    access: "approval",
+    /* Moving the position is the holder's proposal, and it still asks the owner. */
+    ceoOnly: true,
   },
   team_update: {
     params: TeamUpdateParams,
@@ -964,6 +996,20 @@ export function toolsForAreas(areas: ReadonlySet<ToolArea>): LilosToolName[] {
   );
 }
 
+/**
+ * What one session is offered (D-#778). `ceoAtStart` is the snapshot from
+ * session start: a CEO-only tool is absent unless this session's employee
+ * held the position then. Call time checks the live holder separately.
+ */
+export function toolsForSession(
+  areas: ReadonlySet<ToolArea>,
+  ceoAtStart: boolean,
+): LilosToolName[] {
+  return toolsForAreas(areas).filter(
+    (name) => ceoAtStart || !LILOS_TOOLS[name].ceoOnly,
+  );
+}
+
 /* --------------------------- catalog rendering -------------------------- */
 
 /**
@@ -984,6 +1030,7 @@ export function catalogRows(names: readonly string[]) {
       _meta: {
         "lilos/area": contract.area,
         "lilos/access": contract.access,
+        ...(contract.ceoOnly ? { "lilos/ceoOnly": true } : {}),
       },
     };
   });

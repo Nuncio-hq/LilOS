@@ -22,6 +22,7 @@ import type {
   ScheduleUpdateParams,
   SessionBinding,
   TeamHireParams,
+  TeamSetCeoParams,
   TeamUpdateParams,
   TicketAssignParams,
   TicketAssignResult,
@@ -148,6 +149,10 @@ export interface AppOps {
   }): Promise<{ conversation: Conversation; message: AppMessage }>;
   /** Hire an employee (`agents.create`? + `employees.create` + `channels.openDm` on approve). */
   hireEmployee(p: TeamHireParams): Promise<Employee>;
+  /** Give an employee the CEO position (`company.setCeo` on approve, D-#778). */
+  setCeo(employeeId: string): Promise<{ ceoId: string }>;
+  /** The employee who holds the CEO position, if the company has one (D-#778). */
+  ceoId(): Promise<string | undefined>;
   /** Edit the calling employee's own record (`employees.update` + `agents.update` on approve). */
   updateSelf(p: TeamUpdateParams): Promise<Employee>;
   /** Add a folder to recent folders (`folders.add` on approve). */
@@ -191,6 +196,12 @@ export interface SurfaceScopeOptions {
   appOps?: AppOps;
   /** Who/what the session is bound to (employee/channel/conversation) — #337. */
   binding?: SessionBinding;
+  /**
+   * True when this session's employee held the CEO position at session
+   * start (D-#778). The offered tool list and the host-policy brief use
+   * this snapshot; call time re-reads `appOps.ceoId()`.
+   */
+  ceoAtStart?: boolean;
   /** Scrollback cap; default 400 KB like the spike's ring. */
   termTailBytes?: number;
   runTimeoutMs?: number;

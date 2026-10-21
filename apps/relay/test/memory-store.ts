@@ -15,7 +15,14 @@ import type {
   ScheduledTask,
   Ticket,
 } from "@lilos/contracts/app";
-import { toSummaryMessage, toSummaryPreview } from "@lilos/contracts/app";
+import {
+  assertReportsAcyclic,
+  CEO_SETTING_KEY,
+  reportsToAfterCeo,
+  toSummaryMessage,
+  toSummaryPreview,
+  withReportsTo,
+} from "@lilos/contracts/app";
 import { equalSecret } from "@lilos/contracts/auth";
 import type {
   AppendMessageInput,
@@ -292,6 +299,30 @@ export function createMemoryStore(): RelayStore {
       }
       employees.delete(id);
       return { employee, channelIds: [...channelIds] };
+    },
+    async setCeo(employeeId) {
+      if (!employees.has(employeeId)) return null;
+      const stored = settings.get(CEO_SETTING_KEY);
+      const oldCeoId = typeof stored === "string" ? stored : undefined;
+      if (oldCeoId === employeeId) {
+        return { ceoId: employeeId, employees: [], changed: false };
+      }
+      const all = [...employees.values()].map((e) => ({
+        id: e.id,
+        reportsTo: e.reportsTo,
+      }));
+      const patches = reportsToAfterCeo(all, oldCeoId, employeeId);
+      assertReportsAcyclic(withReportsTo(all, patches));
+      const changed: Employee[] = [];
+      for (const patch of patches) {
+        const row = employees.get(patch.id);
+        if (!row) continue;
+        if (patch.reportsTo === null) delete row.reportsTo;
+        else row.reportsTo = patch.reportsTo;
+        changed.push(row);
+      }
+      settings.set(CEO_SETTING_KEY, employeeId);
+      return { ceoId: employeeId, employees: changed, changed: true };
     },
     async listChannels() {
       return [...channels.values()].sort((a, b) => a.createdAt - b.createdAt);

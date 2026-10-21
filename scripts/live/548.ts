@@ -194,6 +194,10 @@ const appOps: AppOps = {
   hireEmployee: async () => {
     throw new Error("not exercised in this script");
   },
+  setCeo: async () => {
+    throw new Error("not exercised in this script");
+  },
+  ceoId: async () => undefined,
   updateSelf: async () => {
     throw new Error("not exercised in this script");
   },
