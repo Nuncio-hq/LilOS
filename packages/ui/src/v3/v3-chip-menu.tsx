@@ -65,13 +65,6 @@ export function ChipMenu({
       </button>
       {open && (
         <>
-          <button
-            type="button"
-            tabIndex={-1}
-            aria-label={`Close ${title.toLowerCase()} menu`}
-            onClick={() => setOpen(false)}
-            className="fixed inset-0 z-10 cursor-default"
-          />
           <div
             ref={list}
             role="menu"

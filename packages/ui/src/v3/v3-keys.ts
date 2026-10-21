@@ -50,9 +50,11 @@ export function useFocusOn<T extends HTMLElement>(open: boolean) {
 /** A small dropdown menu: its open state, the trigger and the list, and the
     keys. Opening puts the keyboard on the current choice (`aria-checked`) or
     the first item; ↑ ↓ move between the list's buttons; Esc closes the menu
-    (not the peek behind it) and returns to the trigger. Give the list
-    `role="menu"` so the layer stack leaves its Esc alone too. `triggerRef` is
-    for a caller that also needs the trigger (to focus it from outside). */
+    (not the peek behind it) and returns to the trigger. A press anywhere
+    outside the trigger and the list closes it, so only one menu is ever
+    open. Give the list `role="menu"` so the layer stack leaves its Esc alone
+    too. `triggerRef` is for a caller that also needs the trigger (to focus it
+    from outside). */
 export function useMenu(triggerRef?: RefObject<HTMLButtonElement | null>) {
   const [open, setOpen] = useState(false);
   const own = useRef<HTMLButtonElement>(null);
@@ -66,6 +68,23 @@ export function useMenu(triggerRef?: RefObject<HTMLButtonElement | null>) {
     );
     (on ?? list.current?.querySelector<HTMLElement>("button"))?.focus();
   }, [open]);
+
+  /* Outside presses close the menu from the document, in the capture phase:
+     not a full-screen catcher behind the list, which a container-query
+     ancestor (`contain: layout`) shrinks to its own box, leaving other rows'
+     triggers above it and the rest of the page unable to close it. The
+     trigger is left out so its own click toggles. */
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => {
+      const at = e.target as Node | null;
+      if (at && (list.current?.contains(at) || trigger.current?.contains(at)))
+        return;
+      setOpen(false);
+    };
+    document.addEventListener("pointerdown", onDown, true);
+    return () => document.removeEventListener("pointerdown", onDown, true);
+  }, [open, trigger]);
 
   const close = () => {
     setOpen(false);
