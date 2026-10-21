@@ -1,3 +1,4 @@
+import { ceoOnStuck } from "./ceo-loop";
 import type { HarnessCtx, SessionBinding } from "./ctx";
 
 /**
@@ -131,6 +132,7 @@ function publish(
     .updateConversation(binding.conversationId, {
       stuck: { reason },
     })
+    .then(() => ceoOnStuck(ctx, binding))
     .catch((error) =>
       ctx.opts.log.warn("stuck write failed", { error: String(error) }),
     );

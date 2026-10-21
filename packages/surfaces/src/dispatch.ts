@@ -30,6 +30,7 @@ import {
   type TicketCreateParams,
   type TicketReadParams,
   type TicketUpdateParams,
+  type UpdatePostParams,
 } from "@lilos/contracts/harness";
 import { z } from "zod";
 import { type SurfaceBackend, SurfaceError } from "./backend.js";
@@ -172,6 +173,9 @@ export async function callTool(
       break;
     case "ticket_comment":
       result = await backend.ticketComment(p as TicketCommentParams);
+      break;
+    case "update_post":
+      result = await backend.updatePost(p as UpdatePostParams);
       break;
 
     case "thread_post":

@@ -91,9 +91,16 @@ export function V3Home({ data, go, act }: V3PageProps) {
   const grid = teamGrid(showWaiting);
   const results = resultsToLookAt(data);
   const outside = data.agents.filter((a) => a.kind === "outside").length;
-  const brief = [...data.updates]
-    .filter((u) => u.kind === "brief")
-    .sort((a, b) => b.at.localeCompare(a.at))[0];
+  /* The latest note the CEO wrote. No CEO, no brief (D-#777). */
+  const brief = data.ceoId
+    ? [...data.updates]
+        .filter((u) => u.by === data.ceoId)
+        .sort((a, b) =>
+          a.atSort !== undefined && b.atSort !== undefined
+            ? b.atSort - a.atSort
+            : b.at.localeCompare(a.at),
+        )[0]
+    : undefined;
   const briefBy = brief ? agentOf(data, brief.by) : undefined;
 
   return (

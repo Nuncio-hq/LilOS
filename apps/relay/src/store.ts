@@ -6,6 +6,7 @@ import type {
   AskHireProposal,
   AskState,
   AuthorKind,
+  CompanyUpdate,
   Conversation,
   ConversationLife,
   ConversationState,
@@ -485,6 +486,18 @@ export interface RelayStore {
     id: string,
     update: { by: string; text: string },
   ): Promise<Ticket | null>;
+  /** Newest first (D-#777). */
+  listUpdates(): Promise<CompanyUpdate[]>;
+  postUpdate(input: {
+    kind: CompanyUpdate["kind"];
+    text: string;
+    ticketId?: string;
+    goalId?: string;
+    authorKind: "employee" | "system";
+    authorId?: string;
+  }): Promise<CompanyUpdate>;
+  /** Threads that are a hand of this ticket, newest first. */
+  threadsOnTicket(ticketId: string): Promise<Conversation[]>;
 
   listConversations(query: ListConversationsQuery): Promise<Conversation[]>;
   /**

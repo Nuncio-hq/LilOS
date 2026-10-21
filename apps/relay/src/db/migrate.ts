@@ -481,6 +481,24 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
       `CREATE INDEX conversations_ticket ON conversations(ticket_id)`,
     ],
   },
+  {
+    /* D-#777: company updates. No foreign keys — a removed ticket must
+       not take the note the owner already read with it. */
+    version: 33,
+    statements: [
+      `CREATE TABLE company_updates (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL,
+        text TEXT NOT NULL,
+        ticket_id TEXT,
+        goal_id TEXT,
+        author_kind TEXT NOT NULL,
+        author_id TEXT,
+        created_at INTEGER NOT NULL
+      )`,
+      `CREATE INDEX company_updates_created ON company_updates(created_at)`,
+    ],
+  },
 ];
 
 /**

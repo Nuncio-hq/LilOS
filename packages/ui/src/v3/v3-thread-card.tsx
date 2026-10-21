@@ -285,10 +285,18 @@ export function ThreadCard({
                 Open
               </Btn>
             )}
-            {ticketId && handOff && handTo && (
-              <Btn small onClick={() => handOff(ticketId, handTo.id)}>
-                Hand to {handTo.name}
-              </Btn>
+            {ticketId && t.status === "stuck" && data.ceoId ? (
+              <span className="text-[13px] text-muted-foreground">
+                The CEO will handle it.
+              </span>
+            ) : (
+              ticketId &&
+              handOff &&
+              handTo && (
+                <Btn small onClick={() => handOff(ticketId, handTo.id)}>
+                  Hand to {handTo.name}
+                </Btn>
+              )
             )}
           </Actions>
         </>

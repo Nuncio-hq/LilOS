@@ -458,7 +458,9 @@
         "tickets.create",
         "tickets.update",
         "tickets.assign",
-        "tickets.comment"
+        "tickets.comment",
+        "updates.list",
+        "updates.post"
       ]
     },
     "AppEventMethod": {
@@ -490,7 +492,8 @@
         "schedule.removed",
         "project.upserted",
         "goal.upserted",
-        "ticket.upserted"
+        "ticket.upserted",
+        "update.upserted"
       ]
     },
     "HelloParams": {
@@ -10417,6 +10420,10 @@
         },
         "stuckWhy": {
           "type": "string"
+        },
+        "actorId": {
+          "type": "string",
+          "minLength": 1
         }
       },
       "required": [
@@ -10630,6 +10637,10 @@
             "string",
             "null"
           ]
+        },
+        "actorId": {
+          "type": "string",
+          "minLength": 1
         }
       },
       "required": [
@@ -10915,6 +10926,10 @@
           "minLength": 1
         },
         "ownerId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "actorId": {
           "type": "string",
           "minLength": 1
         }
@@ -11880,10 +11895,316 @@
             "statusAt",
             "createdAt"
           ]
+        },
+        "actorId": {
+          "type": "string",
+          "minLength": 1
         }
       },
       "required": [
         "ticket"
+      ]
+    },
+    "CompanyUpdate": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "plan",
+            "finished",
+            "handed",
+            "stuck",
+            "note"
+          ]
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ticketId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "goalId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "authorKind": {
+          "type": "string",
+          "enum": [
+            "user",
+            "employee",
+            "system"
+          ]
+        },
+        "authorId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "createdAt": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "text",
+        "authorKind",
+        "createdAt"
+      ]
+    },
+    "UpdatesListParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "UpdatesListResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "updates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "plan",
+                  "finished",
+                  "handed",
+                  "stuck",
+                  "note"
+                ]
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1
+              },
+              "ticketId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "goalId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "authorKind": {
+                "type": "string",
+                "enum": [
+                  "user",
+                  "employee",
+                  "system"
+                ]
+              },
+              "authorId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "createdAt": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "text",
+              "authorKind",
+              "createdAt"
+            ]
+          }
+        }
+      },
+      "required": [
+        "updates"
+      ]
+    },
+    "UpdatesPostParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "plan",
+            "finished",
+            "handed",
+            "stuck",
+            "note"
+          ]
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "ticketId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "goalId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "authorKind": {
+          "type": "string",
+          "enum": [
+            "employee",
+            "system"
+          ]
+        },
+        "authorId": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "kind",
+        "text"
+      ],
+      "additionalProperties": false
+    },
+    "UpdatesPostResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "update": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "plan",
+                "finished",
+                "handed",
+                "stuck",
+                "note"
+              ]
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1
+            },
+            "ticketId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "goalId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "authorKind": {
+              "type": "string",
+              "enum": [
+                "user",
+                "employee",
+                "system"
+              ]
+            },
+            "authorId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "createdAt": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "text",
+            "authorKind",
+            "createdAt"
+          ]
+        }
+      },
+      "required": [
+        "update"
+      ]
+    },
+    "UpdateUpsertedEvent": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "update": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "plan",
+                "finished",
+                "handed",
+                "stuck",
+                "note"
+              ]
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1
+            },
+            "ticketId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "goalId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "authorKind": {
+              "type": "string",
+              "enum": [
+                "user",
+                "employee",
+                "system"
+              ]
+            },
+            "authorId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "createdAt": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "text",
+            "authorKind",
+            "createdAt"
+          ]
+        }
+      },
+      "required": [
+        "update"
       ]
     },
     "ConversationModelRequestedEvent": {

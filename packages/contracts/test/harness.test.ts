@@ -59,6 +59,7 @@ describe("AC-2 tool surface contracts", () => {
       "ticket_list",
       "ticket_read",
       "ticket_update",
+      "update_post",
       "workbench_open",
       "workbench_previews",
     ]);

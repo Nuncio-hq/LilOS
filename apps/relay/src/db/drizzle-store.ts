@@ -3,6 +3,7 @@ import type {
   AppChannel,
   AppMessage,
   Ask,
+  CompanyUpdate,
   Conversation,
   ConversationSummary,
   Employee,
@@ -295,6 +296,28 @@ const rowToProfile = (row: ProfileRow): ProfileSettings => ({
 
 export function createDrizzleStore(db: Db): RelayStore {
   const now = () => Date.now();
+
+  function rowToUpdate(row: {
+    id: string;
+    kind: string;
+    text: string;
+    ticketId: string | null;
+    goalId: string | null;
+    authorKind: string;
+    authorId: string | null;
+    createdAt: number;
+  }): CompanyUpdate {
+    return {
+      id: row.id,
+      kind: row.kind as CompanyUpdate["kind"],
+      text: row.text,
+      ...(row.ticketId ? { ticketId: row.ticketId } : {}),
+      ...(row.goalId ? { goalId: row.goalId } : {}),
+      authorKind: row.authorKind as CompanyUpdate["authorKind"],
+      ...(row.authorId ? { authorId: row.authorId } : {}),
+      createdAt: row.createdAt,
+    };
+  }
 
   /* Monotonic recents tick (#113): newest-first ordering stays stable even
      when two picks land inside the same millisecond. `q` is the db or its
@@ -1257,6 +1280,37 @@ export function createDrizzleStore(db: Db): RelayStore {
         .where(eq(schema.tickets.id, id))
         .run();
       return ticket;
+    },
+    async listUpdates() {
+      const rows = db
+        .select()
+        .from(schema.companyUpdates)
+        .orderBy(desc(schema.companyUpdates.createdAt))
+        .all();
+      return rows.map(rowToUpdate);
+    },
+    async postUpdate(input) {
+      const row = {
+        id: newId("upd"),
+        kind: input.kind,
+        text: input.text,
+        ticketId: input.ticketId ?? null,
+        goalId: input.goalId ?? null,
+        authorKind: input.authorKind,
+        authorId: input.authorId ?? null,
+        createdAt: now(),
+      };
+      db.insert(schema.companyUpdates).values(row).run();
+      return rowToUpdate(row);
+    },
+    async threadsOnTicket(ticketId: string) {
+      const rows = db
+        .select()
+        .from(schema.conversations)
+        .where(eq(schema.conversations.ticketId, ticketId))
+        .orderBy(desc(schema.conversations.createdAt))
+        .all();
+      return rows.map(rowToConversation);
     },
     async listRecentFolders(): Promise<RecentFolder[]> {
       return db

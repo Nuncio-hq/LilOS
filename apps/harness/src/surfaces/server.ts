@@ -5,9 +5,9 @@ import { fileURLToPath } from "node:url";
 import { equalSecret } from "@lilos/contracts/auth";
 import type { McpServer, McpServerHttp } from "@lilos/contracts/engine";
 import {
-  CEO_INSTRUCTIONS,
   LILOS_TOOLS,
   MCP_PATH,
+  renderCeoBrief,
   type SessionBinding,
   toolsForSession,
 } from "@lilos/contracts/harness";
@@ -226,7 +226,7 @@ export async function serveSurfaces(
       { name: "LILOS_OFFERED_TOOLS", value: offered.join(",") },
       { name: "LILOS_CEO_TOOLS", value: ceoTools.join(",") || "-" },
       ...(scope.ceoAtStart
-        ? [{ name: "LILOS_CEO_INSTRUCTIONS", value: CEO_INSTRUCTIONS }]
+        ? [{ name: "LILOS_CEO_INSTRUCTIONS", value: renderCeoBrief() }]
         : []),
     ];
     const entry = registry.add(scope, {

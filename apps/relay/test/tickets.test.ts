@@ -2,6 +2,7 @@ import type { Conversation, Ticket } from "@lilos/contracts/app";
 import { describe, expect, it } from "vitest";
 import {
   errorData,
+  eventsNamed,
   helloed,
   lastId,
   newRelay,
@@ -9,6 +10,7 @@ import {
   resultOf,
   setupChannel,
 } from "./helpers";
+import { createMemoryStore } from "./memory-store";
 
 /**
  * D-#776: the relay owns goals and tickets. Assign is one step that sets
@@ -99,6 +101,76 @@ describe("tickets", () => {
     );
     const hands = conversations.filter((c) => c.ticketId === ticket.id);
     expect(hands).toHaveLength(2);
+  });
+
+  it("a hand-off notes the previous thread and stops a stuck one", async () => {
+    const store = createMemoryStore();
+    const relay = newRelay({ store });
+    const user = await helloed(relay);
+    const { employee, channel } = await setupChannel(
+      user.frames,
+      user.connection,
+    );
+    await user.connection.receive(
+      req("channel.subscribe", { channelId: channel.id }),
+    );
+    const { project } = await call<{ project: { id: string; key: string } }>(
+      user,
+      "projects.create",
+      { folder: `${HOME}/Code/LilOS`, name: "LilOS" },
+    );
+    const { employee: blair } = await call<{
+      employee: { id: string; name: string };
+    }>(user, "employees.create", { name: "Blair", role: "Notes" });
+    const { ticket } = await call<{ ticket: Ticket }>(user, "tickets.create", {
+      project: project.key,
+      title: "Build it",
+    });
+    const first = await call<{ conversation: Conversation }>(
+      user,
+      "tickets.assign",
+      { id: ticket.id, ownerId: employee.id },
+    );
+    user.frames.length = 0;
+    await call(user, "tickets.assign", { id: ticket.id, ownerId: blair.id });
+    const idleNotes = eventsNamed(user.frames, "message.created").filter(
+      (f) =>
+        (f.params as { message?: { text?: string } }).message?.text ===
+        "Handed to Blair",
+    );
+    expect(idleNotes).toHaveLength(1);
+    expect(eventsNamed(user.frames, "turn.interruptRequested")).toHaveLength(0);
+
+    const { ticket: stuckTicket } = await call<{ ticket: Ticket }>(
+      user,
+      "tickets.create",
+      { project: project.key, title: "Stuck one" },
+    );
+    const stuckHand = await call<{ conversation: Conversation }>(
+      user,
+      "tickets.assign",
+      { id: stuckTicket.id, ownerId: employee.id },
+    );
+    await store.updateConversation(stuckHand.conversation.id, {
+      state: "active",
+      stuck: { reason: "Same step" },
+    });
+    user.frames.length = 0;
+    await call(user, "tickets.assign", {
+      id: stuckTicket.id,
+      ownerId: blair.id,
+    });
+    expect(
+      eventsNamed(user.frames, "message.created").some(
+        (f) =>
+          (f.params as { message?: { text?: string } }).message?.text ===
+          "Handed to Blair",
+      ),
+    ).toBe(true);
+    expect(eventsNamed(user.frames, "turn.interruptRequested")).toHaveLength(1);
+    const cleared = await store.getConversation(stuckHand.conversation.id);
+    expect(cleared?.stuck).toBeUndefined();
+    expect(first.conversation.id).not.toBe(stuckHand.conversation.id);
   });
 
   it("finishing a ticket moves the one waiting on it", async () => {

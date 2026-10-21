@@ -1,5 +1,11 @@
-import type { Goal, Ticket } from "@lilos/contracts/app";
-import type { V3Goal, V3ProgressStep, V3Ticket, V3WaitingOn } from "@lilos/ui";
+import type { CompanyUpdate, Goal, Ticket } from "@lilos/contracts/app";
+import type {
+  V3Goal,
+  V3ProgressStep,
+  V3Ticket,
+  V3Update,
+  V3WaitingOn,
+} from "@lilos/ui";
 
 const MIN = 60_000;
 
@@ -13,6 +19,27 @@ const ago = (at: number, now: number) =>
  * page, so a goal here is only its words. An empty owner stays empty: the
  * row says Unassigned, not that someone left.
  */
+function clock(ts: number): string {
+  const d = new Date(ts);
+  const h = String(d.getHours()).padStart(2, "0");
+  const m = String(d.getMinutes()).padStart(2, "0");
+  return `${h}:${m}`;
+}
+
+/** Relay updates become the Home brief and the Inbox feed (D-#777). */
+export function v3Updates(rows: readonly CompanyUpdate[]): V3Update[] {
+  return rows.map((u) => ({
+    id: u.id,
+    by: u.authorId ?? "",
+    authorKind: u.authorKind,
+    at: clock(u.createdAt),
+    atSort: u.createdAt,
+    ...(u.ticketId ? { ticketId: u.ticketId } : {}),
+    kind: u.kind,
+    text: u.text,
+  }));
+}
+
 export function v3Goals(goals: readonly Goal[]): V3Goal[] {
   return goals.map((g) => ({
     id: g.id,

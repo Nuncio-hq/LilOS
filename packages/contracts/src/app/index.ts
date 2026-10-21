@@ -2,6 +2,7 @@ export * from "./browser";
 export * from "./ceo";
 export * from "./desktop";
 export * from "./domain";
+export * from "./inbox";
 export * from "./project";
 export { appProtocol, appProtocolSchemas } from "./registry";
 export * from "./schedule";

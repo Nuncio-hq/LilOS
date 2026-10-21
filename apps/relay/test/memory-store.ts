@@ -2,6 +2,7 @@ import type {
   AppChannel,
   AppMessage,
   Ask,
+  CompanyUpdate,
   Conversation,
   ConversationSummary,
   Employee,
@@ -83,6 +84,7 @@ export function createMemoryStore(): RelayStore {
   const projects = new Map<string, Project>();
   const goals = new Map<string, Goal>();
   const tickets = new Map<string, Ticket>();
+  const companyUpdates: CompanyUpdate[] = [];
   let profile: ProfileSettings = {};
   const grants = new Map<
     string,
@@ -546,6 +548,28 @@ export function createMemoryStore(): RelayStore {
       );
       tickets.set(ticket.id, ticket);
       return ticket;
+    },
+    async listUpdates() {
+      return [...companyUpdates].sort((a, b) => b.createdAt - a.createdAt);
+    },
+    async postUpdate(input) {
+      const update: CompanyUpdate = {
+        id: newId("upd"),
+        kind: input.kind,
+        text: input.text,
+        ...(input.ticketId ? { ticketId: input.ticketId } : {}),
+        ...(input.goalId ? { goalId: input.goalId } : {}),
+        authorKind: input.authorKind,
+        ...(input.authorId ? { authorId: input.authorId } : {}),
+        createdAt: now(),
+      };
+      companyUpdates.push(update);
+      return update;
+    },
+    async threadsOnTicket(ticketId: string) {
+      return [...conversations.values()]
+        .filter((c) => c.ticketId === ticketId)
+        .sort((a, b) => b.createdAt - a.createdAt);
     },
     async listRecentFolders() {
       return [...folders.values()].sort((a, b) => b.lastUsedAt - a.lastUsedAt);

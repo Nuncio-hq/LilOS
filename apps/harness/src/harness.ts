@@ -43,6 +43,7 @@ import {
   suspendBinding,
   writeLife,
 } from "./harness/bind";
+import { wireCeoLoop } from "./harness/ceo-loop";
 import { execSlashCommand, slashFor } from "./harness/commands";
 import {
   conversationFromAtom,
@@ -52,7 +53,7 @@ import {
   resolveEmployee,
   updateConversation,
 } from "./harness/conversations";
-import type { SessionBinding } from "./harness/ctx";
+import type { HarnessCtx, SessionBinding } from "./harness/ctx";
 import {
   deliver,
   deliverOrdered,
@@ -463,6 +464,9 @@ export class Harness {
     });
     this.reaper.start();
     this.wireScheduler();
+    /* start() runs after Object.assign puts the HarnessCtx methods on the
+       prototype. The class type does not list them (D-#777). */
+    wireCeoLoop(this as unknown as HarnessCtx);
   }
 
   declare private onRelayReady: () => Promise<void>;

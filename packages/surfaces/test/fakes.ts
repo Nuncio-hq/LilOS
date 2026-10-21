@@ -2,6 +2,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import type {
   AppMessage,
+  CompanyUpdate,
   Conversation,
   ConversationSummary,
   Employee,
@@ -25,6 +26,7 @@ import type {
   TicketCommentParams,
   TicketCreateParams,
   TicketUpdateParams,
+  UpdatePostParams,
   ViewerBrowserInputEvent,
 } from "@lilos/contracts/harness";
 import type { ForgePrListItem } from "@lilos/contracts/host";
@@ -207,6 +209,7 @@ export function fakeAppOps(
   const projectRows: Project[] = [...(opts.projects ?? [])];
   const goalRows: Goal[] = [];
   const ticketRows: Ticket[] = [];
+  const companyUpdates: CompanyUpdate[] = [];
   /* The fake's gate: the real impl posts an ask and waits; here the
      recorded command stands in for the card and `approve` answers it. */
   const gate = (command: string) => {
@@ -610,6 +613,20 @@ export function fakeAppOps(
         text: p.text,
       });
       return ticket;
+    },
+    async postUpdate(p: UpdatePostParams) {
+      const update: CompanyUpdate = {
+        id: `upd-${companyUpdates.length + 1}`,
+        kind: p.kind,
+        text: p.text,
+        ...(p.ticketId ? { ticketId: p.ticketId } : {}),
+        ...(p.goalId ? { goalId: p.goalId } : {}),
+        authorKind: "employee",
+        authorId: opts.employees?.[0]?.id ?? "emp",
+        createdAt: Date.now(),
+      };
+      companyUpdates.push(update);
+      return update;
     },
   };
 }

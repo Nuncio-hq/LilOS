@@ -246,6 +246,26 @@ export const tickets = sqliteTable(
 );
 
 /**
+ * What the company told the owner (D-#777). No foreign key: a removed
+ * ticket or goal must not block the note. `author_id` is empty for a
+ * system note (LilOS); an employee note names that employee.
+ */
+export const companyUpdates = sqliteTable(
+  "company_updates",
+  {
+    id: text("id").primaryKey(),
+    kind: text("kind").notNull(),
+    text: text("text").notNull(),
+    ticketId: text("ticket_id"),
+    goalId: text("goal_id"),
+    authorKind: text("author_kind").notNull(),
+    authorId: text("author_id"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [index("company_updates_created").on(t.createdAt)],
+);
+
+/**
  * Scheduled tasks (#136): one row per employee task — a prompt that opens a
  * new thread on a schedule. The relay owns the record (D-#25); the
  * engine host owns the clock: `last_fired_at` is its "runs after this"

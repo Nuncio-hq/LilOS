@@ -39,6 +39,14 @@ import {
   WorkspaceIntent,
 } from "./domain";
 import {
+  CompanyUpdate,
+  UpdatesListParams,
+  UpdatesListResult,
+  UpdatesPostParams,
+  UpdatesPostResult,
+  UpdateUpsertedEvent,
+} from "./inbox";
+import {
   Project,
   ProjectResult,
   ProjectsCreateParams,
@@ -341,6 +349,13 @@ export const appProtocolSchemas = {
   TicketsAssignResult,
   TicketsCommentParams,
   TicketUpsertedEvent,
+  /* company updates (D-#777) */
+  CompanyUpdate,
+  UpdatesListParams,
+  UpdatesListResult,
+  UpdatesPostParams,
+  UpdatesPostResult,
+  UpdateUpsertedEvent,
   ConversationModelRequestedEvent,
   ProfileUpdatedEvent,
   SettingsGetParams,

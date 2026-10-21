@@ -15,12 +15,18 @@ class _Ctx:
 
     def __init__(self):
         self.tools = []
+        self.sections = []
+        self.section_fns = []
 
     def register_hook(self, name, fn):
         pass
 
-    def register_system_prompt_section(self, *args, **kwargs):
-        pass
+    def register_system_prompt_section(self, name, fn, **kwargs):
+        self.sections.append({
+            "name": name,
+            "max_chars": kwargs.get("max_chars"),
+        })
+        self.section_fns.append((name, fn))
 
     def register_tool(self, name, toolset, spec, handler, **kwargs):
         self.tools.append(name)
@@ -34,7 +40,16 @@ spec.loader.exec_module(mod)
 ctx = _Ctx()
 t0 = time.monotonic()
 mod.register(ctx)
-report = {"seconds": time.monotonic() - t0, "tools": ctx.tools}
+ceo_blank = ""
+for name, fn in ctx.section_fns:
+    if name == "lilos.ceo_brief":
+        ceo_blank = fn({"platform": "cli", "session_id": "x"})
+report = {
+    "seconds": time.monotonic() - t0,
+    "tools": ctx.tools,
+    "sections": ctx.sections,
+    "ceo_blank": ceo_blank,
+}
 
 # #549 AC-2: with a LilOS-source session (env stamp is the acp path's mark),
 # every hermes browser_* tool must be refused truthfully — lilos_browser_*

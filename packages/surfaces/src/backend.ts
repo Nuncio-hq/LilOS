@@ -61,6 +61,8 @@ import type {
   TicketUpdateParams,
   TicketUpdateResult,
   ToolArea,
+  UpdatePostParams,
+  UpdatePostResult,
   ViewerBrowserInputEvent,
   WorkbenchOpenResult,
   WorkbenchPreviewsResult,
@@ -117,6 +119,7 @@ export interface SurfaceBackend {
   ticketUpdate(p: TicketUpdateParams): Promise<TicketUpdateResult>;
   ticketAssign(p: TicketAssignParams): Promise<TicketAssignResult>;
   ticketComment(p: TicketCommentParams): Promise<TicketCommentResult>;
+  updatePost(p: UpdatePostParams): Promise<UpdatePostResult>;
 
   threadPost(p: { text: string }): Promise<ThreadPostResult>;
   threadRead(p: ThreadReadParams): Promise<ThreadReadResult>;

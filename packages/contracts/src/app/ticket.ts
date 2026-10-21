@@ -163,6 +163,9 @@ export const TicketsCreateParams = z
     progress: z.array(TicketStep).optional(),
     startsAt: z.string().optional(),
     stuckWhy: z.string().optional(),
+    /** Host-only. The employee who wrote the ticket, so a CEO wake can
+        ignore the CEO's own action (D-#777). A user client cannot set it. */
+    actorId: z.string().min(1).optional(),
   })
   .strict();
 export type TicketsCreateParams = z.infer<typeof TicketsCreateParams>;
@@ -180,6 +183,8 @@ export const TicketsUpdateParams = z
     result: TicketResult.nullable().optional(),
     startsAt: z.string().nullable().optional(),
     stuckWhy: z.string().nullable().optional(),
+    /** Host-only. See `TicketsCreateParams.actorId` (D-#777). */
+    actorId: z.string().min(1).optional(),
   })
   .strict();
 export type TicketsUpdateParams = z.infer<typeof TicketsUpdateParams>;
@@ -192,6 +197,8 @@ export const TicketsAssignParams = z
   .object({
     id: z.string().min(1),
     ownerId: z.string().min(1),
+    /** Host-only. See `TicketsCreateParams.actorId` (D-#777). */
+    actorId: z.string().min(1).optional(),
   })
   .strict();
 export type TicketsAssignParams = z.infer<typeof TicketsAssignParams>;
@@ -213,5 +220,9 @@ export const TicketsCommentParams = z
   .strict();
 export type TicketsCommentParams = z.infer<typeof TicketsCommentParams>;
 
-export const TicketUpsertedEvent = z.object({ ticket: Ticket });
+export const TicketUpsertedEvent = z.object({
+  ticket: Ticket,
+  /** Present when the host named the employee who wrote the ticket (D-#777). */
+  actorId: z.string().min(1).optional(),
+});
 export type TicketUpsertedEvent = z.infer<typeof TicketUpsertedEvent>;

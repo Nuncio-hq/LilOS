@@ -1,8 +1,8 @@
 /**
  * D-#778: company.setCeo is one write. The memory store covers the wire
  * (events, the settings-key lock). The drizzle subprocess covers the
- * real transaction and that user_version stays 32 — #776's migration.
- * C3 adds none. A hire while someone holds the seat reports to them;
+ * real transaction. user_version is 33 — D-#777's company updates.
+ * A hire while someone holds the seat reports to them;
  * removing the holder clears ceoId in that same write.
  */
 
@@ -194,7 +194,7 @@ describe("company.setCeo on the real store (D-#778)", () => {
       cleared: boolean;
       afterCeo: unknown;
     };
-    expect(out.version).toBe(32);
+    expect(out.version).toBe(33);
     expect(out.first).toContainEqual(["bea", expect.stringMatching(/^emp_/)]);
     expect(out.again).toBe(false);
     expect(out.second).toContainEqual(["ada", expect.stringMatching(/^emp_/)]);

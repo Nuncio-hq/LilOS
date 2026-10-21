@@ -20,6 +20,7 @@ import {
   type TicketReadParams,
   type TicketUpdateParams,
   type ToolArea,
+  type UpdatePostParams,
   type ViewerBrowserInputEvent,
 } from "@lilos/contracts/harness";
 import {
@@ -721,6 +722,13 @@ export class SessionSurfaces implements ViewerScope {
     return this.tracked("ticket_comment", p.id, async () => {
       const ops = this.requireAppOps();
       return { ticket: await ops.commentTicket(p) };
+    });
+  }
+
+  updatePost(p: UpdatePostParams) {
+    return this.tracked("update_post", p.kind, async () => {
+      const ops = this.requireAppOps();
+      return { update: await ops.postUpdate(p) };
     });
   }
 

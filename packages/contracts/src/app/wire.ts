@@ -306,6 +306,10 @@ export const AppMethod = z.enum([
   "tickets.update",
   "tickets.assign",
   "tickets.comment",
+  /* Company updates (D-#777). The inbox is the owner's. Posting is the
+     host: the CEO tool, or LilOS for a system note. */
+  "updates.list",
+  "updates.post",
 ]);
 export type AppMethod = z.infer<typeof AppMethod>;
 
@@ -1461,6 +1465,8 @@ export const AppEventMethod = z.enum([
      ticket wakes. */
   "goal.upserted",
   "ticket.upserted",
+  /* A company update was posted (D-#777). Home and Inbox read this live. */
+  "update.upserted",
 ]);
 export type AppEventMethod = z.infer<typeof AppEventMethod>;
 

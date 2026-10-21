@@ -67,6 +67,8 @@ export const AGENT_METHOD_TOOLS: Record<string, string> = {
   /* Handing a ticket to an agent is the CEO's job (#746, D-#778). */
   "tickets.assign": "ticket_assign",
   "tickets.comment": "ticket_comment",
+  /* A note for the owner. CEO-only, and it does not ask (D-#777). */
+  "updates.post": "update_post",
 } as const;
 
 /**
@@ -105,6 +107,7 @@ export const NOT_AGENT_FACING: Record<string, string> = {
     "host-only: the engine and the gateway ask tool post here; the app renders the inbox",
   "asks.respond": "answering an ask is the user's action",
   "asks.list": "the ask inbox is the user's",
+  "updates.list": "the company inbox is the owner's to read",
   /* app wire — user controls of a session */
   "turns.interrupt": "the user interrupts a running turn",
   "messages.remove": "the user retracts a still-waiting message (#315)",

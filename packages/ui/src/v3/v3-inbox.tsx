@@ -7,16 +7,22 @@ import type { V3PageProps } from "./v3-page-types";
 /* Inbox: what the company told you, newest first, as a plain feed. */
 
 const KIND_WORD: Record<V3Update["kind"], string> = {
-  brief: "Update",
-  done: "Finished",
-  handoff: "Handed off",
-  stuck: "Stuck",
   plan: "Plan",
+  finished: "Finished",
+  handed: "Handed off",
+  stuck: "Stuck",
+  note: "Update",
 };
+
+function newer(a: V3Update, b: V3Update): number {
+  if (a.atSort !== undefined && b.atSort !== undefined)
+    return b.atSort - a.atSort;
+  return b.at.localeCompare(a.at);
+}
 
 export function V3Inbox({ data, go }: V3PageProps) {
   // "HH:MM" strings sort correctly as text within one day.
-  const updates = [...data.updates].sort((a, b) => b.at.localeCompare(a.at));
+  const updates = [...data.updates].sort(newer);
 
   return (
     <Page>
@@ -28,17 +34,29 @@ export function V3Inbox({ data, go }: V3PageProps) {
       <Section title="Today" count={updates.length} />
       <div className="border-[var(--v3-line)] border-t">
         {updates.map((u) => {
-          const by = agentOf(data, u.by);
+          const system = u.authorKind === "system";
+          const by = system ? undefined : agentOf(data, u.by);
           return (
             <div
               key={u.id}
               className="flex gap-3 border-[var(--v3-line)] border-b py-3.5"
             >
-              <AgentAvatar data={data} agent={by} size={24} className="mt-px" />
+              {system ? (
+                <span className="mt-px grid size-6 place-items-center rounded-full bg-[var(--v3-soft)] text-[11px] font-semibold text-foreground">
+                  L
+                </span>
+              ) : (
+                <AgentAvatar
+                  data={data}
+                  agent={by}
+                  size={24}
+                  className="mt-px"
+                />
+              )}
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline gap-2 text-[13.5px]">
                   <b className="font-semibold text-foreground">
-                    {by?.name ?? FORMER_AGENT}
+                    {system ? "LilOS" : (by?.name ?? FORMER_AGENT)}
                   </b>
                   <span className="text-muted-foreground">
                     {KIND_WORD[u.kind]}
