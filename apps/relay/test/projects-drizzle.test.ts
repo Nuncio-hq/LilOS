@@ -123,8 +123,9 @@ describe("projects migration + backfill on the real store (D-#771)", () => {
     expect(out.colsAt27).not.toContain("stuck");
     /* v28 filed projects; v29 (D-#773) adds ask lines; v30 (D-#772) adds
        stuck; v31 (D-#775) adds reports_to and stuck_at; v32 (D-#776) adds
-       goals and tickets. */
-    expect(out.versionAfter).toBe(33);
+       goals and tickets. v33 (D-#777) adds company updates; v34 adds
+       the wake flags. */
+    expect(out.versionAfter).toBe(34);
     expect(out.colsAfter).toContain("project_id");
     expect(out.colsAfter).toContain("stuck");
     expect(out.colsAfter).toContain("stuck_at");
