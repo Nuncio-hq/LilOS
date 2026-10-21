@@ -1464,6 +1464,17 @@ export class FakeEngine {
       fast: s.fast,
       ...(ref ? { ref } : {}),
     });
+    /* #790: report the route that answered. The session's pick stays;
+       the harness decides whether this is a fallback and words the note. */
+    if (script.fallbackTo) {
+      const target = script.fallbackTo;
+      this.emit(s, "turn.model", {
+        turnId,
+        model: target.model,
+        ...(target.provider ? { provider: target.provider } : {}),
+        ...(target.reason ? { reason: target.reason } : {}),
+      });
+    }
     /* A stop landing inside the `slowstart` wait must not resurrect a
        closed session — the turn still mints and cancels on its first
        paced sleep, but the state machine stays closed. */
@@ -2040,7 +2051,11 @@ export class FakeEngine {
     // Clear the turn BEFORE turn.completed — observers reacting to the
     // event (e.g. draining a queued prompt) must see the session free.
     s.turn = undefined;
-    this.emit(s, "turn.completed", { turnId, stopReason, usage: s.usage });
+    this.emit(s, "turn.completed", {
+      turnId,
+      stopReason,
+      usage: s.usage,
+    });
     if (s.state !== "closed") this.setState(s, "idle");
     this.autoTitle(s, "llm", promptText);
     // A steer that never hit a boundary becomes the next turn's input — never

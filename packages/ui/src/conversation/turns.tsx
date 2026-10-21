@@ -349,26 +349,41 @@ export function AgentTurn({
             data-turnsettled
             className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[12.5px] text-muted-foreground opacity-0 transition-opacity duration-300 group-hover:opacity-100 group-has-[[data-question-card][data-ask-state=resolved]]:h-0 group-has-[[data-question-card][data-ask-state=resolved]]:overflow-hidden"
           >
-            {r.dur !== undefined && <span>Worked for {r.dur}s</span>}
-            {r.model && (
-              <span>
-                · {models?.find((m) => m.id === r.model)?.name ?? r.model}
-                {r.effort && ` · ${effortLabel(r.effort)}`}
-                {r.fast && " · Fast"}
-              </span>
-            )}
-            {steps.length > 0 && <span>· {plural(steps.length, "step")}</span>}
-            {files > 0 &&
-              (onOpen ? (
-                <button
-                  type="button"
-                  className="underline-offset-2 hover:text-foreground hover:underline"
-                  onClick={() => onOpen("changes")}
-                >
-                  · {plural(files, "file")} changed
-                </button>
-              ) : (
-                <span>· {plural(files, "file")} changed</span>
+            {[
+              r.dur !== undefined ? (
+                <span key="dur">Worked for {r.dur}s</span>
+              ) : null,
+              r.model ? (
+                <span key="model">
+                  {models?.find((m) => m.id === r.model)?.name ?? r.model}
+                  {r.effort && ` · ${effortLabel(r.effort)}`}
+                  {r.fast && " · Fast"}
+                </span>
+              ) : null,
+              steps.length > 0 ? (
+                <span key="steps">{plural(steps.length, "step")}</span>
+              ) : null,
+              files > 0 ? (
+                onOpen ? (
+                  <button
+                    key="files"
+                    type="button"
+                    className="underline-offset-2 hover:text-foreground hover:underline"
+                    onClick={() => onOpen("changes")}
+                  >
+                    {plural(files, "file")} changed
+                  </button>
+                ) : (
+                  <span key="files">{plural(files, "file")} changed</span>
+                )
+              ) : null,
+            ]
+              .filter((bit) => bit !== null)
+              .map((bit, i) => (
+                <span key={bit.key ?? i}>
+                  {i > 0 ? "· " : null}
+                  {bit}
+                </span>
               ))}
             <MessageActions className="ml-auto opacity-0 transition-opacity group-hover:opacity-100">
               {r.text && (

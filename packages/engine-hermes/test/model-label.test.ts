@@ -69,6 +69,10 @@ describe("model-label (issue #194 AC-4)", () => {
       "Llama 3.1 8B Instruct FP8",
     );
     expect(displayModelName("gemma-4-26b-a4b-it")).toBe("Gemma 4 26B A4B IT");
+    expect(displayModelName("devin-claude-opus-5-5")).toBe(
+      "Devin Claude Opus 5.5",
+    );
+    expect(displayModelName("claude-opus-5-5")).toBe("Opus 5.5");
     expect(displayModelName("nemotron-nano-12b-v2-vl")).toBe(
       "Nemotron Nano 12B V2 VL",
     );

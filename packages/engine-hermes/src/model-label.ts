@@ -66,33 +66,39 @@ const applyVendorCasing = (text: string): string => {
   return cased;
 };
 
+/** Hyphenated version pins (`opus-5-5`, `haiku-4-5`) read dotted ("5.5").
+    A parameter-count token (`26b`) is not a version, and neither is a
+    date pin (`4.20-0309`): `gemma-4-26b` stays "4 26B", not "4.26B" (#790). */
+function dotVersion(base: string): string {
+  return base.replace(/(\d)-(?=\d{1,2}(?!\d))(?!\d*[bB]\b)/g, "$1.");
+}
+
 function prettifyBase(base: string): string {
   if (/^claude-/i.test(base)) {
     // Anthropic ids spell the version with hyphens (`haiku-4-5`, `fable-5-1`);
     // the human name is dotted ("Haiku 4.5"), not "Haiku 4 5".
     return applyVendorCasing(
-      titleCase(
-        base
-          .replace(/^claude-/i, "")
-          .replace(/(\d)-(?=\d)/g, "$1.")
-          .replace(/-/g, " "),
-      ),
+      titleCase(dotVersion(base.replace(/^claude-/i, "")).replace(/-/g, " ")),
     );
   }
 
   if (/^gpt-/i.test(base)) {
-    return base.replace(/^gpt-/i, "GPT-");
+    return dotVersion(base).replace(/^gpt-/i, "GPT-");
   }
 
   // Title-case this branch too: without it `gemini-2.5-pro` rendered as
   // "Gemini 2.5 pro" — the only branch that left its words lowercase.
   if (/^gemini-/i.test(base)) {
     return applyVendorCasing(
-      titleCase(base.replace(/^gemini-/i, "Gemini ").replace(/-/g, " ")),
+      titleCase(
+        dotVersion(base)
+          .replace(/^gemini-/i, "Gemini ")
+          .replace(/-/g, " "),
+      ),
     );
   }
 
-  return applyVendorCasing(titleCase(base.replace(/-/g, " ")));
+  return applyVendorCasing(titleCase(dotVersion(base).replace(/-/g, " ")));
 }
 
 // Split the trailing suffixes a local id can carry — a variant tag

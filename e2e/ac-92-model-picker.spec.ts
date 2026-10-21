@@ -226,7 +226,7 @@ test("AC-3 + AC-4 the next turn runs the picked model + effort + fast; the foote
     page
       .locator("[data-agentturn]")
       .last()
-      .getByText("· Fake Reasoning · High · Fast"),
+      .getByText("Fake Reasoning · High · Fast", { exact: true }),
   ).toBeVisible({ timeout: 90_000 });
   await expect(triggers(page)).toContainText("Fake Reasoning");
   await page.screenshot({ path: `${SHOTS}/ac-4-footer.png` });
@@ -241,7 +241,10 @@ test("AC-3 + AC-4 the next turn runs the picked model + effort + fast; the foote
   await expect(triggers(page)).toContainText("Fake Opus 2");
   await send(page, "one more thing");
   await expect(
-    page.locator("[data-agentturn]").last().getByText("· Fake Opus 2 · High"),
+    page
+      .locator("[data-agentturn]")
+      .last()
+      .getByText("Fake Opus 2 · High", { exact: true }),
   ).toBeVisible({ timeout: 90_000 });
   await page.screenshot({ path: `${SHOTS}/ac-8-slash-id.png` });
   expect(errors).toEqual([]);
@@ -282,7 +285,7 @@ test("AC-4 + AC-5 a pick on the new-session composer lands on the FIRST turn; th
     page
       .locator("[data-agentturn]")
       .last()
-      .getByText("· Fake Reasoning · High · Fast"),
+      .getByText("Fake Reasoning · High · Fast", { exact: true }),
   ).toBeVisible({ timeout: 90_000 });
   // The session keeps its pick on its own composer.
   await expect(triggers(page)).toContainText("Fake Reasoning");
