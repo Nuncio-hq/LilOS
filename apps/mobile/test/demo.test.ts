@@ -218,9 +218,7 @@ describe("demo data source (#168)", () => {
           cwd: "~/Code/QRit",
         },
       );
-      const qrit = c.projects
-        .get()
-        .find((p) => p.folder === "~/Code/QRit");
+      const qrit = c.projects.get().find((p) => p.folder === "~/Code/QRit");
       expect(qrit?.name).toBe("QRit");
       expect(qrit?.key).toBe("QRI");
       expect(opened.conversation.projectId).toBe(qrit?.id);

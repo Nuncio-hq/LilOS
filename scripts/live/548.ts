@@ -149,6 +149,10 @@ const appOps: AppOps = {
   profile: async () => ({ userName: "Oscar", companyName: "LilOS" }),
   openWorkbench: async () => {},
   scheduledTasks: async () => [],
+  projects: async () => [],
+  createProject: async () => {
+    throw new Error("not exercised in this script");
+  },
   startThread: async () => {
     throw new Error("not exercised in this script");
   },
