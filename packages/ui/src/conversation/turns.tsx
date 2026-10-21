@@ -104,7 +104,7 @@ export function AgentTurn({
   return (
     <Message
       from="assistant"
-      className="lilos-rise relative max-w-full gap-3.5"
+      className="lilos-rise max-w-full gap-3.5"
       data-agentturn
     >
       {hasWork && (
@@ -242,15 +242,18 @@ export function AgentTurn({
           r.phase === "failed") && (
           /* data-turnsettled: the footer only renders once the turn has ended —
            the stable "turn is over" anchor for specs (text lands earlier).
-           It is out of the column's height (`absolute`, bottom of the turn)
-           so a 24px Copy/Retry button and its focus ring paint in full —
-           no overflow clip — and do not extend scrollHeight. An in-flow
-           20px box hung past the column's `pb-3` and, with the composer
-           margin, measured 24.5 against #602's 24px cap. A resolved
-           question card drops the line (FIX #515 r4). */
+           It stays in flow under the reply. An absolute bar sat on the
+           last line and blocked selecting it. `-mt-3.5` cancels this
+           column's gap so the line starts at the text, not over it.
+           `-mb-4` overhangs the turn by 16px; with the composer's 2px
+           margin the band is 18px, under #602's 24px cap. The 4px bottom
+           padding holds the 3px focus ring inside the bar — a bare `h-6`
+           put the ring on the scrollport edge, where it was clipped. No
+           overflow clip. The buttons stay 24px. A resolved question card
+           drops the line (FIX #515 r4). */
           <div
             data-turnsettled
-            className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex h-6 items-center gap-x-1.5 whitespace-nowrap text-[12px] text-muted-foreground/70 opacity-0 transition-opacity duration-300 group-hover:pointer-events-auto group-hover:opacity-100 group-has-[[data-question-card][data-ask-state=resolved]]:hidden"
+            className="-mt-3.5 -mb-4 flex items-center gap-x-1.5 pb-1 whitespace-nowrap text-[12px] text-muted-foreground/70 opacity-0 transition-opacity duration-300 group-hover:opacity-100 group-has-[[data-question-card][data-ask-state=resolved]]:hidden"
           >
             {r.model && (
               <span>

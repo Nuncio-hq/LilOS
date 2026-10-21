@@ -585,6 +585,92 @@ describe("model picker v2", () => {
     expect(trigger().textContent).not.toContain("High");
   });
 
+  /* Three writes queued before any echo: model, then Fast, then effort.
+     The first echo is only the model write. Popping it and then treating
+     the effort mismatch as a rewrite used to wipe High and Fast (#807). */
+  test("a model echo with Fast and effort still in flight keeps both", async () => {
+    const picks: ModelChoice[] = [];
+    const { rerender } = render(
+      <Harness picks={picks} value={choiceFor("qwen", MODELS)} />,
+    );
+    await openModels();
+    await act(async () =>
+      fireEvent.click(
+        headingFor("OpenAI").querySelector("button") as HTMLElement,
+      ),
+    );
+    await act(async () =>
+      fireEvent.click(within(list()).getByText("GPT test 5")),
+    );
+    await act(async () =>
+      fireEvent.click(
+        body().querySelector('button[aria-label="Fast mode"]') as HTMLElement,
+      ),
+    );
+    await act(async () =>
+      fireEvent.keyDown(
+        body().querySelector('input[type="range"]') as HTMLElement,
+        { key: "ArrowRight" },
+      ),
+    );
+    expect(picks).toHaveLength(3);
+    expect(picks[2]).toMatchObject({
+      model: "gpt-test-5",
+      effort: "high",
+      fast: true,
+    });
+    expect(trigger().textContent).toContain("High");
+    expect(trigger().querySelector('[aria-label="Fast"]')).toBeTruthy();
+    await act(async () =>
+      rerender(
+        <Harness picks={picks} value={choiceFor("gpt-test-5", MODELS)} />,
+      ),
+    );
+    expect(trigger().textContent).toContain("High");
+    expect(trigger().textContent).not.toContain("Medium");
+    expect(trigger().querySelector('[aria-label="Fast"]')).toBeTruthy();
+  });
+
+  /* The harness stores a refused Fast as null; the relay maps that to
+     undefined, not false. That echo is not the Fast-on write, so the
+     draft drops (#807). */
+  test("a Fast refusal echoed as undefined drops the draft", async () => {
+    const picks: ModelChoice[] = [];
+    /* The prop has to move: a refusal that stays `undefined` is the same
+       value the picker already showed. Explicit false, then undefined, is
+       what the relay emits when the harness writes null. */
+    const { rerender } = render(
+      <Harness
+        picks={picks}
+        value={{ ...choiceFor("gpt-test-5", MODELS), fast: false }}
+      />,
+    );
+    await open();
+    await act(async () =>
+      fireEvent.click(
+        body().querySelector('button[aria-label="Fast mode"]') as HTMLElement,
+      ),
+    );
+    expect(picks.at(-1)).toMatchObject({ fast: true });
+    expect(trigger().querySelector('[aria-label="Fast"]')).toBeTruthy();
+    await act(async () =>
+      rerender(
+        <Harness
+          picks={picks}
+          value={{ ...choiceFor("gpt-test-5", MODELS), fast: undefined }}
+        />,
+      ),
+    );
+    expect(trigger().querySelector('[aria-label="Fast"]')).toBeNull();
+    await act(async () =>
+      fireEvent.keyDown(
+        body().querySelector('input[type="range"]') as HTMLElement,
+        { key: "ArrowRight" },
+      ),
+    );
+    expect(picks.at(-1)).toMatchObject({ fast: false, effort: "high" });
+  });
+
   test("Refresh / Edit models render only with their handlers (D-#19)", async () => {
     const { unmount } = render(<Harness />);
     await openModels();
