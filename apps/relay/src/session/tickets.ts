@@ -112,13 +112,17 @@ export async function handleTickets(c: RelayCtx): Promise<false | undefined> {
       const parsed = TicketsAssignParams.safeParse(params);
       if (!parsed.success) throw badParams(parsed.error.issues);
       const ownerId = await personId(store, parsed.data.ownerId);
-      const { channel } = await store.openDmChannel(ownerId);
+      const { channel, created } = await store.openDmChannel(ownerId);
       const opened = await store.assignTicket({
         id: parsed.data.id,
         ownerId,
         channelId: channel.id,
       });
       if (!opened) notFound("ticket");
+      /* A new owner's channel is not in an already-open client. Announce
+         it before the thread event so the client subscribes and the hand
+         shows up; an existing channel is already subscribed. */
+      if (created) broadcast("channel.created", { channel });
       broadcast("ticket.upserted", { ticket: opened.ticket });
       c.emitMessage(opened.conversation.channelId, opened.rootMessage);
       c.emitConversation(opened.conversation.channelId, opened.conversation);

@@ -54,10 +54,15 @@ async function shot(page: Page, name: string) {
 }
 
 async function project() {
+  /* The new-chat draft picks the first project (D-#771). The folder has to
+     exist on disk or the agent's session never starts and the tool never
+     runs — a missing cwd looks like the shell itself is missing. */
+  const folder = `${stack.home}/lil`;
+  mkdirSync(folder, { recursive: true });
   const { project } = await relayRpc<{
     project: { id: string; key: string; name: string };
   }>(pageOf(), stack, "projects.create", {
-    folder: `${stack.home}/lil`,
+    folder,
     name: "LilOS",
   });
   return project;
@@ -103,9 +108,13 @@ test("a ticket from the owner and from an agent lands on Work and its project", 
   await expect(main(page).getByText("From the agent")).toBeVisible();
   await shot(page, "ac-1-work");
 
+  /* A project opens beside the page (D-#771), and its tickets are on that
+     record — the same place the project spec reads a thread. */
   await page.goto(`${stack.webUrl}/#?page=project&id=${proj.id}`);
-  await expect(main(page).getByText("From you")).toBeVisible();
-  await expect(main(page).getByText("From the agent")).toBeVisible();
+  const peek = v3Peek(page);
+  await expect(peek.getByText("Open tickets")).toBeVisible({ timeout: 30_000 });
+  await expect(peek.getByText("From you")).toBeVisible();
+  await expect(peek.getByText("From the agent")).toBeVisible();
 });
 
 test("assign opens the owner's thread; reassign adds a second hand", async ({
@@ -120,17 +129,31 @@ test("assign opens the owner's thread; reassign adds a second hand", async ({
     "tickets.create",
     { project: proj.key, title: "Hands" },
   );
-  await relayRpc(page, stack, "tickets.assign", {
+  const first = await relayRpc<{
+    conversation: { id: string; ticketId?: string };
+  }>(page, stack, "tickets.assign", {
     id: ticket.id,
     ownerId: agent.id,
   });
   const { employee } = await relayRpc<{
     employee: { id: string; name: string };
   }>(page, stack, "employees.create", { name: "Blair", role: "Notes" });
-  await relayRpc(page, stack, "tickets.assign", {
+  const second = await relayRpc<{
+    conversation: { id: string; ticketId?: string; channelId: string };
+  }>(page, stack, "tickets.assign", {
     id: ticket.id,
     ownerId: employee.id,
   });
+  expect(first.conversation.ticketId).toBe(ticket.id);
+  expect(second.conversation.ticketId).toBe(ticket.id);
+  expect(second.conversation.id).not.toBe(first.conversation.id);
+  const listed = await relayRpc<{
+    conversations: { id: string; ticketId?: string; channelId: string }[];
+  }>(page, stack, "conversations.list", { includeArchived: true });
+  const hands = listed.conversations.filter((c) => c.ticketId === ticket.id);
+  expect(hands.map((c) => c.id).sort()).toEqual(
+    [first.conversation.id, second.conversation.id].sort(),
+  );
 
   await page.goto(`${stack.webUrl}/#?page=work&open=ticket:${ticket.id}`);
   await expect(v3Peek(page).getByText("changed hands 1×")).toBeVisible({
