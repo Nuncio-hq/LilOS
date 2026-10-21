@@ -1,19 +1,25 @@
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ProfileConnection } from "@lilos/contracts/app";
 import { scrubLilosEnv } from "@lilos/contracts/env";
+import {
+  PLUGIN_CONTENT_HASH_FILE,
+  pluginContentHash,
+} from "@lilos/engine-hermes";
 import type { Logger } from "./log";
 
 /**
  * Connect (#339): once the user approves Connect (relay setting
  * `connect.hermes.approved`), install the bundled `lilos` plugin into every
  * employee's Hermes profile and enable it (`hermes -p <p> plugins enable`).
- * Thereafter the reconciler keeps it that way: a plugin version drift
- * re-copies + re-enables (AC-6, row shows "updating" meanwhile), a removed
+ * Thereafter the reconciler keeps it that way: a content-hash drift
+ * re-copies + re-enables (D-#817, row shows "updating" meanwhile), a removed
  * employee's profile is disabled — the profile itself is never deleted
  * (AC-1). Without approval nothing is touched and every profile row just
- * reads "not-connected" (AC-7).
+ * reads "not-connected" (AC-7). One approval covers every profile LilOS
+ * manages, including one hired later — `employee.upserted` reconciles, and
+ * so do startup and the timer. Connect is not approved again per hire.
  *
  * The latest rows ride `harness.report` so relay `system.status` answers
  * "which employees aren't connected" for the Connect surfaces. On any row
@@ -64,15 +70,6 @@ export interface ConnectDeps extends ConnectBaseDeps {
 }
 
 type Row = ProfileConnection;
-
-const pluginVersion = (dir: string): string | undefined => {
-  try {
-    const yaml = readFileSync(join(dir, "plugin.yaml"), "utf8");
-    return /^version:\s*"?([^"\n]+)"?\s*$/m.exec(yaml)?.[1]?.trim();
-  } catch {
-    return undefined;
-  }
-};
 
 /** `hermes config get <list-key>` prints YAML-ish rows (`- name`) or a
    scalar; `config set` may also echo a JSON list. Tolerant parse for the
@@ -255,7 +252,14 @@ export class HermesConnect extends ConnectBase<ConnectDeps> {
       : join(this.deps.hermesHome, "profiles", profile);
   }
 
-  /** Install + enable the plugin on one profile (version-aware, AC-6). */
+  /** Install + enable the plugin on one profile.
+   *  D-#817: the refresh key is the shipped directory's content hash, not
+   *  `plugin.yaml` `version`. Every roster profile hits this on each
+   *  reconcile — a hire after approval included (`employee.upserted`,
+   *  startup, the 30s timer). The owner is not asked again. Hermes may
+   *  have cloned an older tree that still says the same version
+   *  (`ensureAgent`'s `clone_from`); the hash is what recopies it. A home
+   *  that does not exist yet stays not-connected until a later pass. */
   private connect(profile: string, row: Row): void {
     const home = this.profileHome(profile);
     if (!existsSync(home)) {
@@ -265,16 +269,28 @@ export class HermesConnect extends ConnectBase<ConnectDeps> {
       return;
     }
     const target = join(home, "plugins", "lilos");
-    const bundled = pluginVersion(this.deps.pluginSrc);
-    const installed = pluginVersion(target);
-    const needsCopy =
-      !existsSync(target) || (bundled !== undefined && installed !== bundled);
+    const shipped = pluginContentHash(this.deps.pluginSrc);
+    if (shipped === undefined) {
+      row.state = "failed";
+      row.reason = "couldn't read the bundled LilOS plugin";
+      return;
+    }
+    // Same version string is not "up to date". Hash the files we copy.
+    const installed = pluginContentHash(target);
+    const needsCopy = shipped !== installed;
     if (needsCopy) {
       row.state = "updating";
       row.reason = undefined;
       try {
+        // Replace, don't merge: a file the new plugin dropped must not
+        // stay behind and keep the next hash from matching.
         mkdirSync(join(home, "plugins"), { recursive: true });
+        rmSync(target, { recursive: true, force: true });
         cpSync(this.deps.pluginSrc, target, { recursive: true });
+        writeFileSync(
+          join(home, "plugins", PLUGIN_CONTENT_HASH_FILE),
+          `${shipped}\n`,
+        );
       } catch (error) {
         row.state = "failed";
         row.reason = `couldn't install the LilOS plugin: ${String(error)}`;

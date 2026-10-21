@@ -3,10 +3,15 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+  PLUGIN_CONTENT_HASH_FILE,
+  pluginContentHash,
+} from "@lilos/engine-hermes";
 import { describe, expect, it } from "vitest";
 import {
   CONNECT_APPROVAL_KEY,
@@ -334,6 +339,147 @@ describe("AC-6 (#339) updates replace the plugin without re-asking", () => {
     await f.connect.reconcile();
     expect(f.installedYaml("ada")).toContain('version: "0.2.0"');
     expect(f.enableCalls("ada")).toBe(2);
+    expect(f.connect.report()[0].state).toBe("connected");
+  });
+});
+
+describe("D-#817 content hash, not plugin.yaml version", () => {
+  const installedPy = (home: string, profile: string) =>
+    join(home, "profiles", profile, "plugins", "lilos", "__init__.py");
+  const hashRecord = (home: string, profile: string) =>
+    join(home, "profiles", profile, "plugins", PLUGIN_CONTENT_HASH_FILE);
+
+  it("refreshes an older plugin that still carries the same version string", async () => {
+    const f = fixture("0.2.0");
+    f.employees.push({ id: "e1", name: "Ada", profile: "ada" });
+    f.mkProfile("ada");
+    f.approve();
+    const pluginDir = join(f.hermesHome, "profiles", "ada", "plugins", "lilos");
+    mkdirSync(pluginDir, { recursive: true });
+    // Same version the bundle ships. Only the module body is older.
+    writeFileSync(
+      join(pluginDir, "plugin.yaml"),
+      readFileSync(join(f.pluginSrc, "plugin.yaml")),
+    );
+    writeFileSync(join(pluginDir, "__init__.py"), "def register(ctx): stale\n");
+
+    await f.connect.reconcile();
+
+    expect(readFileSync(installedPy(f.hermesHome, "ada"), "utf8")).toBe(
+      readFileSync(join(f.pluginSrc, "__init__.py"), "utf8"),
+    );
+    expect(readFileSync(hashRecord(f.hermesHome, "ada"), "utf8")).toBe(
+      `${pluginContentHash(f.pluginSrc)}\n`,
+    );
+    expect(f.enableCalls("ada")).toBe(1);
+    expect(f.connect.report()[0].state).toBe("connected");
+  });
+
+  it("does not recopy an install whose files already match", async () => {
+    const f = fixture("0.2.0");
+    f.employees.push({ id: "e1", name: "Ada", profile: "ada" });
+    f.mkProfile("ada");
+    f.approve();
+    await f.connect.reconcile();
+    const calls = f.calls.length;
+    const py = installedPy(f.hermesHome, "ada");
+    const record = hashRecord(f.hermesHome, "ada");
+    const pyMtime = statSync(py).mtimeMs;
+    const recordMtime = statSync(record).mtimeMs;
+
+    await f.connect.reconcile();
+
+    expect(statSync(py).mtimeMs).toBe(pyMtime);
+    expect(statSync(record).mtimeMs).toBe(recordMtime);
+    expect(f.calls).toHaveLength(calls);
+    expect(f.enableCalls("ada")).toBe(1);
+  });
+
+  it("ignores __pycache__ so a loaded plugin is not recopied every start", async () => {
+    const f = fixture("0.2.0");
+    f.employees.push({ id: "e1", name: "Ada", profile: "ada" });
+    f.mkProfile("ada");
+    f.approve();
+    await f.connect.reconcile();
+    const py = installedPy(f.hermesHome, "ada");
+    const pyMtime = statSync(py).mtimeMs;
+    const cache = join(
+      f.hermesHome,
+      "profiles",
+      "ada",
+      "plugins",
+      "lilos",
+      "__pycache__",
+    );
+    mkdirSync(cache, { recursive: true });
+    writeFileSync(join(cache, "lilos.cpython-313.pyc"), "not the plugin");
+
+    await f.connect.reconcile();
+
+    expect(statSync(py).mtimeMs).toBe(pyMtime);
+    expect(f.enableCalls("ada")).toBe(1);
+  });
+
+  it("a hire after approval gets the current plugin on the next reconcile", async () => {
+    const f = fixture("0.2.0");
+    f.employees.push({ id: "e1", name: "Ada", profile: "ada" });
+    f.mkProfile("ada");
+    f.approve();
+    await f.connect.reconcile();
+    const adaPy = installedPy(f.hermesHome, "ada");
+    const adaMtime = statSync(adaPy).mtimeMs;
+
+    // The approval flag is not written again. Bea's home shows up the way
+    // a clone of an older profile does: same version string, stale body.
+    f.employees.push({ id: "e2", name: "Bea", profile: "bea" });
+    f.mkProfile("bea");
+    const beaDir = join(f.hermesHome, "profiles", "bea", "plugins", "lilos");
+    mkdirSync(beaDir, { recursive: true });
+    writeFileSync(
+      join(beaDir, "plugin.yaml"),
+      readFileSync(join(f.pluginSrc, "plugin.yaml")),
+    );
+    writeFileSync(join(beaDir, "__init__.py"), "def register(ctx): stale\n");
+    writeFileSync(join(beaDir, "leftover.py"), "from the clone\n");
+
+    await f.connect.reconcile();
+
+    expect(readFileSync(installedPy(f.hermesHome, "bea"), "utf8")).toBe(
+      readFileSync(join(f.pluginSrc, "__init__.py"), "utf8"),
+    );
+    expect(existsSync(join(beaDir, "leftover.py"))).toBe(false);
+    expect(f.enableCalls("bea")).toBe(1);
+    expect(statSync(adaPy).mtimeMs).toBe(adaMtime);
+    expect(f.connect.report()).toEqual([
+      { profile: "ada", employee: "Ada", state: "connected" },
+      { profile: "bea", employee: "Bea", state: "connected" },
+    ]);
+  });
+
+  it("a profile that appears after the first pass is refreshed without a new approval", async () => {
+    const f = fixture("0.2.0");
+    f.employees.push({ id: "e1", name: "Bea", profile: "bea" });
+    f.approve();
+    await f.connect.reconcile();
+    expect(f.installedYaml("bea")).toBeUndefined();
+    expect(f.connect.report()[0].state).toBe("not-connected");
+    expect(f.enableCalls("bea")).toBe(0);
+
+    f.mkProfile("bea");
+    const beaDir = join(f.hermesHome, "profiles", "bea", "plugins", "lilos");
+    mkdirSync(beaDir, { recursive: true });
+    writeFileSync(
+      join(beaDir, "plugin.yaml"),
+      'name: lilos\nversion: "0.2.0"\n',
+    );
+    writeFileSync(join(beaDir, "__init__.py"), "def register(ctx): stale\n");
+
+    await f.connect.reconcile();
+
+    expect(readFileSync(installedPy(f.hermesHome, "bea"), "utf8")).toBe(
+      readFileSync(join(f.pluginSrc, "__init__.py"), "utf8"),
+    );
+    expect(f.enableCalls("bea")).toBe(1);
     expect(f.connect.report()[0].state).toBe("connected");
   });
 });

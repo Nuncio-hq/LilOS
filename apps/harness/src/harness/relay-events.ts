@@ -51,7 +51,9 @@ export function onRelayEvent(
       break;
     }
     case "employee.upserted": {
-      // A new hire's profile needs the plugin when Connect is approved.
+      // D-#817: one Connect approval covers a later hire. This reconcile
+      // copies the shipped plugin (content hash, not plugin.yaml version);
+      // the owner is not asked again.
       void this.opts.connect?.reconcile();
       break;
     }

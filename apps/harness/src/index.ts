@@ -198,8 +198,9 @@ statusReporter = new StatusReporter({
 });
 const stopStatusReporter = statusReporter.start();
 
-/* Connect self-heals on a timer too (AC-6 version drift) — events alone
-   can miss (harness was down when the approval or a hire landed). */
+/* Connect self-heals on a timer too (D-#817 content hash) — events alone
+   can miss (harness was down when the approval or a hire landed). A hire
+   does not need Connect approved again: employee.upserted reconciles too. */
 const connectTimer = connect
   ? setInterval(() => void connect.reconcile(), 30_000)
   : undefined;
