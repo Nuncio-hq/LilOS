@@ -3,7 +3,7 @@ import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "../lib/utils";
 import { Btn, Kbd, Spinner } from "./v3-bits";
 import type { V3Data, V3Draft } from "./v3-data-types";
-import { AgentAvatar, CeoMark } from "./v3-marks";
+import { AgentAvatar, Avatar, CeoMark } from "./v3-marks";
 import type { V3Actions, V3Route } from "./v3-page-types";
 import { MessageHitRow, useMessageHits } from "./v3-palette-messages";
 import { Footer, PlanView } from "./v3-palette-plan";
