@@ -2,7 +2,7 @@ import { threadStatus } from "@lilos/client-runtime";
 import type { ThreadSources } from "./threads";
 
 /* Threads finished or failed since Monday, per employee, plus threads
-   whose `stuckAt` falls in that window (issue #775). Finished and failed
+   whose `stuckAt` falls in that window (D-#775). Finished and failed
    use `threadStatus` (client-runtime, D-#33) — the same derivation Threads
    uses, including an open relay ask. Their activity time is the summary's
    last message, else the thread's createdAt. Archived threads stay out,
