@@ -77,10 +77,7 @@ import {
   resyncBinding,
   surfaceBackendDown,
 } from "./harness/engine-attach";
-import {
-  deliverLiveEngineEvent,
-  onEngineEvent,
-} from "./harness/engine-events";
+import { deliverLiveEngineEvent, onEngineEvent } from "./harness/engine-events";
 import {
   applyHeldPick,
   doApplyHeldPick,

@@ -1141,7 +1141,9 @@ describe("workspace harness", () => {
     }
   });
 
-  it("#814 turn.completed is observable only once the row is idle", { timeout: 15_000 }, async () => {
+  it("#814 turn.completed is observable only once the row is idle", {
+    timeout: 15_000,
+  }, async () => {
     /* SessionWatch seeds `running` from `state === "active"` at boot
        (#572). Publishing the completion before that write lets a list
        in the gap replay a finished session. Hold the idle write: the
