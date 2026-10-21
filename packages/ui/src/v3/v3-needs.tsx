@@ -7,9 +7,8 @@ import {
   agentOf,
   askTag,
   FORMER_AGENT,
+  resultsToLookAt,
   threadsOf,
-  threadTag,
-  ticketOf,
 } from "./v3-model";
 import { CHIP, OpenAsk } from "./v3-needs-ask";
 import { RowButton } from "./v3-open-record";
@@ -130,58 +129,7 @@ export function V3Needs({ data, go, act }: V3PageProps) {
   }, [act, allow, asks, current, index]);
 
   const stuck = data.tickets.filter((t) => t.status === "stuck" && t.fallback);
-  const results = useMemo(() => {
-    const rows: {
-      key: string;
-      title: string;
-      ticketId?: string;
-      /** Where it lives, in a word: its ticket, its project, or "Chat". */
-      tag: string;
-      by: string;
-      note: string;
-      minutes: number;
-      threadId?: string;
-      unseen: boolean;
-    }[] = [];
-    const seenTickets = new Set<string>();
-    for (const th of data.threads.filter((t) => t.unseen)) {
-      const t = th.ticketId ? ticketOf(data, th.ticketId) : undefined;
-      if (th.ticketId) seenTickets.add(th.ticketId);
-      rows.push({
-        key: th.id,
-        title: th.title,
-        ticketId: th.ticketId,
-        tag: threadTag(data, th),
-        by: th.agentId,
-        note: th.quote ? `“${th.quote}”` : (th.summary ?? ""),
-        minutes: th.doneAgo ?? t?.doneAgo ?? t?.since ?? 0,
-        threadId: th.id,
-        unseen: true,
-      });
-    }
-    for (const t of data.tickets) {
-      if (
-        t.status !== "done" ||
-        (t.doneAgo ?? Number.POSITIVE_INFINITY) >= 180 ||
-        seenTickets.has(t.id)
-      )
-        continue;
-      const th = threadsOf(data, t.id).at(-1);
-      const pr = t.result?.pr;
-      rows.push({
-        key: t.id,
-        title: t.title,
-        ticketId: t.id,
-        tag: t.id,
-        by: t.owner,
-        note: th?.summary ?? (pr ? `PR #${pr.num} · ${pr.branch}` : "Done"),
-        minutes: t.doneAgo ?? 0,
-        threadId: th?.id,
-        unseen: false,
-      });
-    }
-    return rows.sort((a, b) => a.minutes - b.minutes);
-  }, [data]);
+  const results = useMemo(() => resultsToLookAt(data), [data]);
 
   const others = asks.filter((a) => a !== current);
   const handleAt = stuck.map((t) => t.fallback?.at).sort()[0];

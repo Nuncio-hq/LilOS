@@ -118,6 +118,10 @@ export const WORKBENCHES: Record<string, V3Workbench> = {
   "t-hb12-ceo": { ...HB12_BUILD, terminal: [{ cmd: "gh pr view 66 --json files", lines: ["3 files changed"] }] },
 }
 
+/* Monday 19 October is this company's today. `nextAt` is that fire time;
+   `next` only says it. */
+const AT = (iso: string) => Date.parse(iso);
+
 export const SCHEDULES: V3Data["schedules"] = [
   {
     id: "s-brief",
@@ -126,6 +130,7 @@ export const SCHEDULES: V3Data["schedules"] = [
     prompt: "Write Oscar a short update: what moved since yesterday, what is stuck, what needs him.",
     when: { kind: "weekdays", time: "09:00" },
     next: "Tomorrow 09:00",
+    nextAt: AT("2026-10-20T09:00:00"),
     last: { at: "Today 09:00", result: "finished", threadId: "t-hb12-plan" },
   },
   {
@@ -136,6 +141,7 @@ export const SCHEDULES: V3Data["schedules"] = [
     prompt: "Pick the best unused hook from the sheet and draft today's X post. Ask before posting.",
     when: { kind: "daily", time: "09:30" },
     next: "Tomorrow 09:30",
+    nextAt: AT("2026-10-20T09:30:00"),
     last: { at: "Today 09:30", result: "finished" },
   },
   {
@@ -146,6 +152,7 @@ export const SCHEDULES: V3Data["schedules"] = [
     prompt: "QR-7: rewrite the onboarding copy in our voice. Two options per screen.",
     when: { kind: "once", time: "14:00", date: "2026-10-19" },
     next: "Today 14:00",
+    nextAt: AT("2026-10-19T14:00:00"),
   },
   {
     id: "s-flakes",
@@ -155,6 +162,7 @@ export const SCHEDULES: V3Data["schedules"] = [
     prompt: "Run the e2e suite three times and open a ticket for any test that fails once.",
     when: { kind: "daily", time: "02:00" },
     next: "Tonight 02:00",
+    nextAt: AT("2026-10-20T02:00:00"),
     paused: true,
     last: { at: "Sat 02:00", result: "failed" },
   },

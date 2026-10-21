@@ -9,10 +9,13 @@ import {
   agentThread,
   agentTicket,
   askTag,
+  asleepAgents,
   FORMER_AGENT,
   goalProgress,
+  nextRunLabel,
   projectOf,
-  teamCounts,
+  resultsToLookAt,
+  threadsIn,
   ticketOf,
   waitingLabel,
 } from "./v3-model";
@@ -20,22 +23,28 @@ import { RowButton } from "./v3-open-record";
 import type { V3PageProps } from "./v3-page-types";
 import type { V3Agent, V3Status } from "./v3-types";
 
-/* Home: three quiet answers on one page. What do I have to do, how is the
-   team, how far are the goals. The CEO's note sits on top like a morning
-   briefing. */
+/* Home: who is working, what needs you, what just finished. Counts are the
+   Threads counts (D-#774). The CEO's note and Goals join with tickets (M2). */
 
 const COUNT_ORDER: { status: V3Status; word: string }[] = [
   { status: "working", word: "working" },
-  { status: "waiting", word: "waiting" },
   { status: "needs", word: "needs you" },
+  /* Stuck only when a thread already wears it. Nothing marks a thread stuck
+     until that slice lands, so the count stays 0 and this row stays hidden. */
   { status: "stuck", word: "stuck" },
   { status: "idle", word: "idle" },
 ];
 
 /* Beside an open record the team table keeps who, status and what they're
-   on; since and waiting-on come back when the pane is wide enough. */
-const TEAM_GRID =
-  "grid grid-cols-[120px_110px_minmax(0,1fr)] @min-[660px]:grid-cols-[150px_128px_minmax(0,1fr)_64px_96px] items-center gap-x-3";
+   on; since and waiting-on come back when the pane is wide enough. Waiting
+   on is a ticket fact: with no ticket waiting, the column is not drawn. */
+const teamGrid = (wait: boolean) =>
+  cn(
+    "grid grid-cols-[120px_110px_minmax(0,1fr)] items-center gap-x-3",
+    wait
+      ? "@min-[660px]:grid-cols-[150px_128px_minmax(0,1fr)_64px_96px]"
+      : "@min-[660px]:grid-cols-[150px_128px_minmax(0,1fr)_64px]",
+  );
 const WIDE = "hidden @min-[660px]:block";
 
 /** One team row: what the agent is on, since when, and who it waits on. */
@@ -54,7 +63,7 @@ function teamRow(d: V3Data, agent: V3Agent) {
     status,
     idle,
     text: idle
-      ? (agent.next ?? "Nothing assigned")
+      ? (nextRunLabel(d, agentId) ?? agent.next ?? "Nothing assigned")
       : (thread?.title ?? ticket?.title ?? "—"),
     ticketId: ticket?.id,
     since:
@@ -69,7 +78,18 @@ function teamRow(d: V3Data, agent: V3Agent) {
 }
 
 export function V3Home({ data, go, act }: V3PageProps) {
-  const counts = teamCounts(data);
+  /* Working and needs-you count threads, idle counts agents off the live
+     board: the same numbers Threads shows (D-#774). A zero stays hidden. */
+  const counts: Partial<Record<V3Status, number>> = {
+    working: threadsIn(data.threads, "working"),
+    needs: threadsIn(data.threads, "needs"),
+    stuck: threadsIn(data.threads, "stuck"),
+    idle: asleepAgents(data).length,
+  };
+  const rows = data.agents.map((a) => ({ agent: a, row: teamRow(data, a) }));
+  const showWaiting = rows.some((r) => r.row.waiting !== "—");
+  const grid = teamGrid(showWaiting);
+  const results = resultsToLookAt(data);
   const outside = data.agents.filter((a) => a.kind === "outside").length;
   const brief = [...data.updates]
     .filter((u) => u.kind === "brief")
@@ -198,7 +218,7 @@ export function V3Home({ data, go, act }: V3PageProps) {
       <div className="text-[14px]">
         <div
           className={cn(
-            TEAM_GRID,
+            grid,
             "border-[var(--v3-line)] border-b pb-[7px] text-[12.5px] text-muted-foreground/70",
           )}
         >
@@ -206,19 +226,17 @@ export function V3Home({ data, go, act }: V3PageProps) {
           <span>Status</span>
           <span>Working on</span>
           <span className={cn(WIDE, "text-right")}>Since</span>
-          <span className={cn(WIDE, "text-right")}>Waiting on</span>
+          {showWaiting && (
+            <span className={cn(WIDE, "text-right")}>Waiting on</span>
+          )}
         </div>
-        {data.agents.map((a) => {
-          const r = teamRow(data, a);
+        {rows.map(({ agent: a, row: r }) => {
           return (
             <RowButton
               key={a.id}
               opens={{ page: "agent", id: a.id }}
               onClick={() => go({ page: "agent", id: a.id })}
-              className={cn(
-                TEAM_GRID,
-                "border-[var(--v3-line)] border-b py-2.5",
-              )}
+              className={cn(grid, "border-[var(--v3-line)] border-b py-2.5")}
             >
               <span className="flex items-center gap-[9px] font-medium text-foreground">
                 <AgentAvatar data={data} agent={a} />
@@ -252,21 +270,65 @@ export function V3Home({ data, go, act }: V3PageProps) {
               >
                 {r.since}
               </span>
-              <span
-                className={cn(
-                  WIDE,
-                  "text-right",
-                  r.waiting === "—"
-                    ? "text-muted-foreground/70"
-                    : "text-foreground",
-                )}
-              >
-                {r.waiting}
-              </span>
+              {showWaiting && (
+                <span
+                  className={cn(
+                    WIDE,
+                    "text-right",
+                    r.waiting === "—"
+                      ? "text-muted-foreground/70"
+                      : "text-foreground",
+                  )}
+                >
+                  {r.waiting}
+                </span>
+              )}
             </RowButton>
           );
         })}
       </div>
+
+      {/* Finished and not seen: the same rows Needs you lists (D-#774).
+          Nothing finished stays hidden (D-#19). */}
+      {results.length > 0 && (
+        <>
+          <Section title="Recent results" count={results.length} />
+          <div className="border-[var(--v3-line)] border-t">
+            {results.map((r) => (
+              <RowButton
+                key={r.key}
+                opens={
+                  r.threadId
+                    ? { page: "thread", id: r.threadId }
+                    : r.ticketId
+                      ? { page: "ticket", id: r.ticketId }
+                      : undefined
+                }
+                onClick={() => {
+                  if (r.threadId) {
+                    if (r.unseen) act.markSeen(r.threadId);
+                    go({ page: "thread", id: r.threadId });
+                  } else if (r.ticketId) go({ page: "ticket", id: r.ticketId });
+                }}
+                className="flex min-h-[52px] items-center gap-3.5 border-[var(--v3-line)] border-b py-[7px]"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-medium text-foreground">
+                    {r.title}
+                  </div>
+                  <div className="mt-px truncate text-[13px] text-muted-foreground">
+                    {r.tag} · {agentNameOf(data, r.by)}
+                    {r.note && ` · ${r.note}`}
+                  </div>
+                </div>
+                <span className="shrink-0 text-[13px] text-muted-foreground/70">
+                  {r.minutes < 1 ? "just now" : `${ago(r.minutes)} ago`}
+                </span>
+              </RowButton>
+            ))}
+          </div>
+        </>
+      )}
 
       {/* Goals arrive with tickets (M2); until then nothing fake shows. */}
       {data.features.tickets && (
