@@ -271,6 +271,11 @@ test("a CEO thread's team_set_ceo moves the position only after approval", async
     await expect(main(page)).toContainText("Give the CEO position to Quill", {
       timeout: 60_000,
     });
+    // Written for a person: the sentence is the title, the rest is the ask,
+    // and no tool syntax or internal id reaches the card.
+    await expect(main(page)).toContainText("Everyone who reported");
+    await expect(main(page)).not.toContainText("team_set_ceo");
+    await expect(main(page)).not.toContainText(quillId);
     await shot(page, "03-approval");
     await main(page)
       .getByRole("button", { name: "Approve", exact: true })
