@@ -66,9 +66,12 @@ describe("relay migrations", () => {
     // v25 adds the asks' hire-draft column; v26 adds #561's muted flag
     // on employees; v27 adds #136's scheduled_tasks table + the
     // conversation's scheduled marker; v28 adds D-#771's projects table +
-    // the conversation's project_id.
-    expect(out.version).toBe(28);
+    // the conversation's project_id; v29 adds D-#773's why / if_yes / if_no.
+    expect(out.version).toBe(29);
     expect(out.askCols).toContain("hire");
+    expect(out.askCols).toContain("why");
+    expect(out.askCols).toContain("if_yes");
+    expect(out.askCols).toContain("if_no");
     expect(out.msgCols).toContain("dropped");
     expect(out.msgCols).toContain("removed");
     expect(out.msgCols).toContain("claimed");
