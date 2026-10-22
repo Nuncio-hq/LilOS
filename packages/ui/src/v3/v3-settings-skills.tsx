@@ -168,7 +168,8 @@ function AddSkill({
           placeholder="What you call it"
           className={cn(FIELD, "h-8")}
         />
-        {slug !== "" && (
+        {/* Only when it differs from what was typed: same text twice is noise. */}
+        {slug !== "" && slug !== name.trim() && (
           <span
             data-skill-slug
             className="mt-1 block font-mono text-[12.5px] text-muted-foreground"

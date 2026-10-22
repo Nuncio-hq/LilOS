@@ -192,7 +192,7 @@ for (const theme of ["light", "dark"] as const) {
       ),
     });
     await expect(main.getByLabel("Name")).toHaveValue("launch-notes");
-    await expect(main.locator("[data-skill-slug]")).toHaveText("launch-notes");
+    await expect(main.locator("[data-skill-slug]")).toHaveCount(0);
     await expect(main.getByLabel("Description")).toHaveValue(
       "Ask before anything goes public.",
     );

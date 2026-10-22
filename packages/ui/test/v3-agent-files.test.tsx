@@ -568,9 +568,8 @@ describe("skill library", () => {
       });
     });
     expect(await screen.findByDisplayValue("launch-notes")).toBeTruthy();
-    expect(document.querySelector("[data-skill-slug]")?.textContent).toBe(
-      "launch-notes",
-    );
+    // The name already is the slug; the form doesn't say it twice.
+    expect(document.querySelector("[data-skill-slug]")).toBeNull();
     const body = screen.getByLabelText("Skill text") as HTMLTextAreaElement;
     expect(body.value).toBe("# Launch\n\nWarm the cups.");
     expect(body.value).not.toContain("Ask before anything public.");
