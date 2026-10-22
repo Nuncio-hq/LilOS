@@ -338,18 +338,27 @@ test("AC-6 #606 pick-hold: a Files pick while the turn starts survives its first
 }) => {
   test.setTimeout(120_000);
   await page.setViewportSize({ width: 1288, height: 700 });
-  await startSession(page, repo, "slowstart:5000 check the folder");
+  /* The small fixture. Files on the checkout mounts the whole tree, and
+     under a loaded runner that paint starves the turn so the terminal
+     step lands on this wait's edge. The hold is about the tab; the
+     fixture already has rows. */
+  await startSession(page, repoDir, "slowstart:5000 check the folder");
   await panelIntoFocus(page);
   await expect(tab(page, "Files")).toBeVisible({ timeout: 30_000 });
   await tab(page, "Files").click();
   await expect(rows(page).first()).toBeVisible({ timeout: 30_000 });
-  /* The turn's live row + steps land ~5 s in — long after the pick. Turn
-     end is marked by the turn card's settled footer — the stable anchor
-     every turn (done, stopped, or failed) renders — not by waiting for
-     reply text, which makes this wait depend on the client feed landing
-     rather than on the turn actually finishing. */
+  /* The steal is the last step becoming `terminal` (`pnpm -r typecheck`):
+     liveKey flips when that step is appended, and the command is in the
+     turn then. `data-turnsettled` waits out the rest of the word-by-word
+     answer (#809). Under CPU load the 25 ms ticks stretch and the footer
+     never mounts inside this window, even though Files has already
+     survived the step — the failure snapshots still had the tab selected,
+     with "ran 1 command" already on the fold. */
   await expect(
-    page.locator("[data-msg] [data-agentturn] [data-turnsettled]").last(),
+    page
+      .locator("[data-msg] [data-agentturn]")
+      .filter({ hasText: /pnpm -r typecheck|ran 1 command/ })
+      .last(),
   ).toBeVisible({ timeout: 30_000 });
   await expect(tab(page, "Files")).toHaveAttribute("aria-selected", "true");
   await expect(rows(page).first()).toBeVisible();
