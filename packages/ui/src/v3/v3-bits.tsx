@@ -60,6 +60,8 @@ export function Btn({
   small,
   className,
   title,
+  disabled,
+  pressed,
   ref,
 }: {
   children: ReactNode;
@@ -68,6 +70,9 @@ export function Btn({
   small?: boolean;
   className?: string;
   title?: string;
+  disabled?: boolean;
+  /** Stays in its pressed look while a form it opened is on screen. */
+  pressed?: boolean;
   /** For a caller that moves the keyboard here (a confirm's safe answer). */
   ref?: Ref<HTMLButtonElement>;
 }) {
@@ -76,6 +81,8 @@ export function Btn({
       ref={ref}
       type="button"
       title={title}
+      disabled={disabled}
+      aria-pressed={pressed || undefined}
       onClick={onClick}
       className={cn(
         "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[7px] border font-medium text-[13px] transition-[background,transform] active:scale-[0.97]",
@@ -83,6 +90,8 @@ export function Btn({
         primary
           ? "border-foreground bg-foreground text-background hover:bg-foreground/85"
           : "border-foreground/15 bg-background text-foreground hover:bg-[var(--v3-hover)]",
+        pressed && !primary && "bg-[var(--v3-hover)]",
+        disabled && "pointer-events-none opacity-60",
         className,
       )}
     >

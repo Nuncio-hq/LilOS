@@ -9,6 +9,7 @@ import type {
   V3ConnectorDef,
   V3Goal,
   V3Project,
+  V3Skill,
   V3Thread,
   V3Ticket,
 } from "./v3-types";
@@ -223,6 +224,9 @@ export type V3Data = {
       searches. New chats start with the holder when there is one. */
   ceoId?: string;
   agents: V3Agent[];
+  /** The company skill library. Absent: Settings has no Skills tab, and an
+      agent's page cannot attach or detach (D-#19). */
+  skills?: V3Skill[];
   connectors: V3ConnectorDef[];
   projects: V3Project[];
   goals: V3Goal[];

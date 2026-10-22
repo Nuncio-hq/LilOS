@@ -97,7 +97,11 @@ const COMMANDS: SlashItem[] = [
 export function fakeCommands(d: V3Data, agentId: string, query: string): SlashItem[] {
   const q = query.trim().toLowerCase()
   const own = (d.agents.find((a) => a.id === agentId)?.skills ?? []).map(
-    (name): SlashItem => ({ name, description: "A skill this agent has learned", kind: "skill" }),
+    (name): SlashItem => ({
+      name,
+      description: d.skills?.find((s) => s.id === name)?.about ?? "A skill this agent uses",
+      kind: "skill",
+    }),
   )
   return [...COMMANDS, ...own].filter((c) => c.name.toLowerCase().includes(q))
 }

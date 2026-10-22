@@ -43,6 +43,32 @@ export type V3ConnectorDef = {
   agents: string[];
 };
 
+/** A memory file the agent keeps. The company owns the file; a runtime only
+    sees a copy for the live thread. The row is this file: its name, the
+    first line of `text` (so an edit cannot drift from a second list), and
+    `updated` for where it came from. */
+export type V3Note = {
+  id: string;
+  /** File name, as the list shows it ("readers.md"). */
+  name: string;
+  text: string;
+  /** Where it came from, as the row shows it: a ticket ("from LIL-77") or
+      a date ("9 Oct", "just now"). */
+  updated: string;
+};
+
+/** One skill in the company library. An agent uses the ones it has attached.
+    Shaped like a SKILL.md file: `name`, `about` (the description), and `text`
+    (the body). The body does not repeat the description. */
+export type V3Skill = {
+  id: string;
+  name: string;
+  /** The description: one line, for the library list and under the name. */
+  about: string;
+  /** The body a runtime is given. Not a second copy of `about`. */
+  text: string;
+};
+
 export type V3Agent = {
   id: string;
   name: string;
@@ -64,7 +90,8 @@ export type V3Agent = {
      instead of showing a made-up value. */
   runtime?: string;
   /** The engine profile the agent runs on (its id on the engine), where the
-     app knows it. Persona, memory and skills live in that profile. */
+     app knows it. The profile is which runtime. Instructions, notes and
+     skills are the company's, when the app carries them. */
   profile?: string;
   model: string;
   /** The model's id on the engine, where `model` (the label) names one: the
@@ -82,13 +109,18 @@ export type V3Agent = {
   /** Notifications switched off for this agent (banners and pushes alike). */
   muted?: boolean;
   schedule?: string;
+  /** Skill ids this agent uses. When the company library is present
+      (`V3Data.skills`) each id is one of its skills and the page can attach
+      or detach it. With no library, the page shows the names and no control. */
   skills?: string[];
+  /** Memory files (the agent's notes/). Absent: this app does not carry
+      them, and the page draws no Notes section (D-#19). */
+  notes?: V3Note[];
   /** Dollars spent this period, and the cap. */
   spend?: { used: number; cap: number; period: "week" | "month" };
   instructions: string[];
   /** A rule the CEO proposes after this agent got stuck. */
   suggestion?: { text: string; after: string };
-  memory?: { text: string; source: string }[];
   week?: { done: number; typical: string; stuck: number; handed: number };
   /** Threads finished or failed since Monday, and threads whose stuckAt
       falls in that week even after they recover. Colour is only a count

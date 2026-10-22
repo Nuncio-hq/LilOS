@@ -1,4 +1,4 @@
-import type { ModelVisibility, V3DataActions } from "@lilos/ui"
+import { skillSlug, type ModelVisibility, type V3DataActions } from "@lilos/ui"
 import { MODEL_OPTIONS, modelIdOf, settingsModels, visibilityOf } from "../fake-v3-models"
 import { type Engine, patchConnect } from "./context"
 
@@ -21,6 +21,7 @@ export function settingsActions({ setData, getData, toast, openStatus }: Engine)
   | "connectEngine"
   | "setModelVisibility"
   | "refreshModels"
+  | "addSkill"
 > {
   let checking: Promise<void> | undefined
   /* One list hides models for every picker, and Settings shows the same list
@@ -92,6 +93,26 @@ export function settingsActions({ setData, getData, toast, openStatus }: Engine)
         )
       })
       return Promise.resolve()
+    },
+    addSkill: ({ name, about, text }) => {
+      // The form already shows this slug, and refuses a name the library
+      // has. Store that slug; a second row would be the same skill twice.
+      const named = skillSlug(name)
+      const body = text.trim()
+      const line = about.trim()
+      if (!named || (!body && !line)) return
+      setData((d) => {
+        const skills = d.skills ?? []
+        if (skills.some((s) => s.name === named || s.id === named)) return d
+        return {
+          ...d,
+          skills: [
+            ...skills,
+            { id: named, name: named, about: line || named, text: body },
+          ],
+        }
+      })
+      // The selected row is the confirmation. A toast would sit on top of it.
     },
     setModelVisibility: setVisibility,
     refreshModels: () =>

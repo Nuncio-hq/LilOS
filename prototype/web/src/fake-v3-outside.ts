@@ -79,7 +79,6 @@ const outside = (
   skills: [],
   spend: { used: 0, cap: 0, period: "week" },
   instructions: [],
-  memory: [],
   week,
 })
 

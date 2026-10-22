@@ -34,7 +34,10 @@ export type V3Route =
   | { page: "agent"; id: string }
   | { page: "hire" }
   | { page: "guide" }
-  | { page: "settings"; view?: "general" | "engine" | "phone" | "connectors" }
+  | {
+      page: "settings";
+      view?: "general" | "engine" | "phone" | "connectors" | "skills";
+    }
   /** First run: name the company, check the engine, hire the CEO, add a project. */
   | { page: "welcome" }
   /** A new chat, opened like any record beside the page you are on; `id` is
@@ -162,6 +165,19 @@ export type V3Actions = {
   removeAgent?: (id: string) => Promise<void>;
   /** Turns a connector on or off for one agent's sessions. */
   toggleConnector?: (connectorId: string, agentId: string) => void;
+  /** Writes one memory file. `id` replaces that note; absent adds one.
+      Absent: the page draws no Notes section (D-#19). */
+  saveNote?: (
+    agentId: string,
+    note: { id?: string; name: string; text: string },
+  ) => void;
+  /** Attaches or detaches one company skill for this agent. Absent: skills
+      stay a quiet list, with no toggle (D-#19). */
+  setAgentSkill?: (agentId: string, skillId: string, attached: boolean) => void;
+  /** Adds a skill to the company library. The page has already read a chosen
+      file into `text`, or the words were typed. Absent: Settings has no
+      Skills tab (D-#19). */
+  addSkill?: (skill: { name: string; about: string; text: string }) => void;
   addConnector?: (c: {
     label: string;
     kind: "cli" | "mcp";

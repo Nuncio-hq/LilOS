@@ -1,12 +1,12 @@
 import { cn } from "../lib/utils";
-import { Btn, Section } from "./v3-bits";
+import { Btn } from "./v3-bits";
 import type { V3Data } from "./v3-data-types";
 import { AgentAvatar } from "./v3-marks";
 import type { V3Actions } from "./v3-page-types";
 import type { V3Agent } from "./v3-types";
 
-/* What sits under an agent's instructions: a rule the CEO proposes after it
-   got stuck, and what it remembers. */
+/* A rule the CEO proposes after an agent got stuck. What the agent
+   remembers is its notes (one list), not a second section here. */
 
 /** The CEO's proposed rule; `ceo` is who proposes it. */
 export function RuleSuggestion({
@@ -61,26 +61,5 @@ export function RuleSuggestion({
         </div>
       )}
     </div>
-  );
-}
-
-export function Memory({ memory }: { memory: NonNullable<V3Agent["memory"]> }) {
-  return (
-    <>
-      <Section title="Remembers" count={memory.length} />
-      <ul className="border-[var(--v3-line)] border-t text-[14px]">
-        {memory.map((m) => (
-          <li
-            key={m.text}
-            className="flex items-baseline gap-4 border-[var(--v3-line)] border-b py-2 text-foreground"
-          >
-            <span className="min-w-0 flex-1">{m.text}</span>
-            <span className="shrink-0 text-[12.5px] text-muted-foreground/70">
-              {m.source}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </>
   );
 }

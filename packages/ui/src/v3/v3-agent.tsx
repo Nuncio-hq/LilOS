@@ -20,8 +20,10 @@ import {
   SaveButtons,
   useAgentEditor,
 } from "./v3-agent-edit";
+import { AgentNotes } from "./v3-agent-notes";
 import { RemoveAgent } from "./v3-agent-remove";
-import { Memory, RuleSuggestion } from "./v3-agent-rules";
+import { RuleSuggestion } from "./v3-agent-rules";
+import { AgentSkills } from "./v3-agent-skills";
 import { AgentWeek } from "./v3-agent-week";
 import { ago, Btn, Meter, Page, Prop, Section, Title } from "./v3-bits";
 import { EscLayer, useFocusBack } from "./v3-keys";
@@ -36,8 +38,8 @@ import type { V3Agent, V3ConnectorDef } from "./v3-types";
 /* One agent, like a person's profile in Notion: what it does, what it runs
    on, what it has been plugged into, and how far to trust it this week. An
    outside worker gets the same page minus everything LilOS runs (runtime,
-   model, skills, spend, instructions, memory): LilOS only watches it.
-   What the app cannot tell (runtime, schedule, skills, spend, memory, week)
+   model, skills, spend, instructions, notes): LilOS only watches it.
+   What the app cannot tell (runtime, schedule, skills, spend, week)
    or cannot change (connectors, rules, editing, removing) is left out,
    never shown as a made-up value or a dead control. Make CEO is the
    owner's way to move the position (D-#778), including the first time
@@ -102,6 +104,11 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
   const nextJob = outside
     ? undefined
     : soonestNext(data.schedules.filter((s) => s.agentId === agent.id));
+  /* Notes and the skill toggles need both the records and a handler. The
+     real app has neither yet, so those sections stay off the page (D-#19). */
+  const notes =
+    !outside && agent.notes && act.saveNote ? agent.notes : undefined;
+  const skillEditor = !outside && data.skills && act.setAgentSkill;
 
   return (
     <Page wide>
@@ -233,8 +240,9 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
                 {agent.runtime}
               </Prop>
             )}
-            {/* Which engine profile the agent runs: its persona, memory and
-               skills live there, not in the company record. */}
+            {/* The engine profile this agent runs on. Instructions, notes and
+               skills on this page are the company's when the app carries
+               them; the profile is only which runtime it is. */}
             {agent.profile && (
               <Prop icon={<IdCardIcon />} label="Profile">
                 <span className="font-mono text-[13px] text-foreground">
@@ -272,7 +280,8 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
                 />
               </Prop>
             )}
-            {agent.skills && (
+            {/* Names only, when the app cannot attach or detach. */}
+            {!skillEditor && agent.skills && agent.skills.length > 0 && (
               <Prop icon={<BookOpenIcon />} label="Skills">
                 {agent.skills.map((s) => (
                   <span key={s} className={PILL}>
@@ -328,6 +337,22 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
               </>
             )
           )}
+          {notes && (
+            <AgentNotes
+              notes={notes}
+              onSave={(note) => act.saveNote?.(agent.id, note)}
+            />
+          )}
+          {skillEditor && data.skills && (
+            <AgentSkills
+              skills={data.skills}
+              attached={agent.skills ?? []}
+              onToggle={(skillId, attached) =>
+                act.setAgentSkill?.(agent.id, skillId, attached)
+              }
+              onLibrary={() => go({ page: "settings", view: "skills" })}
+            />
+          )}
           {agent.suggestion && ceo && (
             <RuleSuggestion
               data={data}
@@ -337,8 +362,6 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
               gap={agent.instructions.length > 0 ? "mt-3" : "mt-10"}
             />
           )}
-
-          {agent.memory && <Memory memory={agent.memory} />}
         </>
       )}
 
