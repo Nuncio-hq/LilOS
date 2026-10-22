@@ -358,7 +358,7 @@ describe("AC-1 watchNotifications — only when the conversation is not in view"
     };
   };
 
-  const stateHarness = (store = seqStore()) => {
+  const stateHarness = (store = seqStore(), postedCap?: number) => {
     const posted: DesktopNotification[] = [];
     const listeners = new Set<(e: EngineEvent) => void>();
     const viewListeners = new Set<() => void>();
@@ -396,6 +396,7 @@ describe("AC-1 watchNotifications — only when the conversation is not in view"
       inForeground: () => state.foreground,
       isRequestOpen: (id) => state.open.some((r) => r.requestId === id),
       post: (n) => posted.push(n),
+      ...(postedCap !== undefined ? { postedCap } : {}),
     });
     const emit = (e: EngineEvent) => {
       for (const fn of listeners) fn(e);
@@ -564,6 +565,101 @@ describe("AC-1 watchNotifications — only when the conversation is not in view"
     asksChanged();
     emit(live);
     expect(posted).toHaveLength(1);
+  });
+
+  it("one ask posts one banner when the re-check and the live frame both fire (#819)", () => {
+    const { posted, state, emit, asksChanged } = stateHarness();
+    state.openConv = "c2"; // c1's ask is not on screen
+    state.open = [];
+    asksChanged();
+    const e = ev("request.opened", "s1", {
+      turnId: "t1",
+      requestId: "r9",
+      request: approval,
+    });
+    state.open = [{ sessionId: "s1", requestId: "r9", request: approval }];
+    asksChanged();
+    emit(e);
+    expect(posted).toHaveLength(1);
+    expect(posted[0]?.kind).toBe("ask");
+  });
+
+  it("the standing CEO thread never notifies from either path (D-#777)", () => {
+    const { posted, state, emit, asksChanged, feeds } = stateHarness();
+    state.open = [];
+    state.convs = [
+      ...state.convs,
+      { ...conv("c-ceo", "s-ceo"), ceoThread: true },
+    ];
+    feeds["s-ceo"] = [];
+    asksChanged(); // seed
+    const e = {
+      ...ev("turn.completed", "s-ceo", {
+        turnId: "t1",
+        stopReason: "end_turn",
+      }),
+      seq: 2,
+    };
+    feeds["s-ceo"] = [e];
+    asksChanged();
+    emit(e);
+    expect(posted).toEqual([]);
+  });
+
+  it("drops the oldest posted turns at the cap and still collapses the newest (#819)", () => {
+    const { posted, state, emit, asksChanged, feeds } = stateHarness(
+      seqStore(),
+      4,
+    );
+    state.open = [];
+    feeds.s2 = [];
+    asksChanged(); // seed
+    const fire = (turnId: string, seq: number) => {
+      const e = {
+        ...ev("turn.completed", "s2", { turnId, stopReason: "end_turn" }),
+        seq,
+      };
+      feeds.s2 = [...(feeds.s2 ?? []), e];
+      asksChanged();
+      emit(e);
+    };
+    for (let n = 1; n <= 5; n++) fire(`t${n}`, n);
+    expect(posted).toHaveLength(5);
+    const again = {
+      ...ev("turn.completed", "s2", { turnId: "t5", stopReason: "end_turn" }),
+      seq: 15,
+    };
+    feeds.s2 = [...(feeds.s2 ?? []), again];
+    asksChanged();
+    emit(again);
+    expect(posted).toHaveLength(5);
+  });
+
+  it("an open ask survives the banner-memory trim (#819)", () => {
+    const { posted, state, emit, asksChanged, feeds } = stateHarness(
+      seqStore(),
+      2,
+    );
+    state.openConv = null; // neither the ask nor s2's turns are on screen
+    asksChanged(); // the still-open ask posts once
+    expect(posted.map((n) => n.kind)).toEqual(["ask"]);
+    feeds.s2 = [];
+    asksChanged(); // seed s2; the ask stays open so its key is not trimmed
+    const fire = (turnId: string, seq: number) => {
+      const e = {
+        ...ev("turn.completed", "s2", { turnId, stopReason: "end_turn" }),
+        seq,
+      };
+      feeds.s2 = [...(feeds.s2 ?? []), e];
+      asksChanged();
+      emit(e);
+    };
+    fire("t1", 1);
+    fire("t2", 2);
+    asksChanged();
+    asksChanged();
+    expect(posted.filter((n) => n.kind === "ask")).toHaveLength(1);
+    expect(posted.filter((n) => n.kind === "done")).toHaveLength(2);
   });
 
   it("accounts an in-view completion without ever posting it", () => {

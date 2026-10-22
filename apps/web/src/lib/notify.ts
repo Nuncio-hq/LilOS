@@ -129,6 +129,8 @@ export function notificationForEvent(
       const { stopReason, error } = e.payload;
       if (stopReason === "cancelled") return null;
       const c = conversationOf(e.sessionId, ctx);
+      /* D-#777: the standing thread's turns reach the owner as updates,
+         so a finish there is not a banner. */
       if (!c || c.ceoThread) return null;
       /* #561 AC-3: a muted employee notifies nowhere. */
       if (employeeOf(c, ctx)?.muted) return null;
@@ -276,6 +278,12 @@ export interface WatchNotificationsOpts {
    * Engines emit `turn.completed{error}` and `session.state{error}` as a
    * pair for a single failure; default 1500ms collapses that pair. */
   failureDedupeMs?: number;
+  /**
+   * How many posted thread+turn and ask keys to remember (#819). Past this,
+   * the oldest keys go, except an ask that is still open — dropping that
+   * id would let the next re-check raise the ask again. Default 1024.
+   */
+  postedCap?: number;
 }
 
 export function watchNotifications(opts: WatchNotificationsOpts): () => void {
@@ -322,9 +330,33 @@ export function watchNotifications(opts: WatchNotificationsOpts): () => void {
       turnTexts.get(`${sessionId}:${turnId}`) ??
       opts.context().turnText?.(sessionId, turnId),
   });
-  // Asks already posted, keyed by requestId — dedupes the live fast-path
-  // against the state-driven check below.
-  const postedAsks = new Set<string>();
+  /* #819: one finish is seen twice. The feed update runs the re-check
+     (sessionModels / sessionSignals, wired in effects.ts) before `onEvent`
+     delivers the live frame, and a turn can also show up under a second
+     seq. Both paths post through here, once per thread + turn. An ask is
+     once per request id — the same id the live frame and the open-ask
+     re-check already shared, now in this set so the cap covers it too.
+     Seq accounting still drops an exact frame after its key ages out. */
+  const postedCap = opts.postedCap ?? 1024;
+  const posted = new Set<string>();
+  const askKey = (requestId: string) => `ask:${requestId}`;
+  const turnKey = (conversationId: string, turnId: string) =>
+    `turn:${conversationId}:${turnId}`;
+  const rememberPosted = (key: string): void => {
+    posted.add(key);
+    if (posted.size <= postedCap) return;
+    const open = new Set(
+      (opts.openAsks?.() ?? []).map((a) => askKey(a.requestId)),
+    );
+    const keep = Math.floor(postedCap / 2);
+    for (const k of posted) {
+      if (posted.size <= keep) break;
+      /* The key just claimed stays. An open ask stays: the next re-check
+         would otherwise post it again. */
+      if (k === key || open.has(k)) continue;
+      posted.delete(k);
+    }
+  };
   /* Completion seqs already accounted this mount; the optional store
      carries the same record across a reload. */
   const handledSeqs = new Set<string>();
@@ -363,10 +395,11 @@ export function watchNotifications(opts: WatchNotificationsOpts): () => void {
   const checkAsks = (): void => {
     if (!opts.openAsks) return;
     for (const a of opts.openAsks()) {
-      if (postedAsks.has(a.requestId)) continue;
+      const key = askKey(a.requestId);
+      if (posted.has(key)) continue;
       const n = askNotification(a.sessionId, a.request, ctxFor());
       if (!n || inView(n.conversationId)) continue;
-      postedAsks.add(a.requestId);
+      rememberPosted(key);
       opts.post(n);
     }
   };
@@ -443,12 +476,7 @@ export function watchNotifications(opts: WatchNotificationsOpts): () => void {
           recordSeq(sessionId, e.seq);
           continue;
         }
-        if (dupFailed(n)) {
-          recordSeq(sessionId, e.seq);
-          continue;
-        }
-        recordSeq(sessionId, e.seq);
-        opts.post(n);
+        postFresh(e, n);
       }
     }
   };
@@ -466,6 +494,33 @@ export function watchNotifications(opts: WatchNotificationsOpts): () => void {
     e.type === "request.opened" ||
     e.type === "turn.completed" ||
     (e.type === "session.state" && e.payload.state === "error");
+
+  /* The live frame, its late retry, and the re-check all post here so a
+     second sight of the same finish cannot banner again (#819). */
+  const postFresh = (e: EngineEvent, n: DesktopNotification): void => {
+    if (e.type === "request.opened") {
+      const key = askKey(e.payload.requestId);
+      if (posted.has(key)) return;
+      rememberPosted(key);
+      opts.post(n);
+      return;
+    }
+    if (seqSeen(e.sessionId, e.seq)) return;
+    if (
+      e.type === "turn.completed" &&
+      posted.has(turnKey(n.conversationId, e.payload.turnId))
+    ) {
+      /* This seq is the finish we already bannered. Account it so the
+         re-check does not keep revisiting it after the key ages out. */
+      recordSeq(e.sessionId, e.seq);
+      return;
+    }
+    recordSeq(e.sessionId, e.seq);
+    if (dupFailed(n)) return;
+    if (e.type === "turn.completed")
+      rememberPosted(turnKey(n.conversationId, e.payload.turnId));
+    opts.post(n);
+  };
 
   const deliver = (e: EngineEvent): void => {
     /* Fold before the notifyable gate — deltas aren't attention-worthy
@@ -502,15 +557,7 @@ export function watchNotifications(opts: WatchNotificationsOpts): () => void {
             const retry = notificationForEvent(e, ctxFor());
             if (!retry) return;
             if (inView(retry.conversationId)) return; // checkAsks owns asks
-            if (
-              e.type === "request.opened" &&
-              postedAsks.has(e.payload.requestId)
-            )
-              return;
-            if (e.type === "request.opened")
-              postedAsks.add(e.payload.requestId);
-            else recordSeq(e.sessionId, e.seq);
-            if (!dupFailed(retry)) opts.post(retry);
+            postFresh(e, retry);
           }, retryMs),
         );
       }
@@ -523,12 +570,7 @@ export function watchNotifications(opts: WatchNotificationsOpts): () => void {
       if (e.type !== "request.opened") recordSeq(e.sessionId, e.seq);
       return;
     }
-    if (e.type === "request.opened") {
-      if (postedAsks.has(e.payload.requestId)) return;
-      postedAsks.add(e.payload.requestId);
-    } else recordSeq(e.sessionId, e.seq); // delivered — the check never reposts
-    if (dupFailed(n)) return;
-    opts.post(n);
+    postFresh(e, n);
   };
 
   /* One state-driven pass over asks + completions — both recover what the
@@ -549,6 +591,6 @@ export function watchNotifications(opts: WatchNotificationsOpts): () => void {
     unsubView?.();
     for (const t of pending.values()) clearTimeout(t);
     pending.clear();
-    postedAsks.clear();
+    posted.clear();
   };
 }
