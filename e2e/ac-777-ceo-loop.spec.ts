@@ -101,6 +101,28 @@ async function threadIdle(page: Page, id: string) {
     .toBe("idle");
 }
 
+/** Assign's opening turn has started and finished. Right after assign the
+    row is still idle, so idle alone passes before `ticket_update` marks
+    the ticket working. A message in that gap joins the opening turn. */
+async function openingTurnSettled(
+  page: Page,
+  ticketId: string,
+  conversationId: string,
+) {
+  await expect
+    .poll(
+      async () => {
+        const { tickets } = await relayRpc<{
+          tickets: { id: string; status: string }[];
+        }>(page, stack, "tickets.list", {});
+        return tickets.find((t) => t.id === ticketId)?.status ?? "";
+      },
+      { timeout: 90_000 },
+    )
+    .toBe("working");
+  await threadIdle(page, conversationId);
+}
+
 test("a goal given to the CEO becomes tickets with owners in one turn", async ({
   page,
 }) => {
@@ -277,13 +299,13 @@ test("a stuck thread is handed to another agent, with an update", async ({
     "tickets.assign",
     { id: ticket.id, ownerId: worker.id },
   );
+  await openingTurnSettled(page, ticket.id, conversation.id);
   await page.goto(
     `${stack.webUrl}/#?page=threads&open=thread:${encodeURIComponent(conversation.id)}`,
   );
   await expect(v3Peek(page).getByRole("button", { name: "Send" })).toBeVisible({
     timeout: 90_000,
   });
-  await threadIdle(page, conversation.id);
   await ceoIdle(page);
   const box = v3Peek(page).getByPlaceholder(`Message ${worker.name}…`);
   await box.fill("stuck:");
@@ -343,18 +365,7 @@ test("a worker who finishes with the ticket still open wakes the CEO", async ({
   );
   /* The opening turn marks the ticket working. The next turn does not
      call ticket_update, which is the forgotten close. */
-  await expect
-    .poll(
-      async () => {
-        const { tickets } = await relayRpc<{
-          tickets: { id: string; status: string }[];
-        }>(page, stack, "tickets.list", {});
-        return tickets.find((t) => t.id === ticket.id)?.status ?? "";
-      },
-      { timeout: 90_000 },
-    )
-    .toBe("working");
-  await threadIdle(page, conversation.id);
+  await openingTurnSettled(page, ticket.id, conversation.id);
   await page.goto(
     `${stack.webUrl}/#?page=threads&open=thread:${encodeURIComponent(conversation.id)}`,
   );

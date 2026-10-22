@@ -344,18 +344,12 @@ test("AC-6 #606 pick-hold: a Files pick while the turn starts survives its first
   await expect(tab(page, "Files")).toBeVisible({ timeout: 30_000 });
   await tab(page, "Files").click();
   await expect(rows(page).first()).toBeVisible({ timeout: 30_000 });
-  /* The steal is the last step becoming `terminal` (`pnpm -r typecheck`):
-     liveKey flips when that step is appended, and the command is in the
-     turn then. `data-turnsettled` waits out the rest of the word-by-word
-     answer (#809). Under CPU load the 25 ms ticks stretch and the footer
-     never mounts inside this window, even though Files has already
-     survived the step — the failure snapshots still had the tab selected,
-     with "ran 1 command" already on the fold. */
+  /* The turn's live row + steps land ~5 s in — long after the pick. Turn
+     end is the settled footer: it mounts on `turn.completed`, which is
+     the #685 `feedHold=turn.completed:400` relay-claim race. A step
+     string (`pnpm -r typecheck`) is in the turn before that event. */
   await expect(
-    page
-      .locator("[data-msg] [data-agentturn]")
-      .filter({ hasText: /pnpm -r typecheck|ran 1 command/ })
-      .last(),
+    page.locator("[data-msg] [data-agentturn] [data-turnsettled]").last(),
   ).toBeVisible({ timeout: 30_000 });
   await expect(tab(page, "Files")).toHaveAttribute("aria-selected", "true");
   await expect(rows(page).first()).toBeVisible();
