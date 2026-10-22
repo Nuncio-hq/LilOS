@@ -86,45 +86,6 @@ export function foldSessionSignal(
 const ensure = (sig: SessionSignal | undefined): SessionSignal =>
   sig ?? { running: false, openRequests: new Map() };
 
-/**
- * The feed's own log says the current turn already ended.
- *
- * Boot seeds `running` from a row that can still read `active` after the
- * turn closed (#814 / #572): the idle write lands after `turn.completed`
- * is already in the log. `turn.completed` is that end. A `turn.recap` is
- * too — replay compaction writes one only once the turn is closed
- * (D-#431), and a live stream never carries it. A later `turn.started`
- * is a new turn. A `turn.delta` after a recap means the recap was an
- * overlap inside a turn that is still streaming, so it does not settle.
- */
-function feedTurnSettled(events: readonly EngineEvent[]): boolean {
-  let current: string | undefined;
-  let settled: "done" | "recap" | undefined;
-  for (const e of events) {
-    const tid = turnIdOf(e);
-    if (e.type === "turn.started" && tid) {
-      current = tid;
-      settled = undefined;
-      continue;
-    }
-    if (!tid) continue;
-    if (!current) current = tid;
-    if (tid !== current) continue;
-    if (e.type === "turn.completed") settled = "done";
-    else if (e.type === "turn.recap") {
-      if (settled !== "done") settled = "recap";
-    } else if (e.type === "turn.delta" && settled === "recap")
-      settled = undefined;
-  }
-  return settled !== undefined;
-}
-
-const turnIdOf = (e: EngineEvent): string | undefined => {
-  if (!("turnId" in e.payload)) return undefined;
-  const id = e.payload.turnId;
-  return typeof id === "string" ? id : undefined;
-};
-
 export interface SessionWatchDeps {
   conversations: ReadableAtom<readonly Conversation[]>;
   asks: ReadableAtom<readonly Ask[]>;
@@ -458,27 +419,12 @@ export class SessionWatch {
      stale seeded flag (a row that still said active after the turn ended)
      and open requests the broadcast never showed us (resolved in a socket
      gap — or an ask row the relay never got to update). Only then does the
-     session leave the watch set.
-     The log can settle sooner than that model. A boot row still says
-     active while the attached feed already holds this turn's
-     `turn.completed` or `turn.recap`, and the snapshot-shaped model can
-     still look live. Keeping `running` would hold the background
-     `events.since` for a turn that already ended (#814). */
+     session leave the watch set. */
   private reconcile(sid: string): void {
     const l = this.latest.get(sid);
-    if (!l?.feed) return;
-    const settled = feedTurnSettled(l.feed.events);
-    if (!l.feed.synced || !l.model) {
-      if (!settled) return;
-      const e = this.entry(sid);
-      if (!e.running) return;
-      e.running = false;
-      this.publish(sid);
-      this.evaluate();
-      return;
-    }
+    if (!l?.feed?.synced || !l.model) return;
     const e = this.entry(sid);
-    const running = settled ? false : l.model.live !== undefined;
+    const running = l.model.live !== undefined;
     const reqs = new Map(
       l.model.openRequests.map((r) => [r.requestId, r.request]),
     );
