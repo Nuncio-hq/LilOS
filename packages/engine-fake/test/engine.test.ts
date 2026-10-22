@@ -1,11 +1,11 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { MODEL_CATALOG } from "../src/catalog.js";
 import { FakeEngine, RpcError } from "../src/engine.js";
-import { STUCK_CLEAR_SOCKET } from "../src/script.js";
+import { stuckClearSocketPath } from "../src/script.js";
 import { connectFake, handleJsonRpc } from "../src/transport.js";
 
 const conn = (tick = 1) => connectFake(new FakeEngine({ tick }));
@@ -1371,7 +1371,7 @@ describe("engine-fake #573: session.stop forgets the session", () => {
     let released = false;
     const connectRelease = () =>
       new Promise<void>((resolve, reject) => {
-        const socket = connect(join(cwd, STUCK_CLEAR_SOCKET));
+        const socket = connect(stuckClearSocketPath(cwd));
         socket.once("connect", () => {
           socket.end();
           resolve();
@@ -1402,6 +1402,67 @@ describe("engine-fake #573: session.stop forgets the session", () => {
       }
       c.close();
       rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("stuck-clear socket stays under sun_path when the cwd is long, and a stale file is replaced", async () => {
+    const cwd = `/var/folders/${"ab".repeat(60)}/T/lilos-e2e-long/work`;
+    expect(cwd.length).toBeGreaterThan(110);
+    const sockPath = stuckClearSocketPath(cwd);
+    expect(Buffer.byteLength(sockPath)).toBeLessThan(104);
+    expect(sockPath.startsWith("/tmp/lilos-sc-")).toBe(true);
+    writeFileSync(sockPath, "stale");
+    const c = connectFake(new FakeEngine({ tick: 1 }));
+    const { sessionId } = (await c.request("session.start", {
+      agent: "default",
+      cwd,
+    })) as { sessionId: string };
+    let sawSix: (() => void) | undefined;
+    const six = new Promise<void>((resolve) => {
+      sawSix = resolve;
+    });
+    let searches = 0;
+    c.onEvent((e) => {
+      if (
+        e.type === "tool.started" &&
+        "tool" in e.payload &&
+        e.payload.tool === "web_search"
+      ) {
+        searches += 1;
+        if (searches === 6) sawSix?.();
+      }
+    });
+    const pending = promptText(c, sessionId, "stuck: clear");
+    let released = false;
+    const connectRelease = () =>
+      new Promise<void>((resolve, reject) => {
+        const socket = connect(sockPath);
+        socket.once("connect", () => {
+          socket.end();
+          resolve();
+        });
+        socket.once("error", (err) => {
+          socket.destroy();
+          reject(err);
+        });
+      });
+    try {
+      await six;
+      await connectRelease();
+      released = true;
+      const done = await Promise.race([
+        pending.then(() => "done" as const),
+        new Promise<"slow">((r) => setTimeout(() => r("slow"), 2_000)),
+      ]);
+      expect(done).toBe("done");
+      expect(existsSync(sockPath)).toBe(false);
+    } finally {
+      if (!released) {
+        await connectRelease().catch(() => {});
+        await pending.catch(() => {});
+      }
+      c.close();
+      rmSync(sockPath, { force: true });
     }
   });
 });

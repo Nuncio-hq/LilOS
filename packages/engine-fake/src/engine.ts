@@ -84,6 +84,7 @@ import {
   type FakeStep,
   type FakeSubagent,
   scriptFor,
+  stuckClearSocketPath,
 } from "./script.js";
 
 /* ── subagents + background jobs (#179) ────────────────────────────────── */
@@ -1667,7 +1668,7 @@ export class FakeEngine {
          cannot land in the same burst. */
       s.releaseReady = undefined;
       const release = script.steps.find((step) => step.releaseSocket);
-      if (release?.releaseSocket) this.armRelease(s, release.releaseSocket);
+      if (release?.releaseSocket) this.armRelease(s);
       for (const step of script.steps) {
         if (step.releaseSocket) {
           await s.releaseReady;
@@ -2427,9 +2428,10 @@ export class FakeEngine {
 
   /** D-#772: the clearing step's gate. Listening starts before the earlier
       calls are emitted; the promise resolves on the first connection, or
-      when the turn is stopped. */
-  private armRelease(s: FakeSession, name: string): void {
-    const sockPath = join(s.cwd, name);
+      when the turn is stopped. A leftover socket from a crashed run is
+      removed before bind, and again when the wait ends. */
+  private armRelease(s: FakeSession): void {
+    const sockPath = stuckClearSocketPath(s.cwd);
     s.releaseReady = new Promise((resolve, reject) => {
       let settled = false;
       let server: Server | undefined;

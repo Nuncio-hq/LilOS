@@ -80,7 +80,9 @@ test("Hire a Researcher: the new agent is in the sidebar and People, opened besi
     await expect(main(page).getByRole("heading", { level: 1 })).toHaveText(
       "People",
     );
-    /* Hire is the sidebar control only, not a link in this header. */
+    /* Hire is the sidebar control only, not a link in this header.
+       Count it only once describe has landed, or the gap reads as absent. */
+    await expect(page.locator("[data-engine-described]")).toBeAttached();
     await expect(
       main(page).getByRole("button", { name: /Hire an agent/ }),
     ).toHaveCount(0);
@@ -122,10 +124,15 @@ test("an engine that cannot create agents has no Hire: not in the sidebar, and i
     await expect(side.getByRole("button", { name: /Default/ })).toBeVisible({
       timeout: 30_000,
     });
+    /* Hire is absent both before describe and when the engine declares no
+       agents. The attribute is describe landing; the count is that state.
+       Each goto mounts the shell again, so describe has to land again. */
+    await expect(page.locator("[data-engine-described]")).toBeAttached();
     await expect(
       side.getByRole("button", { name: "Hire an agent" }),
     ).toHaveCount(0);
     await page.goto(`${stack.webUrl}/#?page=people`);
+    await expect(page.locator("[data-engine-described]")).toBeAttached();
     await expect(main(page).getByRole("heading", { level: 1 })).toHaveText(
       "People",
     );
@@ -133,12 +140,14 @@ test("an engine that cannot create agents has no Hire: not in the sidebar, and i
       main(page).getByRole("button", { name: /Hire an agent/ }),
     ).toHaveCount(0);
     await page.goto(`${stack.webUrl}/#?page=people&view=org`);
+    await expect(page.locator("[data-engine-described]")).toBeAttached();
     await expect(
       main(page).getByRole("button", { name: /Hire an agent/ }),
     ).toHaveCount(0);
 
     // A link to Hire still lands somewhere honest, with nothing to submit.
     await page.goto(`${stack.webUrl}/#?page=hire`);
+    await expect(page.locator("[data-engine-described]")).toBeAttached();
     await expect(page.getByText(/Hiring is not available/)).toBeVisible({
       timeout: 30_000,
     });

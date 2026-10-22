@@ -103,15 +103,13 @@ test("statuses and this week's counts, including a thread that recovered from st
     /* The hold thread is the live one, so the row wears Working. The week
        word is the lowercase count, not that pill. */
     await expect(row).toContainText("Working");
-    await expect(row).toContainText(/\d+ finished/, { timeout: 20_000 });
-    await expect(row).toContainText(/\d+ failed/);
+    await expect(row).toContainText(/[1-9]\d* finished/, { timeout: 20_000 });
+    await expect(row).toContainText(/[1-9]\d* failed/);
     await expect(row).toContainText(/[1-9]\d* stuck/);
     const text = await row.innerText();
     const finished = Number(/(\d+) finished/.exec(text)?.[1]);
     const failed = Number(/(\d+) failed/.exec(text)?.[1]);
     const stuck = Number(/(\d+) stuck/.exec(text)?.[1]);
-    expect(finished).toBeGreaterThan(0);
-    expect(failed).toBeGreaterThan(0);
     await shot(page, "01-week");
 
     await row.click();
