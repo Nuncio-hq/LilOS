@@ -273,10 +273,11 @@ export interface FakeEngineOptions {
  * prompt produces a mutating step that asks for approval — the conformance
  * suite exercises that path.
  */
-/** `LILOS_CEO_TOOLS` / `LILOS_CEO_INSTRUCTIONS` on a session's MCP spec (D-#778). */
+/** `LILOS_CEO_TOOLS` / `LILOS_CEO_INSTRUCTIONS` on a session's MCP spec (D-#778).
+    The instructions value is the CEO brief (D-#777). */
 function ceoOffer(
   servers: SessionStartParams["mcpServers"],
-): { ceo: 0 | 1; tools: string } | undefined {
+): { ceo: 0 | 1; tools: string; brief: string } | undefined {
   for (const server of servers ?? []) {
     if (!("env" in server) || !Array.isArray(server.env)) continue;
     const tools = server.env.find((e) => e.name === "LILOS_CEO_TOOLS")?.value;
@@ -284,7 +285,7 @@ function ceoOffer(
     const instructions = server.env.find(
       (e) => e.name === "LILOS_CEO_INSTRUCTIONS",
     )?.value;
-    return { ceo: instructions ? 1 : 0, tools };
+    return { ceo: instructions ? 1 : 0, tools, brief: instructions ?? "" };
   }
   return undefined;
 }
@@ -316,6 +317,13 @@ export class FakeEngine {
   private refCounter = 0;
   private turnCounter = 0;
   private hexCounter = 0;
+  /** Prompt sections, the engine-fake stand-in for the real engine's
+      `register_system_prompt_section` (D-#777). */
+  private promptSections: {
+    name: string;
+    render: (info: { ceoBrief: string }) => string;
+    maxChars: number;
+  }[] = [];
 
   constructor(opts: FakeEngineOptions = {}) {
     this.tick = opts.tick ?? 25;
@@ -323,6 +331,23 @@ export class FakeEngine {
     this.sessionNamespace = opts.sessionNamespace ?? randomNamespace();
     this.eventLogCap = opts.eventLogCap ?? EVENT_LOG_CAP;
     this.askOpenDelayMs = opts.askOpenDelayMs ?? 0;
+    this.registerSystemPromptSection("lilos.host_policy", () => "", {
+      maxChars: 2000,
+    });
+    this.registerSystemPromptSection(
+      "lilos.ceo_brief",
+      (info) => info.ceoBrief,
+      { maxChars: 2000 },
+    );
+  }
+
+  /** Same shape as the real engine: a named section, rendered per session, capped. */
+  registerSystemPromptSection(
+    name: string,
+    render: (info: { ceoBrief: string }) => string,
+    opts: { maxChars: number },
+  ): void {
+    this.promptSections.push({ name, render, maxChars: opts.maxChars });
   }
 
   private readonly caps: Partial<Record<KnownCapability, boolean>>;
@@ -605,6 +630,16 @@ export class FakeEngine {
       console.log(
         `session.start agent=${p.agent} ceo=${offer.ceo} ceoTools=${offer.tools}`,
       );
+    }
+    /* Render the registered sections the way the real engine freezes them.
+       Log the CEO brief only when this session has one (D-#777). */
+    for (const section of this.promptSections) {
+      const text = section
+        .render({ ceoBrief: offer?.brief ?? "" })
+        .slice(0, section.maxChars);
+      if (section.name === "lilos.ceo_brief" && text) {
+        console.log(`prompt.section lilos.ceo_brief chars=${text.length}`);
+      }
     }
     this.emit(s, "session.started", {
       agent: p.agent,

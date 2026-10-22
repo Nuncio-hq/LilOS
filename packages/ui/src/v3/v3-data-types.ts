@@ -184,9 +184,14 @@ export type V3Update = {
   id: string;
   by: string;
   at: string;
+  /** Epoch ms. Absent in the prototype, which sorts the clock string. */
+  atSort?: number;
   ticketId?: string;
-  kind: "brief" | "done" | "handoff" | "stuck" | "plan";
+  goalId?: string;
+  kind: "plan" | "finished" | "handed" | "stuck" | "note";
   text: string;
+  /** A system note is LilOS, not an agent (D-#777). */
+  authorKind?: "user" | "employee" | "system";
 };
 
 /** The CEO's answer to one ⌘K line: either a reply or a draft plan. */

@@ -14,10 +14,11 @@ import {
  *
  * Which areas a session actually has is decided in SessionSurfaces
  * (`scope.ts`): `root`, `terminal` and `workbench` always; `browser` when
- * one can launch; `thread`, `team`, `folder`, `project`, `ticket`, `goal`
- * and `schedule` on a
- * session bound to an employee's thread. The closing sentence states that.
- * The names above it come from the catalog, not from this sentence.
+ * one can launch; `thread`, `team`, `folder`, `project`, `ticket`, `goal`,
+ * `schedule` and `update` on a session bound to an employee's thread.
+ * The closing sentence states that. The names above it come from the
+ * catalog, not from this sentence. `update_post` stays CEO-only at offer
+ * time (D-#777).
  */
 function renderGatewayTools(): string {
   const grouped = new Map<ToolArea, { name: string; approval: boolean }[]>(
@@ -77,6 +78,6 @@ ${renderGatewayTools()}
 
 A session only sees the areas it has attached: \`root\`, \`terminal\` and
 \`workbench\` always; \`browser\` when a browser can launch; \`thread\`,
-\`team\`, \`folder\`, \`project\`, \`ticket\`, \`goal\` and \`schedule\` when the session is bound
-to an employee's thread.`,
+\`team\`, \`folder\`, \`project\`, \`ticket\`, \`goal\`, \`schedule\` and \`update\` when the session is bound
+to an employee's thread. \`update_post\` is offered only to the CEO.`,
 };

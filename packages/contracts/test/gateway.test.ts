@@ -3,7 +3,6 @@ import { AppMethod } from "../src/app/index.js";
 import {
   AGENT_METHOD_TOOLS,
   APPROVAL_GATED_METHODS,
-  CEO_INSTRUCTIONS,
   HOST_POLICY_MARKER,
   HOST_POLICY_MAX_CHARS,
   HOST_POLICY_VERSION,
@@ -11,6 +10,7 @@ import {
   LILOS_TOOLS,
   NOT_AGENT_FACING,
   PLANNED_TOOL_NAMES,
+  renderCeoBrief,
   renderHostPolicy,
   TOOL_ACCESS,
   TOOL_AREAS,
@@ -162,16 +162,20 @@ describe("AC-5 host policy renders from the catalog", () => {
     }
   });
 
-  it("adds the CEO brief only for a session that holds the position (D-#778)", () => {
+  it("keeps the CEO brief out of the shared host policy (D-#777)", () => {
     const areas = new Set(TOOL_AREAS);
     const plain = renderHostPolicy(areas);
-    expect(plain).not.toContain(CEO_INSTRUCTIONS);
+    const brief = renderCeoBrief();
     /* The shared area lines never name CEO-only tools, so a non-CEO
-       session does not hear about them (D-#778). */
+       session does not hear about them (D-#778). The brief is its own
+       section with its own cap (D-#777). */
     expect(plain).not.toContain("team_set_ceo");
     expect(plain).not.toContain("ticket_assign");
-    const ceo = renderHostPolicy(areas, { ceo: true });
-    expect(ceo).toContain(CEO_INSTRUCTIONS);
-    expect(ceo.length).toBeLessThanOrEqual(HOST_POLICY_MAX_CHARS);
+    expect(plain).not.toContain("update_post");
+    expect(plain).not.toContain(brief);
+    expect(plain.length).toBeLessThanOrEqual(HOST_POLICY_MAX_CHARS);
+    expect(brief.length).toBeLessThanOrEqual(2000);
+    expect(brief).toContain("Plan a goal into tickets");
+    expect(brief).toContain("update_post");
   });
 });

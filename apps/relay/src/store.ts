@@ -6,6 +6,7 @@ import type {
   AskHireProposal,
   AskState,
   AuthorKind,
+  CompanyUpdate,
   Conversation,
   ConversationLife,
   ConversationState,
@@ -231,6 +232,11 @@ export interface OpenConversationInput {
       message's (channelId, key) slot — the same index `appendMessage`
       dedupes on — so a resend answers the stored thread. */
   dedupeKey?: string;
+  /** Host-only (D-#777). Absent is the owner's send. */
+  authorKind?: AuthorKind;
+  /** Host-only (D-#777): the root message is a CEO wake, and this
+      conversation is the standing thread. */
+  ceoWake?: true;
   /** Host-only (#136): the scheduled task the run was fired for — the
       thread is marked and the chip opens the task. */
   scheduled?: { taskId: string; name: string };
@@ -276,6 +282,9 @@ export interface AppendMessageInput {
   fast?: boolean;
   /** Exactly-once key: a retry with a recorded key returns the original message. */
   dedupeKey?: string;
+  /** Host-only (D-#777): this message is a CEO wake. Storing it also
+      marks the conversation as the standing thread. */
+  ceoWake?: true;
 }
 
 export interface ListMessagesQuery {
@@ -485,6 +494,18 @@ export interface RelayStore {
     id: string,
     update: { by: string; text: string },
   ): Promise<Ticket | null>;
+  /** Newest first (D-#777). */
+  listUpdates(): Promise<CompanyUpdate[]>;
+  postUpdate(input: {
+    kind: CompanyUpdate["kind"];
+    text: string;
+    ticketId?: string;
+    goalId?: string;
+    authorKind: "employee" | "system";
+    authorId?: string;
+  }): Promise<CompanyUpdate>;
+  /** Threads that are a hand of this ticket, newest first. */
+  threadsOnTicket(ticketId: string): Promise<Conversation[]>;
 
   listConversations(query: ListConversationsQuery): Promise<Conversation[]>;
   /**
@@ -625,8 +646,9 @@ export interface RelayStore {
   listAsks(query: ListAsksQuery): Promise<Ask[]>;
 
   /**
-   * User messages past each conversation's `deliveredSeq` watermark — the
-   * turns the engine host still owes. Surfaced by `harness.register`.
+   * User messages, and CEO wakes, past each conversation's `deliveredSeq`
+   * watermark — the turns the engine host still owes. A wake is owed by
+   * its flag, not by its text (D-#777). Surfaced by `harness.register`.
    */
   listPendingTurns(): Promise<PendingTurn[]>;
 

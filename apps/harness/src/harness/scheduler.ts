@@ -1,6 +1,7 @@
 import type { AppChannel, Conversation } from "@lilos/contracts/app";
 import { runTitle, type ScheduledTask } from "@lilos/contracts/app";
 import { TaskScheduler } from "../scheduler";
+import { routeCeoSchedule } from "./ceo-loop";
 import type { HarnessCtx } from "./ctx";
 
 /**
@@ -93,6 +94,9 @@ export async function fireScheduledTask(
   task: ScheduledTask,
   due: { at: number; key: string },
 ): Promise<void> {
+  /* A CEO's schedule is a wake on the standing thread, not a second
+     conversation (D-#777). The slot is still consumed. */
+  if (await routeCeoSchedule(this, task)) return;
   /* The task opens on the employee's channel; it may not exist yet if the
      employee was never opened — create it like `channels.openDm` (the wire
      name of the per-employee routing channel, kind "dm"). */

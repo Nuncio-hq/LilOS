@@ -2,6 +2,7 @@ import type {
   AppChannel,
   AppMessage,
   Ask,
+  CompanyUpdate,
   Conversation,
   ConversationSummary,
   Employee,
@@ -83,6 +84,7 @@ export function createMemoryStore(): RelayStore {
   const projects = new Map<string, Project>();
   const goals = new Map<string, Goal>();
   const tickets = new Map<string, Ticket>();
+  const companyUpdates: CompanyUpdate[] = [];
   let profile: ProfileSettings = {};
   const grants = new Map<
     string,
@@ -157,6 +159,7 @@ export function createMemoryStore(): RelayStore {
       removed: false,
       claimed: false,
       text: input.text,
+      ...(input.ceoWake ? { ceoWake: true as const } : {}),
       ...(input.model !== undefined ? { model: input.model } : {}),
       ...(input.provider !== undefined ? { provider: input.provider } : {}),
       ...(input.effort !== undefined ? { effort: input.effort } : {}),
@@ -166,6 +169,10 @@ export function createMemoryStore(): RelayStore {
       attachments: input.attachments,
     };
     messages.set(message.id, message);
+    if (input.ceoWake && input.conversationId) {
+      const conversation = conversations.get(input.conversationId);
+      if (conversation) conversation.ceoThread = true;
+    }
     if (noFolderDedupeKey(input.dedupeKey)) hiddenIds.add(message.id);
     if (input.dedupeKey) {
       dedupe.set(`${input.channelId}|${input.dedupeKey}`, message.id);
@@ -204,6 +211,7 @@ export function createMemoryStore(): RelayStore {
       ...(input.cwd !== undefined ? { cwd: input.cwd } : {}),
       ...(input.projectId !== undefined ? { projectId: input.projectId } : {}),
       ...(input.ticketId !== undefined ? { ticketId: input.ticketId } : {}),
+      ...(input.ceoWake ? { ceoThread: true as const } : {}),
       ...(input.workspace !== undefined ? { workspace: input.workspace } : {}),
       ...openTitle(input),
       archived: false,
@@ -227,8 +235,9 @@ export function createMemoryStore(): RelayStore {
       channelId: input.channelId,
       conversationId: conversation.id,
       authorId: input.authorId,
-      authorKind: "user",
+      authorKind: input.authorKind ?? "user",
       text: input.text,
+      ...(input.ceoWake ? { ceoWake: true as const } : {}),
       attachments: input.attachments,
       dedupeKey: input.dedupeKey,
     });
@@ -547,6 +556,37 @@ export function createMemoryStore(): RelayStore {
       tickets.set(ticket.id, ticket);
       return ticket;
     },
+    async listUpdates() {
+      /* Same-millisecond rows stay newest-first: a later insert wins the
+         tie (D-#777). Drizzle breaks it with rowid. */
+      return companyUpdates
+        .map((row, index) => ({ row, index }))
+        .sort((a, b) => b.row.createdAt - a.row.createdAt || b.index - a.index)
+        .map((x) => x.row);
+    },
+    async postUpdate(input) {
+      const update: CompanyUpdate = {
+        id: newId("upd"),
+        kind: input.kind,
+        text: input.text,
+        ...(input.ticketId ? { ticketId: input.ticketId } : {}),
+        ...(input.goalId ? { goalId: input.goalId } : {}),
+        authorKind: input.authorKind,
+        ...(input.authorId ? { authorId: input.authorId } : {}),
+        createdAt: now(),
+      };
+      companyUpdates.push(update);
+      return update;
+    },
+    async threadsOnTicket(ticketId: string) {
+      const rows = [...conversations.values()].filter(
+        (c) => c.ticketId === ticketId,
+      );
+      return rows
+        .map((row, index) => ({ row, index }))
+        .sort((a, b) => b.row.createdAt - a.row.createdAt || b.index - a.index)
+        .map((x) => x.row);
+    },
     async listRecentFolders() {
       return [...folders.values()].sort((a, b) => b.lastUsedAt - a.lastUsedAt);
     },
@@ -588,7 +628,7 @@ export function createMemoryStore(): RelayStore {
           all.find((m) => m.id === conversation.rootMessageId);
         const last = convMessages.at(-1) ?? all.at(-1);
         if (!root || !last) continue;
-        const answer = convMessages.find((m) => m.authorKind !== "user");
+        const answer = convMessages.find((m) => m.authorKind === "employee");
         summaries.push({
           conversation,
           root: toSummaryMessage(root),
@@ -657,7 +697,7 @@ export function createMemoryStore(): RelayStore {
     },
     async recordConversationFinish({ conversationId, sessionId, eventSeq }) {
       const conversation = conversations.get(conversationId);
-      if (!conversation) return;
+      if (!conversation || conversation.ceoThread) return;
       const mark = finishMarks.get(conversationId);
       if (mark && mark.sessionId === sessionId && eventSeq <= mark.seq) return;
       /* Same stamp rule as the real store (#563): strictly past every mark
@@ -815,7 +855,7 @@ export function createMemoryStore(): RelayStore {
         if (!channel) continue;
         const owed = conversationMessages(conversation.id).filter(
           (m) =>
-            m.authorKind === "user" &&
+            (m.authorKind === "user" || m.ceoWake === true) &&
             !m.rewound &&
             !m.dropped &&
             !m.removed &&

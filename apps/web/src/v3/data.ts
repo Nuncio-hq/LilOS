@@ -19,6 +19,7 @@ import { folders } from "../lib/folders";
 import { currentCompany, currentName, osFullName, profile } from "../lib/me";
 import {
   asks,
+  ceoThreadId,
   companyCeoId,
   engine as engineClient,
   engineDefaultModel,
@@ -34,7 +35,7 @@ import { modelLabel, modelRowStore } from "./models";
 import { profileStore } from "./profiles";
 import { v3SettingsSlice } from "./settings-data";
 import { lastChats, v3ArchivedThreads, v3Asks, v3Threads } from "./threads";
-import { v3Goals, v3Tickets } from "./tickets";
+import { v3Goals, v3Tickets, v3Updates } from "./tickets";
 import { type WeekCounts, weekByAgent } from "./week";
 
 /* The company as the relay knows it, in the shape the v3 pages read. A
@@ -187,7 +188,9 @@ export function v3DataStore(): ReadableAtom<V3Data> {
       relay.projects,
       relay.goals,
       relay.tickets,
+      relay.updates,
       companyCeoId,
+      ceoThreadId,
     ],
     (
       employees,
@@ -212,7 +215,9 @@ export function v3DataStore(): ReadableAtom<V3Data> {
       projects,
       goals,
       tickets,
+      updates,
       holderId,
+      standingId,
     ): V3Data => {
       const src = {
         now,
@@ -245,10 +250,10 @@ export function v3DataStore(): ReadableAtom<V3Data> {
         projects: projectRows(projects),
         goals: v3Goals(goals),
         tickets: v3Tickets(tickets, now),
-        threads: v3Threads(src),
-        archivedThreads: v3ArchivedThreads(src),
+        threads: v3Threads(src, standingId),
+        archivedThreads: v3ArchivedThreads(src, standingId),
         asks: v3Asks(src),
-        updates: [],
+        updates: v3Updates(updates),
         browser: { tabs: [], bookmarks: [] },
         modelChoices: modelRows.map((r) => r.label),
         hireTemplates: HIRE_TEMPLATES,

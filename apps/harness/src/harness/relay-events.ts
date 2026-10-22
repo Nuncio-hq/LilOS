@@ -10,9 +10,16 @@ import {
   MessageChangedEvent,
   ScheduleRemovedEvent,
   ScheduleUpsertedEvent,
+  TicketUpsertedEvent,
   TurnInterruptRequestedEvent,
 } from "@lilos/contracts/app";
 import { CONNECT_APPROVAL_KEY } from "../connect";
+import {
+  ceoOnAsk,
+  ceoOnConversation,
+  ceoOnSettings,
+  ceoOnTicket,
+} from "./ceo-loop";
 import type { HarnessCtx } from "./ctx";
 
 /**
@@ -48,6 +55,7 @@ export function onRelayEvent(
       // #339: the Connect step's one-time approval toggles the reconciler.
       if (params.key === CONNECT_APPROVAL_KEY)
         void this.opts.connect?.reconcile();
+      ceoOnSettings(this, params);
       break;
     }
     case "employee.upserted": {
@@ -78,6 +86,7 @@ export function onRelayEvent(
     case "ask.resolved": {
       const parsed = AskResolvedEvent.safeParse(params);
       if (parsed.success) {
+        ceoOnAsk(this, parsed.data.ask);
         void this.onAskResolved(parsed.data.ask).catch((error) =>
           this.opts.log.warn("ask respond forward failed", {
             askId: parsed.data.ask.id,
@@ -97,6 +106,13 @@ export function onRelayEvent(
       if (parsed.success) this.onScheduleRemoved(parsed.data.taskId);
       break;
     }
+    case "ticket.upserted": {
+      // D-#777: a ticket finishing (not by the CEO) wakes the standing thread.
+      const parsed = TicketUpsertedEvent.safeParse(params);
+      if (parsed.success)
+        ceoOnTicket(this, parsed.data.ticket, parsed.data.actorId);
+      break;
+    }
     case "conversation.updated": {
       // User-initiated rename/archive (host writes only touch
       // engineRef/state/deliveredSeq): mirror onto the engine session when
@@ -104,6 +120,7 @@ export function onRelayEvent(
       const parsed = ConversationUpdatedEvent.safeParse(params);
       if (!parsed.success) break;
       const conv = parsed.data.conversation;
+      ceoOnConversation(this, conv);
       void this.onScheduledConversationUpdate(conv);
       const seen = this.metaSeen.get(conv.id);
       const binding = this.bindings.get(conv.id);

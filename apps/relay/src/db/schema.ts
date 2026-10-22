@@ -110,6 +110,11 @@ export const conversations = sqliteTable(
     /** The ticket this thread is a hand of (D-#776); null = not on a ticket.
         One column, so a thread links to at most one ticket. */
     ticketId: text("ticket_id").references(() => tickets.id),
+    /** The standing CEO thread (D-#777). Set when a ceo-wake message is
+        stored on this row. */
+    ceoThread: integer("ceo_thread", { mode: "boolean" })
+      .notNull()
+      .default(false),
     /** Workstream mode stamped at open (#156): JSON WorkspaceIntent; null =
         direct folder / just chat. */
     workspace: text("workspace"),
@@ -246,6 +251,26 @@ export const tickets = sqliteTable(
 );
 
 /**
+ * What the company told the owner (D-#777). No foreign key: a removed
+ * ticket or goal must not block the note. `author_id` is empty for a
+ * system note (LilOS); an employee note names that employee.
+ */
+export const companyUpdates = sqliteTable(
+  "company_updates",
+  {
+    id: text("id").primaryKey(),
+    kind: text("kind").notNull(),
+    text: text("text").notNull(),
+    ticketId: text("ticket_id"),
+    goalId: text("goal_id"),
+    authorKind: text("author_kind").notNull(),
+    authorId: text("author_id"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [index("company_updates_created").on(t.createdAt)],
+);
+
+/**
  * Scheduled tasks (#136): one row per employee task — a prompt that opens a
  * new thread on a schedule. The relay owns the record (D-#25); the
  * engine host owns the clock: `last_fired_at` is its "runs after this"
@@ -295,6 +320,9 @@ export const messages = sqliteTable(
     authorKind: text("author_kind", {
       enum: ["user", "employee", "system"],
     }).notNull(),
+    /** A CEO wake (D-#777). The text is what the model reads; this flag
+        is what the product keys off. */
+    ceoWake: integer("ceo_wake", { mode: "boolean" }).notNull().default(false),
     text: text("text").notNull(),
     /** Display refs JSON (`MessageAttachment[]`); bytes live outside the row. */
     attachments: text("attachments"),

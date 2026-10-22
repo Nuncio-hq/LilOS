@@ -6,6 +6,7 @@ import type {
   Employee,
   Project,
 } from "@lilos/contracts/app";
+import { ceoWakeNote } from "@lilos/contracts/harness";
 import type {
   Approval,
   EmployeeRow,
@@ -57,7 +58,10 @@ function sessionLabel(conversationId: string, wire: HomeWire): string {
   const summary = wire.summaries.find(
     (s) => s.conversation.id === conversationId,
   );
-  const text = summary?.root.text.trim();
+  const raw = summary?.root.ceoWake
+    ? ceoWakeNote(summary.root.text)
+    : summary?.root.text;
+  const text = raw?.trim();
   if (text) return text.length > 40 ? `${text.slice(0, 39)}…` : text;
   return "a thread";
 }
@@ -180,6 +184,7 @@ export function toEmployeeRow(
           (c) =>
             c.channelId === channel.id &&
             !c.archived &&
+            !c.ceoThread &&
             c.finishedSeq > c.readSeq,
         )) ||
       undefined,
@@ -280,7 +285,8 @@ export function toSessionGroups(
       title: sessionLabel(c.id, wire),
       ...(project ? { project } : {}),
       when: ageLabel(lastOf(c.id) || c.createdAt, nowMs),
-      unread: c.finishedSeq > c.readSeq,
+      /* D-#777: the standing thread never counts as unseen. */
+      unread: c.finishedSeq > c.readSeq && !c.ceoThread,
     };
     if (ask) {
       const req = ask.request;

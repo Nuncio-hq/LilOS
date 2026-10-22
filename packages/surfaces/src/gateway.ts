@@ -3,6 +3,7 @@ import {
   catalogRows,
   LILOS_TOOLS,
   MCP_PATH,
+  renderCeoBrief,
   renderHostPolicy,
   TOOL_PATH_PREFIX,
   toolListAll,
@@ -219,9 +220,10 @@ async function handleMcpRequest(
         buildMcpInitializeResult({
           requestedProtocolVersion: request.params.protocolVersion,
           serverVersion: "1.0.0",
-          instructions: renderHostPolicy(caller.scope.areas, {
-            ceo: caller.scope.ceoAtStart,
-          }),
+          instructions: renderHostPolicy(caller.scope.areas),
+          /* The brief is its own section. Absent unless this session held
+             the position at start (D-#777). */
+          ...(caller.scope.ceoAtStart ? { ceoBrief: renderCeoBrief() } : {}),
         }),
       );
     case "ping":

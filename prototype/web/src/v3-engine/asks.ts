@@ -95,7 +95,7 @@ export function askActions({ setData, getData, toast }: Engine): Pick<
             by: ask.from,
             at: "12:05",
             ticketId: ask.ticketId,
-            kind: closes ? "done" : "handoff",
+            kind: closes ? "finished" : "handed",
             text: `${word}. ${yes ? ask.ifYes : outcome === "no" ? ask.ifNo : ""}`.trim(),
           },
           ...d.updates,

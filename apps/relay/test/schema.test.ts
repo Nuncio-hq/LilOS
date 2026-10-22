@@ -16,6 +16,7 @@ describe("AC-5 relay stores no engine transcript", () => {
     expect(Object.keys(schema).sort()).toEqual([
       "asks",
       "channels",
+      "companyUpdates",
       "conversations",
       "devicePush",
       "employees",

@@ -9,6 +9,7 @@ import {
   ChannelRemovedEvent,
   ChannelSnapshotEvent,
   ChannelSyncedEvent,
+  type CompanyUpdate,
   ConnectChangedEvent,
   type Conversation,
   ConversationRewoundEvent,
@@ -38,6 +39,7 @@ import {
   type Ticket,
   TicketUpsertedEvent,
   toSummaryPreview,
+  UpdateUpsertedEvent,
   type WelcomeResult,
   WS_CLOSE_DEVICE_REVOKED,
 } from "@lilos/contracts/app";
@@ -224,6 +226,9 @@ export class RelayClient {
       `ticket.upserted`. */
   readonly goals: WritableAtom<Goal[]> = atom([]);
   readonly tickets: WritableAtom<Ticket[]> = atom([]);
+  /** Company updates (D-#777). Empty until the directory refresh, and on a
+      relay that predates `updates.list`. Live via `update.upserted`. */
+  readonly updates: WritableAtom<CompanyUpdate[]> = atom([]);
   readonly channels: WritableAtom<AppChannel[]> = atom([]);
   readonly conversations: WritableAtom<Conversation[]> = atom([]);
   /** True once the first directory refresh has landed — until then the list
@@ -1089,6 +1094,11 @@ export class RelayClient {
         this.tickets.set(tickets);
       })
       .catch(() => {});
+    this.request<{ updates: CompanyUpdate[] }>("updates.list", {})
+      .then(({ updates }) => {
+        this.updates.set(updates);
+      })
+      .catch(() => {});
     try {
       const [
         employees,
@@ -1334,6 +1344,17 @@ export class RelayClient {
       }
       case "ticket.upserted": {
         this.upsertTicket(TicketUpsertedEvent.parse(params).ticket);
+        return;
+      }
+      case "update.upserted": {
+        const update = UpdateUpsertedEvent.parse(params).update;
+        const list = this.updates.get();
+        const idx = list.findIndex((u) => u.id === update.id);
+        this.updates.set(
+          idx === -1
+            ? [update, ...list]
+            : list.map((u) => (u.id === update.id ? update : u)),
+        );
         return;
       }
       case "employee.removed": {
@@ -1667,7 +1688,9 @@ export class RelayClient {
        response already contains this message — and carries flags a patch
        can't (`root.rewound` after a rewind-to-root, the true count).
        Cancelling it would strand that state (#134 AC-5). */
-    const isAnswer = message.authorKind !== "user";
+    /* The first employee reply, not the system root. A CEO wake is a
+       system message and must not become the thread's summary (D-#777). */
+    const isAnswer = message.authorKind === "employee";
     this.conversationSummaries.set(
       summaries.map((s) =>
         s.conversation.id === convId && s.last.seq < message.seq

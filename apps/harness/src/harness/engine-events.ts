@@ -57,6 +57,8 @@ export function onEngineEvent(this: HarnessCtx, event: EngineEvent) {
   switch (event.type) {
     case "turn.started": {
       if (!binding) return;
+      /* A new turn has not touched its ticket yet (D-#777). */
+      binding.ticketTouched = false;
       binding.runningTurnId = event.payload.turnId;
       binding.textByTurn.set(event.payload.turnId, "");
       // The pick the turn actually runs on — engine truth for the footer's
@@ -296,6 +298,8 @@ export function onEngineEvent(this: HarnessCtx, event: EngineEvent) {
        uses (`command ?? path ?? pattern ?? query`). */
     case "tool.started":
       if (binding) {
+        if (/ticket_update/.test(event.payload.tool))
+          binding.ticketTouched = true;
         const arg = String(
           event.payload.input.command ??
             event.payload.input.path ??
@@ -319,7 +323,11 @@ export function onEngineEvent(this: HarnessCtx, event: EngineEvent) {
       break;
     case "tool.completed":
       /* D-#772: the call finishing is progress, including a nested one. */
-      if (binding) noteStuckProgress(this, binding);
+      if (binding) {
+        if (/ticket_update/.test(event.payload.tool))
+          binding.ticketTouched = true;
+        noteStuckProgress(this, binding);
+      }
       break;
     case "request.opened":
       if (binding) {

@@ -45,6 +45,8 @@ import {
   type TicketUpdateParams,
   type TicketUpdateResult,
   TOOL_PATH_PREFIX,
+  type UpdatePostParams,
+  type UpdatePostResult,
   type ViewerClientMsg,
   ViewerServerMsg,
   type ViewerServerMsg as ViewerServerMsgT,
@@ -166,6 +168,8 @@ export function toolBackend(opts: ToolClientOptions): SurfaceBackend {
       call("ticket_assign", p) as Promise<TicketAssignResult>,
     ticketComment: (p: TicketCommentParams) =>
       call("ticket_comment", p) as Promise<TicketCommentResult>,
+    updatePost: (p: UpdatePostParams) =>
+      call("update_post", p) as Promise<UpdatePostResult>,
   };
 }
 

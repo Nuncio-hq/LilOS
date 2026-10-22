@@ -325,6 +325,14 @@ export type AttachmentChip = {
 
 export type ThreadEntry =
   | {
+      /** A LilOS note, the same centred line the web draws for a CEO wake
+          (D-#777). Not an agent turn. */
+      kind: "note";
+      id: string;
+      time: string;
+      text: string;
+    }
+  | {
       kind: "user";
       id: string;
       time: string;

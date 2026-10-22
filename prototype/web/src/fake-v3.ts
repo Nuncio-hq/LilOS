@@ -740,15 +740,15 @@ const UPDATES: V3Data["updates"] = [
     id: "u-brief",
     by: "ceo",
     at: "12:04",
-    kind: "brief",
+    kind: "note",
     text: "The paywall test passed review and I’m reading the PR now; it should ship today. Scout has made no progress on the creator search for 45 minutes, so I’ll hand it to Marketer at 12:30 unless you say otherwise.",
   },
   { id: "u-stuck", by: "ceo", at: "11:50", ticketId: "HB-14", kind: "stuck", text: "Scout has run the same search six times. I’ll hand HB-14 to Marketer at 12:30 unless you stop me." },
-  { id: "u-lil81", by: "ceo", at: "11:52", ticketId: "LIL-81", kind: "handoff", text: "Asked Builder to patch the scroll restore and prove it with 15 green runs." },
-  { id: "u-rev", by: "reviewer", at: "11:38", ticketId: "HB-12", kind: "done", text: "Copy B reads better and both variants work on device. Ready for sign-off." },
-  { id: "u-lil77", by: "builder", at: "10:04", ticketId: "LIL-77", kind: "done", text: "PR #64 merged: the docs are one page now." },
+  { id: "u-lil81", by: "ceo", at: "11:52", ticketId: "LIL-81", kind: "handed", text: "Asked Builder to patch the scroll restore and prove it with 15 green runs." },
+  { id: "u-rev", by: "reviewer", at: "11:38", ticketId: "HB-12", kind: "finished", text: "Copy B reads better and both variants work on device. Ready for sign-off." },
+  { id: "u-lil77", by: "builder", at: "10:04", ticketId: "LIL-77", kind: "finished", text: "PR #64 merged: the docs are one page now." },
   { id: "u-plan", by: "ceo", at: "09:14", ticketId: "HB-12", kind: "plan", text: "Split “Grow HeardBack conversion” into four tickets: hooks, ads, paywall test, creators." },
-  { id: "u-9am", by: "ceo", at: "09:00", kind: "brief", text: "Morning. Six agents, five open tickets, nothing blocked. Today: the paywall test, the flaky e2e test, and QRit’s name." },
+  { id: "u-9am", by: "ceo", at: "09:00", kind: "note", text: "Morning. Six agents, five open tickets, nothing blocked. Today: the paywall test, the flaky e2e test, and QRit’s name." },
 ]
 
 export const V3_DATA: V3Data = {

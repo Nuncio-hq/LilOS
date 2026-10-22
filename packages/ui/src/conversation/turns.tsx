@@ -11,6 +11,7 @@ import {
 } from "../components/ai-elements/message";
 import { Shimmer } from "../components/ai-elements/shimmer";
 import { withFileMentionChips } from "../lib/mentions";
+import { catalogModelName } from "../lib/model-name";
 import { HermesAvatar } from "../shell/avatars";
 import type { EmpFn, HumanFn, ModelOption, Reply, WbTab } from "../types";
 import { VIEWER_ID } from "../types";
@@ -262,7 +263,7 @@ export function AgentTurn({
           >
             {r.model && (
               <span>
-                {models?.find((m) => m.id === r.model)?.name ?? r.model}
+                {catalogModelName(r.model, models)}
                 {r.effort && ` · ${effortLabel(r.effort)}`}
                 {r.fast && " · Fast"}
               </span>

@@ -405,6 +405,13 @@ export function ThreadScreen({
                       style={{ minWidth: 24 }}
                     />
                   </View>
+                ) : e.kind === "note" ? (
+                  <AppText
+                    tone="muted"
+                    className="py-1 text-center text-[13px] leading-[18px]"
+                  >
+                    {e.text}
+                  </AppText>
                 ) : e.kind === "user" ? (
                   <UserBubble
                     text={e.text}

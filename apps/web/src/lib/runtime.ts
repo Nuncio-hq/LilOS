@@ -8,6 +8,7 @@ import {
 import {
   type Ask,
   CEO_SETTING_KEY,
+  CEO_THREAD_KEY,
   type EngineHostStatus,
   type SystemStatusResult,
   type WelcomeResult,
@@ -140,6 +141,14 @@ export async function bootRuntime(cfg: LilosConfig): Promise<void> {
       companyCeoId.set(typeof r.value === "string" ? r.value : undefined);
     })
     .catch(() => {});
+  /* The standing CEO thread (D-#777), so Home can leave it out of
+     Recent results. Same KV, same follow. */
+  void relay
+    .request<{ value: unknown }>("settings.get", { key: CEO_THREAD_KEY })
+    .then((r) => {
+      ceoThreadId.set(typeof r.value === "string" ? r.value : undefined);
+    })
+    .catch(() => {});
   relay.onEvent((method, params) => {
     if (method !== "settings.changed") return;
     const { key, value } = params as { key?: string; value?: unknown };
@@ -158,6 +167,9 @@ export async function bootRuntime(cfg: LilosConfig): Promise<void> {
     }
     if (key === CEO_SETTING_KEY) {
       companyCeoId.set(typeof value === "string" ? value : undefined);
+    }
+    if (key === CEO_THREAD_KEY) {
+      ceoThreadId.set(typeof value === "string" ? value : undefined);
     }
   });
   // #339: the Connect approval flag + its settings.changed follow-up.
@@ -208,6 +220,7 @@ export const modelVisibility = atom<ModelVisibility>({
 
 /** Who holds the CEO position (D-#778). Absent until `company.setCeo`. */
 export const companyCeoId = atom<string | undefined>(undefined);
+export const ceoThreadId = atom<string | undefined>(undefined);
 
 /* `host.changed` lands at harness.register while the engine is still
    starting, so a catalog refresh re-asks a bounded number of times before

@@ -173,6 +173,9 @@ const appOps: AppOps = {
   commentTicket: async () => {
     throw new Error("not exercised in this script");
   },
+  postUpdate: async () => {
+    throw new Error("not exercised in this script");
+  },
   startThread: async () => {
     throw new Error("not exercised in this script");
   },

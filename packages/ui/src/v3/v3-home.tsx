@@ -91,9 +91,16 @@ export function V3Home({ data, go, act }: V3PageProps) {
   const grid = teamGrid(showWaiting);
   const results = resultsToLookAt(data);
   const outside = data.agents.filter((a) => a.kind === "outside").length;
-  const brief = [...data.updates]
-    .filter((u) => u.kind === "brief")
-    .sort((a, b) => b.at.localeCompare(a.at))[0];
+  /* The latest note the CEO wrote. No CEO, no brief (D-#777). */
+  const brief = data.ceoId
+    ? [...data.updates]
+        .filter((u) => u.by === data.ceoId)
+        .sort((a, b) =>
+          a.atSort !== undefined && b.atSort !== undefined
+            ? b.atSort - a.atSort
+            : b.at.localeCompare(a.at),
+        )[0]
+    : undefined;
   const briefBy = brief ? agentOf(data, brief.by) : undefined;
 
   return (
@@ -168,7 +175,11 @@ export function V3Home({ data, go, act }: V3PageProps) {
       {data.asks.length === 0 ? (
         <p className="border-[var(--v3-line)] border-y py-3.5 text-[14px] text-muted-foreground">
           Nothing needs you.
-          {data.ceoId && " The CEO will write at 15:00."}
+          {/* Only a real schedule (D-#19): the CEO's next scheduled run, if
+              it has one — never a promised time nothing will keep. */}
+          {data.ceoId &&
+            nextRunLabel(data, data.ceoId) &&
+            ` The CEO's next run: ${nextRunLabel(data, data.ceoId)}.`}
         </p>
       ) : (
         <div className="border-[var(--v3-line)] border-t">

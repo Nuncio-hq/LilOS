@@ -11,6 +11,7 @@ import {
   contextUsedOf,
   contextWindowOf,
 } from "../lib/context-window";
+import { catalogModelName } from "../lib/model-name";
 import { cn } from "../lib/utils";
 import type { ModelOption, Usage } from "../types";
 
@@ -101,7 +102,7 @@ export function SessionUsage({
           },
         ];
   const free = Math.max(0, max - used);
-  const name = models?.find((m) => m.id === model)?.name ?? model;
+  const name = catalogModelName(model, models) ?? model;
   const [open, setOpen] = useState(false);
   // Segments start at 0 and grow once the card is on screen.
   const [grown, setGrown] = useState(false);

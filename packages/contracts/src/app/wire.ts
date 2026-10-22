@@ -306,6 +306,10 @@ export const AppMethod = z.enum([
   "tickets.update",
   "tickets.assign",
   "tickets.comment",
+  /* Company updates (D-#777). The inbox is the owner's. Posting is the
+     host: the CEO tool, or LilOS for a system note. */
+  "updates.list",
+  "updates.post",
 ]);
 export type AppMethod = z.infer<typeof AppMethod>;
 
@@ -582,6 +586,15 @@ export const ConversationsOpenParams = z
     scheduled: z
       .object({ taskId: z.string().min(1), name: z.string() })
       .optional(),
+    /** Host-only (D-#777): the standing CEO thread's root is a system
+        note, not the owner typing. A client-supplied kind is ignored. */
+    authorKind: z.enum(["user", "system"]).optional(),
+    /** Host-only (D-#777): this open is a CEO wake. Ignored unless the
+        host also sends `authorKind: "system"`. */
+    ceoWake: z.literal(true).optional(),
+    /** Host-only (D-#777): stamp the title as the user's so the engine's
+        auto-title cannot rename it. Clients already get "user". */
+    titleSource: z.literal("user").optional(),
   })
   .refine(
     (p) => p.text.length > 0 || (p.attachments?.length ?? 0) > 0,
@@ -682,6 +695,9 @@ export const MessagesPostParams = z.object({
   text: z.string(),
   authorId: z.string().min(1).default("user"),
   authorKind: AuthorKind.default("user"),
+  /** Host-only (D-#777): this post is a CEO wake. Ignored unless the
+      host also sends `authorKind: "system"`. */
+  ceoWake: z.literal(true).optional(),
   attachments: AttachmentsField,
   /** Engine `turn.started.model` — set by the host on employee answers. */
   model: z.string().min(1).optional(),
@@ -1461,6 +1477,8 @@ export const AppEventMethod = z.enum([
      ticket wakes. */
   "goal.upserted",
   "ticket.upserted",
+  /* A company update was posted (D-#777). Home and Inbox read this live. */
+  "update.upserted",
 ]);
 export type AppEventMethod = z.infer<typeof AppEventMethod>;
 

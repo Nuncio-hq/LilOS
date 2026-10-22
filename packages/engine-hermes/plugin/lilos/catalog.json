@@ -961,6 +961,10 @@
                   "system"
                 ]
               },
+              "ceoWake": {
+                "type": "boolean",
+                "const": true
+              },
               "attachments": {
                 "type": "array",
                 "items": {
@@ -1174,6 +1178,10 @@
                     "employee",
                     "system"
                   ]
+                },
+                "ceoWake": {
+                  "type": "boolean",
+                  "const": true
                 },
                 "attachments": {
                   "type": "array",
@@ -1746,6 +1754,10 @@
                   "employee",
                   "system"
                 ]
+              },
+              "ceoWake": {
+                "type": "boolean",
+                "const": true
               },
               "attachments": {
                 "type": "array",
@@ -4561,6 +4573,118 @@
       "_meta": {
         "lilos/area": "ticket",
         "lilos/access": "write"
+      }
+    },
+    {
+      "name": "update_post",
+      "description": "Post a short note on Home and in Inbox. kind is plan, finished, handed, stuck, or note. Does not ask. Only the CEO's session is offered this, and with no CEO it is offered to nobody.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "plan",
+              "finished",
+              "handed",
+              "stuck",
+              "note"
+            ]
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "ticketId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "goalId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "kind",
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "update": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "plan",
+                  "finished",
+                  "handed",
+                  "stuck",
+                  "note"
+                ]
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1
+              },
+              "ticketId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "goalId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "authorKind": {
+                "type": "string",
+                "enum": [
+                  "user",
+                  "employee",
+                  "system"
+                ]
+              },
+              "authorId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "createdAt": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "text",
+              "authorKind",
+              "createdAt"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "update"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "_meta": {
+        "lilos/area": "update",
+        "lilos/access": "write",
+        "lilos/ceoOnly": true
       }
     },
     {

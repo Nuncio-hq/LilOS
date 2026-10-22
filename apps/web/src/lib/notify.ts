@@ -129,7 +129,7 @@ export function notificationForEvent(
       const { stopReason, error } = e.payload;
       if (stopReason === "cancelled") return null;
       const c = conversationOf(e.sessionId, ctx);
-      if (!c) return null;
+      if (!c || c.ceoThread) return null;
       /* #561 AC-3: a muted employee notifies nowhere. */
       if (employeeOf(c, ctx)?.muted) return null;
       const name = employeeName(c, ctx);
@@ -158,7 +158,9 @@ export function notificationForEvent(
     case "session.state": {
       if (e.payload.state !== "error") return null;
       const c = conversationOf(e.sessionId, ctx);
-      if (!c) return null;
+      /* D-#777: the standing thread's turns reach the owner as updates,
+         so a finish there is not a banner. */
+      if (!c || c.ceoThread) return null;
       if (employeeOf(c, ctx)?.muted) return null;
       const name = employeeName(c, ctx);
       return {

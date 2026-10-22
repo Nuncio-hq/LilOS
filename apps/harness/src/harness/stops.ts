@@ -44,6 +44,9 @@ export function stopOwns(
   conversationId: string,
   message: AppMessage,
 ): boolean {
+  /* A wake is not a send the owner stopped. Parking it would swallow
+     the turn (D-#777). */
+  if (message.authorKind !== "user") return false;
   const stopSeq = this.stopSeqs.get(conversationId);
   return (
     stopSeq !== undefined &&
@@ -65,6 +68,7 @@ export function dropStopped(
   binding: SessionBinding,
   message: AppMessage,
 ) {
+  if (message.authorKind !== "user") return;
   binding.consumed.delete(message.id);
   this.dismissed.add(message.id);
   this.relayWrite(`drop stopped ${message.id}`, () =>

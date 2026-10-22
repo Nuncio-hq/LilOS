@@ -1,0 +1,139 @@
+import { describe, expect, it } from "vitest";
+import {
+  CEO_WAKE_COALESCE_MS,
+  CeoWakes,
+  ceoWakeNote,
+  formatCeoWake,
+} from "../src/harness/ceo-wake.js";
+
+/**
+ * D-#777: one wake per burst, never the CEO's own action, and never a
+ * second turn while one is running.
+ */
+describe("CEO wakes", () => {
+  const ceo = "emp_ceo";
+
+  it("coalesces events inside the window into one wake", () => {
+    const wakes = new CeoWakes();
+    expect(wakes.note({ reason: "done", ticketId: "LIL-1", at: 0 }, ceo)).toBe(
+      "queued",
+    );
+    expect(
+      wakes.note(
+        { reason: "stuck", ticketId: "LIL-2", handTo: "emp_b", at: 500 },
+        ceo,
+      ),
+    ).toBe("queued");
+    expect(wakes.poll(1_000)).toBeNull();
+    const batch = wakes.poll(CEO_WAKE_COALESCE_MS);
+    expect(batch).toHaveLength(2);
+    expect(batch?.[0]?.ticketId).toBe("LIL-1");
+    expect(batch?.[1]?.ticketId).toBe("LIL-2");
+    expect(wakes.poll(CEO_WAKE_COALESCE_MS + 1)).toBeNull();
+  });
+
+  it("drops the CEO's own action and drops everything when no one holds the seat", () => {
+    const wakes = new CeoWakes();
+    expect(
+      wakes.note(
+        { reason: "done", ticketId: "LIL-1", actorId: ceo, at: 0 },
+        ceo,
+      ),
+    ).toBe("self");
+    expect(wakes.poll(CEO_WAKE_COALESCE_MS)).toBeNull();
+    expect(wakes.note({ reason: "done", ticketId: "LIL-1", at: 0 }, null)).toBe(
+      "no-ceo",
+    );
+    expect(wakes.hasPending).toBe(false);
+  });
+
+  it("runs one turn at a time and releases the next when that turn settles", () => {
+    const wakes = new CeoWakes();
+    wakes.note({ reason: "done", ticketId: "LIL-1", at: 0 }, ceo);
+    const first = wakes.poll(CEO_WAKE_COALESCE_MS);
+    expect(first).toHaveLength(1);
+    expect(wakes.isRunning).toBe(true);
+    expect(
+      wakes.note({ reason: "ask", ticketId: "LIL-3", at: 2_000 }, ceo),
+    ).toBe("queued");
+    expect(wakes.poll(9_000)).toBeNull();
+    const next = wakes.settled();
+    expect(next).toHaveLength(1);
+    expect(next?.[0]?.reason).toBe("ask");
+    expect(wakes.isRunning).toBe(true);
+    expect(wakes.settled()).toBeNull();
+    expect(wakes.isRunning).toBe(false);
+  });
+
+  it("lists every event on one wake", () => {
+    const text = formatCeoWake([
+      {
+        reason: "done",
+        ticketId: "LIL-1",
+        at: 0,
+        next: [{ ticketId: "LIL-2", ownerId: "emp_b" }],
+      },
+      { reason: "stuck", ticketId: "LIL-9", handTo: "emp_c", at: 1 },
+    ]);
+    expect(text).toBe(
+      [
+        "CEO wake.",
+        "- finished LIL-1",
+        "- next LIL-2 owner emp_b",
+        "- stuck ticket LIL-9 hand emp_c",
+      ].join("\n"),
+    );
+    const last = formatCeoWake([
+      {
+        reason: "stuck",
+        ticketId: "LIL-9",
+        handTo: "emp_ceo",
+        lastResort: true,
+        at: 0,
+      },
+    ]);
+    expect(last).toContain("- stuck ticket LIL-9 hand emp_ceo last");
+    const named = formatCeoWake([
+      {
+        reason: "stuck",
+        ticketId: "LIL-9",
+        handTo: "emp_c",
+        handName: "Ink",
+        at: 0,
+      },
+    ]);
+    expect(named).toContain("- stuck ticket LIL-9 hand emp_c name:Ink");
+    expect(ceoWakeNote(named)).toBe("LilOS: LIL-9 is stuck");
+    expect(ceoWakeNote(text)).toBe(
+      "LilOS: LIL-1 is done · LIL-2 is next · LIL-9 is stuck",
+    );
+    /* Rendering only. A caller that has not seen `ceoWake` does not
+       ask for a note, so this is not a detector. */
+    expect(ceoWakeNote("Handed to Blair")).toBe("LilOS: wake");
+    const open = formatCeoWake([{ reason: "open", ticketId: "LIL-4", at: 0 }]);
+    expect(open).toContain(
+      "- ticket LIL-4 still open after the thread finished: check it, then close it or hand it on",
+    );
+    expect(ceoWakeNote(open)).toBe(
+      "LilOS: LIL-4 finished with the ticket still open",
+    );
+  });
+
+  it("puts a busy batch back ready, and a failed batch behind a new window", () => {
+    const busy = new CeoWakes();
+    busy.note({ reason: "done", ticketId: "LIL-1", at: 0 }, ceo);
+    const taken = busy.poll(CEO_WAKE_COALESCE_MS);
+    busy.hold(taken ?? [], CEO_WAKE_COALESCE_MS);
+    expect(busy.isRunning).toBe(false);
+    expect(busy.poll(CEO_WAKE_COALESCE_MS)?.[0]?.ticketId).toBe("LIL-1");
+
+    const failed = new CeoWakes();
+    failed.note({ reason: "ask", ticketId: "LIL-2", at: 0 }, ceo);
+    const batch = failed.poll(CEO_WAKE_COALESCE_MS);
+    failed.restore(batch ?? [], 5_000);
+    expect(failed.poll(5_000)).toBeNull();
+    expect(failed.poll(5_000 + CEO_WAKE_COALESCE_MS)?.[0]?.ticketId).toBe(
+      "LIL-2",
+    );
+  });
+});

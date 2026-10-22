@@ -137,6 +137,9 @@ export function buildMcpInitializeResult(input: {
   readonly requestedProtocolVersion: unknown;
   readonly serverVersion: string;
   readonly instructions: string;
+  /** CEO brief for a session that held the position at start (D-#777).
+      A second prompt section, not part of `instructions`. */
+  readonly ceoBrief?: string;
 }): Record<string, unknown> {
   return {
     protocolVersion: negotiateMcpProtocolVersion(
@@ -149,5 +152,6 @@ export function buildMcpInitializeResult(input: {
       version: input.serverVersion,
     },
     instructions: input.instructions,
+    ...(input.ceoBrief ? { lilosCeoBrief: input.ceoBrief } : {}),
   };
 }

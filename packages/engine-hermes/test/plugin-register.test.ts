@@ -40,6 +40,8 @@ test("register() returns fast with the full catalog against a dead gateway", () 
   const out = JSON.parse(r.stdout.trim().split("\n").at(-1) ?? "{}") as {
     seconds: number;
     tools: string[];
+    sections: { name: string; max_chars: number }[];
+    ceo_blank: string;
   };
   /* Generous bound for slow CI: the old path needed the whole 15 s urllib
      timeout; the snapshot path is a file read well under a second. */
@@ -47,6 +49,13 @@ test("register() returns fast with the full catalog against a dead gateway", () 
   expect(out.tools).toContain("lilos_context");
   expect(out.tools).toContain("lilos_team_list");
   expect(out.tools.length).toBeGreaterThanOrEqual(20);
+  /* Two sections, each with its own 2000-char cap. The CEO brief is blank
+     outside a LilOS session (D-#777). */
+  expect(out.sections).toEqual([
+    { name: "lilos.host_policy", max_chars: 2000 },
+    { name: "lilos.ceo_brief", max_chars: 2000 },
+  ]);
+  expect(out.ceo_blank).toBe("");
 });
 
 test("#549 AC-2: browser_exec/browser_vault_* get a truthful block inside a LilOS session", () => {

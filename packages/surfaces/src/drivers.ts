@@ -1,5 +1,6 @@
 import type {
   AppMessage,
+  CompanyUpdate,
   Conversation,
   ConversationSummary,
   Employee,
@@ -35,6 +36,7 @@ import type {
   TicketReadResult,
   TicketUpdateParams,
   TicketUpdateResult,
+  UpdatePostParams,
   ViewerBrowserInputEvent,
 } from "@lilos/contracts/harness";
 import type { ForgePrListItem } from "@lilos/contracts/host";
@@ -178,6 +180,8 @@ export interface AppOps {
   updateTicket(p: TicketUpdateParams): Promise<TicketUpdateResult>;
   assignTicket(p: TicketAssignParams): Promise<TicketAssignResult>;
   commentTicket(p: TicketCommentParams): Promise<TicketCommentResult["ticket"]>;
+  /** CEO note for the owner. Does not ask (D-#777). */
+  postUpdate(p: UpdatePostParams): Promise<CompanyUpdate>;
   /**
    * `ask` (D-#773): post a question or a once/deny approval and wait.
    * A decline throws `SurfaceError("declined")`.

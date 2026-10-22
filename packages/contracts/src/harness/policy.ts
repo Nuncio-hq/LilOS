@@ -1,4 +1,3 @@
-import { CEO_INSTRUCTIONS } from "./ceo.js";
 import type { ToolArea } from "./tools.js";
 
 /**
@@ -10,10 +9,10 @@ import type { ToolArea } from "./tools.js";
  *
  * Versioned (`[LilOS host policy vN]`) — bump N when the rules change so a
  * stale prompt is diagnosable. Kept under 2000 chars: it rides in every
- * engine context. v9 keeps v8's areas (ticket, goal) and appends the CEO
- * brief (D-#778). Wording is shorter so that brief still fits; every v8
- * rule is still here. The `team` line does not name CEO-only tools
- * (`team_set_ceo`, `ticket_assign`): a session that does not hold the
+ * engine context. v9 keeps v8's areas (ticket, goal). The CEO brief is not
+ * in this text: it has its own section and its own cap (D-#777). The
+ * `team` line does not name CEO-only tools (`team_set_ceo`,
+ * `ticket_assign`, `update_post`): a session that does not hold the
  * position must not hear about them.
  */
 export const HOST_POLICY_VERSION = 9;
@@ -67,22 +66,22 @@ const AREA_LINES: Record<ToolArea, string> = {
     "- `browser_*`: the session's own browser, shared with the user's Workbench — the only browser you may use for web pages.",
   terminal:
     "- `terminal_*`: the session's shell in its working folder — runs commands the user can watch live.",
+  /* D-#777: `update_post` is CEO-only and described in the CEO brief, not
+     in this shared text. The area exists so the name matches
+     `<area>_<action>`. Empty, so it never adds a bullet. */
+  update: "",
 };
 
-export function renderHostPolicy(
-  areas: ReadonlySet<ToolArea>,
-  /* `ceo` appends the position's brief. Only a session that held the
-     position at start passes it (D-#778). */
-  opts?: { ceo?: boolean },
-): string {
+export function renderHostPolicy(areas: ReadonlySet<ToolArea>): string {
   const lines = [
     HOST_POLICY_MARKER,
     "You are an employee in LilOS. These tools are your only way to read or act, and they never touch another session.",
-    ...TOOL_AREA_ORDER.filter((a) => areas.has(a)).map((a) => AREA_LINES[a]),
+    ...TOOL_AREA_ORDER.filter((a) => areas.has(a))
+      .map((a) => AREA_LINES[a])
+      .filter((line) => line !== ""),
     "Reading is always allowed. Changes beyond your own thread — new threads, hiring, merging — need an approval: propose them, never push them through.",
     "Never open `~/.lilos` — the `lilos_*` tools are your only view of its state.",
     "Files, edits, and git use your engine's tools in the session folder; LilOS tools are for the app, not the codebase.",
-    ...(opts?.ceo ? [CEO_INSTRUCTIONS] : []),
   ];
   return lines.join("\n");
 }

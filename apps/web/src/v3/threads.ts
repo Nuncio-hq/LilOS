@@ -198,17 +198,24 @@ export function lastChats(
 
 /** The threads, newest activity first. Archived ones and ones whose employee
     is gone stay out; `v3ArchivedThreads` has the archived. */
-export function v3Threads(src: ThreadSources): V3Thread[] {
-  return threadRows(src, false);
+export function v3Threads(src: ThreadSources, standingId?: string): V3Thread[] {
+  return threadRows(src, false, standingId);
 }
 
 /** The threads put away (`conversations.update {archived}`), newest first:
     Threads → All → Archived, where they unarchive. */
-export function v3ArchivedThreads(src: ThreadSources): V3Thread[] {
-  return threadRows(src, true);
+export function v3ArchivedThreads(
+  src: ThreadSources,
+  standingId?: string,
+): V3Thread[] {
+  return threadRows(src, true, standingId);
 }
 
-function threadRows(src: ThreadSources, archived: boolean): V3Thread[] {
+function threadRows(
+  src: ThreadSources,
+  archived: boolean,
+  standingId?: string,
+): V3Thread[] {
   const summaries = new Map(src.summaries.map((s) => [s.conversation.id, s]));
   const owners = ownersOf(src.channels);
   const openAsk = new Map<string, Ask>();
@@ -224,12 +231,18 @@ function threadRows(src: ThreadSources, archived: boolean): V3Thread[] {
     const agentId = owners.get(c.channelId);
     if (!agentId) continue;
     const summary = summaries.get(c.id);
-    const status = threadStatus(
+    const derived = threadStatus(
       c,
       c.engineRef ? src.models[c.engineRef] : undefined,
       c.engineRef ? src.signals[c.engineRef] : undefined,
       openCount.get(c.id) ?? 0,
     );
+    /* The standing CEO thread's output is the updates. It is not an
+       unseen result, and it does not join Recent results (D-#777). */
+    const status =
+      standingId && c.id === standingId && derived === "unseen"
+        ? "idle"
+        : derived;
     const last = summary?.last.createdAt ?? c.createdAt;
     const live =
       status === "working" || status === "needs" || status === "stuck";

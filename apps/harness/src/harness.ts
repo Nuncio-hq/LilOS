@@ -43,6 +43,7 @@ import {
   suspendBinding,
   writeLife,
 } from "./harness/bind";
+import { stopCeoLoop, wireCeoLoop } from "./harness/ceo-loop";
 import { execSlashCommand, slashFor } from "./harness/commands";
 import {
   conversationFromAtom,
@@ -52,7 +53,7 @@ import {
   resolveEmployee,
   updateConversation,
 } from "./harness/conversations";
-import type { SessionBinding } from "./harness/ctx";
+import type { HarnessCtx, SessionBinding } from "./harness/ctx";
 import {
   deliver,
   deliverOrdered,
@@ -474,6 +475,9 @@ export class Harness {
     });
     this.reaper.start();
     this.wireScheduler();
+    /* start() runs after Object.assign puts the HarnessCtx methods on the
+       prototype. The class type does not list them (D-#777). */
+    wireCeoLoop(this as unknown as HarnessCtx);
   }
 
   declare private onRelayReady: () => Promise<void>;
@@ -501,7 +505,9 @@ export class Harness {
   async stop(): Promise<void> {
     this.reaper.stop();
     this.scheduler?.stop();
-    /* D-#772: a quiet timer must not fire after the harness stops. */
+    /* D-#772: a quiet timer must not fire after the harness stops.
+       D-#777: the CEO coalesce timer is the same kind of quiet timer. */
+    stopCeoLoop(this as unknown as HarnessCtx);
     stopStuckWatches(this.bindings.values());
     for (const t of this.earlyFlushTimers.values()) clearTimeout(t);
     this.earlyFlushTimers.clear();

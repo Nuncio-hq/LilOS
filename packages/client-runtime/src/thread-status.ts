@@ -72,6 +72,7 @@ export function threadStatus(
   if (c.stuck && running) return "stuck";
   if (running) return "working";
   if (c.turnFailure) return "failed";
-  if (c.finishedSeq > c.readSeq) return "unseen";
+  /* D-#777: the standing CEO thread's finishes are updates, never unseen. */
+  if (c.finishedSeq > c.readSeq && !c.ceoThread) return "unseen";
   return "idle";
 }

@@ -1,6 +1,7 @@
 import type { RelayClient } from "@lilos/client-runtime";
 import type {
   AppMessage,
+  CompanyUpdate,
   Conversation,
   ConversationSummary,
   Employee,
@@ -20,6 +21,7 @@ import type {
   TicketReadParams,
   TicketUpdateParams,
   TicketUpdateResult,
+  UpdatePostParams,
 } from "@lilos/contracts/harness";
 import type { ForgePrListItem } from "@lilos/contracts/host";
 import type { AppOps } from "@lilos/surfaces";
@@ -148,16 +150,25 @@ export function createAppOps(deps: {
         return r.ticket;
       },
       createTicket: async (p: TicketCreateParams) => {
-        const r = await relay.request<{ ticket: Ticket }>("tickets.create", p);
+        const r = await relay.request<{ ticket: Ticket }>("tickets.create", {
+          ...p,
+          ...(binding.employeeId ? { actorId: binding.employeeId } : {}),
+        });
         return r.ticket;
       },
       updateTicket: async (p: TicketUpdateParams) =>
-        relay.request<TicketUpdateResult>("tickets.update", p),
+        relay.request<TicketUpdateResult>("tickets.update", {
+          ...p,
+          ...(binding.employeeId ? { actorId: binding.employeeId } : {}),
+        }),
       assignTicket: async (p: TicketAssignParams) => {
         const r = await relay.request<{
           ticket: Ticket;
           conversation: Conversation;
-        }>("tickets.assign", p);
+        }>("tickets.assign", {
+          ...p,
+          ...(binding.employeeId ? { actorId: binding.employeeId } : {}),
+        });
         return {
           ticket: r.ticket,
           thread: { id: r.conversation.id, title: r.conversation.title },
@@ -169,6 +180,17 @@ export function createAppOps(deps: {
           by: binding.employeeId,
         });
         return r.ticket;
+      },
+      postUpdate: async (p: UpdatePostParams) => {
+        const r = await relay.request<{ update: CompanyUpdate }>(
+          "updates.post",
+          {
+            ...p,
+            authorKind: "employee",
+            authorId: binding.employeeId,
+          },
+        );
+        return r.update;
       },
       status: () =>
         relay.request<SystemStatusResult>("system.status", { logLines: 0 }),

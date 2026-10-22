@@ -96,14 +96,17 @@ export async function handleTickets(c: RelayCtx): Promise<false | undefined> {
         startsAt: parsed.data.startsAt,
         stuckWhy: parsed.data.stuckWhy,
       });
-      broadcast("ticket.upserted", { ticket });
+      broadcast("ticket.upserted", {
+        ticket,
+        ...actorOf(c, parsed.data.actorId),
+      });
       c.respond(c.peer, c.id, { ticket });
       return;
     }
     case "tickets.update": {
       const parsed = TicketsUpdateParams.safeParse(params);
       if (!parsed.success) throw badParams(parsed.error.issues);
-      const { id, waitingOn, ...rest } = parsed.data;
+      const { id, waitingOn, actorId, ...rest } = parsed.data;
       const current = await store.getTicket(id);
       if (!current) notFound("ticket");
       if (rest.goalId)
@@ -124,7 +127,8 @@ export async function handleTickets(c: RelayCtx): Promise<false | undefined> {
         ...(resolved !== undefined ? { waitingOn: resolved } : {}),
       });
       if (!changed) notFound("ticket");
-      for (const ticket of changed) broadcast("ticket.upserted", { ticket });
+      for (const ticket of changed)
+        broadcast("ticket.upserted", { ticket, ...actorOf(c, actorId) });
       c.respond(c.peer, c.id, { tickets: changed });
       return;
     }
@@ -151,9 +155,20 @@ export async function handleTickets(c: RelayCtx): Promise<false | undefined> {
          it before the thread event so the client subscribes and the hand
          shows up; an existing channel is already subscribed. */
       if (created) broadcast("channel.created", { channel });
-      broadcast("ticket.upserted", { ticket: opened.ticket });
+      broadcast("ticket.upserted", {
+        ticket: opened.ticket,
+        ...actorOf(c, parsed.data.actorId),
+      });
       c.emitMessage(opened.conversation.channelId, opened.rootMessage);
       c.emitConversation(opened.conversation.channelId, opened.conversation);
+      /* The previous hand hears it was handed on, and a running or stuck
+         thread stops so it leaves Stuck (D-#777). */
+      await handOffPrevious(
+        c,
+        opened.ticket.id,
+        opened.conversation.id,
+        ownerId,
+      );
       c.respond(c.peer, c.id, opened);
       return;
     }
@@ -182,6 +197,54 @@ export async function handleTickets(c: RelayCtx): Promise<false | undefined> {
     }
     default:
       return false;
+  }
+}
+
+/** Host-only. A user client's `actorId` is ignored so the model cannot
+    name someone else (D-#777). */
+function actorOf(
+  c: RelayCtx,
+  actorId: string | undefined,
+): { actorId?: string } {
+  return c.isHost(c.peer) && actorId ? { actorId } : {};
+}
+
+/** "Handed to <agent>" in the previous thread. Stop it when it is still
+    running or stuck, and clear the stuck mark so it leaves Stuck. An idle
+    thread only gets the note. */
+async function handOffPrevious(
+  c: RelayCtx,
+  ticketId: string,
+  openedId: string,
+  ownerId: string,
+): Promise<void> {
+  const hands = await c.store.threadsOnTicket(ticketId);
+  const previous = hands.find((thread) => thread.id !== openedId);
+  if (!previous) return;
+  const employees = await c.store.listEmployees();
+  const name = employees.find((e) => e.id === ownerId)?.name ?? "another agent";
+  const { message } = await c.store.appendMessage({
+    channelId: previous.channelId,
+    conversationId: previous.id,
+    authorId: "system",
+    authorKind: "system",
+    text: `Handed to ${name}`,
+  });
+  c.emitMessage(previous.channelId, message);
+  const wasStuck = previous.stuck != null;
+  if (wasStuck) {
+    const cleared = await c.store.updateConversation(previous.id, {
+      stuck: null,
+    });
+    if (cleared) c.emitConversation(previous.channelId, cleared);
+  }
+  if (previous.state === "active" || wasStuck) {
+    const channel = await c.store.getChannel(previous.channelId);
+    c.emit(previous.channelId, "turn.interruptRequested", {
+      channelId: previous.channelId,
+      conversationId: previous.id,
+      afterSeq: channel?.lastSeq ?? 0,
+    });
   }
 }
 

@@ -185,6 +185,136 @@ export function scriptFor(
     .replace(/[?.!]+$/, "");
   const tail = `I'm in \`${cwd}\` on ⎇ \`${branch}\`. Tell me what to change and I'll edit there.`;
 
+  /* A CEO wake (D-#777). The harness lists what changed; this turn calls
+     the real tools. A model would read the same lines. */
+  if (/^CEO wake\b/.test(q)) {
+    const toolName = (name: string) => `mcp__lilos__${name}`;
+    const steps: FakeStep[] = [];
+    for (const raw of q.split("\n").slice(1)) {
+      const line = raw.replace(/^- /, "").trim();
+      const finished = /^finished (\S+)$/.exec(line);
+      if (finished) {
+        const id = finished[1] ?? "";
+        steps.push({
+          tool: toolName("ticket_read"),
+          input: { id },
+          output: "",
+        });
+        steps.push({
+          tool: toolName("update_post"),
+          input: { kind: "finished", text: `Checked ${id}.`, ticketId: id },
+          output: "",
+        });
+        continue;
+      }
+      const next = /^next (\S+) owner (\S+)$/.exec(line);
+      if (next) {
+        steps.push({
+          tool: toolName("ticket_assign"),
+          input: { id: next[1], ownerId: next[2] },
+          output: "",
+        });
+        continue;
+      }
+      const stuckLine =
+        /^stuck ticket (\S+) hand (\S+)(?: name:(.*?))?( last)?$/.exec(line);
+      if (stuckLine) {
+        const id = stuckLine[1] ?? "";
+        const lastResort = stuckLine[4] !== undefined;
+        const who = stuckLine[3]?.trim();
+        steps.push({
+          tool: toolName("ticket_assign"),
+          input: { id, ownerId: stuckLine[2] },
+          output: "",
+        });
+        steps.push({
+          tool: toolName("update_post"),
+          input: {
+            kind: "handed",
+            text: lastResort
+              ? `Handed ${id} to the CEO. It was stuck.`
+              : `Handed ${id} to ${who || "the next agent"}. It was stuck.`,
+            ticketId: id,
+          },
+          output: "",
+        });
+        continue;
+      }
+      const open = /^ticket (\S+) still open after the thread finished\b/.exec(
+        line,
+      );
+      if (open) {
+        const id = open[1] ?? "";
+        steps.push({
+          tool: toolName("ticket_read"),
+          input: { id },
+          output: "",
+        });
+        steps.push({
+          tool: toolName("ticket_update"),
+          input: { id, status: "done" },
+          output: "",
+        });
+        steps.push({
+          tool: toolName("update_post"),
+          input: {
+            kind: "finished",
+            text: `Closed ${id}. The thread finished with it still open.`,
+            ticketId: id,
+          },
+          output: "",
+        });
+        continue;
+      }
+      const ask = /^ask ticket (\S+)$/.exec(line);
+      if (ask) {
+        steps.push({
+          tool: toolName("update_post"),
+          input: {
+            kind: "note",
+            text: `Ask on ${ask[1]} is resolved.`,
+            ticketId: ask[1],
+          },
+          output: "",
+        });
+        continue;
+      }
+      const sched = /^schedule (.*)$/.exec(line);
+      if (sched) {
+        steps.push({
+          tool: toolName("update_post"),
+          input: { kind: "note", text: sched[1] || "Schedule." },
+          output: "",
+        });
+      }
+    }
+    return {
+      reasoning: "A wake lists what changed. Act on every line.",
+      steps,
+      text: "Done.",
+    };
+  }
+
+  /* A hand-off opens the worker's thread with `<id>: <title>`. Taking
+     the ticket marks it working, so that opening turn is not "forgot
+     ticket_update". A later turn that never calls the tool is the wake
+     (D-#777). */
+  const handed = /^([A-Z0-9]+-\d+): \S/.exec(prompt.trim());
+  if (handed) {
+    const id = handed[1] ?? "";
+    return {
+      reasoning: "The ticket was handed over. Mark it working.",
+      steps: [
+        {
+          tool: "mcp__lilos__ticket_update",
+          input: { id, status: "working" },
+          output: "",
+        },
+      ],
+      text: `Working on ${id}.`,
+    };
+  }
+
   /* `fallback:` — the primary did not answer; the turn runs on a fixed
      other catalog model. The session's pick is unchanged (#790). */
   const fb = /^fallback:\s*(.*)$/is.exec(q);
@@ -526,6 +656,7 @@ ${tail}`,
             else if (part.startsWith("ticket:"))
               input.waitingOn = { kind: "ticket", ticketId: part.slice(7) };
             else if (part.startsWith("owner:")) input.ownerId = part.slice(6);
+            else if (part.startsWith("goal:")) input.goalId = part.slice(5);
           }
           steps.push({
             tool: tool("ticket_create"),
@@ -541,6 +672,18 @@ ${tail}`,
             input: { id, ownerId },
             output: "",
           });
+          break;
+        }
+        case "update":
+        case "update-post": {
+          /* `kind | text` plus optional `ticket:ID` `goal:ID`. */
+          const [kind, text, ...rest] = arg.split("|").map((s) => s.trim());
+          const input: Record<string, unknown> = { kind, text };
+          for (const part of rest) {
+            if (part.startsWith("ticket:")) input.ticketId = part.slice(7);
+            else if (part.startsWith("goal:")) input.goalId = part.slice(5);
+          }
+          steps.push({ tool: tool("update_post"), input, output: "" });
           break;
         }
         case "ticket-update": {

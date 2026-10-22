@@ -8,6 +8,7 @@ import {
   contextWindowOf,
 } from "../lib/context-window";
 import { prettyPath } from "../lib/helpers";
+import { catalogModelName } from "../lib/model-name";
 import { cn } from "../lib/utils";
 import type { Employee, ModelOption, Thread } from "../types";
 import { threadPlans } from "./plan-panel";
@@ -80,7 +81,7 @@ export function DetailsPanel({
      picker and the agent turn word it ("Extra high", not `xhigh`). */
   const modelRow = modelId
     ? [
-        models?.find((m) => m.id === modelId)?.name ?? modelId,
+        catalogModelName(modelId, models),
         thread.effort ? effortLabel(thread.effort) : undefined,
       ]
         .filter(Boolean)

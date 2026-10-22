@@ -17,9 +17,11 @@ One small adapter, three jobs:
    tool behind ``tool_search`` (apps/harness connect.ts turns it off).
    Every tool call carries the Hermes session id so the gateway resolves
    the session's own scope.
-2. Inject the versioned LilOS host policy into each LilOS session's system
-   prompt (``register_system_prompt_section`` — rendered once per session
-   and frozen, so it is cache-safe by construction).
+2. Inject two prompt sections into each LilOS session: the versioned host
+   policy, and — when the session held the CEO position at start — the CEO
+   brief (``lilos.ceo_brief``, its own 2000-char cap, D-#777). Each is
+   rendered once per session and frozen, so it is cache-safe. The brief
+   does not ride inside the host policy.
 3. Block Hermes' own ``browser_*`` tools inside LilOS sessions — agents
    browse through the session's LilOS browser instead, which Oscar can
    watch. ``web_search``/``web_extract`` stay allowed (read-only).
@@ -211,14 +213,15 @@ def _make_handler(tool_name):
     return handler
 
 
-def _policy_section(session_info):
-    """Host policy, fetched per session so each LilOS session gets the
-    versioned policy rendered for ITS areas (frozen by core after render)."""
+def _session_prompts(session_info):
+    """Host policy and CEO brief for one session. Both come from the same
+    MCP initialize the policy already fetched. The brief is empty unless
+    that session held the position at start (D-#777)."""
     if session_info.get("platform") != LILOS_SOURCE:
-        return ""
+        return "", ""
     env = _env()
     if env is None:
-        return ""
+        return "", ""
     sid = str(session_info.get("session_id") or "")
     if sid not in _policies:
         try:
@@ -234,10 +237,25 @@ def _policy_section(session_info):
                     },
                 },
             )
-            _policies[sid] = str((out.get("result") or {}).get("instructions") or "")
+            result = out.get("result") or {}
+            _policies[sid] = (
+                str(result.get("instructions") or ""),
+                str(result.get("lilosCeoBrief") or ""),
+            )
         except Exception:
-            _policies[sid] = ""
+            _policies[sid] = ("", "")
     return _policies[sid]
+
+
+def _policy_section(session_info):
+    """Host policy, fetched per session so each LilOS session gets the
+    versioned policy rendered for ITS areas (frozen by core after render)."""
+    return _session_prompts(session_info)[0]
+
+
+def _ceo_section(session_info):
+    """CEO brief. Empty for every other session, including a non-LilOS one."""
+    return _session_prompts(session_info)[1]
 
 
 def _pre_tool_call(tool_name, args=None, session_id="", task_id="", **_kw):
@@ -291,6 +309,10 @@ def register(ctx):
     ctx.register_hook("pre_tool_call", _pre_tool_call)
     ctx.register_system_prompt_section(
         "lilos.host_policy", _policy_section,
+        position="after_memory", max_chars=2000,
+    )
+    ctx.register_system_prompt_section(
+        "lilos.ceo_brief", _ceo_section,
         position="after_memory", max_chars=2000,
     )
 

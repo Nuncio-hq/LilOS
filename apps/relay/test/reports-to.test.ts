@@ -49,7 +49,7 @@ describe("reportsTo on the real store (D-#775)", () => {
       cleared: string | null;
       after: string | null;
     };
-    expect(out.version).toBe(32);
+    expect(out.version).toBe(34);
     expect(out.linked).toMatch(/^emp_/);
     expect(out.cleared).toBeNull();
     expect(out.after).toBeNull();

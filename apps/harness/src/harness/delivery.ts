@@ -12,6 +12,13 @@ import type { HarnessCtx, SessionBinding } from "./ctx";
  * `Object.assign` at the bottom of `../harness.ts`.
  */
 
+/** The owner's sends start turns. A CEO wake does too, by the `ceoWake`
+    flag: the text is what the model reads, and the flag is what delivers
+    it (D-#777). */
+function promptsEngine(message: AppMessage): boolean {
+  return message.authorKind === "user" || message.ceoWake === true;
+}
+
 /** Run `fn` after the conversation's earlier delivery work, in arrival order. */
 export function ordered<T>(
   this: HarnessCtx,
@@ -37,7 +44,7 @@ export function deliver(this: HarnessCtx, message: AppMessage): Promise<void> {
      without the chain, two sends' interleaved awaits can reach
      enqueueOrPrompt reversed and the later send prompts first. */
   const convId = message.conversationId;
-  if (!convId || message.authorKind !== "user") return Promise.resolve();
+  if (!convId || !promptsEngine(message)) return Promise.resolve();
   return this.ordered(convId, () => this.deliverOrdered(message));
 }
 
@@ -45,7 +52,7 @@ export async function deliverOrdered(
   this: HarnessCtx,
   message: AppMessage,
 ): Promise<void> {
-  if (message.authorKind !== "user") return;
+  if (!promptsEngine(message)) return;
   if (!message.conversationId) return;
   /* #315: a user-removed row must never reach the engine — not even via
      a replayed frame that predates the `message.changed` it carried.

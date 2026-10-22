@@ -41,6 +41,7 @@ import { handleSchedules } from "./session/schedules";
 import { handleSettings } from "./session/settings";
 import { handleTickets } from "./session/tickets";
 import { handleTurns } from "./session/turns";
+import { handleUpdates } from "./session/updates";
 import type { RejectedHandshake } from "./status";
 import type { RelayStore } from "./store";
 
@@ -179,6 +180,8 @@ const METHOD_HANDLERS: ReadonlyMap<
   ["tickets.update", handleTickets],
   ["tickets.assign", handleTickets],
   ["tickets.comment", handleTickets],
+  ["updates.list", handleUpdates],
+  ["updates.post", handleUpdates],
   ["conversations.list", handleConversations],
   ["conversations.summaries", handleConversations],
   ["conversations.open", handleConversations],

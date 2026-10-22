@@ -7,6 +7,11 @@
  */
 export const CEO_SETTING_KEY = "ceoId";
 
+/** The standing CEO thread (D-#777). The host writes it. It is not the
+    position: clearing the seat clears this too, so the next holder does
+    not inherit the previous thread. */
+export const CEO_THREAD_KEY = "ceoThreadId";
+
 /** A `reportsTo` rewrite would loop. The relay maps it to invalid_params. */
 export class CeoGraphError extends Error {
   constructor(message = "reportsTo would cycle") {

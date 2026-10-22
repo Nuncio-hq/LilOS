@@ -48,9 +48,18 @@ const drop = <T extends object, K extends keyof T>(row: T, key: K): T => {
 };
 
 /** A planned ticket becomes working when someone is checked out on it, and
-    that move drops the wait (working never waits). Anything already
-    waiting, stuck, or finished keeps its status. */
+    that move drops the wait (working never waits). A stuck ticket handed
+    to someone leaves stuck for working and drops its reason (D-#777).
+    Anything already waiting or finished keeps its status. */
 export function checkout(ticket: Ticket, ownerId: string, at: number): Ticket {
+  if (ticket.status === "stuck") {
+    return {
+      ...drop(ticket, "stuckWhy"),
+      ownerId,
+      status: "working",
+      statusAt: at,
+    };
+  }
   if (ticket.status !== "planned") return { ...ticket, ownerId };
   return {
     ...drop(ticket, "waitingOn"),

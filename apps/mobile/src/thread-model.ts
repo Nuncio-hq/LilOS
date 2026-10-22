@@ -17,6 +17,7 @@ import type {
   Employee,
 } from "@lilos/contracts/app";
 import type { Job } from "@lilos/contracts/engine";
+import { ceoWakeNote } from "@lilos/contracts/harness";
 import type {
   AgentEntry,
   Approval,
@@ -360,40 +361,49 @@ export function mergeThreadEntries(
     model?.turns.flatMap((t) => (t.ref ? [t.ref] : [])) ?? [],
   );
   const entries: ThreadEntry[] = visible.map((m) =>
-    m.authorKind === "user"
+    m.ceoWake
       ? {
-          kind: "user",
+          /* The same LilOS note the web draws. The flag decides; the
+             stored lines stay what the model read (D-#777). */
+          kind: "note" as const,
           id: m.id,
           time: clock(m.createdAt),
-          text: m.text,
-          /* Attachment refs ride the message — chips under the bubble
+          text: ceoWakeNote(m.text),
+        }
+      : m.authorKind === "user"
+        ? {
+            kind: "user",
+            id: m.id,
+            time: clock(m.createdAt),
+            text: m.text,
+            /* Attachment refs ride the message — chips under the bubble
              (name + size now; the phone doesn't fetch the bytes). */
-          ...(m.attachments?.length
-            ? {
-                attachments: m.attachments.map((a) => ({
-                  name: a.name || "attachment",
-                  sizeBytes: a.sizeBytes,
-                  mimeType: a.mimeType,
-                })),
-              }
-            : {}),
-          /* #425: `claimed` rows keep the bubble but lose the caption — the
+            ...(m.attachments?.length
+              ? {
+                  attachments: m.attachments.map((a) => ({
+                    name: a.name || "attachment",
+                    sizeBytes: a.sizeBytes,
+                    mimeType: a.mimeType,
+                  })),
+                }
+              : {}),
+            /* #425: `claimed` rows keep the bubble but lose the caption — the
              harness committed the send to the engine pipeline (#377), so it
              is mid-dispatch, never queued. Same rule as the Mac, where a
              claimed row leaves the waiting tray but stays a sent bubble. */
-          ...(opts.deliveredSeq !== undefined &&
-          m.seq > opts.deliveredSeq &&
-          !m.claimed &&
-          !startedRefs.has(m.id)
-            ? { queued: true, ...(blocked ? { waiting: true } : {}) }
-            : {}),
-        }
-      : {
-          kind: "agent",
-          id: m.id,
-          time: clock(m.createdAt),
-          text: m.authorKind === "system" ? `⚠ ${m.text}` : m.text,
-        },
+            ...(opts.deliveredSeq !== undefined &&
+            m.seq > opts.deliveredSeq &&
+            !m.claimed &&
+            !startedRefs.has(m.id)
+              ? { queued: true, ...(blocked ? { waiting: true } : {}) }
+              : {}),
+          }
+        : {
+            kind: "agent",
+            id: m.id,
+            time: clock(m.createdAt),
+            text: m.authorKind === "system" ? `⚠ ${m.text}` : m.text,
+          },
   );
 
   if (!model) return entries;

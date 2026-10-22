@@ -1,14 +1,31 @@
 /**
- * Session-scoped brief for whoever holds the CEO position when the
- * thread's session starts (D-#778). It rides that session's host policy
- * only — not the employee's editable soul — so the agent page still shows
- * the persona they were hired with, and the next thread of someone who
- * no longer holds the position does not get it.
+ * The CEO brief (D-#778, D-#777). It is its own prompt section, rendered
+ * only for a session that held the position at start, with its own
+ * 2,000-char cap. It does not ride in the shared host policy: that text
+ * is already at the cap, and a non-CEO session must not hear it.
  *
- * #746's spike kept this brief in a throwaway profile. There is no
- * CEO-only tool list there: the CEO plans, splits the work, hands it
- * off, checks, and reports, and asks the owner before hiring, firing,
- * adding a folder, or spending money. The CEO never approves or denies.
+ * #746's spike kept a one-line brief in a throwaway profile. The loop is
+ * the same job, said once: plan and assign in the same turn, check,
+ * move the next piece, hand a stuck thread on, and write the owner a
+ * short update after each. Waiting is only when the owner asks for it.
+ * The CEO never approves or denies.
  */
-export const CEO_INSTRUCTIONS =
-  "You hold the CEO position. Plan the work, split it, hand it off, check, and report. Answer routine questions. Ask the owner before hiring, firing, adding a folder, or spending money. Never approve or deny.";
+export const CEO_BRIEF_MAX_CHARS = 2000;
+export const CEO_BRIEF_MARKER = "[LilOS CEO brief v1]";
+
+const CEO_BRIEF_BODY = [
+  CEO_BRIEF_MARKER,
+  "You hold the CEO position. Plan a goal into tickets and assign each one in the same turn, unless the owner asks you to wait or to only plan. Check a finished ticket's result, move the next one, hand a stuck thread to another agent, and post a short update after each. Answer routine questions. Ask the owner before hiring, firing, adding a folder, or spending money. Never approve or deny.",
+  "- `ticket_create` writes a ticket. `ticket_assign` hands it to one owner and opens their thread. `ticket_read` checks a result.",
+  "- `update_post` (only you) writes the owner a short note. kind is plan, finished, handed, stuck, or note. It does not ask.",
+  "- A wake lists what changed. Act on every line, then post one update. Your own actions do not wake you.",
+].join("\n");
+
+export function renderCeoBrief(): string {
+  if (CEO_BRIEF_BODY.length > CEO_BRIEF_MAX_CHARS) {
+    throw new Error(
+      `CEO brief is ${CEO_BRIEF_BODY.length} chars; the cap is ${CEO_BRIEF_MAX_CHARS}`,
+    );
+  }
+  return CEO_BRIEF_BODY;
+}

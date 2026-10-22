@@ -5,6 +5,7 @@ import {
   EmployeeStatus,
   WorkbenchOpenTarget,
 } from "../app/domain.js";
+import { CompanyUpdate, CompanyUpdateKind } from "../app/inbox.js";
 import { Project } from "../app/project.js";
 import { ScheduledTask, TaskSchedule } from "../app/schedule.js";
 import {
@@ -61,6 +62,9 @@ export const TOOL_AREAS = [
   "browser",
   "terminal",
   "schedule",
+  /* D-#777: CEO-only `update_post`. Not a host-policy bullet — the brief
+     describes it, and a non-CEO session is not offered the tool. */
+  "update",
 ] as const;
 export type ToolArea = (typeof TOOL_AREAS)[number];
 
@@ -637,6 +641,17 @@ export const TicketCommentParams = z.strictObject({
   text: z.string().trim().min(1),
 });
 export type TicketCommentParams = z.infer<typeof TicketCommentParams>;
+
+/** A note for the owner. No approval: it only writes that note (D-#777). */
+export const UpdatePostParams = z.strictObject({
+  kind: CompanyUpdateKind,
+  text: z.string().trim().min(1).max(2000),
+  ticketId: z.string().min(1).optional(),
+  goalId: z.string().min(1).optional(),
+});
+export type UpdatePostParams = z.infer<typeof UpdatePostParams>;
+export const UpdatePostResult = z.object({ update: CompanyUpdate });
+export type UpdatePostResult = z.infer<typeof UpdatePostResult>;
 export const TicketCommentResult = z.object({ ticket: TicketSchema });
 export type TicketCommentResult = z.infer<typeof TicketCommentResult>;
 
@@ -954,6 +969,16 @@ export const LILOS_TOOLS: Record<string, LilosToolContract> = {
     area: "ticket",
     access: "write",
   },
+  update_post: {
+    params: UpdatePostParams,
+    result: UpdatePostResult,
+    doc: "Post a short note on Home and in Inbox. kind is plan, finished, handed, stuck, or note. Does not ask. Only the CEO's session is offered this, and with no CEO it is offered to nobody.",
+    /* Own area so the name matches `<area>_<action>` (D-#777). The shared
+       host policy does not grow a line for it; the CEO brief describes it. */
+    area: "update",
+    access: "write",
+    ceoOnly: true,
+  },
   schedule_list: {
     params: ScheduleListParams,
     result: ScheduleListResult,
@@ -1001,10 +1026,10 @@ export function toolsForAreas(areas: ReadonlySet<ToolArea>): LilosToolName[] {
 
 /**
  * What one session is offered (D-#778). `ceoAtStart` is the snapshot from
- * session start: `team_set_ceo` and `ticket_assign` are absent unless this
- * session's employee held the position then. With no CEO, they are offered
- * to nobody — the owner does those in the app. `team_hire` is not in that
- * set. Call time checks the live holder separately.
+ * session start: `team_set_ceo`, `ticket_assign`, and `update_post` are
+ * absent unless this session's employee held the position then. With no
+ * CEO, they are offered to nobody — the owner does those in the app.
+ * `team_hire` is not in that set. Call time checks the live holder separately.
  */
 export function toolsForSession(
   areas: ReadonlySet<ToolArea>,
