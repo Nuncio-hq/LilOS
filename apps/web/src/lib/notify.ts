@@ -465,7 +465,9 @@ export function watchNotifications(opts: WatchNotificationsOpts): () => void {
           if (notifyable(e)) {
             const ctx = ctxFor();
             const c = conversationOf(e.sessionId, ctx);
-            if (c && employeeOf(c, ctx)?.muted) recordSeq(sessionId, e.seq);
+            // A silent CEO-thread finish (D-#777) is spent like a muted one.
+            if (c && (c.ceoThread || employeeOf(c, ctx)?.muted))
+              recordSeq(sessionId, e.seq);
           }
           continue;
         }
@@ -537,7 +539,10 @@ export function watchNotifications(opts: WatchNotificationsOpts): () => void {
         /* Muted at delivery time — the moment stays silent for good, so the
            state check never reposts it after an unmute. An open ask stays
            owed instead: it still needs an answer once unmuted. */
-        if (e.type !== "request.opened" && employeeOf(c, opts.context())?.muted)
+        if (
+          e.type !== "request.opened" &&
+          (c.ceoThread || employeeOf(c, opts.context())?.muted)
+        )
           recordSeq(e.sessionId, e.seq);
         return;
       }
