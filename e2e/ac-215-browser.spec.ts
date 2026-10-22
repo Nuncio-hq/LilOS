@@ -194,7 +194,9 @@ test("AC-1/AC-3: panel renders real pages; pop-out window; find, zoom, print, do
   ).toBeVisible({ timeout: 30_000 });
   await expect(dock.locator("[data-browser-tab]")).toHaveCount(2);
 
-  /* AC-1b: pop-out is a real OS window loading the same chrome. */
+  /* AC-1b: pop-out is a real OS window loading the same chrome.
+     #827: that window paints without waiting for relay.connect()
+     (`startShell`). This poll stays at expect's default 5s. */
   await dock.locator("[data-browser-mode-toggle]").click();
   let bw: Page | undefined;
   await expect
