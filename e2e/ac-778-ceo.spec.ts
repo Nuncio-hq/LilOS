@@ -114,7 +114,10 @@ test("Make CEO moves the chip everywhere and redraws the org chart", async ({
     await expect(
       main(page).getByRole("button", { name: /Quill/ }).locator(CHIP),
     ).toBeVisible();
-    await expect(main(page)).toContainText("The CEO will write at 15:00.");
+    // No CEO schedule here, so Home promises no time (D-#19).
+    await expect(main(page)).toContainText("Nothing needs you.");
+    await expect(main(page)).not.toContainText("The CEO's next run");
+    await expect(main(page)).not.toContainText("will write at");
 
     await page.goto(`${stack.webUrl}/#?page=people&view=org`);
     await expect(ownerNode).toContainText("Quill");

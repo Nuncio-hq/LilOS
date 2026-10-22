@@ -175,7 +175,11 @@ export function V3Home({ data, go, act }: V3PageProps) {
       {data.asks.length === 0 ? (
         <p className="border-[var(--v3-line)] border-y py-3.5 text-[14px] text-muted-foreground">
           Nothing needs you.
-          {data.ceoId && " The CEO will write at 15:00."}
+          {/* Only a real schedule (D-#19): the CEO's next scheduled run, if
+              it has one — never a promised time nothing will keep. */}
+          {data.ceoId &&
+            nextRunLabel(data, data.ceoId) &&
+            ` The CEO's next run: ${nextRunLabel(data, data.ceoId)}.`}
         </p>
       ) : (
         <div className="border-[var(--v3-line)] border-t">
