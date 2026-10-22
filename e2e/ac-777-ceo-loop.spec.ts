@@ -84,6 +84,23 @@ async function ceoIdle(page: Page) {
     .not.toBe("busy");
 }
 
+/** The worker's thread finished its turn. Send stays on screen while a turn
+    runs (it steers), so it is no signal: a message sent then joins the
+    running turn instead of starting its own script. */
+async function threadIdle(page: Page, id: string) {
+  await expect
+    .poll(
+      async () => {
+        const { conversations } = await relayRpc<{
+          conversations: { id: string; state: string }[];
+        }>(page, stack, "conversations.list", { includeArchived: true });
+        return conversations.find((c) => c.id === id)?.state ?? "";
+      },
+      { timeout: 90_000 },
+    )
+    .toBe("idle");
+}
+
 test("a goal given to the CEO becomes tickets with owners in one turn", async ({
   page,
 }) => {
@@ -266,6 +283,7 @@ test("a stuck thread is handed to another agent, with an update", async ({
   await expect(v3Peek(page).getByRole("button", { name: "Send" })).toBeVisible({
     timeout: 90_000,
   });
+  await threadIdle(page, conversation.id);
   await ceoIdle(page);
   const box = v3Peek(page).getByPlaceholder(`Message ${worker.name}…`);
   await box.fill("stuck:");
@@ -336,17 +354,7 @@ test("a worker who finishes with the ticket still open wakes the CEO", async ({
       { timeout: 90_000 },
     )
     .toBe("working");
-  await expect
-    .poll(
-      async () => {
-        const { conversations } = await relayRpc<{
-          conversations: { id: string; state: string }[];
-        }>(page, stack, "conversations.list", { includeArchived: true });
-        return conversations.find((c) => c.id === conversation.id)?.state ?? "";
-      },
-      { timeout: 90_000 },
-    )
-    .toBe("idle");
+  await threadIdle(page, conversation.id);
   await page.goto(
     `${stack.webUrl}/#?page=threads&open=thread:${encodeURIComponent(conversation.id)}`,
   );
