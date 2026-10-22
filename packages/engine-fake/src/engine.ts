@@ -1,4 +1,11 @@
-import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { createServer, type Server } from "node:net";
 import { dirname, join } from "node:path";
 import {
   type AgentDescriptor,
@@ -77,6 +84,7 @@ import {
   type FakeStep,
   type FakeSubagent,
   scriptFor,
+  stuckClearSocketPath,
 } from "./script.js";
 
 /* ── subagents + background jobs (#179) ────────────────────────────────── */
@@ -221,6 +229,10 @@ interface FakeSession {
   /** D-#772: the `stuck:` hold releases on a steer, so the turn continues.
       `LILOS_TURN_HOLD` does not — that hold is the test's running window. */
   holdReleasesOnSteer?: boolean;
+  /** D-#772: `stuck: clear` resolves this when the spec connects. Armed
+      before the six searches, so a connection cannot be missed and the
+      clearing read cannot be emitted before it. */
+  releaseReady?: Promise<void>;
   /** #432: a `slow[:ms]` prompt's pacing override, set per turn — the spec
       needing a running window marks its prompt instead of slowing the whole
       engine (the old `ENGINE_FAKE_TICK`). The leg a slow turn arms inherits
@@ -1651,7 +1663,17 @@ export class FakeEngine {
         this.emit(s, "turn.delta", { turnId, stream: "reasoning", delta: w });
       }
       s.turn.phase = "tools";
+      /* D-#772: listen before any of these calls are emitted. The spec
+         connects only after it has seen the sixth, so the next step
+         cannot land in the same burst. */
+      s.releaseReady = undefined;
+      const release = script.steps.find((step) => step.releaseSocket);
+      if (release?.releaseSocket) this.armRelease(s);
       for (const step of script.steps) {
+        if (step.releaseSocket) {
+          await s.releaseReady;
+          if (s.turn?.interrupted) throw new Interrupted();
+        }
         if (step.pauseBeforeMs) {
           await new Promise((r) => setTimeout(r, step.pauseBeforeMs));
           if (s.turn?.interrupted) throw new Interrupted();
@@ -2402,6 +2424,44 @@ export class FakeEngine {
       return /^(git\s+(commit|push|worktree)|gh\s)/.test(step.input.command);
     }
     return false;
+  }
+
+  /** D-#772: the clearing step's gate. Listening starts before the earlier
+      calls are emitted; the promise resolves on the first connection, or
+      when the turn is stopped. A leftover socket from a crashed run is
+      removed before bind, and again when the wait ends. */
+  private armRelease(s: FakeSession): void {
+    const sockPath = stuckClearSocketPath(s.cwd);
+    s.releaseReady = new Promise((resolve, reject) => {
+      let settled = false;
+      let server: Server | undefined;
+      const finish = (error?: Error) => {
+        if (settled) return;
+        settled = true;
+        if (s.holdTurn === onStop) s.holdTurn = undefined;
+        server?.close();
+        try {
+          unlinkSync(sockPath);
+        } catch {
+          /* already gone */
+        }
+        if (error) reject(error);
+        else resolve();
+      };
+      const onStop = () => finish();
+      s.holdTurn = onStop;
+      try {
+        unlinkSync(sockPath);
+      } catch {
+        /* absent */
+      }
+      server = createServer((socket) => {
+        socket.end();
+        finish();
+      });
+      server.once("error", (error) => finish(error));
+      server.listen(sockPath);
+    });
   }
 
   private async sleep(s: FakeSession): Promise<void> {

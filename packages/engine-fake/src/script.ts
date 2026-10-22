@@ -6,6 +6,8 @@
  * prototype are UI concerns and stay out of the wire; their content is
  * carried by the tool steps and text.
  */
+import { createHash } from "node:crypto";
+import { normalize } from "node:path";
 import {
   MARKDOWN_BLOCKS_SAMPLE,
   MARKDOWN_LINKS_SAMPLE,
@@ -57,9 +59,13 @@ export interface FakeStep {
   subagents?: FakeSubagent[];
   /** #179: this call leaves a background process running (job.* events). */
   job?: FakeJob;
-  /** Wait this long before the call starts — a test can see the state
-      the earlier calls produced (D-#772's clear). */
+  /** Wait this long before the call starts. `stuck: clear` does not use
+      this: a fixed gap can elapse before a slow harness applies the
+      earlier calls (D-#772). */
   pauseBeforeMs?: number;
+  /** Set on a step that waits for `stuckClearSocketPath(cwd)` before it
+      starts. The value is a marker, not a path (D-#772's clear). */
+  releaseSocket?: string;
   diff?: {
     path: string;
     status: "added" | "modified" | "deleted";
@@ -88,6 +94,24 @@ export interface FakeScript {
   fallbackTo?: { model: string; provider?: string; reason?: string };
   /** Hold the turn open after the steps until interrupt (D-#772). */
   hold?: boolean;
+}
+
+/** Marker on the `stuck: clear` step. The listen path is
+    `stuckClearSocketPath`, not this name inside the cwd. */
+export const STUCK_CLEAR_SOCKET = "stuck-clear";
+
+/** `stuck: clear`'s listen path. sun_path is 104 bytes on macOS, and an
+    e2e cwd under `/var/folders/…/T/lilos-e2e-…/work` plus a filename
+    exceeds that. Linux temp dirs are short, so a cwd path hides the
+    limit. This is always `/tmp/lilos-sc-<16 hex of the cwd>.sock` (35
+    bytes): `/tmp` itself, not `os.tmpdir()` (on macOS that is the long
+    folders path), and the hash keeps two folders from sharing a socket. */
+export function stuckClearSocketPath(cwd: string): string {
+  const hash = createHash("sha256")
+    .update(normalize(cwd))
+    .digest("hex")
+    .slice(0, 16);
+  return `/tmp/lilos-sc-${hash}.sock`;
 }
 
 const EDIT_ASK =
@@ -349,8 +373,12 @@ export function scriptFor(
   }
 
   /* `stuck:` — six identical web searches, then hold the turn so a test
-     can see Stuck. `stuck: clear` does the six, pauses, then one
-     different call, which clears the mark (D-#772). */
+     can see Stuck. `stuck: clear` does the six, then one different call
+     which clears the mark (D-#772). That call waits until something
+     connects to `stuckClearSocketPath(cwd)`. The socket is listening
+     before the six are emitted, and the spec connects only once the
+     card is up, so a slow harness cannot apply the sixth search and the
+     clearing read in one burst. A fixed pause can. */
   const stuck = /^stuck:(?:\s+(clear))?\s*$/i.exec(q);
   if (stuck) {
     const query = "journaling creators 5k–50k";
@@ -365,7 +393,7 @@ export function scriptFor(
         tool: "read_file",
         input: { path: "creators.csv" },
         output: "7 rows",
-        pauseBeforeMs: 4000,
+        releaseSocket: STUCK_CLEAR_SOCKET,
       });
     }
     return {

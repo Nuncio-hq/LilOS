@@ -10,6 +10,7 @@ import {
   type Stack,
   startChat,
 } from "./helpers/stack";
+import { releaseStuckClear } from "./helpers/stuck-clear";
 
 /**
  * Issue #772 — a thread that repeats itself or stalls shows Stuck.
@@ -254,6 +255,9 @@ test("a different step clears Stuck", async ({ page }) => {
   await startChat(page, stack.webUrl, agent, "stuck: clear");
   await expect(card(page)).toContainText(REASON, { timeout: 20_000 });
   await shot(page, "2-before-clear.png");
+  /* The sixth search is on screen. Connecting lets the different step
+     run; until then the engine does not emit it. */
+  await releaseStuckClear(stack.home);
   await expect(card(page)).toBeHidden({ timeout: 20_000 });
   await shot(page, "2-cleared.png");
 });

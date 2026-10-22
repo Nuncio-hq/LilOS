@@ -338,16 +338,16 @@ test("AC-6 #606 pick-hold: a Files pick while the turn starts survives its first
 }) => {
   test.setTimeout(120_000);
   await page.setViewportSize({ width: 1288, height: 700 });
-  await startSession(page, repo, "slowstart:5000 check the folder");
+  /* AC-6 is about the #606 pick-hold surviving the first live row, not about painting a big tree. */
+  await startSession(page, repoDir, "slowstart:5000 check the folder");
   await panelIntoFocus(page);
   await expect(tab(page, "Files")).toBeVisible({ timeout: 30_000 });
   await tab(page, "Files").click();
   await expect(rows(page).first()).toBeVisible({ timeout: 30_000 });
   /* The turn's live row + steps land ~5 s in — long after the pick. Turn
-     end is marked by the turn card's settled footer — the stable anchor
-     every turn (done, stopped, or failed) renders — not by waiting for
-     reply text, which makes this wait depend on the client feed landing
-     rather than on the turn actually finishing. */
+     end is the settled footer: it mounts on `turn.completed`, which is
+     the #685 `feedHold=turn.completed:400` relay-claim race. A step
+     string (`pnpm -r typecheck`) is in the turn before that event. */
   await expect(
     page.locator("[data-msg] [data-agentturn] [data-turnsettled]").last(),
   ).toBeVisible({ timeout: 30_000 });

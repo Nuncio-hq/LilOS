@@ -39,7 +39,10 @@ function Company() {
   );
   const description = useAtom(engine.description);
   // #115/D-#19: Hire exists only while the engine can create agents; the new
-  // chat's `/` menu only while it lists commands.
+  // chat's `/` menu only while it lists commands. The deciding state is the
+  // filtered feed `describe`. The relay's `engineHost` seed is the
+  // supervisor's raw probe — it still lists caps `LILOS_HIDE_CAPS` removed —
+  // so Hire does not fall back to it the way the model catalog does.
   const has = (id: string) =>
     description?.capabilities.some((c) => c.id === id) ?? false;
   const agents = has("agents");
@@ -61,8 +64,13 @@ function Company() {
     openShortcuts: toggleShortcuts,
     toggleSidebar,
   });
+  /* The attribute is describe landing: Hire's absence before that is not
+     the engine declaring no agents (#823). */
   return (
-    <div className="flex h-dvh">
+    <div
+      className="flex h-dvh"
+      {...(description ? { "data-engine-described": "" } : {})}
+    >
       <div className="min-w-0 flex-1">
         <V3Shell
           data={data}

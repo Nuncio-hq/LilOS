@@ -10,6 +10,7 @@ import {
   v3Peek,
   v3Sidebar,
 } from "./helpers/stack";
+import { releaseStuckClear } from "./helpers/stuck-clear";
 
 /**
  * Issue #775 — People. One test per acceptance criterion, on the real stack.
@@ -81,8 +82,18 @@ test("statuses and this week's counts, including a thread that recovered from st
       { timeout: 20_000 },
     );
     /* The different step clears the mark. The stamp stays, so the week
-       still counts this thread once the card is gone. */
+       still counts this thread once the card is gone. Connecting is what
+       lets that step run. The card leaves when that step starts; the
+       week's finished count includes the thread only after the answer
+       lands, so read the row then. */
+    await releaseStuckClear(stack.home);
     await expect(page.locator("[data-stuck]")).toBeHidden({ timeout: 20_000 });
+    await expect(v3Peek(page)).toContainText("A different page this time.", {
+      timeout: 20_000,
+    });
+    await expect(
+      v3Peek(page).getByRole("button", { name: /^stop/i }),
+    ).toHaveCount(0);
 
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`${stack.webUrl}/#?page=people`);
@@ -92,16 +103,15 @@ test("statuses and this week's counts, including a thread that recovered from st
     /* The hold thread is the live one, so the row wears Working. The week
        word is the lowercase count, not that pill. */
     await expect(row).toContainText("Working");
-    await expect(row).toContainText(/\d+ finished/, { timeout: 20_000 });
-    await expect(row).toContainText(/\d+ failed/);
-    await expect(row).toContainText(/\d+ stuck/);
+    /* "1 finished" already matches the first thread. This stack has
+       exactly two, so the row is readable only at 2. */
+    await expect(row).toContainText(/2 finished/, { timeout: 20_000 });
+    await expect(row).toContainText(/[1-9]\d* failed/);
+    await expect(row).toContainText(/[1-9]\d* stuck/);
     const text = await row.innerText();
     const finished = Number(/(\d+) finished/.exec(text)?.[1]);
     const failed = Number(/(\d+) failed/.exec(text)?.[1]);
     const stuck = Number(/(\d+) stuck/.exec(text)?.[1]);
-    expect(finished).toBeGreaterThan(0);
-    expect(failed).toBeGreaterThan(0);
-    expect(stuck).toBeGreaterThan(0);
     await shot(page, "01-week");
 
     await row.click();
