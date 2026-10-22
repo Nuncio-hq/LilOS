@@ -79,7 +79,6 @@ export function peopleActions({ setData, getData, toast }: Engine): Pick<
             instructions: [
               `You are ${name}, the company’s ${role.toLowerCase()}. The CEO gives you tickets; finish them and report back in one short update.`,
             ],
-            memory: [],
             // Empty, not absent: the page can add a file (D-#19).
             notes: [],
             week: { done: 0, typical: "—", stuck: 0, handed: 0 },
@@ -120,7 +119,6 @@ export function peopleActions({ setData, getData, toast }: Engine): Pick<
             skills: [],
             spend: { used: 0, cap: 10, period: "week" },
             instructions: p.soul ? [p.soul] : [],
-            memory: [],
             notes: [],
             week: { done: 0, typical: "—", stuck: 0, handed: 0 },
             next: "Waiting for the CEO to give a first ticket",
@@ -233,7 +231,8 @@ export function peopleActions({ setData, getData, toast }: Engine): Pick<
           };
         }),
       }));
-      toast("Note saved");
+      // "Note saved" is drawn inside the notes panel. A window toast would
+      // sit across the seam between the page and the side peek.
     },
     setAgentSkill: (agentId, skillId, attached) => {
       setData((d) => ({

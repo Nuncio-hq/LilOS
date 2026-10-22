@@ -1,20 +1,34 @@
 import { PlusIcon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { MessageResponse } from "../components/ai-elements/message";
 import { cn } from "../lib/utils";
 import { Btn } from "./v3-bits";
+import { OPEN_ROW } from "./v3-open-record";
 import type { V3PageProps } from "./v3-page-types";
 import type { V3Skill } from "./v3-types";
 
-/* Settings → Skills: the company library. List, read one, add from typed
-   text or from a file the page reads itself. The tab exists only when the
-   library and addSkill were both passed (D-#19). Reading a file is view
-   state: the bytes never leave the page until Add hands the text up. */
+/* Settings → Skills: the company library. The list scrolls on its own and
+   the detail stays put, so a long library does not push the open skill off
+   the page. Add replaces that detail (the skill you had open is not left
+   underneath the form). The tab exists only when the library and addSkill
+   were both passed (D-#19). Reading a file is view state: the bytes never
+   leave the page until Add hands the text up. */
 
 const FIELD =
   "mt-1 w-full rounded-[7px] border border-foreground/15 bg-background px-2.5 text-[14px] text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-foreground/40";
 
 /** A skill is a short text. Bigger than this is not one. */
 const MAX_FILE_BYTES = 256 * 1024;
+
+/** The library's name: kebab-case, the same shape as the ids already in
+    use ("launch-notes"). Trailing separators stay off the saved name; the
+    form shows this before Add. */
+export function skillSlug(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
 
 function firstAbout(text: string): string {
   const line = text
@@ -35,7 +49,8 @@ function AddSkill({
   const [about, setAbout] = useState("");
   const [text, setText] = useState("");
   const [fileNote, setFileNote] = useState<string | null>(null);
-  const ready = name.trim() !== "" && text.trim() !== "";
+  const slug = skillSlug(name);
+  const ready = slug !== "" && text.trim() !== "";
 
   const load = async (file: File) => {
     const textLike =
@@ -54,8 +69,8 @@ function AddSkill({
       const body = await file.text();
       setText(body);
       setFileNote(file.name);
-      if (name.trim() === "")
-        setName(file.name.replace(/\.[^.]+$/, "").replace(/[-_]+/g, " "));
+      // The file's name is the library name, extension off, kebab-case.
+      setName(skillSlug(file.name.replace(/\.(md|markdown|txt)$/i, "")));
       if (about.trim() === "") setAbout(firstAbout(body));
     } catch {
       setFileNote("Could not read that file.");
@@ -64,10 +79,9 @@ function AddSkill({
 
   const submit = () => {
     if (!ready) return;
-    const named = name.trim();
     onAdd({
-      name: named,
-      about: about.trim() || firstAbout(text) || named,
+      name: slug,
+      about: about.trim() || firstAbout(text) || slug,
       text: text.trim(),
     });
   };
@@ -75,7 +89,7 @@ function AddSkill({
   return (
     <form
       data-add-skill
-      className="mt-4 space-y-3 rounded-lg border border-[var(--v3-line)] bg-[var(--v3-soft)] p-4"
+      className="space-y-3 rounded-lg border border-[var(--v3-line)] bg-[var(--v3-soft)] p-4"
       onSubmit={(e) => {
         e.preventDefault();
         submit();
@@ -90,6 +104,14 @@ function AddSkill({
           placeholder="What you call it"
           className={cn(FIELD, "h-8")}
         />
+        {slug !== "" && (
+          <span
+            data-skill-slug
+            className="mt-1 block font-mono text-[12.5px] text-muted-foreground"
+          >
+            {slug}
+          </span>
+        )}
       </label>
       <label className="block">
         <span className="text-[13px] text-muted-foreground">About</span>
@@ -150,9 +172,19 @@ export function SkillsPane({ data, act }: V3PageProps) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [want, setWant] = useState<string | null>(null);
+  const [filter, setFilter] = useState("");
+  const rows = useRef(new Map<string, HTMLButtonElement>());
+  const needle = filter.trim().toLowerCase();
+  const shown = skills.filter(
+    (s) =>
+      needle === "" ||
+      s.name.toLowerCase().includes(needle) ||
+      s.about.toLowerCase().includes(needle),
+  );
   const open = skills.find((s) => s.id === openId);
 
-  // Add appends. Select that new row once it is in the list.
+  // Add appends. Select that new row once it is in the list, and bring it
+  // into the list's own scroll (the detail pane does not move with it).
   useEffect(() => {
     if (!want) return;
     const found = [...skills].reverse().find((s) => s.name === want);
@@ -160,6 +192,11 @@ export function SkillsPane({ data, act }: V3PageProps) {
     setOpenId(found.id);
     setWant(null);
   }, [skills, want]);
+
+  useEffect(() => {
+    if (!openId) return;
+    rows.current.get(openId)?.scrollIntoView?.({ block: "nearest" });
+  }, [openId]);
 
   return (
     <div data-skills-library className="@container">
@@ -174,45 +211,76 @@ export function SkillsPane({ data, act }: V3PageProps) {
           </Btn>
         </div>
       )}
-      {act.addSkill && adding && (
-        <AddSkill
-          onAdd={(skill) => {
-            act.addSkill?.(skill);
-            setWant(skill.name);
-            setAdding(false);
-          }}
-          onCancel={() => setAdding(false)}
-        />
-      )}
-      <div className="mt-4 grid gap-6 @min-[680px]:grid-cols-[minmax(0,240px)_minmax(0,1fr)]">
-        <ul
-          aria-label="Skill library"
-          className="border-[var(--v3-line)] border-t"
-        >
-          {skills.length === 0 && (
-            <li className="py-3 text-[14px] text-muted-foreground">
-              No skills yet.
-            </li>
+      <div className="mt-4 grid items-start gap-6 @min-[680px]:grid-cols-[minmax(0,260px)_minmax(0,1fr)]">
+        <div className="min-w-0">
+          <input
+            aria-label="Filter skills"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            placeholder="Filter"
+            className="mb-2 h-8 w-full rounded-[7px] border border-foreground/15 bg-background px-2.5 text-[13.5px] text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-foreground/40"
+          />
+          <div
+            data-skill-list
+            className="max-h-[min(28rem,calc(100vh-16rem))] overflow-y-auto"
+          >
+            <ul
+              aria-label="Skill library"
+              className="border-[var(--v3-line)] border-t"
+            >
+              {shown.length === 0 && (
+                <li className="py-3 text-[14px] text-muted-foreground">
+                  {skills.length === 0 ? "No skills yet." : "No skill matches."}
+                </li>
+              )}
+              {shown.map((s) => {
+                const on = s.id === openId;
+                return (
+                  <li key={s.id} className="border-[var(--v3-line)] border-b">
+                    <button
+                      ref={(el) => {
+                        if (el) rows.current.set(s.id, el);
+                        else rows.current.delete(s.id);
+                      }}
+                      type="button"
+                      aria-current={on ? "true" : undefined}
+                      onClick={() => {
+                        setOpenId(s.id);
+                        setAdding(false);
+                      }}
+                      className={cn(
+                        "block w-full px-2 py-2 text-left hover:bg-[var(--v3-hover)]",
+                        on && OPEN_ROW,
+                      )}
+                    >
+                      <span className="block text-[14px] text-foreground">
+                        {s.name}
+                      </span>
+                      <span className="mt-0.5 block truncate text-[12.5px] text-muted-foreground">
+                        {s.about}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </div>
+        <div data-skill-detail className="sticky top-4 min-w-0 self-start">
+          {adding && act.addSkill ? (
+            <AddSkill
+              onAdd={(skill) => {
+                act.addSkill?.(skill);
+                setFilter("");
+                setWant(skill.name);
+                setAdding(false);
+              }}
+              onCancel={() => setAdding(false)}
+            />
+          ) : (
+            <SkillView skill={open} />
           )}
-          {skills.map((s) => (
-            <li key={s.id} className="border-[var(--v3-line)] border-b">
-              <button
-                type="button"
-                aria-current={s.id === openId ? "true" : undefined}
-                onClick={() => setOpenId(s.id)}
-                className="block w-full px-1 py-2 text-left hover:bg-[var(--v3-hover)]"
-              >
-                <span className="block text-[14px] text-foreground">
-                  {s.name}
-                </span>
-                <span className="mt-0.5 block truncate text-[12.5px] text-muted-foreground">
-                  {s.about}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-        <SkillView skill={open} />
+        </div>
       </div>
     </div>
   );
@@ -227,8 +295,10 @@ function SkillView({ skill }: { skill: V3Skill | undefined }) {
         {skill.name}
       </h2>
       <p className="mt-1 text-[14px] text-muted-foreground">{skill.about}</p>
-      <div className="mt-4 whitespace-pre-wrap border-[var(--v3-line)] border-l-2 pl-4 text-[14.5px] text-foreground leading-relaxed">
-        {skill.text}
+      <div className="mt-4 border-[var(--v3-line)] border-l-2 pl-4">
+        <MessageResponse className="lilos-prose text-[14.5px] text-foreground leading-relaxed">
+          {skill.text}
+        </MessageResponse>
       </div>
     </article>
   );

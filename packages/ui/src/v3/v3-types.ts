@@ -44,13 +44,16 @@ export type V3ConnectorDef = {
 };
 
 /** A memory file the agent keeps. The company owns the file; a runtime only
-    sees a copy for the live thread. */
+    sees a copy for the live thread. The row is this file: its name, the
+    first line of `text` (so an edit cannot drift from a second list), and
+    `updated` for where it came from. */
 export type V3Note = {
   id: string;
   /** File name, as the list shows it ("readers.md"). */
   name: string;
   text: string;
-  /** When it last changed, in words ("14 Oct"). */
+  /** Where it came from, as the row shows it: a ticket ("from LIL-77") or
+      a date ("9 Oct", "just now"). */
   updated: string;
 };
 
@@ -85,7 +88,8 @@ export type V3Agent = {
      instead of showing a made-up value. */
   runtime?: string;
   /** The engine profile the agent runs on (its id on the engine), where the
-     app knows it. Persona, memory and skills live in that profile. */
+     app knows it. The profile is which runtime. Instructions, notes and
+     skills are the company's, when the app carries them. */
   profile?: string;
   model: string;
   /** The model's id on the engine, where `model` (the label) names one: the
@@ -115,7 +119,6 @@ export type V3Agent = {
   instructions: string[];
   /** A rule the CEO proposes after this agent got stuck. */
   suggestion?: { text: string; after: string };
-  memory?: { text: string; source: string }[];
   week?: { done: number; typical: string; stuck: number; handed: number };
   /** Threads finished or failed since Monday, and threads whose stuckAt
       falls in that week even after they recover. Colour is only a count

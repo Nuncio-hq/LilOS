@@ -1,17 +1,33 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { MessageResponse } from "../components/ai-elements/message";
+import { cn } from "../lib/utils";
+import { ToastView } from "../shell/toast-view";
 import { Btn, Section } from "./v3-bits";
 import { EscLayer } from "./v3-keys";
+import { OPEN_ROW } from "./v3-open-record";
 import type { V3Note } from "./v3-types";
 
-/* An agent's memory files: a list, the open file, and an editor. The page
-   draws this only when it was given the files and a save (D-#19), so a build
-   that does not own agent files yet shows nothing here. A note is one file
-   in a flat folder — a path would be a second place to look. */
+/* An agent's memory files: a list, the open file, and an editor. One list —
+   the old Remembers lines were a second copy of these files and drifted
+   after an edit. The page draws this only when it was given the files and
+   a save (D-#19), so a build that does not own agent files yet shows
+   nothing here. A note is one file in a flat folder — a path would be a
+   second place to look. */
 
 const FIELD =
   "rounded-[7px] border border-foreground/15 bg-background text-foreground outline-none focus:border-foreground/40";
 
+/** How long "Note saved" stays, matching the shell's notice. */
+const SAVED_MS = 2600;
+
 type Draft = { name: string; text: string };
+
+/** The row's summary: the file's first line, so it cannot drift from the
+    file. A markdown heading mark is not part of the sentence. */
+function noteSummary(text: string): string {
+  const line = text.split("\n").find((l) => l.trim() !== "") ?? "";
+  return line.replace(/^#{1,6}\s+/, "").trim();
+}
 
 /** Why this name cannot be saved, or null when it can. */
 function nameProblem(
@@ -41,10 +57,12 @@ export function AgentNotes({
   notes: V3Note[];
   onSave: (note: { id?: string; name: string; text: string }) => void;
 }) {
+  const panel = useRef<HTMLDivElement>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [tried, setTried] = useState(false);
+  const [saved, setSaved] = useState(0);
   const open = notes.find((n) => n.id === openId);
   const creating = editing && openId === null;
   const problem = draft ? nameProblem(draft.name, notes, openId) : null;
@@ -55,6 +73,12 @@ export function AgentNotes({
       : tried && problem === "empty"
         ? "Give the file a name."
         : null;
+
+  useEffect(() => {
+    if (!saved) return;
+    const t = window.setTimeout(() => setSaved(0), SAVED_MS);
+    return () => window.clearTimeout(t);
+  }, [saved]);
 
   const startNew = () => {
     setOpenId(null);
@@ -78,10 +102,11 @@ export function AgentNotes({
       text: draft.text,
     });
     closeEdit();
+    setSaved((n) => n + 1);
   };
 
   return (
-    <div data-agent-notes className="@container">
+    <div ref={panel} data-agent-notes className="@container">
       <Section
         title="Notes"
         count={notes.length}
@@ -89,7 +114,7 @@ export function AgentNotes({
         onLink={startNew}
       />
       <p className="mb-2 max-w-[620px] text-[13.5px] text-muted-foreground">
-        Files this agent keeps. They stay with the agent when its runtime
+        This agent's memory. The files stay with the agent when its runtime
         changes.
       </p>
       <ul aria-label="Notes" className="border-[var(--v3-line)] border-t">
@@ -109,12 +134,16 @@ export function AgentNotes({
                   setOpenId(n.id);
                   closeEdit();
                 }}
-                className="flex w-full items-baseline gap-4 py-2 text-left text-[14px] hover:bg-[var(--v3-hover)]"
+                className={cn(
+                  "flex w-full items-baseline gap-3 rounded-md px-2 py-2 text-left text-[14px] hover:bg-[var(--v3-hover)]",
+                  on && OPEN_ROW,
+                )}
               >
-                <span
-                  className={`min-w-0 flex-1 truncate font-mono text-[13px] ${on ? "text-foreground" : "text-foreground/90"}`}
-                >
+                <span className="w-[7.5rem] shrink-0 truncate font-mono text-[13px] text-foreground">
                   {n.name}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-[13.5px] text-muted-foreground">
+                  {noteSummary(n.text)}
                 </span>
                 <span className="shrink-0 text-[12.5px] text-muted-foreground/70">
                   {n.updated}
@@ -142,8 +171,10 @@ export function AgentNotes({
               Edit
             </Btn>
           </div>
-          <div className="mt-2 whitespace-pre-wrap border-[var(--v3-line)] border-l-2 pl-4 text-[14.5px] text-foreground leading-relaxed">
-            {open.text}
+          <div className="mt-2 border-[var(--v3-line)] border-l-2 pl-4">
+            <MessageResponse className="lilos-prose text-[14.5px] text-foreground leading-relaxed">
+              {open.text}
+            </MessageResponse>
           </div>
         </article>
       )}
@@ -192,6 +223,9 @@ export function AgentNotes({
             <Btn onClick={closeEdit}>Cancel</Btn>
           </div>
         </form>
+      )}
+      {saved > 0 && panel.current && (
+        <ToastView toast={{ text: "Note saved" }} anchor={panel.current} />
       )}
     </div>
   );

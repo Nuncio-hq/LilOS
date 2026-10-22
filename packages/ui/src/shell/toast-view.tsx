@@ -26,9 +26,51 @@ export interface ToastNotice {
   action?: { label: string; run: () => void };
 }
 
-export function ToastView({ toast }: { toast: ToastNotice }) {
-  const [bottom, setBottom] = useState(RESTING_PX);
+export function ToastView({
+  toast,
+  anchor,
+}: {
+  toast: ToastNotice;
+  /** The panel this notice belongs to. Set, the pill is centred in that
+      panel instead of the window, so it does not sit across the seam
+      between the page and the side peek. Absent: the window, as before. */
+  anchor?: HTMLElement | null;
+}) {
+  const [place, setPlace] = useState<{ bottom: number; left?: number }>({
+    bottom: RESTING_PX,
+  });
   useLayoutEffect(() => {
+    if (anchor) {
+      /* The panel is the frame. A composer on the other side of the seam
+         must not pull the pill back to the middle of the window. */
+      const measure = () => {
+        const r = anchor.getBoundingClientRect();
+        const visibleBottom = Math.min(
+          Math.max(r.bottom, 0),
+          window.innerHeight,
+        );
+        const visibleTop = Math.max(r.top, 0);
+        const maxBottom = Math.max(
+          GAP_PX,
+          window.innerHeight - visibleTop - TOP_RESERVE_PX,
+        );
+        const bottom = Math.min(
+          Math.max(window.innerHeight - visibleBottom + GAP_PX, GAP_PX),
+          maxBottom,
+        );
+        setPlace({ bottom, left: r.left + r.width / 2 });
+      };
+      measure();
+      const ro = new ResizeObserver(measure);
+      ro.observe(anchor);
+      window.addEventListener("resize", measure);
+      window.addEventListener("scroll", measure, true);
+      return () => {
+        ro.disconnect();
+        window.removeEventListener("resize", measure);
+        window.removeEventListener("scroll", measure, true);
+      };
+    }
     const measure = () => {
       let px = RESTING_PX;
       for (const el of document.querySelectorAll("[data-composer]")) {
@@ -36,7 +78,9 @@ export function ToastView({ toast }: { toast: ToastNotice }) {
         if (r.height > 0)
           px = Math.max(px, window.innerHeight - r.top + GAP_PX);
       }
-      setBottom(Math.min(px, window.innerHeight - TOP_RESERVE_PX));
+      setPlace({
+        bottom: Math.min(px, window.innerHeight - TOP_RESERVE_PX),
+      });
     };
     const ro = new ResizeObserver(measure);
     /* Composers mount and unmount while a toast is alive (DM home → Focus
@@ -67,13 +111,18 @@ export function ToastView({ toast }: { toast: ToastNotice }) {
       ro.disconnect();
       window.removeEventListener("resize", measure);
     };
-  }, []);
+  }, [anchor]);
   return createPortal(
     <div
       data-toast
+      data-toast-panel={anchor ? "" : undefined}
       role="status"
-      style={{ bottom }}
-      className="fixed left-1/2 z-[60] flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center gap-2 rounded-lg border bg-popover px-4 py-2 text-popover-foreground text-sm shadow-lg backdrop-blur"
+      style={
+        place.left === undefined
+          ? { bottom: place.bottom }
+          : { bottom: place.bottom, left: place.left }
+      }
+      className={`fixed z-[60] flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center gap-2 rounded-lg border bg-popover px-4 py-2 text-popover-foreground text-sm shadow-lg backdrop-blur ${place.left === undefined ? "left-1/2" : ""}`}
     >
       {toast.error && (
         <CircleAlertIcon className="size-4 shrink-0 text-destructive" />

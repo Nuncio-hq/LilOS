@@ -25,10 +25,6 @@ const AGENTS: V3Data["agents"] = [
       "You run Oscar Co. Split every goal into tickets with one owner each, check every result before it ships, and write Oscar a short update at 9:00 and 12:00.",
       "Ask Oscar before anything goes public or costs money. Decide everything else yourself.",
     ],
-    memory: [
-      { text: "Oscar reads updates on his phone; keep them under 60 words.", source: "from you, 3 Oct" },
-      { text: "HeardBack ships on Thursdays; never merge to its main on a Friday.", source: "learned 9 Oct" },
-    ],
     week: { done: 14, typical: "6m", stuck: 0, handed: 0 },
   },
   {
@@ -48,10 +44,6 @@ const AGENTS: V3Data["agents"] = [
       "You write and fix code in the project's folder. Keep every change small enough to review in five minutes.",
       "Open a PR for every ticket; never push to main.",
     ],
-    memory: [
-      { text: "LilOS tests run with bun run verify; E2E only on ready PRs.", source: "from LIL-77" },
-      { text: "ac-544 flakes when the cache paints late.", source: "learned today" },
-    ],
     week: { done: 11, typical: "52m", stuck: 1, handed: 0 },
   },
   {
@@ -68,7 +60,6 @@ const AGENTS: V3Data["agents"] = [
     skills: ["ios-simulator", "screenshots"],
     spend: { used: 3.4, cap: 15, period: "week" },
     instructions: ["Check every result on a real device or browser before you call it done. Attach screenshots."],
-    memory: [{ text: "HeardBack's paywall shows only after the third entry.", source: "from HB-12" }],
     week: { done: 8, typical: "16m", stuck: 0, handed: 0 },
   },
   {
@@ -85,7 +76,6 @@ const AGENTS: V3Data["agents"] = [
     skills: ["copywriting", "meta-ads", "x-threads"],
     spend: { used: 112, cap: 300, period: "month" },
     instructions: ["You write copy and run growth tests. Every claim needs a number behind it."],
-    memory: [{ text: "Hook 2 (“write it before you forget it”) scored best with readers.", source: "from HB-9" }],
     week: { done: 7, typical: "41m", stuck: 0, handed: 0 },
   },
   {
@@ -109,11 +99,6 @@ const AGENTS: V3Data["agents"] = [
       text: "If two searches in a row return nothing new, stop and tell the CEO what you tried.",
       after: "HB-14",
     },
-    memory: [
-      { text: "HeardBack readers are mostly women 25–40 who journal at night.", source: "from HB-9" },
-      { text: "Oscar wants creators with 5k–50k followers, not bigger.", source: "from you, 14 Oct" },
-      { text: "X search is rate-limited after ~40 queries; use Grok Bot for bulk lookups.", source: "learned 17 Oct" },
-    ],
     week: { done: 9, typical: "38m", stuck: 2, handed: 1 },
   },
   {
@@ -130,7 +115,6 @@ const AGENTS: V3Data["agents"] = [
     skills: ["figma-export", "app-store-assets"],
     spend: { used: 2.2, cap: 10, period: "week" },
     instructions: ["You make screens and store assets. Show two options, never one."],
-    memory: [{ text: "QRit's brand colour is #2E78AD; icons stay flat.", source: "from QR-2" }],
     week: { done: 4, typical: "1h 10m", stuck: 0, handed: 0 },
     next: "Starts the onboarding copy at 14:00 · QR-7",
   },

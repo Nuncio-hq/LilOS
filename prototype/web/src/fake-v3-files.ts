@@ -128,14 +128,14 @@ export const AGENT_NOTES: Record<string, V3Note[]> = {
     note(
       "updates",
       "updates.md",
-      "3 Oct",
-      "Updates are read on a phone. Keep them under 60 words.\nWrite one at 9:00 and one at 12:00. Say what shipped, what is stuck, and what needs a decision.",
+      "from you, 3 Oct",
+      "Oscar reads updates on his phone; keep them under 60 words.\nWrite one at 9:00 and one at 12:00. Say what shipped, what is stuck, and what needs a decision.",
     ),
     note(
       "shipping",
       "shipping.md",
-      "9 Oct",
-      "HeardBack ships on Thursdays.\nNever merge to its main on a Friday.",
+      "learned 9 Oct",
+      "HeardBack ships on Thursdays; never merge to its main on a Friday.",
     ),
   ],
   builder: [
@@ -143,13 +143,13 @@ export const AGENT_NOTES: Record<string, V3Note[]> = {
       "verify",
       "verify.md",
       "from LIL-77",
-      "Tests run with bun run verify.\nEnd-to-end specs run on ready pull requests, not on every draft.\nNever push to main. Open a pull request for every ticket.",
+      "LilOS tests run with bun run verify; E2E only on ready PRs.\nNever push to main. Open a pull request for every ticket.",
     ),
     note(
       "flakes",
       "flakes.md",
-      "today",
-      "ac-544 flakes when the workbench cache paints late.\nWait for the fresh read before asserting the file list.",
+      "learned today",
+      "ac-544 flakes when the cache paints late.\nWait for the fresh read before asserting the file list.",
     ),
   ],
   reviewer: [
@@ -157,7 +157,7 @@ export const AGENT_NOTES: Record<string, V3Note[]> = {
       "devices",
       "devices.md",
       "from HB-12",
-      "Check a result on a real device or browser before calling it done. Attach screenshots.\nHeardBack's paywall shows only after the third entry.",
+      "HeardBack's paywall shows only after the third entry.\nCheck a result on a real device or browser before calling it done. Attach screenshots.",
     ),
   ],
   marketer: [
@@ -165,7 +165,7 @@ export const AGENT_NOTES: Record<string, V3Note[]> = {
       "hooks",
       "hooks.md",
       "from HB-9",
-      "Hook 2 (“write it before you forget it”) scored best with HeardBack readers.\nKeep it as the control when testing a new line.",
+      "Hook 2 (“write it before you forget it”) scored best with readers.\nKeep it as the control when testing a new line.",
     ),
     note(
       "claims",
@@ -179,19 +179,19 @@ export const AGENT_NOTES: Record<string, V3Note[]> = {
       "readers",
       "readers.md",
       "from HB-9",
-      "HeardBack readers are mostly women 25–40 who journal at night.\nThey open the app after 21:00. A hook that sounds like a reminder beats one that sounds like an ad.",
+      "HeardBack readers are mostly women 25–40 who journal at night.\n\nThey open the app after 21:00.\n\n- A reminder beats an ad.\n- Cite the row.",
     ),
     note(
       "creators",
       "creators.md",
-      "14 Oct",
-      "The brief is creators with 5k–50k followers, not bigger.\nIf a creator might not be real, say so in the row. Do not drop them silently.",
+      "from you, 14 Oct",
+      "Oscar wants creators with 5k–50k followers, not bigger.\nIf a creator might not be real, say so in the row. Do not drop them silently.",
     ),
     note(
       "sources",
       "sources.md",
-      "17 Oct",
-      "Cite every row with a link.\nX search is rate-limited after about 40 queries. Use a bulk lookup, then check the ones that matter by hand.",
+      "learned 17 Oct",
+      "X search is rate-limited after ~40 queries; use Grok Bot for bulk lookups.\nCite every row with a link. Check the ones that matter by hand.",
     ),
   ],
   designer: [
@@ -199,7 +199,7 @@ export const AGENT_NOTES: Record<string, V3Note[]> = {
       "brand",
       "brand.md",
       "from QR-2",
-      "QRit's brand colour is #2E78AD. Icons stay flat.\nShow two options, never one.",
+      "QRit's brand colour is #2E78AD; icons stay flat.\nShow two options, never one.",
     ),
   ],
 }

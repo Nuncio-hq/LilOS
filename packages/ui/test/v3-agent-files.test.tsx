@@ -24,8 +24,8 @@ const notes: V3Note[] = [
   {
     id: "readers",
     name: "readers.md",
-    text: "They journal at night.",
-    updated: "14 Oct",
+    text: "They journal at night.\n\n# Night\n\n- After 21:00.",
+    updated: "from HB-9",
   },
 ];
 
@@ -171,12 +171,42 @@ describe("gated off without records and handlers", () => {
 });
 
 describe("notes", () => {
-  test("opens a file, edits it, and saves that file", () => {
+  test("one memory list: the row is the file, its first line, and where it came from", () => {
+    render(
+      <V3AgentPage data={data()} go={vi.fn()} act={actions()} id="scout" />,
+    );
+    expect(screen.getAllByRole("heading", { name: /^Notes/ })).toHaveLength(1);
+    expect(screen.queryByRole("heading", { name: /Remembers/ })).toBeNull();
+    expect(screen.queryByText("Remembers")).toBeNull();
+    const row = notesOf().getByRole("button", { name: /readers\.md/ });
+    expect(row.textContent).toContain("They journal at night.");
+    expect(row.textContent).toContain("from HB-9");
+  });
+
+  test("the open note keeps the selected row mark without a hover, and renders markdown", () => {
+    render(
+      <V3AgentPage data={data()} go={vi.fn()} act={actions()} id="scout" />,
+    );
+    const region = notesOf();
+    const row = region.getByRole("button", { name: /readers\.md/ });
+    fireEvent.click(row);
+    expect(row.getAttribute("aria-current")).toBe("true");
+    expect(row.className).toContain("shadow-[inset_2px_0_0_var(--foreground)]");
+    const article = region.getByRole("article");
+    expect(
+      within(article).getByRole("heading", { name: "Night" }),
+    ).toBeTruthy();
+    expect(article.textContent).not.toContain("# Night");
+  });
+
+  test("opens a file, edits it, and saves that file inside its own panel", () => {
     const act_ = actions();
     render(<V3AgentPage data={data()} go={vi.fn()} act={act_} id="scout" />);
     const region = notesOf();
     fireEvent.click(region.getByRole("button", { name: /readers\.md/ }));
-    expect(region.getByText("They journal at night.")).toBeTruthy();
+    expect(
+      region.getAllByText("They journal at night.").length,
+    ).toBeGreaterThan(0);
     fireEvent.click(region.getByRole("button", { name: "Edit" }));
     fireEvent.change(region.getByLabelText("Note"), {
       target: { value: "They journal after 21:00." },
@@ -187,6 +217,10 @@ describe("notes", () => {
       name: "readers.md",
       text: "They journal after 21:00.",
     });
+    const toast = document.querySelector("[data-toast]");
+    expect(toast?.textContent).toContain("Note saved");
+    expect(toast?.hasAttribute("data-toast-panel")).toBe(true);
+    expect(toast?.className).not.toContain("left-1/2");
   });
 
   test("a new note is a new file, and a taken or path name is not saved", () => {
@@ -223,26 +257,89 @@ describe("notes", () => {
   });
 });
 
+const chipNames = () =>
+  within(screen.getByRole("group", { name: "Using" }))
+    .getAllByRole("button")
+    .map((b) => b.getAttribute("aria-label"))
+    .filter((n) => n?.startsWith("Detach"));
+
 describe("skills", () => {
-  test("attach and detach call the handler, and Library opens Settings", () => {
+  test("using chips stay in attach order; Add skill attaches, the chip detaches", () => {
     const act_ = actions();
     const go = vi.fn();
-    render(
-      <V3AgentPage data={data({ skills })} go={go} act={act_} id="scout" />,
+    const research = skills[0];
+    const sheetsSkill = skills[1];
+    if (!research || !sheetsSkill) throw new Error("fixture");
+    const library: V3Skill[] = [
+      research,
+      {
+        id: "brand-voice",
+        name: "brand-voice",
+        about: "Plain words.",
+        text: "Plain.",
+      },
+      sheetsSkill,
+    ];
+    const scout: V3Agent = {
+      ...agent,
+      skills: ["sheets", "web-research"],
+    };
+    const view = (who: V3Agent) => data({ agents: [who], skills: library });
+    const { rerender } = render(
+      <V3AgentPage data={view(scout)} go={go} act={act_} id="scout" />,
     );
-    const using = within(screen.getByRole("group", { name: "Using" }));
-    expect(
-      using.getByRole("button", { name: "web-research", pressed: true }),
-    ).toBeTruthy();
-    fireEvent.click(using.getByRole("button", { name: "web-research" }));
+    expect(screen.queryByText("Not using")).toBeNull();
+    expect(chipNames()).toEqual(["Detach sheets", "Detach web-research"]);
+    fireEvent.click(screen.getByRole("button", { name: "+ Add skill" }));
+    const menu = screen.getByRole("menu", { name: "Add a skill" });
+    expect(within(menu).queryByRole("menuitem", { name: /sheets/ })).toBeNull();
+    fireEvent.change(within(menu).getByLabelText("Find a skill"), {
+      target: { value: "brand" },
+    });
+    fireEvent.click(
+      within(menu).getByRole("menuitem", { name: /brand-voice/ }),
+    );
+    expect(act_.setAgentSkill).toHaveBeenCalledWith(
+      "scout",
+      "brand-voice",
+      true,
+    );
+    rerender(
+      <V3AgentPage
+        data={view({
+          ...scout,
+          skills: ["sheets", "web-research", "brand-voice"],
+        })}
+        go={go}
+        act={act_}
+        id="scout"
+      />,
+    );
+    expect(chipNames()).toEqual([
+      "Detach sheets",
+      "Detach web-research",
+      "Detach brand-voice",
+    ]);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Detach web-research" }),
+    );
     expect(act_.setAgentSkill).toHaveBeenCalledWith(
       "scout",
       "web-research",
       false,
     );
-    const rest = within(screen.getByRole("group", { name: "Not using" }));
-    fireEvent.click(rest.getByRole("button", { name: "sheets" }));
-    expect(act_.setAgentSkill).toHaveBeenCalledWith("scout", "sheets", true);
+    rerender(
+      <V3AgentPage
+        data={view({
+          ...scout,
+          skills: ["sheets", "brand-voice"],
+        })}
+        go={go}
+        act={act_}
+        id="scout"
+      />,
+    );
+    expect(chipNames()).toEqual(["Detach sheets", "Detach brand-voice"]);
     fireEvent.click(screen.getByRole("button", { name: "Library" }));
     expect(go).toHaveBeenCalledWith({ page: "settings", view: "skills" });
   });
@@ -269,34 +366,100 @@ describe("skill library", () => {
       <V3Settings data={data({ skills })} go={go} act={act_} view="skills" />,
     );
 
-  test("lists skills and shows the one you open", () => {
+  test("the list scrolls on its own, the detail stays, and the open row stays marked", () => {
     library(actions());
     expect(screen.getByRole("button", { name: "Skills" })).toBeTruthy();
+    expect(screen.getByLabelText("Filter skills")).toBeTruthy();
+    expect(document.querySelector("[data-skill-list]")?.className).toContain(
+      "overflow-y-auto",
+    );
+    expect(document.querySelector("[data-skill-detail]")?.className).toContain(
+      "sticky",
+    );
     expect(screen.getByText("Choose a skill.")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /web-research/ }));
+    fireEvent.change(screen.getByLabelText("Filter skills"), {
+      target: { value: "per fact" },
+    });
+    expect(screen.queryByRole("button", { name: /web-research/ })).toBeNull();
+    const row = screen.getByRole("button", { name: /sheets/ });
+    fireEvent.click(row);
+    expect(row.getAttribute("aria-current")).toBe("true");
+    expect(row.className).toContain("shadow-[inset_2px_0_0_var(--foreground)]");
     const view = document.querySelector("[data-skill-view]") as HTMLElement;
-    expect(within(view).getByText("Cite every row.")).toBeTruthy();
+    expect(within(view).getByText("A cell is a value.")).toBeTruthy();
   });
 
-  test("adds from typed text", () => {
+  test("the add form replaces the detail", () => {
+    library(actions());
+    fireEvent.click(screen.getByRole("button", { name: /web-research/ }));
+    expect(screen.getByText("Cite every row.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Add skill" }));
+    expect(document.querySelector("[data-add-skill]")).toBeTruthy();
+    expect(document.querySelector("[data-skill-view]")).toBeNull();
+    expect(screen.queryByText("Cite every row.")).toBeNull();
+  });
+
+  test("adds from typed text under the slug the form shows", () => {
     const act_ = actions();
     library(act_);
     fireEvent.click(screen.getByRole("button", { name: "Add skill" }));
     fireEvent.change(screen.getByLabelText("Name"), {
-      target: { value: "launch checklist" },
+      target: { value: "Launch Notes" },
     });
+    expect(document.querySelector("[data-skill-slug]")?.textContent).toBe(
+      "launch-notes",
+    );
     fireEvent.change(screen.getByLabelText("Skill text"), {
       target: { value: "Ask before anything public." },
     });
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
     expect(act_.addSkill).toHaveBeenCalledWith({
-      name: "launch checklist",
+      name: "launch-notes",
       about: "Ask before anything public.",
       text: "Ask before anything public.",
     });
   });
 
-  test("a text file fills the name, the line, and the text", async () => {
+  test("adding selects the new skill and renders its markdown", () => {
+    const act_ = actions();
+    const { rerender } = render(
+      <V3Settings
+        data={data({ skills })}
+        go={vi.fn()}
+        act={act_}
+        view="skills"
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Add skill" }));
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Launch Notes" },
+    });
+    fireEvent.change(screen.getByLabelText("Skill text"), {
+      target: { value: "# Launch\nAsk before anything public." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    const added: V3Skill = {
+      id: "launch-notes",
+      name: "launch-notes",
+      about: "Ask before anything public.",
+      text: "# Launch\nAsk before anything public.",
+    };
+    rerender(
+      <V3Settings
+        data={data({ skills: [...skills, added] })}
+        go={vi.fn()}
+        act={act_}
+        view="skills"
+      />,
+    );
+    const row = screen.getByRole("button", { name: /launch-notes/ });
+    expect(row.getAttribute("aria-current")).toBe("true");
+    const view = document.querySelector("[data-skill-view]") as HTMLElement;
+    expect(within(view).getByRole("heading", { name: "Launch" })).toBeTruthy();
+    expect(view.textContent).not.toContain("# Launch");
+  });
+
+  test("a text file fills the kebab-case name, the line, and the text", async () => {
     library(actions());
     fireEvent.click(screen.getByRole("button", { name: "Add skill" }));
     const file = new File(
@@ -309,7 +472,10 @@ describe("skill library", () => {
         target: { files: [file] },
       });
     });
-    expect(await screen.findByDisplayValue("launch notes")).toBeTruthy();
+    expect(await screen.findByDisplayValue("launch-notes")).toBeTruthy();
+    expect(document.querySelector("[data-skill-slug]")?.textContent).toBe(
+      "launch-notes",
+    );
     expect(screen.getByLabelText("Skill text")).toHaveProperty(
       "value",
       "# Launch\nAsk before anything public.\n",

@@ -61,5 +61,6 @@ export {
 } from "./v3/v3-nav";
 export type * from "./v3/v3-page-types";
 export { whenWords } from "./v3/v3-schedule-text";
+export { skillSlug } from "./v3/v3-settings-skills";
 export { V3Shell } from "./v3/v3-shell";
 export type * from "./v3/v3-types";

@@ -22,7 +22,7 @@ import {
 } from "./v3-agent-edit";
 import { AgentNotes } from "./v3-agent-notes";
 import { RemoveAgent } from "./v3-agent-remove";
-import { Memory, RuleSuggestion } from "./v3-agent-rules";
+import { RuleSuggestion } from "./v3-agent-rules";
 import { AgentSkills } from "./v3-agent-skills";
 import { AgentWeek } from "./v3-agent-week";
 import { ago, Btn, Meter, Page, Prop, Section, Title } from "./v3-bits";
@@ -38,8 +38,8 @@ import type { V3Agent, V3ConnectorDef } from "./v3-types";
 /* One agent, like a person's profile in Notion: what it does, what it runs
    on, what it has been plugged into, and how far to trust it this week. An
    outside worker gets the same page minus everything LilOS runs (runtime,
-   model, skills, spend, instructions, memory): LilOS only watches it.
-   What the app cannot tell (runtime, schedule, skills, spend, memory, week)
+   model, skills, spend, instructions, notes): LilOS only watches it.
+   What the app cannot tell (runtime, schedule, skills, spend, week)
    or cannot change (connectors, rules, editing, removing) is left out,
    never shown as a made-up value or a dead control. Make CEO is the
    owner's way to move the position (D-#778), including the first time
@@ -362,8 +362,6 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
               gap={agent.instructions.length > 0 ? "mt-3" : "mt-10"}
             />
           )}
-
-          {agent.memory && <Memory memory={agent.memory} />}
         </>
       )}
 

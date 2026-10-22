@@ -1,4 +1,4 @@
-import type { ModelVisibility, V3DataActions } from "@lilos/ui"
+import { skillSlug, type ModelVisibility, type V3DataActions } from "@lilos/ui"
 import { MODEL_OPTIONS, modelIdOf, settingsModels, visibilityOf } from "../fake-v3-models"
 import { type Engine, patchConnect } from "./context"
 
@@ -95,16 +95,15 @@ export function settingsActions({ setData, getData, toast, openStatus }: Engine)
       return Promise.resolve()
     },
     addSkill: ({ name, about, text }) => {
-      const named = name.trim()
+      // The form already shows this slug; store that, not the words typed.
+      const named = skillSlug(name)
       const body = text.trim()
       if (!named || !body) return
       setData((d) => {
         const skills = d.skills ?? []
-        const base =
-          named.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "skill"
         const taken = new Set(skills.map((s) => s.id))
-        let id = base
-        for (let n = 2; taken.has(id); n++) id = `${base}-${n}`
+        let id = named
+        for (let n = 2; taken.has(id); n++) id = `${named}-${n}`
         return {
           ...d,
           skills: [
