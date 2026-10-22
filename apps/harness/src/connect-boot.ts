@@ -51,7 +51,7 @@ export async function reconcileBeforeEngine(
       timeout,
     ]);
   } finally {
-    if (timer) clearTimeout(timer);
+    clearTimeout(timer);
   }
   /* Says in the log that the plugin was settled before the engine could
      import it — the one ordering D-#817 relies on, otherwise only visible
