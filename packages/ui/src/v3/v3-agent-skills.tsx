@@ -1,5 +1,6 @@
 import { XIcon } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { cn } from "../lib/utils";
 import { Section } from "./v3-bits";
 import { useMenu } from "./v3-keys";
 import type { V3Skill } from "./v3-types";
@@ -13,6 +14,11 @@ import type { V3Skill } from "./v3-types";
 
 const CHIP =
   "inline-flex h-[24px] items-center gap-1 rounded-full border border-foreground bg-foreground pr-1 pl-2.5 text-[12.5px] text-background";
+
+/* Fifteen unused skills are taller than the window and land on the Threads
+   row. The menu scrolls itself, and opens upward when the button is too
+   close to the bottom for that cap to fit. */
+const MENU_MAX = 320;
 
 export function AgentSkills({
   skills,
@@ -29,6 +35,7 @@ export function AgentSkills({
   const { open, setOpen, trigger, list, close, onKeyDown } = useMenu();
   const search = useRef<HTMLInputElement>(null);
   const [q, setQ] = useState("");
+  const [up, setUp] = useState(false);
   const known = new Map(skills.map((s) => [s.id, s]));
   const using = attached.map(
     (id) => known.get(id) ?? { id, name: id, about: "", text: "" },
@@ -46,6 +53,15 @@ export function AgentSkills({
     if (open) search.current?.focus();
     else setQ("");
   }, [open]);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const r = trigger.current?.getBoundingClientRect();
+    if (!r) return;
+    const below = window.innerHeight - r.bottom;
+    const above = r.top;
+    setUp(below < MENU_MAX && above > below);
+  }, [open, trigger]);
 
   return (
     <div data-agent-skills>
@@ -97,11 +113,15 @@ export function AgentSkills({
               ref={list}
               role="menu"
               aria-label="Add a skill"
+              data-menu-place={up ? "up" : "down"}
               tabIndex={-1}
               onKeyDown={onKeyDown}
-              className="absolute top-full left-0 z-20 mt-1 w-[240px] rounded-lg border border-[var(--v3-line)] bg-background py-1 text-[13.5px]"
+              className={cn(
+                "absolute left-0 z-20 w-[240px] max-h-[min(320px,50dvh)] overflow-y-auto rounded-lg border border-[var(--v3-line)] bg-background py-1 text-[13.5px]",
+                up ? "bottom-full mb-1" : "top-full mt-1",
+              )}
             >
-              <div className="px-2 pb-1">
+              <div className="sticky top-0 z-10 bg-background px-2 pb-1">
                 <input
                   ref={search}
                   aria-label="Find a skill"

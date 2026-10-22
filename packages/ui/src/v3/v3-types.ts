@@ -57,13 +57,15 @@ export type V3Note = {
   updated: string;
 };
 
-/** One skill in the company library. An agent uses the ones it has attached. */
+/** One skill in the company library. An agent uses the ones it has attached.
+    Shaped like a SKILL.md file: `name`, `about` (the description), and `text`
+    (the body). The body does not repeat the description. */
 export type V3Skill = {
   id: string;
   name: string;
-  /** One line, for the library list. */
+  /** The description: one line, for the library list and under the name. */
   about: string;
-  /** The text a runtime is given when this skill is attached. */
+  /** The body a runtime is given. Not a second copy of `about`. */
   text: string;
 };
 

@@ -217,10 +217,7 @@ describe("notes", () => {
       name: "readers.md",
       text: "They journal after 21:00.",
     });
-    const toast = document.querySelector("[data-toast]");
-    expect(toast?.textContent).toContain("Note saved");
-    expect(toast?.hasAttribute("data-toast-panel")).toBe(true);
-    expect(toast?.className).not.toContain("left-1/2");
+    expect(document.querySelector("[data-toast]")).toBeNull();
   });
 
   test("a new note is a new file, and a taken or path name is not saved", () => {
@@ -292,6 +289,10 @@ describe("skills", () => {
     expect(chipNames()).toEqual(["Detach sheets", "Detach web-research"]);
     fireEvent.click(screen.getByRole("button", { name: "+ Add skill" }));
     const menu = screen.getByRole("menu", { name: "Add a skill" });
+    expect(menu.className).toContain("overflow-y-auto");
+    expect(menu.className).toContain("max-h-");
+    expect(menu.className).toContain("top-full");
+    expect(menu.getAttribute("data-menu-place")).toBe("down");
     expect(within(menu).queryByRole("menuitem", { name: /sheets/ })).toBeNull();
     fireEvent.change(within(menu).getByLabelText("Find a skill"), {
       target: { value: "brand" },
@@ -344,6 +345,55 @@ describe("skills", () => {
     expect(go).toHaveBeenCalledWith({ page: "settings", view: "skills" });
   });
 
+  test("the menu scrolls, and opens upward when the button is near the bottom", () => {
+    const real = HTMLElement.prototype.getBoundingClientRect;
+    const height = window.innerHeight;
+    Object.defineProperty(window, "innerHeight", {
+      configurable: true,
+      value: 900,
+    });
+    HTMLElement.prototype.getBoundingClientRect = function () {
+      if (this.getAttribute("aria-haspopup") === "menu") {
+        return {
+          x: 0,
+          y: 860,
+          top: 860,
+          bottom: 884,
+          left: 0,
+          right: 80,
+          width: 80,
+          height: 24,
+          toJSON() {
+            return {};
+          },
+        } as DOMRect;
+      }
+      return real.call(this);
+    };
+    try {
+      render(
+        <V3AgentPage
+          data={data({ skills })}
+          go={vi.fn()}
+          act={actions()}
+          id="scout"
+        />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "+ Add skill" }));
+      const menu = screen.getByRole("menu", { name: "Add a skill" });
+      expect(menu.className).toContain("overflow-y-auto");
+      expect(menu.className).toContain("max-h-");
+      expect(menu.className).toContain("bottom-full");
+      expect(menu.getAttribute("data-menu-place")).toBe("up");
+    } finally {
+      HTMLElement.prototype.getBoundingClientRect = real;
+      Object.defineProperty(window, "innerHeight", {
+        configurable: true,
+        value: height,
+      });
+    }
+  });
+
   test("instructions stay the existing field beside the new sections", () => {
     render(
       <V3AgentPage
@@ -393,7 +443,11 @@ describe("skill library", () => {
     library(actions());
     fireEvent.click(screen.getByRole("button", { name: /web-research/ }));
     expect(screen.getByText("Cite every row.")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Add skill" }));
+    const add = screen.getByRole("button", { name: "Add skill" });
+    fireEvent.click(add);
+    expect(add.hasAttribute("disabled")).toBe(true);
+    expect(add.getAttribute("aria-pressed")).toBe("true");
+    expect(document.querySelector("[aria-current]")).toBeNull();
     expect(document.querySelector("[data-add-skill]")).toBeTruthy();
     expect(document.querySelector("[data-skill-view]")).toBeNull();
     expect(screen.queryByText("Cite every row.")).toBeNull();
@@ -412,12 +466,45 @@ describe("skill library", () => {
     fireEvent.change(screen.getByLabelText("Skill text"), {
       target: { value: "Ask before anything public." },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add", exact: true }));
     expect(act_.addSkill).toHaveBeenCalledWith({
       name: "launch-notes",
       about: "Ask before anything public.",
-      text: "Ask before anything public.",
+      text: "",
     });
+  });
+
+  test("a name the library already has is refused, and a name with no letters says so", () => {
+    const act_ = actions();
+    library(act_);
+    fireEvent.click(screen.getByRole("button", { name: "Add skill" }));
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Éclair & Tea!" },
+    });
+    expect(document.querySelector("[data-skill-slug]")?.textContent).toBe(
+      "eclair-tea",
+    );
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "web-research" },
+    });
+    fireEvent.change(screen.getByLabelText("Skill text"), {
+      target: { value: "Again." },
+    });
+    expect(screen.getByText("A skill already has that name.")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Add", exact: true }),
+    ).toHaveProperty("disabled", true);
+    fireEvent.click(screen.getByRole("button", { name: "Add", exact: true }));
+    expect(act_.addSkill).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "!!!" },
+    });
+    expect(screen.getByText("Use letters or numbers.")).toBeTruthy();
+    expect(document.querySelector("[data-skill-slug]")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Add", exact: true }),
+    ).toHaveProperty("disabled", true);
   });
 
   test("adding selects the new skill and renders its markdown", () => {
@@ -437,7 +524,12 @@ describe("skill library", () => {
     fireEvent.change(screen.getByLabelText("Skill text"), {
       target: { value: "# Launch\nAsk before anything public." },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add", exact: true }));
+    expect(act_.addSkill).toHaveBeenCalledWith({
+      name: "launch-notes",
+      about: "Ask before anything public.",
+      text: "# Launch",
+    });
     const added: V3Skill = {
       id: "launch-notes",
       name: "launch-notes",
@@ -457,13 +549,16 @@ describe("skill library", () => {
     const view = document.querySelector("[data-skill-view]") as HTMLElement;
     expect(within(view).getByRole("heading", { name: "Launch" })).toBeTruthy();
     expect(view.textContent).not.toContain("# Launch");
+    expect(view.textContent?.split("Ask before anything public.").length).toBe(
+      2,
+    );
   });
 
   test("a text file fills the kebab-case name, the line, and the text", async () => {
     library(actions());
     fireEvent.click(screen.getByRole("button", { name: "Add skill" }));
     const file = new File(
-      ["# Launch\nAsk before anything public.\n"],
+      ["# Launch\nAsk before anything public.\n\nWarm the cups.\n"],
       "launch-notes.md",
       { type: "text/markdown" },
     );
@@ -476,12 +571,36 @@ describe("skill library", () => {
     expect(document.querySelector("[data-skill-slug]")?.textContent).toBe(
       "launch-notes",
     );
-    expect(screen.getByLabelText("Skill text")).toHaveProperty(
-      "value",
-      "# Launch\nAsk before anything public.\n",
+    const body = screen.getByLabelText("Skill text") as HTMLTextAreaElement;
+    expect(body.value).toBe("# Launch\n\nWarm the cups.");
+    expect(body.value).not.toContain("Ask before anything public.");
+    expect(
+      (screen.getByLabelText("Description") as HTMLInputElement).value,
+    ).toBe("Ask before anything public.");
+  });
+
+  test("a file's frontmatter is the name and the description", async () => {
+    library(actions());
+    fireEvent.click(screen.getByRole("button", { name: "Add skill" }));
+    const file = new File(
+      [
+        "---\nname: Éclair & Tea!\ndescription: A pot for the afternoon.\n---\n\n# Serve\n\nWarm the pot.\n",
+      ],
+      "tea.md",
+      { type: "text/markdown" },
     );
-    expect((screen.getByLabelText("About") as HTMLInputElement).value).toBe(
-      "Ask before anything public.",
-    );
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText("Skill file"), {
+        target: { files: [file] },
+      });
+    });
+    expect(await screen.findByDisplayValue("eclair-tea")).toBeTruthy();
+    expect(
+      (screen.getByLabelText("Description") as HTMLInputElement).value,
+    ).toBe("A pot for the afternoon.");
+    const body = screen.getByLabelText("Skill text") as HTMLTextAreaElement;
+    expect(body.value).toContain("# Serve");
+    expect(body.value).toContain("Warm the pot.");
+    expect(body.value).not.toContain("A pot for the afternoon.");
   });
 });

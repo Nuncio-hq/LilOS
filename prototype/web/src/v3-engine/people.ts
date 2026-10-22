@@ -231,8 +231,8 @@ export function peopleActions({ setData, getData, toast }: Engine): Pick<
           };
         }),
       }));
-      // "Note saved" is drawn inside the notes panel. A window toast would
-      // sit across the seam between the page and the side peek.
+      // The row's "just now" is the confirmation. A toast would cover the
+      // list it just updated.
     },
     setAgentSkill: (agentId, skillId, attached) => {
       setData((d) => ({

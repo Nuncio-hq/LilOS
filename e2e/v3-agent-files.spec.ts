@@ -4,8 +4,8 @@ import { expect, type Page, test } from "@playwright/test";
 /**
  * #762 prototype: an agent's notes (its only memory) and skills, and the
  * company skill library. Mock company. Shots land in test-results/762-proto.
- * The agent stays in the side peek, so the note toast can be checked against
- * the seam between the page and the peek.
+ * The agent stays in the side peek. Saving a note and adding a skill leave
+ * no toast: the row is the confirmation.
  */
 
 const OUT = "test-results/762-proto";
@@ -71,22 +71,10 @@ for (const theme of ["light", "dark"] as const) {
     await body.evaluate((el) => el.scrollIntoView({ block: "center" }));
     await shot(page, theme, "note-edit");
     await notes.getByRole("button", { name: "Save" }).click();
-    const toast = page.locator("[data-toast]");
-    await expect(toast).toHaveText("Note saved");
-    await expect(toast).toHaveAttribute("data-toast-panel", "");
-    const toastBox = await toast.boundingBox();
-    const peekBox = await peek.boundingBox();
-    expect(toastBox).toBeTruthy();
-    expect(peekBox).toBeTruthy();
-    if (toastBox && peekBox) {
-      expect(toastBox.x).toBeGreaterThanOrEqual(peekBox.x - 2);
-      expect(toastBox.x + toastBox.width).toBeLessThanOrEqual(
-        peekBox.x + peekBox.width + 2,
-      );
-    }
-    await shot(page, theme, "note-toast");
+    await expect(page.locator("[data-toast]")).toHaveCount(0);
+    const saved = notes.getByRole("button", { name: /readers\.md/ });
+    await expect(saved).toContainText("just now");
     await expect(notes.getByText("Edited in the prototype.")).toBeVisible();
-    await expect(toast).toHaveCount(0, { timeout: 5_000 });
 
     const skills = peek.locator("[data-agent-skills]");
     await skills.scrollIntoViewIfNeeded();
@@ -96,9 +84,24 @@ for (const theme of ["light", "dark"] as const) {
       "Detach creator-vetting",
       "Detach sheets",
     ]);
-    await skills.getByRole("button", { name: "+ Add skill" }).click();
+    const addSkill = skills.getByRole("button", { name: "+ Add skill" });
+    await addSkill.evaluate((el) => {
+      const scroller = el.closest("[data-v3-scroller]");
+      if (!(scroller instanceof HTMLElement)) return;
+      const s = scroller.getBoundingClientRect();
+      const r = el.getBoundingClientRect();
+      scroller.scrollTop += r.bottom - (s.bottom - 16);
+    });
+    await addSkill.click();
     const menu = page.getByRole("menu", { name: "Add a skill" });
     await expect(menu).toBeVisible();
+    await expect(menu).toHaveAttribute("data-menu-place", "up");
+    await expect(menu).toHaveClass(/overflow-y-auto/);
+    await expect(menu).toHaveClass(/max-h-/);
+    expect(await menu.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(
+      true,
+    );
+    await shot(page, theme, "skills-menu");
     await menu.getByLabel("Find a skill").fill("brand");
     await expect(
       menu.getByRole("menuitem", { name: /brand-voice/ }),
@@ -106,7 +109,6 @@ for (const theme of ["light", "dark"] as const) {
     await expect(menu.getByRole("menuitem", { name: /planning/ })).toHaveCount(
       0,
     );
-    await shot(page, theme, "skills-menu");
     await menu.getByRole("menuitem", { name: /brand-voice/ }).click();
     expect(await chipLabels(page)).toEqual([
       "Detach web-research",
@@ -146,20 +148,57 @@ for (const theme of ["light", "dark"] as const) {
     expect(detailBox && view && detailBox.y < view.height).toBeTruthy();
     await shot(page, theme, "skills-list");
 
-    await main.getByRole("button", { name: "Add skill" }).click();
+    const addBtn = main.getByRole("button", { name: "Add skill" });
+    const before = await addBtn.boundingBox();
+    const listBefore = await list.boundingBox();
+    await addBtn.click();
+    const after = await addBtn.boundingBox();
+    const listAfter = await list.boundingBox();
+    expect(before && after && Math.abs(after.y - before.y)).toBeLessThan(2);
+    expect(
+      listBefore && listAfter && Math.abs(listAfter.y - listBefore.y),
+    ).toBeLessThan(2);
+    await expect(addBtn).toBeDisabled();
+    await expect(addBtn).toHaveAttribute("aria-pressed", "true");
+    await expect(main.locator("[aria-current]")).toHaveCount(0);
     await expect(main.locator("[data-skill-view]")).toHaveCount(0);
+    await expect(main.locator("[data-add-skill]")).toBeVisible();
     await expect(main.getByText("Cite every row.")).toHaveCount(0);
+    await shot(page, theme, "add-skill");
+
+    await main.getByLabel("Name").fill("typescript");
+    await main.getByLabel("Skill text").fill("Again.");
+    await expect(
+      main.getByText("A skill already has that name."),
+    ).toBeVisible();
+    await expect(
+      main.getByRole("button", { name: "Add", exact: true }),
+    ).toBeDisabled();
+    await shot(page, theme, "skill-duplicate");
+
+    await main.getByLabel("Name").fill("!!!");
+    await expect(main.getByText("Use letters or numbers.")).toBeVisible();
+    await expect(main.locator("[data-skill-slug]")).toHaveCount(0);
+    await expect(
+      main.getByRole("button", { name: "Add", exact: true }),
+    ).toBeDisabled();
+    await shot(page, theme, "skill-letters");
+
     await main.locator('input[type="file"]').setInputFiles({
       name: "launch-notes.md",
       mimeType: "text/markdown",
-      buffer: Buffer.from("# Launch\nAsk before anything goes public.\n"),
+      buffer: Buffer.from(
+        "# Launch\nAsk before anything goes public.\n\nWarm the cups.\n",
+      ),
     });
     await expect(main.getByLabel("Name")).toHaveValue("launch-notes");
     await expect(main.locator("[data-skill-slug]")).toHaveText("launch-notes");
-    await expect(main.getByLabel("Skill text")).toHaveValue(
-      "# Launch\nAsk before anything goes public.\n",
+    await expect(main.getByLabel("Description")).toHaveValue(
+      "Ask before anything goes public.",
     );
-    await shot(page, theme, "add-skill");
+    await expect(main.getByLabel("Skill text")).not.toHaveValue(
+      /Ask before anything goes public/,
+    );
     await main.getByRole("button", { name: "Add", exact: true }).click();
     const added = main.getByRole("button", { name: /launch-notes/ });
     await expect(added).toHaveAttribute("aria-current", "true");
@@ -176,9 +215,21 @@ for (const theme of ["light", "dark"] as const) {
       skill.getByRole("heading", { name: "Launch", exact: true }),
     ).toBeVisible();
     await expect(skill).not.toContainText("# Launch");
-    await expect(page.locator("[data-toast]")).toHaveCount(0, {
-      timeout: 5_000,
-    });
+    expect(
+      (await skill.innerText()).split("Ask before anything goes public.")
+        .length,
+    ).toBe(2);
+    await expect(page.locator("[data-toast]")).toHaveCount(0);
     await shot(page, theme, "skill-added");
+
+    await page.goto(`/?page=people&open=agent:builder&theme=${theme}`);
+    const builder = page.locator('aside[aria-label="Opened record"]');
+    const verify = builder.locator("[data-agent-notes]");
+    await verify.getByRole("button", { name: /verify\.md/ }).click();
+    const paras = verify.locator("article .lilos-prose p");
+    await expect(paras).toHaveCount(2);
+    await expect(paras.nth(0)).toContainText("bun run verify");
+    await expect(paras.nth(1)).toContainText("Never push to main");
+    await shot(page, theme, "verify-note");
   });
 }

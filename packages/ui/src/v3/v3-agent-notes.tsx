@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { MessageResponse } from "../components/ai-elements/message";
 import { cn } from "../lib/utils";
-import { ToastView } from "../shell/toast-view";
 import { Btn, Section } from "./v3-bits";
 import { EscLayer } from "./v3-keys";
 import { OPEN_ROW } from "./v3-open-record";
@@ -16,9 +15,6 @@ import type { V3Note } from "./v3-types";
 
 const FIELD =
   "rounded-[7px] border border-foreground/15 bg-background text-foreground outline-none focus:border-foreground/40";
-
-/** How long "Note saved" stays, matching the shell's notice. */
-const SAVED_MS = 2600;
 
 type Draft = { name: string; text: string };
 
@@ -57,12 +53,10 @@ export function AgentNotes({
   notes: V3Note[];
   onSave: (note: { id?: string; name: string; text: string }) => void;
 }) {
-  const panel = useRef<HTMLDivElement>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [tried, setTried] = useState(false);
-  const [saved, setSaved] = useState(0);
   const open = notes.find((n) => n.id === openId);
   const creating = editing && openId === null;
   const problem = draft ? nameProblem(draft.name, notes, openId) : null;
@@ -73,12 +67,6 @@ export function AgentNotes({
       : tried && problem === "empty"
         ? "Give the file a name."
         : null;
-
-  useEffect(() => {
-    if (!saved) return;
-    const t = window.setTimeout(() => setSaved(0), SAVED_MS);
-    return () => window.clearTimeout(t);
-  }, [saved]);
 
   const startNew = () => {
     setOpenId(null);
@@ -102,11 +90,10 @@ export function AgentNotes({
       text: draft.text,
     });
     closeEdit();
-    setSaved((n) => n + 1);
   };
 
   return (
-    <div ref={panel} data-agent-notes className="@container">
+    <div data-agent-notes className="@container">
       <Section
         title="Notes"
         count={notes.length}
@@ -223,9 +210,6 @@ export function AgentNotes({
             <Btn onClick={closeEdit}>Cancel</Btn>
           </div>
         </form>
-      )}
-      {saved > 0 && panel.current && (
-        <ToastView toast={{ text: "Note saved" }} anchor={panel.current} />
       )}
     </div>
   );

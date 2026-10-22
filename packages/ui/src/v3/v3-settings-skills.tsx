@@ -21,27 +21,88 @@ const FIELD =
 const MAX_FILE_BYTES = 256 * 1024;
 
 /** The library's name: kebab-case, the same shape as the ids already in
-    use ("launch-notes"). Trailing separators stay off the saved name; the
+    use ("launch-notes"). Accents fold to the letter first ("Éclair" is
+    "eclair"), so a mark the keyboard added does not become a different
+    name or an empty one. Trailing separators stay off the saved name; the
     form shows this before Add. */
 export function skillSlug(name: string): string {
-  return name
+  const plain = name.normalize("NFKD").replace(/\p{M}/gu, "");
+  return plain
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
 }
 
-function firstAbout(text: string): string {
-  const line = text
-    .split("\n")
-    .map((l) => l.trim())
-    .find((l) => l !== "" && !l.startsWith("#"));
-  return (line ?? "").slice(0, 140);
+/** The body's first sentence, skipping a heading. That line is the
+    description when the file did not give one. */
+function firstProse(text: string): string {
+  return (
+    text
+      .split("\n")
+      .map((l) => l.trim())
+      .find((l) => l !== "" && !l.startsWith("#")) ?? ""
+  );
+}
+
+/** The description is its own line above the body. A body line that says
+    the same thing would show the sentence twice, so it comes out. */
+function dropMatchingLine(text: string, about: string): string {
+  const want = about.trim();
+  if (!want) return text;
+  const lines = text.split("\n");
+  const at = lines.findIndex(
+    (l) => l.trim().replace(/^#{1,6}\s+/, "") === want,
+  );
+  if (at < 0) return text;
+  lines.splice(at, 1);
+  return lines.join("\n");
+}
+
+function skillBody(about: string, text: string): string {
+  return dropMatchingLine(text, about).trim();
+}
+
+/** A skill file is a SKILL.md: a name, a description, and a body. Two
+    frontmatter lines are enough; this is not a YAML parser. With no
+    description, the body's first prose line is it, and that line is not
+    left at the top of the body as well. */
+function readSkillFile(
+  raw: string,
+  filename: string,
+): { name: string; about: string; text: string } {
+  const source = raw.replace(/^\uFEFF/, "");
+  const fm = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(source);
+  let titled = "";
+  let description = "";
+  let body = source;
+  if (fm?.[1] != null) {
+    body = source.slice(fm[0].length);
+    for (const line of fm[1].split(/\r?\n/)) {
+      const m = /^(name|description):\s*(.*)$/.exec(line.trim());
+      if (!m?.[1] || m[2] == null) continue;
+      const value = m[2].replace(/^["']|["']$/g, "").trim();
+      if (m[1] === "name") titled = value;
+      else description = value;
+    }
+  }
+  const fromFile = filename.replace(/\.(md|markdown|txt)$/i, "");
+  if (!description) description = firstProse(body);
+  body = dropMatchingLine(body, description);
+  return {
+    name: skillSlug(titled || fromFile),
+    about: description.slice(0, 140),
+    text: body.trim(),
+  };
 }
 
 function AddSkill({
+  names,
   onAdd,
   onCancel,
 }: {
+  /** Names and ids already in the library. A second row with the same
+      slug would be the same skill twice. */
+  names: string[];
   onAdd: (skill: { name: string; about: string; text: string }) => void;
   onCancel: () => void;
 }) {
@@ -50,7 +111,10 @@ function AddSkill({
   const [text, setText] = useState("");
   const [fileNote, setFileNote] = useState<string | null>(null);
   const slug = skillSlug(name);
-  const ready = slug !== "" && text.trim() !== "";
+  const duplicate = slug !== "" && names.includes(slug);
+  const nameless = name.trim() !== "" && slug === "";
+  const ready =
+    slug !== "" && !duplicate && (text.trim() !== "" || about.trim() !== "");
 
   const load = async (file: File) => {
     const textLike =
@@ -66,12 +130,11 @@ function AddSkill({
       return;
     }
     try {
-      const body = await file.text();
-      setText(body);
+      const read = readSkillFile(await file.text(), file.name);
+      setName(read.name);
+      setAbout(read.about);
+      setText(read.text);
       setFileNote(file.name);
-      // The file's name is the library name, extension off, kebab-case.
-      setName(skillSlug(file.name.replace(/\.(md|markdown|txt)$/i, "")));
-      if (about.trim() === "") setAbout(firstAbout(body));
     } catch {
       setFileNote("Could not read that file.");
     }
@@ -79,10 +142,11 @@ function AddSkill({
 
   const submit = () => {
     if (!ready) return;
+    const full = about.trim() || firstProse(text);
     onAdd({
       name: slug,
-      about: about.trim() || firstAbout(text) || slug,
-      text: text.trim(),
+      about: full.slice(0, 140) || slug,
+      text: skillBody(full, text),
     });
   };
 
@@ -112,11 +176,21 @@ function AddSkill({
             {slug}
           </span>
         )}
+        {duplicate && (
+          <p className="mt-1 text-[13px] text-foreground">
+            A skill already has that name.
+          </p>
+        )}
+        {nameless && (
+          <p className="mt-1 text-[13px] text-foreground">
+            Use letters or numbers.
+          </p>
+        )}
       </label>
       <label className="block">
-        <span className="text-[13px] text-muted-foreground">About</span>
+        <span className="text-[13px] text-muted-foreground">Description</span>
         <input
-          aria-label="About"
+          aria-label="Description"
           value={about}
           onChange={(e) => setAbout(e.target.value)}
           placeholder="One line, for the list"
@@ -154,11 +228,7 @@ function AddSkill({
         )}
       </div>
       <div className="flex items-center gap-2 pt-1">
-        <Btn
-          primary
-          onClick={submit}
-          className={!ready ? "pointer-events-none opacity-40" : undefined}
-        >
+        <Btn primary disabled={!ready} onClick={submit}>
           Add
         </Btn>
         <Btn onClick={onCancel}>Cancel</Btn>
@@ -203,9 +273,16 @@ export function SkillsPane({ data, act }: V3PageProps) {
       <p className="mt-4 max-w-[620px] text-[14.5px] text-muted-foreground">
         The company's skills. Each agent uses the ones attached on its page.
       </p>
-      {act.addSkill && !adding && (
+      {act.addSkill && (
         <div className="mt-5">
-          <Btn onClick={() => setAdding(true)}>
+          <Btn
+            pressed={adding}
+            disabled={adding}
+            onClick={() => {
+              setAdding(true);
+              setOpenId(null);
+            }}
+          >
             <PlusIcon className="size-3.5" />
             Add skill
           </Btn>
@@ -269,6 +346,7 @@ export function SkillsPane({ data, act }: V3PageProps) {
         <div data-skill-detail className="sticky top-4 min-w-0 self-start">
           {adding && act.addSkill ? (
             <AddSkill
+              names={skills.flatMap((s) => [s.name, s.id])}
               onAdd={(skill) => {
                 act.addSkill?.(skill);
                 setFilter("");
@@ -289,17 +367,20 @@ export function SkillsPane({ data, act }: V3PageProps) {
 function SkillView({ skill }: { skill: V3Skill | undefined }) {
   if (!skill)
     return <p className="text-[14px] text-muted-foreground">Choose a skill.</p>;
+  const body = skillBody(skill.about, skill.text);
   return (
     <article data-skill-view>
       <h2 className="font-semibold text-[22px] text-foreground leading-tight">
         {skill.name}
       </h2>
       <p className="mt-1 text-[14px] text-muted-foreground">{skill.about}</p>
-      <div className="mt-4 border-[var(--v3-line)] border-l-2 pl-4">
-        <MessageResponse className="lilos-prose text-[14.5px] text-foreground leading-relaxed">
-          {skill.text}
-        </MessageResponse>
-      </div>
+      {body !== "" && (
+        <div className="mt-4 border-[var(--v3-line)] border-l-2 pl-4">
+          <MessageResponse className="lilos-prose text-[14.5px] text-foreground leading-relaxed">
+            {body}
+          </MessageResponse>
+        </div>
+      )}
     </article>
   );
 }

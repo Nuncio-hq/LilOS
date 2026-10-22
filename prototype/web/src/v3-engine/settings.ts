@@ -95,24 +95,24 @@ export function settingsActions({ setData, getData, toast, openStatus }: Engine)
       return Promise.resolve()
     },
     addSkill: ({ name, about, text }) => {
-      // The form already shows this slug; store that, not the words typed.
+      // The form already shows this slug, and refuses a name the library
+      // has. Store that slug; a second row would be the same skill twice.
       const named = skillSlug(name)
       const body = text.trim()
-      if (!named || !body) return
+      const line = about.trim()
+      if (!named || (!body && !line)) return
       setData((d) => {
         const skills = d.skills ?? []
-        const taken = new Set(skills.map((s) => s.id))
-        let id = named
-        for (let n = 2; taken.has(id); n++) id = `${named}-${n}`
+        if (skills.some((s) => s.name === named || s.id === named)) return d
         return {
           ...d,
           skills: [
             ...skills,
-            { id, name: named, about: about.trim() || named, text: body },
+            { id: named, name: named, about: line || named, text: body },
           ],
         }
       })
-      toast(`${named} added to the library`)
+      // The selected row is the confirmation. A toast would sit on top of it.
     },
     setModelVisibility: setVisibility,
     refreshModels: () =>
