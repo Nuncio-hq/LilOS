@@ -405,6 +405,185 @@ describe("#572 AC-1 feeds attach only for the open, running, or asking", () => {
     expect(attached(engine)).toEqual(["s1"]);
   });
 
+  it("#814 a boot row that still says active settles when the feed shows the turn completed", () => {
+    /* The row says active, so the watch attaches. The feed it attaches
+       to already ends this turn (turn.completed, with the replay's
+       turn.recap ahead of it) while the reduced model still looks live
+       — the snapshot has not caught the idle write. That must not keep
+       the background session running. */
+    const c = conv("c1", "s1", { state: "active" });
+    const { engine, signals } = setup([c]);
+    expect(attached(engine)).toEqual(["s1"]);
+    expect(signals.get().s1?.running).toBe(true);
+    const live = {
+      turnId: "t1",
+      phase: "text" as const,
+      reasoning: "",
+      text: "hi",
+      steps: [],
+      steers: [],
+      requests: [],
+      plans: [],
+      subagents: [],
+    };
+    engine.setModel("s1", model({ sessionId: "s1", live }));
+    engine.feeds.get("s1")?.set({
+      sessionId: "s1",
+      synced: true,
+      latestSeq: 3,
+      coverageSeq: 3,
+      events: [
+        ev("s1", 1, "turn.started", { turnId: "t1" }),
+        ev("s1", 2, "turn.recap", {
+          turnId: "t1",
+          text: "hi",
+          reasoning: "",
+        }),
+        ev("s1", 3, "turn.completed", {
+          turnId: "t1",
+          stopReason: "end_turn",
+        }),
+      ],
+      openRequests: [],
+    });
+    expect(signals.get().s1?.running ?? false).toBe(false);
+    expect(attached(engine)).toEqual([]);
+    expect(engine.released).toEqual(["s1"]);
+  });
+
+  it("#814 a turn.recap of the current turn settles a boot row that still says active", () => {
+    /* Replay compaction stands a finished turn's text in as turn.recap
+       (D-#431) even when turn.completed is not in this window. The row
+       still says active and the model still looks live. */
+    const c = conv("c1", "s1", { state: "active" });
+    const { engine, signals } = setup([c]);
+    expect(attached(engine)).toEqual(["s1"]);
+    engine.setModel(
+      "s1",
+      model({
+        sessionId: "s1",
+        live: {
+          turnId: "t1",
+          phase: "text",
+          reasoning: "",
+          text: "hi",
+          steps: [],
+          steers: [],
+          requests: [],
+          plans: [],
+          subagents: [],
+        },
+      }),
+    );
+    engine.feeds.get("s1")?.set({
+      sessionId: "s1",
+      synced: false,
+      latestSeq: 2,
+      coverageSeq: 2,
+      events: [
+        ev("s1", 1, "turn.started", { turnId: "t1" }),
+        ev("s1", 2, "turn.recap", {
+          turnId: "t1",
+          text: "hi",
+          reasoning: "",
+        }),
+      ],
+      openRequests: [],
+    });
+    expect(signals.get().s1?.running ?? false).toBe(false);
+    expect(attached(engine)).toEqual([]);
+  });
+
+  it("#814 a turn.delta after a recap is still the live turn", () => {
+    /* A recap overlapping a stream that kept going is not the end.
+       The next delta puts the turn back in flight. */
+    const c = conv("c1", "s1", { state: "active" });
+    const { engine, signals } = setup([c]);
+    engine.setModel(
+      "s1",
+      model({
+        sessionId: "s1",
+        live: {
+          turnId: "t1",
+          phase: "text",
+          reasoning: "",
+          text: "hi",
+          steps: [],
+          steers: [],
+          requests: [],
+          plans: [],
+          subagents: [],
+        },
+      }),
+    );
+    engine.feeds.get("s1")?.set({
+      sessionId: "s1",
+      synced: true,
+      latestSeq: 3,
+      coverageSeq: 3,
+      events: [
+        ev("s1", 1, "turn.started", { turnId: "t1" }),
+        ev("s1", 2, "turn.recap", {
+          turnId: "t1",
+          text: "hi",
+          reasoning: "",
+        }),
+        ev("s1", 3, "turn.delta", {
+          turnId: "t1",
+          stream: "text",
+          delta: " more",
+        }),
+      ],
+      openRequests: [],
+    });
+    expect(signals.get().s1?.running).toBe(true);
+    expect(attached(engine)).toEqual(["s1"]);
+  });
+
+  it("#814 a later turn.started stays watched after an earlier completion", () => {
+    const c = conv("c1", "s1", { state: "active" });
+    const { engine, signals } = setup([c]);
+    engine.setModel(
+      "s1",
+      model({
+        sessionId: "s1",
+        live: {
+          turnId: "t2",
+          phase: "tools",
+          reasoning: "",
+          text: "",
+          steps: [],
+          steers: [],
+          requests: [],
+          plans: [],
+          subagents: [],
+        },
+      }),
+    );
+    engine.feeds.get("s1")?.set({
+      sessionId: "s1",
+      synced: true,
+      latestSeq: 4,
+      coverageSeq: 4,
+      events: [
+        ev("s1", 1, "turn.started", { turnId: "t1" }),
+        ev("s1", 2, "turn.completed", {
+          turnId: "t1",
+          stopReason: "end_turn",
+        }),
+        ev("s1", 3, "turn.started", { turnId: "t2" }),
+        ev("s1", 4, "turn.delta", {
+          turnId: "t2",
+          stream: "text",
+          delta: "working",
+        }),
+      ],
+      openRequests: [],
+    });
+    expect(signals.get().s1?.running).toBe(true);
+    expect(attached(engine)).toEqual(["s1"]);
+  });
+
   it("AC-2 a terminal feed error consumes the one-shot (no pin, no retry)", () => {
     const { engine } = setup([conv("c1", "s1")], [], {
       previouslyRunning: new Set(["s1"]),
