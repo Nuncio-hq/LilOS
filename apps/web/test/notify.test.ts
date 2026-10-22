@@ -525,6 +525,47 @@ describe("AC-1 watchNotifications — only when the conversation is not in view"
     expect(posted).toHaveLength(1);
   });
 
+  it("one turn posts one banner when the re-check and the live frame both fire (#819)", () => {
+    const { posted, state, emit, asksChanged, feeds } = stateHarness();
+    state.open = []; // no asks — completions only
+    feeds.s2 = [];
+    asksChanged(); // seed — the session is already known
+    const done = {
+      ...ev("turn.completed", "s2", { turnId: "t4", stopReason: "end_turn" }),
+      seq: 4,
+    };
+    /* Engine order: the feed update runs the re-check, then the live
+       frame arrives. Both are one finish. */
+    feeds.s2 = [done];
+    asksChanged();
+    emit(done);
+    expect(posted).toHaveLength(1);
+    expect(posted[0]).toMatchObject({
+      conversationId: "c2",
+      kind: "done",
+      title: "Builder finished",
+    });
+  });
+
+  it("the same turn under a second seq still posts one banner (#819)", () => {
+    const { posted, state, emit, asksChanged, feeds } = stateHarness();
+    state.open = []; // no asks — completions only
+    feeds.s2 = [];
+    asksChanged(); // seed
+    const inFeed = {
+      ...ev("turn.completed", "s2", { turnId: "t4", stopReason: "end_turn" }),
+      seq: 9,
+    };
+    const live = {
+      ...ev("turn.completed", "s2", { turnId: "t4", stopReason: "end_turn" }),
+      seq: 4,
+    };
+    feeds.s2 = [inFeed];
+    asksChanged();
+    emit(live);
+    expect(posted).toHaveLength(1);
+  });
+
   it("accounts an in-view completion without ever posting it", () => {
     const { posted, state, asksChanged, viewChanged, feeds } = stateHarness();
     state.open = []; // no asks — completions only
