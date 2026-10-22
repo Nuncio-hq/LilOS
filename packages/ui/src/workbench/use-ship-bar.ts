@@ -204,9 +204,12 @@ export function useShipBar({
           });
           /* No extra re-read: shipCall's trailing `update()` lands the
              fresh PR, and landing on the PR tab signals its own read —
-             a reloadPr here would double-call `gh pr view` (#429). */
-          setTab("pr");
-        });
+             a reloadPr here would double-call `gh pr view` (#429).
+             The tab switch itself waits until that refresh returns
+             (#814): doing it here showed the PR while git status still
+             said the default branch, so the next Create PR asked for a
+             branch name again. */
+        }).then(() => setTab("pr"));
     }
   }
 
