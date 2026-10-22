@@ -1462,14 +1462,13 @@ export function createDrizzleStore(db: Db): RelayStore {
     },
     async recordConversationFinish({ conversationId, sessionId, eventSeq }) {
       /* D-#563: the stamp must clear every mark the relay has seen —
-         max(channel.lastSeq, readSeq) + 1. A quiet channel (nothing
-         posted) would otherwise stamp at lastSeq, equal readSeq, and
-         the dot would miss. A reply posted before this event (#814)
-         has already bumped lastSeq; +1 still sits past it. The
-         conditional UPDATE keeps the freshness fence atomic, same rule
-         as `recordTurnUsage`: a replayed finish from the same session
-         only wins past the stored event seq; a rebound session always
-         writes. */
+         max(channel.lastSeq, readSeq) + 1 — because the finish's own
+         channel writes land AFTER the engine event that calls this: at
+         `lastSeq` a quiet-channel finish would equal `readSeq` and the
+         dot would silently miss. The conditional UPDATE keeps the
+         freshness fence atomic, same rule as `recordTurnUsage`: a
+         replayed finish from the same session only wins past the stored
+         event seq; a rebound session always writes. */
       const row = db
         .select({
           lastSeq: schema.channels.lastSeq,

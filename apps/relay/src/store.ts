@@ -573,8 +573,8 @@ export interface RelayStore {
    * stamp strictly past every mark the relay has seen —
    * `max(channel.lastSeq, readSeq) + 1` — so the "finished, not seen" dot
    * (`finishedSeq > readSeq`) always fires, even on a channel quiet since
-   * the last read. A reply posted before the engine event (#814) is
-   * already in `lastSeq`; +1 still sits past it. `sessionId`/`eventSeq` are the
+   * the last read (the finish's own channel writes arrive after the
+   * engine event that stamps it). `sessionId`/`eventSeq` are the
    * freshness fence (same rule as `recordTurnUsage`): a replayed older
    * finish from the same session can't rewrite; a rebound session writes
    * freely.

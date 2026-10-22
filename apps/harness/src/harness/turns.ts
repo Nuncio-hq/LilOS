@@ -53,10 +53,7 @@ export async function finishTurn(
   // — hit the same key instead of posting a duplicate.
   const source = binding.turnSource.get(turnId) ?? turnId;
   if (hasAnswer) {
-    /* #814: the reply lands before the idle write. The fold claims a
-       root-prompt turn off that row; an idle row with no reply unmounts
-       it until the post arrives (#659). */
-    await this.relayWriteAwaited(`answer ${turnId}`, () =>
+    this.relayWrite(`answer ${turnId}`, () =>
       this.opts.relay.request("messages.post", {
         channelId: binding.channelId,
         conversationId: binding.conversationId,
@@ -82,21 +79,18 @@ export async function finishTurn(
       binding,
       `Error: ${event.payload.error}`,
       `sys:${binding.conversationId}:${source}:error`,
-      true,
     );
   } else if (!hasAnswer && stopReason === "cancelled") {
     await this.postSystem(
       binding,
       "Stopped.",
       `sys:${binding.conversationId}:${source}:stopped`,
-      true,
     );
   } else if (!hasAnswer) {
     await this.postSystem(
       binding,
       "(the engine ended the turn silently)",
       `sys:${binding.conversationId}:${source}:silent`,
-      true,
     );
   }
   /* D-#772: the watch was reset with runningTurnId, before the awaits.
@@ -106,46 +100,34 @@ export async function finishTurn(
      is the only stuck writer; a clear here would flash the card and
      push again. */
   const ownsRow = !binding.runningTurnId;
-  /* #814: one write, and the live path waits for it before publishing
-     the event or starting the next turn. Idle and the failure (or the
-     stopped word) arrive together — a bare idle ahead of this one lets
-     the scheduler record a failed run as finished and then ignore the
-     real write. Replay can still have started the next turn during the
-     awaits above; ownsRow keeps that turn's row. */
-  try {
-    await this.updateConversation(binding.conversationId, {
-      ...(ownsRow ? { state: "idle" as const } : {}),
-      ...(ownsRow && !binding.stuckDefer ? { stuck: null } : {}),
-      /* #419: the thread's failure card — the turn model carries it
+  this.updateConversation(binding.conversationId, {
+    ...(ownsRow ? { state: "idle" as const } : {}),
+    ...(ownsRow && !binding.stuckDefer ? { stuck: null } : {}),
+    /* #419: the thread's failure card — the turn model carries it
        too, but the row keeps it across a session rebind/reload. A
        backend-death turn was already stamped by surfaceBackendDown. */
-      ...(event.payload.error && event.payload.errorCode !== BACKEND_DOWN
-        ? {
-            turnFailure: {
-              /* #560: a context-window death reads "context" — the thread
+    ...(event.payload.error && event.payload.errorCode !== BACKEND_DOWN
+      ? {
+          turnFailure: {
+            /* #560: a context-window death reads "context" — the thread
                swaps the bare retry for Compact now / a fresh session.
                Typed errorCode first; untyped engines still match on the
                provider's error text. */
-              kind:
-                event.payload.errorCode === CONTEXT_LIMIT ||
-                CONTEXT_LIMIT_TEXT.test(event.payload.error)
-                  ? ("context" as const)
-                  : ("model" as const),
-              text: event.payload.error,
-            },
-          }
-        : {}),
-      /* #583: a stopped turn's word rides the row the same way — a released
+            kind:
+              event.payload.errorCode === CONTEXT_LIMIT ||
+              CONTEXT_LIMIT_TEXT.test(event.payload.error)
+                ? ("context" as const)
+                : ("model" as const),
+            text: event.payload.error,
+          },
+        }
+      : {}),
+    /* #583: a stopped turn's word rides the row the same way — a released
        or replayed session has no live turn model to say "stopped". */
-      ...(stopReason === "cancelled" && !event.payload.error
-        ? { turnStopped: true }
-        : {}),
-    });
-  } catch (error) {
-    this.opts.log.warn("turn finish update failed", {
-      error: String(error),
-    });
-  }
+    ...(stopReason === "cancelled" && !event.payload.error
+      ? { turnStopped: true }
+      : {}),
+  }).catch(() => {});
 
   /* #315 AC-5: ■ Stop parks everything still waiting — queued sends and
      accepted-but-unlanded steers alike land in the not-sent tray

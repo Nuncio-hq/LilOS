@@ -120,21 +120,14 @@ export async function postSystem(
   target: { channelId: string; conversationId: string },
   text: string,
   dedupeKey?: string,
-  /* finishTurn passes true so the note is on the channel before the
-     idle row (#814). The default stays fire-and-forget: a caller that
-     writes turnFailure after this post must not wait, or that write
-     lands after the lost-turn sleep card and replaces it. */
-  wait = false,
 ) {
-  const label = `system note "${text.slice(0, 24)}"`;
-  const run = () =>
+  this.relayWrite(`system note "${text.slice(0, 24)}"`, () =>
     this.opts.relay.request("messages.post", {
       channelId: target.channelId,
       conversationId: target.conversationId,
       authorKind: "system",
       text,
       ...(dedupeKey ? { dedupeKey } : {}),
-    });
-  if (wait) await this.relayWriteAwaited(label, run);
-  else this.relayWrite(label, run);
+    }),
+  );
 }

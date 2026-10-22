@@ -36,34 +36,6 @@ export function relayWrite(
   });
 }
 
-/**
- * Same write as `relayWrite`, but the caller waits until it lands.
- * finishTurn posts the reply and only then writes the idle row (#814):
- * a fire-and-forget post lets that row go idle with no answer, and the
- * fold unmounts a root-prompt turn until the post arrives (#659). A
- * busy outbox or a dead socket queues FIFO and resolves — the caller
- * must not block on a transport that will replay itself.
- */
-export async function relayWriteAwaited(
-  this: HarnessCtx,
-  label: string,
-  run: () => Promise<unknown>,
-): Promise<void> {
-  if (this.outbox.length > 0) {
-    this.outbox.push({ label, run });
-    return;
-  }
-  try {
-    await run();
-  } catch (error) {
-    if (isTransientRelayError(error)) {
-      this.outbox.push({ label, run });
-    } else {
-      this.opts.log.warn(`${label} dropped`, { error: String(error) });
-    }
-  }
-}
-
 export async function flushOutbox(this: HarnessCtx): Promise<void> {
   if (this.flushingOutbox) return;
   this.flushingOutbox = true;

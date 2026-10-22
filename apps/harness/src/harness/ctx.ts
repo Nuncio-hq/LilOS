@@ -275,8 +275,6 @@ export interface HarnessCtx {
   describeAndHire(conn: EngineConnection): Promise<void>;
   resyncBinding(binding: SessionBinding): Promise<void>;
   relayWrite(label: string, run: () => Promise<unknown>): void;
-  /** Awaited relay write (#814): the reply lands before the idle row. */
-  relayWriteAwaited(label: string, run: () => Promise<unknown>): Promise<void>;
   flushOutbox(): Promise<void>;
   applyReplay(binding: SessionBinding, replay: EventsSinceResult): void;
   markTurnInterrupted(binding: SessionBinding, turnId: string): Promise<void>;
@@ -350,8 +348,6 @@ export interface HarnessCtx {
     channelId: string,
   ): Promise<SessionBinding | undefined>;
   onEngineEvent(event: EngineEvent): void;
-  /** Live-socket entry (#814): commits idle before `turn.completed`. */
-  deliverLiveEngineEvent(event: EngineEvent): Promise<void>;
   openAsk(
     binding: SessionBinding,
     turnId: string,
@@ -481,7 +477,5 @@ export interface HarnessCtx {
     target: { channelId: string; conversationId: string },
     text: string,
     dedupeKey?: string,
-    /** Wait until the note lands (#814). Default fires and returns. */
-    wait?: boolean,
   ): Promise<void>;
 }

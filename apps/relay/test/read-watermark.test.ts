@@ -3,11 +3,10 @@
     max(channel.lastSeq, readSeq) + 1 — and `markConversationRead` lifts
     `readSeq` to max(channel.lastSeq, finishedSeq), so
     `finishedSeq > readSeq` is the client's "finished, not seen yet" dot.
-    The stamp must exceed what a markRead could already have covered.
-    A finish on a channel quiet since the last read has to dot too, and
-    a reply posted before the engine event (#814) is already in lastSeq
-    so +1 still sits past it. The (sessionId, eventSeq) fence keeps a
-    replayed finish from the same
+    The stamp must exceed what a markRead could already have covered
+    because the finish's own channel writes land AFTER its engine event —
+    a finish on a channel quiet since the last read has to dot too. The
+    (sessionId, eventSeq) fence keeps a replayed finish from the same
     session from re-stamping; a rebound session writes freely. Runs under
     bun:sqlite via a subprocess (vitest itself is Node). */
 import { spawnSync } from "node:child_process";
