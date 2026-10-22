@@ -49,7 +49,8 @@ for (const theme of ["light", "dark"] as const) {
 
     await notes.getByRole("button", { name: /readers\.md/ }).click();
     await notes.getByRole("button", { name: "Edit" }).click();
-    const body = notes.getByLabel("Note");
+    // "Note" is also a prefix of the list's name ("Notes"); the textbox is exact.
+    const body = notes.getByRole("textbox", { name: "Note", exact: true });
     await expect(body).toBeVisible();
     await body.fill(
       "HeardBack readers journal at night.\nEdited in the prototype.",
