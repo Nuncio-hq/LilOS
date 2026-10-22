@@ -27,6 +27,7 @@ export async function reconcileBeforeEngine(
   opts?: { timeoutMs?: number; log?: Logger },
 ): Promise<void> {
   const timeoutMs = opts?.timeoutMs ?? CONNECT_BOOT_RECONCILE_MS;
+  const startedAt = Date.now();
   let timer: ReturnType<typeof setTimeout> | undefined;
   let timedOut = false;
   const timeout = new Promise<void>((resolve) => {
@@ -52,5 +53,12 @@ export async function reconcileBeforeEngine(
   } finally {
     if (timer) clearTimeout(timer);
   }
+  /* Says in the log that the plugin was settled before the engine could
+     import it — the one ordering D-#817 relies on, otherwise only visible
+     from file times. */
+  if (!timedOut)
+    opts?.log?.info("connect boot reconcile done; starting the engine", {
+      ms: Date.now() - startedAt,
+    });
   startEngine();
 }
