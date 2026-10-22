@@ -7,12 +7,14 @@ import type { V3PageProps } from "./v3-page-types";
 import { EnginePane } from "./v3-settings-engine";
 import { GeneralPane } from "./v3-settings-panes";
 import { PhonePane } from "./v3-settings-phone";
+import { SkillsPane } from "./v3-settings-skills";
 import type { V3ConnectorDef } from "./v3-types";
 
-/* Settings: company-level choices in four tabs. General, Engine & models and
-   Phone live in their own files; Connectors stays here: the outside services
+/* Settings: company-level choices. General, Engine & models, Phone and
+   Skills live in their own files; Connectors stays here: the outside services
    agents use, turned on per agent. LilOS keeps what to run and who gets it,
-   never a login (each connector keeps its own). */
+   never a login (each connector keeps its own). Skills is a tab only when
+   the company library and a way to add to it were both passed (D-#19). */
 
 const KIND_WORD: Record<V3ConnectorDef["kind"], string> = {
   mcp: "MCP",
@@ -213,13 +215,14 @@ function ConnectorRow({
   );
 }
 
-type View = "general" | "engine" | "phone" | "connectors";
+type View = "general" | "engine" | "phone" | "connectors" | "skills";
 
 const TABS: { id: View; label: string }[] = [
   { id: "general", label: "General" },
   { id: "engine", label: "Engine & models" },
   { id: "phone", label: "Phone" },
   { id: "connectors", label: "Connectors" },
+  { id: "skills", label: "Skills" },
 ];
 
 function ConnectorsPane({ data, go, act }: V3PageProps) {
@@ -269,10 +272,15 @@ export function V3Settings({
   view = "general",
   ...props
 }: V3PageProps & { view?: View }) {
-  // Connectors is a tab only where there is something to show or add.
+  // A tab only where there is something to show or change (D-#19).
   const hasConnectors =
     props.data.connectors.length > 0 || !!props.act.addConnector;
-  const tabs = TABS.filter((t) => t.id !== "connectors" || hasConnectors);
+  const hasSkills = props.data.skills !== undefined && !!props.act.addSkill;
+  const tabs = TABS.filter((t) => {
+    if (t.id === "connectors") return hasConnectors;
+    if (t.id === "skills") return hasSkills;
+    return true;
+  });
   const shown = tabs.some((t) => t.id === view) ? view : "general";
   return (
     <Page wide>
@@ -286,6 +294,7 @@ export function V3Settings({
       {shown === "engine" && <EnginePane {...props} />}
       {shown === "phone" && <PhonePane {...props} />}
       {shown === "connectors" && <ConnectorsPane {...props} />}
+      {shown === "skills" && <SkillsPane {...props} />}
     </Page>
   );
 }

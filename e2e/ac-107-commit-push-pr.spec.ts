@@ -503,8 +503,11 @@ test("AC-4 Create PR asks for a branch name on the default branch, then gh pr cr
   await page.screenshot({ path: `${SHOTS}/ac-4-pr-tab.png` });
 
   // Off the default branch the ask is gone — the form goes straight to the
-  // prefilled title/body.
+  // prefilled title/body. The PR card is `gh pr view`, which can paint
+  // before git status reports the new branch (#814). The label is the
+  // signal the form will read.
   await tab(page, /Changes/).click();
+  await expect(page.locator("[data-shipbar]")).toContainText("feat/e2e-ship");
   await page.locator("[data-shippr]").click();
   await expect(page.locator("[data-shipbranch]")).toHaveCount(0);
   await page.locator("[data-shipcreate]").click();
