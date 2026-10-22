@@ -207,7 +207,10 @@ export async function warmDevClient(
         );
       }
       try {
-        res = await fetch(url);
+        // A stalled transform must not outlive the deadline.
+        res = await fetch(url, {
+          signal: AbortSignal.timeout(Math.max(deadline - Date.now(), 1)),
+        });
       } catch {
         res = undefined;
       }
@@ -591,7 +594,11 @@ export async function bootStack(
     /* The listening answer is the HTML shell. Pay the module compile
        before returning, on the same 60s the HTTP wait already had —
        otherwise the spec's first page.goto holds it (#827). */
-    await warmDevClient(webUrl, webBudget, proc);
+    await warmDevClient(
+      webUrl,
+      Math.max(webBudget - (Date.now() - webStart), 1),
+      proc,
+    );
     const relayToken = await waitForToken(home);
     const bound: StackPorts = {
       relay: relayPort,

@@ -123,8 +123,11 @@ test.beforeAll(async () => {
   });
 });
 test.afterAll(async () => {
-  await stackA?.stop();
-  await stackB?.stop();
+  try {
+    await stackA?.stop();
+  } finally {
+    await stackB?.stop();
+  }
 });
 
 /** Open the app past first run, on Home with the auto-hired Default in the
