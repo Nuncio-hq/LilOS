@@ -83,9 +83,17 @@ test("statuses and this week's counts, including a thread that recovered from st
     );
     /* The different step clears the mark. The stamp stays, so the week
        still counts this thread once the card is gone. Connecting is what
-       lets that step run. */
+       lets that step run. The card leaves when that step starts; the
+       week's finished count includes the thread only after the answer
+       lands, so read the row then. */
     await releaseStuckClear(stack.home);
     await expect(page.locator("[data-stuck]")).toBeHidden({ timeout: 20_000 });
+    await expect(v3Peek(page)).toContainText("A different page this time.", {
+      timeout: 20_000,
+    });
+    await expect(
+      v3Peek(page).getByRole("button", { name: /^stop/i }),
+    ).toHaveCount(0);
 
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`${stack.webUrl}/#?page=people`);
