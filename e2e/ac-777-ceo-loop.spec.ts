@@ -84,43 +84,30 @@ async function ceoIdle(page: Page) {
     .not.toBe("busy");
 }
 
-/** The worker's thread finished its turn. Send stays on screen while a turn
-    runs (it steers), so it is no signal: a message sent then joins the
-    running turn instead of starting its own script. */
-async function threadIdle(page: Page, id: string) {
+/** The assign's opening turn has finished on a bound thread. Send stays
+    on screen while a turn runs (it steers). A new conversation is idle
+    with `engineRef` null for the moment before bind writes `engineRef`
+    and `state: "active"` together, so idle alone matches that gap and
+    the send joins the opening turn. Idle with an engineRef is that
+    session after the turn released the row. The answer text is not this
+    signal: it streams while the turn still owns the row. */
+async function openingTurnSettled(page: Page, conversationId: string) {
   await expect
     .poll(
       async () => {
         const { conversations } = await relayRpc<{
-          conversations: { id: string; state: string }[];
+          conversations: {
+            id: string;
+            state: string;
+            engineRef: string | null;
+          }[];
         }>(page, stack, "conversations.list", { includeArchived: true });
-        return conversations.find((c) => c.id === id)?.state ?? "";
+        const row = conversations.find((c) => c.id === conversationId);
+        return row?.state === "idle" && row.engineRef != null;
       },
       { timeout: 90_000 },
     )
-    .toBe("idle");
-}
-
-/** Assign's opening turn has started and finished. Right after assign the
-    row is still idle, so idle alone passes before `ticket_update` marks
-    the ticket working. A message in that gap joins the opening turn. */
-async function openingTurnSettled(
-  page: Page,
-  ticketId: string,
-  conversationId: string,
-) {
-  await expect
-    .poll(
-      async () => {
-        const { tickets } = await relayRpc<{
-          tickets: { id: string; status: string }[];
-        }>(page, stack, "tickets.list", {});
-        return tickets.find((t) => t.id === ticketId)?.status ?? "";
-      },
-      { timeout: 90_000 },
-    )
-    .toBe("working");
-  await threadIdle(page, conversationId);
+    .toBe(true);
 }
 
 test("a goal given to the CEO becomes tickets with owners in one turn", async ({
@@ -299,7 +286,7 @@ test("a stuck thread is handed to another agent, with an update", async ({
     "tickets.assign",
     { id: ticket.id, ownerId: worker.id },
   );
-  await openingTurnSettled(page, ticket.id, conversation.id);
+  await openingTurnSettled(page, conversation.id);
   await page.goto(
     `${stack.webUrl}/#?page=threads&open=thread:${encodeURIComponent(conversation.id)}`,
   );
@@ -310,9 +297,10 @@ test("a stuck thread is handed to another agent, with an update", async ({
   const box = v3Peek(page).getByPlaceholder(`Message ${worker.name}…`);
   await box.fill("stuck:");
   await v3Peek(page).getByRole("button", { name: "Send" }).click();
-  await expect(page.getByText("The CEO will handle it.")).toBeVisible({
-    timeout: 30_000,
-  });
+  /* "The CEO will handle it." is a flash on the stuck card. The wake can
+     hand the thread off before the page paints it. The card's copy and
+     when it shows are a unit test; here the hand-off and the update are
+     the record. */
   await shot(page, "3-stuck");
   await expect(v3Peek(page)).toContainText(`Handed to ${editor.name}`, {
     timeout: 60_000,
@@ -324,7 +312,6 @@ test("a stuck thread is handed to another agent, with an update", async ({
     { timeout: 30_000 },
   );
   await expect(main(page)).not.toContainText("to the CEO");
-  await expect(page.getByText("The CEO will handle it.")).toHaveCount(0);
   await ceoIdle(page);
   await shot(page, "3-update");
 });
@@ -365,7 +352,7 @@ test("a worker who finishes with the ticket still open wakes the CEO", async ({
   );
   /* The opening turn marks the ticket working. The next turn does not
      call ticket_update, which is the forgotten close. */
-  await openingTurnSettled(page, ticket.id, conversation.id);
+  await openingTurnSettled(page, conversation.id);
   await page.goto(
     `${stack.webUrl}/#?page=threads&open=thread:${encodeURIComponent(conversation.id)}`,
   );
