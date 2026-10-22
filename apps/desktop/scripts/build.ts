@@ -18,6 +18,7 @@ import {
 import { createRequire } from "node:module";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { pluginCopyFilter } from "../../../packages/engine-hermes/src/plugin-hash";
 import { BUNDLE_EXECUTABLES, engineBundlePlan } from "./engines";
 
 /**
@@ -279,8 +280,11 @@ if (existsSync(join(WEB_DIST, "index.html"))) {
    Resources — nothing in plugins/ is code-signed on its own. */
 const PLUGIN_SRC = join(REPO, "packages", "engine-hermes", "plugin");
 if (existsSync(PLUGIN_SRC)) {
+  /* D-#817: same junk the content hash ignores. Copying __pycache__,
+   *.pyc, or .DS_Store into the bundle dirties every install. */
   cpSync(PLUGIN_SRC, join(APP, "Contents", "Resources", "app", "plugin"), {
     recursive: true,
+    filter: pluginCopyFilter,
   });
 }
 /* D-#539: the harness loads playwright lazily through createRequire and needs

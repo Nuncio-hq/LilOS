@@ -3,10 +3,16 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+  PLUGIN_CONTENT_HASH_FILE,
+  pluginContentHash,
+} from "@lilos/engine-hermes";
 import { describe, expect, it } from "vitest";
 import {
   CONNECT_APPROVAL_KEY,
@@ -27,7 +33,14 @@ interface Call {
   argv: string[];
 }
 
-function fixture(version = "0.1.0", onChange?: () => void) {
+function fixture(
+  version = "0.1.0",
+  onChange?: () => void,
+  extra?: {
+    onPluginCopied?: () => void;
+    hashPlugin?: (dir: string) => string | undefined;
+  },
+) {
   const pluginSrc = mkdtempSync(join(tmpdir(), "lilos339-plugin-"));
   writeFileSync(
     join(pluginSrc, "plugin.yaml"),
@@ -59,6 +72,7 @@ function fixture(version = "0.1.0", onChange?: () => void) {
       return { status: 0, out: "" };
     },
     ...(onChange ? { onChange } : {}),
+    ...extra,
   });
 
   return {
@@ -335,6 +349,374 @@ describe("AC-6 (#339) updates replace the plugin without re-asking", () => {
     expect(f.installedYaml("ada")).toContain('version: "0.2.0"');
     expect(f.enableCalls("ada")).toBe(2);
     expect(f.connect.report()[0].state).toBe("connected");
+  });
+});
+
+describe("D-#817 content hash, not plugin.yaml version", () => {
+  const installedPy = (home: string, profile: string) =>
+    join(home, "profiles", profile, "plugins", "lilos", "__init__.py");
+  const hashRecord = (home: string, profile: string) =>
+    join(home, "profiles", profile, "plugins", PLUGIN_CONTENT_HASH_FILE);
+
+  it("refreshes an older plugin that still carries the same version string", async () => {
+    const f = fixture("0.2.0");
+    f.employees.push({ id: "e1", name: "Ada", profile: "ada" });
+    f.mkProfile("ada");
+    f.approve();
+    const pluginDir = join(f.hermesHome, "profiles", "ada", "plugins", "lilos");
+    mkdirSync(pluginDir, { recursive: true });
+    // Same version the bundle ships. Only the module body is older.
+    writeFileSync(
+      join(pluginDir, "plugin.yaml"),
+      readFileSync(join(f.pluginSrc, "plugin.yaml")),
+    );
+    writeFileSync(join(pluginDir, "__init__.py"), "def register(ctx): stale\n");
+
+    await f.connect.reconcile();
+
+    expect(readFileSync(installedPy(f.hermesHome, "ada"), "utf8")).toBe(
+      readFileSync(join(f.pluginSrc, "__init__.py"), "utf8"),
+    );
+    expect(readFileSync(hashRecord(f.hermesHome, "ada"), "utf8")).toBe(
+      `${pluginContentHash(f.pluginSrc)}\n`,
+    );
+    expect(f.enableCalls("ada")).toBe(1);
+    expect(f.connect.report()[0].state).toBe("connected");
+  });
+
+  it("does not recopy an install whose files already match", async () => {
+    const f = fixture("0.2.0");
+    f.employees.push({ id: "e1", name: "Ada", profile: "ada" });
+    f.mkProfile("ada");
+    f.approve();
+    await f.connect.reconcile();
+    const calls = f.calls.length;
+    const py = installedPy(f.hermesHome, "ada");
+    const record = hashRecord(f.hermesHome, "ada");
+    const pyMtime = statSync(py).mtimeMs;
+    const recordMtime = statSync(record).mtimeMs;
+
+    await f.connect.reconcile();
+
+    expect(statSync(py).mtimeMs).toBe(pyMtime);
+    expect(statSync(record).mtimeMs).toBe(recordMtime);
+    expect(f.calls).toHaveLength(calls);
+    expect(f.enableCalls("ada")).toBe(1);
+  });
+
+  it("ignores __pycache__ so a loaded plugin is not recopied every start", async () => {
+    const f = fixture("0.2.0");
+    f.employees.push({ id: "e1", name: "Ada", profile: "ada" });
+    f.mkProfile("ada");
+    f.approve();
+    await f.connect.reconcile();
+    const py = installedPy(f.hermesHome, "ada");
+    const pyMtime = statSync(py).mtimeMs;
+    const cache = join(
+      f.hermesHome,
+      "profiles",
+      "ada",
+      "plugins",
+      "lilos",
+      "__pycache__",
+    );
+    mkdirSync(cache, { recursive: true });
+    writeFileSync(join(cache, "lilos.cpython-313.pyc"), "not the plugin");
+
+    await f.connect.reconcile();
+
+    expect(statSync(py).mtimeMs).toBe(pyMtime);
+    expect(f.enableCalls("ada")).toBe(1);
+  });
+
+  it("a hire after approval gets the current plugin on the next reconcile", async () => {
+    const f = fixture("0.2.0");
+    f.employees.push({ id: "e1", name: "Ada", profile: "ada" });
+    f.mkProfile("ada");
+    f.approve();
+    await f.connect.reconcile();
+    const adaPy = installedPy(f.hermesHome, "ada");
+    const adaMtime = statSync(adaPy).mtimeMs;
+
+    // The approval flag is not written again. Bea's home shows up the way
+    // a clone of an older profile does: same version string, stale body.
+    f.employees.push({ id: "e2", name: "Bea", profile: "bea" });
+    f.mkProfile("bea");
+    const beaDir = join(f.hermesHome, "profiles", "bea", "plugins", "lilos");
+    mkdirSync(beaDir, { recursive: true });
+    writeFileSync(
+      join(beaDir, "plugin.yaml"),
+      readFileSync(join(f.pluginSrc, "plugin.yaml")),
+    );
+    writeFileSync(join(beaDir, "__init__.py"), "def register(ctx): stale\n");
+    writeFileSync(join(beaDir, "leftover.py"), "from the clone\n");
+
+    await f.connect.reconcile();
+
+    expect(readFileSync(installedPy(f.hermesHome, "bea"), "utf8")).toBe(
+      readFileSync(join(f.pluginSrc, "__init__.py"), "utf8"),
+    );
+    expect(existsSync(join(beaDir, "leftover.py"))).toBe(false);
+    expect(f.enableCalls("bea")).toBe(1);
+    expect(statSync(adaPy).mtimeMs).toBe(adaMtime);
+    expect(f.connect.report()).toEqual([
+      { profile: "ada", employee: "Ada", state: "connected" },
+      { profile: "bea", employee: "Bea", state: "connected" },
+    ]);
+  });
+
+  it("a profile that appears after the first pass is refreshed without a new approval", async () => {
+    const f = fixture("0.2.0");
+    f.employees.push({ id: "e1", name: "Bea", profile: "bea" });
+    f.approve();
+    await f.connect.reconcile();
+    expect(f.installedYaml("bea")).toBeUndefined();
+    expect(f.connect.report()[0].state).toBe("not-connected");
+    expect(f.enableCalls("bea")).toBe(0);
+
+    f.mkProfile("bea");
+    const beaDir = join(f.hermesHome, "profiles", "bea", "plugins", "lilos");
+    mkdirSync(beaDir, { recursive: true });
+    writeFileSync(
+      join(beaDir, "plugin.yaml"),
+      'name: lilos\nversion: "0.2.0"\n',
+    );
+    writeFileSync(join(beaDir, "__init__.py"), "def register(ctx): stale\n");
+
+    await f.connect.reconcile();
+
+    expect(readFileSync(installedPy(f.hermesHome, "bea"), "utf8")).toBe(
+      readFileSync(join(f.pluginSrc, "__init__.py"), "utf8"),
+    );
+    expect(f.enableCalls("bea")).toBe(1);
+    expect(f.connect.report()[0].state).toBe("connected");
+  });
+
+  it("queues one follow-up pass for triggers that arrive during a reconcile", async () => {
+    const f = fixture("0.2.0");
+    f.employees.push({ id: "e1", name: "Ada", profile: "ada" });
+    f.mkProfile("ada");
+    f.approve();
+    let reads = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const connect = new HermesConnect({
+      relay: {
+        request: async (method, params) => {
+          if (method === "settings.get")
+            return { value: f.settings.get(String(params.key)) };
+          if (method === "employees.list") {
+            reads += 1;
+            const snapshot = f.employees.map((e) => ({ ...e }));
+            if (reads === 1) await gate;
+            return { employees: snapshot };
+          }
+          throw new Error(`unexpected ${method}`);
+        },
+      },
+      hermesBin: () => "/bin/true",
+      hermesHome: f.hermesHome,
+      pluginSrc: f.pluginSrc,
+      log: createMemoryLogger(),
+      run: (argv) => {
+        f.calls.push({ argv });
+        return { status: 0, out: "" };
+      },
+    });
+
+    const first = connect.reconcile();
+    for (let i = 0; i < 50 && reads < 1; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    expect(reads).toBe(1);
+
+    // Hired while the first pass holds the old roster. Two triggers must
+    // collapse into one follow-up, and that follow-up must see Bea.
+    f.employees.push({ id: "e2", name: "Bea", profile: "bea" });
+    f.mkProfile("bea");
+    let followed = false;
+    const mid = connect.reconcile().then(() => {
+      followed = reads >= 2;
+    });
+    const midAgain = connect.reconcile();
+    release();
+    await first;
+    await mid;
+    await midAgain;
+
+    expect(reads).toBe(2);
+    expect(followed).toBe(true);
+    expect(readFileSync(installedPy(f.hermesHome, "bea"), "utf8")).toBe(
+      readFileSync(join(f.pluginSrc, "__init__.py"), "utf8"),
+    );
+  });
+
+  it("refreshes the default Hermes home when no employee uses profile default", async () => {
+    const f = fixture("0.2.0");
+    f.employees.push(
+      { id: "e1", name: "Ada", profile: "ada" },
+      { id: "e2", name: "Grace", profile: "grace" },
+    );
+    f.mkProfile("ada");
+    f.mkProfile("grace");
+    f.approve();
+    const defDir = join(f.hermesHome, "plugins", "lilos");
+    mkdirSync(defDir, { recursive: true });
+    writeFileSync(
+      join(defDir, "plugin.yaml"),
+      readFileSync(join(f.pluginSrc, "plugin.yaml")),
+    );
+    writeFileSync(join(defDir, "__init__.py"), "def register(ctx): stale\n");
+
+    await f.connect.reconcile();
+
+    expect(readFileSync(join(defDir, "__init__.py"), "utf8")).toBe(
+      readFileSync(join(f.pluginSrc, "__init__.py"), "utf8"),
+    );
+    expect(
+      readFileSync(
+        join(f.hermesHome, "plugins", PLUGIN_CONTENT_HASH_FILE),
+        "utf8",
+      ),
+    ).toBe(`${pluginContentHash(f.pluginSrc)}\n`);
+    expect(f.enableCalls("default")).toBe(1);
+    expect(
+      f.connect
+        .report()
+        .map((r) => r.profile)
+        .sort(),
+    ).toEqual(["ada", "grace"]);
+
+    await f.connect.reconcile();
+    expect(f.enableCalls("default")).toBe(1);
+  });
+
+  it("leaves the default home alone until Connect is approved", async () => {
+    const f = fixture("0.2.0");
+    f.employees.push({ id: "e1", name: "Ada", profile: "ada" });
+    f.mkProfile("ada");
+    const marker = join(f.hermesHome, "plugins", "lilos", "__init__.py");
+    mkdirSync(join(f.hermesHome, "plugins", "lilos"), { recursive: true });
+    writeFileSync(marker, "leave me\n");
+
+    await f.connect.reconcile();
+
+    expect(readFileSync(marker, "utf8")).toBe("leave me\n");
+    expect(f.calls).toHaveLength(0);
+  });
+
+  it("an empty bundle is not copied onto a profile", async () => {
+    const f = fixture("0.2.0");
+    const empty = mkdtempSync(join(tmpdir(), "lilos817-empty-src-"));
+    try {
+      f.employees.push({ id: "e1", name: "Ada", profile: "ada" });
+      f.mkProfile("ada");
+      f.approve();
+      const connect = new HermesConnect({
+        relay: {
+          request: async (method, params) => {
+            if (method === "settings.get")
+              return { value: f.settings.get(String(params.key)) };
+            if (method === "employees.list") return { employees: f.employees };
+            throw new Error(`unexpected ${method}`);
+          },
+        },
+        hermesBin: () => "/bin/true",
+        hermesHome: f.hermesHome,
+        pluginSrc: empty,
+        log: createMemoryLogger(),
+        run: (argv) => {
+          f.calls.push({ argv });
+          return { status: 0, out: "" };
+        },
+      });
+
+      await connect.reconcile();
+
+      expect(
+        existsSync(join(f.hermesHome, "profiles", "ada", "plugins", "lilos")),
+      ).toBe(false);
+      expect(existsSync(join(f.hermesHome, "plugins", "lilos"))).toBe(false);
+      expect(f.calls).toHaveLength(0);
+      expect(connect.report()).toEqual([
+        {
+          profile: "ada",
+          employee: "Ada",
+          state: "failed",
+          reason: "couldn't read the bundled LilOS plugin",
+        },
+      ]);
+    } finally {
+      rmSync(empty, { recursive: true, force: true });
+    }
+  });
+
+  it("computes the shipped hash once per pass", async () => {
+    let calls = 0;
+    const f = fixture("0.2.0", undefined, {
+      hashPlugin: (dir) => {
+        calls += 1;
+        return pluginContentHash(dir);
+      },
+    });
+    f.employees.push(
+      { id: "e1", name: "Ada", profile: "ada" },
+      { id: "e2", name: "Grace", profile: "grace" },
+    );
+    f.mkProfile("ada");
+    f.mkProfile("grace");
+    f.approve();
+
+    await f.connect.reconcile();
+
+    expect(calls).toBe(1);
+    expect(f.installedYaml("ada")).toContain("lilos");
+    expect(f.installedYaml("grace")).toContain("lilos");
+    expect(
+      existsSync(join(f.hermesHome, "plugins", "lilos", "__init__.py")),
+    ).toBe(true);
+  });
+
+  it("a copy drops __pycache__, bytecode, and .DS_Store", async () => {
+    const f = fixture("0.2.0");
+    f.employees.push({ id: "e1", name: "Ada", profile: "ada" });
+    f.mkProfile("ada");
+    f.approve();
+    mkdirSync(join(f.pluginSrc, "__pycache__"), { recursive: true });
+    writeFileSync(join(f.pluginSrc, "__pycache__", "lilos.pyc"), "junk");
+    writeFileSync(join(f.pluginSrc, "extra.pyc"), "junk");
+    writeFileSync(join(f.pluginSrc, ".DS_Store"), "junk");
+
+    await f.connect.reconcile();
+
+    const installed = join(f.hermesHome, "profiles", "ada", "plugins", "lilos");
+    const def = join(f.hermesHome, "plugins", "lilos");
+    for (const dir of [installed, def]) {
+      expect(existsSync(join(dir, "__init__.py"))).toBe(true);
+      expect(existsSync(join(dir, "__pycache__"))).toBe(false);
+      expect(existsSync(join(dir, "extra.pyc"))).toBe(false);
+      expect(existsSync(join(dir, ".DS_Store"))).toBe(false);
+    }
+  });
+
+  it("tells the harness when a pass actually replaces the plugin", async () => {
+    let copies = 0;
+    const f = fixture("0.2.0", undefined, {
+      onPluginCopied: () => {
+        copies += 1;
+      },
+    });
+    f.employees.push({ id: "e1", name: "Ada", profile: "ada" });
+    f.mkProfile("ada");
+    f.approve();
+
+    await f.connect.reconcile();
+    expect(copies).toBe(1);
+
+    await f.connect.reconcile();
+    expect(copies).toBe(1);
   });
 });
 

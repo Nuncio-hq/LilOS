@@ -26,6 +26,7 @@ import { SURFACES_ENV } from "@lilos/surfaces";
 import packageJson from "../package.json";
 import { launcherFor, resolveHarnessConfig } from "./config";
 import { FakeConnect, HermesConnect } from "./connect";
+import { reconcileBeforeEngine } from "./connect-boot";
 import { connectEngineWs } from "./engine/client";
 import { resolveHermesBin } from "./engine/discover";
 import { EngineSupervisor } from "./engine/supervisor";
@@ -34,6 +35,7 @@ import { Harness } from "./harness";
 import { createAppOps } from "./harness/app-ops";
 import { createHostHandler } from "./host";
 import { createFileLogger } from "./log";
+import { createPluginRestart } from "./plugin-restart";
 import { createSleepGuard } from "./sleep";
 import { StatusReporter, teeLogger } from "./status";
 import { serveSurfaces } from "./surfaces/server";
@@ -117,6 +119,9 @@ let statusReporter: StatusReporter | undefined;
 const onConnectRows = () => {
   void statusReporter?.sendNow().catch(() => {});
 };
+/* Wired to the supervisor below. A copy during the boot reconcile sees
+   `engineStarted` still false and does not schedule a restart (D-#817). */
+let notePluginCopied = (): void => {};
 const connect =
   config.engine.kind === "hermes"
     ? new HermesConnect({
@@ -130,6 +135,7 @@ const connect =
         },
         log,
         onChange: onConnectRows,
+        onPluginCopied: () => notePluginCopied(),
       })
     : config.engine.kind === "fake" && process.env.LILOS_CONNECT_FAKE === "1"
       ? new FakeConnect({ relay, log, onChange: onConnectRows })
@@ -182,8 +188,29 @@ const supervisor = new EngineSupervisor({
   log,
 });
 
+let engineStarted = false;
+const pluginRestart = createPluginRestart({
+  engineStarted: () => engineStarted,
+  idle: () => harness.engineIdle(),
+  restart: () => supervisor.restartForPluginRefresh(),
+  log,
+});
+notePluginCopied = () => pluginRestart.noteCopied();
+
 await harness.start();
-void supervisor.start();
+/* D-#817: replace the plugin before the engine can import it. The wait
+   is bounded (CONNECT_BOOT_RECONCILE_MS in connect-boot.ts) so a pass
+   stuck awaiting the relay cannot pin boot. The callback flips
+   `engineStarted` first so a copy that finishes after the bound still
+   restarts the new process. */
+await reconcileBeforeEngine(
+  () => (connect ? connect.reconcile() : Promise.resolve()),
+  () => {
+    engineStarted = true;
+    void supervisor.start();
+  },
+  { log },
+);
 
 /* #33: heartbeat engine telemetry (describe probe, RSS, live sessions, log
    tail) into `harness.report` so relay `system.status` stays fresh. */
@@ -198,12 +225,14 @@ statusReporter = new StatusReporter({
 });
 const stopStatusReporter = statusReporter.start();
 
-/* Connect self-heals on a timer too (AC-6 version drift) — events alone
-   can miss (harness was down when the approval or a hire landed). */
+/* Connect self-heals on a timer too (D-#817 content hash) — events alone
+   can miss (harness was down when the approval or a hire landed). The
+   boot pass already ran, before supervisor.start. A hire does not need
+   Connect approved again: employee.upserted reconciles too, and a pass
+   that copies while the engine is up restarts it once idle. */
 const connectTimer = connect
   ? setInterval(() => void connect.reconcile(), 30_000)
   : undefined;
-void connect?.reconcile();
 
 // Sleep detection (AC-4): a frozen heartbeat that fires late means the Mac
 // slept — drop the presumed-dead engine socket so the supervisor reconnects
@@ -272,6 +301,7 @@ const shutdown = async () => {
   feedServer.stop();
   feed.close();
   if (connectTimer !== undefined) clearInterval(connectTimer);
+  pluginRestart.stop();
   await supervisor.stop();
   await harness.stop();
   await surfaces.close();
