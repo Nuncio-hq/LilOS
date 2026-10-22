@@ -115,6 +115,134 @@ export function captureProc(proc: ChildProcess): () => string {
   return () => buf;
 }
 
+const WARM_WIDTH = 8;
+const WARM_URL_CAP = 4_000;
+const IMPORT_RE = /(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s+)["']([^"']+)["']/g;
+const CSS_URL_RE =
+  /@import\s+(?:url\(\s*)?["']([^"']+)["']|url\(\s*["']?([^"')\s]+)["']?\s*\)/g;
+const HTML_REF_RE =
+  /<(?:script|link)\b[^>]*?\b(?:src|href)\s*=\s*["']([^"']+)["'][^>]*>/gi;
+
+/** Same-origin URL `raw` resolved against `base`. External, data, and
+    blob URLs are not this dev server's graph. A bare specifier
+    (`react`, or a word inside a comment) is not a live import either:
+    Vite rewrites those to `/src/…`, `/@fs/…`, or a dep url before the
+    response is sent. Requesting the bare word makes the optimizer look
+    for a dep file that was never written. */
+function warmUrl(raw: string, base: string, origin: string): string | null {
+  if (
+    !raw ||
+    raw.startsWith("data:") ||
+    raw.startsWith("blob:") ||
+    raw.startsWith("#") ||
+    (!raw.startsWith(".") &&
+      !raw.startsWith("/") &&
+      !raw.startsWith("http:") &&
+      !raw.startsWith("https:"))
+  )
+    return null;
+  let url: URL;
+  try {
+    url = new URL(raw, base);
+  } catch {
+    return null;
+  }
+  if (url.origin !== origin) return null;
+  url.hash = "";
+  return url.href;
+}
+
+/**
+ * #827: `waitForHttp` returns on the HTML document. Vite serves that
+ * before it has transformed a module. The browser's `load` event waits
+ * for the static graph (measured ~250 requests, ~17MB). ac-115 AC-1 has
+ * no `test.setTimeout`, so that compile ran inside the default 30s and
+ * on a busy Mac the first `page.goto` ("waiting until load") exceeded
+ * it. `server.warmup` does not close the gap: an HTML warmup only calls
+ * `transformIndexHtml`, and `preTransformRequests` fires `warmupRequest`
+ * on static imports without awaiting them. One fetch of `main.tsx`
+ * returns while the rest of the graph is still compiling.
+ *
+ * Crawl the transformed URLs here, inside the boot's existing web
+ * budget, so the spec's `page.goto` is a warm load. Each vite process
+ * has its own in-memory transform cache — a suite-wide prebuild does
+ * not warm the next stack. The dep-optimizer cache is per worker
+ * (`LILOS_VITE_CACHE_DIR` in vite.config.ts) so parallel boots don't
+ * re-bundle one `node_modules/.vite` and full-reload each other (#84).
+ *
+ * A 504 is Vite's "outdated optimized dep" while the first optimize is
+ * still writing; retry it until the budget ends. Any other non-OK
+ * response is a URL the graph mentioned and the server refused — skip
+ * it, the browser's load event would too.
+ */
+export async function warmDevClient(
+  webUrl: string,
+  ms = 60_000,
+  proc?: ChildProcess,
+): Promise<void> {
+  const origin = new URL(webUrl).origin;
+  const deadline = Date.now() + ms;
+  const seen = new Set<string>();
+  const queue: string[] = [];
+  const enqueue = (raw: string, base: string) => {
+    const href = warmUrl(raw, base, origin);
+    if (!href || seen.has(href)) return;
+    if (seen.size >= WARM_URL_CAP) {
+      throw new Error(
+        `warm of ${webUrl} followed more than ${WARM_URL_CAP} urls`,
+      );
+    }
+    seen.add(href);
+    queue.push(href);
+  };
+  enqueue(`${origin}/`, `${origin}/`);
+
+  const timedOut = () => Date.now() > deadline;
+  const pull = async (url: string): Promise<void> => {
+    let res: Response | undefined;
+    while (!timedOut()) {
+      if (proc && proc.exitCode !== null) {
+        throw new Error(
+          `stack exited ${proc.exitCode} while warming ${webUrl}`,
+        );
+      }
+      try {
+        res = await fetch(url);
+      } catch {
+        res = undefined;
+      }
+      if (res && res.status !== 504 && res.status !== 408) break;
+      await sleep(50);
+    }
+    if (!res || res.status === 504 || res.status === 408) {
+      throw new Error(`timed out warming ${webUrl} at ${url}`);
+    }
+    if (!res.ok) return;
+    const text = await res.text();
+    const ct = res.headers.get("content-type") ?? "";
+    const html =
+      ct.includes("html") || url === `${origin}/` || /\.html(?:$|\?)/.test(url);
+    if (html) {
+      for (const m of text.matchAll(HTML_REF_RE)) enqueue(m[1] ?? "", url);
+      return;
+    }
+    for (const m of text.matchAll(IMPORT_RE)) enqueue(m[1] ?? "", url);
+    if (ct.includes("css") || url.includes(".css")) {
+      for (const m of text.matchAll(CSS_URL_RE))
+        enqueue(m[1] ?? m[2] ?? "", url);
+    }
+  };
+
+  while (queue.length) {
+    if (timedOut()) {
+      throw new Error(
+        `timed out warming ${webUrl} (${seen.size} urls, ${queue.length} left)`,
+      );
+    }
+    await Promise.all(queue.splice(0, WARM_WIDTH).map(pull));
+  }
+}
+
 /** Any HTTP answer = the server is listening; `proc` exit short-circuits the
     wait when the stack died instead of serving. */
 export async function waitForHttp(
@@ -394,6 +522,10 @@ export async function bootStack(
         LILOS_RELAY_PORT: String(ports.relay),
         LILOS_FEED_PORT: String(ports.feed),
         LILOS_WEB_PORT: String(ports.web),
+        /* #827 / #84: one optimizer cache per worker. Two stacks in this
+           worker share it, booted one after another, so the second finds
+           deps already written. A sibling worker never rewrites it. */
+        LILOS_VITE_CACHE_DIR: `node_modules/.vite-e2e-w${workerIndex() ?? WORKER}`,
         ...extraEnv,
       },
       /* Piped, not inherited: the readiness probe reads `[relay] instanceId`
@@ -456,6 +588,10 @@ export async function bootStack(
         : webBudget,
       proc,
     );
+    /* The listening answer is the HTML shell. Pay the module compile
+       before returning, on the same 60s the HTTP wait already had —
+       otherwise the spec's first page.goto holds it (#827). */
+    await warmDevClient(webUrl, webBudget, proc);
     const relayToken = await waitForToken(home);
     const bound: StackPorts = {
       relay: relayPort,

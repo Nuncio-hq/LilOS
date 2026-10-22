@@ -110,6 +110,13 @@ function lilosConfig() {
 }
 
 export default defineConfig({
+  // #827: parallel e2e workers each set LILOS_VITE_CACHE_DIR. One shared
+  // node_modules/.vite lets a second optimize rewrite the deps and
+  // full-reload every other dev server mid-navigation (#84). Unset — plain
+  // `bun run dev` — keeps Vite's own cache directory.
+  ...(process.env.LILOS_VITE_CACHE_DIR
+    ? { cacheDir: process.env.LILOS_VITE_CACHE_DIR }
+    : {}),
   // Packaged builds are loaded over file:// — absolute /assets paths would
   // resolve to the filesystem root. LILOS_WEB_BASE=./ keeps them relative.
   base: process.env.LILOS_WEB_BASE ?? "/",

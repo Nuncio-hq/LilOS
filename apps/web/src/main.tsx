@@ -11,6 +11,7 @@ import {
   watchSessionFeeds,
   watchWorkbenchOpens,
 } from "./lib/runtime";
+import { startShell } from "./lib/start-shell";
 import { App } from "./v3/root";
 
 /* The real app's entry. D-#3 web stack: React 19 + Vite + Tailwind v4 +
@@ -30,21 +31,29 @@ async function main() {
   // controls mount/move, so a freshly swapped header stays clickable.
   watchDragRegions();
   const root = createRoot(el);
-  try {
-    const cfg = await loadConfig();
-    await bootRuntime(cfg);
-    watchSessionFeeds();
-    watchAsks();
-    watchWorkbenchOpens();
-    watchDraftPruning();
-  } catch (e) {
-    bootError.set((e as Error).message);
-  }
-  root.render(
-    <StrictMode>
-      <App />
-    </StrictMode>,
-  );
+  const render = () =>
+    root.render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    );
+  await startShell({
+    popout: window.lilos?.browser?.isBrowserWindow === true,
+    boot: async () => {
+      try {
+        const cfg = await loadConfig();
+        await bootRuntime(cfg);
+        watchSessionFeeds();
+        watchAsks();
+        watchWorkbenchOpens();
+        watchDraftPruning();
+      } catch (e) {
+        bootError.set((e as Error).message);
+        throw e;
+      }
+    },
+    render,
+  });
 }
 
 void main();
