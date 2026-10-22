@@ -85,7 +85,11 @@ export function useShellEffects({
 
   /* Notifications (#32): engine events → macOS notifications when the
      conversation isn't in view; a click opens that thread. #561: while the
-     human is at this Mac the relay silences the phone. */
+     human is at this Mac the relay silences the phone. #819: a finish
+     updates the watched feed (the re-check below) and is then delivered
+     on `onEvent`. Both reach this one watcher, which posts once per
+     thread + turn, and once per ask id. A finish on the standing CEO
+     thread is not a banner (D-#777). */
   useEffect(() => {
     const bridge = window.lilos;
     if (!bridge) return;
@@ -117,7 +121,8 @@ export function useShellEffects({
           onOpenAsksChange: (fn) => {
             /* Signals move on broadcast frames; models move on feed syncs — a
                replay can change the ask/completion set, so both re-run the
-               state-driven check. */
+               state-driven check. The live frame runs after that check;
+               the watcher dedupes the pair (#819). */
             const unSignals = sessionSignals.subscribe(fn);
             const unModels = sessionModels.subscribe(fn);
             return () => {
