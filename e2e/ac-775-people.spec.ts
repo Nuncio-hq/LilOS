@@ -10,6 +10,7 @@ import {
   v3Peek,
   v3Sidebar,
 } from "./helpers/stack";
+import { releaseStuckClear } from "./helpers/stuck-clear";
 
 /**
  * Issue #775 — People. One test per acceptance criterion, on the real stack.
@@ -81,7 +82,9 @@ test("statuses and this week's counts, including a thread that recovered from st
       { timeout: 20_000 },
     );
     /* The different step clears the mark. The stamp stays, so the week
-       still counts this thread once the card is gone. */
+       still counts this thread once the card is gone. Connecting is what
+       lets that step run. */
+    await releaseStuckClear(stack.home);
     await expect(page.locator("[data-stuck]")).toBeHidden({ timeout: 20_000 });
 
     await page.setViewportSize({ width: 1440, height: 900 });
@@ -94,14 +97,13 @@ test("statuses and this week's counts, including a thread that recovered from st
     await expect(row).toContainText("Working");
     await expect(row).toContainText(/\d+ finished/, { timeout: 20_000 });
     await expect(row).toContainText(/\d+ failed/);
-    await expect(row).toContainText(/\d+ stuck/);
+    await expect(row).toContainText(/[1-9]\d* stuck/);
     const text = await row.innerText();
     const finished = Number(/(\d+) finished/.exec(text)?.[1]);
     const failed = Number(/(\d+) failed/.exec(text)?.[1]);
     const stuck = Number(/(\d+) stuck/.exec(text)?.[1]);
     expect(finished).toBeGreaterThan(0);
     expect(failed).toBeGreaterThan(0);
-    expect(stuck).toBeGreaterThan(0);
     await shot(page, "01-week");
 
     await row.click();

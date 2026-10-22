@@ -338,10 +338,7 @@ test("AC-6 #606 pick-hold: a Files pick while the turn starts survives its first
 }) => {
   test.setTimeout(120_000);
   await page.setViewportSize({ width: 1288, height: 700 });
-  /* The small fixture. Files on the checkout mounts the whole tree, and
-     under a loaded runner that paint starves the turn so the terminal
-     step lands on this wait's edge. The hold is about the tab; the
-     fixture already has rows. */
+  /* AC-6 is about the #606 pick-hold surviving the first live row, not about painting a big tree. */
   await startSession(page, repoDir, "slowstart:5000 check the folder");
   await panelIntoFocus(page);
   await expect(tab(page, "Files")).toBeVisible({ timeout: 30_000 });

@@ -57,9 +57,14 @@ export interface FakeStep {
   subagents?: FakeSubagent[];
   /** #179: this call leaves a background process running (job.* events). */
   job?: FakeJob;
-  /** Wait this long before the call starts — a test can see the state
-      the earlier calls produced (D-#772's clear). */
+  /** Wait this long before the call starts. `stuck: clear` does not use
+      this: a fixed gap can elapse before a slow harness applies the
+      earlier calls (D-#772). */
   pauseBeforeMs?: number;
+  /** File name of a Unix socket in the session cwd. The call does not
+      start until a client connects, and the socket is already listening
+      before the earlier calls are emitted (D-#772's clear). */
+  releaseSocket?: string;
   diff?: {
     path: string;
     status: "added" | "modified" | "deleted";
@@ -89,6 +94,9 @@ export interface FakeScript {
   /** Hold the turn open after the steps until interrupt (D-#772). */
   hold?: boolean;
 }
+
+/** `stuck: clear` parks the different step on this socket in the session cwd. */
+export const STUCK_CLEAR_SOCKET = "stuck-clear.sock";
 
 const EDIT_ASK =
   /\b(add|fix|change|update|write|implement|refactor|bump|remove|rename|create|make|edit|move|delete|scaffold)\b/i;
@@ -349,8 +357,12 @@ export function scriptFor(
   }
 
   /* `stuck:` — six identical web searches, then hold the turn so a test
-     can see Stuck. `stuck: clear` does the six, pauses, then one
-     different call, which clears the mark (D-#772). */
+     can see Stuck. `stuck: clear` does the six, then one different call
+     which clears the mark (D-#772). That call waits until something
+     connects to `<cwd>/${STUCK_CLEAR_SOCKET}`. The socket is listening
+     before the six are emitted, and the spec connects only once the
+     card is up, so a slow harness cannot apply the sixth search and the
+     clearing read in one burst. A fixed pause can. */
   const stuck = /^stuck:(?:\s+(clear))?\s*$/i.exec(q);
   if (stuck) {
     const query = "journaling creators 5k–50k";
@@ -365,7 +377,7 @@ export function scriptFor(
         tool: "read_file",
         input: { path: "creators.csv" },
         output: "7 rows",
-        pauseBeforeMs: 4000,
+        releaseSocket: STUCK_CLEAR_SOCKET,
       });
     }
     return {

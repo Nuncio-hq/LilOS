@@ -190,11 +190,15 @@ test("AC-1 the sidebar offers Hire, and opens the Hire page, only when the engin
   });
   try {
     await openApp(stackB, page);
+    /* Hire is absent both before describe and when the engine declares no
+       agents. The attribute is describe landing; the count is that state. */
+    await expect(page.locator("[data-engine-described]")).toBeAttached();
     await expect(
       v3Sidebar(page).getByRole("button", { name: "Hire an agent" }),
     ).toHaveCount(0);
     // A link to the Hire page says plainly that it can't be used.
     await page.goto(`${stackB.webUrl}/#?page=hire`);
+    await expect(page.locator("[data-engine-described]")).toBeAttached();
     await expect(
       page.getByText(
         /Hiring is not available while the engine cannot create agents/,
