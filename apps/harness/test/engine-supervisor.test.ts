@@ -468,3 +468,30 @@ describe("#482 engine liveness probe", () => {
     await w.supervisor.stop();
   });
 });
+
+describe("D-#817 plugin refresh restart", () => {
+  it("a plugin refresh does not spend the crash budget", async () => {
+    const w = world({
+      probeIntervalMs: 0,
+      maxConsecutiveCrashes: 2,
+      stableAfterMs: 60_000,
+    });
+    await w.supervisor.start();
+    expect(w.procs).toHaveLength(1);
+    expect(w.states.at(-1)).toBe("running");
+
+    w.supervisor.restartForPluginRefresh();
+    for (let i = 0; i < 10 && w.procs.length < 2; i++) await tick();
+    expect(w.procs).toHaveLength(2);
+    expect(w.details).toContain("lilos plugin refreshed");
+    expect(w.supervisor.state.current).toBe("running");
+
+    // A real crash right after must still relaunch. If the refresh had
+    // counted, this second fast exit would exhaust the budget of 2.
+    w.procs[1]?.die(1);
+    for (let i = 0; i < 10 && w.procs.length < 3; i++) await tick();
+    expect(w.supervisor.state.current).not.toBe("failed");
+    expect(w.procs).toHaveLength(3);
+    await w.supervisor.stop();
+  });
+});

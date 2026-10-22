@@ -416,6 +416,17 @@ export class Harness {
     return this.bindings.get(conversationId)?.runningTurnId;
   }
 
+  /** D-#817: a plugin refresh may restart the engine only when nothing is
+   *  mid-turn. A running turn, or a prompt already handed to the engine,
+   *  would be dropped by the kill. */
+  engineIdle(): boolean {
+    for (const binding of this.bindings.values()) {
+      if (binding.runningTurnId) return false;
+      if (binding.inflightPrompts.size > 0) return false;
+    }
+    return true;
+  }
+
   /* The Mac user's home this harness serves — `~` on the wire means this
      directory (device-scope folder reads stay under it). */
   private readonly home: string;
