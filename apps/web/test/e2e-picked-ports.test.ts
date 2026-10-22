@@ -15,7 +15,7 @@ import type { AddressInfo } from "node:net";
 import { createServer } from "node:net";
 import { describe, expect, it } from "vitest";
 import { freePort, pickPorts } from "../../../e2e/helpers/stack";
-import { reserveLoopbackPort } from "../dev/ready";
+import { PORT_SLICE, slicePort } from "../dev/ready";
 
 /** The kernel's ephemeral floor, read independently of the code under test:
     Linux `ip_local_port_range`, macOS `portrange.first`, 32768 otherwise —
@@ -61,23 +61,23 @@ describe("AC-1 (#689/#825) stack ports are not chosen out of the ephemeral range
     await expect(pickPorts()).resolves.toEqual({ relay: 0, feed: 0, web: 0 });
   });
 
-  it("freePort and a reservation stay strictly below the ephemeral floor", async () => {
+  it("freePort stays in the probe band, under the slice and the ephemeral floor", async () => {
     const floor = ephemeralFloor();
     const singles = await Promise.all(
       Array.from({ length: 8 }, () => freePort()),
     );
-    const held = await reserveLoopbackPort();
-    try {
-      for (const port of [...singles, held.port]) {
-        expect(
-          port,
-          `picked ${port} is inside the ephemeral range`,
-        ).toBeLessThan(floor);
-      }
-      expect(held.port).toBeGreaterThanOrEqual(20_000);
-    } finally {
-      held.release();
+    for (const port of singles) {
+      expect(port).toBeGreaterThanOrEqual(PORT_SLICE.probeLo);
+      expect(port).toBeLessThanOrEqual(PORT_SLICE.probeHi);
+      expect(port).toBeLessThan(PORT_SLICE.base);
+      expect(port, `picked ${port} is inside the ephemeral range`).toBeLessThan(
+        floor,
+      );
     }
+    const web = slicePort("web", 0);
+    expect(web).toBeGreaterThanOrEqual(PORT_SLICE.base);
+    expect(web).toBeLessThan(PORT_SLICE.floor);
+    expect(web).toBeLessThan(floor);
   });
 
   it("AC-2 this host never answers bind(0) with a port below the floor", async () => {
@@ -90,23 +90,6 @@ describe("AC-1 (#689/#825) stack ports are not chosen out of the ephemeral range
     );
     for (const port of bound) {
       expect(port).toBeGreaterThanOrEqual(floor);
-    }
-  });
-
-  it("freePort skips a port a reservation still holds", async () => {
-    /* ac-27 and ac-315 probe; ac-28/130/557 hold the lock across a relay
-       restart. Pin Math.random at the held port: without the skip this
-       resolves that port, and with it every try hits the lock and gives up. */
-    const held = await reserveLoopbackPort();
-    const span = 32_767 - 20_000 + 1;
-    const fraction = (held.port - 20_000 + 0.5) / span;
-    const random = Math.random;
-    Math.random = () => fraction;
-    try {
-      await expect(freePort()).rejects.toThrow(/no free port/);
-    } finally {
-      Math.random = random;
-      held.release();
     }
   });
 

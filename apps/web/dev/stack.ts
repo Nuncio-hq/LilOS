@@ -20,7 +20,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { type Subprocess, spawn } from "bun";
-import { parseListeningPort, reserveLoopbackPort } from "./ready";
+import { parseListeningPort, requireSlicePort } from "./ready";
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // apps/web/dev
 const repo = path.resolve(here, "../../..");
@@ -48,12 +48,9 @@ const killAll = () => {
  * `await shutdown(1)` must wait for that same drain. Returning immediately
  * let the umbrella die while siblings were still exiting (#84).
  */
-/** Released once vite has bound, or on the way down if it never does. */
-let releaseWebPort = (): void => {};
 let shuttingDown: Promise<void> | undefined;
 const shutdown = (code: number): Promise<void> => {
   shuttingDown ??= (async () => {
-    releaseWebPort();
     killAll();
     await Promise.race([
       Promise.allSettled(kids.map((k) => k.exited)),
@@ -338,59 +335,58 @@ if (!feedUp) {
   await shutdown(1);
 }
 
-/* #825: Vite 8.3.4 does not honour `server.port: 0`. A listen trace was
-   `0@0.0.0.0`, then the concrete port on `::` and `127.0.0.1`.
-   `address()` / `resolvedUrls` report that port only after the rebind, so
-   engine-fake's `listen(0)` can take it in the gap (#689). Reserve a port
-   below the ephemeral floor and hold the lock until vite's ready line says
-   it has bound — then the socket, not the lock, owns the port. */
+/* #825: Vite 8.3.4 does not honour `server.port: 0` (it probes, closes,
+   then rebinds). The port has to be known first. A worker slice port is
+   probed here; if something already holds it, this throws and vite is
+   not spawned. A shutdown that started during the probe (a sibling
+   already died, or SIGTERM) must not continue into the spawn either.
+   `bun run dev` passes 5200 and does not come through here. */
 let webPort = WEB_PORT;
 if (webPort === 0) {
   try {
-    const reserved = await reserveLoopbackPort();
-    webPort = reserved.port;
-    releaseWebPort = reserved.release;
+    webPort = await requireSlicePort("web");
   } catch (err) {
     console.error(err instanceof Error ? err.message : err);
     await shutdown(1);
     throw err;
   }
 }
-const web = spawnCaptured(
-  "web",
-  [
-    path.join(webDir, "node_modules", ".bin", "vite"),
-    "--host",
-    "127.0.0.1",
-    "--port",
-    String(webPort),
-    "--strictPort",
-  ],
-  {
-    LILOS_RELAY_WS: `ws://127.0.0.1:${relayPort}/ws`,
-    LILOS_RELAY_TOKEN: token,
-    LILOS_ENGINE_WS: `ws://127.0.0.1:${feedPort}/ws`,
-    LILOS_WEB_PORT: String(webPort),
-  },
-  webDir,
-);
-if (WEB_PORT === 0) {
-  try {
-    const bound = await reportedPort("web", web.text, web.proc, 60_000);
-    if (bound !== webPort) {
-      throw new Error(
-        `[stack] vite bound :${bound}, not the reserved :${webPort}`,
-      );
+if (shuttingDown) await shuttingDown;
+else {
+  const web = spawnCaptured(
+    "web",
+    [
+      path.join(webDir, "node_modules", ".bin", "vite"),
+      "--host",
+      "127.0.0.1",
+      "--port",
+      String(webPort),
+      "--strictPort",
+    ],
+    {
+      LILOS_RELAY_WS: `ws://127.0.0.1:${relayPort}/ws`,
+      LILOS_RELAY_TOKEN: token,
+      LILOS_ENGINE_WS: `ws://127.0.0.1:${feedPort}/ws`,
+      LILOS_WEB_PORT: String(webPort),
+    },
+    webDir,
+  );
+  if (WEB_PORT === 0) {
+    try {
+      const bound = await reportedPort("web", web.text, web.proc, 60_000);
+      if (bound !== webPort) {
+        throw new Error(
+          `[stack] vite bound :${bound}, not the slice port :${webPort}`,
+        );
+      }
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : err);
+      await shutdown(1);
+      throw err;
     }
-  } catch (err) {
-    console.error(err instanceof Error ? err.message : err);
-    await shutdown(1);
-    throw err;
   }
-  releaseWebPort();
-}
 
-console.log(`
+  console.log(`
 LilOS dev stack
   web     http://localhost:${webPort}
   relay   ws://127.0.0.1:${relayPort}/ws   (state: ${HOME})
@@ -399,9 +395,10 @@ LilOS dev stack
   })
 `);
 
-// The stack is only alive while every child is: a dead vite (e.g. its
-// --strictPort was still held by the previous stack's draining child)
-// otherwise leaves an umbrella that serves nothing and hangs callers
-// waiting for the web URL (#84).
-await Promise.race(kids.map((k) => k.exited));
-await shutdown(1);
+  // The stack is only alive while every child is: a dead vite (e.g. its
+  // --strictPort was still held by the previous stack's draining child)
+  // otherwise leaves an umbrella that serves nothing and hangs callers
+  // waiting for the web URL (#84).
+  await Promise.race(kids.map((k) => k.exited));
+  await shutdown(1);
+}

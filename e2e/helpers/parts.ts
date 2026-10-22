@@ -14,7 +14,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { reserveLoopbackPort } from "../../apps/web/dev/ready";
+import { requireSlicePort } from "../../apps/web/dev/ready";
 import { engineTag, expectNoEngineLeak } from "../engine-leak";
 import {
   captureProc,
@@ -92,52 +92,28 @@ export async function bootParts(
     web: undefined,
   };
   const logs: (() => string)[] = [];
-  /* #825: port 0 is not a probe this helper closes and hopes the child
-     rebinds. The harness feed can `listen(0)` and print the port; vite
-     cannot (its port 0 is a probe — see `reservePorts`), and `restartRelay`
-     rebinds the relay port while the page still holds that address, so an
-     ephemeral port could be stolen in the exit→rebind gap (#689). Those
-     two are reserved below the ephemeral floor and the lock is held until
-     `stop`. A concrete port the caller already picked is used as-is. */
-  const releases: (() => void)[] = [];
+  /* #825: the feed can `listen(0)` and print the port. Vite cannot
+     (8.3.4 rebinds), and `restartRelay` rebinds the relay port while the
+     page still holds that address, so those two come from this worker's
+     slice. A concrete port the caller already picked is used as-is. */
   let relayPort = ports.relay;
   let feedPort = ports.feed;
   let webPort = ports.web;
-  const releaseAll = () => {
-    for (const release of releases) release();
-    releases.length = 0;
-  };
   const stop = async () => {
     for (const k of ["web", "harness", "relay"] as const) {
       const p = procs[k];
       procs[k] = undefined;
       if (p) await killProc(p);
     }
-    releaseAll();
     await expectNoEngineLeak(leakTag);
   };
   try {
-    /* Inside the try so a throw on a later claim releases the earlier
-       locks. They used to run before `stop` existed, and a failure there
-       left the first port held until the process exited. */
-    if (relayPort === 0) {
-      const held = await reserveLoopbackPort();
-      relayPort = held.port;
-      releases.push(held.release);
-    }
-    if (webPort === 0) {
-      const held = await reserveLoopbackPort();
-      webPort = held.port;
-      releases.push(held.release);
-    }
+    if (relayPort === 0) relayPort = await requireSlicePort("relay");
+    if (webPort === 0) webPort = await requireSlicePort("web");
     /* No harness: nothing will bind the feed, but vite still bakes the URL
-       into the page. A zero there is not "connection refused on a port we
-       own" — reserve one and hold it so another stack's server cannot be
-       what the page reaches. */
+       into the page. A zero there would be :0, or another stack's feed. */
     if (feedPort === 0 && opts.harness === false) {
-      const held = await reserveLoopbackPort();
-      feedPort = held.port;
-      releases.push(held.release);
+      feedPort = await requireSlicePort("feed");
     }
     const relayWs = `ws://127.0.0.1:${relayPort}/ws`;
     procs.relay = await spawnRelay(home, relayPort, logs);

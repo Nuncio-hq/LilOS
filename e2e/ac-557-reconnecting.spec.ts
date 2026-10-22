@@ -9,9 +9,9 @@ import {
   captureProc,
   killProc,
   panelIntoFocus,
-  reservePorts,
   type StackPorts,
   skipFirstRun,
+  slicePorts,
   startChat,
   v3Peek,
   WORKER,
@@ -39,7 +39,6 @@ const LINE = "[data-reconnecting]";
 /* Held for the spec: `restartRelay` rebinds this port while the page
    still has the address (#825). */
 let PORTS: StackPorts;
-let releasePorts = (): void => {};
 
 interface Procs {
   home: string;
@@ -243,14 +242,11 @@ async function rpc(
 
 let stack: Procs;
 test.beforeAll(async () => {
-  const reserved = await reservePorts();
-  releasePorts = reserved.release;
-  PORTS = reserved;
+  PORTS = await slicePorts();
   stack = await boot();
 });
 test.afterAll(async () => {
   await stack?.kill();
-  releasePorts();
   if (stack?.leakTag) await expectNoEngineLeak(stack.leakTag);
 });
 test.describe.configure({ mode: "serial" });

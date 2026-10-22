@@ -13,16 +13,18 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { once } from "node:events";
 import { mkdtempSync, readFileSync } from "node:fs";
-import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as playwright from "@playwright/test";
 import {
   type ListeningKind,
+  PORT_SLICE,
   parseListeningPort,
-  portLockHeld,
-  reserveLoopbackPort,
+  probeFreePort,
+  requireSlicePort,
+  type SliceUse,
+  workerIndex,
 } from "../../apps/web/dev/ready";
 import { engineTag, expectNoEngineLeak } from "../engine-leak";
 
@@ -156,114 +158,58 @@ export async function waitForToken(home: string): Promise<string> {
     running optimizer (#84). */
 export const WORKER = Number(process.env.TEST_WORKER_INDEX ?? "0");
 
-/* #689: anything that still probes a port (vite preview, a spec that
-   spawns its own listener) stays BELOW the kernel's ephemeral range.
-   `listen(0)` draws from that range — engine-fake launches on `--port 0`,
-   and so does every outbound connect() source port — so a probed-free
-   ephemeral port can be re-issued before the real bind (ac-659 repeat 18).
-   Linux `ip_local_port_range` starts at 32768, macOS/Windows at 49152.
-   The dev stack itself does not use this (#825): `pickPorts` returns 0
-   and each child reports the port it bound. Two probes can still return
-   the same number; callers that must pin a port use `reservePorts`. */
-const PICK_PORT_LO = 20_000;
-const PICK_PORT_HI = 32_767;
-const PICK_PORT_TRIES = 100;
-
-export const freePort = () =>
-  new Promise<number>((resolve, reject) => {
-    let tries = 0;
-    const attempt = () => {
-      if (++tries > PICK_PORT_TRIES) {
-        reject(
-          new Error(
-            `no free port in ${PICK_PORT_LO}-${PICK_PORT_HI} after ${PICK_PORT_TRIES} tries`,
-          ),
-        );
-        return;
-      }
-      const port =
-        PICK_PORT_LO +
-        Math.floor(Math.random() * (PICK_PORT_HI - PICK_PORT_LO + 1));
-      /* A lock, live or dead, belongs to a stack that will rebind this
-         port (ac-28/130/557 hold one across a relay restart). ac-27 and
-         ac-315 probe with freePort and must not take it. Dead locks are
-         reclaimed by reserve, not here. */
-      if (portLockHeld(port)) {
-        attempt();
-        return;
-      }
-      const srv = createServer();
-      srv.once("error", (e: NodeJS.ErrnoException) => {
-        if (e.code === "EADDRINUSE") attempt();
-        else reject(e);
-      });
-      srv.listen(port, "127.0.0.1", () => {
-        srv.close(() => resolve(port));
-      });
-    };
-    attempt();
-  });
+/* #689: a probe stays under the slice and under the ephemeral floor.
+   `listen(0)` draws from that floor — engine-fake launches on `--port 0`
+   — so a probed-free ephemeral port can be re-issued before the real
+   bind (ac-659 repeat 18). The band is `PORT_SLICE.probeLo`–`probeHi`.
+   Vite and a restart-on-the-same-port spec do not use this; they take
+   a slice port (#825). */
+export const freePort = (): Promise<number> => probeFreePort();
 
 /**
  * Ports for `bootStack`. `0` means "do not choose". The child binds port 0
- * (or, for vite, a reserved port) and prints the port it actually bound;
- * `bootStack` reads that line. Choosing a free port here and handing the
- * number over was the race: two workers can both observe the same port
- * free after the probe closes, and one spec then talks to the other's
- * server (#825).
+ * and prints the port it actually bound; `bootStack` reads that line.
+ * Vite is the exception: it cannot bind 0, so `bootStack` fills `web`
+ * from this worker's slice before spawn. Choosing a free ephemeral port
+ * here and handing the number over was the race: two workers can both
+ * observe the same port free after the probe closes, and one spec then
+ * talks to the other's server (#825).
  */
 export function pickPorts(): Promise<StackPorts> {
   return Promise.resolve({ relay: 0, feed: 0, web: 0 });
 }
 
 /**
- * Three distinct below-floor ports, held until `release`. Not the common
- * boot path — that is `pickPorts` (all zeros).
- *
- * Vite 8.3.4 cannot bind 0 for real: its listen is `0@0.0.0.0` and then
- * the concrete port. `address()` reports that port only after the rebind,
- * and engine-fake's `listen(0)` can take it in the gap (#689).
- * `apps/web/dev/stack.ts` reserves the web port itself when
- * `LILOS_WEB_PORT` is 0. Specs that spawn vite themselves (`bootParts`,
- * ac-28/130/557) reserve here.
- *
- * The same hold covers a spec that kills a listener and rebinds the SAME
- * port while a client already has the address (ac-28's full reboot onto
- * the same ports; ac-130 and ac-557 `restartRelay`). A port that came from
- * `listen(0)` can be handed to another child in the exit→rebind gap. This
- * band is below the ephemeral floor, and the lock stays held across that
- * gap so a second reservation cannot take it either.
+ * Relay, feed, and web for a spec that rebinds those ports while the
+ * page still holds the addresses (ac-28, ac-130, ac-557). Each number
+ * is that worker's slice port. A holder fails the boot by name.
  */
-export async function reservePorts(): Promise<
-  StackPorts & { release: () => void }
-> {
-  const settled = await Promise.allSettled([
-    reserveLoopbackPort(),
-    reserveLoopbackPort(),
-    reserveLoopbackPort(),
+export async function slicePorts(): Promise<StackPorts> {
+  const [relay, feed, web] = await Promise.all([
+    requireSlicePort("relay"),
+    requireSlicePort("feed"),
+    requireSlicePort("web"),
   ]);
-  const held = settled.flatMap((s) =>
-    s.status === "fulfilled" ? [s.value] : [],
-  );
-  if (held.length !== 3) {
-    for (const h of held) h.release();
-    const rejected = settled.find((s) => s.status === "rejected");
-    throw rejected?.status === "rejected"
-      ? rejected.reason
-      : new Error("reservePorts failed");
-  }
-  let released = false;
-  return {
-    relay: held[0].port,
-    feed: held[1].port,
-    web: held[2].port,
-    release: () => {
-      if (released) return;
-      released = true;
-      for (const h of held) h.release();
-    },
-  };
+  return { relay, feed, web };
 }
+
+/* One worker can boot more than one stack. Each live vite takes the
+   next name in `PORT_SLICE.viteSlots`. The name is checked out before
+   the probe, and a held port is not replaced with the next name. */
+const takenVite = new Set<SliceUse>();
+const takeViteUse = (): SliceUse => {
+  const use = PORT_SLICE.viteSlots.find((slot) => !takenVite.has(slot));
+  if (!use) {
+    throw new Error(
+      `this worker already has ${PORT_SLICE.viteSlots.length} vite servers (${PORT_SLICE.viteSlots.join(", ")})`,
+    );
+  }
+  takenVite.add(use);
+  return use;
+};
+const releaseViteUse = (use: SliceUse) => {
+  takenVite.delete(use);
+};
 
 /** The port a child printed. Fails on process exit or when `ms` runs out,
     with the tail of its output — never a hang. Discovery shares the
@@ -404,31 +350,58 @@ export async function bootStack(
   extraEnv: Record<string, string> = {},
   opts: { home?: string; holdOursMs?: number } = {},
 ): Promise<Stack> {
+  /* Vite cannot bind 0. Inside a runner the port is this worker's next
+     vite slot, passed in as a concrete number so two stacks in one
+     worker do not both ask the child for `web`. Outside a runner the
+     child would probe; do that here so the URL we wait on is the one
+     vite was given. */
+  let viteUse: SliceUse | undefined;
+  if (ports.web === 0) {
+    if (workerIndex() === undefined) {
+      ports = { ...ports, web: await probeFreePort() };
+    } else {
+      const use = takeViteUse();
+      try {
+        ports = { ...ports, web: await requireSlicePort(use) };
+        viteUse = use;
+      } catch (err) {
+        releaseViteUse(use);
+        throw err;
+      }
+    }
+  }
+  const releaseVite = () => {
+    if (!viteUse) return;
+    releaseViteUse(viteUse);
+    viteUse = undefined;
+  };
   const home =
     opts.home ?? mkdtempSync(path.join(tmpdir(), `lilos-e2e-${tag}-`));
   const leakTag = engineTag(tag);
-  const proc = spawn("bun", ["run", "dev"], {
-    cwd: webDir,
-    detached: true,
-    env: {
-      ...process.env,
-      LILOS_HOME: home,
-      /* #412: the shipped default sends no-folder sessions to the user's
-         home — a spec must never work there, so the scratch home pins a
-         workdir explicitly. */
-      LILOS_WORKDIR: path.join(home, "work"),
-      LILOS_ENGINE_TAG: leakTag,
-      LILOS_RELAY_PORT: String(ports.relay),
-      LILOS_FEED_PORT: String(ports.feed),
-      LILOS_WEB_PORT: String(ports.web),
-      ...extraEnv,
-    },
-    /* Piped, not inherited: the readiness probe reads `[relay] instanceId`
-       off this stream — captureProc tees it back to the spec's console. */
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  const log = captureProc(proc);
+  let spawned: ChildProcess | undefined;
   try {
+    const proc = spawn("bun", ["run", "dev"], {
+      cwd: webDir,
+      detached: true,
+      env: {
+        ...process.env,
+        LILOS_HOME: home,
+        /* #412: the shipped default sends no-folder sessions to the user's
+           home — a spec must never work there, so the scratch home pins a
+           workdir explicitly. */
+        LILOS_WORKDIR: path.join(home, "work"),
+        LILOS_ENGINE_TAG: leakTag,
+        LILOS_RELAY_PORT: String(ports.relay),
+        LILOS_FEED_PORT: String(ports.feed),
+        LILOS_WEB_PORT: String(ports.web),
+        ...extraEnv,
+      },
+      /* Piped, not inherited: the readiness probe reads `[relay] instanceId`
+         off this stream — captureProc tees it back to the spec's console. */
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    spawned = proc;
+    const log = captureProc(proc);
     /* Identity before web: a foreign relay/harness fails in ~a second
        instead of after vite's whole boot. Vite can't carry identity, but
        its --strictPort dies on a held port and the umbrella exits — the
@@ -511,13 +484,15 @@ export async function bootStack(
       },
       stop: async () => {
         await killProc(proc);
+        releaseVite();
         await expectNoEngineLeak(leakTag);
       },
     };
   } catch (e) {
     // Group kill: `bun run dev` spawns detached — killing only the shim
     // orphans stack.ts + relay + harness + vite and poisons the next boot.
-    await killProc(proc);
+    if (spawned) await killProc(spawned);
+    releaseVite();
     throw e;
   }
 }

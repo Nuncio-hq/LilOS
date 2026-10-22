@@ -1,16 +1,13 @@
-import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  claimLoopbackPort,
+  PORT_SLICE,
   parseListeningPort,
-  reserveLoopbackPort,
+  requireSlicePort,
+  type SliceUse,
+  slicePort,
+  workerIndex,
 } from "../dev/ready";
-
-const lockFile = (port: number) =>
-  join(tmpdir(), "lilos-port-locks", String(port));
 
 describe("parseListeningPort (#825)", () => {
   it("reads the port each child actually bound", () => {
@@ -88,93 +85,69 @@ const bind = (port: number) =>
     });
   });
 
-const plant = (port: number, body: string) => {
-  mkdirSync(join(tmpdir(), "lilos-port-locks"), { recursive: true });
-  writeFileSync(lockFile(port), body);
-};
+const USES = Object.keys(PORT_SLICE.offsets) as SliceUse[];
 
-describe("reserveLoopbackPort (#825)", () => {
-  it("hands out distinct below-floor ports that are free to bind", async () => {
-    const held = await Promise.all(
-      Array.from({ length: 8 }, () => reserveLoopbackPort()),
-    );
-    try {
-      const ports = held.map((h) => h.port);
-      expect(new Set(ports).size).toBe(ports.length);
-      for (const port of ports) {
-        expect(port).toBeGreaterThanOrEqual(20_000);
-        expect(port).toBeLessThanOrEqual(32_767);
-        expect(readFileSync(lockFile(port), "utf8")).toBe(`${process.pid}\n`);
+describe("PORT_SLICE (#825)", () => {
+  it("gives each worker index a block, and each use its own port in it", () => {
+    const indexes = [0, 1, 2, 3, 4, 5, 6, 7, PORT_SLICE.maxIndex];
+    const seen = new Set<number>();
+    for (const index of indexes) {
+      const ports = USES.map((use) => slicePort(use, index));
+      expect(new Set(ports).size).toBe(USES.length);
+      for (const use of USES) {
+        const port = slicePort(use, index);
+        expect(port).toBe(
+          PORT_SLICE.base + index * PORT_SLICE.stride + PORT_SLICE.offsets[use],
+        );
+        expect(port).toBeGreaterThanOrEqual(PORT_SLICE.base);
+        expect(port).toBeLessThan(PORT_SLICE.floor);
+        expect(seen.has(port)).toBe(false);
+        seen.add(port);
       }
-      const sockets = await Promise.all(ports.map((port) => bind(port)));
-      await Promise.all(sockets.map((s) => s.close()));
-    } finally {
-      for (const h of held) h.release();
     }
+    const atZero = new Set(USES.map((use) => slicePort(use, 0)));
+    for (const use of USES) {
+      expect(atZero.has(slicePort(use, 1))).toBe(false);
+    }
+    expect(slicePort("web4", PORT_SLICE.maxIndex)).toBeLessThan(
+      PORT_SLICE.floor,
+    );
+    expect(() => slicePort("relay", PORT_SLICE.maxIndex + 1)).toThrow(
+      /does not fit/,
+    );
   });
 
-  it("release is idempotent and frees the claim", async () => {
-    const held = await reserveLoopbackPort();
-    held.release();
-    held.release();
-    const again = await reserveLoopbackPort();
-    again.release();
-    expect(again.port).toBeGreaterThan(0);
+  it("reads the runner index and treats a bare shell as no index", () => {
+    expect(workerIndex({})).toBeUndefined();
+    expect(workerIndex({ TEST_PARALLEL_INDEX: "0", VITEST_POOL_ID: "4" })).toBe(
+      0,
+    );
+    expect(workerIndex({ VITEST_POOL_ID: "3" })).toBe(3);
   });
 
-  it("does not unlink an empty or non-numeric lock", async () => {
-    /* An empty file used to parse as pid 0. pidAlive(0) is false, so a
-       sweep deleted a lock whose owner had not finished writing it. */
-    const seed = await reserveLoopbackPort();
-    const emptyPort = seed.port;
-    seed.release();
-    plant(emptyPort, "");
-    const other = await reserveLoopbackPort();
-    other.release();
-    expect(readFileSync(lockFile(emptyPort), "utf8")).toBe("");
-    expect(await claimLoopbackPort(emptyPort)).toBeUndefined();
-    expect(readFileSync(lockFile(emptyPort), "utf8")).toBe("");
-
-    const seed2 = await reserveLoopbackPort();
-    const textPort = seed2.port;
-    seed2.release();
-    plant(textPort, "nope\n");
-    expect(await claimLoopbackPort(textPort)).toBeUndefined();
-    expect(readFileSync(lockFile(textPort), "utf8")).toBe("nope\n");
-    unlinkSync(lockFile(emptyPort));
-    unlinkSync(lockFile(textPort));
+  it("falls back to the probe band when no runner index is set", async () => {
+    const port = await requireSlicePort("web", {});
+    expect(port).toBeGreaterThanOrEqual(PORT_SLICE.probeLo);
+    expect(port).toBeLessThanOrEqual(PORT_SLICE.probeHi);
+    expect(port).toBeLessThan(PORT_SLICE.base);
+    const socket = await bind(port);
+    await socket.close();
   });
 
-  it("a live lock stays, and two claims of one dead lock yield one winner", async () => {
-    const live = await reserveLoopbackPort();
+  it("fails loudly when the slice port is already held", async () => {
+    const index = 20;
+    const port = slicePort("web", index);
+    const socket = await bind(port);
     try {
-      expect(await claimLoopbackPort(live.port)).toBeUndefined();
-      expect(readFileSync(lockFile(live.port), "utf8")).toBe(
-        `${process.pid}\n`,
+      await expect(
+        requireSlicePort("web", { TEST_PARALLEL_INDEX: String(index) }),
+      ).rejects.toThrow(
+        new RegExp(
+          `port ${port} \\(web, offset ${PORT_SLICE.offsets.web}, worker ${index}\\) is already held by pid ${process.pid}`,
+        ),
       );
     } finally {
-      live.release();
-    }
-
-    const seed = await reserveLoopbackPort();
-    const port = seed.port;
-    seed.release();
-    /* Above pid_max, so it cannot be a live process and cannot be reused. */
-    plant(port, "2147483647\n");
-    const [a, b] = await Promise.all([
-      claimLoopbackPort(port),
-      claimLoopbackPort(port),
-    ]);
-    const winners = [a, b].filter((held) => held !== undefined);
-    try {
-      expect(winners).toHaveLength(1);
-      expect(readFileSync(lockFile(port), "utf8").trim()).toBe(
-        String(process.pid),
-      );
-      const socket = await bind(port);
       await socket.close();
-    } finally {
-      for (const held of winners) held.release();
     }
   });
 });

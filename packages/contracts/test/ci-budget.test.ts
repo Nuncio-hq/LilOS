@@ -147,11 +147,12 @@ describe("#433 AC-2 flakes stay visible under sharding", () => {
     // probe-then-hand-off those blocks were replaced with: two shards can
     // both see that port free. The boot passes 0 and reads the port the
     // child bound. freePort stays for callers that still probe (vite
-    // preview). reservePorts is the lock for vite and for a rebind.
+    // preview), under the slice. slicePorts is the per-worker block for
+    // a spec that rebinds a port the page already holds.
     const stack = read("e2e/helpers/stack.ts");
     expect(stack).toContain("pickPorts");
     expect(stack).toContain("parseListeningPort");
-    expect(stack).toContain("reservePorts");
+    expect(stack).toContain("slicePorts");
     expect(stack).toContain("freePort");
     expect(stack).toContain("relay: 0, feed: 0, web: 0");
   });

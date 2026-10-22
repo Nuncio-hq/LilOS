@@ -8,9 +8,9 @@ import { engineTag, expectNoEngineLeak } from "./engine-leak";
 import {
   captureProc,
   killProc,
-  reservePorts,
   type StackPorts,
   skipFirstRun,
+  slicePorts,
   startChat,
   threadUrl,
   v3Sidebar,
@@ -84,7 +84,6 @@ const viteCacheDir = `node_modules/.vite-ac28-w${WORKER}`;
    across that gap: the ports sit below the ephemeral floor, so a sibling
    `listen(0)` cannot take them while nothing is bound (#825, #689). */
 let PORTS: StackPorts;
-let releasePorts = (): void => {};
 
 async function boot(tag: string, home?: string): Promise<Procs> {
   const base = home ?? mkdtempSync(path.join(tmpdir(), `lilos-e2e-28-${tag}-`));
@@ -265,14 +264,11 @@ test.beforeAll(async () => {
     recursive: true,
     force: true,
   });
-  const reserved = await reservePorts();
-  releasePorts = reserved.release;
-  PORTS = reserved;
+  PORTS = await slicePorts();
   stack = await boot("main");
 });
 test.afterAll(async () => {
   await stack?.kill();
-  releasePorts();
 });
 test.describe.configure({ mode: "serial" });
 // #84: keep a trace on failure so a mid-goto abort shows what navigated.
