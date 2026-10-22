@@ -13,8 +13,7 @@
     "./env": "./src/env.ts",
     "./app": "./src/app/index.ts",
     "./host": "./src/host/index.ts",
-    "./harness": "./src/harness/index.ts",
-    "./ready": "./src/ready.ts"
+    "./harness": "./src/harness/index.ts"
   },
   "scripts": {
     "typecheck": "tsc -b",

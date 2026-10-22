@@ -13,7 +13,7 @@
  * knows the full tree (shim → stack → children) is live before it fires.
  */
 import { spawn } from "node:child_process";
-import { parseListeningPort } from "../packages/contracts/src/ready";
+import { parseListeningPort } from "../apps/web/dev/ready";
 import { watchOrphanExit } from "./engine-leak";
 
 const flag = (name: string): string => {

@@ -370,7 +370,8 @@ describe("relay e2e (real Bun process + bun:sqlite)", () => {
     // LILOS_RELAY_TAILSCALE_* pin a fake tailnet identity on this machine's
     // LAN address: a real non-loopback bind + real probe result — no
     // tailscaled needed. A fixed port keeps the listener's address stable
-    // across the restart leg below (port 0 → different ephemeral ports).
+    // across the restart leg below: port 0 puts both listeners on one
+    // port, but a new process asked for 0 is handed a different one.
     const lan = lanAddress();
     if (!lan) {
       console.warn("no LAN address — skipping the tailnet-bind e2e");
@@ -465,6 +466,35 @@ describe("relay e2e (real Bun process + bun:sqlite)", () => {
     await tcpConnect(lan, port, 5_000);
     mac.close();
   }, 60_000);
+
+  it("#825 port 0: the tailnet listener uses the loopback port", async () => {
+    const lan = lanAddress();
+    if (!lan) {
+      console.warn("no LAN address — skipping the tailnet-bind e2e");
+      return;
+    }
+    const relay = await startRelay({
+      LILOS_RELAY_PORT: "0",
+      LILOS_RELAY_TAILSCALE_IP: lan,
+      LILOS_RELAY_TAILSCALE_NAME: "mac.tailnet.test",
+    });
+    expect(relay.port).toBeGreaterThan(0);
+    const mac = new RelayClient({
+      url: relay.url,
+      token: relay.token,
+      socketFactory: wsFactory().factory,
+      autoReconnect: false,
+      client: { name: "e2e-mac-port0" },
+    });
+    await mac.connect();
+    const { offer } = await mac.request<{ offer: { host: string } }>(
+      "pairing.offer",
+      {},
+    );
+    expect(offer.host).toBe(`mac.tailnet.test:${relay.port}`);
+    await tcpConnect(lan, relay.port);
+    mac.close();
+  }, 30_000);
 
   it("AC-1 Tailscale down → pairing.offer answers tailscale_unavailable", async () => {
     // A missing binary is the honest "not installed" probe failure.

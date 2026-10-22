@@ -76,10 +76,10 @@ type RelayPeer = ReturnType<typeof relay.connect>;
 const peers = new Map<unknown, RelayPeer>();
 
 // `relay`/`app` below are initialized before listen() is ever invoked.
-const listenOnce = (bindHost: string) =>
+const listenOnce = (bindHost: string, port: number) =>
   Bun.serve({
     hostname: bindHost,
-    port: config.port,
+    port,
     async fetch(request, server) {
       const url = new URL(request.url);
       if (url.pathname === "/ws") {
@@ -154,23 +154,21 @@ const listenOnce = (bindHost: string) =>
    Bun.sleepSync retry freezes the loop for the whole window — a kill in
    that window is ignored until SIGKILL and every buffered log line is
    dropped. */
-const listen = async (bindHost: string) => {
+const listen = async (bindHost: string, port: number) => {
   let server: ReturnType<typeof listenOnce> | undefined;
   for (let i = 0; i < 60 && !server; i++) {
     try {
-      server = listenOnce(bindHost);
+      server = listenOnce(bindHost, port);
     } catch (err) {
       const e = err as NodeJS.ErrnoException;
       if (e.code !== "EADDRINUSE" && !/in use|EADDRINUSE/i.test(e.message)) {
         throw err;
       }
-      console.error(
-        `[relay] port ${config.port} on ${bindHost} busy, retrying`,
-      );
+      console.error(`[relay] port ${port} on ${bindHost} busy, retrying`);
       await Bun.sleep(250);
     }
   }
-  if (!server) throw new Error(`port ${config.port} still busy after retries`);
+  if (!server) throw new Error(`port ${port} still busy after retries`);
   return server;
 };
 
@@ -218,10 +216,19 @@ const phoneAccess: PhoneAccess = {
         );
         return null;
       }
+      /* #825: `config.port` may be 0. Passing 0 again makes Bun assign a
+         second ephemeral port, and /pair/exchange on the advertised host
+         gets ECONNREFUSED. Bind the port the loopback server actually got.
+         A fixed port (the dev default 4577) is the same number. */
+      const port = server.port;
+      if (port === undefined) {
+        relay.log(`tailscale bind ${bindIp} failed: loopback has no port`);
+        return null;
+      }
       try {
-        tailscaleServer = await listen(bindIp);
+        tailscaleServer = await listen(bindIp, port);
       } catch (err) {
-        relay.log(`tailscale bind ${bindIp}:${config.port} failed: ${err}`);
+        relay.log(`tailscale bind ${bindIp}:${port} failed: ${err}`);
         return null;
       }
       /* D-#803: the QR names the MagicDNS host when the probe has one.
@@ -292,7 +299,7 @@ try {
   // fd 1 closed (spawned with stdout ignored) — /healthz carries the id.
 }
 
-const server = await listen(config.host);
+const server = await listen(config.host, config.port);
 
 const address = `${server.hostname}:${server.port}`;
 relay.log(`listening on http://${address} (ws: /ws)`);

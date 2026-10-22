@@ -21,8 +21,9 @@ import * as playwright from "@playwright/test";
 import {
   type ListeningKind,
   parseListeningPort,
+  portLockHeld,
   reserveLoopbackPort,
-} from "../../packages/contracts/src/ready";
+} from "../../apps/web/dev/ready";
 import { engineTag, expectNoEngineLeak } from "../engine-leak";
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/helpers
@@ -183,6 +184,14 @@ export const freePort = () =>
       const port =
         PICK_PORT_LO +
         Math.floor(Math.random() * (PICK_PORT_HI - PICK_PORT_LO + 1));
+      /* A lock, live or dead, belongs to a stack that will rebind this
+         port (ac-28/130/557 hold one across a relay restart). ac-27 and
+         ac-315 probe with freePort and must not take it. Dead locks are
+         reclaimed by reserve, not here. */
+      if (portLockHeld(port)) {
+        attempt();
+        return;
+      }
       const srv = createServer();
       srv.once("error", (e: NodeJS.ErrnoException) => {
         if (e.code === "EADDRINUSE") attempt();
@@ -211,11 +220,12 @@ export function pickPorts(): Promise<StackPorts> {
  * Three distinct below-floor ports, held until `release`. Not the common
  * boot path — that is `pickPorts` (all zeros).
  *
- * Vite cannot bind 0 for real: `httpServerStart` probes an ephemeral port,
- * closes the probe, then binds that number, and engine-fake's `listen(0)`
- * can take it in the gap (#689). `apps/web/dev/stack.ts` reserves the web
- * port itself when `LILOS_WEB_PORT` is 0. Specs that spawn vite themselves
- * (`bootParts`, ac-28/130/557) reserve here.
+ * Vite 8.3.4 cannot bind 0 for real: its listen is `0@0.0.0.0` and then
+ * the concrete port. `address()` reports that port only after the rebind,
+ * and engine-fake's `listen(0)` can take it in the gap (#689).
+ * `apps/web/dev/stack.ts` reserves the web port itself when
+ * `LILOS_WEB_PORT` is 0. Specs that spawn vite themselves (`bootParts`,
+ * ac-28/130/557) reserve here.
  *
  * The same hold covers a spec that kills a listener and rebinds the SAME
  * port while a client already has the address (ac-28's full reboot onto
@@ -227,11 +237,21 @@ export function pickPorts(): Promise<StackPorts> {
 export async function reservePorts(): Promise<
   StackPorts & { release: () => void }
 > {
-  const held = await Promise.all([
+  const settled = await Promise.allSettled([
     reserveLoopbackPort(),
     reserveLoopbackPort(),
     reserveLoopbackPort(),
   ]);
+  const held = settled.flatMap((s) =>
+    s.status === "fulfilled" ? [s.value] : [],
+  );
+  if (held.length !== 3) {
+    for (const h of held) h.release();
+    const rejected = settled.find((s) => s.status === "rejected");
+    throw rejected?.status === "rejected"
+      ? rejected.reason
+      : new Error("reservePorts failed");
+  }
   let released = false;
   return {
     relay: held[0].port,

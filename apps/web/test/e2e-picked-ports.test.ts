@@ -15,7 +15,7 @@ import type { AddressInfo } from "node:net";
 import { createServer } from "node:net";
 import { describe, expect, it } from "vitest";
 import { freePort, pickPorts } from "../../../e2e/helpers/stack";
-import { reserveLoopbackPort } from "../../../packages/contracts/src/ready";
+import { reserveLoopbackPort } from "../dev/ready";
 
 /** The kernel's ephemeral floor, read independently of the code under test:
     Linux `ip_local_port_range`, macOS `portrange.first`, 32768 otherwise —
@@ -90,6 +90,23 @@ describe("AC-1 (#689/#825) stack ports are not chosen out of the ephemeral range
     );
     for (const port of bound) {
       expect(port).toBeGreaterThanOrEqual(floor);
+    }
+  });
+
+  it("freePort skips a port a reservation still holds", async () => {
+    /* ac-27 and ac-315 probe; ac-28/130/557 hold the lock across a relay
+       restart. Pin Math.random at the held port: without the skip this
+       resolves that port, and with it every try hits the lock and gives up. */
+    const held = await reserveLoopbackPort();
+    const span = 32_767 - 20_000 + 1;
+    const fraction = (held.port - 20_000 + 0.5) / span;
+    const random = Math.random;
+    Math.random = () => fraction;
+    try {
+      await expect(freePort()).rejects.toThrow(/no free port/);
+    } finally {
+      Math.random = random;
+      held.release();
     }
   });
 

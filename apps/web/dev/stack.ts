@@ -19,11 +19,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  parseListeningPort,
-  reserveLoopbackPort,
-} from "@lilos/contracts/ready";
 import { type Subprocess, spawn } from "bun";
+import { parseListeningPort, reserveLoopbackPort } from "./ready";
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // apps/web/dev
 const repo = path.resolve(here, "../../..");
@@ -40,28 +37,33 @@ const kids: Subprocess[] = [];
 const killAll = () => {
   for (const k of kids) k.kill();
 };
-let shuttingDown = false;
 /**
  * Wait for children to exit before this process exits: a SIGTERM'd child
  * (vite especially) still holds its port while it drains, and if the
  * umbrella exits first a respawned stack races the half-dead child on
  * --strictPort and never serves (#84). Wedged children get SIGKILL after a
  * grace period rather than hanging the shutdown.
+ *
+ * One in-flight promise. A child that exits first starts it; a later
+ * `await shutdown(1)` must wait for that same drain. Returning immediately
+ * let the umbrella die while siblings were still exiting (#84).
  */
 /** Released once vite has bound, or on the way down if it never does. */
 let releaseWebPort = (): void => {};
-const shutdown = async (code: number) => {
-  if (shuttingDown) return;
-  shuttingDown = true;
-  releaseWebPort();
-  killAll();
-  await Promise.race([
-    Promise.allSettled(kids.map((k) => k.exited)),
-    Bun.sleep(5_000).then(() => {
-      for (const k of kids) if (k.exitCode === null) k.kill("SIGKILL");
-    }),
-  ]);
-  process.exit(code);
+let shuttingDown: Promise<void> | undefined;
+const shutdown = (code: number): Promise<void> => {
+  shuttingDown ??= (async () => {
+    releaseWebPort();
+    killAll();
+    await Promise.race([
+      Promise.allSettled(kids.map((k) => k.exited)),
+      Bun.sleep(5_000).then(() => {
+        for (const k of kids) if (k.exitCode === null) k.kill("SIGKILL");
+      }),
+    ]);
+    process.exit(code);
+  })();
+  return shuttingDown;
 };
 process.on("SIGINT", () => void shutdown(0));
 process.on("SIGTERM", () => void shutdown(0));
@@ -330,17 +332,18 @@ while (!feedUp) {
 }
 if (!feedUp) {
   console.error(
-    `[stack] harness feed never came up on :${feedPort}` +
-      (FEED_PORT === 0 ? " (no listening line)" : ""),
+    `[stack] harness feed never answered HTTP on :${feedPort}` +
+      (FEED_PORT === 0 ? " (the listening line was received)" : ""),
   );
   await shutdown(1);
 }
 
-/* #825: vite cannot bind port 0 for real. `httpServerStart` treats 0 as
-   "probe an ephemeral port, close it, bind that number", and engine-fake's
-   own `listen(0)` can take the probed port in that gap (#689). Reserve a
-   port below the ephemeral floor and hold the lock until vite's ready
-   line says it has bound — then the socket, not the lock, owns the port. */
+/* #825: Vite 8.3.4 does not honour `server.port: 0`. A listen trace was
+   `0@0.0.0.0`, then the concrete port on `::` and `127.0.0.1`.
+   `address()` / `resolvedUrls` report that port only after the rebind, so
+   engine-fake's `listen(0)` can take it in the gap (#689). Reserve a port
+   below the ephemeral floor and hold the lock until vite's ready line says
+   it has bound — then the socket, not the lock, owns the port. */
 let webPort = WEB_PORT;
 if (webPort === 0) {
   try {
