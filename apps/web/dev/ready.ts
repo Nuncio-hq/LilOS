@@ -20,6 +20,7 @@
  * same need: the number is in the page before the new process binds.
  * Those ports come from `PORT_SLICE`, not from a lock file.
  */
+import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync, readlinkSync } from "node:fs";
 import { createServer } from "node:net";
 
@@ -160,10 +161,30 @@ const bindProbe = (port: number): Promise<void> =>
     });
   });
 
-/** Who is listening on `port`, from `/proc`, when this host has it. */
+/** Who listens on `port`, from `lsof`: macOS has no `/proc`, and the Mac
+    is where parallel stacks collided (#825). `lsof` exits 1 on no match. */
+const lsofHolder = (port: number): string | undefined => {
+  let out = "";
+  try {
+    out = execFileSync(
+      "lsof",
+      ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN", "-Fpc"],
+      { encoding: "utf8", timeout: 5_000 },
+    );
+  } catch {
+    return undefined;
+  }
+  const pid = /^p(\d+)$/m.exec(out)?.[1];
+  if (!pid) return undefined;
+  const cmd = /^c(.+)$/m.exec(out)?.[1];
+  return cmd ? `pid ${pid}: ${cmd}` : `pid ${pid}`;
+};
+
+/** Who is listening on `port`: `/proc` where the host has it, else `lsof`. */
 const portHolder = (port: number): string | undefined => {
   const hex = port.toString(16).toUpperCase().padStart(4, "0");
   let inode: string | undefined;
+  let sawTable = false;
   for (const table of ["/proc/net/tcp", "/proc/net/tcp6"]) {
     let text = "";
     try {
@@ -171,6 +192,7 @@ const portHolder = (port: number): string | undefined => {
     } catch {
       continue;
     }
+    sawTable = true;
     for (const line of text.split("\n")) {
       const parts = line.trim().split(/\s+/);
       const local = parts[1];
@@ -182,6 +204,7 @@ const portHolder = (port: number): string | undefined => {
     }
     if (inode && inode !== "0") break;
   }
+  if (!sawTable) return lsofHolder(port);
   if (!inode || inode === "0") return undefined;
   const needle = `socket:[${inode}]`;
   let pids: string[] = [];
@@ -220,7 +243,7 @@ const portHolder = (port: number): string | undefined => {
 /**
  * The slice port for `use` on this worker. Probes it first. A holder
  * fails the call: the error names the port, the use, and the listener
- * when `/proc` can see one. No second port is tried.
+ * when `/proc` or `lsof` can see one. No second port is tried.
  *
  * With no worker index (a shell, not Playwright or vitest), this is
  * `probeFreePort` — the same below-slice probe `freePort` uses.
