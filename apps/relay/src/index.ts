@@ -297,7 +297,15 @@ const server = await listen(config.host);
 const address = `${server.hostname}:${server.port}`;
 relay.log(`listening on http://${address} (ws: /ws)`);
 relay.log(`home: ${config.homeDir}`);
-console.log(`[relay] listening on http://${address} (ws: /ws)`);
+/* #825: unbuffered, same as the instanceId line. `LILOS_RELAY_PORT=0`
+   means the kernel chose the port; a parent reads this line to learn it.
+   `console.log` can sit in a block buffer when stdout is a pipe, and the
+   parent would then wait out its whole budget. */
+try {
+  writeSync(1, `[relay] listening on http://${address} (ws: /ws)\n`);
+} catch {
+  // fd 1 closed (stdout ignored).
+}
 console.log(`[relay] home: ${config.homeDir}`);
 
 // Rebind the tailnet listener after restarts while phone access stays on.

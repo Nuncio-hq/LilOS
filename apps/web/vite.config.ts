@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -55,6 +55,32 @@ const uiDeps = bareDepsOf(path.resolve(here, "../../packages/ui/src")).map(
  * get it from env (set by dev/stack.ts); the Electron shell injects the same
  * object via its preload, so this file only exists for the plain-web path.
  */
+/** #825: one machine-readable line with the port the dev server actually
+ *  bound. Vite's own "Local:" line is padded and colored; parents that
+ *  passed a reserved port read this instead. `writeSync` so a pipe (the
+ *  dev umbrella captures stdout) cannot block-buffer the line. */
+function lilosWebReady(): Plugin {
+  return {
+    name: "lilos-web-ready",
+    configureServer(server) {
+      const httpServer = server.httpServer;
+      httpServer?.once("listening", () => {
+        const addr = httpServer.address();
+        if (typeof addr === "object" && addr) {
+          try {
+            fs.writeSync(
+              1,
+              `[web] listening on http://127.0.0.1:${addr.port}\n`,
+            );
+          } catch {
+            // fd 1 closed (stdout ignored).
+          }
+        }
+      });
+    },
+  };
+}
+
 function lilosConfig() {
   const body = JSON.stringify({
     relayWs: process.env.LILOS_RELAY_WS ?? "ws://127.0.0.1:4577/ws",
@@ -87,7 +113,7 @@ export default defineConfig({
   // Packaged builds are loaded over file:// — absolute /assets paths would
   // resolve to the filesystem root. LILOS_WEB_BASE=./ keeps them relative.
   base: process.env.LILOS_WEB_BASE ?? "/",
-  plugins: [react(), tailwindcss(), lilosConfig()],
+  plugins: [react(), tailwindcss(), lilosConfig(), lilosWebReady()],
   resolve: {
     alias: { "@": path.resolve(here, "src") },
     dedupe: ["react", "react-dom"],

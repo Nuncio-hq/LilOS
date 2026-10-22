@@ -19,6 +19,10 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  parseListeningPort,
+  reserveLoopbackPort,
+} from "@lilos/contracts/ready";
 import { type Subprocess, spawn } from "bun";
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // apps/web/dev
@@ -44,9 +48,12 @@ let shuttingDown = false;
  * --strictPort and never serves (#84). Wedged children get SIGKILL after a
  * grace period rather than hanging the shutdown.
  */
+/** Released once vite has bound, or on the way down if it never does. */
+let releaseWebPort = (): void => {};
 const shutdown = async (code: number) => {
   if (shuttingDown) return;
   shuttingDown = true;
+  releaseWebPort();
   killAll();
   await Promise.race([
     Promise.allSettled(kids.map((k) => k.exited)),
@@ -90,29 +97,65 @@ setInterval(() => {
 
 const webDir = path.resolve(here, "..");
 
-function run(
+/** Pipe stdout, forward every byte, keep the text so a port-0 child can be
+    read back. A child that exits before its ready line still fails the
+    boot — `exited` is observed by the caller, this only captures output. */
+function spawnCaptured(
   name: string,
   cmd: string[],
   env: Record<string, string>,
   cwd = repo,
-): Subprocess {
-  const p = spawn(cmd, {
+): { proc: Subprocess; text: () => string } {
+  const proc = spawn(cmd, {
     cwd,
     env: { ...process.env, ...env },
-    stdout: "inherit",
+    stdout: "pipe",
     stderr: "inherit",
   });
-  kids.push(p);
+  kids.push(proc);
   console.log(`[stack] ${name}: ${cmd.join(" ")}`);
-  // A supervised child dying means this stack is dead — exit so callers
-  // fail on the process exit instead of waiting on ports that never come.
-  p.exited.then((code) => {
+  let buf = "";
+  const dec = new TextDecoder();
+  void (async () => {
+    const stream = proc.stdout as ReadableStream<Uint8Array>;
+    for await (const chunk of stream) {
+      const text = dec.decode(chunk, { stream: true });
+      buf += text;
+      process.stdout.write(text);
+    }
+  })();
+  proc.exited.then((code) => {
     if (!shuttingDown) {
       console.error(`[stack] ${name} exited (code ${code})`);
       void shutdown(1);
     }
   });
-  return p;
+  return { proc, text: () => buf };
+}
+
+/** Fail fast: the ready line, the process exiting, or the budget. No hang. */
+async function reportedPort(
+  kind: "relay" | "harness" | "web",
+  read: () => string,
+  proc: Subprocess,
+  ms: number,
+): Promise<number> {
+  const start = Date.now();
+  for (;;) {
+    const port = parseListeningPort(read(), kind);
+    if (port) return port;
+    if (proc.exitCode !== null) {
+      throw new Error(
+        `[stack] ${kind} exited (code ${proc.exitCode}) before reporting its port\n${read().slice(-1200)}`,
+      );
+    }
+    if (Date.now() - start > ms) {
+      throw new Error(
+        `[stack] timed out waiting for ${kind} to report its port\n${read().slice(-1200)}`,
+      );
+    }
+    await Bun.sleep(50);
+  }
 }
 
 /* The relay's stdout is piped, not inherited: an identity-checked readiness
@@ -144,7 +187,7 @@ relayProc.exited.then((code) => {
       `[stack] relay exited (code ${code})` +
         (relayUp
           ? ""
-          : ` before port ${RELAY_PORT} was ours` +
+          : ` before port ${relayPort} was ours` +
             (foreign !== undefined ? ` — /healthz answers ${foreign}` : "") +
             ` (ours ${relayInstance ?? "never logged"})`),
     );
@@ -153,12 +196,14 @@ relayProc.exited.then((code) => {
 });
 
 const INSTANCE_LINE = /instanceId: ([0-9a-fA-F-]{36})/;
+let relayBuf = "";
 void (async () => {
   const dec = new TextDecoder();
   const stream = relayProc.stdout as ReadableStream<Uint8Array>;
   for await (const chunk of stream) {
     const text = dec.decode(chunk, { stream: true });
-    relayInstance ??= INSTANCE_LINE.exec(text)?.[1];
+    relayBuf += text;
+    relayInstance ??= INSTANCE_LINE.exec(relayBuf)?.[1];
     process.stdout.write(text);
   }
 })();
@@ -179,8 +224,26 @@ for (let i = 0; i < 100 && !existsSync(tokenPath); i++) {
    each poll: a half-dead predecessor can hold the port bound but
    unanswering, and an unbounded fetch hangs this boot (#84). */
 const relayDeadline = Date.now() + 25_000;
+/* #825: port 0 is "bind whatever the kernel assigns". The listening line
+   carries that port; probing :0 is not a server. A concrete port (the dev
+   default, or a spec that pinned one) is unchanged. */
+let relayPort = RELAY_PORT;
+if (relayPort === 0) {
+  try {
+    relayPort = await reportedPort(
+      "relay",
+      () => relayBuf,
+      relayProc,
+      Math.max(relayDeadline - Date.now(), 1),
+    );
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : err);
+    await shutdown(1);
+    throw err;
+  }
+}
 while (!relayUp) {
-  const seen = await fetch(`http://127.0.0.1:${RELAY_PORT}/healthz`, {
+  const seen = await fetch(`http://127.0.0.1:${relayPort}/healthz`, {
     signal: AbortSignal.timeout(1_000),
   })
     .then((r) => r.json())
@@ -196,7 +259,7 @@ while (!relayUp) {
   if (seen !== undefined) foreign = seen;
   if (Date.now() > relayDeadline) {
     console.error(
-      `[stack] relay never claimed port ${RELAY_PORT} ` +
+      `[stack] relay never claimed port ${relayPort} ` +
         `(ours ${relayInstance ?? "never logged"}` +
         (foreign !== undefined ? `, /healthz answers ${foreign}` : "") +
         `)`,
@@ -212,12 +275,14 @@ if (!token) {
   console.error("[stack] relay did not write its token file");
   await shutdown(1);
 }
-console.log(`[stack] relay ready on :${RELAY_PORT} (home ${HOME})`);
+console.log(`[stack] relay ready on :${relayPort} (home ${HOME})`);
 
 // The harness launches engine-fake itself (LILOS_ENGINE=fake by default);
 // LILOS_ENGINE=url + LILOS_ENGINE_URL points it at an external engine.
+// Engine-fake already binds `--port 0` and prints `LISTENING ws://…`
+// (#825); the harness launcher reads that line. Nothing here picks it.
 const harnessEnv: Record<string, string> = {
-  LILOS_RELAY_URL: `ws://127.0.0.1:${RELAY_PORT}/ws`,
+  LILOS_RELAY_URL: `ws://127.0.0.1:${relayPort}/ws`,
   LILOS_RELAY_HOME: HOME,
   LILOS_RELAY_TOKEN: token,
   LILOS_HARNESS_HOME: HARNESS_HOME,
@@ -227,48 +292,106 @@ const harnessEnv: Record<string, string> = {
   LILOS_FEED_PORT: String(FEED_PORT),
 };
 if (!process.env.LILOS_ENGINE) harnessEnv.LILOS_ENGINE = "fake";
-run("harness", ["bun", "run", "apps/harness/src/index.ts"], harnessEnv);
+const harness = spawnCaptured(
+  "harness",
+  ["bun", "run", "apps/harness/src/index.ts"],
+  harnessEnv,
+);
 
-// wait for the feed socket to accept a connection (harness cold start +
-// engine spawn can take a few seconds on a fresh checkout)
+// The old poll was 300 × 100ms. Port discovery shares that budget so a
+// child that never reports fails in the same window, not a longer one.
+const feedDeadline = Date.now() + 30_000;
+let feedPort = FEED_PORT;
+if (feedPort === 0) {
+  try {
+    feedPort = await reportedPort(
+      "harness",
+      harness.text,
+      harness.proc,
+      Math.max(feedDeadline - Date.now(), 1),
+    );
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : err);
+    await shutdown(1);
+    throw err;
+  }
+}
 let feedUp = false;
-for (let i = 0; i < 300 && !feedUp; i++) {
-  feedUp = await fetch(`http://127.0.0.1:${FEED_PORT}/`, {
+while (!feedUp) {
+  feedUp = await fetch(`http://127.0.0.1:${feedPort}/`, {
     signal: AbortSignal.timeout(1_000),
   })
     .then((r) => r.ok)
     .catch(() => false);
-  if (!feedUp) await Bun.sleep(100);
+  if (!feedUp) {
+    if (Date.now() > feedDeadline) break;
+    await Bun.sleep(100);
+  }
 }
 if (!feedUp) {
-  console.error("[stack] harness feed never came up");
+  console.error(
+    `[stack] harness feed never came up on :${feedPort}` +
+      (FEED_PORT === 0 ? " (no listening line)" : ""),
+  );
   await shutdown(1);
 }
 
-run(
+/* #825: vite cannot bind port 0 for real. `httpServerStart` treats 0 as
+   "probe an ephemeral port, close it, bind that number", and engine-fake's
+   own `listen(0)` can take the probed port in that gap (#689). Reserve a
+   port below the ephemeral floor and hold the lock until vite's ready
+   line says it has bound — then the socket, not the lock, owns the port. */
+let webPort = WEB_PORT;
+if (webPort === 0) {
+  try {
+    const reserved = await reserveLoopbackPort();
+    webPort = reserved.port;
+    releaseWebPort = reserved.release;
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : err);
+    await shutdown(1);
+    throw err;
+  }
+}
+const web = spawnCaptured(
   "web",
   [
     path.join(webDir, "node_modules", ".bin", "vite"),
     "--host",
     "127.0.0.1",
     "--port",
-    String(WEB_PORT),
+    String(webPort),
     "--strictPort",
   ],
   {
-    LILOS_RELAY_WS: `ws://127.0.0.1:${RELAY_PORT}/ws`,
+    LILOS_RELAY_WS: `ws://127.0.0.1:${relayPort}/ws`,
     LILOS_RELAY_TOKEN: token,
-    LILOS_ENGINE_WS: `ws://127.0.0.1:${FEED_PORT}/ws`,
-    LILOS_WEB_PORT: String(WEB_PORT),
+    LILOS_ENGINE_WS: `ws://127.0.0.1:${feedPort}/ws`,
+    LILOS_WEB_PORT: String(webPort),
   },
   webDir,
 );
+if (WEB_PORT === 0) {
+  try {
+    const bound = await reportedPort("web", web.text, web.proc, 60_000);
+    if (bound !== webPort) {
+      throw new Error(
+        `[stack] vite bound :${bound}, not the reserved :${webPort}`,
+      );
+    }
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : err);
+    await shutdown(1);
+    throw err;
+  }
+  releaseWebPort();
+}
 
 console.log(`
 LilOS dev stack
-  web     http://localhost:${WEB_PORT}
-  relay   ws://127.0.0.1:${RELAY_PORT}/ws   (state: ${HOME})
-  feed    ws://127.0.0.1:${FEED_PORT}/ws   (harness; engine ${
+  web     http://localhost:${webPort}
+  relay   ws://127.0.0.1:${relayPort}/ws   (state: ${HOME})
+  feed    ws://127.0.0.1:${feedPort}/ws   (harness; engine ${
     process.env.LILOS_ENGINE ?? "fake"
   })
 `);

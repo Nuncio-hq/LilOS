@@ -15,6 +15,7 @@ import type { AddressInfo } from "node:net";
 import { createServer } from "node:net";
 import { describe, expect, it } from "vitest";
 import { freePort, pickPorts } from "../../../e2e/helpers/stack";
+import { reserveLoopbackPort } from "../../../packages/contracts/src/ready";
 
 /** The kernel's ephemeral floor, read independently of the code under test:
     Linux `ip_local_port_range`, macOS `portrange.first`, 32768 otherwise —
@@ -53,17 +54,29 @@ const bindZero = (): Promise<number> =>
     });
   });
 
-describe("AC-1 (#689) a picked port is unreachable by the ephemeral allocator", () => {
-  it("freePort/pickPorts return ports strictly below the ephemeral floor", async () => {
+describe("AC-1 (#689/#825) stack ports are not chosen out of the ephemeral range", () => {
+  it("pickPorts does not choose a port — the child binds and reports it", async () => {
+    /* Choosing one here was the pick-then-bind race (#825). 0 is the
+       signal; it is not a port the ephemeral allocator can hand out. */
+    await expect(pickPorts()).resolves.toEqual({ relay: 0, feed: 0, web: 0 });
+  });
+
+  it("freePort and a reservation stay strictly below the ephemeral floor", async () => {
     const floor = ephemeralFloor();
     const singles = await Promise.all(
       Array.from({ length: 8 }, () => freePort()),
     );
-    const trio = await pickPorts();
-    for (const port of [...singles, trio.relay, trio.feed, trio.web]) {
-      expect(port, `picked ${port} is inside the ephemeral range`).toBeLessThan(
-        floor,
-      );
+    const held = await reserveLoopbackPort();
+    try {
+      for (const port of [...singles, held.port]) {
+        expect(
+          port,
+          `picked ${port} is inside the ephemeral range`,
+        ).toBeLessThan(floor);
+      }
+      expect(held.port).toBeGreaterThanOrEqual(20_000);
+    } finally {
+      held.release();
     }
   });
 

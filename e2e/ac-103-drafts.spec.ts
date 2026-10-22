@@ -7,7 +7,6 @@ import {
   pickPorts,
   relayRpc,
   type Stack,
-  type StackPorts,
   skipFirstRun,
   startChat,
   v3Peek,
@@ -35,13 +34,10 @@ const repo = path.resolve(here, "..");
 const SHOTS = path.join(repo, "test-results", "ac-103");
 const DRAFT_PREFIX = "lilos:composer-draft:";
 
-/* AC-5's port-release check reads PORTS.relay after the stack is killed. */
-let PORTS: StackPorts;
 let stack: Stack;
 test.beforeAll(async () => {
   test.setTimeout(120_000);
-  PORTS = await pickPorts();
-  stack = await bootStack("drafts", PORTS);
+  stack = await bootStack("drafts", await pickPorts());
 });
 test.afterAll(async () => {
   await stack?.stop();
@@ -280,7 +276,7 @@ test("AC-5 sending clears only that draft; a failed send keeps the text", async 
   // A failed send keeps the text: SIGKILL the relay so the client's socket
   // closes — the send rejects (`relay not connected`) and nothing can clear
   // the draft. Only a resolved send clears, so the text is safe either way.
-  const pids = execSync(`lsof -ti tcp:${PORTS.relay} -sTCP:LISTEN`)
+  const pids = execSync(`lsof -ti tcp:${stack.ports.relay} -sTCP:LISTEN`)
     .toString()
     .trim();
   for (const pid of pids.split("\n").filter(Boolean))

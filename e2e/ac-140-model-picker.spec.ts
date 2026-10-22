@@ -30,19 +30,13 @@ import {
  */
 const ROOT = path.dirname(fileURLToPath(import.meta.url)).replace(/\/e2e$/, "");
 const SHOTS = path.join(ROOT, "test-results", "ac-140");
-let RELAY: number;
-let FEED: number;
-let WEBP: number;
 
 let stack: Stack;
 test.beforeAll(async () => {
   test.setTimeout(120_000);
-  ({ relay: RELAY, feed: FEED, web: WEBP } = await pickPorts());
-  stack = await bootStack(
-    "ac140",
-    { relay: RELAY, feed: FEED, web: WEBP },
-    { LILOS_ENGINE: "fake" },
-  );
+  stack = await bootStack("ac140", await pickPorts(), {
+    LILOS_ENGINE: "fake",
+  });
 });
 test.afterAll(async () => {
   await stack?.stop();
@@ -117,18 +111,18 @@ test("AC-1 + AC-2 a session on a catalog-absent model: hint → Refresh → swit
   await expect(
     v3Sidebar(page).getByRole("button", { name: /Default/ }),
   ).toBeVisible({ timeout: 30_000 });
-  const listed = await rpc(stack.home, RELAY, [
+  const listed = await rpc(stack.home, stack.ports.relay, [
     { method: "employees.list", params: {} },
   ]);
   const employeeId = (
     listed[0] as { employees: { id: string; name: string }[] }
   ).employees.find((e) => e.name === "Default")?.id;
   if (!employeeId) throw new Error("no Default employee on the relay");
-  const dm = await rpc(stack.home, RELAY, [
+  const dm = await rpc(stack.home, stack.ports.relay, [
     { method: "channels.openDm", params: { employeeId } },
   ]);
   const channelId = (dm[0] as { channel: { id: string } }).channel.id;
-  const opened = await rpc(stack.home, RELAY, [
+  const opened = await rpc(stack.home, stack.ports.relay, [
     {
       method: "conversations.open",
       params: {
@@ -191,7 +185,7 @@ test("AC-1 + AC-2 a session on a catalog-absent model: hint → Refresh → swit
   await expect
     .poll(
       async () => {
-        const rows = await rpc(stack.home, RELAY, [
+        const rows = await rpc(stack.home, stack.ports.relay, [
           { method: "conversations.list", params: { channelId } },
         ]);
         const { conversations } = rows[0] as {
@@ -224,7 +218,7 @@ test("AC-1 + AC-2 a session on a catalog-absent model: hint → Refresh → swit
       .locator("[data-turnsettled]")
       .allInnerTexts()
       .catch(() => [] as string[]);
-    const state = await rpc(stack.home, RELAY, [
+    const state = await rpc(stack.home, stack.ports.relay, [
       { method: "conversations.list", params: { channelId } },
     ]).catch(() => null);
     console.log("[ac140 diag] url:", page.url());

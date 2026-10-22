@@ -18,6 +18,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as playwright from "@playwright/test";
+import {
+  type ListeningKind,
+  parseListeningPort,
+  reserveLoopbackPort,
+} from "../../packages/contracts/src/ready";
 import { engineTag, expectNoEngineLeak } from "../engine-leak";
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/helpers
@@ -150,17 +155,15 @@ export async function waitForToken(home: string): Promise<string> {
     running optimizer (#84). */
 export const WORKER = Number(process.env.TEST_WORKER_INDEX ?? "0");
 
-/* #689: pick BELOW the kernel's ephemeral range, not out of it. `listen(0)`
-   draws from that range — and so does every `bind(0)` listener (engine-fake
-   launches on `--port 0`) and every outbound connect() source port, so a
-   probed-free ephemeral port can be re-issued to another child in the
-   release→bind gap (ac-659 repeat 18: engine-fake took the web port, vite
-   died EADDRINUSE, `page.goto` landed on engine-fake's 404 page and the
-   aside wait timed out). The allocator never hands out ports below its
-   floor — Linux `ip_local_port_range` starts at 32768, macOS/Windows at
-   49152 — so a picked port in this band stays free until our child binds
-   it. A pick-vs-pick race is still possible, but it needs another caller
-   choosing the same port in the same instant. */
+/* #689: anything that still probes a port (vite preview, a spec that
+   spawns its own listener) stays BELOW the kernel's ephemeral range.
+   `listen(0)` draws from that range — engine-fake launches on `--port 0`,
+   and so does every outbound connect() source port — so a probed-free
+   ephemeral port can be re-issued before the real bind (ac-659 repeat 18).
+   Linux `ip_local_port_range` starts at 32768, macOS/Windows at 49152.
+   The dev stack itself does not use this (#825): `pickPorts` returns 0
+   and each child reports the port it bound. Two probes can still return
+   the same number; callers that must pin a port use `reservePorts`. */
 const PICK_PORT_LO = 20_000;
 const PICK_PORT_HI = 32_767;
 const PICK_PORT_TRIES = 100;
@@ -192,15 +195,79 @@ export const freePort = () =>
     attempt();
   });
 
-/** Three distinct free ports — repeat/parallel runs must never collide. */
-export async function pickPorts(): Promise<StackPorts> {
+/**
+ * Ports for `bootStack`. `0` means "do not choose". The child binds port 0
+ * (or, for vite, a reserved port) and prints the port it actually bound;
+ * `bootStack` reads that line. Choosing a free port here and handing the
+ * number over was the race: two workers can both observe the same port
+ * free after the probe closes, and one spec then talks to the other's
+ * server (#825).
+ */
+export function pickPorts(): Promise<StackPorts> {
+  return Promise.resolve({ relay: 0, feed: 0, web: 0 });
+}
+
+/**
+ * Three distinct below-floor ports, held until `release`. Not the common
+ * boot path — that is `pickPorts` (all zeros).
+ *
+ * Vite cannot bind 0 for real: `httpServerStart` probes an ephemeral port,
+ * closes the probe, then binds that number, and engine-fake's `listen(0)`
+ * can take it in the gap (#689). `apps/web/dev/stack.ts` reserves the web
+ * port itself when `LILOS_WEB_PORT` is 0. Specs that spawn vite themselves
+ * (`bootParts`, ac-28/130/557) reserve here.
+ *
+ * The same hold covers a spec that kills a listener and rebinds the SAME
+ * port while a client already has the address (ac-28's full reboot onto
+ * the same ports; ac-130 and ac-557 `restartRelay`). A port that came from
+ * `listen(0)` can be handed to another child in the exit→rebind gap. This
+ * band is below the ephemeral floor, and the lock stays held across that
+ * gap so a second reservation cannot take it either.
+ */
+export async function reservePorts(): Promise<
+  StackPorts & { release: () => void }
+> {
+  const held = await Promise.all([
+    reserveLoopbackPort(),
+    reserveLoopbackPort(),
+    reserveLoopbackPort(),
+  ]);
+  let released = false;
+  return {
+    relay: held[0].port,
+    feed: held[1].port,
+    web: held[2].port,
+    release: () => {
+      if (released) return;
+      released = true;
+      for (const h of held) h.release();
+    },
+  };
+}
+
+/** The port a child printed. Fails on process exit or when `ms` runs out,
+    with the tail of its output — never a hang. Discovery shares the
+    caller's existing budget; it does not add one. */
+export async function waitForListeningPort(
+  kind: ListeningKind,
+  proc: ChildProcess,
+  out: () => string,
+  ms: number,
+): Promise<number> {
+  const start = Date.now();
   for (;;) {
-    const [relay, feed, web] = await Promise.all([
-      freePort(),
-      freePort(),
-      freePort(),
-    ]);
-    if (new Set([relay, feed, web]).size === 3) return { relay, feed, web };
+    const port = parseListeningPort(out(), kind);
+    if (port) return port;
+    if (proc.exitCode !== null || proc.signalCode !== null) {
+      throw new Error(
+        `${kind} exited (${proc.exitCode ?? proc.signalCode}) before reporting its port\n${out().slice(-1200)}`,
+      );
+    }
+    if (Date.now() - start > ms)
+      throw new Error(
+        `timed out waiting for ${kind} to report its port\n${out().slice(-1200)}`,
+      );
+    await sleep(50);
   }
 }
 
@@ -341,24 +408,73 @@ export async function bootStack(
     stdio: ["ignore", "pipe", "pipe"],
   });
   const log = captureProc(proc);
-  const webUrl = `http://127.0.0.1:${ports.web}`;
   try {
     /* Identity before web: a foreign relay/harness fails in ~a second
        instead of after vite's whole boot. Vite can't carry identity, but
        its --strictPort dies on a held port and the umbrella exits — the
-       proc-exit check catches that. */
-    await waitForInstance("relay", ports.relay, proc, log, 60_000, {
-      holdOursMs: opts.holdOursMs,
-    });
-    await waitForInstance("harness", ports.feed, proc, log);
-    await waitForHttp(webUrl, 60_000, proc);
+       proc-exit check catches that.
+       Port 0 is discovered from the child's ready line inside the same
+       60s the identity/HTTP wait already had (#825). A concrete port keeps
+       the full budget and is NOT gated on the line: a relay that can never
+       bind (a foreign stand-in holds it, #273) still has to fail the
+       identity check, and it may never print a listening line. */
+    const relayBudget = 60_000;
+    const relayStart = Date.now();
+    const relayPort =
+      ports.relay === 0
+        ? await waitForListeningPort("relay", proc, log, relayBudget)
+        : ports.relay;
+    await waitForInstance(
+      "relay",
+      relayPort,
+      proc,
+      log,
+      ports.relay === 0
+        ? Math.max(relayBudget - (Date.now() - relayStart), 1)
+        : relayBudget,
+      { holdOursMs: opts.holdOursMs },
+    );
+    const feedBudget = 60_000;
+    const feedStart = Date.now();
+    const feedPort =
+      ports.feed === 0
+        ? await waitForListeningPort("harness", proc, log, feedBudget)
+        : ports.feed;
+    await waitForInstance(
+      "harness",
+      feedPort,
+      proc,
+      log,
+      ports.feed === 0
+        ? Math.max(feedBudget - (Date.now() - feedStart), 1)
+        : feedBudget,
+    );
+    const webBudget = 60_000;
+    const webStart = Date.now();
+    const webPort =
+      ports.web === 0
+        ? await waitForListeningPort("web", proc, log, webBudget)
+        : ports.web;
+    const webUrl = `http://127.0.0.1:${webPort}`;
+    await waitForHttp(
+      webUrl,
+      ports.web === 0
+        ? Math.max(webBudget - (Date.now() - webStart), 1)
+        : webBudget,
+      proc,
+    );
     const relayToken = await waitForToken(home);
+    const bound: StackPorts = {
+      relay: relayPort,
+      feed: feedPort,
+      web: webPort,
+    };
     return {
       home,
       webUrl,
-      ports,
-      relayWs: `ws://127.0.0.1:${ports.relay}/ws`,
-      feedWs: `ws://127.0.0.1:${ports.feed}/ws`,
+      ports: bound,
+      relayWs: `ws://127.0.0.1:${bound.relay}/ws`,
+      feedWs: `ws://127.0.0.1:${bound.feed}/ws`,
       relayToken,
       proc,
       leakTag,

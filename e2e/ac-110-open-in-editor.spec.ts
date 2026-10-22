@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import {
   bootStack,
-  freePort,
+  pickPorts,
   type Stack,
   startChatInFolder,
 } from "./helpers/stack";
@@ -31,7 +31,7 @@ import {
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
 const repo = path.resolve(here, "..");
-/* Kernel-assigned ports: bound-and-probed free ports per stack (#484). */
+/* Port 0: each child binds and reports the port (#825). */
 
 const SHOTS = path.join(repo, "test-results", "ac-110");
 
@@ -56,21 +56,13 @@ let stack: Stack;
 test.beforeAll(async () => {
   test.setTimeout(120_000);
   writeFileSync(LOG, "");
-  stack = await bootStack(
-    "ac110",
-    {
-      relay: await freePort(),
-      feed: await freePort(),
-      web: await freePort(),
-    },
-    {
-      // os.editors sees the fake bundles; os.open's `open` resolves to the
-      // fake bin — both write argv lines to LOG.
-      LILOS_APP_DIRS: path.join(FAKE_OS, "Applications"),
-      FAKE_OPEN_LOG: LOG,
-      PATH: `${path.join(FAKE_OS, "bin")}:${process.env.PATH}`,
-    },
-  );
+  stack = await bootStack("ac110", await pickPorts(), {
+    // os.editors sees the fake bundles; os.open's `open` resolves to the
+    // fake bin — both write argv lines to LOG.
+    LILOS_APP_DIRS: path.join(FAKE_OS, "Applications"),
+    FAKE_OPEN_LOG: LOG,
+    PATH: `${path.join(FAKE_OS, "bin")}:${process.env.PATH}`,
+  });
 });
 test.afterAll(async () => {
   await stack?.stop();

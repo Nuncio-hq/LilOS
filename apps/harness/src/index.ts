@@ -5,7 +5,7 @@
  *   LILOS_ENGINE=fake|hermes|url|command bun run apps/harness/src/index.ts
  */
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, writeSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { systemClock, watchOrphaned, watchWake } from "@lilos/background";
@@ -78,6 +78,13 @@ const surfaces = await serveSurfaces(0, {
 
   log,
 });
+/* #825: surfaces already binds port 0. Report the port the kernel gave
+   it — unbuffered, same reason as the relay's instance id. */
+try {
+  writeSync(1, `[harness] surfaces listening on ${surfaces.url}\n`);
+} catch {
+  // fd 1 closed (stdout ignored).
+}
 
 const repoRoot = process.env.LILOS_REPO_ROOT ?? process.cwd();
 // Packaged app: compiled engine adapters sit next to this binary when the
@@ -293,6 +300,14 @@ const feedServer = Bun.serve<FeedData>({
     },
   },
 });
+/* #825: `LILOS_FEED_PORT=0` asks the kernel for a port. The number in
+   config is then 0; the one that was bound is `feedServer.port`. Parents
+   (bun run dev, e2e) read this line instead of choosing the port. */
+try {
+  writeSync(1, `[harness] listening on http://127.0.0.1:${feedServer.port}\n`);
+} catch {
+  // fd 1 closed (stdout ignored).
+}
 
 const shutdown = async () => {
   log.info("shutting down");
@@ -325,6 +340,6 @@ watchOrphaned({
 log.info("harness up", {
   relay: config.relayUrl,
   engine: config.engine.kind,
-  feed: `ws://127.0.0.1:${config.feedPort}/ws`,
+  feed: `ws://127.0.0.1:${feedServer.port}/ws`,
   workdir: config.workdir,
 });

@@ -8,7 +8,7 @@ import { engineTag, expectNoEngineLeak } from "./engine-leak";
 import {
   captureProc,
   killProc,
-  pickPorts,
+  reservePorts,
   type StackPorts,
   skipFirstRun,
   startChat,
@@ -79,9 +79,12 @@ async function spawnRelay(home: string, port: number): Promise<ChildProcess> {
  * offset per worker — otherwise 4 relays race the same port and die (#84).
  */
 const viteCacheDir = `node_modules/.vite-ac28-w${WORKER}`;
-/* Picked once per spec run — a restart re-boots onto the same ports so
-   conversation URLs stay valid across kill→boot (#484). */
+/* Reserved once per spec run — a restart re-boots onto the same ports so
+   conversation URLs stay valid across kill→boot (#484). The lock is held
+   across that gap: the ports sit below the ephemeral floor, so a sibling
+   `listen(0)` cannot take them while nothing is bound (#825, #689). */
 let PORTS: StackPorts;
+let releasePorts = (): void => {};
 
 async function boot(tag: string, home?: string): Promise<Procs> {
   const base = home ?? mkdtempSync(path.join(tmpdir(), `lilos-e2e-28-${tag}-`));
@@ -262,11 +265,14 @@ test.beforeAll(async () => {
     recursive: true,
     force: true,
   });
-  PORTS = await pickPorts();
+  const reserved = await reservePorts();
+  releasePorts = reserved.release;
+  PORTS = reserved;
   stack = await boot("main");
 });
 test.afterAll(async () => {
   await stack?.kill();
+  releasePorts();
 });
 test.describe.configure({ mode: "serial" });
 // #84: keep a trace on failure so a mid-goto abort shows what navigated.

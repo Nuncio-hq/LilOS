@@ -8,7 +8,7 @@ import { engineTag, expectNoEngineLeak } from "./engine-leak";
 import {
   captureProc,
   killProc,
-  pickPorts,
+  reservePorts,
   type StackPorts,
   skipFirstRun,
   startChat,
@@ -38,7 +38,10 @@ import {
 const ROOT = path.dirname(fileURLToPath(import.meta.url)).replace(/\/e2e$/, "");
 const webDir = path.join(ROOT, "apps", "web");
 const SHOTS = path.join(ROOT, "test-results", "ac-130");
+/* Held for the spec: `restartRelay` rebinds this port while the page
+   still has the address (#825). */
 let PORTS: StackPorts;
+let releasePorts = (): void => {};
 
 const TOAST = "[data-toast]";
 const PNG = Buffer.from(
@@ -285,11 +288,14 @@ async function channelIdFor(stack: Procs): Promise<string> {
 
 let stack: Procs;
 test.beforeAll(async () => {
-  PORTS = await pickPorts();
+  const reserved = await reservePorts();
+  releasePorts = reserved.release;
+  PORTS = reserved;
   stack = await boot();
 });
 test.afterAll(async () => {
   await stack?.kill();
+  releasePorts();
   if (stack?.leakTag) await expectNoEngineLeak(stack.leakTag);
 });
 test.describe.configure({ mode: "serial" });

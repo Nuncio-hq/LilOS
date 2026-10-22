@@ -142,11 +142,17 @@ describe("#433 AC-2 flakes stay visible under sharding", () => {
     expect(config).toContain('[["list"], ["github"]]');
   });
 
-  it("keeps the bound-and-probed port picking shards rely on", () => {
-    // #484: pickPorts probes a live bind for free ports — shard legs can
-    // never collide by construction (was: fixed base+worker·100 blocks).
+  it("keeps collision-free ports for sharded e2e", () => {
+    // #484 retired fixed base+worker·100 blocks. #825 retired the
+    // probe-then-hand-off those blocks were replaced with: two shards can
+    // both see that port free. The boot passes 0 and reads the port the
+    // child bound. freePort stays for callers that still probe (vite
+    // preview). reservePorts is the lock for vite and for a rebind.
     const stack = read("e2e/helpers/stack.ts");
     expect(stack).toContain("pickPorts");
+    expect(stack).toContain("parseListeningPort");
+    expect(stack).toContain("reservePorts");
     expect(stack).toContain("freePort");
+    expect(stack).toContain("relay: 0, feed: 0, web: 0");
   });
 });
