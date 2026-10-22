@@ -221,9 +221,11 @@ test("AC-4 after a restart every thread is still under its project; nothing is l
     text: "hello in gamma",
     cwd: gamma,
   });
-  const { home, ports } = stack;
+  const { home } = stack;
   await stack.stop();
-  stack = await bootStack("ac771b", ports, {}, { home });
+  // Fresh ports. Rebinding the ports the stopped stack just released is
+  // the pick-then-bind gap (#825); the page loads the new origin below.
+  stack = await bootStack("ac771b", await pickPorts(), {}, { home });
   await page.goto(`${stack.webUrl}/`);
   const side = v3Sidebar(page);
   for (const name of ["lilos-alpha", "lilos-beta", "lilos-gamma"])

@@ -142,4 +142,6 @@ const server = Bun.serve({
   },
 });
 
+/* #825: this is the port the kernel assigned (`--port 0`). Parents parse
+   `LISTENING ws://127.0.0.1:<port>/ws` — nothing picks the port first. */
 console.log(`LISTENING ws://127.0.0.1:${server.port}/ws`);

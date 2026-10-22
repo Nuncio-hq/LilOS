@@ -14,6 +14,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { requireSlicePort } from "../../apps/web/dev/ready";
 import { engineTag, expectNoEngineLeak } from "../engine-leak";
 import {
   captureProc,
@@ -22,6 +23,7 @@ import {
   WORKER,
   waitForFeed,
   waitForHttp,
+  waitForListeningPort,
   waitForRelay,
   waitForToken,
 } from "./stack";
@@ -90,7 +92,13 @@ export async function bootParts(
     web: undefined,
   };
   const logs: (() => string)[] = [];
-  const relayWs = `ws://127.0.0.1:${ports.relay}/ws`;
+  /* #825: the feed can `listen(0)` and print the port. Vite cannot
+     (8.3.4 rebinds), and `restartRelay` rebinds the relay port while the
+     page still holds that address, so those two come from this worker's
+     slice. A concrete port the caller already picked is used as-is. */
+  let relayPort = ports.relay;
+  let feedPort = ports.feed;
+  let webPort = ports.web;
   const stop = async () => {
     for (const k of ["web", "harness", "relay"] as const) {
       const p = procs[k];
@@ -100,7 +108,15 @@ export async function bootParts(
     await expectNoEngineLeak(leakTag);
   };
   try {
-    procs.relay = await spawnRelay(home, ports.relay, logs);
+    if (relayPort === 0) relayPort = await requireSlicePort("relay");
+    if (webPort === 0) webPort = await requireSlicePort("web");
+    /* No harness: nothing will bind the feed, but vite still bakes the URL
+       into the page. A zero there would be :0, or another stack's feed. */
+    if (feedPort === 0 && opts.harness === false) {
+      feedPort = await requireSlicePort("feed");
+    }
+    const relayWs = `ws://127.0.0.1:${relayPort}/ws`;
+    procs.relay = await spawnRelay(home, relayPort, logs);
     const relayToken = await waitForToken(home);
 
     if (opts.harness !== false) {
@@ -116,7 +132,7 @@ export async function bootParts(
           LILOS_HARNESS_HOME: path.join(home, "harness"),
           LILOS_REPO_ROOT: repo,
           LILOS_WORKDIR: path.join(home, "harness", "work"),
-          LILOS_FEED_PORT: String(ports.feed),
+          LILOS_FEED_PORT: String(feedPort),
           LILOS_ENGINE_TAG: leakTag,
           ...opts.harnessEnv,
         },
@@ -125,7 +141,26 @@ export async function bootParts(
       procs.harness = harness;
       const out = captureProc(harness);
       logs.push(out);
-      await waitForFeed(ports.feed, harness, out);
+      /* The feed's 60s identity wait also covers learning the port when
+         the caller passed 0. A concrete port keeps the full budget. */
+      const feedBudget = 60_000;
+      const feedStart = Date.now();
+      if (feedPort === 0) {
+        feedPort = await waitForListeningPort(
+          "harness",
+          harness,
+          out,
+          feedBudget,
+        );
+      }
+      await waitForFeed(
+        feedPort,
+        harness,
+        out,
+        ports.feed === 0
+          ? Math.max(feedBudget - (Date.now() - feedStart), 1)
+          : undefined,
+      );
     }
 
     procs.web = spawn(
@@ -137,7 +172,7 @@ export async function bootParts(
         "--host",
         "127.0.0.1",
         "--port",
-        String(ports.web),
+        String(webPort),
         "--strictPort",
       ],
       {
@@ -147,20 +182,25 @@ export async function bootParts(
           ...process.env,
           LILOS_RELAY_WS: relayWs,
           LILOS_RELAY_TOKEN: relayToken,
-          LILOS_ENGINE_WS: `ws://127.0.0.1:${ports.feed}/ws`,
-          LILOS_WEB_PORT: String(ports.web),
+          LILOS_ENGINE_WS: `ws://127.0.0.1:${feedPort}/ws`,
+          LILOS_WEB_PORT: String(webPort),
           LILOS_VITE_CACHE_DIR: `node_modules/.vite-${tag}-w${WORKER}`,
         },
         stdio: ["ignore", "pipe", "pipe"],
       },
     );
     logs.push(captureProc(procs.web));
-    await waitForHttp(`http://127.0.0.1:${ports.web}`, 60_000, procs.web);
+    await waitForHttp(`http://127.0.0.1:${webPort}`, 60_000, procs.web);
 
+    const bound: StackPorts = {
+      relay: relayPort,
+      feed: feedPort,
+      web: webPort,
+    };
     return {
       home,
-      webUrl: `http://127.0.0.1:${ports.web}`,
-      ports,
+      webUrl: `http://127.0.0.1:${webPort}`,
+      ports: bound,
       relayWs,
       relayToken,
       leakTag,
@@ -170,7 +210,7 @@ export async function bootParts(
         if (p) await killProc(p);
       },
       restartRelay: async () => {
-        procs.relay = await spawnRelay(home, ports.relay, logs);
+        procs.relay = await spawnRelay(home, relayPort, logs);
       },
       log: () => logs.map((l) => l()).join("\n"),
       stop,

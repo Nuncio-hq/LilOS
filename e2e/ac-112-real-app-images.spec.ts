@@ -193,10 +193,6 @@ async function rpc(
   return out;
 }
 
-let RELAY: number;
-let FEED: number;
-let PORT: number;
-
 test.describe.configure({ mode: "serial" });
 test.setTimeout(120_000);
 
@@ -204,12 +200,9 @@ let stack: Stack;
 let stack2: Stack | undefined;
 
 test.beforeAll(async () => {
-  ({ relay: RELAY, feed: FEED, web: PORT } = await pickPorts());
-  stack = await bootStack(
-    "ac112",
-    { relay: RELAY, feed: FEED, web: PORT },
-    { LILOS_ENGINE: "fake" },
-  );
+  stack = await bootStack("ac112", await pickPorts(), {
+    LILOS_ENGINE: "fake",
+  });
 });
 
 test.afterAll(async () => {
@@ -284,11 +277,11 @@ test("AC-2 sends attachments over conversations.open and messages.post", async (
 
   // Wire check: the root message carries the attachment ref and the stored
   // blob decodes to the bytes we picked (attachments round-trip base64).
-  const root = (await messagesOf(stack.home, RELAY, conv)).find(
+  const root = (await messagesOf(stack.home, stack.ports.relay, conv)).find(
     (m) => m.attachments?.length,
   );
   expect(root?.attachments?.[0]?.name).toBe("picked.png");
-  const got = await rpc(stack.home, RELAY, [
+  const got = await rpc(stack.home, stack.ports.relay, [
     {
       method: "attachments.get",
       params: { id: root?.attachments?.[0]?.id },
@@ -314,9 +307,9 @@ test("AC-2 sends attachments over conversations.open and messages.post", async (
   await expect(
     page.locator("[data-attachments]", { hasText: "reply.png" }),
   ).toBeVisible();
-  const withAtt = (await messagesOf(stack.home, RELAY, conv)).filter(
-    (m) => m.attachments?.length,
-  );
+  const withAtt = (
+    await messagesOf(stack.home, stack.ports.relay, conv)
+  ).filter((m) => m.attachments?.length);
   expect(withAtt.map((m) => m.attachments?.[0]?.name)).toEqual([
     "picked.png",
     "reply.png",
@@ -370,11 +363,11 @@ test("AC-4 oversize and too many files are refused and send nothing", async ({
   await draftDefault(page, stack.webUrl);
   // Serial mode shares the stack: assert the DM's conversation count doesn't
   // grow when a send is refused.
-  const channelId = await channelOf(stack.home, RELAY);
+  const channelId = await channelOf(stack.home, stack.ports.relay);
   const opened = async () =>
     (
       (
-        await rpc(stack.home, RELAY, [
+        await rpc(stack.home, stack.ports.relay, [
           { method: "conversations.list", params: { channelId } },
         ])
       )[0] as { conversations: unknown[] }
@@ -454,7 +447,7 @@ test("AC-4 oversize and too many files are refused and send nothing", async ({
 
   // The relay itself still rejects an oversize attachment the same way.
   await expect(
-    rpc(stack.home, RELAY, [
+    rpc(stack.home, stack.ports.relay, [
       {
         method: "conversations.open",
         params: {
@@ -509,7 +502,7 @@ test("AC-2b an image-only send (no typed text) opens a session and replies", asy
   ).toContainText("image/png", { timeout: 30_000 });
 
   // Wire check: the root message carried attachments with empty text.
-  const rootOnly = (await messagesOf(stack.home, RELAY, conv)).find(
+  const rootOnly = (await messagesOf(stack.home, stack.ports.relay, conv)).find(
     (m) => m.attachments?.[0]?.name === "only.png",
   );
   expect(rootOnly?.text).toBe("");

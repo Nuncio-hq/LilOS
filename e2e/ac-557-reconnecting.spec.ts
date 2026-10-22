@@ -9,9 +9,9 @@ import {
   captureProc,
   killProc,
   panelIntoFocus,
-  pickPorts,
   type StackPorts,
   skipFirstRun,
+  slicePorts,
   startChat,
   v3Peek,
   WORKER,
@@ -36,6 +36,8 @@ const ROOT = path.dirname(fileURLToPath(import.meta.url)).replace(/\/e2e$/, "");
 const webDir = path.join(ROOT, "apps", "web");
 const SHOTS = path.join(ROOT, "test-results", "ac-557");
 const LINE = "[data-reconnecting]";
+/* Held for the spec: `restartRelay` rebinds this port while the page
+   still has the address (#825). */
 let PORTS: StackPorts;
 
 interface Procs {
@@ -240,7 +242,7 @@ async function rpc(
 
 let stack: Procs;
 test.beforeAll(async () => {
-  PORTS = await pickPorts();
+  PORTS = await slicePorts();
   stack = await boot();
 });
 test.afterAll(async () => {

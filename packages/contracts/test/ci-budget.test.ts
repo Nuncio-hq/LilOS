@@ -141,12 +141,4 @@ describe("#433 AC-2 flakes stay visible under sharding", () => {
     expect(config).toContain("retries: process.env.CI ? 1 : 0");
     expect(config).toContain('[["list"], ["github"]]');
   });
-
-  it("keeps the bound-and-probed port picking shards rely on", () => {
-    // #484: pickPorts probes a live bind for free ports — shard legs can
-    // never collide by construction (was: fixed base+worker·100 blocks).
-    const stack = read("e2e/helpers/stack.ts");
-    expect(stack).toContain("pickPorts");
-    expect(stack).toContain("freePort");
-  });
 });
