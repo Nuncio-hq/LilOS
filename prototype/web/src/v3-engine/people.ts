@@ -27,6 +27,8 @@ export function peopleActions({ setData, getData, toast }: Engine): Pick<
   | "removeAgent"
   | "toggleConnector"
   | "addConnector"
+  | "saveNote"
+  | "setAgentSkill"
 > {
   return {
     acceptRule: (agentId) => {
@@ -78,6 +80,8 @@ export function peopleActions({ setData, getData, toast }: Engine): Pick<
               `You are ${name}, the company’s ${role.toLowerCase()}. The CEO gives you tickets; finish them and report back in one short update.`,
             ],
             memory: [],
+            // Empty, not absent: the page can add a file (D-#19).
+            notes: [],
             week: { done: 0, typical: "—", stuck: 0, handed: 0 },
             next: "Waiting for the CEO to give a first ticket",
           },
@@ -117,6 +121,7 @@ export function peopleActions({ setData, getData, toast }: Engine): Pick<
             spend: { used: 0, cap: 10, period: "week" },
             instructions: p.soul ? [p.soul] : [],
             memory: [],
+            notes: [],
             week: { done: 0, typical: "—", stuck: 0, handed: 0 },
             next: "Waiting for the CEO to give a first ticket",
           },
@@ -190,6 +195,62 @@ export function peopleActions({ setData, getData, toast }: Engine): Pick<
       setData((d) => patchConnect(d, (c) => ({ ...c, rows: c.rows.map((r) => (r.profile === profile ? { ...r, employee: undefined } : r)) })));
       toast(`${gone} removed from the company`);
       return Promise.resolve();
+    },
+    saveNote: (agentId, note) => {
+      const name = note.name.trim();
+      if (!name || /[/\\]/.test(name)) return;
+      const notes = getData().agents.find((a) => a.id === agentId)?.notes ?? [];
+      if (notes.some((n) => n.name === name && n.id !== note.id)) {
+        toast("A note already has that name");
+        return;
+      }
+      const base =
+        name
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-|-$/g, "") || "note";
+      setData((d) => ({
+        ...d,
+        agents: d.agents.map((a) => {
+          if (a.id !== agentId) return a;
+          const files = a.notes ?? [];
+          if (note.id && files.some((n) => n.id === note.id)) {
+            return {
+              ...a,
+              notes: files.map((n) =>
+                n.id === note.id
+                  ? { ...n, name, text: note.text, updated: "just now" }
+                  : n,
+              ),
+            };
+          }
+          const taken = new Set(files.map((n) => n.id));
+          let id = base;
+          for (let n = 2; taken.has(id); n++) id = `${base}-${n}`;
+          return {
+            ...a,
+            notes: [...files, { id, name, text: note.text, updated: "just now" }],
+          };
+        }),
+      }));
+      toast("Note saved");
+    },
+    setAgentSkill: (agentId, skillId, attached) => {
+      setData((d) => ({
+        ...d,
+        agents: d.agents.map((a) => {
+          if (a.id !== agentId) return a;
+          const skills = a.skills ?? [];
+          const has = skills.includes(skillId);
+          if (attached === has) return a;
+          return {
+            ...a,
+            skills: attached
+              ? [...skills, skillId]
+              : skills.filter((s) => s !== skillId),
+          };
+        }),
+      }));
     },
     toggleConnector: (connectorId, agentId) => {
       setData((d) => ({

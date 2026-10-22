@@ -43,6 +43,27 @@ export type V3ConnectorDef = {
   agents: string[];
 };
 
+/** A memory file the agent keeps. The company owns the file; a runtime only
+    sees a copy for the live thread. */
+export type V3Note = {
+  id: string;
+  /** File name, as the list shows it ("readers.md"). */
+  name: string;
+  text: string;
+  /** When it last changed, in words ("14 Oct"). */
+  updated: string;
+};
+
+/** One skill in the company library. An agent uses the ones it has attached. */
+export type V3Skill = {
+  id: string;
+  name: string;
+  /** One line, for the library list. */
+  about: string;
+  /** The text a runtime is given when this skill is attached. */
+  text: string;
+};
+
 export type V3Agent = {
   id: string;
   name: string;
@@ -82,7 +103,13 @@ export type V3Agent = {
   /** Notifications switched off for this agent (banners and pushes alike). */
   muted?: boolean;
   schedule?: string;
+  /** Skill ids this agent uses. When the company library is present
+      (`V3Data.skills`) each id is one of its skills and the page can attach
+      or detach it. With no library, the page shows the names and no control. */
   skills?: string[];
+  /** Memory files (the agent's notes/). Absent: this app does not carry
+      them, and the page draws no Notes section (D-#19). */
+  notes?: V3Note[];
   /** Dollars spent this period, and the cap. */
   spend?: { used: number; cap: number; period: "week" | "month" };
   instructions: string[];

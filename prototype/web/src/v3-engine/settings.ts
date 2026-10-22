@@ -21,6 +21,7 @@ export function settingsActions({ setData, getData, toast, openStatus }: Engine)
   | "connectEngine"
   | "setModelVisibility"
   | "refreshModels"
+  | "addSkill"
 > {
   let checking: Promise<void> | undefined
   /* One list hides models for every picker, and Settings shows the same list
@@ -92,6 +93,27 @@ export function settingsActions({ setData, getData, toast, openStatus }: Engine)
         )
       })
       return Promise.resolve()
+    },
+    addSkill: ({ name, about, text }) => {
+      const named = name.trim()
+      const body = text.trim()
+      if (!named || !body) return
+      setData((d) => {
+        const skills = d.skills ?? []
+        const base =
+          named.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "skill"
+        const taken = new Set(skills.map((s) => s.id))
+        let id = base
+        for (let n = 2; taken.has(id); n++) id = `${base}-${n}`
+        return {
+          ...d,
+          skills: [
+            ...skills,
+            { id, name: named, about: about.trim() || named, text: body },
+          ],
+        }
+      })
+      toast(`${named} added to the library`)
     },
     setModelVisibility: setVisibility,
     refreshModels: () =>
