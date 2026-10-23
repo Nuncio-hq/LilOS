@@ -10,7 +10,7 @@ export { BrowserPanel } from "./browser/browser-panel";
 export * from "./browser/browser-types";
 // shared agent-chat pieces (steer rows, not-sent tray, composer running state)
 export * from "./chat/agent-chat";
-export { isHidden } from "./chat/model-visibility-dialog";
+export { isHidden } from "./chat/model-visibility";
 // conversation (shared by the thread panel and Focus — issue #19)
 export { FindBar } from "./conversation/find-bar";
 export { setFindSessionOpen } from "./conversation/find-unstub";

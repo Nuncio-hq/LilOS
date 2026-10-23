@@ -1,0 +1,258 @@
+# Walks every v3 screen and interaction on the fake company, screenshotting
+# each as <theme>-NN-name.png under the test output dir (/tmp/820/takeScreenshot).
+#
+#   JAVA_HOME=/opt/homebrew/opt/openjdk@21 PATH=$JAVA_HOME/bin:$PATH \
+#     maestro --device <udid> test --test-output-dir=/tmp/820 -e THEME=<light|dark> prototype/mobile/maestro/v3-walk.yaml
+#   (switch the sim with `xcrun simctl ui <udid> appearance dark`, rerun with THEME=dark)
+appId: com.nuncio.lilos.mobile
+---
+- launchApp
+# A fresh company every run: the walk approves and denies real asks.
+- openLink: lilos://preview?reset=1&open=home
+- tapOn:
+    text: "Allow"
+    optional: true
+- assertVisible: "Oscar Co"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-01-home
+
+# Home: the three counts open the right list.
+- assertVisible: "3 needs you"
+- tapOn: "3 needs you"
+- assertVisible: "1 of 3"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-02-needs-card
+
+# Approve by swipe: the card flies off, the next one is "1 of 2".
+- swipe:
+    from:
+      id: ask-card
+    direction: RIGHT
+    duration: 300
+- assertVisible: "1 of 2"
+- assertNotVisible: "Approve $40 for the Meta Ads test"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-03-needs-question
+
+# Answer a question ask: it shows its choices, not a swipe.
+- tapOn: "Keep “QRit”"
+- assertVisible: "1 of 1"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-04-needs-plan
+
+# Reject by button (a plan: its thread has the plan; here you decide).
+- tapOn: "Reject plan"
+- assertVisible: "All clear"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-05-needs-empty
+
+# A new ask arrives (the demo company's next one): approve it by button; the
+# next one, deny by button. The approved thread finishes by itself a few
+# seconds later.
+- openLink: lilos://preview?push=ask&open=needs
+- assertVisible: "1 of 1"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-06-needs-new-ask
+- tapOn: "Approve"
+- assertVisible: "All clear"
+- openLink: lilos://preview?push=ask&open=needs
+- assertVisible: "1 of 1"
+- tapOn: "Deny"
+- assertVisible: "All clear"
+
+# The counts moved: nothing waits on you now, the tab badge is gone.
+- tapOn: "Home"
+- assertVisible: "0 needs you"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-07-home-after
+
+# Results to look at: open a finished thread from the list.
+- openLink: lilos://preview?open=needs
+- scrollUntilVisible:
+    element: "Results to look at"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-08-needs-results
+- tapOn: "Run the Meta Ads test.*"
+- assertVisible:
+    id: thread-composer-input
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-09-thread-result
+
+# Work: threads grouped by project, then tickets.
+- openLink: lilos://preview?open=work
+- assertVisible: "Threads"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-10-work-threads
+- tapOn: "Tickets"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-11-work-tickets
+- tapOn: "HB-14.*"
+- assertVisible: "Find 20 journaling creators"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-12-ticket
+- scrollUntilVisible:
+    element: "Threads"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-13-ticket-threads
+
+# The ticket's owner: the agent page.
+- openLink: lilos://preview?open=agent:scout
+- assertVisible: "Instructions"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-14-agent
+- scroll
+- scroll
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-15-agent-threads
+
+# A thread: send a message and watch the scripted reply stream in.
+- openLink: lilos://preview?open=work
+- tapOn: "Threads"
+- tapOn: "How does the relay store messages?.*"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-16-thread-chat
+- tapOn:
+    id: thread-composer-input
+- inputText: "Why is ac-544 flaky?"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-17-thread-composer
+- tapOn: "Send"
+- assertVisible: "Why is ac-544 flaky?"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-17b-thread-working
+- extendedWaitUntil:
+    visible: "Worked.*"
+    timeout: 60000
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-18-thread-reply
+
+# Ask the CEO: the search tab, a search, then a question to the CEO.
+- openLink: lilos://preview?open=ask
+- assertVisible: "Recent from the CEO"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-19-ask-ceo
+- tapOn: "Ask the CEO or search"
+- inputText: "Scout"
+- hideKeyboard
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-20-ask-ceo-search
+# The field is the capsule above the tab bar: tap it to type again.
+- tapOn:
+    point: "50%,94%"
+- eraseText: 10
+- inputText: "How many are working?"
+- tapOn: "Ask the CEO: .*How many are working.*"
+- extendedWaitUntil:
+    visible: ".*agents are working.*"
+    timeout: 60000
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-21-ceo-thread
+
+# Two CEO messages in a row share one author line; the owner's message in
+# between starts a new run.
+- tapOn:
+    id: thread-composer-input
+- inputText: "Is anything stuck?"
+- tapOn: "Send"
+- extendedWaitUntil:
+    visible: ".*is stuck.*"
+    timeout: 60000
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-21b-ceo-thread-second-reply
+
+# Company: people, hire a new agent, then org, goals and projects.
+- openLink: lilos://preview?open=company
+- assertVisible: "People"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-22-company
+- tapOn: "People: Hire"
+- assertVisible: "Hire Researcher"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-23-hire
+- tapOn: "Hire Researcher"
+- assertVisible: "Instructions"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-24-agent-new-hire
+- openLink: lilos://preview?open=company
+- assertVisible: "Researcher"
+- scroll
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-25-company-org
+- scroll
+- scroll
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-26-company-goals-projects
+
+# Pulse: the bottom accessory opens the CEO's thread.
+- openLink: lilos://preview?open=home
+- tapOn: "Company pulse.*"
+- assertVisible:
+    id: thread-composer-input
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-27-pulse-ceo-thread
+
+# The plan ask: its thread carries the plan (read from the same place as the
+# Mac's), and Reject / Approve plan decide it right there.
+- openLink: lilos://preview?reset=1&open=thread:t-chat-sidebar
+- assertVisible: "Read the saved width synchronously, before the first render"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-28-thread-plan
+- tapOn: "Reject plan"
+- assertVisible: "Rejected"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-29-thread-plan-rejected
+- openLink: lilos://preview?reset=1&open=thread:t-chat-sidebar
+- assertVisible: "Waiting for your OK"
+- tapOn: "Approve plan"
+- assertVisible: "Approved"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-30-thread-plan-approved
+- extendedWaitUntil:
+    visible: "The plan is carried out.*"
+    timeout: 30000
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-31-thread-plan-carried-out
+
+# The v2 prototype is one link away. A link meant for v2 does not touch the
+# v3 company (this push= would add a fourth ask), and a link back to v3
+# carries its other params along (Needs opens once v3 has mounted).
+- openLink: lilos://preview?reset=1&open=home
+- openLink: lilos://preview?ui=v2&push=ask
+- openLink: lilos://preview?ui=v3&open=needs
+- assertVisible: "1 of 3"
+- openLink: lilos://preview?ui=v2
+- openLink: lilos://preview?ui=v3&open=work
+- assertVisible: "Threads"

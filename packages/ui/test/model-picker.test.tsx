@@ -18,7 +18,7 @@ import {
   sessionChoice,
   withSessionModel,
 } from "../src/chat/model-picker";
-import { isHidden, modelKey } from "../src/chat/model-visibility-dialog";
+import { isHidden, modelKey } from "../src/chat/model-visibility";
 import type { ModelChoice, ModelOption, ModelVisibility } from "../src/types";
 
 /* happy-dom does not implement every browser API the vendored components touch. */

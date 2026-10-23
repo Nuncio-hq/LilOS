@@ -338,6 +338,7 @@
       "name": "@lilos/prototype-mobile",
       "version": "0.0.0",
       "dependencies": {
+        "@lilos/ui": "workspace:*",
         "@lilos/ui-native": "workspace:*",
         "@nanostores/react": "^2.0.1",
         "@react-navigation/bottom-tabs": "^7.19.2",
@@ -350,6 +351,7 @@
         "expo-glass-effect": "~57.0.4",
         "expo-haptics": "~57.0.3",
         "expo-linking": "~57.0.11",
+        "expo-notifications": "~57.0.21",
         "expo-secure-store": "~57.0.4",
         "expo-status-bar": "~57.0.1",
         "expo-symbols": "~57.0.3",

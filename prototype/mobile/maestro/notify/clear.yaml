@@ -1,0 +1,10 @@
+# Wake the lock screen and sweep away whatever notifications are stacked
+# there, so the next push is the only one and "View" is unambiguous.
+appId: com.apple.springboard
+---
+- tapOn:
+    point: "50%,25%"
+- swipe:
+    start: "85%,81%"
+    end: "10%,81%"
+    duration: 500

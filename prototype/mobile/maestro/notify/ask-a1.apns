@@ -1,0 +1,12 @@
+{
+  "Simulator Target Bundle": "com.nuncio.lilos.mobile",
+  "aps": {
+    "alert": {
+      "title": "Approve $40 for the Meta Ads test",
+      "body": "Marketer: the 3 best hooks scored best with 50 readers."
+    },
+    "category": "lilos-ask",
+    "sound": "default"
+  },
+  "body": { "askId": "a-1" }
+}

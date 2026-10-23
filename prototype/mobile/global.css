@@ -46,6 +46,25 @@
       --color-code-addition: #116329;
       --color-code-deletion: #82071e;
       --color-code-hunk: #0550ae;
+      /* v3: warm paper, ink, hairlines; colour only on status. */
+      --color-paper: #fbfaf7;
+      --color-paper-soft: #f2f0eb;
+      --color-ink: #1d1c1a;
+      --color-ink-2: #5c5952;
+      --color-ink-3: #8c887f;
+      --color-rule: #1d1c1a1a;
+      --color-st-working: #0284c7;
+      --color-st-working-ink: #0369a1;
+      --color-st-waiting: #ca8a04;
+      --color-st-waiting-ink: #8a5a00;
+      --color-st-needs: #ea580c;
+      --color-st-needs-ink: #b8400a;
+      --color-st-stuck: #dc2626;
+      --color-st-stuck-ink: #b91c1c;
+      --color-st-idle: #a8a29e;
+      --color-st-idle-ink: #6b675f;
+      --color-st-done: #059669;
+      --color-st-done-ink: #047857;
     }
 
     @variant dark {
@@ -82,6 +101,24 @@
       --color-code-addition: #3fb950;
       --color-code-deletion: #f85149;
       --color-code-hunk: #a5d6ff;
+      --color-paper: #1a1917;
+      --color-paper-soft: #252320;
+      --color-ink: #f2f0ea;
+      --color-ink-2: #b5b1a8;
+      --color-ink-3: #86827a;
+      --color-rule: #f2f0ea1f;
+      --color-st-working: #38bdf8;
+      --color-st-working-ink: #7dd3fc;
+      --color-st-waiting: #facc15;
+      --color-st-waiting-ink: #fde047;
+      --color-st-needs: #fb923c;
+      --color-st-needs-ink: #fdba74;
+      --color-st-stuck: #f87171;
+      --color-st-stuck-ink: #fca5a5;
+      --color-st-idle: #78716c;
+      --color-st-idle-ink: #a8a29e;
+      --color-st-done: #34d399;
+      --color-st-done-ink: #6ee7b7;
     }
   }
 }
