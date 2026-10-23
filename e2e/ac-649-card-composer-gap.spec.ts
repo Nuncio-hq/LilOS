@@ -1,13 +1,14 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
+import { growDmThread } from "./helpers/relay-thread";
 import {
   bootStack,
   panelIntoFocus,
   pickPorts,
   type Stack,
   skipFirstRun,
-  startChat,
+  threadUrl,
   v3Peek,
 } from "./helpers/stack";
 
@@ -224,22 +225,31 @@ const idle = async (page: Page) => {
     .toBe(true);
 };
 
-/** Grow the session until the Focus scroller overflows with headroom for
-    the card that follows (≥ a card's height of scroll range). */
+/** The thread was grown through the relay before the page opened
+    (`openChat`). This only checks the scroller overflowed. Sending
+    another "summarize" here would put a word-by-word turn under
+    `idle`'s 5s poll (#827). */
 async function makeScrollable(page: Page) {
   const focusSel = "[data-thread-panel] [role='log']";
-  const range = () =>
-    page.evaluate((s) => {
-      const sc = document.querySelector(s)
-        ?.firstElementChild as HTMLElement | null;
-      return sc ? sc.scrollHeight - sc.clientHeight : 0;
-    }, focusSel);
-  for (let i = 0; i < 8 && (await range()) < 320; i++) {
-    await send(page, `Working note ${i + 1}: summarize the repo layout`);
-    await idle(page);
-  }
-  expect(await range(), "session never became scrollable").toBeGreaterThan(320);
+  const range = await page.evaluate((s) => {
+    const sc = document.querySelector(s)
+      ?.firstElementChild as HTMLElement | null;
+    return sc ? sc.scrollHeight - sc.clientHeight : 0;
+  }, focusSel);
+  expect(range, "session never became scrollable").toBeGreaterThan(320);
 }
+
+/* Four settled default-script turns. Measured under four CPU hogs:
+   hello + two of these notes already overflowed a 700px-tall scroller,
+   and each composer send left only ~0.5s of the 5s idle poll after the
+   turn. One extra note is margin for a shorter wrap. None of these
+   match engine-fake's edit-ask, so each turn completes on its own. */
+const SETTLED_SCROLL = [
+  "hello there",
+  "Working note 1: summarize the repo layout",
+  "Working note 2: summarize the repo layout",
+  "Working note 3: summarize the repo layout",
+];
 
 test.describe("AC-1/2/3 approval, plan and question cards (real app, engine-fake)", () => {
   test.describe.configure({ mode: "serial" });
@@ -253,19 +263,24 @@ test.describe("AC-1/2/3 approval, plan and question cards (real app, engine-fake
     await stack?.stop();
   });
 
-  /* A new chat with the seeded employee, landed on its thread in the side
-     peek and then widened into the session view — the peek's widen button
-     is the only way in (#577). An id that names nobody opens the draft on
-     the default agent. */
+  /* A settled DM with the seeded employee, opened in the side peek and
+     widened — the peek's widen button is the only way in (#577).
+     #827: the turns are posted through the relay (`growDmThread` waits
+     `turn.completed` on its own 60s budget) before the page opens.
+     `idle` then only has to see a quiet composer for 600ms inside
+     expect's default 5s. Sending them from the composer made the poll
+     wait out engine-fake's word-by-word reply; under load that reply
+     plus 600ms did not fit. */
   async function openChat(page: Page) {
+    const grown = await growDmThread(stack, SETTLED_SCROLL);
     await skipFirstRun(page);
-    await startChat(
-      page,
-      stack.webUrl,
-      { id: "default", name: "Default" },
-      "hello there",
-    );
+    await page.goto(threadUrl(stack.webUrl, grown.conversationId));
     await panelIntoFocus(page);
+    await expect(
+      page
+        .locator("[data-thread-panel] [data-agentturn] [data-turnsettled]")
+        .last(),
+    ).toBeVisible({ timeout: 30_000 });
   }
 
   /** The surface under test: the session view as is, or narrowed back to the

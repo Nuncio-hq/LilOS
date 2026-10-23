@@ -110,12 +110,24 @@ async function dmChannelIds(
 test.describe.configure({ mode: "serial" });
 
 let stackA: Stack; // engine-fake advertising every capability
+let stackB: Stack; // LILOS_HIDE_CAPS=agents — AC-1's second page
 test.beforeAll(async () => {
   test.setTimeout(120_000);
+  /* #827: AC-1's default 30s used to cover two cold vite boots. The
+     first page.goto ("waiting until load") is the compile. Both stacks
+     boot here, where this hook already allows 120s; `bootStack` warms
+     the module graph before it returns. The test only navigates. */
   stackA = await bootStack("main", await pickPorts());
+  stackB = await bootStack("noagents", await pickPorts(), {
+    LILOS_HIDE_CAPS: "agents",
+  });
 });
 test.afterAll(async () => {
-  await stackA?.stop();
+  try {
+    await stackA?.stop();
+  } finally {
+    await stackB?.stop();
+  }
 });
 
 /** Open the app past first run, on Home with the auto-hired Default in the
@@ -185,30 +197,24 @@ test("AC-1 the sidebar offers Hire, and opens the Hire page, only when the engin
   await page.screenshot({ path: `${SHOTS}/ac-1-hire-dialog.png` });
 
   // D-#19: no `agents` capability advertised → no hire affordance at all.
-  const stackB = await bootStack("noagents", await pickPorts(), {
-    LILOS_HIDE_CAPS: "agents",
-  });
-  try {
-    await openApp(stackB, page);
-    /* Hire is absent both before describe and when the engine declares no
-       agents. The attribute is describe landing; the count is that state. */
-    await expect(page.locator("[data-engine-described]")).toBeAttached();
-    await expect(
-      v3Sidebar(page).getByRole("button", { name: "Hire an agent" }),
-    ).toHaveCount(0);
-    // A link to the Hire page says plainly that it can't be used.
-    await page.goto(`${stackB.webUrl}/#?page=hire`);
-    await expect(page.locator("[data-engine-described]")).toBeAttached();
-    await expect(
-      page.getByText(
-        /Hiring is not available while the engine cannot create agents/,
-      ),
-    ).toBeVisible();
-    await expect(roleCard(page, "Engineer")).toHaveCount(0);
-    await page.screenshot({ path: `${SHOTS}/ac-1-no-agents-capability.png` });
-  } finally {
-    await stackB.stop();
-  }
+  // The no-agents stack was booted in beforeAll (#827).
+  await openApp(stackB, page);
+  /* Hire is absent both before describe and when the engine declares no
+     agents. The attribute is describe landing; the count is that state. */
+  await expect(page.locator("[data-engine-described]")).toBeAttached();
+  await expect(
+    v3Sidebar(page).getByRole("button", { name: "Hire an agent" }),
+  ).toHaveCount(0);
+  // A link to the Hire page says plainly that it can't be used.
+  await page.goto(`${stackB.webUrl}/#?page=hire`);
+  await expect(page.locator("[data-engine-described]")).toBeAttached();
+  await expect(
+    page.getByText(
+      /Hiring is not available while the engine cannot create agents/,
+    ),
+  ).toBeVisible();
+  await expect(roleCard(page, "Engineer")).toHaveCount(0);
+  await page.screenshot({ path: `${SHOTS}/ac-1-no-agents-capability.png` });
 });
 
 test("AC-2 hire a QA agent: the engine profile is created, the employee links it, a second click hires no duplicate", async ({
