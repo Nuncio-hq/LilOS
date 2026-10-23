@@ -128,6 +128,18 @@ export function initNotifications(h: NotifyHandlers): () => void {
   return () => sub.remove();
 }
 
+/** Forget what was handled and clear every notification the phone still holds,
+    scheduled or delivered: after a company reset an old Approve must not act
+    on the fresh company (its ask ids come back). Both calls start together so
+    the clearing cannot reach a notification posted right after the reset. */
+export async function resetNotifications(): Promise<void> {
+  handled.clear();
+  await Promise.all([
+    Notifications.cancelAllScheduledNotificationsAsync(),
+    Notifications.dismissAllNotificationsAsync(),
+  ]);
+}
+
 let permission: Promise<boolean> | undefined;
 
 export function ensurePermission(): Promise<boolean> {

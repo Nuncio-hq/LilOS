@@ -50,3 +50,11 @@ export function openTab(screen: keyof TabRoutes) {
   toTabs();
   v3Nav.navigate("Tabs", { screen });
 }
+
+/** Run `fn` once the navigation tree exists (a link or notification that
+    launched the app arrives before the first screen is mounted, and a
+    switch from the v2 prototype remounts the whole tree). */
+export function whenNavReady(fn: () => void, tries = 40) {
+  if (v3Nav.isReady()) fn();
+  else if (tries > 0) setTimeout(() => whenNavReady(fn, tries - 1), 150);
+}

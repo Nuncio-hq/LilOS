@@ -219,3 +219,40 @@ appId: com.nuncio.lilos.mobile
 - waitForAnimationToEnd:
     timeout: 1500
 - takeScreenshot: ${THEME}-27-pulse-ceo-thread
+
+# The plan ask: its thread carries the plan (read from the same place as the
+# Mac's), and Reject / Approve plan decide it right there.
+- openLink: lilos://preview?reset=1&open=thread:t-chat-sidebar
+- assertVisible: "Read the saved width synchronously, before the first render"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-28-thread-plan
+- tapOn: "Reject plan"
+- assertVisible: "Rejected"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-29-thread-plan-rejected
+- openLink: lilos://preview?reset=1&open=thread:t-chat-sidebar
+- assertVisible: "Waiting for your OK"
+- tapOn: "Approve plan"
+- assertVisible: "Approved"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-30-thread-plan-approved
+- extendedWaitUntil:
+    visible: "The plan is carried out.*"
+    timeout: 30000
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-31-thread-plan-carried-out
+
+# The v2 prototype is one link away. A link meant for v2 does not touch the
+# v3 company (this push= would add a fourth ask), and a link back to v3
+# carries its other params along (Needs opens once v3 has mounted).
+- openLink: lilos://preview?reset=1&open=home
+- openLink: lilos://preview?ui=v2&push=ask
+- openLink: lilos://preview?ui=v3&open=needs
+- assertVisible: "1 of 3"
+- openLink: lilos://preview?ui=v2
+- openLink: lilos://preview?ui=v3&open=work
+- assertVisible: "Threads"

@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { AppState } from "react-native";
 import { CEO_THREAD_ID } from "./model";
-import { openTab, openThread, v3Nav } from "./nav";
+import { openTab, openThread, whenNavReady } from "./nav";
 import {
   ensurePermission,
   initNotifications,
@@ -18,15 +18,8 @@ import { approve, deny, focusAsk, releaseNext } from "./store";
    foreground handler hides the banner. */
 const NEWS_AFTER_S = 4;
 
-/** Run once the navigation tree exists: a notification that launched the app
-    from killed arrives before the first screen is mounted. */
-function whenReady(fn: () => void, tries = 40) {
-  if (v3Nav.isReady()) fn();
-  else if (tries > 0) setTimeout(() => whenReady(fn, tries - 1), 150);
-}
-
 function open(target: NotifyTarget) {
-  whenReady(() => {
+  whenNavReady(() => {
     if (target.kind === "ask") {
       focusAsk(target.askId);
       openTab("Needs");

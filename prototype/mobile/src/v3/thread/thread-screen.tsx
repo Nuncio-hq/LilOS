@@ -22,7 +22,9 @@ export function ThreadContainer({
     () => (thread ? threadVM(d, thread) : undefined),
     [d, thread],
   );
-  const title = thread?.title ?? "";
+  /* The standing thread with an agent is titled by its name, which the
+     header block right under the bar already says: no second copy. */
+  const title = thread && thread.title !== vm?.agent.name ? thread.title : "";
   const unseen = thread?.unseen === true;
 
   useLayoutEffect(() => {

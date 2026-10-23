@@ -15,7 +15,6 @@ import {
 import { AgentContainer } from "./company/agent-screen";
 import { CompanyContainer } from "./company/company-screen";
 import { HireContainer } from "./company/hire-sheet";
-import { useV3DeepLinks } from "./deep-links";
 import { HomeContainer } from "./home/home-screen";
 import { PulseAccessory } from "./home/pulse-accessory";
 import { type RootRoutes, type TabRoutes, v3Nav } from "./nav";
@@ -120,7 +119,6 @@ const SHEET: NativeStackNavigationOptions = {
 };
 
 function Routes() {
-  useV3DeepLinks();
   useNotifications();
   return (
     <Stack.Navigator
