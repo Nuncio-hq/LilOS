@@ -9,6 +9,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./model-rules": "./src/employees/model-rules.ts",
+    "./v3": "./src/v3/index.ts",
     "./provider-logos": "./src/components/provider-logos.ts"
   },
   "peerDependencies": {
