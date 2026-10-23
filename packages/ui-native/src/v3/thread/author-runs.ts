@@ -68,4 +68,5 @@ export const hasAnswerSide = (t: TurnVM): boolean =>
   t.steps.length > 0 ||
   !!t.answer ||
   !!t.summary ||
+  !!t.plan ||
   t.attachments.length > 0;

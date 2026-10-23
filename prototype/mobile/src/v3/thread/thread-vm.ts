@@ -1,3 +1,4 @@
+import type { Plan } from "@lilos/ui/types";
 import {
   threadTag,
   type V3Attachment,
@@ -8,10 +9,12 @@ import {
 } from "@lilos/ui/v3-data";
 import type {
   AttachmentVM,
+  PlanVM,
   StepVM,
   ThreadVM,
   TurnVM,
 } from "@lilos/ui-native/v3";
+import { planOf } from "../../../../web/src/thread/mock-plans";
 import { askVM, personOf, STATUS_WORDS } from "../model";
 
 /* A thread of the company as the conversation screen draws it. Pure. */
@@ -52,8 +55,31 @@ function attachmentVM(
   return { key, ...a };
 }
 
-function turnVM(d: V3Data, threadId: string, t: V3Turn): TurnVM {
+/** The plan a turn proposed, from the same source the Mac reads it from. */
+function planVM(key: string, p: Plan): PlanVM {
+  return {
+    status: p.status,
+    version: p.version,
+    goal: p.goal,
+    steps: p.steps.map((s, i) => ({
+      key: `${key}-p${i}`,
+      text: s.text,
+      files: s.files ?? [],
+      state:
+        s.status === "completed"
+          ? "done"
+          : s.status === "in_progress"
+            ? "running"
+            : "pending",
+    })),
+    risks: p.risks ?? [],
+  };
+}
+
+function turnVM(d: V3Data, thread: V3Thread, t: V3Turn): TurnVM {
+  const threadId = thread.id;
   const key = `${threadId}-${t.n}`;
+  const plan = planOf(thread, t);
   const steps = (t.steps ?? []).map((s, i) => stepVM(key, s, i));
   return {
     key,
@@ -72,6 +98,7 @@ function turnVM(d: V3Data, threadId: string, t: V3Turn): TurnVM {
     streaming: t.streaming === true,
     summary: t.summary,
     attachments: (t.attachments ?? []).map((a, i) => attachmentVM(key, a, i)),
+    plan: plan && planVM(key, plan),
     queued: (t.queued ?? []).map((q, i) => ({
       key: `${key}-q${i}`,
       at: q.at,
@@ -80,20 +107,29 @@ function turnVM(d: V3Data, threadId: string, t: V3Turn): TurnVM {
   };
 }
 
+/** The line "what it is doing now", unless a plan card already marks that
+    very step as running (an approved plan's first step). */
+function runningLine(t: V3Thread, turns: TurnVM[]): ThreadVM["now"] {
+  if (t.status !== "working" || !t.now) return undefined;
+  const text = t.now.text;
+  const shown = turns.some((u) =>
+    u.plan?.steps.some((s) => s.state === "running" && s.text === text),
+  );
+  return shown ? undefined : { text, elapsed: t.now.elapsed };
+}
+
 export function threadVM(d: V3Data, t: V3Thread): ThreadVM {
   const ask = t.askId ? d.asks.find((a) => a.id === t.askId) : undefined;
+  // Stored newest first; a chat reads oldest first.
+  const turns = [...t.turns].reverse().map((turn) => turnVM(d, t, turn));
   return {
     id: t.id,
     agent: personOf(d, t.agentId),
     tag: threadTag(d, t),
     status: t.status,
     statusWord: STATUS_WORDS[t.status],
-    // Stored newest first; a chat reads oldest first.
-    turns: [...t.turns].reverse().map((turn) => turnVM(d, t.id, turn)),
-    now:
-      t.status === "working" && t.now
-        ? { text: t.now.text, elapsed: t.now.elapsed }
-        : undefined,
+    turns,
+    now: runningLine(t, turns),
     stuck: t.status === "stuck" ? t.stuck : undefined,
     failure:
       t.status === "failed" ? (t.summary ?? "It did not finish.") : undefined,

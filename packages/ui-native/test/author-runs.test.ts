@@ -106,6 +106,17 @@ describe("turnAuthorLines", () => {
     expect(turnAuthorLines(turns, "ceo", false)).toEqual([true, true]);
   });
 
+  it("counts a turn that only carries a plan as the agent's", () => {
+    const plan = {
+      status: "proposed" as const,
+      version: 1,
+      steps: [],
+      risks: [],
+    };
+    const turns = [turn({ prompt: prompt(true) }), turn({ plan })];
+    expect(turnAuthorLines(turns, "ceo", false)).toEqual([false, true]);
+  });
+
   it("gives a prompt-only turn no line", () => {
     const turns = [turn({ prompt: prompt(true) })];
     expect(turnAuthorLines(turns, "ceo", false)).toEqual([false]);

@@ -5,6 +5,7 @@ import type { Person } from "../types";
 import { Attachments } from "./attachments";
 import { hasAnswerSide } from "./author-runs";
 import { Glyph } from "./glyph";
+import { PlanCard } from "./plan-card";
 import { V3Prose } from "./prose";
 import { WorkFold } from "./steps";
 import type { PromptVM, TurnVM } from "./types";
@@ -120,6 +121,7 @@ export function TurnView({
           ) : turn.summary ? (
             <T variant="body">{turn.summary}</T>
           ) : null}
+          {turn.plan ? <PlanCard plan={turn.plan} /> : null}
           <Attachments items={turn.attachments} />
         </View>
       ) : null}

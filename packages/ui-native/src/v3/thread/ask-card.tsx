@@ -32,9 +32,13 @@ export function ThreadAskCard({
       />
       <View className="gap-1">
         <T variant="label">{ask.title}</T>
-        <T variant="small" tone="ink2">
-          {ask.ask}
-        </T>
+        {/* A plan's ask only points at the plan, which is right above in this
+            thread: no line telling you to go and read it. */}
+        {ask.kind === "plan" ? null : (
+          <T variant="small" tone="ink2">
+            {ask.ask}
+          </T>
+        )}
       </View>
       {lines.length > 0 ? (
         <View className="gap-1">
@@ -73,6 +77,8 @@ export function ThreadAskCard({
         <DecisionButtons
           onApprove={onApprove}
           onDeny={onDeny}
+          approveLabel={ask.kind === "plan" ? "Approve plan" : undefined}
+          denyLabel={ask.kind === "plan" ? "Reject plan" : undefined}
           testIDPrefix="thread-ask"
         />
       )}

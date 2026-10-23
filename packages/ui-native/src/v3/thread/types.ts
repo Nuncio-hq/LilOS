@@ -54,6 +54,23 @@ export type AttachmentVM =
   | { key: string; kind: "image"; label: string }
   | { key: string; kind: "sheet"; name: string; rows: number };
 
+/** A plan an agent proposed before touching anything: what done looks like,
+    the steps (with the files each expects to touch) and what could go wrong. */
+export type PlanVM = {
+  /** Waiting for your OK, approved (its steps are the live checklist),
+      rejected, or replaced by a newer version. */
+  status: "proposed" | "approved" | "rejected" | "replaced";
+  version: number;
+  goal?: string;
+  steps: {
+    key: string;
+    text: string;
+    files: string[];
+    state: "pending" | "running" | "done";
+  }[];
+  risks: string[];
+};
+
 /** The message that started a turn. */
 export type PromptVM = {
   /** You wrote it: a bubble. Otherwise an agent asked: a quiet line. */
@@ -83,6 +100,8 @@ export type TurnVM = {
   /** What a turn with no answer did, in one line. */
   summary?: string;
   attachments: AttachmentVM[];
+  /** The plan this turn proposed. */
+  plan?: PlanVM;
   /** Messages sent while the turn ran; the agent reads them after the step. */
   queued: { key: string; at: string; text: string }[];
 };

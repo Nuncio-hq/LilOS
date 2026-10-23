@@ -5,6 +5,7 @@ import {
   type V3Ticket,
   type V3Turn,
 } from "@lilos/ui/v3-data";
+import { decidePlan, hasPlan } from "../../../../web/src/thread/mock-plans";
 import { drain } from "./chat";
 import { nowClock, uid } from "./clock";
 import { deferInLane, isBusy, openLane } from "./lanes";
@@ -27,6 +28,15 @@ const sentences = (text?: string): string[] =>
 
 const nextTurnNumber = (t: V3Thread): number =>
   Math.max(0, ...t.turns.map((u) => u.n)) + 1;
+
+/** A turn that was still running when the thread stopped waiting is over:
+    "3m so far" reads "3m". */
+const settled = (turns: V3Turn[]): V3Turn[] =>
+  turns.map((u) =>
+    u.took?.endsWith(" so far")
+      ? { ...u, took: u.took.slice(0, -" so far".length) }
+      : u,
+  );
 
 /** What the agent did once you approved, written from the ask and its subject. */
 type Carried = {
@@ -90,7 +100,7 @@ function finishApproved(threadId: string, c: Carried): void {
             summary,
             step: (t.step ?? 0) + 1,
             minutes: t.minutes + 1,
-            turns: [turn, ...t.turns],
+            turns: [turn, ...settled(t.turns)],
           }
         : t,
     ),
@@ -105,15 +115,17 @@ function carryOn(threadId: string, c: Carried): void {
     return;
   }
   const later = openLane(threadId);
-  later(
-    () =>
-      patchThread(threadId, (t) => ({
-        ...t,
-        now: { kind: "think", text: `Checking ${c.subject}`, elapsed: "0s" },
-        tail: [`Approved by ${c.me}`, "Almost done…"],
-      })),
-    1500,
-  );
+  // An approved plan already shows its first step running (decidePlan).
+  if (!c.plan)
+    later(
+      () =>
+        patchThread(threadId, (t) => ({
+          ...t,
+          now: { kind: "think", text: `Checking ${c.subject}`, elapsed: "0s" },
+          tail: [`Approved by ${c.me}`, "Almost done…"],
+        })),
+      1500,
+    );
   later(() => {
     finishApproved(threadId, c);
     drain(threadId);
@@ -127,21 +139,7 @@ function closingTurn(
   me: string,
   at: string,
   subject: string,
-  plan: boolean,
 ): { turn: V3Turn; summary: string } {
-  if (plan) {
-    const summary = "Plan rejected, nothing was touched";
-    return {
-      summary,
-      turn: {
-        n: nextTurnNumber(t),
-        from: `you at ${at}`,
-        took: "just now",
-        prompt: { by: "you", at, text: "Rejected the plan" },
-        answer: `${summary}.`,
-      },
-    };
-  }
   if (outcome.kind === "answer") {
     const summary = `You chose ${outcome.option}`;
     return {
@@ -193,7 +191,8 @@ function resolve(askId: string, outcome: Outcome): void {
     : outcome.kind === "no"
       ? "Denied"
       : `You chose ${outcome.option}`;
-  const plan = !!thread && !ticket && ask.kind === "approval";
+  // A plan's text lives with the Mac's mock plans, keyed by its thread.
+  const plan = !!thread && hasPlan(thread.id);
   const subject = ticket?.title ?? thread?.title ?? ask.title;
   const who = agentNameOf(d, ask.from);
   const at = nowClock();
@@ -237,6 +236,15 @@ function resolve(askId: string, outcome: Outcome): void {
 
   const threads = d.threads.map((t) => {
     if (t.askId !== askId) return t;
+    // The plan card settles the way the Mac's does: Approve sets the first
+    // step running, Reject ends the thread with its plan rejected.
+    if (plan) {
+      const decided = decidePlan(
+        { ...t, step: (t.step ?? 0) + 1 },
+        yes ? "approve" : "reject",
+      );
+      return yes ? decided : { ...decided, turns: settled(decided.turns) };
+    }
     const base = {
       ...t,
       askId: undefined,
@@ -267,7 +275,7 @@ function resolve(askId: string, outcome: Outcome): void {
         },
       };
     }
-    const closing = closingTurn(t, ask, outcome, d.me, at, subject, plan);
+    const closing = closingTurn(t, ask, outcome, d.me, at, subject);
     return {
       ...base,
       status: "done" as const,
@@ -277,7 +285,7 @@ function resolve(askId: string, outcome: Outcome): void {
       live: undefined,
       tail: undefined,
       summary: closing.summary,
-      turns: [closing.turn, ...t.turns],
+      turns: [closing.turn, ...settled(t.turns)],
     };
   });
 

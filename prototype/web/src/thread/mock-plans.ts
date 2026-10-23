@@ -1,4 +1,5 @@
-import type { Plan, PlanStep, V3Thread, V3Turn } from "@lilos/ui"
+import type { Plan, PlanStep } from "@lilos/ui/types"
+import type { V3Thread, V3Turn } from "@lilos/ui/v3-data"
 
 /* A plan waiting for your OK (the card with Approve, Change and Reject), on a
    mock thread. The mock thread record has no plan to propose, so the plan's

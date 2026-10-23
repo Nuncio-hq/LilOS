@@ -18,6 +18,7 @@ import type {
   ThreadRowVM,
   TicketRowVM,
 } from "@lilos/ui-native/v3";
+import { hasPlan } from "../../../web/src/thread/mock-plans";
 
 /* Lookups and view-model builders every v3 screen shares. Pure: they read
    the company and never change it. */
@@ -71,11 +72,12 @@ export function agoText(min: number): string {
   return min < 1 ? "just now" : `${minutesText(min)} ago`;
 }
 
-/** A plan ask names a thread and has no ticket and nothing else to say: the
-    plan itself reads in the thread. */
-function askKind(a: V3Ask): AskVM["kind"] {
+/** A plan ask is an approval whose thread carries a plan to read (the Mac's
+    mock-plans.ts holds the plan text, not the company data). */
+function askKind(d: V3Data, a: V3Ask): AskVM["kind"] {
   if (a.kind === "question") return "question";
-  return a.threadId && !a.ticketId && !a.why ? "plan" : "approval";
+  const thread = d.threads.find((t) => t.askId === a.id);
+  return thread && hasPlan(thread.id) ? "plan" : "approval";
 }
 
 export function askVM(d: V3Data, a: V3Ask): AskVM {
@@ -86,7 +88,7 @@ export function askVM(d: V3Data, a: V3Ask): AskVM {
     a.threadId ?? d.threads.find((t) => t.askId === a.id)?.id ?? undefined;
   return {
     id: a.id,
-    kind: askKind(a),
+    kind: askKind(d, a),
     from: personOf(d, a.from),
     title: a.title,
     ask: a.ask,
