@@ -170,6 +170,19 @@ appId: com.nuncio.lilos.mobile
     timeout: 1500
 - takeScreenshot: ${THEME}-21-ceo-thread
 
+# Two CEO messages in a row share one author line; the owner's message in
+# between starts a new run.
+- tapOn:
+    id: thread-composer-input
+- inputText: "Is anything stuck?"
+- tapOn: "Send"
+- extendedWaitUntil:
+    visible: ".*is stuck.*"
+    timeout: 60000
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-21b-ceo-thread-second-reply
+
 # Company: people, hire a new agent, then org, goals and projects.
 - openLink: lilos://preview?open=company
 - assertVisible: "People"

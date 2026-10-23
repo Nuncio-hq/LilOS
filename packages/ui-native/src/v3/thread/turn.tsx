@@ -3,6 +3,7 @@ import { Animated, Easing, Text, View } from "react-native";
 import { Avatar, PersonName, T } from "../kit";
 import type { Person } from "../types";
 import { Attachments } from "./attachments";
+import { hasAnswerSide } from "./author-runs";
 import { Glyph } from "./glyph";
 import { V3Prose } from "./prose";
 import { WorkFold } from "./steps";
@@ -77,14 +78,17 @@ function AskedLine({ prompt }: { prompt: PromptVM }) {
   );
 }
 
-export function TurnView({ turn, agent }: { turn: TurnVM; agent: Person }) {
+export function TurnView({
+  turn,
+  agent,
+  showAuthor,
+}: {
+  turn: TurnVM;
+  agent: Person;
+  /** First message of a run by this agent: draw who is speaking. */
+  showAuthor: boolean;
+}) {
   const { prompt } = turn;
-  const hasAnswerSide =
-    turn.live ||
-    turn.steps.length > 0 ||
-    !!turn.answer ||
-    !!turn.summary ||
-    turn.attachments.length > 0;
   return (
     <View className="gap-4" testID={`turn-${turn.key}`}>
       {prompt ? (
@@ -94,12 +98,14 @@ export function TurnView({ turn, agent }: { turn: TurnVM; agent: Person }) {
           <AskedLine prompt={prompt} />
         )
       ) : null}
-      {hasAnswerSide ? (
+      {hasAnswerSide(turn) ? (
         <View className="gap-3 px-5">
-          <View className="flex-row items-center gap-2">
-            <Avatar person={agent} size={24} />
-            <PersonName person={agent} variant="small" />
-          </View>
+          {showAuthor ? (
+            <View className="flex-row items-center gap-2">
+              <Avatar person={agent} size={24} />
+              <PersonName person={agent} variant="small" />
+            </View>
+          ) : null}
           <WorkFold
             steps={turn.steps}
             took={turn.took}

@@ -1,7 +1,8 @@
-import { useRef } from "react";
+import { useMemo, useRef } from "react";
 import { ScrollView, View } from "react-native";
 import { StatusDot, T } from "../kit";
 import { ThreadAskCard } from "./ask-card";
+import { turnAuthorLines } from "./author-runs";
 import { ThreadComposer } from "./composer";
 import { ThreadHeader } from "./header";
 import { TurnView } from "./turn";
@@ -27,6 +28,13 @@ export function ThreadView({
   const scroller = useRef<ScrollView>(null);
   const pinned = useRef(true);
   const { ask } = thread;
+  // The header under the native bar names the agent, so the run that opens
+  // the transcript needs no author line of its own; every later run does,
+  // because the header scrolls away.
+  const authorLines = useMemo(
+    () => turnAuthorLines(thread.turns, thread.agent.id, true),
+    [thread.turns, thread.agent.id],
+  );
   return (
     <View testID="thread-screen" className="flex-1 bg-paper">
       <ScrollView
@@ -55,8 +63,13 @@ export function ThreadView({
       >
         <ThreadHeader thread={thread} />
         <View className="gap-7 pt-6">
-          {thread.turns.map((turn) => (
-            <TurnView key={turn.key} turn={turn} agent={thread.agent} />
+          {thread.turns.map((turn, i) => (
+            <TurnView
+              key={turn.key}
+              turn={turn}
+              agent={thread.agent}
+              showAuthor={authorLines[i] === true}
+            />
           ))}
           {thread.stuck ? (
             <View testID="thread-stuck" className="gap-1 px-5">
