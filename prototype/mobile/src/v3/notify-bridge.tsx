@@ -12,8 +12,11 @@ import {
 import { approve, deny, focusAsk, releaseNext } from "./store";
 
 /* How long after the app goes to the background the demo company "gets news".
-   Long enough to lock the phone, short enough to wait for. */
-const NEWS_AFTER_MS = 4000;
+   Long enough to lock the phone, short enough to wait for. iOS owns the
+   delay (a time-interval trigger): a JS timer does not run once the phone
+   locks and the app is suspended, so it would fire on resume, when the
+   foreground handler hides the banner. */
+const NEWS_AFTER_S = 4;
 
 /** Run once the navigation tree exists: a notification that launched the app
     from killed arrives before the first screen is mounted. */
@@ -33,13 +36,15 @@ function open(target: NotifyTarget) {
   });
 }
 
-/** Post the next queued ask or CEO update as a local notification; the item
-    is already in the company, so the notification's Approve decides a real
-    ask. Exported for the `lilos://preview?push=` deep link. */
-export function pushNext(kind?: "ask" | "update") {
+/** Release the next queued ask or CEO update into the company and post it as
+    a local notification `afterSeconds` later (0 = now); the item is already
+    in the company, so the notification's Approve decides a real ask. */
+export function pushNext(kind?: "ask" | "update", afterSeconds = 0) {
   const next = releaseNext(kind);
   if (!next) return;
-  void (next.kind === "ask" ? notifyAsk(next) : notifyUpdate(next));
+  void (next.kind === "ask"
+    ? notifyAsk(next, afterSeconds)
+    : notifyUpdate(next, afterSeconds));
 }
 
 /** Notifications for the v3 app: lock-screen Approve/Deny and taps route
@@ -52,17 +57,12 @@ export function useNotifications() {
       deny: (id) => deny(id),
       open,
     });
-    let timer: ReturnType<typeof setTimeout> | undefined;
     const sub = AppState.addEventListener("change", (state) => {
-      clearTimeout(timer);
-      if (state === "background") {
-        timer = setTimeout(() => pushNext(), NEWS_AFTER_MS);
-      }
+      if (state === "background") pushNext(undefined, NEWS_AFTER_S);
     });
     return () => {
       stop();
       sub.remove();
-      clearTimeout(timer);
     };
   }, []);
 }
