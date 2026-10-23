@@ -5,6 +5,7 @@
    models from the same fake company as the Mac (#820). Import nothing here
    that touches React, the DOM or CSS: the phone bundles every line. */
 
+export { isHidden, modelKey } from "../chat/model-visibility";
 export type {
   FileMention,
   ModelOption,
@@ -12,7 +13,6 @@ export type {
   ModelVisibility,
   SlashItem,
 } from "../types";
-export { isHidden, modelKey } from "../chat/model-visibility";
 export { HIRE_TEMPLATES, type V3HireTemplate } from "./hire-templates";
 export type * from "./v3-data-types";
 export * from "./v3-model";
