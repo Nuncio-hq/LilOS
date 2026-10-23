@@ -14,7 +14,12 @@ import {
    two peek out behind it, scaled down and lower. Only an approval ask swipes
    (right approves, left denies); questions and plans are answered with their
    buttons. The buttons run the same exit animation as a swipe, so a decision
-   looks the same either way. */
+   looks the same either way.
+
+   Nothing here waits on a layout event to be visible: the front card is laid
+   out in normal flow (so the deck is as tall as it is), the cards behind
+   stretch over it and scale about their bottom edge, which needs no height.
+   The measured width only feeds the swipe thresholds. */
 
 /** How far each card behind sticks out below the one in front. */
 export const PEEK = 12;
@@ -33,7 +38,7 @@ export function StackCard({
   count,
   width,
   minHeight,
-  onMeasure,
+  onMeasureFront,
   onApprove,
   onDeny,
   onAnswer,
@@ -46,9 +51,11 @@ export function StackCard({
   count: number;
   /** The card's width, the yardstick for the swipe threshold. */
   width: number;
-  /** The tallest card so far, so every card is the same size. */
+  /** The tallest front card so far, so the deck keeps its height as cards
+      change; 0 until one is measured, which only means "no minimum". */
   minHeight: number;
-  onMeasure: (height: number) => void;
+  /** The front card's laid-out height. */
+  onMeasureFront: (height: number) => void;
   onApprove: (id: string) => void;
   onDeny: (id: string) => void;
   onAnswer: (id: string, option: string) => void;
@@ -143,12 +150,11 @@ export function StackCard({
     });
   }, [x]);
 
-  // The cards behind are scaled about their centre, so they must sit lower
-  // by the share of height the scale takes off, plus the peek itself.
+  // The cards behind shrink toward their bottom edge (which stays where the
+  // front card's bottom is) and sit a peek lower each; the height never enters.
   const { scale, lift, opacity } = useMemo(() => {
     const at = (i: number) => 1 - SCALE_STEP * Math.min(i, 2);
-    const down = (i: number) =>
-      Math.min(i, 2) * PEEK + ((1 - at(i)) * minHeight) / 2;
+    const down = (i: number) => Math.min(i, 2) * PEEK;
     const inputRange = [0, 1, 2, 3];
     return {
       scale: depthV.interpolate({
@@ -161,14 +167,14 @@ export function StackCard({
         outputRange: [down(0), down(1), down(2), down(3)],
         extrapolate: "clamp",
       }),
-      // Beyond the third card nothing shows, but it still measures.
+      // Beyond the third card nothing shows.
       opacity: depthV.interpolate({
         inputRange,
         outputRange: [1, 1, 1, 0],
         extrapolate: "clamp",
       }),
     };
-  }, [depthV, minHeight]);
+  }, [depthV]);
 
   const tilt = x.interpolate({
     inputRange: [-width, 0, width],
@@ -191,13 +197,22 @@ export function StackCard({
       accessibilityLabel={front ? `Ask: ${ask.title}` : undefined}
       {...(front ? null : HIDDEN_FROM_READERS)}
       pointerEvents={front ? "auto" : "none"}
-      onLayout={(e) => onMeasure(e.nativeEvent.layout.height)}
-      className="absolute rounded-[22px] border border-rule bg-paper-soft"
+      onLayout={
+        front ? (e) => onMeasureFront(e.nativeEvent.layout.height) : undefined
+      }
+      className="rounded-[22px] border border-rule bg-paper-soft"
       style={{
-        left: 20,
-        right: 20,
-        top: 0,
-        minHeight,
+        marginHorizontal: 20,
+        ...(front
+          ? { minHeight }
+          : {
+              position: "absolute",
+              left: 0,
+              right: 0,
+              top: 0,
+              bottom: PEEK * 2,
+            }),
+        transformOrigin: "center bottom",
         zIndex: count - depth,
         opacity: Animated.multiply(opacity, fade),
         transform: [

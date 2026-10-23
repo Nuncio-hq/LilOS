@@ -5,9 +5,11 @@ import type { AskVM } from "../types";
 import { PEEK, StackCard } from "./stack-card";
 
 /* The deck: the first ask in front, the next two peeking out behind it. The
-   cards are laid on top of each other, so the deck's height is the tallest
-   card's, kept for as long as asks remain: what sits below it (Results to
-   look at) must not jump while cards fly off. */
+   front card is in normal flow, so the deck is as tall as it; the others
+   stretch over it. The tallest front card so far is kept as a minimum for as
+   long as asks remain, so what sits below (Results to look at) does not jump
+   while cards fly off. A missed layout event costs that minimum, never the
+   deck: every card is visible from its first frame. */
 
 const SIDE_MARGIN = 20;
 
@@ -30,7 +32,9 @@ export function NeedsStack({
 }) {
   const window = useWindowDimensions();
   const [tallest, setTallest] = useState(0);
-  const [attempt, setAttempt] = useState(0);
+  // The deck's own width once laid out; until then the window's, which is
+  // what it is on a phone. Only the swipe thresholds read it.
+  const [deckWidth, setDeckWidth] = useState(window.width);
   const empty = asks.length === 0;
 
   // The next batch of asks starts from its own size.
@@ -38,36 +42,26 @@ export function NeedsStack({
     if (empty) setTallest(0);
   }, [empty]);
 
-  // A tab that mounts while the app is still settling can miss the one layout
-  // event the deck waits on; the deck stays hidden until a card is measured,
-  // so mount the cards again until one is.
-  useEffect(() => {
-    if (empty || tallest > 0) return;
-    const t = setTimeout(() => setAttempt((n) => n + 1), 600);
-    return () => clearTimeout(t);
-  }, [empty, tallest]);
-
   if (empty) return <EmptyState title="All clear" body={emptyBody} />;
 
   return (
     <View
       testID="needs-stack"
-      style={{
-        height: tallest + PEEK * 2,
-        // Until the first measure the cards sit at their own height: hide the
-        // one frame in which they are not yet the same size.
-        opacity: tallest === 0 ? 0 : 1,
-      }}
+      onLayout={(e) => setDeckWidth(e.nativeEvent.layout.width)}
+      // Room for the two cards that peek out below the front one.
+      style={{ paddingBottom: PEEK * 2 }}
     >
       {asks.map((ask, i) => (
         <StackCard
-          key={`${attempt}-${ask.id}`}
+          key={ask.id}
           ask={ask}
           depth={i}
           count={asks.length}
-          width={window.width - SIDE_MARGIN * 2}
+          width={deckWidth - SIDE_MARGIN * 2}
           minHeight={tallest}
-          onMeasure={(h) => setTallest((prev) => Math.max(prev, Math.ceil(h)))}
+          onMeasureFront={(h) =>
+            setTallest((prev) => Math.max(prev, Math.ceil(h)))
+          }
           onApprove={onApprove}
           onDeny={onDeny}
           onAnswer={onAnswer}
