@@ -1,0 +1,12 @@
+{
+  "Simulator Target Bundle": "com.nuncio.lilos.mobile",
+  "aps": {
+    "alert": {
+      "title": "Rename the app to “QRit Pro”?",
+      "body": "Chief: “QRit Pro” is free in the App Store."
+    },
+    "category": "lilos-ask",
+    "sound": "default"
+  },
+  "body": { "askId": "a-2" }
+}

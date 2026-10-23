@@ -1,0 +1,11 @@
+{
+  "Simulator Target Bundle": "com.nuncio.lilos.mobile",
+  "aps": {
+    "alert": {
+      "title": "Chief",
+      "body": "Scout has run the same search six times. I’ll hand HB-14 to Marketer at 12:30 unless you stop me."
+    },
+    "sound": "default"
+  },
+  "body": { "updateId": "u-stuck" }
+}

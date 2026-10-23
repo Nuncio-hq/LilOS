@@ -1,0 +1,60 @@
+# Answer ONE notification from the lock screen, driven through SpringBoard.
+# Env: PREFIX (screenshot name prefix), ACTION (approve | deny | open),
+# WAIT (regex of text only the app shows once it is in front).
+#   approve / deny: swipe the notification half-left to reveal
+#     Options / View / Clear, tap View to expand it into its actions, tap
+#     Approve or Deny. Buttons are tapped by label: the expanded card moves
+#     between the opening animation and its settled layout.
+#   open: tap the notification body, then Open.
+# The device has no passcode, so Approve (which asks for an unlock) goes
+# straight through; on a phone with a passcode iOS asks for it first.
+appId: com.apple.springboard
+---
+- tapOn:
+    point: "50%,25%"
+- takeScreenshot: ${PREFIX}-lockscreen
+- runFlow:
+    when:
+      true: ${ACTION != 'open'}
+    commands:
+      - swipe:
+          start: "80%,81%"
+          end: "52%,81%"
+          duration: 1200
+      - tapOn: "View"
+      - waitForAnimationToEnd:
+          timeout: 3000
+      - takeScreenshot: ${PREFIX}-actions
+- runFlow:
+    when:
+      true: ${ACTION == 'approve'}
+    commands:
+      - tapOn: "Approve"
+- runFlow:
+    when:
+      true: ${ACTION == 'deny'}
+    commands:
+      - tapOn: "Deny"
+- runFlow:
+    when:
+      true: ${ACTION == 'open'}
+    commands:
+      - tapOn:
+          point: "50%,81%"
+      - waitForAnimationToEnd:
+          timeout: 3000
+      # A locked device asks to be opened first: the tapped notification
+      # slides aside and shows an Open button (iOS asks for the passcode
+      # here on a phone that has one).
+      - tapOn: "Open"
+# The lock screen's date ("Fri 23 Oct") is gone once the app is in front.
+# A cold start downloads the bundle first, hence the long wait.
+- extendedWaitUntil:
+    notVisible: "[A-Z][a-z]{2} [0-9]{1,2} [A-Z][a-z]{2}"
+    timeout: 60000
+- extendedWaitUntil:
+    visible: "${WAIT}"
+    timeout: 60000
+- waitForAnimationToEnd:
+    timeout: 3000
+- takeScreenshot: ${PREFIX}-after-${ACTION}

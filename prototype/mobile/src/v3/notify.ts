@@ -11,7 +11,7 @@ import * as Notifications from "expo-notifications";
  *
  * A remote push needs `aps.category = "lilos-ask"` and the ids under a
  * top-level `body` key (expo-notifications reads `data` from `body` for
- * remote payloads); see maestro/notify/ask.apns.
+ * remote payloads); see maestro/notify/ask-a1.apns.
  */
 
 export type NotifyTarget =
@@ -145,32 +145,51 @@ export function ensurePermission(): Promise<boolean> {
 
 const post = async (
   content: Notifications.NotificationContentInput,
+  afterSeconds: number,
 ): Promise<void> => {
   if (!(await ensurePermission())) return;
   await categoryReady;
-  // `trigger: null` = deliver now; the handler above hides it in the foreground.
-  await Notifications.scheduleNotificationAsync({ content, trigger: null });
+  /* A delay is handed to iOS, not to a JS timer: a phone that was just
+     locked suspends the app within a second or two, and a suspended app's
+     timers never fire — the notification would only appear once the app
+     is opened again, when the handler above hides it. Without a delay it
+     goes out now (`trigger: null`). */
+  await Notifications.scheduleNotificationAsync({
+    content,
+    trigger:
+      afterSeconds > 0
+        ? {
+            type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+            seconds: afterSeconds,
+          }
+        : null,
+  });
 };
 
-/** A new ask: title = what is asked, body = who asks + why. */
-export function notifyAsk(a: {
-  id: string;
-  title: string;
-  body: string;
-}): Promise<void> {
-  return post({
-    title: a.title,
-    body: a.body,
-    categoryIdentifier: ASK_CATEGORY,
-    data: { askId: a.id },
-  });
+/** A new ask: title = what is asked, body = who asks + why. `afterSeconds`
+    lets iOS deliver it later, even while the app is suspended. */
+export function notifyAsk(
+  a: { id: string; title: string; body: string },
+  afterSeconds = 0,
+): Promise<void> {
+  return post(
+    {
+      title: a.title,
+      body: a.body,
+      categoryIdentifier: ASK_CATEGORY,
+      data: { askId: a.id },
+    },
+    afterSeconds,
+  );
 }
 
 /** A new CEO update (no actions: the tap opens the CEO thread). */
-export function notifyUpdate(u: {
-  id: string;
-  title: string;
-  body: string;
-}): Promise<void> {
-  return post({ title: u.title, body: u.body, data: { updateId: u.id } });
+export function notifyUpdate(
+  u: { id: string; title: string; body: string },
+  afterSeconds = 0,
+): Promise<void> {
+  return post(
+    { title: u.title, body: u.body, data: { updateId: u.id } },
+    afterSeconds,
+  );
 }
