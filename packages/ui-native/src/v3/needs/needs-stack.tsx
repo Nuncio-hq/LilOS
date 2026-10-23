@@ -30,12 +30,22 @@ export function NeedsStack({
 }) {
   const window = useWindowDimensions();
   const [tallest, setTallest] = useState(0);
+  const [attempt, setAttempt] = useState(0);
   const empty = asks.length === 0;
 
   // The next batch of asks starts from its own size.
   useEffect(() => {
     if (empty) setTallest(0);
   }, [empty]);
+
+  // A tab that mounts while the app is still settling can miss the one layout
+  // event the deck waits on; the deck stays hidden until a card is measured,
+  // so mount the cards again until one is.
+  useEffect(() => {
+    if (empty || tallest > 0) return;
+    const t = setTimeout(() => setAttempt((n) => n + 1), 600);
+    return () => clearTimeout(t);
+  }, [empty, tallest]);
 
   if (empty) return <EmptyState title="All clear" body={emptyBody} />;
 
@@ -51,7 +61,7 @@ export function NeedsStack({
     >
       {asks.map((ask, i) => (
         <StackCard
-          key={ask.id}
+          key={`${attempt}-${ask.id}`}
           ask={ask}
           depth={i}
           count={asks.length}

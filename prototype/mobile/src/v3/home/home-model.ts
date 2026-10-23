@@ -61,9 +61,18 @@ export function ceoState(d: V3Data): V3Status {
   );
 }
 
-/** Tickets moving: those being worked, outside workers' and agents' alike. */
+/** Tickets moving: those with a hand working on them, outside workers' and
+    agents' alike. A ticket waiting on the CEO's sign-off still moves while
+    the CEO's thread works, so this agrees with Home's "working" count. */
 export function ticketsMoving(d: V3Data): string {
-  const n = d.tickets.filter((t) => t.status === "working").length;
+  const live = new Set(
+    d.threads
+      .filter((t) => t.status === "working" && t.ticketId)
+      .map((t) => t.ticketId),
+  );
+  const n = d.tickets.filter(
+    (t) => t.status === "working" || live.has(t.id),
+  ).length;
   if (n === 0) return "no tickets moving";
   return `${n} ${n === 1 ? "ticket" : "tickets"} moving`;
 }

@@ -17,14 +17,12 @@ export function HomeScreen({
   update,
   counts,
   asks,
-  asksTotal,
   team,
   onOpenUpdate,
   onOpenCount,
   onOpenAsk,
   onApprove,
   onDeny,
-  onSeeAllAsks,
   onOpenAgent,
 }: {
   /** The company's name. */
@@ -36,8 +34,6 @@ export function HomeScreen({
   counts: HomeCounts;
   /** The longest-waiting asks that fit on Home (at most two). */
   asks: AskVM[];
-  /** All open asks; above `asks.length` the header offers "See all". */
-  asksTotal: number;
   /** Everyone on the team, the CEO first. */
   team: HomeTeamRow[];
   onOpenUpdate: () => void;
@@ -46,7 +42,6 @@ export function HomeScreen({
   onOpenAsk: (id: string) => void;
   onApprove: (id: string) => void;
   onDeny: (id: string) => void;
-  onSeeAllAsks: () => void;
   onOpenAgent: (id: string) => void;
 }) {
   return (
@@ -64,11 +59,7 @@ export function HomeScreen({
       )}
       <CountStrip counts={counts} onOpen={onOpenCount} />
       {asks.length > 0 ? (
-        <SectionBlock
-          title="Needs you"
-          action={asksTotal > asks.length ? `See all ${asksTotal}` : undefined}
-          onAction={onSeeAllAsks}
-        >
+        <SectionBlock title="Needs you">
           {asks.map((ask, i) => (
             <AskRow
               key={ask.id}

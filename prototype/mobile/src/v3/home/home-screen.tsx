@@ -37,7 +37,6 @@ export function HomeContainer() {
         stuck: threadsIn(d.threads, "stuck"),
       }}
       asks={asks}
-      asksTotal={d.asks.length}
       team={team}
       onOpenUpdate={() => openThread(CEO_THREAD_ID)}
       /* Stuck threads show on Work's default view, like working ones. */
@@ -54,7 +53,6 @@ export function HomeContainer() {
         hapticDeny();
         deny(id);
       }}
-      onSeeAllAsks={() => openTab("Needs")}
       onOpenAgent={openAgent}
     />
   );
