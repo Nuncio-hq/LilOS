@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@lilos/ui": "workspace:*",
     "@lilos/ui-native": "workspace:*",
     "@nanostores/react": "^2.0.1",
     "@react-navigation/bottom-tabs": "^7.19.2",

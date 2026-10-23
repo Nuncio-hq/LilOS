@@ -1,4 +1,4 @@
-import type { FileMention, SlashItem, V3Data } from "@lilos/ui"
+import type { FileMention, SlashItem, V3Data } from "@lilos/ui/v3-data"
 
 /* ?v3 mock: what a new chat's `@` and `/` read. A small file list per project
    folder (folders end with "/", like the Workbench's) and the engine's

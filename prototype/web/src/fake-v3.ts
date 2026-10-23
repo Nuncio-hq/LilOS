@@ -1,4 +1,4 @@
-import { HIRE_TEMPLATES, type V3Data, type V3Draft, type V3Profile } from "@lilos/ui"
+import { HIRE_TEMPLATES, type V3Data, type V3Draft, type V3Profile } from "@lilos/ui/v3-data"
 import { ATTENTION_ASKS, ATTENTION_THREADS } from "./fake-v3-attention"
 import { CONNECTORS, OUTSIDE_THREADS, OUTSIDE_TICKETS, OUTSIDE_WORKERS } from "./fake-v3-outside"
 import { MODEL_OPTIONS, MODEL_PROVIDERS, MODEL_VISIBILITY, modelIdOf } from "./fake-v3-models"

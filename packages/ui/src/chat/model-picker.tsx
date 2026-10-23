@@ -46,7 +46,8 @@ import type {
   Thread,
 } from "../types";
 import { EffortSlider } from "./effort-slider";
-import { isHidden, ModelVisibilityDialog } from "./model-visibility-dialog";
+import { isHidden } from "./model-visibility";
+import { ModelVisibilityDialog } from "./model-visibility-dialog";
 
 /* Provider slugs we render the models.dev logo for; anything else gets the
    generic chip — never a broken image. */

@@ -338,6 +338,7 @@
       "name": "@lilos/prototype-mobile",
       "version": "0.0.0",
       "dependencies": {
+        "@lilos/ui": "workspace:*",
         "@lilos/ui-native": "workspace:*",
         "@nanostores/react": "^2.0.1",
         "@react-navigation/bottom-tabs": "^7.19.2",

@@ -1,4 +1,4 @@
-import type { V3Note, V3Skill } from "@lilos/ui"
+import type { V3Note, V3Skill } from "@lilos/ui/v3-data"
 
 /* The prototype's company library and each agent's memory files. Believable
    for this mock company, and only here: the real app does not carry them

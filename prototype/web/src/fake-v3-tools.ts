@@ -1,4 +1,4 @@
-import type { V3Data, V3Workbench } from "@lilos/ui"
+import type { V3Data, V3Workbench } from "@lilos/ui/v3-data"
 import { MODEL_OPTIONS, MODEL_PROVIDERS, MODEL_VISIBILITY, settingsModels } from "./fake-v3-models"
 
 /* ?v3 mock: the tools around the company. Each thread's Workbench, the

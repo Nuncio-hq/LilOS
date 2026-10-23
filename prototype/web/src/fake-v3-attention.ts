@@ -1,4 +1,4 @@
-import type { V3Data } from "@lilos/ui"
+import type { V3Data } from "@lilos/ui/v3-data"
 
 /* The threads that stop and look at you instead of finishing on their own, so
    the prototype shows every card the real thread view has:

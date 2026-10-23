@@ -1,4 +1,4 @@
-import type { V3Data, V3Reply, V3Thread } from "@lilos/ui"
+import type { V3Data, V3Reply, V3Thread } from "@lilos/ui/v3-data"
 
 /* The fake agent behind ?v3 chats. It picks a script by what the message is
    about, so a chat in the prototype reads like a real session: a few steps

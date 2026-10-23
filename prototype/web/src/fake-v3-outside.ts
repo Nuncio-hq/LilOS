@@ -1,4 +1,4 @@
-import type { V3Data } from "@lilos/ui"
+import type { V3Data } from "@lilos/ui/v3-data"
 
 /* ?v3 mock: the company's connectors and the outside workers reached through
    them. Provider names, marks and colours live only here (mock data), never in

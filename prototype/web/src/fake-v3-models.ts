@@ -1,4 +1,4 @@
-import { isHidden, type ModelOption, type ModelProvider, type ModelVisibility, type V3Settings } from "@lilos/ui"
+import { isHidden, type ModelOption, type ModelProvider, type ModelVisibility, type V3Settings } from "@lilos/ui/v3-data"
 
 /* ?v3 mock: the engine's model catalog, as the full picker in a new chat and
    Settings → Engine & models both read it. One source: what Edit models hides
