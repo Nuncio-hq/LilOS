@@ -1,4 +1,4 @@
-import { Page, SerifTitle, T } from "../kit";
+import { Page, T } from "../kit";
 import type { AskVM } from "../types";
 import { NeedsStack } from "./needs-stack";
 import { ResultsToLookAt, type ResultVM } from "./results";
@@ -31,7 +31,6 @@ export function NeedsScreen({
 }: NeedsScreenProps) {
   return (
     <Page testID="needs-screen">
-      <SerifTitle>Needs you</SerifTitle>
       {asks.length > 0 ? (
         <T variant="small" tone="ink2" className="px-5 pb-3">
           {`${position} of ${asks.length}`}

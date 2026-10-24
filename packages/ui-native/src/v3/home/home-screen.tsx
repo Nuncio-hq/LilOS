@@ -1,4 +1,4 @@
-import { Hairline, Page, SectionBlock, SerifTitle, T } from "../kit";
+import { Hairline, Page, SectionBlock } from "../kit";
 import type { AskVM } from "../types";
 import { AskRow, CountStrip, TeamRow, UpdateBlock } from "./home-parts";
 import type {
@@ -46,12 +46,6 @@ export function HomeScreen({
 }) {
   return (
     <Page testID="home-screen">
-      <SerifTitle>{title}</SerifTitle>
-      {date ? (
-        <T variant="small" tone="ink3" className="-mt-2 px-5 pb-3">
-          {date}
-        </T>
-      ) : null}
       {update ? (
         <UpdateBlock update={update} onPress={onOpenUpdate} />
       ) : (

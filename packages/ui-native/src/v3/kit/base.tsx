@@ -8,8 +8,8 @@ import {
   type TextProps,
   View,
 } from "react-native";
-import { DOT, INK, STATUS_WORD } from "./status";
-import type { Person, Status } from "./types";
+import { DOT, INK, STATUS_WORD } from "../status";
+import type { Person, Status } from "../types";
 
 /* The v3 look on the phone: warm paper, ink text, hairlines instead of
    boxes, a serif for titles, sans for everything else. Colour is only ever
