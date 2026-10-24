@@ -31,7 +31,6 @@ const DETAIL: NativeStackNavigationOptions = {
   headerShadowVisible: false,
   headerBackButtonDisplayMode: "minimal",
   headerTitleStyle: SERIF,
-  headerTransparent: true,
   title: "",
 };
 

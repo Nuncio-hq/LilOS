@@ -69,7 +69,10 @@ export function SerifTitle({ children }: { children: string }) {
   );
 }
 
-/** The scrolling page under every v3 tab and pushed screen. */
+/** The scrolling page under every v3 tab and pushed screen. The ScrollView is
+    the screen's root view and its first scroll view: that is what UIKit
+    watches to collapse the large title and to minimize the tab bar, so
+    nothing may wrap it or sit before it. */
 export function Page({
   children,
   testID,
@@ -77,20 +80,25 @@ export function Page({
 }: {
   children: ReactNode;
   testID?: string;
+  /** Pinned under the scroll view (a composer, a button bar). */
   footer?: ReactNode;
 }) {
+  const scroll = (
+    <ScrollView
+      testID={testID}
+      className="flex-1 bg-paper"
+      contentInsetAdjustmentBehavior="automatic"
+      contentContainerStyle={{ paddingBottom: 24 }}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
+    >
+      {children}
+    </ScrollView>
+  );
+  if (!footer) return scroll;
   return (
     <View className="flex-1 bg-paper">
-      <ScrollView
-        testID={testID}
-        className="flex-1"
-        contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={{ paddingBottom: 48 }}
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag"
-      >
-        {children}
-      </ScrollView>
+      {scroll}
       {footer}
     </View>
   );
