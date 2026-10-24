@@ -1,4 +1,5 @@
 import { Pressable, Text, View } from "react-native";
+import { Icon } from "../../components/icon";
 import { Avatar, PersonName, T, Tag } from "../kit";
 import { DecisionButtons } from "../rows";
 import type { AskVM } from "../types";
@@ -7,15 +8,14 @@ import type { AskVM } from "../types";
    swipe, stamps) is stack-card.tsx. Engine and gateway asks may omit the
    reasons; a row is drawn only when its text exists. */
 
-function Reason({ label, text }: { label: string; text?: string }) {
+/** "Approve → what happens", one line; the whole sentence is in Details. */
+function Consequence({ label, text }: { label: string; text?: string }) {
   if (!text) return null;
   return (
-    <View className="gap-0.5">
-      <T variant="caption" tone="ink3" className="font-semibold">
-        {label}
-      </T>
-      <T variant="small">{text}</T>
-    </View>
+    <T variant="small" tone="ink2" numberOfLines={1}>
+      <Text className="font-semibold text-ink">{`${label} `}</Text>
+      {`→ ${text}`}
+    </T>
   );
 }
 
@@ -37,7 +37,7 @@ function QuestionOptions({
             accessibilityRole="button"
             accessibilityLabel={option}
             onPress={() => onAnswer(option)}
-            className={`h-[52px] flex-row items-center justify-center gap-2 rounded-full px-5 active:opacity-70 ${first ? "bg-ink" : "border border-rule bg-paper"}`}
+            className={`h-12 flex-row items-center justify-center gap-2 rounded-full px-5 active:opacity-70 ${first ? "bg-ink" : "bg-paper"}`}
           >
             <Text
               numberOfLines={1}
@@ -74,7 +74,7 @@ function PlanActions({
           accessibilityRole="button"
           accessibilityLabel="Read the plan"
           onPress={onOpenThread}
-          className="h-11 items-center justify-center rounded-full border border-rule bg-paper active:opacity-60"
+          className="h-11 items-center justify-center rounded-full bg-paper active:opacity-60"
         >
           <Text className="font-semibold text-[16px] text-ink">
             Read the plan
@@ -83,6 +83,7 @@ function PlanActions({
       ) : null}
       <DecisionButtons
         size="lg"
+        onSoft
         approveLabel="Approve plan"
         denyLabel="Reject plan"
         onApprove={onApprove}
@@ -93,12 +94,18 @@ function PlanActions({
   );
 }
 
+/** The sheet has something the card does not already say. */
+const hasDetails = (ask: AskVM) =>
+  ask.kind !== "plan" &&
+  Boolean(ask.why || ask.ifYes || ask.ifNo || ask.spend || ask.fallback);
+
 export function AskCard({
   ask,
   onApprove,
   onDeny,
   onAnswer,
   onOpenThread,
+  onDetails,
 }: {
   ask: AskVM;
   onApprove: () => void;
@@ -106,11 +113,14 @@ export function AskCard({
   onAnswer: (option: string) => void;
   /** Absent when the ask has no thread to read. */
   onOpenThread?: () => void;
+  /** Opens the full reasons, cost and fallback. */
+  onDetails: () => void;
 }) {
+  const approval = ask.kind === "approval";
   return (
-    <View className="flex-1 gap-3.5 p-5">
+    <View className="flex-1 gap-3 p-5">
       <View className="flex-row items-center gap-3">
-        <Avatar person={ask.from} size={40} />
+        <Avatar person={ask.from} size={36} />
         <View className="flex-1 gap-0.5">
           <PersonName person={ask.from} />
           <T variant="caption" tone="ink2">
@@ -119,20 +129,39 @@ export function AskCard({
         </View>
         <Tag>{ask.tag}</Tag>
       </View>
-      <T variant="heading">{ask.title}</T>
-      <T variant="body">{ask.ask}</T>
-      <Reason label="Why" text={ask.why} />
-      <Reason label="If you approve" text={ask.ifYes} />
-      <Reason label="If you deny" text={ask.ifNo} />
-      {ask.spend ? (
-        <T variant="caption" tone="ink2">
-          {ask.spend}
+      <T variant="heading" numberOfLines={3}>
+        {ask.title}
+      </T>
+      {ask.why ? (
+        <T variant="small" tone="ink2" numberOfLines={2}>
+          {ask.why}
         </T>
       ) : null}
-      {ask.fallback ? (
-        <T variant="caption" tone="ink2">
-          {ask.fallback}
-        </T>
+      {approval ? (
+        <View className="gap-1">
+          <Consequence label="Approve" text={ask.ifYes} />
+          <Consequence label="Deny" text={ask.ifNo} />
+        </View>
+      ) : null}
+      {hasDetails(ask) ? (
+        <Pressable
+          testID="ask-details-open"
+          accessibilityRole="button"
+          accessibilityLabel="Details"
+          onPress={onDetails}
+          hitSlop={8}
+          className="flex-row items-center gap-1 self-start active:opacity-60"
+        >
+          <T variant="small" tone="ink2" className="font-semibold">
+            Details
+          </T>
+          <Icon
+            name="chevron.right"
+            size={11}
+            weight="semibold"
+            tone="muted-foreground"
+          />
+        </Pressable>
       ) : null}
       <View className="mt-auto pt-1">
         {ask.kind === "question" && ask.options?.length ? (
@@ -143,9 +172,10 @@ export function AskCard({
             onDeny={onDeny}
             onOpenThread={onOpenThread}
           />
-        ) : ask.kind === "approval" ? (
+        ) : approval ? (
           <DecisionButtons
             size="lg"
+            onSoft
             onApprove={onApprove}
             onDeny={onDeny}
             testIDPrefix="ask"

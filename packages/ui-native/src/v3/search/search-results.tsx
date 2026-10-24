@@ -1,35 +1,22 @@
-import { View } from "react-native";
-import { Avatar, Note, Page, PersonName, SectionBlock, T, Tag } from "../kit";
-import { ListRow, ThreadRow, TicketRow } from "../rows";
+import { useState } from "react";
+import { Pressable, View } from "react-native";
+import { Avatar, CompactRow, Module, Modules, Note, Page, T } from "../kit";
 import type { Person } from "../types";
 import type { RecentUpdateVM, SearchGroup, SearchResultsProps } from "./types";
 
 /* "Ask the CEO": asking is always the first answer, so it leads whenever
-   something is typed; people, threads and tickets that match follow. With
-   nothing typed the page shows what the CEO last told you. */
+   something is typed; people, threads and tickets that match follow, three
+   to a module with the rest behind "n more". With nothing typed the page
+   shows what the CEO last told you. */
 
-// Same width as an avatar, so a note from LilOS lines up with the rest.
-const AVATAR = 34;
+/** Rows a module shows before "n more". */
+const SHOWN = 3;
 
 /** Stands in for the CEO's avatar while the company has nobody in the seat. */
 const NO_CEO: Pick<Person, "name" | "outside"> = {
   name: "CEO",
   outside: false,
 };
-
-function heading(title: string, group: SearchGroup<unknown>): string {
-  return `${title} · ${group.total}`;
-}
-
-/** Said when a group holds more matches than it shows. */
-function More({ group }: { group: SearchGroup<unknown> }) {
-  if (group.total <= group.rows.length) return null;
-  return (
-    <Note>
-      {`Showing the first ${group.rows.length}. Type more to narrow it.`}
-    </Note>
-  );
-}
 
 function AskRow({
   query,
@@ -41,92 +28,112 @@ function AskRow({
   onAsk: () => void;
 }) {
   return (
-    <ListRow
+    <Pressable
       testID="search-ask-ceo"
-      label={`Ask the CEO: ${query}`}
+      accessibilityRole="button"
+      accessibilityLabel={`Ask the CEO: ${query}`}
       onPress={onAsk}
+      className="flex-row items-center gap-3 rounded-[22px] bg-paper-soft p-4 active:opacity-60"
+      style={{ borderCurve: "continuous" }}
     >
-      <View className="flex-row items-center gap-3">
-        <Avatar person={ceo ?? NO_CEO} size={AVATAR} />
-        <T variant="label" numberOfLines={3} className="flex-1">
-          {`Ask the CEO: “${query}”`}
-        </T>
-      </View>
-    </ListRow>
+      <Avatar person={ceo ?? NO_CEO} size={34} />
+      <T variant="label" numberOfLines={3} className="flex-1">
+        {`Ask the CEO: “${query}”`}
+      </T>
+    </Pressable>
   );
 }
 
-function PersonRow({
-  person,
-  onPress,
-  last,
+/** One result module: the first rows, the rest on "n more". */
+function Group<T>({
+  title,
+  group,
+  render,
 }: {
-  person: Person;
-  onPress: (id: string) => void;
-  last: boolean;
+  title: string;
+  group: SearchGroup<T>;
+  render: (row: T) => React.ReactNode;
 }) {
+  const [all, setAll] = useState(false);
+  if (group.rows.length === 0) return null;
+  const shown = all ? group.rows : group.rows.slice(0, SHOWN);
+  const more = group.total - shown.length;
   return (
-    <ListRow
-      onPress={() => onPress(person.id)}
-      last={last}
-      label={person.role ? `${person.name}, ${person.role}` : person.name}
+    <Module
+      title={title}
+      count={group.total}
+      footer={
+        more > 0
+          ? { label: `${more} more`, onPress: () => setAll(true) }
+          : undefined
+      }
     >
-      <View className="flex-row items-center gap-3">
-        <Avatar person={person} size={AVATAR} />
-        <View className="flex-1 gap-0.5">
-          <PersonName person={person} />
-          {person.role ? (
-            <T variant="caption" tone="ink2" numberOfLines={1}>
-              {person.role}
-            </T>
-          ) : null}
-        </View>
-      </View>
-    </ListRow>
+      {shown.map(render)}
+    </Module>
   );
 }
 
-function RecentRow({
-  update,
-  onPress,
-  last,
+function Recent({
+  updates,
+  onOpen,
 }: {
-  update: RecentUpdateVM;
-  onPress: () => void;
-  last: boolean;
+  updates: RecentUpdateVM[];
+  onOpen: (id: string) => void;
 }) {
+  const [all, setAll] = useState(false);
+  if (updates.length === 0) return null;
+  const shown = all ? updates : updates.slice(0, SHOWN);
+  const more = updates.length - shown.length;
   return (
-    <ListRow
-      onPress={onPress}
-      last={last}
-      label={`${update.whoName}, ${update.at}: ${update.text}`}
+    <Module
+      title="Recent updates"
+      footer={
+        more > 0
+          ? { label: `${more} more`, onPress: () => setAll(true) }
+          : undefined
+      }
     >
-      <View className="flex-row items-start gap-3">
-        {update.who ? (
-          <Avatar person={update.who} size={AVATAR} />
-        ) : (
-          <View style={{ width: AVATAR }} />
-        )}
-        <View className="flex-1 gap-0.5">
-          <View className="flex-row items-baseline gap-2">
-            <T variant="label" numberOfLines={1} className="shrink">
-              {update.whoName}
-            </T>
-            <T variant="caption" tone="ink3">
-              {update.at}
-            </T>
-          </View>
-          <T variant="small" tone="ink2" numberOfLines={3}>
-            {update.text}
-          </T>
-          {update.ticketTag ? (
-            <View className="pt-1">
-              <Tag>{update.ticketTag}</Tag>
+      <View className="gap-3">
+        {shown.map((u) => (
+          <Pressable
+            key={u.id}
+            accessibilityRole={u.openable ? "button" : undefined}
+            accessibilityLabel={`${u.whoName}, ${u.at}: ${u.text}`}
+            disabled={!u.openable}
+            onPress={() => onOpen(u.id)}
+            className="flex-row items-start gap-2.5 active:opacity-60"
+          >
+            {u.who ? (
+              <Avatar person={u.who} size={26} />
+            ) : (
+              <View className="w-[26px]" />
+            )}
+            <View className="flex-1 gap-0.5">
+              <View className="flex-row items-baseline gap-2">
+                <T
+                  variant="small"
+                  numberOfLines={1}
+                  className="shrink font-semibold"
+                >
+                  {u.whoName}
+                </T>
+                <T variant="caption" tone="ink3">
+                  {u.at}
+                </T>
+                {u.ticketTag ? (
+                  <T variant="caption" tone="ink3">
+                    {u.ticketTag}
+                  </T>
+                ) : null}
+              </View>
+              <T variant="small" tone="ink2" numberOfLines={2}>
+                {u.text}
+              </T>
             </View>
-          ) : null}
-        </View>
+          </Pressable>
+        ))}
       </View>
-    </ListRow>
+    </Module>
   );
 }
 
@@ -139,64 +146,56 @@ export function SearchResults(props: SearchResultsProps) {
         <Note>
           Ask the CEO anything, or search people, threads and tickets.
         </Note>
-        {props.recent.length > 0 ? (
-          <SectionBlock title="Recent from the CEO">
-            {props.recent.map((u, i) => (
-              <RecentRow
-                key={u.id}
-                update={u}
-                onPress={props.onOpenCeoThread}
-                last={i === props.recent.length - 1}
-              />
-            ))}
-          </SectionBlock>
-        ) : null}
+        <Modules>
+          <Recent updates={props.recent} onOpen={props.onOpenUpdate} />
+        </Modules>
       </Page>
     );
   }
 
   return (
     <Page testID="search-results">
-      <AskRow query={query} ceo={props.ceo} onAsk={props.onAsk} />
-      {people.rows.length > 0 ? (
-        <SectionBlock title={heading("People", people)}>
-          {people.rows.map((p, i) => (
-            <PersonRow
+      <Modules>
+        <AskRow query={query} ceo={props.ceo} onAsk={props.onAsk} />
+        <Group
+          title="People"
+          group={people}
+          render={(p) => (
+            <CompactRow
               key={p.id}
-              person={p}
-              onPress={props.onOpenPerson}
-              last={i === people.rows.length - 1}
+              title={p.name}
+              meta={p.role}
+              onPress={() => props.onOpenPerson(p.id)}
             />
-          ))}
-          <More group={people} />
-        </SectionBlock>
-      ) : null}
-      {threads.rows.length > 0 ? (
-        <SectionBlock title={heading("Threads", threads)}>
-          {threads.rows.map((t, i) => (
-            <ThreadRow
+          )}
+        />
+        <Group
+          title="Threads"
+          group={threads}
+          render={(t) => (
+            <CompactRow
               key={t.id}
-              row={t}
-              onPress={props.onOpenThread}
-              last={i === threads.rows.length - 1}
+              dot={t.status}
+              title={t.title}
+              meta={t.agent.name}
+              onPress={() => props.onOpenThread(t.id)}
             />
-          ))}
-          <More group={threads} />
-        </SectionBlock>
-      ) : null}
-      {tickets.rows.length > 0 ? (
-        <SectionBlock title={heading("Tickets", tickets)}>
-          {tickets.rows.map((t, i) => (
-            <TicketRow
+          )}
+        />
+        <Group
+          title="Tickets"
+          group={tickets}
+          render={(t) => (
+            <CompactRow
               key={t.id}
-              row={t}
-              onPress={props.onOpenTicket}
-              last={i === tickets.rows.length - 1}
+              dot={t.status}
+              title={t.title}
+              meta={t.id}
+              onPress={() => props.onOpenTicket(t.id)}
             />
-          ))}
-          <More group={tickets} />
-        </SectionBlock>
-      ) : null}
+          )}
+        />
+      </Modules>
     </Page>
   );
 }

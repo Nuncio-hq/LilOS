@@ -1,87 +1,96 @@
-import { Hairline, Page, SectionBlock, SerifTitle, T } from "../kit";
-import type { AskVM } from "../types";
-import { AskRow, CountStrip, TeamRow, UpdateBlock } from "./home-parts";
-import type {
-  HomeCountKey,
-  HomeCounts,
-  HomeTeamRow,
-  HomeUpdate,
-} from "./types";
+import { Modules, Page, type RingPerson, StatTile, StatTiles } from "../kit";
+import { ResultsModule } from "../needs/results";
+import type { AskVM, ResultVM } from "../types";
+import { HeroAsk } from "./hero-ask";
+import { TeamModule, UpdateModule } from "./modules";
+import type { HomeCountKey, HomeCounts, HomeUpdate } from "./types";
 
-/* Home: the company's name, the CEO's latest word, three counts, the asks
-   that have waited longest, then the whole team. Each fact appears once —
-   results to look at live on the Needs tab. */
+/* Home answers one question — what needs me now? — in a short stack of
+   modules: three numbers, the one ask that matters most, the latest word
+   from the CEO, who is on the team, and what finished. The company's name is
+   the native large title. */
+
+/** Results shown on Home; the rest are in the Needs you tab. */
+const RESULT_ROWS = 2;
+
 export function HomeScreen({
-  title,
-  date,
-  update,
   counts,
-  asks,
+  hero,
+  update,
   team,
-  onOpenUpdate,
+  results,
   onOpenCount,
-  onOpenAsk,
   onApprove,
   onDeny,
+  onAnswer,
+  onReviewPlan,
+  onOpenUpdate,
+  onOpenTeam,
   onOpenAgent,
+  onOpenResult,
 }: {
-  /** The company's name. */
-  title: string;
-  /** Today's date line under the title. */
-  date?: string;
+  counts: HomeCounts;
+  /** The most urgent ask. Absent: nothing waits on you. */
+  hero?: AskVM;
   /** Absent: the company has no CEO or no tickets, so nothing to read. */
   update?: HomeUpdate;
-  counts: HomeCounts;
-  /** The longest-waiting asks that fit on Home (at most two). */
-  asks: AskVM[];
-  /** Everyone on the team, the CEO first. */
-  team: HomeTeamRow[];
-  onOpenUpdate: () => void;
-  onOpenCount: (key: HomeCountKey) => void;
-  /** Tap on an ask's text: show it in the Needs tab. */
-  onOpenAsk: (id: string) => void;
-  onApprove: (id: string) => void;
-  onDeny: (id: string) => void;
+  team: RingPerson[];
+  results: ResultVM[];
+  /** What each tile opens; a tile without one only says its number. */
+  onOpenCount: Partial<Record<HomeCountKey, () => void>>;
+  onApprove: (askId: string) => void;
+  onDeny: (askId: string) => void;
+  onAnswer: (askId: string, option: string) => void;
+  onReviewPlan: (threadId: string) => void;
+  /** Absent: the update points at nothing to open. */
+  onOpenUpdate?: () => void;
+  onOpenTeam: () => void;
   onOpenAgent: (id: string) => void;
+  onOpenResult: (key: string) => void;
 }) {
   return (
     <Page testID="home-screen">
-      <SerifTitle>{title}</SerifTitle>
-      {date ? (
-        <T variant="small" tone="ink3" className="-mt-2 px-5 pb-3">
-          {date}
-        </T>
-      ) : null}
-      {update ? (
-        <UpdateBlock update={update} onPress={onOpenUpdate} />
-      ) : (
-        <Hairline />
-      )}
-      <CountStrip counts={counts} onOpen={onOpenCount} />
-      {asks.length > 0 ? (
-        <SectionBlock title="Needs you">
-          {asks.map((ask, i) => (
-            <AskRow
-              key={ask.id}
-              ask={ask}
-              last={i === asks.length - 1}
-              onOpen={onOpenAsk}
-              onApprove={onApprove}
-              onDeny={onDeny}
-            />
-          ))}
-        </SectionBlock>
-      ) : null}
-      <SectionBlock title="Team">
-        {team.map((row, i) => (
-          <TeamRow
-            key={row.person.id}
-            row={row}
-            last={i === team.length - 1}
-            onPress={onOpenAgent}
+      <Modules>
+        <StatTiles>
+          <StatTile
+            testID="home-count-working"
+            value={counts.working}
+            label="Working"
+            tone="work"
+            onPress={onOpenCount.working}
           />
-        ))}
-      </SectionBlock>
+          <StatTile
+            testID="home-count-needs"
+            value={counts.needs}
+            label="Needs you"
+            tone="needs"
+            onPress={onOpenCount.needs}
+          />
+          <StatTile
+            testID="home-count-stuck"
+            value={counts.stuck}
+            label="Stuck"
+            tone="stuck"
+            onPress={onOpenCount.stuck}
+          />
+        </StatTiles>
+        {hero ? (
+          <HeroAsk
+            ask={hero}
+            onApprove={onApprove}
+            onDeny={onDeny}
+            onAnswer={onAnswer}
+            onReview={onReviewPlan}
+          />
+        ) : null}
+        {update ? <UpdateModule update={update} onOpen={onOpenUpdate} /> : null}
+        <TeamModule
+          people={team}
+          onOpen={onOpenTeam}
+          onOpenAgent={onOpenAgent}
+        />
+        <ResultsModule rows={results} max={RESULT_ROWS} onOpen={onOpenResult} />
+      </Modules>
     </Page>
   );
 }

@@ -1,3 +1,4 @@
+export { ProjectScreen } from "./project-screen";
 export { TicketScreen } from "./ticket-screen";
 export type {
   TicketFact,
@@ -8,7 +9,11 @@ export type {
 } from "./ticket-types";
 export { WorkScreen } from "./work-screen";
 export type {
-  WorkThreadGroup,
-  WorkTicketGroup,
+  ProjectList,
+  ProjectPageVM,
+  ProjectScreenProps,
+  WorkItemVM,
+  WorkProjectVM,
+  WorkScreenProps,
   WorkView,
 } from "./work-types";

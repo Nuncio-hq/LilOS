@@ -1,0 +1,205 @@
+# The Work and Company legs of the v3 phone walk (round 2): Work → project →
+# ticket → thread, Company → People → agent, Hire, goals and projects, and the
+# scroll proofs (large title collapses, tab bar minimizes to the inline pulse,
+# both come back on the way up). Screenshots: <theme>-wc-NN-name.png.
+#
+#   JAVA_HOME=/opt/homebrew/opt/openjdk@21 PATH=$JAVA_HOME/bin:$PATH \
+#     maestro --device <udid> test --test-output-dir=/tmp/820b-run -e THEME=<light|dark> \
+#     prototype/mobile/maestro/v3-walk-work-company.yaml
+#   (switch the sim with `xcrun simctl ui <udid> appearance dark`, rerun with THEME=dark)
+appId: com.nuncio.lilos.mobile
+---
+- launchApp
+# Home mounts first; a link sent before it did would be lost.
+- tapOn:
+    text: "Allow"
+    optional: true
+- assertVisible: "Oscar Co"
+# A fresh company every run: the walk approves a real ask and hires an agent.
+- openLink: lilos://preview?reset=1&open=work
+- assertVisible: "Attention"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-wc-01-work
+
+# Work scrolls: the large title collapses, the tab bar becomes the inline
+# pulse; scrolling back up restores both.
+- scroll
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-wc-02-work-scrolled
+- swipe:
+    start: 50%, 25%
+    end: 50%, 85%
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-wc-03-work-restored
+
+# Attention leads with what is stuck or failed, then what needs you; what it
+# does not show stays in its project's module, nothing hides behind "more".
+- assertVisible: "Find 20 journaling creators.*"
+- assertVisible: "Summarise yesterday.*"
+- assertNotVisible:
+    id: module-attention-footer
+- assertVisible: "1 needs you · 1 stuck · 1 working.*"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-wc-04-work-attention
+
+# A project module's header opens the project page: its threads, then its
+# tickets, with the finished work folded.
+- tapOn:
+    id: work-project-heardback-header
+- assertVisible: "Threads"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-wc-05-project-threads
+- tapOn: "Tickets"
+- assertVisible: "Open"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-wc-06-project-tickets
+# The done tickets sit below the fold, behind the bar: scroll, then open them.
+- scroll
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn:
+    id: project-done-header
+- assertVisible: ".*Collect 50 hooks from X.*"
+- scroll
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-wc-07-project-done
+
+# A ticket from the project page: header card and modules.
+- swipe:
+    start: 50%, 25%
+    end: 50%, 90%
+- swipe:
+    start: 50%, 25%
+    end: 50%, 90%
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn:
+    id: project-ticket-HB-14
+- assertVisible: "Find 20 journaling creators"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-wc-08-ticket-stuck
+- scroll
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-wc-09-ticket-scrolled
+
+# Its thread opens over the tab bar, composer at the bottom.
+- tapOn:
+    id: ticket-thread-t-hb14
+- assertVisible:
+    id: thread-composer-input
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-wc-10-thread
+
+# A ticket that waits on you decides right on its page.
+- openLink: lilos://preview?open=ticket:HB-11
+- assertVisible: "Decision"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-wc-11-ticket-decision
+- tapOn:
+    id: ticket-ask-approve
+- assertVisible: "Approved"
+- assertNotVisible: "Decision"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-wc-12-ticket-approved
+
+# A question ask: its choices are the buttons.
+- openLink: lilos://preview?open=ticket:QR-3
+- assertVisible: "Keep “QRit”"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-wc-13-ticket-question
+
+# The ticket's owner: the agent page.
+- tapOn:
+    id: ticket-owner
+- assertVisible: "Runs the company"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-wc-14-agent-ceo
+
+# Company: the people grid, goals and projects; it scrolls like Work does.
+- openLink: lilos://preview?open=company
+- assertVisible: "Goals"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-wc-15-company
+- scroll
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-wc-16-company-scrolled
+- swipe:
+    start: 50%, 25%
+    end: 50%, 85%
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-wc-17-company-restored
+
+# A person in the grid opens their page: threads, instructions, notes, skills.
+- tapOn:
+    id: person-builder
+- assertVisible: "Instructions"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-wc-18-agent-builder
+- scroll
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-wc-19-agent-scrolled
+
+# The People module's header opens the full list: the org chart.
+- openLink: lilos://preview?open=company
+- tapOn:
+    id: company-people-header
+- assertVisible: "Org chart"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-wc-20-people
+- tapOn:
+    id: org-scout
+- assertVisible: "Find 20 journaling creators.*"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-wc-21-agent-scout
+
+# Hire is the + in the navigation bar: a card hires, the new agent's page opens.
+- openLink: lilos://preview?open=company
+- tapOn: "Hire"
+- assertVisible: "Hire Researcher"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-wc-22-hire
+- tapOn: "Hire Researcher"
+- assertVisible: "Instructions"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-wc-23-agent-new-hire
+- openLink: lilos://preview?open=company
+- assertVisible: "Researcher, .*"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-wc-24-company-hired
+
+# A project module row opens its page (a goal is read-only: no second door).
+- assertVisible: "Grow HeardBack conversion"
+- openLink: lilos://preview?open=company
+- scroll
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn:
+    id: project-qrit
+- assertVisible: "Threads"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-wc-26-project-from-company

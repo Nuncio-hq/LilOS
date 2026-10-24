@@ -2,6 +2,8 @@ import {
   agentOf,
   askTag,
   FORMER_AGENT,
+  type LookAtRow,
+  resultsToLookAt,
   threadTag,
   ticketOf,
   type V3Agent,
@@ -10,11 +12,13 @@ import {
   type V3Status,
   type V3Thread,
   type V3Ticket,
+  type V3Update,
   waitingLabel,
 } from "@lilos/ui/v3-data";
 import type {
   AskVM,
   Person,
+  ResultVM,
   ThreadRowVM,
   TicketRowVM,
 } from "@lilos/ui-native/v3";
@@ -84,15 +88,18 @@ export function askVM(d: V3Data, a: V3Ask): AskVM {
   const spend = a.spend
     ? `$${a.spend.amount} · $${a.spend.used} of $${a.spend.cap} used`
     : undefined;
-  const threadId =
-    a.threadId ?? d.threads.find((t) => t.askId === a.id)?.id ?? undefined;
+  const thread = d.threads.find((t) => t.askId === a.id);
+  const threadId = a.threadId ?? thread?.id;
+  const kind = askKind(d, a);
   return {
     id: a.id,
-    kind: askKind(d, a),
+    kind,
     from: personOf(d, a.from),
-    title: a.title,
+    // "Review the plan" says nothing: a plan ask is named by what it plans.
+    title: kind === "plan" && thread ? thread.title : a.title,
     ask: a.ask,
-    why: a.why,
+    // A plan ask says nothing itself; its thread's one-line summary stands in.
+    why: a.why ?? (kind === "plan" ? thread?.quote : undefined),
     ifYes: a.ifYes,
     ifNo: a.ifNo,
     tag: askTag(d, a),
@@ -163,3 +170,59 @@ export function ticketRowVM(d: V3Data, t: V3Ticket): TicketRowVM {
 }
 
 export { ticketOf };
+
+/** What finished since you looked, as rows to open and as view models. Home
+    and Needs show the same list (the Mac's `resultsToLookAt`). */
+export function resultRows(d: V3Data): { rows: LookAtRow[]; vms: ResultVM[] } {
+  const rows = resultsToLookAt(d);
+  return {
+    rows,
+    vms: rows.map((r) => ({
+      key: r.key,
+      title: r.title,
+      by: personOf(d, r.by),
+      note: r.note,
+      tag: r.tag,
+      ago: agoText(r.minutes),
+      unseen: r.unseen,
+      openable: Boolean(r.threadId ?? r.ticketId),
+    })),
+  };
+}
+
+/** What an update is about, and so what it opens: the CEO's own notes open
+    the CEO's thread; an update about a ticket opens that ticket; one by an
+    agent with nothing else to point at opens the agent. A note from LilOS
+    itself about nothing opens nothing. */
+export type UpdateTarget =
+  | { kind: "thread"; id: string }
+  | { kind: "ticket"; id: string }
+  | { kind: "agent"; id: string };
+
+export function updateTarget(d: V3Data, u: V3Update): UpdateTarget | undefined {
+  const ceo = Boolean(d.ceoId) && u.by === d.ceoId;
+  if (ceo && u.kind === "note") return { kind: "thread", id: CEO_THREAD_ID };
+  if (u.ticketId && ticketOf(d, u.ticketId))
+    return { kind: "ticket", id: u.ticketId };
+  if (ceo) return { kind: "thread", id: CEO_THREAD_ID };
+  if (u.authorKind !== "system" && agentOf(d, u.by))
+    return { kind: "agent", id: u.by };
+  return undefined;
+}
+
+/** Newest first, one per destination: two updates about the same ticket (or
+    two notes to the CEO's thread) are one row, the newer. Ones that open
+    nothing stay, each its own. */
+export function recentUpdates(d: V3Data, limit: number): V3Update[] {
+  const seen = new Set<string>();
+  const out: V3Update[] = [];
+  for (const u of d.updates) {
+    const t = updateTarget(d, u);
+    const key = t ? `${t.kind}:${t.id}` : `update:${u.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(u);
+    if (out.length === limit) break;
+  }
+  return out;
+}

@@ -11,7 +11,7 @@ import { CEO_THREAD_ID, personOf, threadRowVM, ticketRowVM } from "../model";
    the rows; the screen decides what a tap does. */
 
 /** Each group shows this many rows; its heading says how many matched. */
-export const GROUP_LIMIT = 5;
+export const GROUP_LIMIT = 20;
 
 export type SearchHits = {
   people: SearchGroup<Person>;

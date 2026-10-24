@@ -2,9 +2,4 @@
 
 export { HomeScreen } from "./home-screen";
 export { Pulse } from "./pulse";
-export type {
-  HomeCountKey,
-  HomeCounts,
-  HomeTeamRow,
-  HomeUpdate,
-} from "./types";
+export type { HomeCountKey, HomeCounts, HomeUpdate } from "./types";

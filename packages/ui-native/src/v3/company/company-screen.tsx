@@ -1,29 +1,34 @@
-import { Page, SerifTitle } from "../kit";
-import { GoalsSection, ProjectsSection } from "./goals";
-import { OrgSection, PeopleSection } from "./people";
+import { AvatarGrid, Module, Modules, Page } from "../kit";
+import { GoalsModule, ProjectsModule } from "./goals";
 import type { CompanyScreenProps } from "./types";
 
-/** The Company tab: who works here, who reports to whom, what the company is
-    after and where the work lives. */
+/** The Company tab: who works here (a grid, the header opens the full
+    People page), what the company is after, and where the work lives. The
+    native header carries the title and the Hire button. */
 export function CompanyScreen({
   people,
-  org,
   goals,
   projects,
   onOpenAgent,
-  onHire,
+  onOpenPeople,
+  onOpenProject,
 }: CompanyScreenProps) {
   return (
     <Page testID="company-screen">
-      <SerifTitle>Company</SerifTitle>
-      <PeopleSection
-        people={people}
-        onOpenAgent={onOpenAgent}
-        onHire={onHire}
-      />
-      {org.length ? <OrgSection org={org} onOpenAgent={onOpenAgent} /> : null}
-      {goals.length ? <GoalsSection goals={goals} /> : null}
-      {projects.length ? <ProjectsSection projects={projects} /> : null}
+      <Modules>
+        <Module
+          title="People"
+          count={people.length}
+          testID="company-people"
+          onOpen={onOpenPeople}
+        >
+          <AvatarGrid people={people} columns={4} onPress={onOpenAgent} />
+        </Module>
+        {goals.length > 0 ? <GoalsModule goals={goals} /> : null}
+        {projects.length > 0 ? (
+          <ProjectsModule projects={projects} onOpenProject={onOpenProject} />
+        ) : null}
+      </Modules>
     </Page>
   );
 }

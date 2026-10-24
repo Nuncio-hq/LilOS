@@ -1,9 +1,9 @@
-import { agentStatus, resultsToLookAt } from "@lilos/ui/v3-data";
-import { NeedsScreen, type ResultVM } from "@lilos/ui-native/v3";
+import { agentStatus } from "@lilos/ui/v3-data";
+import { NeedsScreen } from "@lilos/ui-native/v3";
 import { useStore } from "@nanostores/react";
 import { useEffect, useMemo, useState } from "react";
 import { hapticApprove, hapticDeny, hapticSelect } from "../haptics";
-import { agoText, askVM, openAsks, personOf } from "../model";
+import { askVM, openAsks, resultRows } from "../model";
 import { openThread, openTicket } from "../nav";
 import { $data, $focusAsk, answer, approve, deny, markSeen } from "../store";
 
@@ -30,21 +30,7 @@ export function NeedsContainer() {
     };
   }, [d, open, lead]);
 
-  const rows = useMemo(() => resultsToLookAt(d), [d]);
-  const results = useMemo<ResultVM[]>(
-    () =>
-      rows.map((r) => ({
-        key: r.key,
-        title: r.title,
-        by: personOf(d, r.by),
-        note: r.note,
-        tag: r.tag,
-        ago: agoText(r.minutes),
-        unseen: r.unseen,
-        openable: Boolean(r.threadId ?? r.ticketId),
-      })),
-    [d, rows],
-  );
+  const { rows, vms: results } = useMemo(() => resultRows(d), [d]);
 
   const working = useMemo(
     () => d.agents.filter((a) => agentStatus(d, a.id) === "working").length,

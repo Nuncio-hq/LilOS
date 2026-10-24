@@ -5,28 +5,38 @@ export * from "./company";
 export * from "./home";
 export {
   Avatar,
+  AvatarGrid,
+  AvatarRing,
+  AvatarStrip,
   CeoChip,
+  ClampText,
+  CompactRow,
   EmptyState,
   Hairline,
+  Module,
+  Modules,
   Note,
   Page,
   PersonName,
-  SectionBlock,
+  ProgressBar,
+  type RingPerson,
   Segmented,
-  SerifTitle,
+  StatTile,
+  StatTiles,
   StatusDot,
   StatusLabel,
   T,
   Tag,
 } from "./kit";
 export * from "./needs";
-export { DecisionButtons, ListRow, ThreadRow, TicketRow } from "./rows";
+export { DecisionButtons } from "./rows";
 export * from "./search";
-export { DOT, INK, STATUS_VAR, STATUS_WORD } from "./status";
+export { DOT, INK, RING, STATUS_WORD } from "./status";
 export * from "./thread";
 export type {
   AskVM,
   Person,
+  ResultVM,
   Status,
   ThreadRowVM,
   TicketRowVM,

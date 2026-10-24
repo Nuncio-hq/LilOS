@@ -43,6 +43,7 @@ export function StackCard({
   onDeny,
   onAnswer,
   onOpenThread,
+  onDetails,
 }: {
   ask: AskVM;
   /** 0 = the card in front, 1 = the one right behind it … */
@@ -60,6 +61,7 @@ export function StackCard({
   onDeny: (id: string) => void;
   onAnswer: (id: string, option: string) => void;
   onOpenThread: (threadId: string) => void;
+  onDetails: (askId: string) => void;
 }) {
   const swipeable = ask.kind === "approval";
   const front = depth === 0;
@@ -232,6 +234,7 @@ export function StackCard({
         onOpenThread={
           ask.threadId ? () => onOpenThread(ask.threadId as string) : undefined
         }
+        onDetails={() => onDetails(ask.id)}
       />
       {swipeable && front ? (
         <View

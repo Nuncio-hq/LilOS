@@ -18,7 +18,9 @@ export function ThreadAskCard({
   onAnswer: (option: string) => void;
 }) {
   const lines: { key: string; label: string; text: string }[] = [];
-  if (ask.why) lines.push({ key: "why", label: "Why", text: ask.why });
+  // A plan's one-line summary is the plan card right above it.
+  if (ask.why && ask.kind !== "plan")
+    lines.push({ key: "why", label: "Why", text: ask.why });
   if (ask.ifYes) lines.push({ key: "yes", label: "If yes", text: ask.ifYes });
   if (ask.ifNo) lines.push({ key: "no", label: "If no", text: ask.ifNo });
   return (
@@ -30,16 +32,16 @@ export function ThreadAskCard({
         status="needs"
         label={`Needs you · waiting ${ask.waiting}`}
       />
-      <View className="gap-1">
-        <T variant="label">{ask.title}</T>
-        {/* A plan's ask only points at the plan, which is right above in this
-            thread: no line telling you to go and read it. */}
-        {ask.kind === "plan" ? null : (
+      {/* A plan's ask is named for what it plans, which is this thread's own
+          title, and points at the plan right above: it carries no text. */}
+      {ask.kind === "plan" ? null : (
+        <View className="gap-1">
+          <T variant="label">{ask.title}</T>
           <T variant="small" tone="ink2">
             {ask.ask}
           </T>
-        )}
-      </View>
+        </View>
+      )}
       {lines.length > 0 ? (
         <View className="gap-1">
           {lines.map((l) => (
@@ -77,6 +79,7 @@ export function ThreadAskCard({
         <DecisionButtons
           onApprove={onApprove}
           onDeny={onDeny}
+          onSoft
           approveLabel={ask.kind === "plan" ? "Approve plan" : undefined}
           denyLabel={ask.kind === "plan" ? "Reject plan" : undefined}
           testIDPrefix="thread-ask"

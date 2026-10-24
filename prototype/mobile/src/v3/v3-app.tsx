@@ -8,31 +8,29 @@ import {
 } from "@react-navigation/native-stack";
 import { StatusBar } from "expo-status-bar";
 import { useColorScheme, View } from "react-native";
-import {
-  SafeAreaProvider,
-  useSafeAreaInsets,
-} from "react-native-safe-area-context";
-import { AgentContainer } from "./company/agent-screen";
-import { CompanyContainer } from "./company/company-screen";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import { HireContainer } from "./company/hire-sheet";
-import { HomeContainer } from "./home/home-screen";
 import { PulseAccessory } from "./home/pulse-accessory";
-import { type RootRoutes, type TabRoutes, v3Nav } from "./nav";
-import { NeedsContainer } from "./needs/needs-screen";
+import { type CoverRoutes, type TabRoutes, v3Nav } from "./nav";
 import { useNotifications } from "./notify-bridge";
-import { AskCeoContainer } from "./search/search-screen";
+import {
+  AskStack,
+  CompanyStack,
+  HomeStack,
+  NeedsStack,
+  WorkStack,
+} from "./stacks";
 import { $data } from "./store";
 import { useV3NavTheme } from "./theme";
 import { ThreadContainer } from "./thread/thread-screen";
-import { TicketContainer } from "./work/ticket-screen";
-import { WorkContainer } from "./work/work-screen";
 
-const Stack = createNativeStackNavigator<RootRoutes>();
+const Stack = createNativeStackNavigator<CoverRoutes>();
 const Tab = createNativeBottomTabNavigator<TabRoutes>();
 
-/* Four tabs and the search-role tab. Each tab draws its own serif title in
-   its content, so the bar carries buttons only; the Company pulse is the
-   bar's bottom accessory (like Music's mini player) and opens the CEO. */
+/* Four tabs and the search-role tab, each a native stack (stacks.tsx) with its
+   own large title. The Company pulse is the bar's bottom accessory (like
+   Music's mini player) and opens the CEO; when the bar minimizes on scroll it
+   becomes the short inline form. */
 function Tabs() {
   const open = useStore($data).asks.length;
   const ink = useThemeColor("ink");
@@ -49,7 +47,7 @@ function Tabs() {
     >
       <Tab.Screen
         name="Home"
-        component={HomeContainer}
+        component={HomeStack}
         options={{
           tabBarLabel: "Home",
           tabBarIcon: ({ focused }) => ({
@@ -60,7 +58,7 @@ function Tabs() {
       />
       <Tab.Screen
         name="Needs"
-        component={NeedsContainer}
+        component={NeedsStack}
         options={{
           tabBarLabel: "Needs you",
           tabBarBadge: open || undefined,
@@ -72,7 +70,7 @@ function Tabs() {
       />
       <Tab.Screen
         name="Work"
-        component={WorkContainer}
+        component={WorkStack}
         options={{
           tabBarLabel: "Work",
           tabBarIcon: ({ focused }) => ({
@@ -83,7 +81,7 @@ function Tabs() {
       />
       <Tab.Screen
         name="Company"
-        component={CompanyContainer}
+        component={CompanyStack}
         options={{
           tabBarLabel: "Company",
           tabBarIcon: ({ focused }) => ({
@@ -94,12 +92,10 @@ function Tabs() {
       />
       <Tab.Screen
         name="AskCeo"
-        component={AskCeoContainer}
+        component={AskStack}
         options={{
           tabBarSystemItem: "search",
           tabBarLabel: "Ask the CEO",
-          title: "Ask the CEO",
-          headerShown: true,
           // The search field is the CEO's door; the pulse would crowd it.
           bottomAccessory: undefined,
         }}
@@ -133,24 +129,13 @@ function Routes() {
         component={Tabs}
         options={{ headerShown: false }}
       />
-      <Stack.Screen name="Thread" component={ThreadContainer} />
-      <Stack.Screen name="Agent" component={AgentContainer} />
-      <Stack.Screen name="Ticket" component={TicketContainer} />
+      <Stack.Screen
+        name="Thread"
+        component={ThreadContainer}
+        getId={({ params }) => params.threadId}
+      />
       <Stack.Screen name="Hire" component={HireContainer} options={SHEET} />
     </Stack.Navigator>
-  );
-}
-
-/* Content scrolls under the status bar (no header on the tabs); a paper
-   strip keeps the clock and battery readable instead of printing over rows. */
-function StatusBarScrim() {
-  const { top } = useSafeAreaInsets();
-  return (
-    <View
-      pointerEvents="none"
-      className="absolute inset-x-0 top-0 bg-paper"
-      style={{ height: top }}
-    />
   );
 }
 
@@ -164,7 +149,6 @@ export function V3App() {
         <NavigationContainer ref={v3Nav} theme={theme}>
           <Routes />
         </NavigationContainer>
-        <StatusBarScrim />
       </View>
     </SafeAreaProvider>
   );

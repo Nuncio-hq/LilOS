@@ -1,7 +1,9 @@
-import { Page, SerifTitle, T } from "../kit";
-import type { AskVM } from "../types";
+import { useState } from "react";
+import { Modules, Page, T } from "../kit";
+import type { AskVM, ResultVM } from "../types";
+import { AskDetailsSheet } from "./ask-details";
 import { NeedsStack } from "./needs-stack";
-import { ResultsToLookAt, type ResultVM } from "./results";
+import { ResultsModule } from "./results";
 
 export type NeedsScreenProps = {
   /** Open asks in the order they are decided: the first is in front. */
@@ -18,6 +20,10 @@ export type NeedsScreenProps = {
   onOpenResult: (key: string) => void;
 };
 
+/** Results below the stack: three rows, the rest behind "n more" (which
+    expands the module in place: this tab is where they are listed). */
+const RESULT_ROWS = 3;
+
 export function NeedsScreen({
   asks,
   position,
@@ -29,9 +35,10 @@ export function NeedsScreen({
   onOpenThread,
   onOpenResult,
 }: NeedsScreenProps) {
+  const [detailsId, setDetailsId] = useState<string>();
+  const [allResults, setAllResults] = useState(false);
   return (
     <Page testID="needs-screen">
-      <SerifTitle>Needs you</SerifTitle>
       {asks.length > 0 ? (
         <T variant="small" tone="ink2" className="px-5 pb-3">
           {`${position} of ${asks.length}`}
@@ -44,8 +51,20 @@ export function NeedsScreen({
         onDeny={onDeny}
         onAnswer={onAnswer}
         onOpenThread={onOpenThread}
+        onDetails={setDetailsId}
       />
-      <ResultsToLookAt rows={results} onOpen={onOpenResult} />
+      <Modules>
+        <ResultsModule
+          rows={results}
+          max={allResults ? results.length : RESULT_ROWS}
+          onOpen={onOpenResult}
+          onMore={() => setAllResults(true)}
+        />
+      </Modules>
+      <AskDetailsSheet
+        ask={asks.find((a) => a.id === detailsId)}
+        onClose={() => setDetailsId(undefined)}
+      />
     </Page>
   );
 }

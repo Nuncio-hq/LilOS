@@ -19,6 +19,8 @@ export type RecentUpdateVM = {
   text: string;
   /** The ticket it is about, as its id. */
   ticketTag?: string;
+  /** It points at something to open; a note about nothing is plain text. */
+  openable: boolean;
 };
 
 export type SearchResultsProps = {
@@ -31,7 +33,8 @@ export type SearchResultsProps = {
   threads: SearchGroup<ThreadRowVM>;
   tickets: SearchGroup<TicketRowVM>;
   onAsk: () => void;
-  onOpenCeoThread: () => void;
+  /** Opens what the update is about. */
+  onOpenUpdate: (id: string) => void;
   onOpenPerson: (id: string) => void;
   onOpenThread: (id: string) => void;
   onOpenTicket: (id: string) => void;

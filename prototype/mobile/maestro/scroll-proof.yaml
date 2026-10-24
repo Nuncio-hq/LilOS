@@ -1,0 +1,23 @@
+# One tab, scrolled down and back (a sub-flow of v3-walk.yaml and
+# v3-walk-work-company.yaml). Needs env THEME and NAME. Proves the three
+# things the owner asked for: the large title collapses into the bar, the tab
+# bar minimizes to the short pulse, and a small scroll back up restores both.
+appId: com.nuncio.lilos.mobile
+---
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-scroll-${NAME}-a-top
+- swipe:
+    start: 50%, 64%
+    end: 50%, 14%
+    duration: 400
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-scroll-${NAME}-b-scrolled
+- swipe:
+    start: 50%, 30%
+    end: 50%, 52%
+    duration: 300
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-scroll-${NAME}-c-back

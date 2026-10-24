@@ -1,53 +1,24 @@
-import {
-  agentDot,
-  agentStatus,
-  agentThread,
-  agentTicket,
-  nextRunLabel,
-  type V3Data,
-  type V3Status,
-} from "@lilos/ui/v3-data";
-import type { HomeTeamRow } from "@lilos/ui-native/v3";
-import { minutesText, personOf, STATUS_WORDS } from "../model";
+import { agentStatus, type V3Data, type V3Status } from "@lilos/ui/v3-data";
+import type { RingPerson } from "@lilos/ui-native/v3";
+import { STATUS_WORDS } from "../model";
 
 /* Home's and Pulse's view models: pure functions of the company. */
 
-/** Everyone on the team, the CEO first, then the roster's order. */
-export function teamRows(d: V3Data): HomeTeamRow[] {
+/** Everyone on the team, the CEO first, then the roster's order: a ring and
+    one word for what they are doing, both from `agentStatus` like Company's. */
+export function teamPeople(d: V3Data): RingPerson[] {
   const ordered = [
     ...d.agents.filter((a) => a.id === d.ceoId),
     ...d.agents.filter((a) => a.id !== d.ceoId),
   ];
-  return ordered.map((a) => {
-    const status = agentStatus(d, a.id);
-    const idle = status === "idle";
-    const ticket = agentTicket(d, a.id);
-    const thread = idle ? undefined : agentThread(d, a.id);
-    const run = idle ? nextRunLabel(d, a.id) : undefined;
-    const next = idle ? (run ? `Next: ${run}` : a.next) : undefined;
-    /* A planned ticket on an idle agent is what its next run already says;
-       it shows only when nothing else tells what the agent will do. */
-    const own =
-      ticket && !(idle && ticket.status === "planned" && next)
-        ? ticket
-        : undefined;
-    const on = own ? `${own.id} · ${own.title}` : thread?.title;
-    const since = own
-      ? own.status === "planned"
-        ? undefined
-        : minutesText(own.since)
-      : thread
-        ? minutesText(thread.minutes)
-        : undefined;
-    return {
-      person: personOf(d, a.id),
-      dot: agentDot(d, a.id),
-      statusWord: STATUS_WORDS[status],
-      on,
-      since,
-      next,
-    };
-  });
+  return ordered.map((a) => ({
+    id: a.id,
+    name: a.name,
+    status: agentStatus(d, a.id),
+    caption: STATUS_WORDS[agentStatus(d, a.id)],
+    isCeo: a.id === d.ceoId,
+    outside: a.kind === "outside",
+  }));
 }
 
 /** What the CEO is doing, ignoring `needs` (that waits on you, not on them):

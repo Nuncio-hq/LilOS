@@ -6,10 +6,11 @@ import {
   ScrollView,
   Text,
   type TextProps,
+  useWindowDimensions,
   View,
 } from "react-native";
-import { DOT, INK, STATUS_WORD } from "./status";
-import type { Person, Status } from "./types";
+import { DOT, INK, STATUS_WORD } from "../status";
+import type { Person, Status } from "../types";
 
 /* The v3 look on the phone: warm paper, ink text, hairlines instead of
    boxes, a serif for titles, sans for everything else. Colour is only ever
@@ -55,44 +56,40 @@ export function T({
   );
 }
 
-/** A tab's large serif title, drawn in the content (the native large title
-    vanishes after a pushed screen pops). */
-export function SerifTitle({ children }: { children: string }) {
-  return (
-    <T
-      variant="title"
-      className="px-5 pt-1 pb-3"
-      style={{ letterSpacing: -0.4 }}
-    >
-      {children}
-    </T>
-  );
-}
+/** What the top and bottom bars take of a tall phone's screen: the large
+    title bar (~165pt) and the tab bar with its accessory (~140pt). */
+const BARS = 305;
+/** How far a short page can still be scrolled. UIKit minimizes the tab bar
+    after about 100pt of scroll down and restores it only after about as
+    much scroll back up (a short flick up that reaches the top leaves it
+    minimized), so a short page needs about twice that. */
+const TRAVEL = 230;
 
-/** The scrolling page under every v3 tab and pushed screen. */
+/** The scrolling page under every v3 tab and pushed screen. The ScrollView is
+    the screen's root view and its first scroll view: that is what UIKit
+    watches to collapse the large title and to minimize the tab bar, so
+    nothing may wrap it or sit before it. A page shorter than the screen is
+    made as tall as the bars leave plus `TRAVEL`, so it still scrolls enough
+    to minimize the bar; a longer page ends right after its last module. */
 export function Page({
   children,
   testID,
-  footer,
 }: {
   children: ReactNode;
   testID?: string;
-  footer?: ReactNode;
 }) {
+  const { height } = useWindowDimensions();
   return (
-    <View className="flex-1 bg-paper">
-      <ScrollView
-        testID={testID}
-        className="flex-1"
-        contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={{ paddingBottom: 48 }}
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag"
-      >
-        {children}
-      </ScrollView>
-      {footer}
-    </View>
+    <ScrollView
+      testID={testID}
+      className="flex-1 bg-paper"
+      contentInsetAdjustmentBehavior="automatic"
+      contentContainerStyle={{ minHeight: height - BARS + TRAVEL }}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
+    >
+      {children}
+    </ScrollView>
   );
 }
 
@@ -159,40 +156,6 @@ export function Hairline({ inset = 0 }: { inset?: number }) {
       className="h-px bg-rule"
       style={inset ? { marginLeft: inset } : undefined}
     />
-  );
-}
-
-/** A section: serif heading, an optional right-hand action, then its rows. */
-export function SectionBlock({
-  title,
-  action,
-  onAction,
-  children,
-}: {
-  title: string;
-  action?: string;
-  onAction?: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <View className="pt-7">
-      <View className="flex-row items-baseline justify-between px-5 pb-1.5">
-        <T variant="heading">{title}</T>
-        {action && onAction ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`${title}: ${action}`}
-            onPress={onAction}
-            hitSlop={10}
-          >
-            <T variant="small" tone="ink2" className="font-semibold">
-              {action}
-            </T>
-          </Pressable>
-        ) : null}
-      </View>
-      {children}
-    </View>
   );
 }
 

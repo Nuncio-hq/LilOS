@@ -1,56 +1,31 @@
-import { Pressable, View } from "react-native";
-import { Avatar, CeoChip, SectionBlock, StatusLabel, T } from "../kit";
-import { ListRow } from "../rows";
-import type { OrgNodeVM, PersonRowVM } from "./types";
+import { Pressable, Text, View } from "react-native";
+import { AvatarRing, CeoChip, T } from "../kit";
+import { INK } from "../status";
+import type { OrgNodeVM } from "./types";
 
-/* People (who works here, and how they are doing) and Org (who reports to
-   whom). Org leaves status out: People already says it. */
+/* The org chart is the people list: everyone once, indented under whoever
+   they report to, each with their status. */
 
-export function PeopleSection({
-  people,
-  onOpenAgent,
-  onHire,
-}: {
-  people: PersonRowVM[];
-  onOpenAgent: (id: string) => void;
-  onHire: () => void;
-}) {
+/** The mark of an always-on bot reached through a connector, beside its name
+    (the CEO chip's twin). */
+function OutsideChip() {
   return (
-    <SectionBlock title="People" action="Hire" onAction={onHire}>
-      {people.map((p, i) => (
-        <ListRow
-          key={p.person.id}
-          testID={`person-${p.person.id}`}
-          label={p.person.name}
-          onPress={() => onOpenAgent(p.person.id)}
-          last={i === people.length - 1}
-        >
-          <View className="flex-row items-center gap-3">
-            <Avatar person={p.person} size={40} />
-            <View className="flex-1 gap-0.5">
-              <View className="flex-row items-center gap-1.5">
-                <T variant="label" numberOfLines={1} className="shrink">
-                  {p.person.name}
-                </T>
-                {p.person.isCeo ? <CeoChip /> : null}
-              </View>
-              <T variant="caption" tone="ink2" numberOfLines={1}>
-                {p.roleLine}
-              </T>
-            </View>
-            <StatusLabel status={p.status} label={p.statusWord} />
-          </View>
-        </ListRow>
-      ))}
-    </SectionBlock>
+    <View className="rounded border border-rule px-1.5 py-px">
+      <Text className="font-semibold text-[10px] text-ink-2 uppercase tracking-wider">
+        Outside
+      </Text>
+    </View>
   );
 }
 
-const ORG_ROW = 44;
-const AVATAR = 26;
+const AVATAR = 32;
+/* The status ring adds this much round the avatar. */
+const RING = 10;
+const OUTER = AVATAR + RING;
+const ROW = 52;
 /* The vertical line runs under the parent's avatar centre. */
-const TRUNK = AVATAR / 2;
-const BRANCH = 14;
+const TRUNK = OUTER / 2;
+const BRANCH = 22;
 
 function OrgNode({
   node,
@@ -62,9 +37,9 @@ function OrgNode({
   /** How this node hangs off its parent: absent for a root. */
   connector?: { last: boolean };
 }) {
-  const { person } = node;
+  const { person, status, statusWord, roleLine } = node.row;
   return (
-    <View style={connector ? { paddingLeft: TRUNK + BRANCH + 4 } : undefined}>
+    <View style={connector ? { paddingLeft: BRANCH + 4 } : undefined}>
       {connector ? (
         <>
           <View
@@ -73,42 +48,55 @@ function OrgNode({
               left: 0,
               top: 0,
               width: 1,
-              ...(connector.last ? { height: ORG_ROW / 2 } : { bottom: 0 }),
+              ...(connector.last ? { height: ROW / 2 } : { bottom: 0 }),
             }}
           />
           <View
             className="absolute bg-rule"
-            style={{ left: 0, top: ORG_ROW / 2, height: 1, width: BRANCH }}
+            style={{ left: 0, top: ROW / 2, height: 1, width: BRANCH }}
           />
         </>
       ) : null}
       <Pressable
         testID={`org-${person.id}`}
         accessibilityRole="button"
-        accessibilityLabel={`Org: ${person.name}`}
+        accessibilityLabel={`${person.name}, ${roleLine}, ${statusWord}`}
         onPress={() => onOpenAgent(person.id)}
         className="flex-row items-center gap-2.5 active:opacity-60"
-        style={{ height: ORG_ROW }}
+        style={{ height: ROW }}
       >
-        <Avatar person={person} size={AVATAR} />
-        <T variant="small" className="shrink font-semibold" numberOfLines={1}>
-          {person.name}
-        </T>
-        {person.isCeo ? <CeoChip /> : null}
-        <T
-          variant="caption"
-          tone="ink3"
-          numberOfLines={1}
-          className="min-w-0 flex-1"
-        >
-          {person.role}
-        </T>
+        <AvatarRing
+          name={person.name}
+          status={status}
+          size={AVATAR}
+          outside={person.outside}
+        />
+        <View className="shrink gap-px">
+          <View className="flex-row items-center gap-1.5">
+            <T
+              variant="small"
+              className="shrink font-semibold"
+              numberOfLines={1}
+            >
+              {person.name}
+            </T>
+            {person.isCeo ? <CeoChip /> : null}
+            {person.outside ? <OutsideChip /> : null}
+          </View>
+          <T variant="caption" tone="ink3" numberOfLines={1}>
+            {person.role}
+          </T>
+        </View>
+        <View className="flex-1" />
+        <Text className={`font-semibold text-[12.5px] ${INK[status]}`}>
+          {statusWord}
+        </Text>
       </Pressable>
       {node.reports.length ? (
         <View style={{ marginLeft: TRUNK }}>
           {node.reports.map((r, i) => (
             <OrgNode
-              key={r.person.id}
+              key={r.row.person.id}
               node={r}
               onOpenAgent={onOpenAgent}
               connector={{ last: i === node.reports.length - 1 }}
@@ -120,7 +108,7 @@ function OrgNode({
   );
 }
 
-export function OrgSection({
+export function OrgChart({
   org,
   onOpenAgent,
 }: {
@@ -128,12 +116,10 @@ export function OrgSection({
   onOpenAgent: (id: string) => void;
 }) {
   return (
-    <SectionBlock title="Org">
-      <View className="px-5 pt-1">
-        {org.map((n) => (
-          <OrgNode key={n.person.id} node={n} onOpenAgent={onOpenAgent} />
-        ))}
-      </View>
-    </SectionBlock>
+    <View>
+      {org.map((n) => (
+        <OrgNode key={n.row.person.id} node={n} onOpenAgent={onOpenAgent} />
+      ))}
+    </View>
   );
 }

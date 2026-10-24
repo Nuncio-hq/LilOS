@@ -20,11 +20,14 @@ import { useMemo } from "react";
 import { minutesText, personOf, STATUS_WORDS, threadRowVM } from "../model";
 import type { RootRoutes } from "../nav";
 import { openThread, openTicket } from "../nav";
-import { $data } from "../store";
-import { roleLine } from "./company-screen";
+import { $data, markSeen } from "../store";
+import { roleLine } from "./company-model";
 
-/* An agent's page, pushed from People, Org or a thread. Instructions, notes
-   and skills are read-only here. */
+const sameWords = (a: string, b: string) =>
+  a.trim().toLowerCase() === b.trim().toLowerCase();
+
+/* An agent's page, pushed from People, the grid, a ticket or a thread. Its
+   instructions, notes and skills are read-only here. */
 
 /** Most urgent first; within a status the newest thread leads. */
 const URGENCY: V3Status[] = [
@@ -57,21 +60,24 @@ function notesOf(a: V3Agent): NoteVM[] {
 }
 
 function skillsOf(d: V3Data, a: V3Agent): SkillVM[] {
-  return (a.skills ?? []).map((id) => {
-    const s = d.skills?.find((x) => x.id === id);
-    return { id, name: s?.name ?? id, about: s?.about || undefined };
-  });
+  return (a.skills ?? []).map((id) => ({
+    id,
+    name: d.skills?.find((x) => x.id === id)?.name ?? id,
+  }));
 }
 
-function engineRows(d: V3Data, a: V3Agent): AgentPageProps["engine"] {
+/** Engine, model and the connector it is reached through, as one line. */
+function runsOnOf(d: V3Data, a: V3Agent): string | undefined {
   const via = a.via
     ? d.connectors.find((c) => c.id === a.via)?.label
     : undefined;
-  return [
-    { label: "Engine", value: a.runtime ?? "" },
-    { label: "Model", value: a.model },
-    { label: "Reached through", value: via ?? "" },
-  ].filter((r) => r.value);
+  // The engine profile id is plumbing: "Hermes · Opus 5.5 · High".
+  const runtime = a.runtime
+    ?.split(" · ")
+    .filter((part) => !/^profile\b/i.test(part))
+    .join(" · ");
+  const line = [runtime, a.model, via].filter(Boolean).join(" · ");
+  return line || undefined;
 }
 
 function pageOf(
@@ -87,18 +93,18 @@ function pageOf(
     person: personOf(d, a.id),
     status,
     statusWord: STATUS_WORDS[status],
-    roleLine: roleLine(a),
+    // A hired "Researcher" has the role "Researcher": say it once.
+    roleLine: sameWords(a.role, a.name) ? undefined : roleLine(a),
     description: a.description || undefined,
-    engine: engineRows(d, a),
-    ticket: ticket && {
+    now: ticket && {
       id: ticket.id,
       title: ticket.title,
-      since: `${STATUS_WORDS[ticket.status]} for ${minutesText(ticket.since)}`,
+      since:
+        ticket.status === "planned"
+          ? STATUS_WORDS.planned
+          : `${STATUS_WORDS[ticket.status]} for ${minutesText(ticket.since)}`,
     },
     nextRun: next || undefined,
-    instructions: a.instructions,
-    notes: notesOf(a),
-    skills: skillsOf(d, a),
     week: a.week
       ? `${a.week.done} done · typically ${a.week.typical} · ${a.week.stuck} stuck`
       : undefined,
@@ -106,6 +112,10 @@ function pageOf(
       a.spend && a.spend.cap > 0
         ? `${money(a.spend.used)} of ${money(a.spend.cap)} this ${a.spend.period}`
         : undefined,
+    runsOn: runsOnOf(d, a),
+    instructions: a.instructions,
+    notes: notesOf(a),
+    skills: skillsOf(d, a),
     threads: d.threads
       .filter((t) => t.agentId === a.id)
       .sort((x, y) => rank(x.status) - rank(y.status) || x.minutes - y.minutes)
@@ -122,13 +132,16 @@ export function AgentContainer({
     () => (agent ? pageOf(d, agent) : undefined),
     [d, agent],
   );
-  // The page draws the name as its serif title; the bar stays empty.
   if (!page) return <EmptyState title="No longer on the team" />;
   return (
     <AgentScreen
       {...page}
       onOpenTicket={openTicket}
-      onOpenThread={openThread}
+      onOpenThread={(id) => {
+        // Opening a finished thread is looking at it.
+        markSeen(id);
+        openThread(id);
+      }}
     />
   );
 }

@@ -6,7 +6,7 @@
 #            posts its own notification ~4 s after it backgrounds (lock does it).
 #   cold     terminate the app first, so the tap launches it (the
 #            getLastNotificationResponseAsync path); warm leaves it suspended.
-# Needs JAVA_HOME (openjdk@21) for Maestro. Shots land under /tmp/820/<run>/.
+# Needs JAVA_HOME (openjdk@21) for Maestro. Shots land under /tmp/820b/<run>/.
 set -e
 UDID=${1:?udid}; PAYLOAD=${2:?payload}; ACTION=${3:?action}; PREFIX=${4:?prefix}; WAIT=${5:?wait regex}; START=${6:-warm}
 DIR=$(dirname "$0")
@@ -27,4 +27,4 @@ else
   "$DIR/push.sh" "$UDID" "$PAYLOAD"
   sleep 2
 fi
-maestro --device "$UDID" test --test-output-dir /tmp/820 -e PREFIX="$PREFIX" -e ACTION="$ACTION" -e WAIT="$WAIT" "$DIR/answer.yaml"
+maestro --device "$UDID" test --test-output-dir /tmp/820b -e PREFIX="$PREFIX" -e ACTION="$ACTION" -e WAIT="$WAIT" "$DIR/answer.yaml"
