@@ -220,6 +220,27 @@ appId: com.nuncio.lilos.mobile
     timeout: 1500
 - takeScreenshot: ${THEME}-19-pulse-ceo-thread
 
+# A long page ends right after its last module: Company scrolled to its end
+# has no blank paper under Projects, only the pulse and the bar.
+- openLink: lilos://preview?open=company
+- waitForAnimationToEnd:
+    timeout: 1500
+- swipe:
+    start: 50%, 80%
+    end: 50%, 10%
+    duration: 300
+- swipe:
+    start: 50%, 80%
+    end: 50%, 10%
+    duration: 300
+- swipe:
+    start: 50%, 80%
+    end: 50%, 10%
+    duration: 300
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-scroll-company-end
+
 # The v2 prototype is one link away. A link meant for v2 does not touch the
 # v3 company (this push= would add a fourth ask), and a link back to v3
 # carries its other params along (Needs opens once v3 has mounted).
