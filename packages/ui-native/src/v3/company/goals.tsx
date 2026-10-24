@@ -1,86 +1,124 @@
-import { View } from "react-native";
-import { SectionBlock, T } from "../kit";
-import { ListRow } from "../rows";
+import { useState } from "react";
+import { Pressable, View } from "react-native";
+import { Icon } from "../../components/icon";
+import { Module, ProgressBar, StatusDot, T } from "../kit";
 import type { GoalVM, ProjectVM } from "./types";
 
 /* Goals and Projects: what the company is after and where the work lives.
-   Neither has a page to open, so the rows are not buttons. */
+   A goal and a project both open their project's page. */
 
-function ProgressBar({ done, total }: { done: number; total: number }) {
-  const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
-  return (
-    <View
-      accessibilityRole="progressbar"
-      accessibilityValue={{ min: 0, max: total, now: done }}
-      className="h-[3px] overflow-hidden rounded-full bg-rule"
-    >
-      <View className="h-full bg-ink" style={{ width: `${pct}%` }} />
+/** Lines a module shows before it says "n more". */
+const TOP_GOALS = 3;
+
+function GoalRow({
+  goal,
+  onOpenProject,
+}: {
+  goal: GoalVM;
+  onOpenProject: (projectId: string) => void;
+}) {
+  const { projectId } = goal;
+  const body = (
+    <View className="gap-1.5 py-1.5">
+      <View className="flex-row items-baseline justify-between gap-3">
+        <T variant="small" className="flex-1 font-semibold" numberOfLines={1}>
+          {goal.title}
+        </T>
+        <T variant="caption" tone="ink2">
+          {goal.total === 0 ? "No tickets" : `${goal.done} of ${goal.total}`}
+        </T>
+      </View>
+      <ProgressBar value={goal.total > 0 ? goal.done / goal.total : 0} />
+      <T variant="caption" tone="ink3" numberOfLines={1}>
+        {goal.project ? `${goal.project} · Due ${goal.due}` : `Due ${goal.due}`}
+      </T>
     </View>
   );
-}
-
-export function GoalsSection({ goals }: { goals: GoalVM[] }) {
+  if (!projectId) return body;
   return (
-    <SectionBlock title="Goals">
-      {goals.map((g, i) => (
-        <ListRow
-          key={g.id}
-          testID={`goal-${g.id}`}
-          last={i === goals.length - 1}
-        >
-          <View className="gap-1.5">
-            <T variant="label">{g.title}</T>
-            <T variant="caption" tone="ink2">
-              {g.project ? `${g.project} · Due ${g.due}` : `Due ${g.due}`}
-            </T>
-            <ProgressBar done={g.done} total={g.total} />
-            <T variant="caption" tone="ink2">
-              {g.total === 0
-                ? "No tickets yet"
-                : `${g.done} of ${g.total} ${g.total === 1 ? "ticket" : "tickets"} done`}
-            </T>
-            <T variant="caption" tone="ink3">
-              {g.why}
-            </T>
-          </View>
-        </ListRow>
-      ))}
-    </SectionBlock>
+    <Pressable
+      testID={`goal-${goal.id}`}
+      accessibilityRole="button"
+      accessibilityLabel={`${goal.title}, ${goal.done} of ${goal.total} done`}
+      onPress={() => onOpenProject(projectId)}
+      className="active:opacity-60"
+    >
+      {body}
+    </Pressable>
   );
 }
 
-export function ProjectsSection({ projects }: { projects: ProjectVM[] }) {
+/** Each goal with a progress bar; "more" unfolds the rest in place (goals
+    have no page of their own). */
+export function GoalsModule({
+  goals,
+  onOpenProject,
+}: {
+  goals: GoalVM[];
+  onOpenProject: (projectId: string) => void;
+}) {
+  const [all, setAll] = useState(false);
+  const shown = all ? goals : goals.slice(0, TOP_GOALS);
+  const hidden = goals.length - TOP_GOALS;
   return (
-    <SectionBlock title="Projects">
-      {projects.map((p, i) => (
-        <ListRow
+    <Module
+      title="Goals"
+      count={goals.length}
+      footer={
+        hidden > 0
+          ? {
+              label: all ? "Show less" : `${hidden} more`,
+              onPress: () => setAll((v) => !v),
+            }
+          : undefined
+      }
+    >
+      {shown.map((g) => (
+        <GoalRow key={g.id} goal={g} onOpenProject={onOpenProject} />
+      ))}
+    </Module>
+  );
+}
+
+export function ProjectsModule({
+  projects,
+  onOpenProject,
+}: {
+  projects: ProjectVM[];
+  onOpenProject: (projectId: string) => void;
+}) {
+  return (
+    <Module title="Projects" count={projects.length}>
+      {projects.map((p) => (
+        <Pressable
           key={p.id}
           testID={`project-${p.id}`}
-          last={i === projects.length - 1}
+          accessibilityRole="button"
+          accessibilityLabel={`${p.name}, ${p.summary}`}
+          onPress={() => onOpenProject(p.id)}
+          className="flex-row items-center gap-2.5 py-1.5 active:opacity-60"
         >
-          <View className="gap-0.5">
-            <View className="flex-row items-baseline justify-between gap-3">
-              <T variant="label" className="shrink">
-                {p.name}
-              </T>
-              <T variant="caption" tone="ink3">
-                {p.key}
-              </T>
-            </View>
-            <T variant="small" tone="ink2">
-              {p.about}
+          {p.status ? (
+            <StatusDot status={p.status} />
+          ) : (
+            <View className="w-2" />
+          )}
+          <View className="flex-1 gap-px">
+            <T variant="small" className="font-semibold" numberOfLines={1}>
+              {p.name}
             </T>
-            <T variant="caption" tone="ink3" numberOfLines={1}>
-              {p.folder}
+            <T variant="caption" tone="ink2" numberOfLines={1}>
+              {p.summary}
             </T>
-            {p.open === undefined ? null : (
-              <T variant="caption" tone="ink2">
-                {p.open === 1 ? "1 open ticket" : `${p.open} open tickets`}
-              </T>
-            )}
           </View>
-        </ListRow>
+          <Icon
+            name="chevron.right"
+            size={12}
+            tone="muted-foreground"
+            weight="semibold"
+          />
+        </Pressable>
       ))}
-    </SectionBlock>
+    </Module>
   );
 }

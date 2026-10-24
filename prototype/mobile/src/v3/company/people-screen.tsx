@@ -1,29 +1,31 @@
 import { PeopleScreen } from "@lilos/ui-native/v3";
 import { useStore } from "@nanostores/react";
+import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useLayoutEffect, useMemo } from "react";
-import { openAgent, openHire } from "../nav";
+import type { RootRoutes } from "../nav";
+import { openAgent } from "../nav";
 import { $data } from "../store";
-import { orgTree, peopleRows } from "./company-model";
+import { orgTree, peopleSummary } from "./company-model";
+import { HIRE_BUTTON } from "./hire-button";
 
-/** The People page, pushed from Company: everyone, and who reports to whom.
-    `navigation` is whichever stack pushed it. */
+const SERIF = { fontFamily: "Charter" } as const;
+
+/** The People page, pushed from Company: everyone, indented under who they
+    report to, under a large "People" title. Hire is the `+` here too. */
 export function PeopleContainer({
   navigation,
-}: {
-  navigation: { setOptions: (o: { title: string }) => void };
-}) {
+}: NativeStackScreenProps<RootRoutes, "People">) {
   const d = useStore($data);
-  const people = useMemo(() => peopleRows(d), [d]);
   const org = useMemo(() => orgTree(d), [d]);
+  const summary = useMemo(() => peopleSummary(d), [d]);
   useLayoutEffect(() => {
-    navigation.setOptions({ title: "People" });
+    navigation.setOptions({
+      title: "People",
+      headerLargeTitle: true,
+      headerLargeTitleShadowVisible: false,
+      headerLargeTitleStyle: SERIF,
+      ...HIRE_BUTTON,
+    });
   }, [navigation]);
-  return (
-    <PeopleScreen
-      people={people}
-      org={org}
-      onOpenAgent={openAgent}
-      onHire={openHire}
-    />
-  );
+  return <PeopleScreen summary={summary} org={org} onOpenAgent={openAgent} />;
 }

@@ -1,42 +1,65 @@
 import { goalProgress, projectOf } from "@lilos/ui/v3-data";
-import { CompanyScreen } from "@lilos/ui-native/v3";
+import {
+  CompanyScreen,
+  type GoalVM,
+  type ProjectVM,
+} from "@lilos/ui-native/v3";
 import { useStore } from "@nanostores/react";
-import { useMemo } from "react";
-import { openAgent, openHire } from "../nav";
+import { useNavigation } from "@react-navigation/native";
+import { useLayoutEffect, useMemo } from "react";
+import { openAgent, openPeople, openProject } from "../nav";
 import { $data } from "../store";
-import { orgTree, peopleRows } from "./company-model";
+import {
+  CHAT_ID,
+  openByProject,
+  summaryOf,
+  worstStatus,
+} from "../work/work-model";
+import { ringPeople } from "./company-model";
+import { HIRE_BUTTON } from "./hire-button";
 
-/* The Company tab: the company's people, org, goals and projects. */
+/* The Company tab: the company's people, goals and projects. Hire is the `+`
+   in the navigation bar. */
 
 export function CompanyContainer() {
+  const navigation = useNavigation();
   const d = useStore($data);
   const props = useMemo(() => {
     const tickets = d.features.tickets;
-    return {
-      people: peopleRows(d),
-      org: orgTree(d),
-      goals: tickets
-        ? d.goals.map((g) => ({
+    const goals: GoalVM[] = tickets
+      ? d.goals.map((g) => {
+          const project = projectOf(d, g.projectId);
+          return {
             id: g.id,
             title: g.title,
-            project: projectOf(d, g.projectId)?.name,
+            projectId: project?.id,
+            project: project?.name,
             due: g.due,
-            why: g.why,
             ...goalProgress(d, g.id),
-          }))
-        : [],
-      projects: d.projects.map((p) => ({
+          };
+        })
+      : [];
+    const projects: ProjectVM[] = openByProject(d)
+      .filter((p) => p.id !== CHAT_ID)
+      .map((p) => ({
         id: p.id,
         name: p.name,
-        key: p.key,
-        about: p.about,
-        folder: p.folder,
-        open: tickets
-          ? d.tickets.filter((t) => t.projectId === p.id && t.status !== "done")
-              .length
-          : undefined,
-      })),
-    };
+        status: worstStatus(p.items),
+        summary: summaryOf(p.items),
+      }));
+    return { people: ringPeople(d), goals, projects };
   }, [d]);
-  return <CompanyScreen {...props} onOpenAgent={openAgent} onHire={openHire} />;
+
+  useLayoutEffect(() => {
+    navigation.setOptions(HIRE_BUTTON);
+  }, [navigation]);
+
+  return (
+    <CompanyScreen
+      {...props}
+      onOpenAgent={openAgent}
+      onOpenPeople={openPeople}
+      onOpenProject={openProject}
+    />
+  );
 }

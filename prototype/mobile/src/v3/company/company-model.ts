@@ -4,7 +4,7 @@ import {
   type V3Agent,
   type V3Data,
 } from "@lilos/ui/v3-data";
-import type { OrgNodeVM, PersonRowVM } from "@lilos/ui-native/v3";
+import type { OrgNodeVM, PersonRowVM, RingPerson } from "@lilos/ui-native/v3";
 import { personOf, STATUS_WORDS } from "../model";
 
 /* What the Company tab, the People page and an agent's page all say about
@@ -22,14 +22,26 @@ export function roleLine(a: V3Agent): string {
   return a.role ? `${a.role} · Outside worker` : "Outside worker";
 }
 
-export function peopleRows(d: V3Data): PersonRowVM[] {
+function personRow(d: V3Data, a: V3Agent): PersonRowVM {
+  const status = agentStatus(d, a.id);
+  return {
+    person: personOf(d, a.id),
+    status,
+    statusWord: STATUS_WORDS[status],
+    roleLine: roleLine(a),
+  };
+}
+
+/** The Company tab's grid: everyone, CEO first, each wearing their status. */
+export function ringPeople(d: V3Data): RingPerson[] {
   return ceoFirst(d, d.agents).map((a) => {
-    const status = agentStatus(d, a.id);
+    const { person, status } = personRow(d, a);
     return {
-      person: personOf(d, a.id),
+      id: a.id,
+      name: person.name,
       status,
-      statusWord: STATUS_WORDS[status],
-      roleLine: roleLine(a),
+      isCeo: person.isCeo,
+      outside: person.outside,
     };
   });
 }
@@ -41,11 +53,27 @@ export function orgTree(d: V3Data): OrgNodeVM[] {
   const node = (a: V3Agent): OrgNodeVM => {
     seen.add(a.id);
     return {
-      person: personOf(d, a.id),
+      row: personRow(d, a),
       reports: reportsOf(d.agents, a.id)
         .filter((r) => !seen.has(r.id))
         .map(node),
     };
   };
   return ceoFirst(d, reportsOf(d.agents, undefined)).map(node);
+}
+
+/** "8 people · 3 working · 1 needs you": how many, and who wants a look. */
+export function peopleSummary(d: V3Data): string {
+  const statuses = d.agents.map((a) => agentStatus(d, a.id));
+  const count = (s: string) => statuses.filter((x) => x === s).length;
+  const parts = [
+    `${d.agents.length} ${d.agents.length === 1 ? "person" : "people"}`,
+  ];
+  const needs = count("needs");
+  if (needs > 0) parts.push(`${needs} ${needs === 1 ? "needs" : "need"} you`);
+  for (const status of ["stuck", "working"] as const) {
+    const n = count(status);
+    if (n > 0) parts.push(`${n} ${status}`);
+  }
+  return parts.join(" · ");
 }

@@ -1,119 +1,81 @@
 import { useState } from "react";
-import { View } from "react-native";
-import { EmptyState, Page, Segmented, SerifTitle } from "../kit";
-import { ThreadRow, TicketRow } from "../rows";
-import { DoneToggle, GroupHead } from "./work-parts";
-import type { WorkThreadGroup, WorkTicketGroup, WorkView } from "./work-types";
+import { EmptyState, Module, Modules, Page, T } from "../kit";
+import { WorkItemRow } from "./work-parts";
+import type { WorkScreenProps } from "./work-types";
 
-const VIEWS: { key: WorkView; label: string }[] = [
-  { key: "threads", label: "Threads" },
-  { key: "tickets", label: "Tickets" },
-];
+/** Lines a module shows before it says "n more". */
+const TOP = 3;
 
+/** The Work tab: what wants you, then one module per project with its top
+    few items. The native header carries the title. */
 export function WorkScreen({
-  view,
-  onView,
-  threads,
-  tickets,
-  onOpenThread,
-  onOpenTicket,
-}: {
-  view: WorkView;
-  onView: (view: WorkView) => void;
-  threads: WorkThreadGroup[];
-  tickets: WorkTicketGroup[];
-  onOpenThread: (id: string) => void;
-  onOpenTicket: (id: string) => void;
-}) {
-  // Kept here, not per group, so a group stays open across a Threads/Tickets switch.
-  const [openDone, setOpenDone] = useState<ReadonlySet<string>>(new Set());
-  const toggleDone = (id: string) =>
-    setOpenDone((prev) => {
-      const next = new Set(prev);
-      if (!next.delete(id)) next.add(id);
-      return next;
-    });
+  attention,
+  projects,
+  onOpenItem,
+  onOpenProject,
+}: WorkScreenProps) {
+  // Attention has no page of its own: "more" unfolds it in place.
+  const [allAttention, setAllAttention] = useState(false);
+  const shown = allAttention ? attention : attention.slice(0, TOP);
+  const hidden = attention.length - TOP;
 
   return (
     <Page testID="work-screen">
-      <SerifTitle>Work</SerifTitle>
-      <Segmented options={VIEWS} value={view} onChange={onView} />
-      {view === "threads" ? (
-        threads.length === 0 ? (
+      <Modules>
+        {attention.length > 0 ? (
+          <Module
+            title="Attention"
+            count={attention.length}
+            footer={
+              hidden > 0
+                ? {
+                    label: allAttention ? "Show less" : `${hidden} more`,
+                    onPress: () => setAllAttention((v) => !v),
+                  }
+                : undefined
+            }
+          >
+            {shown.map((item) => (
+              <WorkItemRow
+                key={item.key}
+                item={item}
+                showWhere
+                onPress={onOpenItem}
+              />
+            ))}
+          </Module>
+        ) : null}
+        {projects.length === 0 ? (
           <EmptyState
-            title="No threads yet"
-            body="Threads appear here as soon as you or an agent starts one."
+            title="No projects yet"
+            body="Work shows up here once the company has a project."
           />
         ) : (
-          threads.map((g) => (
-            <View key={g.id} testID={`work-group-${g.id}`}>
-              <GroupHead name={g.name} caption={g.caption} about={g.about} />
-              {g.rows.map((r, i) => (
-                <ThreadRow
-                  key={r.id}
-                  row={r}
-                  onPress={onOpenThread}
-                  last={g.quiet.length === 0 && i === g.rows.length - 1}
-                />
+          projects.map((p) => (
+            <Module
+              key={p.id}
+              testID={`work-project-${p.id}`}
+              title={p.name}
+              onOpen={() => onOpenProject(p.id)}
+              footer={
+                p.items.length > TOP
+                  ? {
+                      label: `${p.items.length - TOP} more`,
+                      onPress: () => onOpenProject(p.id),
+                    }
+                  : undefined
+              }
+            >
+              <T variant="caption" tone="ink2">
+                {p.summary}
+              </T>
+              {p.items.slice(0, TOP).map((item) => (
+                <WorkItemRow key={item.key} item={item} onPress={onOpenItem} />
               ))}
-              {g.quiet.length > 0 ? (
-                <View className="opacity-60">
-                  {g.quiet.map((r, i) => (
-                    <ThreadRow
-                      key={r.id}
-                      row={r}
-                      onPress={onOpenThread}
-                      last={i === g.quiet.length - 1}
-                    />
-                  ))}
-                </View>
-              ) : null}
-            </View>
+            </Module>
           ))
-        )
-      ) : tickets.length === 0 ? (
-        <EmptyState
-          title="No tickets yet"
-          body="Tickets appear here when the CEO plans work for a project."
-        />
-      ) : (
-        tickets.map((g) => {
-          const open = openDone.has(g.id);
-          return (
-            <View key={g.id} testID={`work-group-${g.id}`}>
-              <GroupHead name={g.name} caption={g.caption} about={g.about} />
-              {g.rows.map((r, i) => (
-                <TicketRow
-                  key={r.id}
-                  row={r}
-                  onPress={onOpenTicket}
-                  last={g.done.length === 0 && i === g.rows.length - 1}
-                />
-              ))}
-              {g.done.length > 0 ? (
-                <DoneToggle
-                  groupId={g.id}
-                  count={g.done.length}
-                  open={open}
-                  onPress={() => toggleDone(g.id)}
-                />
-              ) : null}
-              {open ? (
-                <View className="opacity-60">
-                  {g.done.map((r, i) => (
-                    <TicketRow
-                      key={r.id}
-                      row={r}
-                      onPress={onOpenTicket}
-                      last={i === g.done.length - 1}
-                    />
-                  ))}
-                </View>
-              ) : null}
-            </View>
-          );
-        })
-      )}
+        )}
+      </Modules>
     </Page>
   );
 }

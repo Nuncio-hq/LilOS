@@ -1,39 +1,61 @@
-import type { ThreadRowVM, TicketRowVM } from "../types";
+import type { Person, Status, ThreadRowVM, TicketRowVM } from "../types";
 
-/* What the Work tab draws: one group per project (plus "Chat" for threads
-   that live in no project). The app orders the rows; this only shows them. */
+/* What Work and a project's page draw. The app orders everything; these
+   screens only show it. */
 
-type WorkGroupHead = {
+/** One piece of open work: a ticket, or a plain chat that belongs to no
+    ticket. The one line a module shows for it. */
+export type WorkItemVM = {
+  /** "ticket:HB-11" / "thread:t-hb11": unique across both kinds. */
+  key: string;
+  kind: "ticket" | "thread";
+  /** The ticket's or the thread's own id. */
   id: string;
-  /** The project's name, or "Chat". */
+  title: string;
+  status: Status;
+  /** The ticket's owner, or the thread's agent. */
+  who: Person;
+  /** The project it lives in ("Chat" for none). */
+  where: string;
+};
+
+export type WorkProjectVM = {
+  id: string;
   name: string;
-  /** "3 open" — how much of the group is still going. */
-  caption: string;
-  /** What the project is about, one line; absent for Chat. */
-  about?: string;
+  /** "2 working · 1 stuck", or "Nothing open". */
+  summary: string;
+  /** Open work, most pressing first. */
+  items: WorkItemVM[];
 };
 
-export type WorkThreadGroup = WorkGroupHead & {
-  /** The live and recent threads, most pressing first. */
-  rows: ThreadRowVM[];
-  /** Finished and already seen: listed last and drawn quietly. */
-  quiet: ThreadRowVM[];
-};
-
-export type WorkTicketGroup = WorkGroupHead & {
-  rows: TicketRowVM[];
-  /** Done tickets, behind one collapsed "N done" line. */
-  done: TicketRowVM[];
+export type WorkScreenProps = {
+  /** What wants you across all projects: needs you, stuck, failed. */
+  attention: WorkItemVM[];
+  projects: WorkProjectVM[];
+  onOpenItem: (item: WorkItemVM) => void;
+  onOpenProject: (projectId: string) => void;
 };
 
 export type WorkView = "threads" | "tickets";
 
-/** One project's page: all of its threads, and its tickets when the company
-    has tickets switched on. */
+/** One list on a project's page: what is open, and what is finished. */
+export type ProjectList<Row> = { open: Row[]; done: Row[] };
+
 export type ProjectPageVM = {
   id: string;
   name: string;
+  /** What the project is about; absent for Chat. */
   about?: string;
-  threads: WorkThreadGroup;
-  tickets?: WorkTicketGroup;
+  threads: ProjectList<ThreadRowVM>;
+  /** Absent when the company has no tickets (or for Chat). */
+  tickets?: ProjectList<TicketRowVM>;
+};
+
+export type ProjectScreenProps = {
+  /** Absent when the project no longer exists. */
+  page: ProjectPageVM | undefined;
+  view: WorkView;
+  onView: (view: WorkView) => void;
+  onOpenThread: (threadId: string) => void;
+  onOpenTicket: (ticketId: string) => void;
 };

@@ -9,8 +9,11 @@ export type {
 } from "./ticket-types";
 export { WorkScreen } from "./work-screen";
 export type {
+  ProjectList,
   ProjectPageVM,
-  WorkThreadGroup,
-  WorkTicketGroup,
+  ProjectScreenProps,
+  WorkItemVM,
+  WorkProjectVM,
+  WorkScreenProps,
   WorkView,
 } from "./work-types";

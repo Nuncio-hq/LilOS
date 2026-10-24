@@ -1,23 +1,20 @@
-import { Page } from "../kit";
-import { OrgSection, PeopleSection } from "./people";
+import { Module, Modules, Page, T } from "../kit";
+import { OrgChart } from "./people";
 import type { PeopleScreenProps } from "./types";
 
-/** The People page: everyone in the company, then who reports to whom. The
-    native header carries the title. */
-export function PeopleScreen({
-  people,
-  org,
-  onOpenAgent,
-  onHire,
-}: PeopleScreenProps) {
+/** The People page: everyone in the company, indented under who they report
+    to. The native header carries the title. */
+export function PeopleScreen({ summary, org, onOpenAgent }: PeopleScreenProps) {
   return (
     <Page testID="people-screen">
-      <PeopleSection
-        people={people}
-        onOpenAgent={onOpenAgent}
-        onHire={onHire}
-      />
-      {org.length ? <OrgSection org={org} onOpenAgent={onOpenAgent} /> : null}
+      <Modules>
+        <T variant="small" tone="ink2" className="px-1">
+          {summary}
+        </T>
+        <Module title="Org chart" testID="people-org">
+          <OrgChart org={org} onOpenAgent={onOpenAgent} />
+        </Module>
+      </Modules>
     </Page>
   );
 }

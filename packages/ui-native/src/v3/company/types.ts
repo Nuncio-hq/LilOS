@@ -1,9 +1,11 @@
+import type { RingPerson } from "../kit";
 import type { Person, Status, ThreadRowVM } from "../types";
 
-/* View models for the Company tab, an agent's page and the Hire sheet. The
-   app builds them from its company; nothing here knows where it lives. */
+/* View models for the Company tab, the People page, an agent's page and the
+   Hire sheet. The app builds them from its company; nothing here knows where
+   it lives. */
 
-/** One line of the People list. */
+/** One person as the org chart draws them. */
 export type PersonRowVM = {
   person: Person;
   status: Status;
@@ -14,7 +16,7 @@ export type PersonRowVM = {
 
 /** A person in the org tree with the people who report to them. */
 export type OrgNodeVM = {
-  person: Person;
+  row: PersonRowVM;
   reports: OrgNodeVM[];
 };
 
@@ -22,44 +24,42 @@ export type GoalVM = {
   id: string;
   title: string;
   /** Absent when the goal's project is gone. */
+  projectId?: string;
   project?: string;
   /** "Fri 31 Oct" — shown after "Due". */
   due: string;
   done: number;
   total: number;
-  why: string;
 };
 
 export type ProjectVM = {
   id: string;
   name: string;
-  /** Ticket prefix: LIL, HB. */
-  key: string;
-  about: string;
-  folder: string;
-  /** Tickets not done. Absent when the company has no tickets. */
-  open?: number;
+  /** What the project wears: its most pressing item's status. Absent when
+      nothing is open. */
+  status?: Status;
+  /** "2 working · 1 stuck", or "Nothing open". */
+  summary: string;
 };
 
 export type CompanyScreenProps = {
   /** CEO first, then the roster. */
-  people: PersonRowVM[];
-  /** The CEO's tree, then anyone with no boss beside them. */
-  org: OrgNodeVM[];
-  /** Empty hides the section. */
+  people: RingPerson[];
+  /** Empty hides the module. */
   goals: GoalVM[];
-  /** Empty hides the section. */
+  /** Empty hides the module. */
   projects: ProjectVM[];
   onOpenAgent: (agentId: string) => void;
-  onHire: () => void;
+  onOpenPeople: () => void;
+  onOpenProject: (projectId: string) => void;
 };
 
 export type PeopleScreenProps = {
-  /** CEO first, then the roster. */
-  people: PersonRowVM[];
+  /** "8 people · 3 working · 1 needs you" */
+  summary: string;
+  /** The CEO's tree, then anyone with no boss beside them. */
   org: OrgNodeVM[];
   onOpenAgent: (agentId: string) => void;
-  onHire: () => void;
 };
 
 export type NoteVM = {
@@ -75,8 +75,6 @@ export type NoteVM = {
 export type SkillVM = {
   id: string;
   name: string;
-  /** Absent when the library does not describe it. */
-  about?: string;
 };
 
 export type AgentPageProps = {
@@ -86,19 +84,20 @@ export type AgentPageProps = {
   /** "Engineer" (outside workers: "Growth bot · Outside worker"). */
   roleLine: string;
   description?: string;
-  /** Read-only rows: Engine, Model, Reached through. Empty ones are left out. */
-  engine: { label: string; value: string }[];
   /** The ticket the agent holds now. */
-  ticket?: { id: string; title: string; since: string };
+  now?: { id: string; title: string; since: string };
   /** Idle agents: what wakes them next. */
   nextRun?: string;
-  instructions: string[];
-  notes: NoteVM[];
-  skills: SkillVM[];
-  /** "6 done · typically 25m · 0 stuck". */
+  /** "14 done · typically 6m · 0 stuck". */
   week?: string;
   /** "$9.80 of $25 this week". */
   spend?: string;
+  /** "Hermes · Opus 5.5 · High": one line, empty ones left out. */
+  runsOn?: string;
+  instructions: string[];
+  notes: NoteVM[];
+  skills: SkillVM[];
+  /** Most urgent first. */
   threads: ThreadRowVM[];
   onOpenTicket: (ticketId: string) => void;
   onOpenThread: (threadId: string) => void;

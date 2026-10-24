@@ -1,112 +1,135 @@
-import { View } from "react-native";
-import { CeoChip, Page, SectionBlock, StatusLabel, T } from "../kit";
-import { ListRow, ThreadRow } from "../rows";
+import { Pressable, Text, View } from "react-native";
+import { Icon } from "../../components/icon";
 import {
-  EngineSection,
-  InstructionsSection,
-  NotesSection,
-  SkillsSection,
-  WeekSection,
+  AvatarRing,
+  CeoChip,
+  ClampText,
+  Modules,
+  Page,
+  StatusLabel,
+  T,
+} from "../kit";
+import {
+  AgentThreadsModule,
+  InstructionsModule,
+  NotesModule,
+  RunsOnModule,
+  SkillsModule,
 } from "./agent-parts";
 import type { AgentPageProps } from "./types";
 
-/** One agent or outside worker: who they are, what they hold now, what they
-    were told and know, and their threads. Sections with nothing to say are
-    left out. */
+const SERIF = { fontFamily: "Charter" } as const;
+
+/** One agent or outside worker: who they are and what they hold now, then
+    modules. Modules with nothing to say are left out. */
 export function AgentScreen({
   person,
   status,
   statusWord,
   roleLine,
   description,
-  engine,
-  ticket,
+  now,
   nextRun,
+  week,
+  spend,
+  runsOn,
   instructions,
   notes,
   skills,
-  week,
-  spend,
   threads,
   onOpenTicket,
   onOpenThread,
 }: AgentPageProps) {
+  const stats = [week, spend].filter(Boolean).join(" · ");
   return (
     <Page testID="agent-screen">
-      <View className="gap-1.5 px-5 pt-2">
-        <View className="flex-row items-center gap-2.5">
-          <T variant="title" className="shrink" style={{ letterSpacing: -0.4 }}>
-            {person.name}
-          </T>
-          {person.isCeo ? <CeoChip /> : null}
-        </View>
-        <T variant="small" tone="ink2">
-          {roleLine}
-        </T>
-        <View className="self-start pt-0.5">
-          <StatusLabel status={status} label={statusWord} />
-        </View>
-        {description ? (
-          <T variant="small" className="pt-2">
-            {description}
-          </T>
-        ) : null}
-      </View>
-
-      {ticket || nextRun ? (
-        <SectionBlock title={ticket ? "Now" : "Next run"}>
-          {ticket ? (
-            <ListRow
-              testID="agent-ticket"
-              label={`${ticket.id}, ${ticket.title}`}
-              onPress={() => onOpenTicket(ticket.id)}
-              last={!nextRun}
-            >
-              <View className="gap-0.5">
-                <T variant="label" numberOfLines={2}>
-                  {ticket.title}
-                </T>
-                <T variant="caption" tone="ink2">
-                  {`${ticket.id} · ${ticket.since}`}
-                </T>
-              </View>
-            </ListRow>
-          ) : null}
-          {nextRun ? (
-            <ListRow last>
-              <View className="gap-0.5">
-                {ticket ? (
-                  <T variant="caption" tone="ink3">
-                    Next run
-                  </T>
-                ) : null}
-                <T variant="small">{nextRun}</T>
-              </View>
-            </ListRow>
-          ) : null}
-        </SectionBlock>
-      ) : null}
-
-      {engine.length ? <EngineSection rows={engine} /> : null}
-      {instructions.length ? (
-        <InstructionsSection items={instructions} />
-      ) : null}
-      {notes.length ? <NotesSection notes={notes} /> : null}
-      {skills.length ? <SkillsSection skills={skills} /> : null}
-      {week || spend ? <WeekSection week={week} spend={spend} /> : null}
-
-      {threads.length ? (
-        <SectionBlock title="Threads">
-          {threads.map((row, i) => (
-            <ThreadRow
-              key={row.id}
-              row={row}
-              onPress={onOpenThread}
-              last={i === threads.length - 1}
+      <Modules>
+        <View
+          testID="agent-header"
+          className="gap-3 rounded-[22px] bg-paper-soft p-4"
+          style={{ borderCurve: "continuous" }}
+        >
+          <View className="flex-row items-center gap-3.5">
+            <AvatarRing
+              name={person.name}
+              status={status}
+              size={52}
+              outside={person.outside}
             />
-          ))}
-        </SectionBlock>
-      ) : null}
+            <View className="flex-1 gap-0.5">
+              <View className="flex-row items-center gap-2">
+                <Text
+                  accessibilityRole="header"
+                  className="shrink font-semibold text-[24px] text-ink leading-[30px]"
+                  style={SERIF}
+                  numberOfLines={1}
+                >
+                  {person.name}
+                </Text>
+                {person.isCeo ? <CeoChip /> : null}
+              </View>
+              <T variant="caption" tone="ink2" numberOfLines={1}>
+                {roleLine}
+              </T>
+            </View>
+          </View>
+          <StatusLabel status={status} label={statusWord} />
+          {description ? (
+            <ClampText lines={2} tone="ink2">
+              {description}
+            </ClampText>
+          ) : null}
+          {now ? (
+            <Pressable
+              testID="agent-ticket"
+              accessibilityRole="button"
+              accessibilityLabel={`${now.id}, ${now.title}`}
+              onPress={() => onOpenTicket(now.id)}
+              className="flex-row items-center gap-2 active:opacity-60"
+            >
+              <View className="flex-1 gap-0.5">
+                <T variant="small" className="font-semibold" numberOfLines={2}>
+                  {now.title}
+                </T>
+                <T variant="caption" tone="ink3" numberOfLines={1}>
+                  {`${now.id} · ${now.since}`}
+                </T>
+              </View>
+              <Icon
+                name="chevron.right"
+                size={12}
+                tone="muted-foreground"
+                weight="semibold"
+              />
+            </Pressable>
+          ) : nextRun ? (
+            <View className="gap-0.5">
+              <T variant="caption" tone="ink3">
+                Next run
+              </T>
+              <T variant="small" numberOfLines={2}>
+                {nextRun}
+              </T>
+            </View>
+          ) : null}
+          {stats ? (
+            <T variant="caption" tone="ink3" numberOfLines={2}>
+              {stats}
+            </T>
+          ) : null}
+        </View>
+        {threads.length > 0 ? (
+          <AgentThreadsModule threads={threads} onOpenThread={onOpenThread} />
+        ) : null}
+        {instructions.length > 0 ? (
+          <InstructionsModule items={instructions} />
+        ) : null}
+        {notes.length > 0 ? <NotesModule notes={notes} /> : null}
+        {skills.length > 0 ? <SkillsModule skills={skills} /> : null}
+        {runsOn ? (
+          <RunsOnModule line={runsOn} outside={person.outside} />
+        ) : null}
+      </Modules>
     </Page>
   );
 }

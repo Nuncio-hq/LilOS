@@ -33,14 +33,21 @@ export type TicketPageVM = {
   id: string;
   title: string;
   status: Status;
-  statusWord: string;
+  /** The status word with how long: "Needs you · 41 min". */
+  statusLine: string;
   owner: Person;
-  /** Project, goal, what it waits on, why it is stuck, since, started … */
-  facts: TicketFact[];
+  /** Project and goal, as chips. */
+  chips: string[];
+  /** What it waits on or why it is stuck, one line; absent when the status
+      line and the decision already say it. */
+  note?: string;
   /** The ask this ticket waits on you for, while it is still open. */
   ask?: AskVM;
   progress: TicketStepVM[];
   result?: TicketResultVM;
+  /** Newest first. */
   updates: TicketUpdateVM[];
   threads: ThreadRowVM[];
+  /** Reviewer, start, fallback: only what the header does not say. */
+  facts: TicketFact[];
 };

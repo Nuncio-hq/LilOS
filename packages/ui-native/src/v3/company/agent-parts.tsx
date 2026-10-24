@@ -1,147 +1,185 @@
 import { useState } from "react";
-import { View } from "react-native";
+import { Pressable, View } from "react-native";
 import { Icon } from "../../components/icon";
-import { Note, SectionBlock, T } from "../kit";
-import { ListRow } from "../rows";
+import { ClampText, CompactRow, Module, T, Tag } from "../kit";
+import type { ThreadRowVM } from "../types";
 import type { NoteVM, SkillVM } from "./types";
 
-/* The read-only parts of an agent's page: what it was told, what it
-   remembers, what it can do. */
+/* The modules of an agent's page. Instructions, notes and skills are
+   read-only here. Each shows a few lines and unfolds in place: none of them
+   has a page of its own. */
 
-export function EngineSection({
-  rows,
-}: {
-  rows: { label: string; value: string }[];
-}) {
-  return (
-    <SectionBlock title="Runs on">
-      {rows.map((r, i) => (
-        <ListRow key={r.label} last={i === rows.length - 1}>
-          <View className="min-h-[32px] flex-row items-center justify-between gap-4">
-            <T variant="small" tone="ink2">
-              {r.label}
-            </T>
-            <T variant="small" className="shrink font-semibold">
-              {r.value}
-            </T>
-          </View>
-        </ListRow>
-      ))}
-    </SectionBlock>
-  );
-}
+const TOP_THREADS = 3;
+const TOP_NOTES = 2;
+const INSTRUCTION_LINES = 3;
 
-export function InstructionsSection({ items }: { items: string[] }) {
+/** What it was told, three lines; "more" shows every rule. */
+export function InstructionsModule({ items }: { items: string[] }) {
+  const [all, setAll] = useState(false);
   return (
-    <SectionBlock title="Instructions">
-      <View className="gap-2.5 px-5 pt-1">
-        {items.map((text) => (
-          <T key={text} variant="small">
-            {text}
-          </T>
-        ))}
-      </View>
-    </SectionBlock>
+    <Module title="Instructions" testID="agent-instructions">
+      {all ? (
+        <View className="gap-2">
+          {items.map((text) => (
+            <T key={text} variant="small">
+              {text}
+            </T>
+          ))}
+        </View>
+      ) : (
+        <ClampText lines={INSTRUCTION_LINES} onMore={() => setAll(true)}>
+          {items.join("\n")}
+        </ClampText>
+      )}
+    </Module>
   );
 }
 
 function NoteRow({
   note,
-  last,
   open,
   onToggle,
 }: {
   note: NoteVM;
-  last: boolean;
   open: boolean;
   onToggle: () => void;
 }) {
   return (
-    <ListRow
+    <Pressable
       testID={`note-${note.id}`}
-      label={`${note.name}, ${open ? "collapse" : "expand"}`}
+      accessibilityRole="button"
+      accessibilityLabel={`${note.name}, ${open ? "collapse" : "expand"}`}
+      accessibilityState={{ expanded: open }}
       onPress={onToggle}
-      last={last}
+      className="gap-0.5 py-1.5 active:opacity-60"
     >
-      <View className="gap-1">
-        <View className="flex-row items-center justify-between gap-3">
-          <T variant="label" numberOfLines={1} className="flex-1">
-            {note.name}
-          </T>
-          <T variant="caption" tone="ink3">
-            {note.updated}
-          </T>
-          <Icon
-            name={open ? "chevron.up" : "chevron.down"}
-            size={12}
-            tone="muted-foreground"
-          />
-        </View>
-        {open ? (
-          <T variant="small" tone="ink2" selectable>
-            {note.text}
-          </T>
-        ) : (
-          <T variant="small" tone="ink2" numberOfLines={1}>
-            {note.firstLine}
-          </T>
-        )}
+      <View className="flex-row items-center gap-2">
+        <T variant="small" numberOfLines={1} className="flex-1 font-semibold">
+          {note.name}
+        </T>
+        <T variant="caption" tone="ink3">
+          {note.updated}
+        </T>
+        <Icon
+          name={open ? "chevron.up" : "chevron.down"}
+          size={11}
+          tone="muted-foreground"
+          weight="semibold"
+        />
       </View>
-    </ListRow>
+      {open ? (
+        <T variant="small" tone="ink2" selectable>
+          {note.text}
+        </T>
+      ) : (
+        <T variant="caption" tone="ink2" numberOfLines={1}>
+          {note.firstLine}
+        </T>
+      )}
+    </Pressable>
   );
 }
 
-export function NotesSection({ notes }: { notes: NoteVM[] }) {
+/** The two newest notes; a tap reads one in full, "more" lists the rest. */
+export function NotesModule({ notes }: { notes: NoteVM[] }) {
   const [openId, setOpenId] = useState<string | undefined>();
+  const [all, setAll] = useState(false);
+  const shown = all ? notes : notes.slice(0, TOP_NOTES);
+  const hidden = notes.length - TOP_NOTES;
   return (
-    <SectionBlock title="Notes">
-      {notes.map((n, i) => (
+    <Module
+      title="Notes"
+      count={notes.length}
+      testID="agent-notes"
+      footer={
+        hidden > 0
+          ? {
+              label: all ? "Show less" : `${hidden} more`,
+              onPress: () => setAll((v) => !v),
+            }
+          : undefined
+      }
+    >
+      {shown.map((n) => (
         <NoteRow
           key={n.id}
           note={n}
-          last={i === notes.length - 1}
           open={openId === n.id}
           onToggle={() => setOpenId(openId === n.id ? undefined : n.id)}
         />
       ))}
-    </SectionBlock>
+    </Module>
   );
 }
 
-export function SkillsSection({ skills }: { skills: SkillVM[] }) {
+export function SkillsModule({ skills }: { skills: SkillVM[] }) {
   return (
-    <SectionBlock title="Skills">
-      {skills.map((s, i) => (
-        <ListRow
-          key={s.id}
-          testID={`skill-${s.id}`}
-          last={i === skills.length - 1}
-        >
-          <View className="gap-0.5">
-            <T variant="label">{s.name}</T>
-            {s.about ? (
-              <T variant="caption" tone="ink2">
-                {s.about}
-              </T>
-            ) : null}
-          </View>
-        </ListRow>
-      ))}
-    </SectionBlock>
+    <Module title="Skills" count={skills.length} testID="agent-skills">
+      <View className="flex-row flex-wrap gap-1.5 pt-0.5">
+        {skills.map((s) => (
+          <Tag key={s.id}>{s.name}</Tag>
+        ))}
+      </View>
+    </Module>
   );
 }
 
-export function WeekSection({
-  week,
-  spend,
+/** The agent's threads, most urgent first, one line each. */
+export function AgentThreadsModule({
+  threads,
+  onOpenThread,
 }: {
-  week?: string;
-  spend?: string;
+  threads: ThreadRowVM[];
+  onOpenThread: (threadId: string) => void;
+}) {
+  const [all, setAll] = useState(false);
+  const shown = all ? threads : threads.slice(0, TOP_THREADS);
+  const hidden = threads.length - TOP_THREADS;
+  return (
+    <Module
+      title="Threads"
+      count={threads.length}
+      testID="agent-threads"
+      footer={
+        hidden > 0
+          ? {
+              label: all ? "Show less" : `${hidden} more`,
+              onPress: () => setAll((v) => !v),
+            }
+          : undefined
+      }
+    >
+      {shown.map((t) => (
+        <CompactRow
+          key={t.id}
+          testID={`agent-thread-${t.id}`}
+          dot={t.status}
+          title={t.title}
+          meta={t.tag}
+          onPress={() => onOpenThread(t.id)}
+        />
+      ))}
+    </Module>
+  );
+}
+
+/** Where the agent runs; an outside worker is reached through a connector
+    instead. */
+export function RunsOnModule({
+  line,
+  outside,
+}: {
+  line: string;
+  outside: boolean;
 }) {
   return (
-    <SectionBlock title="This week">
-      {week ? <Note>{week}</Note> : null}
-      {spend ? <Note>{spend}</Note> : null}
-    </SectionBlock>
+    <Module
+      title={outside ? "Reached through" : "Runs on"}
+      testID="agent-runs-on"
+    >
+      <T variant="small" tone="ink2">
+        {line}
+      </T>
+    </Module>
   );
 }

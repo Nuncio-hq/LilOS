@@ -1,34 +1,29 @@
-import { WorkScreen, type WorkView } from "@lilos/ui-native/v3";
+import { WorkScreen } from "@lilos/ui-native/v3";
 import { useStore } from "@nanostores/react";
-import { useMemo, useState } from "react";
-import { hapticSelect } from "../haptics";
-import { openThread, openTicket } from "../nav";
+import { useMemo } from "react";
+import { openProject, openThread, openTicket } from "../nav";
 import { $data, markSeen } from "../store";
-import { threadGroups, ticketGroups } from "./work-groups";
+import { workOverview } from "./work-model";
 
-/** The Work tab: threads or tickets, grouped by project. */
+/** The Work tab: what wants you, then each project's open work. */
 export function WorkContainer() {
   const d = useStore($data);
-  const [view, setView] = useState<WorkView>("threads");
-  const threads = useMemo(() => threadGroups(d), [d]);
-  const tickets = useMemo(() => ticketGroups(d), [d]);
+  const { attention, projects } = useMemo(() => workOverview(d), [d]);
 
   return (
     <WorkScreen
-      view={view}
-      onView={(next) => {
-        if (next === view) return;
-        hapticSelect();
-        setView(next);
-      }}
-      threads={threads}
-      tickets={tickets}
-      onOpenThread={(id) => {
+      attention={attention}
+      projects={projects}
+      onOpenItem={(item) => {
+        if (item.kind === "ticket") {
+          openTicket(item.id);
+          return;
+        }
         // Opening a finished thread is looking at it.
-        markSeen(id);
-        openThread(id);
+        markSeen(item.id);
+        openThread(item.id);
       }}
-      onOpenTicket={openTicket}
+      onOpenProject={openProject}
     />
   );
 }

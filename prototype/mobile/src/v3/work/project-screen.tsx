@@ -1,31 +1,33 @@
-import type { ProjectPageVM, WorkView } from "@lilos/ui-native/v3";
-import { ProjectScreen } from "@lilos/ui-native/v3";
+import { ProjectScreen, type WorkView } from "@lilos/ui-native/v3";
 import { useStore } from "@nanostores/react";
+import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useLayoutEffect, useMemo, useState } from "react";
 import { hapticSelect } from "../haptics";
+import type { RootRoutes } from "../nav";
 import { openThread, openTicket } from "../nav";
 import { $data, markSeen } from "../store";
-import { projectPage } from "./work-groups";
+import { projectPage } from "./work-model";
+
+const SERIF = { fontFamily: "Charter" } as const;
 
 /** A project's page, pushed from Work or Company: every thread and ticket in
-    it. `navigation` is whichever stack pushed it. */
+    it, under the project's name as a large title. */
 export function ProjectContainer({
   route,
   navigation,
-}: {
-  route: { params: { projectId: string } };
-  navigation: { setOptions: (o: { title: string }) => void };
-}) {
+}: NativeStackScreenProps<RootRoutes, "Project">) {
   const { projectId } = route.params;
   const d = useStore($data);
   const [view, setView] = useState<WorkView>("threads");
-  const page: ProjectPageVM | undefined = useMemo(
-    () => projectPage(d, projectId),
-    [d, projectId],
-  );
+  const page = useMemo(() => projectPage(d, projectId), [d, projectId]);
 
   useLayoutEffect(() => {
-    navigation.setOptions({ title: page?.name ?? "Project" });
+    navigation.setOptions({
+      title: page?.name ?? "Project",
+      headerLargeTitle: true,
+      headerLargeTitleShadowVisible: false,
+      headerLargeTitleStyle: SERIF,
+    });
   }, [navigation, page?.name]);
 
   return (

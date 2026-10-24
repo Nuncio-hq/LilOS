@@ -8,7 +8,8 @@ import { openAgent, openThread, type RootRoutes } from "../nav";
 import { $data, answer, approve, deny, markSeen } from "../store";
 import { ticketPageVM } from "./ticket-page";
 
-/** A ticket's own page, pushed over the tabs. The header says its id. */
+/** A ticket's own page, pushed inside its tab's stack. The header says its
+    id; the page's header card carries the title. */
 export function TicketContainer({
   route,
   navigation,
