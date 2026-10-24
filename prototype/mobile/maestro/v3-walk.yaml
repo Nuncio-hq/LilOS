@@ -1,9 +1,9 @@
-# Walks every v3 screen and interaction on the fake company, screenshotting
-# each as <theme>-NN-name.png under the test output dir (/tmp/820/takeScreenshot).
+# Walks Home, Needs you, threads, Ask the CEO and the pulse on the fake
+# company, and proves scroll-to-minimize on every tab. Work, Company and the
+# pages under them are v3-walk-work-company.yaml. Screenshots are named
+# <theme>-NN-name under the test output dir.
 #
-#   JAVA_HOME=/opt/homebrew/opt/openjdk@21 PATH=$JAVA_HOME/bin:$PATH \
-#     maestro --device <udid> test --test-output-dir=/tmp/820 -e THEME=<light|dark> prototype/mobile/maestro/v3-walk.yaml
-#   (switch the sim with `xcrun simctl ui <udid> appearance dark`, rerun with THEME=dark)
+#   prototype/mobile/maestro/walk.sh <udid> [light|dark]
 appId: com.nuncio.lilos.mobile
 ---
 - launchApp
@@ -17,13 +17,21 @@ appId: com.nuncio.lilos.mobile
     timeout: 1500
 - takeScreenshot: ${THEME}-01-home
 
-# Home: the three counts open the right list.
+# Home: the tile opens Needs you.
 - assertVisible: "3 needs you"
 - tapOn: "3 needs you"
 - assertVisible: "1 of 3"
 - waitForAnimationToEnd:
     timeout: 1500
 - takeScreenshot: ${THEME}-02-needs-card
+
+# Details: the full reasons, cost and fallback behind the card.
+- tapOn: "Details"
+- assertVisible: "If you do nothing"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-03-needs-details
+- tapOn: "Close details"
 
 # Approve by swipe: the card flies off, the next one is "1 of 2".
 - swipe:
@@ -35,128 +43,120 @@ appId: com.nuncio.lilos.mobile
 - assertNotVisible: "Approve $40 for the Meta Ads test"
 - waitForAnimationToEnd:
     timeout: 1500
-- takeScreenshot: ${THEME}-03-needs-question
+- takeScreenshot: ${THEME}-04-needs-question
 
 # Answer a question ask: it shows its choices, not a swipe.
 - tapOn: "Keep “QRit”"
 - assertVisible: "1 of 1"
 - waitForAnimationToEnd:
     timeout: 1500
-- takeScreenshot: ${THEME}-04-needs-plan
+- takeScreenshot: ${THEME}-05-needs-plan
+- runFlow:
+    file: scroll-proof.yaml
+    env:
+      NAME: needs
 
-# Reject by button (a plan: its thread has the plan; here you decide).
+# Reject by button.
 - tapOn: "Reject plan"
 - assertVisible: "All clear"
 - waitForAnimationToEnd:
     timeout: 1500
-- takeScreenshot: ${THEME}-05-needs-empty
+- takeScreenshot: ${THEME}-06-needs-empty
 
-# A new ask arrives (the demo company's next one): approve it by button; the
-# next one, deny by button. The approved thread finishes by itself a few
-# seconds later.
-- openLink: lilos://preview?push=ask&open=needs
-- assertVisible: "1 of 1"
+# A new ask arrives: Home shows it as the one ask that matters; approve it
+# there, by button, and the count moves.
+- openLink: lilos://preview?push=ask&open=home
+- assertVisible: "1 needs you"
 - waitForAnimationToEnd:
     timeout: 1500
-- takeScreenshot: ${THEME}-06-needs-new-ask
+- takeScreenshot: ${THEME}-07-home-new-ask
 - tapOn: "Approve"
-- assertVisible: "All clear"
+- assertVisible: "0 needs you"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-08-home-after
+- runFlow:
+    file: scroll-proof.yaml
+    env:
+      NAME: home
+
+# A second one, denied on the Needs you tab by button.
 - openLink: lilos://preview?push=ask&open=needs
 - assertVisible: "1 of 1"
 - tapOn: "Deny"
 - assertVisible: "All clear"
 
-# The counts moved: nothing waits on you now, the tab badge is gone.
-- tapOn: "Home"
-- assertVisible: "0 needs you"
-- waitForAnimationToEnd:
-    timeout: 1500
-- takeScreenshot: ${THEME}-07-home-after
-
-# Results to look at: open a finished thread from the list.
-- openLink: lilos://preview?open=needs
-- scrollUntilVisible:
-    element: "Results to look at"
-- waitForAnimationToEnd:
-    timeout: 1500
-- takeScreenshot: ${THEME}-08-needs-results
-- tapOn: "Run the Meta Ads test.*"
+# Results to look at opens the thread behind them.
+- tapOn: "Merge PR #66.*"
 - assertVisible:
     id: thread-composer-input
 - waitForAnimationToEnd:
     timeout: 1500
 - takeScreenshot: ${THEME}-09-thread-result
 
-# Work: threads grouped by project, then tickets.
-- openLink: lilos://preview?open=work
-- assertVisible: "Threads"
+# A thread: send a message and watch the scripted reply stream in. Threads
+# cover the tab bar (the composer owns the bottom).
+- openLink: lilos://preview?open=thread:t-chat-relay
+- assertVisible:
+    id: thread-composer-input
 - waitForAnimationToEnd:
     timeout: 1500
-- takeScreenshot: ${THEME}-10-work-threads
-- tapOn: "Tickets"
-- waitForAnimationToEnd:
-    timeout: 1500
-- takeScreenshot: ${THEME}-11-work-tickets
-- tapOn: "HB-14.*"
-- assertVisible: "Find 20 journaling creators"
-- waitForAnimationToEnd:
-    timeout: 1500
-- takeScreenshot: ${THEME}-12-ticket
-- scrollUntilVisible:
-    element: "Threads"
-- waitForAnimationToEnd:
-    timeout: 1500
-- takeScreenshot: ${THEME}-13-ticket-threads
-
-# The ticket's owner: the agent page.
-- openLink: lilos://preview?open=agent:scout
-- assertVisible: "Instructions"
-- waitForAnimationToEnd:
-    timeout: 1500
-- takeScreenshot: ${THEME}-14-agent
-- scroll
-- scroll
-- waitForAnimationToEnd:
-    timeout: 1500
-- takeScreenshot: ${THEME}-15-agent-threads
-
-# A thread: send a message and watch the scripted reply stream in.
-- openLink: lilos://preview?open=work
-- tapOn: "Threads"
-- tapOn: "How does the relay store messages?.*"
-- waitForAnimationToEnd:
-    timeout: 1500
-- takeScreenshot: ${THEME}-16-thread-chat
+- takeScreenshot: ${THEME}-10-thread-chat
 - tapOn:
     id: thread-composer-input
 - inputText: "Why is ac-544 flaky?"
-- waitForAnimationToEnd:
-    timeout: 1500
-- takeScreenshot: ${THEME}-17-thread-composer
 - tapOn: "Send"
 - assertVisible: "Why is ac-544 flaky?"
 - waitForAnimationToEnd:
     timeout: 1500
-- takeScreenshot: ${THEME}-17b-thread-working
+- takeScreenshot: ${THEME}-11-thread-working
 - extendedWaitUntil:
     visible: "Worked.*"
     timeout: 60000
 - waitForAnimationToEnd:
     timeout: 1500
-- takeScreenshot: ${THEME}-18-thread-reply
+- takeScreenshot: ${THEME}-12-thread-reply
+
+# The plan ask: its thread carries the plan (read from the same place as the
+# Mac's), and Reject / Approve plan decide it right there.
+- openLink: lilos://preview?reset=1&open=thread:t-chat-sidebar
+- assertVisible: "Read the saved width synchronously, before the first render"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-13-thread-plan
+- tapOn: "Reject plan"
+- assertVisible: "Rejected"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-14-thread-plan-rejected
+- openLink: lilos://preview?reset=1&open=thread:t-chat-sidebar
+- assertVisible: "Waiting for your OK"
+- tapOn: "Approve plan"
+- assertVisible: "Approved"
+- extendedWaitUntil:
+    visible: "The plan is carried out.*"
+    timeout: 30000
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-15-thread-plan-carried-out
 
 # Ask the CEO: the search tab, a search, then a question to the CEO.
-- openLink: lilos://preview?open=ask
+- openLink: lilos://preview?reset=1&open=ask
 - assertVisible: "Recent from the CEO"
 - waitForAnimationToEnd:
     timeout: 1500
-- takeScreenshot: ${THEME}-19-ask-ceo
+- takeScreenshot: ${THEME}-16-ask-ceo
+- tapOn: "3 more"
+- runFlow:
+    file: scroll-proof.yaml
+    env:
+      NAME: ask
 - tapOn: "Ask the CEO or search"
 - inputText: "Scout"
 - hideKeyboard
 - waitForAnimationToEnd:
     timeout: 1500
-- takeScreenshot: ${THEME}-20-ask-ceo-search
+- takeScreenshot: ${THEME}-17-ask-ceo-search
 # The field is the capsule above the tab bar: tap it to type again.
 - tapOn:
     point: "50%,94%"
@@ -168,48 +168,7 @@ appId: com.nuncio.lilos.mobile
     timeout: 60000
 - waitForAnimationToEnd:
     timeout: 1500
-- takeScreenshot: ${THEME}-21-ceo-thread
-
-# Two CEO messages in a row share one author line; the owner's message in
-# between starts a new run.
-- tapOn:
-    id: thread-composer-input
-- inputText: "Is anything stuck?"
-- tapOn: "Send"
-- extendedWaitUntil:
-    visible: ".*is stuck.*"
-    timeout: 60000
-- waitForAnimationToEnd:
-    timeout: 1500
-- takeScreenshot: ${THEME}-21b-ceo-thread-second-reply
-
-# Company: people, hire a new agent, then org, goals and projects.
-- openLink: lilos://preview?open=company
-- assertVisible: "People"
-- waitForAnimationToEnd:
-    timeout: 1500
-- takeScreenshot: ${THEME}-22-company
-- tapOn: "People: Hire"
-- assertVisible: "Hire Researcher"
-- waitForAnimationToEnd:
-    timeout: 1500
-- takeScreenshot: ${THEME}-23-hire
-- tapOn: "Hire Researcher"
-- assertVisible: "Instructions"
-- waitForAnimationToEnd:
-    timeout: 1500
-- takeScreenshot: ${THEME}-24-agent-new-hire
-- openLink: lilos://preview?open=company
-- assertVisible: "Researcher"
-- scroll
-- waitForAnimationToEnd:
-    timeout: 1500
-- takeScreenshot: ${THEME}-25-company-org
-- scroll
-- scroll
-- waitForAnimationToEnd:
-    timeout: 1500
-- takeScreenshot: ${THEME}-26-company-goals-projects
+- takeScreenshot: ${THEME}-18-ceo-thread
 
 # Pulse: the bottom accessory opens the CEO's thread.
 - openLink: lilos://preview?open=home
@@ -218,33 +177,7 @@ appId: com.nuncio.lilos.mobile
     id: thread-composer-input
 - waitForAnimationToEnd:
     timeout: 1500
-- takeScreenshot: ${THEME}-27-pulse-ceo-thread
-
-# The plan ask: its thread carries the plan (read from the same place as the
-# Mac's), and Reject / Approve plan decide it right there.
-- openLink: lilos://preview?reset=1&open=thread:t-chat-sidebar
-- assertVisible: "Read the saved width synchronously, before the first render"
-- waitForAnimationToEnd:
-    timeout: 1500
-- takeScreenshot: ${THEME}-28-thread-plan
-- tapOn: "Reject plan"
-- assertVisible: "Rejected"
-- waitForAnimationToEnd:
-    timeout: 1500
-- takeScreenshot: ${THEME}-29-thread-plan-rejected
-- openLink: lilos://preview?reset=1&open=thread:t-chat-sidebar
-- assertVisible: "Waiting for your OK"
-- tapOn: "Approve plan"
-- assertVisible: "Approved"
-- waitForAnimationToEnd:
-    timeout: 1500
-- takeScreenshot: ${THEME}-30-thread-plan-approved
-- extendedWaitUntil:
-    visible: "The plan is carried out.*"
-    timeout: 30000
-- waitForAnimationToEnd:
-    timeout: 1500
-- takeScreenshot: ${THEME}-31-thread-plan-carried-out
+- takeScreenshot: ${THEME}-19-pulse-ceo-thread
 
 # The v2 prototype is one link away. A link meant for v2 does not touch the
 # v3 company (this push= would add a fourth ask), and a link back to v3
@@ -255,4 +188,4 @@ appId: com.nuncio.lilos.mobile
 - assertVisible: "1 of 3"
 - openLink: lilos://preview?ui=v2
 - openLink: lilos://preview?ui=v3&open=work
-- assertVisible: "Threads"
+- assertVisible: "Work"

@@ -125,6 +125,7 @@ export function DecisionButtons({
   approveLabel = "Approve",
   denyLabel = "Deny",
   size = "md",
+  onSoft = false,
   testIDPrefix,
 }: {
   onApprove: () => void;
@@ -132,6 +133,9 @@ export function DecisionButtons({
   approveLabel?: string;
   denyLabel?: string;
   size?: "sm" | "md" | "lg";
+  /** The buttons sit on a paper-soft surface (a module, a card): Deny is
+      drawn in paper there, or it would have no shape of its own. */
+  onSoft?: boolean;
   testIDPrefix?: string;
 }) {
   const h = size === "lg" ? "h-[52px]" : size === "md" ? "h-11" : "h-9";
@@ -143,7 +147,7 @@ export function DecisionButtons({
         accessibilityRole="button"
         accessibilityLabel={denyLabel}
         onPress={onDeny}
-        className={`${h} flex-1 items-center justify-center rounded-full bg-paper-soft active:opacity-60`}
+        className={`${h} flex-1 items-center justify-center rounded-full active:opacity-60 ${onSoft ? "bg-paper" : "bg-paper-soft"}`}
       >
         <Text className={`font-semibold text-ink ${text}`}>{denyLabel}</Text>
       </Pressable>

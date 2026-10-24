@@ -1,6 +1,8 @@
 import {
   openAgent,
   openHire,
+  openPeople,
+  openProject,
   openTab,
   openThread,
   openTicket,
@@ -13,7 +15,8 @@ import { focusAsk, resetCompany } from "./store";
    the Maestro walk:
      reset=1                     fresh company
      open=home|needs|work|company|ask   a tab
-     open=thread:<id> | agent:<id> | ticket:<id> | ask:<id> | hire
+     open=thread:<id> | agent:<id> | ticket:<id> | project:<id> | ask:<id>
+          | people | hire
      push=ask|update             fire the next demo notification now
      ui=v2|v3                    which prototype (root.tsx); a link for v2 is
                                  not this handler's */
@@ -34,6 +37,8 @@ export function applyPreview(query: string) {
   if (open) {
     whenNavReady(() => {
       if (open === "hire") openHire();
+      else if (open === "people") openPeople();
+      else if (open.startsWith("project:")) openProject(open.slice(8));
       else if (open.startsWith("thread:")) openThread(open.slice(7));
       else if (open.startsWith("agent:")) openAgent(open.slice(6));
       else if (open.startsWith("ticket:")) openTicket(open.slice(7));

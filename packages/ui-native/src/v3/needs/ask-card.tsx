@@ -83,6 +83,7 @@ function PlanActions({
       ) : null}
       <DecisionButtons
         size="lg"
+        onSoft
         approveLabel="Approve plan"
         denyLabel="Reject plan"
         onApprove={onApprove}
@@ -174,6 +175,7 @@ export function AskCard({
         ) : approval ? (
           <DecisionButtons
             size="lg"
+            onSoft
             onApprove={onApprove}
             onDeny={onDeny}
             testIDPrefix="ask"

@@ -88,7 +88,10 @@ export function Page({
       testID={testID}
       className="flex-1 bg-paper"
       contentInsetAdjustmentBehavior="automatic"
-      contentContainerStyle={{ paddingBottom: 24 }}
+      // A short page still rubber-bands, so dragging it up collapses the
+      // title and minimizes the bar like a long one.
+      alwaysBounceVertical
+      contentContainerStyle={{ paddingBottom: 72 }}
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="on-drag"
     >
