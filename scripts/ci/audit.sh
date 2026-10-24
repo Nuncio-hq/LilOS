@@ -16,6 +16,12 @@
 #   published (1.4.0 is the latest release). Reachable only inside
 #   @expo/cli at mobile build time; LilOS does not verify RSA signatures
 #   with node-forge. Revisit on an expo/xcode bump.
+# - GHSA-mrhx-c7xc-m3w5 zod<4.6.6: memory exhaustion while validating
+#   oversized constrained collections. No fixed 3.x is published (3.25.76
+#   is the latest 3 release; the patch starts at 4.6.6). The direct
+#   dependency is already on zod 4. Reachable only under @expo/cli and
+#   shadcn, both build/dev CLIs, never agent-facing runtime text. Revisit
+#   on an Expo/shadcn bump.
 #
 # uuid@7 via xcode (GHSA-w5hq-g745-h8pq) is moderate — below the gate.
 #
@@ -32,4 +38,5 @@ cd "$(dirname "$0")/../.."
 
 exec bun audit --audit-level=high \
   --ignore GHSA-vfj7-8cjw-p6xm \
-  --ignore GHSA-86w9-cpqp-85rv
+  --ignore GHSA-86w9-cpqp-85rv \
+  --ignore GHSA-mrhx-c7xc-m3w5
