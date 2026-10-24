@@ -16,14 +16,12 @@ import {
 } from "@lilos/ui-native/v3";
 import { useStore } from "@nanostores/react";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useLayoutEffect, useMemo } from "react";
+import { useMemo } from "react";
 import { minutesText, personOf, STATUS_WORDS, threadRowVM } from "../model";
 import type { RootRoutes } from "../nav";
 import { openThread, openTicket } from "../nav";
 import { $data, markSeen } from "../store";
 import { roleLine } from "./company-model";
-
-const SERIF = { fontFamily: "Charter" } as const;
 
 const sameWords = (a: string, b: string) =>
   a.trim().toLowerCase() === b.trim().toLowerCase();
@@ -127,7 +125,6 @@ function pageOf(
 
 export function AgentContainer({
   route,
-  navigation,
 }: NativeStackScreenProps<RootRoutes, "Agent">) {
   const d = useStore($data);
   const agent = agentOf(d, route.params.agentId);
@@ -135,17 +132,6 @@ export function AgentContainer({
     () => (agent ? pageOf(d, agent) : undefined),
     [d, agent],
   );
-  const name = agent?.name;
-  // The name is the native large title: it collapses to the bar on scroll,
-  // so the header card does not repeat it.
-  useLayoutEffect(() => {
-    navigation.setOptions({
-      title: name ?? "",
-      headerLargeTitle: true,
-      headerLargeTitleShadowVisible: false,
-      headerLargeTitleStyle: SERIF,
-    });
-  }, [navigation, name]);
   if (!page) return <EmptyState title="No longer on the team" />;
   return (
     <AgentScreen

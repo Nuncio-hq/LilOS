@@ -5,8 +5,7 @@ import {
   type ProjectVM,
 } from "@lilos/ui-native/v3";
 import { useStore } from "@nanostores/react";
-import { useNavigation } from "@react-navigation/native";
-import { useLayoutEffect, useMemo } from "react";
+import { useMemo } from "react";
 import { openAgent, openPeople, openProject } from "../nav";
 import { $data } from "../store";
 import {
@@ -16,13 +15,11 @@ import {
   worstStatus,
 } from "../work/work-model";
 import { ringPeople } from "./company-model";
-import { HIRE_BUTTON } from "./hire-button";
 
 /* The Company tab: the company's people, goals and projects. Hire is the `+`
-   in the navigation bar. */
+   in the navigation bar, set by the stack. */
 
 export function CompanyContainer() {
-  const navigation = useNavigation();
   const d = useStore($data);
   const props = useMemo(() => {
     const tickets = d.features.tickets;
@@ -48,10 +45,6 @@ export function CompanyContainer() {
       }));
     return { people: ringPeople(d), goals, projects };
   }, [d]);
-
-  useLayoutEffect(() => {
-    navigation.setOptions(HIRE_BUTTON);
-  }, [navigation]);
 
   return (
     <CompanyScreen
