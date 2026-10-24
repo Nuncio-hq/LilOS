@@ -5,21 +5,15 @@ import { Module, ProgressBar, StatusDot, T } from "../kit";
 import type { GoalVM, ProjectVM } from "./types";
 
 /* Goals and Projects: what the company is after and where the work lives.
-   A goal and a project both open their project's page. */
+   A goal is read-only: its project is one tap away in the Projects module
+   below, so a second door to it would only duplicate that. */
 
 /** Lines a module shows before it says "n more". */
 const TOP_GOALS = 3;
 
-function GoalRow({
-  goal,
-  onOpenProject,
-}: {
-  goal: GoalVM;
-  onOpenProject: (projectId: string) => void;
-}) {
-  const { projectId } = goal;
-  const body = (
-    <View className="gap-1.5 py-1.5">
+function GoalRow({ goal }: { goal: GoalVM }) {
+  return (
+    <View testID={`goal-${goal.id}`} className="gap-1.5 py-1.5">
       <View className="flex-row items-baseline justify-between gap-3">
         <T variant="small" className="flex-1 font-semibold" numberOfLines={1}>
           {goal.title}
@@ -34,29 +28,11 @@ function GoalRow({
       </T>
     </View>
   );
-  if (!projectId) return body;
-  return (
-    <Pressable
-      testID={`goal-${goal.id}`}
-      accessibilityRole="button"
-      accessibilityLabel={`${goal.title}, ${goal.done} of ${goal.total} done`}
-      onPress={() => onOpenProject(projectId)}
-      className="active:opacity-60"
-    >
-      {body}
-    </Pressable>
-  );
 }
 
 /** Each goal with a progress bar; "more" unfolds the rest in place (goals
     have no page of their own). */
-export function GoalsModule({
-  goals,
-  onOpenProject,
-}: {
-  goals: GoalVM[];
-  onOpenProject: (projectId: string) => void;
-}) {
+export function GoalsModule({ goals }: { goals: GoalVM[] }) {
   const [all, setAll] = useState(false);
   const shown = all ? goals : goals.slice(0, TOP_GOALS);
   const hidden = goals.length - TOP_GOALS;
@@ -74,7 +50,7 @@ export function GoalsModule({
       }
     >
       {shown.map((g) => (
-        <GoalRow key={g.id} goal={g} onOpenProject={onOpenProject} />
+        <GoalRow key={g.id} goal={g} />
       ))}
     </Module>
   );

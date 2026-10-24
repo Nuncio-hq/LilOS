@@ -21,6 +21,11 @@ import {
 
 const capital = (s: string) => s.slice(0, 1).toUpperCase() + s.slice(1);
 
+/** Whoever acted, by name; the owner is "You", never their own name (the
+    same word `waitingLabel` uses). */
+const whoOf = (d: V3Data, id: string) =>
+  id === "you" ? { ...personOf(d, id), name: "You" } : personOf(d, id);
+
 /** "Needs you · 41 min": the status word and how long it has been so. */
 function statusLine(t: V3Ticket): string {
   const word = STATUS_WORDS[t.status];
@@ -86,7 +91,7 @@ export function ticketPageVM(d: V3Data, t: V3Ticket): TicketPageVM {
     progress: t.progress.map((s) => ({
       text: s.text,
       state: s.state,
-      who: personOf(d, s.by).name,
+      who: whoOf(d, s.by).name,
       took: s.took,
     })),
     result:
@@ -103,7 +108,7 @@ export function ticketPageVM(d: V3Data, t: V3Ticket): TicketPageVM {
       .sort((a, b) => a.u.ago - b.u.ago)
       .map(({ u, i }) => ({
         id: `${t.id}-${i}`,
-        who: u.authorKind === "system" || !u.by ? undefined : personOf(d, u.by),
+        who: u.authorKind === "system" || !u.by ? undefined : whoOf(d, u.by),
         ago: agoText(u.ago),
         text: u.text,
       })),

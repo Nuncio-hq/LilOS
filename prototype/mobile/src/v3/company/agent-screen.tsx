@@ -16,12 +16,17 @@ import {
 } from "@lilos/ui-native/v3";
 import { useStore } from "@nanostores/react";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useMemo } from "react";
+import { useLayoutEffect, useMemo } from "react";
 import { minutesText, personOf, STATUS_WORDS, threadRowVM } from "../model";
 import type { RootRoutes } from "../nav";
 import { openThread, openTicket } from "../nav";
 import { $data, markSeen } from "../store";
 import { roleLine } from "./company-model";
+
+const SERIF = { fontFamily: "Charter" } as const;
+
+const sameWords = (a: string, b: string) =>
+  a.trim().toLowerCase() === b.trim().toLowerCase();
 
 /* An agent's page, pushed from People, the grid, a ticket or a thread. Its
    instructions, notes and skills are read-only here. */
@@ -68,7 +73,12 @@ function runsOnOf(d: V3Data, a: V3Agent): string | undefined {
   const via = a.via
     ? d.connectors.find((c) => c.id === a.via)?.label
     : undefined;
-  const line = [a.runtime, a.model, via].filter(Boolean).join(" · ");
+  // The engine profile id is plumbing: "Hermes · Opus 5.5 · High".
+  const runtime = a.runtime
+    ?.split(" · ")
+    .filter((part) => !/^profile\b/i.test(part))
+    .join(" · ");
+  const line = [runtime, a.model, via].filter(Boolean).join(" · ");
   return line || undefined;
 }
 
@@ -85,7 +95,8 @@ function pageOf(
     person: personOf(d, a.id),
     status,
     statusWord: STATUS_WORDS[status],
-    roleLine: roleLine(a),
+    // A hired "Researcher" has the role "Researcher": say it once.
+    roleLine: sameWords(a.role, a.name) ? undefined : roleLine(a),
     description: a.description || undefined,
     now: ticket && {
       id: ticket.id,
@@ -116,6 +127,7 @@ function pageOf(
 
 export function AgentContainer({
   route,
+  navigation,
 }: NativeStackScreenProps<RootRoutes, "Agent">) {
   const d = useStore($data);
   const agent = agentOf(d, route.params.agentId);
@@ -123,7 +135,17 @@ export function AgentContainer({
     () => (agent ? pageOf(d, agent) : undefined),
     [d, agent],
   );
-  // The header card carries the name; the bar stays empty.
+  const name = agent?.name;
+  // The name is the native large title: it collapses to the bar on scroll,
+  // so the header card does not repeat it.
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      title: name ?? "",
+      headerLargeTitle: true,
+      headerLargeTitleShadowVisible: false,
+      headerLargeTitleStyle: SERIF,
+    });
+  }, [navigation, name]);
   if (!page) return <EmptyState title="No longer on the team" />;
   return (
     <AgentScreen

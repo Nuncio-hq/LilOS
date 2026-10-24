@@ -24,9 +24,7 @@ export function CompanyScreen({
         >
           <AvatarGrid people={people} columns={4} onPress={onOpenAgent} />
         </Module>
-        {goals.length > 0 ? (
-          <GoalsModule goals={goals} onOpenProject={onOpenProject} />
-        ) : null}
+        {goals.length > 0 ? <GoalsModule goals={goals} /> : null}
         {projects.length > 0 ? (
           <ProjectsModule projects={projects} onOpenProject={onOpenProject} />
         ) : null}

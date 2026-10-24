@@ -130,7 +130,20 @@ export function worstStatus(
     ?.status;
 }
 
-const WANTS_YOU: V3Status[] = ["needs", "stuck", "failed"];
+/** What Attention is about: things that want a person, worst first. A stuck
+    or failed item comes before one that waits on you: an agent that is going
+    round in circles burns money and nothing else on the phone says so, while
+    a decision waiting on you is already a badge on Needs you and the lead of
+    Home. Inside a severity the longest-waiting leads. */
+const ATTENTION_RANK: Partial<Record<V3Status, number>> = {
+  stuck: 0,
+  failed: 0,
+  needs: 1,
+};
+
+/** How many lines Attention shows. The rest of what wants you stays in its
+    project's module (it is not hidden behind a "more"). */
+export const ATTENTION_TOP = 3;
 
 /** Every project's open work, most pressing first; Chat only while it holds
     something. */
@@ -157,28 +170,33 @@ export type WorkOverview = {
   projects: WorkProjectVM[];
 };
 
-/** The Work tab. Whatever wants you is in Attention and nowhere else: each
-    project's module then says what else is open, so no line shows twice. */
+/** The Work tab. Attention shows the worst few; a project's module leaves out
+    exactly those and lists the rest of its open work, so no line shows twice
+    and nothing is hidden. Its summary counts everything open in the project. */
 export function workOverview(d: V3Data): WorkOverview {
   const groups = rankedByProject(d);
   const attention = groups
     .flatMap((g) => g.ranked)
-    .filter((r) => WANTS_YOU.includes(r.item.status))
-    .sort(byPressing)
+    .filter((r) => r.item.status in ATTENTION_RANK)
+    .sort(
+      (a, b) =>
+        (ATTENTION_RANK[a.item.status] ?? 0) -
+          (ATTENTION_RANK[b.item.status] ?? 0) || b.since - a.since,
+    )
+    .slice(0, ATTENTION_TOP)
     .map((r) => r.item);
+  const shown = new Set(attention.map((i) => i.key));
   const projects = groups
     .map((g) => {
       const all = g.ranked.map((r) => r.item);
-      const items = all.filter((i) => !WANTS_YOU.includes(i.status));
-      const summary =
-        items.length > 0
-          ? summaryOf(items)
-          : all.length > 0
-            ? "Nothing else open"
-            : "Nothing open";
-      return { id: g.id, name: g.name, summary, items };
+      return {
+        id: g.id,
+        name: g.name,
+        summary: summaryOf(all),
+        items: all.filter((i) => !shown.has(i.key)),
+      };
     })
-    // Chat is a module only while it has something besides Attention.
+    // Chat is a module only while it has something Attention does not show.
     .filter((p) => p.id !== CHAT_ID || p.items.length > 0);
   return { attention, projects };
 }

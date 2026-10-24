@@ -32,7 +32,6 @@ export function CompanyContainer() {
           return {
             id: g.id,
             title: g.title,
-            projectId: project?.id,
             project: project?.name,
             due: g.due,
             ...goalProgress(d, g.id),

@@ -35,15 +35,16 @@ appId: com.nuncio.lilos.mobile
     timeout: 1500
 - takeScreenshot: ${THEME}-wc-03-work-restored
 
-# Attention has no page of its own: "more" unfolds it in place.
-- tapOn:
-    id: module-attention-footer
+# Attention leads with what is stuck or failed, then what needs you; what it
+# does not show stays in its project's module, nothing hides behind "more".
+- assertVisible: "Find 20 journaling creators"
 - assertVisible: "Summarise yesterday.*"
+- assertNotVisible:
+    id: module-attention-footer
+- assertVisible: "1 needs you · 1 stuck · 1 working.*"
 - waitForAnimationToEnd:
     timeout: 1500
-- takeScreenshot: ${THEME}-wc-04-work-attention-all
-- tapOn:
-    id: module-attention-footer
+- takeScreenshot: ${THEME}-wc-04-work-attention
 
 # A project module's header opens the project page: its threads, then its
 # tickets, with the finished work folded.
@@ -190,13 +191,8 @@ appId: com.nuncio.lilos.mobile
     timeout: 1500
 - takeScreenshot: ${THEME}-wc-24-company-hired
 
-# A goal opens its project; a project module row opens it too.
-- tapOn:
-    id: goal-g-hb
-- assertVisible: "Threads"
-- waitForAnimationToEnd:
-    timeout: 1500
-- takeScreenshot: ${THEME}-wc-25-goal-project
+# A project module row opens its page (a goal is read-only: no second door).
+- assertVisible: "Grow HeardBack conversion"
 - openLink: lilos://preview?open=company
 - scroll
 - waitForAnimationToEnd:

@@ -24,7 +24,6 @@ export type GoalVM = {
   id: string;
   title: string;
   /** Absent when the goal's project is gone. */
-  projectId?: string;
   project?: string;
   /** "Fri 31 Oct" — shown after "Due". */
   due: string;
@@ -81,8 +80,9 @@ export type AgentPageProps = {
   person: Person;
   status: Status;
   statusWord: string;
-  /** "Engineer" (outside workers: "Growth bot · Outside worker"). */
-  roleLine: string;
+  /** "Engineer" (outside workers: "Growth bot · Outside worker"). Absent
+      when it would only repeat the name (a hired "Researcher"). */
+  roleLine?: string;
   description?: string;
   /** The ticket the agent holds now. */
   now?: { id: string; title: string; since: string };

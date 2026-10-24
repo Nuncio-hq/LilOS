@@ -1,4 +1,4 @@
-import { Pressable, Text, View } from "react-native";
+import { Pressable, View } from "react-native";
 import { Icon } from "../../components/icon";
 import {
   AvatarRing,
@@ -17,8 +17,6 @@ import {
   SkillsModule,
 } from "./agent-parts";
 import type { AgentPageProps } from "./types";
-
-const SERIF = { fontFamily: "Charter" } as const;
 
 /** One agent or outside worker: who they are and what they hold now, then
     modules. Modules with nothing to say are left out. */
@@ -56,24 +54,25 @@ export function AgentScreen({
               size={52}
               outside={person.outside}
             />
-            <View className="flex-1 gap-0.5">
-              <View className="flex-row items-center gap-2">
-                <Text
-                  accessibilityRole="header"
-                  className="shrink font-semibold text-[24px] text-ink leading-[30px]"
-                  style={SERIF}
-                  numberOfLines={1}
-                >
-                  {person.name}
-                </Text>
-                {person.isCeo ? <CeoChip /> : null}
-              </View>
-              <T variant="caption" tone="ink2" numberOfLines={1}>
-                {roleLine}
-              </T>
+            <View className="flex-1 gap-1.5">
+              <StatusLabel status={status} label={statusWord} />
+              {roleLine || person.isCeo ? (
+                <View className="flex-row items-center gap-2">
+                  {roleLine ? (
+                    <T
+                      variant="caption"
+                      tone="ink2"
+                      numberOfLines={1}
+                      className="shrink"
+                    >
+                      {roleLine}
+                    </T>
+                  ) : null}
+                  {person.isCeo ? <CeoChip /> : null}
+                </View>
+              ) : null}
             </View>
           </View>
-          <StatusLabel status={status} label={statusWord} />
           {description ? (
             <ClampText lines={2} tone="ink2">
               {description}
