@@ -147,6 +147,7 @@ export function DecisionModule({
           </View>
         ) : (
           <DecisionButtons
+            onSoft
             testIDPrefix="ticket-ask"
             onApprove={() => onApprove(ask.id)}
             onDeny={() => onDeny(ask.id)}
