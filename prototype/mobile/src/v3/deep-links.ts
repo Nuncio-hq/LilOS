@@ -17,7 +17,8 @@ import { focusAsk, resetCompany } from "./store";
      reset=1                     fresh company
      open=home|needs|work|company|ask   a tab
      open=thread:<id> | agent:<id> | ticket:<id> | project:<id> | ask:<id>
-          | people | hire
+          | people | hire   (agent and people open on Company, ticket and
+                             project on Work, each from that tab's root)
      push=ask|update             fire the next demo notification now
      ui=v2|v3                    which prototype (root.tsx); a link for v2 is
                                  not this handler's */
@@ -40,12 +41,20 @@ export function applyPreview(query: string) {
       // A link starts from the tabs, not on top of whatever was open.
       uncover();
       if (open === "hire") openHire();
-      else if (open === "people") openPeople();
-      else if (open.startsWith("project:")) openProject(open.slice(8));
-      else if (open.startsWith("thread:")) openThread(open.slice(7));
-      else if (open.startsWith("agent:")) openAgent(open.slice(6));
-      else if (open.startsWith("ticket:")) openTicket(open.slice(7));
-      else if (open.startsWith("ask:")) {
+      else if (open === "people") {
+        openTab("Company");
+        openPeople();
+      } else if (open.startsWith("project:")) {
+        openTab("Work");
+        openProject(open.slice(8));
+      } else if (open.startsWith("thread:")) openThread(open.slice(7));
+      else if (open.startsWith("agent:")) {
+        openTab("Company");
+        openAgent(open.slice(6));
+      } else if (open.startsWith("ticket:")) {
+        openTab("Work");
+        openTicket(open.slice(7));
+      } else if (open.startsWith("ask:")) {
         focusAsk(open.slice(4));
         openTab("Needs");
       } else

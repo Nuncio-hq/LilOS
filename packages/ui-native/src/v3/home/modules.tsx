@@ -10,7 +10,7 @@ export function UpdateModule({
   onOpen,
 }: {
   update: HomeUpdate;
-  onOpen: () => void;
+  onOpen?: () => void;
 }) {
   return (
     <Module

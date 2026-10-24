@@ -1,3 +1,4 @@
+import { agentOf } from "@lilos/ui/v3-data";
 import { useThemeColor } from "@lilos/ui-native";
 import { useStore } from "@nanostores/react";
 import {
@@ -7,6 +8,7 @@ import {
 import type { ComponentType } from "react";
 import { AgentContainer } from "./company/agent-screen";
 import { CompanyContainer } from "./company/company-screen";
+import { HIRE_BUTTON } from "./company/hire-button";
 import { PeopleContainer } from "./company/people-screen";
 import { HomeContainer } from "./home/home-screen";
 import type { StackRoutes } from "./nav";
@@ -57,22 +59,41 @@ function TabStack({
         component={root}
         options={{ ...LARGE, title, ...rootOptions }}
       />
+      {/* The options of a pushed screen are set here, from its params, so the
+          push transition starts with the right title (setOptions from the
+          screen itself lands a frame late). */}
       <Stack.Screen
         name="Agent"
         component={AgentContainer}
         getId={({ params }) => params.agentId}
+        options={({ route }) => ({
+          ...LARGE,
+          title: agentOf($data.get(), route.params.agentId)?.name ?? "",
+        })}
       />
       <Stack.Screen
         name="Ticket"
         component={TicketContainer}
         getId={({ params }) => params.ticketId}
+        options={({ route }) => ({ title: route.params.ticketId })}
       />
       <Stack.Screen
         name="Project"
         component={ProjectContainer}
         getId={({ params }) => params.projectId}
+        options={({ route }) => ({
+          ...LARGE,
+          title:
+            $data.get().projects.find((p) => p.id === route.params.projectId)
+              ?.name ?? "Project",
+        })}
       />
-      <Stack.Screen name="People" component={PeopleContainer} />
+      <Stack.Screen
+        name="People"
+        component={PeopleContainer}
+        getId={() => "people"}
+        options={{ ...LARGE, title: "People", ...HIRE_BUTTON }}
+      />
     </Stack.Navigator>
   );
 }
@@ -91,7 +112,13 @@ export function WorkStack() {
 }
 
 export function CompanyStack() {
-  return <TabStack title="Company" root={CompanyContainer} />;
+  return (
+    <TabStack
+      title="Company"
+      root={CompanyContainer}
+      rootOptions={HIRE_BUTTON}
+    />
+  );
 }
 
 export function AskStack() {

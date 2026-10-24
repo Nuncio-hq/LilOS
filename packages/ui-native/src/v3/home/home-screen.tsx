@@ -36,12 +36,14 @@ export function HomeScreen({
   update?: HomeUpdate;
   team: RingPerson[];
   results: ResultVM[];
-  onOpenCount: (key: HomeCountKey) => void;
+  /** What each tile opens; a tile without one only says its number. */
+  onOpenCount: Partial<Record<HomeCountKey, () => void>>;
   onApprove: (askId: string) => void;
   onDeny: (askId: string) => void;
   onAnswer: (askId: string, option: string) => void;
   onReviewPlan: (threadId: string) => void;
-  onOpenUpdate: () => void;
+  /** Absent: the update points at nothing to open. */
+  onOpenUpdate?: () => void;
   onOpenTeam: () => void;
   onOpenAgent: (id: string) => void;
   onOpenResult: (key: string) => void;
@@ -55,21 +57,21 @@ export function HomeScreen({
             value={counts.working}
             label="Working"
             tone="work"
-            onPress={() => onOpenCount("working")}
+            onPress={onOpenCount.working}
           />
           <StatTile
             testID="home-count-needs"
             value={counts.needs}
             label="Needs you"
             tone="needs"
-            onPress={() => onOpenCount("needs")}
+            onPress={onOpenCount.needs}
           />
           <StatTile
             testID="home-count-stuck"
             value={counts.stuck}
             label="Stuck"
             tone="stuck"
-            onPress={() => onOpenCount("stuck")}
+            onPress={onOpenCount.stuck}
           />
         </StatTiles>
         {hero ? (

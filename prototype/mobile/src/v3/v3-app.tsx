@@ -8,10 +8,7 @@ import {
 } from "@react-navigation/native-stack";
 import { StatusBar } from "expo-status-bar";
 import { useColorScheme, View } from "react-native";
-import {
-  SafeAreaProvider,
-  useSafeAreaInsets,
-} from "react-native-safe-area-context";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import { HireContainer } from "./company/hire-sheet";
 import { PulseAccessory } from "./home/pulse-accessory";
 import { type CoverRoutes, type TabRoutes, v3Nav } from "./nav";
@@ -142,19 +139,6 @@ function Routes() {
   );
 }
 
-/* Content scrolls under the status bar (no header on the tabs); a paper
-   strip keeps the clock and battery readable instead of printing over rows. */
-function StatusBarScrim() {
-  const { top } = useSafeAreaInsets();
-  return (
-    <View
-      pointerEvents="none"
-      className="absolute inset-x-0 top-0 bg-paper"
-      style={{ height: top }}
-    />
-  );
-}
-
 export function V3App() {
   const theme = useV3NavTheme();
   const scheme = useColorScheme();
@@ -165,7 +149,6 @@ export function V3App() {
         <NavigationContainer ref={v3Nav} theme={theme}>
           <Routes />
         </NavigationContainer>
-        <StatusBarScrim />
       </View>
     </SafeAreaProvider>
   );

@@ -7,19 +7,26 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SearchBarCommands } from "react-native-screens";
 import { hapticSelect } from "../haptics";
-import { CEO_THREAD_ID, personOf } from "../model";
-import { openAgent, openThread, openTicket, type StackRoutes } from "../nav";
+import { CEO_THREAD_ID, personOf, recentUpdates, updateTarget } from "../model";
+import {
+  openAgent,
+  openTarget,
+  openThread,
+  openTicket,
+  type StackRoutes,
+} from "../nav";
 import { $data, askCeo, markSeen } from "../store";
 import { searchCompany } from "./match";
 
 /* The search-role tab. iOS 26 shows its native search field in a glass
    capsule next to the tab bar; what is typed drives the results below. */
 
-/** The CEO's latest updates shown while nothing is typed. */
+/** The latest updates shown while nothing is typed: one per thing they are
+    about, so no two rows open the same screen. */
 const RECENT_LIMIT = 6;
 
-function recentUpdates(d: V3Data): RecentUpdateVM[] {
-  return d.updates.slice(0, RECENT_LIMIT).map((u) => {
+function recentVMs(d: V3Data): RecentUpdateVM[] {
+  return recentUpdates(d, RECENT_LIMIT).map((u) => {
     // A system note is LilOS, not an agent: no avatar, no person page.
     const system = u.authorKind === "system";
     const who = system ? undefined : personOf(d, u.by);
@@ -30,6 +37,7 @@ function recentUpdates(d: V3Data): RecentUpdateVM[] {
       at: u.at,
       text: u.text,
       ticketTag: u.ticketId,
+      openable: updateTarget(d, u) !== undefined,
     };
   });
 }
@@ -80,7 +88,7 @@ export function AskCeoContainer() {
   }, [navigation, ask, ink]);
 
   const hits = useMemo(() => searchCompany(data, query), [data, query]);
-  const recent = useMemo(() => recentUpdates(data), [data]);
+  const recent = useMemo(() => recentVMs(data), [data]);
   const ceo = useMemo(
     () => (data.ceoId ? personOf(data, data.ceoId) : undefined),
     [data],
@@ -95,7 +103,11 @@ export function AskCeoContainer() {
       threads={hits.threads}
       tickets={hits.tickets}
       onAsk={() => ask(query)}
-      onOpenCeoThread={() => openThread(CEO_THREAD_ID)}
+      onOpenUpdate={(id) => {
+        const u = data.updates.find((x) => x.id === id);
+        const target = u && updateTarget(data, u);
+        if (target) openTarget(target);
+      }}
       onOpenPerson={openAgent}
       onOpenThread={(id) => {
         hapticSelect();

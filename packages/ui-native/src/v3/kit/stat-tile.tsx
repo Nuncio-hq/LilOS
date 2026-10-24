@@ -25,18 +25,13 @@ export function StatTile({
   value: number;
   label: string;
   tone: Tone;
-  onPress: () => void;
+  /** Opens what the number counts. Absent: the tile only says the number
+      (something else on the screen already shows what it counts). */
+  onPress?: () => void;
   testID?: string;
 }) {
-  return (
-    <Pressable
-      testID={testID}
-      accessibilityRole="button"
-      accessibilityLabel={`${value} ${label.toLowerCase()}`}
-      onPress={onPress}
-      className="min-h-[62px] flex-1 justify-center rounded-[22px] bg-paper-soft px-4 py-2 active:opacity-60"
-      style={{ borderCurve: "continuous" }}
-    >
+  const body = (
+    <>
       <Text
         className={`text-[30px] font-semibold leading-[34px] ${value > 0 ? INK[tone] : "text-ink-3"}`}
       >
@@ -45,6 +40,32 @@ export function StatTile({
       <T variant="caption" tone="ink2" numberOfLines={1}>
         {label}
       </T>
+    </>
+  );
+  const box =
+    "min-h-[62px] flex-1 justify-center rounded-[22px] bg-paper-soft px-4 py-2";
+  if (!onPress)
+    return (
+      <View
+        testID={testID}
+        accessible
+        accessibilityLabel={`${value} ${label.toLowerCase()}`}
+        className={box}
+        style={{ borderCurve: "continuous" }}
+      >
+        {body}
+      </View>
+    );
+  return (
+    <Pressable
+      testID={testID}
+      accessibilityRole="button"
+      accessibilityLabel={`${value} ${label.toLowerCase()}`}
+      onPress={onPress}
+      className={`${box} active:opacity-60`}
+      style={{ borderCurve: "continuous" }}
+    >
+      {body}
     </Pressable>
   );
 }

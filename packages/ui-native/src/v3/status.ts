@@ -36,18 +36,6 @@ export const INK: Record<Status, string> = {
   failed: "text-st-stuck-ink",
 };
 
-/** Theme variable name for a status colour (for icons). */
-export const STATUS_VAR: Record<Status, string> = {
-  working: "st-working",
-  waiting: "st-waiting",
-  needs: "st-needs",
-  stuck: "st-stuck",
-  idle: "st-idle",
-  done: "st-done",
-  planned: "st-idle",
-  failed: "st-stuck",
-};
-
 /** The ring round an avatar: a status colour, or the quiet rule when the
     person has nothing going on (idle, planned, done and seen). */
 export const RING: Record<Status, string> = {

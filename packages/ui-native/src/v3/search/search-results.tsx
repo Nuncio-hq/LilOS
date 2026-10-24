@@ -78,7 +78,7 @@ function Recent({
   onOpen,
 }: {
   updates: RecentUpdateVM[];
-  onOpen: () => void;
+  onOpen: (id: string) => void;
 }) {
   const [all, setAll] = useState(false);
   if (updates.length === 0) return null;
@@ -86,7 +86,7 @@ function Recent({
   const more = updates.length - shown.length;
   return (
     <Module
-      title="Recent from the CEO"
+      title="Recent updates"
       footer={
         more > 0
           ? { label: `${more} more`, onPress: () => setAll(true) }
@@ -97,9 +97,10 @@ function Recent({
         {shown.map((u) => (
           <Pressable
             key={u.id}
-            accessibilityRole="button"
+            accessibilityRole={u.openable ? "button" : undefined}
             accessibilityLabel={`${u.whoName}, ${u.at}: ${u.text}`}
-            onPress={onOpen}
+            disabled={!u.openable}
+            onPress={() => onOpen(u.id)}
             className="flex-row items-start gap-2.5 active:opacity-60"
           >
             {u.who ? (
@@ -146,7 +147,7 @@ export function SearchResults(props: SearchResultsProps) {
           Ask the CEO anything, or search people, threads and tickets.
         </Note>
         <Modules>
-          <Recent updates={props.recent} onOpen={props.onOpenCeoThread} />
+          <Recent updates={props.recent} onOpen={props.onOpenUpdate} />
         </Modules>
       </Page>
     );

@@ -12,6 +12,7 @@ import {
   type V3Status,
   type V3Thread,
   type V3Ticket,
+  type V3Update,
   waitingLabel,
 } from "@lilos/ui/v3-data";
 import type {
@@ -94,7 +95,8 @@ export function askVM(d: V3Data, a: V3Ask): AskVM {
     id: a.id,
     kind,
     from: personOf(d, a.from),
-    title: a.title,
+    // "Review the plan" says nothing: a plan ask is named by what it plans.
+    title: kind === "plan" && thread ? thread.title : a.title,
     ask: a.ask,
     // A plan ask says nothing itself; its thread's one-line summary stands in.
     why: a.why ?? (kind === "plan" ? thread?.quote : undefined),
@@ -186,4 +188,41 @@ export function resultRows(d: V3Data): { rows: LookAtRow[]; vms: ResultVM[] } {
       openable: Boolean(r.threadId ?? r.ticketId),
     })),
   };
+}
+
+/** What an update is about, and so what it opens: the CEO's own notes open
+    the CEO's thread; an update about a ticket opens that ticket; one by an
+    agent with nothing else to point at opens the agent. A note from LilOS
+    itself about nothing opens nothing. */
+export type UpdateTarget =
+  | { kind: "thread"; id: string }
+  | { kind: "ticket"; id: string }
+  | { kind: "agent"; id: string };
+
+export function updateTarget(d: V3Data, u: V3Update): UpdateTarget | undefined {
+  const ceo = Boolean(d.ceoId) && u.by === d.ceoId;
+  if (ceo && u.kind === "note") return { kind: "thread", id: CEO_THREAD_ID };
+  if (u.ticketId && ticketOf(d, u.ticketId))
+    return { kind: "ticket", id: u.ticketId };
+  if (ceo) return { kind: "thread", id: CEO_THREAD_ID };
+  if (u.authorKind !== "system" && agentOf(d, u.by))
+    return { kind: "agent", id: u.by };
+  return undefined;
+}
+
+/** Newest first, one per destination: two updates about the same ticket (or
+    two notes to the CEO's thread) are one row, the newer. Ones that open
+    nothing stay, each its own. */
+export function recentUpdates(d: V3Data, limit: number): V3Update[] {
+  const seen = new Set<string>();
+  const out: V3Update[] = [];
+  for (const u of d.updates) {
+    const t = updateTarget(d, u);
+    const key = t ? `${t.kind}:${t.id}` : `update:${u.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(u);
+    if (out.length === limit) break;
+  }
+  return out;
 }

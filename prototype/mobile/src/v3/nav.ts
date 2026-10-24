@@ -133,3 +133,13 @@ export function whenNavReady(fn: () => void, tries = 40) {
   if (v3Nav.isReady()) fn();
   else if (tries > 0) setTimeout(() => whenNavReady(fn, tries - 1), 150);
 }
+
+/** Open what an update is about. */
+export function openTarget(target: {
+  kind: "thread" | "ticket" | "agent";
+  id: string;
+}) {
+  if (target.kind === "thread") openThread(target.id);
+  else if (target.kind === "ticket") openTicket(target.id);
+  else openAgent(target.id);
+}

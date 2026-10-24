@@ -1,16 +1,11 @@
-import {
-  agentDot,
-  agentStatus,
-  type V3Data,
-  type V3Status,
-} from "@lilos/ui/v3-data";
+import { agentStatus, type V3Data, type V3Status } from "@lilos/ui/v3-data";
 import type { RingPerson } from "@lilos/ui-native/v3";
 import { STATUS_WORDS } from "../model";
 
 /* Home's and Pulse's view models: pure functions of the company. */
 
-/** Everyone on the team, the CEO first, then the roster's order: a ring for
-    what wants your eye on them, and one word for what they are doing. */
+/** Everyone on the team, the CEO first, then the roster's order: a ring and
+    one word for what they are doing, both from `agentStatus` like Company's. */
 export function teamPeople(d: V3Data): RingPerson[] {
   const ordered = [
     ...d.agents.filter((a) => a.id === d.ceoId),
@@ -19,7 +14,7 @@ export function teamPeople(d: V3Data): RingPerson[] {
   return ordered.map((a) => ({
     id: a.id,
     name: a.name,
-    status: agentDot(d, a.id),
+    status: agentStatus(d, a.id),
     caption: STATUS_WORDS[agentStatus(d, a.id)],
     isCeo: a.id === d.ceoId,
     outside: a.kind === "outside",

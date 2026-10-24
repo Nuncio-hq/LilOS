@@ -18,6 +18,21 @@ appId: com.nuncio.lilos.mobile
     timeout: 1500
 - takeScreenshot: ${THEME}-01-home
 
+# The latest update is the CEO's own note, so it opens the CEO's thread; the
+# one stuck thread opens from the Stuck tile. Each is its own destination.
+- tapOn: "Latest update.*"
+- assertVisible:
+    id: thread-composer-input
+- openLink: lilos://preview?open=home
+- assertVisible: "1 stuck"
+- tapOn: "1 stuck"
+- assertVisible:
+    id: thread-composer-input
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-02-stuck-thread
+- openLink: lilos://preview?open=home
+
 # Home: the tile opens Needs you.
 - assertVisible: "3 needs you"
 - tapOn: "3 needs you"
@@ -56,6 +71,18 @@ appId: com.nuncio.lilos.mobile
     file: scroll-proof.yaml
     env:
       NAME: needs
+
+# A plan ask on Home is named for what it plans, with its one-line why, and
+# its one button reads the plan in its thread.
+- openLink: lilos://preview?open=home
+- assertVisible: "Review the plan"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-05b-home-plan-hero
+- tapOn: "Review the plan"
+- assertVisible: "Waiting for your OK"
+- openLink: lilos://preview?open=needs
+- assertVisible: "1 of 1"
 
 # Reject by button.
 - tapOn: "Reject plan"
@@ -143,10 +170,18 @@ appId: com.nuncio.lilos.mobile
 
 # Ask the CEO: the search tab, a search, then a question to the CEO.
 - openLink: lilos://preview?reset=1&open=ask
-- assertVisible: "Recent from the CEO"
+- assertVisible: "Recent updates"
 - waitForAnimationToEnd:
     timeout: 1500
 - takeScreenshot: ${THEME}-16-ask-ceo
+# An update opens what it is about: the CEO's note on HB-14 opens HB-14.
+- tapOn: "Chief, 11:50.*"
+- assertVisible: "HB-14"
+- waitForAnimationToEnd:
+    timeout: 1500
+- takeScreenshot: ${THEME}-16b-ask-update-ticket
+- openLink: lilos://preview?open=ask
+- assertVisible: "Recent updates"
 # A broad search makes a long page: the large title collapses as it scrolls.
 - tapOn: "Ask the CEO or search"
 - inputText: "e"

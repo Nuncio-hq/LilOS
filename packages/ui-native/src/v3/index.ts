@@ -20,9 +20,7 @@ export {
   PersonName,
   ProgressBar,
   type RingPerson,
-  SectionBlock,
   Segmented,
-  SerifTitle,
   StatTile,
   StatTiles,
   StatusDot,
@@ -31,9 +29,9 @@ export {
   Tag,
 } from "./kit";
 export * from "./needs";
-export { DecisionButtons, ListRow, ThreadRow, TicketRow } from "./rows";
+export { DecisionButtons } from "./rows";
 export * from "./search";
-export { DOT, INK, RING, STATUS_VAR, STATUS_WORD } from "./status";
+export { DOT, INK, RING, STATUS_WORD } from "./status";
 export * from "./thread";
 export type {
   AskVM,

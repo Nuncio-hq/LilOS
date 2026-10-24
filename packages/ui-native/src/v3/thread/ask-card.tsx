@@ -32,16 +32,16 @@ export function ThreadAskCard({
         status="needs"
         label={`Needs you · waiting ${ask.waiting}`}
       />
-      <View className="gap-1">
-        <T variant="label">{ask.title}</T>
-        {/* A plan's ask only points at the plan, which is right above in this
-            thread: no line telling you to go and read it. */}
-        {ask.kind === "plan" ? null : (
+      {/* A plan's ask is named for what it plans, which is this thread's own
+          title, and points at the plan right above: it carries no text. */}
+      {ask.kind === "plan" ? null : (
+        <View className="gap-1">
+          <T variant="label">{ask.title}</T>
           <T variant="small" tone="ink2">
             {ask.ask}
           </T>
-        )}
-      </View>
+        </View>
+      )}
       {lines.length > 0 ? (
         <View className="gap-1">
           {lines.map((l) => (

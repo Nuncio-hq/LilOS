@@ -36,6 +36,11 @@ export function HeroAsk({
         <T variant="body" numberOfLines={2} className="font-semibold">
           {ask.title}
         </T>
+        {ask.kind === "plan" && ask.why ? (
+          <T variant="small" tone="ink2" numberOfLines={1}>
+            {ask.why}
+          </T>
+        ) : null}
         {ask.kind === "question" && ask.options?.length ? (
           <View className="gap-2">
             {ask.options.map((option, i) => (

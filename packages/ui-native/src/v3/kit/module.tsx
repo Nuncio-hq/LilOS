@@ -15,7 +15,6 @@ export function Module({
   count,
   onOpen,
   openWhole = false,
-  action,
   footer,
   accessibilityLabel,
   children,
@@ -29,10 +28,7 @@ export function Module({
   /** The whole card is the one control that opens it (a note, an update),
       not just its header: nothing inside may be pressable. */
   openWhole?: boolean;
-  /** "2 more" at the header's end: opens what the card does not show, in a
-      line the card already has (no footer row). */
-  action?: { label: string; onPress: () => void };
-  /** The same, as a row under the content (for taller modules). */
+  /** "2 more": a row under the content that opens what the card does not show. */
   footer?: { label: string; onPress: () => void };
   /** What a screen reader says for a whole-card control. */
   accessibilityLabel?: string;
@@ -56,26 +52,7 @@ export function Module({
         </T>
       ) : null}
       <View className="flex-1" />
-      {action ? (
-        <Pressable
-          testID={`${id}-action`}
-          accessibilityRole="button"
-          accessibilityLabel={action.label}
-          onPress={action.onPress}
-          hitSlop={8}
-          className="min-h-10 flex-row items-center gap-1 active:opacity-60"
-        >
-          <T variant="small" tone="ink2" className="font-semibold">
-            {action.label}
-          </T>
-          <Icon
-            name="chevron.right"
-            size={11}
-            tone="muted-foreground"
-            weight="semibold"
-          />
-        </Pressable>
-      ) : onOpen ? (
+      {onOpen ? (
         <Icon
           name="chevron.right"
           size={13}
