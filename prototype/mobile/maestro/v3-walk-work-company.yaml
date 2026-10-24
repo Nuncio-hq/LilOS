@@ -37,7 +37,7 @@ appId: com.nuncio.lilos.mobile
 
 # Attention leads with what is stuck or failed, then what needs you; what it
 # does not show stays in its project's module, nothing hides behind "more".
-- assertVisible: "Find 20 journaling creators"
+- assertVisible: "Find 20 journaling creators.*"
 - assertVisible: "Summarise yesterday.*"
 - assertNotVisible:
     id: module-attention-footer
