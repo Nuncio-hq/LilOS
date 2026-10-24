@@ -88,10 +88,12 @@ export function Page({
       testID={testID}
       className="flex-1 bg-paper"
       contentInsetAdjustmentBehavior="automatic"
-      // A short page still rubber-bands, so dragging it up collapses the
-      // title and minimizes the bar like a long one.
+      // A short page still rubber-bands, and the room below its content (the
+      // bar is ~140pt, and UIKit minimizes it only after a scroll of about
+      // 100pt) lets even a short page collapse the title and minimize the
+      // bar, then bring it back.
       alwaysBounceVertical
-      contentContainerStyle={{ paddingBottom: 72 }}
+      contentContainerStyle={{ paddingBottom: 176 }}
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="on-drag"
     >

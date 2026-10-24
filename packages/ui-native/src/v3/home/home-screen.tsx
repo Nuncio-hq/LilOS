@@ -16,7 +16,6 @@ const RESULT_ROWS = 2;
 export function HomeScreen({
   counts,
   hero,
-  moreAsks,
   update,
   team,
   results,
@@ -25,7 +24,6 @@ export function HomeScreen({
   onDeny,
   onAnswer,
   onReviewPlan,
-  onOpenNeeds,
   onOpenUpdate,
   onOpenTeam,
   onOpenAgent,
@@ -34,8 +32,6 @@ export function HomeScreen({
   counts: HomeCounts;
   /** The most urgent ask. Absent: nothing waits on you. */
   hero?: AskVM;
-  /** The other open asks. */
-  moreAsks: number;
   /** Absent: the company has no CEO or no tickets, so nothing to read. */
   update?: HomeUpdate;
   team: RingPerson[];
@@ -45,7 +41,6 @@ export function HomeScreen({
   onDeny: (askId: string) => void;
   onAnswer: (askId: string, option: string) => void;
   onReviewPlan: (threadId: string) => void;
-  onOpenNeeds: () => void;
   onOpenUpdate: () => void;
   onOpenTeam: () => void;
   onOpenAgent: (id: string) => void;
@@ -80,12 +75,10 @@ export function HomeScreen({
         {hero ? (
           <HeroAsk
             ask={hero}
-            more={moreAsks}
             onApprove={onApprove}
             onDeny={onDeny}
             onAnswer={onAnswer}
             onReview={onReviewPlan}
-            onMore={onOpenNeeds}
           />
         ) : null}
         {update ? <UpdateModule update={update} onOpen={onOpenUpdate} /> : null}
@@ -94,12 +87,7 @@ export function HomeScreen({
           onOpen={onOpenTeam}
           onOpenAgent={onOpenAgent}
         />
-        <ResultsModule
-          rows={results}
-          max={RESULT_ROWS}
-          onOpen={onOpenResult}
-          onMore={onOpenNeeds}
-        />
+        <ResultsModule rows={results} max={RESULT_ROWS} onOpen={onOpenResult} />
       </Modules>
     </Page>
   );

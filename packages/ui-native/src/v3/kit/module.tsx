@@ -14,8 +14,10 @@ export function Module({
   title,
   count,
   onOpen,
+  openWhole = false,
   action,
   footer,
+  accessibilityLabel,
   children,
   testID,
 }: {
@@ -24,11 +26,16 @@ export function Module({
   count?: number;
   /** Tapping the header opens the full view. Absent: the header is only a title. */
   onOpen?: () => void;
+  /** The whole card is the one control that opens it (a note, an update),
+      not just its header: nothing inside may be pressable. */
+  openWhole?: boolean;
   /** "2 more" at the header's end: opens what the card does not show, in a
       line the card already has (no footer row). */
   action?: { label: string; onPress: () => void };
   /** The same, as a row under the content (for taller modules). */
   footer?: { label: string; onPress: () => void };
+  /** What a screen reader says for a whole-card control. */
+  accessibilityLabel?: string;
   children: ReactNode;
   testID?: string;
 }) {
@@ -78,13 +85,9 @@ export function Module({
       ) : null}
     </View>
   );
-  return (
-    <View
-      testID={id}
-      className="overflow-hidden rounded-[22px] bg-paper-soft"
-      style={{ borderCurve: "continuous" }}
-    >
-      {onOpen ? (
+  const card = (
+    <>
+      {onOpen && !openWhole ? (
         <Pressable
           testID={`${id}-header`}
           accessibilityRole="button"
@@ -119,6 +122,27 @@ export function Module({
           />
         </Pressable>
       ) : null}
+    </>
+  );
+  return (
+    <View
+      testID={id}
+      className="overflow-hidden rounded-[22px] bg-paper-soft"
+      style={{ borderCurve: "continuous" }}
+    >
+      {onOpen && openWhole ? (
+        <Pressable
+          testID={`${id}-open`}
+          accessibilityRole="button"
+          accessibilityLabel={accessibilityLabel ?? title}
+          onPress={onOpen}
+          className="active:opacity-60"
+        >
+          {card}
+        </Pressable>
+      ) : (
+        card
+      )}
     </View>
   );
 }

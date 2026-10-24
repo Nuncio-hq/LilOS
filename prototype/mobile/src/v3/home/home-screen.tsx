@@ -30,12 +30,18 @@ export function HomeContainer() {
         stuck: threadsIn(d.threads, "stuck"),
       }}
       hero={hero}
-      moreAsks={Math.max(0, asks.length - 1)}
       update={update}
       team={team}
       results={results}
-      /* Stuck threads show on Work's default view, like working ones. */
-      onOpenCount={(key) => openTab(key === "needs" ? "Needs" : "Work")}
+      onOpenCount={(key) => {
+        if (key === "needs") return openTab("Needs");
+        // One stuck thread is the thing to look at: open it. Working and
+        // several stuck go to Work, which lists them.
+        const stuck = d.threads.filter((t) => t.status === "stuck");
+        if (key === "stuck" && stuck.length === 1 && stuck[0])
+          return openThread(stuck[0].id);
+        openTab("Work");
+      }}
       onApprove={(id) => {
         hapticApprove();
         approve(id);
@@ -49,7 +55,6 @@ export function HomeContainer() {
         answer(id, option);
       }}
       onReviewPlan={openThread}
-      onOpenNeeds={() => openTab("Needs")}
       onOpenUpdate={() => openThread(CEO_THREAD_ID)}
       onOpenTeam={() => openTab("Company")}
       onOpenAgent={openAgent}
