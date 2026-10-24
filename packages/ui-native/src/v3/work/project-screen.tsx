@@ -19,7 +19,7 @@ function Lists<Row extends { id: string }>({
   list: ProjectList<Row>;
   /** "threads" / "tickets", for the empty line. */
   noun: string;
-  render: (row: Row) => React.ReactNode;
+  render: (row: Row, folded: boolean) => React.ReactNode;
 }) {
   const [doneOpen, setDoneOpen] = useState(false);
   return (
@@ -30,7 +30,7 @@ function Lists<Row extends { id: string }>({
             {`No open ${noun}.`}
           </T>
         ) : (
-          list.open.map(render)
+          list.open.map((r) => render(r, false))
         )}
       </Module>
       {list.done.length > 0 ? (
@@ -41,7 +41,7 @@ function Lists<Row extends { id: string }>({
           open={doneOpen}
           onToggle={() => setDoneOpen((o) => !o)}
         >
-          {list.done.map(render)}
+          {list.done.map((r) => render(r, true))}
         </FoldModule>
       ) : null}
     </>
@@ -68,7 +68,7 @@ export function ProjectScreen({
     );
   }
   const { tickets } = page;
-  const threadRow = (r: ThreadRowVM) => (
+  const threadRow = (r: ThreadRowVM, folded: boolean) => (
     <ProjectRow
       key={r.id}
       testID={`project-thread-${r.id}`}
@@ -76,6 +76,7 @@ export function ProjectScreen({
       title={r.title}
       status={r.status}
       statusWord={r.statusWord}
+      folded={folded}
       where={r.tag === page.name ? undefined : r.tag}
       detail={r.detail}
       unseen={r.unseen}
@@ -83,7 +84,7 @@ export function ProjectScreen({
       onPress={() => onOpenThread(r.id)}
     />
   );
-  const ticketRow = (r: TicketRowVM) => (
+  const ticketRow = (r: TicketRowVM, folded: boolean) => (
     <ProjectRow
       key={r.id}
       testID={`project-ticket-${r.id}`}
@@ -91,6 +92,7 @@ export function ProjectScreen({
       title={r.title}
       status={r.status}
       statusWord={r.statusWord}
+      folded={folded}
       where={r.id}
       detail={r.detail}
       label={`${r.id}, ${r.title}, ${r.statusWord}`}

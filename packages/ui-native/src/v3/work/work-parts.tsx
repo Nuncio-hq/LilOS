@@ -38,6 +38,7 @@ export function ProjectRow({
   where,
   detail,
   unseen,
+  folded,
   label,
   testID,
   onPress,
@@ -50,6 +51,8 @@ export function ProjectRow({
   where?: string;
   detail: string;
   unseen?: boolean;
+  /** Drawn in the Done module: the status word is left out. */
+  folded?: boolean;
   label: string;
   testID: string;
   onPress: () => void;
@@ -71,10 +74,8 @@ export function ProjectRow({
           {unseen ? <View className="size-2 rounded-full bg-st-done" /> : null}
         </View>
         <View className="flex-row items-center gap-1.5">
-          {/* Done work sits in the Done module: its word would only repeat. */}
-          {status === "done" ? null : (
-            <StatusLabel status={status} label={statusWord} />
-          )}
+          {/* Inside the folded Done module the word would only repeat the title. */}
+          {folded ? null : <StatusLabel status={status} label={statusWord} />}
           {where ? (
             <T
               variant="caption"
@@ -82,7 +83,7 @@ export function ProjectRow({
               numberOfLines={1}
               className="flex-1"
             >
-              {status === "done" ? where : `· ${where}`}
+              {folded ? where : `· ${where}`}
             </T>
           ) : null}
         </View>
