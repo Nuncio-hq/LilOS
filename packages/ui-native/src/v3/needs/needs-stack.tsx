@@ -20,6 +20,7 @@ export function NeedsStack({
   onDeny,
   onAnswer,
   onOpenThread,
+  onDetails,
 }: {
   /** In the order they are decided: the first is in front. */
   asks: AskVM[];
@@ -29,6 +30,7 @@ export function NeedsStack({
   onDeny: (id: string) => void;
   onAnswer: (id: string, option: string) => void;
   onOpenThread: (threadId: string) => void;
+  onDetails: (askId: string) => void;
 }) {
   const window = useWindowDimensions();
   const [tallest, setTallest] = useState(0);
@@ -66,6 +68,7 @@ export function NeedsStack({
           onDeny={onDeny}
           onAnswer={onAnswer}
           onOpenThread={onOpenThread}
+          onDetails={onDetails}
         />
       ))}
     </View>

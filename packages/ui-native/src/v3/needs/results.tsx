@@ -1,65 +1,44 @@
-import { View } from "react-native";
-import { Avatar, SectionBlock, T } from "../kit";
-import { ListRow } from "../rows";
-import type { Person } from "../types";
+import { CompactRow, Module } from "../kit";
+import type { ResultVM } from "../types";
 
-/** One finished thing to look at, ready to draw. */
-export type ResultVM = {
-  key: string;
-  title: string;
-  by: Person;
-  note: string;
-  /** Where it lives: ticket id, project or "Chat". */
-  tag: string;
-  /** "41 min ago" */
-  ago: string;
-  /** Finished past your read mark. */
-  unseen: boolean;
-  /** It has a thread or a ticket to open; without either the row is plain. */
-  openable: boolean;
-};
+/* "Results to look at": what finished since you looked. A module, so Home
+   shows two rows and Needs three, each with the rest one tap away. */
 
-export function ResultsToLookAt({
+export function ResultsModule({
   rows,
+  max,
   onOpen,
+  onMore,
 }: {
   rows: ResultVM[];
+  /** How many rows the module shows; the rest sit behind "n more". */
+  max: number;
   onOpen: (key: string) => void;
+  /** Opens the full list. Absent: this screen is the full list. */
+  onMore?: () => void;
 }) {
   if (rows.length === 0) return null;
+  const shown = rows.slice(0, max);
+  const more = rows.length - shown.length;
   return (
-    <SectionBlock title="Results to look at">
-      {rows.map((row, i) => (
-        <ListRow
+    <Module
+      title="Results to look at"
+      footer={
+        more > 0 && onMore
+          ? { label: `${more} more`, onPress: onMore }
+          : undefined
+      }
+    >
+      {shown.map((row) => (
+        <CompactRow
           key={row.key}
           testID={`result-${row.key}`}
-          label={`${row.title}, ${row.by.name}${row.unseen ? ", new" : ""}`}
+          dot={row.unseen ? "done" : "idle"}
+          title={row.title}
+          meta={row.by.name}
           onPress={row.openable ? () => onOpen(row.key) : undefined}
-          last={i === rows.length - 1}
-        >
-          <View className="flex-row items-start gap-3">
-            <Avatar person={row.by} size={34} />
-            <View className="flex-1 gap-0.5">
-              <View className="flex-row items-center justify-between gap-2">
-                <T variant="label" numberOfLines={1} className="flex-1">
-                  {row.title}
-                </T>
-                {row.unseen ? (
-                  <View className="size-2 rounded-full bg-st-done" />
-                ) : null}
-              </View>
-              <T variant="caption" numberOfLines={1}>
-                {`${row.by.name} · ${row.tag} · ${row.ago}`}
-              </T>
-              {row.note ? (
-                <T variant="caption" tone="ink3" numberOfLines={2}>
-                  {row.note}
-                </T>
-              ) : null}
-            </View>
-          </View>
-        </ListRow>
+        />
       ))}
-    </SectionBlock>
+    </Module>
   );
 }

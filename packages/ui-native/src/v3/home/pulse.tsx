@@ -38,7 +38,7 @@ export function Pulse({
         onPress={onPress}
         className="flex-1 flex-row items-center gap-2 px-3"
       >
-        <Avatar person={person} size={22} />
+        <StatusDot status={state} size={8} />
         <T variant="small" numberOfLines={1} className="flex-1 font-semibold">
           {`${person.name} · ${stateWord}`}
         </T>

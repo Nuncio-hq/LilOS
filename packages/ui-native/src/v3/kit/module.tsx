@@ -14,6 +14,7 @@ export function Module({
   title,
   count,
   onOpen,
+  action,
   footer,
   children,
   testID,
@@ -23,14 +24,17 @@ export function Module({
   count?: number;
   /** Tapping the header opens the full view. Absent: the header is only a title. */
   onOpen?: () => void;
-  /** "2 more" / "See all": opens what the card does not show. */
+  /** "2 more" at the header's end: opens what the card does not show, in a
+      line the card already has (no footer row). */
+  action?: { label: string; onPress: () => void };
+  /** The same, as a row under the content (for taller modules). */
   footer?: { label: string; onPress: () => void };
   children: ReactNode;
   testID?: string;
 }) {
   const id = testID ?? `module-${slug(title)}`;
   const header = (
-    <View className="min-h-11 flex-row items-center gap-2 px-4 pt-1">
+    <View className="min-h-10 flex-row items-center gap-2 px-4 pt-0.5">
       <Text
         accessibilityRole="header"
         className="shrink text-[18px] font-semibold text-ink leading-[24px]"
@@ -45,7 +49,26 @@ export function Module({
         </T>
       ) : null}
       <View className="flex-1" />
-      {onOpen ? (
+      {action ? (
+        <Pressable
+          testID={`${id}-action`}
+          accessibilityRole="button"
+          accessibilityLabel={action.label}
+          onPress={action.onPress}
+          hitSlop={8}
+          className="min-h-10 flex-row items-center gap-1 active:opacity-60"
+        >
+          <T variant="small" tone="ink2" className="font-semibold">
+            {action.label}
+          </T>
+          <Icon
+            name="chevron.right"
+            size={11}
+            tone="muted-foreground"
+            weight="semibold"
+          />
+        </Pressable>
+      ) : onOpen ? (
         <Icon
           name="chevron.right"
           size={13}
@@ -102,5 +125,5 @@ export function Module({
 
 /** The gap between modules on a page. */
 export function Modules({ children }: { children: ReactNode }) {
-  return <View className="gap-3 px-4 pt-1 pb-6">{children}</View>;
+  return <View className="gap-2.5 px-4 pt-1 pb-6">{children}</View>;
 }

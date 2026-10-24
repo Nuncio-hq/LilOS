@@ -2,6 +2,8 @@ import {
   agentOf,
   askTag,
   FORMER_AGENT,
+  type LookAtRow,
+  resultsToLookAt,
   threadTag,
   ticketOf,
   type V3Agent,
@@ -15,6 +17,7 @@ import {
 import type {
   AskVM,
   Person,
+  ResultVM,
   ThreadRowVM,
   TicketRowVM,
 } from "@lilos/ui-native/v3";
@@ -163,3 +166,22 @@ export function ticketRowVM(d: V3Data, t: V3Ticket): TicketRowVM {
 }
 
 export { ticketOf };
+
+/** What finished since you looked, as rows to open and as view models. Home
+    and Needs show the same list (the Mac's `resultsToLookAt`). */
+export function resultRows(d: V3Data): { rows: LookAtRow[]; vms: ResultVM[] } {
+  const rows = resultsToLookAt(d);
+  return {
+    rows,
+    vms: rows.map((r) => ({
+      key: r.key,
+      title: r.title,
+      by: personOf(d, r.by),
+      note: r.note,
+      tag: r.tag,
+      ago: agoText(r.minutes),
+      unseen: r.unseen,
+      openable: Boolean(r.threadId ?? r.ticketId),
+    })),
+  };
+}

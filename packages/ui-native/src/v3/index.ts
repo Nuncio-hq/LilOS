@@ -38,6 +38,7 @@ export * from "./thread";
 export type {
   AskVM,
   Person,
+  ResultVM,
   Status,
   ThreadRowVM,
   TicketRowVM,

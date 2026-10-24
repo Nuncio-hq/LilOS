@@ -73,3 +73,19 @@ export type TicketRowVM = {
   /** "waits on You", "stuck: same web search 6×", "starts after HB-12", "done 2 h ago". */
   detail: string;
 };
+
+/** One finished thing to look at, ready to draw (Home and Needs show it). */
+export type ResultVM = {
+  key: string;
+  title: string;
+  by: Person;
+  note: string;
+  /** Where it lives: ticket id, project or "Chat". */
+  tag: string;
+  /** "41 min ago" */
+  ago: string;
+  /** Finished past your read mark. */
+  unseen: boolean;
+  /** It has a thread or a ticket to open; without either the row is plain. */
+  openable: boolean;
+};

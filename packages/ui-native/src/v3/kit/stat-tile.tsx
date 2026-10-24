@@ -34,11 +34,11 @@ export function StatTile({
       accessibilityRole="button"
       accessibilityLabel={`${value} ${label.toLowerCase()}`}
       onPress={onPress}
-      className="min-h-[76px] flex-1 justify-center rounded-[22px] bg-paper-soft px-4 py-3 active:opacity-60"
+      className="min-h-[62px] flex-1 justify-center rounded-[22px] bg-paper-soft px-4 py-2 active:opacity-60"
       style={{ borderCurve: "continuous" }}
     >
       <Text
-        className={`text-[32px] font-semibold leading-[36px] ${value > 0 ? INK[tone] : "text-ink-3"}`}
+        className={`text-[30px] font-semibold leading-[34px] ${value > 0 ? INK[tone] : "text-ink-3"}`}
       >
         {String(value)}
       </Text>
@@ -50,5 +50,5 @@ export function StatTile({
 }
 
 export function StatTiles({ children }: { children: ReactNode }) {
-  return <View className="flex-row gap-2.5 px-4 pt-1">{children}</View>;
+  return <View className="flex-row gap-2.5">{children}</View>;
 }

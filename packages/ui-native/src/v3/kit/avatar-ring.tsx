@@ -96,7 +96,7 @@ function Cell({
       accessibilityRole="button"
       accessibilityLabel={`${person.name}, ${word}`}
       onPress={() => onPress(person.id)}
-      className="items-center gap-1 py-1.5 active:opacity-60"
+      className="items-center gap-0.5 py-1 active:opacity-60"
       style={{ width }}
     >
       <View>
@@ -104,7 +104,7 @@ function Cell({
           name={person.name}
           status={person.status}
           outside={person.outside}
-          size={40}
+          size={36}
         />
         {person.isCeo ? (
           <View className="absolute -bottom-0.5 self-center rounded border border-rule bg-paper px-1">
