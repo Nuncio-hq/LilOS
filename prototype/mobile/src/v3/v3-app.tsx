@@ -132,7 +132,11 @@ function Routes() {
         component={Tabs}
         options={{ headerShown: false }}
       />
-      <Stack.Screen name="Thread" component={ThreadContainer} />
+      <Stack.Screen
+        name="Thread"
+        component={ThreadContainer}
+        getId={({ params }) => params.threadId}
+      />
       <Stack.Screen name="Hire" component={HireContainer} options={SHEET} />
     </Stack.Navigator>
   );

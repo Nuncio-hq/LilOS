@@ -57,9 +57,21 @@ function TabStack({
         component={root}
         options={{ ...LARGE, title, ...rootOptions }}
       />
-      <Stack.Screen name="Agent" component={AgentContainer} />
-      <Stack.Screen name="Ticket" component={TicketContainer} />
-      <Stack.Screen name="Project" component={ProjectContainer} />
+      <Stack.Screen
+        name="Agent"
+        component={AgentContainer}
+        getId={({ params }) => params.agentId}
+      />
+      <Stack.Screen
+        name="Ticket"
+        component={TicketContainer}
+        getId={({ params }) => params.ticketId}
+      />
+      <Stack.Screen
+        name="Project"
+        component={ProjectContainer}
+        getId={({ params }) => params.projectId}
+      />
       <Stack.Screen name="People" component={PeopleContainer} />
     </Stack.Navigator>
   );

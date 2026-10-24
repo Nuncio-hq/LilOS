@@ -18,7 +18,9 @@ export function ThreadAskCard({
   onAnswer: (option: string) => void;
 }) {
   const lines: { key: string; label: string; text: string }[] = [];
-  if (ask.why) lines.push({ key: "why", label: "Why", text: ask.why });
+  // A plan's one-line summary is the plan card right above it.
+  if (ask.why && ask.kind !== "plan")
+    lines.push({ key: "why", label: "Why", text: ask.why });
   if (ask.ifYes) lines.push({ key: "yes", label: "If yes", text: ask.ifYes });
   if (ask.ifNo) lines.push({ key: "no", label: "If no", text: ask.ifNo });
   return (
@@ -77,6 +79,7 @@ export function ThreadAskCard({
         <DecisionButtons
           onApprove={onApprove}
           onDeny={onDeny}
+          onSoft
           approveLabel={ask.kind === "plan" ? "Approve plan" : undefined}
           denyLabel={ask.kind === "plan" ? "Reject plan" : undefined}
           testIDPrefix="thread-ask"

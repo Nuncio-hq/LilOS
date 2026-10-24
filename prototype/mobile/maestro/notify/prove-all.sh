@@ -1,6 +1,6 @@
 #!/bin/sh
 # The whole lock-screen matrix for one appearance, screenshots copied to
-# /tmp/820/notify-<appearance>-<leg>-<step>.png.
+# /tmp/820b/notify-<appearance>-<leg>-<step>.png.
 # Usage: prove-all.sh <udid> <light|dark>
 # First: the app in front on Home (before) and a pushed ask arriving while it
 # is open (foreground: no banner, the Needs you stack already shows it).
@@ -11,13 +11,13 @@
 set -u
 UDID=${1:?udid}; MODE=${2:?light|dark}
 DIR=$(cd "$(dirname "$0")" && pwd)
-OUT=/tmp/820
+OUT=/tmp/820b
 xcrun simctl ui "$UDID" appearance "$MODE"
 
 leg() { # <name> <payload> <action> <wait regex> <cold|warm>
   NAME=$1; PAYLOAD=$2; ACTION=$3; WAIT=$4; START=$5
-  "$DIR/run.sh" "$UDID" "$PAYLOAD" "$ACTION" "$MODE-$NAME" "$WAIT" "$START" >/tmp/820-leg.log 2>&1 \
-    || echo "leg $MODE-$NAME FAILED (see /tmp/820-leg.log)"
+  "$DIR/run.sh" "$UDID" "$PAYLOAD" "$ACTION" "$MODE-$NAME" "$WAIT" "$START" >/tmp/820b-leg.log 2>&1 \
+    || echo "leg $MODE-$NAME FAILED (see /tmp/820b-leg.log)"
   RUN=$(ls -dt "$OUT"/2026-* | head -1)
   for f in "$RUN"/answer/takeScreenshot/*.png; do
     [ -f "$f" ] && cp "$f" "$OUT/notify-$(basename "$f")"

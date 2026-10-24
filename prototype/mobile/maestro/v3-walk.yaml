@@ -6,7 +6,8 @@
 #   prototype/mobile/maestro/walk.sh <udid> [light|dark]
 appId: com.nuncio.lilos.mobile
 ---
-- launchApp
+- launchApp:
+    stopApp: true
 # A fresh company every run: the walk approves and denies real asks.
 - openLink: lilos://preview?reset=1&open=home
 - tapOn:
@@ -87,7 +88,7 @@ appId: com.nuncio.lilos.mobile
 - assertVisible: "All clear"
 
 # Results to look at opens the thread behind them.
-- tapOn: "Merge PR #66.*"
+- tapOn: "Run the Meta Ads test.*"
 - assertVisible:
     id: thread-composer-input
 - waitForAnimationToEnd:
@@ -146,12 +147,17 @@ appId: com.nuncio.lilos.mobile
 - waitForAnimationToEnd:
     timeout: 1500
 - takeScreenshot: ${THEME}-16-ask-ceo
-- tapOn: "3 more"
+# A broad search makes a long page: the large title collapses as it scrolls.
+- tapOn: "Ask the CEO or search"
+- inputText: "e"
+- hideKeyboard
 - runFlow:
     file: scroll-proof.yaml
     env:
       NAME: ask
-- tapOn: "Ask the CEO or search"
+- tapOn:
+    point: "50%,94%"
+- eraseText: 5
 - inputText: "Scout"
 - hideKeyboard
 - waitForAnimationToEnd:

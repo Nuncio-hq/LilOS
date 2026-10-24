@@ -66,7 +66,7 @@ function tabStack(tab: TabName): AnyState | undefined {
 }
 
 /** Back to the tabs with none of the covering screens left over. */
-function uncover() {
+export function uncover() {
   const root = v3Nav.getRootState();
   if (root && root.index > 0)
     v3Nav.dispatch({ ...StackActions.popToTop(), target: root.key });

@@ -6,6 +6,7 @@ import {
   openTab,
   openThread,
   openTicket,
+  uncover,
   whenNavReady,
 } from "./nav";
 import { pushNext } from "./notify-bridge";
@@ -36,6 +37,8 @@ export function applyPreview(query: string) {
   const open = q.get("open");
   if (open) {
     whenNavReady(() => {
+      // A link starts from the tabs, not on top of whatever was open.
+      uncover();
       if (open === "hire") openHire();
       else if (open === "people") openPeople();
       else if (open.startsWith("project:")) openProject(open.slice(8));
