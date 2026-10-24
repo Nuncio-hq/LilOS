@@ -21,7 +21,7 @@ import { minutesText, personOf, STATUS_WORDS, threadRowVM } from "../model";
 import type { RootRoutes } from "../nav";
 import { openThread, openTicket } from "../nav";
 import { $data } from "../store";
-import { roleLine } from "./company-screen";
+import { roleLine } from "./company-model";
 
 /* An agent's page, pushed from People, Org or a thread. Instructions, notes
    and skills are read-only here. */

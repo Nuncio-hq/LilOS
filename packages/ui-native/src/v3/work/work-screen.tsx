@@ -1,78 +1,14 @@
 import { useState } from "react";
-import { Pressable, View } from "react-native";
-import { Icon } from "../../components/icon";
-import { EmptyState, Page, Segmented, SerifTitle, T } from "../kit";
+import { View } from "react-native";
+import { EmptyState, Page, Segmented, SerifTitle } from "../kit";
 import { ThreadRow, TicketRow } from "../rows";
+import { DoneToggle, GroupHead } from "./work-parts";
 import type { WorkThreadGroup, WorkTicketGroup, WorkView } from "./work-types";
 
 const VIEWS: { key: WorkView; label: string }[] = [
   { key: "threads", label: "Threads" },
   { key: "tickets", label: "Tickets" },
 ];
-
-/** A project's name with how much is open, and what it is about. */
-function GroupHead({
-  name,
-  caption,
-  about,
-}: {
-  name: string;
-  caption: string;
-  about?: string;
-}) {
-  return (
-    <View className="px-5 pt-7 pb-1.5">
-      <View className="flex-row items-baseline justify-between gap-3">
-        <T variant="heading" numberOfLines={1} className="flex-1">
-          {name}
-        </T>
-        <T variant="caption" tone="ink3">
-          {caption}
-        </T>
-      </View>
-      {about ? (
-        <T variant="caption" tone="ink2" numberOfLines={2} className="pt-0.5">
-          {about}
-        </T>
-      ) : null}
-    </View>
-  );
-}
-
-/** The collapsed "N done" line: done work stays out of sight until asked. */
-function DoneToggle({
-  groupId,
-  count,
-  open,
-  onPress,
-}: {
-  groupId: string;
-  count: number;
-  open: boolean;
-  onPress: () => void;
-}) {
-  const label = `${count} done`;
-  return (
-    <Pressable
-      testID={`work-done-${groupId}`}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityState={{ expanded: open }}
-      onPress={onPress}
-      className="h-11 flex-row items-center gap-1.5 px-5 active:bg-paper-soft"
-    >
-      <T variant="small" tone="ink3">
-        {label}
-      </T>
-      <Icon
-        name={open ? "chevron.down" : "chevron.right"}
-        size={11}
-        tone="muted-foreground"
-        weight="semibold"
-      />
-    </Pressable>
-  );
-}
 
 export function WorkScreen({
   view,

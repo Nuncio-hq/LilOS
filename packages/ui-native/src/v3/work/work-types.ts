@@ -27,3 +27,13 @@ export type WorkTicketGroup = WorkGroupHead & {
 };
 
 export type WorkView = "threads" | "tickets";
+
+/** One project's page: all of its threads, and its tickets when the company
+    has tickets switched on. */
+export type ProjectPageVM = {
+  id: string;
+  name: string;
+  about?: string;
+  threads: WorkThreadGroup;
+  tickets?: WorkTicketGroup;
+};

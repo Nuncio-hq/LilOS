@@ -54,6 +54,14 @@ export type CompanyScreenProps = {
   onHire: () => void;
 };
 
+export type PeopleScreenProps = {
+  /** CEO first, then the roster. */
+  people: PersonRowVM[];
+  org: OrgNodeVM[];
+  onOpenAgent: (agentId: string) => void;
+  onHire: () => void;
+};
+
 export type NoteVM = {
   id: string;
   /** File name, "readers.md". */

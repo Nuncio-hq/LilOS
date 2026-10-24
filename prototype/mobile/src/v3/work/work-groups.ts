@@ -1,5 +1,9 @@
 import type { V3Data, V3Status, V3Thread, V3Ticket } from "@lilos/ui/v3-data";
-import type { WorkThreadGroup, WorkTicketGroup } from "@lilos/ui-native/v3";
+import type {
+  ProjectPageVM,
+  WorkThreadGroup,
+  WorkTicketGroup,
+} from "@lilos/ui-native/v3";
 import { CEO_THREAD_ID, threadRowVM, ticketOf, ticketRowVM } from "../model";
 
 /* Work groups the company by project and floats what wants you to the top of
@@ -114,4 +118,34 @@ export function ticketGroups(d: V3Data): WorkTicketGroup[] {
     });
   }
   return groups;
+}
+
+/** One project's page: its threads and (with tickets on) its tickets, empty
+    groups included so the page can say "nothing yet". Undefined when the id
+    names no project. */
+export function projectPage(d: V3Data, id: string): ProjectPageVM | undefined {
+  const project = d.projects.find((p) => p.id === id);
+  if (!project && id !== CHAT) return undefined;
+  const name = project?.name ?? "Chat";
+  const about = project?.about;
+  const threads = threadGroups(d).find((g) => g.id === id) ?? {
+    id,
+    name,
+    about,
+    caption: openCaption(0),
+    rows: [],
+    quiet: [],
+  };
+  const tickets =
+    project && d.features.tickets
+      ? (ticketGroups(d).find((g) => g.id === id) ?? {
+          id,
+          name,
+          about,
+          caption: openCaption(0),
+          rows: [],
+          done: [],
+        })
+      : undefined;
+  return { id, name, about, threads, tickets };
 }
