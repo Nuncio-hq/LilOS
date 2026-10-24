@@ -93,6 +93,11 @@ function PlanActions({
   );
 }
 
+/** The sheet has something the card does not already say. */
+const hasDetails = (ask: AskVM) =>
+  ask.kind !== "plan" &&
+  Boolean(ask.why || ask.ifYes || ask.ifNo || ask.spend || ask.fallback);
+
 export function AskCard({
   ask,
   onApprove,
@@ -137,24 +142,26 @@ export function AskCard({
           <Consequence label="Deny" text={ask.ifNo} />
         </View>
       ) : null}
-      <Pressable
-        testID="ask-details-open"
-        accessibilityRole="button"
-        accessibilityLabel="Details"
-        onPress={onDetails}
-        hitSlop={8}
-        className="flex-row items-center gap-1 self-start active:opacity-60"
-      >
-        <T variant="small" tone="ink2" className="font-semibold">
-          Details
-        </T>
-        <Icon
-          name="chevron.right"
-          size={11}
-          weight="semibold"
-          tone="muted-foreground"
-        />
-      </Pressable>
+      {hasDetails(ask) ? (
+        <Pressable
+          testID="ask-details-open"
+          accessibilityRole="button"
+          accessibilityLabel="Details"
+          onPress={onDetails}
+          hitSlop={8}
+          className="flex-row items-center gap-1 self-start active:opacity-60"
+        >
+          <T variant="small" tone="ink2" className="font-semibold">
+            Details
+          </T>
+          <Icon
+            name="chevron.right"
+            size={11}
+            weight="semibold"
+            tone="muted-foreground"
+          />
+        </Pressable>
+      ) : null}
       <View className="mt-auto pt-1">
         {ask.kind === "question" && ask.options?.length ? (
           <QuestionOptions options={ask.options} onAnswer={onAnswer} />

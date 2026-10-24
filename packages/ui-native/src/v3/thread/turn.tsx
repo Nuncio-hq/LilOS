@@ -91,7 +91,7 @@ export function TurnView({
 }) {
   const { prompt } = turn;
   return (
-    <View className="gap-4" testID={`turn-${turn.key}`}>
+    <View className="gap-3" testID={`turn-${turn.key}`}>
       {prompt ? (
         prompt.fromYou ? (
           <YouBubble prompt={prompt} />

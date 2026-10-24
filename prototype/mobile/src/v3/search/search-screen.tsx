@@ -2,13 +2,13 @@ import type { V3Data } from "@lilos/ui/v3-data";
 import { useThemeColor } from "@lilos/ui-native";
 import { type RecentUpdateVM, SearchResults } from "@lilos/ui-native/v3";
 import { useStore } from "@nanostores/react";
-import type { NativeBottomTabNavigationProp } from "@react-navigation/bottom-tabs/unstable";
 import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SearchBarCommands } from "react-native-screens";
 import { hapticSelect } from "../haptics";
 import { CEO_THREAD_ID, personOf } from "../model";
-import { openAgent, openThread, openTicket, type TabRoutes } from "../nav";
+import { openAgent, openThread, openTicket, type StackRoutes } from "../nav";
 import { $data, askCeo, markSeen } from "../store";
 import { searchCompany } from "./match";
 
@@ -37,7 +37,7 @@ function recentUpdates(d: V3Data): RecentUpdateVM[] {
 export function AskCeoContainer() {
   const data = useStore($data);
   const navigation =
-    useNavigation<NativeBottomTabNavigationProp<TabRoutes, "AskCeo">>();
+    useNavigation<NativeStackNavigationProp<StackRoutes, "Root">>();
   const ink = useThemeColor("ink");
   const [typed, setTyped] = useState("");
   const field = useRef<SearchBarCommands>(null);
@@ -56,9 +56,6 @@ export function AskCeoContainer() {
 
   useEffect(() => {
     navigation.setOptions({
-      // A serif large title like the other tabs' in-content titles.
-      headerLargeTitleEnabled: true,
-      headerLargeTitleStyle: { fontFamily: "Charter" },
       headerSearchBarOptions: {
         ref: field,
         placeholder: "Ask the CEO or search",

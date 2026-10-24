@@ -62,7 +62,7 @@ export function ThreadView({
         contentContainerStyle={{ paddingBottom: 24 }}
       >
         <ThreadHeader thread={thread} />
-        <View className="gap-7 pt-6">
+        <View className="gap-5 pt-4">
           {thread.turns.map((turn, i) => (
             <TurnView
               key={turn.key}

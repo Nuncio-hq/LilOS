@@ -87,15 +87,17 @@ export function askVM(d: V3Data, a: V3Ask): AskVM {
   const spend = a.spend
     ? `$${a.spend.amount} · $${a.spend.used} of $${a.spend.cap} used`
     : undefined;
-  const threadId =
-    a.threadId ?? d.threads.find((t) => t.askId === a.id)?.id ?? undefined;
+  const thread = d.threads.find((t) => t.askId === a.id);
+  const threadId = a.threadId ?? thread?.id;
+  const kind = askKind(d, a);
   return {
     id: a.id,
-    kind: askKind(d, a),
+    kind,
     from: personOf(d, a.from),
     title: a.title,
     ask: a.ask,
-    why: a.why,
+    // A plan ask says nothing itself; its thread's one-line summary stands in.
+    why: a.why ?? (kind === "plan" ? thread?.quote : undefined),
     ifYes: a.ifYes,
     ifNo: a.ifNo,
     tag: askTag(d, a),
