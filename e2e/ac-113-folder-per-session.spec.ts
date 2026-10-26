@@ -1,6 +1,5 @@
 import { execSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
-import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
@@ -38,35 +37,39 @@ const repo = path.resolve(here, "..");
 
 const SHOTS = path.join(repo, "test-results", "ac-113");
 
-/* Real fixture dirs, made once for the whole file. They sit under ~/repos —
-   moving a live session into a folder is a host write gated to the Mac's
-   home folder, and ~/repos is one of the discovery scan's default roots. */
-mkdirSync(path.join(homedir(), "repos"), { recursive: true }); // may not exist on a fresh CI runner
-const ROOT = mkdtempSync(path.join(homedir(), "repos", "lilos-113-"));
-const repoDir = path.join(ROOT, "lilos-repo-a");
-const plainDir = path.join(ROOT, "lilos-plain-b");
-const goneDir = path.join(ROOT, "lilos-gone-c");
+/* Real fixture dirs, made once for the whole file INSIDE the stack's
+   scratch HOME (r10): the host gates reads/writes to the harness's home
+   and discovery chips collapse paths against it — under the scratch
+   HOME a fixture in the real ~/repos is unreachable AND unshrinkable.
+   They sit under ~/repos — one of the discovery scan's default roots. */
+let ROOT: string;
+let repoDir: string;
+let plainDir: string;
+let goneDir: string;
 /* Never added to recents before the #208 AC-3 test — the dialog must say
    "Not a git repo" for a dir it hasn't seen. */
-const freshDir = path.join(ROOT, "lilos-fresh-d");
-mkdirSync(repoDir);
-mkdirSync(plainDir);
-mkdirSync(goneDir);
-mkdirSync(freshDir);
-execSync(
-  "git init -b trunk && git -c user.email=t@t -c user.name=t commit --allow-empty -m init",
-  { cwd: repoDir },
-);
+let freshDir: string;
 
 /* The recents and the discovery chips carry a folder under $HOME in its
    `~/x` form (a move stores it that way), so spec lookups use it too: the
    same folder in two spellings would list as two menu rows. */
-const shown = (abs: string) => `~${abs.slice(homedir().length)}`;
+const shown = (abs: string) => `~${abs.slice(stack.home.length)}`;
 
 let stack: Stack;
 test.beforeAll(async () => {
   test.setTimeout(120_000);
   stack = await bootStack("ac113", await pickPorts());
+  mkdirSync(path.join(stack.home, "repos"), { recursive: true });
+  ROOT = mkdtempSync(path.join(stack.home, "repos", "lilos-113-"));
+  repoDir = path.join(ROOT, "lilos-repo-a");
+  plainDir = path.join(ROOT, "lilos-plain-b");
+  goneDir = path.join(ROOT, "lilos-gone-c");
+  freshDir = path.join(ROOT, "lilos-fresh-d");
+  for (const d of [repoDir, plainDir, goneDir, freshDir]) mkdirSync(d);
+  execSync(
+    "git init -b trunk && git -c user.email=t@t -c user.name=t commit --allow-empty -m init",
+    { cwd: repoDir },
+  );
 });
 test.afterAll(async () => {
   await stack?.stop();

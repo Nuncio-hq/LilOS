@@ -296,10 +296,19 @@ function runnerEntry(dir: string, entry: string): string {
  * user-visible recipe (`claude-agent-acp`); the result is what actually
  * spawns. Async — a cold install is a real subprocess (r6 review:
  * the spawnSync version froze the harness event loop).
+ *
+ * `fetch:false` never installs — the availability probe resolves this
+ * way so "is it usable now" is answered from PATH + the cache only,
+ * never by writing one (a fetch-once-per-probe into every e2e stack's
+ * scratch HOME is what exhausted the CI runner's quota — r10). Either
+ * way `LILOS_ACP_PROVISION=0` refuses the fetch outright: e2e/CI sets
+ * it so a launch demand can never reach npm, and the failure reads
+ * "provisioning disabled in tests" rather than an installer error.
  */
 export async function resolveAgentCommand(
   spec: AcpLaunchSpec,
   env: NodeJS.ProcessEnv = process.env,
+  opts?: { fetch?: boolean },
 ): Promise<ResolvedAgentCommand> {
   const [bin, ...rest] = spec.command;
   if (!bin) return { ok: false, output: "empty launch command" };
@@ -354,6 +363,13 @@ export async function resolveAgentCommand(
     };
   const entry = () => binEntry(dir, npm);
   if (!(existsSync(join(dir, ".lilos-provisioned")) && entry())) {
+    if (env.LILOS_ACP_PROVISION === "0")
+      return { ok: false, output: "provisioning disabled in tests" };
+    if (opts?.fetch === false)
+      return {
+        ok: false,
+        output: `${npm.package}@${npm.version} is not installed`,
+      };
     const r = await install(dir, npm, env);
     if (!r.ok) return { ok: false, output: r.output };
     if (!entry())
@@ -384,9 +400,12 @@ export async function verifyAgentCommand(
   r: ResolvedAgentCommand,
   env?: NodeJS.ProcessEnv,
 ): Promise<{ ok: boolean; output: string }> {
+  /* An unresolved command is unverifiable even with no verify args —
+     the resolve's reason is the verdict, not "nothing to check". */
+  if (!r.ok) return { ok: false, output: r.output };
   if (!spec.verify) return { ok: true, output: "" };
   const head = r.probeHead ?? r.command;
-  if (!r.ok || !head?.length) return { ok: false, output: r.output };
+  if (!head?.length) return { ok: false, output: r.output };
   const [bin, ...args] = head;
   return probeExecutable(bin, [...args, ...spec.verify.args], {
     env: { ...(env ?? process.env), ...(r.env ?? {}) } as NodeJS.ProcessEnv,
@@ -394,11 +413,15 @@ export async function verifyAgentCommand(
   });
 }
 
-/** Verify the resolved command answers the spec's probe args. */
+/** Verify the resolved command answers the spec's probe args.
+    Fetch-free (r10): a probe reports what is usable NOW — a PATH
+    binary or a warm cache — it must never install one. The harness
+    runs this at boot for every catalog row; provisioning belongs to
+    the first real launch demand (`resolveAgentCommand`, fetch on). */
 export async function probeAgentCommand(
   spec: AcpLaunchSpec,
   env?: NodeJS.ProcessEnv,
 ): Promise<{ ok: boolean; output: string }> {
-  const r = await resolveAgentCommand(spec, env);
+  const r = await resolveAgentCommand(spec, env, { fetch: false });
   return verifyAgentCommand(spec, r, env);
 }

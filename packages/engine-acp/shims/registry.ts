@@ -21,10 +21,12 @@ export const ACP_AGENTS: Record<string, AcpLaunchSpec> = {
 
 /**
  * D-#761: install check for the runtime catalog — resolve the recipe's
- * launch command (an installed binary on PATH, else the spec's
- * provisioned distribution per D-#866), then run it with the verify
- * args; exit 0 means hirable. A provisioning failure — offline, no
- * runtime, no installer — lands on the status row's detail line.
+ * launch command from what is already usable (a PATH binary at/above
+ * the pin, or an already-provisioned cache entry), then run it with
+ * the verify args; exit 0 means hirable. The probe NEVER fetches
+ * (r10 — a boot probe that provisioned acp:claude into every e2e
+ * stack's scratch HOME filled the runner's quota): a not-installed
+ * recipe reports unavailable until a real launch provisions it.
  */
 export async function probeAcpSpec(
   spec: AcpLaunchSpec,

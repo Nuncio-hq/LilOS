@@ -1,3 +1,4 @@
+import { readdirSync } from "node:fs";
 import type { AgentDescriptor, EngineEvent } from "@lilos/contracts/engine";
 import type { AcpLaunchSpec } from "@lilos/engine-acp";
 import { connectFake, FakeEngine } from "@lilos/engine-fake";
@@ -620,6 +621,41 @@ describe("EngineRegistry (D-#761)", () => {
          failed verdict is served, not another install attempt. */
       await expect(reg.ensure(ACP)).rejects.toThrow();
       expect(launched).toEqual([]);
+    } finally {
+      await reg.stop();
+      if (prev === undefined) delete process.env.LILOS_ACP_CACHE;
+      else process.env.LILOS_ACP_CACHE = prev;
+    }
+  });
+
+  /* r10: the boot probe must NEVER provision — it runs once per harness
+     boot for every catalog row, and under e2e each stack's scratch HOME
+     made that one npm tree per stack (~100/shard → the EDQUOT run).
+     Unprovisioned reports unavailable with the reason; the cache stays
+     empty. Provisioning belongs to the first real launch (ensure). */
+  it("probeAvailable never provisions — an unprovisioned row reports unavailable", async () => {
+    const cache = mkhome();
+    const prev = process.env.LILOS_ACP_CACHE;
+    process.env.LILOS_ACP_CACHE = cache;
+    const { reg } = world({
+      acpSpec: {
+        id: "devin",
+        command: ["lilos-definitely-not-on-path-acp"],
+        provision: {
+          npm: {
+            package: "x",
+            version: "file:/nonexistent-pkg",
+            bin: "b",
+          },
+        },
+      },
+    });
+    try {
+      await reg.probeAvailable();
+      const row = reg.statusRows().find((r) => r.id === ACP);
+      expect(row?.available).toBe(false);
+      expect(row?.detail).toContain("is not installed");
+      expect(readdirSync(cache).filter((d) => !d.startsWith("."))).toEqual([]);
     } finally {
       await reg.stop();
       if (prev === undefined) delete process.env.LILOS_ACP_CACHE;

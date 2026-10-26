@@ -264,6 +264,40 @@ describe("resolveAgentCommand", () => {
     rmSync(home, { recursive: true, force: true });
   });
 
+  /* r10: e2e/CI set LILOS_ACP_PROVISION=0 — a resolve must refuse the
+     fetch outright (never run an installer, never write the cache) and
+     say why. The EDQUOT run was ~100 scratch-HOME installs per shard. */
+  test("LILOS_ACP_PROVISION=0 disables the fetch and says so", async () => {
+    const home = tmp();
+    const cache = join(home, "acp-cache");
+    const r = await resolveAgentCommand(
+      spec({ provision: { npm: { package: "x", version: "1", bin: "b" } } }),
+      { ...env(home), LILOS_ACP_CACHE: cache, LILOS_ACP_PROVISION: "0" },
+    );
+    expect(r.ok).toBe(false);
+    expect(r.output).toBe("provisioning disabled in tests");
+    expect(existsSync(cache)).toBe(false);
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  /* r10: the availability probe resolves with fetch:false — "usable
+     now" answers from PATH + a warm cache only; a miss reports
+     "not installed" and writes NOTHING (a boot-time install per e2e
+     stack's scratch HOME was the quota exhaustion). */
+  test("fetch:false reports not-installed and writes nothing", async () => {
+    const home = tmp();
+    const cache = join(home, "acp-cache");
+    const r = await resolveAgentCommand(
+      spec({ provision: { npm: { package: "x", version: "1", bin: "b" } } }),
+      { ...env(home), LILOS_ACP_CACHE: cache },
+      { fetch: false },
+    );
+    expect(r.ok).toBe(false);
+    expect(r.output).toContain("is not installed");
+    expect(existsSync(cache)).toBe(false);
+    rmSync(home, { recursive: true, force: true });
+  });
+
   test("a failed fetch reports why instead of looping", async () => {
     const home = tmp();
     const r = await resolveAgentCommand(
@@ -333,6 +367,39 @@ describe("probeAgentCommand", () => {
     });
     expect(v.ok).toBe(true);
     expect(v.output).toContain("devin acp 9.9.9");
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  /* r10 regression: the harness runs this probe at boot for every
+     catalog row. Probing an unprovisioned npm recipe must report it
+     unavailable and write NOTHING — the r6 probe installed into every
+     e2e stack's scratch HOME (~100 adapter trees per shard → EDQUOT).
+     Provisioning belongs to the first real launch, not the probe. */
+  test("a probe never installs — an unprovisioned recipe reports unavailable", async () => {
+    const home = tmp();
+    const cache = join(home, "acp-cache");
+    const pkg = fixturePkg(home);
+    const s = spec({
+      provision: {
+        npm: {
+          package: "lilos-fake-acp-agent",
+          version: `file:${pkg}`,
+          bin: "fake-acp",
+        },
+      },
+    });
+    const e = { ...env(home), LILOS_ACP_CACHE: cache };
+    const p = await probeAgentCommand(s, e);
+    expect(p.ok).toBe(false);
+    expect(p.output).toContain("is not installed");
+    expect(existsSync(cache)).toBe(false);
+    /* Once a real launch provisioned it, the same probe verifies the
+       warm cache — availability reflects reality, fetch-free. */
+    const r = await resolveAgentCommand(s, e);
+    expect(r.ok).toBe(true);
+    const p2 = await probeAgentCommand(s, e);
+    expect(p2.ok).toBe(true);
+    expect(p2.output).toContain("fake-acp 1.2.3");
     rmSync(home, { recursive: true, force: true });
   });
 });
