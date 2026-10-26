@@ -149,9 +149,10 @@ describe("AC-4 (#85) the fake engine stays behind an explicit setting", () => {
 
 describe("D-#845 the generic ACP engine", () => {
   it("LILOS_ENGINE=acp picks the devin registry entry by default", () => {
-    expect(
-      resolveHarnessConfig(env({ LILOS_ENGINE: "acp" })).engine,
-    ).toEqual({ kind: "acp", agent: "devin" });
+    expect(resolveHarnessConfig(env({ LILOS_ENGINE: "acp" })).engine).toEqual({
+      kind: "acp",
+      agent: "devin",
+    });
   });
 
   it("LILOS_ACP_AGENT picks another registry entry", () => {

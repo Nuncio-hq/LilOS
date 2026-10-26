@@ -52,9 +52,7 @@ const listen = (
     });
     child.once("exit", (code) => {
       clearTimeout(timer);
-      reject(
-        new Error(`serve exited ${code} before LISTENING:\n${out}`),
-      );
+      reject(new Error(`serve exited ${code} before LISTENING:\n${out}`));
     });
   });
 
@@ -73,12 +71,13 @@ const wsClient = async (url: string) => {
       result?: unknown;
       error?: { message: string };
     };
-    if (m.id !== undefined && pending.has(m.id)) {
-      const r = pending.get(m.id)!;
-      pending.delete(m.id);
-      if (m.error) r(Promise.reject(new Error(m.error.message)));
-      else r(m.result);
-    }
+    const id = m.id;
+    if (id === undefined) return;
+    const r = pending.get(id);
+    if (!r) return;
+    pending.delete(id);
+    if (m.error) r(Promise.reject(new Error(m.error.message)));
+    else r(m.result);
   };
   return {
     request: (method: string, params: unknown = {}) =>
@@ -136,9 +135,9 @@ describe("serve.ts entry point (D-#845)", () => {
 
   test("--agent picks the registry entry; unknown ids fail plainly", async () => {
     /* bogus entry: exits 2 with the registry list on stderr. */
-    await expect(
-      listen(["--agent", "bogus"], {}, 10_000),
-    ).rejects.toThrow(/exited 2|unknown agent/);
+    await expect(listen(["--agent", "bogus"], {}, 10_000)).rejects.toThrow(
+      /exited 2|unknown agent/,
+    );
   }, 20_000);
 
   test("/ws without the protocol token is refused", async () => {
@@ -147,9 +146,9 @@ describe("serve.ts entry point (D-#845)", () => {
       /* no token: the upgrade is denied — the socket never opens. */
       await expect(wsClient(proc.url)).rejects.toThrow(/ws connect/);
       /* wrong token: same. */
-      await expect(
-        wsClient(`${proc.url}?token=wrong`),
-      ).rejects.toThrow(/ws connect/);
+      await expect(wsClient(`${proc.url}?token=wrong`)).rejects.toThrow(
+        /ws connect/,
+      );
     } finally {
       proc.child.kill("SIGTERM");
     }
@@ -184,9 +183,8 @@ describe("serve.ts entry point (D-#845)", () => {
             events: { type: string; payload: { output?: string } }[];
           };
           return (
-            events.events
-              .filter((e) => e.type === "tool.completed")
-              .at(-1)?.payload?.output ?? ""
+            events.events.filter((e) => e.type === "tool.completed").at(-1)
+              ?.payload?.output ?? ""
           );
         };
         /* Internal state never crosses the scrub… */

@@ -1,16 +1,13 @@
 import { execFileSync } from "node:child_process";
 import { authorizeLoopbackUpgrade } from "@lilos/contracts/auth";
 import { MAX_FRAME_BYTES } from "@lilos/contracts/engine";
-import {
-  scrubLilosEnv,
-  takeEngineProtocolToken,
-} from "@lilos/contracts/env";
+import { scrubLilosEnv, takeEngineProtocolToken } from "@lilos/contracts/env";
+import { devinSpec } from "../shims/devin.js";
 import { AcpEngine } from "../src/engine.js";
+import type { AcpLaunchSpec } from "../src/launch.js";
 import { probeExecutable, resolveExecutable } from "../src/launch.js";
 import { AcpClientTerminals } from "../src/terminals.js";
 import { acpEventFrame, handleJsonRpc } from "../src/transport.js";
-import { devinSpec } from "../shims/devin.js";
-import type { AcpLaunchSpec } from "../src/launch.js";
 
 /**
  * WebSocket entry point — the only place engine-acp touches Bun APIs
@@ -75,10 +72,28 @@ const spec: AcpLaunchSpec = (() => {
       console.error("engine-acp: --command is empty");
       process.exit(2);
     }
-    return { id: "command", command: argv };
+    /* The roster seed for an unnamed command: the executable basename as
+       the display name — `devin acp` shows as "Devin", anything else as
+       itself. --name overrides for a friendlier engine/agent label. */
+    const base =
+      argv[0]
+        .split("/")
+        .pop()
+        ?.replace(/\.[^.]*$/, "") ?? "agent";
+    const display = base.charAt(0).toUpperCase() + base.slice(1);
+    return {
+      id: "command",
+      command: argv,
+      agent: {
+        id: "command",
+        name: display,
+        description: `The configured ACP command: ${argv.join(" ")}`,
+        detail: { isDefault: true },
+      },
+    };
   }
   console.error(
-    "engine-acp: pass --agent <id> (registry entry) or --command \"<argv>\"",
+    'engine-acp: pass --agent <id> (registry entry) or --command "<argv>"',
   );
   process.exit(2);
 })();
@@ -127,6 +142,7 @@ const engine = new AcpEngine({
   name: arg("name") ?? `engine-acp-${spec.id}`,
   command,
   clientInfo: { name: "lilos", version: "0" },
+  ...(spec.agent ? { agent: spec.agent } : {}),
   ...(spec.clientCapabilities
     ? { clientCapabilities: spec.clientCapabilities }
     : {}),

@@ -1,3 +1,4 @@
+export * from "./agents.js";
 export * from "./capabilities.js";
 export * from "./client.js";
 export * from "./engine.js";

@@ -126,9 +126,7 @@ export function resolveHarnessConfig(
                     : { agent: "devin" }),
                 ...(env.LILOS_ACP_COMMAND
                   ? {
-                      command: env.LILOS_ACP_COMMAND.split(" ").filter(
-                        Boolean,
-                      ),
+                      command: env.LILOS_ACP_COMMAND.split(" ").filter(Boolean),
                     }
                   : {}),
                 ...(env.LILOS_ENGINE_TAG ? { tag: env.LILOS_ENGINE_TAG } : {}),
@@ -213,9 +211,7 @@ export function launcherFor(
       return acpEngineLauncher({
         repoRoot,
         ...(config.engine.agent ? { agent: config.engine.agent } : {}),
-        ...(config.engine.command
-          ? { command: config.engine.command }
-          : {}),
+        ...(config.engine.command ? { command: config.engine.command } : {}),
         ...(config.engine.tag ? { tag: config.engine.tag } : {}),
         ...(serveBins.acp ? { serveBin: serveBins.acp } : {}),
         env: engineEnv,

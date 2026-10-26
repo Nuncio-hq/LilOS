@@ -236,11 +236,7 @@ export class AcpClientTerminals {
   waitForExit = async (
     request: acp.WaitForTerminalExitRequest,
   ): Promise<acp.WaitForTerminalExitResponse> =>
-    this.require(
-      request.sessionId,
-      request.terminalId,
-      "wait_for_exit",
-    ).exited;
+    this.require(request.sessionId, request.terminalId, "wait_for_exit").exited;
 
   kill = async (
     request: acp.KillTerminalRequest,
@@ -253,11 +249,7 @@ export class AcpClientTerminals {
   release = async (
     request: acp.ReleaseTerminalRequest,
   ): Promise<acp.ReleaseTerminalResponse> => {
-    const t = this.require(
-      request.sessionId,
-      request.terminalId,
-      "release",
-    );
+    const t = this.require(request.sessionId, request.terminalId, "release");
     t.released = true;
     if (t.exitStatus === undefined) this.killProc(t);
     /* The record stays in the map — tool-call content embedded by
@@ -374,8 +366,7 @@ export function resolveEmbeddedTerminalContent(
     return notification;
   }
   const content = update.content;
-  if (!content?.some((entry) => entry.type === "terminal"))
-    return notification;
+  if (!content?.some((entry) => entry.type === "terminal")) return notification;
   const mapped = content.map(
     (entry): acp.ToolCallContent =>
       entry.type !== "terminal"

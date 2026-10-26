@@ -31,16 +31,12 @@ export interface AcpConnectionOptions {
   clientCapabilities?: acp.ClientCapabilities;
   /** `terminal/*` method handlers — required when the capability is on. */
   terminals?: {
-    create(
-      r: acp.CreateTerminalRequest,
-    ): Promise<acp.CreateTerminalResponse>;
+    create(r: acp.CreateTerminalRequest): Promise<acp.CreateTerminalResponse>;
     output(r: acp.TerminalOutputRequest): Promise<acp.TerminalOutputResponse>;
     waitForExit(
       r: acp.WaitForTerminalExitRequest,
     ): Promise<acp.WaitForTerminalExitResponse>;
-    kill(
-      r: acp.KillTerminalRequest,
-    ): Promise<acp.KillTerminalResponse | void>;
+    kill(r: acp.KillTerminalRequest): Promise<acp.KillTerminalResponse | void>;
     release(
       r: acp.ReleaseTerminalRequest,
     ): Promise<acp.ReleaseTerminalResponse | void>;

@@ -19,6 +19,15 @@ export const devinSpec: AcpLaunchSpec = {
   id: "devin",
   command: ["devin", "acp"],
   verify: { args: ["--version"], timeoutMs: 15_000 },
+  /* The roster seed — the harness's first-run hire reads `agents.list`
+     and hires `detail.isDefault`, so this row is what "Devin" looks like
+     to Oscar before he ever opens a thread. */
+  agent: {
+    id: "devin",
+    name: "Devin",
+    description: "Devin CLI over ACP — Cognition's agent, signed in locally.",
+    detail: { isDefault: true },
+  },
   clientCapabilities: {
     fs: { readTextFile: false, writeTextFile: false },
     terminal: true,
@@ -30,8 +39,6 @@ export const devinSpec: AcpLaunchSpec = {
       access === "ask"
         ? ["accept-edits", "smart", "ask"]
         : ["bypass", "smart", "accept-edits"];
-    return (
-      prefer.find((id) => ids.has(id)) ?? modes[0]?.id ?? undefined
-    );
+    return prefer.find((id) => ids.has(id)) ?? modes[0]?.id ?? undefined;
   },
 };

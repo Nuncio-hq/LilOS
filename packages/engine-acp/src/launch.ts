@@ -3,6 +3,7 @@ import { accessSync, constants, existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, isAbsolute, join } from "node:path";
 import type * as acp from "@agentclientprotocol/sdk";
+import type { AgentDescriptor } from "@lilos/contracts/engine";
 import type { AcpEngineOptions } from "./engine.js";
 
 /**
@@ -23,6 +24,12 @@ export interface AcpLaunchSpec {
   id: string;
   /** stdio command argv — e.g. `["devin", "acp"]`. */
   command: string[];
+  /**
+   * Roster seed (D-#845): the persona `agents.list` opens with — the
+   * launched binary is the agent. `detail.isDefault` marks the harness's
+   * first-run hire pick.
+   */
+  agent?: AgentDescriptor;
   /** Install check: `<bin> <verifyArgs>` must exit 0 before serving. */
   verify?: { args: string[]; timeoutMs?: number };
   /** `initialize.clientCapabilities` override (e.g. terminal on). */

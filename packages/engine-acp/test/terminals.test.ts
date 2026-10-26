@@ -70,9 +70,10 @@ describe("AcpClientTerminals (D-#845)", () => {
       command: "sh",
       args: ["-c", "exit 7"],
     });
-    expect(
-      await t.waitForExit({ sessionId: SESSION, terminalId }),
-    ).toEqual({ exitCode: 7, signal: null });
+    expect(await t.waitForExit({ sessionId: SESSION, terminalId })).toEqual({
+      exitCode: 7,
+      signal: null,
+    });
     await t.release({ sessionId: SESSION, terminalId });
 
     const { terminalId: live } = await t.create({
@@ -117,9 +118,9 @@ describe("AcpClientTerminals (D-#845)", () => {
       args: ["x"],
     });
     /* another session may not drive it */
-    await expect(
-      t.output({ sessionId: "s-2", terminalId }),
-    ).rejects.toThrow(/unknown terminal/);
+    await expect(t.output({ sessionId: "s-2", terminalId })).rejects.toThrow(
+      /unknown terminal/,
+    );
     await t.waitForExit({ sessionId: SESSION, terminalId });
     await t.release({ sessionId: SESSION, terminalId });
   });

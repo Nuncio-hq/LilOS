@@ -459,10 +459,7 @@ export function acpServeCommand(options: {
   /** Argv marker for e2e leak assertions (`pgrep -f "--tag <tag>"`). */
   tag?: string;
 }): string[] {
-  const script = join(
-    options.repoRoot,
-    "packages/engine-acp/scripts/serve.ts",
-  );
+  const script = join(options.repoRoot, "packages/engine-acp/scripts/serve.ts");
   const serve = options.serveBin
     ? [options.serveBin]
     : existsSync(script)
