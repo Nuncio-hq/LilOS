@@ -2,10 +2,10 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Harness } from "@lilos/engine-conformance";
 import { describe, expect, test } from "vitest";
-import { AcpEngine } from "../src/engine.js";
-import { connectAcp } from "../src/transport.js";
 import { claudeSpec } from "../shims/claude.js";
 import { ACP_AGENTS } from "../shims/registry.js";
+import { AcpEngine } from "../src/engine.js";
+import { connectAcp } from "../src/transport.js";
 
 /**
  * D-#866 — the Claude Code shim's recipe: Anthropic's official adapter
@@ -64,9 +64,7 @@ describe("the claude registry entry (D-#866)", () => {
        mode, never `auto` (Claude deciding on its own hides asks). */
     expect(claudeSpec.modeForAccess?.("ask", all)).toBe("default");
     /* full: unattended — bypass when offered, then auto/acceptEdits. */
-    expect(claudeSpec.modeForAccess?.("full", all)).toBe(
-      "bypassPermissions",
-    );
+    expect(claudeSpec.modeForAccess?.("full", all)).toBe("bypassPermissions");
     expect(
       claudeSpec.modeForAccess?.(
         "full",
@@ -77,9 +75,9 @@ describe("the claude registry entry (D-#866)", () => {
       claudeSpec.modeForAccess?.("full", MODES("default", "acceptEdits")),
     ).toBe("acceptEdits");
     /* Degenerate mode lists still answer safely. */
-    expect(
-      claudeSpec.modeForAccess?.("ask", MODES("something-else")),
-    ).toBe("something-else");
+    expect(claudeSpec.modeForAccess?.("ask", MODES("something-else"))).toBe(
+      "something-else",
+    );
     expect(claudeSpec.modeForAccess?.("full", [])).toBeUndefined();
   });
 });
@@ -99,11 +97,9 @@ const envOf = async (h: Harness, sessionId: string, name: string) => {
     content: [{ type: "text", text: `env ${name}` }],
   });
   const ev = h.events
-    .filter(
-      (e) => e.sessionId === sessionId && e.type === "tool.completed",
-    )
+    .filter((e) => e.sessionId === sessionId && e.type === "tool.completed")
     .at(-1);
-  return String(ev?.payload.output ?? "");
+  return String((ev?.payload as { output?: string } | undefined)?.output ?? "");
 };
 
 describe("shim env policy reaches the agent child (D-#866)", () => {
