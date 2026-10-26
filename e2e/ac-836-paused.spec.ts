@@ -140,9 +140,10 @@ test("hidden pages land on Home; ticket and goal links land on their project", a
     ["goal", goal.id],
   ] as const) {
     await page.goto(`${stack.webUrl}/#?open=${kind}:${id}`);
-    await expect(
-      v3Peek(page).getByRole("heading", { level: 1 }),
-    ).toContainText(project.name, { timeout: 30_000 });
+    await expect(v3Peek(page).getByRole("heading", { level: 1 })).toContainText(
+      project.name,
+      { timeout: 30_000 },
+    );
     await page.keyboard.press("Escape");
   }
 });
