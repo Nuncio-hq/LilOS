@@ -7,8 +7,15 @@ const TONES: V3Tone[] = ["c", "b", "r", "m", "s", "d"]
    folder…" in a new chat asks for a folder, then the project appears in the
    sidebar and is picked. The real relay does the same: a folder that already
    has a project answers it, and the key is derived from the name. */
-export function projectActions({ setData, getData, askForFolder }: Engine): Pick<V3DataActions, "newProject"> {
+export function projectActions({ setData, getData, askForFolder }: Engine): Pick<V3DataActions, "newProject" | "renameProject"> {
   return {
+    renameProject: (projectId, name) =>
+      setData((d) => ({
+        ...d,
+        projects: d.projects.map((p) =>
+          p.id === projectId && name.trim() ? { ...p, name: name.trim() } : p,
+        ),
+      })),
     newProject: (onCreated) =>
       askForFolder((path) => {
         const have = getData().projects.find((p) => p.folder === path)

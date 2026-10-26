@@ -3,7 +3,7 @@ import { type ToastNotice, ToastView, type V3Nav, V3Shell, navFromParams, params
 import { V3_DATA, v3Draft } from "./fake-v3"
 import { v3Reply } from "./fake-v3-reply"
 import { FolderDialog } from "./folder-host"
-import { StatusBanner, StatusDetails } from "./status-host"
+import { StatusDetails } from "./status-host"
 import { MockThread } from "./thread/mock-thread"
 import { type Toast, makeThreadSeams } from "./thread/seams"
 import { makeActions } from "./v3-engine/actions"
@@ -106,7 +106,6 @@ export default function V3App() {
             onSession={(open) => setNav((n) => ({ ...n, full: open }))}
           />
         )}
-        banner={<StatusBanner data={data} onDetails={() => setStatus(true)} />}
       />
       {status && <StatusDetails data={data} onClose={() => setStatus(false)} onCopied={() => onToast("Diagnostics copied")} />}
       {asking && <FolderDialog onPick={asking} onClose={() => setAsking(null)} />}

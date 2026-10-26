@@ -1,10 +1,12 @@
 import {
   BookOpenIcon,
   CircleAlertIcon,
+  EllipsisIcon,
   HomeIcon,
   InboxIcon,
   LayersIcon,
   MoonIcon,
+  PencilIcon,
   PlusIcon,
   SearchIcon,
   SettingsIcon,
@@ -12,15 +14,22 @@ import {
   SunIcon,
   TargetIcon,
 } from "lucide-react";
-import type { PointerEventHandler, ReactNode, Ref } from "react";
+import {
+  type PointerEventHandler,
+  type ReactNode,
+  type Ref,
+  useState,
+} from "react";
 import { cn } from "../lib/utils";
 import { Kbd } from "./v3-bits";
 import type { V3Data } from "./v3-data-types";
+import { useMenu } from "./v3-keys";
 import { AgentAvatar, CeoMark, ProjectMark, StatusDot } from "./v3-marks";
 import { agentDot, boardStatus, companyOn, listedThreads } from "./v3-model";
 import { isRecordRoute } from "./v3-nav";
 import type { V3RecordRoute, V3Route } from "./v3-page-types";
 import { type SidebarMode, SidebarToggle } from "./v3-topbar";
+import type { V3Project, V3Status } from "./v3-types";
 
 /* The v3 sidebar is the company's table of contents: the three databases
    (Work, Threads, Goals), the projects, and the people, each person with the
@@ -36,6 +45,9 @@ export function V3Sidebar({
   onTheme,
   canHire = true,
   onAddAgent,
+  onNewProject,
+  onRenameProject,
+  onStatus,
   mode,
   width,
   sideRef,
@@ -59,6 +71,14 @@ export function V3Sidebar({
   /** Opens the add-agent dialog (#870); drawn as the ＋ beside Agents while
      the company layer is paused. Absent = the app cannot create agents. */
   onAddAgent?: () => void;
+  /** The ＋ beside Projects makes one (the same ask-for-folder the project
+     menu's row runs, D-#868). Absent: no ＋. */
+  onNewProject?: () => void;
+  /** A project row's ⋯ → Rename writes through this. Absent: no menu. */
+  onRenameProject?: (projectId: string, name: string) => void;
+  /** The engine footer's dot opens the app's status details. Absent: the
+     row just reads the state. */
+  onStatus?: () => void;
   mode: SidebarMode;
   width: number;
   sideRef: Ref<HTMLElement>;
@@ -184,17 +204,34 @@ export function V3Sidebar({
           />
         )}
 
-        {/* No projects yet (a company of plain folders): no empty heading. */}
+        {/* No projects yet (a company of plain folders): no empty heading.
+            Notion-style (D-#868): the ＋ and each row's ⋯ show on hover. */}
         {data.projects.length > 0 && (
           <>
-            <Label>Projects</Label>
+            <Label
+              right={
+                onNewProject && (
+                  <button
+                    type="button"
+                    aria-label="New project"
+                    title="New project"
+                    onClick={onNewProject}
+                    className="grid size-5 place-items-center rounded text-muted-foreground/70 transition-colors hover:bg-[var(--v3-hover)] hover:text-foreground"
+                  >
+                    <PlusIcon className="size-3.5" />
+                  </button>
+                )
+              }
+            >
+              Projects
+            </Label>
             {data.projects.map((p) => (
-              <Item
+              <ProjectItem
                 key={p.id}
-                icon={<ProjectMark name={p.name} tone={p.tone} />}
-                label={p.name}
+                project={p}
                 on={on("project", p.id)}
                 onClick={() => go({ page: "project", id: p.id })}
+                onRename={onRenameProject}
               />
             ))}
           </>
@@ -264,6 +301,10 @@ export function V3Sidebar({
           label={dark ? "Light mode" : "Dark mode"}
           onClick={onTheme}
         />
+        {/* The engine's state as a quiet footer dot instead of a banner
+            (D-#868): green while it runs, its reason on hover, Details on
+            click where the app has them. */}
+        <EngineFoot data={data} onStatus={onStatus} />
       </div>
     </aside>
   );
@@ -334,10 +375,162 @@ function Label({
   );
   if (!right) return head;
   return (
-    <div className="flex items-end pr-1">
+    <div className="group flex items-end pr-1">
       {head}
-      <span className="ml-auto pb-1">{right}</span>
+      {/* Hover-only, the Notion way (D-#868): still focusable and still a
+          real button — opacity never takes it out of the a11y tree. */}
+      <span className="ml-auto pb-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+        {right}
+      </span>
     </div>
+  );
+}
+
+/** One project row: its mark and name, a ⋯ on hover that opens the row's
+   small menu — Rename swaps the name for a box in place (D-#868). */
+function ProjectItem({
+  project,
+  on,
+  onClick,
+  onRename,
+}: {
+  project: V3Project;
+  on?: boolean;
+  onClick: () => void;
+  onRename?: (projectId: string, name: string) => void;
+}) {
+  const menu = useMenu();
+  const [renaming, setRenaming] = useState(false);
+  if (renaming) {
+    return (
+      <input
+        aria-label="Project name"
+        defaultValue={project.name}
+        // biome-ignore lint/a11y/noAutofocus: it opens because you asked to rename
+        autoFocus
+        onFocus={(e) => e.currentTarget.select()}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            onRename?.(project.id, e.currentTarget.value);
+            setRenaming(false);
+          } else if (e.key === "Escape") {
+            e.stopPropagation();
+            setRenaming(false);
+          }
+        }}
+        onBlur={(e) => {
+          onRename?.(project.id, e.currentTarget.value);
+          setRenaming(false);
+        }}
+        className="mx-2 h-[30px] w-[calc(100%-16px)] rounded-md border border-foreground/20 bg-background px-1.5 text-[14px] text-foreground outline-none focus:border-foreground/40"
+      />
+    );
+  }
+  return (
+    <span className="group relative">
+      <button
+        type="button"
+        onClick={onClick}
+        className={cn(
+          "flex h-[30px] w-full items-center gap-2.5 whitespace-nowrap rounded-md px-2 text-left transition-colors hover:bg-[var(--v3-hover)] [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:opacity-70",
+          on && "bg-[var(--v3-hover)] font-medium text-foreground",
+        )}
+      >
+        <ProjectMark name={project.name} tone={project.tone} />
+        <span className="min-w-0 flex-1 truncate">{project.name}</span>
+      </button>
+      {onRename && (
+        <>
+          <button
+            ref={menu.trigger}
+            type="button"
+            aria-label={`${project.name} actions`}
+            title={`${project.name} actions`}
+            aria-haspopup="menu"
+            aria-expanded={menu.open}
+            onClick={() => menu.setOpen((o) => !o)}
+            className={cn(
+              "absolute top-1/2 right-1.5 grid size-5 -translate-y-1/2 place-items-center rounded text-muted-foreground/70 opacity-0 transition-opacity hover:bg-[var(--v3-hover)] hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100",
+              menu.open && "opacity-100",
+            )}
+          >
+            <EllipsisIcon className="size-3.5" />
+          </button>
+          {menu.open && (
+            <div
+              ref={menu.list}
+              role="menu"
+              aria-label={`${project.name} actions`}
+              onKeyDown={menu.onKeyDown}
+              className="absolute top-[calc(100%-4px)] right-2 z-20 w-40 rounded-lg border bg-popover p-1 shadow-lg"
+            >
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  menu.setOpen(false);
+                  setRenaming(true);
+                }}
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[13px] hover:bg-[var(--v3-hover)]"
+              >
+                <PencilIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                <span className="truncate">Rename</span>
+              </button>
+            </div>
+          )}
+        </>
+      )}
+    </span>
+  );
+}
+
+/* The engine footer dot's word for each state: a green "running" while it
+   is fine, the plain state otherwise. Relay beats engine: nothing reaches
+   a fine engine through a dead link. */
+const ENGINE_WORD: Record<string, { status: V3Status; word: string }> = {
+  ok: { status: "done", word: "running" },
+  starting: { status: "working", word: "starting" },
+  old: { status: "needs", word: "needs an update" },
+  missing: { status: "failed", word: "not installed" },
+  down: { status: "failed", word: "down" },
+};
+
+function EngineFoot({
+  data,
+  onStatus,
+}: {
+  data: V3Data;
+  onStatus?: () => void;
+}) {
+  const { engine, relay } = data.settings;
+  const s =
+    relay.state !== "ok"
+      ? {
+          status: relay.state === "down" ? "failed" : "working",
+          label: `Relay ${relay.state}`,
+          title: relay.problem,
+        }
+      : {
+          status: ENGINE_WORD[engine.state]?.status ?? "idle",
+          label: `${engine.name}${engine.version ? ` ${engine.version}` : ""} ${ENGINE_WORD[engine.state]?.word ?? engine.state}`,
+          title: engine.problem,
+        };
+  return (
+    <button
+      type="button"
+      onClick={onStatus}
+      disabled={!onStatus}
+      title={s.title ?? s.label}
+      className={cn(
+        "mt-1.5 flex h-7 w-full shrink-0 items-center gap-2 rounded-md border-[var(--v3-line)] border-t px-2 pt-1.5 text-left text-[12.5px] text-muted-foreground/80",
+        onStatus && "hover:bg-[var(--v3-hover)] hover:text-foreground",
+      )}
+    >
+      <StatusDot status={s.status} />
+      <span className="min-w-0 flex-1 truncate" data-engine-foot>
+        {s.label}
+      </span>
+    </button>
   );
 }
 

@@ -376,6 +376,17 @@ export function V3Shell({
                     openAddAgent((id) => goFromPage({ page: "newchat", id }))
                 : undefined
             }
+            onNewProject={
+              actions.newProject
+                ? /* The ＋ beside Projects makes one, then opens it (D-#868). */
+                  () =>
+                    actions.newProject?.((id) =>
+                      goFromNav({ page: "project", id }),
+                    )
+                : undefined
+            }
+            onRenameProject={actions.renameProject}
+            onStatus={actions.showStatus}
             mode={mode}
             width={side.w}
             sideRef={pop.side}

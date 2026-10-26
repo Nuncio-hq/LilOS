@@ -123,6 +123,9 @@ export type V3Actions = {
      `data.projects`. Closing the dialog says nothing. Absent: the project
      menu has no such row. */
   newProject?: (onCreated: (projectId: string) => void) => void;
+  /** Renames a project in place (the sidebar's ⋯ → Rename, D-#868); an
+     empty name is not a rename. Absent: no Rename on the menu. */
+  renameProject?: (projectId: string, name: string) => void;
   markSeen: (threadId: string) => void;
   /** Opens the app's small add-agent dialog (the ＋ beside Agents, "Add
      agent…" at the bottom of a composer's agent menu — #870): Who? · Name ·
