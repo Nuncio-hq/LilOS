@@ -3,6 +3,7 @@ import type { EngineEvent, McpServer } from "@lilos/contracts/engine";
 import type { HarnessCtx, SessionBinding } from "./ctx";
 import { BACKEND_DOWN, CONTEXT_LIMIT, CONTEXT_LIMIT_TEXT } from "./rpc";
 import { clearStuck, resetStuckWatch } from "./stuck";
+import { noteTaskTurn } from "./task-wake";
 
 /**
  * Turn completion: the answer post + dedupe, the Stop park
@@ -128,6 +129,11 @@ export async function finishTurn(
       ? { turnStopped: true }
       : {}),
   }).catch(() => {});
+
+  /* D-#844: a turn ending on a task child owes the parent a wake —
+     noted before the Stop park below can return early; the queue
+     coalesces and `tasks.wake` posts it fenced (replay-safe). */
+  noteTaskTurn(this, binding, event, text);
 
   /* #315 AC-5: ■ Stop parks everything still waiting — queued sends and
      accepted-but-unlanded steers alike land in the not-sent tray

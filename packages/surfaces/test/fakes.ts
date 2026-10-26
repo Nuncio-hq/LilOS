@@ -13,6 +13,7 @@ import type {
   Project,
   ScheduledTask,
   SystemStatusResult,
+  Task,
   Ticket,
   WorkbenchOpenTarget,
 } from "@lilos/contracts/app";
@@ -22,6 +23,7 @@ import type {
   ProjectCreateParams,
   ScheduleCreateParams,
   ScheduleUpdateParams,
+  TaskCreateParams,
   TeamHireParams,
   TeamUpdateParams,
   TicketAssignParams,
@@ -214,6 +216,11 @@ export function fakeAppOps(
   const goalRows: Goal[] = [];
   const ticketRows: Ticket[] = [];
   const companyUpdates: CompanyUpdate[] = [];
+  /* D-#844: the fake's task state — a ticket row per hand-off plus the
+     child conversation it opened (children stay out of `convs` so the
+     parent's own thread list doesn't see them). */
+  const taskTickets: Ticket[] = [];
+  const taskConvs: Conversation[] = [];
   /* The fake's gate: the real impl posts an ask and waits; here the
      recorded command stands in for the card and `approve` answers it. */
   const gate = (command: string) => {
@@ -295,7 +302,37 @@ export function fakeAppOps(
       messages.push(msg);
       return msg;
     },
-    async readConversation(o?: { conversationId?: string; afterSeq?: number }) {
+    /* D-#844: the child's message — lands on ITS channel/conversation as a
+       user message, same as the owner typing there. */
+    async postToThread(p: {
+      channelId: string;
+      conversationId: string;
+      text: string;
+    }) {
+      const msg = {
+        id: `m${messages.length + 1}`,
+        channelId: p.channelId,
+        conversationId: p.conversationId,
+        seq:
+          messages.filter((m) => m.conversationId === p.conversationId).length +
+          1,
+        authorId: "user",
+        authorKind: "user" as const,
+        text: p.text,
+        rewound: false,
+        dropped: false,
+        removed: false,
+        claimed: false,
+        createdAt: Date.now(),
+      } satisfies AppMessage;
+      messages.push(msg);
+      return msg;
+    },
+    async readConversation(o?: {
+      conversationId?: string;
+      channelId?: string;
+      afterSeq?: number;
+    }) {
       return messages.filter(
         (m) =>
           (!o?.conversationId || m.conversationId === o.conversationId) &&
@@ -649,6 +686,112 @@ export function fakeAppOps(
       companyUpdates.push(update);
       return update;
     },
+    /* D-#844: the fake's task table — a ticket row per task plus the
+       child conversation it opened. Repeating `requestId` returns the
+       first task; read/cancel are scoped to the bound parent thread. */
+    async taskCreate(p: TaskCreateParams) {
+      const byReq = p.requestId
+        ? taskTickets.find((t) => t.task?.requestId === p.requestId)
+        : undefined;
+      if (byReq?.task) return taskView(byReq, taskConvs, employees);
+      const agent =
+        employees.find((e) => e.id === p.agent || e.name === p.agent) ??
+        employees[0];
+      const ticket: Ticket = {
+        id: `TASK-${taskTickets.length + 1}`,
+        number: taskTickets.length + 1,
+        title: p.title ?? p.prompt.slice(0, 40),
+        projectId: "p1",
+        status: "working",
+        progress: [],
+        updates: [],
+        statusAt: Date.now(),
+        createdAt: Date.now(),
+        task: {
+          parentConversationId: convId,
+          childConversationId: `child-${taskTickets.length + 1}`,
+          childChannelId: `ch-${agent?.id ?? "emp"}`,
+          ...(p.requestId ? { requestId: p.requestId } : {}),
+          wakedTurnIds: [],
+        },
+      };
+      taskTickets.push(ticket);
+      taskConvs.push({
+        id: ticket.task!.childConversationId,
+        channelId: ticket.task!.childChannelId,
+        rootMessageId: "cm1",
+        engineRef: "eng-fake",
+        state: "active",
+        title: ticket.title,
+        titleSource: "auto",
+        access: bound.access,
+        archived: false,
+        deliveredSeq: 0,
+        readSeq: 0,
+        finishedSeq: 0,
+        createdAt: Date.now(),
+        parentId: convId,
+      });
+      return taskView(ticket, taskConvs, employees);
+    },
+    async taskRead(taskId: string) {
+      const ticket = taskTickets.find(
+        (t) => t.id === taskId && t.task?.parentConversationId === convId,
+      );
+      if (!ticket)
+        throw new SurfaceError("not_found", `unknown task ${taskId}`);
+      return taskView(ticket, taskConvs, employees);
+    },
+    async taskCancel(taskId: string) {
+      const ticket = taskTickets.find(
+        (t) => t.id === taskId && t.task?.parentConversationId === convId,
+      );
+      if (!ticket)
+        throw new SurfaceError("not_found", `unknown task ${taskId}`);
+      ticket.task!.cancelledAt = Date.now();
+      return taskView(ticket, taskConvs, employees);
+    },
+    async taskChildren() {
+      const tickets = taskTickets.filter(
+        (t) => t.task?.parentConversationId === convId,
+      );
+      return {
+        conversations: taskConvs.filter((c) => c.parentId === convId),
+        tickets,
+      };
+    },
+  };
+}
+
+/** Flatten the fake's task ticket into the agent-facing `Task` view —
+    mirrors the relay's projection (D-#844). */
+function taskView(
+  ticket: Ticket,
+  convs: Conversation[],
+  employees: Employee[],
+): Task {
+  const t = ticket.task!;
+  const agent = employees.find(
+    (e) => `ch-${e.id}` === t.childChannelId || e.id === ticket.ownerId,
+  );
+  const status: Task["status"] = t.cancelledAt
+    ? "cancelled"
+    : (t.lastResult?.outcome ?? "running");
+  return {
+    id: ticket.id,
+    title: ticket.title,
+    status,
+    agentId: agent?.id ?? ticket.ownerId ?? "emp",
+    ...(agent?.name ? { agentName: agent.name } : {}),
+    threadId: t.childConversationId,
+    channelId: t.childChannelId,
+    parentThreadId: t.parentConversationId,
+    ...(t.lastResult !== undefined ? { result: t.lastResult.text } : {}),
+    ...(t.lastResult
+      ? { resultOutcome: t.lastResult.outcome, finishedAt: t.lastResult.at }
+      : {}),
+    createdAt: ticket.createdAt,
+    ...(t.cancelledAt !== undefined ? { cancelledAt: t.cancelledAt } : {}),
   };
 }
 

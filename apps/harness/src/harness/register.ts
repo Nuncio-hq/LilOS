@@ -1,5 +1,10 @@
-import { APP_PROTOCOL_VERSION, type PendingTurn } from "@lilos/contracts/app";
+import {
+  APP_PROTOCOL_VERSION,
+  type PendingTurn,
+  type TaskWakeEvent,
+} from "@lilos/contracts/app";
 import type { HarnessCtx } from "./ctx";
+import { noteTaskWake } from "./task-wake";
 
 /**
  * The `harness.register` handshake and the re-delivery sweep it
@@ -24,6 +29,7 @@ export async function onRelayReady(this: HarnessCtx): Promise<void> {
       const reg = await this.opts.relay.request<{
         hostId: string;
         pending: PendingTurn[];
+        taskWakes?: TaskWakeEvent[];
       }>("harness.register", {
         protocolVersion: APP_PROTOCOL_VERSION,
         version: this.opts.version ?? "0",
@@ -53,6 +59,11 @@ export async function onRelayReady(this: HarnessCtx): Promise<void> {
           );
         }
       }
+      /* D-#844: finishes the relay still owes a wake for — a restart
+         between the child's turn.completed and `tasks.wake` — re-enter
+         the coalescing queue; the ticket fence drops ones already
+         posted. */
+      for (const event of reg.taskWakes ?? []) noteTaskWake(this, event);
     } while (this.registerAgain);
   } finally {
     this.registering = false;

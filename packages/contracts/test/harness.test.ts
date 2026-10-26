@@ -40,6 +40,10 @@ describe("AC-2 tool surface contracts", () => {
       "schedule_list",
       "schedule_run_now",
       "schedule_update",
+      "task_cancel",
+      "task_create",
+      "task_read",
+      "task_wait",
       "team_hire",
 
       "team_list",

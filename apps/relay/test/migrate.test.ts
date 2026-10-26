@@ -70,8 +70,9 @@ describe("relay migrations", () => {
     // v30 adds D-#772's stuck mark; v31 adds D-#775's reports_to and
     // conversations.stuck_at (issue #775); v32 adds D-#776's goals, tickets
     // and conversations.ticket_id; v33 adds D-#777's company_updates;
-    // v34 adds the CEO wake flag and the standing-thread flag.
-    expect(out.version).toBe(34);
+    // v34 adds the CEO wake flag and the standing-thread flag; v35 adds
+    // D-#844's task columns + the task wake flag.
+    expect(out.version).toBe(35);
     expect(out.askCols).toContain("hire");
     expect(out.askCols).toContain("why");
     expect(out.askCols).toContain("if_yes");

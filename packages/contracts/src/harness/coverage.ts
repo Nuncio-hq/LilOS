@@ -69,6 +69,11 @@ export const AGENT_METHOD_TOOLS: Record<string, string> = {
   "tickets.comment": "ticket_comment",
   /* A note for the owner. CEO-only, and it does not ask (D-#777). */
   "updates.post": "update_post",
+  /* Agent hand-offs (D-#844): the `task_*` tools ride the host-only
+     tasks.* methods; `task_wait` polls `tasks.read` app-side. */
+  "tasks.create": "task_create",
+  "tasks.read": "task_read",
+  "tasks.cancel": "task_cancel",
 } as const;
 
 /**
@@ -143,6 +148,10 @@ export const NOT_AGENT_FACING: Record<string, string> = {
   "presence.report":
     "the desktop's at-the-Mac signal is a transport heartbeat, not agent data — the relay's push fan-out consumes it (#561)",
   "employees.remove": "only Oscar removes an employee",
+  /* Host-only (D-#844): the harness posts a child's finished turn as the
+     parent's coalesced wake — the agent receives it, it never posts one. */
+  "tasks.wake": "host posts the parent wake; the agent is woken by it",
+  "tasks.children": "scope lookup behind thread_* follow-ups, not a tool",
   /* app wire — covered by `context`, the prompt, or the engine's own tools (D-#179) */
   "channels.list": "channel roster comes through `context`, not a tool",
   "agents.list":

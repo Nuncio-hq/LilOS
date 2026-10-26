@@ -319,6 +319,35 @@ export function scriptFor(
     };
   }
 
+  /* A task wake (D-#844): a child thread this session handed work to
+     finished — one `- <taskId> "<title>" (<agent>) <outcome>[: result]`
+     line each. A real model reads the lines and answers; the fake calls
+     `task_read` per line and reports the outcomes. The result text is
+     arbitrary child output — it must never reach the generic scripts
+     (an inlined "I'll change X" would mint an edit turn with an
+     approval wait under access:"ask" and wedge the thread). */
+  if (/^Your task results:/.test(q)) {
+    const toolName = (name: string) => `mcp__lilos__${name}`;
+    const steps: FakeStep[] = [];
+    const seen: string[] = [];
+    for (const raw of q.split("\n").slice(1)) {
+      const id = /^- (\S+)/.exec(raw.trim())?.[1];
+      if (!id) continue;
+      seen.push(id);
+      steps.push({
+        tool: toolName("task_read"),
+        input: { taskId: id },
+        output: "",
+      });
+    }
+    return {
+      reasoning:
+        "Task wakes list who reported. task_read has the full record; answer with the gist.",
+      steps,
+      text: `Task results in (${seen.join(", ") || "none"}). Folded into the thread.`,
+    };
+  }
+
   /* A hand-off opens the worker's thread with `<id>: <title>`. Taking
      the ticket marks it working, so that opening turn is not "forgot
      ticket_update". A later turn that never calls the tool is the wake

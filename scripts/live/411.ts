@@ -183,6 +183,19 @@ const appOps: AppOps = {
   postUpdate: async () => {
     throw new Error("not exercised in this script");
   },
+  postToThread: async () => {
+    throw new Error("not exercised in this script");
+  },
+  taskCreate: async () => {
+    throw new Error("not exercised in this script");
+  },
+  taskRead: async () => {
+    throw new Error("not exercised in this script");
+  },
+  taskCancel: async () => {
+    throw new Error("not exercised in this script");
+  },
+  taskChildren: async () => ({ conversations: [], tickets: [] }),
   startThread: async () => {
     throw new Error("not exercised in this script");
   },

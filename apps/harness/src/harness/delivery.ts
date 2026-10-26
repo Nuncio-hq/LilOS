@@ -14,9 +14,14 @@ import type { HarnessCtx, SessionBinding } from "./ctx";
 
 /** The owner's sends start turns. A CEO wake does too, by the `ceoWake`
     flag: the text is what the model reads, and the flag is what delivers
-    it (D-#777). */
+    it (D-#777). A task wake is the same delivery for a child finish
+    (D-#844). */
 function promptsEngine(message: AppMessage): boolean {
-  return message.authorKind === "user" || message.ceoWake === true;
+  return (
+    message.authorKind === "user" ||
+    message.ceoWake === true ||
+    message.taskWake === true
+  );
 }
 
 /** Run `fn` after the conversation's earlier delivery work, in arrival order. */
