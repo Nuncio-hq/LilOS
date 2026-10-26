@@ -20,11 +20,12 @@ const FAKE_AGENT = join(
   "fake-agent.ts",
 );
 
-const make = (env?: Record<string, string>) => {
+const make = (env?: Record<string, string>, defaultEffort?: string) => {
   const engine = new AcpEngine({
     name: "engine-acp-fake",
     command: ["bun", FAKE_AGENT],
     ...(env ? { env } : {}),
+    ...(defaultEffort ? { defaultEffort } : {}),
     clientInfo: { name: "lilos-picks-test", version: "0" },
   });
   return new Harness(connectAcp(engine));
@@ -216,6 +217,55 @@ describe("per-job model/effort picks reach the agent (D-#846)", () => {
         model: "fake-smart",
         effort: "high",
       });
+    } finally {
+      h.close();
+    }
+  }, 30_000);
+
+  test("defaultEffort lands when session.start picks no effort (D-#761)", async () => {
+    const h = make(undefined, "high");
+    try {
+      const res = (await h.request("session.start", {
+        agent: "devin",
+        cwd: "/tmp/lilos-picks",
+      })) as { sessionId: string; notes?: string[] };
+      const ev = await h.waitEvent(
+        h.forSession(res.sessionId, (e) => e.type === "session.started"),
+      );
+      expect(ev.payload).toMatchObject({ effort: "high" });
+      expect(res.notes ?? []).toHaveLength(0);
+
+      /* An explicit param still wins over the engine default. */
+      const picked = (await h.request("session.start", {
+        agent: "devin",
+        cwd: "/tmp/lilos-picks",
+        effort: "low",
+      })) as { sessionId: string };
+      const ev2 = await h.waitEvent(
+        h.forSession(picked.sessionId, (e) => e.type === "session.started"),
+      );
+      expect(ev2.payload).toMatchObject({ effort: "low" });
+    } finally {
+      h.close();
+    }
+  }, 30_000);
+
+  test("a defaultEffort the session doesn't advertise skips with the note", async () => {
+    const h = make(undefined, "max");
+    try {
+      const res = (await h.request("session.start", {
+        agent: "devin",
+        cwd: "/tmp/lilos-picks",
+      })) as { sessionId: string; notes?: string[] };
+      const ev = await h.waitEvent(
+        h.forSession(res.sessionId, (e) => e.type === "session.started"),
+      );
+      /* The agent keeps its own default — no half-applied default. */
+      expect(ev.payload).toMatchObject({ effort: "medium" });
+      expect(
+        (res.notes ?? []).some((t) => t.includes('"max"')),
+        `effort skip note, got ${JSON.stringify(res.notes)}`,
+      ).toBe(true);
     } finally {
       h.close();
     }

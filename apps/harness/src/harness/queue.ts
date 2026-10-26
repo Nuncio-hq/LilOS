@@ -58,7 +58,7 @@ export function enqueueOrPrompt(
     // pick is held: the pick applies before the next prompt, so the
     // message runs as that next prompt on the new model instead of
     // steering the old turn (#92).
-    const conn = this.engine;
+    const conn = this.connFor(binding);
     /* A `/` send is never a steer: injecting the command's text into the
        running turn would corrupt it. It queues and execs when the lane
        frees — engines without `commands` send it as a normal prompt. */

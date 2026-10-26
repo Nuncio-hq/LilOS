@@ -243,7 +243,7 @@ export function v3DataStore(): ReadableAtom<V3Data> {
         agents: employees.map((e) =>
           toAgent(
             e,
-            engine || undefined,
+            e.runtime ?? (engine || undefined),
             profiles.byProfile[e.profile],
             chats.get(e.id),
             weeks.get(e.id) ?? { finished: 0, failed: 0, stuck: 0 },

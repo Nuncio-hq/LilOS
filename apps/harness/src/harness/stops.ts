@@ -144,9 +144,10 @@ export async function onInterruptRequested(
      the Stop. Wait for in-flight sends to dispatch; the in-order conn
      then lands prompt → interrupt, so the engine has a turn to stop. */
   await Promise.all(binding.promptGates);
-  const conn = this.engine;
-  // A rebind may have swapped the binding while the gates were held.
+  // A rebind may have swapped the binding while the gates were held —
+  // resolve the conn on the LIVE binding's runtime (D-#761).
   const live = this.bindings.get(conversationId);
+  const conn = live ? this.connFor(live) : undefined;
   if (!conn || !live) return;
   try {
     await conn.request("interrupt", { sessionId: live.sessionId });

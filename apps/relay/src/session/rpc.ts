@@ -36,6 +36,9 @@ export interface HostRecord {
   registeredAt: number;
   lastReportAt?: number;
   engine?: { state: EngineHostState; detail?: string };
+  /** D-#761: per-runtime engine state — `engine` stays the default
+      runtime's row; non-default runtimes accumulate here keyed by id. */
+  engines?: Record<string, { state: EngineHostState; detail?: string }>;
   /** Latest telemetry payload from harness.report.status. */
   status?: HarnessStatusReport;
 }

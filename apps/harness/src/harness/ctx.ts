@@ -18,6 +18,7 @@ import type {
   TurnFailure,
 } from "@lilos/contracts/app";
 import type {
+  AgentDescriptor,
   ConversationAccess,
   DescribeResult,
   EngineEvent,
@@ -26,6 +27,7 @@ import type {
   McpServer,
 } from "@lilos/contracts/engine";
 import type { EngineConnection } from "../engine/client";
+import type { EngineRegistry } from "../engine/registry";
 import type { EngineGapCause, EngineHostState } from "../engine/supervisor";
 import type { HarnessOptions } from "../harness";
 import type { ReaperCandidate, SessionReaper } from "../reaper";
@@ -45,9 +47,14 @@ import type { SlashOutcome } from "./commands";
 export interface SessionBinding {
   conversationId: string;
   channelId: string;
+  /** D-#761: which engine owns this session — the `Employee.runtime` the
+      conversation bound under ("hermes" = the default engine). Every
+      engine call resolves its conn through this, never a global. */
+  runtime: string;
   /** Transport handle used in engine calls (stable across ref rotations). */
   sessionId: string;
-  /** Durable ref stored as the conversation's engineRef. */
+  /** Durable ref stored as the conversation's engineRef —
+      runtime-qualified for non-default runtimes (`acp:devin::s-1`). */
   ref: string;
   /**
    * The engine's own session id inside its engine (#339 — Hermes' stored
@@ -204,16 +211,37 @@ export type ConversationPickPatch = {
 };
 
 export interface HarnessCtx {
+  /** The DEFAULT runtime's live connection — kept for the single-engine
+      surface (welcome describe, fixtures); per-runtime calls resolve via
+      `connFor`/`connForRuntime`. */
   engine?: EngineConnection;
+  /** D-#761: live connection per runtime id (attachEngine populates; the
+      registry owns it when configured — `connFor` checks `closed`). */
+  readonly engineConns: Map<string, EngineConnection>;
+  /** D-#761: the runtime catalog + lazy starters (absent in unit fixtures
+      — `ensureRuntime` then only resolves already-attached conns). */
+  runtimes?: EngineRegistry;
   /** #834: what took the last engine continuity away — "sleep" only when
       the wake watchdog reported a real Mac sleep; every restart path
       (process exit, dead-air kill, reconnect exhaustion, socket drop)
-      reads "restart". A turn the gap killed is worded from it. */
+      reads "restart". A turn the gap killed is worded from it.
+      D-#761: keyed by runtime — one engine's restart words only its own
+      turns. */
   gapCause?: EngineGapCause;
+  readonly gapCauseByRuntime: Map<string, EngineGapCause>;
+  /** D-#761: `describe` per runtime — `describeResult` stays the default
+      engine's row for the single-engine readers. */
+  readonly describeByRuntime: Map<string, DescribeResult>;
   /** #790: lazy `models.list`, so a fallback note can use catalog names
-      without the harness importing an engine's label rules. */
+      without the harness importing an engine's label rules.
+      D-#761: one cache per engine — the catalog belongs to the runtime
+      that served it. */
   modelCatalog?: Promise<
     readonly { id: string; name?: string; provider?: string }[]
+  >;
+  readonly modelCatalogs: Map<
+    string,
+    Promise<readonly { id: string; name?: string; provider?: string }[]>
   >;
   hostId?: string;
   started: boolean;
@@ -271,14 +299,42 @@ export interface HarnessCtx {
   start(): Promise<void>;
   onRelayReady(): Promise<void>;
   stop(): Promise<void>;
-  attachEngine(conn: EngineConnection, gapCause?: EngineGapCause): void;
-  onEngineStateChange(state: EngineHostState, detail?: string): void;
+  attachEngine(
+    conn: EngineConnection,
+    gapCause?: EngineGapCause,
+    runtime?: string,
+  ): void;
+  onEngineStateChange(
+    state: EngineHostState,
+    detail?: string,
+    runtime?: string,
+  ): void;
+  /** D-#761: the live conn for a binding's runtime (undefined when that
+      engine is down — callers take their existing engine-down path). */
+  connFor(binding: SessionBinding): EngineConnection | undefined;
+  connForRuntime(runtime: string): EngineConnection | undefined;
+  /** D-#761: bind-time resolution — starts the runtime lazily through the
+      registry when configured; fixtures resolve attached conns only. */
+  ensureRuntime(runtime: string): Promise<EngineConnection | undefined>;
+  /** D-#761: the `conversationBySession` key for an engine-local session
+      id — qualified for non-default runtimes so two engines' ids can't
+      collide on one map. */
+  sessionKey(runtime: string, sessionId: string): string;
+  /** D-#761: the binding holding an engine-local session (ask resolvers
+      only have the session the request opened on). */
+  bindingBySession(
+    runtime: string,
+    sessionId: string,
+  ): SessionBinding | undefined;
+  describeForRuntime(runtime: string): DescribeResult | undefined;
+  hasCapabilityFor(runtime: string, id: string): boolean;
+  hasAutoTitleFor(runtime: string): boolean;
   engineDescribe(): DescribeResult | undefined;
   eventsSince(sessionId: string, after: number): Promise<EventsSinceResult>;
   subscribeEngineEvents(fn: (event: EngineEvent) => void): () => void;
   hasCapability(id: string): boolean;
   hasAutoTitle(): boolean;
-  describeAndHire(conn: EngineConnection): Promise<void>;
+  describeAndHire(conn: EngineConnection, runtime?: string): Promise<void>;
   resyncBinding(binding: SessionBinding): Promise<void>;
   relayWrite(label: string, run: () => Promise<unknown>): void;
   flushOutbox(): Promise<void>;
@@ -338,7 +394,7 @@ export interface HarnessCtx {
   ): Promise<void>;
   skipScheduledRun(task: ScheduledTask, at: number): Promise<void>;
   onScheduledConversationUpdate(conversation: Conversation): Promise<void>;
-  sessionHasOpenAsk(sessionId: string): boolean;
+  sessionHasOpenAsk(runtime: string, sessionId: string): boolean;
   suspendBinding(sessionId: string): Promise<void>;
   onReaperSuspended(conversationId: string, sessionId: string): void;
   sendCanProduceTurn(conversationId: string): boolean;
@@ -353,7 +409,7 @@ export interface HarnessCtx {
     conv: Conversation,
     channelId: string,
   ): Promise<SessionBinding | undefined>;
-  onEngineEvent(event: EngineEvent): void;
+  onEngineEvent(event: EngineEvent, runtime?: string): void;
   openAsk(
     binding: SessionBinding,
     turnId: string,
@@ -373,6 +429,8 @@ export interface HarnessCtx {
     answer?: string,
   ): Promise<void>;
   onRelayEvent(method: string, params: Record<string, unknown>): void;
+  /** D-#761: `agents.list` merges started rosters with unstarted seeds. */
+  agentsListMerged(): Promise<{ agents: AgentDescriptor[] }>;
   onRelayRequest(
     method: string,
     params: Record<string, unknown>,
@@ -452,6 +510,21 @@ export interface HarnessCtx {
   resolveEmployee(
     conv: Conversation | undefined,
   ): Promise<Employee | undefined>;
+  /** The runtime a conversation binds to — the stored engineRef's
+      qualifier wins, else the channel employee's runtime (D-#761). */
+  runtimeForConversation(conv: Conversation | undefined): Promise<string>;
+  /** The conv's non-default runtime reached a terminal `failed` state —
+      waiting on it can only burn retries (D-#761 review). */
+  runtimeFailedFor(conv: Conversation | undefined): Promise<boolean>;
+  /** Plain reason the conv's runtime failed (for the thread's error
+      surface); undefined when the runtime is not failed. */
+  runtimeFailureDetail(
+    conv: Conversation | undefined,
+  ): Promise<string | undefined>;
+  /** Free the supervisor of every failed non-default runtime nothing
+      needs — no bindings, no parked sends, no ensure waiters (D-#761
+      review: supervision must not outlive its last user). */
+  releaseIdleFailedRuntimes(): Promise<void>;
   conversationFromAtom(conversationId: string): Conversation | undefined;
   findConversation(conversationId: string): Promise<Conversation | undefined>;
   updateConversation(

@@ -582,15 +582,19 @@ export class RelayClient {
     return agents;
   }
 
-  async describeAgent(id: string): Promise<AgentDescriptor> {
+  async describeAgent(id: string, runtime?: string): Promise<AgentDescriptor> {
     const { agent } = await this.request<{ agent: AgentDescriptor }>(
       "agents.describe",
-      { id },
+      { id, ...(runtime ? { runtime } : {}) },
     );
     return agent;
   }
 
-  async createAgent(params: AgentsCreateParams): Promise<AgentDescriptor> {
+  /* `runtime` is an app→harness routing hint (D-#761) — stripped before
+     the engine sees the create; the engine-side schema stays strict. */
+  async createAgent(
+    params: AgentsCreateParams & { runtime?: string },
+  ): Promise<AgentDescriptor> {
     const { agent } = await this.request<{ agent: AgentDescriptor }>(
       "agents.create",
       params as Record<string, unknown>,

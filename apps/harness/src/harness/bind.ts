@@ -6,6 +6,11 @@ import {
   RESUME_AWARE_TIMEOUT_MS,
   SESSION_NOT_FOUND,
 } from "../engine/client";
+import {
+  normalizeRuntime,
+  parseSessionRef,
+  qualifySessionRef,
+} from "../engine/runtimes";
 import type { ReaperCandidate } from "../reaper";
 import { employeeHoldsCeo } from "./ceo-session";
 import type { HarnessCtx, SessionBinding } from "./ctx";
@@ -55,7 +60,7 @@ export function reaperCandidates(this: HarnessCtx): ReaperCandidate[] {
     if (!binding.sessionId || binding.suspended) continue;
     if (binding.runningTurnId) continue; // a turn runs
     if (binding.openSubagents.size) continue; // a subagent runs
-    if (this.sessionHasOpenAsk(binding.sessionId)) continue; // an ask is open
+    if (this.sessionHasOpenAsk(binding.runtime, binding.sessionId)) continue; // an ask is open
     if (this.sendCanProduceTurn(binding.conversationId)) continue;
     out.push({
       conversationId: binding.conversationId,
@@ -67,13 +72,16 @@ export function reaperCandidates(this: HarnessCtx): ReaperCandidate[] {
 }
 
 /** An engine ask (approval/question) still open on this session — the
-    `requestByAsk` map keys are relay ask ids, its rows hold the session. */
+    `requestByAsk` map keys are relay ask ids, its rows hold the qualified
+    session ref (D-#761). */
 export function sessionHasOpenAsk(
   this: HarnessCtx,
+  runtime: string,
   sessionId: string,
 ): boolean {
+  const key = this.sessionKey(runtime, sessionId);
   for (const rec of this.requestByAsk.values()) {
-    if (rec.sessionId === sessionId) return true;
+    if (rec.sessionId === key) return true;
   }
   return false;
 }
@@ -82,7 +90,12 @@ export async function suspendBinding(
   this: HarnessCtx,
   sessionId: string,
 ): Promise<void> {
-  const conn = this.engine;
+  /* D-#761: the session id is engine-local — find the owning binding so
+     the suspend lands on the right engine. */
+  const binding = [...this.bindings.values()].find(
+    (b) => b.sessionId === sessionId,
+  );
+  const conn = binding ? this.connFor(binding) : this.connForRuntime("hermes");
   if (!conn) throw new Error("engine not attached");
   await conn.request("session.suspend", { sessionId });
 }
@@ -168,7 +181,20 @@ export async function bindConversation(
 ): Promise<SessionBinding | undefined> {
   const existing = this.bindings.get(conv.id);
   if (existing) return existing;
-  const conn = this.engine;
+  /* D-#761: the conversation binds to ITS agent's runtime — a stored
+     engineRef's qualifier wins for reattach (the session demonstrably
+     lives there), else the employee's `runtime` picks the engine and
+     the registry starts it lazily on first demand. Absent = "hermes",
+     so pre-#761 threads bind exactly where they did. */
+  const storedRef = conv.engineRef
+    ? parseSessionRef(conv.engineRef)
+    : undefined;
+  const bindingEmployee = storedRef
+    ? undefined
+    : await this.resolveEmployee(conv);
+  const runtime =
+    storedRef?.runtime ?? normalizeRuntime(bindingEmployee?.runtime);
+  const conn = await this.ensureRuntime(runtime);
   if (!conn) return undefined;
   /* #459: named e2e probe — park the whole bind so "surface session
      created" lands ~`bindDelayMs` after the send that triggered it, the
@@ -179,14 +205,15 @@ export async function bindConversation(
 
   // Reattach path: harness restarted while the engine kept the session
   // (orphan grace, #22) — the stored engineRef still resolves on the engine.
-  if (conv.engineRef) {
+  if (conv.engineRef && storedRef) {
     try {
       /* #834: reattach rides the adapter's lazy resume too — the resumed
-         session rebuild can outlast the default call deadline. */
+         session rebuild can outlast the default call deadline. D-#761:
+         the engine sees its own (stripped) id, never the qualifier. */
       const replay = await conn.request<EventsSinceResult>(
         "events.since",
         {
-          sessionId: conv.engineRef,
+          sessionId: storedRef.sessionId,
           after: 0,
         },
         RESUME_AWARE_TIMEOUT_MS,
@@ -194,7 +221,8 @@ export async function bindConversation(
       const binding: SessionBinding = {
         conversationId: conv.id,
         channelId,
-        sessionId: conv.engineRef,
+        runtime,
+        sessionId: storedRef.sessionId,
         ref: conv.engineRef,
         cwd: expandPath(conv.cwd ?? this.opts.workdir, this.home),
         hasFolder: Boolean(conv.cwd),
@@ -218,7 +246,10 @@ export async function bindConversation(
         suspended: false,
       };
       this.bindings.set(conv.id, binding);
-      this.conversationBySession.set(conv.engineRef, conv.id);
+      this.conversationBySession.set(
+        this.sessionKey(runtime, storedRef.sessionId),
+        conv.id,
+      );
       this.applyReplay(binding, replay);
       /* #550: replayed `turn.steered` events land in `steerLanded`, but
          the steer RPCs they would claim already resolved on the old conn
@@ -264,7 +295,7 @@ export async function bindConversation(
     }
   }
 
-  const employee = await this.resolveEmployee(conv);
+  const employee = bindingEmployee ?? (await this.resolveEmployee(conv));
   const agent = await this.ensureAgent(conn, employee);
   /* D-#817: the profile's plugin has to be the shipped tree before
      session.start — Hermes imports it for this thread. UI hire and
@@ -276,6 +307,7 @@ export async function bindConversation(
   const binding: SessionBinding = {
     conversationId: conv.id,
     channelId,
+    runtime,
     sessionId: "",
     ref: "",
     cwd: expandPath(conv.cwd ?? this.opts.workdir, this.home),
@@ -317,13 +349,20 @@ export async function bindConversation(
   );
   this.aliasSurfaces(surface?.session, started.engineSessionId);
   binding.sessionId = started.sessionId;
-  binding.ref = started.ref ?? started.sessionId;
+  /* D-#761: the durable ref is runtime-qualified for non-default engines
+     — two engines both owning "s-1" must not collide on engineRef or the
+     feed's session key. The default runtime keeps the bare id so pre-#761
+     rows, feed clients, and session-event payloads are unchanged. */
+  binding.ref = qualifySessionRef(runtime, started.ref ?? started.sessionId);
   binding.engineSessionId = started.engineSessionId;
   binding.gatewaySession = surface?.session;
   this.bindings.set(conv.id, binding);
-  this.conversationBySession.set(started.sessionId, conv.id);
+  this.conversationBySession.set(
+    this.sessionKey(runtime, started.sessionId),
+    conv.id,
+  );
   await this.updateConversation(conv.id, {
-    engineRef: started.sessionId,
+    engineRef: binding.ref,
     state: "active",
   });
   /* D-#846: picks the session couldn't take ride home in the result —

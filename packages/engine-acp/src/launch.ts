@@ -38,6 +38,8 @@ export interface AcpLaunchSpec {
   terminals?: { shellCommands?: boolean };
   /** access → agent mode id (the agent's own vocabulary). */
   modeForAccess?: AcpEngineOptions["modeForAccess"];
+  /** Engine-level effort default (e.g. Devin's free SWE-2 `max`). */
+  defaultEffort?: AcpEngineOptions["defaultEffort"];
   /** `_meta` on `session/new` for this agent. */
   sessionMeta?: AcpEngineOptions["sessionMeta"];
 }

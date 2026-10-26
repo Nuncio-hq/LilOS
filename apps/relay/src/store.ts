@@ -189,6 +189,8 @@ interface NewEmployee {
   now: string;
   instructions: string;
   respondTo: RespondTo;
+  /** D-#761: engine runtime id ("acp:devin"); absent = the default engine. */
+  runtime?: string;
 }
 
 /** `reportsTo: null` clears the link (back to the owner). */
