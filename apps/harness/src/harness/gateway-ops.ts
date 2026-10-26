@@ -10,10 +10,16 @@ import type {
   RecentFolder,
   ScheduledTask,
 } from "@lilos/contracts/app";
-import { CEO_SETTING_KEY } from "@lilos/contracts/app";
+import {
+  applyCodingAgentPatch,
+  CEO_SETTING_KEY,
+  CODING_AGENTS_SETTING_KEY,
+  parseCodingAgents,
+} from "@lilos/contracts/app";
 import type { AgentDescriptor } from "@lilos/contracts/engine";
 import type {
   AskParams,
+  CodingAgentsSetParams,
   GoalCreateParams,
   ProjectCreateParams,
   ScheduleCreateParams,
@@ -125,6 +131,7 @@ export function createGatewayApprovalOps(
   | "scheduleDelete"
   | "scheduleRunNow"
   | "askUser"
+  | "codingAgentsSet"
 > {
   const { relay, runningTurnId, binding } = deps;
 
@@ -543,6 +550,41 @@ export function createGatewayApprovalOps(
         throw new SurfaceError("declined", `the user declined: ${p.question}`);
       }
       return { outcome: "yes" as const };
+    },
+
+    /* D-#835: one stored default per outside coding agent. The card states
+       the change in words; on "once" the KV row is read, patched and
+       written back so a half-applied default can't land. */
+    codingAgentsSet: async (p: CodingAgentsSetParams) => {
+      const parts: string[] = [];
+      if (p.model !== undefined) {
+        parts.push(
+          p.model === null ? "clear the model" : `model → ${p.model}`,
+        );
+      }
+      if (p.effort !== undefined) {
+        parts.push(
+          p.effort === null ? "clear the effort" : `effort → ${p.effort}`,
+        );
+      }
+      const what = parts.join(", ") || "no change";
+      await gate({
+        command: `coding_agents_set ${p.agent} ${what}`,
+        description: `Change the stored default for the ${p.agent} coding agent: ${what}. Empty fields mean that CLI's own default.`,
+      });
+      const cur = await relay.request<{ value: unknown }>("settings.get", {
+        key: CODING_AGENTS_SETTING_KEY,
+      });
+      const next = applyCodingAgentPatch(
+        parseCodingAgents(cur.value),
+        p.agent,
+        p,
+      );
+      await relay.request("settings.set", {
+        key: CODING_AGENTS_SETTING_KEY,
+        value: next,
+      });
+      return next;
     },
   };
 }

@@ -1,6 +1,7 @@
 import type { Conversation, WorkbenchOpenTarget } from "@lilos/contracts/app";
 import {
   type AskParams,
+  type CodingAgentsSetParams,
   type FolderAddParams,
   type GoalCreateParams,
   HOST_POLICY_VERSION,
@@ -123,8 +124,8 @@ export class SessionSurfaces implements ViewerScope {
       // browser_* only when a real browser can attach — never advertised otherwise.
       ...(opts.createBrowser ? (["browser"] as const) : []),
       // thread_* / team_* / folder_* / project_* / ticket_* / goal_* /
-      // schedule_* / update_* only when the session is bound to an
-      // employee's thread.
+      // schedule_* / coding_* / update_* only when the session is bound to
+      // an employee's thread.
       ...(opts.appOps
         ? ([
             "thread",
@@ -134,6 +135,7 @@ export class SessionSurfaces implements ViewerScope {
             "ticket",
             "goal",
             "schedule",
+            "coding",
             /* D-#777: attached so a CEO session is offered `update_post`.
                A non-CEO session still does not see it (`ceoOnly`). The
                shared host policy has no line for this area. */
@@ -909,6 +911,24 @@ export class SessionSurfaces implements ViewerScope {
     return this.tracked("schedule_run_now", p.id, async () => {
       const ops = this.requireAppOps();
       return { task: await ops.scheduleRunNow(p.id) };
+    });
+  }
+
+  /* ------------------------------ coding ops -------------------------------- */
+
+  /* D-#835: Oscar's per-agent defaults; `coding_agents_set` is gated inside
+     the app leg like every write beyond this thread (D-#341). */
+  codingAgents() {
+    return this.tracked("coding_agents", "", async () => {
+      const ops = this.requireAppOps();
+      return { agents: await ops.codingAgents() };
+    });
+  }
+
+  codingAgentsSet(p: CodingAgentsSetParams) {
+    return this.tracked("coding_agents_set", p.agent, async () => {
+      const ops = this.requireAppOps();
+      return { agents: await ops.codingAgentsSet(p) };
     });
   }
 

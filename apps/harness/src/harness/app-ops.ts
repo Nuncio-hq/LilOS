@@ -12,7 +12,11 @@ import type {
   SystemStatusResult,
   Ticket,
 } from "@lilos/contracts/app";
-import { CEO_SETTING_KEY } from "@lilos/contracts/app";
+import {
+  CEO_SETTING_KEY,
+  CODING_AGENTS_SETTING_KEY,
+  parseCodingAgents,
+} from "@lilos/contracts/app";
 import type {
   SessionBinding,
   TicketAssignParams,
@@ -206,6 +210,15 @@ export function createAppOps(deps: {
           conversationId: binding.conversationId,
           target,
         });
+      },
+      /* D-#835: Oscar's stored defaults for outside coding agents. The
+         `codingAgents` KV row is the one place they live; the hand-off
+         skills read it before every run. */
+      codingAgents: async () => {
+        const r = await relay.request<{ value: unknown }>("settings.get", {
+          key: CODING_AGENTS_SETTING_KEY,
+        });
+        return parseCodingAgents(r.value);
       },
       /* The live holder. Call time reads this; the start snapshot is separate (D-#778). */
       ceoId: async () => {

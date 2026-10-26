@@ -1267,3 +1267,64 @@ describe("AC-1 thread tools over the gateway (issue #340)", () => {
     }
   });
 });
+
+describe("#835 coding-agent defaults over the gateway", () => {
+  it("coding_agents reads the stored defaults; absent stays absent", async () => {
+    const ops = fakeAppOps([], {
+      conversationId: "conv-s-ca",
+      codingAgents: { claude: { model: "opus", effort: "high" } },
+    });
+    const { scope } = makeScope("s-ca", { appOps: ops });
+    const api = await serveGateway({
+      sessions: [{ scope, token: "t-ca" }],
+    });
+    try {
+      const r = dmPayload(await dmCall(api.baseUrl, "t-ca", "coding_agents", {}));
+      expect(r.agents).toEqual({ claude: { model: "opus", effort: "high" } });
+    } finally {
+      api.server.close();
+    }
+  });
+
+  it("coding_agents_set is approval-gated and patches one agent", async () => {
+    const ops = fakeAppOps([], {
+      conversationId: "conv-s-cas",
+      codingAgents: { claude: { model: "opus" } },
+    });
+    const { scope } = makeScope("s-cas", { appOps: ops });
+    const api = await serveGateway({
+      sessions: [{ scope, token: "t-cas" }],
+    });
+    try {
+      const r = dmPayload(
+        await dmCall(api.baseUrl, "t-cas", "coding_agents_set", {
+          agent: "claude",
+          effort: "max",
+        }),
+      );
+      expect(ops.asks).toEqual(["coding_agents_set claude"]);
+      expect(r.agents).toEqual({
+        claude: { model: "opus", effort: "max" },
+      });
+      // null clears a field; an emptied entry drops out of the sparse map.
+      const cleared = dmPayload(
+        await dmCall(api.baseUrl, "t-cas", "coding_agents_set", {
+          agent: "claude",
+          model: null,
+          effort: null,
+        }),
+      );
+      expect(cleared.agents).toEqual({});
+      // A bad agent id is a params error — the ask never opens.
+      const bad = await dmCall(api.baseUrl, "t-cas", "coding_agents_set", {
+        agent: "copilot",
+        model: "x",
+      });
+      expect(bad.result?.isError).toBe(true);
+      expect(bad.result?.content[0].text).toContain("invalid params");
+      expect(ops.asks.length).toBe(2);
+    } finally {
+      api.server.close();
+    }
+  });
+});
