@@ -2292,6 +2292,92 @@ describe("engine-hermes #482: settle + heal invariants", () => {
     );
   });
 
+  /* #834: the reviewer's drained send submitted while the REPLACED
+     `hermes serve` still owned the session's active slot — the gateway's
+     4090 lease frees the moment that pid exits, so the adapter retries
+     inside a bounded window instead of surfacing "open in another
+     window" on a send about to succeed. */
+  test("#834 a submit refused on session ownership retries through the draining lease", async () => {
+    const gw = new FakeGateway();
+    const engine = new HermesEngine({
+      gateway: gw,
+      submitOwnershipWaitMs: 10_000,
+      submitOwnershipRetryMs: 20,
+    });
+    const h = new Harness(connectInMemory(engine));
+    const { sessionId } = await start(h);
+
+    gw.submitRefusals = 2;
+    const p = promptAsync(h, sessionId, "still there?");
+    for (let i = 0; i < 200 && gw.submitAttempts < 3; i++)
+      await new Promise((r) => setTimeout(r, 10));
+    expect(gw.submitAttempts).toBe(3); // two refusals, then the send lands
+    gw.complete(gw.lastSid, { text: "yes" });
+
+    const res = await p;
+    expect(res.stopReason).toBe("end_turn");
+    // The transient refusal never surfaced as a refusal frame.
+    const done = h.events.filter((e) => e.type === "turn.completed");
+    expect(done).toHaveLength(1);
+    expect((done[0].payload as { stopReason: string }).stopReason).toBe(
+      "end_turn",
+    );
+  });
+
+  /* The paired hole: a Stop pressed while the submit waits out the lease
+     must abort the pending submit — never land the stopped send once the
+     lease frees. */
+  test("#834 a Stop during the ownership wait aborts the pending submit", async () => {
+    const gw = new FakeGateway();
+    const engine = new HermesEngine({
+      gateway: gw,
+      submitOwnershipWaitMs: 60_000,
+      submitOwnershipRetryMs: 20,
+    });
+    const h = new Harness(connectInMemory(engine));
+    const { sessionId } = await start(h);
+
+    gw.submitRefusals = 1_000; // lease held far past the test window
+    const p = promptAsync(h, sessionId, "stop me");
+    for (let i = 0; i < 200 && gw.submitAttempts < 2; i++)
+      await new Promise((r) => setTimeout(r, 10));
+    expect(gw.submitAttempts).toBeGreaterThan(0);
+
+    await h.request("interrupt", { sessionId });
+    const res = await p;
+    expect(res.stopReason).toBe("cancelled");
+    const done = h.events.filter((e) => e.type === "turn.completed");
+    expect(done).toHaveLength(1);
+    expect((done[0].payload as { stopReason: string }).stopReason).toBe(
+      "cancelled",
+    );
+    expect(gw.runningSids.size).toBe(0); // nothing ever ran backend-side
+  });
+
+  /* The bound's other half: a session genuinely owned by another LIVE
+     surface keeps refusing past the window — the send surfaces the
+     ownership error instead of retrying forever. */
+  test("#834 a session owned by a live surface refuses after the window", async () => {
+    const gw = new FakeGateway();
+    const engine = new HermesEngine({
+      gateway: gw,
+      submitOwnershipWaitMs: 120,
+      submitOwnershipRetryMs: 20,
+    });
+    const h = new Harness(connectInMemory(engine));
+    const { sessionId } = await start(h);
+
+    gw.submitRefusals = 10_000; // a live owner never frees the lease
+    await expect(promptAsync(h, sessionId, "mine")).rejects.toThrow(
+      /open in another Hermes window/,
+    );
+    const done = h.events.filter((e) => e.type === "turn.completed");
+    expect(done).toHaveLength(1);
+    expect((done[0].payload as { stopReason: string }).stopReason).toBe(
+      "refusal",
+    );
+  });
+
   test("a turn whose backend dies mid-completion-await settles exactly once", async () => {
     const { gw, engine, h } = setup();
     const { sessionId } = await start(h);

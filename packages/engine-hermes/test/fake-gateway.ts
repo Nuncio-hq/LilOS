@@ -218,6 +218,13 @@ export class FakeGateway implements GatewayLike {
   /** #521: when set, prompt.submit rejects with it — a typed backend-death
       wire error landing inside prompt()'s submit await. */
   submitError?: RpcError;
+  /** #834: the first N prompt.submit calls refuse with the gateway's
+      ownership-conflict code — the REPLACED `hermes serve` still owns the
+      session's active slot while it drains after its adapter died. The
+      lease frees when that pid exits; the count models that window. */
+  submitRefusals = 0;
+  /** prompt.submit calls received (refused ones included). */
+  submitAttempts = 0;
   /**
    * #50 AC-1 — `session.create` params this gateway's contract forbids
    * (older Hermes builds: Params models are `extra="forbid"` and answer the
@@ -364,6 +371,19 @@ export class FakeGateway implements GatewayLike {
       }
       case "prompt.submit": {
         this.lastPrompt = p;
+        this.submitAttempts += 1;
+        if (this.submitRefusals > 0) {
+          this.submitRefusals -= 1;
+          // tui_gateway/methods_prompt.py: session held by a live owner —
+          // the previous backend's pid frees it when it exits.
+          return Promise.reject(
+            new RpcError(
+              4090,
+              "This chat is open in another Hermes window/terminal. Use it there, or start a new chat here.\nDetails: session ref-1 opened by lilos 0m ago.",
+              { reason: "SESSION_NOT_OWNED" },
+            ),
+          );
+        }
         if (this.submitError) return Promise.reject(this.submitError);
         const sid = String(p.session_id);
         const promptRef = this.refs.get(sid);

@@ -187,6 +187,15 @@ export async function markTurnInterrupted(
   binding: SessionBinding,
   turnId: string,
 ): Promise<void> {
+  /* #834: the gap's cause is known — the supervisor stamps `gapCause`
+     per attach; only a real wake says "went to sleep". The turnFailure
+     kind stays `sleep` for both: the contract treats it as the
+     slept-or-restarted amber chip (D-#419). */
+  const why =
+    this.gapCause === "sleep"
+      ? "your Mac went to sleep"
+      : "the engine restarted";
+  const note = `Stopped partway — ${why}. Send a message to pick up where it left off.`;
   // Only release the sleep hold/clear the slot when the lost turn still
   // owns it — a different adopted turn must keep its own hold.
   if (binding.runningTurnId === turnId) {
@@ -207,9 +216,8 @@ export async function markTurnInterrupted(
       stuck: null,
       turnFailure: {
         kind: "sleep",
-        /* #592: user-facing copy — the phone's amber chip says "Mac went
-           to sleep"; the note says why and how to resume. */
-        text: "Stopped partway — your Mac went to sleep. Send a message to pick up where it left off.",
+        /* #592: user-facing copy — the amber chip carries the same line. */
+        text: note,
       },
     });
     /* The turn vanished mid-run — pending steers can't land anymore. */
@@ -217,10 +225,7 @@ export async function markTurnInterrupted(
   }
   /* #419 AC-4: the note reports the interrupt; the Retry lives on the
      session card + turn, not in text nobody can click. */
-  await this.postSystem(
-    binding,
-    "Stopped partway — your Mac went to sleep. Send a message to pick up where it left off.",
-  );
+  await this.postSystem(binding, note);
 }
 
 /**
@@ -241,17 +246,21 @@ export async function surfaceBackendDown(
   /* D-#772: the backend dying ends the turn. Clear the mark and its timer
      even when this process restarted and only the row still says stuck. */
   void clearStuck(this, binding);
+  /* #834: BACKEND_DOWN means the engine's backend died — always a
+     restart, never a sleep. */
+  const note =
+    "Stopped partway — the engine restarted. Send a message to pick up where it left off.";
   await this.updateConversation(binding.conversationId, {
     state: "idle",
     stuck: null,
     turnFailure: {
       kind: "sleep",
-      text: "Stopped partway — your Mac went to sleep. Send a message to pick up where it left off.",
+      text: note,
     },
   });
   await this.postSystem(
     binding,
-    "Stopped partway — your Mac went to sleep. Send a message to pick up where it left off.",
+    note,
     `sys:${binding.conversationId}:${sourceId}:engine-restart`,
   );
 }

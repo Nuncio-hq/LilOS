@@ -28,8 +28,15 @@ export interface EngineSupervisorOptions {
   launcher: EngineLauncher;
   /** Open a protocol connection to a url the launcher produced. */
   connect: (url: string) => Promise<EngineConnection>;
-  /** Every successful connect/reconnect delivers the fresh connection. */
-  onConnection: (conn: EngineConnection, reconnect: boolean) => void;
+  /** Every successful connect/reconnect delivers the fresh connection —
+      `gapCause` says what took the last engine continuity away (#834: a
+      turn the gap killed reads "your Mac went to sleep" or "the engine
+      restarted"). */
+  onConnection: (
+    conn: EngineConnection,
+    reconnect: boolean,
+    gapCause: EngineGapCause,
+  ) => void;
   onState?: (state: EngineHostState, detail?: string) => void;
   log: Logger;
   /** First crash delay; doubles each crash until maxBackoffMs. */
@@ -54,6 +61,11 @@ export interface EngineSupervisorOptions {
   probeTimeoutMs?: number;
   probeMissesBeforeRestart?: number;
 }
+
+/** #834: why the last engine conn gap happened — a real Mac sleep
+    (wake watchdog) or an engine-side death/restart. The harness words a
+    turn the gap killed from it. */
+export type EngineGapCause = "sleep" | "restart";
 
 export class EngineSupervisor {
   readonly state: {
@@ -85,6 +97,11 @@ export class EngineSupervisor {
   private probeBusy = false;
   /** D-#817: the next child exit is a plugin refresh, not a crash. */
   private deliberateRestart = false;
+  /** #834: what killed the last engine continuity — the default is a
+      restart: a conn loss only proves sleep through notifyWake, and a
+      turn that vanished across any other gap demonstrably died with the
+      engine. */
+  private gapCause: EngineGapCause = "restart";
   /** A refresh was requested before the child existed (boot timed out
    *  while a copy was still running). Kill once it comes up. */
   private pluginRefreshPending = false;
@@ -176,6 +193,7 @@ export class EngineSupervisor {
    */
   notifyWake(): void {
     if (this.stopping) return;
+    this.gapCause = "sleep";
     const conn = this.state.conn;
     if (!conn) return;
     this.state.conn = undefined;
@@ -194,6 +212,10 @@ export class EngineSupervisor {
   }
 
   private async run(): Promise<void> {
+    /* A launch means the previous engine is gone (crash, kill, reconnect
+       budget spent) — a turn lost across this attach restarted, it did
+       not sleep. */
+    this.gapCause = "restart";
     this.set("starting");
     for (;;) {
       try {
@@ -243,7 +265,18 @@ export class EngineSupervisor {
     this.procAlive = true;
     if (!proc) return;
     proc.exited.then((exit: EngineExit) => {
+      /* D-#834: a SIGTERMed adapter drains before it exits —
+         engine.close() runs a session.close per session and the old
+         `hermes serve` lingers holding its leases. When the exit finally
+         lands the replacement has already attached and OWNS
+         launched/conn/probe: running the shared path here closed the
+         live conn, spent a crash, and armed a relaunch whose
+         attachProcess killed the healthy adapter — the "engine exited
+         (code 0)" loop. A superseded process leaving is expected, not a
+         crash. */
+      if (this.launched !== launched) return;
       this.procAlive = false;
+      this.gapCause = "restart";
       if (this.stopping || this.state.current === "stopped") return;
       if (this.deliberateRestart) {
         this.deliberateRestart = false;
@@ -421,11 +454,19 @@ export class EngineSupervisor {
       conn.close();
       return;
     }
+    /* A published conn supersedes any relaunch a racing exit armed — if
+       it were left armed, its start() would attach a third process and
+       kill this adapter as "the stale one" (#834). */
+    if (this.relaunchTimer) {
+      clearTimeout(this.relaunchTimer);
+      this.relaunchTimer = undefined;
+    }
     this.startedAt = Date.now();
     this.state.conn = conn;
     conn.onClose?.((reason) => {
       if (this.stopping) return;
       this.opts.log.warn("engine socket dropped", { reason });
+      this.gapCause = "restart";
       /* Retire the dead socket + its probe before the recovery arms — a
          probe that keeps ticking on a conn that can't answer accumulates
          dead-air misses and kills a healthy adapter mid-reconnect. A
@@ -444,7 +485,7 @@ export class EngineSupervisor {
     });
     this.set("running", this.opts.launcher.name);
     this.armProbe(conn);
-    this.opts.onConnection(conn, reconnect);
+    this.opts.onConnection(conn, reconnect, this.gapCause);
     if (this.pluginRefreshPending && !this.stopping) {
       this.restartForPluginRefresh();
     }

@@ -1019,8 +1019,11 @@ describe("workspace harness", () => {
       sess.turn = undefined;
       sess.openRequests.clear();
 
+      /* A real Mac sleep is the "sleep" gap cause — the supervisor hands
+         it on the conn after notifyWake (#834). */
       w.harness.attachEngine(
         connectFake(w.engine) as unknown as EngineConnection,
+        "sleep",
       );
 
       const note = await waitFor(async () => {
@@ -1048,6 +1051,73 @@ describe("workspace harness", () => {
       expect(failed.turnFailure?.kind).toBe("sleep");
       expect(failed.turnFailure?.text).toContain("went to sleep");
       expect(w.sleep.held).toBe(false);
+    } finally {
+      await w.cleanup();
+    }
+  });
+
+  it("#834 a turn lost to an engine restart says so — not 'went to sleep'", async () => {
+    const w = await setupWorld();
+    try {
+      const { channel } = await openDmConversation(w.user);
+      const { conversation } = await w.user.request<{
+        conversation: { id: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "Add a footer to the page",
+      });
+      await waitFor(() => w.sleep.held || undefined, "turn running");
+
+      // Same lost-turn shape as AC-4, but the gap was an engine restart —
+      // attachEngine with the restart cause (also the default).
+      const sessions = (
+        w.engine as unknown as {
+          sessions: Map<
+            string,
+            { turn?: unknown; openRequests: Map<string, unknown> }
+          >;
+        }
+      ).sessions;
+      const engineRef = await waitFor(async () => {
+        const { conversations } = await w.user.request<{
+          conversations: { id: string; engineRef: string | null }[];
+        }>("conversations.list", {});
+        return (
+          conversations.find((c) => c.id === conversation.id)?.engineRef ??
+          undefined
+        );
+      }, "engineRef");
+      const sess = sessions.get(engineRef as string);
+      if (!sess) throw new Error("fake engine lost the session");
+      sess.turn = undefined;
+      sess.openRequests.clear();
+
+      w.harness.attachEngine(
+        connectFake(w.engine) as unknown as EngineConnection,
+        "restart",
+      );
+
+      const note = await waitFor(async () => {
+        const { messages } = await w.user.request<{ messages: AppMessage[] }>(
+          "messages.list",
+          { channelId: channel.id, limit: 50 },
+        );
+        return messages.find((m) => m.text.includes("engine restarted"));
+      }, "restart interrupted note");
+      expect(note.text).not.toContain("went to sleep");
+      const failed = await waitFor(async () => {
+        const { conversations } = await w.user.request<{
+          conversations: {
+            id: string;
+            state: string;
+            turnFailure?: { kind: string; text: string };
+          }[];
+        }>("conversations.list", {});
+        const c = conversations.find((x) => x.id === conversation.id);
+        return c?.state === "idle" ? c : undefined;
+      }, "conversation back to idle");
+      expect(failed.turnFailure?.kind).toBe("sleep"); // still the amber chip
+      expect(failed.turnFailure?.text).toContain("the engine restarted");
     } finally {
       await w.cleanup();
     }
@@ -1150,10 +1220,13 @@ describe("workspace harness", () => {
       const note = await waitFor(async () => {
         const { messages } = await listConvMessages(w.user, channel.id);
         return messages.find(
-          (m) => m.authorKind === "system" && m.text.includes("went to sleep"),
+          (m) =>
+            m.authorKind === "system" && m.text.includes("engine restarted"),
         );
       }, "restart note");
-      expect(note.text).toContain("went to sleep");
+      /* #834: BACKEND_DOWN is always an engine restart, never a sleep —
+         the note says so. */
+      expect(note.text).toContain("the engine restarted");
 
       const failed = await waitFor(async () => {
         const { conversations } = await w.user.request<{
@@ -1165,7 +1238,7 @@ describe("workspace harness", () => {
         return conversations.find((x) => x.id === conversation.id)?.turnFailure;
       }, "turnFailure stamped");
       expect(failed?.kind).toBe("sleep");
-      expect(failed?.text).toContain("went to sleep");
+      expect(failed?.text).toContain("the engine restarted");
 
       /* The generic failure path must not ride the same rejection — one
          typed surface, no "Engine error:" duplicate. */

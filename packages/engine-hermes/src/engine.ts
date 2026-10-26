@@ -128,6 +128,11 @@ function extraForbiddenField(e: unknown): string | undefined {
   return EXTRA_FORBIDDEN_RE.exec(e.message)?.[1];
 }
 
+/** #834: Stop landed while prompt()'s submit waited out the previous
+    backend's session-ownership lease — the turn completes `cancelled`,
+    not refused, and the send never runs. */
+class PromptSubmitCancelled extends Error {}
+
 export interface HermesEngineOptions {
   /** Connected `hermes serve` gateway (ws path). */
   gateway: GatewayLike;
@@ -156,6 +161,12 @@ export interface HermesEngineOptions {
   /** Injectable HTTP fetch for the #549 activation POST — tests stub the
       backend endpoint; default is the global fetch. */
   fetchFn?: typeof fetch;
+  /** #834: how long `prompt`'s submit retries a session-ownership refusal
+      (gateway 4090) while the PREVIOUS `hermes serve` still owns the
+      lease — and the pace between retries. Defaults cover a slow
+      graceful drain; tests shrink them. */
+  submitOwnershipWaitMs?: number;
+  submitOwnershipRetryMs?: number;
 }
 
 /**
@@ -241,6 +252,16 @@ export class HermesEngine {
       an agent and pass their own. */
   private static readonly GW_TIMEOUT_MS = 30_000;
   private static readonly GW_RESUME_TIMEOUT_MS = 240_000;
+  /** #834: `prompt.submit` can land while the REPLACED `hermes serve`
+      still owns the session's active slot — the gateway refuses with
+      code 4090 until that backend's pid exits (a SIGTERMed adapter's
+      graceful drain takes seconds after its socket already dropped).
+      That refusal is transient, so the submit retries inside this
+      window instead of surfacing "open in another window" on a send
+      that is about to succeed. A session genuinely owned by a live
+      other surface burns the whole window, then refuses identically. */
+  private static readonly SUBMIT_OWNERSHIP_WAIT_MS = 90_000;
+  private static readonly SUBMIT_OWNERSHIP_RETRY_MS = 1_500;
 
   /**
    * Every backend call goes through here so a dead backend fails FAST with
@@ -1072,6 +1093,9 @@ export class HermesEngine {
       .join("\n");
 
     const turnId = `t${++this.turnCounter}`;
+    /* A new turn clears the Stop-during-lease-wait flag a previous turn's
+       interrupt may have left (#834). */
+    s.submitCancelled = false;
     const done = new Promise<{ turnId: string; stopReason: string }>(
       (resolve, reject) => {
         s.turn = { turnId, phase: "reasoning", resolve, reject };
@@ -1100,10 +1124,7 @@ export class HermesEngine {
             ext,
           });
         }
-        await this.gw("prompt.submit", {
-          session_id: s.runtimeSid,
-          text,
-        });
+        await this.submitWithOwnershipWait(s, turnId, text);
         s.userTurns += 1;
         this.persistSession(s);
       } else {
@@ -1116,23 +1137,71 @@ export class HermesEngine {
         void driver.submit(s, turnId, content).catch(() => {});
       }
     } catch (e) {
+      /* #834: a Stop during the ownership-lease wait aborts the pending
+         submit — the send never ran, so the turn ends `cancelled`, not
+         refused with an ownership error the user can't act on. */
+      const cancelled = e instanceof PromptSubmitCancelled;
       const msg = e instanceof RpcError ? e.message : String(e);
       /* #482: a backend death can settle this turn first (markBackendDown
          already emitted turn.completed + rejected `done`) — don't stamp a
          second completed frame or resurrect the state it chose. */
       if ((s.turn as { turnId: string } | undefined)?.turnId === turnId) {
         s.turn = undefined;
+        s.submitCancelled = false;
         s.emit("turn.completed", {
           turnId,
-          stopReason: "refusal",
-          error: msg,
-          ...(e instanceof RpcError ? { errorCode: e.code } : {}),
+          stopReason: cancelled ? "cancelled" : "refusal",
+          ...(cancelled ? {} : { error: msg }),
+          ...(e instanceof RpcError && !cancelled ? { errorCode: e.code } : {}),
         });
         s.setState("idle");
       }
+      if (cancelled) return { turnId, stopReason: "cancelled" };
       throw e;
     }
     return done;
+  }
+
+  /**
+   * `prompt.submit` through the previous backend's draining lease
+   * (D-#834): Hermes refuses with code 4090 while the REPLACED
+   * `hermes serve` still owns the session's active slot — that pid's
+   * exit frees it. Retry the same submit inside a bounded window; a
+   * Stop or a backend death ends the wait early (PromptSubmitCancelled /
+   * the settled-turn path).
+   */
+  private async submitWithOwnershipWait(
+    s: Session,
+    turnId: string,
+    text: string,
+  ): Promise<void> {
+    const deadline =
+      Date.now() +
+      (this.opts.submitOwnershipWaitMs ??
+        HermesEngine.SUBMIT_OWNERSHIP_WAIT_MS);
+    const retryMs =
+      this.opts.submitOwnershipRetryMs ??
+      HermesEngine.SUBMIT_OWNERSHIP_RETRY_MS;
+    for (;;) {
+      try {
+        await this.gw("prompt.submit", {
+          session_id: s.runtimeSid,
+          text,
+        });
+        return;
+      } catch (e) {
+        // Hermes 4090 = session ownership conflict — transient while the
+        // previous backend's pid still lives; anything else is final.
+        if (!(e instanceof RpcError && e.code === 4090)) throw e;
+        if (s.submitCancelled) throw new PromptSubmitCancelled();
+        /* The turn settled under the wait (markBackendDown etc.) — surface
+           the real failure, not the stale lease refusal. */
+        if (s.turn?.turnId !== turnId || this.backendDown !== undefined)
+          throw e;
+        if (Date.now() >= deadline) throw e;
+        await new Promise((r) => setTimeout(r, retryMs));
+      }
+    }
   }
 
   private async interrupt(p: InterruptParams) {
@@ -1145,6 +1214,10 @@ export class HermesEngine {
     /* The interrupt kills the queued drain with the turn — drop pending
        steer refs or they'd anchor an unrelated later leg (#308). */
     s.steeredQueue = [];
+    /* #834: the turn may be claimed but still unsubmitted — its submit is
+       waiting out the previous backend's ownership lease. Mark it so the
+       retry aborts; the send must not land once the user said Stop. */
+    if (s.turn) s.submitCancelled = true;
     if (s.driver === "acp") {
       await this.acpDrivers.get(s.id)?.interrupt(s);
       return { interrupted: true };

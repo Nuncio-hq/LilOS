@@ -24,7 +24,7 @@ import {
   RESUME_AWARE_TIMEOUT_MS,
   SESSION_NOT_FOUND,
 } from "./engine/client";
-import type { EngineHostState } from "./engine/supervisor";
+import type { EngineGapCause, EngineHostState } from "./engine/supervisor";
 import { ensureAgent, sessionParams } from "./harness/agents";
 import {
   autoApprove,
@@ -262,6 +262,11 @@ export interface HarnessOptions {
 
 export class Harness {
   private engine?: EngineConnection;
+
+  /** #834: what took the last engine continuity away (the supervisor
+      stamps it at each attach) — a turn the gap killed is worded
+      "went to sleep" vs "the engine restarted" from it. */
+  private gapCause?: EngineGapCause;
 
   private hostId?: string;
 
@@ -521,7 +526,10 @@ export class Harness {
   /* --------------------------- engine wiring ---------------------------- */
 
   /** Supervisor calls this on every fresh connection (first + reconnect). */
-  attachEngine(conn: EngineConnection): void {
+  attachEngine(conn: EngineConnection, gapCause?: EngineGapCause): void {
+    /* #834: remember why the engine gapped — a turn this attach proves
+       dead is worded "went to sleep" or "the engine restarted" from it. */
+    this.gapCause = gapCause ?? "restart";
     this.engine?.close();
     this.engine = conn;
     this.unsubs.push(conn.onEvent((e) => this.onEngineEvent(e)));
