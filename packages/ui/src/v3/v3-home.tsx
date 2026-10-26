@@ -9,8 +9,9 @@ import {
   Title,
   useTick,
 } from "./v3-bits";
-import type { V3Data } from "./v3-data-types";
+import type { V3Ask, V3Data } from "./v3-data-types";
 import { ChatDraft } from "./v3-draft-chat";
+import { ThreadPill } from "./v3-live";
 import { AgentAvatar, CeoMark, StatusDot, StatusPill } from "./v3-marks";
 import {
   agentNameOf,
@@ -29,6 +30,7 @@ import {
   nextRunLabel,
   projectOf,
   resultsToLookAt,
+  threadOf,
   threadsIn,
   ticketOf,
   waitingLabel,
@@ -431,28 +433,80 @@ function CompanyHome({ data, go, act }: V3PageProps) {
 }
 
 /* Home with the company layer paused (D-#836): the counts, a box that talks
-   to Hermes, Needs you, the pinned threads, and Recent threads — the
-   daily app, with tickets, the team table, goals and the CEO's note out of
-   sight but still in the data underneath. "Open Threads" goes to the list
-   for the rest. */
-const THREADS_HOME = 6;
+   to Hermes, the pinned threads, and one list under it — the daily app,
+   with tickets, the team table, goals and the CEO's note out of sight but
+   still in the data underneath. "Open Threads" goes to the list for the
+   rest. */
+const THREADS_HOME = 8;
+
+/** A needs-you row in Home's list (#862): the ask's title, the pill and
+    its quick action on the row, highlighted so it reads before the rest. */
+function HomeAskRow({ data, ask, go, act }: V3PageProps & { ask: V3Ask }) {
+  const t = ask.threadId ? threadOf(data, ask.threadId) : undefined;
+  return (
+    <RowButton
+      opens={t ? { page: "thread", id: t.id } : undefined}
+      onClick={() =>
+        t ? go({ page: "thread", id: t.id }) : go({ page: "needs" })
+      }
+      className="flex min-h-[38px] items-center gap-2.5 rounded-md bg-orange-500/[0.07] px-2.5 py-1 text-[13.5px] dark:bg-orange-400/10"
+    >
+      <StatusDot status="needs" />
+      <span className="flex min-w-0 flex-1 items-center gap-1.5">
+        <span data-thread-title className="truncate text-foreground">
+          {ask.title}
+        </span>
+        <ThreadPill status="needs" />
+      </span>
+      <span className="@min-[560px]:block hidden max-w-[38%] shrink truncate text-[12.5px] text-muted-foreground/70">
+        {askTag(data, ask)} · {agentNameOf(data, ask.from)}
+      </span>
+      {/* The buttons act on the ask; the row itself opens where it lives. */}
+      <span
+        className="flex shrink-0 gap-1.5"
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.stopPropagation()}
+      >
+        {ask.kind === "approval" ? (
+          <>
+            <Btn onClick={() => act.deny(ask.id)}>Deny</Btn>
+            <Btn primary onClick={() => act.approve(ask.id)}>
+              Approve
+            </Btn>
+          </>
+        ) : (
+          <Btn onClick={() => go({ page: "needs" })}>Reply</Btn>
+        )}
+      </span>
+    </RowButton>
+  );
+}
 
 function DailyHome({ data, go, act }: V3PageProps) {
   const starter = defaultAgent(data);
   /* A wake time passing quietly returns its thread — tick so Home re-reads
      the clock. */
   useTick(30_000);
-  /* Home's order (#862): Needs you (open asks), then Pinned — the threads
-     pinned by hand, the same row with its menu so a pin comes off from
-     here — then Recent threads: everything still listed, newest came-back
-     first, minus the pinned (they have their own block) and anything
-     snoozed or settled, which sleeps on its shelf. Helpers have no row
-     (D-#847); a Home section hides when it is empty. */
+  /* Home's list is one list (#862 feedback): what needs you first —
+     highlighted, pill and quick action on the row — then work in flight,
+     then the rest of what came back, newest first. Pinned keeps its own
+     small block above; snoozed and settled sleep on their shelves and
+     never land here. Helpers have no row (D-#847). Empty draws nothing. */
   const s = sectionedThreads(data);
   const now = Date.now();
-  const recent = [...s.active, ...s.working].sort(
-    (a, b) => backThen(b, now) - backThen(a, now),
+  /* A thread with an open ask shows as the ask's highlighted row, not a
+     thread row — the link runs both ways (a.threadId / t.askId). */
+  const askIds = new Set(data.asks.map((a) => a.id));
+  const asked = new Set(
+    data.asks.map((a) => a.threadId).filter((x) => x !== undefined),
   );
+  const recent = [
+    ...s.working.filter((t) => !asked.has(t.id) && !askIds.has(t.askId ?? "")),
+    ...s.active
+      .filter((t) => !asked.has(t.id) && !askIds.has(t.askId ?? ""))
+      .sort((a, b) => backThen(b, now) - backThen(a, now)),
+  ];
+  const rows = data.asks.length + recent.length;
 
   return (
     <Page>
@@ -471,7 +525,6 @@ function DailyHome({ data, go, act }: V3PageProps) {
           />
         </div>
       )}
-      <NeedsBlock data={data} go={go} act={act} />
       {s.pinned.length > 0 && (
         <>
           <Section title="Pinned" count={s.pinned.length} />
@@ -482,18 +535,29 @@ function DailyHome({ data, go, act }: V3PageProps) {
           </div>
         </>
       )}
-      {recent.length > 0 && (
+      {rows > 0 && (
         <>
           <Section
-            title="Recent threads"
-            count={recent.length}
+            title="Threads"
+            count={rows}
             link="Open Threads"
             onLink={() => go({ page: "threads" })}
           />
-          <div className="border-[var(--v3-line)] border-t">
-            {recent.slice(0, THREADS_HOME).map((t) => (
-              <ThreadRow key={t.id} data={data} t={t} go={go} act={act} />
+          <div className="flex flex-col gap-px">
+            {data.asks.map((ask) => (
+              <HomeAskRow
+                key={ask.id}
+                data={data}
+                ask={ask}
+                go={go}
+                act={act}
+              />
             ))}
+            {recent
+              .slice(0, Math.max(0, THREADS_HOME - data.asks.length))
+              .map((t) => (
+                <ThreadRow key={t.id} data={data} t={t} go={go} act={act} />
+              ))}
           </div>
         </>
       )}

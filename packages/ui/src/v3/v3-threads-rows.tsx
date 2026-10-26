@@ -20,15 +20,12 @@ import { settledReason, snoozeBack } from "./v3-sections";
 import { useRenameMenu } from "./v3-thread-menu";
 import type { V3Thread } from "./v3-types";
 
-/* The one thread row (#862 feedback): the Threads page's single list, the
-   sidebar's thread list and Home's recents all draw the same row — a status
-   dot (a word-pill only for Needs you / Failed, the two a scan should
-   catch), the title, `project · agent`, and the ⋯ menu (pin, settle,
-   snooze — #862). The clock stays quiet until the row is hovered; a
-   snoozed row says when it's back and a settled row says why it parked.
-   `marker` is the row's data attribute: `data-thread-row` on the lists,
-   `data-sidebar-row` in the sidebar so a locator on the page's rows never
-   counts a sidebar row twice. */
+/* The one thread row (#862 feedback): the Threads page's single list and
+   Home's list both draw it — a status dot (a word-pill only for Needs you /
+   Failed, the two a scan should catch), the title, `project · agent`, and
+   the ⋯ menu (pin, settle, snooze — #862). The clock stays quiet until the
+   row is hovered; a snoozed row says when it's back and a settled row says
+   why it parked. */
 
 export function ThreadRow({
   data,
@@ -36,19 +33,14 @@ export function ThreadRow({
   go,
   act,
   settled,
-  compact,
   drop,
-  marker = "data-thread-row",
 }: V3PageProps & {
   t: V3Thread;
   /** A shelf row: dimmed, and its menu leads with Un-settle. */
   settled?: boolean;
-  /** Tighter rows for the sidebar. */
-  compact?: boolean;
   /** Inside a group that already names it — the Agent grouping, Home's
       project groups — that half of `project · agent` is spared. */
   drop?: "project" | "agent";
-  marker?: string;
 }) {
   const {
     renameThread,
@@ -102,7 +94,7 @@ export function ThreadRow({
   return (
     // `data-settled` marks the shelf rows: a settled thread leaves the list
     // for the Settled fold and the marker says so (#862).
-    <div {...{ [marker]: t.id }} data-settled={settled || undefined}>
+    <div data-thread-row={t.id} data-settled={settled || undefined}>
       <RowButton
         opens={{ page: "thread", id: t.id }}
         marked={
@@ -110,10 +102,7 @@ export function ThreadRow({
         }
         onClick={() => go({ page: "thread", id: t.id })}
         className={cn(
-          "group/thread flex items-center",
-          compact
-            ? "min-h-[28px] gap-2 rounded-md pr-1.5 pl-[18px] text-[13px]"
-            : "min-h-[38px] gap-2.5 border-[var(--v3-line)] border-b py-1 text-[13.5px]",
+          "group/thread flex min-h-[38px] items-center gap-2.5 border-[var(--v3-line)] border-b py-1 text-[13.5px]",
           settled && "text-muted-foreground",
         )}
       >
@@ -157,10 +146,9 @@ export function ThreadRow({
           )}
           <HelpersHint data={data} thread={t} className="text-[12px]" />
         </span>
-        {/* `project · agent` has no room in the sidebar's compact row or a
-            phone-narrow pane — the dot, title and menu already say what
-            the row is. */}
-        {meta && !compact && (
+        {/* `project · agent` has no room in a phone-narrow pane — the dot,
+            title and menu already say what the row is. */}
+        {meta && (
           <span className="@min-[560px]:block hidden max-w-[38%] shrink truncate text-[12.5px] text-muted-foreground/70">
             {meta}
           </span>
