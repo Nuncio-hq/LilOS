@@ -200,6 +200,17 @@ export function createPushFanout(options: {
        kind. */
     if (macActiveAt !== undefined && now() - macActiveAt < presenceWindowMs)
       return;
+    /* D-#862: a snoozed thread is quiet — finished/failed/stuck stay
+       silent until it wakes. Needs-you (both ask kinds) is the one push
+       a snooze never silences; the ask also wakes the thread. An expired
+       stamp counts as awake — the list filters it the same way. */
+    if (
+      conversation.snoozedUntil !== undefined &&
+      conversation.snoozedUntil > now() &&
+      kind !== "needs_approval" &&
+      kind !== "waiting_for_input"
+    )
+      return;
     if (kind === "failed") {
       const last = failureSentAt.get(conversation.id);
       if (last !== undefined && now() - last < collapseMs) return;

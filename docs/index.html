@@ -296,6 +296,7 @@ packages/engine-*             adapter owning an engine</code></pre>
 <li id="d-848"><b>D-#848</b> A git caller's <code>task_create</code> child forks HEAD to a worktree by default via the #156 workspace intent; <code>"shared"</code> shares the folder; uncommitted edits never copy. <em>Not: a second worktree path, auto-merge.</em> <small>#848</small> <kbd>apps/harness/src/harness/task-isolation.ts</kbd></li>
 <li id="d-761"><b>D-#761</b> Engine per runtime (<code>Employee.runtime</code>): lazy start, adapter+failure gates, runtime::session refs. <em>Not: shared engine, retry loops.</em> <small>#761</small> <kbd>apps/harness/src/engine/registry.ts</kbd></li>
 <li id="d-847"><b>D-#847</b> A helper is a thread with <code>parentId</code>: no list row, shown on its parent; waiting parents read Working; parent Stop ends only its turn. <em>Not: helper rows, a stop cascade.</em> <small>#847</small> <kbd>packages/ui/src/v3/v3-model.ts</kbd></li>
+<li id="d-862"><b>D-#862</b> Pin/settle/snooze are relay state (<code>conversations.*</code>); <code>archived</code> is the settled mirror; the sweep settles 3-day idle + terminal PRs — never pinned, snoozed, or helper children; Oscar's message or park action resumes. <em>Not: client stamps, agent-facing tools.</em> <small>#862</small> <kbd>apps/relay/src/sweep.ts</kbd></li>
 </ul>
 <h3 id="decisions-testing">Testing</h3>
 <ul class="decisions">

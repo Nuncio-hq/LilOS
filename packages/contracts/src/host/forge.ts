@@ -124,6 +124,13 @@ export const ForgePrListItem = z.object({
   base: z.string().min(1),
   /** ISO 8601 (`createdAt`). */
   openedAt: z.string(),
+  /* D-#862: when the PR went terminal — `closedAt` for a close,
+     `mergedAt` for a merge (gh stamps both on a merged PR; a closed one
+     has only `closedAt`). The auto-settle sweep compares them against
+     Oscar's last message: a PR that closed before he last wrote can't
+     settle work he resumed. Absent on open PRs and pre-#862 hosts. */
+  closedAt: z.string().optional(),
+  mergedAt: z.string().optional(),
   /** Head-commit CI rollup: `none` when the PR carries no checks. */
   checks: z.enum(["none", "pending", "passing", "failing"]),
 });

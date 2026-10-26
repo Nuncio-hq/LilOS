@@ -4,6 +4,7 @@ import {
   AsksRespondParams,
 } from "@lilos/contracts/app";
 import type { RelayCtx } from "./ctx";
+import { wakeSnoozed } from "./park";
 import { badParams, JsonRpcCode, RpcError } from "./rpc";
 
 /**
@@ -41,6 +42,10 @@ export async function handleAsks(c: RelayCtx): Promise<false | undefined> {
           channelId: ask.channelId,
           ask,
         });
+        /* D-#862: the ask is a needs-you transition — it wakes a snoozed
+           thread early (its push still goes out; Needs-you is the one
+           kind a snooze never silences). */
+        await wakeSnoozed(c, ask.conversationId);
         /* #161: a created ask IS the needs-you transition — push. A
            replayed open returns created=false, so a host retry can't
            re-notify. Fire-and-forget: push never blocks the relay. */

@@ -221,7 +221,58 @@ export const Conversation = z.object({
    * applies from the agent's next action.
    */
   access: ConversationAccess.default("ask"),
+  /* D-#862: `settled` is the real model — a settled thread parks on the
+     Settled shelf (`settledAt`/`settledReason`/`settledPr` say when and
+     why). `archived` stays on the wire as its synced mirror so pre-#862
+     clients keep working: it is true exactly while `settledAt` is set, and
+     an `archived` write maps to settle/un-settle (reason `manual`). */
   archived: z.boolean(),
+  /**
+   * D-#862: pinned to the top of the thread list, epoch ms (newest pin
+   * first). Absent = not pinned. Settling removes the pin. Relay-stamped;
+   * clients write it through `conversations.pin`.
+   */
+  pinnedAt: Timestamp.optional(),
+  /**
+   * D-#862: when the thread settled, epoch ms — the shelf's stamp and its
+   * sort order. Absent = the thread is live. Relay-stamped by
+   * `conversations.settle`, the auto-settle sweep, or an `archived` write.
+   */
+  settledAt: Timestamp.optional(),
+  /**
+   * D-#862: why it settled — `manual` (the owner, or a legacy `archived` write),
+   * `idle` (the 3-day sweep), `pr` (its PR merged or closed). Present on
+   * every settled row.
+   */
+  settledReason: z.enum(["manual", "idle", "pr"]).optional(),
+  /**
+   * D-#862: the PR whose merge/close settled the thread — only when
+   * `settledReason` is `pr` and the thread knew the link (a workstream
+   * thread's `workspace.branch`).
+   */
+  settledPr: z
+    .strictObject({ num: z.int(), state: z.enum(["merged", "closed"]) })
+    .optional(),
+  /**
+   * D-#862: hidden until this epoch-ms time — the thread keeps working but
+   * leaves every list. Wakes early on a new ask, a failed turn, or the
+   * user's own message; `conversations.snooze {until: null}` wakes it now.
+   */
+  snoozedUntil: Timestamp.optional(),
+  /**
+   * D-#862: the auto-settle switch for this thread — `false` leaves it in
+   * the list forever (Auto-settle → Disabled). Absent = on.
+   */
+  autoSettle: z.boolean().optional(),
+  /**
+   * D-#862 review: the newest owner park action's stamp (pin, settle,
+   * un-settle, snooze, wake, auto-settle flip — and the wake paths). The
+   * sweep counts it as activity, so a thread the owner just un-parked or
+   * touched doesn't bounce straight back onto the shelf, and an un-settle
+   * newer than a PR's terminal stamp rescues it from the PR path.
+   * Relay-stamped; never a client write.
+   */
+  lastParkActionAt: Timestamp.optional(),
   /**
    * Host-owned watermark: highest user-message seq the harness has handed to
    * the engine. User messages beyond it are the owed turns — this is what

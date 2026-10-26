@@ -1276,6 +1276,12 @@
                 "openedAt": {
                   "type": "string"
                 },
+                "closedAt": {
+                  "type": "string"
+                },
+                "mergedAt": {
+                  "type": "string"
+                },
                 "checks": {
                   "type": "string",
                   "enum": [

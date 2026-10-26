@@ -1,4 +1,4 @@
-import type { AppMessage } from "@lilos/contracts/app";
+import type { AppMessage, Conversation } from "@lilos/contracts/app";
 import type { HarnessCtx, SessionBinding } from "./ctx";
 import { noteTaskWake } from "./task-wake";
 
@@ -73,16 +73,34 @@ export async function deliverOrdered(
     messageId: message.id,
   });
   this.opts.onNeedEngine?.();
-  const conv = await this.findConversation(message.conversationId);
+  let conv = await this.findConversation(message.conversationId);
   // Lookup failed (relay flapped mid-RPC): leave `delivered` unset so the
   // register-time pending list can redeliver the message later.
   if (!conv) return;
   if (conv.archived || conv.state === "closed") {
-    this.opts.log.warn("dropping message for unknown/closed conversation", {
-      conversationId: message.conversationId,
-    });
-    this.dropParkedInterruptIfOrphaned(conv.id);
-    return;
+    /* D-#862 review: the relay un-settles on the owner's own send and
+       emits conversation.updated BEFORE message.created — but this
+       socket can hold a stale settled row anyway (a subscribe landing
+       between the two frames, a replay not yet healed). Re-read the
+       relay once — bypassing the atom — before dropping a send the
+       owner just made; a row that still reads settled then truly is. */
+    let fresh: Conversation | undefined;
+    try {
+      const listed = await this.opts.relay.request<{
+        conversations: Conversation[];
+      }>("conversations.list", { includeArchived: true });
+      fresh = listed.conversations.find((c) => c.id === message.conversationId);
+    } catch {
+      fresh = undefined;
+    }
+    if (!fresh || fresh.archived || fresh.state === "closed") {
+      this.opts.log.warn("dropping message for unknown/closed conversation", {
+        conversationId: message.conversationId,
+      });
+      this.dropParkedInterruptIfOrphaned(conv.id);
+      return;
+    }
+    conv = fresh;
   }
   this.delivered.add(message.id);
   /* Until the send lands in a tracked resting place (early/queue/

@@ -72,8 +72,9 @@ describe("relay migrations", () => {
     // and conversations.ticket_id; v33 adds D-#777's company_updates;
     // v34 adds the CEO wake flag and the standing-thread flag; v35 adds
     // D-#844's task columns + the task wake flag; v36 adds D-#761's
-    // employees.runtime.
-    expect(out.version).toBe(36);
+    // employees.runtime; v37 adds D-#862's parking columns; v38 adds its
+    // review's last_park_action_at.
+    expect(out.version).toBe(38);
     expect(out.askCols).toContain("hire");
     expect(out.askCols).toContain("why");
     expect(out.askCols).toContain("if_yes");
@@ -115,10 +116,111 @@ describe("relay migrations", () => {
     expect(out.empCols).toContain("muted");
     expect(out.empCols).toContain("reports_to");
     expect(out.empCols).toContain("runtime");
+    for (const col of [
+      "pinned_at",
+      "settled_at",
+      "settled_reason",
+      "settled_pr",
+      "snoozed_until",
+      "auto_settle",
+      "last_park_action_at",
+    ])
+      expect(out.colsAt7).toContain(col);
     expect(out.msgIdx).toContain("messages_conversation_seq");
     expect(out.msgIdx).not.toContain("messages_conversation");
     // …and keeps everything v6 shipped.
     expect(out.colsAt7).toContain("cwd");
     expect(out.tables).toContain("recent_folders");
+  });
+
+  it("D-#862 v37 parks the rows `archived` already held — settled manual", () => {
+    /* Seed a v36-shaped DB with one archived + one live thread, then let
+       applyMigrations run v37. The archived row's settled_at falls back
+       to its newest message (its last activity), else created_at. */
+    const script = `
+      import { Database } from "bun:sqlite";
+      import { MIGRATIONS, applyMigrations } from "./src/db/migrate.ts";
+      const db = new Database(":memory:");
+      for (const m of MIGRATIONS.filter((m) => m.version <= 36)) {
+        for (const s of m.statements) db.exec(s);
+        db.exec("PRAGMA user_version = " + m.version);
+      }
+      db.exec("INSERT INTO employees (id, name, created_at) VALUES ('e1', 'Ada', 1)");
+      db.exec("INSERT INTO channels (id, kind, employee_id, last_seq, created_at) VALUES ('c1', 'dm', 'e1', 9, 1)");
+      let seq = 0;
+      const seed = (id, createdAt, archived, lastMsg) => {
+        seq += 1;
+        db.exec("INSERT INTO messages (id, channel_id, conversation_id, author_id, author_kind, text, seq, created_at) VALUES ('m_" + id + "', 'c1', '" + id + "', 'user', 'user', 'hi', " + seq + ", " + lastMsg + ")");
+        db.query("INSERT INTO conversations (id, channel_id, root_message_id, title, archived, created_at) VALUES (?, 'c1', 'm_" + id + "', ?, ?, ?)")
+          .run(id, id, archived, createdAt);
+      };
+      seed("old_archived", 1000, 1, 4000);
+      seed("live", 2000, 0, 3000);
+      applyMigrations(db);
+      const rows = db.query("SELECT id, archived, settled_at, settled_reason, auto_settle FROM conversations ORDER BY id").all();
+      /* The shipped store's park translation over the migrated DB: the
+         legacy archived write folds into settle; settle drops pin +
+         snooze; un-settle clears reason/PR and the mirror. */
+      const { drizzle } = await import("drizzle-orm/bun-sqlite");
+      const { createDrizzleStore } = await import("./src/db/drizzle-store.ts");
+      const schema = await import("./src/db/schema.ts");
+      const store = createDrizzleStore(drizzle(db, { schema }));
+      await store.updateConversation("live", {
+        pinnedAt: 5, snoozedUntil: 9,
+      });
+      const pinnedSnoozed = await store.getConversation("live");
+      await store.updateConversation("live", { archived: true });
+      const settledViaAlias = await store.getConversation("live");
+      await store.updateConversation("live", { settledAt: null });
+      const unsettled = await store.getConversation("live");
+      const migrated = await store.getConversation("old_archived");
+      console.log(JSON.stringify({
+        version: db.query("PRAGMA user_version").get().user_version,
+        rows, pinnedSnoozed, settledViaAlias, unsettled, migrated,
+      }));
+    `;
+    const res = spawnSync(BUN, ["-e", script], {
+      cwd: RELAY_DIR,
+      encoding: "utf8",
+    });
+    expect(res.status, res.stderr).toBe(0);
+    const out = JSON.parse(res.stdout.trim().split("\n").at(-1) ?? "null");
+    expect(out.version).toBe(38);
+    const archived = out.rows.find(
+      (r: { id: string }) => r.id === "old_archived",
+    );
+    expect(archived).toMatchObject({
+      archived: 1,
+      settled_at: 4000,
+      settled_reason: "manual",
+      auto_settle: 1,
+    });
+    const live = out.rows.find((r: { id: string }) => r.id === "live");
+    expect(live).toMatchObject({ archived: 0, settled_at: null });
+    /* Drizzle store: the pin + snooze landed; the legacy `archived: true`
+       write settled the row (and dropped them); `settledAt: null` woke
+       it again with the mirror back to live. */
+    expect(out.pinnedSnoozed).toMatchObject({
+      pinnedAt: 5,
+      snoozedUntil: 9,
+    });
+    /* The raw-SQL row emits the flag verbatim — true = the default. */
+    expect(out.pinnedSnoozed.autoSettle).toBe(true);
+    expect(out.settledViaAlias).toMatchObject({
+      archived: true,
+      settledReason: "manual",
+    });
+    expect(out.settledViaAlias.settledAt).toBeTypeOf("number");
+    expect(out.settledViaAlias.pinnedAt).toBeUndefined();
+    expect(out.settledViaAlias.snoozedUntil).toBeUndefined();
+    expect(out.unsettled).toMatchObject({ archived: false });
+    expect(out.unsettled.settledAt).toBeUndefined();
+    expect(out.unsettled.settledReason).toBeUndefined();
+    /* The migrated row reads back as parked through the domain type. */
+    expect(out.migrated).toMatchObject({
+      archived: true,
+      settledAt: 4000,
+      settledReason: "manual",
+    });
   });
 });

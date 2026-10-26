@@ -289,12 +289,12 @@ const threadRow = (page: Page, title: string) =>
     .locator('[role="button"]', { hasText: title })
     .first();
 
-test("AC-1 failed rename, archive and unarchive show their reasons", async ({
+test("AC-1 failed rename, settle and un-settle show their reasons", async ({
   page,
 }) => {
   await page.setViewportSize(VIEW);
   const fail = await wireFailures(page);
-  const TITLE = "a thread to rename and archive";
+  const TITLE = "a thread to rename and settle";
   await openSession(page, TITLE);
   /* Back to the page beside the list: the new thread is a row on Threads. */
   await page.goto(`${APP()}#?page=threads`);
@@ -321,10 +321,10 @@ test("AC-1 failed rename, archive and unarchive show their reasons", async ({
   );
   await expect(page.locator(TOAST)).toContainText(LOST);
 
-  /* Archive — same method, {archived} instead. */
+  /* Settle — its own method since D-#862, {settled: true}. */
   fail.heal();
   fail.reject({
-    match: (m, p) => m === "conversations.update" && p.archived !== undefined,
+    match: (m, p) => m === "conversations.settle" && p.settled === true,
     message: ERR,
   });
   await row.hover();
@@ -333,13 +333,13 @@ test("AC-1 failed rename, archive and unarchive show their reasons", async ({
     .click();
   await page.getByRole("menuitem", { name: "Settle thread" }).click();
   await expect(page.locator(TOAST)).toContainText(
-    "Couldn't archive the thread",
+    "Couldn't settle the thread",
     { timeout: 15_000 },
   );
   await expect(page.locator(TOAST)).toContainText(LOST);
-  await shot(page, "ac1-archive-toast");
+  await shot(page, "ac1-settle-toast");
 
-  /* Unarchive — the row moves under the folded Settled shelf first. */
+  /* Un-settle — the row moves under the folded Settled shelf first. */
   fail.heal();
   await row.hover();
   await row
@@ -348,25 +348,25 @@ test("AC-1 failed rename, archive and unarchive show their reasons", async ({
   await page.getByRole("menuitem", { name: "Settle thread" }).click();
   /* The sidebar renders the same fold — scope the shelf click to #v3-main. */
   await page.locator('#v3-main [data-fold="settled"] > button').click();
-  const archivedMenu = page
+  const settledMenu = page
     .locator("[data-settled-list]")
     .getByRole("button", { name: "Thread actions", exact: true })
     .last();
-  await expect(archivedMenu).toBeAttached({ timeout: 15_000 });
+  await expect(settledMenu).toBeAttached({ timeout: 15_000 });
   fail.reject({
-    match: (m, p) => m === "conversations.update" && p.archived !== undefined,
+    match: (m, p) => m === "conversations.settle" && p.settled === false,
     message: ERR,
   });
-  await archivedMenu.click();
+  await settledMenu.click();
   await page.getByRole("menuitem", { name: "Un-settle thread" }).click();
   await expect(page.locator(TOAST)).toContainText(
-    "Couldn't unarchive the thread",
+    "Couldn't un-settle the thread",
     { timeout: 15_000 },
   );
   await expect(page.locator(TOAST)).toContainText(LOST);
 });
 
-test("AC-1 the thread's own header renames and archives, and failures say so", async ({
+test("AC-1 the thread's own header renames and settles, and failures say so", async ({
   page,
 }) => {
   await page.setViewportSize(VIEW);
@@ -408,15 +408,15 @@ test("AC-1 the thread's own header renames and archives, and failures say so", a
     { timeout: 15_000 },
   );
 
-  /* A failed archive toasts too. */
+  /* A failed settle toasts too — `conversations.settle` since D-#862. */
   fail.reject({
-    match: (m, p) => m === "conversations.update" && p.archived !== undefined,
+    match: (m, p) => m === "conversations.settle" && p.settled === true,
     message: ERR,
   });
   await menu.click();
   await page.getByRole("menuitem", { name: "Settle thread" }).click();
   await expect(page.locator(TOAST)).toContainText(
-    "Couldn't archive the thread",
+    "Couldn't settle the thread",
     {
       timeout: 15_000,
     },

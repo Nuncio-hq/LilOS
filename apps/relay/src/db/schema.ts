@@ -137,7 +137,32 @@ export const conversations = sqliteTable(
     titleSource: text("title_source", { enum: ["auto", "user"] })
       .notNull()
       .default("auto"),
+    /* D-#862: `settled_*` is the thread-parking model — `archived` stays as
+       its synced mirror (updateConversation keeps archived ⇔ settled_at
+       non-NULL) so pre-#862 wire clients and every archived-filtered query
+       keep working unchanged. */
     archived: integer("archived", { mode: "boolean" }).notNull().default(false),
+    /** Pinned to the top of the thread list, epoch ms; NULL = not pinned.
+        Settling clears it. */
+    pinnedAt: integer("pinned_at"),
+    /** Settled onto the shelf, epoch ms; NULL = live. */
+    settledAt: integer("settled_at"),
+    /** Why it settled: 'manual' (the user / a legacy archived write), 'idle'
+        (3-day sweep), 'pr' (its PR merged or closed). */
+    settledReason: text("settled_reason", {
+      enum: ["manual", "idle", "pr"],
+    }),
+    /** The PR that settled it — JSON {num, state} — when reason='pr'. */
+    settledPr: text("settled_pr"),
+    /** Hidden until this epoch-ms time; wakes early on ask/failure/user msg. */
+    snoozedUntil: integer("snoozed_until"),
+    /** Auto-settle switch for this thread; 1 = the sweep may settle it. */
+    autoSettle: integer("auto_settle", { mode: "boolean" })
+      .notNull()
+      .default(true),
+    /** D-#862 review: newest owner park action — the sweep's idle clock
+        counts it so a freshly un-parked thread doesn't bounce back. */
+    lastParkActionAt: integer("last_park_action_at"),
     /** Host watermark: highest user-message seq handed to the engine (#28). */
     deliveredSeq: integer("delivered_seq").notNull().default(0),
     /** The newest turn.completed's usage (#300): JSON engine `Usage`

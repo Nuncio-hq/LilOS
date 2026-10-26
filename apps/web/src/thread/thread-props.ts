@@ -59,7 +59,8 @@ export function sharedViewProps(d: ThreadData) {
     onModelOpen: d.setModelOpen,
     access: d.conv.access,
     onAccess: d.onAccess,
-    /* The header's ⋯ menu: rename in place, archive/unarchive. */
+    /* The header's ⋯ menu: rename in place, settle/un-settle — the same
+       wording the row menu on Threads uses. */
     onRename: (title: string) =>
       toastOnFail(
         "Couldn't rename the thread",
@@ -68,8 +69,8 @@ export function sharedViewProps(d: ThreadData) {
     onArchive: (archived: boolean) =>
       toastOnFail(
         archived
-          ? "Couldn't archive the thread"
-          : "Couldn't unarchive the thread",
+          ? "Couldn't settle the thread"
+          : "Couldn't un-settle the thread",
         archiveConversation(d.conv.id, archived),
       ),
     onSend: d.send,

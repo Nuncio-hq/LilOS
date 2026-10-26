@@ -204,7 +204,20 @@ export interface ConversationPatch {
       field: `user` (non-host client) marks the name user-chosen forever;
       `auto` (engine host) applies only while the row isn't user-titled. */
   titleSource?: "auto" | "user";
+  /* D-#862: `archived` is the legacy alias for settle — the stores
+     translate it into the settled_* fields and keep the mirror column
+     (archived ⇔ settledAt non-null) inside updateConversation, the only
+     writer. */
   archived?: boolean;
+  /* D-#862: thread-parking columns. `pinnedAt`/`snoozedUntil`/`settledAt`
+     are epoch-ms stamps (`null` clears); `settledReason`/`settledPr` land
+     together with `settledAt`. */
+  pinnedAt?: number | null;
+  settledAt?: number | null;
+  settledReason?: "manual" | "idle" | "pr" | null;
+  settledPr?: { num: number; state: "merged" | "closed" } | null;
+  snoozedUntil?: number | null;
+  autoSettle?: boolean;
   state?: ConversationState;
   engineRef?: string;
   /** The model pinned on the engine session (issue #30). `null` clears
@@ -723,6 +736,14 @@ export interface RelayStore {
    * messages it marked, oldest first.
    */
   markRewound(conversationId: string, fromSeq: number): Promise<AppMessage[]>;
+
+  /**
+   * D-#862: the newest user-authored message's stamp in a thread — the user's
+   * resume clock for the PR-settle guard (only his messages resume a
+   * thread; agent turns and background wakes do not). `undefined` when the
+   * thread has no user row.
+   */
+  lastUserMessageAt(conversationId: string): Promise<number | undefined>;
 
   /**
    * Idempotent on (conversationId, requestId): re-opening the same engine
