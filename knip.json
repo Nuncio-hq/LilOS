@@ -22,6 +22,9 @@
     "packages/engine-conformance": {
       "entry": ["scripts/*.ts", "clients/**/*"]
     },
+    "packages/engine-acp": {
+      "entry": ["scripts/*.ts"]
+    },
     "packages/engine-fake": {
       "entry": ["scripts/*.ts"]
     },

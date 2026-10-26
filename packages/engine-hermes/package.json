@@ -14,8 +14,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@agentclientprotocol/sdk": "1.4.0",
+    "@agentclientprotocol/sdk": "1.9.0",
     "@lilos/contracts": "workspace:*",
+    "@lilos/engine-acp": "workspace:*",
     "zod": "^4.1.11"
   },
   "devDependencies": {
