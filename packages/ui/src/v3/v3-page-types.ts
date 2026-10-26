@@ -45,17 +45,20 @@ export type V3Route =
   | { page: "newchat"; id: string };
 
 /** A record: something you open (a ticket, a thread, a person, a goal, a
-   project). Records open beside the page you are on, never instead of it. */
+   project). A record becomes the page when you go to it (the sidebar, ⌘K);
+   a record the page already lists opens beside it (D-#769). */
 export type V3RecordRoute = Extract<V3Route, { id: string }>;
 
-/** A page: somewhere you live (the sidebar's entries). */
+/** A page: somewhere you live, that carries no id of its own. */
 export type V3PageRoute = Exclude<V3Route, V3RecordRoute>;
 
-/** Where you are: one page, plus the records you opened from it, in order.
-   The last record shows in the side peek; the rest are its trail. `full`
-   widens the peek over the page without leaving it. */
+/** Where you are: one route you went to (a page, or the record itself when
+   a sidebar item or ⌘K jump navigated, D-#769), plus the records you opened
+   from it, in order. The last record shows in the side peek; the rest are
+   its trail. `full` widens the peek over the page without leaving it — and
+   on a thread page it is the session view. */
 export type V3Nav = {
-  page: V3PageRoute;
+  page: V3Route;
   peek: V3RecordRoute[];
   full?: boolean;
 };

@@ -13,14 +13,15 @@ import { useShellEffects } from "./effects";
 import { moveNav, v3Nav } from "./nav";
 import { visibleNav } from "./shown";
 
-/* The real app's root (D-#769: one shell — the page on the left, one record
-   in a side peek with its trail, a widened thread is the session view, where
-   you are is the URL hash, a control exists only when the engine can do it).
-   V3Shell runs on the relay's company: the nav is nav.ts, the data one
-   computed store (data.ts), every click an action (actions.ts). The thread
-   in the peek and widened is ThreadPanel: the one v3 thread view, running on
-   engine events (#770). Not: a second UI, a route per record, placeholder or
-   duplicate controls. */
+/* The real app's root (D-#769: one shell — a destination is the page, an
+   item the page lists opens beside it in the side peek with its trail, a
+   widened thread is the session view, where you are is the URL hash, a
+   control exists only when the engine can do it). V3Shell runs on the
+   relay's company: the nav is nav.ts, the data one computed store
+   (data.ts), every click an action (actions.ts). The thread in the page,
+   the peek and widened is ThreadPanel: the one v3 thread view, running on
+   engine events (#770). Not: a second UI, a route per record, placeholder
+   or duplicate controls. */
 
 function Company() {
   const nav = useAtom(v3Nav);

@@ -1,4 +1,4 @@
-import type { V3Data, V3Nav } from "@lilos/ui";
+import { isRecordRoute, type V3Data, type V3Nav } from "@lilos/ui";
 
 /* What the shell draws, as opposed to what the URL says. The hash can name a
    gated page or record, and first run owns the whole window (no page, no
@@ -20,20 +20,33 @@ export function visibleNav(
 ): V3Nav {
   if (!tickets) {
     const gated = ["work", "inbox", "goals"].includes(nav.page.page);
+    /* A record can sit in `page` now (D-#769): a gated ticket or goal in
+       that slot is not opened either, so the shown nav lands on Home the
+       same way a gated page does. */
+    const gatedRecord =
+      isRecordRoute(nav.page) &&
+      (nav.page.page === "ticket" || nav.page.page === "goal");
     const peek = nav.peek.filter(
       (r) => r.page !== "ticket" && r.page !== "goal",
     );
-    if (!gated && peek.length === nav.peek.length) return nav;
-    return { ...nav, page: gated ? { page: "home" } : nav.page, peek };
+    if (!gated && !gatedRecord && peek.length === nav.peek.length) return nav;
+    return {
+      ...nav,
+      page: gated || gatedRecord ? { page: "home" } : nav.page,
+      peek,
+    };
   }
   if (hasUpdates || nav.page.page !== "inbox") return nav;
   return { ...nav, page: { page: "home" } };
 }
 
-/** The conversation the side peek draws, if its top record is a thread. First
-    run (V3Shell: not set up, or the Welcome page) draws no peek, so nothing
-    is open then: marking a thread read or silencing its notifications while
-    the human is on Welcome would be a lie. */
+/** The conversation on screen, if any: the side peek's top thread, or the
+    thread that IS the page now that a record can be the page (D-#769). A
+    widened peek covers the page, so a non-thread top hides whatever thread
+    the page holds. First run (V3Shell: not set up, or the Welcome page)
+    draws no record, so nothing is open then: marking a thread read or
+    silencing its notifications while the human is on Welcome would be a
+    lie. */
 export function threadOnScreen(
   nav: V3Nav,
   data: Pick<V3Data, "setUp" | "features"> & {
@@ -47,5 +60,7 @@ export function threadOnScreen(
   );
   if (!data.setUp || shown.page.page === "welcome") return undefined;
   const top = shown.peek[shown.peek.length - 1];
-  return top?.page === "thread" ? top.id : undefined;
+  if (top?.page === "thread") return top.id;
+  if (top != null && shown.full) return undefined;
+  return shown.page.page === "thread" ? shown.page.id : undefined;
 }

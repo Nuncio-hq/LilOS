@@ -7,13 +7,14 @@ import {
   pickPorts,
   type Stack,
   startChat,
+  v3Main,
   v3Peek,
 } from "./helpers/stack";
 
 /**
  * Keyboard navigation: ⌘K opens the search palette over people and threads
  * (a thread matches on its title, which is the first message until the
- * engine writes one) — Enter opens the pick beside the page you are on.
+ * engine writes one) — Enter jumps to the pick as the page (D-#769).
  * ⌘/ shows the shortcut list. The web surface binds only the chords a
  * browser doesn't reserve (⌘N/⌘1–9 are Electron menu accelerators, covered
  * by apps/desktop's menu test). ⌘[ / ⌘] walk the hash history.
@@ -70,10 +71,11 @@ test("⌘K opens the palette, typing filters, Enter opens the thread", async ({
   await expect(row).toHaveCount(1);
   await expect(row).toContainText(`${agent.name} · thread`);
 
-  /* Enter opens the highlighted pick — the thread opens beside Threads. */
+  /* Enter opens the highlighted pick — a palette jump navigates to the
+     thread's page (D-#769), closing whatever the peek showed. */
   await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(/open=thread:[^&]+/, { timeout: 15_000 });
-  await expect(v3Peek(page).locator("[data-thread-panel]")).toBeVisible();
+  await expect(page).toHaveURL(/page=thread&id=[^&]+/, { timeout: 15_000 });
+  await expect(v3Main(page).locator("[data-thread-panel]")).toBeVisible();
   await expect(palette(page)).toHaveCount(0);
   await page.screenshot({ path: `${SHOTS}/ac-k-session.png` });
 });
@@ -97,10 +99,11 @@ test("⌘K person pick lands on their page; Esc closes the palette", async ({
   await palette(page).locator("input").fill(agent.name);
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(
-    new RegExp(`open=agent:${encodeURIComponent(agent.id)}$`),
+    new RegExp(`page=agent&id=${encodeURIComponent(agent.id)}$`),
     { timeout: 15_000 },
   );
-  await expect(v3Peek(page)).toBeVisible();
+  await expect(v3Main(page)).toBeVisible();
+  await expect(v3Peek(page)).toHaveCount(0);
   await expect(palette(page)).toHaveCount(0);
 });
 

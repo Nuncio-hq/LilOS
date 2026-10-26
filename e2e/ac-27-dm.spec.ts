@@ -601,11 +601,11 @@ test("AC-7 real-app build: every visible control has a working handler", async (
     };
     await clickAll("aside:not([aria-label])");
     // Open Default (the sweep may have left any page up) and sweep what it
-    // shows: the page behind and the person beside it.
+    // shows: a sidebar pick is a jump — the person IS the page now (D-#769).
     await sidebar
       .getByRole("button", { name: /default/i })
       .click({ timeout: 10_000 });
-    await expect(page).toHaveURL(/open=agent:/);
+    await expect(page).toHaveURL(/[#?&]page=agent&id=/);
     await clickAll("main");
     await clickAll('aside[aria-label="Opened record"]');
     // The app still works: a new chat accepts a message and the agent

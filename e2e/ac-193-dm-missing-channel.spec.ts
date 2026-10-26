@@ -7,6 +7,7 @@ import {
   relayRpc,
   type Stack,
   skipFirstRun,
+  v3Main,
   v3Peek,
   v3Sidebar,
 } from "./helpers/stack";
@@ -83,9 +84,10 @@ test("AC-1 first-run hire's DM channel exists, and the new chat with it is ready
   if (!first) throw new Error("no Default employee on the relay");
   expect((await dmChannels(page, first.id)).length).toBe(1);
 
-  // Their page → Message: the draft's composer is up and usable.
+  // Their page → Message: the draft's composer is up and usable. The
+  // sidebar pick jumped to the person's page (D-#769); Message peeks beside it.
   await sidebar.getByRole("button", { name: /Default/ }).click();
-  await v3Peek(page).getByRole("button", { name: "Message" }).click();
+  await v3Main(page).getByRole("button", { name: "Message" }).click();
   const box = v3Peek(page).getByPlaceholder("Message Default…");
   await expect(box).toBeVisible({ timeout: 15_000 });
   await expect(box).toBeEnabled();

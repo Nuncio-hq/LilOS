@@ -2,9 +2,11 @@ import {
   navFromParams,
   paramsFromNav,
   paramsText,
+  stepNav,
   type V3Nav,
 } from "@lilos/ui";
 import { atom } from "nanostores";
+import { v3DataStore } from "./data";
 
 /* Where you are in v3 lives in the URL hash (`#?page=threads&open=thread:<id>`)
    because the packaged Mac app loads from `file:`, where only the fragment can
@@ -37,10 +39,15 @@ export function moveNav(update: (nav: V3Nav) => V3Nav): void {
 
 window.addEventListener("popstate", () => v3Nav.set(fromHash()));
 
-/** A conversation opens beside Threads, whatever page you were on: what a
-    notification click or any other link to a thread means. */
+/** A notification click is a jump, the same as a sidebar pick or ⌘K
+    (D-#769): it NAVIGATES — the thread becomes the page, full width, and
+    any peek closes. */
 export const openThread = (conversationId: string): void =>
-  moveNav(() => ({
-    page: { page: "threads" },
-    peek: [{ page: "thread", id: conversationId }],
-  }));
+  moveNav((n) =>
+    stepNav(
+      n,
+      { page: "thread", id: conversationId },
+      "nav",
+      v3DataStore().get(),
+    ),
+  );

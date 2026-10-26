@@ -18,8 +18,8 @@ import { Kbd } from "./v3-bits";
 import type { V3Data } from "./v3-data-types";
 import { AgentAvatar, CeoMark, ProjectMark, StatusDot } from "./v3-marks";
 import { agentDot, boardStatus, companyOn, listedThreads } from "./v3-model";
-import type { V3PageRoute, V3RecordRoute, V3Route } from "./v3-page-types";
-
+import { isRecordRoute } from "./v3-nav";
+import type { V3RecordRoute, V3Route } from "./v3-page-types";
 import { type SidebarMode, SidebarToggle } from "./v3-topbar";
 
 /* The v3 sidebar is the company's table of contents: the three databases
@@ -45,8 +45,9 @@ export function V3Sidebar({
   onBlur,
 }: {
   data: V3Data;
-  /** The page you are on: its entry stays lit while records open beside it. */
-  page: V3PageRoute;
+  /** Where you are — a page, or the record you went straight to (D-#769):
+     a project or agent the sidebar navigated to keeps its entry lit. */
+  page: V3Route;
   /** The record in the side peek, if any: a project or person gets a mark. */
   open?: V3RecordRoute;
   go: (r: V3Route) => void;
@@ -75,8 +76,13 @@ export function V3Sidebar({
     const s = boardStatus(data, t);
     return s !== "done" && s !== "idle";
   }).length;
+  /* A bare page lights its own entry; a record lights it when it IS the
+     page (the sidebar went to it) or sits on top of the peek. */
   const on = (p: V3Route["page"], id?: string) =>
-    id === undefined ? page.page === p : opened?.page === p && opened.id === id;
+    id === undefined
+      ? page.page === p
+      : (isRecordRoute(page) && page.page === p && page.id === id) ||
+        (opened?.page === p && opened.id === id);
 
   return (
     // Always mounted, so hiding keeps its scroll and its place; hidden, it is
