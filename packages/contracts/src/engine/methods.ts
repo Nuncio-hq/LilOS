@@ -107,6 +107,11 @@ export const SessionStartResult = z.object({
    * id resolves the same session scope.
    */
   engineSessionId: z.string().min(1).optional(),
+  /** Picks session.start could not take (D-#846 — the session never
+      advertised the option): one line each. Events emitted inside
+      session.start race the binding registration, so the engine reports
+      them here and the host posts them as system notes once bound. */
+  notes: z.array(z.string().min(1)).optional(),
 });
 export type SessionStartResult = z.infer<typeof SessionStartResult>;
 
