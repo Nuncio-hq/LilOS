@@ -362,6 +362,9 @@ export class EngineSupervisor {
       if (code !== undefined) this.probeMisses = 0;
       if (code === EngineSupervisor.BACKEND_DOWN) {
         this.probeDown = true;
+        /* #834: a backend report owns the verdict now — event traffic
+           must not lift it the way it lifts a dead-air miss. */
+        this.probeDeadAir = false;
         const detail = error instanceof Error ? error.message : String(error);
         if (
           this.state.current !== "failed" &&
