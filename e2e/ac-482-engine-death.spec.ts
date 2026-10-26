@@ -298,7 +298,9 @@ test("AC-1/2/3 (#482) killed hermes child → typed errors fast, outage shown, s
 
     /* #521: the in-flight TURN fails typed too — whichever path notices the
        death first, the DM shows the restart surface (interrupted note +
-       sleep failure card), never a generic "Engine error:" line. */
+       amber failure card), never a generic "Engine error:" line. #834: a
+       killed backend is an engine restart, so the note says so — only a
+       real Mac sleep still says "went to sleep". */
     await probe.waitEvent(
       "message.created",
       (p) => {
@@ -307,7 +309,7 @@ test("AC-1/2/3 (#482) killed hermes child → typed errors fast, outage shown, s
         return (
           m?.authorKind === "system" &&
           typeof m.text === "string" &&
-          m.text.includes("went to sleep")
+          m.text.includes("the engine restarted")
         );
       },
       10_000,
