@@ -241,6 +241,10 @@ export class FakeGateway implements GatewayLike {
       lets a test hold completeTurn's post-turn rotation poll mid-flight. */
   titleGate?: Promise<void>;
 
+  /** #834: when set, config.get answers only after this promise resolves —
+      a backend event loop too stalled to read a config key. */
+  configGetGate?: Promise<void>;
+
   /** #573: when set, session.resume answers only after this promise
       resolves — a test can land session.stop inside the resume window and
       prove the forgotten session isn't resurrected when the answer lands. */
@@ -707,9 +711,17 @@ export class FakeGateway implements GatewayLike {
         return Promise.resolve({ plugins: this.plugins });
       case "config.get": {
         const key = String(p.key ?? "");
-        if (key === "approvals.mode")
-          return Promise.resolve({ key, value: this.approvalsMode });
-        return Promise.reject(new RpcError(4002, `unknown config key: ${key}`));
+        /* #834: hold the answer like the stalled backend event loop did —
+           describe must not wait on this read. */
+        const reply = () =>
+          key === "approvals.mode"
+            ? Promise.resolve({ key, value: this.approvalsMode })
+            : Promise.reject(
+                new RpcError(4002, `unknown config key: ${key}`),
+              );
+        return this.configGetGate
+          ? this.configGetGate.then(reply)
+          : reply();
       }
       case "complete.slash": {
         /* A fixed menu — the adapter maps text/meta/kind verbatim. */

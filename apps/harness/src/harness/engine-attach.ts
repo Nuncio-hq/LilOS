@@ -7,6 +7,7 @@ import type {
 import {
   type EngineConnection,
   engineErrorCode,
+  RESUME_AWARE_TIMEOUT_MS,
   SESSION_NOT_FOUND,
 } from "../engine/client";
 import type { HarnessCtx, SessionBinding } from "./ctx";
@@ -96,10 +97,17 @@ export async function resyncBinding(
   const conn = this.engine;
   if (!conn) return;
   try {
-    const replay = await conn.request<EventsSinceResult>("events.since", {
-      sessionId: binding.sessionId,
-      after: binding.lastSeq,
-    });
+    /* #834: on a just-restarted adapter this read drives the session's
+       lazy resume — it must outlast that rebuild or the resync dies at
+       15 s mid-resume and the lane never sees the session truth. */
+    const replay = await conn.request<EventsSinceResult>(
+      "events.since",
+      {
+        sessionId: binding.sessionId,
+        after: binding.lastSeq,
+      },
+      RESUME_AWARE_TIMEOUT_MS,
+    );
     this.applyReplay(binding, replay);
   } catch (error) {
     if (engineErrorCode(error) === SESSION_NOT_FOUND) {

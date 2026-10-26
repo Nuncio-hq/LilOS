@@ -225,6 +225,10 @@ export class HermesEngine {
       close: () => this.current.close(),
     };
     this.wireGateway(this.current);
+    /* #834: seed the approval policy off describe's answer path — the
+       probe reads it synchronously, so a slow backend never shows in
+       describe's latency. */
+    this.prefetchPolicy();
   }
 
   private wireGateway(gw: GatewayLike) {
@@ -786,8 +790,14 @@ export class HermesEngine {
     capabilities.push(COMPACT_CAPABILITY);
     /* #106: the global approval policy — `approvals.setPolicy` writes
        `approvals.mode`; `current` reports the live value when a `config.get`
-       read or a setPolicy this run knows it (omitted otherwise). */
-    const current = this.policy ?? (await this.readPolicy());
+       read or a setPolicy this run knows it (omitted otherwise).
+       #834: describe is the harness's liveness probe — it answers from
+       adapter memory only. Awaiting `config.get` here made the probe ride
+       a busy backend's event loop (one incident stalled it 66 s, and the
+       healthy adapter was restarted for missing the 1.5 s deadline), so
+       the read seeds the cache off the answer path instead. */
+    const current = this.policy;
+    if (current === undefined) this.prefetchPolicy();
     capabilities.push({
       ...APPROVAL_POLICY_CAPABILITY,
       detail: {
@@ -2196,6 +2206,22 @@ export class HermesEngine {
 
   /** Best-effort `config.get approvals.mode` — `undefined` when the build
       can't read it (a describe must not fail over a policy probe). */
+  /* #834: one `config.get` in flight at a time, fired by the constructor
+      and by describe when `policy` is still unknown — never awaited by
+      describe itself. A failure just means "still unknown"; the next
+      describe re-arms it. */
+  private policyPrefetch?: Promise<void>;
+  private prefetchPolicy(): void {
+    if (this.policy !== undefined || this.policyPrefetch) return;
+    this.policyPrefetch = this.readPolicy()
+      .then((v) => {
+        this.policy ??= v;
+      })
+      .finally(() => {
+        this.policyPrefetch = undefined;
+      });
+  }
+
   private async readPolicy(): Promise<ApprovalPolicy | undefined> {
     try {
       const r = (await this.gw("config.get", {

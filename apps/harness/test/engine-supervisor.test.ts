@@ -1,3 +1,4 @@
+import type { EngineEvent } from "@lilos/contracts/engine";
 import { describe, expect, it } from "vitest";
 import type { EngineConnection } from "../src/engine/client.js";
 import { EngineRpcError } from "../src/engine/client.js";
@@ -26,15 +27,19 @@ function fakeProc(pid: number): {
   };
 }
 
-/** EngineConnection that never makes real I/O; `drop()` fires onClose.
-    `responder` answers every request (default: plain Error = dead air). */
+/** EngineConnection that never makes real I/O; `drop()` fires onClose and
+    `emit()` pushes an engine event to subscribers (a busy adapter's turn
+    traffic — the probe's other proof of life, #834). `responder` answers
+    every request (default: plain Error = dead air). */
 function fakeConn(): EngineConnection & {
   drop: (reason?: string) => void;
+  emit: (e: EngineEvent) => void;
   responder: () => Promise<unknown>;
   requestCalls: number;
   closed: boolean;
 } {
   let closeCb: ((reason?: string) => void) | undefined;
+  const eventFns = new Set<(e: EngineEvent) => void>();
   const conn = {
     requestCalls: 0,
     closed: false,
@@ -44,7 +49,10 @@ function fakeConn(): EngineConnection & {
       conn.requestCalls += 1;
       return conn.responder() as Promise<T>;
     },
-    onEvent: () => () => {},
+    onEvent: (fn: (e: EngineEvent) => void) => {
+      eventFns.add(fn);
+      return () => eventFns.delete(fn);
+    },
     onClose: (fn: (reason?: string) => void) => {
       closeCb = fn;
     },
@@ -52,9 +60,21 @@ function fakeConn(): EngineConnection & {
       conn.closed = true;
     },
     drop: (reason?: string) => closeCb?.(reason ?? "dropped"),
+    emit: (e: EngineEvent) => {
+      for (const fn of eventFns) fn(e);
+    },
   };
   return conn;
 }
+
+/** A minimal live-traffic frame — the adapter pushing turn progress. */
+const busyEvent = (seq: number): EngineEvent =>
+  ({
+    seq,
+    sessionId: "s-1",
+    type: "session.state",
+    payload: { state: "running" },
+  }) as EngineEvent;
 
 interface World {
   supervisor: EngineSupervisor;
@@ -445,6 +465,67 @@ describe("#482 engine liveness probe", () => {
     for (let i = 0; i < 10 && w.conns.length < 2; i++) await tick();
     expect(w.procs).toHaveLength(1);
     expect(w.connections.at(-1)?.reconnect).toBe(true);
+    expect(w.states.at(-1)).toBe("running");
+    await w.supervisor.stop();
+  });
+
+  /* #834: a busy-but-alive Hermes adapter can miss the describe deadline —
+     its `describe` used to ride the backend's stalled event loop while turn
+     events kept flowing. Event frames are proof of life equal to an answer:
+     they reset the dead-air count, so only sustained silence restarts. */
+  it("live event traffic keeps a describe-missing adapter alive; silence after it still kills", async () => {
+    const w = world({
+      probeIntervalMs: 5,
+      probeTimeoutMs: 10,
+      probeMissesBeforeRestart: 2,
+      // describe never answers inside the probe deadline — every probe is
+      // dead air on the request path (the fake conn has no request timer,
+      // so the rejection stands in for the client's own deadline); only
+      // the event stream can prove the adapter is alive.
+      responders: [
+        () =>
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("dead air")), 50),
+          ),
+        () => Promise.resolve({}),
+      ],
+    });
+    await w.supervisor.start();
+    const c0 = w.conns[0];
+    if (!c0) throw new Error("conn missing");
+
+    // Miss 1 lands while the adapter is quiet: the verdict reads restarting.
+    for (let i = 0; i < 20 && w.states.at(-1) !== "restarting"; i++)
+      await tick();
+    expect(w.states.at(-1)).toBe("restarting");
+    expect(w.details.at(-1)).toContain("probe timeout");
+
+    // A turn's progress frame proves the adapter's event loop is alive —
+    // the dead-air count resets and the dead-air verdict lifts.
+    let seq = 0;
+    c0.emit(busyEvent(++seq));
+    for (let i = 0; i < 20 && w.states.at(-1) !== "running"; i++) await tick();
+    expect(w.states.at(-1)).toBe("running");
+
+    // Now hold it busy indefinitely — events flow between probes while
+    // describe still never answers. Two consecutive dead-air misses can
+    // never accumulate, so the process is never killed.
+    const traffic = setInterval(() => c0.emit(busyEvent(++seq)), 4);
+    try {
+      for (let i = 0; i < 12; i++) await tick();
+      expect(w.procs).toHaveLength(1);
+      expect(w.conns).toHaveLength(1);
+      expect(c0.closed).toBe(false);
+    } finally {
+      clearInterval(traffic);
+    }
+
+    // The moment the traffic stops too, the adapter is genuinely wedged:
+    // two dead-air misses land back to back and it is restarted (#482).
+    for (let i = 0; i < 30 && w.procs.length < 2; i++) await tick();
+    expect(c0.closed).toBe(true);
+    expect(w.procs).toHaveLength(2);
+    for (let i = 0; i < 10 && w.states.at(-1) !== "running"; i++) await tick();
     expect(w.states.at(-1)).toBe("running");
     await w.supervisor.stop();
   });

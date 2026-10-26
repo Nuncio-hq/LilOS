@@ -422,7 +422,11 @@ describe("engine-hermes #106: approval modes", () => {
 
   test("AC-3 approvals.setPolicy -> config.set approvals.mode; describe reports current", async () => {
     const { gw, h } = setup();
-    // `current` seeds from config.get when no setPolicy ran yet.
+    /* `current` seeds from config.get when no setPolicy ran yet — off
+       describe's answer path (#834), so it lands on the next describe. */
+    for (let i = 0; i < 20 && (await capCurrent(h)) === undefined; i++) {
+      await new Promise((r) => setTimeout(r, 5));
+    }
     expect(await capCurrent(h)).toBe("smart");
     expect(await h.request("approvals.setPolicy", { policy: "off" })).toEqual({
       policy: "off",
@@ -432,6 +436,45 @@ describe("engine-hermes #106: approval modes", () => {
     ).toMatchObject({ value: "off" });
     expect(gw.approvalsMode).toBe("off");
     expect(await capCurrent(h)).toBe("off");
+  });
+
+  test("#834 describe never awaits the backend — a stalled config.get cannot stall the liveness probe", async () => {
+    const gw = new FakeGateway();
+    let release!: () => void;
+    gw.configGetGate = new Promise<void>((r) => {
+      release = r;
+    });
+    const engine = new HermesEngine({ gateway: gw });
+    const conn = connectInMemory(engine);
+    const h = new Harness(conn);
+
+    /* The incident: describe awaited `config.get approvals.mode` to seed
+       `current`, so a backend event loop stalled under load made a
+       healthy adapter miss the harness's 1.5 s probe deadline. describe
+       must answer from memory — `current` is omitted until the seed
+       lands — and the read rides off the answer path. */
+    const d = (await Promise.race([
+      h.request("describe"),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("describe hung")), 2_000),
+      ),
+    ])) as {
+      capabilities: { id: string; detail?: { current?: string } }[];
+      backend?: { state?: string };
+    };
+    expect(d.backend?.state).toBe("running");
+    expect(
+      d.capabilities.find((c) => c.id === "approval_policy")?.detail
+        ?.current,
+    ).toBeUndefined();
+
+    /* Once the backend unblocks, the in-flight seed lands and the next
+       describe carries `current` again. */
+    release();
+    for (let i = 0; i < 20 && (await capCurrent(h)) === undefined; i++) {
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    expect(await capCurrent(h)).toBe("smart");
   });
 
   test("AC-1 access:full on session.start sends the session yolo hint; session.setAccess toggles it", async () => {

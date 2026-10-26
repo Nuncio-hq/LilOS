@@ -21,6 +21,7 @@ import type { CheckpointStore } from "@lilos/host";
 import {
   type EngineConnection,
   engineErrorCode,
+  RESUME_AWARE_TIMEOUT_MS,
   SESSION_NOT_FOUND,
 } from "./engine/client";
 import type { EngineHostState } from "./engine/supervisor";
@@ -539,12 +540,21 @@ export class Harness {
       );
     }
     for (const binding of this.bindings.values()) {
-      void this.resyncBinding(binding).catch((error) =>
-        this.opts.log.warn("session resync failed", {
-          sessionId: binding.sessionId,
-          error: String(error),
-        }),
-      );
+      /* #834: a send requeued while the engine was down must run on its
+         own now — the queue's other drains (turn.completed, rebind) never
+         fire when the session survived the restart (the adapter resumes
+         its stored row, so nothing rebinds). Once resync has settled the
+         lane truth, the parked send drains; a resync failure still gets
+         the attempt — a dead sessionId prompts into SESSION_NOT_FOUND
+         and rebinds, and a still-running lane no-ops. */
+      void this.resyncBinding(binding)
+        .catch((error) =>
+          this.opts.log.warn("session resync failed", {
+            sessionId: binding.sessionId,
+            error: String(error),
+          }),
+        )
+        .finally(() => this.drainQueue(binding));
     }
   }
 
@@ -575,10 +585,17 @@ export class Harness {
     const conn = this.engine;
     if (!conn) throw new Error("engine not connected");
     try {
-      return await conn.request<EventsSinceResult>("events.since", {
-        sessionId,
-        after,
-      });
+      /* #834: the feed's replay lands on the same lazy-resume path —
+         a transcript reopened while the adapter rebuilds must outwait
+         the rebuild, not error into "transcript replay failed". */
+      return await conn.request<EventsSinceResult>(
+        "events.since",
+        {
+          sessionId,
+          after,
+        },
+        RESUME_AWARE_TIMEOUT_MS,
+      );
     } catch (error) {
       /* D-#300: a session the engine forgot — legacy bare ids (`s1`) with
          no registry row, or any SESSION_NOT_FOUND — must not surface as a
@@ -619,6 +636,8 @@ export class Harness {
   declare private describeAndHire: (conn: EngineConnection) => Promise<void>;
 
   declare private resyncBinding: (binding: SessionBinding) => Promise<void>;
+
+  declare private drainQueue: (binding: SessionBinding) => void;
 
   /* ------------------------- message -> engine -------------------------- */
 

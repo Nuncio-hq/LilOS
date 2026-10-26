@@ -46,7 +46,10 @@ export interface EngineSupervisorOptions {
      `backend.state` restarting/failed (mapped into host state — the
      adapter itself stays up and self-heals); an adapter that stops
      answering at all is restarted after probeMissesBeforeRestart
-     consecutive misses. */
+     consecutive misses. #834: "dead air" counts frames, not answers —
+     engine events the adapter pushes (turn progress etc.) reset the miss
+     count the same way a response does, so a busy-but-alive adapter is
+     never restarted for being busy. */
   probeIntervalMs?: number;
   probeTimeoutMs?: number;
   probeMissesBeforeRestart?: number;
@@ -72,6 +75,14 @@ export class EngineSupervisor {
   private probeMisses = 0;
   /** Probe-driven not-running state — cleared on the next healthy probe. */
   private probeDown = false;
+  /** #834: set only when a dead-air miss drove the verdict — answered
+      frames and backend-down reports own their own recovery. */
+  private probeDeadAir = false;
+  /** Unsubscribe the probe's liveness listener on the current conn. */
+  private probeEventOff?: () => void;
+  /** One probe in flight — a conn slower than the interval must not
+      stack overlapping probes into inflated misses. */
+  private probeBusy = false;
   /** D-#817: the next child exit is a plugin refresh, not a crash. */
   private deliberateRestart = false;
   /** A refresh was requested before the child existed (boot timed out
@@ -278,6 +289,21 @@ export class EngineSupervisor {
     this.stopProbe();
     const every = this.opts.probeIntervalMs;
     if (!(every > 0)) return;
+    /* #834: any frame the adapter pushes proves its event loop is alive,
+       same as an answered request — a busy Hermes still forwards turn
+       events while `describe` waits behind the backend's stalled loop.
+       Traffic alone can never restart the adapter; it lifts a dead-air
+       verdict the same way the next healthy probe would. */
+    this.probeEventOff = conn.onEvent(() => {
+      if (this.state.conn !== conn) return;
+      this.probeMisses = 0;
+      if (this.probeDeadAir) {
+        this.probeDeadAir = false;
+        this.probeDown = false;
+        if (this.state.current === "restarting")
+          this.set("running", this.opts.launcher.name);
+      }
+    });
     this.probeTimer = setInterval(() => void this.probe(conn), every);
     this.probeTimer.unref?.();
   }
@@ -285,8 +311,12 @@ export class EngineSupervisor {
   private stopProbe() {
     if (this.probeTimer) clearInterval(this.probeTimer);
     this.probeTimer = undefined;
+    this.probeEventOff?.();
+    this.probeEventOff = undefined;
     this.probeMisses = 0;
     this.probeDown = false;
+    this.probeDeadAir = false;
+    this.probeBusy = false;
   }
 
   /**
@@ -295,13 +325,17 @@ export class EngineSupervisor {
    * call hung until its own (longer) deadline. The probe draws the line:
    * backend-down signals map straight into host state while the adapter
    * self-heals; repeated dead air means the adapter itself is gone and the
-   * process gets restarted.
+   * process gets restarted. #834: dead air means no frames at all — a
+   * busy adapter may miss the `describe` deadline while its turn events
+   * keep flowing, and the events are the same proof of life.
    */
   private async probe(conn: EngineConnection) {
     if (this.stopping || conn !== this.state.conn) {
       this.stopProbe();
       return;
     }
+    if (this.probeBusy) return;
+    this.probeBusy = true;
     try {
       const r = await conn.request<{
         backend?: { state?: string; detail?: string };
@@ -341,6 +375,7 @@ export class EngineSupervisor {
       if (code !== undefined) return;
       this.probeMisses += 1;
       this.probeDown = true;
+      this.probeDeadAir = true;
       if (this.probeMisses < this.opts.probeMissesBeforeRestart) {
         this.opts.log.warn("engine probe timeout", {
           miss: this.probeMisses,
@@ -367,6 +402,8 @@ export class EngineSupervisor {
       } else if (this.launched?.url) {
         void this.reconnect(this.launched.url);
       }
+    } finally {
+      this.probeBusy = false;
     }
   }
 
