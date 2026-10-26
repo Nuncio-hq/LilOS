@@ -29,6 +29,17 @@ const agent: V3Agent = {
   instructions: ["Comment with file:line.", "Never push to main."],
 };
 
+/* A second agent, so emp_1 is not the last one on the team — the last LilOS
+   agent never gets a remove control (#856). `two` is the roster remove tests
+   need; `data()` alone leaves one agent for everything else. */
+const other: V3Agent = {
+  ...agent,
+  id: "emp_2",
+  name: "Maker",
+  instructions: [],
+};
+const two: V3Agent[] = [agent, other];
+
 const data = (over: Partial<V3Data> = {}): V3Data =>
   ({
     company: "Co",
@@ -99,11 +110,14 @@ const press = (el: Element, key: string) =>
 
 describe("capability by presence", () => {
   test("no updateAgent/removeAgent: no Edit, no mute switch, no Remove", () => {
-    mount(actions({ updateAgent: undefined, removeAgent: undefined }));
+    mount(
+      actions({ updateAgent: undefined, removeAgent: undefined }),
+      data({ agents: two }),
+    );
     expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
     expect(screen.queryByRole("switch")).toBeNull();
     expect(
-      screen.queryByRole("button", { name: "Remove from company" }),
+      screen.queryByRole("button", { name: "Remove from LilOS" }),
     ).toBeNull();
   });
 
@@ -111,7 +125,7 @@ describe("capability by presence", () => {
     const outside: V3Agent = { ...agent, kind: "outside", via: "x" };
     render(
       <V3AgentPage
-        data={data({ agents: [outside] })}
+        data={data({ agents: [outside, other] })}
         go={vi.fn()}
         act={actions()}
         id="emp_1"
@@ -119,7 +133,7 @@ describe("capability by presence", () => {
     );
     expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
     expect(
-      screen.queryByRole("button", { name: "Remove from company" }),
+      screen.queryByRole("button", { name: "Remove from LilOS" }),
     ).toBeNull();
   });
 
@@ -280,38 +294,88 @@ describe("remove", () => {
   test("asks first, says what goes and what stays, then goes to People", async () => {
     const act_ = actions();
     const go = vi.fn<(r: V3Route) => void>();
-    mount(act_, data(), go);
-    fireEvent.click(
-      screen.getByRole("button", { name: "Remove from company" }),
-    );
+    mount(act_, data({ agents: two }), go);
+    fireEvent.click(screen.getByRole("button", { name: "Remove from LilOS" }));
     const ask = screen.getByRole("group", {
-      name: "Remove Reviewer from the company",
+      name: "Remove Reviewer from LilOS",
     });
-    expect(ask.textContent).toContain("Remove Reviewer from the company?");
-    expect(ask.textContent).toContain("Reviewer's record and 1 thread");
-    expect(ask.textContent).toContain("engine profile");
+    expect(ask.textContent).toContain("Remove Reviewer from LilOS?");
+    expect(ask.textContent).toContain("Reviewer and its 1 thread in LilOS");
+    expect(ask.textContent).toContain("engine profile and CLI login");
     expect(act_.removeAgent).not.toHaveBeenCalled();
     await act(async () => {
       fireEvent.click(
-        screen.getByRole("button", { name: "Remove from company" }),
+        screen.getByRole("button", { name: "Remove from LilOS" }),
       );
     });
     expect(act_.removeAgent).toHaveBeenCalledWith("emp_1");
     expect(go).toHaveBeenCalledWith({ page: "people" });
   });
 
+  test("a running thread is named in the ask: it is stopped first", () => {
+    mount(
+      actions(),
+      data({
+        agents: two,
+        threads: [
+          {
+            id: "t-live",
+            agentId: "emp_1",
+            title: "Live work",
+            status: "working",
+            startedAt: "11:00",
+            minutes: 4,
+            step: 1,
+            context: 1,
+            folder: "~",
+            changes: [],
+            turns: [],
+          },
+        ],
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Remove from LilOS" }));
+    expect(
+      screen.getByRole("group", { name: "Remove Reviewer from LilOS" })
+        .textContent,
+    ).toContain("Anything running is stopped first");
+  });
+
+  test("with the company layer paused Remove is still there — and lands on People", async () => {
+    const act_ = actions();
+    const go = vi.fn<(r: V3Route) => void>();
+    // shownData's shape, as the paused shell hands it down (D-#836):
+    // company off, no ceoId.
+    mount(
+      act_,
+      data({ agents: two, features: { company: false, tickets: false } }),
+      go,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Remove from LilOS" }));
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Remove from LilOS" }),
+      );
+    });
+    expect(act_.removeAgent).toHaveBeenCalledWith("emp_1");
+    expect(go).toHaveBeenCalledWith({ page: "people" });
+  });
+
+  test("the last LilOS agent has no remove control", () => {
+    mount(actions(), data());
+    expect(
+      screen.queryByRole("button", { name: "Remove from LilOS" }),
+    ).toBeNull();
+  });
+
   test("Cancel and Esc put the question away without removing", () => {
     const shell = shellEsc();
     const act_ = actions();
-    mount(act_);
-    fireEvent.click(
-      screen.getByRole("button", { name: "Remove from company" }),
-    );
+    mount(act_, data({ agents: two }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove from LilOS" }));
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("group")).toBeNull();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Remove from company" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Remove from LilOS" }));
     press(document.body, "Escape");
     expect(screen.queryByRole("group")).toBeNull();
     expect(act_.removeAgent).not.toHaveBeenCalled();
@@ -323,27 +387,25 @@ describe("remove", () => {
     const go = vi.fn();
     mount(
       actions({ removeAgent: vi.fn().mockRejectedValue(new Error("no")) }),
-      data(),
+      data({ agents: two }),
       go,
     );
-    fireEvent.click(
-      screen.getByRole("button", { name: "Remove from company" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Remove from LilOS" }));
     await act(async () => {
       fireEvent.click(
-        screen.getByRole("button", { name: "Remove from company" }),
+        screen.getByRole("button", { name: "Remove from LilOS" }),
       );
     });
     expect(go).not.toHaveBeenCalled();
     expect(
-      screen.getByRole("group", { name: "Remove Reviewer from the company" }),
+      screen.getByRole("group", { name: "Remove Reviewer from LilOS" }),
     ).toBeTruthy();
   });
 
   test("whoever holds the CEO position has no remove control", () => {
-    mount(actions(), data({ ceoId: "emp_1" }));
+    mount(actions(), data({ agents: two, ceoId: "emp_1" }));
     expect(
-      screen.queryByRole("button", { name: "Remove from company" }),
+      screen.queryByRole("button", { name: "Remove from LilOS" }),
     ).toBeNull();
   });
 });

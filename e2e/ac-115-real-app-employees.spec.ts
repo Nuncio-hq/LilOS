@@ -512,21 +512,18 @@ test("AC-7 Remove deletes the LilOS record + DM, never the engine profile", asyn
   );
   expect((await dmChannelIds(stackA, employeeId)).length).toBe(1);
 
-  await peek.getByRole("button", { name: "Remove from company" }).click();
-  // #64's plain confirmation: what goes (record + DMs) vs what stays (profile).
+  await peek.getByRole("button", { name: "Remove from LilOS" }).click();
+  // #856's plain confirmation: what goes (the agent + its LilOS threads) vs
+  // what stays (the engine profile and CLI login).
   const confirm = peek.getByRole("group", {
-    name: "Remove Tester from the company",
+    name: "Remove Tester from LilOS",
   });
+  await expect(confirm.getByText("Remove Tester from LilOS?")).toBeVisible();
   await expect(
-    confirm.getByText("Remove Tester from the company?"),
-  ).toBeVisible();
-  await expect(
-    confirm.getByText(
-      /its engine profile, with its history, memory and skills/,
-    ),
+    confirm.getByText(/its engine profile and CLI login/),
   ).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-7-remove-confirm.png` });
-  await confirm.getByRole("button", { name: "Remove from company" }).click();
+  await confirm.getByRole("button", { name: "Remove from LilOS" }).click();
 
   // The sidebar row goes, the peek closes and the app is on People.
   await expect(

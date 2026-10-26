@@ -314,23 +314,29 @@ describe("focus returns to the control that opened an editor or confirm", () => 
     );
   });
 
-  test("Remove from company: the question opens on Cancel and closes back on the trigger", () => {
+  test("Remove from LilOS: the question opens on Cancel and closes back on the trigger", () => {
     mountAgent();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Remove from company" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Remove from LilOS" }));
     expect(document.activeElement).toBe(
       screen.getByRole("button", { name: "Cancel" }),
     );
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(document.activeElement).toBe(
-      screen.getByRole("button", { name: "Remove from company" }),
+      screen.getByRole("button", { name: "Remove from LilOS" }),
     );
   });
 });
 
+/* emp_1 plus a second agent: the last LilOS agent has no remove control
+   (#856), and this page's tests need it drawn. */
 function mountAgent() {
+  const mate: V3Agent = { ...agent, id: "emp_2", name: "Maker" };
   return render(
-    <V3AgentPage data={data()} go={vi.fn()} act={actions()} id="emp_1" />,
+    <V3AgentPage
+      data={data({ agents: [agent, mate] })}
+      go={vi.fn()}
+      act={actions()}
+      id="emp_1"
+    />,
   );
 }

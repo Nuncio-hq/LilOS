@@ -50,6 +50,16 @@ export const shownRoute = (d: V3Data, r: V3Route): V3Route => {
 export const agentOf = (d: V3Data, id: string): V3Agent | undefined =>
   d.agents.find((a) => a.id === id);
 
+/** Whether the owner may take this agent off LilOS (#856): a LilOS agent (an
+   outside worker is its connector's to remove, not ours), not the CEO while
+   the position shows, and never the last LilOS agent — somebody must run the
+   app. `d` is shown data: with the company layer paused `ceoId` is already
+   absent, so the hidden position does not stand in the way (D-#836). */
+export const removable = (d: V3Data, a: V3Agent): boolean =>
+  a.kind !== "outside" &&
+  a.id !== d.ceoId &&
+  d.agents.some((x) => x.id !== a.id && x.kind !== "outside");
+
 /** What stands in for the name of an agent that is no longer on the team. */
 export const FORMER_AGENT = "Former agent";
 
