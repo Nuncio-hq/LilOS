@@ -47,12 +47,12 @@ export function ProjectChip({
                 tone={project.tone}
                 className="size-4 text-[9px]"
               />
-              <span className="truncate">{project.name}</span>
+              <span className="@max-sm:hidden truncate">{project.name}</span>
             </>
           ) : (
             <>
               <MessageSquareIcon className="size-3.5 shrink-0" />
-              <span className="truncate">No project</span>
+              <span className="@max-sm:hidden truncate">No project</span>
             </>
           )
         }

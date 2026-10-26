@@ -435,25 +435,36 @@ export function ModelPicker({
           {curAgent && (
             <>
               {curAgent.avatar}
-              <span className="max-w-24 truncate">{curAgent.name}</span>
-              <span aria-hidden className="text-muted-foreground/50">
+              {/* Narrow composer (D-#868): the agent is its avatar alone, so
+                  the model's short name keeps its room instead of truncating. */}
+              <span className="@max-sm:hidden max-w-24 truncate">
+                {curAgent.name}
+              </span>
+              <span
+                aria-hidden
+                className="@max-sm:hidden text-muted-foreground/50"
+              >
                 ·
               </span>
             </>
           )}
           <ModelLogo provider={cur?.provider} logo={logoOf(cur?.provider)} />
-          <span className="max-w-36 truncate">
+          <span className="@max-sm:shrink-0 @max-sm:max-w-none max-w-36 truncate">
             {catalogModelName(value.model, merged, value.provider) ??
               value.model}
           </span>
-          {effort && <span data-effort>· {effortLabel(effort)}</span>}
+          {effort && (
+            <span data-effort className="@max-sm:hidden">
+              · {effortLabel(effort)}
+            </span>
+          )}
           {fast && (
             <ZapIcon
               aria-label="Fast"
               className="size-3 fill-primary text-primary"
             />
           )}
-          <ChevronDownIcon className="size-3 opacity-60" />
+          <ChevronDownIcon className="@max-sm:hidden size-3 opacity-60" />
         </PopoverTrigger>
         <PopoverContent
           side="top"

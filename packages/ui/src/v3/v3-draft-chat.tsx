@@ -357,7 +357,7 @@ export function ChatDraft({
           label={
             <>
               <AgentAvatar data={data} agent={agent} size={16} />
-              <span className="truncate">{agent.name}</span>
+              <span className="@max-sm:hidden truncate">{agent.name}</span>
             </>
           }
           options={[

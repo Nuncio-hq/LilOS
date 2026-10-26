@@ -66,7 +66,7 @@ export function ChipMenu({
         )}
       >
         {label}
-        <ChevronDownIcon className="size-3 shrink-0 opacity-60" />
+        <ChevronDownIcon className="@max-sm:hidden size-3 shrink-0 opacity-60" />
       </button>
       {open && (
         <>

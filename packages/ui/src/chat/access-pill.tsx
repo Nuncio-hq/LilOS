@@ -78,7 +78,7 @@ export function AccessPill({
       >
         <cur.Icon className={cn("size-3.5", full && "fill-orange-500/20")} />
         <span className="sr-only">{cur.label}</span>
-        <ChevronDownIcon className="size-3 opacity-60" />
+        <ChevronDownIcon className="@max-sm:hidden size-3 opacity-60" />
       </PromptInputButton>
       {open &&
         at &&

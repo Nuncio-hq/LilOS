@@ -199,9 +199,12 @@ export function Composer({
           aria-label={placeholder}
           className="block min-h-6 w-full resize-none bg-transparent text-[14.5px] text-foreground leading-normal outline-none placeholder:text-muted-foreground/70"
         />
-        <div className="mt-2 flex items-center gap-1">
+        {/* Both rows are containers (D-#868): a narrow box — phone, side
+            peek — drops the key hint and the chips' names/chevrons to bare
+            marks, so the pill, folder and shield stay on one row. */}
+        <div className="@container mt-2 flex items-center gap-1">
           {attach && <AttachButton attach={attach} />}
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-0.5 gap-y-1">
+          <div className="@container flex min-w-0 flex-1 flex-wrap items-center gap-x-0.5 gap-y-1">
             {chips ?? (
               <>
                 {onAgent ? (
@@ -239,7 +242,7 @@ export function Composer({
               </>
             )}
           </div>
-          <Kbd className="shrink-0">⌘↵</Kbd>
+          <Kbd className="@max-sm:hidden shrink-0">⌘↵</Kbd>
           <button
             type="button"
             disabled={!sendable}
