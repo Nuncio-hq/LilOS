@@ -24,8 +24,9 @@ import { V3ProjectPage } from "./v3-project";
 import { V3TicketPage } from "./v3-ticket";
 import { toolbarBtn } from "./v3-topbar";
 
-/** A record's name in the trail: short enough to fit four in a row. */
-function label(d: V3Data, r: V3RecordRoute) {
+/** A record's name, in the trail or as a record page's name: short enough
+   to fit four in a row. */
+export function recordLabel(d: V3Data, r: V3RecordRoute) {
   if (r.page === "thread") {
     const t =
       d.threads.find((x) => x.id === r.id) ??
@@ -125,7 +126,7 @@ export function V3Peek({
               <ChevronRightIcon className="size-3.5 shrink-0 opacity-50" />
               {i === trail.length - 1 ? (
                 <span className="min-w-0 truncate font-medium text-foreground">
-                  {label(data, r)}
+                  {recordLabel(data, r)}
                 </span>
               ) : (
                 <button
@@ -133,7 +134,7 @@ export function V3Peek({
                   onClick={() => onTrail(i)}
                   className="min-w-0 max-w-[180px] shrink truncate hover:text-foreground"
                 >
-                  {label(data, r)}
+                  {recordLabel(data, r)}
                 </button>
               )}
             </Fragment>
@@ -165,13 +166,33 @@ export function V3Peek({
         key={key}
         className="lilos-v3-line-in @container row-start-3 min-h-0 overflow-y-auto"
       >
-        {top.page === "thread" && renderThread({ ...props, id: top.id })}
-        {top.page === "newchat" && <V3DraftChat {...props} id={top.id} />}
-        {top.page === "ticket" && <V3TicketPage {...props} id={top.id} />}
-        {top.page === "agent" && <V3AgentPage {...props} id={top.id} />}
-        {top.page === "goal" && <V3GoalPage {...props} id={top.id} />}
-        {top.page === "project" && <V3ProjectPage {...props} id={top.id} />}
+        <V3RecordContent top={top} props={props} renderThread={renderThread} />
       </div>
     </aside>
+  );
+}
+
+/* One record's body — the same components whether the record sits in the
+   side peek or IS the page (D-#769). The page and the peek hand it their
+   own props: the page's `go` navigates or opens beside by what the page
+   lists, the peek's extends the trail. */
+export function V3RecordContent({
+  top,
+  props,
+  renderThread,
+}: {
+  top: V3RecordRoute;
+  props: V3PageProps;
+  renderThread: (props: V3PageProps & { id: string }) => ReactNode;
+}) {
+  return (
+    <>
+      {top.page === "thread" && renderThread({ ...props, id: top.id })}
+      {top.page === "newchat" && <V3DraftChat {...props} id={top.id} />}
+      {top.page === "ticket" && <V3TicketPage {...props} id={top.id} />}
+      {top.page === "agent" && <V3AgentPage {...props} id={top.id} />}
+      {top.page === "goal" && <V3GoalPage {...props} id={top.id} />}
+      {top.page === "project" && <V3ProjectPage {...props} id={top.id} />}
+    </>
   );
 }

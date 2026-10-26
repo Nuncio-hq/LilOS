@@ -57,6 +57,14 @@ const panel = (page: Page) => page.locator("[data-thread-panel]");
 /** The thread's own row/card on the Threads page beside the panel. */
 const listRow = (page: Page, text: RegExp) =>
   page.locator("#v3-main").getByText(text).first();
+/* A just-sent chat is running, and running threads fold under Working
+   (#862): open the shelf so the row is in the DOM. */
+const openWorking = async (page: Page) => {
+  const fold = page.locator(
+    '#v3-main [data-fold="working"] > button[aria-expanded="false"]',
+  );
+  if (await fold.count()) await fold.click();
+};
 
 test("AC-1 a new send lands on the list with the thread in the panel — no jump to Focus", async ({
   page,
@@ -70,8 +78,9 @@ test("AC-1 a new send lands on the list with the thread in the panel — no jump
   await expect(
     panel(page).getByText("hello — where do I land").first(),
   ).toBeVisible({ timeout: 15_000 });
-  /* …and the list itself never left — the thread's card sits beside the
+  /* …and the list itself never left — the thread's row sits beside the
      panel, exactly like the prototype. */
+  await openWorking(page);
   await expect(listRow(page, /where do I land/i)).toBeVisible({
     timeout: 15_000,
   });
@@ -108,6 +117,7 @@ test("AC-2 the panel's ✕ is the way back to the list; the trail's first crumb 
   await page.screenshot({ path: `${SHOTS}/ac-2-panel-closed.png` });
 
   /* The thread is re-opened from its row… */
+  await openWorking(page);
   await listRow(page, /close me twice/i).click();
   await expect(page).toHaveURL(PANEL_URL, { timeout: 15_000 });
   await expect(panel(page)).toBeVisible();

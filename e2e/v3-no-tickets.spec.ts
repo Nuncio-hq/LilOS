@@ -5,6 +5,7 @@ import {
   pickPorts,
   type Stack,
   startChat,
+  v3Main,
   v3Peek,
   v3Sidebar,
 } from "./helpers/stack";
@@ -108,7 +109,7 @@ test("no CEO copy, and a person can be given a ticket", async ({ page }) => {
     ["#?page=inbox", "Good afternoon"],
     ["#?page=needs", "Needs you"],
     ["#?page=threads", "Threads"],
-    ["#?page=threads&view=all", "Threads"],
+    ["#?page=threads", "Threads"],
     ["#?page=threads&view=agent", "Threads"],
     ["#?page=threads&view=scheduled", "Threads"],
     ["#?page=people", "People"],
@@ -218,7 +219,8 @@ test("⌘K searches and jumps; with no CEO behind it there is no draft to make",
   ).toHaveCount(0);
   await expect(page).toHaveURL(/#?$|\/$/);
 
-  // A person: searching the name jumps to them, beside the page you were on.
+  // A person: searching the name jumps to them — a palette pick is a jump,
+  // so the agent IS the page (D-#769).
   await box.fill(agent.name.slice(0, 3));
   // Threads of theirs match the name too; the person is the row that is not
   // labelled a thread, and it comes first.
@@ -231,13 +233,11 @@ test("⌘K searches and jumps; with no CEO behind it there is no draft to make",
   );
   await box.press("Enter");
   await expect(palette(page)).toHaveCount(0);
-  await expect(v3Peek(page).getByRole("heading", { level: 1 })).toHaveText(
+  await expect(v3Main(page).getByRole("heading", { level: 1 })).toHaveText(
     agent.name,
   );
-  await expect(page).toHaveURL(/open=agent:/);
-  await expect(page.getByRole("heading", { level: 1 }).first()).toContainText(
-    "Good afternoon",
-  );
+  await expect(page).toHaveURL(/page=agent&id=/);
+  await expect(v3Peek(page)).toHaveCount(0);
 
   // A thread: found by its words, and Esc closes the palette without moving.
   await startChat(page, stack.webUrl, agent, "Say hello then list files");
@@ -257,7 +257,7 @@ test("⌘K searches and jumps; with no CEO behind it there is no draft to make",
   await page.keyboard.press("ControlOrMeta+k");
   await palette(page).getByRole("textbox").fill("hello");
   await palette(page).getByRole("textbox").press("Enter");
-  await expect(page).toHaveURL(/open=thread:conv_/);
+  await expect(page).toHaveURL(/page=thread&id=conv_/);
   await expect(page.locator("[data-thread-panel]")).toBeVisible({
     timeout: 30_000,
   });

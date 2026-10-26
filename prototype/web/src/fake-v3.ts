@@ -306,6 +306,16 @@ const TICKETS: V3Data["tickets"] = [
   done("LIL-74", "How T3 Code settles quiet threads", "lilos", "scout", 2900),
 ]
 
+/* The list's clock (#862): `BACK(m)` is "this many minutes ago" for
+   cameBackAt ordering, pins and the shelf's ages; `TOMORROW_9` is the
+   snooze preset's tomorrow-morning wake. */
+const BACK = (min: number) => Date.now() - min * 60_000
+const TOMORROW_9 = (() => {
+  const d = new Date(Date.now() + 86_400_000)
+  d.setHours(9, 0, 0, 0)
+  return d.getTime()
+})()
+
 const THREADS: V3Data["threads"] = [
   {
     id: "t-lil81",
@@ -462,6 +472,9 @@ const THREADS: V3Data["threads"] = [
     agentId: "marketer",
     title: "Run the Meta Ads test",
     status: "needs",
+    // Its hand has been up for the 41 minutes the ask reads (#862: Active
+    // orders by when each thread last came back to you).
+    cameBackAt: BACK(41),
     startedAt: "10:40",
     minutes: 83,
     step: 31,
@@ -508,6 +521,7 @@ const THREADS: V3Data["threads"] = [
     agentId: "scout",
     title: "Find 20 journaling creators",
     status: "stuck",
+    cameBackAt: BACK(45),
     startedAt: "10:52",
     minutes: 72,
     step: 44,
@@ -547,6 +561,7 @@ const THREADS: V3Data["threads"] = [
     title: "Check on device",
     status: "done",
     unseen: true,
+    cameBackAt: BACK(27),
     startedAt: "11:20",
     minutes: 18,
     context: 22,
@@ -582,6 +597,10 @@ const THREADS: V3Data["threads"] = [
     agentId: "builder",
     title: "Build two variants",
     status: "done",
+    cameBackAt: BACK(65),
+    // Its menu reads Auto-settle · Disabled (#862): this one never parks
+    // itself while the test runs.
+    autoSettleOff: true,
     startedAt: "09:20",
     minutes: 110,
     context: 58,
@@ -613,6 +632,7 @@ const THREADS: V3Data["threads"] = [
     agentId: "ceo",
     title: "Plan the test",
     status: "done",
+    cameBackAt: BACK(171),
     startedAt: "09:14",
     minutes: 5,
     context: 9,
@@ -627,6 +647,10 @@ const THREADS: V3Data["threads"] = [
     agentId: "scout",
     title: "Collect 50 hooks from X",
     status: "done",
+    // The second pin — pinned before the relay chat, so it sits under it
+    // (#862: newest pin first).
+    pinnedAt: BACK(40),
+    cameBackAt: BACK(235),
     startedAt: "08:10",
     minutes: 38,
     context: 40,
@@ -641,6 +665,9 @@ const THREADS: V3Data["threads"] = [
     agentId: "builder",
     title: "Fold the docs into one page",
     status: "done",
+    // Asleep on the Snoozed shelf until tomorrow morning (#862).
+    snoozedUntil: TOMORROW_9,
+    cameBackAt: BACK(121),
     startedAt: "09:15",
     minutes: 47,
     context: 51,
@@ -656,6 +683,9 @@ const THREADS: V3Data["threads"] = [
     agentId: "builder",
     title: "How does the relay store messages?",
     status: "done",
+    // The newest pin — first row under Pinned (#862).
+    pinnedAt: BACK(25),
+    cameBackAt: BACK(25),
     startedAt: "10:20",
     minutes: 6,
     context: 14,
@@ -686,6 +716,60 @@ const THREADS: V3Data["threads"] = [
           "Yes. Removing a thread or an agent drops only the LilOS record. The engine profile and its sessions stay (D-#29), so nothing an agent learned is lost by accident.\n\nWant me to make this a ticket to add a real *Delete transcript* button?",
       },
     ],
+  },
+]
+
+/* The Settled shelf (#862): the three ways a thread lands there — you
+   put it away yourself (no reason named), the idle sweep parked it after
+   three quiet days, or its PR merged. The wire calls the shelf
+   `archivedThreads`; Un-settle brings a row back on top of Active. */
+const SETTLED: V3Data["threads"] = [
+  {
+    id: "t-settle-theme",
+    projectId: "qrit",
+    agentId: "designer",
+    title: "Pick the onboarding theme",
+    status: "done",
+    startedAt: "Thu 16:40",
+    minutes: 22,
+    context: 18,
+    model: "Sonnet 5 · Medium",
+    folder: "~/Code/qrit",
+    summary: "Three theme boards with swatches and type",
+    settledAt: BACK(2 * 24 * 60),
+    turns: [],
+  },
+  {
+    id: "t-settle-search",
+    projectId: "heardback",
+    agentId: "scout",
+    title: "Shortlist journaling blogs",
+    status: "done",
+    startedAt: "Wed 14:05",
+    minutes: 31,
+    context: 24,
+    model: "Sonnet 5 · Medium",
+    folder: "~/Research/heardback",
+    summary: "12 blogs with contact emails",
+    settledAt: BACK(4 * 24 * 60),
+    settledWhy: { kind: "idle" },
+    turns: [],
+  },
+  {
+    id: "t-settle-hermes",
+    projectId: "lilos",
+    agentId: "builder",
+    title: "Bump Hermes to 0.14.2",
+    status: "done",
+    startedAt: "Sun 11:20",
+    minutes: 15,
+    context: 30,
+    model: "Opus 5.5 · High",
+    folder: "~/Code/LilOS",
+    summary: "Version bump, changelog read, tests green",
+    settledAt: BACK(26 * 60),
+    settledWhy: { kind: "pr", num: 61, state: "merged" },
+    turns: [],
   },
 ]
 
@@ -756,7 +840,7 @@ export const V3_DATA: V3Data = {
   threads: [...THREADS, ...CODING_THREADS, ...ATTENTION_THREADS, ...OUTSIDE_THREADS].map((t) =>
     WORKBENCHES[t.id] ? { ...t, workbench: WORKBENCHES[t.id] } : t,
   ),
-  archivedThreads: [],
+  archivedThreads: SETTLED,
   asks: [...ASKS, ...ATTENTION_ASKS, ...CODING_ASKS],
   updates: UPDATES,
   schedules: SCHEDULES,
@@ -764,6 +848,27 @@ export const V3_DATA: V3Data = {
   devices: DEVICES,
   modelChoices: ["Opus 5.5 · High", "Sonnet 5 · Medium", "Haiku 5 · Fast"],
   hireTemplates: HIRE_TEMPLATES,
+  /* The runtime roster `system.status.runtimes` would report (D-#761): the
+     default engine first, then the coding runtimes — two installed, two
+     greyed with the probe's reason, so the add-agent dialog shows a Who?
+     like the real app's (#870). */
+  runtimes: [
+    { id: "hermes", label: "Hermes", available: true, isDefault: true },
+    { id: "acp:devin", label: "Devin", available: true },
+    { id: "acp:claude-code", label: "Claude Code", available: true },
+    {
+      id: "acp:cursor",
+      label: "Cursor",
+      available: false,
+      detail: "cursor-agent is not on PATH",
+    },
+    {
+      id: "acp:antigravity",
+      label: "Antigravity",
+      available: false,
+      detail: "antigravity is not installed — install it and restart LilOS",
+    },
+  ],
   // The new-chat box shows the engine's full picker (effort, Fast, Edit models).
   modelCatalog: {
     options: MODEL_OPTIONS,
@@ -871,5 +976,22 @@ export const ENGINE_PROFILES: V3Profile[] = [
     model: "Sonnet 5 · Medium",
     skills: 6,
     soul: "You file every sheet and note where the team will look for it, and say where you put it.",
+  },
+  /* The coding runtimes' roster seeds (D-#761): `agents.list` merges them in
+     before the runtime has ever started, stamped with the runtime they
+     belong to — the add-agent dialog folds each into its runtime's row. */
+  {
+    id: "devin",
+    name: "Devin",
+    description: "Devin CLI over ACP — Cognition's agent, signed in locally.",
+    skills: 0,
+    runtime: "acp:devin",
+  },
+  {
+    id: "claude-code",
+    name: "Claude Code",
+    description: "Claude Code over ACP — Anthropic's agent, signed in locally.",
+    skills: 0,
+    runtime: "acp:claude-code",
   },
 ]

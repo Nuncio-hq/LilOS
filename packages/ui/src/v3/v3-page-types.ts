@@ -25,7 +25,7 @@ export type V3Route =
   | { page: "inbox" }
   | { page: "work"; view?: "waiting" | "board" | "project" | "timeline" }
   | { page: "ticket"; id: string }
-  | { page: "threads"; view?: "live" | "all" | "agent" | "scheduled" }
+  | { page: "threads"; view?: "scheduled" }
   | { page: "thread"; id: string }
   | { page: "goals" }
   | { page: "goal"; id: string }
@@ -45,17 +45,20 @@ export type V3Route =
   | { page: "newchat"; id: string };
 
 /** A record: something you open (a ticket, a thread, a person, a goal, a
-   project). Records open beside the page you are on, never instead of it. */
+   project). A record becomes the page when you go to it (the sidebar, ⌘K);
+   a record the page already lists opens beside it (D-#769). */
 export type V3RecordRoute = Extract<V3Route, { id: string }>;
 
-/** A page: somewhere you live (the sidebar's entries). */
+/** A page: somewhere you live, that carries no id of its own. */
 export type V3PageRoute = Exclude<V3Route, V3RecordRoute>;
 
-/** Where you are: one page, plus the records you opened from it, in order.
-   The last record shows in the side peek; the rest are its trail. `full`
-   widens the peek over the page without leaving it. */
+/** Where you are: one route you went to (a page, or the record itself when
+   a sidebar item or ⌘K jump navigated, D-#769), plus the records you opened
+   from it, in order. The last record shows in the side peek; the rest are
+   its trail. `full` widens the peek over the page without leaving it — and
+   on a thread page it is the session view. */
 export type V3Nav = {
-  page: V3PageRoute;
+  page: V3Route;
   peek: V3RecordRoute[];
   full?: boolean;
 };
@@ -121,13 +124,23 @@ export type V3Actions = {
      menu has no such row. */
   newProject?: (onCreated: (projectId: string) => void) => void;
   markSeen: (threadId: string) => void;
+  /** Opens the app's small add-agent dialog (the ＋ beside Agents, "Add
+     agent…" at the bottom of a composer's agent menu — #870): Who? · Name ·
+     Hire, nothing else. `onHired` gets the new agent's id — the caller
+     selects it where it was opened (its composer, a new chat). Absent: no
+     ＋ and no menu row (the app cannot create agents). */
+  addAgent?: (onHired: (agentId: string) => void) => void;
   /** Hires an agent and returns its id, so the Hire page can open it. Rejects
      when the hire failed (the app has already said why). Absent while the
-     engine cannot create agents. */
+     engine cannot create agents. `runtime` lands the new profile on that
+     engine runtime (D-#761); absent = the default engine. */
   hire?: (agent: {
     name: string;
     role: string;
+    /** "" = the engine/runtime's own default model (the add-agent dialog
+        asks for no model). */
     model: string;
+    runtime?: string;
   }) => Promise<string>;
   /** The engine's profiles, read fresh each time the Hire page opens so one
      made or freed elsewhere shows up. Absent where the engine cannot list
@@ -241,9 +254,26 @@ export type V3Actions = {
   /** Renames a thread in place (an empty title is not a rename). Absent: the
      app cannot, and no title is editable. */
   renameThread?: (threadId: string, title: string) => void;
-  /** Puts a thread away (`true`: it leaves Live and Recent for Threads →
-     All → Archived) or brings it back. Absent: no archive controls. */
+  /** Settles a thread (`true`: it leaves every list for the Settled shelf —
+     finished work parked, not deleted — and settling takes its pin off) or
+     brings it back to the top of Active. The wire keeps the name
+     `archiveThread` until the backend slice renames archive to settle
+     (#862); the UI says Settle. Absent: no settle controls. */
   archiveThread?: (threadId: string, archived: boolean) => void;
+  /** Pins a thread to the top of the list (`true`) or takes the pin off.
+     Absent: no pin controls. */
+  pinThread?: (threadId: string, pinned: boolean) => void;
+  /** Snoozes a thread until `until` (epoch ms): it keeps working but leaves
+     every list until then — or until it needs you, fails or gets stuck, or
+     you message it. Absent: no Snooze. */
+  snoozeThread?: (threadId: string, until: number) => void;
+  /** Brings a snoozed thread back now ("Wake now"): the snooze is over, it
+     returns to where it belongs. Absent: no Wake control. */
+  wakeThread?: (threadId: string) => void;
+  /** The per-thread auto-settle switch: `false`, the 3-day-idle and
+     PR-merged sweep leaves this thread alone. Absent: no Auto-settle
+     choice. */
+  setAutoSettle?: (threadId: string, enabled: boolean) => void;
   /** ⌘K's message search: what people and agents said, newest relevance
      first. Rejects when the search failed (the app has already said why).
      Absent: ⌘K finds people, threads and records only. */

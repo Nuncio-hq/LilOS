@@ -18,7 +18,8 @@ import { Kbd } from "./v3-bits";
 import type { V3Data } from "./v3-data-types";
 import { AgentAvatar, CeoMark, ProjectMark, StatusDot } from "./v3-marks";
 import { agentDot, boardStatus, companyOn, listedThreads } from "./v3-model";
-import type { V3PageRoute, V3RecordRoute, V3Route } from "./v3-page-types";
+import { isRecordRoute } from "./v3-nav";
+import type { V3RecordRoute, V3Route } from "./v3-page-types";
 import { type SidebarMode, SidebarToggle } from "./v3-topbar";
 
 /* The v3 sidebar is the company's table of contents: the three databases
@@ -34,6 +35,7 @@ export function V3Sidebar({
   dark,
   onTheme,
   canHire = true,
+  onAddAgent,
   mode,
   width,
   sideRef,
@@ -43,8 +45,9 @@ export function V3Sidebar({
   onBlur,
 }: {
   data: V3Data;
-  /** The page you are on: its entry stays lit while records open beside it. */
-  page: V3PageRoute;
+  /** Where you are — a page, or the record you went straight to (D-#769):
+     a project or agent the sidebar navigated to keeps its entry lit. */
+  page: V3Route;
   /** The record in the side peek, if any: a project or person gets a mark. */
   open?: V3RecordRoute;
   go: (r: V3Route) => void;
@@ -53,6 +56,9 @@ export function V3Sidebar({
   onTheme: () => void;
   /** The app can create agents; without it the Hire entry is not drawn. */
   canHire?: boolean;
+  /** Opens the add-agent dialog (#870); drawn as the ＋ beside Agents while
+     the company layer is paused. Absent = the app cannot create agents. */
+  onAddAgent?: () => void;
   mode: SidebarMode;
   width: number;
   sideRef: Ref<HTMLElement>;
@@ -70,8 +76,13 @@ export function V3Sidebar({
     const s = boardStatus(data, t);
     return s !== "done" && s !== "idle";
   }).length;
+  /* A bare page lights its own entry; a record lights it when it IS the
+     page (the sidebar went to it) or sits on top of the peek. */
   const on = (p: V3Route["page"], id?: string) =>
-    id === undefined ? page.page === p : opened?.page === p && opened.id === id;
+    id === undefined
+      ? page.page === p
+      : (isRecordRoute(page) && page.page === p && page.id === id) ||
+        (opened?.page === p && opened.id === id);
 
   return (
     // Always mounted, so hiding keeps its scroll and its place; hidden, it is
@@ -160,6 +171,9 @@ export function V3Sidebar({
           onClick={() => go({ page: "threads" })}
           right={<Count n={live} />}
         />
+        {/* No thread list here (#862 feedback): the sidebar stays the
+            table of contents — the sectioned list lives on the Threads
+            page only. */}
         {data.features.tickets && (
           <Item
             icon={<TargetIcon />}
@@ -187,30 +201,39 @@ export function V3Sidebar({
         )}
 
         {/* The roster is the company's team list: with the layer paused
-            (D-#836) the agents still run underneath, they are just not a
-            table of contents you browse. */}
-        {companyOn(data) && (
+            (D-#836) the agents still run underneath — as the Agents section,
+            a flat list with a ＋ to add one in seconds (#870), not a page
+            you browse to. */}
+        {companyOn(data) ? (
           <>
             <Label onClick={() => go({ page: "people" })} on={on("people")}>
               People
             </Label>
             {data.agents.map((a) => (
-              <Item
-                key={a.id}
-                icon={<AgentAvatar data={data} agent={a} />}
-                label={a.name}
-                on={on("agent", a.id)}
-                onClick={() => go({ page: "agent", id: a.id })}
-                right={
-                  <>
-                    {a.id === data.ceoId && <CeoMark />}
-                    <StatusDot
-                      status={agentDot(data, a.id)}
-                      className="size-[7px]"
-                    />
-                  </>
-                }
-              />
+              <AgentItem key={a.id} data={data} agent={a} on={on} go={go} />
+            ))}
+          </>
+        ) : (
+          <>
+            <Label
+              right={
+                onAddAgent && (
+                  <button
+                    type="button"
+                    aria-label="Add agent"
+                    title="Add agent"
+                    onClick={onAddAgent}
+                    className="grid size-5 place-items-center rounded text-muted-foreground/70 transition-colors hover:bg-[var(--v3-hover)] hover:text-foreground"
+                  >
+                    <PlusIcon className="size-3.5" />
+                  </button>
+                )
+              }
+            >
+              Agents
+            </Label>
+            {data.agents.map((a) => (
+              <AgentItem key={a.id} data={data} agent={a} on={on} go={go} />
             ))}
           </>
         )}
@@ -284,16 +307,19 @@ function Label({
   onClick,
   on,
   company,
+  right,
 }: {
   children: ReactNode;
   onClick?: () => void;
   on?: boolean;
   /** The company's own name heads the section that holds its work. */
   company?: boolean;
+  /** A quiet control at the row's right (the Agents section's ＋). */
+  right?: ReactNode;
 }) {
   const cls =
     "min-w-0 shrink-0 truncate px-2 pt-[18px] pb-1 text-left font-medium text-[12px] text-muted-foreground/70";
-  return onClick ? (
+  const head = onClick ? (
     <button
       type="button"
       onClick={onClick}
@@ -305,5 +331,41 @@ function Label({
     <div data-company-label={company || undefined} className={cls}>
       {children}
     </div>
+  );
+  if (!right) return head;
+  return (
+    <div className="flex items-end pr-1">
+      {head}
+      <span className="ml-auto pb-1">{right}</span>
+    </div>
+  );
+}
+
+/** One roster row — the People section's and the paused Agents section's
+   share it (avatar, name, CEO mark and the one status dot). */
+function AgentItem({
+  data,
+  agent,
+  on,
+  go,
+}: {
+  data: V3Data;
+  agent: V3Data["agents"][number];
+  on: (p: V3Route["page"], id?: string) => boolean;
+  go: (r: V3Route) => void;
+}) {
+  return (
+    <Item
+      icon={<AgentAvatar data={data} agent={agent} />}
+      label={agent.name}
+      on={on("agent", agent.id)}
+      onClick={() => go({ page: "agent", id: agent.id })}
+      right={
+        <>
+          {agent.id === data.ceoId && <CeoMark />}
+          <StatusDot status={agentDot(data, agent.id)} className="size-[7px]" />
+        </>
+      }
+    />
   );
 }

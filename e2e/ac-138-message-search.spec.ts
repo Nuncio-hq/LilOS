@@ -117,14 +117,14 @@ test("AC-2/3/4 message hits: found by message text, snippet marked, archived onl
   ).toBeVisible({ timeout: 60_000 });
   await expect(idleComposer).toBeVisible({ timeout: 60_000 });
   // Archive session B the way a person does: its row's menu on Threads → All.
-  await page.goto(`${stack.webUrl}/#?page=threads&view=all`);
+  await page.goto(`${stack.webUrl}/#?page=threads`);
   const rowB = page.locator(`[data-thread-row="${convB}"]`);
   await expect(rowB).toBeVisible({ timeout: 30_000 });
   await rowB.hover();
   await rowB
     .getByRole("button", { name: "Thread actions", exact: true })
     .click();
-  await page.getByRole("menuitem", { name: "Archive thread" }).click();
+  await page.getByRole("menuitem", { name: "Settle thread" }).click();
   await expect(rowB).toHaveCount(0, { timeout: 15_000 });
 
   // The index, over the wire: archived hits are left out until asked for.
@@ -179,14 +179,14 @@ test("AC-2/3/4 message hits: found by message text, snippet marked, archived onl
   await expect(palette.locator("[data-archived-hit]")).toHaveCount(2);
   await page.screenshot({ path: `${SHOTS}/ac2-message-hits.png` });
 
-  // AC-3: picking the user's long follow-up opens its thread beside Threads,
-  // scrolled to and flashing THAT message.
+  // AC-3: picking the user's long follow-up is a palette jump — the thread
+  // becomes the page (D-#769), scrolled to and flashing THAT message.
   const clicked = hitRows.filter({ hasText: "mid-ingest" }).first();
   const hitId = await clicked.getAttribute("data-message-hit");
   expect(hitId).toBeTruthy();
   await clicked.click();
   await expect(page).toHaveURL(
-    new RegExp(`open=thread:${encodeURIComponent(convA)}`),
+    new RegExp(`page=thread&id=${encodeURIComponent(convA)}`),
     { timeout: 10_000 },
   );
   await expect(panel).toBeVisible();
@@ -206,14 +206,14 @@ test("AC-2/3/4 message hits: found by message text, snippet marked, archived onl
   await expect(archivedHit.first()).toBeVisible({ timeout: 15_000 });
   await archivedHit.first().click();
   await expect(page).toHaveURL(
-    new RegExp(`open=thread:${encodeURIComponent(convB)}`),
+    new RegExp(`page=thread&id=${encodeURIComponent(convB)}`),
     { timeout: 10_000 },
   );
   await panel
     .getByRole("button", { name: "Thread actions", exact: true })
     .click();
-  await page.getByRole("menuitem", { name: "Unarchive thread" }).click();
-  await page.goto(`${stack.webUrl}/#?page=threads&view=all`);
+  await page.getByRole("menuitem", { name: "Un-settle thread" }).click();
+  await page.goto(`${stack.webUrl}/#?page=threads`);
   await expect(page.locator(`[data-thread-row="${convB}"]`)).toBeVisible({
     timeout: 15_000,
   });

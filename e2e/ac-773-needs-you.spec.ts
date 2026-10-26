@@ -151,7 +151,7 @@ test("approve from Needs you resumes the turn and the item disappears everywhere
 
   await goTo(page, "Threads");
   const row = card(page, /add a footer to the page/i);
-  await expect(row).toContainText("Finished");
+  await expect(row.locator('[data-v3-status="done"]')).toBeVisible();
   await expect(row.getByRole("button", { name: "Approve" })).toHaveCount(0);
   await shot(page, "ac-2-thread-card-finished");
 });

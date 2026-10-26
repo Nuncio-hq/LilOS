@@ -251,7 +251,7 @@ async function trial(shotsDir = ""): Promise<{ open: Window; reload: Window }> {
         /* Leg 1 — open: the thread's row on Threads → All opens the side
            peek, which mounts the panel. */
         await skipFirstRun(page);
-        await page.goto(`${preview.url}/#?page=threads&view=all`);
+        await page.goto(`${preview.url}/#?page=threads`);
         const row = page
           .locator(`#v3-main [data-thread-row="${grown.conversationId}"]`)
           .getByRole("button")

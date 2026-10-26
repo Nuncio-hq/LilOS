@@ -9,6 +9,7 @@ import {
   relayRpc,
   type Stack,
   skipFirstRun,
+  startChat,
   v3Peek,
   v3Sidebar,
 } from "./helpers/stack";
@@ -77,12 +78,27 @@ test("the sidebar is the daily app's, and Home is the daily Home with its compos
     ).toHaveCount(0);
   await expect(side.getByText("People", { exact: true })).toHaveCount(0);
   await expect(side.locator("[data-company-label]")).toHaveCount(0);
-  await expect(side.getByRole("button", { name: /default/i })).toHaveCount(0);
+  /* The roster is there as the Agents section — a flat list with its ＋ to
+     add one (#870): browsable rows, not a page you navigate to. */
+  await expect(side.getByText("Agents", { exact: true })).toBeVisible();
+  await expect(side.getByRole("button", { name: /default/i })).toBeVisible();
+  await expect(side.getByRole("button", { name: "Add agent" })).toBeVisible();
+  /* Nav-only sidebar (#862's accepted design): the thread rows, shelves and
+     folds all live on the Threads page — the sidebar mirrors none of it. */
+  await expect(side.locator("[data-thread-row]")).toHaveCount(0);
+  await expect(side.locator("[data-fold]")).toHaveCount(0);
   await page.screenshot({ path: `${SHOTS}/sidebar.png` });
 
-  // Home is the daily Home: the composer that talks to the agent — agent,
-  // project, model+effort and access one click each — then Needs you and
-  // the chats; no Goals section, no team table.
+  /* A turn that pauses on an approval ask, so Home's one list has a
+     needs-you row to read. */
+  await startChat(page, stack.webUrl, agent, "Add a footer to the page");
+
+  /* Home is the daily Home (#862): the composer that talks to the agent —
+     agent, project, model+effort and access one click each — then Pinned
+     (hidden while empty) and ONE list: needs-you rows highlighted with
+     their quick action, then working, then the rest of recent. The old
+     Needs you block and its "Nothing needs you." line are gone; no Goals
+     section, no team table. */
   await side.getByRole("button", { name: /^Home/ }).click();
   await expect(greeting(page)).toBeVisible({ timeout: 30_000 });
   const box = main(page).getByPlaceholder(
@@ -95,7 +111,23 @@ test("the sidebar is the daily app's, and Home is the daily Home with its compos
   await expect(model).toBeVisible();
   await expect(model.locator("[data-effort]")).toBeVisible();
   await expect(main(page).locator("[data-slot='access-pill']")).toBeVisible();
-  await expect(main(page).getByText("Nothing needs you.")).toBeVisible();
+  /* The merged list under the composer: the ask's row wears the Needs-you
+     pill and its Deny/Approve on the row itself. */
+  await expect(
+    main(page).getByRole("heading", { name: /Threads/ }),
+  ).toBeVisible();
+  await expect(
+    main(page).getByRole("button", { name: "Approve", exact: true }),
+  ).toBeVisible({ timeout: 30_000 });
+  await expect(
+    main(page).getByText("Needs you", { exact: true }),
+  ).toBeVisible();
+  /* Empty sections hide: nothing is pinned, so no Pinned head; the ask
+     arrived so no "Nothing needs you." line exists to draw anyway. */
+  await expect(main(page).getByRole("heading", { name: "Pinned" })).toHaveCount(
+    0,
+  );
+  await expect(main(page).getByText("Nothing needs you.")).toHaveCount(0);
   await expect(main(page).getByRole("heading", { name: "Goals" })).toHaveCount(
     0,
   );

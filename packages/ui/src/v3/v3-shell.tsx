@@ -11,12 +11,13 @@ import { ConversationReflowKey } from "../components/ai-elements/conversation";
 import { draftKey, setDraft } from "../lib/drafts";
 import { useTheme } from "../shell/use-theme";
 import type { Theme } from "../types";
+import { V3AddAgent } from "./v3-add-agent";
 import type { V3Data, V3Draft } from "./v3-data-types";
 import { EscLayer } from "./v3-keys";
 import { SIDEBAR_W, shellSizes, useLayoutPrefs } from "./v3-layout-prefs";
 import { CeoEmployeeContext } from "./v3-marks";
 import { companyOn, defaultAgent, shownData, shownRoute } from "./v3-model";
-import { step } from "./v3-nav";
+import { isRecordRoute, step } from "./v3-nav";
 import { OpenRecord } from "./v3-open-record";
 import type {
   V3Actions,
@@ -27,7 +28,7 @@ import type {
 } from "./v3-page-types";
 import { PAGE_NAME, V3PageView } from "./v3-page-view";
 import { V3Palette } from "./v3-palette";
-import { V3Peek } from "./v3-peek";
+import { recordLabel, V3Peek, V3RecordContent } from "./v3-peek";
 import { SidebarHotZone, useSidebarPopout } from "./v3-popout";
 import { ResizeHandle, useWidth } from "./v3-resize";
 import { V3Sidebar } from "./v3-sidebar";
@@ -100,8 +101,11 @@ export function V3Shell({
   const [jump, setJump] = useState<{ threadId: string; messageId: string }>();
   const clearJump = useCallback(() => setJump(undefined), []);
   // A jump that never landed (the thread has no such message) must not wait
-  // around for the next time that thread opens.
-  const openId = nav.peek[nav.peek.length - 1];
+  // around for the next time that thread opens. The record on show is the
+  // peek's top, or the page itself when the page is a record (D-#769).
+  const openId =
+    nav.peek[nav.peek.length - 1] ??
+    (isRecordRoute(nav.page) ? nav.page : undefined);
   useEffect(() => {
     if (jump && !(openId?.page === "thread" && openId.id === jump.threadId))
       setJump(undefined);
@@ -122,25 +126,39 @@ export function V3Shell({
       typeof window !== "undefined" &&
       window.matchMedia("(prefers-color-scheme: dark)").matches);
 
-  /* Two ways to move, one rule each: the page opens a record fresh; the peek
-     extends its trail. Changing page always starts at the page's top. Every
-     route passes shownRoute first (D-#836): nothing a page does can land on
-     a page or record of the paused company layer. */
+  /* Three ways to move (D-#769): a place you go to — the sidebar, a ⌘K
+     jump — navigates: it becomes the page, full width, and any peek
+     closes. An item on the page opens beside it only when the page lists
+     it (v3-nav's belongsTo); anything else navigates too. A link inside
+     the peek extends its trail. Changing page always starts at the page's
+     top. Every route passes shownRoute first (D-#836): nothing a page
+     does can land on a page or record of the paused company layer. */
+  const goFromNav = useCallback(
+    (r: V3Route) => {
+      onNav((n) => step(n, shownRoute(companyData, r), "nav", companyData));
+      document.getElementById("v3-main")?.scrollTo({ top: 0 });
+    },
+    [onNav, companyData],
+  );
   const goFromPage = useCallback(
     (r: V3Route) => {
       const to = shownRoute(companyData, r);
-      onNav((n) => step(n, to, "page"));
+      onNav((n) => step(n, to, "page", companyData));
       if (!("id" in to))
         document.getElementById("v3-main")?.scrollTo({ top: 0 });
     },
     [onNav, companyData],
   );
   const goFromPeek = useCallback(
-    (r: V3Route) => onNav((n) => step(n, shownRoute(companyData, r), "peek")),
+    (r: V3Route) =>
+      onNav((n) => step(n, shownRoute(companyData, r), "peek", companyData)),
     [onNav, companyData],
   );
+  /* Close takes back the peek's widen flag too — but `full` on a thread
+     PAGE is its session (D-#769), not the peek's, so a bare Esc leaves
+     it be. */
   const closePeek = useCallback(
-    () => onNav((n) => ({ ...n, peek: [], full: false })),
+    () => onNav((n) => (n.peek.length ? { ...n, peek: [], full: false } : n)),
     [onNav],
   );
   /* The layout is this device's: column widths and whether the sidebar is
@@ -244,9 +262,28 @@ export function V3Shell({
     },
     [data, draft, goFromPage, goFromPeek],
   );
+  /* The ＋ beside Agents and the composer menu's "Add agent…" share the one
+     small dialog (#870): the shell owns it and hands each opener an
+     `onHired` to run when the hire lands. Offered only where the app can
+     create agents at all (a profile to read, a way to hire). */
+  const [addAgent, setAddAgent] = useState<{
+    onHired: (agentId: string) => void;
+  } | null>(null);
+  const openAddAgent = useMemo(
+    () =>
+      actions.listProfiles && (actions.hireProfile ?? actions.hire)
+        ? (onHired: (agentId: string) => void) => setAddAgent({ onHired })
+        : undefined,
+    [actions],
+  );
+
   const act = useMemo<V3Actions>(
-    () => ({ ...actions, ask: (text) => openAsk(text, "page") }),
-    [actions, openAsk],
+    () => ({
+      ...actions,
+      ask: (text) => openAsk(text, "page"),
+      ...(openAddAgent ? { addAgent: openAddAgent } : {}),
+    }),
+    [actions, openAsk, openAddAgent],
   );
   const peekAct = useMemo<V3Actions>(
     () => ({ ...act, ask: (text) => openAsk(text, "peek") }),
@@ -259,7 +296,7 @@ export function V3Shell({
   ) => {
     if (!actions.startPlan) return;
     actions.startPlan(plan, text);
-    goFromPage({ page: "work", view: "waiting" });
+    goFromNav({ page: "work", view: "waiting" });
   };
 
   /* What is shown, not what was asked for: a nav from a saved URL or an
@@ -278,6 +315,22 @@ export function V3Shell({
   const props = { data, go: goFromPage, act };
   const widened = !!top && !!nav.full;
   const beside = !!top && !nav.full;
+  /* The thread a record shows, wherever the record sits — the page column
+     or the side peek (D-#769). `place` keeps the re-pin key honest (#315):
+     the peek's widths, or the page's when the record IS the page and
+     `full` is its session view rather than a widen. */
+  const threadPane = (p: V3PageProps & { id: string }, place: string) => (
+    <ConversationReflowKey.Provider
+      value={`${hidden ? 0 : side.w}:${peek.w}:${place}`}
+    >
+      {renderThread({
+        ...p,
+        ...(jump?.threadId === p.id
+          ? { scrollTo: jump.messageId, onScrolled: clearJump }
+          : {}),
+      })}
+    </ConversationReflowKey.Provider>
+  );
   /* A hidden sidebar leaves its toggle and Search in the toolbar, leading the
      leftmost segment: the page's, or the peek's once it covers the page. */
   const shortcuts = hidden ? (
@@ -310,11 +363,19 @@ export function V3Shell({
             data={data}
             page={page}
             open={top}
-            go={goFromPage}
+            go={goFromNav}
             onSearch={() => setPalette("")}
             dark={dark}
             onTheme={() => setTheme(dark ? "light" : "dark")}
             canHire={!!actions.hire}
+            onAddAgent={
+              openAddAgent
+                ? /* The sidebar's ＋ hires, then opens a chat with the new
+                     agent — it is the composer selection (#870). */
+                  () =>
+                    openAddAgent((id) => goFromPage({ page: "newchat", id }))
+                : undefined
+            }
             mode={mode}
             width={side.w}
             sideRef={pop.side}
@@ -362,7 +423,19 @@ export function V3Shell({
               key={JSON.stringify(page)}
               className="lilos-v3-line-in @container col-start-1 row-start-3 min-h-0 min-w-0 overflow-y-auto"
             >
-              <V3PageView page={page} {...props} />
+              {/* The page is a record too when you went straight to it
+                  (D-#769): same body as the peek, the page's own props. */}
+              {isRecordRoute(page) ? (
+                <V3RecordContent
+                  top={page}
+                  props={props}
+                  renderThread={(p) =>
+                    threadPane(p, nav.full ? "session" : "page")
+                  }
+                />
+              ) : (
+                <V3PageView page={page} {...props} />
+              )}
             </main>
             {beside && (
               <ResizeHandle
@@ -381,26 +454,16 @@ export function V3Shell({
               <V3Peek
                 data={data}
                 lead={widened ? shortcuts : undefined}
-                renderThread={(p) => (
-                  /* #315: the panes' widths as one key — the thread re-pins
-                   to its bottom in the very commit that moves them (see
-                   the guard in conversation.tsx). */
-                  <ConversationReflowKey.Provider
-                    value={`${hidden ? 0 : side.w}:${peek.w}:${nav.full ? "full" : "side"}`}
-                  >
-                    {renderThread({
-                      ...p,
-                      ...(jump?.threadId === p.id
-                        ? { scrollTo: jump.messageId, onScrolled: clearJump }
-                        : {}),
-                    })}
-                  </ConversationReflowKey.Provider>
-                )}
+                renderThread={(p) => threadPane(p, nav.full ? "full" : "side")}
                 go={goFromPeek}
                 act={peekAct}
                 trail={trail}
                 full={!!nav.full}
-                pageName={PAGE_NAME[page.page]}
+                pageName={
+                  isRecordRoute(page)
+                    ? recordLabel(data, page)
+                    : PAGE_NAME[page.page]
+                }
                 onBack={() =>
                   onNav((n) => ({
                     ...n,
@@ -421,6 +484,18 @@ export function V3Shell({
           {hidden && (
             <SidebarHotZone onEnter={pop.show} onLeave={pop.tuckSoon} />
           )}
+          {addAgent && (
+            <V3AddAgent
+              data={data}
+              act={act}
+              onClose={() => setAddAgent(null)}
+              onHired={(id) => {
+                const done = addAgent.onHired;
+                setAddAgent(null);
+                done(id);
+              }}
+            />
+          )}
           {palette !== null && (
             <V3Palette
               data={data}
@@ -433,11 +508,11 @@ export function V3Shell({
               }
               onStart={startPlan}
               onClose={() => setPalette(null)}
-              go={goFromPage}
+              go={goFromNav}
               searchMessages={actions.searchMessages}
               onOpenMessage={(threadId, messageId) => {
                 setJump({ threadId, messageId });
-                goFromPage({ page: "thread", id: threadId });
+                goFromNav({ page: "thread", id: threadId });
               }}
             />
           )}

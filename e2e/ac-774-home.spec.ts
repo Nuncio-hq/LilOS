@@ -209,7 +209,7 @@ test("approve on Home resolves the ask everywhere, and the result is the same ro
     .getByRole("button")
     .filter({ hasText: /add a footer/i })
     .first();
-  await expect(card).toContainText("Finished");
+  await expect(card.locator('[data-v3-status="done"]')).toBeVisible();
   await expect(card.getByRole("button", { name: "Approve" })).toHaveCount(0);
 
   // Opening the result from Home is what sees it, on Needs you too.

@@ -153,19 +153,19 @@ const expectAligned = async (page: Page, row: Locator, tag: string) => {
   expect(lineDelta, `${tag}: name line vs avatar`).toBeLessThanOrEqual(4);
 };
 
-/* The Threads list row's own avatar/name pair (the agent's letter chip and its
-   name, one `items-center` line): same top-edge rule, one frame. */
+/* The Threads list row's leading pair (the status dot and the title, one
+   `items-center` line — #862's merged row carries no avatar chip): the same
+   one-line rule as tops(), compared as centres since a dot sits mid-line. */
 const listTops = (row: Locator) =>
   row.evaluate((el) => {
-    const avatar = [...el.querySelectorAll("span[aria-hidden='true']")].find(
-      (n) => (n as HTMLElement).style.width !== "",
-    );
-    const name = avatar?.nextElementSibling;
-    if (!avatar || !name) throw new Error("list row avatar or name missing");
-    return {
-      avatarTop: avatar.getBoundingClientRect().y,
-      nameTop: name.getBoundingClientRect().y,
+    const dot = el.querySelector<HTMLElement>("[data-v3-status]");
+    const name = el.querySelector<HTMLElement>("[data-thread-title]");
+    if (!dot || !name) throw new Error("list row dot or title missing");
+    const mid = (n: HTMLElement) => {
+      const r = n.getBoundingClientRect();
+      return r.y + r.height / 2;
     };
+    return { avatarTop: mid(dot), nameTop: mid(name) };
   });
 
 const expectListAligned = async (page: Page, row: Locator, tag: string) => {

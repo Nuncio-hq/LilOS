@@ -57,10 +57,12 @@ export {
   HelpersBlock,
   HelpersHint,
   ParentLine,
+  ParkLine,
   ThreadLineage,
 } from "./v3/v3-helpers";
-export { agentNameOf, agentOf, boardStatus } from "./v3/v3-model";
+export { agentNameOf, agentOf, boardStatus, snoozed } from "./v3/v3-model";
 export {
+  isRecordRoute,
   navFromParams,
   paramsFromNav,
   paramsText,
@@ -68,6 +70,16 @@ export {
 } from "./v3/v3-nav";
 export type * from "./v3/v3-page-types";
 export { whenWords } from "./v3/v3-schedule-text";
+export {
+  SECTION_ORDER,
+  sectionedThreads,
+  sectionOf,
+  settledReason,
+  snoozeBack,
+  type ThreadSections,
+  type V3Section,
+} from "./v3/v3-sections";
 export { skillSlug } from "./v3/v3-settings-skills";
 export { V3Shell } from "./v3/v3-shell";
+export type { ThreadPark } from "./v3/v3-thread-menu";
 export type * from "./v3/v3-types";

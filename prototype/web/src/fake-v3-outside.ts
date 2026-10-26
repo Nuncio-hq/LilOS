@@ -127,6 +127,9 @@ export const OUTSIDE_THREADS: V3Data["threads"] = [
     agentId: "hb-marketing",
     title: "Scrape competitor hooks on X",
     status: "working",
+    /* Asleep on the Snoozed shelf for another hour or so — it keeps
+       scraping underneath (#862). */
+    snoozedUntil: Date.now() + 75 * 60_000,
     startedAt: "11:46",
     minutes: 18,
     step: 9,

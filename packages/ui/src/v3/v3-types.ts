@@ -143,6 +143,26 @@ export type V3AgentPatch = {
   confirmModel?: boolean;
 };
 
+/** One engine runtime the harness reports (`system.status.runtimes`,
+   D-#761): the default engine plus each lazily-started coding runtime
+   (Devin, Claude Code…). The add-agent dialog's Who? lists every
+   non-default row as a kind to hire. */
+export type V3Runtime = {
+  /** The id `Employee.runtime` stores; a hire passes it back unchanged. */
+  id: string;
+  /** Its display name ("Devin"). */
+  label: string;
+  /** The install probe's verdict; absent = never probed (still hireable). */
+  available?: boolean;
+  /** Its lifecycle once it has run ("failed" greys the row). */
+  state?: string;
+  /** The plain reason it cannot be hired, in the runtime's own words. */
+  detail?: string;
+  /** The runtime the app already runs as its default engine: its profiles
+     are Who?'s profile rows, not a kind of their own. */
+  isDefault?: boolean;
+};
+
 /** An engine profile as the engine reports it: a persona with a model and
    skills that exists on the engine whether or not anyone is hired on it. The
    Hire page offers the ones no agent runs yet. */
@@ -365,6 +385,32 @@ export type V3Thread = {
   workbench?: V3Workbench;
   /** The last Rewind on this thread, shown as a quiet line in the chat. */
   rewound?: { dropped: number; files: boolean };
+  /* Where the thread sits in the list (#862, the T3 Code sidebar's model):
+     Pinned stays on top, a snooze sleeps it until its wake time, and a
+     settled thread parks on the Settled shelf — its `settledAt`, and why.
+     All three are relay state, the same on Mac and phone; only folding
+     Working is the device's own choice. */
+  /** Pinned to the top of the list, epoch ms (newest pin first; reordering
+      by drag comes later). Settling takes the pin off. */
+  pinnedAt?: number;
+  /** Hidden until then, epoch ms: the thread keeps working underneath and
+      comes back early when it needs you, fails or gets stuck, or you
+      message it. */
+  snoozedUntil?: number;
+  /** When the thread last came back to you — it finished, failed, asked or
+      woke — epoch ms. The Active list orders by it, newest first. */
+  cameBackAt?: number;
+  /** When it settled, epoch ms (what the shelf shows). */
+  settledAt?: number;
+  /** Why the shelf has it: a sweep parked it after it sat idle three days,
+      or when its PR merged or closed. Absent on a settled thread = you
+      settled it yourself. */
+  settledWhy?:
+    | { kind: "idle" }
+    | { kind: "pr"; num: number; state: "merged" | "closed" };
+  /** Auto-settle switched off for this thread: the idle/PR sweep leaves it
+      in the list (Auto-settle → Disabled on its menu). */
+  autoSettleOff?: boolean;
 };
 
 /** One message that matched a ⌘K search. The thread's title and whether it

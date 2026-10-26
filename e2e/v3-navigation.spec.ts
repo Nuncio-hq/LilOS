@@ -12,10 +12,11 @@ import {
 
 /**
  * Navigation in the v3 shell never loses where you were (real stack: relay +
- * harness on engine-fake). You live on a page; whatever you open from it
- * stacks in a side peek beside it, with a trail back through every step.
- * Esc, Back/Forward and a reload all land on the same place, because where
- * you are lives in the URL hash.
+ * harness on engine-fake). You live on a page; an item the page lists opens
+ * in a side peek beside it, with a trail back through every step — a jump
+ * (sidebar, ⌘K) navigates and the record IS the page (D-#769). Esc,
+ * Back/Forward and a reload all land on the same place, because where you
+ * are lives in the URL hash.
  */
 
 let stack: Stack;

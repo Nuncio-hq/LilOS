@@ -3,10 +3,13 @@ import {
   ClockIcon,
   CoinsIcon,
   CpuIcon,
+  EllipsisIcon,
   IdCardIcon,
+  PencilIcon,
   PlugIcon,
   SparklesIcon,
 } from "lucide-react";
+import { useState } from "react";
 import { Connectors, PILL } from "./v3-agent-connectors";
 import {
   DescriptionField,
@@ -26,7 +29,7 @@ import { RuleSuggestion } from "./v3-agent-rules";
 import { AgentSkills } from "./v3-agent-skills";
 import { AgentWeek } from "./v3-agent-week";
 import { ago, Btn, Meter, Page, Prop, Section, Title } from "./v3-bits";
-import { EscLayer, useFocusBack } from "./v3-keys";
+import { EscLayer, useFocusBack, useMenu } from "./v3-keys";
 import { AgentAvatar, Avatar, CeoMark, StatusPill } from "./v3-marks";
 import {
   agentOf,
@@ -37,9 +40,10 @@ import {
   removable,
 } from "./v3-model";
 import type { V3PageProps } from "./v3-page-types";
-import { ThreadRow } from "./v3-rows";
 import { soonestNext } from "./v3-schedule-text";
 import { AgentSchedules } from "./v3-schedules";
+import { TitleInput } from "./v3-thread-menu";
+import { ThreadRow } from "./v3-threads-rows";
 import type { V3Agent, V3ConnectorDef } from "./v3-types";
 
 /* One agent, like a person's profile in Notion: what it does, what it runs
@@ -80,6 +84,19 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
   const draft = ed?.draft;
   // Saving or cancelling swaps the fields back for Edit: the keyboard goes there.
   const editButton = useFocusBack<HTMLButtonElement>(!!draft);
+  /* Click-to-rename (#870): the name itself, or ⋯ → Rename, swaps it for a
+     box; Enter (or leaving) saves just the name through updateAgent, Esc
+     keeps the old one. Only where the app can edit at all. */
+  const [renaming, setRenaming] = useState(false);
+  const nameButton = useFocusBack<HTMLButtonElement>(renaming);
+  const rename =
+    ed && !draft
+      ? {
+          save: (name: string) =>
+            void act.updateAgent?.(agent.id, { name }).catch(() => {}),
+          start: () => setRenaming(true),
+        }
+      : undefined;
   const outside = agent.kind === "outside";
   const via = outside
     ? data.connectors.find((c) => c.id === agent.via)
@@ -149,9 +166,32 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
           >
             {draft && ed ? (
               <NameField ed={ed} draft={draft} />
+            ) : renaming && rename ? (
+              <TitleInput
+                value={agent.name}
+                ariaLabel="Agent name"
+                onSave={rename.save}
+                onDone={(byKey) => {
+                  setRenaming(false);
+                  if (byKey) nameButton.current?.focus();
+                }}
+                className="h-[1.2em]"
+              />
             ) : (
               <>
-                {agent.name}
+                {rename ? (
+                  <button
+                    ref={nameButton}
+                    type="button"
+                    title="Rename"
+                    onClick={rename.start}
+                    className="-mx-1 rounded-[5px] px-1 text-left outline-none transition-colors hover:bg-[var(--v3-hover)] focus-visible:bg-[var(--v3-hover)]"
+                  >
+                    {agent.name}
+                  </button>
+                ) : (
+                  agent.name
+                )}
                 {holdsCeo && <CeoMark className="ml-2.5 align-middle" />}
               </>
             )}
@@ -184,6 +224,7 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
                 </button>
               )}
               {ed && <EditButton ref={editButton} onClick={ed.start} />}
+              {rename && <AgentMenu onRename={rename.start} />}
             </>
           )}
         </div>
@@ -389,7 +430,14 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
           </p>
         )}
         {threads.map((t) => (
-          <ThreadRow key={t.id} data={data} thread={t} go={go} />
+          <ThreadRow
+            key={t.id}
+            data={data}
+            t={t}
+            go={go}
+            act={act}
+            drop="agent"
+          />
         ))}
       </div>
 
@@ -401,5 +449,47 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
         <RemoveAgent data={data} go={go} act={act} agent={agent} />
       )}
     </Page>
+  );
+}
+
+/** The agent's ⋯ — quiet actions on the page header; today the other door
+   to rename (#870). Same shape as the thread rows' ⋯ menu. */
+function AgentMenu({ onRename }: { onRename: () => void }) {
+  const menu = useMenu();
+  return (
+    <span className="relative">
+      <button
+        ref={menu.trigger}
+        type="button"
+        onClick={() => menu.setOpen((o) => !o)}
+        aria-label="Agent actions"
+        aria-haspopup="menu"
+        aria-expanded={menu.open}
+        className="grid size-7 place-items-center rounded-lg text-muted-foreground hover:bg-[var(--v3-hover)] hover:text-foreground"
+      >
+        <EllipsisIcon className="size-4" />
+      </button>
+      {menu.open && (
+        <div
+          ref={menu.list}
+          role="menu"
+          onKeyDown={menu.onKeyDown}
+          className="absolute top-[calc(100%+6px)] right-0 z-20 w-40 rounded-lg border bg-popover p-1 shadow-lg"
+        >
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              menu.setOpen(false);
+              onRename();
+            }}
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[13px] hover:bg-[var(--v3-hover)]"
+          >
+            <PencilIcon className="size-3.5 shrink-0 text-muted-foreground" />
+            <span className="truncate">Rename</span>
+          </button>
+        </div>
+      )}
+    </span>
   );
 }

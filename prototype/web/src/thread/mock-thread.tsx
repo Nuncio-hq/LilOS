@@ -4,6 +4,7 @@ import {
   FocusView,
   type ModelChoice,
   type PlanAction,
+  snoozed,
   ThreadLineage,
   ThreadView,
   type V3Ask,
@@ -220,6 +221,18 @@ function Body({
     },
     onRename: act.renameThread && ((title: string) => act.renameThread?.(t.id, title)),
     onArchive: act.archiveThread && ((to: boolean) => act.archiveThread?.(t.id, to)),
+    /* The ⋯ menu's park choices (#862): pin, snooze/wake, auto-settle —
+       each drawn only with its action. A settled thread's menu suppresses
+       them in the shared menu itself. */
+    park: {
+      pinned: t.pinnedAt !== undefined,
+      onPin: act.pinThread && ((to: boolean) => act.pinThread?.(t.id, to)),
+      snoozedUntil: snoozed(t) ? t.snoozedUntil : undefined,
+      onSnooze: act.snoozeThread && ((until: number) => act.snoozeThread?.(t.id, until)),
+      onWake: act.wakeThread && (() => act.wakeThread?.(t.id)),
+      autoSettle: !t.autoSettleOff,
+      onAutoSettle: act.setAutoSettle && ((on: boolean) => act.setAutoSettle?.(t.id, on)),
+    },
     onSend: sendHere,
     pending: model.pending,
     onRemovePending: dropQueued,
@@ -264,8 +277,9 @@ function Body({
     <div data-thread-panel className="flex h-full min-h-0 min-w-0 flex-col">
       {/* A hand-off is an ordinary thread with lineage (D-#847): the page
           leads with the parent a helper belongs to, or the helpers a
-          parent is waiting on — nothing on an ordinary thread. */}
-      <ThreadLineage data={data} thread={t} go={go} act={act} />
+          parent is waiting on — nothing on an ordinary thread. The park
+          line joins it while the thread is off the lists (#862). */}
+      <ThreadLineage data={data} thread={t} go={go} act={act} settled={!live} />
       {session ? (
         <FocusView
           bare

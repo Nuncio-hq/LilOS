@@ -8,6 +8,7 @@ import {
   type Stack,
   skipFirstRun,
   startChat,
+  v3Main,
   v3Peek,
   v3Sidebar,
 } from "./helpers/stack";
@@ -290,11 +291,12 @@ test("AC-4 + AC-5 a pick on the new-session composer lands on the FIRST turn; th
   await page.screenshot({ path: `${SHOTS}/ac-4-first-turn-pick.png` });
 
   // A new chat with the same person (their page → Message) is back on the
-  // employee default.
+  // employee default. The sidebar pick jumped to the person's page (D-#769);
+  // the draft it opens peeks beside it.
   await v3Sidebar(page)
     .getByRole("button", { name: /Default/ })
     .click();
-  await v3Peek(page).getByRole("button", { name: "Message" }).click();
+  await v3Main(page).getByRole("button", { name: "Message" }).click();
   await expect(draftChip(page)).toContainText("Fake Large");
   expect(errors).toEqual([]);
 });

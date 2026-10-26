@@ -90,6 +90,7 @@ export function ThreadView(props: ThreadViewProps) {
     onContinue,
     onRename,
     onArchive,
+    park,
     findBar,
     scrollTo,
     onScrolled,
@@ -103,6 +104,7 @@ export function ThreadView(props: ThreadViewProps) {
     inputClassName: "h-8 [font-size:22px]",
     onRename,
     onArchive,
+    park,
   });
   const keyTarget = useThreadKeys({
     thread,

@@ -13,6 +13,7 @@ import {
   skipFirstRun,
   startChat,
   startChatInFolder,
+  v3Main,
   v3Peek,
   v3Sidebar,
 } from "./helpers/stack";
@@ -110,17 +111,19 @@ test("AC-1 a plain chat has no project; a thread opened in a folder is listed on
   await settled(page);
   const side = v3Sidebar(page);
   await expect(side.getByText("Projects", { exact: true })).toBeVisible();
+  // A sidebar project row is a jump: the project IS the page (D-#769),
+  // its threads list on it.
   await side.getByRole("button", { name: "lilos-alpha" }).click();
-  const peek = v3Peek(page);
-  await expect(peek.getByText("Project", { exact: true })).toBeVisible();
-  await expect(peek).toContainText(shown(alpha).replace(/^~/, ""), {
+  const project = v3Main(page);
+  await expect(project.getByText("Project", { exact: true })).toBeVisible();
+  await expect(project).toContainText(shown(alpha).replace(/^~/, ""), {
     timeout: 15_000,
   });
   // Live or past, the thread is listed here, and the plain chat is not.
-  const listed = peek.locator("[data-project-live], [data-project-past]");
+  const listed = project.locator("[data-project-live], [data-project-past]");
   await expect(listed.getByText(/hello in alpha/i)).toHaveCount(1);
   await expect(listed.getByText(/just talking/i)).toHaveCount(0);
-  await expect(peek.locator("[data-project-past]")).toContainText(
+  await expect(project.locator("[data-project-past]")).toContainText(
     /hello in alpha/i,
     { timeout: 30_000 },
   );
@@ -234,7 +237,7 @@ test("AC-4 after a restart every thread is still under its project; nothing is l
     });
   await side.getByRole("button", { name: "lilos-gamma" }).click();
   await expect(
-    v3Peek(page)
+    v3Main(page)
       .locator("[data-project-live], [data-project-past]")
       .filter({ hasText: /hello in gamma/i }),
   ).toHaveCount(1, { timeout: 30_000 });

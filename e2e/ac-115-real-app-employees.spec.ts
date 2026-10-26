@@ -6,6 +6,7 @@ import {
   pickPorts,
   type Stack,
   skipFirstRun,
+  v3Main,
   v3Peek,
   v3Sidebar,
 } from "./helpers/stack";
@@ -459,27 +460,28 @@ test("AC-8 the channel-assignment part of the Hire page does not render in the r
   await page.screenshot({ path: `${SHOTS}/ac-8-no-channels.png` });
 });
 
-/** An agent's page in the side peek, opened from its sidebar row. */
+/** An agent's page, opened from its sidebar row — a jump, so the record is
+ *  the page column, not a peek (D-#769). */
 async function openAgent(page: Page, name: string) {
   await v3Sidebar(page).getByRole("button", { name, exact: true }).click();
-  const peek = v3Peek(page);
-  await expect(peek.getByRole("heading", { level: 1, name })).toBeVisible();
-  return peek;
+  const record = v3Main(page);
+  await expect(record.getByRole("heading", { level: 1, name })).toBeVisible();
+  return record;
 }
 
 test("AC-6 Edit saves display name + role via employees.update; surfaces update live", async ({
   page,
 }) => {
   await openApp(stackA, page);
-  const peek = await openAgent(page, "Senior Engineer");
-  await peek.getByRole("button", { name: "Edit" }).click();
+  const record = await openAgent(page, "Senior Engineer");
+  await record.getByRole("button", { name: "Edit" }).click();
 
-  await peek.getByRole("textbox", { name: "Name" }).fill("Engineer Prime");
-  await peek.getByRole("textbox", { name: "Role" }).fill("Records lead");
+  await record.getByRole("textbox", { name: "Name" }).fill("Engineer Prime");
+  await record.getByRole("textbox", { name: "Role" }).fill("Records lead");
   await page.screenshot({ path: `${SHOTS}/ac-6-edit-dialog.png` });
-  await peek.getByRole("button", { name: "Save" }).click();
+  await record.getByRole("button", { name: "Save" }).click();
   // "Save" reads "Saving…" while in flight: Edit is back once it has landed.
-  await expect(peek.getByRole("button", { name: "Edit" })).toBeVisible();
+  await expect(record.getByRole("button", { name: "Edit" })).toBeVisible();
 
   // The sidebar row and the agent page read the updated record without a
   // reload; the role is the page's kicker line.
@@ -487,9 +489,9 @@ test("AC-6 Edit saves display name + role via employees.update; surfaces update 
     v3Sidebar(page).getByRole("button", { name: "Engineer Prime" }),
   ).toBeVisible();
   await expect(
-    peek.getByRole("heading", { level: 1, name: "Engineer Prime" }),
+    record.getByRole("heading", { level: 1, name: "Engineer Prime" }),
   ).toBeVisible();
-  await expect(peek.getByText(/^Records lead/)).toBeVisible();
+  await expect(record.getByText(/^Records lead/)).toBeVisible();
   await expect(
     v3Sidebar(page).getByRole("button", { name: "Senior Engineer" }),
   ).toHaveCount(0);
@@ -506,16 +508,16 @@ test("AC-7 Remove deletes the LilOS record + DM, never the engine profile", asyn
   page,
 }) => {
   await openApp(stackA, page);
-  const peek = await openAgent(page, "Tester");
+  const record = await openAgent(page, "Tester");
   const employeeId = decodeURIComponent(
-    /open=agent:([^&,]+)/.exec(page.url())?.[1] ?? "",
+    /[?&]id=([^&,]+)/.exec(page.url())?.[1] ?? "",
   );
   expect((await dmChannelIds(stackA, employeeId)).length).toBe(1);
 
-  await peek.getByRole("button", { name: "Remove from LilOS" }).click();
+  await record.getByRole("button", { name: "Remove from LilOS" }).click();
   // #856's plain confirmation: what goes (the agent + its LilOS threads) vs
   // what stays (the engine profile and CLI login).
-  const confirm = peek.getByRole("group", {
+  const confirm = record.getByRole("group", {
     name: "Remove Tester from LilOS",
   });
   await expect(confirm.getByText("Remove Tester from LilOS?")).toBeVisible();
@@ -525,7 +527,8 @@ test("AC-7 Remove deletes the LilOS record + DM, never the engine profile", asyn
   await page.screenshot({ path: `${SHOTS}/ac-7-remove-confirm.png` });
   await confirm.getByRole("button", { name: "Remove from LilOS" }).click();
 
-  // The sidebar row goes, the peek closes and the app is on People.
+  // The sidebar row goes and the app leaves the deleted record's
+  // page for People (the list that owned it).
   await expect(
     v3Sidebar(page).getByRole("button", { name: "Tester", exact: true }),
   ).toHaveCount(0);

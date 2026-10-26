@@ -737,6 +737,11 @@ export const v3Sidebar = (page: playwright.Page): playwright.Locator =>
 export const v3Peek = (page: playwright.Page): playwright.Locator =>
   page.getByRole("complementary", { name: "Opened record" });
 
+/** The page column: where a record lands when the open is a jump — sidebar,
+ *  palette, notification, or a link the current page doesn't own (D-#769). */
+export const v3Main = (page: playwright.Page): playwright.Locator =>
+  page.locator("#v3-main");
+
 /**
  * Start a chat with `agent` the way a person does: the new-chat draft beside
  * Threads, type, Send. Resolves once the draft has swapped for its thread
@@ -864,7 +869,8 @@ export async function startChatInFolder(
  * and read its name off the record. D-#836 took the roster row out of the
  * paused sidebar, so the id comes off the relay's employees.list — same
  * record the row used to show (oldest hire first; "Default" on engine-fake,
- * "default" on hermes). The agent's page is left open in the peek.
+ * "default" on hermes). The agent's page is left open in the peek — an
+ * agent belongs to People, so the peek is where the URL keeps it (D-#769).
  */
 export async function openDefaultAgent(
   page: playwright.Page,

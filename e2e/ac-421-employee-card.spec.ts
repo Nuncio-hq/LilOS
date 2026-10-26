@@ -6,6 +6,7 @@ import {
   pickPorts,
   type Stack,
   skipFirstRun,
+  v3Main,
   v3Peek,
   v3Sidebar,
 } from "./helpers/stack";
@@ -14,8 +15,8 @@ import {
  * Issue #421 — one shared employee card (engine, owner, profile, model, now
  * rows + the missing-profile switch) instead of an app-local modal.
  *
- * v3: the card is the agent's page in the side peek (`v3-agent.tsx`), opened
- * from its sidebar row. What that page shows of the old card: the engine
+ * v3: the card is the agent's page (`v3-agent.tsx`), opened from its
+ * sidebar row — a jump, so the record lands as the page (D-#769). What that page shows of the old card: the engine
  * ("Runs on"), the engine profile ("Profile"), the model, the "Now" row with
  * its status, the role, the instructions, and a Message button. What it does
  * NOT have (reported, not faked): the "owned by <you>" line, the "Instructions
@@ -84,7 +85,8 @@ async function rpc(
   return out;
 }
 
-/** Open `name`'s page in the side peek from its sidebar row, past first run.
+/** Open `name`'s page from its sidebar row — a jump, so the record is the
+ *  page column (D-#769), past first run.
  *  `statusPollMs` shortens the engine-name poll so the "Runs on" row reads
  *  `engine-fake` well inside the waits. AC-2/AC-504 leave extra employees on
  *  this shared stack, so always click through the named row. */
@@ -96,42 +98,49 @@ async function openAgentPage(page: Page, name: string) {
   });
   await expect(row).toBeVisible({ timeout: 30_000 });
   await row.click();
-  const peek = v3Peek(page);
-  await expect(peek.getByRole("heading", { level: 1, name })).toBeVisible();
-  return peek;
+  /* A sidebar pick is a jump: the agent's page IS the page (D-#769). */
+  const record = v3Main(page);
+  await expect(record.getByRole("heading", { level: 1, name })).toBeVisible();
+  return record;
 }
 
 /** One labelled row of the agent page's property list. */
-const prop = (peek: ReturnType<typeof v3Peek>, label: string) =>
-  peek.locator("div.flex.min-h-9").filter({ hasText: new RegExp(`^${label}`) });
+const prop = (record: ReturnType<typeof v3Main>, label: string) =>
+  record
+    .locator("div.flex.min-h-9")
+    .filter({ hasText: new RegExp(`^${label}`) });
 
 test("AC-1 the agent page carries the card's rows: engine, profile, model, now; no old-modal Soul row", async ({
   page,
 }) => {
   test.setTimeout(90_000);
-  const peek = await openAgentPage(page, "Default");
+  const record = await openAgentPage(page, "Default");
 
   // The card's grid on the page: Engine → "Runs on", Model, Now (+ Idle).
   // engine.name lands on the harness's second status report (~10s); the row
   // is left out until the probe lands.
-  await expect(prop(peek, "Runs on")).toContainText("engine-fake", {
+  await expect(prop(record, "Runs on")).toContainText("engine-fake", {
     timeout: 30_000,
   });
-  await expect(prop(peek, "Profile")).toContainText("default");
-  await expect(prop(peek, "Model")).toBeVisible();
-  await expect(prop(peek, "Now")).toContainText("Idle");
+  await expect(prop(record, "Profile")).toContainText("default");
+  await expect(prop(record, "Model")).toBeVisible();
+  await expect(prop(record, "Now")).toContainText("Idle");
   // The Instructions are the engine profile's own persona (the page reads
   // `agents.describe`), so the stock Default shows engine-fake's soul text.
-  await expect(peek.getByText("Instructions", { exact: true })).toBeVisible();
-  await expect(peek.getByText(/You are the default employee/)).toBeVisible({
+  await expect(record.getByText("Instructions", { exact: true })).toBeVisible();
+  await expect(record.getByText(/You are the default employee/)).toBeVisible({
     timeout: 30_000,
   });
   // The old modal's signature: a "Soul" row — gone.
-  await expect(peek.getByText("Soul", { exact: true })).toHaveCount(0);
-  // Message starts a chat with them (a new-chat draft beside the page).
-  await expect(peek.getByRole("button", { name: "Message" })).toBeVisible();
-  // The visible ✕ closes the peek.
-  await peek.getByRole("button", { name: /^Close/ }).click();
+  await expect(record.getByText("Soul", { exact: true })).toHaveCount(0);
+  // Message starts a chat with them — a new-chat draft beside the page
+  // (a draft belongs on its agent's page, D-#769), and its visible ✕ closes
+  // the peek.
+  await record.getByRole("button", { name: "Message" }).click();
+  await expect(v3Peek(page)).toBeVisible();
+  await v3Peek(page)
+    .getByRole("button", { name: /^Close/ })
+    .click();
   await expect(v3Peek(page)).toHaveCount(0);
 });
 
@@ -155,9 +164,9 @@ test("AC-2 the missing-profile switch works end to end", async ({ page }) => {
   const employeeId = (created.result as { employee: { id: string } }).employee
     .id;
 
-  const peek = await openAgentPage(page, "Switchy");
-  await expect(page).toHaveURL(new RegExp(`open=agent:${employeeId}`));
-  await expect(peek.getByText(/Deckhand/)).toBeVisible();
+  const record = await openAgentPage(page, "Switchy");
+  await expect(page).toHaveURL(new RegExp(`page=agent&id=${employeeId}`));
+  await expect(record.getByText(/Deckhand/)).toBeVisible();
 
   await rpc(stack.relayWs, stack.relayToken, [
     {
@@ -178,7 +187,7 @@ test("AC-2 the missing-profile switch works end to end", async ({ page }) => {
 
   // The next session boots on the switched profile: Message → send, then
   // read the conversation's engine replay for session.started.agent.
-  await peek.getByRole("button", { name: "Message" }).click();
+  await record.getByRole("button", { name: "Message" }).click();
   const box = v3Peek(page).getByPlaceholder("Message Switchy…");
   await box.fill("switch check");
   await v3Peek(page).getByRole("button", { name: "Send" }).click();

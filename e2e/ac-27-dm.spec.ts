@@ -487,13 +487,18 @@ test("AC-6 two sessions run in parallel; Threads shows each live phase", async (
   );
   await page.goto(`${stackA.webUrl}/#?page=threads`);
   await expect(v3Peek(page)).toHaveCount(0);
-  /* A live thread's card carries its phase pill: "Working" while it runs,
-     "Needs you" while it waits on an approval (#224 badge design, #71 AC-4).
-     The cards on the Live board are the old DM list's session rows. */
-  const live = page
-    .locator("main")
-    .getByRole("button")
-    .filter({ hasText: /Working|Needs you/ });
+  /* A live thread's row carries its phase signal: the status dot while it
+     runs, the Needs-you pill while it waits on an approval (#224 badge
+     design, #71 AC-4). Running threads sit folded under Working (#862) —
+     open that shelf first. */
+  const workingFold = page.locator(
+    '#v3-main [data-fold="working"] > button[aria-expanded="false"]',
+  );
+  if (await workingFold.count()) await workingFold.click();
+  const live = page.locator(
+    '#v3-main [data-thread-row]:has([data-v3-status="working"]), ' +
+      '#v3-main [data-thread-row]:has([data-v3-status="needs"])',
+  );
   await expect(live).toHaveCount(2, { timeout: 60_000 });
   // The sidebar counts the same two as live.
   await expect(
@@ -596,11 +601,11 @@ test("AC-7 real-app build: every visible control has a working handler", async (
     };
     await clickAll("aside:not([aria-label])");
     // Open Default (the sweep may have left any page up) and sweep what it
-    // shows: the page behind and the person beside it.
+    // shows: a sidebar pick is a jump — the person IS the page now (D-#769).
     await sidebar
       .getByRole("button", { name: /default/i })
       .click({ timeout: 10_000 });
-    await expect(page).toHaveURL(/open=agent:/);
+    await expect(page).toHaveURL(/[#?&]page=agent&id=/);
     await clickAll("main");
     await clickAll('aside[aria-label="Opened record"]');
     // The app still works: a new chat accepts a message and the agent

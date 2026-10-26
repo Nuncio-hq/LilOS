@@ -1,86 +1,100 @@
-import { ChevronRightIcon } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { ChevronRightIcon, PinIcon } from "lucide-react";
+import type { ReactNode } from "react";
 import { cn } from "../lib/utils";
-import { Meter, span, TicketId } from "./v3-bits";
-import type { V3Data } from "./v3-data-types";
+import { ago } from "./v3-bits";
 import { HelpersHint } from "./v3-helpers";
 import { ThreadPill } from "./v3-live";
+import { StatusDot } from "./v3-marks";
 import {
-  agentOf,
+  agentNameOf,
   boardStatus,
   listedAncestorOf,
+  projectOf,
+  snoozed,
   threadOf,
-  threadTag,
+  threadProjectId,
 } from "./v3-model";
 import { RowButton, useOpenRoute } from "./v3-open-record";
 import type { V3PageProps } from "./v3-page-types";
-import { AgentName } from "./v3-rows";
+import { settledReason, snoozeBack } from "./v3-sections";
 import { useRenameMenu } from "./v3-thread-menu";
 import type { V3Thread } from "./v3-types";
 
-/* The rows of Threads' lists. Each carries the thread's quiet ⋯ menu (rename
-   in place, archive) where the app can do those, and opens the thread on a
-   click. The grids answer to the page's own width (it is a container: a
-   thread open beside it takes more than half of it), never the window's, and
-   every title column has a floor: a title truncates, it does not vanish. */
+/* The one thread row (#862 feedback): the Threads page's single list and
+   Home's list both draw it — a status dot (a word-pill only for Needs you /
+   Failed, the two a scan should catch), the title, `project · agent`, and
+   the ⋯ menu (pin, settle, snooze — #862). The clock stays quiet until the
+   row is hovered; a snoozed row says when it's back and a settled row says
+   why it parked. */
 
-type Row = V3PageProps & { t: V3Thread; archived?: boolean };
-
-/** The title with its tag (ticket or project); the input while it is being
-    renamed. */
-function RowTitle({
-  data,
-  t,
-  editing,
-}: {
-  data: V3Data;
-  t: V3Thread;
-  editing: ReactNode | undefined;
-}) {
-  const parent = t.parentId ? threadOf(data, t.parentId) : undefined;
-  return (
-    <span className="flex min-w-0 items-center">
-      <TicketId id={threadTag(data, t)} className="shrink-0" />
-      {editing ?? <span className="truncate">{t.title}</span>}
-      {parent && (
-        <span
-          className="ml-1.5 shrink-0 truncate text-[12px] text-muted-foreground/60"
-          title={`helper of ${parent.title}`}
-        >
-          ↩ {parent.title}
-        </span>
-      )}
-      <HelpersHint data={data} thread={t} className="ml-1.5 text-[12px]" />
-    </span>
-  );
-}
-
-/** One row: the thread's title (renameable), then `children` (its cells),
-    then the menu. `grid` names the columns. */
-function ThreadRow({
+export function ThreadRow({
   data,
   t,
   go,
   act,
-  archived,
-  grid,
-  className,
-  children,
-}: Row & { grid: string; className?: string; children: ReactNode }) {
-  const { renameThread, archiveThread } = act;
+  settled,
+  drop,
+}: V3PageProps & {
+  t: V3Thread;
+  /** A shelf row: dimmed, and its menu leads with Un-settle. */
+  settled?: boolean;
+  /** Inside a group that already names it — the Agent grouping, Home's
+      project groups — that half of `project · agent` is spared. */
+  drop?: "project" | "agent";
+}) {
+  const {
+    renameThread,
+    archiveThread,
+    pinThread,
+    snoozeThread,
+    wakeThread,
+    setAutoSettle,
+  } = act;
   const { input, menu } = useRenameMenu({
     title: t.title,
-    archived,
+    archived: settled,
     quiet: true,
     onRename: renameThread && ((title) => renameThread(t.id, title)),
     onArchive: archiveThread && ((to) => archiveThread(t.id, to)),
+    park: settled
+      ? {
+          autoSettle: !t.autoSettleOff,
+          onAutoSettle: setAutoSettle && ((on) => setAutoSettle(t.id, on)),
+        }
+      : {
+          pinned: t.pinnedAt !== undefined,
+          onPin: pinThread && ((to) => pinThread(t.id, to)),
+          snoozedUntil: snoozed(t) ? t.snoozedUntil : undefined,
+          onSnooze: snoozeThread && ((until) => snoozeThread(t.id, until)),
+          onWake: wakeThread && (() => wakeThread(t.id)),
+          autoSettle: !t.autoSettleOff,
+          onAutoSettle: setAutoSettle && ((on) => setAutoSettle(t.id, on)),
+        },
   });
   // An open helper marks its nearest listed ancestor's row (D-#847).
   const open = useOpenRoute();
+  const board = boardStatus(data, t);
+  const parent = t.parentId ? threadOf(data, t.parentId) : undefined;
+  const project = threadProjectId(data, t);
+  const projectName = project ? projectOf(data, project)?.name : undefined;
+  const asleep = snoozed(t);
+  const meta = [
+    drop === "project" ? undefined : projectName,
+    drop === "agent" ? undefined : agentNameOf(data, t.agentId),
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  /* The hover clock is when the thread last moved: when it came back to
+     you, else when it opened, else how long it's been going. */
+  const back = t.cameBackAt ?? t.openedAt;
+  const when =
+    back !== undefined
+      ? Math.max(0, Math.round((Date.now() - back) / 60_000))
+      : t.minutes;
   return (
-    // `data-thread-row`, not `data-thread`: that one marks the open thread's
-    // transcript, and the list sits under the peek on the same page.
-    <div data-thread-row={t.id} data-archived={archived || undefined}>
+    // `data-settled` marks the shelf rows: a settled thread leaves the list
+    // for the Settled fold and the marker says so (#862).
+    <div data-thread-row={t.id} data-settled={settled || undefined}>
       <RowButton
         opens={{ page: "thread", id: t.id }}
         marked={
@@ -88,126 +102,117 @@ function ThreadRow({
         }
         onClick={() => go({ page: "thread", id: t.id })}
         className={cn(
-          "group/thread grid items-center border-[var(--v3-line)] border-b py-2.5",
-          grid,
-          archived && "text-muted-foreground",
-          className,
+          "group/thread flex min-h-[38px] items-center gap-2.5 border-[var(--v3-line)] border-b py-1 text-[13.5px]",
+          settled && "text-muted-foreground",
         )}
       >
-        <RowTitle data={data} t={t} editing={input} />
-        {children}
-        <span className="flex justify-end">{menu}</span>
+        <StatusDot status={board} />
+        <span className="flex min-w-0 flex-1 items-center gap-1.5">
+          {t.pinnedAt !== undefined && (
+            <PinIcon
+              aria-label="Pinned"
+              className="size-3 shrink-0 text-muted-foreground/70"
+            />
+          )}
+          {t.unseen && (
+            <span
+              aria-hidden
+              // Test hook: the row's unseen dot (#563) — the merged list
+              // carries what the card board did (#862).
+              data-thread-unseen
+              className="inline-block size-[7px] shrink-0 rounded-full bg-sky-600 dark:bg-sky-400"
+            />
+          )}
+          {input ?? (
+            <span
+              data-thread-title
+              className={cn("truncate", !settled && "text-foreground")}
+            >
+              {t.title}
+            </span>
+          )}
+          {/* The two statuses a scan should catch get words; the rest stay
+              a dot (#862 feedback). */}
+          {(board === "needs" || board === "failed") && (
+            <ThreadPill status={board} />
+          )}
+          {parent && (
+            <span
+              className="shrink-0 truncate text-[12px] text-muted-foreground/60"
+              title={`helper of ${parent.title}`}
+            >
+              ↩ {parent.title}
+            </span>
+          )}
+          <HelpersHint data={data} thread={t} className="text-[12px]" />
+        </span>
+        {/* `project · agent` has no room in a phone-narrow pane — the dot,
+            title and menu already say what the row is. */}
+        {meta && (
+          <span className="@min-[560px]:block hidden max-w-[38%] shrink truncate text-[12.5px] text-muted-foreground/70">
+            {meta}
+          </span>
+        )}
+        <span
+          className="max-w-[45%] shrink-0 truncate text-right text-[12.5px] text-muted-foreground/70"
+          title={
+            settled
+              ? settledReason(t)
+              : asleep && t.snoozedUntil !== undefined
+                ? snoozeBack(t.snoozedUntil)
+                : undefined
+          }
+        >
+          {settled ? (
+            settledReason(t)
+          ) : asleep && t.snoozedUntil !== undefined ? (
+            snoozeBack(t.snoozedUntil)
+          ) : (
+            <span className="opacity-0 transition-opacity group-hover/thread:opacity-100">
+              {ago(when)}
+            </span>
+          )}
+        </span>
+        <span className="flex shrink-0 justify-end">{menu}</span>
       </RowButton>
     </div>
   );
 }
 
-/* Live → Earlier today: title, who, what it did, how long. The summary only
-   when there is room. */
-const RECENT =
-  "grid-cols-[minmax(96px,2fr)_minmax(0,1fr)_58px_24px] gap-3 @min-[760px]:grid-cols-[minmax(0,1fr)_150px_minmax(0,170px)_70px_24px] @min-[760px]:gap-4";
-
-export function RecentRow(p: Row) {
-  const { t, data } = p;
+/** A fold in the thread list ("Working (3)", an agent's group): a shelf or
+    group that opens on the chevron. Its open state comes from the device
+    (useFoldPrefs), so the caller picks the key and the default. `marker`
+    names it for tests ("settled", "agent:<id>"). */
+export function Fold({
+  title,
+  count,
+  open,
+  onToggle,
+  marker,
+  children,
+}: {
+  title: ReactNode;
+  count: number;
+  open: boolean;
+  onToggle: (open: boolean) => void;
+  marker?: string;
+  children: ReactNode;
+}) {
+  if (count === 0) return null;
   return (
-    <ThreadRow {...p} grid={RECENT} className="text-[13.5px]">
-      <AgentName data={data} agent={agentOf(data, t.agentId)} />
-      <span className="hidden truncate text-muted-foreground @min-[760px]:block">
-        {t.summary}
-      </span>
-      <span className="text-right text-muted-foreground">
-        {span(t.minutes)}
-      </span>
-    </ThreadRow>
-  );
-}
-
-/* All: title, who, status; when started and how long once there is room, and
-   the context column only where some thread reports one. */
-export const ALL_GRID = {
-  plain:
-    "grid-cols-[minmax(96px,2fr)_minmax(0,1fr)_auto_24px] gap-3 @min-[700px]:grid-cols-[minmax(0,1fr)_150px_100px_70px_70px_24px] @min-[700px]:gap-4",
-  context:
-    "grid-cols-[minmax(96px,2fr)_minmax(0,1fr)_auto_24px] gap-3 @min-[700px]:grid-cols-[minmax(0,1fr)_150px_100px_70px_70px_100px_24px] @min-[700px]:gap-4",
-};
-
-export function AllRow(p: Row & { hasContext: boolean }) {
-  const { t, data, hasContext } = p;
-  return (
-    <ThreadRow {...p} grid={hasContext ? ALL_GRID.context : ALL_GRID.plain}>
-      <AgentName data={data} agent={agentOf(data, t.agentId)} />
-      <span>
-        <ThreadPill status={boardStatus(data, t)} />
-      </span>
-      <span className="hidden text-muted-foreground @min-[700px]:block">
-        {t.startedAt}
-      </span>
-      <span className="hidden text-muted-foreground @min-[700px]:block">
-        {span(t.minutes)}
-      </span>
-      {hasContext && (
-        <span className="hidden items-center gap-2 text-muted-foreground @min-[700px]:flex">
-          {t.context !== undefined && (
-            <>
-              <Meter value={t.context} className="w-10" />
-              {t.context}%
-            </>
-          )}
-        </span>
-      )}
-    </ThreadRow>
-  );
-}
-
-/** By agent: the agent is the heading, so the row is title, status, time. */
-export function AgentThreadRow(p: Row) {
-  const { t, data } = p;
-  return (
-    <ThreadRow
-      {...p}
-      grid="grid-cols-[minmax(96px,1fr)_auto_58px_24px] gap-3 @min-[700px]:grid-cols-[minmax(0,1fr)_auto_48px_80px_24px] @min-[700px]:gap-4"
-      className="py-2 text-[13.5px]"
-    >
-      <ThreadPill status={boardStatus(data, t)} />
-      <span className="text-right text-muted-foreground">
-        {span(t.minutes)}
-      </span>
-      <span className="hidden text-right text-muted-foreground/70 @min-[700px]:block">
-        {t.startedAt}
-      </span>
-    </ThreadRow>
-  );
-}
-
-/** Threads put away, folded under the list ("Archived (3)"); a row opens its
-    thread and its menu brings it back. Nothing is drawn with none. */
-export function Archived({
-  threads,
-  hasContext,
-  ...p
-}: V3PageProps & { threads: V3Thread[]; hasContext: boolean }) {
-  const [open, setOpen] = useState(false);
-  if (threads.length === 0) return null;
-  return (
-    <div className="mt-6">
+    <div className="mt-6" {...(marker ? { "data-fold": marker } : {})}>
       <button
         type="button"
         aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => onToggle(!open)}
         className="flex items-center gap-1.5 text-[13.5px] text-muted-foreground hover:text-foreground"
       >
         <ChevronRightIcon
           className={cn("size-3.5 transition-transform", open && "rotate-90")}
         />
-        Archived ({threads.length})
+        {title} ({count})
       </button>
-      {open && (
-        <div data-archived-list className="mt-1.5">
-          {threads.map((t) => (
-            <AllRow key={t.id} {...p} t={t} archived hasContext={hasContext} />
-          ))}
-        </div>
-      )}
+      {open && <div className="mt-1.5">{children}</div>}
     </div>
   );
 }
