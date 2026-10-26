@@ -44,7 +44,7 @@ export function V3Sidebar({
   onBlur,
 }: {
   data: V3Data;
-  /** Where you are — a page, or the record you went straight to (#863):
+  /** Where you are — a page, or the record you went straight to (D-#769):
      a project or agent the sidebar navigated to keeps its entry lit. */
   page: V3Route;
   /** The record in the side peek, if any: a project or person gets a mark. */

@@ -1,4 +1,4 @@
-/* The #863 split-view rules, decided with the owner (26 Oct 2026): the
+/* The D-#769 split-view rules, settled with the owner in #863 (26 Oct 2026): the
    sidebar and ⌘K NAVIGATE — the target becomes the page, full width, and
    any peek closes; an item on the page opens in the side PEEK only when
    the page lists it (a thread row on its project, a helper on its parent
@@ -64,7 +64,7 @@ const data = (over: Partial<V3Data> = {}): V3Data =>
 const d = data();
 const on = (page: V3Route, peek: V3Nav["peek"] = []): V3Nav => ({ page, peek });
 
-describe("sidebar and ⌘K navigate (#863)", () => {
+describe("sidebar and ⌘K navigate (D-#769)", () => {
   test("a sidebar page becomes the page and closes the peek", () => {
     const nav = on({ page: "project", id: "p1" }, [
       { page: "thread", id: "t1" },

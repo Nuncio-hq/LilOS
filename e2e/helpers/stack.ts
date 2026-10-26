@@ -856,9 +856,9 @@ export async function startChatInFolder(
 /**
  * The company's first agent (the one the harness hires when the roster is
  * empty): past first run, open its sidebar row and read the id off the hash
- * the row opens (`#?open=agent:<id>`). The name is the row's own text, since
- * it is "Default" on engine-fake and "default" on hermes. The agent's page is
- * left open in the peek.
+ * the row navigates to (`#?page=agent&id=<id>` — a sidebar pick is a jump,
+ * D-#769). The name is the row's own text, since it is "Default" on
+ * engine-fake and "default" on hermes. The agent's page is left open.
  */
 export async function openDefaultAgent(
   page: playwright.Page,
@@ -879,9 +879,9 @@ export async function openDefaultAgent(
     .filter((l) => l.length > 0 && l !== "CEO");
   const name = (lines.pop() ?? "").replace(/\s+CEO$/, "").trim();
   await row.click();
-  await expect(page).toHaveURL(/open=agent:[^&,]+/);
+  await expect(page).toHaveURL(/[#?&]page=agent&id=[^&,]+/);
   const id = decodeURIComponent(
-    /open=agent:([^&,]+)/.exec(page.url())?.[1] ?? "",
+    /[?&]id=([^&,]+)/.exec(page.url())?.[1] ?? "",
   );
   return { id, name };
 }

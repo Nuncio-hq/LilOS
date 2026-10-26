@@ -16,7 +16,7 @@ import { makeActions } from "./v3-engine/actions"
    /?page=settings&view=phone · /?page=welcome (first run) ·
    /?page=people&open=agent:scout,newchat:scout · &theme=dark|light. A record
    link (/?page=project&id=lilos, /?page=ticket&id=HB-12) makes the record
-   the page itself — what the sidebar and ⌘K produce (#863). A leading
+   the page itself — what the sidebar and ⌘K produce (D-#769). A leading
    `v3` flag (old links: ?v3&page=…) is the same screen and is kept as is.
    The mock company state lives in the shell and resets only on a full reload. */
 const navFromUrl = (): V3Nav => navFromParams(new URLSearchParams(location.search))

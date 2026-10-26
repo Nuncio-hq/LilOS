@@ -173,7 +173,7 @@ export function V3Peek({
 }
 
 /* One record's body — the same components whether the record sits in the
-   side peek or IS the page (#863). The page and the peek hand it their
+   side peek or IS the page (D-#769). The page and the peek hand it their
    own props: the page's `go` navigates or opens beside by what the page
    lists, the peek's extends the trail. */
 export function V3RecordContent({

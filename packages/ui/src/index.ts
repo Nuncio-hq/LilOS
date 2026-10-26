@@ -61,6 +61,7 @@ export {
 } from "./v3/v3-helpers";
 export { agentNameOf, agentOf, boardStatus } from "./v3/v3-model";
 export {
+  isRecordRoute,
   navFromParams,
   paramsFromNav,
   paramsText,

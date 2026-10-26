@@ -1,5 +1,5 @@
 import type { DesktopShortcutAction } from "@lilos/contracts/app";
-import { stepNav, type V3Nav } from "@lilos/ui";
+import { isRecordRoute, stepNav, type V3Nav } from "@lilos/ui";
 import { computed, type ReadableAtom } from "nanostores";
 import { useEffect } from "react";
 import { useBrowserContextPush } from "../lib/browser";
@@ -44,7 +44,11 @@ function currentAgentId(): string | undefined {
     company.features.tickets,
     company.updates.length > 0,
   );
-  const top = nav.peek[nav.peek.length - 1];
+  /* The frontmost record is the peek's top; with no peek the page can be
+     the record itself (D-#769). */
+  const top =
+    nav.peek[nav.peek.length - 1] ??
+    (isRecordRoute(nav.page) ? nav.page : undefined);
   if (top?.page === "agent" || top?.page === "newchat") return top.id;
   if (top?.page === "thread") {
     const conv = relay.conversations.get().find((c) => c.id === top.id);
@@ -195,7 +199,7 @@ export function useShellEffects({
       const digit = /^employee-(\d)$/.exec(action);
       if (digit) {
         const id = relay.employees.get()[Number(digit[1]) - 1]?.id;
-        /* Keyboard jumps are `nav` moves (#863): they go to the record,
+        /* Keyboard jumps are `nav` moves (D-#769): they go to the record,
            full width — the same rule the sidebar and ⌘K follow. */
         if (id)
           move((n) =>
