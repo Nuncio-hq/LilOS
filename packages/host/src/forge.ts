@@ -1,3 +1,4 @@
+import { homedir } from "node:os";
 import type {
   ForgeCommentResult,
   ForgeCreateParams,
@@ -12,6 +13,7 @@ import type {
   ForgePrsResult,
   ForgePullRequest,
 } from "@lilos/contracts/host";
+import { protectedFolderOf } from "@lilos/contracts/host";
 import { asAccessError, bounded, probeTimeoutMs } from "./access.js";
 import { HOST_ERRORS, HostError } from "./errors.js";
 import { run } from "./exec.js";
@@ -106,7 +108,17 @@ async function gh(cwd: string, args: string[]): Promise<string> {
     });
     return stdout;
   } catch (e) {
-    throw asAccessError(e, cwd) ?? ghFailed(e);
+    /* Same rule as git() (D-#875): a consent signature inside a protected
+       folder reports FOLDER_ACCESS, a killed child elsewhere is gh's own
+       failure (a hung network read is not a folder prompt). */
+    const access = asAccessError(e, cwd);
+    if (
+      access &&
+      (protectedFolderOf(cwd, homedir()) || !(e as { killed?: boolean }).killed)
+    ) {
+      throw access;
+    }
+    throw ghFailed(e);
   }
 }
 
