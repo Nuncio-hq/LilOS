@@ -159,7 +159,20 @@ export async function bindingFor(
   if (existing) return existing;
   const inFlight = this.binds.get(conv.id);
   if (inFlight) return inFlight;
-  const pending = this.bindConversation(conv, channelId).finally(() => {
+  const inner = this.bindConversation(conv, channelId);
+  /* D-#866 r5: the drop surface reads the real bind reason instead of
+     "several attempts". Detached observer — it must NOT extend the
+     awaited `pending` chain: extra settle hops once let a `!binding`
+     park land after attachEngine's `early` sweep, orphaning the send. */
+  void inner.then(
+    () => {
+      this.lastBindError.delete(conv.id);
+    },
+    (error: unknown) => {
+      this.lastBindError.set(conv.id, String(error));
+    },
+  );
+  const pending = inner.finally(() => {
     this.binds.delete(conv.id);
     /* A parked Stop is moot when the bind produced nothing to stop — drop
        it instead of interrupting whatever turn the next bind creates. */

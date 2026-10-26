@@ -156,6 +156,20 @@ export async function deliverOrdered(
         void this.dropEarlyWithError(conv.id).catch(() => {});
         return;
       }
+      /* D-#866 r5: a conn that attached between the bind's conn-check and
+         this park already swept `early` — and this park has no flush
+         timer, so the send would sit forever. Re-check once; a conn that
+         landed mid-await drives the flush now instead. */
+      const runtime = await this.runtimeForConversation(conv);
+      if (this.connForRuntime(runtime)) {
+        void this.flushEarly(conv.id).catch((error) =>
+          this.opts.log.warn("early message flush failed", {
+            conversationId: conv.id,
+            error: String(error),
+          }),
+        );
+        return;
+      }
       // Engine still starting/restarting: hold the message; attachEngine
       // flushes this queue once a connection exists (the dedupe set above
       // would otherwise drop it forever). If the start then fails the
@@ -316,14 +330,40 @@ export async function dropEarlyWithError(
     });
     return undefined;
   });
+  /* The reason the send died, most truthful first: a terminal runtime
+     verdict, else the verbatim bind rejection, else the generic line. */
   let detail = "session could not be bound after several attempts";
   try {
-    detail = (await this.runtimeFailureDetail(conv)) ?? detail;
+    detail =
+      (await this.runtimeFailureDetail(conv)) ??
+      this.lastBindError.get(convId) ??
+      detail;
   } catch (error) {
     this.opts.log.warn("drop: runtime failure detail lookup failed", {
       conversationId: convId,
       error: String(error),
     });
+  }
+  /* D-#866 r5: a start-stall under the packaged app is most often macOS
+     folder consent (TCC) parking the agent's child reads — the parked
+     sends deserve the actionable line, not a bare "timed out". Likely
+     cause, not a certainty: the real reason stays in the message. */
+  if (/did not answer|timed? ?out|deadline|could not be bound/i.test(detail)) {
+    let label = "The agent";
+    try {
+      label =
+        (conv &&
+          this.runtimes?.get(await this.runtimeForConversation(conv))?.spec
+            .label) ||
+        label;
+    } catch {
+      /* label lookup is cosmetic — keep the generic lead */
+    }
+    detail =
+      `${label} didn't start in time — ${detail}. ` +
+      `If macOS asked LilOS for access to a folder (Desktop, Documents), ` +
+      `allow it in System Settings → Privacy & Security → Files and ` +
+      `Folders, then send again.`;
   }
   this.opts.log.error("dropping held messages: engine could not start", {
     conversationId: convId,

@@ -262,6 +262,10 @@ export interface HarnessCtx {
   readonly requestByAsk: Map<string, { sessionId: string; requestId: string }>;
   readonly delivered: Set<string>;
   readonly early: Map<string, AppMessage[]>;
+  /** The latest `bindingFor` rejection per conversation — the surfaced
+      "why the send died" when the park is dropped (D-#866 r5: the real
+      `session.start` error, not "several attempts"). */
+  readonly lastBindError: Map<string, string>;
   /** Bounded re-bind retries for sends parked on a bind failure. */
   readonly earlyFlushTimers: Map<string, ReturnType<typeof setTimeout>>;
   readonly earlyFlushAttempts: Map<string, number>;

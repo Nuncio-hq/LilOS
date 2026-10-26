@@ -36,6 +36,7 @@ function makeReporter(opts: {
   liveSessions?: () => number;
   logTail?: () => string[];
   connect?: () => ProfileConnection[];
+  hideCaps?: string[];
 }) {
   const sent = opts.sent ?? [];
   const reporter = new StatusReporter({
@@ -45,6 +46,7 @@ function makeReporter(opts: {
     },
     supervisor: opts.supervisor,
     version: "0.1.0",
+    hideCaps: opts.hideCaps,
     model: "fake-model-1",
     liveSessions: opts.liveSessions,
     logTail: opts.logTail,
@@ -181,6 +183,49 @@ describe("AC-4 (#33) harness status reporter feeds engine RSS + sessions", () =>
     expect(without?.models).toBeUndefined();
     expect(without?.defaultModel).toBeUndefined();
     // models.list is never probed for an engine that did not declare `models`.
+    expect(calls).toEqual(["describe"]);
+  });
+
+  it("D-#866 r5: hideCaps filters the report — no models leak through system.status", async () => {
+    /* The feed's `describe` already hides the cap; this report feeds
+       `system.status`/`welcome.engineHost`, whose raw caps+models used to
+       re-seed the picker's catalog and render it anyway (the e2e AC-3
+       `LILOS_HIDE_CAPS: models` leg). The report must describe the engine
+       as the app sees it. */
+    const calls: string[] = [];
+    const conn = {
+      request: async <T>(method: string) => {
+        calls.push(method);
+        if (method === "describe") {
+          return {
+            ...DESCRIBE,
+            capabilities: [
+              { id: "models", name: "Models" },
+              { id: "steer", name: "Steer" },
+            ],
+          } as T;
+        }
+        if (method === "models.list") {
+          return {
+            models: [{ id: "fake-small", name: "Fake Small" }],
+            default: "fake-small",
+          } as T;
+        }
+        throw new Error(`unexpected ${method}`);
+      },
+    } as EngineConnection;
+
+    const { reporter, sent } = makeReporter({
+      supervisor: { state: { current: "running", conn } },
+      sent: [],
+      hideCaps: ["models"],
+    });
+    await reporter.reportOnce();
+    const status = sent[0].status;
+    expect(status?.capabilities?.map((c) => c.id)).toEqual(["steer"]);
+    expect(status?.models).toBeUndefined();
+    expect(status?.defaultModel).toBeUndefined();
+    // Hidden == absent: the catalog probe is skipped too.
     expect(calls).toEqual(["describe"]);
   });
 
