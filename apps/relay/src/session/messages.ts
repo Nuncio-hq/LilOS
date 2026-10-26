@@ -11,6 +11,7 @@ import {
 } from "@lilos/contracts/app";
 import { noFolderDedupeKey } from "../store";
 import type { RelayCtx } from "./ctx";
+import { resumeParked } from "./park";
 import { badParams, JsonRpcCode, RpcError } from "./rpc";
 
 /**
@@ -105,7 +106,23 @@ export async function handleMessages(c: RelayCtx): Promise<false | undefined> {
         parsed.data.ceoWake === true
           ? (true as const)
           : undefined;
+      /* D-#862 review: the park wake-up runs BEFORE the append — the
+         conversation.updated must land before message.created, because a
+         client that delivers while the row still reads settled drops the
+         send and nothing retries it. The user's own message resumes a
+         parked thread; so does a host-posted follow-up on a task child
+         (D-#844/D-#847) — a child's only writer is the host, so without
+         this a settled child can never come back. Employee/system lines
+         on a plain thread never count as resuming. */
+      const resumes =
+        parsed.data.conversationId !== undefined &&
+        (parsed.data.authorKind === "user" && !isHost(peer)
+          ? true
+          : isHost(peer) &&
+            (await store.getConversation(parsed.data.conversationId))
+              ?.parentId !== undefined);
       try {
+        if (resumes) await resumeParked(c, parsed.data.conversationId);
         const { message, created } = await store.appendMessage({
           ...parsed.data,
           ...(ceoWake ? { ceoWake } : { ceoWake: undefined }),
@@ -253,6 +270,11 @@ export async function handleMessages(c: RelayCtx): Promise<false | undefined> {
         dropped: false,
         claimed: false,
       });
+      /* D-#862 review: re-sending a parked tray message resumes the
+         thread BEFORE message.changed — a deliver that lands while the
+         row still reads settled drops it (same order rule as posts). */
+      if (message.conversationId !== undefined)
+        await resumeParked(c, message.conversationId);
       emitMessageChanged(message.channelId, sent ?? message, [
         "dropped",
         "claimed",

@@ -122,6 +122,16 @@ export const NOT_AGENT_FACING: Record<string, string> = {
     "the user moves a thread's working folder (#581) — like folders.add/folders.browse, picking is the user's",
   "conversations.markRead":
     "the read watermark is Oscar's own — an agent never marks a thread seen for him (#563)",
+  /* D-#862: thread parking is the owner's list management — an agent never
+     shelves, hides or pins a thread in Oscar's list for him. */
+  "conversations.settle":
+    "settling is Oscar's shelf action — an agent never decides he is done with a thread (#862)",
+  "conversations.snooze":
+    "snooze hides a thread from Oscar's lists — the owner picks what leaves them (#862)",
+  "conversations.pin":
+    "pinning orders Oscar's list — the owner picks what sits on top (#862)",
+  "conversations.setAutoSettle":
+    "the auto-settle switch is Oscar's per-thread choice (#862)",
   "conversations.setModel": "the user picks the session's model",
   "conversations.setAccess":
     "the composer pill is the user's — an agent must never grant itself Full access (#106)",

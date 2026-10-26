@@ -444,6 +444,10 @@
         "presence.report",
         "workbench.open",
         "conversations.markRead",
+        "conversations.settle",
+        "conversations.snooze",
+        "conversations.pin",
+        "conversations.setAutoSettle",
         "schedules.list",
         "schedules.create",
         "schedules.update",
@@ -2002,6 +2006,59 @@
         "archived": {
           "type": "boolean"
         },
+        "pinnedAt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "settledAt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "settledReason": {
+          "type": "string",
+          "enum": [
+            "manual",
+            "idle",
+            "pr"
+          ]
+        },
+        "settledPr": {
+          "type": "object",
+          "properties": {
+            "num": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "state": {
+              "type": "string",
+              "enum": [
+                "merged",
+                "closed"
+              ]
+            }
+          },
+          "required": [
+            "num",
+            "state"
+          ],
+          "additionalProperties": false
+        },
+        "snoozedUntil": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "autoSettle": {
+          "type": "boolean"
+        },
+        "lastParkActionAt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
         "deliveredSeq": {
           "default": 0,
           "type": "integer",
@@ -2377,6 +2434,59 @@
               },
               "archived": {
                 "type": "boolean"
+              },
+              "pinnedAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "settledAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "settledReason": {
+                "type": "string",
+                "enum": [
+                  "manual",
+                  "idle",
+                  "pr"
+                ]
+              },
+              "settledPr": {
+                "type": "object",
+                "properties": {
+                  "num": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "merged",
+                      "closed"
+                    ]
+                  }
+                },
+                "required": [
+                  "num",
+                  "state"
+                ],
+                "additionalProperties": false
+              },
+              "snoozedUntil": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "autoSettle": {
+                "type": "boolean"
+              },
+              "lastParkActionAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
               },
               "deliveredSeq": {
                 "default": 0,
@@ -2844,6 +2954,59 @@
             },
             "archived": {
               "type": "boolean"
+            },
+            "pinnedAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "settledAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "settledReason": {
+              "type": "string",
+              "enum": [
+                "manual",
+                "idle",
+                "pr"
+              ]
+            },
+            "settledPr": {
+              "type": "object",
+              "properties": {
+                "num": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "merged",
+                    "closed"
+                  ]
+                }
+              },
+              "required": [
+                "num",
+                "state"
+              ],
+              "additionalProperties": false
+            },
+            "snoozedUntil": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "autoSettle": {
+              "type": "boolean"
+            },
+            "lastParkActionAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
             },
             "deliveredSeq": {
               "default": 0,
@@ -3475,6 +3638,59 @@
             "archived": {
               "type": "boolean"
             },
+            "pinnedAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "settledAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "settledReason": {
+              "type": "string",
+              "enum": [
+                "manual",
+                "idle",
+                "pr"
+              ]
+            },
+            "settledPr": {
+              "type": "object",
+              "properties": {
+                "num": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "merged",
+                    "closed"
+                  ]
+                }
+              },
+              "required": [
+                "num",
+                "state"
+              ],
+              "additionalProperties": false
+            },
+            "snoozedUntil": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "autoSettle": {
+              "type": "boolean"
+            },
+            "lastParkActionAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
             "deliveredSeq": {
               "default": 0,
               "type": "integer",
@@ -3688,6 +3904,12 @@
               "openedAt": {
                 "type": "string"
               },
+              "closedAt": {
+                "type": "string"
+              },
+              "mergedAt": {
+                "type": "string"
+              },
               "checks": {
                 "type": "string",
                 "enum": [
@@ -3757,6 +3979,12 @@
           "minLength": 1
         },
         "openedAt": {
+          "type": "string"
+        },
+        "closedAt": {
+          "type": "string"
+        },
+        "mergedAt": {
           "type": "string"
         },
         "checks": {
@@ -5100,6 +5328,59 @@
             "archived": {
               "type": "boolean"
             },
+            "pinnedAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "settledAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "settledReason": {
+              "type": "string",
+              "enum": [
+                "manual",
+                "idle",
+                "pr"
+              ]
+            },
+            "settledPr": {
+              "type": "object",
+              "properties": {
+                "num": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "merged",
+                    "closed"
+                  ]
+                }
+              },
+              "required": [
+                "num",
+                "state"
+              ],
+              "additionalProperties": false
+            },
+            "snoozedUntil": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "autoSettle": {
+              "type": "boolean"
+            },
+            "lastParkActionAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
             "deliveredSeq": {
               "default": 0,
               "type": "integer",
@@ -5871,6 +6152,59 @@
                   },
                   "archived": {
                     "type": "boolean"
+                  },
+                  "pinnedAt": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "settledAt": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "settledReason": {
+                    "type": "string",
+                    "enum": [
+                      "manual",
+                      "idle",
+                      "pr"
+                    ]
+                  },
+                  "settledPr": {
+                    "type": "object",
+                    "properties": {
+                      "num": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "state": {
+                        "type": "string",
+                        "enum": [
+                          "merged",
+                          "closed"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "num",
+                      "state"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "snoozedUntil": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "autoSettle": {
+                    "type": "boolean"
+                  },
+                  "lastParkActionAt": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
                   },
                   "deliveredSeq": {
                     "default": 0,
@@ -8607,6 +8941,59 @@
             },
             "archived": {
               "type": "boolean"
+            },
+            "pinnedAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "settledAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "settledReason": {
+              "type": "string",
+              "enum": [
+                "manual",
+                "idle",
+                "pr"
+              ]
+            },
+            "settledPr": {
+              "type": "object",
+              "properties": {
+                "num": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "merged",
+                    "closed"
+                  ]
+                }
+              },
+              "required": [
+                "num",
+                "state"
+              ],
+              "additionalProperties": false
+            },
+            "snoozedUntil": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "autoSettle": {
+              "type": "boolean"
+            },
+            "lastParkActionAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
             },
             "deliveredSeq": {
               "default": 0,
@@ -12163,6 +12550,59 @@
             },
             "archived": {
               "type": "boolean"
+            },
+            "pinnedAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "settledAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "settledReason": {
+              "type": "string",
+              "enum": [
+                "manual",
+                "idle",
+                "pr"
+              ]
+            },
+            "settledPr": {
+              "type": "object",
+              "properties": {
+                "num": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "merged",
+                    "closed"
+                  ]
+                }
+              },
+              "required": [
+                "num",
+                "state"
+              ],
+              "additionalProperties": false
+            },
+            "snoozedUntil": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "autoSettle": {
+              "type": "boolean"
+            },
+            "lastParkActionAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
             },
             "deliveredSeq": {
               "default": 0,

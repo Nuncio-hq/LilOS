@@ -48,6 +48,10 @@ const PR_LIST_FIELDS = [
   "headRefName",
   "baseRefName",
   "createdAt",
+  /* D-#862: the terminal stamp the relay's settle sweep guards resumes
+     against — merged PRs carry both. */
+  "closedAt",
+  "mergedAt",
   "statusCheckRollup",
 ].join(",");
 
@@ -154,6 +158,8 @@ export type GhPrListEntry = {
   headRefName: string;
   baseRefName: string;
   createdAt: string;
+  closedAt?: string | null;
+  mergedAt?: string | null;
   statusCheckRollup?: GhCheck[];
 };
 
@@ -294,6 +300,10 @@ export function mapPrList(entries: GhPrListEntry[]): ForgePrListItem[] {
       head: v.headRefName,
       base: v.baseRefName,
       openedAt: v.createdAt,
+      /* D-#862: the settle sweep's resume guard needs the terminal
+         stamp — absent on open PRs (gh returns null). */
+      ...(v.closedAt ? { closedAt: v.closedAt } : {}),
+      ...(v.mergedAt ? { mergedAt: v.mergedAt } : {}),
       checks: rollupChecks(v.statusCheckRollup),
     });
   }

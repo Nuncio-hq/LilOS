@@ -284,6 +284,14 @@ export const AppMethod = z.enum([
      `readSeq` past every finish the relay has seen, clearing the
      "finished, not seen" dot on every device. */
   "conversations.markRead",
+  /* D-#862 thread parking: settle parks a thread on the Settled shelf,
+     snooze hides it until a wake, pin holds it at the top, setAutoSettle
+     is its sweep switch. All Oscar's actions — the stamps are
+     relay-owned, `conversation.updated` carries them to every client. */
+  "conversations.settle",
+  "conversations.snooze",
+  "conversations.pin",
+  "conversations.setAutoSettle",
   /* Scheduled tasks (#136): the relay owns the records (D-#25); the host
      reads them all and fires runs as `conversations.open`. `runNow`
      stamps `requestedAt` — a click while the host was down still fires
@@ -636,6 +644,9 @@ export const ConversationsOpenResult = z.object({
 /**
  * Update a conversation: `title`/`archived` by any client; `state`,
  * `engineRef` and the `deliveredSeq` watermark are host-only writes.
+ * D-#862: `archived` is the legacy alias for settle — `true` settles
+ * (reason `manual`), `false` un-settles; `conversations.settle` is the
+ * dedicated call.
  */
 export const ConversationsUpdateParams = z.object({
   conversationId: z.string().min(1),
@@ -678,6 +689,56 @@ export type ConversationsUpdateParams = z.infer<
   typeof ConversationsUpdateParams
 >;
 export const ConversationResult = z.object({ conversation: Conversation });
+
+/**
+ * D-#862: `conversations.settle {conversationId, settled}` — parks a thread
+ * on the Settled shelf (`true`, stamps `settledAt` + reason `manual` and
+ * drops its pin and snooze) or brings it back to the list (`false`). Any
+ * client may call it; the stamps are relay-owned.
+ */
+export const ConversationsSettleParams = z
+  .object({ conversationId: z.string().min(1), settled: z.boolean() })
+  .strict();
+export type ConversationsSettleParams = z.infer<
+  typeof ConversationsSettleParams
+>;
+
+/**
+ * D-#862: `conversations.snooze {conversationId, until}` — hides the thread
+ * until the epoch-ms `until` (it keeps working underneath); `until: null`
+ * is "Wake now". A new ask, a failed turn or the user's own message also
+ * wakes it early.
+ */
+export const ConversationsSnoozeParams = z
+  .object({
+    conversationId: z.string().min(1),
+    until: z.int().min(0).nullable(),
+  })
+  .strict();
+export type ConversationsSnoozeParams = z.infer<
+  typeof ConversationsSnoozeParams
+>;
+
+/**
+ * D-#862: `conversations.pin {conversationId, pinned}` — pins the thread to
+ * the top of the list (`true`, stamps `pinnedAt`) or takes the pin off.
+ */
+export const ConversationsPinParams = z
+  .object({ conversationId: z.string().min(1), pinned: z.boolean() })
+  .strict();
+export type ConversationsPinParams = z.infer<typeof ConversationsPinParams>;
+
+/**
+ * D-#862: `conversations.setAutoSettle {conversationId, enabled}` — the
+ * per-thread auto-settle switch: `false`, the idle/PR sweep leaves the
+ * thread in the list. Default on (absent `autoSettle` = on).
+ */
+export const ConversationsSetAutoSettleParams = z
+  .object({ conversationId: z.string().min(1), enabled: z.boolean() })
+  .strict();
+export type ConversationsSetAutoSettleParams = z.infer<
+  typeof ConversationsSetAutoSettleParams
+>;
 
 /**
  * `conversations.markRead {conversationId}` (#563): stamps the thread's

@@ -129,8 +129,8 @@ describe("D-#761: runtime employee DM channel is readable after a restart", () =
     await new Promise<void>((r) => first.proc.once("exit", () => r()));
 
     /* Roll the file back to v35 the way a real pre-#761 install looks:
-       drop the runtime column, rewind user_version. The next boot's
-       migration re-adds it — the exact path the owner's relay took.
+       drop every column v36+ added, rewind user_version. The next boot's
+       migration re-adds them — the exact path the owner's relay took.
        bun:sqlite runs under bun only (migrate.test.ts convention). */
     const res = spawnSync(
       BUN,
@@ -139,6 +139,8 @@ describe("D-#761: runtime employee DM channel is readable after a restart", () =
         `import { Database } from "bun:sqlite";
          const db = new Database(${JSON.stringify(`${first.home}/relay.sqlite`)});
          db.exec("ALTER TABLE employees DROP COLUMN runtime");
+         for (const col of ["pinned_at","settled_at","settled_reason","settled_pr","snoozed_until","auto_settle","last_park_action_at"])
+           db.exec("ALTER TABLE conversations DROP COLUMN " + col);
          db.exec("PRAGMA user_version = 35");
          db.close();`,
       ],
