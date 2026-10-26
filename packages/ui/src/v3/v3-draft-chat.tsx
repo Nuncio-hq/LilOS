@@ -1,4 +1,4 @@
-import { Trash2Icon } from "lucide-react";
+import { PlusIcon, Trash2Icon } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { AccessPill } from "../chat/access-pill";
 import { clearDraftIfSent, draftKey, useDraft } from "../lib/drafts";
@@ -35,9 +35,10 @@ import type { V3Agent } from "./v3-types";
    your last opener, `@` for people and files of the folder, `/` for the
    engine's commands, the full model picker and the Ask / Full access pill. */
 
-/** The agent menu's remove row: an action, never a choice (`ChipOption`),
-   so its id can never clash with a real agent's. */
+/** The agent menu's action rows: never choices (`ChipOption`), so their ids
+   can never clash with a real agent's. */
 const REMOVE_AGENT = "\u0000remove-agent";
+const ADD_AGENT = "\u0000add-agent";
 
 /** Where this agent's chats usually go. Where its last one ran: a plain chat
     counts, since "No project" is a choice that must not slide back to a
@@ -283,7 +284,16 @@ export function ChatDraft({
         title="Agent"
         value={agent.id}
         onPick={(id) =>
-          id === REMOVE_AGENT ? setRemoveId(agent.id) : setAgent(id)
+          id === REMOVE_AGENT
+            ? setRemoveId(agent.id)
+            : id === ADD_AGENT
+              ? /* "Add agent…" hires on the spot and the new agent becomes
+                   this draft's chip — ready to message (#870). */
+                act.addAgent?.((hired) => {
+                  setAgent(hired);
+                  input.current?.focus();
+                })
+              : setAgent(id)
         }
         triggerRef={agentChip}
         label={
@@ -320,6 +330,21 @@ export function ChatDraft({
                       <span className="truncate">
                         Remove {agent.name} from LilOS…
                       </span>
+                    </>
+                  ),
+                },
+              ]
+            : []),
+          /* Last row: the ＋ beside Agents' other way in (#870). */
+          ...(act.addAgent
+            ? [
+                {
+                  id: ADD_AGENT,
+                  action: true,
+                  node: (
+                    <>
+                      <PlusIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                      <span className="truncate">Add agent…</span>
                     </>
                   ),
                 },

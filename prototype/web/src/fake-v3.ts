@@ -848,6 +848,27 @@ export const V3_DATA: V3Data = {
   devices: DEVICES,
   modelChoices: ["Opus 5.5 · High", "Sonnet 5 · Medium", "Haiku 5 · Fast"],
   hireTemplates: HIRE_TEMPLATES,
+  /* The runtime roster `system.status.runtimes` would report (D-#761): the
+     default engine first, then the coding runtimes — two installed, two
+     greyed with the probe's reason, so the add-agent dialog shows a Who?
+     like the real app's (#870). */
+  runtimes: [
+    { id: "hermes", label: "Hermes", available: true, isDefault: true },
+    { id: "acp:devin", label: "Devin", available: true },
+    { id: "acp:claude-code", label: "Claude Code", available: true },
+    {
+      id: "acp:cursor",
+      label: "Cursor",
+      available: false,
+      detail: "cursor-agent is not on PATH",
+    },
+    {
+      id: "acp:antigravity",
+      label: "Antigravity",
+      available: false,
+      detail: "antigravity is not installed — install it and restart LilOS",
+    },
+  ],
   // The new-chat box shows the engine's full picker (effort, Fast, Edit models).
   modelCatalog: {
     options: MODEL_OPTIONS,
@@ -955,5 +976,22 @@ export const ENGINE_PROFILES: V3Profile[] = [
     model: "Sonnet 5 · Medium",
     skills: 6,
     soul: "You file every sheet and note where the team will look for it, and say where you put it.",
+  },
+  /* The coding runtimes' roster seeds (D-#761): `agents.list` merges them in
+     before the runtime has ever started, stamped with the runtime they
+     belong to — the add-agent dialog folds each into its runtime's row. */
+  {
+    id: "devin",
+    name: "Devin",
+    description: "Devin CLI over ACP — Cognition's agent, signed in locally.",
+    skills: 0,
+    runtime: "acp:devin",
+  },
+  {
+    id: "claude-code",
+    name: "Claude Code",
+    description: "Claude Code over ACP — Anthropic's agent, signed in locally.",
+    skills: 0,
+    runtime: "acp:claude-code",
   },
 ]

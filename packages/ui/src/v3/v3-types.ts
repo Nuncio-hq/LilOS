@@ -143,6 +143,26 @@ export type V3AgentPatch = {
   confirmModel?: boolean;
 };
 
+/** One engine runtime the harness reports (`system.status.runtimes`,
+   D-#761): the default engine plus each lazily-started coding runtime
+   (Devin, Claude Code…). The add-agent dialog's Who? lists every
+   non-default row as a kind to hire. */
+export type V3Runtime = {
+  /** The id `Employee.runtime` stores; a hire passes it back unchanged. */
+  id: string;
+  /** Its display name ("Devin"). */
+  label: string;
+  /** The install probe's verdict; absent = never probed (still hireable). */
+  available?: boolean;
+  /** Its lifecycle once it has run ("failed" greys the row). */
+  state?: string;
+  /** The plain reason it cannot be hired, in the runtime's own words. */
+  detail?: string;
+  /** The runtime the app already runs as its default engine: its profiles
+     are Who?'s profile rows, not a kind of their own. */
+  isDefault?: boolean;
+};
+
 /** An engine profile as the engine reports it: a persona with a model and
    skills that exists on the engine whether or not anyone is hired on it. The
    Hire page offers the ones no agent runs yet. */

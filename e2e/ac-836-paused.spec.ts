@@ -78,7 +78,11 @@ test("the sidebar is the daily app's, and Home is the daily Home with its compos
     ).toHaveCount(0);
   await expect(side.getByText("People", { exact: true })).toHaveCount(0);
   await expect(side.locator("[data-company-label]")).toHaveCount(0);
-  await expect(side.getByRole("button", { name: /default/i })).toHaveCount(0);
+  /* The roster is there as the Agents section — a flat list with its ＋ to
+     add one (#870): browsable rows, not a page you navigate to. */
+  await expect(side.getByText("Agents", { exact: true })).toBeVisible();
+  await expect(side.getByRole("button", { name: /default/i })).toBeVisible();
+  await expect(side.getByRole("button", { name: "Add agent" })).toBeVisible();
   /* Nav-only sidebar (#862's accepted design): the thread rows, shelves and
      folds all live on the Threads page — the sidebar mirrors none of it. */
   await expect(side.locator("[data-thread-row]")).toHaveCount(0);

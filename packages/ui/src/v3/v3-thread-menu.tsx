@@ -452,11 +452,14 @@ export function TitleInput({
   onSave,
   onDone,
   className,
+  ariaLabel = "Thread title",
 }: {
   value: string;
   onSave: (title: string) => void;
   onDone: (byKey: boolean) => void;
   className?: string;
+  /** What the box is called when it is not a thread's (an agent's name). */
+  ariaLabel?: string;
 }) {
   const [draft, setDraft] = useState(value);
   // Leaving the box also fires blur once Enter or Esc has already decided.
@@ -477,7 +480,7 @@ export function TitleInput({
       <input
         // biome-ignore lint/a11y/noAutofocus: it opens because you asked to rename
         autoFocus
-        aria-label="Thread title"
+        aria-label={ariaLabel}
         value={draft}
         onFocus={(e) => e.currentTarget.select()}
         onChange={(e) => setDraft(e.target.value)}
