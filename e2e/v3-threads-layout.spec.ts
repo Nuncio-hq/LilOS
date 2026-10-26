@@ -20,7 +20,9 @@ for (const group of ["Section", "Agent", "Project"] as const) {
       await expect(rows.first()).toBeVisible();
       /* A title reads when it shows in full or, truncated, keeps at least
          80px: the merged row's title is fluid, so a short title is
-         legitimately narrower than 80 (#862). */
+         legitimately narrower than 80 (#862). scrollWidth is a whole px
+         while the rect is fractional — a 1px slack absorbs that, and a
+         truly truncated title still needs the full 80. */
       const titles = await rows.evaluateAll((els) =>
         els.map((row) => {
           const title = row.querySelector<HTMLElement>("[data-thread-title]");
@@ -34,7 +36,7 @@ for (const group of ["Section", "Agent", "Project"] as const) {
       expect(titles.length).toBeGreaterThan(0);
       for (const { w, full } of titles)
         expect(
-          w,
+          w + 1,
           `a title column is ${w}px wide (text ${full}px)`,
         ).toBeGreaterThanOrEqual(Math.min(full, 81));
     });
