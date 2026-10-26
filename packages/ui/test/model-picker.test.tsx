@@ -485,9 +485,7 @@ describe("model picker v2", () => {
     rerender(<Harness value={choiceFor("gpt-test-4o", MODELS)} />);
     await open();
     await open();
-    expect(
-      body().querySelector('button[aria-label="Reasoning"]'),
-    ).toBeNull();
+    expect(body().querySelector('button[aria-label="Reasoning"]')).toBeNull();
   });
 
   test("an effort pick reports the pick; the trigger shows model · effort", async () => {

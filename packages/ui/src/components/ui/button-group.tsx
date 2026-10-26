@@ -2,6 +2,11 @@ import { mergeProps } from "@base-ui/react/merge-props"
 import { useRender } from "@base-ui/react/use-render"
 import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "cn"
+/* The ambient React UMD global resolves to a second @types/react copy in
+   this workspace (19.2.x) while JSX uses this package's own (19.3.x); the
+   two `Ref` brands conflict. Importing React here pins both to the same
+   copy. */
+import type * as React from "react"
 
 import { Separator } from "./separator"
 

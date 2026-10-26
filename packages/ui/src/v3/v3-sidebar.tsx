@@ -503,7 +503,7 @@ function EngineFoot({
   onStatus?: () => void;
 }) {
   const { engine, relay } = data.settings;
-  const s =
+  const s: { status: V3Status; label: string; title?: string } =
     relay.state !== "ok"
       ? {
           status: relay.state === "down" ? "failed" : "working",
