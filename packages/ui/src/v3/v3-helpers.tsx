@@ -71,7 +71,7 @@ export function HelperRow({
           <span className="text-muted-foreground"> · {t.title}</span>
         </span>
       </span>
-      <span className="shrink-0">
+      <span className="hidden shrink-0 @min-[440px]:block">
         <ThreadPill status={t.status} />
       </span>
       <span className="w-10 shrink-0 text-right text-[12.5px] text-muted-foreground">
