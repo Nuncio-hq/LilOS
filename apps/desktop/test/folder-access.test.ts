@@ -107,6 +107,29 @@ describe("FolderAccess (#875)", () => {
     expect(fa.state().pending).toEqual(["Documents", "Downloads"]);
   });
 
+  it("ensure() awaits the OS answer before resolving (#875 r2)", async () => {
+    let answer!: () => void;
+    const fa = make((abs) =>
+      abs.endsWith("/Desktop")
+        ? new Promise<unknown>((r) => {
+            answer = () => r([]);
+          })
+        : Promise.resolve([]),
+    );
+    let settled = false;
+    const p = fa.ensure(`${HOME}/Desktop/work/LilOS`).then((s) => {
+      settled = true;
+      return s;
+    });
+    await flush();
+    // The prompt is still up — the pending folders.add waits on it.
+    expect(settled).toBe(false);
+    answer(); // Allow clicked — the await ends, the add proceeds.
+    const s = await p;
+    expect(settled).toBe(true);
+    expect(s).toEqual({ pending: ["Documents", "Downloads"], blocked: [] });
+  });
+
   it("ensure() re-touches a blocked folder a grant just unblocked", async () => {
     let granted = false;
     const read = (abs: string) =>

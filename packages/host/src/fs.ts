@@ -52,20 +52,23 @@ export async function fsList(params: { path: string }): Promise<FsListResult> {
   // serially, turned a big folder (e.g. $TMPDIR, ~900 repos) into 15s+.
   const repos: FsEntry[] = [];
   for (const e of entries) {
-    if (e.kind === "dir" && (await hasGitDir(join(abs, e.name)))) repos.push(e);
+    /* A protected child macOS still blocks stays unmarked — the listing
+       answers instead of dying on one child's consent wait (#875). */
+    if (
+      e.kind === "dir" &&
+      (await hasGitDir(join(abs, e.name)).catch(() => false))
+    ) {
+      repos.push(e);
+    }
   }
   let next = 0;
   const worker = async () => {
     while (next < repos.length) {
       const e = repos[next++] as FsEntry;
-      /* A child that fails its own probe (a chmod'd repo, a hung one on a
-         readable folder) just stays unmarked — the listing must not die
-         for one child. A confirmed folder wall still reports (#875). */
-      const mark = await repoMark(join(abs, e.name)).catch((err) => {
-        if (err instanceof HostError && err.code === HOST_ERRORS.FOLDER_ACCESS)
-          throw err;
-        return null;
-      });
+      /* A child that fails its own probe — a chmod'd repo, a hung one on
+         a readable folder, a consent-waiting protected dir — stays
+         unmarked; one child must not kill the whole listing (#875). */
+      const mark = await repoMark(join(abs, e.name)).catch(() => null);
       if (mark) e.repo = mark;
     }
   };

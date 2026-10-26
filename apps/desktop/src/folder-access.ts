@@ -48,7 +48,7 @@ const EMPTY: FolderAccessState = { pending: [], blocked: [] };
 export class FolderAccess {
   private asked = new Set<string>();
   private blocked = new Set<string>();
-  private inflight = new Set<string>();
+  private inflight = new Map<string, Promise<void>>();
   private listeners = new Set<(s: FolderAccessState) => void>();
   private mac: boolean;
   /* E2E + non-interactive runs can't click an OS prompt; the flag skips
@@ -95,13 +95,16 @@ export class FolderAccess {
     };
   }
 
-  /** One read on the folder; its settle is the answer. Resolved → asked
+  /** One read on the folder; its settle is the answer — resolved → asked
    *  and unblocked; refused → asked and blocked; still pending → the OS
-   *  prompt is up and the answer is simply late — nothing is marked. */
-  private touch(name: ProtectedFolder): void {
-    if (this.skip || this.inflight.has(name)) return;
-    this.inflight.add(name);
-    void this.read(join(this.home, name))
+   *  prompt is up and the answer is simply late. The returned promise
+   *  settles with the read so a caller (`ensure`) can await the answer. */
+  private touch(name: ProtectedFolder): Promise<void> {
+    if (this.skip) return Promise.resolve();
+    const inflight = this.inflight.get(name);
+    if (inflight) return inflight;
+    const askedWas = this.asked.has(name);
+    const p = this.read(join(this.home, name))
       .then(() => {
         this.asked.add(name);
         this.blocked.delete(name);
@@ -112,9 +115,14 @@ export class FolderAccess {
       })
       .finally(() => {
         this.inflight.delete(name);
-        this.persist();
+        /* Only `asked` is persisted — write when it actually changed; a
+           focus re-probe of already-asked folders doesn't rewrite the
+           file three times over. `blocked` still emits (not persisted). */
+        if (this.asked.has(name) !== askedWas) this.persist();
         this.emit();
       });
+    this.inflight.set(name, p);
+    return p;
   }
 
   /** Touch every unsettled folder — the OS prompts rise one after another
@@ -122,7 +130,7 @@ export class FolderAccess {
   ask(): Promise<FolderAccessState> {
     for (const name of PROTECTED_FOLDERS) {
       if (!this.asked.has(name) || this.blocked.has(name)) {
-        this.touch(name);
+        void this.touch(name);
       }
     }
     return Promise.resolve(this.state());
@@ -131,8 +139,10 @@ export class FolderAccess {
   /** A folder the app just adopted (project add, thread move): a pending
    *  protected folder gets touched — the macOS prompt rises the moment the
    *  folder matters (D-#875 acceptance: adding a project inside Desktop
-   *  must prompt). A blocked one re-touches so a grant just given settles
-   *  without a second click. `~/x` expands under home. */
+   *  must prompt). The await ends on the OS's answer: a grant lets the
+   *  add proceed, a denial lets it hear FOLDER_ACCESS and resurface the
+   *  step — a never-answered prompt just holds the await, like a modal.
+   *  `~/x` expands under home. */
   ensure(path: string): Promise<FolderAccessState> {
     const abs =
       path === "~"
@@ -142,7 +152,7 @@ export class FolderAccess {
           : path;
     const name = protectedFolderOf(abs, this.home);
     if (name && (!this.asked.has(name) || this.blocked.has(name))) {
-      this.touch(name);
+      return this.touch(name).then(() => this.state());
     }
     return Promise.resolve(this.state());
   }
@@ -153,7 +163,7 @@ export class FolderAccess {
    *  Pending folders stay untouched — the ask step explains first. */
   refreshBlocked(): Promise<FolderAccessState> {
     for (const name of PROTECTED_FOLDERS) {
-      if (this.asked.has(name)) this.touch(name);
+      if (this.asked.has(name)) void this.touch(name);
     }
     return Promise.resolve(this.state());
   }

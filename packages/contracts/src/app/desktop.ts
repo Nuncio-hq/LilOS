@@ -218,7 +218,9 @@ export interface DesktopBridge {
     ask(): Promise<FolderAccessState>;
     /** A folder the app just adopted (project add, move): if it sits inside
      *  a never-asked or blocked protected folder, main touches it so the OS
-     *  prompt rises while the new folder's context is on screen. */
+     *  prompt rises while the new folder's context is on screen, and the
+     *  promise resolves with the answer — the caller's add/move proceeds
+     *  on a grant, hears FOLDER_ACCESS on a denial. */
     ensure(path: string): Promise<FolderAccessState>;
     /** System Settings → Privacy & Security → Files and Folders. */
     openSettings(): Promise<void>;

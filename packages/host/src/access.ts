@@ -32,8 +32,10 @@ export const probeTimeoutMs = () =>
 const CONFIRM_MS = 1_000;
 
 /** Tests point the protected-folder check at a temp home so it runs off
- *  macOS too; read lazily so a test can set it before the first probe. */
-const homeDir = () => process.env.LILOS_HOME ?? homedir();
+ *  macOS too; read lazily so a test can set it before the first probe.
+ *  Dedicated knob — LILOS_HOME already means the app state dir elsewhere
+ *  (a probe home of `~/.lilos-dev` would miss every real protected path). */
+const homeDir = () => process.env.LILOS_TCC_HOME ?? homedir();
 
 /** `abs`'s protected folder under the probe's home. */
 export const protectedFolder = (abs: string): ProtectedFolder | undefined =>
@@ -73,52 +75,75 @@ export const asAccessError = (
   isAccessError(e) && protectedFolder(abs) ? folderAccessError(abs) : undefined;
 
 /* One readdir per protected folder doubles as the confirm probe AND the
-   "still walled" record: while it pends the folder counts as blocked — a
+   late-grant watcher: while it pends the folder counts as blocked — a
    repeat probe fails at once instead of parking another syscall on the
-   same unanswered prompt. Whatever the readdir answers — a grant's names,
-   a denial's EPERM — deletes the record, so the next probe asks afresh.
-   A walled folder costs the process exactly one hanging readdir; a pile
-   of repeated confirms can't exhaust the fs worker pool (D-#875). */
-const stuck = new Map<ProtectedFolder, Promise<boolean>>();
+   same unanswered prompt. Whatever it answers — a grant's names, a
+   denial's EPERM — deletes the record, so the next probe asks afresh.
+   A walled folder costs the process one hanging readdir at a time; a
+   pile of repeated confirms can't exhaust the fs worker pool (D-#875).
+
+   The blocked flag expires after STUCK_TTL_MS: a readdir that never
+   settles (a stuck iCloud Desktop, a consent wait under launchd that
+   never returns EINTR) otherwise gates every read in that folder until
+   the harness restarts — expiry re-checks with a FRESH read instead. */
+const STUCK_TTL_MS = 30_000;
+const watchers = new Map<ProtectedFolder, Promise<boolean>>();
+const blockedUntil = new Map<ProtectedFolder, number>();
+
+/** Test seam: swap the confirm read — a chmod can REFUSE a readdir but
+ *  can't hold it pending; only the OS (or this fake) does that. Module
+ *  state has no ctor for an opts seam, so a setter it is. */
+let confirmRead: (abs: string) => Promise<unknown> = (abs) => fsp.readdir(abs);
+export function setConfirmRead(
+  fn: ((abs: string) => Promise<unknown>) | null,
+): void {
+  confirmRead = fn ?? ((abs) => fsp.readdir(abs));
+}
 
 function folderRead(folder: ProtectedFolder): Promise<boolean> {
-  let w = stuck.get(folder);
+  let w = watchers.get(folder);
   if (!w) {
-    w = fsp.readdir(join(homeDir(), folder)).then(
-      () => {
-        if (stuck.get(folder) === w) stuck.delete(folder);
-        return true;
-      },
-      () => {
-        if (stuck.get(folder) === w) stuck.delete(folder);
-        return false;
-      },
+    w = confirmRead(join(homeDir(), folder)).then(
+      () => true,
+      () => false,
     );
-    stuck.set(folder, w);
+    watchers.set(folder, w);
+    void w.then((ok) => {
+      if (watchers.get(folder) === w) watchers.delete(folder);
+      if (ok) blockedUntil.delete(folder); // a granted read re-opens it
+    });
   }
   return w;
 }
 
-/** Throw FOLDER_ACCESS for `abs` while its protected folder's confirm read
- *  is still out — a repeat probe doesn't park behind the same prompt. */
+/** Throw FOLDER_ACCESS for `abs` while its protected folder is flagged
+ *  blocked — a repeat probe fails at once, not behind the same prompt. */
 export function assertFolderReadable(abs: string): void {
   const folder = protectedFolder(abs);
-  if (folder && stuck.has(folder)) throw folderAccessError(abs);
+  if (folder && (blockedUntil.get(folder) ?? 0) > Date.now()) {
+    throw folderAccessError(abs);
+  }
 }
 
 /** Post-failure classification (D-#875): is the protected folder `abs`
  *  sits in really unreadable right now? The 1 s confirm readdir separates
- *  a consent wait (the read stays out, the folder flags blocked) from an
- *  ordinary slow op — and its late answer clears the flag on a grant. */
+ *  a consent wait from an ordinary slow op. A read still pending after
+ *  the second flags the folder for STUCK_TTL_MS — repeat probes fail fast
+ *  while the watcher listens for the late grant; a refused read needs no
+ *  flag (probes fail fast on their own and the next one sees a grant).
+ *  An expired flag drops the stale watcher and re-reads fresh. */
 export async function confirmFolderBlocked(abs: string): Promise<boolean> {
   const folder = protectedFolder(abs);
   if (!folder) return false;
-  if (stuck.has(folder)) return true; // the unanswered confirm is still out
+  if ((blockedUntil.get(folder) ?? 0) > Date.now()) return true;
+  watchers.delete(folder); // flag expired — ask anew, not the stale watch
   const read = await Promise.race([
     folderRead(folder),
     new Promise<null>((r) => setTimeout(() => r(null), CONFIRM_MS)),
   ]);
-  return read !== true;
+  if (read === true) return false;
+  if (read === null) blockedUntil.set(folder, Date.now() + STUCK_TTL_MS);
+  return true;
 }
 
 const TIMED_OUT = Symbol("timed-out");

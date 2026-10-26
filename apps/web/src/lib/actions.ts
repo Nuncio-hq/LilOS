@@ -484,8 +484,9 @@ export async function moveConversationFolder(
   path: string,
 ): Promise<void> {
   /* D-#875: a move into a protected folder needs the macOS grant — the
-     desktop probe raises the OS prompt BEFORE the move can hit the wall. */
-  ensureFolderAccess(path);
+     desktop probe raises the OS prompt and this await is the user's
+     answer before the move can hit the wall. */
+  await ensureFolderAccess(path);
   try {
     await relay.request("conversations.moveFolder", { conversationId, path });
   } catch (e) {

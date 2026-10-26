@@ -73,9 +73,10 @@ export async function refreshFolders(): Promise<void> {
     what was typed. */
 export async function addFolder(path: string): Promise<Folder | undefined> {
   /* D-#875: a folder inside ~/Desktop, ~/Documents or ~/Downloads needs the
-     macOS grant — the desktop probe rises the OS prompt BEFORE the add, so
-     folders.add doesn't hit the same wall the probe is there to clear. */
-  ensureFolderAccess(path);
+     macOS grant — the desktop probe rises the OS prompt and this await is
+     the user's answer, so folders.add doesn't hit the same wall while the
+     prompt is still up. */
+  await ensureFolderAccess(path);
   const res = await relay
     .request<{ folder: { path: string } }>("folders.add", { path })
     .catch((e) => {

@@ -1,5 +1,6 @@
 import type { AppMessage, AttachmentsGetResult } from "@lilos/contracts/app";
 import type { ContentBlock } from "@lilos/contracts/engine";
+import { confirmFolderBlocked } from "@lilos/host";
 import { engineErrorCode, SESSION_NOT_FOUND } from "../engine/client";
 import { excludeFromGit, humanBytes, saveAttachment } from "./attachments";
 import type { HarnessCtx, SessionBinding } from "./ctx";
@@ -394,6 +395,21 @@ export async function stampCheckpoint(
      user files. Folder checkpoints only exist for folder-bound sessions. */
   if (!checkpoints || !binding.hasFolder) return;
   try {
+    /* #875: on a consent-waiting protected folder the shadow `git add -A`
+       parks inside open() forever — the turn would hang before the prompt
+       is even sent. The 1 s confirm says whether the folder is really
+       walled; a walled folder just skips its snapshot for the turn (the
+       message still runs — it can't be a file rewind point). */
+    if (await confirmFolderBlocked(binding.cwd)) {
+      this.opts.log.warn(
+        "folder checkpoint skipped — waiting on macOS folder access",
+        {
+          conversationId: binding.conversationId,
+          messageId: message.id,
+        },
+      );
+      return;
+    }
     const checkpoint = await checkpoints.snapshot(binding.cwd);
     await this.opts.relay.request("messages.setCheckpoint", {
       channelId: binding.channelId,

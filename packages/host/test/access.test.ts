@@ -9,21 +9,26 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import {
+  assertFolderReadable,
   bounded,
+  confirmFolderBlocked,
   exists,
+  fsList,
+  gitDiscoverRepos,
   gitIsRepo,
   HOST_ERRORS,
   HostError,
   isAccessError,
+  setConfirmRead,
 } from "../src/index";
 
 /* D-#875 bounded probes: a read that can't answer — a FIFO `open()` with
    no writer, a `git` child that never finishes — reports FOLDER_ACCESS
    ("waiting on macOS folder access for …") only when the protected folder
    itself is unreadable; a slow-but-granted op reports its own timeout.
-   The probe home is a tmpdir via LILOS_HOME so this runs on any OS.
+   The probe home is a tmpdir via LILOS_TCC_HOME so this runs on any OS.
    A chmod 0111 folder stands in for the TCC wall: chdir/stat still pass
    (the path resolves) but readdir is refused — exactly what a denied
    consent looks like to the confirm read. Skipped when tests run as root
@@ -37,10 +42,10 @@ const DL = join(HOME, "Downloads");
 for (const dir of [D, DOCS, DL]) mkdirSync(dir, { recursive: true });
 
 const restoreEnv = {
-  home: process.env.LILOS_HOME,
+  home: process.env.LILOS_TCC_HOME,
   ms: process.env.LILOS_PROBE_TIMEOUT_MS,
 };
-process.env.LILOS_HOME = HOME;
+process.env.LILOS_TCC_HOME = HOME;
 process.env.LILOS_PROBE_TIMEOUT_MS = "40";
 
 const isRoot = process.getuid?.() === 0;
@@ -48,8 +53,8 @@ const deny = (dir: string) => chmodSync(dir, 0o111); // traverse ok, read refuse
 const allow = (dir: string) => chmodSync(dir, 0o755);
 
 afterAll(() => {
-  if (restoreEnv.home === undefined) delete process.env.LILOS_HOME;
-  else process.env.LILOS_HOME = restoreEnv.home;
+  if (restoreEnv.home === undefined) delete process.env.LILOS_TCC_HOME;
+  else process.env.LILOS_TCC_HOME = restoreEnv.home;
   if (restoreEnv.ms === undefined) delete process.env.LILOS_PROBE_TIMEOUT_MS;
   else process.env.LILOS_PROBE_TIMEOUT_MS = restoreEnv.ms;
   for (const dir of [D, DOCS, DL]) allow(dir);
@@ -238,4 +243,84 @@ describe("git probe bound (#875)", () => {
       message: expect.stringContaining("timed out"),
     });
   });
+});
+
+describe("listings and discovery skip a walled child (#875)", () => {
+  /* Review r2: a blocked protected CHILD must not kill the whole call.
+     chmod 000 stands in for the denied wall — even traversal is refused,
+     so the child's own probes throw FOLDER_ACCESS while the parent's
+     readdir still answers. */
+  it.skipIf(isRoot)(
+    "fsList answers while a protected child is walled",
+    async () => {
+      chmodSync(D, 0o000);
+      const res = await fsList({ path: HOME });
+      const desktop = res.entries.find((e) => e.name === "Desktop");
+      expect(desktop).toMatchObject({ kind: "dir" });
+      expect(desktop?.repo).toBeUndefined();
+      allow(D);
+    },
+  );
+
+  it.skipIf(isRoot)(
+    "fsList ON the walled folder itself still reports FOLDER_ACCESS",
+    async () => {
+      chmodSync(D, 0o000);
+      await expect(fsList({ path: D })).rejects.toMatchObject({
+        code: HOST_ERRORS.FOLDER_ACCESS,
+        data: { folder: "Desktop" },
+      });
+      allow(D);
+    },
+  );
+
+  it.skipIf(isRoot)(
+    "gitDiscoverRepos skips a walled root and keeps the rest",
+    async () => {
+      const dev = join(HOME, "Developer");
+      const proj = join(dev, "proj");
+      mkdirSync(join(proj, ".git"), { recursive: true }); // a repo marker
+      chmodSync(D, 0o000);
+      const res = await gitDiscoverRepos({ roots: [D, dev], depth: 2 });
+      expect(res.repos.some((r) => r.path.endsWith("Developer/proj"))).toBe(
+        true,
+      );
+      allow(D);
+    },
+  );
+});
+
+describe("blocked-flag expiry (#875)", () => {
+  /* A read the OS never answers arms the flag; the flag expires after
+     30 s so the next probe re-reads fresh instead of gating forever on
+     a stuck watcher (r2 finding 2). */
+  it("a never-settling read flags, expires, then re-checks", async () => {
+    vi.useFakeTimers();
+    try {
+      setConfirmRead(() => never()); // consent wait nobody answers
+      const p = confirmFolderBlocked(inDocs);
+      await vi.advanceTimersByTimeAsync(1_000); // the confirm's own bound
+      await expect(p).resolves.toBe(true);
+      // Flagged: repeat probes fail fast instead of parking a syscall.
+      expect(() => assertFolderReadable(inDocs)).toThrow(/folder access/i);
+      vi.advanceTimersByTime(31_000); // flag ages out
+      expect(() => assertFolderReadable(inDocs)).not.toThrow();
+      setConfirmRead(null); // access arrived — the re-check reads for real
+      await expect(confirmFolderBlocked(inDocs)).resolves.toBe(false);
+      expect(() => assertFolderReadable(inDocs)).not.toThrow();
+    } finally {
+      setConfirmRead(null);
+      vi.useRealTimers();
+    }
+  });
+
+  it.skipIf(isRoot)(
+    "a refused read reports blocked but doesn't arm the flag — a grant is seen next probe",
+    async () => {
+      deny(DOCS);
+      await expect(confirmFolderBlocked(inDocs)).resolves.toBe(true);
+      allow(DOCS); // granted at once: no 30 s blind spot behind a flag
+      await expect(confirmFolderBlocked(inDocs)).resolves.toBe(false);
+    },
+  );
 });

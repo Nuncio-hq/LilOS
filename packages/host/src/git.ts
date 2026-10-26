@@ -827,24 +827,35 @@ export async function gitDiscoverRepos(params: {
   const depth = params.depth ?? 2;
   const repos: { path: string; head: string | null; remote: string | null }[] =
     [];
+  /* A protected dir macOS still blocks is skipped, not fatal — one walled
+     root or child must not drop the rest of the scan (#875). */
+  const isWall = (e: unknown): e is HostError =>
+    e instanceof HostError && e.code === HOST_ERRORS.FOLDER_ACCESS;
   async function scan(dir: string, d: number): Promise<void> {
     if (repos.length >= DISCOVER_CAP) return;
-    if (await exists(join(dir, ".git"))) {
-      const [head, remote] = await Promise.all([headOf(dir), remoteOf(dir)]);
+    const hasGit = await exists(join(dir, ".git")).catch(
+      (e): false | "blocked" => {
+        if (isWall(e)) return "blocked";
+        throw e;
+      },
+    );
+    if (hasGit === "blocked") return; // the dir's whole subtree is walled
+    if (hasGit) {
+      /* The dir listed, so it's readable — a head/remote probe that still
+         dies (slow repo, weird hooks) just loses its metadata, not the
+         whole scan. */
+      const [head, remote] = await Promise.all([
+        headOf(dir).catch(() => null),
+        remoteOf(dir).catch(() => null),
+      ]);
       repos.push({ path: collapsePath(dir), head, remote });
       return; // don't descend into a repo
     }
     if (d === 0) return;
-    /* A root macOS still blocks reports instead of scanning nothing — the
-       picker hears "waiting on folder access" rather than finding no repos
-       (#875). Missing/unreadable dirs still skip silently. */
     const dirents = await bounded(
       fsp.readdir(dir, { withFileTypes: true }),
       dir,
-    ).catch((e) => {
-      if (e instanceof HostError) throw e;
-      return [] as import("node:fs").Dirent[];
-    });
+    ).catch(() => [] as import("node:fs").Dirent[]); // walled or unreadable: skip
     for (const de of dirents) {
       if (
         !de.isDirectory() ||

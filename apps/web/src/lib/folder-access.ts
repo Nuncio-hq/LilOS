@@ -82,16 +82,16 @@ export function dismissFolderAccessBanner(names: string[]): void {
   write(BANNER_X_KEY, JSON.stringify([...next]));
 }
 
-/** A folder the app just adopted (project add, thread move): keeps its
- *  protected folder in view — pending asks at the step, blocked at the
- *  banner. Fire-and-forget; a bridge miss is nothing. */
-export function ensureFolderAccess(path: string): void {
-  void window.lilos?.folderAccess
+/** A folder the app just adopted (project add, thread move): the caller
+ *  awaits this, and the desktop's `ensure` resolves on the OS's answer —
+ *  a grant lets the add/move proceed, a denial makes it hear
+ *  FOLDER_ACCESS and resurface the step; a prompt left open just holds
+ *  the call, like a modal (D-#875). Off the desktop, no wait. */
+export async function ensureFolderAccess(path: string): Promise<void> {
+  const s = await window.lilos?.folderAccess
     ?.ensure(path)
-    .then((s) => {
-      if (s) folderAccess.set(s);
-    })
-    .catch(() => {});
+    .catch(() => undefined);
+  if (s) folderAccess.set(s);
 }
 
 /** A relay/host answer that says a protected folder blocked the call —
