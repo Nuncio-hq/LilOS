@@ -221,9 +221,7 @@ async function openApp(stack: Procs, page: Page) {
   });
   await row.click();
   await expect(page).toHaveURL(/[#?&]page=agent&id=[^&,]+/);
-  const id = decodeURIComponent(
-    /[?&]id=([^&,]+)/.exec(page.url())?.[1] ?? "",
-  );
+  const id = decodeURIComponent(/[?&]id=([^&,]+)/.exec(page.url())?.[1] ?? "");
   // Any mid-flight full reload bumps the count past what this goto saw —
   // and the navigation entry flips to "reload" even when goto survived it.
   const tail = stack.viteLog().slice(-2000);

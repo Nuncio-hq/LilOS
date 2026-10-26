@@ -221,7 +221,9 @@ test("AC-2: scroll, find, and jump-to-message reach held turns on a lazy thread"
   const hitId = await hit.getAttribute("data-message-hit");
   expect(hitId).toBeTruthy();
   await hit.click();
-  await expect(page).toHaveURL(/page=thread&id=conv_[^&]+/, { timeout: 10_000 });
+  await expect(page).toHaveURL(/page=thread&id=conv_[^&]+/, {
+    timeout: 10_000,
+  });
   const anchor = panel.locator(`[data-msg="${hitId}"]`);
   await expect(anchor).toBeVisible({ timeout: 15_000 });
   /* The target mounted real (not a stub) and flashed. */

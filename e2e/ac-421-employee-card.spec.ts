@@ -106,7 +106,9 @@ async function openAgentPage(page: Page, name: string) {
 
 /** One labelled row of the agent page's property list. */
 const prop = (record: ReturnType<typeof v3Main>, label: string) =>
-  record.locator("div.flex.min-h-9").filter({ hasText: new RegExp(`^${label}`) });
+  record
+    .locator("div.flex.min-h-9")
+    .filter({ hasText: new RegExp(`^${label}`) });
 
 test("AC-1 the agent page carries the card's rows: engine, profile, model, now; no old-modal Soul row", async ({
   page,
@@ -136,7 +138,9 @@ test("AC-1 the agent page carries the card's rows: engine, profile, model, now; 
   // the peek.
   await record.getByRole("button", { name: "Message" }).click();
   await expect(v3Peek(page)).toBeVisible();
-  await v3Peek(page).getByRole("button", { name: /^Close/ }).click();
+  await v3Peek(page)
+    .getByRole("button", { name: /^Close/ })
+    .click();
   await expect(v3Peek(page)).toHaveCount(0);
 });
 
