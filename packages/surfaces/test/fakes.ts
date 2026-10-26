@@ -2,6 +2,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import type {
   AppMessage,
+  CodingAgentsSetting,
   CompanyUpdate,
   Conversation,
   ConversationSummary,
@@ -17,7 +18,6 @@ import type {
 } from "@lilos/contracts/app";
 import type {
   CodingAgentsSetParams,
-  CodingAgentsSetting,
   GoalCreateParams,
   ProjectCreateParams,
   ScheduleCreateParams,

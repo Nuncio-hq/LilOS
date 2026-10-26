@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * Oscar's default model + effort per outside coding agent (#835, D-#835):
+ * The user's default model + effort per outside coding agent (#835, D-#835):
  * one LilOS-owned record in the settings KV so it survives plugin recopies
  * and is shared by every session and surface. Agents read it through
  * `coding_agents` and propose changes through `coding_agents_set`

@@ -552,15 +552,13 @@ export function createGatewayApprovalOps(
       return { outcome: "yes" as const };
     },
 
-    /* D-#835: one stored default per outside coding agent. The card states
+    /* D-#835: one stored default per outside coding agent. The card names
        the change in words; on "once" the KV row is read, patched and
        written back so a half-applied default can't land. */
     codingAgentsSet: async (p: CodingAgentsSetParams) => {
       const parts: string[] = [];
       if (p.model !== undefined) {
-        parts.push(
-          p.model === null ? "clear the model" : `model → ${p.model}`,
-        );
+        parts.push(p.model === null ? "clear the model" : `model → ${p.model}`);
       }
       if (p.effort !== undefined) {
         parts.push(

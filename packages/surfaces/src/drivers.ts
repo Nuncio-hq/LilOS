@@ -1,5 +1,6 @@
 import type {
   AppMessage,
+  CodingAgentsSetting,
   CompanyUpdate,
   Conversation,
   ConversationSummary,
@@ -16,7 +17,6 @@ import type {
   AskParams,
   AskToolResult,
   CodingAgentsSetParams,
-  CodingAgentsSetting,
   GoalCreateParams,
   GoalCreateResult,
   GoalListResult,
@@ -189,7 +189,7 @@ export interface AppOps {
    * A decline throws `SurfaceError("declined")`.
    */
   askUser(p: AskParams): Promise<AskToolResult>;
-  /** `coding_agents` — Oscar's stored defaults for outside coding agents
+  /** `coding_agents` — the user's stored defaults for outside coding agents
       (D-#835); absent agent/field = that CLI's own default. */
   codingAgents(): Promise<CodingAgentsSetting>;
   /** `coding_agents_set` — proposes the change on a card and applies only

@@ -1279,7 +1279,9 @@ describe("#835 coding-agent defaults over the gateway", () => {
       sessions: [{ scope, token: "t-ca" }],
     });
     try {
-      const r = dmPayload(await dmCall(api.baseUrl, "t-ca", "coding_agents", {}));
+      const r = dmPayload(
+        await dmCall(api.baseUrl, "t-ca", "coding_agents", {}),
+      );
       expect(r.agents).toEqual({ claude: { model: "opus", effort: "high" } });
     } finally {
       api.server.close();

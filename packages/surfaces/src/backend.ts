@@ -123,7 +123,7 @@ export interface SurfaceBackend {
   ticketAssign(p: TicketAssignParams): Promise<TicketAssignResult>;
   ticketComment(p: TicketCommentParams): Promise<TicketCommentResult>;
   updatePost(p: UpdatePostParams): Promise<UpdatePostResult>;
-  /** `coding_agents` — Oscar's stored per-agent defaults (D-#835). */
+  /** `coding_agents` — the user's stored per-agent defaults (D-#835). */
   codingAgents(): Promise<CodingAgentsResult>;
   /** `coding_agents_set` — approval-gated change to one agent's default. */
   codingAgentsSet(p: CodingAgentsSetParams): Promise<CodingAgentsSetResult>;

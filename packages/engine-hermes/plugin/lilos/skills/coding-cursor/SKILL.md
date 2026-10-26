@@ -49,17 +49,22 @@ only the agent's self-report.
 
 ## Model and effort flags
 
-`cursor-agent` has no `--effort` flag — effort rides inside the model
-string as a bracket override:
+`cursor-agent` has no `--effort` flag — on this CLI effort rides inside
+the model id itself. `cursor-agent models` lists the accepted ids; they
+end in a tier word (`-none`, `-minimal`, `-low`, `-medium`, `-high`,
+`-xhigh`, `-max`, plus `thinking` and `-fast` variants), and bracket
+overrides like `model[effort=high]` are rejected.
 
-```
---model 'claude-opus-4-8[effort=high]'
-```
-
-- Model + effort both set → `--model 'M[effort=E]'`.
-- Model only → `--model 'M'`.
-- Effort only → append `[effort=E]` to the model you would run anyway.
+- Model + effort → join them: `--model '<model>-<effort>'` (e.g.
+  `claude-opus-4-8` + `high` → `claude-opus-4-8-high`). When the stored
+  model already ends in a tier word, the stored effort replaces it
+  (keep a `thinking`/`fast` part that sits before the tier:
+  `claude-haiku-5-5-thinking-high` + `low` → `claude-haiku-5-5-thinking-low`).
+- Model only → `--model '<model>'` verbatim.
+- Effort only → apply the suffix to the model you would run anyway.
 - Neither → omit `--model`.
+- Run `cursor-agent models` when unsure — the printed ids are the only
+  accepted values.
 
 ## Commands
 
@@ -110,5 +115,8 @@ Verified:
 
 - Always pass `--print` (or `-p`) — interactive mode stalls the turn.
 - Keep `--trust` so the workspace prompt can't stall the run.
+- On a free plan only `auto` is accepted — a stored named model errors
+  with "Free plans can only use Auto". Relay that error honestly; do not
+  silently substitute another model.
 - A per-job override is never stored; a stored default is never changed
   without `lilos_coding_agents_set` and the user's approval.

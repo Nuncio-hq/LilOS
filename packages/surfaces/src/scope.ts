@@ -916,7 +916,7 @@ export class SessionSurfaces implements ViewerScope {
 
   /* ------------------------------ coding ops -------------------------------- */
 
-  /* D-#835: Oscar's per-agent defaults; `coding_agents_set` is gated inside
+  /* D-#835: the user's per-agent defaults; `coding_agents_set` is gated in
      the app leg like every write beyond this thread (D-#341). */
   codingAgents() {
     return this.tracked("coding_agents", "", async () => {

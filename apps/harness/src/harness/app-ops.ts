@@ -211,7 +211,7 @@ export function createAppOps(deps: {
           target,
         });
       },
-      /* D-#835: Oscar's stored defaults for outside coding agents. The
+      /* D-#835: the user's stored defaults for outside coding agents. The
          `codingAgents` KV row is the one place they live; the hand-off
          skills read it before every run. */
       codingAgents: async () => {

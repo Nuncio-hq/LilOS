@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CodingAgentId, CodingAgentsSetting } from "../app/coding-agents.js";
 import {
   AppMessage,
   ConversationState,
@@ -8,10 +9,6 @@ import {
 import { CompanyUpdate, CompanyUpdateKind } from "../app/inbox.js";
 import { Project } from "../app/project.js";
 import { ScheduledTask, TaskSchedule } from "../app/schedule.js";
-import {
-  CodingAgentId,
-  CodingAgentsSetting,
-} from "../app/coding-agents.js";
 import {
   Goal as GoalSchema,
   TicketResult as TicketResultSchema,
@@ -704,7 +701,7 @@ export type ScheduleDeletedResult = z.infer<typeof ScheduleDeletedResult>;
 /* --------------------------------- coding --------------------------------- */
 
 /**
- * `coding_agents` — Oscar's stored default model + effort per outside
+ * `coding_agents` — the user's stored default model + effort per outside
  * coding agent (D-#835). Absent agent or field = that CLI's own default.
  */
 export const CodingAgentsParams = z.strictObject({});

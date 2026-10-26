@@ -99,5 +99,10 @@ Verified:
 
 - Never run `agy` without `-p`/`--print` — interactive mode stalls the turn.
 - Never use `--dangerously-skip-permissions`; `--mode` is the boundary.
+- Headless runs auto-deny the `command` (shell) permission — the JSON shows
+  `denied_actions` when the agent tried a shell command and the answer may
+  be incomplete. Read tools still work; report `denied_actions` verbatim
+  and never claim it ran commands it couldn't. The user's own
+  `permissions.allow` rules in `agy`'s settings can allow `command(...)`.
 - A per-job override is never stored; a stored default is never changed
   without `lilos_coding_agents_set` and the user's approval.
