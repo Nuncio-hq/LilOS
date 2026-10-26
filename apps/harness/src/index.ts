@@ -74,6 +74,9 @@ const surfaces = await serveSurfaces(0, {
     relay,
     runningTurnId: (conversationId) => harness.runningTurnFor(conversationId),
     log,
+    /* No `homeDir` reaches `new Harness` below — its home is `homedir()`,
+       and `~`-collapsed paths on the wire mean that same directory. */
+    home: homedir(),
   }),
 
   log,
@@ -183,6 +186,7 @@ const supervisor = new EngineSupervisor({
       // "nous" not "hermes" in the file name: managed Macs kill *hermes*
       // executables by name (#141); the engine id stays "hermes".
       hermes: bundledEngine("lilos-engine-nous"),
+      acp: bundledEngine("lilos-engine-acp"),
     },
     {
       [SURFACES_ENV.baseUrl]: surfaces.url,

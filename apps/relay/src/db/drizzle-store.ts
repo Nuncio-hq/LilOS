@@ -1409,6 +1409,9 @@ export function createDrizzleStore(db: Db): RelayStore {
           authorId: "user",
           access: input.access,
           ...(input.cwd !== undefined ? { cwd: input.cwd } : {}),
+          ...(input.workspace !== undefined
+            ? { workspace: input.workspace }
+            : {}),
           projectId: input.projectId,
           parentId: input.parentConversationId,
           /* ticketId lands once the row's number is known — the update
@@ -1432,6 +1435,7 @@ export function createDrizzleStore(db: Db): RelayStore {
             parentConversationId: input.parentConversationId,
             childConversationId: opened.conversation.id,
             childChannelId: input.channelId,
+            ...(input.worktree ? { worktree: input.worktree } : {}),
             ...(input.requestId ? { requestId: input.requestId } : {}),
           },
           createdAt: at,

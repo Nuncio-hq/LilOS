@@ -19,6 +19,7 @@
   },
   "devDependencies": {
     "@lilos/engine-conformance": "workspace:*",
+    "@types/bun": "1.4.2",
     "typescript": "^7.0.2",
     "vitest": "^4.1.11"
   }

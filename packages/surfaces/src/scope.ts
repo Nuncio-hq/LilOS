@@ -638,7 +638,7 @@ export class SessionSurfaces implements ViewerScope {
       `${p.agent}: ${p.prompt.slice(0, 60)}`,
       async () => {
         const ops = this.requireAppOps();
-        return { task: await ops.taskCreate(p) };
+        return ops.taskCreate(p);
       },
     );
   }

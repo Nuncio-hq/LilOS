@@ -157,6 +157,63 @@ describe("tasks.create (D-#844)", () => {
     expect(eventsNamed(host.frames, "ticket.upserted")).toEqual([]);
   });
 
+  it("stamps a host-resolved workspace on the child — the D-#848 worktree intent", async () => {
+    const dir = home();
+    const { host, worker, parent } = await worldWithParent(dir);
+    const wt = join(dir, "repo", ".lilos", "wt", "fix-bug");
+    const r = await createTask(host, {
+      parentConversationId: parent.id,
+      employeeId: worker.id,
+      prompt: "Fix the flaky test",
+      cwd: wt,
+      workspace: {
+        mode: "new",
+        repoPath: join(dir, "repo"),
+        branch: "ws/fix-bug",
+        base: "abc123",
+      },
+    });
+    // The child's cwd is the worktree, not the parent's folder; the
+    // intent rides the row so the bind materializes it (#156 path).
+    expect(r.conversation.cwd).toBe(wt);
+    expect(r.conversation.workspace).toEqual({
+      mode: "new",
+      repoPath: join(dir, "repo"),
+      branch: "ws/fix-bug",
+      base: "abc123",
+    });
+    // Still the parent's project — the repo's, never the wt dir's.
+    expect(r.conversation.projectId).toBe(parent.projectId);
+    // The task record remembers where the child ran.
+    expect(r.task.worktree).toEqual({ path: wt, branch: "ws/fix-bug" });
+    expect(r.ticket.task.worktree).toEqual({
+      path: wt,
+      branch: "ws/fix-bug",
+    });
+    // task_read answers it without a second lookup.
+    await host.connection.receive(
+      req("tasks.read", {
+        taskId: r.task.id,
+        parentConversationId: parent.id,
+      }),
+    );
+    const read = resultOf(host.frames, lastId()).result as AnyResult;
+    expect(read.task.worktree).toEqual({ path: wt, branch: "ws/fix-bug" });
+  });
+
+  it("keeps inheriting the parent's folder when no workspace arrives (shared)", async () => {
+    const dir = home();
+    const { host, worker, parent } = await worldWithParent(dir);
+    const r = await createTask(host, {
+      parentConversationId: parent.id,
+      employeeId: worker.id,
+      prompt: "Look over the diff",
+    });
+    expect(r.conversation.cwd).toBe(join(dir, "work"));
+    expect(r.conversation.workspace).toBeUndefined();
+    expect(r.task.worktree).toBeUndefined();
+  });
+
   it("refuses a folder-less parent — a chat carries no project to file under", async () => {
     const dir = home();
     const { host, worker, callerChannel } = await worldWithParent(dir);

@@ -32,6 +32,7 @@ import type { ForgePrListItem } from "@lilos/contracts/host";
 import type { AppOps } from "@lilos/surfaces";
 import type { Logger } from "../log";
 import { createGatewayApprovalOps, listProjects } from "./gateway-ops";
+import { resolveTaskIsolation, type TaskIsolation } from "./task-isolation";
 
 /**
  * The `appOps` factory behind `serveSurfaces` — every op talks to the relay
@@ -45,8 +46,12 @@ export function createAppOps(deps: {
   relay: RelayClient;
   runningTurnId: (conversationId: string) => string | undefined;
   log: Logger;
+  /* The Mac home `~` names on the wire — the same value `Harness.home`
+     resolves to (`opts.homeDir ?? homedir()`). Stored `cwd`/`repoPath`
+     spellings collapse against it. */
+  home: string;
 }): (session: string, binding?: SessionBinding) => AppOps | undefined {
-  const { relay, runningTurnId, log } = deps;
+  const { relay, runningTurnId, log, home } = deps;
   return (_session, binding) => {
     if (!binding) return undefined;
     return {
@@ -235,7 +240,33 @@ export function createAppOps(deps: {
               : `unknown agent "${p.agent}" — team_list has the roster`,
           );
         }
-        const r = await relay.request<{ task: Task }>("tasks.create", {
+        /* D-#848: the isolation pick resolves HERE — the harness is the
+           only process with git (D-#11); the relay just stamps the
+           `cwd`/`workspace` it is given. "shared" skips the probe (and
+           the parent-row read) entirely. */
+        let isolation: TaskIsolation = {};
+        if (p.isolation !== "shared") {
+          const { conversations } = await relay.request<{
+            conversations: Conversation[];
+          }>("conversations.list", {
+            channelId: binding.channelId,
+            includeArchived: true,
+          });
+          const parent = conversations.find(
+            (c) => c.id === binding.conversationId,
+          );
+          isolation = await resolveTaskIsolation({
+            cwd: parent?.cwd,
+            workspace: parent?.workspace,
+            isolation: p.isolation,
+            seed: p.title ?? p.prompt,
+            home,
+          });
+        }
+        const r = await relay.request<{
+          task: Task;
+          conversation: Conversation;
+        }>("tasks.create", {
           parentConversationId: binding.conversationId,
           employeeId: employee.id,
           prompt: p.prompt,
@@ -245,8 +276,21 @@ export function createAppOps(deps: {
           ...(p.provider !== undefined ? { provider: p.provider } : {}),
           ...(p.effort !== undefined ? { effort: p.effort } : {}),
           ...(p.fast !== undefined ? { fast: p.fast } : {}),
+          ...(isolation.cwd !== undefined ? { cwd: isolation.cwd } : {}),
+          ...(isolation.workspace !== undefined
+            ? { workspace: isolation.workspace }
+            : {}),
         });
-        return r.task;
+        /* The heads-up names the STORED row, never the resolved intent —
+           a requestId retry re-answers the real worktree instead of one
+           that was never created. "Uncommitted changes are not in it":
+           the worktree forks the commit, not the working tree. */
+        const ws = r.conversation.workspace;
+        const note =
+          ws?.mode === "new" && r.conversation.cwd
+            ? `${employee.name} works in a fresh worktree ${r.conversation.cwd} on branch ${ws.branch}, forked from your checkout's current commit — your uncommitted changes are not in it. Merging back stays a separate step (for example a PR or git merge).`
+            : undefined;
+        return { task: r.task, ...(note ? { note } : {}) };
       },
       taskRead: async (taskId) => {
         const r = await relay.request<{ task: Task }>("tasks.read", {

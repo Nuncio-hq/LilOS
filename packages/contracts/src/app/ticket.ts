@@ -1,5 +1,11 @@
 import { z } from "zod";
-import { AppMessage, AuthorKind, Conversation, Timestamp } from "./domain";
+import {
+  AppMessage,
+  AuthorKind,
+  Conversation,
+  Timestamp,
+  WorkspaceIntent,
+} from "./domain";
 
 /**
  * Goals and tickets (D-#776). The relay owns both. A ticket's id is its
@@ -111,6 +117,12 @@ export const TicketTask = z.object({
   /** The child's channel — internal routing the app leg needs for
       follow-up reads/posts; set once at create. */
   childChannelId: z.string().min(1),
+  /** D-#848: where the child ran when isolation forked a worktree —
+      the task record's own memory (its thread can later move folders).
+      Absent = the child shares the parent's folder. */
+  worktree: z
+    .strictObject({ path: z.string().min(1), branch: z.string().min(1) })
+    .optional(),
   /** The creating call's idempotency key — unique per parent thread. */
   requestId: z.string().min(1).optional(),
   /** Set by `tasks.cancel`; a cancelled task never wakes the parent. */
@@ -303,6 +315,11 @@ export const Task = z.object({
   channelId: z.string().min(1),
   /** The parent thread — the only thread allowed to read/wait/cancel. */
   parentThreadId: z.string().min(1),
+  /** Where the child works when isolation forked a worktree (D-#848);
+      absent = it shares the parent's folder. */
+  worktree: z
+    .strictObject({ path: z.string().min(1), branch: z.string().min(1) })
+    .optional(),
   /** The finished turn's text, capped at TASK_RESULT_MAX_BYTES. */
   result: z.string().optional(),
   resultOutcome: z.enum(["finished", "stopped", "failed"]).optional(),
@@ -332,6 +349,13 @@ export const TasksCreateParams = z
     provider: z.string().optional(),
     effort: z.string().optional(),
     fast: z.boolean().optional(),
+    /** Host-only (D-#848): the harness resolves `isolation` into the
+        `conversations.open.workspace` intent a workstream open already
+        carries (#156) — `cwd` the new worktree dir, `workspace.repoPath`
+        the repo it forks. Absent = the child inherits the parent's
+        folder (shared). */
+    cwd: z.string().min(1).optional(),
+    workspace: WorkspaceIntent.optional(),
   })
   .strict();
 export type TasksCreateParams = z.infer<typeof TasksCreateParams>;

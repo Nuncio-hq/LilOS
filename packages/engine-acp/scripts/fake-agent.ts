@@ -17,6 +17,8 @@
  * - "plan: tasks" → paced plan snapshots (interrupt leaves items pending)
  * - "remember the codeword X" / "recall:" → session transcript memory —
  *   it survives `session/load` (the fake advertises loadSession)
+ * - "env NAME" → tool call reporting the spawned child's own env value
+ *   (the D-#845 spawn-scrub probe)
  * - first turn sends `session_info_update` (the llm auto-title) and each
  *   turn reports `usage_update` + PromptResponse.usage
  *
@@ -412,6 +414,28 @@ const agent = (conn: acp.AgentSideConnection): acp.Agent => ({
       });
     } else if (/\bLILOS_SLOW\b/.test(text)) {
       outcome = await runSlow(conn, s, /300 words/.test(text) ? 320 : 220);
+    } else if (/^env \S+$/i.test(text.trim())) {
+      /* D-#845 probe: the spawned child's own env view — the serve test
+         asserts LILOS_* internals never cross the seam's spawn scrub
+         while HOME/PATH still do. */
+      const name = text.trim().split(/\s+/)[1];
+      const toolCallId = `call-${++nextToolCall}`;
+      await send(conn, s.id, {
+        sessionUpdate: "tool_call",
+        toolCallId,
+        title: `env ${name}`,
+        kind: "read",
+        status: "in_progress",
+        rawInput: { name },
+      } as acp.SessionUpdate);
+      await send(conn, s.id, {
+        sessionUpdate: "tool_call_update",
+        toolCallId,
+        title: `env ${name}`,
+        status: "completed",
+        rawOutput: process.env[name] ?? "<unset>",
+      } as acp.SessionUpdate);
+      await sendText(conn, s.id, "LILOS_OK");
     } else if (/read or search tool|relay package/i.test(text)) {
       await sendTool(conn, s.id, {
         title: "Read relay package",

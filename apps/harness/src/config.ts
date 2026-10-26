@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { EngineLauncher } from "./engine/launcher";
 import {
+  acpEngineLauncher,
   externalEngineLauncher,
   fakeEngineLauncher,
   hermesEngineLauncher,
@@ -42,6 +43,16 @@ export interface HarnessConfig {
         tag?: string;
       }
     | { kind: "hermes"; provider?: string; model?: string }
+    | {
+        /** D-#845: the generic ACP engine — a registry entry (`--agent`,
+            `devin` by default) or a local command (`LILOS_ACP_COMMAND`,
+            verbatim argv). */
+        kind: "acp";
+        agent?: string;
+        command?: string[];
+        /** Argv marker for e2e leak assertions. */
+        tag?: string;
+      }
     | { kind: "url"; url: string };
   /** ws port of the client-facing session feed (read-only engine surface). */
   feedPort: number;
@@ -102,20 +113,40 @@ export function resolveHarnessConfig(
               ).split(" "),
               ...(env.LILOS_ENGINE_URL ? { url: env.LILOS_ENGINE_URL } : {}),
             }
-          : engineKind === "fake"
+          : engineKind === "acp"
             ? {
-                kind: "fake",
-                ...(env.ENGINE_FAKE_TICK
-                  ? { tick: Number(env.ENGINE_FAKE_TICK) }
+                kind: "acp",
+                /* D-#845: default registry entry is `devin` — the signed-in
+                   CLI carries the session; LILOS_ACP_COMMAND overrides
+                   with a local command. */
+                ...(env.LILOS_ACP_AGENT
+                  ? { agent: env.LILOS_ACP_AGENT }
+                  : env.LILOS_ACP_COMMAND
+                    ? {}
+                    : { agent: "devin" }),
+                ...(env.LILOS_ACP_COMMAND
+                  ? {
+                      command: env.LILOS_ACP_COMMAND.split(" ").filter(Boolean),
+                    }
                   : {}),
                 ...(env.LILOS_ENGINE_TAG ? { tag: env.LILOS_ENGINE_TAG } : {}),
               }
-            : (() => {
-                // An unknown kind must never quietly become the fake engine.
-                throw new Error(
-                  `unknown LILOS_ENGINE "${engineKind}" — expected hermes | fake | url | command`,
-                );
-              })();
+            : engineKind === "fake"
+              ? {
+                  kind: "fake",
+                  ...(env.ENGINE_FAKE_TICK
+                    ? { tick: Number(env.ENGINE_FAKE_TICK) }
+                    : {}),
+                  ...(env.LILOS_ENGINE_TAG
+                    ? { tag: env.LILOS_ENGINE_TAG }
+                    : {}),
+                }
+              : (() => {
+                  // An unknown kind must never quietly become the fake engine.
+                  throw new Error(
+                    `unknown LILOS_ENGINE "${engineKind}" — expected hermes | fake | acp | url | command`,
+                  );
+                })();
   return {
     relayUrl: env.LILOS_RELAY_URL ?? DEFAULT_RELAY_URL,
     relayToken,
@@ -146,7 +177,7 @@ export function launcherFor(
   repoRoot: string,
   log: Logger,
   /** Binaries bundled next to the harness exec (packaged app only). */
-  serveBins: { fake?: string; hermes?: string } = {},
+  serveBins: { fake?: string; hermes?: string; acp?: string } = {},
   /** Extra env for the engine child process (gateway surfaces creds, #339). */
   engineEnv: Record<string, string> = {},
 ): EngineLauncher {
@@ -173,6 +204,16 @@ export function launcherFor(
         // #288: the adapter's session registry lives beside the harness's own
         // state so a restart resumes each conversation's stored session.
         sessionsFile: join(config.homeDir, "engine-sessions.json"),
+        env: engineEnv,
+        log,
+      });
+    case "acp":
+      return acpEngineLauncher({
+        repoRoot,
+        ...(config.engine.agent ? { agent: config.engine.agent } : {}),
+        ...(config.engine.command ? { command: config.engine.command } : {}),
+        ...(config.engine.tag ? { tag: config.engine.tag } : {}),
+        ...(serveBins.acp ? { serveBin: serveBins.acp } : {}),
         env: engineEnv,
         log,
       });

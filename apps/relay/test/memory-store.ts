@@ -623,6 +623,9 @@ export function createMemoryStore(): RelayStore {
         authorId: "user",
         access: input.access,
         ...(input.cwd !== undefined ? { cwd: input.cwd } : {}),
+        ...(input.workspace !== undefined
+          ? { workspace: input.workspace }
+          : {}),
         projectId: input.projectId,
         parentId: input.parentConversationId,
         ...(input.model !== undefined ? { model: input.model } : {}),
@@ -644,6 +647,7 @@ export function createMemoryStore(): RelayStore {
           parentConversationId: input.parentConversationId,
           childConversationId: opened.conversation.id,
           childChannelId: input.channelId,
+          ...(input.worktree ? { worktree: input.worktree } : {}),
           ...(input.requestId ? { requestId: input.requestId } : {}),
         },
         createdAt: at,

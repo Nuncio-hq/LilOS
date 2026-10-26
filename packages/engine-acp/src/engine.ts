@@ -1,5 +1,9 @@
 import type * as acp from "@agentclientprotocol/sdk";
 import {
+  type AgentDescriptor,
+  type AgentsCreateParams,
+  type AgentsDescribeParams,
+  type AgentsUpdateParams,
   type ApprovalOutcome,
   type DescribeResult,
   ENGINE_METHODS,
@@ -22,6 +26,7 @@ import {
   type SessionStopParams,
   type SessionSuspendParams,
 } from "@lilos/contracts/engine";
+import { AcpAgentRoster } from "./agents.js";
 import {
   type AcpSessionConfig,
   catalogEffortOption,
@@ -44,6 +49,10 @@ import {
 } from "./mapping.js";
 import { acpApprovalRequest, acpPermissionAnswer } from "./permissions.js";
 import { AcpSession, cancelAllAcpAsks, type PendingAcpAsk } from "./session.js";
+import {
+  type AcpClientTerminals,
+  resolveEmbeddedTerminalContent,
+} from "./terminals.js";
 
 /**
  * D-#764 — the generic ACP engine: any agent speaking the pinned ACP schema
@@ -64,6 +73,18 @@ export interface AcpEngineOptions {
   env?: Record<string, string>;
   /** `initialize.clientInfo`. */
   clientInfo?: { name: string; version: string };
+  /**
+   * `initialize.clientCapabilities` override — the shim advertises what
+   * the agent needs (e.g. `terminal: true` for agents that run commands
+   * through the client). Defaults to no delegation.
+   */
+  clientCapabilities?: acp.ClientCapabilities;
+  /**
+   * Client-side `terminal/*` serving (D-#845) — required when
+   * `clientCapabilities.terminal` is advertised; the engine also resolves
+   * `{type:"terminal"}` tool-call content against the manager's buffers.
+   */
+  terminals?: AcpClientTerminals;
   /** Per-session event-log cap (#431). */
   eventLogCap?: number;
   /**
@@ -81,6 +102,12 @@ export interface AcpEngineOptions {
    * the engine package, not the generic seam).
    */
   sessionMeta?: (p: SessionStartParams) => Record<string, unknown>;
+  /**
+   * The launched agent's roster seed (D-#845): the descriptor
+   * `agents.list` opens with — id, display name, `detail.isDefault` for
+   * the harness's first-run hire. Defaults to a generic "default" row.
+   */
+  agent?: AgentDescriptor;
 }
 
 export class AcpEngine {
@@ -93,10 +120,22 @@ export class AcpEngine {
   /** Session-config catalog learned from session/new advertisements —
       engine-wide truth that accrues as sessions open (D-#764). */
   private catalog: AcpSessionConfig = { options: new Map() };
+  /* D-#845 — LilOS personas over the one launched binary; in-memory, the
+     same lifetime as the session map. */
+  private agents: AcpAgentRoster;
   private opening?: Promise<AcpConnection>;
   private pumping = new Set<string>();
 
-  constructor(private readonly opts: AcpEngineOptions) {}
+  constructor(private readonly opts: AcpEngineOptions) {
+    this.agents = new AcpAgentRoster(
+      opts.agent ?? {
+        id: "default",
+        name: "Default",
+        detail: { isDefault: true },
+      },
+      () => catalogModels(this.catalog),
+    );
+  }
 
   onEvent(fn: (e: EngineEvent) => void): () => void {
     this.listeners.add(fn);
@@ -115,6 +154,20 @@ export class AcpEngine {
       ...(this.opts.env ? { env: this.opts.env } : {}),
       cwd: process.cwd(),
       ...(this.opts.clientInfo ? { clientInfo: this.opts.clientInfo } : {}),
+      ...(this.opts.clientCapabilities
+        ? { clientCapabilities: this.opts.clientCapabilities }
+        : {}),
+      ...(this.opts.terminals
+        ? {
+            terminals: {
+              create: (r) => this.opts.terminals!.create(r),
+              output: async (r) => this.opts.terminals!.output(r),
+              waitForExit: (r) => this.opts.terminals!.waitForExit(r),
+              kill: (r) => this.opts.terminals!.kill(r),
+              release: (r) => this.opts.terminals!.release(r),
+            },
+          }
+        : {}),
       handlers: {
         onPermission: (params) => this.onPermission(params),
         onUpdate: (params) => this.onUpdate(params),
@@ -144,6 +197,7 @@ export class AcpEngine {
 
   async close() {
     for (const s of this.sessions.values()) cancelAllAcpAsks(s);
+    await this.opts.terminals?.disposeAll();
     await this.conn?.close();
     this.conn = undefined;
   }
@@ -194,6 +248,20 @@ export class AcpEngine {
         return this.sessionSteer(parsed.data as SessionSteerParams);
       case "models.list":
         return this.modelsList(parsed.data as ModelsListParams);
+      case "agents.list":
+        return { agents: this.agents.list() };
+      case "agents.describe":
+        return {
+          agent: this.agents.describe((parsed.data as AgentsDescribeParams).id),
+        };
+      case "agents.create":
+        return {
+          agent: this.agents.create(parsed.data as AgentsCreateParams),
+        };
+      case "agents.update":
+        return {
+          agent: this.agents.update(parsed.data as AgentsUpdateParams),
+        };
       case "session.setModel":
         return this.sessionSetModel(parsed.data as SessionSetModelParams);
       case "session.setTitle":
@@ -214,7 +282,25 @@ export class AcpEngine {
       name: this.opts.name ?? "engine-acp",
       version: this.opts.version ?? "0.0.0",
       protocol: ENGINE_PROTOCOL,
-      capabilities: deriveCapabilities(conn.initializeResult, this.catalog),
+      capabilities: [
+        ...deriveCapabilities(conn.initializeResult, this.catalog),
+        /* D-#845 — the roster is engine-owned (one launched binary + the
+           LilOS personas created over it), so `agents` is declared for
+           every ACP agent — the hire surface needs it. */
+        {
+          id: "agents",
+          name: "Hireable agents",
+          description:
+            "One launched ACP agent plus LilOS personas created over it; sessions start as one.",
+          methods: [
+            "agents.list",
+            "agents.describe",
+            "agents.create",
+            "agents.update",
+          ],
+          detail: { updatable: ["name", "description", "soul", "model"] },
+        },
+      ],
     };
   }
 
@@ -232,6 +318,11 @@ export class AcpEngine {
 
   private async sessionStart(p: SessionStartParams) {
     const conn = await this.connection();
+    /* The persona's profile model is the default the session picks up —
+       an explicit session.start.model still wins (D-#845: `agent` is the
+       LilOS persona handle; ACP `session/new` has no profile gate, so an
+       unknown name still starts under it). */
+    const persona = this.agents.resolve(p.agent);
     const res = await conn.newSession({
       cwd: p.cwd,
       mcpServers: (p.mcpServers ?? []).map(toAcpMcp),
@@ -251,7 +342,8 @@ export class AcpEngine {
     /* Apply the requested pick over session/set_config_option — honest:
        only what the session advertised gets written (#846 owns the full
        per-job selection surface). */
-    await this.applyPick(s, p);
+    const pick = p.model ?? persona?.model;
+    await this.applyPick(s, pick === p.model ? p : { ...p, model: pick });
     /* Access hint: only when the session advertised modes and the engine
        knows this agent's mode vocabulary. */
     if (p.access && s.modes && this.opts.modeForAccess) {
@@ -597,7 +689,14 @@ export class AcpEngine {
   private onUpdate(params: acp.SessionNotification) {
     const s = this.sessionForAcp(params.sessionId);
     if (!s) return;
-    handleAcpUpdate(s, params, {
+    /* `{type:"terminal"}` tool-call content resolves against the client
+       terminals' buffers before the shared mapping sees it — the mapping
+       itself stays terminal-agnostic (D-#845). */
+    const t = this.opts.terminals;
+    const notification = t
+      ? resolveEmbeddedTerminalContent(params, t.readOutputSnapshot)
+      : params;
+    handleAcpUpdate(s, notification, {
       onSessionInfo: (sess, u) => {
         /* session_info_update carries the agent-computed title — the "llm"
            stage of #137's auto-title. */

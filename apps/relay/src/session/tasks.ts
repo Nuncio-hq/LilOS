@@ -69,7 +69,18 @@ export async function handleTasks(c: RelayCtx): Promise<false | undefined> {
         projectId: project.id,
         projectKey: project.key,
         access: parent.access,
-        ...(parent.cwd !== undefined ? { cwd: parent.cwd } : {}),
+        /* D-#848: the host resolves `isolation` into a `cwd` + #156
+           `workspace` intent before this call — the child's folder then
+           overrides the parent's; absent means shared. The task blob
+           keeps where the child ran so `task_read` answers it without a
+           second lookup. */
+        ...((p.cwd ?? parent.cwd) !== undefined
+          ? { cwd: p.cwd ?? parent.cwd }
+          : {}),
+        ...(p.workspace !== undefined ? { workspace: p.workspace } : {}),
+        ...(p.cwd !== undefined && p.workspace?.mode === "new"
+          ? { worktree: { path: p.cwd, branch: p.workspace.branch } }
+          : {}),
         /* An unpicked session field inherits the parent's — the child
            starts where the caller runs. */
         model: p.model ?? parent.model,
@@ -215,6 +226,7 @@ function toTask(ticket: Ticket, agentName?: string): Task {
     threadId: task.childConversationId,
     channelId: task.childChannelId,
     parentThreadId: task.parentConversationId,
+    ...(task.worktree ? { worktree: task.worktree } : {}),
     ...(task.lastResult
       ? {
           result: task.lastResult.text,
