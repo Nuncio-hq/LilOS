@@ -116,9 +116,12 @@ const widened: V3Nav = {
 describe("Esc in the shell", () => {
   test("a sidebar floating over a widened thread tucks first; the thread keeps its Esc for the next press", () => {
     const { container, onEscape } = mount(widened);
-    fireEvent.pointerEnter(
-      container.querySelector("[data-sidebar-hot-zone]") as Element,
-    );
+    const zone = container.querySelector("[data-sidebar-hot-zone]") as Element;
+    /* The zone wakes on the pointer GOING to the edge — a bare enter (the
+       strip materialising under a parked pointer on hide) must not pop. */
+    fireEvent.pointerEnter(zone);
+    expect(sidebar(container)).toBe("hidden");
+    fireEvent.pointerMove(zone);
     expect(sidebar(container)).toBe("popped");
     esc();
     expect(sidebar(container)).toBe("hidden");

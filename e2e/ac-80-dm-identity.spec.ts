@@ -65,7 +65,10 @@ async function expectChairmanIsSamePerson(
   webUrl: string,
   initial: string,
 ) {
-  await page.goto(`${webUrl}/#?page=people&view=org`);
+  /* D-#836: the org chart is the paused company layer — `?company=1` shows
+     it back (a URL hatch, so the desktop window's preload config honors it
+     too — LILOS_COMPANY only reaches the web server's config endpoint). */
+  await page.goto(`${webUrl}/?company=1#?page=people&view=org`);
   const chip = page
     .locator("#v3-main")
     .getByText("Chairman", { exact: true })

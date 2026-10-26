@@ -5,11 +5,11 @@ import { TOOLBAR_HEIGHT } from "../apps/desktop/src/window-chrome";
 import { launchDesktop } from "./helpers/electron";
 import {
   bootStack,
+  openDefaultAgent,
   panelFocusReady,
   pickPorts,
   type Stack,
   v3Peek,
-  v3Sidebar,
 } from "./helpers/stack";
 
 /**
@@ -77,11 +77,11 @@ test("#301 Focus toggle stays clickable across the panel ⇄ Focus header swap",
   test.setTimeout(180_000);
   const { app, win } = await launchDesktop(stack);
   try {
-    const person = v3Sidebar(win).getByRole("button", { name: /default/i });
-    await expect(person).toBeVisible({ timeout: 60_000 });
-    /* A person opens in the side peek; "Message" starts the chat, and the
-       send takes the draft's place with its thread. */
-    await person.click();
+    /* D-#836: no roster row in the paused sidebar — openDefaultAgent opens
+       the person in the side peek by id, the same place the row landed. */
+    await openDefaultAgent(win, stack.webUrl);
+    /* "Message" starts the chat, and the send takes the draft's place with
+       its thread. */
     await v3Peek(win).getByRole("button", { name: "Message" }).click();
     const box = v3Peek(win).getByPlaceholder("Message Default…");
     await expect(box).toBeVisible({ timeout: 30_000 });
