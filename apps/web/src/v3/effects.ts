@@ -195,7 +195,7 @@ export function useShellEffects({
       const digit = /^employee-(\d)$/.exec(action);
       if (digit) {
         const id = relay.employees.get()[Number(digit[1]) - 1]?.id;
-        /* Keyboard jumps are `nav` moves (D-#863): they go to the record,
+        /* Keyboard jumps are `nav` moves (#863): they go to the record,
            full width — the same rule the sidebar and ⌘K follow. */
         if (id)
           move((n) =>

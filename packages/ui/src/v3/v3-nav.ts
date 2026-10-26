@@ -7,7 +7,7 @@ import type {
   V3Route,
 } from "./v3-page-types";
 
-/* One place for how you move around v3 (#767 feedback, split by D-#863).
+/* One place for how you move around v3 (#767 feedback, split by #863).
    The split view is only for related things: the sidebar and ⌘K NAVIGATE —
    the target becomes the page, full width, and any peek closes — while an
    item ON the page that belongs to it (a thread row on its project, a
@@ -26,7 +26,7 @@ export const isRecordRoute = (r: V3Route): r is V3RecordRoute => "id" in r;
 export type V3StepFrom = "nav" | "page" | "peek";
 
 /** Whether the current page lists this record — so opening it beside keeps
-   the list (D-#863). A record the page does not own is a place you go to:
+   the list (#863). A record the page does not own is a place you go to:
    the click navigates instead. Projects are places themselves (the
    sidebar's entries), never items on another page. */
 export function belongsTo(d: V3Data, page: V3Route, r: V3RecordRoute): boolean {
@@ -84,7 +84,7 @@ export function belongsTo(d: V3Data, page: V3Route, r: V3RecordRoute): boolean {
   }
 }
 
-/** Where `r` leads from where you are (D-#863): `nav` always becomes the
+/** Where `r` leads from where you are (#863): `nav` always becomes the
    page; `page` opens the record beside when the page lists it, else it
    navigates too; `peek` extends the trail. Changing page always starts at
    the page's top and closes the peek. */

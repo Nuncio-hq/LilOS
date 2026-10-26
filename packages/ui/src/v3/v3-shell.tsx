@@ -101,7 +101,7 @@ export function V3Shell({
   const clearJump = useCallback(() => setJump(undefined), []);
   // A jump that never landed (the thread has no such message) must not wait
   // around for the next time that thread opens. The record on show is the
-  // peek's top, or the page itself when the page is a record (D-#863).
+  // peek's top, or the page itself when the page is a record (#863).
   const openId =
     nav.peek[nav.peek.length - 1] ??
     (isRecordRoute(nav.page) ? nav.page : undefined);
@@ -125,7 +125,7 @@ export function V3Shell({
       typeof window !== "undefined" &&
       window.matchMedia("(prefers-color-scheme: dark)").matches);
 
-  /* Three ways to move (D-#863): a place you go to — the sidebar, a ⌘K
+  /* Three ways to move (#863): a place you go to — the sidebar, a ⌘K
      jump — navigates: it becomes the page, full width, and any peek
      closes. An item on the page opens beside it only when the page lists
      it (v3-nav's belongsTo); anything else navigates too. A link inside
@@ -154,7 +154,7 @@ export function V3Shell({
     [onNav, companyData],
   );
   /* Close takes back the peek's widen flag too — but `full` on a thread
-     PAGE is its session (D-#863), not the peek's, so a bare Esc leaves
+     PAGE is its session (#863), not the peek's, so a bare Esc leaves
      it be. */
   const closePeek = useCallback(
     () => onNav((n) => (n.peek.length ? { ...n, peek: [], full: false } : n)),
@@ -296,7 +296,7 @@ export function V3Shell({
   const widened = !!top && !!nav.full;
   const beside = !!top && !nav.full;
   /* The thread a record shows, wherever the record sits — the page column
-     or the side peek (D-#863). `place` keeps the re-pin key honest (#315):
+     or the side peek (#863). `place` keeps the re-pin key honest (#315):
      the peek's widths, or the page's when the record IS the page and
      `full` is its session view rather than a widen. */
   const threadPane = (p: V3PageProps & { id: string }, place: string) => (
@@ -396,7 +396,7 @@ export function V3Shell({
               className="lilos-v3-line-in @container col-start-1 row-start-3 min-h-0 min-w-0 overflow-y-auto"
             >
               {/* The page is a record too when you went straight to it
-                  (D-#863): same body as the peek, the page's own props. */}
+                  (#863): same body as the peek, the page's own props. */}
               {isRecordRoute(page) ? (
                 <V3RecordContent
                   top={page}
