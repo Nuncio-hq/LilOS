@@ -2204,8 +2204,6 @@ export class HermesEngine {
 
   /* ── #106 approval modes ───────────────────────────────────────────── */
 
-  /** Best-effort `config.get approvals.mode` — `undefined` when the build
-      can't read it (a describe must not fail over a policy probe). */
   /* #834: one `config.get` in flight at a time, fired by the constructor
       and by describe when `policy` is still unknown — never awaited by
       describe itself. A failure just means "still unknown"; the next
@@ -2222,6 +2220,8 @@ export class HermesEngine {
       });
   }
 
+  /** Best-effort `config.get approvals.mode` — `undefined` when the build
+      can't read it (a describe must not fail over a policy probe). */
   private async readPolicy(): Promise<ApprovalPolicy | undefined> {
     try {
       const r = (await this.gw("config.get", {
