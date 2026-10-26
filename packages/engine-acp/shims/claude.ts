@@ -24,18 +24,21 @@ import type { AcpLaunchSpec } from "../src/launch.js";
  *
  * Modes the adapter advertises: `default` (asks before changes),
  * `acceptEdits`, `plan`, `auto`, and `bypassPermissions` (only when the
- * user's settings allow bypass). LilOS `ask` maps to `default` —
- * permission asks ride session/request_permission into LilOS; `auto`
- * would let Claude decide alone and hide asks from Oscar. `full` prefers
- * `bypassPermissions`, then `auto`, then `acceptEdits`.
+ * user's settings allow bypass). EVERY LilOS session runs `default` —
+ * permission asks ride session/request_permission into LilOS, and the
+ * harness answers them itself on a `full` thread (D-#866 r7: access is
+ * LilOS-side, so a mid-turn pill flip lands on the very next tool call
+ * with no session churn — the cost is one extra round trip per tool
+ * call in Full). `auto`/`bypassPermissions` would let Claude decide
+ * alone and hide asks from Oscar.
  *
  * The mode has to land AT session/new, not after: the spawned `claude`
  * binds canUseTool's auto-approve (the CLAUDE_SDK_CAN_USE_TOOL_SHADOWED
  * warning) to the mode in its argv, so a session born under the user's
  * `permissions.defaultMode` (Oscar's is `bypassPermissions`) stays
- * un-gated even after a set_mode. `sessionMeta` opts `ask` sessions out
- * of the skip flag — the adapter clamps the initial mode to `default`
- * and drops bypassPermissions from that session's catalog entirely.
+ * un-gated even after a set_mode. `sessionMeta` clears the skip flag on
+ * EVERY session — the adapter clamps the initial mode to `default` and
+ * drops bypassPermissions from the session's catalog entirely.
  */
 export const claudeSpec: AcpLaunchSpec = {
   id: "claude",
@@ -77,24 +80,19 @@ export const claudeSpec: AcpLaunchSpec = {
     "CLOUD_ML_REGION",
     "AWS_REGION",
   ],
-  /* Non-`full` sessions spawn without --allow-dangerously-skip-permissions:
+  /* EVERY session spawns without --allow-dangerously-skip-permissions:
      the adapter resolves its initial mode through resolvePermissionMode,
      which clamps bypassPermissions to `default` when the flag is off —
      real gating from the first prompt, not a post-hoc set_mode that the
-     spawned CLI ignores (see the header note). FAIL-CLOSED (r6 review):
-     anything but the explicit `full` grant — a missing access, a new
-     level the shim does not know — is gated; `full` alone passes no
-     meta, so bypass stays allowed and the mode lands via set_mode. */
-  sessionMeta: (p) =>
-    p.access === "full"
-      ? {}
-      : { claudeCode: { options: { allowDangerouslySkipPermissions: false } } },
-  modeForAccess: (access, modes) => {
+     spawned CLI ignores (see the header note). r7: "full" is enforced
+     by the HARNESS answering the session's permission asks itself, so
+     no session — `full` or the catalog probe — is ever born bypassed.
+     Fail-closed by construction: access never appears in the meta. */
+  sessionMeta: () => ({
+    claudeCode: { options: { allowDangerouslySkipPermissions: false } },
+  }),
+  modeForAccess: (_access, modes) => {
     const ids = new Set(modes.map((m) => m.id));
-    const prefer =
-      access === "ask"
-        ? ["default", "acceptEdits"]
-        : ["bypassPermissions", "auto", "acceptEdits"];
-    return prefer.find((id) => ids.has(id)) ?? modes[0]?.id ?? undefined;
+    return ids.has("default") ? "default" : (modes[0]?.id ?? undefined);
   },
 };

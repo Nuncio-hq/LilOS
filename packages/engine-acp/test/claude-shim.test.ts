@@ -66,7 +66,7 @@ describe("the claude registry entry (D-#866)", () => {
     }
   });
 
-  test("access maps onto the adapter's permission modes", () => {
+  test("every access level runs the adapter's default mode (D-#866 r7)", () => {
     const all = MODES(
       "default",
       "acceptEdits",
@@ -74,48 +74,38 @@ describe("the claude registry entry (D-#866)", () => {
       "auto",
       "bypassPermissions",
     );
-    /* ask: asks ride session/request_permission to LilOS — the manual
-       mode, never `auto` (Claude deciding on its own hides asks). */
+    /* r7: "full" is the HARNESS auto-answering the session's own
+       permission asks — the agent never runs bypassed, so every level
+       lands `default` and asks always ride session/request_permission.
+       `auto`/`bypassPermissions` would let Claude decide alone and hide
+       asks from Oscar. */
     expect(claudeSpec.modeForAccess?.("ask", all)).toBe("default");
-    /* full: unattended — bypass when offered, then auto/acceptEdits. */
-    expect(claudeSpec.modeForAccess?.("full", all)).toBe("bypassPermissions");
-    expect(
-      claudeSpec.modeForAccess?.(
-        "full",
-        MODES("default", "acceptEdits", "plan", "auto"),
-      ),
-    ).toBe("auto");
-    expect(
-      claudeSpec.modeForAccess?.("full", MODES("default", "acceptEdits")),
-    ).toBe("acceptEdits");
+    expect(claudeSpec.modeForAccess?.("full", all)).toBe("default");
     /* Degenerate mode lists still answer safely. */
-    expect(claudeSpec.modeForAccess?.("ask", MODES("something-else"))).toBe(
-      "something-else",
+    expect(claudeSpec.modeForAccess?.("full", MODES("acceptEdits"))).toBe(
+      "acceptEdits",
     );
     expect(claudeSpec.modeForAccess?.("full", [])).toBeUndefined();
   });
 
-  test("ask sessions are born without the skip flag (D-#866)", () => {
+  test("every session is born without the skip flag (D-#866 r7)", () => {
     /* The spawned `claude` binds its permission gating to the mode in its
        argv — a set_mode after session/new cannot un-shadow it (proven
        against adapter 0.96.0: born-bypass sessions kept auto-approving
-       after set_mode 'default'). `sessionMeta` opts `ask` out at
-       creation so the adapter clamps the initial mode itself. */
+       after set_mode 'default'). `sessionMeta` clears the flag at
+       creation so the adapter clamps the initial mode itself. r7: EVERY
+       session gates — `full` included (the harness answers the asks
+       itself), and a missing access fails closed by construction. */
+    const gate = {
+      claudeCode: { options: { allowDangerouslySkipPermissions: false } },
+    };
     expect(
       claudeSpec.sessionMeta?.({ agent: "t", cwd: "/x", access: "ask" }),
-    ).toEqual({
-      claudeCode: { options: { allowDangerouslySkipPermissions: false } },
-    });
-    /* `full` passes nothing — bypass stays allowed and the mode lands
-       via set_mode. */
+    ).toEqual(gate);
     expect(
       claudeSpec.sessionMeta?.({ agent: "t", cwd: "/x", access: "full" }),
-    ).toEqual({});
-    /* FAIL-CLOSED (r6): a missing access — or any level the shim does
-       not know — is gated, never silently bypassed. */
-    expect(claudeSpec.sessionMeta?.({ agent: "t", cwd: "/x" })).toEqual({
-      claudeCode: { options: { allowDangerouslySkipPermissions: false } },
-    });
+    ).toEqual(gate);
+    expect(claudeSpec.sessionMeta?.({ agent: "t", cwd: "/x" })).toEqual(gate);
   });
 });
 
@@ -208,12 +198,12 @@ describe("shim env policy reaches the agent child (D-#866)", () => {
     }
   }, 30_000);
 
-  test("session.setAccess re-creates a live full session under the ask meta (D-#866 r3)", async () => {
-    /* The adapter binds the bypass flag at session spawn — a full→ask
-       flip mid-thread can only re-gate by being born again. The engine
-       answers setAccess by suspend+resume: the re-create (load here,
-       since the fake advertises loadSession) replays the NEW meta, which
-       the meta log proves. */
+  test("session.setAccess is gone — flips are harness-side now (D-#866 r7)", async () => {
+    /* r7 killed the suspend+resume re-gate: access is LilOS-side data the
+       engine never hears about, so a session is never re-created for a
+       pill flip. The engine declares no approval_policy and a stray
+       setAccess dies at the capability gate — and a `full` session is
+       born under the SAME gate meta as `ask` (the meta log proves it). */
     const dir = mkdtempSync(join(tmpdir(), "acp-access-"));
     const log = join(dir, "meta.log");
     const engine = new AcpEngine({
@@ -230,42 +220,30 @@ describe("shim env policy reaches the agent child (D-#866)", () => {
         .split("\n")
         .map((l) => JSON.parse(l) as { op: string; meta: unknown });
     try {
-      /* describe declares approval_policy — the harness's flip path
-         only fires when it is there (r6: it used to be missing, so a
-         running full thread never re-gated). */
       const d = (await h.request("describe", {})) as {
         capabilities: { id: string; methods?: string[] }[];
       };
-      const ap = d.capabilities.find((c) => c.id === "approval_policy");
-      expect(ap?.methods).toContain("session.setAccess");
+      expect(d.capabilities.some((c) => c.id === "approval_policy")).toBe(
+        false,
+      );
 
       const { sessionId } = (await h.request("session.start", {
         agent: "t",
         cwd: process.cwd(),
         access: "full",
       })) as { sessionId: string };
-      /* Born full → no gate in the meta. */
-      expect(ops().at(-1)).toEqual({ op: "new", meta: {} });
-
-      /* Flip to ask — the live session must be re-created under the
-         gate meta, never left ungated on the old spawn. */
-      const r = (await h.request("session.setAccess", {
-        sessionId,
-        access: "ask",
-      })) as { access: string };
-      expect(r.access).toBe("ask");
-      const last = ops().at(-1);
-      expect(["load", "new"]).toContain(last?.op);
-      expect(last?.meta).toEqual({
-        claudeCode: { options: { allowDangerouslySkipPermissions: false } },
+      /* Born full → STILL carries the gate meta — nothing runs bypassed. */
+      expect(ops().at(-1)).toEqual({
+        op: "new",
+        meta: {
+          claudeCode: { options: { allowDangerouslySkipPermissions: false } },
+        },
       });
 
-      /* The session still serves after the re-gate. */
-      const turn = (await h.request("prompt", {
-        sessionId,
-        content: [{ type: "text", text: "still there?" }],
-      })) as { stopReason?: string };
-      expect(turn.stopReason).toBeTruthy();
+      /* A stray setAccess dies at the capability gate — no churn. */
+      await expect(
+        h.request("session.setAccess", { sessionId, access: "ask" }),
+      ).rejects.toThrow(/session\.setAccess/);
     } finally {
       h.close();
       rmSync(dir, { recursive: true, force: true });

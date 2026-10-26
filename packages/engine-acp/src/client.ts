@@ -104,6 +104,17 @@ export class AcpConnection {
   /** Sessions with a prompt in flight or queued — interrupt must still
      cancel a send that has not reached the wire yet. */
   private promptBusy = new Map<string, number>();
+  /** A session-creating RPC that outlived its bound and is still in
+     flight. While it is, another `session/new` would stack a second
+     agent child behind the same wedge — subsequent creates fail fast
+     with the same error instead (r7 nit: up to 6 leaked `claude`
+     children per stuck send). Clears when the RPC settles; teardown
+     drops it with the process. */
+  private wedgedCreate?: { req: Promise<unknown>; message: string };
+  /** Creates still in flight — includes a wedged one until it settles.
+     The engine counts these plus live sessions before reaping a wedged
+     adapter, so teardown never kills a create that might still answer. */
+  private readonly pendingCreates = new Set<Promise<unknown>>();
 
   private constructor(
     readonly initializeResult: acp.InitializeResponse,
@@ -271,6 +282,50 @@ export class AcpConnection {
     return Math.min(timeoutMs ?? this.createTimeoutMs, this.createTimeoutMs);
   }
 
+  /** Shared bound for the session-creating RPCs. The callers check
+      `wedgedCreate` BEFORE building `req` — once the RPC is on the wire
+      the child already exists, so the guard lives ahead of it. A
+      timeout (when `arm`) raises the guard: while the abandoned RPC is
+      still in flight, every later create rejects fast with the same
+      message rather than stacking another agent child behind the wedge
+      (r7 nit). A late answer's orphaned ACP session is closed on settle. */
+  private create<T>(
+    req: Promise<T>,
+    ms: number,
+    reason: () => string,
+    arm: boolean,
+  ): Promise<T> {
+    req.catch(() => {});
+    this.pendingCreates.add(req);
+    const settle = (res?: T) => {
+      this.pendingCreates.delete(req);
+      if (this.wedgedCreate?.req !== req) return;
+      this.wedgedCreate = undefined;
+      /* The wedge answered after we abandoned it — the ACP session it
+         created has no owner; close it so the late child doesn't leak
+         (the adapter stays — it may still hold live work). */
+      const id = (res as { sessionId?: string } | undefined)?.sessionId;
+      if (id && this.conn)
+        void Promise.resolve(this.conn.closeSession({ sessionId: id })).catch(
+          () => {},
+        );
+    };
+    void req.then(settle, () => settle());
+    return withTimeout(req, ms, reason, () => {
+      /* Abandoned: no caller waits on it anymore, so it stops counting
+         as a live create (a late answer still takes the settle path). */
+      this.pendingCreates.delete(req);
+      if (arm) this.wedgedCreate = { req, message: reason() };
+    });
+  }
+
+  /** A create whose caller still waits is in flight — teardown would
+      kill a session the engine has not registered yet, so its "no live
+      sessions" check would lie. */
+  hasLiveCreates(): boolean {
+    return this.pendingCreates.size > 0;
+  }
+
   /** `session/new` — the agent attaches the given MCP servers.
       A wedge here rejects THIS call only — the adapter multiplexes all
       sessions over one process group, so a per-session timeout must
@@ -282,20 +337,24 @@ export class AcpConnection {
       mcpServers?: acp.McpServer[];
       meta?: Record<string, unknown>;
     },
-    opts?: { timeoutMs?: number },
+    opts?: { timeoutMs?: number; armWedge?: boolean },
   ): Promise<acp.NewSessionResponse> {
     if (!this.conn) throw new Error("connection closed");
+    /* r7 nit: a wedged create is still in flight — another session/new
+       would stack a second child behind it. Fail fast before the wire
+       call, with the same error, until the wedged RPC settles. */
+    if (this.wedgedCreate) throw new Error(this.wedgedCreate.message);
     const req = this.conn.newSession({
       cwd: p.cwd,
       mcpServers: p.mcpServers ?? [],
       ...(p.meta ? { _meta: p.meta } : {}),
     });
-    req.catch(() => {});
     const ms = this.bound(opts?.timeoutMs);
-    return withTimeout(
+    return this.create(
       req,
       ms,
       () => `agent did not answer session/new in ${ms}ms`,
+      opts?.armWedge !== false,
     );
   }
 
@@ -308,21 +367,22 @@ export class AcpConnection {
       mcpServers?: acp.McpServer[];
       meta?: Record<string, unknown>;
     },
-    opts?: { timeoutMs?: number },
+    opts?: { timeoutMs?: number; armWedge?: boolean },
   ): Promise<acp.LoadSessionResponse> {
     if (!this.conn) throw new Error("connection closed");
+    if (this.wedgedCreate) throw new Error(this.wedgedCreate.message);
     const req = this.conn.loadSession({
       sessionId: p.sessionId,
       cwd: p.cwd,
       mcpServers: p.mcpServers ?? [],
       ...(p.meta ? { _meta: p.meta } : {}),
     });
-    req.catch(() => {});
     const ms = this.bound(opts?.timeoutMs);
-    return withTimeout(
+    return this.create(
       req,
       ms,
       () => `agent did not answer session/load in ${ms}ms`,
+      opts?.armWedge !== false,
     );
   }
 

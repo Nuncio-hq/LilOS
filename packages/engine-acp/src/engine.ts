@@ -4,7 +4,6 @@ import {
   type AgentsCreateParams,
   type AgentsDescribeParams,
   type AgentsUpdateParams,
-  APPROVAL_POLICY_CAPABILITY,
   type ApprovalOutcome,
   type DescribeResult,
   ENGINE_METHODS,
@@ -18,7 +17,6 @@ import {
   type PromptResult,
   type RequestRespondParams,
   RPC_ERRORS,
-  type SessionSetAccessParams,
   type SessionSetHiddenParams,
   type SessionSetModelParams,
   type SessionSetModelResult,
@@ -247,22 +245,32 @@ export class AcpEngine {
     try {
       /* D-#866 (r4): the scratch session still spawns the agent's child —
          it must carry the same `ask` meta as a gated session so NO session
-         is ever born under the user's bypassPermissions default. */
-      const probe = await c.newSession({
-        cwd: process.cwd(),
-        ...(this.opts.sessionMeta
-          ? {
-              meta: this.opts.sessionMeta({
-                agent: this.opts.agent?.id ?? "",
-                cwd: process.cwd(),
-                access: "ask",
-              }),
-            }
-          : {}),
-      });
+         is ever born under the user's bypassPermissions default.
+         `armWedge:false` — a hung probe leaves ONE bounded child (reaped
+         at conn close); it must not bar real session starts, which is
+         what the wedged-create guard exists to protect (r7 nit). */
+      const probe = await c.newSession(
+        {
+          cwd: process.cwd(),
+          ...(this.opts.sessionMeta
+            ? {
+                meta: this.opts.sessionMeta({
+                  agent: this.opts.agent?.id ?? "",
+                  cwd: process.cwd(),
+                  access: "ask",
+                }),
+              }
+            : {}),
+        },
+        { armWedge: false },
+      );
       learnSessionConfig(this.catalog, probe);
       await c.closeSession(probe.sessionId);
-    } catch {
+    } catch (e) {
+      /* Still reap on a wedged probe when nobody else is using the
+         adapter — the wedged probe child dies with the conn (r7 nit),
+         and the next demand re-probes on a fresh adapter. */
+      await this.reapWedgedCreate(c, e);
       /* An agent that cannot open a session cannot run turns either —
          the empty catalog just means no models capability yet. */
     }
@@ -371,8 +379,6 @@ export class AcpEngine {
         };
       case "session.setModel":
         return this.sessionSetModel(parsed.data as SessionSetModelParams);
-      case "session.setAccess":
-        return this.sessionSetAccess(parsed.data as SessionSetAccessParams);
       case "session.setTitle":
         return this.sessionSetTitle(parsed.data as SessionSetTitleParams);
       case "session.setHidden":
@@ -416,17 +422,6 @@ export class AcpEngine {
           ],
           detail: { updatable: ["name", "description", "soul", "model"] },
         },
-        /* D-#866 r6 — `session.setAccess` is engine-owned: the adapter
-           binds the bypass flag at session spawn, so a mid-thread
-           full→ask flip can only re-gate by re-creating the session
-           under the new meta — the method always exists (a suspended
-           session carries the level into its next resume). Only
-           `session.setAccess` is claimed — `approvals.setPolicy` is
-           not implemented. */
-        {
-          ...APPROVAL_POLICY_CAPABILITY,
-          methods: ["session.setAccess"],
-        },
       ],
     };
   }
@@ -459,14 +454,19 @@ export class AcpEngine {
        LilOS persona handle; ACP `session/new` has no profile gate, so an
        unknown name still starts under it). */
     const persona = this.agents.resolve(p.agent);
-    const res = await conn.newSession(
-      {
-        cwd: p.cwd,
-        mcpServers: (p.mcpServers ?? []).map(toAcpMcp),
-        ...(this.opts.sessionMeta ? { meta: this.opts.sessionMeta(p) } : {}),
-      },
-      { timeoutMs: left() },
-    );
+    const res = await conn
+      .newSession(
+        {
+          cwd: p.cwd,
+          mcpServers: (p.mcpServers ?? []).map(toAcpMcp),
+          ...(this.opts.sessionMeta ? { meta: this.opts.sessionMeta(p) } : {}),
+        },
+        { timeoutMs: left() },
+      )
+      .catch(async (e) => {
+        await this.reapWedgedCreate(conn, e);
+        throw e;
+      });
     const id = `s-${++this.sessionCounter}`;
     const s = new AcpSession(
       id,
@@ -1049,49 +1049,34 @@ export class AcpEngine {
   }
 
   /**
-   * `session.setAccess` — the harness pushes a conversation-level flip
-   * (D-#866 r3). The adapter binds the bypass flag when the session
-   * spawns, so `session/set_mode` on the live session cannot re-gate a
-   * full one to ask — the only honest answer is a re-created session
-   * under the new meta. Suspend+resume IS that path (loadSession
-   * replays the new meta; a fresh session/new gets it too). A suspended
-   * session just carries the level into its next resume. Resume
-   * failure leaves the session suspended — the next prompt retries
-   * the re-gate rather than silently serving the old level.
+   * A timed-out session create leaves its agent child running inside the
+   * shared adapter (r7 nit — the harness's bind retries each spawned
+   * another `claude`, up to 6 per stuck send). With no other live
+   * sessions to protect, closing the connection reaps the whole tree;
+   * with live sessions the conn's wedged-create guard already fails
+   * later creates fast, so nothing stacks behind the wedge.
    */
-  private async sessionSetAccess(p: SessionSetAccessParams) {
-    const s = this.require(p.sessionId);
-    if (s.access === p.access) return { access: s.access };
-    /* A live session can only re-gate by being born again (the adapter
-       binds the bypass flag at spawn): suspend + resume replays the
-       sessionMeta built from the NEW access. Revert the stored level on
-       failure — a retry with the same target must not read `changed:
-       false` and report success on a session that never re-gated. */
-    if (!s.suspended && s.state !== "closed") {
-      const prev = s.access;
-      s.access = p.access;
-      try {
-        await this.sessionSuspend({ sessionId: s.id });
-        await this.resume(s);
-      } catch (error) {
-        s.access = prev;
-        throw error;
-      }
-    } else {
-      /* Suspended/closed: the level only has to be stamped — the next
-         resume replays it through sessionMeta. */
-      s.access = p.access;
-    }
-    return { access: s.access };
+  private async reapWedgedCreate(
+    conn: AcpConnection,
+    error: unknown,
+    self?: AcpSession,
+  ) {
+    if (!/did not answer session\/(new|load)/.test(String(error))) return;
+    const live = [...this.sessions.values()].filter(
+      (x) =>
+        x !== self && x.acpSessionId && !x.suspended && x.state !== "closed",
+    );
+    if (live.length === 0 && !conn.hasLiveCreates() && this.conn === conn)
+      await conn.close();
   }
 
   /** Reattach a suspended session — same LilOS id, live ACP session. */
   private async resume(s: AcpSession) {
     const conn = await this.connection();
     const caps = conn.agentCapabilities;
-    /* The shim's sessionMeta is access-aware (D-#866): an `ask` session
-       must come BACK without the skip flag too — re-create paths below
-       pass the same meta or it is born under the settings default. */
+    /* The re-create must replay the shim's sessionMeta (D-#866): every
+       session is born gated — one that came back without the meta would
+       run under the user's settings default (bypassPermissions). */
     const meta = this.opts.sessionMeta?.({
       agent: s.agent,
       cwd: s.cwd,
@@ -1108,15 +1093,24 @@ export class AcpEngine {
           mcpServers: [],
           ...(meta ? { meta } : {}),
         });
-      } catch {
-        /* A dead session still resumes — fresh session/new below. */
+      } catch (e) {
+        /* A dead session still resumes — fresh session/new below — but a
+           WEDGED load surfaces: its child still runs in the adapter, and
+           the conn's wedged-create guard would only fail the retry. */
+        await this.reapWedgedCreate(conn, e, s);
+        if (/did not answer session\/(new|load)/.test(String(e))) throw e;
       }
     }
     if (!res) {
-      const created = await conn.newSession({
-        cwd: s.cwd,
-        ...(meta ? { meta } : {}),
-      });
+      const created = await conn
+        .newSession({
+          cwd: s.cwd,
+          ...(meta ? { meta } : {}),
+        })
+        .catch(async (e) => {
+          await this.reapWedgedCreate(conn, e, s);
+          throw e;
+        });
       s.acpSessionId = created.sessionId;
       res = created;
     }

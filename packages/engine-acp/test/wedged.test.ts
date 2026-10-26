@@ -82,15 +82,28 @@ describe("wedged agent containment (D-#866)", () => {
           cwd: "/tmp/wedged-cwd",
         }),
       ).rejects.toThrow(/did not answer session\/new/);
+      /* r7 nit: while the wedged create is still in flight, ANOTHER
+         session/new must not stack a third child behind it — the guard
+         fails fast with the same error, before the wire call (this
+         rejection is far inside the 600ms bound). */
+      const t0 = Date.now();
+      await expect(
+        engine.dispatch("session.start", {
+          agent: "x",
+          cwd: "/tmp/wedged-cwd",
+        }),
+      ).rejects.toThrow(/did not answer session\/new/);
+      expect(Date.now() - t0).toBeLessThan(TIMEOUT);
       const t2 = (await engine.dispatch("prompt", {
         sessionId: a.sessionId,
         content: [{ type: "text", text: "after the wedge" }],
       })) as { stopReason?: string };
       expect(t2.stopReason).not.toBe("refusal");
-      /* The wedged session's grandchild is NOT killed by the timeout —
-         the adapter's group only dies at close(). */
+      /* The wedged session's grandchild STAYS while the adapter is
+         kept for A — bounded to one child, reaped at close(). */
       expect(existsSync(pidfile)).toBe(true);
       const pid = Number(readFileSync(pidfile, "utf8").trim());
+      expect(gone(pid)).toBe(false);
       await engine.close();
       for (let i = 0; i < 20 && !gone(pid); i++) await settle(100);
       expect(gone(pid)).toBe(true);
@@ -144,14 +157,22 @@ describe("wedged agent containment (D-#866)", () => {
     }
   });
 
-  test("a wedged session.start inside the budget still leaves the adapter usable", {
+  test("a wedged solo start is reaped — the retry rides a fresh adapter (r7 nit)", {
     timeout: 30_000,
   }, async () => {
+    /* The r7 nit: an abandoned session start leaves its `claude` child
+       running until the engine restarts. With no live sessions to
+       protect, the engine tears the adapter down — killing the wedged
+       child — and the wedged-create guard dies with the conn, so the
+       next start (the sentinel means the NEW adapter serves normally)
+       succeeds instead of fail-fasting on a dead guard. */
     const dir = mkdtempSync(join(tmpdir(), "acp-wedge-"));
     const sentinel = join(dir, "hang-once");
+    const pidfile = join(dir, "grandchild.pid");
     const engine = make({
       LILOS_FAKE_HANG_CWD: "/tmp/wedged-cwd",
       LILOS_FAKE_HANG_ONCE: sentinel,
+      LILOS_FAKE_GRANDCHILD_PIDFILE: pidfile,
     });
     try {
       await engine.dispatch("describe", {});
@@ -161,8 +182,12 @@ describe("wedged agent containment (D-#866)", () => {
           cwd: "/tmp/wedged-cwd",
         }),
       ).rejects.toThrow(/did not answer session\/new/);
-      /* The wedged call is abandoned on the SAME adapter — the sentinel
-         means this generation now serves normally, no respawn needed. */
+      /* The wedged child died with the adapter — no engine restart
+         needed, no orphan reparented to launchd. */
+      const pid = Number(readFileSync(pidfile, "utf8").trim());
+      for (let i = 0; i < 30 && !gone(pid); i++) await settle(100);
+      expect(gone(pid)).toBe(true);
+      /* Fresh adapter, clear guard — the same cwd now serves. */
       const res = (await engine.dispatch("session.start", {
         agent: "x",
         cwd: "/tmp/wedged-cwd",
