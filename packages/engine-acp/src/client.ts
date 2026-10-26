@@ -142,10 +142,7 @@ export class AcpConnection {
       return this.conn.prompt({ sessionId, prompt: content });
     };
     const prev = this.promptQueues.get(sessionId) ?? Promise.resolve();
-    this.promptBusy.set(
-      sessionId,
-      (this.promptBusy.get(sessionId) ?? 0) + 1,
-    );
+    this.promptBusy.set(sessionId, (this.promptBusy.get(sessionId) ?? 0) + 1);
     const next = prev.then(run, run);
     this.promptQueues.set(
       sessionId,
