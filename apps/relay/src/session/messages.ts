@@ -10,6 +10,7 @@ import {
   MessagesSetCheckpointParams,
 } from "@lilos/contracts/app";
 import { noFolderDedupeKey } from "../store";
+import { resumeParked } from "./park";
 import type { RelayCtx } from "./ctx";
 import { badParams, JsonRpcCode, RpcError } from "./rpc";
 
@@ -118,6 +119,13 @@ export async function handleMessages(c: RelayCtx): Promise<false | undefined> {
         if (created && !noFolderDedupeKey(parsed.data.dedupeKey))
           emitMessage(message.channelId, message);
         else dropAttachments(attachments);
+        /* D-#862: only Oscar's own message counts as resuming — a
+           client-posted user message wakes a snoozed thread and
+           un-settles a settled one. Employee, system, and host-posted
+           lines never do (a task prompt or a ceoWake is not Oscar
+           typing). A dedupe retry already resumed it. */
+        if (created && parsed.data.authorKind === "user" && !isHost(peer))
+          await resumeParked(c, message.conversationId);
         respond(peer, id, { message });
       } catch (error) {
         dropAttachments(attachments);

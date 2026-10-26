@@ -203,12 +203,44 @@ export function makeV3Actions(caps: V3Capabilities): V3DataActions {
         "Couldn't rename the thread",
         renameConversation(threadId, title),
       ),
+    /* D-#862: park actions call their relay methods — the row's stamps
+       land on `conversation.updated`, so every client sees them. The view
+       name stays `archiveThread`; the UI says Settle. */
     archiveThread: (threadId, archived) =>
       toastOnFail(
         archived
-          ? "Couldn't archive the thread"
-          : "Couldn't unarchive the thread",
+          ? "Couldn't settle the thread"
+          : "Couldn't un-settle the thread",
         archiveConversation(threadId, archived),
+      ),
+    pinThread: (threadId, pinned) =>
+      toastOnFail(
+        pinned ? "Couldn't pin the thread" : "Couldn't unpin the thread",
+        relay.request("conversations.pin", { conversationId: threadId, pinned }),
+      ),
+    snoozeThread: (threadId, until) =>
+      toastOnFail(
+        "Couldn't snooze the thread",
+        relay.request("conversations.snooze", {
+          conversationId: threadId,
+          until,
+        }),
+      ),
+    wakeThread: (threadId) =>
+      toastOnFail(
+        "Couldn't wake the thread",
+        relay.request("conversations.snooze", {
+          conversationId: threadId,
+          until: null,
+        }),
+      ),
+    setAutoSettle: (threadId, enabled) =>
+      toastOnFail(
+        "Couldn't update auto-settle",
+        relay.request("conversations.setAutoSettle", {
+          conversationId: threadId,
+          enabled,
+        }),
       ),
     searchMessages,
     markSeen: (threadId) =>

@@ -162,6 +162,18 @@ const rowToConversation = (row: ConversationRow): Conversation => {
     scheduled: row.scheduled
       ? (JSON.parse(row.scheduled) as Conversation["scheduled"])
       : undefined,
+    /* D-#862: thread parking — epoch-ms stamps fold to absent; `settledPr`
+       is its JSON {num, state}; `autoSettle` emits only when off (absent =
+       on, the wire's default). `archived` rides the column — the mirror is
+       maintained on every settle write. */
+    pinnedAt: row.pinnedAt ?? undefined,
+    settledAt: row.settledAt ?? undefined,
+    settledReason: row.settledReason ?? undefined,
+    settledPr: row.settledPr
+      ? (JSON.parse(row.settledPr) as Conversation["settledPr"])
+      : undefined,
+    snoozedUntil: row.snoozedUntil ?? undefined,
+    ...(row.autoSettle === false ? { autoSettle: false } : {}),
   };
 };
 
@@ -562,6 +574,11 @@ export function createDrizzleStore(db: Db): RelayStore {
         turnFailure: conversation.turnFailure
           ? JSON.stringify(conversation.turnFailure)
           : null,
+        /* D-#862: same JSON boundary for `settledPr` — a fresh thread is
+           never parked, so this only keeps the spread type honest. */
+        settledPr: conversation.settledPr
+          ? JSON.stringify(conversation.settledPr)
+          : null,
         /* The domain flag is literal true. The column is 0/1. */
         ceoThread: conversation.ceoThread === true,
       })
@@ -889,6 +906,9 @@ export function createDrizzleStore(db: Db): RelayStore {
         model, provider, effort, fast, cwd, project_id AS projectId,
         ticket_id AS ticketId, ceo_thread AS ceoThread, workspace, access, title,
         title_source AS titleSource, archived, delivered_seq AS deliveredSeq,
+        pinned_at AS pinnedAt, settled_at AS settledAt,
+        settled_reason AS settledReason, settled_pr AS settledPr,
+        snoozed_until AS snoozedUntil, auto_settle AS autoSettle,
         usage, usage_session_id AS usageSessionId, usage_seq AS usageSeq,
         life, turn_failure AS turnFailure,
         turn_stopped AS turnStopped, bg_jobs AS bgJobs, stuck,
@@ -925,6 +945,8 @@ export function createDrizzleStore(db: Db): RelayStore {
              the boolean schema doesn't see a number. */
           turnStopped: r.turnStopped == null ? null : !!r.turnStopped,
           ceoThread: !!r.ceoThread,
+          /* D-#862: NOT NULL DEFAULT 1 column, raw SQL yields 0/1. */
+          autoSettle: !!r.autoSettle,
         } as ConversationRow),
       );
       if (convs.length === 0) return [];
@@ -1687,7 +1709,31 @@ export function createDrizzleStore(db: Db): RelayStore {
       /* turnFailure crosses the patch API as the domain object (#419);
          the column holds its JSON like `workspace`/`usage` — serialize at
          the boundary, `null` clears. */
-      const { turnFailure, stuck, ...cols } = patch;
+      const { turnFailure, stuck, settledPr, ...cols } = patch;
+      /* D-#862: park writes. `archived` is the legacy settle alias —
+         translate it to a manual settle so old callers keep working; an
+         explicit settleAt write wins over a stray archived flag, and the
+         mirror column always follows settledAt. Settling drops the pin and
+         any snooze — a settled thread needs neither. */
+      let parkSync: Partial<typeof schema.conversations.$inferInsert> = {};
+      if (patch.settledAt !== undefined) {
+        /* A settled thread is never pinned or snoozed — the shelf row
+           carries no badge; un-settling clears the reason. */
+        parkSync =
+          patch.settledAt != null
+            ? { archived: true, pinnedAt: null, snoozedUntil: null }
+            : { archived: false, settledReason: null, settledPr: null };
+      } else if (patch.archived !== undefined) {
+        parkSync = patch.archived
+          ? {
+              settledAt: now(),
+              settledReason: "manual" as const,
+              settledPr: null,
+              pinnedAt: null,
+              snoozedUntil: null,
+            }
+          : { settledAt: null, settledReason: null, settledPr: null };
+      }
       /* Issue #775: stamp stuckAt only when stuck goes unset → set. A
          clear leaves the stamp; a rewrite while it is still set is not a
          new episode; the next unset → set overwrites it. The host patch
@@ -1706,6 +1752,12 @@ export function createDrizzleStore(db: Db): RelayStore {
         .update(schema.conversations)
         .set({
           ...cols,
+          ...parkSync,
+          /* D-#862: same boundary as turnFailure — the column holds JSON,
+             `null` clears. */
+          ...(settledPr !== undefined
+            ? { settledPr: settledPr === null ? null : JSON.stringify(settledPr) }
+            : {}),
           ...(turnFailure !== undefined
             ? {
                 turnFailure:
@@ -2050,6 +2102,21 @@ export function createDrizzleStore(db: Db): RelayStore {
             .all()
         : base.orderBy(asc(schema.asks.createdAt)).all();
       return rows.map(rowToAsk);
+    },
+    /* D-#862: Oscar's resume clock — the newest user row's stamp, one
+       aggregate read the sweep runs per PR-linked thread. */
+    async lastUserMessageAt(conversationId) {
+      const row = db
+        .select({ at: max(schema.messages.createdAt) })
+        .from(schema.messages)
+        .where(
+          and(
+            eq(schema.messages.conversationId, conversationId),
+            eq(schema.messages.authorKind, "user"),
+          ),
+        )
+        .get();
+      return row?.at ?? undefined;
     },
     async insertPairingGrant(grant: {
       codeHash: string;

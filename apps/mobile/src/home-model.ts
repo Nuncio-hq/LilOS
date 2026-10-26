@@ -272,10 +272,21 @@ export function toSessionGroups(
   const out: SessionListGroups = { needsYou: [], running: [], finished: [] };
   for (const c of wire.conversations) {
     if (c.archived) continue;
+    const ask = asksByConv.get(c.id)?.[0];
+    /* D-#862: a snoozed thread stays off the phone's list too — unless it
+       raised a hand (an open ask, a failed turn, a stuck mark), the same
+       early-wake exceptions the desktop applies. */
+    if (
+      c.snoozedUntil !== undefined &&
+      c.snoozedUntil > nowMs &&
+      !ask &&
+      !c.turnFailure &&
+      !c.stuck
+    )
+      continue;
     const employeeId = empByChannel.get(c.channelId);
     const employee = employeeId ? empById.get(employeeId) : undefined;
     if (!employee) continue;
-    const ask = asksByConv.get(c.id)?.[0];
     const project = projectNameOf(c, wire.projects);
     const base = {
       id: c.id,

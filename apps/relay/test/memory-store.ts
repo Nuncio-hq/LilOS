@@ -829,6 +829,33 @@ export function createMemoryStore(): RelayStore {
       const conversation = conversations.get(id);
       if (!conversation) return null;
       patch = titlePatch(patch, conversation);
+      /* D-#862: same park rules as the drizzle store — `archived` is the
+         legacy settle alias; a settled thread is never pinned or snoozed;
+         the mirror always follows settledAt. Runs before the null-clear so
+         a translate-into-clear still clears. */
+      if (patch.settledAt !== undefined) {
+        if (patch.settledAt != null) {
+          patch = { ...patch, archived: true, pinnedAt: null, snoozedUntil: null };
+        } else {
+          patch = {
+            ...patch,
+            archived: false,
+            settledReason: null,
+            settledPr: null,
+          };
+        }
+      } else if (patch.archived !== undefined) {
+        patch = patch.archived
+          ? {
+              ...patch,
+              settledAt: now(),
+              settledReason: "manual",
+              settledPr: null,
+              pinnedAt: null,
+              snoozedUntil: null,
+            }
+          : { ...patch, settledAt: null, settledReason: null, settledPr: null };
+      }
       /* Issue #775: stamp stuckAt only on unset → set. Captured before the
          null-clear below deletes the live mark and drops the patch key. */
       const hadStuck = conversation.stuck != null;
@@ -854,6 +881,12 @@ export function createMemoryStore(): RelayStore {
         "cwd",
         "projectId",
         "stuck",
+        /* D-#862: park stamps clear the same way. */
+        "pinnedAt",
+        "settledAt",
+        "settledReason",
+        "settledPr",
+        "snoozedUntil",
       ] as const) {
         if (patch[k] === null) {
           delete (conversation as Record<string, unknown>)[k];
@@ -862,6 +895,10 @@ export function createMemoryStore(): RelayStore {
       }
       Object.assign(conversation, patch);
       if (marking && !hadStuck) conversation.stuckAt = now();
+      /* D-#862: keep the legacy mirror and the wire's absent-is-on
+         convention exactly like the row mapper does. */
+      conversation.archived = conversation.settledAt !== undefined;
+      if (conversation.autoSettle === true) delete conversation.autoSettle;
       return conversation;
     },
     async recordTurnUsage({ conversationId, sessionId, seq, usage }) {
@@ -1023,6 +1060,19 @@ export function createMemoryStore(): RelayStore {
         )
         .filter((a) => (state ? a.state === state : true))
         .sort((a, b) => a.createdAt - b.createdAt);
+    },
+    /* D-#862: Oscar's resume clock — same rule as the drizzle aggregate. */
+    async lastUserMessageAt(conversationId) {
+      let at: number | undefined;
+      for (const m of messages.values()) {
+        if (
+          m.conversationId === conversationId &&
+          m.authorKind === "user" &&
+          (at === undefined || m.createdAt > at)
+        )
+          at = m.createdAt;
+      }
+      return at;
     },
     async listPendingTurns() {
       const pending: PendingTurn[] = [];

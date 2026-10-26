@@ -303,6 +303,21 @@ function threadRows(
         ...(status === "stuck" && c.stuck
           ? { stuck: { what: c.stuck.reason, detail: [] } }
           : {}),
+        /* D-#862: relay park stamps → the sections' fields. `cameBackAt`
+           derives client-side: the newest activity, with an open ask's
+           stamp — it IS when the thread last came back to Oscar. */
+        ...(c.pinnedAt !== undefined ? { pinnedAt: c.pinnedAt } : {}),
+        ...(c.snoozedUntil !== undefined
+          ? { snoozedUntil: c.snoozedUntil }
+          : {}),
+        cameBackAt: Math.max(ask?.createdAt ?? 0, last),
+        ...(c.settledAt !== undefined ? { settledAt: c.settledAt } : {}),
+        ...(c.settledReason === "idle"
+          ? { settledWhy: { kind: "idle" as const } }
+          : c.settledReason === "pr" && c.settledPr
+            ? { settledWhy: { kind: "pr" as const, ...c.settledPr } }
+            : {}),
+        ...(c.autoSettle === false ? { autoSettleOff: true } : {}),
       },
     });
   }

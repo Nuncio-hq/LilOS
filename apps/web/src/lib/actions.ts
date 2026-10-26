@@ -427,13 +427,18 @@ export async function renameConversation(
   await relay.request("conversations.update", { conversationId, title });
 }
 
-/** Put a thread away (or bring it back): `conversations.update {archived}`.
- *  Archived threads leave the live lists but stay searchable (#28, #138). */
+/** Put a thread away (or bring it back): `conversations.settle` (D-#862 —
+ *  the Settled shelf; the UI action keeps the name `archiveThread` for the
+ *  view-model contract). Settled threads leave the live lists but stay
+ *  searchable (#28, #138). */
 export async function archiveConversation(
   conversationId: string,
   archived: boolean,
 ): Promise<void> {
-  await relay.request("conversations.update", { conversationId, archived });
+  await relay.request("conversations.settle", {
+    conversationId,
+    settled: archived,
+  });
 }
 
 /** Pin the pick a conversation's next turn runs on (`conversations.setModel`, #92). */

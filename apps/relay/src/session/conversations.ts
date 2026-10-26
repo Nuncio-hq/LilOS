@@ -5,12 +5,16 @@ import {
   type ConversationsMoveFolderHostResult,
   ConversationsMoveFolderParams,
   ConversationsOpenParams,
+  ConversationsPinParams,
   ConversationsPrsParams,
   type ConversationsRewindHostParams,
   type ConversationsRewindHostResult,
   ConversationsRewindParams,
   ConversationsSetAccessParams,
+  ConversationsSetAutoSettleParams,
   ConversationsSetModelParams,
+  ConversationsSettleParams,
+  ConversationsSnoozeParams,
   ConversationsSummariesParams,
   ConversationsUpdateParams,
   type Project,
@@ -56,6 +60,7 @@ export async function handleConversations(
     callHost,
     respond,
     options,
+    now,
     log,
   } = c;
   switch (method) {
@@ -221,6 +226,11 @@ export async function handleConversations(
               titleSource: isHost(peer) ? ("auto" as const) : ("user" as const),
             }
           : {}),
+        /* D-#862: a failed turn wakes a snoozed thread — folded into the
+           same write so one `conversation.updated` carries both. */
+        ...(rest.turnFailure && before?.snoozedUntil
+          ? { snoozedUntil: null }
+          : {}),
       };
       /* D-#771: `cwd` is how a thread moves between projects —
          `conversations.moveFolder` lands here through the harness's
@@ -260,6 +270,86 @@ export async function handleConversations(
           ?.threadStuck(conversation, conversation.stuck.reason)
           .catch((error) => log(`push fan-out failed: ${error}`));
       }
+      respond(peer, id, { conversation });
+      return;
+    }
+    /* D-#862: thread parking — Oscar's own actions, callable from any
+       client (Mac settles, the phone sees it on `conversation.updated`).
+       The relay owns every stamp; the store keeps the `archived` mirror
+       and drops pin/snooze on settle, so the writes below stay small. */
+    case "conversations.settle": {
+      const parsed = ConversationsSettleParams.safeParse(params);
+      if (!parsed.success) throw badParams(parsed.error.issues);
+      const conversation = await store.updateConversation(
+        parsed.data.conversationId,
+        parsed.data.settled
+          ? { settledAt: now(), settledReason: "manual" }
+          : { settledAt: null },
+      );
+      if (!conversation) {
+        throw new RpcError(
+          JsonRpcCode.notFound,
+          "not_found",
+          "conversation not found",
+        );
+      }
+      emitConversation(conversation.channelId, conversation);
+      respond(peer, id, { conversation });
+      return;
+    }
+    case "conversations.snooze": {
+      const parsed = ConversationsSnoozeParams.safeParse(params);
+      if (!parsed.success) throw badParams(parsed.error.issues);
+      /* `until: null` is Wake now; a stamp in the past behaves the same
+         (the list filter treats an expired stamp as awake). */
+      const conversation = await store.updateConversation(
+        parsed.data.conversationId,
+        { snoozedUntil: parsed.data.until },
+      );
+      if (!conversation) {
+        throw new RpcError(
+          JsonRpcCode.notFound,
+          "not_found",
+          "conversation not found",
+        );
+      }
+      emitConversation(conversation.channelId, conversation);
+      respond(peer, id, { conversation });
+      return;
+    }
+    case "conversations.pin": {
+      const parsed = ConversationsPinParams.safeParse(params);
+      if (!parsed.success) throw badParams(parsed.error.issues);
+      const conversation = await store.updateConversation(
+        parsed.data.conversationId,
+        { pinnedAt: parsed.data.pinned ? now() : null },
+      );
+      if (!conversation) {
+        throw new RpcError(
+          JsonRpcCode.notFound,
+          "not_found",
+          "conversation not found",
+        );
+      }
+      emitConversation(conversation.channelId, conversation);
+      respond(peer, id, { conversation });
+      return;
+    }
+    case "conversations.setAutoSettle": {
+      const parsed = ConversationsSetAutoSettleParams.safeParse(params);
+      if (!parsed.success) throw badParams(parsed.error.issues);
+      const conversation = await store.updateConversation(
+        parsed.data.conversationId,
+        { autoSettle: parsed.data.enabled },
+      );
+      if (!conversation) {
+        throw new RpcError(
+          JsonRpcCode.notFound,
+          "not_found",
+          "conversation not found",
+        );
+      }
+      emitConversation(conversation.channelId, conversation);
       respond(peer, id, { conversation });
       return;
     }

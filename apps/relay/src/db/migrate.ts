@@ -534,6 +534,29 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
     version: 36,
     statements: [`ALTER TABLE employees ADD COLUMN runtime TEXT`],
   },
+  {
+    /* D-#862: thread parking — pin/settle/snooze. Settled replaces the old
+       `archived`: archived rows become settled (reason 'manual', stamped at
+       their last activity so the shelf orders them sanely). `archived`
+       itself stays as a synced mirror column for wire compat — every
+       archived-filtered query keeps working. */
+    version: 37,
+    statements: [
+      `ALTER TABLE conversations ADD COLUMN pinned_at INTEGER`,
+      `ALTER TABLE conversations ADD COLUMN settled_at INTEGER`,
+      `ALTER TABLE conversations ADD COLUMN settled_reason TEXT`,
+      `ALTER TABLE conversations ADD COLUMN settled_pr TEXT`,
+      `ALTER TABLE conversations ADD COLUMN snoozed_until INTEGER`,
+      `ALTER TABLE conversations ADD COLUMN auto_settle INTEGER NOT NULL DEFAULT 1`,
+      `UPDATE conversations
+         SET settled_at = COALESCE(
+               (SELECT MAX(created_at) FROM messages
+                  WHERE messages.conversation_id = conversations.id),
+               created_at),
+             settled_reason = 'manual'
+         WHERE archived = 1`,
+    ],
+  },
 ];
 
 /**

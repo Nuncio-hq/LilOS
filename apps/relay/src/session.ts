@@ -45,6 +45,7 @@ import { handleTurns } from "./session/turns";
 import { handleUpdates } from "./session/updates";
 import type { RejectedHandshake } from "./status";
 import type { RelayStore } from "./store";
+import { autoSettleSweep } from "./sweep";
 
 /** Minimal ws peer surface — Bun's ServerWebSocket and test doubles fit this. */
 export interface RelayWsPeer {
@@ -106,6 +107,12 @@ export interface RelayOptions {
    * serve (registration persists) but nothing is sent (tests, bare relays).
    */
   push?: PushFanout;
+  /**
+   * D-#862: how often the auto-settle sweep runs (idle-3-days + PR
+   * merged/closed). Default `SETTLE_SWEEP_MS`; `0` disables the timer —
+   * unit tests drive `autoSettleSweep` by hand.
+   */
+  settleSweepMs?: number;
 }
 
 /** The opt-in Tailscale bind — implemented in index.ts over `Bun.serve`. */
@@ -135,6 +142,11 @@ export interface Relay {
  * buffers a whole incoming frame up to `MAX_FRAME_BYTES` before dispatch).
  */
 export const HELLO_DEADLINE_MS = 10_000;
+
+/* D-#862: the auto-settle sweep's default cadence — a `gh` probe per
+   PR-linked thread per tick keeps this comfortably rare; the 3-day idle
+   rule needs no finer clock. */
+export const SETTLE_SWEEP_MS = 15 * 60_000;
 
 /** Pairing admin is install-token scope only — device peers are refused. */
 const PAIRING_ADMIN_METHODS = new Set([
@@ -192,6 +204,10 @@ const METHOD_HANDLERS: ReadonlyMap<
   ["conversations.setModel", handleConversations],
   ["conversations.setAccess", handleConversations],
   ["conversations.markRead", handleConversations],
+  ["conversations.settle", handleConversations],
+  ["conversations.snooze", handleConversations],
+  ["conversations.pin", handleConversations],
+  ["conversations.setAutoSettle", handleConversations],
   ["conversations.prs", handleConversations],
   ["messages.setCheckpoint", handleMessages],
   ["messages.list", handleMessages],
@@ -635,6 +651,20 @@ export function createRelay(options: RelayOptions): Relay {
       return lastHostDisconnectedAt;
     },
   };
+
+  /* D-#862: the auto-settle sweep — one timer for the relay's life. It
+     runs without clients (the issue: rules run while apps are closed);
+     every error is logged and swallowed — a bad tick must never crash a
+     request path. `unref` keeps tests and bare relays free to exit. */
+  const settleSweepMs = options.settleSweepMs ?? SETTLE_SWEEP_MS;
+  if (settleSweepMs > 0) {
+    const timer = setInterval(() => {
+      autoSettleSweep(shared).catch((error) =>
+        log(`auto-settle sweep failed: ${error}`),
+      );
+    }, settleSweepMs);
+    timer.unref?.();
+  }
 
   async function handle(
     peer: RelayWsPeer,

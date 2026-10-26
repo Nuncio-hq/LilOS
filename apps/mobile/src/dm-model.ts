@@ -247,7 +247,19 @@ export function toSessionTurns(
       (s) =>
         s.conversation.channelId === ctx.channelId && !s.conversation.archived,
     )
-    .map((s) => ({ turn: toSessionTurn(s, ctx), at: s.last.createdAt }));
+    .map((s) => ({ turn: toSessionTurn(s, ctx), at: s.last.createdAt, conv: s.conversation }))
+    /* D-#862: a snoozed thread sleeps on the shelf here too — same stamp,
+       same early-wake exceptions as the desktop (an ask, a failure, a
+       stuck turn shows anyway). */
+    .filter(
+      (r) =>
+        r.conv.snoozedUntil === undefined ||
+        r.conv.snoozedUntil <= ctx.now ||
+        r.turn.state === "needs-you" ||
+        r.turn.state === "failed" ||
+        r.conv.stuck !== undefined,
+    )
+    .map(({ turn, at }) => ({ turn, at }));
   // A just-sent open may still lack a summary (refresh in flight): render it
   // from what the phone itself wrote so the Working row appears at once.
   for (const [id, p] of ctx.pending) {
