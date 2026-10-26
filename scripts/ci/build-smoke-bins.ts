@@ -45,6 +45,7 @@ run([
 for (const [entry, outfile] of [
   ["packages/engine-fake/scripts/serve.ts", "lilos-engine-fake"],
   ["packages/engine-hermes/scripts/serve.ts", "lilos-engine-nous"],
+  ["packages/engine-acp/scripts/serve.ts", "lilos-engine-acp"],
 ] as const) {
   run(["build", join(REPO, entry), ...host, "--outfile", join(OUT, outfile)]);
 }

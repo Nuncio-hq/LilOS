@@ -42,6 +42,10 @@ export const AgentDescriptor = z.object({
   soul: z.string().optional(),
   /** Engine-owned extras (provider, avatar flags, ...); opaque to clients. */
   detail: z.record(z.string(), z.unknown()).optional(),
+  /** D-#761: which runtime listed this agent, stamped by the harness's
+      merged roster — routing metadata for `agents.describe`/`employees.create`,
+      not an engine-side property. */
+  runtime: z.string().min(1).optional(),
 });
 export type AgentDescriptor = z.infer<typeof AgentDescriptor>;
 

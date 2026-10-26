@@ -483,6 +483,21 @@ export function acpServeCommand(options: {
   ];
 }
 
+/** D-#761 review: does the adapter this runtime would launch exist on
+    disk? The packaged app ships a compiled `lilos-engine-acp`; a dev
+    checkout runs `bun serve.ts`. A build with neither must not claim
+    the runtime available — this is the same check `acpServeCommand`
+    makes at launch, readable without starting anything. */
+export function acpAdapterPresent(options: {
+  repoRoot: string;
+  serveBin?: string;
+}): boolean {
+  if (options.serveBin) return existsSync(options.serveBin);
+  return existsSync(
+    join(options.repoRoot, "packages/engine-acp/scripts/serve.ts"),
+  );
+}
+
 /** ACP engine through the command launcher — registry entry or local
     command; the agent's own login runs the session (D-#845). */
 export function acpEngineLauncher(options: {

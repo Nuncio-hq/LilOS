@@ -286,6 +286,47 @@ describe("employees lifecycle + engine passthrough (#29)", () => {
     expect(errorData(user.frames, lastId())).toBe("not_found");
   });
 
+  /* D-#761 review: a non-default-runtime employee's DM channel is an
+     ordinary channel — `messages.list` on it must answer while the
+     employee exists; after removal the D-#29 cascade takes the channel
+     too and a stale id is a plain not_found. */
+  it("a runtime employee's DM channel lists messages; removal makes it not_found", async () => {
+    const relay = newRelay();
+    await engineHost(relay);
+    const user = await helloed(relay);
+
+    await user.connection.receive(
+      req("employees.create", {
+        name: "Devin",
+        role: "coder",
+        runtime: "acp:devin",
+      }),
+    );
+    const { employee } = resultOf(user.frames, lastId()).result as {
+      employee: { id: string; runtime?: string };
+    };
+    expect(employee.runtime).toBe("acp:devin");
+    await user.connection.receive(
+      req("channels.openDm", { employeeId: employee.id }),
+    );
+    const { channel } = resultOf(user.frames, lastId()).result as {
+      channel: { id: string };
+    };
+    await user.connection.receive(
+      req("messages.list", { channelId: channel.id }),
+    );
+    const listed = resultOf(user.frames, lastId()).result as {
+      messages: unknown[];
+    };
+    expect(listed.messages).toEqual([]);
+
+    await user.connection.receive(req("employees.remove", { id: employee.id }));
+    await user.connection.receive(
+      req("messages.list", { channelId: channel.id }),
+    );
+    expect(errorData(user.frames, lastId())).toBe("not_found");
+  });
+
   it("agents.* without a registered host → engine_unavailable", async () => {
     const relay = newRelay();
     const user = await helloed(relay);

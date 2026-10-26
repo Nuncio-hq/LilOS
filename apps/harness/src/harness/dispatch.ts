@@ -73,7 +73,7 @@ export async function dispatchPrompt(
   message: AppMessage,
   promptOnWire: () => void,
 ): Promise<boolean> {
-  const conn = this.engine;
+  const conn = this.connFor(binding);
   if (!conn) {
     this.opts.log.warn("prompt requeue: no conn", { messageId: message.id });
     const live = this.liveBinding(binding);

@@ -71,8 +71,9 @@ describe("relay migrations", () => {
     // conversations.stuck_at (issue #775); v32 adds D-#776's goals, tickets
     // and conversations.ticket_id; v33 adds D-#777's company_updates;
     // v34 adds the CEO wake flag and the standing-thread flag; v35 adds
-    // D-#844's task columns + the task wake flag.
-    expect(out.version).toBe(35);
+    // D-#844's task columns + the task wake flag; v36 adds D-#761's
+    // employees.runtime.
+    expect(out.version).toBe(36);
     expect(out.askCols).toContain("hire");
     expect(out.askCols).toContain("why");
     expect(out.askCols).toContain("if_yes");
@@ -113,6 +114,7 @@ describe("relay migrations", () => {
     expect(out.tables).toContain("engine_event_marks");
     expect(out.empCols).toContain("muted");
     expect(out.empCols).toContain("reports_to");
+    expect(out.empCols).toContain("runtime");
     expect(out.msgIdx).toContain("messages_conversation_seq");
     expect(out.msgIdx).not.toContain("messages_conversation");
     // …and keeps everything v6 shipped.

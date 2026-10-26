@@ -42,6 +42,11 @@ export const Employee = z.object({
       shown by the profile name — never a stored owner id or a hardcoded
       name (D-#775). */
   reportsTo: z.string().min(1).optional(),
+  /** D-#761: the engine runtime this agent's threads bind to — absent or
+      the default id means the default engine (every pre-#761 employee), a
+      coding agent names its ACP runtime (`"acp:<agent>"`). The harness owns
+      routing; the field is set at hire and never widens access. */
+  runtime: z.string().min(1).optional(),
   createdAt: Timestamp,
 });
 export type Employee = z.infer<typeof Employee>;
@@ -634,6 +639,22 @@ export const EngineHostStatus = z.object({
   defaultProvider: z.string().optional(),
 });
 export type EngineHostStatus = z.infer<typeof EngineHostStatus>;
+
+/**
+ * D-#761: one row per engine runtime the harness knows — the default
+ * plus lazily-started coding runtimes (`acp:<agent>`, ...).
+ * `available` = the runtime's own install probe passed, so the hire flow
+ * may offer it; `state`/`detail` are the runtime's own supervisor verdict
+ * when it has run (absent = never started).
+ */
+export const RuntimeStatusRow = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  available: z.boolean().optional(),
+  state: EngineHostState.optional(),
+  detail: z.string().optional(),
+});
+export type RuntimeStatusRow = z.infer<typeof RuntimeStatusRow>;
 
 /**
  * Push kinds a phone can toggle individually (#161): the two attention

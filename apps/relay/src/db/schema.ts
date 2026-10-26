@@ -38,6 +38,9 @@ export const employees = sqliteTable("employees", {
       a hardcoded one. A self-reference would be a cycle; the directory
       rejects those before a write. */
   reportsTo: text("reports_to").references((): AnySQLiteColumn => employees.id),
+  /** D-#761: the engine runtime this agent's threads bind to — NULL means
+      the default engine (every pre-#761 row). */
+  runtime: text("runtime"),
   createdAt: integer("created_at").notNull(),
 });
 

@@ -21,8 +21,14 @@ const SIGNED = "Developer ID Application: Example Dev";
 describe("AC-1 (#85) a signed bundle ships the real engine only", () => {
   const plan = engineBundlePlan(SIGNED);
 
-  it("compiles lilos-engine-nous and no fake", () => {
-    expect(plan.binaries.map((b) => b.outfile)).toEqual(["lilos-engine-nous"]);
+  /* D-#761: the ACP adapter ships in every bundle — a packaged app
+     without it cannot launch a hired coding agent (the #859 review
+     found the packaged Contents/MacOS missing it). */
+  it("compiles lilos-engine-nous + the ACP adapter, and no fake", () => {
+    expect(plan.binaries.map((b) => b.outfile).sort()).toEqual([
+      "lilos-engine-acp",
+      "lilos-engine-nous",
+    ]);
   });
 
   it("stamps hermes as the harness engine default", () => {
@@ -37,8 +43,9 @@ describe("AC-1 (#85) a signed bundle ships the real engine only", () => {
 describe("AC-4 (#85/#141) a dev bundle keeps the fake engine explicit", () => {
   const plan = engineBundlePlan("-");
 
-  it("ships both engine binaries", () => {
+  it("ships all three engine binaries", () => {
     expect(plan.binaries.map((b) => b.outfile).sort()).toEqual([
+      "lilos-engine-acp",
       "lilos-engine-fake",
       "lilos-engine-nous",
     ]);
@@ -56,8 +63,9 @@ describe("AC-4 (#85/#141) a dev bundle keeps the fake engine explicit", () => {
 describe("AC-1 (#141) an ad-hoc bundle can opt into real Hermes", () => {
   const plan = engineBundlePlan("-", "hermes");
 
-  it("still ships both engine binaries (dev bundle, not a release)", () => {
+  it("still ships all three engine binaries (dev bundle, not a release)", () => {
     expect(plan.binaries.map((b) => b.outfile).sort()).toEqual([
+      "lilos-engine-acp",
       "lilos-engine-fake",
       "lilos-engine-nous",
     ]);

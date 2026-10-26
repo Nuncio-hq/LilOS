@@ -113,12 +113,18 @@ export async function handleHarness(c: RelayCtx): Promise<false | undefined> {
       if (!parsed.success) throw badParams(parsed.error.issues);
       requireHost(peer);
       if (host) {
+        /* D-#761: a report names its runtime; absent = the default engine
+           (`host.engine` — the row `welcome.engineHost` serves). Non-default
+           runtimes key under `host.engines` so one engine's outage never
+           overwrites another's state. */
+        const runtime = parsed.data.engine.runtime;
+        const prev = runtime ? host.engines?.[runtime] : host.engine;
         if (
-          host.engine?.state !== parsed.data.engine.state ||
-          host.engine?.detail !== parsed.data.engine.detail
+          prev?.state !== parsed.data.engine.state ||
+          prev?.detail !== parsed.data.engine.detail
         ) {
           log(
-            `engine state ${host.engine?.state ?? "unknown"} -> ${parsed.data.engine.state}${parsed.data.engine.detail ? ` (${parsed.data.engine.detail})` : ""}`,
+            `engine state ${prev?.state ?? "unknown"} -> ${parsed.data.engine.state}${parsed.data.engine.detail ? ` (${parsed.data.engine.detail})` : ""}${runtime ? ` [${runtime}]` : ""}`,
           );
           /* #482: engine-state flips reach every subscribed client live
              (the phone's Mac-sheet + desktop System status refresh) —
@@ -130,7 +136,17 @@ export async function handleHarness(c: RelayCtx): Promise<false | undefined> {
             engine: parsed.data.engine,
           });
         }
-        host.engine = parsed.data.engine;
+        if (runtime) {
+          host.engines = host.engines ?? {};
+          host.engines[runtime] = {
+            state: parsed.data.engine.state,
+            ...(parsed.data.engine.detail !== undefined
+              ? { detail: parsed.data.engine.detail }
+              : {}),
+          };
+        } else {
+          host.engine = parsed.data.engine;
+        }
         host.lastReportAt = now();
         if (parsed.data.status) {
           /* #413: the thread notice and Settings → Engine read `connect` off

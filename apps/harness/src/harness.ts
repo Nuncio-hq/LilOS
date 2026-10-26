@@ -24,6 +24,13 @@ import {
   RESUME_AWARE_TIMEOUT_MS,
   SESSION_NOT_FOUND,
 } from "./engine/client";
+import type { EngineRegistry } from "./engine/registry";
+import {
+  DEFAULT_RUNTIME,
+  normalizeRuntime,
+  parseSessionRef,
+  qualifySessionRef,
+} from "./engine/runtimes";
 import type { EngineGapCause, EngineHostState } from "./engine/supervisor";
 import {
   codingAgentDefaults,
@@ -55,7 +62,11 @@ import {
   employeeIdFor,
   findConversation,
   postSystem,
+  releaseIdleFailedRuntimes,
   resolveEmployee,
+  runtimeFailedFor,
+  runtimeFailureDetail,
+  runtimeForConversation,
   updateConversation,
 } from "./harness/conversations";
 import type { HarnessCtx, SessionBinding } from "./harness/ctx";
@@ -117,6 +128,7 @@ import {
   watchChannel,
 } from "./harness/relay-events";
 import {
+  agentsListMerged,
   ensureWorktree,
   folderBrowse,
   folderDetail,
@@ -263,15 +275,33 @@ export interface HarnessOptions {
      start, so a send arriving pre-bind lands in the same ~1s window the
      loaded run measured. `0`/unset = no hold (`LILOS_BIND_DELAY_MS`). */
   bindDelayMs?: number;
+  /**
+   * D-#761: the runtime registry — one supervised engine per runtime id.
+   * Absent in unit fixtures (a plain `attachEngine` populates
+   * `engineConns` directly); the entry point always wires it.
+   */
+  runtimes?: EngineRegistry;
 }
 
 export class Harness {
   private engine?: EngineConnection;
 
+  /** D-#761: the registry — own field so `HarnessCtx.runtimes` resolves
+      to the same instance moved members read. */
+  private readonly runtimes?: EngineRegistry;
+
+  /** D-#761: live conn per runtime id — `engine` mirrors the default row
+      for the single-engine readers that predate the registry. */
+  private readonly engineConns = new Map<string, EngineConnection>();
+
   /** #834: what took the last engine continuity away (the supervisor
       stamps it at each attach) — a turn the gap killed is worded
       "went to sleep" vs "the engine restarted" from it. */
   private gapCause?: EngineGapCause;
+
+  /** D-#761: the gap cause is per-runtime — one engine's restart words
+      only the turns running on its sessions. */
+  private readonly gapCauseByRuntime = new Map<string, EngineGapCause>();
 
   private hostId?: string;
 
@@ -399,8 +429,18 @@ export class Harness {
     { title: string; archived: boolean; titleSource?: "auto" | "user" }
   >();
 
-  /** Latest `describe` result (hideCaps already filtered out). */
+  /** Latest `describe` result (hideCaps already filtered out) — the
+      DEFAULT runtime's row; per-runtime rows live in describeByRuntime. */
   private describeResult?: DescribeResult;
+
+  /** D-#761: each runtime's last describe (hideCaps applied). */
+  private readonly describeByRuntime = new Map<string, DescribeResult>();
+
+  /** D-#761: per-engine `models.list` caches (#790's lazy catalog). */
+  private readonly modelCatalogs = new Map<
+    string,
+    Promise<readonly { id: string; name?: string; provider?: string }[]>
+  >();
 
   /** Feed subscribers fan out every engine event to attached clients. */
   private readonly feedListeners = new Set<(event: EngineEvent) => void>();
@@ -447,6 +487,7 @@ export class Harness {
   private readonly stateDir: string;
 
   constructor(private readonly opts: HarnessOptions) {
+    this.runtimes = opts.runtimes;
     this.home = opts.homeDir ?? homedir();
     this.stateDir = opts.stateDir ?? join(homedir(), ".lilos", "harness");
     this.reaper = new SessionReaper({
@@ -528,25 +569,44 @@ export class Harness {
     for (const unsub of this.unsubs.splice(0)) unsub();
     this.opts.relay.close();
     this.engine = undefined;
+    this.engineConns.clear();
     this.opts.log.close();
   }
 
   /* --------------------------- engine wiring ---------------------------- */
 
-  /** Supervisor calls this on every fresh connection (first + reconnect). */
-  attachEngine(conn: EngineConnection, gapCause?: EngineGapCause): void {
+  /**
+   * Supervisor calls this on every fresh connection (first + reconnect).
+   * D-#761: `runtime` names which engine attached — absent = the default.
+   * Resync touches only this runtime's bindings: a restarted `acp:devin`
+   * must not replay or drain sessions the healthy `hermes` still owns.
+   */
+  attachEngine(
+    conn: EngineConnection,
+    gapCause?: EngineGapCause,
+    runtime: string = DEFAULT_RUNTIME,
+  ): void {
     /* #834: remember why the engine gapped — a turn this attach proves
        dead is worded "went to sleep" or "the engine restarted" from it. */
-    this.gapCause = gapCause ?? "restart";
-    this.engine?.close();
-    this.engine = conn;
-    this.unsubs.push(conn.onEvent((e) => this.onEngineEvent(e)));
-    void this.describeAndHire(conn).catch((error) =>
-      this.opts.log.warn("describe/hire failed", { error: String(error) }),
+    const cause = gapCause ?? "restart";
+    this.gapCauseByRuntime.set(runtime, cause);
+    if (runtime === DEFAULT_RUNTIME) this.gapCause = cause;
+    const prev = this.engineConns.get(runtime);
+    if (prev && prev !== conn) prev.close();
+    this.engineConns.set(runtime, conn);
+    if (runtime === DEFAULT_RUNTIME) this.engine = conn;
+    this.unsubs.push(conn.onEvent((e) => this.onEngineEvent(e, runtime)));
+    void this.describeAndHire(conn, runtime).catch((error) =>
+      this.opts.log.warn("describe/hire failed", {
+        runtime,
+        error: String(error),
+      }),
     );
-    // Resync every bound session: replay events past the watermark, re-open
-    // asks, adopt a turn already running (harness restart mid-turn).
-    // Messages held while the engine was down become turns now.
+    // Resync every bound session ON THIS RUNTIME: replay events past the
+    // watermark, re-open asks, adopt a turn already running (harness
+    // restart mid-turn). Messages held while an engine was down become
+    // turns now — a flush re-binds through `ensureRuntime`, so a conv
+    // parked for a still-idle engine lands once it starts.
     for (const convId of this.early.keys()) {
       void this.flushEarly(convId).catch((error) =>
         this.opts.log.warn("early message flush failed", {
@@ -556,6 +616,7 @@ export class Harness {
       );
     }
     for (const binding of this.bindings.values()) {
+      if (binding.runtime !== runtime) continue;
       /* #834: a send requeued while the engine was down must run on its
          own now — the queue's other drains (turn.completed, rebind) never
          fire when the session survived the restart (the adapter resumes
@@ -574,31 +635,140 @@ export class Harness {
     }
   }
 
-  /** Supervisor state changes → relay `harness.report` (host heartbeat). */
-  onEngineStateChange(state: EngineHostState, detail?: string): void {
+  /** Supervisor state changes → relay `harness.report` (host heartbeat).
+      D-#761: a non-default runtime's report carries `engine.runtime` so
+      the relay keys it under `host.engines` — `host.engine` stays the
+      default engine's row. */
+  onEngineStateChange(
+    state: EngineHostState,
+    detail?: string,
+    runtime?: string,
+  ): void {
+    /* D-#761 review: a terminal failure settles every send parked on
+       this runtime — a `!binding` park has no flush timer, so without
+       this it would wait on an engine that can never come. The drop
+       surfaces the error on the thread (and a task wake on a hand-off
+       parent); then, with nothing left needing the runtime, its
+       supervisor is released. */
+    if (state === "failed" && runtime && runtime !== DEFAULT_RUNTIME) {
+      void (async () => {
+        for (const convId of [...this.early.keys()]) {
+          const conv = await this.findConversation(convId);
+          if (conv && (await this.runtimeForConversation(conv)) === runtime) {
+            await this.dropEarlyWithError(convId).catch(() => {});
+          }
+        }
+        await this.releaseIdleFailedRuntimes();
+      })().catch(() => {});
+    }
     if (!this.hostId) return;
     this.opts.relay
       .request("harness.report", {
-        engine: { state, ...(detail ? { detail } : {}) },
+        engine: {
+          state,
+          ...(detail ? { detail } : {}),
+          ...(runtime && runtime !== DEFAULT_RUNTIME ? { runtime } : {}),
+        },
       })
       .catch((error) =>
         this.opts.log.warn("harness.report failed", { error: String(error) }),
       );
   }
 
+  /* ------------------------- D-#761 runtime routing --------------------- */
+
+  /** The live conn for a binding's runtime; undefined = that engine down. */
+  connFor(binding: SessionBinding): EngineConnection | undefined {
+    return this.connForRuntime(binding.runtime);
+  }
+
+  connForRuntime(runtime: string): EngineConnection | undefined {
+    /* A registry row that's down resolves to undefined — never to the
+       map's stale conn (the supervisor already discarded that socket).
+       Runtimes the registry doesn't know (unit fixtures that attach
+       directly) resolve from the attach-time map. */
+    if (this.runtimes?.get(runtime)) return this.runtimes.connFor(runtime);
+    return this.engineConns.get(runtime);
+  }
+
+  /**
+   * Bind-time resolution: the registry lazily starts a configured runtime
+   * on first demand (D-#761); without one (unit fixtures) only
+   * already-attached conns resolve. An unknown/failed runtime returns
+   * undefined — the caller takes the existing engine-down park path.
+   */
+  async ensureRuntime(runtime: string): Promise<EngineConnection | undefined> {
+    const norm = normalizeRuntime(runtime);
+    try {
+      /* A runtime the registry doesn't know (a unit fixture's direct-
+         attach map, or a stale employee.runtime naming a row this
+         build's catalog lacks) resolves from already-attached conns —
+         never lazily started and never blocking the default lane. */
+      if (this.runtimes && !this.runtimes.has(norm)) {
+        return this.connForRuntime(norm);
+      }
+      return (await this.runtimes?.ensure(norm)) ?? this.connForRuntime(norm);
+    } catch (error) {
+      this.opts.log.warn("runtime unavailable", {
+        runtime: norm,
+        error: String(error),
+      });
+      return undefined;
+    }
+  }
+
+  /** `conversationBySession` key — qualified for non-default runtimes so
+      two engines' session ids can't collide on the one map (D-#761). */
+  sessionKey(runtime: string, sessionId: string): string {
+    return qualifySessionRef(runtime, sessionId);
+  }
+
+  /** The binding holding an engine-local session on a given runtime. */
+  bindingBySession(
+    runtime: string,
+    sessionId: string,
+  ): SessionBinding | undefined {
+    const convId = this.conversationBySession.get(
+      this.sessionKey(runtime, sessionId),
+    );
+    return convId ? this.bindings.get(convId) : undefined;
+  }
+
+  describeForRuntime(runtime: string): DescribeResult | undefined {
+    return (
+      this.describeByRuntime.get(runtime) ??
+      (runtime === DEFAULT_RUNTIME ? this.describeResult : undefined)
+    );
+  }
+
+  hasCapabilityFor(runtime: string, id: string): boolean {
+    return (
+      this.describeForRuntime(runtime)?.capabilities.some((c) => c.id === id) ??
+      false
+    );
+  }
+
+  /** Runtime rows for the StatusReporter (`harness.report.status.runtimes`). */
+  runtimeRows() {
+    return this.runtimes?.statusRows();
+  }
+
   /* ---------------- client session feed (read-only) ---------------------- */
 
-  /** Engine identity + capabilities as clients see them (hideCaps applied). */
+  /** Engine identity + capabilities as clients see them (hideCaps
+      applied) — the default engine's row. D-#761: the agent roster the
+      picker reads merges across runtimes inside `agents.list`
+      (agentsListMerged), not here — `describe` carries no roster. */
   engineDescribe(): DescribeResult | undefined {
     return this.describeResult;
   }
 
-  /** `events.since` passthrough — replay a session's event log for a client. */
-  async eventsSince(
-    sessionId: string,
-    after: number,
-  ): Promise<EventsSinceResult> {
-    const conn = this.engine;
+  /** `events.since` passthrough — replay a session's event log for a client.
+      D-#761: the ref is runtime-qualified; it routes the call and is
+      stripped before the engine sees it (the engine knows its own ids). */
+  async eventsSince(ref: string, after: number): Promise<EventsSinceResult> {
+    const { runtime, sessionId } = parseSessionRef(ref);
+    const conn = this.connForRuntime(runtime);
     if (!conn) throw new Error("engine not connected");
     try {
       /* #834: the feed's replay lands on the same lazy-resume path —
@@ -625,7 +795,7 @@ export class Harness {
         latestSeq: after,
         truncated: false,
         openRequests: [],
-        snapshot: { sessionId, state: "closed" },
+        snapshot: { sessionId: ref, state: "closed" },
       };
     }
   }
@@ -643,13 +813,22 @@ export class Harness {
   /** The engine writes titles itself (#137) — declared via
       `session_meta.detail.autoTitle`, emitted as `session.titled`. */
   private hasAutoTitle(): boolean {
+    return this.hasAutoTitleFor(DEFAULT_RUNTIME);
+  }
+
+  /** D-#761: the capability check, scoped to the binding's engine. */
+  hasAutoTitleFor(runtime: string): boolean {
     return (
-      this.describeResult?.capabilities.find((c) => c.id === "session_meta")
-        ?.detail?.autoTitle === true
+      this.describeForRuntime(runtime)?.capabilities.find(
+        (c) => c.id === "session_meta",
+      )?.detail?.autoTitle === true
     );
   }
 
-  declare private describeAndHire: (conn: EngineConnection) => Promise<void>;
+  declare private describeAndHire: (
+    conn: EngineConnection,
+    runtime?: string,
+  ) => Promise<void>;
 
   declare private resyncBinding: (binding: SessionBinding) => Promise<void>;
 
@@ -660,6 +839,16 @@ export class Harness {
   declare private flushEarly: (convId: string) => Promise<void>;
   declare private scheduleEarlyFlush: (convId: string) => void;
   declare private dropEarlyWithError: (convId: string) => Promise<void>;
+  declare private conversationFromAtom: (
+    conversationId: string,
+  ) => Conversation | undefined;
+  declare private findConversation: (
+    conversationId: string,
+  ) => Promise<Conversation | undefined>;
+  declare private runtimeForConversation: (
+    conv: Conversation | undefined,
+  ) => Promise<string>;
+  declare private releaseIdleFailedRuntimes: () => Promise<void>;
 
   /* ------------------------- #346 idle reaper ------------------------- */
 
@@ -674,7 +863,7 @@ export class Harness {
 
   /* ------------------------- engine -> relay ---------------------------- */
 
-  declare private onEngineEvent: (event: EngineEvent) => void;
+  declare private onEngineEvent: (event: EngineEvent, runtime?: string) => void;
 
   /* --------------------------- relay -> engine -------------------------- */
 
@@ -696,6 +885,7 @@ export class Harness {
    (`declare` fields above are the type-level half for the few the class
    itself calls.) */
 Object.assign(Harness.prototype, {
+  agentsListMerged,
   aliasSurfaces,
   applyHeldPick,
   applyReplay,
@@ -767,8 +957,12 @@ Object.assign(Harness.prototype, {
   wireScheduler,
   reconcileAsks,
   relayWrite,
+  releaseIdleFailedRuntimes,
   resolveEmployee,
   resyncBinding,
+  runtimeFailedFor,
+  runtimeFailureDetail,
+  runtimeForConversation,
   rewindConversation,
   scheduleSteerReconcile,
   sendCanProduceTurn,

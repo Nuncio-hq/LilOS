@@ -23,15 +23,29 @@ import {
  * `Object.assign` at the bottom of `../harness.ts`.
  */
 
-export function onEngineEvent(this: HarnessCtx, event: EngineEvent) {
+/**
+ * D-#761: every engine event arrives tagged with its runtime (the attach
+ * closes over it). The session lookup key is qualified the same way —
+ * two engines may both hold a session "s-1" and only the owner's
+ * conversation may claim the event.
+ */
+export function onEngineEvent(
+  this: HarnessCtx,
+  event: EngineEvent,
+  runtime: string = "hermes",
+) {
+  /* Feed + relay see the QUALIFIED ref — a client that resolves the
+     conversation's engineRef must never match a different engine's
+     same-named session. */
+  const qualified = this.sessionKey(runtime, event.sessionId);
   for (const fn of this.feedListeners) {
     try {
-      fn(event);
+      fn({ ...event, sessionId: qualified });
     } catch {
       // a feed subscriber must never break event dispatch
     }
   }
-  const convId = this.conversationBySession.get(event.sessionId);
+  const convId = this.conversationBySession.get(qualified);
   /* Live stream for paired phones (D-#157): every engine event of a
      conversation-bound session is re-published on the relay, which
      re-emits it on the conversation's channel. Errors are swallowed —
@@ -40,7 +54,7 @@ export function onEngineEvent(this: HarnessCtx, event: EngineEvent) {
     this.opts.relay
       .request("engine.event", {
         conversationId: convId,
-        sessionId: event.sessionId,
+        sessionId: qualified,
         event,
       })
       .catch(() => {});
@@ -119,7 +133,7 @@ export function onEngineEvent(this: HarnessCtx, event: EngineEvent) {
           conversationId: convId,
         });
         binding.stopRequested = true;
-        const conn = this.engine;
+        const conn = this.connFor(binding);
         if (conn)
           void conn
             .request("interrupt", { sessionId: binding.sessionId })
@@ -152,7 +166,7 @@ export function onEngineEvent(this: HarnessCtx, event: EngineEvent) {
            Interrupt the turn the ghost alone created instead of running
            removed text. */
         if (this.dismissed.has(event.payload.ref)) {
-          const conn = this.engine;
+          const conn = this.connFor(binding);
           if (conn) {
             void conn
               .request("interrupt", { sessionId: binding.sessionId })
@@ -192,7 +206,7 @@ export function onEngineEvent(this: HarnessCtx, event: EngineEvent) {
          conversation title — a host "auto" write, so the relay drops it
          atomically once the row is user-named; the metaSeen check just
          skips a doomed write when we've already seen the rename. */
-      if (!binding || !this.hasAutoTitle()) break;
+      if (!binding || !this.hasAutoTitleFor(binding.runtime)) break;
       if (this.metaSeen.get(binding.conversationId)?.titleSource === "user")
         break;
       this.updateConversation(binding.conversationId, {
@@ -370,7 +384,7 @@ export function onEngineEvent(this: HarnessCtx, event: EngineEvent) {
         resumeStuckWatch(this, binding);
       }
       void this.onEngineRequestResolved(
-        event.sessionId,
+        qualified,
         event.payload.requestId,
         event.payload.outcome,
         event.payload.answer,
@@ -382,7 +396,7 @@ export function onEngineEvent(this: HarnessCtx, event: EngineEvent) {
         // conversation's engineRef stays the stable engine session id —
         // clients resolve it through the feed (`events.since`, live
         // `event.sessionId`), which never sees runtime refs.
-        binding.ref = event.payload.ref;
+        binding.ref = this.sessionKey(runtime, event.payload.ref);
         /* The rotated ref IS the engine's stored session id — keep the
            gateway alias current so plugin calls resolve this scope. */
         binding.engineSessionId = event.payload.ref;
@@ -502,7 +516,7 @@ async function explainFallback(
     dedupeKey: string;
   },
 ) {
-  const rows = await catalogRows(ctx);
+  const rows = await catalogRows(ctx, binding);
   const names = fallbackNames(
     rows,
     o.fromId,
@@ -517,17 +531,24 @@ async function explainFallback(
   );
 }
 
-function catalogRows(ctx: HarnessCtx): Promise<readonly CatalogRow[]> {
-  if (!ctx.modelCatalog) {
-    const conn = ctx.engine;
-    ctx.modelCatalog = conn
+/* D-#761: the catalog is per-engine — a fallback note on `acp:devin`
+   reads Devin's models, not the default engine's. */
+function catalogRows(
+  ctx: HarnessCtx,
+  binding: SessionBinding,
+): Promise<readonly CatalogRow[]> {
+  let p = ctx.modelCatalogs.get(binding.runtime);
+  if (!p) {
+    const conn = ctx.connFor(binding);
+    p = conn
       ? conn
           .request<{ models?: CatalogRow[] }>("models.list", {})
           .then((r) => r.models ?? [])
           .catch(() => [])
       : Promise.resolve([]);
+    ctx.modelCatalogs.set(binding.runtime, p);
   }
-  return ctx.modelCatalog;
+  return p;
 }
 
 /** Catalog names. Identical names on two routes get the provider, and

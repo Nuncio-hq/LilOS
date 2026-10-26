@@ -43,6 +43,7 @@ import {
   PushPrefs,
   RecentFolder,
   RespondTo,
+  RuntimeStatusRow,
   Timestamp,
   TurnFailure,
   WorkbenchOpenTarget,
@@ -349,15 +350,27 @@ export type EnginePassthroughMethod =
 /** Params schema per passthrough method, for the relay's validate-then-forward gate. */
 export const ENGINE_PASSTHROUGH_PARAMS = {
   "agents.list": AgentsListParams,
-  "agents.describe": AgentsDescribeParams,
-  "agents.create": AgentsCreateParams,
-  "agents.update": AgentsUpdateParams,
-  "models.list": ModelsListParams,
+  /* D-#761: `runtime` is an app→harness routing hint (which engine answers
+     the call), never forwarded to the engine — the harness strips it. */
+  "agents.describe": AgentsDescribeParams.extend({
+    runtime: z.string().min(1).optional(),
+  }),
+  "agents.create": AgentsCreateParams.extend({
+    runtime: z.string().min(1).optional(),
+  }),
+  "agents.update": AgentsUpdateParams.extend({
+    runtime: z.string().min(1).optional(),
+  }),
+  "models.list": ModelsListParams.extend({
+    runtime: z.string().min(1).optional(),
+  }),
   "jobs.list": JobsListParams,
   "jobs.stop": JobsStopParams,
   "approvals.setPolicy": ApprovalsSetPolicyParams,
   "session.ask": SessionAskParams,
-  "commands.list": CommandsListParams,
+  "commands.list": CommandsListParams.extend({
+    runtime: z.string().min(1).optional(),
+  }),
   "session.compact": SessionCompactParams,
 } as const satisfies Record<EnginePassthroughMethod, z.ZodType>;
 
@@ -427,6 +440,9 @@ export const EmployeePatch = z.object({
   muted: z.boolean().optional(),
   /** An employee id, or null to report to the owner again (D-#775). */
   reportsTo: z.string().min(1).nullable().optional(),
+  /* D-#761: re-point the agent's threads at another runtime. Absent leaves
+     the stored runtime; the default id restores the default engine. */
+  runtime: z.string().min(1).optional(),
 });
 export type EmployeePatch = z.infer<typeof EmployeePatch>;
 
@@ -439,6 +455,8 @@ export const EmployeesCreateParams = z.object({
   now: z.string().default(""),
   instructions: z.string().default(""),
   respondTo: RespondTo.default("me"),
+  /* D-#761: the hire-time runtime pick — absent = the default engine. */
+  runtime: z.string().min(1).optional(),
 });
 export type EmployeesCreateParams = z.infer<typeof EmployeesCreateParams>;
 /** Caller-facing shape: `.default()` fields are optional on the wire. */
@@ -1079,6 +1097,9 @@ export const SystemStatusResult = z.object({
   /** Per-profile LilOS connection rows (#339) — absent when the host never
      reported them (engine without connect support, older harness). */
   connect: z.array(ProfileConnection).optional(),
+  /** D-#761: the harness's engine-runtime roster — the hire flow offers a
+      runtime when its row reports `available`. */
+  runtimes: z.array(RuntimeStatusRow).optional(),
   logs: z
     .object({
       relay: z.array(z.string()),
@@ -1156,6 +1177,9 @@ export const HarnessStatusReport = z.object({
   logTail: z.array(z.string()).max(200).optional(),
   /** Per-profile Connect rows (#339) — served verbatim on `system.status`. */
   connect: z.array(ProfileConnection).optional(),
+  /** D-#761: every engine runtime the harness knows (default plus lazily
+      started coding runtimes), served verbatim on `system.status`. */
+  runtimes: z.array(RuntimeStatusRow).optional(),
 });
 export type HarnessStatusReport = z.infer<typeof HarnessStatusReport>;
 
@@ -1164,6 +1188,9 @@ export const HarnessReportParams = z.object({
   engine: z.object({
     state: z.enum(["starting", "running", "restarting", "failed", "stopped"]),
     detail: z.string().optional(),
+    /* D-#761: which runtime this row reports — absent = the default
+       engine; the relay keys non-default rows under `host.engines`. */
+    runtime: z.string().min(1).optional(),
   }),
   status: HarnessStatusReport.optional(),
 });
@@ -1777,7 +1804,12 @@ export type PairingExchangeError = z.infer<typeof PairingExchangeError>;
 export const HostChangedEvent = z.object({
   connected: z.boolean(),
   engine: z
-    .object({ state: EngineHostState, detail: z.string().optional() })
+    .object({
+      state: EngineHostState,
+      detail: z.string().optional(),
+      /* D-#761: absent = the default engine; otherwise the runtime id. */
+      runtime: z.string().min(1).optional(),
+    })
     .optional(),
 });
 export type HostChangedEvent = z.infer<typeof HostChangedEvent>;

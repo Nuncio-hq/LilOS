@@ -118,7 +118,12 @@ function ProfileForm({
     if (!act.hireProfile || !trimmed || hiring.current) return;
     hiring.current = true;
     act
-      .hireProfile({ profile: profile.id, name: trimmed, role: role.trim() })
+      .hireProfile({
+        profile: profile.id,
+        name: trimmed,
+        role: role.trim(),
+        runtime: profile.runtime,
+      })
       .then((id) => {
         go({ page: "people" });
         go({ page: "agent", id });

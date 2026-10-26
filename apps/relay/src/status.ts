@@ -271,6 +271,9 @@ export function buildSystemStatus(input: StatusInput): SystemStatusResult {
     engine,
     mismatch,
     ...(host?.status?.connect ? { connect: host.status.connect } : {}),
+    /* D-#761: the runtime roster rides verbatim — the hire flow offers a
+       non-default runtime only when its row reports `available`. */
+    ...(host?.status?.runtimes ? { runtimes: host.status.runtimes } : {}),
   };
   if (logLines > 0) {
     result.logs = {
