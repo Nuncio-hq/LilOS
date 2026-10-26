@@ -46,16 +46,20 @@ const KIND_OUTCOMES: Record<string, ApprovalOption> = {
   reject_always: "deny",
 };
 
-/** Option ids that switch the session's permission mode or clear its
-   context — never a valid answer, never an offered outcome. Claude's
-   ExitPlanMode card lists every mode change under kind `allow_always`
-   (`exit-plan-clear-auto` first), so an "Always" answer picked by kind
-   reset Claude's context and switched the session to `auto` — Claude
-   then approved its own tools and no asks reached Oscar even under an
-   Ask pill (r8). The only affirmative keeping mode `default` is
-   `exit-plan-default` ("Yes, manually approve edits"); the family
-   pattern covers the clear-context and mode variants it ships now and
-   any the adapter adds later. */
+/** Option ids that turn the answer into a session-mode switch or a
+   context clear instead of a grant — never a valid answer, never an
+   offered outcome. Claude's ExitPlanMode card lists every mode change
+   under kind `allow_always` (`exit-plan-clear-auto` first), so an
+   "Always" answer picked by kind reset Claude's context and switched
+   the session to `auto` — Claude then approved its own tools and no
+   asks reached Oscar even under an Ask pill (r8). The only
+   affirmative keeping mode `default` is `exit-plan-default` ("Yes,
+   manually approve edits"); the family pattern covers the
+   clear-context and mode variants it ships now and any the adapter
+   adds later. A real durable grant is NOT excluded: on a file-edit
+   card, Always → `allow-with-updates` may bump the session to
+   acceptEdits (edits auto-accept, shell still asks) — that IS what
+   Always means for edits (r9 nit). */
 const MODE_CHANGING_OPTION = /^exit-plan-(?!default$)/;
 
 /** Canonical optionIds tried first per outcome, before any fallback. */

@@ -107,12 +107,13 @@ export class AcpConnection {
   /** A session-creating RPC that outlived its bound and is still in
      flight. While it is, another `session/new` would stack a second
      agent child behind the same wedge — subsequent creates FROM THAT
-     CALLER (`new:<cwd>` / `load:<sessionId>`) fail fast with the same
-     error instead, while other conversations create normally, each
-     with its own bound (r7 nit, r8 keying: one global guard had B's
-     wedge refusing healthy C starts and suspended-A resumes on the
-     shared adapter). Entries clear when their RPC settles; teardown
-     drops them with the process. */
+     CALLER (`new:<callerKey>` / `load:<sessionId>`) fail fast with the
+     same error instead, while other callers create normally, each
+     with its own bound (r7 nit; r8 scoped the guard per key; r9 made
+     the new key the caller's stable id — cwd keying still blocked
+     conversations sharing a folder, every folderless chat `~`
+     included). Entries clear when their RPC settles; teardown drops
+     them with the process. */
   private readonly wedgedCreates = new Map<
     string,
     { req: Promise<unknown>; message: string }
@@ -355,15 +356,24 @@ export class AcpConnection {
       mcpServers?: acp.McpServer[];
       meta?: Record<string, unknown>;
     },
-    opts?: { timeoutMs?: number; armWedge?: boolean },
+    opts?: {
+      timeoutMs?: number;
+      armWedge?: boolean;
+      /** The caller's stable identity — the conversation id. r9: the
+         wedge key, so one conversation's wedged start blocks only its
+         own retries, never another conversation's start in the same
+         folder. Absent = the cwd stands in (unkeyed callers). */
+      callerKey?: string;
+    },
   ): Promise<acp.NewSessionResponse> {
     if (!this.conn) throw new Error("connection closed");
-    /* r7 nit + r8: a wedged create from THIS caller (same cwd → same
-       conversation) is still in flight — another session/new would
-       stack a second child behind it. Fail fast before the wire call,
-       with the same error, until the wedged RPC settles. Other
-       callers' keys are untouched — they create normally. */
-    const wedged = this.wedgedCreates.get(`new:${p.cwd}`);
+    /* r7 nit + r8/r9: a wedged create from THIS caller is still in
+       flight — another session/new on the same key would stack a
+       second child behind it. Fail fast before the wire call, with
+       the same error, until the wedged RPC settles. Other callers'
+       keys are untouched — they create normally. */
+    const key = `new:${opts?.callerKey ?? p.cwd}`;
+    const wedged = this.wedgedCreates.get(key);
     if (wedged) throw new Error(wedged.message);
     const req = this.conn.newSession({
       cwd: p.cwd,
@@ -376,7 +386,7 @@ export class AcpConnection {
       ms,
       () => `agent did not answer session/new in ${ms}ms`,
       opts?.armWedge !== false,
-      `new:${p.cwd}`,
+      key,
     );
   }
 

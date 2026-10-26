@@ -113,20 +113,28 @@ describe("wedged agent containment (D-#866)", () => {
     }
   });
 
-  test("a wedge blocks only its own caller — other conversations create and suspended sessions resume (r8)", {
+  test("a wedge blocks only its own caller — other conversations create and suspended sessions resume (r8+r9)", {
     timeout: 30_000,
   }, async () => {
-    /* The reviewer's wedge-block.ts: B's wedged session/new must not
-       poison the shared adapter for anyone else. A healthy C creates
-       normally, suspended A resumes via session/load — each with its
-       own bound — while only B's own retry fails fast. The r7 global
-       guard failed both with B's error + the folder hint. */
-    const engine = make({ LILOS_FAKE_HANG_CWD: "/tmp/wedged-cwd" });
+    /* The reviewer's wedge-block.ts + samecwd-block.ts: B's wedged
+       session/new must not poison the shared adapter for anyone else —
+       not even a conversation in the SAME folder (r9: every folderless
+       chat shares `~`). C creates normally under its own callerKey,
+       suspended A resumes via session/load, and only B's own retry
+       fails fast. HANG_ONCE limits the fake's wedge to B's call so
+       C's same-cwd new would answer — the guard alone decides. */
+    const dir = mkdtempSync(join(tmpdir(), "acp-wedge-"));
+    const sentinel = join(dir, "hang-once");
+    const engine = make({
+      LILOS_FAKE_HANG_CWD: "/tmp/shared-repo",
+      LILOS_FAKE_HANG_ONCE: sentinel,
+    });
     try {
       await engine.dispatch("describe", {});
       const a = (await engine.dispatch("session.start", {
         agent: "x",
         cwd: "/tmp/healthy-cwd",
+        callerKey: "conv-a",
       })) as { sessionId: string };
       const t1 = (await engine.dispatch("prompt", {
         sessionId: a.sessionId,
@@ -137,18 +145,20 @@ describe("wedged agent containment (D-#866)", () => {
       await expect(
         engine.dispatch("session.start", {
           agent: "x",
-          cwd: "/tmp/wedged-cwd",
+          cwd: "/tmp/shared-repo",
+          callerKey: "conv-b",
         }),
       ).rejects.toThrow(/did not answer session\/new/);
       /* Suspend A: its next prompt re-creates via session/load on the
          same adapter — under a `load:<id>` key, untouched by B's
-         `new:<cwd>` wedge. */
+         `new:conv-b` wedge. */
       await engine.dispatch("session.suspend", { sessionId: a.sessionId });
-      /* C — a different caller key — creates normally on the same
-         adapter while B's RPC is still wedged. */
+      /* r9: C — a different conversation in the SAME folder — creates
+         normally; cwd keying would have inherited B's wedge here. */
       const c = (await engine.dispatch("session.start", {
         agent: "x",
-        cwd: "/tmp/third-cwd",
+        cwd: "/tmp/shared-repo",
+        callerKey: "conv-c",
       })) as { sessionId: string };
       expect(c.sessionId).toMatch(/^s-/);
       const aTurn = (await engine.dispatch("prompt", {
@@ -167,12 +177,14 @@ describe("wedged agent containment (D-#866)", () => {
       await expect(
         engine.dispatch("session.start", {
           agent: "x",
-          cwd: "/tmp/wedged-cwd",
+          cwd: "/tmp/shared-repo",
+          callerKey: "conv-b",
         }),
       ).rejects.toThrow(/did not answer session\/new/);
       expect(Date.now() - t0).toBeLessThan(TIMEOUT);
     } finally {
       await engine.close();
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 

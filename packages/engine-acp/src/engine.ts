@@ -461,7 +461,14 @@ export class AcpEngine {
           mcpServers: (p.mcpServers ?? []).map(toAcpMcp),
           ...(this.opts.sessionMeta ? { meta: this.opts.sessionMeta(p) } : {}),
         },
-        { timeoutMs: left() },
+        {
+          timeoutMs: left(),
+          /* r9: the caller's stable identity scopes the wedge guard —
+             retries of THIS conversation's start fail fast; another
+             conversation in the same folder creates normally (cwd
+             keying had them share the wedge — the samecwd repro). */
+          ...(p.callerKey ? { callerKey: p.callerKey } : {}),
+        },
       )
       .catch(async (e) => {
         await this.reapWedgedCreate(conn, e);
@@ -476,6 +483,9 @@ export class AcpEngine {
       this.opts.eventLogCap,
     );
     s.acpSessionId = res.sessionId;
+    /* Resume's session/new fallback keys on the same caller so its own
+       retries still can't stack (r9). */
+    s.callerKey = p.callerKey ?? id;
     s.access = p.access;
     this.sessions.set(id, s);
     this.learnSession(s, res);
@@ -1104,10 +1114,15 @@ export class AcpEngine {
     }
     if (!res) {
       const created = await conn
-        .newSession({
-          cwd: s.cwd,
-          ...(meta ? { meta } : {}),
-        })
+        .newSession(
+          {
+            cwd: s.cwd,
+            ...(meta ? { meta } : {}),
+          },
+          /* Same caller key the start used — this session's own
+             retries still fail fast under a wedge. */
+          { callerKey: s.callerKey },
+        )
         .catch(async (e) => {
           await this.reapWedgedCreate(conn, e, s);
           throw e;

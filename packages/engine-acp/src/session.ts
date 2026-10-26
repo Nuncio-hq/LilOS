@@ -51,6 +51,11 @@ export class AcpSession implements AcpSessionView {
   acpSessionId = "";
   /** Suspended LilOS-side: the next prompt resumes/reattaches (#346). */
   suspended = false;
+  /** The caller's stable key for the wedged-create guard — the
+     conversation id when session.start carried one, else this LilOS
+     id (r9: cwd keying cross-blocked conversations sharing a folder
+     — every folderless chat sits in `~`). */
+  callerKey = "";
   /** The session's live config-option table (from its own session/new). */
   configOptions = new Map<
     string,
