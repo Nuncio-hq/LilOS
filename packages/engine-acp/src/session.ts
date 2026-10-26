@@ -62,6 +62,10 @@ export class AcpSession implements AcpSessionView {
   model?: string;
   effort?: string;
   fast?: boolean;
+  /** D-#846: the pick the user/defaults requested and the live session
+     took — fields that actually wrote land here so a suspend/resume can
+     re-apply them (a reloaded ACP session may return to agent defaults). */
+  pick?: { model?: string; effort?: string; fast?: boolean };
   /** Steers accepted mid-turn — pumped as the next prompt, FIFO (#308). */
   steeredQueue: { text: string; ref?: string }[] = [];
   /** session.setTitle writes here — outranks every later titled upgrade. */
