@@ -133,6 +133,9 @@ async function boot(): Promise<Procs> {
         LILOS_ENGINE_WS: `ws://127.0.0.1:${PORTS.feed}/ws`,
         LILOS_WEB_PORT: String(PORTS.web),
         LILOS_VITE_CACHE_DIR: `node_modules/.vite-ac557-w${WORKER}`,
+        // D-#836: this spec boots vite by hand — bootStack's company-layer
+        // default doesn't reach it, so it opts the layer in itself.
+        LILOS_COMPANY: "1",
       },
       stdio: ["ignore", "pipe", "pipe"],
     },
