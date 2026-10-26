@@ -14,8 +14,9 @@ import { makeActions } from "./v3-engine/actions"
    open in the side peek) · &full=1 widens the peek (a thread becomes a
    session: chat left, its work right) · /?page=work&view=board ·
    /?page=settings&view=phone · /?page=welcome (first run) ·
-   /?page=people&open=agent:scout,newchat:scout · &theme=dark|light. A bare record link
-   (/?page=ticket&id=HB-12) opens it over the page that lists it. A leading
+   /?page=people&open=agent:scout,newchat:scout · &theme=dark|light. A record
+   link (/?page=project&id=lilos, /?page=ticket&id=HB-12) makes the record
+   the page itself — what the sidebar and ⌘K produce (D-#863). A leading
    `v3` flag (old links: ?v3&page=…) is the same screen and is kept as is.
    The mock company state lives in the shell and resets only on a full reload. */
 const navFromUrl = (): V3Nav => navFromParams(new URLSearchParams(location.search))
