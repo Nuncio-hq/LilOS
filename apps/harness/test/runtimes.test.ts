@@ -621,6 +621,64 @@ describe("EngineRegistry (D-#761)", () => {
     await reg.stop();
   });
 
+  /* #859 CI regression: buildSupervisor used to forward every tunable
+     unconditionally — an unset option landed as an explicit `undefined`
+     and spread over the supervisor's defaults, erasing backoff AND the
+     crash budget (NaN retry delay, crashCount >= undefined never true):
+     the default engine hot-looped forever instead of reaching `failed`,
+     and every engine-status e2e surface stayed "restarting". index.ts
+     passes no tunables, so defaults must survive. */
+  it("with no tunables the supervisor keeps its own crash budget — failed, not a hot loop", async () => {
+    const log = createMemoryLogger();
+    let launches = 0;
+    const reg = new EngineRegistry(
+      [
+        {
+          id: DEFAULT_RUNTIME,
+          label: "engine-fake",
+          launcher: () => {
+            const l = externalEngineLauncher("mem://dead");
+            return {
+              ...l,
+              start: async () => {
+                launches += 1;
+                return l.start();
+              },
+            };
+          },
+        },
+      ],
+      {
+        connect: () => Promise.reject(new Error("engine down")),
+        log,
+        hooks: { onConnection: () => {}, onStateChange: () => {} },
+      },
+    );
+    void reg.start().catch(() => {});
+    /* A hot loop (defaults erased) shows dozens of launches inside the
+       window long before `failed` ever arrives; the real supervisor
+       fails after its default budget of 5. */
+    const outcome = await Promise.race([
+      waitFor(
+        () => (reg.get(DEFAULT_RUNTIME)?.state === "failed" ? true : undefined),
+        "default runtime failed",
+      ).then(() => "failed" as const),
+      waitFor(() => (launches > 8 ? true : undefined), "launch hot loop").then(
+        () => "looping" as const,
+      ),
+    ]);
+    expect(outcome).toBe("failed");
+    expect(launches).toBeLessThanOrEqual(5);
+
+    /* The default runtime keeps main's semantics: demand on a failed row
+       re-drives one bounded attempt on the same supervisor — no
+       cooldown gate (that gate exists for lazily-started coding
+       runtimes, not the engine everyone needs). */
+    await expect(reg.ensure(DEFAULT_RUNTIME)).rejects.toThrow();
+    expect(launches).toBe(6);
+    await reg.stop();
+  }, 30_000);
+
   it("stop rejects parked ensure() waiters", async () => {
     const { reg } = world();
     const p = reg.ensure(DEFAULT_RUNTIME);

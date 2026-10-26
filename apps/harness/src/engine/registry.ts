@@ -61,6 +61,13 @@ export interface RuntimeInstance {
   }[];
 }
 
+/** Drop keys whose value is `undefined` — `{...defaults, ...opts}` treats
+    an explicit undefined as a real value and erases the default. */
+const pickDefined = <T extends object>(o: T): Partial<T> =>
+  Object.fromEntries(
+    Object.entries(o).filter(([, v]) => v !== undefined),
+  ) as Partial<T>;
+
 export class EngineRegistry {
   private instances = new Map<string, RuntimeInstance>();
   private stopped = false;
@@ -155,7 +162,13 @@ export class EngineRegistry {
       }
       return Promise.reject(new Error(inst.detail ?? detail));
     }
-    if (inst.state === "failed") {
+    /* The cooldown gate exists for lazily-started coding runtimes. The
+       default engine keeps main's semantics: demand on a `failed` row
+       falls through to `ensureRunning`, which re-drives ONE bounded
+       attempt on the same supervisor (its crashCount persists past the
+       budget, so the attempt re-fails instantly — bounded, but a
+       transient cause that cleared still gets its retry). */
+    if (inst.state === "failed" && inst.spec.id !== DEFAULT_RUNTIME) {
       const cooldown = this.opts.failedRetryCooldownMs ?? 30_000;
       if (
         inst.failedAt === undefined ||
@@ -199,9 +212,14 @@ export class EngineRegistry {
     this.opts.hooks.onStatusChange?.();
   }
 
-  /** Boot only the default runtime — today's engines-up order, unchanged. */
+  /** Boot only the default runtime — today's engines-up order, unchanged.
+      Drives the supervisor directly (not `ensure`'s waiter path): a boot
+      that lands `failed` resolves here the way `supervisor.start()` did
+      on main — callers never see an unhandled rejection. */
   async start(): Promise<void> {
-    await this.ensure(DEFAULT_RUNTIME);
+    const inst = this.instances.get(DEFAULT_RUNTIME);
+    if (!inst) throw new Error(`unknown runtime "${DEFAULT_RUNTIME}"`);
+    await this.buildSupervisor(inst).start();
   }
 
   /** Stop every started engine; idle rows have nothing to stop. */
@@ -280,14 +298,21 @@ export class EngineRegistry {
       launcher: inst.spec.launcher(),
       connect: opts.connect,
       log: opts.log,
-      minBackoffMs: opts.minBackoffMs,
-      maxBackoffMs: opts.maxBackoffMs,
-      reconnectAttempts: opts.reconnectAttempts,
-      stableAfterMs: opts.stableAfterMs,
-      maxConsecutiveCrashes: opts.maxConsecutiveCrashes,
-      probeIntervalMs: opts.probeIntervalMs,
-      probeTimeoutMs: opts.probeTimeoutMs,
-      probeMissesBeforeRestart: opts.probeMissesBeforeRestart,
+      /* Optional tunables reach the supervisor ONLY when set — an
+         explicit `undefined` key spreads over the supervisor's own
+         defaults and erases them (NaN backoff + no crash budget → an
+         instant, endless retry loop that never reports `failed` — the
+         #859 e2e regressions). index.ts passes none of these. */
+      ...pickDefined({
+        minBackoffMs: opts.minBackoffMs,
+        maxBackoffMs: opts.maxBackoffMs,
+        reconnectAttempts: opts.reconnectAttempts,
+        stableAfterMs: opts.stableAfterMs,
+        maxConsecutiveCrashes: opts.maxConsecutiveCrashes,
+        probeIntervalMs: opts.probeIntervalMs,
+        probeTimeoutMs: opts.probeTimeoutMs,
+        probeMissesBeforeRestart: opts.probeMissesBeforeRestart,
+      }),
       onConnection: (conn, reconnect, gapCause) => {
         inst.conn = conn;
         /* A live conn clears the recorded failure — a released row that

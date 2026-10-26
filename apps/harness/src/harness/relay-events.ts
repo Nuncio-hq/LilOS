@@ -75,7 +75,7 @@ export function onRelayEvent(
            events — drop them here or they fire `channels.openDm` on a dead
            employee every tick until restart. */
         this.scheduler.removeEmployeeTasks(parsed.data.employeeId);
-        for (const [taskId, convId] of this.scheduledRunsInFlight) {
+        for (const taskId of this.scheduledRunsInFlight.keys()) {
           if (this.scheduler.getTask(taskId) === undefined)
             this.scheduledRunsInFlight.delete(taskId);
         }

@@ -10,16 +10,6 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { systemClock, watchOrphaned, watchWake } from "@lilos/background";
 import { RelayClient } from "@lilos/client-runtime";
-import type {
-  AppMessage,
-  Conversation,
-  ConversationSummary,
-  Employee,
-  MessageSearchHit,
-  ProfileSettings,
-  ScheduledTask,
-  SystemStatusResult,
-} from "@lilos/contracts/app";
 import { createCheckpointStore } from "@lilos/host";
 import { SURFACES_ENV } from "@lilos/surfaces";
 import packageJson from "../package.json";
