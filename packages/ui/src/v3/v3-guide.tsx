@@ -4,7 +4,7 @@ import { Page, Section, span, Title } from "./v3-bits";
 import { Statuses } from "./v3-guide-bits";
 import { V3GuideToday } from "./v3-guide-today";
 import { ThreadPill } from "./v3-live";
-import { AgentAvatar, StatusPill } from "./v3-marks";
+import { AgentAvatar, STATUS_WORD, StatusDot, StatusPill } from "./v3-marks";
 import {
   agentNameOf,
   agentOf,
@@ -180,7 +180,16 @@ function V3GuideTickets({ data, go }: V3PageProps) {
                       {turns > 0 &&
                         ` · ${turns} ${turns === 1 ? "turn" : "turns"}`}
                     </span>
-                    <ThreadPill status={t.status} />
+                    {/* Filled pills are Needs you and Failed only (D-#868);
+                        every other hop reads as a dot and its word. */}
+                    {t.status === "needs" || t.status === "failed" ? (
+                      <ThreadPill status={t.status} />
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 text-[12.5px] text-muted-foreground">
+                        <StatusDot status={t.status} />
+                        {STATUS_WORD[t.status]}
+                      </span>
+                    )}
                   </button>
                 </div>
               );
@@ -197,7 +206,10 @@ function V3GuideTickets({ data, go }: V3PageProps) {
         <Lbl>you answer →</Lbl>
         <StatusPill status="working" />
         <Lbl>answers →</Lbl>
-        <ThreadPill status="done" />
+        {/* "Finished" reads as a dot — filled pills are Needs you and
+            Failed only (D-#868). */}
+        <StatusDot status="done" />
+        <Lbl>Finished</Lbl>
         <Lbl>30 min quiet →</Lbl>
         <StatusPill status="idle" />
         <Lbl>next message → back to Working, same memory</Lbl>

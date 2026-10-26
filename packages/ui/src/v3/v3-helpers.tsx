@@ -74,8 +74,12 @@ export function HelperRow({
           <span className="text-muted-foreground"> · {t.title}</span>
         </span>
       </span>
+      {/* Filled pills are Needs you and Failed only (D-#868): every other
+          state reads from the dot — or the spinner — at the row's left. */}
       <span className="hidden shrink-0 @min-[440px]:block">
-        <ThreadPill status={t.status} />
+        {(t.status === "needs" || t.status === "failed") && (
+          <ThreadPill status={t.status} />
+        )}
       </span>
       <span className="w-10 shrink-0 text-right text-[12.5px] text-muted-foreground">
         {ago(t.minutes)}
