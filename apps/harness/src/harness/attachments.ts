@@ -1,11 +1,5 @@
 import { execFile } from "node:child_process";
-import {
-  appendFileSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  writeFileSync,
-} from "node:fs";
+import { promises as fsp } from "node:fs";
 import { basename, dirname, extname, join, resolve } from "node:path";
 
 /**
@@ -39,18 +33,21 @@ export function attachmentDir(
 
 /** Decode one attachment into the session's attachment dir; returns the
     absolute path. Names collide-suffix (`-1`, `-2`, …) so a resend or a
-    same-name file never clobbers a file an earlier turn read. */
-export function saveAttachment(opts: {
+    same-name file never clobbers a file an earlier turn read.
+    Async (D-#875): the cwd may sit in a macOS-protected folder — the sync
+    `existsSync`/`writeFileSync` this used to run would park the whole
+    harness event loop on the consent wall; pending promises don't. */
+export async function saveAttachment(opts: {
   cwd: string;
   hasFolder: boolean;
   stateDir: string;
   name: string;
   dataBase64: string;
-}): { path: string } {
+}): Promise<{ path: string }> {
   const dir = attachmentDir(opts.cwd, opts.hasFolder, opts.stateDir);
-  mkdirSync(dir, { recursive: true });
+  await fsp.mkdir(dir, { recursive: true });
   const bytes = Buffer.from(opts.dataBase64, "base64");
-  const path = uniquePath(dir, safeName(opts.name));
+  const path = await uniquePath(dir, safeName(opts.name));
   /* A re-dispatched send (transport re-queue) decodes the same bytes
      again — reuse an identical earlier copy instead of littering
      stem-1, stem-2, … for files nobody new read. */
@@ -59,10 +56,11 @@ export function saveAttachment(opts: {
   const stem = name.slice(0, name.length - ext.length) || "attachment";
   for (let i = 0; ; i++) {
     const candidate = join(dir, i === 0 ? name : `${stem}-${i}${ext}`);
-    if (!existsSync(candidate)) break;
-    if (readFileSync(candidate).equals(bytes)) return { path: candidate };
+    if (!(await exists(candidate))) break;
+    const prev = await fsp.readFile(candidate).catch(() => null);
+    if (prev?.equals(bytes)) return { path: candidate };
   }
-  writeFileSync(path, bytes);
+  await fsp.writeFile(path, bytes);
   return { path };
 }
 
@@ -90,10 +88,10 @@ export async function excludeFromGit(cwd: string): Promise<void> {
     /* Leading slash anchors the pattern to the repo root — without it the
        line would also shadow a user's own same-named dir at any depth. */
     const line = `/${ATTACHMENT_DIR_NAME}/`;
-    const current = existsSync(exclude) ? readFileSync(exclude, "utf8") : "";
+    const current = await fsp.readFile(exclude, "utf8").catch(() => "");
     if (current.split("\n").includes(line)) return;
-    mkdirSync(dirname(exclude), { recursive: true });
-    appendFileSync(exclude, `${line}\n`);
+    await fsp.mkdir(dirname(exclude), { recursive: true });
+    await fsp.appendFile(exclude, `${line}\n`);
   } catch {
     /* read-only git dir — the file still lands, it just shows as untracked */
   }
@@ -114,14 +112,20 @@ function safeName(raw: string): string {
   return name.length > 100 ? name.slice(0, 100) : name;
 }
 
-function uniquePath(dir: string, name: string): string {
+async function uniquePath(dir: string, name: string): Promise<string> {
   const ext = extname(name);
   const stem = name.slice(0, name.length - ext.length) || "attachment";
   for (let i = 0; ; i++) {
     const candidate = join(dir, i === 0 ? name : `${stem}-${i}${ext}`);
-    if (!existsSync(candidate)) return candidate;
+    if (!(await exists(candidate))) return candidate;
   }
 }
+
+const exists = (p: string) =>
+  fsp.stat(p).then(
+    () => true,
+    () => false,
+  );
 
 /** `1.2 MB`-style size for the prompt's file list. */
 export function humanBytes(bytes: number): string {

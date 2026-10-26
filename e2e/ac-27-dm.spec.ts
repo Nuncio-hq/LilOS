@@ -5,7 +5,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron, expect, type Page, test } from "@playwright/test";
 import { allowAll, allowAllWhile, expectSettled } from "./helpers/approvals";
-import { electronScreenshot, ensureDesktopPayload } from "./helpers/electron";
+import {
+  electronSafeEnv,
+  electronScreenshot,
+  ensureDesktopPayload,
+} from "./helpers/electron";
 import {
   bootStack,
   freePort,
@@ -646,7 +650,7 @@ test("AC-8 `_electron` shell renders the same DM app", async () => {
         ? [desktopDir, "--no-sandbox"]
         : [desktopDir],
     env: {
-      ...process.env,
+      ...electronSafeEnv(),
       LILOS_RELAY_HOME: stackA.home,
       LILOS_RELAY_PORT: portOf(stackA.relayWs),
       LILOS_FEED_PORT: portOf(stackA.feedWs),
@@ -654,6 +658,9 @@ test("AC-8 `_electron` shell renders the same DM app", async () => {
          the web server's; the desktop window's config is the preload's). */
       LILOS_WEB_URL: `${stackA.webUrl}/?company=1`,
       LILOS_STATE_DIR: stateDir,
+      // #875: the folder-access step isn't this test's subject — skip the
+      // OS ask the way a granted install would.
+      LILOS_SKIP_FOLDER_ASK: "1",
     },
   });
   try {

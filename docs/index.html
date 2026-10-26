@@ -262,7 +262,7 @@ packages/engine-*             adapter owning an engine</code></pre>
 <li id="d-539"><b>D-#539</b> Bundle ships <code>playwright</code> + <code>playwright-core</code> as real files under <code>Resources/app/pw</code>, via <code>createRequire</code> on first browser call. <em>Not: package.json shim, bundling playwright, ~500 MB browser cache in DMG.</em> <small>#539 · PR #540</small> <kbd>apps/harness/src/surfaces/browser.ts</kbd></li>
 <li id="d-232"><b>D-#232</b> Native chrome: <code>hiddenInset</code> + sidebar vibrancy; renderer owns drag regions (<code>lilos-drag</code>); one 52px toolbar row. <em>Not: framed window, drawn traffic lights, a second header row.</em> <small>#232 · #797</small> <kbd>apps/desktop/src/window-chrome.ts</kbd></li>
 <li id="d-215"><b>D-#215</b> LilOS Browser pages: main process, one <code>WebContentsView</code> per tab on <code>persist:lilos-browser</code>; renderers are chrome: one state snapshot. <em>Not: <code>&lt;webview&gt;</code>, window per tab, browser state via relay.</em> <small>#215 · PR #735</small> <kbd>apps/desktop/src/browser.ts</kbd></li>
-<li id="d-875"><b>D-#875</b> Desktop asks for Desktop/Documents/Downloads up front; every host probe touching them is bounded (SIGKILL) → FOLDER_ACCESS. <em>Not: launchd-side prompts, unbounded reads.</em> <small>#875</small> <kbd>apps/desktop/src/folder-access.ts</kbd></li>
+<li id="d-875"><b>D-#875</b> Desktop asks for Desktop/Documents/Downloads up front; host probes touching them are bounded → FOLDER_ACCESS after a 1s readdir confirm. <em>Not: launchd-side prompts, time-limited writes.</em> <small>#875 PR #879</small> <kbd>apps/desktop/src/folder-access.ts</kbd></li>
 </ul>
 <h3 id="decisions-mobile">Mobile</h3>
 <ul class="decisions">

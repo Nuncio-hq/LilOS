@@ -47,6 +47,9 @@ for (const theme of ["light", "dark"] as const) {
     await expect(
       page.getByRole("button", { name: /system settings/i }),
     ).toBeVisible();
+    /* The page's 0.25s lilos-v3-line-in fade must finish first — the shot
+       otherwise catches it mid-fade (review round 1, should-fix 10). */
+    await page.waitForTimeout(400);
     await shot("folder-access-banner");
   });
 }

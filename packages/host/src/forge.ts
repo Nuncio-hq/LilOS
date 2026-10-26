@@ -1,4 +1,3 @@
-import { homedir } from "node:os";
 import type {
   ForgeCommentResult,
   ForgeCreateParams,
@@ -13,8 +12,6 @@ import type {
   ForgePrsResult,
   ForgePullRequest,
 } from "@lilos/contracts/host";
-import { protectedFolderOf } from "@lilos/contracts/host";
-import { asAccessError, bounded, probeTimeoutMs } from "./access.js";
 import { HOST_ERRORS, HostError } from "./errors.js";
 import { run } from "./exec.js";
 import { repoRoot } from "./git.js";
@@ -93,31 +90,11 @@ function ghFailed(e: unknown): HostError {
   });
 }
 
-/* `gh` reads the repo it's spawned in — a consent-blocked open() there
-   hangs the same as git's (D-#875), so it gets a bound too; 1 min is what
-   a slow PR fetch needs, never forever. */
-const GH_TIMEOUT_MS = 60_000;
-
 async function gh(cwd: string, args: string[]): Promise<string> {
   try {
-    const { stdout } = await run("gh", args, {
-      cwd,
-      maxBuffer: MAX_BUFFER,
-      timeout: GH_TIMEOUT_MS,
-      killSignal: "SIGKILL",
-    });
+    const { stdout } = await run("gh", args, { cwd, maxBuffer: MAX_BUFFER });
     return stdout;
   } catch (e) {
-    /* Same rule as git() (D-#875): a consent signature inside a protected
-       folder reports FOLDER_ACCESS, a killed child elsewhere is gh's own
-       failure (a hung network read is not a folder prompt). */
-    const access = asAccessError(e, cwd);
-    if (
-      access &&
-      (protectedFolderOf(cwd, homedir()) || !(e as { killed?: boolean }).killed)
-    ) {
-      throw access;
-    }
     throw ghFailed(e);
   }
 }
@@ -283,19 +260,9 @@ export async function forgePr(params: ForgePrParams): Promise<ForgePrResult> {
     );
   }
   const [branch, pr] = await Promise.all([
-    bounded(
-      run("git", ["symbolic-ref", "--short", "HEAD"], {
-        cwd: root,
-        timeout: probeTimeoutMs(),
-        killSignal: "SIGKILL",
-      }),
-      root,
-    )
+    run("git", ["symbolic-ref", "--short", "HEAD"], { cwd: root })
       .then(({ stdout }) => stdout.trim())
-      .catch((e) => {
-        if (e instanceof HostError) throw e;
-        return null;
-      }),
+      .catch(() => null),
     viewPr(root, params.number),
   ]);
   return { root: collapsePath(root), branch, pr };
@@ -373,19 +340,11 @@ export async function forgePrs(
   params: ForgePrsParams,
 ): Promise<ForgePrsResult> {
   const root = await repoOrThrow(params.path);
-  const current = await bounded(
-    run("git", ["symbolic-ref", "--short", "HEAD"], {
-      cwd: root,
-      timeout: probeTimeoutMs(),
-      killSignal: "SIGKILL",
-    }),
-    root,
-  )
+  const current = await run("git", ["symbolic-ref", "--short", "HEAD"], {
+    cwd: root,
+  })
     .then(({ stdout }) => stdout.trim())
-    .catch((e) => {
-      if (e instanceof HostError) throw e;
-      return null;
-    });
+    .catch(() => null);
   const branches = [
     ...new Set(
       [current, ...(params.branches ?? [])].filter((b): b is string => !!b),

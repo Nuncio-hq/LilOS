@@ -9,9 +9,43 @@ import { atom } from "nanostores";
 
 export const folderAccess = atom<FolderAccessState | null>(null);
 
-/** "Not now" lives only for this window's life — the ask returns next
- *  launch until the folders are granted (they are the app's main job). */
-export const folderAccessDismissed = atom(false);
+/** "Not now" persists across relaunches (a deliberate defer isn't a
+ *  per-window accident); a real FOLDER_ACCESS answer un-defers it —
+ *  something the user just tried needs the access. */
+const NOT_NOW_KEY = "lilos-fa-notnow";
+export const folderAccessDismissed = atom(readFlag(NOT_NOW_KEY));
+
+/** Banner lines the user dismissed — a deliberately denied folder (or one
+ *  that simply doesn't exist on this Mac) shouldn't nag forever. */
+const BANNER_X_KEY = "lilos-fa-banner-x";
+export const folderAccessBannerDismissed = atom<Set<string>>(
+  new Set(readList(BANNER_X_KEY)),
+);
+
+function readFlag(key: string): boolean {
+  try {
+    return localStorage.getItem(key) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function readList(key: string): string[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(key) ?? "[]");
+    return Array.isArray(raw) ? raw.filter((x) => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function write(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    /* private mode — dismissal just lives for this window */
+  }
+}
 
 let watched = false;
 
@@ -33,6 +67,21 @@ export async function askFolderAccess(): Promise<void> {
   if (s) folderAccess.set(s);
 }
 
+/** The step's "Not now" — persisted; the ask doesn't keep returning for
+ *  the same set of folders. */
+export function dismissFolderAccessStep(): void {
+  folderAccessDismissed.set(true);
+  write(NOT_NOW_KEY, "1");
+}
+
+/** Hide the banner for these folders — persisted per folder. */
+export function dismissFolderAccessBanner(names: string[]): void {
+  const next = new Set(folderAccessBannerDismissed.get());
+  for (const n of names) next.add(n);
+  folderAccessBannerDismissed.set(next);
+  write(BANNER_X_KEY, JSON.stringify([...next]));
+}
+
 /** A folder the app just adopted (project add, thread move): keeps its
  *  protected folder in view — pending asks at the step, blocked at the
  *  banner. Fire-and-forget; a bridge miss is nothing. */
@@ -43,6 +92,14 @@ export function ensureFolderAccess(path: string): void {
       if (s) folderAccess.set(s);
     })
     .catch(() => {});
+}
+
+/** A relay/host answer that says a protected folder blocked the call —
+ *  resurface the ask step if it was snoozed: something the user just did
+ *  needs the access (D-#875). Host errors ride `error.data.host`. */
+export function noteFolderAccessError(e: unknown): void {
+  const host = (e as { data?: { host?: { folder?: string } } }).data?.host;
+  if (host?.folder) folderAccessDismissed.set(false);
 }
 
 /** System Settings → Privacy & Security → Files and Folders. */

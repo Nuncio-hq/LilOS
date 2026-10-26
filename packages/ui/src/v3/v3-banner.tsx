@@ -11,11 +11,14 @@ export function V3Banner({
   status,
   text,
   action,
+  dismiss,
 }: {
   /** The status word whose dot leads the line. */
   status: V3Status;
   text: string;
   action?: { label: string; run: () => void };
+  /** An × that hides the line — for states the user can live with. */
+  dismiss?: () => void;
 }) {
   return (
     <div
@@ -34,6 +37,16 @@ export function V3Banner({
           className="shrink-0 rounded-md px-1.5 py-0.5 text-foreground hover:bg-[var(--v3-hover)]"
         >
           {action.label}
+        </button>
+      )}
+      {dismiss && (
+        <button
+          type="button"
+          aria-label="Dismiss"
+          onClick={dismiss}
+          className="shrink-0 rounded-md px-1 py-0.5 text-muted-foreground hover:bg-[var(--v3-hover)] hover:text-foreground"
+        >
+          ×
         </button>
       )}
     </div>

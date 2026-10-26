@@ -143,7 +143,7 @@ export async function dispatchPrompt(
         });
         continue;
       }
-      const saved = saveAttachment({
+      const saved = await saveAttachment({
         cwd: binding.cwd,
         hasFolder: binding.hasFolder,
         stateDir: this.stateDir,

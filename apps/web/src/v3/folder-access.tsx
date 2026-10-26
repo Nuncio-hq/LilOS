@@ -3,7 +3,10 @@ import { useState } from "react";
 import { createPortal } from "react-dom";
 import {
   askFolderAccess,
+  dismissFolderAccessBanner,
+  dismissFolderAccessStep,
   folderAccess,
+  folderAccessBannerDismissed,
   folderAccessDismissed,
   openFolderAccessSettings,
 } from "../lib/folder-access";
@@ -14,20 +17,26 @@ import { useAtom } from "../lib/hooks";
    looking, then `ask()` makes main touch each folder so the real macOS
    prompts rise. The banner is a V3Shell banner row (blocked reads). */
 
-/** Banner row for the shell's `banner` slot — asked folders still blocked. */
+/** Banner row for the shell's `banner` slot — asked folders still blocked
+ *  and not dismissed. */
 export function FolderAccessBannerHost() {
   const state = useAtom(folderAccess);
-  if (!state || state.blocked.length === 0) return null;
+  const dismissed = useAtom(folderAccessBannerDismissed);
+  if (!state) return null;
+  const show = state.blocked.filter((f) => !dismissed.has(f));
+  if (show.length === 0) return null;
   return (
     <FolderAccessBanner
-      folders={state.blocked}
+      folders={show}
       onSettings={openFolderAccessSettings}
+      onDismiss={() => dismissFolderAccessBanner(show)}
     />
   );
 }
 
-/** The ask step — once, until the pending set is empty or dismissed for
- *  this window's life. Draws over any page (first run included). */
+/** The ask step — until the pending set is empty or "Not now" (which
+ *  persists; a real FOLDER_ACCESS error un-defers it). Draws over any page
+ *  (first run included). */
 export function FolderAccessStepHost() {
   const state = useAtom(folderAccess);
   const dismissed = useAtom(folderAccessDismissed);
@@ -41,7 +50,7 @@ export function FolderAccessStepHost() {
         setBusy(true);
         void askFolderAccess().finally(() => setBusy(false));
       }}
-      onLater={() => folderAccessDismissed.set(true)}
+      onLater={dismissFolderAccessStep}
     />,
     document.body,
   );

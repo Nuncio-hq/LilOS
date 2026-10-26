@@ -20,42 +20,62 @@ import {
  * launchd relay/harness reads hang on a prompt nobody can see). The app's
  * ask step names the folders, `ask()` touches each one with a `readdir` so
  * the real "LilOS would like to access files in your Desktop folder" shows
- * while the user is looking, and a refused/still-waiting read marks the
- * folder `blocked` — the banner's System Settings button is the remedy.
+ * while the user is looking.
+ *
+ * A touch is never timed out: the pending read IS the consent answer —
+ * it resolves on grant, rejects (EPERM/EACCES) on denial, and parks while
+ * the prompt is up. Settling whenever it lands is what "accept late
+ * answers" means; a re-check on window focus picks up a grant given in
+ * System Settings. `inflight` keeps each folder to one outstanding read so
+ * repeat checks never pile threads on the same unanswered prompt.
  *
  * `asked` persists (a granted folder stays granted); `blocked` does not —
  * a denied read fails fast, so the boot probe re-derives it cheaply.
- * `LILOS_PROBE_TIMEOUT_MS` shortens the touch bound in tests.
+ * Off macOS the whole surface is empty — no prompts exist to ask for.
  */
 
 export const FOLDER_ACCESS_SETTINGS_URL =
   "x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders";
 
-const probeTimeoutMs = () =>
-  Number(process.env.LILOS_PROBE_TIMEOUT_MS ?? 8_000);
+const IS_MAC = process.platform === "darwin";
 
 interface Persisted {
   asked?: string[];
 }
 
+const EMPTY: FolderAccessState = { pending: [], blocked: [] };
+
 export class FolderAccess {
   private asked = new Set<string>();
   private blocked = new Set<string>();
+  private inflight = new Set<string>();
   private listeners = new Set<(s: FolderAccessState) => void>();
+  private mac: boolean;
+  /* E2E + non-interactive runs can't click an OS prompt; the flag skips
+     the whole surface the way a granted install behaves — no touches at
+     all, so nothing parks on an unanswerable TCC read (D-#875). */
+  private skip: boolean;
 
   constructor(
     private opts: {
       stateFile: string;
       home?: string;
-      /** Injectable touch — tests substitute a never-landing read. */
+      /** Injectable touch — tests substitute answers and hangs. */
       read?: (abs: string) => Promise<unknown>;
+      /** Tests run the state machine on Linux — a seam, not a prod path. */
+      mac?: boolean;
     },
   ) {
+    this.mac = opts.mac ?? IS_MAC;
+    this.skip = !this.mac || process.env.LILOS_SKIP_FOLDER_ASK === "1";
     try {
       const raw = JSON.parse(readFileSync(opts.stateFile, "utf8")) as Persisted;
       for (const name of raw.asked ?? []) this.asked.add(name);
     } catch {
       /* no record yet — everything is pending */
+    }
+    if (this.skip) {
+      for (const name of PROTECTED_FOLDERS) this.asked.add(name);
     }
   }
 
@@ -68,51 +88,52 @@ export class FolderAccess {
   }
 
   state(): FolderAccessState {
+    if (!this.mac) return EMPTY;
     return {
       pending: PROTECTED_FOLDERS.filter((n) => !this.asked.has(n)),
       blocked: [...this.blocked].sort(),
     };
   }
 
-  /** One read on the folder, raced against the probe bound. Success or a
-   *  fast refusal both settle it; a timeout means a prompt is still up —
-   *  the folder reports blocked either way. */
-  private async touch(name: ProtectedFolder): Promise<void> {
-    const abs = join(this.home, name);
-    try {
-      await Promise.race([
-        this.read(abs),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error("timed out")), probeTimeoutMs()),
-        ),
-      ]);
-      this.asked.add(name);
-      this.blocked.delete(name);
-    } catch {
-      this.asked.add(name);
-      this.blocked.add(name);
-    }
+  /** One read on the folder; its settle is the answer. Resolved → asked
+   *  and unblocked; refused → asked and blocked; still pending → the OS
+   *  prompt is up and the answer is simply late — nothing is marked. */
+  private touch(name: ProtectedFolder): void {
+    if (this.skip || this.inflight.has(name)) return;
+    this.inflight.add(name);
+    void this.read(join(this.home, name))
+      .then(() => {
+        this.asked.add(name);
+        this.blocked.delete(name);
+      })
+      .catch(() => {
+        this.asked.add(name);
+        this.blocked.add(name);
+      })
+      .finally(() => {
+        this.inflight.delete(name);
+        this.persist();
+        this.emit();
+      });
   }
 
-  /** Touch every unsettled folder in order — one macOS prompt at a time. */
-  async ask(): Promise<FolderAccessState> {
+  /** Touch every unsettled folder — the OS prompts rise one after another
+   *  while the ask step is on screen. */
+  ask(): Promise<FolderAccessState> {
     for (const name of PROTECTED_FOLDERS) {
-      if (!this.asked.has(name) || this.blocked.has(name as string)) {
-        await this.touch(name);
+      if (!this.asked.has(name) || this.blocked.has(name)) {
+        this.touch(name);
       }
     }
-    this.persist();
-    this.emit();
-    return this.state();
+    return Promise.resolve(this.state());
   }
 
-  /** A folder the app just adopted (project add, thread move): if it sits
-   *  inside a never-asked protected folder that folder is already pending
-   *  — ensure() only confirms the state, the step/banner do the rest. An
-   *  asked-but-blocked folder re-touches so an add right after the user
-   *  granted settles it without a second click. `~/x` and relative paths
-   *  expand under home, the way the app's folder paths spell. */
-  async ensure(path: string): Promise<FolderAccessState> {
+  /** A folder the app just adopted (project add, thread move): a pending
+   *  protected folder gets touched — the macOS prompt rises the moment the
+   *  folder matters (D-#875 acceptance: adding a project inside Desktop
+   *  must prompt). A blocked one re-touches so a grant just given settles
+   *  without a second click. `~/x` expands under home. */
+  ensure(path: string): Promise<FolderAccessState> {
     const abs =
       path === "~"
         ? this.home
@@ -120,24 +141,21 @@ export class FolderAccess {
           ? join(this.home, path.slice(2))
           : path;
     const name = protectedFolderOf(abs, this.home);
-    if (name && this.blocked.has(name)) {
-      await this.touch(name);
-      this.persist();
-      this.emit();
+    if (name && (!this.asked.has(name) || this.blocked.has(name))) {
+      this.touch(name);
     }
-    return this.state();
+    return Promise.resolve(this.state());
   }
 
-  /** Re-probe asked folders at boot: a denial answers instantly, an
-   *  unanswered prompt counts as blocked. Never touches a pending folder —
-   *  the ask step explains first (D-#875). */
-  async refreshBlocked(): Promise<FolderAccessState> {
+  /** Re-probe asked folders — at boot and on window focus. A granted read
+   *  lands instantly and clears `blocked`; a denial answers instantly too;
+   *  a never-answered prompt raises once more in a window that can show it.
+   *  Pending folders stay untouched — the ask step explains first. */
+  refreshBlocked(): Promise<FolderAccessState> {
     for (const name of PROTECTED_FOLDERS) {
-      if (this.asked.has(name)) await this.touch(name);
+      if (this.asked.has(name)) this.touch(name);
     }
-    this.persist();
-    this.emit();
-    return this.state();
+    return Promise.resolve(this.state());
   }
 
   onChange(cb: (s: FolderAccessState) => void): () => void {
@@ -155,10 +173,10 @@ export class FolderAccess {
       mkdirSync(dirname(this.opts.stateFile), { recursive: true });
       writeFileSync(
         this.opts.stateFile,
-        JSON.stringify({ asked: [...this.asked].sort() }),
+        JSON.stringify({ asked: [...this.asked] }),
       );
     } catch {
-      /* state-dir write failure — in-memory state still answers */
+      /* state dir unwritable — the next launch just asks again */
     }
   }
 }

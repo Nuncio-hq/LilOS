@@ -58,7 +58,14 @@ export async function fsList(params: { path: string }): Promise<FsListResult> {
   const worker = async () => {
     while (next < repos.length) {
       const e = repos[next++] as FsEntry;
-      const mark = await repoMark(join(abs, e.name));
+      /* A child that fails its own probe (a chmod'd repo, a hung one on a
+         readable folder) just stays unmarked — the listing must not die
+         for one child. A confirmed folder wall still reports (#875). */
+      const mark = await repoMark(join(abs, e.name)).catch((err) => {
+        if (err instanceof HostError && err.code === HOST_ERRORS.FOLDER_ACCESS)
+          throw err;
+        return null;
+      });
       if (mark) e.repo = mark;
     }
   };
@@ -334,7 +341,16 @@ export async function fsRead(params: {
       `not a file: ${params.path}`,
     );
   }
-  const fh = await bounded(fsp.open(abs, "r"), abs);
+  const openP = fsp.open(abs, "r");
+  const fh = await bounded(openP, abs).catch((e) => {
+    /* An open that lands after the bound still owns an fd — don't leak
+       it (#875). */
+    void openP.then(
+      (f) => f.close(),
+      () => {},
+    );
+    throw e;
+  });
   try {
     const buf = Buffer.alloc(Math.min(cap + 1, st.size));
     const { bytesRead } = await fh.read(buf, 0, buf.length, 0);

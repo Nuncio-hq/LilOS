@@ -217,7 +217,8 @@ export interface DesktopBridge {
      *  user is looking; resolves to the settled state. */
     ask(): Promise<FolderAccessState>;
     /** A folder the app just adopted (project add, move): if it sits inside
-     *  a never-asked protected folder that folder joins `pending`. */
+     *  a never-asked or blocked protected folder, main touches it so the OS
+     *  prompt rises while the new folder's context is on screen. */
     ensure(path: string): Promise<FolderAccessState>;
     /** System Settings → Privacy & Security → Files and Folders. */
     openSettings(): Promise<void>;

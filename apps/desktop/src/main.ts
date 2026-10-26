@@ -674,6 +674,10 @@ ipcMain.handle("lilos:folder-access:open-settings", () =>
   shell.openExternal(FOLDER_ACCESS_SETTINGS_URL),
 );
 
+/* Back in the window after System Settings? Re-probe — a grant toggled
+   there clears `blocked` so the banner drops without a relaunch (#875). */
+app.on("browser-window-focus", () => void folderAccess.refreshBlocked());
+
 ipcMain.handle("lilos:status", statusWithLiveAgents);
 ipcMain.handle("lilos:ensure", () =>
   ensureServices().then(statusWithLiveAgents),
@@ -757,9 +761,8 @@ app.whenReady().then(async () => {
   }
 
   /* D-#875: settle asked folders in the background — a denied read fails
-     fast, a granted one clears `blocked`; a never-answered prompt may rise
-     again over the banner, which is exactly when the user can answer it.
-     Pending folders stay untouched until the ask step's own touch. */
+     fast, a granted one clears `blocked`. Pending folders stay untouched
+     until the ask step's own touch. */
   void folderAccess.refreshBlocked();
 
   // #539 AC-4: a rollback used to be silent — say it once per failed build.

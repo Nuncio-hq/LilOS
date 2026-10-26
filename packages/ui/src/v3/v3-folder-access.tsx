@@ -70,19 +70,23 @@ export function FolderAccessStep({
 }
 
 /** An asked folder still refusing reads (denied, or a prompt never
- *  answered): the plain line above the page + the Settings remedy. */
+ *  answered): the plain line above the page + the Settings remedy.
+ *  Dismissible — a deliberately denied folder shouldn't nag forever. */
 export function FolderAccessBanner({
   folders,
   onSettings,
+  onDismiss,
 }: {
   folders: string[];
   onSettings: () => void;
+  onDismiss?: () => void;
 }) {
   return (
     <V3Banner
       status="needs"
       text={`LilOS can't read files in ${foldersPhrase(folders)} — folder access is off.`}
       action={{ label: "Open System Settings", run: onSettings }}
+      dismiss={onDismiss}
     />
   );
 }

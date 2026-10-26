@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync, promises as fsp } from "node:fs";
 import { dirname, join } from "node:path";
-import { bounded } from "./access.js";
 import { HOST_ERRORS, HostError } from "./errors.js";
 import { run } from "./exec.js";
 
@@ -105,22 +104,12 @@ function shadowEnv(f: Folder, cwd: string): NodeJS.ProcessEnv {
   };
 }
 
-/* D-#875: the shadow git's worktree IS the session folder — a protected
-   one macOS hasn't granted blocks `add`/`ls-files` forever. 2 min covers a
-   big snapshot; a killed child reports FOLDER_ACCESS via `bounded`. */
-const SHADOW_GIT_TIMEOUT_MS = 120_000;
-
 async function git(f: Folder, cwd: string, args: string[]): Promise<string> {
-  const { stdout } = await bounded(
-    run("git", [...identity, ...args], {
-      cwd,
-      env: shadowEnv(f, cwd),
-      maxBuffer: MAX_BUFFER,
-      timeout: SHADOW_GIT_TIMEOUT_MS,
-      killSignal: "SIGKILL",
-    }),
+  const { stdout } = await run("git", [...identity, ...args], {
     cwd,
-  );
+    env: shadowEnv(f, cwd),
+    maxBuffer: MAX_BUFFER,
+  });
   return stdout;
 }
 
@@ -131,8 +120,7 @@ async function gitOr(
 ): Promise<string | null> {
   try {
     return await git(f, cwd, args);
-  } catch (e) {
-    if (e instanceof HostError) throw e; // FOLDER_ACCESS must report (#875)
+  } catch {
     return null;
   }
 }
@@ -184,7 +172,7 @@ export function createCheckpointStore(root: string): CheckpointStore {
   const chains = new Map<string, Promise<unknown>>();
 
   const folderFor = async (cwd: string): Promise<Folder> => {
-    const real = await bounded(fsp.realpath(cwd), cwd).catch(() => cwd);
+    const real = await fsp.realpath(cwd).catch(() => cwd);
     const key = createHash("sha256").update(real).digest("hex").slice(0, 16);
     const dir = join(root, key);
     const f: Folder = {
@@ -224,7 +212,7 @@ export function createCheckpointStore(root: string): CheckpointStore {
   const enqueue = async <T>(cwd: string, fn: () => Promise<T>): Promise<T> => {
     /* Key the chain on the real path — `~/x`, `x/` and symlinks would
        otherwise run parallel chains into the same shadow index. */
-    const key = await bounded(fsp.realpath(cwd), cwd).catch(() => cwd);
+    const key = await fsp.realpath(cwd).catch(() => cwd);
     const next = (chains.get(key) ?? Promise.resolve()).then(fn, fn);
     chains.set(
       key,
@@ -330,10 +318,7 @@ export function createCheckpointStore(root: string): CheckpointStore {
     const extras = raw.split("\0").filter((p) => p && !isExcluded(p));
     const dirs = new Set<string>();
     for (const rel of extras) {
-      await bounded(
-        fsp.rm(join(cwd, rel), { recursive: true, force: true }),
-        join(cwd, rel),
-      );
+      await fsp.rm(join(cwd, rel), { recursive: true, force: true });
       let d = dirname(join(cwd, rel));
       while (d !== cwd && d.startsWith(cwd)) {
         dirs.add(d);
@@ -341,9 +326,7 @@ export function createCheckpointStore(root: string): CheckpointStore {
       }
     }
     for (const d of [...dirs].sort((a, b) => b.length - a.length)) {
-      await bounded(fsp.rmdir(d), d).catch((e) => {
-        if (e instanceof HostError) throw e; // FOLDER_ACCESS reports (#875)
-      });
+      await fsp.rmdir(d).catch(() => {});
     }
     return { removed: extras, restoredTo: checkpoint };
   };
