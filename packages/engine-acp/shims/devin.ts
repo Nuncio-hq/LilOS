@@ -17,7 +17,11 @@ import type { AcpLaunchSpec } from "../src/launch.js";
  */
 export const devinSpec: AcpLaunchSpec = {
   id: "devin",
-  command: ["devin", "acp"],
+  /* `--model` sets every new session's default (fuzzy names accepted) —
+     the ACP model select only advertises `swe-2-high`, so a `swe-2-max`
+     session pick would have nothing to write to; the launch flag is what
+     actually lands SWE-2 Max as the default. */
+  command: ["devin", "acp", "--model", "swe-2-max"],
   verify: { args: ["--version"], timeoutMs: 15_000 },
   /* The roster seed — the harness's first-run hire reads `agents.list`
      and hires `detail.isDefault`, so this row is what "Devin" looks like
