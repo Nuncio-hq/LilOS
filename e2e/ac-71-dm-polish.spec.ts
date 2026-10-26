@@ -35,9 +35,7 @@ const SHOTS = path.join(repo, "test-results", "ac-71");
 let stack: Stack;
 test.beforeAll(async () => {
   test.setTimeout(120_000);
-  stack = await bootStack("ac71", await pickPorts(), {
-    LILOS_COMPANY: "1",
-  });
+  stack = await bootStack("ac71", await pickPorts());
 });
 test.afterAll(async () => {
   await stack?.stop();

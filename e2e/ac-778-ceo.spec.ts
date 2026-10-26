@@ -38,9 +38,7 @@ test("Make CEO moves the chip everywhere and redraws the org chart", async ({
   page,
 }) => {
   test.setTimeout(180_000);
-  const stack = await bootStack("ac778-chip", await pickPorts(), {
-    LILOS_COMPANY: "1",
-  });
+  const stack = await bootStack("ac778-chip", await pickPorts());
   try {
     const agent = await openDefaultAgent(page, stack.webUrl);
     const created = await relayRpc<{ employee: { id: string } }>(
@@ -156,9 +154,7 @@ test("the new CEO's next thread gets the CEO tools and the old one's does not", 
   page,
 }) => {
   test.setTimeout(240_000);
-  const stack = await bootStack("ac778-tools", await pickPorts(), {
-    LILOS_COMPANY: "1",
-  });
+  const stack = await bootStack("ac778-tools", await pickPorts());
   try {
     const agent = await openDefaultAgent(page, stack.webUrl);
     const listed = await relayRpc<{
@@ -251,9 +247,7 @@ test("a CEO thread's team_set_ceo moves the position only after approval", async
   page,
 }) => {
   test.setTimeout(240_000);
-  const stack = await bootStack("ac778-set", await pickPorts(), {
-    LILOS_COMPANY: "1",
-  });
+  const stack = await bootStack("ac778-set", await pickPorts());
   try {
     const agent = await openDefaultAgent(page, stack.webUrl);
     const created = await relayRpc<{ employee: { id: string } }>(
@@ -316,9 +310,7 @@ test("a non-CEO thread calling a CEO-only tool is refused", async ({
   page,
 }) => {
   test.setTimeout(240_000);
-  const stack = await bootStack("ac778-refuse", await pickPorts(), {
-    LILOS_COMPANY: "1",
-  });
+  const stack = await bootStack("ac778-refuse", await pickPorts());
   try {
     const agent = await openDefaultAgent(page, stack.webUrl);
     const created = await relayRpc<{ employee: { id: string } }>(

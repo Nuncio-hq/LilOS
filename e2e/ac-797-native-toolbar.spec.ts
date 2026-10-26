@@ -51,9 +51,7 @@ let stack: Stack;
 let conversationId = "";
 test.beforeAll(async () => {
   test.setTimeout(120_000);
-  stack = await bootStack("ac797", await pickPorts(), {
-    LILOS_COMPANY: "1",
-  });
+  stack = await bootStack("ac797", await pickPorts());
   conversationId = (
     await growDmThread(stack, ["toolbar check", "and a second turn"])
   ).conversationId;

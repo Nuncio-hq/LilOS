@@ -28,9 +28,7 @@ let agent: { id: string; name: string };
 test.beforeAll(async () => {
   test.setTimeout(180_000);
   mkdirSync(SHOTS, { recursive: true });
-  stack = await bootStack("ac776", await pickPorts(), {
-    LILOS_COMPANY: "1",
-  });
+  stack = await bootStack("ac776", await pickPorts());
 });
 test.afterAll(async () => {
   await stack?.stop();

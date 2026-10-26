@@ -22,11 +22,7 @@ let stack: Stack;
 let agent: { id: string; name: string };
 test.beforeAll(async () => {
   test.setTimeout(120_000);
-  stack = await bootStack("ac774", await pickPorts(), {
-    /* D-#836: this spec reads the company Home (team table) — the layer
-       shows when the stack opts it back in. */
-    LILOS_COMPANY: "1",
-  });
+  stack = await bootStack("ac774", await pickPorts());
 });
 test.afterAll(async () => {
   await stack?.stop();

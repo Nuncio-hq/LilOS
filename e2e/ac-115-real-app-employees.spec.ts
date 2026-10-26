@@ -117,14 +117,9 @@ test.beforeAll(async () => {
      first page.goto ("waiting until load") is the compile. Both stacks
      boot here, where this hook already allows 120s; `bootStack` warms
      the module graph before it returns. The test only navigates. */
-  /* D-#836: Hire and People are the company layer — both stacks opt it back
-     in so this spec reads the surface it was written for. */
-  stackA = await bootStack("main", await pickPorts(), {
-    LILOS_COMPANY: "1",
-  });
+  stackA = await bootStack("main", await pickPorts());
   stackB = await bootStack("noagents", await pickPorts(), {
     LILOS_HIDE_CAPS: "agents",
-    LILOS_COMPANY: "1",
   });
 });
 test.afterAll(async () => {

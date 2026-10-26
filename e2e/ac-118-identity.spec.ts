@@ -67,7 +67,6 @@ test("AC-2 first run folds name+company into the Welcome, prefilled; AC-1 the ch
   test.setTimeout(120_000);
   const stack = await bootStack("ac118a", await pickPorts(), {
     LILOS_USER_NAME: "Test User",
-    LILOS_COMPANY: "1",
   });
   try {
     // No skipFirstRun: this is the first run.
@@ -151,7 +150,6 @@ test("AC-4 an existing install without stored values shows the prefilled identit
 }) => {
   const stack = await bootStack("ac118b", await pickPorts(), {
     LILOS_USER_NAME: "Test User",
-    LILOS_COMPANY: "1",
   });
   try {
     await skipFirstRun(page);

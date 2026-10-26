@@ -529,6 +529,11 @@ export async function bootStack(
            worker share it, booted one after another, so the second finds
            deps already written. A sibling worker never rewrites it. */
         LILOS_VITE_CACHE_DIR: `node_modules/.vite-e2e-w${workerIndex() ?? WORKER}`,
+        /* D-#836: the product's no-env default pauses the company layer,
+           but the suite was written against it — sidebar agent rows are
+           the shared "shell is up" wait. Stacks boot with the layer ON;
+           a paused spec passes `LILOS_COMPANY: "0"` in extraEnv. */
+        LILOS_COMPANY: "1",
         ...extraEnv,
       },
       /* Piped, not inherited: the readiness probe reads `[relay] instanceId`

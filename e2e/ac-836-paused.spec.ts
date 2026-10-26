@@ -15,12 +15,13 @@ import {
 
 /**
  * #836: the real app reads as a Hermes app — the company layer paused, not
- * deleted (D-#836). One stack, plain `bootStack` (no LILOS_COMPANY): the
- * sidebar is Search · Home · Needs you · Threads · Projects, Home is the
- * daily Home (a composer that talks to the agent, Needs you, threads by
- * project), the hidden pages land on Home and a ticket/goal link on its
- * project. The records still answer: the agent's page opens off the composer
- * and the trail, Remove from LilOS stays on it (#856), and `?company=1`
+ * deleted (D-#836). One stack that opts OUT of bootStack's company-on
+ * default (the product's no-env default IS paused): the sidebar is
+ * Search · Home · Needs you · Threads · Projects, Home is the daily Home
+ * (a composer that talks to the agent, Needs you, threads by project),
+ * the hidden pages land on Home and a ticket/goal link on its project.
+ * The records still answer: the agent's page opens off the composer and
+ * the trail, Remove from LilOS stays on it (#856), and `?company=1`
  * shows the layer back untouched.
  */
 
@@ -32,7 +33,9 @@ let agent: { id: string; name: string };
 test.beforeAll(async () => {
   test.setTimeout(120_000);
   mkdirSync(SHOTS, { recursive: true });
-  stack = await bootStack("ac836", await pickPorts());
+  /* "0" beats bootStack's "1" — extraEnv lands last. The product default
+     (no env at all) is paused, which is what this spec exercises. */
+  stack = await bootStack("ac836", await pickPorts(), { LILOS_COMPANY: "0" });
 });
 test.afterAll(async () => {
   await stack?.stop();

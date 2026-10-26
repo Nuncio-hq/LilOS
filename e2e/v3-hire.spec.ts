@@ -20,9 +20,7 @@ test("Hire a Researcher: the new agent is in the sidebar and People, opened besi
   page,
 }) => {
   test.setTimeout(180_000);
-  const stack = await bootStack("v3hire", await pickPorts(), {
-    LILOS_COMPANY: "1",
-  });
+  const stack = await bootStack("v3hire", await pickPorts());
   try {
     await skipFirstRun(page);
     await page.goto(`${stack.webUrl}/`);
@@ -118,7 +116,6 @@ test("an engine that cannot create agents has no Hire: not in the sidebar, and i
   test.setTimeout(180_000);
   const stack = await bootStack("v3nohire", await pickPorts(), {
     LILOS_HIDE_CAPS: "agents",
-    LILOS_COMPANY: "1",
   });
   try {
     await skipFirstRun(page);

@@ -21,9 +21,7 @@ import {
 let stack: Stack;
 test.beforeAll(async () => {
   test.setTimeout(120_000);
-  stack = await bootStack("v3nav", await pickPorts(), {
-    LILOS_COMPANY: "1",
-  });
+  stack = await bootStack("v3nav", await pickPorts());
 });
 test.afterAll(async () => {
   await stack?.stop();

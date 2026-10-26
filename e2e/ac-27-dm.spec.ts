@@ -50,9 +50,7 @@ test.beforeAll(async () => {
     await pickPorts(),
     // #118: the signed-in name is the OS user's — pin it so the approval
     // label assertions below stay deterministic on any machine.
-    // D-#836: the sidebar's People/Work/Goals/Hire rows are the company
-    // layer — this stack opts it back in.
-    { LILOS_USER_NAME: "Oscar", LILOS_COMPANY: "1" },
+    { LILOS_USER_NAME: "Oscar" },
   );
 });
 test.afterAll(async () => {

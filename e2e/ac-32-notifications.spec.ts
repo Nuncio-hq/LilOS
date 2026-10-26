@@ -43,9 +43,7 @@ const LIVE = process.env.LILOS_ENGINE === "hermes";
 let stack: Stack;
 test.beforeAll(async () => {
   test.setTimeout(120_000);
-  stack = await bootStack("ac32", await pickPorts(), {
-    LILOS_COMPANY: "1",
-  });
+  stack = await bootStack("ac32", await pickPorts());
 });
 test.afterAll(async () => {
   await stack?.stop();

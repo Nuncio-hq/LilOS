@@ -37,7 +37,6 @@ test.beforeAll(async () => {
   test.setTimeout(120_000);
   stack = await bootStack("read-dot", await pickPorts(), {
     LILOS_USER_NAME: "Oscar",
-    LILOS_COMPANY: "1",
   });
 });
 test.afterAll(async () => {
