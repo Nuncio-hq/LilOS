@@ -1,5 +1,5 @@
 import { CheckIcon, ChevronDownIcon } from "lucide-react";
-import type { ReactNode } from "react";
+import type { ReactNode, RefObject } from "react";
 import { cn } from "../lib/utils";
 import { useMenu } from "./v3-keys";
 
@@ -29,6 +29,7 @@ export function ChipMenu({
   below,
   ariaLabel,
   className,
+  triggerRef,
 }: {
   label: ReactNode;
   title: string;
@@ -41,8 +42,12 @@ export function ChipMenu({
   /** Names the chip when its text is a value, not what it chooses. */
   ariaLabel?: string;
   className?: string;
+  /** For a caller that puts the keyboard back on the chip itself (after an
+      inline confirm the menu opened closes). */
+  triggerRef?: RefObject<HTMLButtonElement | null>;
 }) {
-  const { open, setOpen, trigger, list, close, onKeyDown } = useMenu();
+  const { open, setOpen, trigger, list, close, onKeyDown } =
+    useMenu(triggerRef);
 
   return (
     <span className="relative min-w-0">

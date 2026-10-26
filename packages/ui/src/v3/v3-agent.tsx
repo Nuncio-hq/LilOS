@@ -34,6 +34,7 @@ import {
   agentThread,
   agentTicket,
   companyOn,
+  removable,
 } from "./v3-model";
 import type { V3PageProps } from "./v3-page-types";
 import { ThreadRow } from "./v3-rows";
@@ -392,9 +393,11 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
         ))}
       </div>
 
-      {/* Quiet and last: taking someone off the team is not what this page is
-          for. The CEO position holder stays until the position moves. */}
-      {!outside && !holdsCeo && company && (
+      {/* Quiet and last: taking an agent off LilOS is not what this page is
+          for. Drawn only for an agent that may go (`removable`): never an
+          outside worker, never the CEO while the position shows, never the
+          last LilOS agent (#856). */}
+      {removable(data, agent) && (
         <RemoveAgent data={data} go={go} act={act} agent={agent} />
       )}
     </Page>

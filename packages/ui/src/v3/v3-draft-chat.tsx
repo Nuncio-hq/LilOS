@@ -1,7 +1,9 @@
+import { Trash2Icon } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { AccessPill } from "../chat/access-pill";
 import { clearDraftIfSent, draftKey, useDraft } from "../lib/drafts";
 import type { AttachedFile, ConversationAccess, ModelChoice } from "../types";
+import { RemoveAsk } from "./v3-agent-remove";
 import { readStaged, useAttach } from "./v3-attach";
 import { Page, Title } from "./v3-bits";
 import { ChipMenu } from "./v3-chip-menu";
@@ -9,7 +11,13 @@ import { Composer } from "./v3-composer";
 import type { V3Data } from "./v3-data-types";
 import { ModelChip, NO_PROJECT, ProjectChip } from "./v3-draft-chips";
 import { AgentAvatar, CeoMark } from "./v3-marks";
-import { agentOf, defaultAgent, projectOf, ticketOf } from "./v3-model";
+import {
+  agentOf,
+  defaultAgent,
+  projectOf,
+  removable,
+  ticketOf,
+} from "./v3-model";
 import type { V3PageProps } from "./v3-page-types";
 import type { V3Agent } from "./v3-types";
 
@@ -26,6 +34,10 @@ import type { V3Agent } from "./v3-types";
    (paste, drop, paperclip), the draft kept per agent across reloads, ↑ for
    your last opener, `@` for people and files of the folder, `/` for the
    engine's commands, the full model picker and the Ask / Full access pill. */
+
+/** The agent menu's remove row: an action, never a choice (`ChipOption`),
+   so its id can never clash with a real agent's. */
+const REMOVE_AGENT = "\u0000remove-agent";
 
 /** Where this agent's chats usually go. Where its last one ran: a plain chat
     counts, since "No project" is a choice that must not slide back to a
@@ -165,6 +177,15 @@ export function ChatDraft({
     {},
   );
   const access = accesses[agent.id] ?? data.settings.approvals;
+  /* Remove from the agent menu: the menu row asks for the agent the chip
+     showed when it was picked (`removeId`), and the question stays open for
+     that agent even if the chip picks another meanwhile. Once it is gone
+     from `data.agents` the question goes with it — and the chip already
+     reads as the fallback. */
+  const [removeId, setRemoveId] = useState<string>();
+  const [removeBusy, setRemoveBusy] = useState(false);
+  const removee = removeId ? agentOf(data, removeId) : undefined;
+  const agentChip = useRef<HTMLButtonElement>(null);
   /* The text is kept per agent, in the same store the thread composers use,
      so a reload or a trip to another page leaves it where it was. */
   const [draft, setDraft] = useDraft(draftKey.dm(agent.id));
@@ -261,26 +282,50 @@ export function ChatDraft({
       <ChipMenu
         title="Agent"
         value={agent.id}
-        onPick={setAgent}
+        onPick={(id) =>
+          id === REMOVE_AGENT ? setRemoveId(agent.id) : setAgent(id)
+        }
+        triggerRef={agentChip}
         label={
           <>
             <AgentAvatar data={data} agent={agent} size={16} />
             <span className="truncate">{agent.name}</span>
           </>
         }
-        options={data.agents.map((a) => ({
-          id: a.id,
-          node: (
-            <>
-              <AgentAvatar data={data} agent={a} size={18} />
-              <span className="shrink-0">{a.name}</span>
-              {a.id === data.ceoId && <CeoMark />}
-              <span className="truncate text-[12.5px] text-muted-foreground/70">
-                {a.role}
-              </span>
-            </>
-          ),
-        }))}
+        options={[
+          ...data.agents.map((a) => ({
+            id: a.id,
+            node: (
+              <>
+                <AgentAvatar data={data} agent={a} size={18} />
+                <span className="shrink-0">{a.name}</span>
+                {a.id === data.ceoId && <CeoMark />}
+                <span className="truncate text-[12.5px] text-muted-foreground/70">
+                  {a.role}
+                </span>
+              </>
+            ),
+          })),
+          /* The picker's overflow: the same Remove the agent's own page has,
+             for the agent the chip shows. `removable` keeps the row off for
+             an outside worker, the CEO and the last LilOS agent (#856). */
+          ...(act.removeAgent && removable(data, agent)
+            ? [
+                {
+                  id: REMOVE_AGENT,
+                  action: true,
+                  node: (
+                    <>
+                      <Trash2Icon className="size-3.5 shrink-0 text-muted-foreground" />
+                      <span className="truncate">
+                        Remove {agent.name} from LilOS…
+                      </span>
+                    </>
+                  ),
+                },
+              ]
+            : []),
+        ]}
       />
       <ProjectChip
         projects={data.projects}
@@ -336,6 +381,37 @@ export function ChatDraft({
           onSend={send}
         />
       </div>
+      {/* The agent menu's Remove row asked its question here, in place —
+          the same ask the agent's own page puts at its end. */}
+      {removee && (
+        <div className="mt-3">
+          <RemoveAsk
+            data={data}
+            agent={removee}
+            busy={removeBusy}
+            onCancel={() => {
+              setRemoveId(undefined);
+              agentChip.current?.focus();
+            }}
+            onConfirm={() => {
+              const remove = act.removeAgent;
+              if (!remove) return;
+              setRemoveBusy(true);
+              // A refused removal has been explained by the app; the
+              // question stays. A done one closes — the chip already reads
+              // as the agent that remains.
+              remove(removee.id).then(
+                () => {
+                  setRemoveId(undefined);
+                  setRemoveBusy(false);
+                  agentChip.current?.focus();
+                },
+                () => setRemoveBusy(false),
+              );
+            }}
+          />
+        </div>
+      )}
     </>
   );
 }
