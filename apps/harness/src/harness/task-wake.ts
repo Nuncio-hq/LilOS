@@ -100,7 +100,13 @@ export function scheduleTaskWake(ctx: HarnessCtx): void {
 export async function flushTaskWakes(ctx: HarnessCtx): Promise<void> {
   const state = taskLoop(ctx);
   const batch = state.wakes.poll(Date.now());
-  if (!batch) return;
+  if (!batch) {
+    /* #873: the timer's monotonic clock can land a millisecond or two
+       ahead of `Date.now()` — poll then declines a batch whose window is
+       still open. Re-arm for the remainder instead of stranding it. */
+    scheduleTaskWake(ctx);
+    return;
+  }
   try {
     await ctx.opts.relay.request("tasks.wake", { events: batch });
     state.wakes.settled();
