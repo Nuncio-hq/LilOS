@@ -297,7 +297,7 @@ test("AC-1 failed rename, archive and unarchive show their reasons", async ({
   const TITLE = "a thread to rename and archive";
   await openSession(page, TITLE);
   /* Back to the page beside the list: the new thread is a row on Threads. */
-  await page.goto(`${APP()}#?page=threads&view=all`);
+  await page.goto(`${APP()}#?page=threads`);
   const row = threadRow(page, TITLE);
   await expect(row).toBeVisible({ timeout: 30_000 });
   const menu = row.getByRole("button", { name: "Thread actions", exact: true });
@@ -346,7 +346,8 @@ test("AC-1 failed rename, archive and unarchive show their reasons", async ({
     .getByRole("button", { name: "Thread actions", exact: true })
     .click();
   await page.getByRole("menuitem", { name: "Settle thread" }).click();
-  await page.getByRole("button", { name: /Settled \(\d+\)/ }).click();
+  /* The sidebar renders the same fold — scope the shelf click to #v3-main. */
+  await page.locator('#v3-main [data-fold="settled"] > button').click();
   const archivedMenu = page
     .locator("[data-settled-list]")
     .getByRole("button", { name: "Thread actions", exact: true })

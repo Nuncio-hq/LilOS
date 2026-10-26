@@ -37,9 +37,9 @@ import {
   removable,
 } from "./v3-model";
 import type { V3PageProps } from "./v3-page-types";
-import { ThreadRow } from "./v3-rows";
 import { soonestNext } from "./v3-schedule-text";
 import { AgentSchedules } from "./v3-schedules";
+import { ThreadRow } from "./v3-threads-rows";
 import type { V3Agent, V3ConnectorDef } from "./v3-types";
 
 /* One agent, like a person's profile in Notion: what it does, what it runs
@@ -389,7 +389,14 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
           </p>
         )}
         {threads.map((t) => (
-          <ThreadRow key={t.id} data={data} thread={t} go={go} />
+          <ThreadRow
+            key={t.id}
+            data={data}
+            t={t}
+            go={go}
+            act={act}
+            drop="agent"
+          />
         ))}
       </div>
 

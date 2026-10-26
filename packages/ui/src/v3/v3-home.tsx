@@ -43,8 +43,8 @@ import {
 } from "./v3-model";
 import { RowButton } from "./v3-open-record";
 import type { V3PageProps } from "./v3-page-types";
-import { ThreadRow } from "./v3-rows";
 import { sectionedThreads } from "./v3-sections";
+import { ThreadRow } from "./v3-threads-rows";
 import type { V3Agent, V3Status, V3Thread } from "./v3-types";
 
 /* Home: who is working, what needs you, what just finished. Counts are the
@@ -476,10 +476,10 @@ function DailyHome({ data, go, act }: V3PageProps) {
           <ThreadRow
             key={t.id}
             data={data}
-            thread={t}
+            t={t}
             go={go}
-            byAgent
-            inProject
+            act={act}
+            drop="project"
           />
         ))}
       </div>

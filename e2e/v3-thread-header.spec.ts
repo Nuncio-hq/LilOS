@@ -5,10 +5,12 @@ import { expect, type Locator, type Page, test } from "@playwright/test";
  * turns on the left, the work strip, the context meter and ⋯ on the right —
  * so the first message starts high in the window. When the column is narrow
  * the strip drops to a row of its own, labels back. Prototype app, mock
- * company; t-lil77 has no background job to lengthen the line.
+ * company; t-hb12-plan has no background job to lengthen the line.
  */
 
-const OPEN = "/?page=threads&open=thread:t-lil77";
+/* t-hb12-plan: finished, unpinned, never parked — nothing lengthens the line
+   (t-lil77 now sleeps on the Snoozed shelf and so draws the park line, #862). */
+const OPEN = "/?page=threads&open=thread:t-hb12-plan";
 const peek = (page: Page) => page.locator('aside[aria-label="Opened record"]');
 
 async function box(el: Locator) {

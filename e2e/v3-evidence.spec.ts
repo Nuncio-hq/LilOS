@@ -163,9 +163,16 @@ for (const theme of ["light", "dark"] as const) {
         .filter({ hasText: /add a footer to the page/i })
         .first();
       await expect(asking).toContainText("Needs you");
+      /* The merged list's row carries the pill; the ask card with its
+         answers lives inside the thread (#862). */
+      await asking.click();
       await expect(
-        asking.getByRole("button", { name: "Approve" }),
-      ).toBeVisible();
+        v3Peek(page)
+          .locator("[data-ask-id]")
+          .first()
+          .getByRole("button", { name: "Deny" }),
+      ).toBeVisible({ timeout: 30_000 });
+      await v3Peek(page).getByRole("button", { name: "Close" }).click();
       await shot("threads-board");
 
       /* Approve until the turn finishes, then open its session view. */

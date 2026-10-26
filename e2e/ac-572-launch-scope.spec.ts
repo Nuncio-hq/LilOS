@@ -212,12 +212,19 @@ test("AC-1/AC-2: cold boot replays nothing; background sessions still badge, rin
   await injectBridge(page);
   const meter = await meterFeedSocket(page);
 
-  // ── AC-1: cold boot on Threads → All — 31 engine sessions, zero replays ──
+  // ── AC-1: cold boot on Threads — 31 engine sessions, zero replays ──
   await skipFirstRun(page);
-  await page.goto(`${stack.webUrl}/#?page=threads&view=all`);
-  /* One row per thread: a button that opens with its "Chat" tag (the row's
-     only fixed text — titles are the fake engine's). */
-  const rows = page.getByRole("button").filter({ hasText: /^Chat/ });
+  await page.goto(`${stack.webUrl}/#?page=threads`);
+  /* The list's shelves fold by default (#862): open them so every session's
+     row is visible before it is counted. Settled seeds stay on their shelf —
+     they are not engine sessions. */
+  for (const fold of await page
+    .locator("#v3-main [data-fold] button[aria-expanded='false']")
+    .all())
+    await fold.click();
+  /* One row per listed thread, marked `data-thread-row`; settled rows wear
+     `data-settled` and are not engine sessions. */
+  const rows = page.locator("#v3-main [data-thread-row]:not([data-settled])");
   const sidebar = v3Sidebar(page);
   /* The list renders from relay rows — all 31 land before we meter; any
      replay would have been sent the moment the feed socket opened, so once
@@ -236,8 +243,10 @@ test("AC-1/AC-2: cold boot replays nothing; background sessions still badge, rin
   });
   await post(convA.id, "slow:400 Say hi to Carol");
   await expect(runningBadge).toBeVisible({ timeout: 60_000 });
-  /* The thread row's state pill shows the running ring. */
-  await expect(rows.filter({ hasText: "Working" })).toHaveCount(1, {
+  /* The thread row's status dot shows the running ring. */
+  await expect(
+    rows.filter({ has: page.locator('[data-v3-status="working"]') }),
+  ).toHaveCount(1, {
     timeout: 30_000,
   });
   /* The running session earns its feed — exactly that one session replays.
@@ -261,9 +270,10 @@ test("AC-1/AC-2: cold boot replays nothing; background sessions still badge, rin
     .toEqual(new Set([convA.engineRef, convB.engineRef]));
 
   // ── AC-1: opening a thread replays exactly that session ──
-  /* The oldest row is a settled seed (A and B just moved to the top); the
-     row says which conversation it is by the thread it opens. */
-  await rows.last().click();
+  /* A mid-list row is a seed (A and B just moved to the ends — needs-you up
+     top, the running one folded under Working); the row says which
+     conversation it is by the thread it opens. */
+  await rows.nth(10).click();
   await expect(page).toHaveURL(/open=thread:[^&]+/);
   const openedId = decodeURIComponent(
     /open=thread:([^&,]+)/.exec(page.url())?.[1] ?? "",

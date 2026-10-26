@@ -363,7 +363,7 @@ test("AC-3 rename + archive persist across restart", async ({ page }) => {
   await expect(listRow(page, ROOT_ROW)).toBeVisible({ timeout: 30_000 });
 
   // Rename it in place from its row's menu, then archive it.
-  await page.goto(`${stack.webUrl}/#?page=threads&view=all`);
+  await page.goto(`${stack.webUrl}/#?page=threads`);
   const row = page.locator(`[data-thread-row="${convId}"]`);
   await expect(row).toBeVisible({ timeout: 30_000 });
   const menu = (r: Locator) =>
@@ -384,7 +384,7 @@ test("AC-3 rename + archive persist across restart", async ({ page }) => {
   // stays where it was.
   await expect(row).toHaveCount(0, { timeout: 15_000 });
   await expect(listRow(page, "Keeper thread")).toBeVisible();
-  await page.getByRole("button", { name: /Settled \(1\)/ }).click();
+  await page.locator('#v3-main [data-fold="settled"] > button').click();
   const archived = page.locator(
     `[data-settled-list] [data-thread-row="${convId}"]`,
   );
@@ -397,12 +397,12 @@ test("AC-3 rename + archive persist across restart", async ({ page }) => {
   await page.goto("about:blank");
   stack = await boot("restart2", stack.home);
   await openApp(stack, page);
-  await page.goto(`${stack.webUrl}/#?page=threads&view=all`);
+  await page.goto(`${stack.webUrl}/#?page=threads`);
   await expect(listRow(page, "Keeper thread")).toBeVisible({ timeout: 30_000 });
   await expect(
     page.locator(`[data-thread-row="${convId}"]:not([data-settled])`),
   ).toHaveCount(0);
-  await page.getByRole("button", { name: /Settled \(1\)/ }).click();
+  await page.locator('#v3-main [data-fold="settled"] > button').click();
   await expect(archived).toContainText("Repo summary thread", {
     timeout: 30_000,
   });

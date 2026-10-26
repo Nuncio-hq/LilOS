@@ -25,7 +25,7 @@ export type V3Route =
   | { page: "inbox" }
   | { page: "work"; view?: "waiting" | "board" | "project" | "timeline" }
   | { page: "ticket"; id: string }
-  | { page: "threads"; view?: "live" | "all" | "agent" | "scheduled" }
+  | { page: "threads"; view?: "scheduled" }
   | { page: "thread"; id: string }
   | { page: "goals" }
   | { page: "goal"; id: string }

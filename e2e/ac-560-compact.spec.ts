@@ -123,8 +123,16 @@ test("AC: context-limit failure offers Compact now + Continue in a new session",
     /* dispatchEvent like the Compact leg above: the meter is a hover card
        and a thread row can sit under the pointer when the click lands. */
     await page.locator("[data-continue-new-session]").dispatchEvent("click");
-    await page.goto(`${stack.webUrl}/#?page=threads&view=all`);
+    await page.goto(`${stack.webUrl}/#?page=threads`);
+    /* The fresh root lands under Working while it runs (#862): the fold is
+       collapsed by default and the sidebar mirrors the sections, so open
+       Working inside #v3-main and count the row there. */
+    const workingFold = page.locator(
+      '#v3-main [data-fold="working"] > button[aria-expanded="false"]',
+    );
+    if (await workingFold.count()) await workingFold.click();
     const recap = page
+      .locator("#v3-main")
       .getByRole("button")
       .filter({ hasText: "Picking up mid-thread" });
     await expect(recap).toHaveCount(1, { timeout: 30_000 });
