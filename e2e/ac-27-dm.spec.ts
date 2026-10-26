@@ -547,6 +547,8 @@ test("AC-7 real-app build: every visible control has a working handler", async (
         LILOS_RELAY_TOKEN: stackA.relayToken,
         LILOS_ENGINE_WS: stackA.feedWs,
         LILOS_WEB_PORT: String(port),
+        // D-#836: the sweep clicks the sidebar's agent row — company layer.
+        LILOS_COMPANY: "1",
       },
       stdio: "inherit",
     },
@@ -648,7 +650,9 @@ test("AC-8 `_electron` shell renders the same DM app", async () => {
       LILOS_RELAY_HOME: stackA.home,
       LILOS_RELAY_PORT: portOf(stackA.relayWs),
       LILOS_FEED_PORT: portOf(stackA.feedWs),
-      LILOS_WEB_URL: stackA.webUrl,
+      /* D-#836: `?company=1` rides the URL (the env knob's config endpoint is
+         the web server's; the desktop window's config is the preload's). */
+      LILOS_WEB_URL: `${stackA.webUrl}/?company=1`,
       LILOS_STATE_DIR: stateDir,
     },
   });

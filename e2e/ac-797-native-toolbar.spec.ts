@@ -312,7 +312,10 @@ test("AC-4 on the Mac the first message of a thread starts ≤ 140px from the wi
   test.skip(!isMac, "the 52px row is the Mac app's");
   test.setTimeout(180_000);
   const { app, win } = await launchDesktop(stack, {
-    hash: threadUrl(stack.webUrl, conversationId),
+    /* D-#836: the stack runs the company layer; `?company=1` carries that
+       into the desktop window, whose config is the preload's (the env knob
+       lives on the web server's config endpoint). */
+    hash: `${stack.webUrl}/?company=1#?page=threads&open=thread:${encodeURIComponent(conversationId)}`,
   });
   try {
     await expect(

@@ -185,6 +185,9 @@ export async function bootParts(
           LILOS_ENGINE_WS: `ws://127.0.0.1:${feedPort}/ws`,
           LILOS_WEB_PORT: String(webPort),
           LILOS_VITE_CACHE_DIR: `node_modules/.vite-${tag}-w${WORKER}`,
+          /* D-#836: the suite reads the company layer — same default as
+             bootStack's (a paused spec overrides the env with "0"). */
+          LILOS_COMPANY: "1",
         },
         stdio: ["ignore", "pipe", "pipe"],
       },

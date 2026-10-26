@@ -125,6 +125,9 @@ export interface DesktopBridgeConfig {
   relayWs: string;
   relayToken: string;
   engineWs: string;
+  /** D-#836: true opts this window into the paused company layer — the
+   * desktop analogue of a `?company=1` tab. Absent = the daily app. */
+  company?: boolean;
 }
 
 /**

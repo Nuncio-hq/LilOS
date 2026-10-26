@@ -45,7 +45,11 @@ export function useSidebarPopout(hidden: boolean) {
 /** The thin strip at the window's left edge that wakes a hidden sidebar. It
     opts out of the window drag region so the pointer events reach it, and the
     shell draws it after the toolbar (the OS applies drag regions in document
-    order, so the later `no-drag` wins where they overlap). */
+    order, so the later `no-drag` wins where they overlap).
+    Wake on `pointermove`, not `pointerenter`: when the sidebar hides under a
+    pointer already parked inside the strip (the traffic lights live at the
+    top-left), enter fires on the layout shift alone and the sidebar pops
+    straight back — hide must win until the pointer actually goes there. */
 export function SidebarHotZone({
   onEnter,
   onLeave,
@@ -57,7 +61,7 @@ export function SidebarHotZone({
     <div
       aria-hidden
       data-sidebar-hot-zone
-      onPointerEnter={onEnter}
+      onPointerMove={onEnter}
       onPointerLeave={onLeave}
       className="absolute inset-y-0 left-0 z-30 w-1.5 [-webkit-app-region:no-drag]"
     />
