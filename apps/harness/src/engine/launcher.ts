@@ -423,7 +423,11 @@ export function hermesEngineLauncher(options: {
         name: "hermes",
         command,
         readyPattern: /LISTENING (ws:\/\/\S+)/,
-        startupTimeoutMs: 300_000, // hermes serve cold-starts ACP tooling
+        /* hermes serve cold-starts ACP tooling — ~10 s quiet, but #834
+           measured 174 s on a loaded box (a dying backend + live turns
+           still draining). A start aborted at 300 s while merely busy
+           would spend the crash budget on healthy work — allow 8 min. */
+        startupTimeoutMs: 480_000,
         fatalExitCodes: [
           HERMES_TOO_OLD_EXIT_CODE,
           HERMES_HOST_CONFLICT_EXIT_CODE,

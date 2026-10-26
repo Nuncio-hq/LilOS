@@ -190,7 +190,8 @@ const supervisor = new EngineSupervisor({
     },
   ),
   connect: (url) => connectEngineWs(url),
-  onConnection: (conn) => harness.attachEngine(conn),
+  onConnection: (conn, _reconnect, gapCause) =>
+    harness.attachEngine(conn, gapCause),
   onState: (state, detail) => harness.onEngineStateChange(state, detail),
   log,
 });

@@ -1,3 +1,4 @@
+import type { EngineEvent } from "@lilos/contracts/engine";
 import { describe, expect, it } from "vitest";
 import type { EngineConnection } from "../src/engine/client.js";
 import { EngineRpcError } from "../src/engine/client.js";
@@ -11,30 +12,49 @@ import { FatalEngineStart } from "../src/engine/launcher.js";
 import { EngineSupervisor } from "../src/engine/supervisor.js";
 import { createMemoryLogger } from "../src/log.js";
 
-/** Engine child whose lifetime the test drives. */
-function fakeProc(pid: number): {
+/** Engine child whose lifetime the test drives. `graceful` models a
+    SIGTERMed adapter that drains first (engine/backend close can take
+    seconds): kill() is recorded but the exit only lands on die(). */
+function fakeProc(
+  pid: number,
+  opts: { graceful?: boolean } = {},
+): {
   proc: EngineProcess;
   die: (code: number | null, signal?: string) => void;
+  killCalls: number;
 } {
   let die: (code: number | null, signal?: string) => void = () => {};
   const exited = new Promise<EngineExit>((r) => {
     die = (code, signal) => r({ code, signal: signal ?? null });
   });
-  return {
-    proc: { pid, exited, kill: () => die(143) },
+  const self = {
+    killCalls: 0,
     die,
+    proc: {
+      pid,
+      exited,
+      kill: () => {
+        self.killCalls += 1;
+        if (!opts.graceful) die(143);
+      },
+    },
   };
+  return self;
 }
 
-/** EngineConnection that never makes real I/O; `drop()` fires onClose.
-    `responder` answers every request (default: plain Error = dead air). */
+/** EngineConnection that never makes real I/O; `drop()` fires onClose and
+    `emit()` pushes an engine event to subscribers (a busy adapter's turn
+    traffic — the probe's other proof of life, #834). `responder` answers
+    every request (default: plain Error = dead air). */
 function fakeConn(): EngineConnection & {
   drop: (reason?: string) => void;
+  emit: (e: EngineEvent) => void;
   responder: () => Promise<unknown>;
   requestCalls: number;
   closed: boolean;
 } {
   let closeCb: ((reason?: string) => void) | undefined;
+  const eventFns = new Set<(e: EngineEvent) => void>();
   const conn = {
     requestCalls: 0,
     closed: false,
@@ -44,7 +64,10 @@ function fakeConn(): EngineConnection & {
       conn.requestCalls += 1;
       return conn.responder() as Promise<T>;
     },
-    onEvent: () => () => {},
+    onEvent: (fn: (e: EngineEvent) => void) => {
+      eventFns.add(fn);
+      return () => eventFns.delete(fn);
+    },
     onClose: (fn: (reason?: string) => void) => {
       closeCb = fn;
     },
@@ -52,9 +75,21 @@ function fakeConn(): EngineConnection & {
       conn.closed = true;
     },
     drop: (reason?: string) => closeCb?.(reason ?? "dropped"),
+    emit: (e: EngineEvent) => {
+      for (const fn of eventFns) fn(e);
+    },
   };
   return conn;
 }
+
+/** A minimal live-traffic frame — the adapter pushing turn progress. */
+const busyEvent = (seq: number): EngineEvent =>
+  ({
+    seq,
+    sessionId: "s-1",
+    type: "session.state",
+    payload: { state: "running" },
+  }) as EngineEvent;
 
 interface World {
   supervisor: EngineSupervisor;
@@ -64,6 +99,7 @@ interface World {
   states: string[];
   details: string[];
   launcher: EngineLauncher;
+  launches: number;
 }
 
 function world(
@@ -80,6 +116,13 @@ function world(
     responders?: Array<(() => Promise<unknown>) | undefined>;
     /** Per-conn gates connect() must await first, in connect() order. */
     connectGates?: Array<Promise<void> | undefined>;
+    /** Per-proc gates launcher.start() awaits first, in launch order. */
+    launchGates?: Array<Promise<void> | undefined>;
+    /** Procs (by index) whose kill() drains instead of dying at once. */
+    gracefulProcs?: number[];
+    /** connect() calls after the first conn refused N times (e.g. the
+        killed adapter's listener is gone while it still drains). */
+    refusedConnects?: number;
   } = {},
 ): World {
   const procs: ReturnType<typeof fakeProc>[] = [];
@@ -87,22 +130,31 @@ function world(
   const connections: World["connections"] = [];
   const states: string[] = [];
   const details: string[] = [];
+  let launches = 0;
   const launcher: EngineLauncher = {
     name: "fake-engine",
     start: () => {
-      const p = fakeProc(4000 + procs.length);
-      procs.push(p);
-      return Promise.resolve<LaunchedEngine>({
-        url: "ws://127.0.0.1:9/ws",
-        process: p.proc,
-      });
+      const gate = extra.launchGates?.[procs.length];
+      const make = () => {
+        const p = fakeProc(4000 + procs.length, {
+          graceful: extra.gracefulProcs?.includes(procs.length),
+        });
+        procs.push(p);
+        return { url: "ws://127.0.0.1:9/ws", process: p.proc };
+      };
+      launches += 1;
+      return gate ? gate.then(make) : Promise.resolve<LaunchedEngine>(make());
     },
   };
+  let refused = extra.refusedConnects ?? 0;
   const supervisor = new EngineSupervisor({
     launcher,
     connect: async () => {
       const gate = extra.connectGates?.[conns.length];
       if (gate) await gate;
+      /* The initial connect is exempt: refusals model a dead listener —
+         there is nothing to refuse the first conn on. */
+      if (conns.length > 0 && refused-- > 0) throw new Error("connect refused");
       const c = fakeConn();
       const responder = extra.responders?.[conns.length];
       if (responder) c.responder = responder;
@@ -122,7 +174,18 @@ function world(
     stableAfterMs: 60_000,
     ...extra,
   });
-  return { supervisor, procs, conns, connections, states, details, launcher };
+  return {
+    supervisor,
+    procs,
+    conns,
+    connections,
+    states,
+    details,
+    launcher,
+    get launches() {
+      return launches;
+    },
+  };
 }
 
 const tick = () => new Promise((r) => setTimeout(r, 30));
@@ -449,6 +512,67 @@ describe("#482 engine liveness probe", () => {
     await w.supervisor.stop();
   });
 
+  /* #834: a busy-but-alive Hermes adapter can miss the describe deadline —
+     its `describe` used to ride the backend's stalled event loop while turn
+     events kept flowing. Event frames are proof of life equal to an answer:
+     they reset the dead-air count, so only sustained silence restarts. */
+  it("live event traffic keeps a describe-missing adapter alive; silence after it still kills", async () => {
+    const w = world({
+      probeIntervalMs: 5,
+      probeTimeoutMs: 10,
+      probeMissesBeforeRestart: 2,
+      // describe never answers inside the probe deadline — every probe is
+      // dead air on the request path (the fake conn has no request timer,
+      // so the rejection stands in for the client's own deadline); only
+      // the event stream can prove the adapter is alive.
+      responders: [
+        () =>
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("dead air")), 50),
+          ),
+        () => Promise.resolve({}),
+      ],
+    });
+    await w.supervisor.start();
+    const c0 = w.conns[0];
+    if (!c0) throw new Error("conn missing");
+
+    // Miss 1 lands while the adapter is quiet: the verdict reads restarting.
+    for (let i = 0; i < 20 && w.states.at(-1) !== "restarting"; i++)
+      await tick();
+    expect(w.states.at(-1)).toBe("restarting");
+    expect(w.details.at(-1)).toContain("probe timeout");
+
+    // A turn's progress frame proves the adapter's event loop is alive —
+    // the dead-air count resets and the dead-air verdict lifts.
+    let seq = 0;
+    c0.emit(busyEvent(++seq));
+    for (let i = 0; i < 20 && w.states.at(-1) !== "running"; i++) await tick();
+    expect(w.states.at(-1)).toBe("running");
+
+    // Now hold it busy indefinitely — events flow between probes while
+    // describe still never answers. Two consecutive dead-air misses can
+    // never accumulate, so the process is never killed.
+    const traffic = setInterval(() => c0.emit(busyEvent(++seq)), 4);
+    try {
+      for (let i = 0; i < 12; i++) await tick();
+      expect(w.procs).toHaveLength(1);
+      expect(w.conns).toHaveLength(1);
+      expect(c0.closed).toBe(false);
+    } finally {
+      clearInterval(traffic);
+    }
+
+    // The moment the traffic stops too, the adapter is genuinely wedged:
+    // two dead-air misses land back to back and it is restarted (#482).
+    for (let i = 0; i < 30 && w.procs.length < 2; i++) await tick();
+    expect(c0.closed).toBe(true);
+    expect(w.procs).toHaveLength(2);
+    for (let i = 0; i < 10 && w.states.at(-1) !== "running"; i++) await tick();
+    expect(w.states.at(-1)).toBe("running");
+    await w.supervisor.stop();
+  });
+
   it("ensureRunning does not double-start while a relaunch timer is armed", async () => {
     const w = world({ minBackoffMs: 200, maxBackoffMs: 200 });
     await w.supervisor.start();
@@ -465,6 +589,81 @@ describe("#482 engine liveness probe", () => {
     for (let i = 0; i < 20 && w.procs.length < 2; i++) await tick();
     expect(w.procs).toHaveLength(2);
     expect(w.states.at(-1)).toBe("running");
+    await w.supervisor.stop();
+  });
+
+  /* #834 review repro: SIGTERM the adapter — its ws listener dies at once
+     (socket drop, reconnects refuse) while the process keeps draining its
+     graceful shutdown (engine.close + backend.close, ~seconds under load).
+     The relaunch's attachProcess SIGTERMs that drainer; when it finally
+     exits code 0 the exit must be read as a superseded generation leaving,
+     never as a crash of the fresh engine — the pre-fix handler ran the
+     shared exit path against current state (conn closed, crash counted,
+     relaunch armed), and the next attachProcess killed the healthy
+     adapter: the self-perpetuating "engine exited code 0" loop. */
+  it("#834 a killed adapter's late exit does not kill the healthy replacement", async () => {
+    const w = world({
+      gracefulProcs: [0],
+      refusedConnects: 2,
+      reconnectAttempts: 2,
+      maxConsecutiveCrashes: 3,
+    });
+    await w.supervisor.start();
+    expect(w.states.at(-1)).toBe("running");
+
+    w.conns[0]?.drop("adapter killed");
+    for (let i = 0; i < 40 && w.conns.length < 2; i++) await tick();
+    expect(w.procs).toHaveLength(2);
+    expect(w.procs[0]?.killCalls).toBe(1);
+    expect(w.connections.at(-1)?.reconnect).toBe(false);
+    expect(w.states.at(-1)).toBe("running");
+
+    // The drained adapter's exit lands now — after the replacement is up.
+    w.procs[0]?.die(0);
+    for (let i = 0; i < 10; i++) await tick();
+
+    expect(w.procs).toHaveLength(2);
+    expect(w.conns[1]?.closed).toBe(false);
+    expect(w.states.at(-1)).toBe("running");
+    await w.supervisor.stop();
+  });
+
+  /* Same race one ordering earlier: the killed adapter's exit lands while
+     the replacement's launch is still in flight (before attachProcess).
+     That exit is legitimately handled — but the relaunch it arms must be
+     consumed by the in-flight start: if it fires after the fresh conn
+     published, the next attachProcess kills the healthy adapter anyway. */
+  it("#834 an exit landing mid-relaunch arms no restart over the fresh conn", async () => {
+    let launchRelease!: () => void;
+    const launchGate = new Promise<void>((r) => {
+      launchRelease = r;
+    });
+    const w = world({
+      minBackoffMs: 30,
+      maxBackoffMs: 60,
+      gracefulProcs: [0],
+      refusedConnects: 2,
+      reconnectAttempts: 2,
+      launchGates: [undefined, launchGate],
+      maxConsecutiveCrashes: 3,
+    });
+    await w.supervisor.start();
+    expect(w.states.at(-1)).toBe("running");
+
+    w.conns[0]?.drop("adapter killed");
+    // Reconnects refuse; the relaunch's start() holds on the gate.
+    for (let i = 0; i < 40 && w.launches < 2; i++) await tick();
+    expect(w.launches).toBe(2);
+
+    w.procs[0]?.die(0);
+    launchRelease();
+    for (let i = 0; i < 40 && w.conns.length < 2; i++) await tick();
+    expect(w.states.at(-1)).toBe("running");
+
+    for (let i = 0; i < 10; i++) await tick();
+    expect(w.launches).toBe(2);
+    expect(w.procs).toHaveLength(2);
+    expect(w.conns[1]?.closed).toBe(false);
     await w.supervisor.stop();
   });
 });

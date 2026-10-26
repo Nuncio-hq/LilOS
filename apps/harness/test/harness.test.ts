@@ -620,6 +620,163 @@ describe("workspace harness", () => {
     }
   });
 
+  /* #834: a send that hit the restart window requeues on the transport
+     error ("prompt requeue: transport"), and the queue used to drain only
+     on a rebind — but a Hermes adapter resumes its stored sessions, so no
+     rebind ever happens and the row sat "Queued · reads this at the next
+     step" forever. attachEngine must drain each lane once resync settles. */
+  it("#834 a send made during an engine restart runs by itself once the engine is back (session survives)", {
+    timeout: 15_000,
+  }, async () => {
+    const w = await setupWorld();
+    try {
+      const { channel } = await openDmConversation(w.user);
+      const { conversation } = await w.user.request<{
+        conversation: { id: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "first",
+      });
+      await waitFor(async () => {
+        const { messages } = await listConvMessages(w.user, channel.id);
+        return messages.find((m) => m.authorKind === "employee");
+      }, "first answer");
+
+      /* The restart window: the conn the harness holds fails like the
+         socket-closed write did — the send dispatches, gets "engine
+         connection not open", and requeues. */
+      const deadCalls: string[] = [];
+      const deadConn: EngineConnection = {
+        request: <T>(method: string) => {
+          deadCalls.push(method);
+          return Promise.reject(
+            new Error("engine connection not open"),
+          ) as Promise<T>;
+        },
+        onEvent: () => () => {},
+        close: () => {},
+      };
+      w.harness.attachEngine(deadConn);
+      await postMessage(
+        w.user,
+        channel.id,
+        conversation.id,
+        "sent mid-restart",
+      );
+      await waitFor(
+        () => (deadCalls.includes("prompt") ? true : undefined),
+        "mid-restart send dispatched onto the dead conn",
+      );
+
+      /* The engine returns on the SAME session — the Hermes restart case,
+         where the adapter resumes its stored row so resync replays instead
+         of rebinding. The queued send must prompt on its own. */
+      const back = connectFake(w.engine) as unknown as EngineConnection;
+      const backCalls: { method: string; params: unknown }[] = [];
+      const orig = back.request.bind(back);
+      back.request = <T = unknown>(
+        method: string,
+        params?: unknown,
+      ): Promise<T> => {
+        backCalls.push({ method, params });
+        return orig<T>(method, params);
+      };
+      w.harness.attachEngine(back);
+
+      await waitFor(
+        () => backCalls.find((c) => c.method === "prompt"),
+        "queued send prompted on its own after resync",
+      );
+      await waitFor(async () => {
+        const { messages } = await listConvMessages(w.user, channel.id);
+        const list = messages.filter(
+          (m) =>
+            m.authorKind === "employee" && m.conversationId === conversation.id,
+        );
+        return list.length >= 2 ? list : undefined;
+      }, "mid-restart send answered");
+      // Exactly once — the one user send produced one prompt.
+      expect(backCalls.filter((c) => c.method === "prompt")).toHaveLength(1);
+    } finally {
+      await w.cleanup();
+    }
+  });
+
+  it("#834 a send made during an engine restart runs by itself on the rebound session", {
+    timeout: 15_000,
+  }, async () => {
+    /* Same window, but the returning engine lost the session entirely
+       (fresh adapter, no stored row): resync rebinds and the transplanted
+       queue drains there — the #487 path, held here as the other half of
+       the incident. */
+    const w = await setupWorld();
+    try {
+      const { channel } = await openDmConversation(w.user);
+      const { conversation } = await w.user.request<{
+        conversation: { id: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "first",
+      });
+      await waitFor(async () => {
+        const { messages } = await listConvMessages(w.user, channel.id);
+        return messages.find((m) => m.authorKind === "employee");
+      }, "first answer");
+
+      const deadCalls: string[] = [];
+      const deadConn: EngineConnection = {
+        request: <T>(method: string) => {
+          deadCalls.push(method);
+          return Promise.reject(
+            new Error("engine connection not open"),
+          ) as Promise<T>;
+        },
+        onEvent: () => () => {},
+        close: () => {},
+      };
+      w.harness.attachEngine(deadConn);
+      await postMessage(
+        w.user,
+        channel.id,
+        conversation.id,
+        "sent mid-restart",
+      );
+      await waitFor(
+        () => (deadCalls.includes("prompt") ? true : undefined),
+        "mid-restart send dispatched onto the dead conn",
+      );
+
+      const engine2 = new FakeEngine({ tick: 1 });
+      const conn2 = connectFake(engine2) as unknown as EngineConnection;
+      const engine2Calls: { method: string; params: unknown }[] = [];
+      const orig2 = conn2.request.bind(conn2);
+      conn2.request = <T = unknown>(
+        method: string,
+        params?: unknown,
+      ): Promise<T> => {
+        engine2Calls.push({ method, params });
+        return orig2<T>(method, params);
+      };
+      w.harness.attachEngine(conn2);
+
+      await waitFor(
+        () => engine2Calls.find((c) => c.method === "prompt"),
+        "queued send prompted on the rebound session",
+      );
+      await waitFor(async () => {
+        const { messages } = await listConvMessages(w.user, channel.id);
+        const list = messages.filter(
+          (m) =>
+            m.authorKind === "employee" && m.conversationId === conversation.id,
+        );
+        return list.length >= 2 ? list : undefined;
+      }, "mid-restart send answered on rebound session");
+      expect(engine2Calls.filter((c) => c.method === "prompt")).toHaveLength(1);
+    } finally {
+      await w.cleanup();
+    }
+  });
+
   it("AC-2 session ids never collide across engine restarts (#61)", {
     timeout: 30_000,
   }, async () => {
@@ -862,8 +1019,11 @@ describe("workspace harness", () => {
       sess.turn = undefined;
       sess.openRequests.clear();
 
+      /* A real Mac sleep is the "sleep" gap cause — the supervisor hands
+         it on the conn after notifyWake (#834). */
       w.harness.attachEngine(
         connectFake(w.engine) as unknown as EngineConnection,
+        "sleep",
       );
 
       const note = await waitFor(async () => {
@@ -891,6 +1051,73 @@ describe("workspace harness", () => {
       expect(failed.turnFailure?.kind).toBe("sleep");
       expect(failed.turnFailure?.text).toContain("went to sleep");
       expect(w.sleep.held).toBe(false);
+    } finally {
+      await w.cleanup();
+    }
+  });
+
+  it("#834 a turn lost to an engine restart says so — not 'went to sleep'", async () => {
+    const w = await setupWorld();
+    try {
+      const { channel } = await openDmConversation(w.user);
+      const { conversation } = await w.user.request<{
+        conversation: { id: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "Add a footer to the page",
+      });
+      await waitFor(() => w.sleep.held || undefined, "turn running");
+
+      // Same lost-turn shape as AC-4, but the gap was an engine restart —
+      // attachEngine with the restart cause (also the default).
+      const sessions = (
+        w.engine as unknown as {
+          sessions: Map<
+            string,
+            { turn?: unknown; openRequests: Map<string, unknown> }
+          >;
+        }
+      ).sessions;
+      const engineRef = await waitFor(async () => {
+        const { conversations } = await w.user.request<{
+          conversations: { id: string; engineRef: string | null }[];
+        }>("conversations.list", {});
+        return (
+          conversations.find((c) => c.id === conversation.id)?.engineRef ??
+          undefined
+        );
+      }, "engineRef");
+      const sess = sessions.get(engineRef as string);
+      if (!sess) throw new Error("fake engine lost the session");
+      sess.turn = undefined;
+      sess.openRequests.clear();
+
+      w.harness.attachEngine(
+        connectFake(w.engine) as unknown as EngineConnection,
+        "restart",
+      );
+
+      const note = await waitFor(async () => {
+        const { messages } = await w.user.request<{ messages: AppMessage[] }>(
+          "messages.list",
+          { channelId: channel.id, limit: 50 },
+        );
+        return messages.find((m) => m.text.includes("engine restarted"));
+      }, "restart interrupted note");
+      expect(note.text).not.toContain("went to sleep");
+      const failed = await waitFor(async () => {
+        const { conversations } = await w.user.request<{
+          conversations: {
+            id: string;
+            state: string;
+            turnFailure?: { kind: string; text: string };
+          }[];
+        }>("conversations.list", {});
+        const c = conversations.find((x) => x.id === conversation.id);
+        return c?.state === "idle" ? c : undefined;
+      }, "conversation back to idle");
+      expect(failed.turnFailure?.kind).toBe("sleep"); // still the amber chip
+      expect(failed.turnFailure?.text).toContain("the engine restarted");
     } finally {
       await w.cleanup();
     }
@@ -993,10 +1220,13 @@ describe("workspace harness", () => {
       const note = await waitFor(async () => {
         const { messages } = await listConvMessages(w.user, channel.id);
         return messages.find(
-          (m) => m.authorKind === "system" && m.text.includes("went to sleep"),
+          (m) =>
+            m.authorKind === "system" && m.text.includes("engine restarted"),
         );
       }, "restart note");
-      expect(note.text).toContain("went to sleep");
+      /* #834: BACKEND_DOWN is always an engine restart, never a sleep —
+         the note says so. */
+      expect(note.text).toContain("the engine restarted");
 
       const failed = await waitFor(async () => {
         const { conversations } = await w.user.request<{
@@ -1008,7 +1238,7 @@ describe("workspace harness", () => {
         return conversations.find((x) => x.id === conversation.id)?.turnFailure;
       }, "turnFailure stamped");
       expect(failed?.kind).toBe("sleep");
-      expect(failed?.text).toContain("went to sleep");
+      expect(failed?.text).toContain("the engine restarted");
 
       /* The generic failure path must not ride the same rejection — one
          typed surface, no "Engine error:" duplicate. */

@@ -25,7 +25,7 @@ import type {
   McpServer,
 } from "@lilos/contracts/engine";
 import type { EngineConnection } from "../engine/client";
-import type { EngineHostState } from "../engine/supervisor";
+import type { EngineGapCause, EngineHostState } from "../engine/supervisor";
 import type { HarnessOptions } from "../harness";
 import type { ReaperCandidate, SessionReaper } from "../reaper";
 import type { TaskScheduler } from "../scheduler";
@@ -204,6 +204,11 @@ export type ConversationPickPatch = {
 
 export interface HarnessCtx {
   engine?: EngineConnection;
+  /** #834: what took the last engine continuity away — "sleep" only when
+      the wake watchdog reported a real Mac sleep; every restart path
+      (process exit, dead-air kill, reconnect exhaustion, socket drop)
+      reads "restart". A turn the gap killed is worded from it. */
+  gapCause?: EngineGapCause;
   /** #790: lazy `models.list`, so a fallback note can use catalog names
       without the harness importing an engine's label rules. */
   modelCatalog?: Promise<
@@ -265,7 +270,7 @@ export interface HarnessCtx {
   start(): Promise<void>;
   onRelayReady(): Promise<void>;
   stop(): Promise<void>;
-  attachEngine(conn: EngineConnection): void;
+  attachEngine(conn: EngineConnection, gapCause?: EngineGapCause): void;
   onEngineStateChange(state: EngineHostState, detail?: string): void;
   engineDescribe(): DescribeResult | undefined;
   eventsSince(sessionId: string, after: number): Promise<EventsSinceResult>;

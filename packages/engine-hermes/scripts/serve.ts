@@ -166,8 +166,15 @@ console.log(`LISTENING ws://127.0.0.1:${server.port}/ws`);
 for (const sig of ["SIGINT", "SIGTERM"] as const) {
   process.on(sig, async () => {
     server.stop(true);
-    await engine.close();
+    /* #834: mark down + kill `hermes serve` BEFORE draining sessions —
+       engine.close() runs a `session.close` per session and each call on
+       a dying backend can ride the gateway timeout (~30 s each), leaving
+       the old process holding the sessions' ownership leases while the
+       replacement adapter's sends submit into them. Marked down, those
+       calls fail fast typed, and the backend's death frees the leases. */
+    engine.markBackendDown("adapter shutting down");
     await backend.close();
+    await engine.close();
     process.exit(0);
   });
 }
