@@ -46,9 +46,10 @@ export async function doRebindConversation(
     sessionId: string;
     ref?: string;
     engineSessionId?: string;
+    notes?: string[];
   }>(
     "session.start",
-    this.sessionParams(employee, agent, conv, surface?.mcpServer),
+    await this.sessionParams(employee, agent, conv, surface?.mcpServer),
   );
   this.aliasSurfaces(surface?.session, started.engineSessionId);
   // Session lost on the engine (fresh engine/orphan grace expired): a turn
@@ -99,6 +100,14 @@ export async function doRebindConversation(
     engineRef: started.sessionId,
     state: "idle",
   });
+  /* D-#846: picks the rebound session couldn't take — same post-binding
+     system note as the fresh-bind path. */
+  for (const [i, text] of (started.notes ?? []).entries())
+    this.postSystem(
+      rebound,
+      text,
+      `sys:${binding.conversationId}:note:${started.sessionId}:start:${i}`,
+    ).catch(() => {});
   /* The old session is gone: an accepted-but-unlanded steer can never
      land on the rebound session — park it in the not-sent tray
      (#315 AC-5/AC-6). Same for the queue when a Stop had armed the
