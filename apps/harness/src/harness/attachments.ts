@@ -74,10 +74,13 @@ export function saveAttachment(opts: {
  * worktree too. Best-effort — a non-repo or missing git skips it.
  */
 export async function excludeFromGit(cwd: string): Promise<void> {
+  /* Bounded (D-#875): a consent-blocked cwd hangs `rev-parse` forever —
+     best-effort stays best-effort, it just stops waiting. */
   const commonDir = await new Promise<string | undefined>((resolveP) => {
     execFile(
       "git",
       ["-C", cwd, "rev-parse", "--git-common-dir"],
+      { timeout: 10_000, killSignal: "SIGKILL" },
       (err, stdout) => resolveP(err ? undefined : stdout.trim() || undefined),
     );
   });

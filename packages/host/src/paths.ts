@@ -1,6 +1,7 @@
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, promises as fsp, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, normalize } from "node:path";
+import { bounded, exists } from "./access.js";
 
 const HOME = homedir();
 
@@ -67,6 +68,44 @@ export function resolveUnderHome(p: string, home = HOME): string | undefined {
   if (rel.split("/").some((s) => s.startsWith("."))) return undefined;
   /* Returned under the LITERAL home so callers' `collapsePath(abs, home)`
      still folds to `~/x` even when `home` is itself a symlink. */
+  const homeBase = normalize(expandPath("~", home));
+  return rel ? join(homeBase, rel) : homeBase;
+}
+
+/** Async `resolveUnderHome` — same walk, same rules, but the stat and
+ *  realpath syscalls are bounded (D-#875): a path under a protected folder
+ *  the app can't read yet reports FOLDER_ACCESS instead of parking the
+ *  caller in a consent wait it can't answer. Sync callers below the probe
+ *  layer keep `resolveUnderHome`. */
+export async function resolveUnderHomeAsync(
+  p: string,
+  home = HOME,
+): Promise<string | undefined> {
+  const realHome = await bounded(fsp.realpath(home), home).catch(
+    () => undefined,
+  );
+  if (!realHome) return undefined;
+  const abs = normalize(expandPath(p, home));
+  let probe = abs;
+  const tail: string[] = [];
+  while (!(await exists(probe))) {
+    tail.unshift(basename(probe));
+    const parent = dirname(probe);
+    if (parent === probe) return undefined;
+    probe = parent;
+  }
+  const ancestor = await bounded(fsp.realpath(probe), probe).catch(
+    () => undefined,
+  );
+  if (!ancestor) return undefined;
+  if (ancestor !== realHome && !ancestor.startsWith(`${realHome}/`)) {
+    return undefined;
+  }
+  const rel =
+    ancestor === realHome
+      ? tail.join("/")
+      : [ancestor.slice(realHome.length + 1), ...tail].join("/");
+  if (rel.split("/").some((s) => s.startsWith("."))) return undefined;
   const homeBase = normalize(expandPath("~", home));
   return rel ? join(homeBase, rel) : homeBase;
 }

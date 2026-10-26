@@ -1,4 +1,5 @@
-import { existsSync, promises as fsp } from "node:fs";
+import { promises as fsp } from "node:fs";
+import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import type {
   GitBranchesResult,
@@ -17,6 +18,14 @@ import type {
   GitWorktreesResult,
   GitWriteReason,
 } from "@lilos/contracts/host";
+import { protectedFolderOf } from "@lilos/contracts/host";
+import {
+  bounded,
+  exists,
+  folderAccessError,
+  isAccessError,
+  probeTimeoutMs,
+} from "./access.js";
 import { HOST_ERRORS, HostError } from "./errors.js";
 import { run } from "./exec.js";
 import { collapsePath, expandPath } from "./paths.js";
@@ -24,17 +33,52 @@ import { collapsePath, expandPath } from "./paths.js";
 const MAX_BUFFER = 64 * 1024 * 1024;
 const DISCOVER_CAP = 200;
 const PATCH_CAP = 200 * 1024;
+/* D-#875: a git child on a TCC-protected folder blocks inside open() until
+   LilOS.app is granted — under launchd the prompt can't even be answered.
+   Every git call is killed at a bound (SIGKILL: a consent-blocked syscall
+   doesn't take SIGTERM) and reports FOLDER_ACCESS instead of hanging.
+   Probes get the short bound; writes/network ops get 2 min so a slow push
+   still completes — the failure mode being bounded matters more than how
+   long the bound is. */
+const GIT_WRITE_TIMEOUT_MS = 120_000;
 
-async function git(cwd: string, args: string[]): Promise<string> {
-  const { stdout } = await run("git", args, { cwd, maxBuffer: MAX_BUFFER });
-  return stdout;
+async function git(
+  cwd: string,
+  args: string[],
+  timeout = probeTimeoutMs(),
+): Promise<string> {
+  try {
+    const { stdout } = await run("git", args, {
+      cwd,
+      maxBuffer: MAX_BUFFER,
+      timeout,
+      killSignal: "SIGKILL",
+    });
+    return stdout;
+  } catch (e) {
+    /* A killed child inside a protected folder is a consent wait; outside
+       one it's just a timeout — say which instead of always crying TCC. */
+    if (isAccessError(e)) {
+      if (protectedFolderOf(cwd, homedir())) throw folderAccessError(cwd);
+      if ((e as { killed?: boolean }).killed) {
+        throw new HostError(
+          HOST_ERRORS.GIT_FAILED,
+          `git timed out after ${timeout}ms`,
+        );
+      }
+      throw folderAccessError(cwd);
+    }
+    throw e;
+  }
 }
 
-/** stdout, or null when git exits non-zero (non-repo, missing ref, unborn HEAD). */
+/** stdout, or null when git exits non-zero (non-repo, missing ref, unborn HEAD).
+    A typed HostError (FOLDER_ACCESS) still throws — the caller must hear it. */
 async function gitOr(cwd: string, args: string[]): Promise<string | null> {
   try {
     return await git(cwd, args);
-  } catch {
+  } catch (e) {
+    if (e instanceof HostError) throw e;
     return null;
   }
 }
@@ -71,7 +115,8 @@ export async function repoMark(
   const root = await repoRoot(abs);
   // git resolves symlinks in --show-toplevel (e.g. /var → /private/var);
   // compare against the canonicalized input path.
-  if (!root || resolve(root) !== resolve(await fsp.realpath(abs))) return null;
+  if (!root || resolve(root) !== resolve(await bounded(fsp.realpath(abs), abs)))
+    return null;
   const [head, remote] = await Promise.all([headOf(root), remoteOf(root)]);
   return { head, remote };
 }
@@ -132,6 +177,9 @@ type GitOp = "commit" | "push" | "pull" | "createBranch";
 /** stderr/exec detail → a typed GitWriteReason the client maps to plain copy
     (same contract as forge's ghFailed — raw stderr only in `detail`). */
 function gitWriteFailed(op: GitOp, e: unknown): HostError {
+  /* A typed HostError (FOLDER_ACCESS #875) already says what blocked —
+     reclassing it as a write failure would hide the consent wait. */
+  if (e instanceof HostError) return e;
   const err = e as { stderr?: string; stdout?: string; message?: string };
   /* `git commit` prints "nothing added to commit" on *stdout* while real
      push/checkout errors ride stderr — take both so the reason classifier
@@ -228,19 +276,16 @@ export async function gitCommit(params: {
     );
   }
   try {
-    await git(root, ["add", "-A", "--", ...params.files]);
+    await git(root, ["add", "-A", "--", ...params.files], GIT_WRITE_TIMEOUT_MS);
   } catch (e) {
     throw gitWriteFailed("commit", e);
   }
   try {
-    await git(root, [
-      "commit",
-      "--only",
-      "-m",
-      params.message,
-      "--",
-      ...params.files,
-    ]);
+    await git(
+      root,
+      ["commit", "--only", "-m", params.message, "--", ...params.files],
+      GIT_WRITE_TIMEOUT_MS,
+    );
   } catch (e) {
     throw gitWriteFailed("commit", e);
   }
@@ -284,9 +329,9 @@ export async function gitPush(params: {
   ]).then((o) => o?.trim() || null);
   try {
     if (upstream) {
-      await git(root, ["push"]);
+      await git(root, ["push"], GIT_WRITE_TIMEOUT_MS);
     } else {
-      await git(root, ["push", "-u", remote, branch]);
+      await git(root, ["push", "-u", remote, branch], GIT_WRITE_TIMEOUT_MS);
     }
   } catch (e) {
     throw gitWriteFailed("push", e);
@@ -335,7 +380,7 @@ export async function gitPull(params: {
     );
   }
   try {
-    await git(root, ["pull", "--ff-only"]);
+    await git(root, ["pull", "--ff-only"], GIT_WRITE_TIMEOUT_MS);
   } catch (e) {
     throw gitWriteFailed("pull", e);
   }
@@ -369,7 +414,7 @@ export async function gitCreateBranch(params: {
     );
   }
   try {
-    await git(root, ["checkout", "-b", params.name]);
+    await git(root, ["checkout", "-b", params.name], GIT_WRITE_TIMEOUT_MS);
   } catch (e) {
     throw gitWriteFailed("createBranch", e);
   }
@@ -756,11 +801,15 @@ export async function worktreeAdd(params: {
   const dir = resolve(expandPath(params.dir));
   const lilos = join(root, ".lilos");
   if (dir.startsWith(`${lilos}/`)) {
-    await fsp.mkdir(lilos, { recursive: true });
+    await bounded(fsp.mkdir(lilos, { recursive: true }), lilos);
     const gi = join(lilos, ".gitignore");
-    if (!existsSync(gi)) await fsp.writeFile(gi, "*\n");
+    if (!(await exists(gi))) await bounded(fsp.writeFile(gi, "*\n"), gi);
   }
-  await git(root, ["worktree", "add", "-b", params.branch, dir, params.base]);
+  await git(
+    root,
+    ["worktree", "add", "-b", params.branch, dir, params.base],
+    GIT_WRITE_TIMEOUT_MS,
+  );
   return { dir: collapsePath(dir), branch: params.branch };
 }
 
@@ -773,15 +822,22 @@ export async function gitDiscoverRepos(params: {
     [];
   async function scan(dir: string, d: number): Promise<void> {
     if (repos.length >= DISCOVER_CAP) return;
-    if (existsSync(join(dir, ".git"))) {
+    if (await exists(join(dir, ".git"))) {
       const [head, remote] = await Promise.all([headOf(dir), remoteOf(dir)]);
       repos.push({ path: collapsePath(dir), head, remote });
       return; // don't descend into a repo
     }
     if (d === 0) return;
-    const dirents = await fsp
-      .readdir(dir, { withFileTypes: true })
-      .catch(() => [] as import("node:fs").Dirent[]);
+    /* A root macOS still blocks reports instead of scanning nothing — the
+       picker hears "waiting on folder access" rather than finding no repos
+       (#875). Missing/unreadable dirs still skip silently. */
+    const dirents = await bounded(
+      fsp.readdir(dir, { withFileTypes: true }),
+      dir,
+    ).catch((e) => {
+      if (e instanceof HostError) throw e;
+      return [] as import("node:fs").Dirent[];
+    });
     for (const de of dirents) {
       if (
         !de.isDirectory() ||

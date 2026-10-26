@@ -20,6 +20,7 @@ import {
   enginePolicyPick,
 } from "../settings/state";
 import { toAttachmentInputs } from "./attachments";
+import { ensureFolderAccess } from "./folder-access";
 import { USER_ID } from "./me";
 import { applyModelCatalog, engine, modelVisibility, relay } from "./runtime";
 import { sayError } from "./toast";
@@ -483,6 +484,8 @@ export async function moveConversationFolder(
   path: string,
 ): Promise<void> {
   await relay.request("conversations.moveFolder", { conversationId, path });
+  // D-#875: a move into a protected folder needs the same macOS grant.
+  ensureFolderAccess(path);
 }
 
 /** engine `describe` capability check (e.g. "steer"). */

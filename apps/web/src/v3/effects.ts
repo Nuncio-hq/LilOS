@@ -3,6 +3,7 @@ import { isRecordRoute, stepNav, type V3Nav } from "@lilos/ui";
 import { computed, type ReadableAtom } from "nanostores";
 import { useEffect } from "react";
 import { useBrowserContextPush } from "../lib/browser";
+import { watchFolderAccess } from "../lib/folder-access";
 import { refreshFolders } from "../lib/folders";
 import { shortcutFromKey } from "../lib/keys";
 import { watchNotifications } from "../lib/notify";
@@ -86,6 +87,9 @@ export function useShellEffects({
   useBrowserContextPush();
   // Recents for the new-chat folder chip.
   useEffect(() => void refreshFolders().catch(() => {}), []);
+  /* D-#875: the desktop's folder-access state — the ask step and the
+     blocked banner read it. No bridge (plain web) → nothing happens. */
+  useEffect(() => watchFolderAccess(), []);
 
   /* Notifications (#32): engine events → macOS notifications when the
      conversation isn't in view; a click opens that thread. #561: while the

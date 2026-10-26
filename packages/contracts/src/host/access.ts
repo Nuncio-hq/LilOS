@@ -1,5 +1,3 @@
-import { join } from "node:path";
-
 /**
  * The folders macOS puts behind a TCC "Files and Folders" consent (D-#875):
  * an `open()`/`readdir()` inside one blocks until the responsible app —
@@ -8,11 +6,7 @@ import { join } from "node:path";
  * desktop shell's ask-step names them, the FOLDER_ACCESS error names them)
  * so the one copy lives in contracts.
  */
-export const PROTECTED_FOLDERS = [
-  "Desktop",
-  "Documents",
-  "Downloads",
-] as const;
+export const PROTECTED_FOLDERS = ["Desktop", "Documents", "Downloads"] as const;
 export type ProtectedFolder = (typeof PROTECTED_FOLDERS)[number];
 
 /** The protected folder `abs` sits inside, if any
@@ -22,7 +16,9 @@ export function protectedFolderOf(
   home: string,
 ): ProtectedFolder | undefined {
   for (const name of PROTECTED_FOLDERS) {
-    const root = join(home, name);
+    // String join, not node:path — contracts are bundled into the mobile
+    // app where node builtins don't resolve.
+    const root = `${home}/${name}`;
     if (abs === root || abs.startsWith(`${root}/`)) return name;
   }
   return undefined;

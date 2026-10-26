@@ -1,4 +1,4 @@
-import { existsSync, promises as fsp } from "node:fs";
+import { promises as fsp } from "node:fs";
 import { join } from "node:path";
 import type {
   FsCompleteResult,
@@ -8,6 +8,7 @@ import type {
   FsSearchResult,
   FsTreeResult,
 } from "@lilos/contracts/host";
+import { bounded, exists, probeTimeoutMs } from "./access.js";
 import { HOST_ERRORS, HostError } from "./errors.js";
 import { run } from "./exec.js";
 import { repoMark, repoRoot } from "./git.js";
@@ -24,8 +25,10 @@ const SEARCH_WALK_CAP = 200_000;
 /** Per-folder enumeration cache lifetime; root mtime bumps invalidate earlier. */
 const SEARCH_CACHE_TTL_MS = 1500;
 
-/** `.git` is a dir in a plain checkout, a file in a worktree/submodule. */
-const hasGitDir = (abs: string) => existsSync(join(abs, ".git"));
+/** `.git` is a dir in a plain checkout, a file in a worktree/submodule.
+ *  The stat is bounded — on a TCC-protected folder it can sit in open()
+ *  forever (D-#875). */
+const hasGitDir = (abs: string) => exists(join(abs, ".git"));
 
 function pathNotFound(path: string, kind: "folder" | "file"): HostError {
   return new HostError(HOST_ERRORS.PATH_NOT_FOUND, `no such ${kind}: ${path}`);
@@ -33,22 +36,24 @@ function pathNotFound(path: string, kind: "folder" | "file"): HostError {
 
 export async function fsList(params: { path: string }): Promise<FsListResult> {
   const abs = expandPath(params.path);
-  const dirents = await fsp
-    .readdir(abs, { withFileTypes: true })
-    .catch((e: NodeJS.ErrnoException) => {
-      throw e.code === "ENOENT" || e.code === "ENOTDIR"
-        ? pathNotFound(params.path, "folder")
-        : e;
-    });
+  const dirents = await bounded(
+    fsp.readdir(abs, { withFileTypes: true }),
+    abs,
+  ).catch((e: NodeJS.ErrnoException) => {
+    throw e.code === "ENOENT" || e.code === "ENOTDIR"
+      ? pathNotFound(params.path, "folder")
+      : e;
+  });
   const entries: FsEntry[] = dirents.map((d) => ({
     name: d.name,
     kind: d.isDirectory() ? "dir" : d.isFile() ? "file" : "other",
   }));
   // Mark repo children with a bounded pool: one `git` round-trip per repo,
   // serially, turned a big folder (e.g. $TMPDIR, ~900 repos) into 15s+.
-  const repos = entries.filter(
-    (e) => e.kind === "dir" && hasGitDir(join(abs, e.name)),
-  );
+  const repos: FsEntry[] = [];
+  for (const e of entries) {
+    if (e.kind === "dir" && (await hasGitDir(join(abs, e.name)))) repos.push(e);
+  }
   let next = 0;
   const worker = async () => {
     while (next < repos.length) {
@@ -75,9 +80,14 @@ export async function fsComplete(params: {
   const dirPart = slash === -1 ? "" : word.slice(0, slash + 1);
   const frag = slash === -1 ? word : word.slice(slash + 1);
   const abs = expandPath(slash === -1 ? "~" : dirPart);
-  const dirents = await fsp
-    .readdir(abs, { withFileTypes: true })
-    .catch(() => [] as import("node:fs").Dirent[]);
+  const dirents = await bounded(
+    fsp.readdir(abs, { withFileTypes: true }),
+    abs,
+  ).catch((e) => {
+    // A consent wait must surface (#875); any other miss stays silent.
+    if (e instanceof HostError) throw e;
+    return [] as import("node:fs").Dirent[];
+  });
   const suggestions = dirents
     .filter(
       (d) =>
@@ -99,9 +109,11 @@ export async function fsTree(params: {
 }): Promise<FsTreeResult> {
   const abs = expandPath(params.path);
   const cap = params.max ?? TREE_CAP;
-  const st = await fsp.stat(abs).catch((e: NodeJS.ErrnoException) => {
-    throw e.code === "ENOENT" ? pathNotFound(params.path, "folder") : e;
-  });
+  const st = await bounded(fsp.stat(abs), abs).catch(
+    (e: NodeJS.ErrnoException) => {
+      throw e.code === "ENOENT" ? pathNotFound(params.path, "folder") : e;
+    },
+  );
   if (!st.isDirectory()) {
     throw new HostError(
       HOST_ERRORS.PATH_NOT_FOUND,
@@ -115,10 +127,14 @@ export async function fsTree(params: {
   const files: string[] = [];
   let truncated = false;
   if (root) {
-    const { stdout } = await run(
-      "git",
-      ["ls-files", "-co", "--exclude-standard", "-z"],
-      { cwd: abs, maxBuffer: 64 * 1024 * 1024 },
+    const { stdout } = await bounded(
+      run("git", ["ls-files", "-co", "--exclude-standard", "-z"], {
+        cwd: abs,
+        maxBuffer: 64 * 1024 * 1024,
+        timeout: probeTimeoutMs(),
+        killSignal: "SIGKILL",
+      }),
+      abs,
     );
     for (const p of stdout.split("\0")) {
       if (p === "") continue;
@@ -131,7 +147,10 @@ export async function fsTree(params: {
   } else {
     async function walk(dir: string, rel: string): Promise<void> {
       if (truncated) return;
-      const dirents = await fsp.readdir(dir, { withFileTypes: true });
+      const dirents = await bounded(
+        fsp.readdir(dir, { withFileTypes: true }),
+        dir,
+      );
       for (const d of dirents) {
         if (truncated) return;
         if (SKIP.has(d.name)) continue;
@@ -163,9 +182,11 @@ const searchCache = new Map<
 >();
 
 async function searchEnumerate(abs: string, inputPath: string) {
-  const st = await fsp.stat(abs).catch((e: NodeJS.ErrnoException) => {
-    throw e.code === "ENOENT" ? pathNotFound(inputPath, "folder") : e;
-  });
+  const st = await bounded(fsp.stat(abs), abs).catch(
+    (e: NodeJS.ErrnoException) => {
+      throw e.code === "ENOENT" ? pathNotFound(inputPath, "folder") : e;
+    },
+  );
   if (!st.isDirectory()) {
     throw new HostError(
       HOST_ERRORS.PATH_NOT_FOUND,
@@ -184,10 +205,14 @@ async function searchEnumerate(abs: string, inputPath: string) {
   const root = await repoRoot(abs);
   if (root) {
     // Same visible set as fs.tree: tracked + untracked, .gitignore honored.
-    const { stdout } = await run(
-      "git",
-      ["ls-files", "-co", "--exclude-standard", "-z"],
-      { cwd: abs, maxBuffer: 64 * 1024 * 1024 },
+    const { stdout } = await bounded(
+      run("git", ["ls-files", "-co", "--exclude-standard", "-z"], {
+        cwd: abs,
+        maxBuffer: 64 * 1024 * 1024,
+        timeout: probeTimeoutMs(),
+        killSignal: "SIGKILL",
+      }),
+      abs,
     );
     const dirs = new Set<string>();
     for (const p of stdout.split("\0")) {
@@ -209,9 +234,14 @@ async function searchEnumerate(abs: string, inputPath: string) {
     let count = 0;
     async function walk(dir: string, rel: string): Promise<void> {
       if (count >= SEARCH_WALK_CAP) return;
-      const dirents = await fsp
-        .readdir(dir, { withFileTypes: true })
-        .catch(() => [] as import("node:fs").Dirent[]);
+      const dirents = await bounded(
+        fsp.readdir(dir, { withFileTypes: true }),
+        dir,
+      ).catch((e) => {
+        // Consent waits report (#875); other misses still skip the dir.
+        if (e instanceof HostError) throw e;
+        return [] as import("node:fs").Dirent[];
+      });
       for (const d of dirents) {
         if (count >= SEARCH_WALK_CAP) return;
         if (SKIP.has(d.name)) continue;
@@ -293,16 +323,18 @@ export async function fsRead(params: {
 }): Promise<FsReadResult> {
   const abs = expandPath(params.path);
   const cap = params.maxBytes ?? READ_CAP;
-  const st = await fsp.stat(abs).catch((e: NodeJS.ErrnoException) => {
-    throw e.code === "ENOENT" ? pathNotFound(params.path, "file") : e;
-  });
+  const st = await bounded(fsp.stat(abs), abs).catch(
+    (e: NodeJS.ErrnoException) => {
+      throw e.code === "ENOENT" ? pathNotFound(params.path, "file") : e;
+    },
+  );
   if (!st.isFile()) {
     throw new HostError(
       HOST_ERRORS.PATH_NOT_FOUND,
       `not a file: ${params.path}`,
     );
   }
-  const fh = await fsp.open(abs, "r");
+  const fh = await bounded(fsp.open(abs, "r"), abs);
   try {
     const buf = Buffer.alloc(Math.min(cap + 1, st.size));
     const { bytesRead } = await fh.read(buf, 0, buf.length, 0);

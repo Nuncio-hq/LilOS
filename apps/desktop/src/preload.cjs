@@ -105,6 +105,20 @@ contextBridge.exposeInMainWorld("lilos", {
     ipcRenderer.on("lilos:shortcut", listener);
     return () => ipcRenderer.removeListener("lilos:shortcut", listener);
   },
+  /* #875 macOS folder access: main owns TCC state + the touches that raise
+     the real prompt; the renderer draws the ask step and the denied banner
+     off `pending`/`blocked`. Absent on plain web — no bridge, no surfaces. */
+  folderAccess: {
+    state: () => ipcRenderer.invoke("lilos:folder-access:state"),
+    ask: () => ipcRenderer.invoke("lilos:folder-access:ask"),
+    ensure: (path) => ipcRenderer.invoke("lilos:folder-access:ensure", path),
+    openSettings: () => ipcRenderer.invoke("lilos:folder-access:open-settings"),
+    onChange: (cb) => {
+      const listener = (_e, s) => cb(s);
+      ipcRenderer.on("lilos:folder-access", listener);
+      return () => ipcRenderer.removeListener("lilos:folder-access", listener);
+    },
+  },
   /* LilOS Browser: main owns the WebContentsView tree + state; this facade
      only ferries commands and the pushed snapshot. Channel names mirror
      DESKTOP_BROWSER_* in contracts/app/browser.ts. Absent on plain web —

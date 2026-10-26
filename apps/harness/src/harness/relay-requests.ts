@@ -1,4 +1,4 @@
-import { existsSync, statSync } from "node:fs";
+import { promises as fsp } from "node:fs";
 import { join, resolve } from "node:path";
 import {
   type Conversation,
@@ -16,8 +16,10 @@ import {
 import type { AgentDescriptor } from "@lilos/contracts/engine";
 import { EventsSinceParams } from "@lilos/contracts/engine";
 import {
+  bounded,
   callHost,
   collapsePath,
+  exists,
   expandPath,
   fsList,
   gitBranches,
@@ -26,7 +28,7 @@ import {
   gitWorktrees,
   HOST_ERRORS,
   HostError,
-  resolveUnderHome,
+  resolveUnderHomeAsync,
   worktreeAdd,
 } from "@lilos/host";
 import { engineErrorCode } from "../engine/client";
@@ -161,14 +163,23 @@ export async function moveConversationFolder(
   this: HarnessCtx,
   params: ConversationsMoveFolderHostParams,
 ): Promise<ConversationsMoveFolderHostResult> {
-  const abs = resolveUnderHome(params.path, this.home);
+  /* Bounded resolve (D-#875): the move target may sit under a protected
+     folder — a consent wait reports FOLDER_ACCESS, it can't hang here. */
+  const abs = await resolveUnderHomeAsync(params.path, this.home);
   if (!abs) {
     throw new HostError(
       HOST_ERRORS.OUTSIDE_ROOT,
       `path is outside the Mac's home folder: ${params.path}`,
     );
   }
-  if (!existsSync(abs) || !statSync(abs).isDirectory()) {
+  const dir = await bounded(
+    fsp.stat(abs).then(
+      (st) => st.isDirectory(),
+      () => false,
+    ),
+    abs,
+  );
+  if (!dir) {
     throw Object.assign(new Error(`folder does not exist: ${params.path}`), {
       code: -32602,
     });
@@ -385,7 +396,7 @@ export async function folderDetail(
     branches: [] as string[],
     workstreams: [],
   };
-  if (!existsSync(abs)) return { ...empty, missing: true };
+  if (!(await exists(abs))) return { ...empty, missing: true };
   const probe = await gitIsRepo({ path: abs });
   if (!probe.isRepo || !probe.root) return { ...empty, missing: false };
   const [branches, worktrees] = await Promise.all([
@@ -429,7 +440,7 @@ export async function folderBrowse(
   params: FoldersBrowseParams,
 ): Promise<FoldersBrowseResult> {
   const home = this.home;
-  const abs = resolveUnderHome(params.path, home);
+  const abs = await resolveUnderHomeAsync(params.path, home);
   if (!abs) {
     throw new HostError(
       HOST_ERRORS.OUTSIDE_ROOT,
@@ -468,17 +479,18 @@ export async function folderDiscover(
   );
   const { repos } = await gitDiscoverRepos({ roots });
   return {
-    repos: repos.flatMap((r) => {
-      const abs = resolveUnderHome(r.path, home);
-      return abs
+    repos: (
+      await Promise.all(repos.map((r) => resolveUnderHomeAsync(r.path, home)))
+    ).flatMap((abs, i) =>
+      abs
         ? [
             {
               path: collapsePath(abs, home),
-              ...(r.head ? { branch: r.head } : {}),
+              ...(repos[i]?.head ? { branch: repos[i]?.head } : {}),
             },
           ]
-        : [];
-    }),
+        : [],
+    ),
   };
 }
 

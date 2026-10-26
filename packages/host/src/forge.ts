@@ -12,6 +12,7 @@ import type {
   ForgePrsResult,
   ForgePullRequest,
 } from "@lilos/contracts/host";
+import { asAccessError, bounded, probeTimeoutMs } from "./access.js";
 import { HOST_ERRORS, HostError } from "./errors.js";
 import { run } from "./exec.js";
 import { repoRoot } from "./git.js";
@@ -90,12 +91,22 @@ function ghFailed(e: unknown): HostError {
   });
 }
 
+/* `gh` reads the repo it's spawned in — a consent-blocked open() there
+   hangs the same as git's (D-#875), so it gets a bound too; 1 min is what
+   a slow PR fetch needs, never forever. */
+const GH_TIMEOUT_MS = 60_000;
+
 async function gh(cwd: string, args: string[]): Promise<string> {
   try {
-    const { stdout } = await run("gh", args, { cwd, maxBuffer: MAX_BUFFER });
+    const { stdout } = await run("gh", args, {
+      cwd,
+      maxBuffer: MAX_BUFFER,
+      timeout: GH_TIMEOUT_MS,
+      killSignal: "SIGKILL",
+    });
     return stdout;
   } catch (e) {
-    throw ghFailed(e);
+    throw asAccessError(e, cwd) ?? ghFailed(e);
   }
 }
 
@@ -260,9 +271,19 @@ export async function forgePr(params: ForgePrParams): Promise<ForgePrResult> {
     );
   }
   const [branch, pr] = await Promise.all([
-    run("git", ["symbolic-ref", "--short", "HEAD"], { cwd: root })
+    bounded(
+      run("git", ["symbolic-ref", "--short", "HEAD"], {
+        cwd: root,
+        timeout: probeTimeoutMs(),
+        killSignal: "SIGKILL",
+      }),
+      root,
+    )
       .then(({ stdout }) => stdout.trim())
-      .catch(() => null),
+      .catch((e) => {
+        if (e instanceof HostError) throw e;
+        return null;
+      }),
     viewPr(root, params.number),
   ]);
   return { root: collapsePath(root), branch, pr };
@@ -340,11 +361,19 @@ export async function forgePrs(
   params: ForgePrsParams,
 ): Promise<ForgePrsResult> {
   const root = await repoOrThrow(params.path);
-  const current = await run("git", ["symbolic-ref", "--short", "HEAD"], {
-    cwd: root,
-  })
+  const current = await bounded(
+    run("git", ["symbolic-ref", "--short", "HEAD"], {
+      cwd: root,
+      timeout: probeTimeoutMs(),
+      killSignal: "SIGKILL",
+    }),
+    root,
+  )
     .then(({ stdout }) => stdout.trim())
-    .catch(() => null);
+    .catch((e) => {
+      if (e instanceof HostError) throw e;
+      return null;
+    });
   const branches = [
     ...new Set(
       [current, ...(params.branches ?? [])].filter((b): b is string => !!b),

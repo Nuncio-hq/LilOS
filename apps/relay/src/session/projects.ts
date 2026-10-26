@@ -1,5 +1,5 @@
 import { ProjectsCreateParams, ProjectsListParams } from "@lilos/contracts/app";
-import { resolveUnderHome } from "@lilos/host";
+import { resolveUnderHomeAsync } from "@lilos/host";
 import { projectFolderOf } from "../projects";
 import type { RelayCtx } from "./ctx";
 import { badParams, JsonRpcCode, RpcError } from "./rpc";
@@ -29,7 +29,7 @@ export async function handleProjects(c: RelayCtx): Promise<false | undefined> {
         /* Same boundary as a phone's `folders.add` (D-#238): a paired
            phone may only make a project of a real folder under the Mac's
            home — what its folder browser could have listed. */
-        const abs = resolveUnderHome(folder, homeDir);
+        const abs = await resolveUnderHomeAsync(folder, homeDir);
         if (!abs) {
           throw new RpcError(
             JsonRpcCode.forbidden,

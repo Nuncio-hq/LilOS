@@ -53,6 +53,11 @@ export { V3Banner } from "./v3/v3-banner";
 export { STEP_VERB } from "./v3/v3-bits";
 export type * from "./v3/v3-data-types";
 export {
+  FolderAccessBanner,
+  FolderAccessStep,
+  foldersPhrase,
+} from "./v3/v3-folder-access";
+export {
   HelperRow,
   HelpersBlock,
   HelpersHint,

@@ -5,6 +5,7 @@
 
 import type { Folder, FsDir, Workspace } from "@lilos/ui/types";
 import { atom } from "nanostores";
+import { ensureFolderAccess } from "./folder-access";
 import {
   hostBranches,
   hostDiscoverRepos,
@@ -74,6 +75,9 @@ export async function addFolder(path: string): Promise<Folder | undefined> {
   const res = await relay.request<{ folder: { path: string } }>("folders.add", {
     path,
   });
+  /* D-#875: a folder inside ~/Desktop, ~/Documents or ~/Downloads needs the
+     macOS grant — the desktop ask step covers its protected folder. */
+  ensureFolderAccess(res.folder.path);
   await refreshFolders();
   return folders.get().find((f) => f.path === res.folder.path);
 }
