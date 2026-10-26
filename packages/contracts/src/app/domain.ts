@@ -240,7 +240,7 @@ export const Conversation = z.object({
    */
   settledAt: Timestamp.optional(),
   /**
-   * D-#862: why it settled — `manual` (Oscar, or a legacy `archived` write),
+   * D-#862: why it settled — `manual` (the owner, or a legacy `archived` write),
    * `idle` (the 3-day sweep), `pr` (its PR merged or closed). Present on
    * every settled row.
    */
@@ -264,6 +264,15 @@ export const Conversation = z.object({
    * the list forever (Auto-settle → Disabled). Absent = on.
    */
   autoSettle: z.boolean().optional(),
+  /**
+   * D-#862 review: the newest owner park action's stamp (pin, settle,
+   * un-settle, snooze, wake, auto-settle flip — and the wake paths). The
+   * sweep counts it as activity, so a thread the owner just un-parked or
+   * touched doesn't bounce straight back onto the shelf, and an un-settle
+   * newer than a PR's terminal stamp rescues it from the PR path.
+   * Relay-stamped; never a client write.
+   */
+  lastParkActionAt: Timestamp.optional(),
   /**
    * Host-owned watermark: highest user-message seq the harness has handed to
    * the engine. User messages beyond it are the owed turns — this is what

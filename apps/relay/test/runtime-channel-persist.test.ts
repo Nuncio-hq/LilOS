@@ -139,7 +139,7 @@ describe("D-#761: runtime employee DM channel is readable after a restart", () =
         `import { Database } from "bun:sqlite";
          const db = new Database(${JSON.stringify(`${first.home}/relay.sqlite`)});
          db.exec("ALTER TABLE employees DROP COLUMN runtime");
-         for (const col of ["pinned_at","settled_at","settled_reason","settled_pr","snoozed_until","auto_settle"])
+         for (const col of ["pinned_at","settled_at","settled_reason","settled_pr","snoozed_until","auto_settle","last_park_action_at"])
            db.exec("ALTER TABLE conversations DROP COLUMN " + col);
          db.exec("PRAGMA user_version = 35");
          db.close();`,

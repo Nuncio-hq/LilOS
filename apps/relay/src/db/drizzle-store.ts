@@ -174,6 +174,7 @@ const rowToConversation = (row: ConversationRow): Conversation => {
       : undefined,
     snoozedUntil: row.snoozedUntil ?? undefined,
     ...(row.autoSettle === false ? { autoSettle: false } : {}),
+    lastParkActionAt: row.lastParkActionAt ?? undefined,
   };
 };
 
@@ -909,6 +910,7 @@ export function createDrizzleStore(db: Db): RelayStore {
         pinned_at AS pinnedAt, settled_at AS settledAt,
         settled_reason AS settledReason, settled_pr AS settledPr,
         snoozed_until AS snoozedUntil, auto_settle AS autoSettle,
+        last_park_action_at AS lastParkActionAt,
         usage, usage_session_id AS usageSessionId, usage_seq AS usageSeq,
         life, turn_failure AS turnFailure,
         turn_stopped AS turnStopped, bg_jobs AS bgJobs, stuck,
@@ -1710,29 +1712,67 @@ export function createDrizzleStore(db: Db): RelayStore {
          the column holds its JSON like `workspace`/`usage` — serialize at
          the boundary, `null` clears. */
       const { turnFailure, stuck, settledPr, ...cols } = patch;
-      /* D-#862: park writes. `archived` is the legacy settle alias —
-         translate it to a manual settle so old callers keep working; an
-         explicit settleAt write wins over a stray archived flag, and the
-         mirror column always follows settledAt. Settling drops the pin and
-         any snooze — a settled thread needs neither. */
+      /* D-#862 review: park writes. `archived` stays the legacy settle
+         alias — an explicit settledAt wins over a stray archived flag and
+         the mirror column always follows settledAt. Settling drops pin
+         and snooze, and a pin/snooze SET can't stick on a settled row
+         (it would silently reappear on un-settle). A re-settle keeps the
+         original stamp + reason — an idle/pr settle must not read as
+         manual. Every park write stamps last_park_action_at: the sweep
+         counts owner park actions as activity. */
       let parkSync: Partial<typeof schema.conversations.$inferInsert> = {};
-      if (patch.settledAt !== undefined) {
-        /* A settled thread is never pinned or snoozed — the shelf row
-           carries no badge; un-settling clears the reason. */
-        parkSync =
-          patch.settledAt != null
-            ? { archived: true, pinnedAt: null, snoozedUntil: null }
-            : { archived: false, settledReason: null, settledPr: null };
-      } else if (patch.archived !== undefined) {
-        parkSync = patch.archived
-          ? {
-              settledAt: now(),
-              settledReason: "manual" as const,
-              settledPr: null,
-              pinnedAt: null,
-              snoozedUntil: null,
-            }
-          : { settledAt: null, settledReason: null, settledPr: null };
+      let settledPrWrite = settledPr;
+      const touchesPark =
+        patch.archived !== undefined ||
+        patch.settledAt !== undefined ||
+        cols.pinnedAt !== undefined ||
+        cols.snoozedUntil !== undefined ||
+        cols.autoSettle !== undefined ||
+        cols.settledReason !== undefined ||
+        settledPr !== undefined;
+      if (touchesPark) {
+        const cur = db
+          .select({ settledAt: schema.conversations.settledAt })
+          .from(schema.conversations)
+          .where(eq(schema.conversations.id, id))
+          .get();
+        if (!cur) return null;
+        const wasSettled = cur.settledAt != null;
+        const settling =
+          patch.settledAt !== undefined
+            ? patch.settledAt != null
+            : patch.archived === true;
+        const unsettling = patch.settledAt === null || patch.archived === false;
+        if (settling) {
+          /* A settled row carries no pin/snooze badge. */
+          parkSync = { archived: true, pinnedAt: null, snoozedUntil: null };
+          if (wasSettled) {
+            /* Re-settle keeps the first settle's stamp/reason/PR. */
+            delete cols.settledAt;
+            delete cols.settledReason;
+            settledPrWrite = undefined;
+          } else if (patch.settledAt === undefined) {
+            /* The legacy alias supplies the settle fields; an explicit
+               settledAt write already rides `cols`. */
+            parkSync.settledAt = now();
+            parkSync.settledReason = "manual";
+            parkSync.settledPr = null;
+          }
+        } else if (unsettling) {
+          parkSync =
+            patch.settledAt !== undefined
+              ? { archived: false, settledReason: null, settledPr: null }
+              : { settledAt: null, settledReason: null, settledPr: null };
+          settledPrWrite = undefined;
+        }
+        const settledAfter =
+          patch.settledAt !== undefined
+            ? patch.settledAt != null
+            : (patch.archived ?? wasSettled);
+        if (settledAfter) {
+          if (cols.pinnedAt != null) delete cols.pinnedAt;
+          if (cols.snoozedUntil != null) delete cols.snoozedUntil;
+        }
       }
       /* Issue #775: stamp stuckAt only when stuck goes unset → set. A
          clear leaves the stamp; a rewrite while it is still set is not a
@@ -1755,10 +1795,13 @@ export function createDrizzleStore(db: Db): RelayStore {
           ...parkSync,
           /* D-#862: same boundary as turnFailure — the column holds JSON,
              `null` clears. */
-          ...(settledPr !== undefined
+          ...(touchesPark ? { lastParkActionAt: now() } : {}),
+          ...(settledPrWrite !== undefined
             ? {
                 settledPr:
-                  settledPr === null ? null : JSON.stringify(settledPr),
+                  settledPrWrite === null
+                    ? null
+                    : JSON.stringify(settledPrWrite),
               }
             : {}),
           ...(turnFailure !== undefined

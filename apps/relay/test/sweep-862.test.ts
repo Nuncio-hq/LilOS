@@ -9,7 +9,7 @@ import type { Conversation } from "@lilos/contracts/app";
 import type { ForgePrListItem } from "@lilos/contracts/host";
 import { describe, expect, it } from "vitest";
 import type { RelaySharedCtx } from "../src/session/ctx";
-import { autoSettleSweep } from "../src/sweep";
+import { autoSettleSweep, createAutoSettleSweep } from "../src/sweep";
 import { createMemoryStore, type RelayStore } from "./memory-store";
 
 /** Fixture reads hit rows the test just wrote — `!` stays out of the lint. */
@@ -25,26 +25,35 @@ interface SweepRig {
   store: RelayStore;
   emitted: Conversation[];
   logs: string[];
-  /** Set the PR rows the stub `callHost` answers `forge.prs` with. */
-  prs: (rows: ForgePrListItem[]) => void;
+  /** Set the PR rows the stub `callHost` answers `forge.prs` with;
+     `during` runs inside the probe — mid-sweep activity lands there. */
+  prs: (rows: ForgePrListItem[], during?: () => void | Promise<void>) => void;
+  /** Times `forge.prs` ran — the overlap guard's proof. */
+  probeCount: () => number;
   /** Drop the host — the sweep then skips the forge probe entirely. */
   noHost: () => void;
   ctx: () => RelaySharedCtx;
 }
 
 const newRig = (): SweepRig => {
-  const store = createMemoryStore();
+  /* The rig's own clock — the store stamps rows and messages with NOW so
+     park-action stamps and mid-sweep sends compare cleanly. */
+  const store = createMemoryStore(() => NOW);
   const emitted: Conversation[] = [];
   const logs: string[] = [];
   let rows: ForgePrListItem[] = [];
+  let during: (() => void | Promise<void>) | undefined;
+  let probes = 0;
   let host: object | null = { peer: true };
   return {
     store,
     emitted,
     logs,
-    prs: (next) => {
+    prs: (next, nextDuring) => {
       rows = next;
+      during = nextDuring;
     },
+    probeCount: () => probes,
     noHost: () => {
       host = null;
     },
@@ -53,11 +62,15 @@ const newRig = (): SweepRig => {
         store,
         now: () => NOW,
         host,
-        callHost: async () => ({
-          root: "/repo",
-          branches: rows.map((r) => r.head),
-          prs: rows,
-        }),
+        callHost: async () => {
+          probes += 1;
+          await during?.();
+          return {
+            root: "/repo",
+            branches: rows.map((r) => r.head),
+            prs: rows,
+          };
+        },
         emitConversation: (_channelId: string, conv: unknown) =>
           emitted.push(conv as Conversation),
         log: (message: string) => logs.push(message),
@@ -321,5 +334,145 @@ describe("D-#862 auto-settle sweep", () => {
     expect((await rig.store.getConversation(conv.id))?.settledReason).toBe(
       "idle",
     );
+  });
+
+  it("an un-settled idle thread stays live — the un-settle itself is activity", async () => {
+    const rig = newRig();
+    const conv = await thread(rig, { ageDays: 4 });
+    await autoSettleSweep(rig.ctx());
+    expect((await rig.store.getConversation(conv.id))?.settledReason).toBe(
+      "idle",
+    );
+    /* The owner pulls it off the shelf — that write must reset the idle
+       clock, or the next tick re-parks the thread inside one sweep
+       interval. */
+    await rig.store.updateConversation(conv.id, { settledAt: null });
+    await autoSettleSweep(rig.ctx());
+    expect(
+      (await rig.store.getConversation(conv.id))?.settledAt,
+    ).toBeUndefined();
+  });
+
+  it("an un-settle newer than the merge rescues the thread on every later tick", async () => {
+    const rig = newRig();
+    /* A fresh agent row keeps it off the idle path — only the PR branch
+       could ever settle it. */
+    const conv = await thread(rig, {
+      ageDays: 4,
+      workspace: { repoPath: "/repo", branch: "feat/x" },
+      empMsgAgeDays: 0,
+    });
+    rig.prs([prRow(42, "feat/x", "merged", { mergedAt: NOW - 2 * DAY })]);
+    await autoSettleSweep(rig.ctx());
+    expect((await rig.store.getConversation(conv.id))?.settledReason).toBe(
+      "pr",
+    );
+    /* Un-settled after the merge — the merge happened BEFORE his action,
+       so no later tick may re-park it on the same terminal stamp. */
+    await rig.store.updateConversation(conv.id, { settledAt: null });
+    await autoSettleSweep(rig.ctx());
+    await autoSettleSweep(rig.ctx());
+    expect(
+      (await rig.store.getConversation(conv.id))?.settledAt,
+    ).toBeUndefined();
+  });
+
+  it("snoozed, pinned, and task-child threads never auto-settle", async () => {
+    const rig = newRig();
+    /* Park fields land straight on the rows — no park write, so ONLY the
+       sweep's own gates keep these out of the shelf. */
+    const snoozed = await thread(rig, { ageDays: 4 });
+    must(await rig.store.getConversation(snoozed.id), "snoozed").snoozedUntil =
+      NOW + DAY;
+    const pinned = await thread(rig, { ageDays: 4 });
+    must(await rig.store.getConversation(pinned.id), "pinned").pinnedAt =
+      NOW - DAY;
+    const child = await thread(rig, { ageDays: 4 });
+    must(await rig.store.getConversation(child.id), "child").parentId =
+      "conv_parent";
+    await autoSettleSweep(rig.ctx());
+    for (const conv of [snoozed, pinned, child]) {
+      const after = await rig.store.getConversation(conv.id);
+      expect(after?.settledAt, `${conv.id} should stay live`).toBeUndefined();
+    }
+    /* The snooze survives intact — settling would have cleared it and the
+       thread could never come back at its own time. */
+    expect((await rig.store.getConversation(snoozed.id))?.snoozedUntil).toBe(
+      NOW + DAY,
+    );
+  });
+
+  it("an open PR on the same branch beats an old merged one", async () => {
+    const rig = newRig();
+    /* Not idle — only the PR branch could settle it, and the open
+       follow-up PR means work on the branch is still going. */
+    const conv = await thread(rig, {
+      ageDays: 4,
+      workspace: { repoPath: "/repo", branch: "feat/x" },
+      empMsgAgeDays: 0,
+    });
+    rig.prs([
+      prRow(42, "feat/x", "merged", { mergedAt: NOW - DAY }),
+      prRow(55, "feat/x", "open"),
+    ]);
+    await autoSettleSweep(rig.ctx());
+    expect(
+      (await rig.store.getConversation(conv.id))?.settledAt,
+    ).toBeUndefined();
+  });
+
+  it("a send that lands mid-probe rescues the thread — the row is re-read", async () => {
+    const rig = newRig();
+    const conv = await thread(rig, {
+      ageDays: 4,
+      workspace: { repoPath: "/repo", branch: "feat/x" },
+    });
+    /* The user types while forge.prs is in flight; the probe still
+       answers merged — the re-read must see his new message. */
+    rig.prs(
+      [prRow(42, "feat/x", "merged", { mergedAt: NOW - 2 * DAY })],
+      async () => {
+        await rig.store.appendMessage({
+          channelId: conv.channelId,
+          conversationId: conv.id,
+          authorId: "user",
+          authorKind: "user",
+          text: "wait — actually",
+        });
+      },
+    );
+    await autoSettleSweep(rig.ctx());
+    expect(
+      (await rig.store.getConversation(conv.id))?.settledAt,
+    ).toBeUndefined();
+  });
+
+  it("a tick still in flight makes the next one a no-op", async () => {
+    const rig = newRig();
+    await thread(rig, {
+      ageDays: 4,
+      workspace: { repoPath: "/repo", branch: "feat/x" },
+    });
+    let release = () => {};
+    let entered = false;
+    rig.prs(
+      [prRow(42, "feat/x", "merged", { mergedAt: NOW - 2 * DAY })],
+      () => {
+        entered = true;
+        return new Promise<void>((r) => {
+          release = r;
+        });
+      },
+    );
+    const sweep = createAutoSettleSweep(rig.ctx());
+    const first = sweep();
+    const second = sweep();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(entered).toBe(true);
+    release();
+    await Promise.all([first, second]);
+    /* The overlapped tick yielded instead of probing on the same stale
+       snapshot. */
+    expect(rig.probeCount()).toBe(1);
   });
 });

@@ -72,8 +72,9 @@ describe("relay migrations", () => {
     // and conversations.ticket_id; v33 adds D-#777's company_updates;
     // v34 adds the CEO wake flag and the standing-thread flag; v35 adds
     // D-#844's task columns + the task wake flag; v36 adds D-#761's
-    // employees.runtime; v37 adds D-#862's parking columns.
-    expect(out.version).toBe(37);
+    // employees.runtime; v37 adds D-#862's parking columns; v38 adds its
+    // review's last_park_action_at.
+    expect(out.version).toBe(38);
     expect(out.askCols).toContain("hire");
     expect(out.askCols).toContain("why");
     expect(out.askCols).toContain("if_yes");
@@ -122,6 +123,7 @@ describe("relay migrations", () => {
       "settled_pr",
       "snoozed_until",
       "auto_settle",
+      "last_park_action_at",
     ])
       expect(out.colsAt7).toContain(col);
     expect(out.msgIdx).toContain("messages_conversation_seq");
@@ -183,7 +185,7 @@ describe("relay migrations", () => {
     });
     expect(res.status, res.stderr).toBe(0);
     const out = JSON.parse(res.stdout.trim().split("\n").at(-1) ?? "null");
-    expect(out.version).toBe(37);
+    expect(out.version).toBe(38);
     const archived = out.rows.find(
       (r: { id: string }) => r.id === "old_archived",
     );

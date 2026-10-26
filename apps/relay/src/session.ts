@@ -45,7 +45,7 @@ import { handleTurns } from "./session/turns";
 import { handleUpdates } from "./session/updates";
 import type { RejectedHandshake } from "./status";
 import type { RelayStore } from "./store";
-import { autoSettleSweep } from "./sweep";
+import { createAutoSettleSweep } from "./sweep";
 
 /** Minimal ws peer surface — Bun's ServerWebSocket and test doubles fit this. */
 export interface RelayWsPeer {
@@ -658,10 +658,9 @@ export function createRelay(options: RelayOptions): Relay {
      request path. `unref` keeps tests and bare relays free to exit. */
   const settleSweepMs = options.settleSweepMs ?? SETTLE_SWEEP_MS;
   if (settleSweepMs > 0) {
+    const sweep = createAutoSettleSweep(shared);
     const timer = setInterval(() => {
-      autoSettleSweep(shared).catch((error) =>
-        log(`auto-settle sweep failed: ${error}`),
-      );
+      sweep().catch((error) => log(`auto-settle sweep failed: ${error}`));
     }, settleSweepMs);
     timer.unref?.();
   }

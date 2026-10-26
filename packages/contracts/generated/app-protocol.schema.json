@@ -2054,6 +2054,11 @@
         "autoSettle": {
           "type": "boolean"
         },
+        "lastParkActionAt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
         "deliveredSeq": {
           "default": 0,
           "type": "integer",
@@ -2477,6 +2482,11 @@
               },
               "autoSettle": {
                 "type": "boolean"
+              },
+              "lastParkActionAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
               },
               "deliveredSeq": {
                 "default": 0,
@@ -2992,6 +3002,11 @@
             },
             "autoSettle": {
               "type": "boolean"
+            },
+            "lastParkActionAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
             },
             "deliveredSeq": {
               "default": 0,
@@ -3670,6 +3685,11 @@
             },
             "autoSettle": {
               "type": "boolean"
+            },
+            "lastParkActionAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
             },
             "deliveredSeq": {
               "default": 0,
@@ -5356,6 +5376,11 @@
             "autoSettle": {
               "type": "boolean"
             },
+            "lastParkActionAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
             "deliveredSeq": {
               "default": 0,
               "type": "integer",
@@ -6175,6 +6200,11 @@
                   },
                   "autoSettle": {
                     "type": "boolean"
+                  },
+                  "lastParkActionAt": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
                   },
                   "deliveredSeq": {
                     "default": 0,
@@ -8959,6 +8989,11 @@
             },
             "autoSettle": {
               "type": "boolean"
+            },
+            "lastParkActionAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
             },
             "deliveredSeq": {
               "default": 0,
@@ -12563,6 +12598,11 @@
             },
             "autoSettle": {
               "type": "boolean"
+            },
+            "lastParkActionAt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
             },
             "deliveredSeq": {
               "default": 0,

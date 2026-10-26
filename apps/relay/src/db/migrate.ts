@@ -557,6 +557,17 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
          WHERE archived = 1`,
     ],
   },
+  {
+    /* D-#862 review: owner park actions (pin/settle/un-settle/snooze/
+       auto-settle flip) are activity — the stamp feeds the sweep's idle
+       clock so a freshly un-parked thread doesn't re-settle on the next
+       tick, and an un-settle newer than a PR's terminal stamp rescues
+       the thread from the PR path. */
+    version: 38,
+    statements: [
+      `ALTER TABLE conversations ADD COLUMN last_park_action_at INTEGER`,
+    ],
+  },
 ];
 
 /**

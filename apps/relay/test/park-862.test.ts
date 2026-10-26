@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import { createPushFanout, type ExpoPushMessage } from "../src/push";
 import {
   dmWithConversation,
+  events,
   eventsNamed,
   helloedToken,
   lastId,
@@ -255,6 +256,151 @@ describe("D-#862 early wake", () => {
     expect(resumed?.snoozedUntil).toBeUndefined();
     expect(resumed?.settledAt).toBeUndefined();
     expect(resumed?.archived).toBe(false);
+  });
+
+  it("the wake emits conversation.updated BEFORE message.created (a settled drop is permanent)", async () => {
+    const { store, oscar, channel, conversation } = await setup();
+    await oscar.connection.receive(
+      req("conversations.settle", {
+        conversationId: conversation.id,
+        settled: true,
+      }),
+    );
+    oscar.frames.length = 0;
+    await oscar.connection.receive(
+      req("messages.post", {
+        channelId: channel.id,
+        conversationId: conversation.id,
+        text: "still there?",
+      }),
+    );
+    /* A client that delivers while the row still reads settled drops the
+       send — so the un-settle broadcast must lead the message frame. */
+    const order = events(oscar.frames).map((f) => f.method);
+    const wake = order.indexOf("conversation.updated");
+    const sent = order.indexOf("message.created");
+    expect(wake).toBeGreaterThanOrEqual(0);
+    expect(sent).toBeGreaterThan(wake);
+    expect(
+      (await store.getConversation(conversation.id))?.settledAt,
+    ).toBeUndefined();
+  });
+
+  it("a host-posted follow-up on a task child resumes it — its only writer is the host", async () => {
+    const { store, relay, oscar, channel, conversation } = await setup();
+    /* D-#844 task child — set straight on the row like the parent link
+       the relay stamps. */
+    const live = await store.getConversation(conversation.id);
+    if (!live) throw new Error("fixture: conversation missing");
+    live.parentId = "conv_parent";
+    await oscar.connection.receive(
+      req("conversations.settle", {
+        conversationId: conversation.id,
+        settled: true,
+      }),
+    );
+    const host = await registeredHost(relay);
+    await host.connection.receive(
+      req("messages.post", {
+        channelId: channel.id,
+        conversationId: conversation.id,
+        authorKind: "user",
+        text: "the parent's follow-up",
+      }),
+    );
+    const resumed = await store.getConversation(conversation.id);
+    expect(resumed?.settledAt).toBeUndefined();
+    expect(resumed?.archived).toBe(false);
+  });
+
+  it("messages.send on a parked tray row resumes the thread — wake frame first", async () => {
+    const { store, relay, oscar, channel, conversation } = await setup();
+    await oscar.connection.receive(
+      req("messages.post", {
+        channelId: channel.id,
+        conversationId: conversation.id,
+        text: "queued",
+      }),
+    );
+    const posted = (
+      resultOf(oscar.frames, lastId()).result as {
+        message: { id: string };
+      }
+    ).message;
+    const host = await registeredHost(relay);
+    await host.connection.receive(
+      req("messages.drop", { messageId: posted.id }),
+    );
+    await oscar.connection.receive(
+      req("conversations.settle", {
+        conversationId: conversation.id,
+        settled: true,
+      }),
+    );
+    oscar.frames.length = 0;
+    await oscar.connection.receive(
+      req("messages.send", { messageId: posted.id }),
+    );
+    const order = events(oscar.frames).map((f) => f.method);
+    const wake = order.indexOf("conversation.updated");
+    const changed = order.indexOf("message.changed");
+    expect(wake).toBeGreaterThanOrEqual(0);
+    expect(changed).toBeGreaterThan(wake);
+    const resumed = await store.getConversation(conversation.id);
+    expect(resumed?.settledAt).toBeUndefined();
+    expect(resumed?.archived).toBe(false);
+  });
+
+  it("a re-settle keeps the original reason; a settled row can't take a pin or snooze set", async () => {
+    const { store, oscar, conversation } = await setup();
+    /* Parked by the sweep — reason `idle` with its own stamp. */
+    await store.updateConversation(conversation.id, {
+      settledAt: 111_000,
+      settledReason: "idle",
+    });
+    /* A legacy `archived: true` re-write and a manual re-settle must not
+       flip the reason to manual or move the stamp. */
+    await oscar.connection.receive(
+      req("conversations.update", {
+        conversationId: conversation.id,
+        archived: true,
+      }),
+    );
+    await oscar.connection.receive(
+      req("conversations.settle", {
+        conversationId: conversation.id,
+        settled: true,
+      }),
+    );
+    let conv = await store.getConversation(conversation.id);
+    expect(conv?.settledReason).toBe("idle");
+    expect(conv?.settledAt).toBe(111_000);
+    /* Pin/snooze SETs on a settled row drop — they'd silently reappear
+       on un-settle otherwise. */
+    await oscar.connection.receive(
+      req("conversations.pin", {
+        conversationId: conversation.id,
+        pinned: true,
+      }),
+    );
+    await oscar.connection.receive(
+      req("conversations.snooze", {
+        conversationId: conversation.id,
+        until: 999_000,
+      }),
+    );
+    conv = await store.getConversation(conversation.id);
+    expect(conv?.pinnedAt).toBeUndefined();
+    expect(conv?.snoozedUntil).toBeUndefined();
+    await oscar.connection.receive(
+      req("conversations.settle", {
+        conversationId: conversation.id,
+        settled: false,
+      }),
+    );
+    conv = await store.getConversation(conversation.id);
+    expect(conv?.pinnedAt).toBeUndefined();
+    expect(conv?.snoozedUntil).toBeUndefined();
   });
 
   it("employee, system and host-posted user lines never wake the snooze", async () => {

@@ -160,6 +160,9 @@ export const conversations = sqliteTable(
     autoSettle: integer("auto_settle", { mode: "boolean" })
       .notNull()
       .default(true),
+    /** D-#862 review: newest owner park action — the sweep's idle clock
+        counts it so a freshly un-parked thread doesn't bounce back. */
+    lastParkActionAt: integer("last_park_action_at"),
     /** Host watermark: highest user-message seq handed to the engine (#28). */
     deliveredSeq: integer("delivered_seq").notNull().default(0),
     /** The newest turn.completed's usage (#300): JSON engine `Usage`

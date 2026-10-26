@@ -54,8 +54,7 @@ test.describe.configure({ mode: "serial" });
 const main = (page: Page) => v3Main(page);
 const shot = (page: Page, name: string) =>
   page.screenshot({ path: path.join(OUT, `${name}.png`), fullPage: false });
-const row = (page: Page) =>
-  main(page).locator(`[data-thread-row="${convId}"]`);
+const row = (page: Page) => main(page).locator(`[data-thread-row="${convId}"]`);
 const foldButton = (page: Page, fold: string) =>
   main(page).locator(`[data-fold="${fold}"] > button`);
 const ensureOpen = async (page: Page, fold: string) => {
@@ -89,9 +88,7 @@ test("park evidence: pinned, menu, snoozed, settled", async ({ page }) => {
   /* Pinned: the thread row sits under its own block at the top. */
   await menu(page);
   await page.getByRole("menuitem", { name: "Pin thread" }).click();
-  await expect(
-    main(page).getByText("Pinned", { exact: true }),
-  ).toBeVisible();
+  await expect(main(page).getByText("Pinned", { exact: true })).toBeVisible();
   await shot(page, "pinned");
 
   /* Snoozed: the folded shelf with the wake time on the row. */

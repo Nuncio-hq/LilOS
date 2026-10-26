@@ -126,7 +126,7 @@ describe("stuckAt on the real store (issue #775)", () => {
       listed: number | null;
       summary: number | null;
     };
-    expect(out.version).toBe(37);
+    expect(out.version).toBe(38);
     expect(out.markedStuck).toEqual({ reason: REASON });
     expect(out.marked).toBeGreaterThan(0);
     expect(out.rewrite).toBe(out.marked);

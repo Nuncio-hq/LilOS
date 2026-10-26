@@ -74,7 +74,7 @@ const rowToDevice = (row: PairedDeviceRow): PairedDevice => ({
 });
 
 /** Reference implementation used by unit tests; SQLite is the shipped one. */
-export function createMemoryStore(): RelayStore {
+export function createMemoryStore(nowFn?: () => number): RelayStore {
   const employees = new Map<string, Employee>();
   const channels = new Map<string, AppChannel>();
   const conversations = new Map<string, Conversation>();
@@ -119,7 +119,7 @@ export function createMemoryStore(): RelayStore {
     return folder;
   };
 
-  const now = () => Date.now();
+  const now = nowFn ?? (() => Date.now());
   /** (channelId, dedupeKey) -> stored message id; side table so the wire type stays clean. */
   const dedupe = new Map<string, string>();
   /** Ids of retired notes kept in storage but never read out (#196). */
@@ -829,18 +829,48 @@ export function createMemoryStore(): RelayStore {
       const conversation = conversations.get(id);
       if (!conversation) return null;
       patch = titlePatch(patch, conversation);
-      /* D-#862: same park rules as the drizzle store — `archived` is the
-         legacy settle alias; a settled thread is never pinned or snoozed;
-         the mirror always follows settledAt. Runs before the null-clear so
-         a translate-into-clear still clears. */
+      /* D-#862 review: same park rules as the drizzle store — `archived`
+         is the legacy settle alias; a settled row never takes a pin or
+         snooze SET (it would reappear on un-settle); a re-settle keeps
+         the first settle's stamp/reason/PR; every park write stamps
+         lastParkActionAt — the sweep counts owner park actions as
+         activity. Runs before the null-clear so a translate-into-clear
+         still clears. */
+      const wasSettled = conversation.settledAt !== undefined;
+      const parkWrite = (
+        [
+          "archived",
+          "pinnedAt",
+          "settledAt",
+          "settledReason",
+          "settledPr",
+          "snoozedUntil",
+          "autoSettle",
+        ] as const
+      ).some((k) => k in patch);
       if (patch.settledAt !== undefined) {
         if (patch.settledAt != null) {
-          patch = {
-            ...patch,
-            archived: true,
-            pinnedAt: null,
-            snoozedUntil: null,
-          };
+          if (wasSettled) {
+            /* Re-settle keeps the first settle's stamp/reason/PR — an
+               idle or pr settle must not silently read as manual. */
+            const rest = { ...patch };
+            delete rest.settledAt;
+            delete rest.settledReason;
+            delete rest.settledPr;
+            patch = {
+              ...rest,
+              archived: true,
+              pinnedAt: null,
+              snoozedUntil: null,
+            };
+          } else {
+            patch = {
+              ...patch,
+              archived: true,
+              pinnedAt: null,
+              snoozedUntil: null,
+            };
+          }
         } else {
           patch = {
             ...patch,
@@ -850,16 +880,41 @@ export function createMemoryStore(): RelayStore {
           };
         }
       } else if (patch.archived !== undefined) {
-        patch = patch.archived
-          ? {
-              ...patch,
-              settledAt: now(),
-              settledReason: "manual",
-              settledPr: null,
-              pinnedAt: null,
-              snoozedUntil: null,
-            }
-          : { ...patch, settledAt: null, settledReason: null, settledPr: null };
+        if (patch.archived) {
+          patch = wasSettled
+            ? { ...patch, pinnedAt: null, snoozedUntil: null }
+            : {
+                ...patch,
+                settledAt: now(),
+                settledReason: "manual",
+                settledPr: null,
+                pinnedAt: null,
+                snoozedUntil: null,
+              };
+        } else {
+          patch = {
+            ...patch,
+            settledAt: null,
+            settledReason: null,
+            settledPr: null,
+          };
+        }
+      }
+      const settledAfter =
+        patch.settledAt !== undefined
+          ? patch.settledAt != null
+          : (patch.archived ?? wasSettled);
+      if (settledAfter) {
+        if (patch.pinnedAt != null) {
+          const next = { ...patch };
+          delete next.pinnedAt;
+          patch = next;
+        }
+        if (patch.snoozedUntil != null) {
+          const next = { ...patch };
+          delete next.snoozedUntil;
+          patch = next;
+        }
       }
       /* Issue #775: stamp stuckAt only on unset → set. Captured before the
          null-clear below deletes the live mark and drops the patch key. */
@@ -899,6 +954,7 @@ export function createMemoryStore(): RelayStore {
         }
       }
       Object.assign(conversation, patch);
+      if (parkWrite) conversation.lastParkActionAt = now();
       if (marking && !hadStuck) conversation.stuckAt = now();
       /* D-#862: keep the legacy mirror and the wire's absent-is-on
          convention exactly like the row mapper does. */

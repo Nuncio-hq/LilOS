@@ -194,7 +194,7 @@ describe("company.setCeo on the real store (D-#778)", () => {
       cleared: boolean;
       afterCeo: unknown;
     };
-    expect(out.version).toBe(37);
+    expect(out.version).toBe(38);
     expect(out.first).toContainEqual(["bea", expect.stringMatching(/^emp_/)]);
     expect(out.again).toBe(false);
     expect(out.second).toContainEqual(["ada", expect.stringMatching(/^emp_/)]);

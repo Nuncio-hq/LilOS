@@ -152,6 +152,58 @@ describe("workspace harness", () => {
     }
   });
 
+  it("D-#862 a send into a settled thread un-settles it AND the turn still runs", async () => {
+    const w = await setupWorld();
+    try {
+      const { channel } = await openDmConversation(w.user);
+      const { conversation } = await w.user.request<{
+        conversation: { id: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "Summarize the repo layout",
+      });
+      /* Let the first turn finish, then park the thread. */
+      await waitFor(async () => {
+        const { messages } = await w.user.request<{
+          messages: AppMessage[];
+        }>("messages.list", { channelId: channel.id, limit: 50 });
+        return messages.find(
+          (m) =>
+            m.authorKind === "employee" && m.conversationId === conversation.id,
+        );
+      }, "first answer");
+      await w.user.request("conversations.settle", {
+        conversationId: conversation.id,
+        settled: true,
+      });
+      /* The user types into the shelf thread. The relay's wake must land
+         before message.created reaches the harness — otherwise delivery
+         reads the still-settled row and drops the send forever. */
+      await postMessage(w.user, channel.id, conversation.id, "one more thing");
+      const resumed = await waitFor(async () => {
+        const { conversations } = await w.user.request<{
+          conversations: { id: string; archived: boolean }[];
+        }>("conversations.list", { includeArchived: true });
+        const conv = conversations.find((c) => c.id === conversation.id);
+        return conv && !conv.archived ? conv : undefined;
+      }, "un-settled conversation");
+      expect(resumed.archived).toBe(false);
+      /* …and the engine actually answers — the send wasn't eaten. */
+      const second = await waitFor(async () => {
+        const { messages } = await w.user.request<{
+          messages: AppMessage[];
+        }>("messages.list", { channelId: channel.id, limit: 50 });
+        return messages.filter(
+          (m) =>
+            m.authorKind === "employee" && m.conversationId === conversation.id,
+        )[1];
+      }, "second employee answer");
+      expect(second.text.length).toBeGreaterThan(0);
+    } finally {
+      await w.cleanup();
+    }
+  });
+
   it("AC-1b hires the employee onto the engine before session.start", async () => {
     const w = await setupWorld();
     try {
