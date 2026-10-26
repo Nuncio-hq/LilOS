@@ -1,4 +1,5 @@
 import { type AttachedFile, STEP_VERB, type V3Data, type V3Reply, type V3Thread, type V3Turn } from "@lilos/ui"
+import { clearEarlyWake } from "./park"
 
 /* The prototype's stand-in for an engine turn: a message goes in, the
    agent's steps appear one by one (a run step streams its output into the
@@ -55,11 +56,16 @@ export function runTurn(
       turns: t.turns.map((u) => (u.n === n ? fn(u) : u)),
     }));
 
+  /* A message from you wakes a snoozed thread (#862): it clears the sleep
+     and the early wake still pending for it. */
+  clearEarlyWake(id);
   patchThread((t) => ({
     ...t,
     status: "working",
     unseen: false,
     stuck: undefined,
+    snoozedUntil: undefined,
+    cameBackAt: Date.now(),
     // A new message moves the conversation on; the last Rewind note goes.
     rewound: undefined,
     step: (t.step ?? 0) + 1,
@@ -146,6 +152,8 @@ export function runTurn(
       status: "done",
       now: undefined,
       live: undefined,
+      /* Finished — it just came back to you; Active orders by this (#862). */
+      cameBackAt: Date.now(),
       minutes: t.minutes + Math.max(1, Math.round(secs / 60)),
     }));
     /* A message queued during this turn starts the next one. */

@@ -136,10 +136,28 @@ export const childrenOf = (d: V3Data, parentId: string): V3Thread[] =>
         (a.openedAt ?? 0) - (b.openedAt ?? 0),
     );
 
+/** The statuses that raise a hand: needing you, stuck or failed — what a
+   snooze ends early for (an ask or a fresh failure is allowed to pull a
+   thread back, #862). */
+const RAISED_HAND: V3Status[] = ["needs", "stuck", "failed"];
+
+/** Snoozed right now: hidden until its wake time while it keeps working
+   underneath. It comes back early when it raises a hand — an ask, a stuck
+   or failed run — and your message ends the snooze too (the mock clears
+   `snoozedUntil` then; the rule is T3 Code's sidebar's). */
+export const snoozed = (t: V3Thread, now = Date.now()): boolean =>
+  t.snoozedUntil !== undefined &&
+  t.snoozedUntil > now &&
+  !RAISED_HAND.includes(t.status);
+
 /** The threads lists draw: helper threads have no row of their own
-   (D-#847). */
-export const listedThreads = (threads: readonly V3Thread[]): V3Thread[] =>
-  threads.filter((t) => t.parentId === undefined);
+   (D-#847), and a snoozed thread sleeps on the Snoozed shelf until it
+   wakes (#862). */
+export const listedThreads = (
+  threads: readonly V3Thread[],
+  now = Date.now(),
+): V3Thread[] =>
+  threads.filter((t) => t.parentId === undefined && !snoozed(t, now));
 
 /** The thread whose row stands in for `id`: a helper has no row, so an open
    helper marks its nearest non-helper ancestor (T3's

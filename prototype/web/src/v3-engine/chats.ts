@@ -1,6 +1,7 @@
 import { agentNameOf, type ModelChoice, type V3Data, type V3DataActions, type V3Thread } from "@lilos/ui"
 import { nowClock, runTurn } from "./chat-sim"
 import { type Engine, threadPatch } from "./context"
+import { clearEarlyWake } from "./park"
 
 /* What a thread's model reads as: the plain menu's label, or what the full
    picker chose (the model's name, its effort, Fast). */
@@ -23,6 +24,10 @@ export function chatActions({ setData, getData, reply, toast }: Engine): Pick<
     message: (threadId, text) => {
       const th = getData().threads.find((t) => t.id === threadId);
       if (!th) return;
+      /* Your message wakes a snoozed thread (#862): it clears the sleep
+         and stamps when it came back, and beats an early wake still
+         scheduled for it. */
+      clearEarlyWake(threadId);
       if (th.status !== "working") {
         runTurn(setData, getData, reply, th, text);
         return;
@@ -36,6 +41,8 @@ export function chatActions({ setData, getData, reply, toast }: Engine): Pick<
           t.id === threadId
             ? {
                 ...t,
+                snoozedUntil: undefined,
+                cameBackAt: Date.now(),
                 turns: t.turns.map((u) =>
                   u.n === newest
                     ? {
@@ -128,17 +135,35 @@ export function chatActions({ setData, getData, reply, toast }: Engine): Pick<
         archivedThreads: d.archivedThreads?.map(rename),
       }));
     },
+    /* The wire still says archive; the product says Settle (#862). A
+       settled thread parks on the shelf with its pin and snooze off — pins
+       and wake times live on the list, not the shelf. Un-settle brings it
+       back on top of Active. */
     archiveThread: (threadId, archived) => {
       setData((d) => {
         const from = archived ? d.threads : (d.archivedThreads ?? []);
         const moved = from.find((t) => t.id === threadId);
         if (!moved) return d;
         const rest = from.filter((t) => t.id !== threadId);
+        const next: V3Thread = archived
+          ? {
+              ...moved,
+              pinnedAt: undefined,
+              snoozedUntil: undefined,
+              settledAt: Date.now(),
+              settledWhy: undefined,
+            }
+          : {
+              ...moved,
+              settledAt: undefined,
+              settledWhy: undefined,
+              cameBackAt: Date.now(),
+            };
         return archived
-          ? { ...d, threads: rest, archivedThreads: [moved, ...(d.archivedThreads ?? [])] }
-          : { ...d, threads: [moved, ...d.threads], archivedThreads: rest };
+          ? { ...d, threads: rest, archivedThreads: [next, ...(d.archivedThreads ?? [])] }
+          : { ...d, threads: [next, ...d.threads], archivedThreads: rest };
       });
-      toast(archived ? "Archived · it moved to Threads → All → Archived" : "Unarchived · it is back in your threads");
+      toast(archived ? "Settled · it parks on Threads → All → Settled" : "Un-settled · it is back in your threads");
     },
   }
 }

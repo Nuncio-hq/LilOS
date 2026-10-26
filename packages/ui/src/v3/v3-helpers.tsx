@@ -1,4 +1,4 @@
-import { CornerLeftUpIcon } from "lucide-react";
+import { ArchiveIcon, CornerLeftUpIcon, MoonStarIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "../lib/utils";
 import { ago, Btn, Spinner } from "./v3-bits";
@@ -11,10 +11,12 @@ import {
   childrenOf,
   FORMER_AGENT,
   liveHelpersOf,
+  snoozed,
   threadOf,
 } from "./v3-model";
 import { RowButton } from "./v3-open-record";
 import type { V3PageProps } from "./v3-page-types";
+import { settledReason, snoozeBack } from "./v3-sections";
 import type { V3Thread } from "./v3-types";
 
 /* Parent ↔ helper lineage (D-#847): a hand-off is an ordinary thread with
@@ -152,18 +154,68 @@ export function HelpersBlock({
   );
 }
 
+/** The park line a thread's own page carries while it is off the lists
+   (#862): asleep — "Snoozed · back 14:32", it keeps working underneath —
+   or settled on the shelf. Each draws only with the action that can undo
+   it (Wake now, Un-settle). */
+export function ParkLine({
+  thread: t,
+  settled,
+  act,
+}: {
+  thread: V3Thread;
+  /** The thread lives on the Settled shelf (`archivedThreads`). */
+  settled?: boolean;
+  act: V3PageProps["act"];
+}) {
+  const line =
+    "flex min-h-[40px] items-center gap-2.5 border-[var(--v3-line)] border-b px-4 py-1.5 text-[13.5px]";
+  if (settled)
+    return (
+      <div className={line}>
+        <ArchiveIcon className="size-3.5 shrink-0 text-muted-foreground/70" />
+        <span className="min-w-0 flex-1 truncate text-muted-foreground">
+          {settledReason(t)}
+        </span>
+        {act.archiveThread && (
+          <Btn small onClick={() => act.archiveThread?.(t.id, false)}>
+            Un-settle
+          </Btn>
+        )}
+      </div>
+    );
+  if (!snoozed(t)) return null;
+  return (
+    <div className={line}>
+      <MoonStarIcon className="size-3.5 shrink-0 text-muted-foreground/70" />
+      <span className="min-w-0 flex-1 truncate text-muted-foreground">
+        Snoozed · {t.snoozedUntil !== undefined && snoozeBack(t.snoozedUntil)}
+        {" — it keeps working underneath"}
+      </span>
+      {act.wakeThread && (
+        <Btn small onClick={() => act.wakeThread?.(t.id)}>
+          Wake now
+        </Btn>
+      )}
+    </div>
+  );
+}
+
 /** What a thread page draws between the toolbar and the conversation: the
-   parent a helper belongs to, and a parent's helpers. Both absent on an
-   ordinary thread — the page is exactly as before (D-#19). */
+   parent a helper belongs to, a parent's helpers, and the line a parked
+   thread carries. All absent on an ordinary thread — the page is exactly
+   as before (D-#19). */
 export function ThreadLineage({
   data,
   thread,
   go,
   act,
-}: V3PageProps & { thread: V3Thread }) {
+  settled,
+}: V3PageProps & { thread: V3Thread; settled?: boolean }) {
   return (
     <>
       <ParentLine data={data} thread={thread} go={go} />
+      <ParkLine thread={thread} settled={settled} act={act} />
       <HelpersBlock data={data} thread={thread} go={go} act={act} />
     </>
   );

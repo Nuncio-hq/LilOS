@@ -3,6 +3,7 @@ import { askActions } from "./asks"
 import { browserActions } from "./browser"
 import { chatActions } from "./chats"
 import type { Engine } from "./context"
+import { parkActions } from "./park"
 import { peopleActions } from "./people"
 import { phoneActions } from "./phone"
 import { planActions } from "./plan"
@@ -19,6 +20,7 @@ export function makeActions(engine: Engine): V3DataActions {
   return {
     ...askActions(engine),
     ...chatActions(engine),
+    ...parkActions(engine),
     ...peopleActions(engine),
     ...planActions(engine),
     ...projectActions(engine),

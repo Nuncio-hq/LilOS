@@ -7,8 +7,9 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "../lib/utils";
-import { Btn, Page, Section, Tabs, Title } from "./v3-bits";
+import { Btn, Page, Section, Tabs, Title, useTick } from "./v3-bits";
 import type { V3Data } from "./v3-data-types";
+import { useFoldPrefs } from "./v3-layout-prefs";
 import { AgentAvatar, CeoMark, DOT } from "./v3-marks";
 import {
   asleepAgents,
@@ -22,13 +23,16 @@ import {
 } from "./v3-model";
 import type { V3PageProps } from "./v3-page-types";
 import { ScheduledView } from "./v3-schedules";
+import { sectionedThreads } from "./v3-sections";
 import { IdleCard, ThreadCard } from "./v3-thread-card";
 import {
   AgentThreadRow,
   ALL_GRID,
   AllRow,
-  Archived,
+  Fold,
   RecentRow,
+  SettledRow,
+  SnoozedRow,
 } from "./v3-threads-rows";
 import type { V3Status, V3Thread } from "./v3-types";
 
@@ -126,11 +130,23 @@ function Live(p: V3PageProps) {
   );
 }
 
+/* Threads → All is the calm list (#862): what came back to you is on top
+   (Pinned, then Active, newest-back first), work in progress folds away,
+   and the Snoozed and Settled shelves sit folded at the bottom — the shape
+   T3 Code's sidebar takes. */
 function All(p: V3PageProps) {
   const { data } = p;
+  /* A wake time passing quietly returns its thread to Active; tick so the
+     list re-reads the clock without waiting for a touch. */
+  useTick(30_000);
   // The Context column only exists when some thread reports its context.
   const hasContext = [...data.threads, ...(data.archivedThreads ?? [])].some(
     (t) => t.context !== undefined,
+  );
+  const s = sectionedThreads(data);
+  const { folds, setFold } = useFoldPrefs();
+  const row = (t: V3Thread) => (
+    <AllRow key={t.id} {...p} t={t} hasContext={hasContext} />
   );
   return (
     <div className="mt-5 text-[13.5px]">
@@ -150,14 +166,46 @@ function All(p: V3PageProps) {
         )}
         <span />
       </div>
-      {listedThreads(data.threads).map((t) => (
-        <AllRow key={t.id} {...p} t={t} hasContext={hasContext} />
-      ))}
-      <Archived
-        {...p}
-        threads={data.archivedThreads ?? []}
-        hasContext={hasContext}
-      />
+      {s.pinned.length > 0 && (
+        <>
+          <div className="pt-2.5 pb-1 text-[12.5px] text-muted-foreground/70">
+            Pinned
+          </div>
+          {s.pinned.map(row)}
+          <div className="mt-2 border-[var(--v3-line)] border-b" />
+        </>
+      )}
+      {s.active.map(row)}
+      <Fold
+        title="Working"
+        count={s.working.length}
+        open={folds.working === true}
+        onToggle={(o) => setFold("working", o)}
+      >
+        {s.working.map(row)}
+      </Fold>
+      <Fold
+        title="Snoozed"
+        count={s.snoozed.length}
+        open={folds.snoozed === true}
+        onToggle={(o) => setFold("snoozed", o)}
+      >
+        {s.snoozed.map((t) => (
+          <SnoozedRow key={t.id} {...p} t={t} />
+        ))}
+      </Fold>
+      <Fold
+        title="Settled"
+        count={s.settled.length}
+        open={folds.settled === true}
+        onToggle={(o) => setFold("settled", o)}
+      >
+        <div data-settled-list>
+          {s.settled.map((t) => (
+            <SettledRow key={t.id} {...p} t={t} />
+          ))}
+        </div>
+      </Fold>
     </div>
   );
 }

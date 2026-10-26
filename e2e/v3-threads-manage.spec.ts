@@ -1,21 +1,26 @@
 import { expect, type Page, test } from "@playwright/test";
 
 /**
- * Rename, archive and unarchive a thread, and the engine approval policy,
+ * Rename, settle and un-settle a thread, and the engine approval policy,
  * on the prototype (mock company). A thread's ⋯ menu is on its row and in
- * its own header; archived threads leave Live and Recent and live under
- * Threads → All → Archived, where they unarchive.
+ * its own header; a running thread sits folded under Working (#862),
+ * and a settled thread leaves the list for the Settled shelf, where it
+ * un-settles.
  */
 
 const T = "t-lil81";
 const row = (page: Page) => page.locator(`#v3-main [data-thread-row="${T}"]`);
 const menu = (scope: ReturnType<Page["locator"]>) =>
   scope.getByRole("button", { name: "Thread actions", exact: true });
+/* t-lil81 is working: its row lives under the folded Working section. */
+const openWorking = (page: Page) =>
+  page.getByRole("button", { name: /^Working \(\d+\)/ }).click();
 
 test("a thread renames in place from its row and its header", async ({
   page,
 }) => {
   await page.goto("/?page=threads&view=all");
+  await openWorking(page);
   await row(page).hover();
   await menu(row(page)).click();
   await page.getByRole("menuitem", { name: "Rename thread" }).click();
@@ -49,17 +54,19 @@ test("a thread renames in place from its row and its header", async ({
   await expect(row(page)).toContainText("Renamed in the header");
 });
 
-test("an archived thread leaves Live and Recent, shows under All → Archived, and unarchives", async ({
+test("a settled thread leaves Live and the list for the Settled shelf, and un-settles", async ({
   page,
 }) => {
   await page.goto("/?page=threads&view=all");
-  await expect(page.getByRole("button", { name: /^Archived/ })).toHaveCount(0);
+  // The mock's shelf starts with three parked threads (#862).
+  await expect(page.getByRole("button", { name: "Settled (3)" })).toBeVisible();
+  await openWorking(page);
   await row(page).hover();
   await menu(row(page)).click();
-  await page.getByRole("menuitem", { name: "Archive thread" }).click();
+  await page.getByRole("menuitem", { name: "Settle thread" }).click();
 
   // Gone from the list, and from Live (the tabs, not a reload: the mock
-  // company lives in memory); present under Archived.
+  // company lives in memory); present on the Settled shelf.
   await expect(row(page)).toHaveCount(0);
   await page.getByRole("button", { name: "Live", exact: true }).click();
   await expect(
@@ -67,17 +74,17 @@ test("an archived thread leaves Live and Recent, shows under All → Archived, a
   ).toBeVisible();
   await expect(page.locator("#v3-main")).not.toContainText("Fix the flaky");
   await page.getByRole("button", { name: "Open All" }).click();
-  await page.getByRole("button", { name: /Archived \(1\)/ }).click();
-  const archived = page.locator(
-    `[data-archived-list] [data-thread-row="${T}"]`,
-  );
-  await expect(archived).toBeVisible();
+  await page.getByRole("button", { name: "Settled (4)" }).click();
+  const settled = page.locator(`[data-settled-list] [data-thread-row="${T}"]`);
+  await expect(settled).toBeVisible();
+  // Settling took the pin and snooze off: the shelf row offers Un-settle.
+  await expect(settled).toContainText("Settled");
 
-  // It still opens, and Unarchive is on its menu.
-  await menu(archived).click();
-  await page.getByRole("menuitem", { name: "Unarchive thread" }).click();
+  // It still opens, and Un-settle is on its menu.
+  await menu(settled).click();
+  await page.getByRole("menuitem", { name: "Un-settle thread" }).click();
   await expect(row(page)).toBeVisible();
-  await expect(page.getByRole("button", { name: /^Archived/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Settled (3)" })).toBeVisible();
 });
 
 test("Settings → General draws the engine approval policy and keeps the pick", async ({

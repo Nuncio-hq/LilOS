@@ -331,7 +331,7 @@ test("AC-1 failed rename, archive and unarchive show their reasons", async ({
   await row
     .getByRole("button", { name: "Thread actions", exact: true })
     .click();
-  await page.getByRole("menuitem", { name: "Archive thread" }).click();
+  await page.getByRole("menuitem", { name: "Settle thread" }).click();
   await expect(page.locator(TOAST)).toContainText(
     "Couldn't archive the thread",
     { timeout: 15_000 },
@@ -339,16 +339,16 @@ test("AC-1 failed rename, archive and unarchive show their reasons", async ({
   await expect(page.locator(TOAST)).toContainText(LOST);
   await shot(page, "ac1-archive-toast");
 
-  /* Unarchive — the row moves under the collapsed Archived section first. */
+  /* Unarchive — the row moves under the folded Settled shelf first. */
   fail.heal();
   await row.hover();
   await row
     .getByRole("button", { name: "Thread actions", exact: true })
     .click();
-  await page.getByRole("menuitem", { name: "Archive thread" }).click();
-  await page.getByRole("button", { name: /Archived \(\d+\)/ }).click();
+  await page.getByRole("menuitem", { name: "Settle thread" }).click();
+  await page.getByRole("button", { name: /Settled \(\d+\)/ }).click();
   const archivedMenu = page
-    .locator("[data-archived-list]")
+    .locator("[data-settled-list]")
     .getByRole("button", { name: "Thread actions", exact: true })
     .last();
   await expect(archivedMenu).toBeAttached({ timeout: 15_000 });
@@ -357,7 +357,7 @@ test("AC-1 failed rename, archive and unarchive show their reasons", async ({
     message: ERR,
   });
   await archivedMenu.click();
-  await page.getByRole("menuitem", { name: "Unarchive thread" }).click();
+  await page.getByRole("menuitem", { name: "Un-settle thread" }).click();
   await expect(page.locator(TOAST)).toContainText(
     "Couldn't unarchive the thread",
     { timeout: 15_000 },
@@ -413,7 +413,7 @@ test("AC-1 the thread's own header renames and archives, and failures say so", a
     message: ERR,
   });
   await menu.click();
-  await page.getByRole("menuitem", { name: "Archive thread" }).click();
+  await page.getByRole("menuitem", { name: "Settle thread" }).click();
   await expect(page.locator(TOAST)).toContainText(
     "Couldn't archive the thread",
     {

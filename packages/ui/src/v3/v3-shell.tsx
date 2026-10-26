@@ -311,6 +311,7 @@ export function V3Shell({
             page={page}
             open={top}
             go={goFromPage}
+            act={act}
             onSearch={() => setPalette("")}
             dark={dark}
             onTheme={() => setTheme(dark ? "light" : "dark")}

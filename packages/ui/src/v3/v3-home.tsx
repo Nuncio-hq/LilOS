@@ -1,6 +1,15 @@
 import { Fragment, type ReactNode } from "react";
 import { cn } from "../lib/utils";
-import { ago, Btn, Meter, Page, relativeTime, Section, Title } from "./v3-bits";
+import {
+  ago,
+  Btn,
+  Meter,
+  Page,
+  relativeTime,
+  Section,
+  Title,
+  useTick,
+} from "./v3-bits";
 import type { V3Data } from "./v3-data-types";
 import { ChatDraft } from "./v3-draft-chat";
 import {
@@ -23,7 +32,6 @@ import {
   defaultAgent,
   FORMER_AGENT,
   goalProgress,
-  LIVE_RANK,
   listedThreads,
   nextRunLabel,
   projectOf,
@@ -36,6 +44,7 @@ import {
 import { RowButton } from "./v3-open-record";
 import type { V3PageProps } from "./v3-page-types";
 import { ThreadRow } from "./v3-rows";
+import { sectionedThreads } from "./v3-sections";
 import type { V3Agent, V3Status, V3Thread } from "./v3-types";
 
 /* Home: who is working, what needs you, what just finished. Counts are the
@@ -438,23 +447,22 @@ const THREADS_HOME = 6;
 
 function DailyHome({ data, go, act }: V3PageProps) {
   const starter = defaultAgent(data);
-  /* Helper threads have no row here (D-#847): a parent waiting on helpers
-     sorts with the work in flight, not with the idle. */
-  const byRank = (a: V3Thread, b: V3Thread) =>
-    (LIVE_RANK[boardStatus(data, a)] ?? 9) -
-    (LIVE_RANK[boardStatus(data, b)] ?? 9);
-  const listed = listedThreads(data.threads);
+  /* A wake time passing quietly returns its thread — tick so Home re-reads
+     the clock. */
+  useTick(30_000);
+  /* The threads, in the list's own section order (#862): pinned, then
+     what came back to you newest first, then work in progress — snoozed
+     sleeps on its shelf and settled lives on its own. Helpers have no row
+     (D-#847). */
+  const s = sectionedThreads(data);
+  const ordered = [...s.pinned, ...s.active, ...s.working];
   const groups = data.projects
     .map((p) => ({
       project: p,
-      threads: listed
-        .filter((t) => threadProjectId(data, t) === p.id)
-        .sort(byRank),
+      threads: ordered.filter((t) => threadProjectId(data, t) === p.id),
     }))
     .filter((g) => g.threads.length > 0);
-  const chats = listed
-    .filter((t) => threadProjectId(data, t) === undefined)
-    .sort(byRank);
+  const chats = ordered.filter((t) => threadProjectId(data, t) === undefined);
   const group = (title: ReactNode, threads: V3Thread[], link?: () => void) => (
     <Fragment key={typeof title === "string" ? title : threads[0]?.id}>
       <Section
