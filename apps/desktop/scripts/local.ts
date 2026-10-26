@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { launchEnv } from "./launch-env";
 
 /**
  * `bun run app:local` — issue #141: one command from a fresh `git pull` to a
@@ -36,9 +37,9 @@ if (process.platform !== "darwin") {
   process.exit(1);
 }
 
-const run = (cmd: string, args: string[]) => {
+const run = (cmd: string, args: string[], env?: NodeJS.ProcessEnv) => {
   console.log(`$ ${cmd} ${args.join(" ")}`);
-  execFileSync(cmd, args, { stdio: "inherit", cwd: REPO });
+  execFileSync(cmd, args, { stdio: "inherit", cwd: REPO, env });
 };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -95,7 +96,10 @@ run("mv", [staged, TARGET]);
 rmSync(previous, { recursive: true, force: true });
 
 console.log("==> relaunch");
-run("open", [TARGET]);
+// `open` forwards the caller's env to the app; scrub Electron-as-Node
+// vars (ELECTRON_RUN_AS_NODE from an Electron app's terminal) or the
+// binary boots as plain Node and no window appears — #837.
+run("open", [TARGET], launchEnv(process.env));
 
 // The app registers relay + harness on launch; wait for the relay's health
 // endpoint so the command ends on a running app, not a hope.
