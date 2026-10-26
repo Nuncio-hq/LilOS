@@ -1,4 +1,5 @@
 import { cn } from "../lib/utils";
+import { AtWorkNow } from "./v3-at-work";
 import {
   ago,
   Btn,
@@ -488,10 +489,13 @@ function DailyHome({ data, go, act }: V3PageProps) {
      the clock. */
   useTick(30_000);
   /* Home's list is one list (#862 feedback): what needs you first —
-     highlighted, pill and quick action on the row — then work in flight,
-     then the rest of what came back, newest first. Pinned keeps its own
-     small block above; snoozed and settled sleep on their shelves and
-     never land here. Helpers have no row (D-#847). Empty draws nothing. */
+     highlighted, pill and quick action on the row — then the rest of what
+     came back, newest first. Working threads are NOT in it (D-#868): they
+     live on the "At work now" strip above, the one place for work in
+     flight, so a running thread never shows twice. Pinned keeps its own
+     small block above — a pin is your pick, the strip is the board;
+     snoozed and settled sleep on their shelves and never land here.
+     Helpers have no row (D-#847). Empty draws nothing. */
   const s = sectionedThreads(data);
   const now = Date.now();
   /* A thread with an open ask shows as the ask's highlighted row, not a
@@ -500,12 +504,9 @@ function DailyHome({ data, go, act }: V3PageProps) {
   const asked = new Set(
     data.asks.map((a) => a.threadId).filter((x) => x !== undefined),
   );
-  const recent = [
-    ...s.working.filter((t) => !asked.has(t.id) && !askIds.has(t.askId ?? "")),
-    ...s.active
-      .filter((t) => !asked.has(t.id) && !askIds.has(t.askId ?? ""))
-      .sort((a, b) => backThen(b, now) - backThen(a, now)),
-  ];
+  const recent = s.active
+    .filter((t) => !asked.has(t.id) && !askIds.has(t.askId ?? ""))
+    .sort((a, b) => backThen(b, now) - backThen(a, now));
   const rows = data.asks.length + recent.length;
 
   return (
@@ -525,6 +526,7 @@ function DailyHome({ data, go, act }: V3PageProps) {
           />
         </div>
       )}
+      <AtWorkNow data={data} go={go} act={act} working={s.working} />
       {s.pinned.length > 0 && (
         <>
           <Section title="Pinned" count={s.pinned.length} />
