@@ -123,12 +123,12 @@ test("statuses and this week's counts, including a thread that recovered from st
     await expect(stat("threads failed")).toHaveClass(/text-red-600/);
 
     /* The same list grouped by agent (#862's "Group by" switch): this
-       agent's fold holds its threads, statuses as dots. */
+       agent's fold holds its threads, statuses as dots. Match the fold by
+       its agent marker, not its text — the avatar's letter chip leads the
+       name, so a starts-with match would miss. */
     await page.goto(`${stack.webUrl}/#?page=threads`);
     await main(page).getByRole("radio", { name: "Agent", exact: true }).click();
-    const block = main(page)
-      .locator('[data-fold^="agent:"]')
-      .filter({ hasText: new RegExp(`^${agent.name}`) });
+    const block = main(page).locator(`[data-fold="agent:${agent.id}"]`);
     await expect(
       block.locator('[data-thread-row]:has([data-v3-status="done"])'),
     ).toHaveCount(finished);

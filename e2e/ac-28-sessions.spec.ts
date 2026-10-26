@@ -405,7 +405,13 @@ test("AC-3 rename + archive persist across restart", async ({ page }) => {
   await expect(
     page.locator(`[data-thread-row="${convId}"]:not([data-settled])`),
   ).toHaveCount(0);
-  await page.locator('#v3-main [data-fold="settled"] > button').click();
+  /* The fold's open state is device-local and the restart reuses the same
+     origin, so it may already be open here — only open it when it is not
+     (an unconditional click would toggle it closed). */
+  const settledFold = page.locator('#v3-main [data-fold="settled"] > button');
+  await expect(settledFold).toBeVisible({ timeout: 30_000 });
+  if ((await settledFold.getAttribute("aria-expanded")) === "false")
+    await settledFold.click();
   await expect(archived).toContainText("Repo summary thread", {
     timeout: 30_000,
   });

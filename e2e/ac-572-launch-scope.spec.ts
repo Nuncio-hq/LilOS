@@ -243,7 +243,13 @@ test("AC-1/AC-2: cold boot replays nothing; background sessions still badge, rin
   });
   await post(convA.id, "slow:400 Say hi to Carol");
   await expect(runningBadge).toBeVisible({ timeout: 60_000 });
-  /* The thread row's status dot shows the running ring. */
+  /* The Working shelf did not exist at cold boot (nothing ran), so it was
+     never opened — the running session's row lands inside it closed. Open
+     it, then the row's status dot shows the running ring. */
+  const workingFold = page.locator('#v3-main [data-fold="working"] > button');
+  await expect(workingFold).toBeVisible({ timeout: 30_000 });
+  if ((await workingFold.getAttribute("aria-expanded")) === "false")
+    await workingFold.click();
   await expect(
     rows.filter({ has: page.locator('[data-v3-status="working"]') }),
   ).toHaveCount(1, {

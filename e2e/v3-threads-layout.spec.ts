@@ -18,15 +18,25 @@ for (const group of ["Section", "Agent", "Project"] as const) {
         await page.getByRole("radio", { name: group, exact: true }).click();
       const rows = page.locator("#v3-main [data-thread-row]");
       await expect(rows.first()).toBeVisible();
+      /* A title reads when it shows in full or, truncated, keeps at least
+         80px: the merged row's title is fluid, so a short title is
+         legitimately narrower than 80 (#862). */
       const titles = await rows.evaluateAll((els) =>
         els.map((row) => {
           const title = row.querySelector<HTMLElement>("[data-thread-title]");
-          return title ? title.getBoundingClientRect().width : 0;
+          if (!title) return { w: 0, full: 0 };
+          return {
+            w: title.getBoundingClientRect().width,
+            full: title.scrollWidth,
+          };
         }),
       );
       expect(titles.length).toBeGreaterThan(0);
-      for (const w of titles)
-        expect(w, `a title column is ${w}px wide`).toBeGreaterThan(80);
+      for (const { w, full } of titles)
+        expect(
+          w,
+          `a title column is ${w}px wide (text ${full}px)`,
+        ).toBeGreaterThanOrEqual(Math.min(full, 81));
     });
   }
 }
