@@ -51,6 +51,9 @@ export interface RuntimeInstance {
   detail?: string;
   /** Install probe: false = recipe's binary missing — not hirable. */
   available?: boolean;
+  /** When the supervisor last reached `failed` — the demand-side
+      cooldown clock (see `ensure`). */
+  failedAt?: number;
   /** Callers parked in `ensure` until the next connection lands. */
   waiters: {
     resolve: (conn: EngineConnection) => void;
@@ -76,6 +79,10 @@ export class EngineRegistry {
       reconnectAttempts?: number;
       stableAfterMs?: number;
       maxConsecutiveCrashes?: number;
+      /** How long a `failed` row answers `ensure` with the recorded
+          reason before a new demand earns one fresh bounded start
+          cycle (D-#761 review — the packaged-missing-adapter loop). */
+      failedRetryCooldownMs?: number;
       hooks: RuntimeHooks;
     },
   ) {
@@ -119,6 +126,14 @@ export class EngineRegistry {
    * running from boot; any other row builds one here on first demand.
    * The supervisor owns the process/conn lifecycle — `ensure` only parks
    * the caller until `onConnection` delivers (or the row goes failed).
+   *
+   * A row that cannot ever launch (adapter not in this build) or whose
+   * supervisor already exhausted its crash budget does NOT re-drive a
+   * start cycle per demand — each `ensure` used to spawn a fresh
+   * `starting→restarting→failed` round (the packaged-app hot loop,
+   * ~22% harness CPU). Missing adapters fail plainly forever; a failed
+   * row answers with the recorded reason until `failedRetryCooldownMs`
+   * passes — then one new demand earns one fresh bounded budget.
    */
   ensure(id: string): Promise<EngineConnection> {
     const inst = this.instances.get(id);
@@ -126,11 +141,62 @@ export class EngineRegistry {
     const live = inst.supervisor?.state.conn;
     if (live) return Promise.resolve(live);
     if (this.stopped) return Promise.reject(new Error("registry stopped"));
+    const detail = inst.detail ?? `engine ${inst.spec.label} is not available`;
+    if (inst.spec.adapterPresent && !inst.spec.adapterPresent()) {
+      /* The recipe exists but the binary does not (a build that never
+         shipped the adapter). No supervisor cycle could help — the
+         verdict is recorded so the row reads `failed` in status and
+         the caller fails plainly. */
+      if (inst.state !== "failed") {
+        inst.state = "failed";
+        inst.detail = `${inst.spec.label} adapter is not part of this build`;
+        inst.failedAt = Date.now();
+        this.opts.hooks.onStateChange(inst.spec.id, "failed", inst.detail);
+      }
+      return Promise.reject(new Error(inst.detail ?? detail));
+    }
+    if (inst.state === "failed") {
+      const cooldown = this.opts.failedRetryCooldownMs ?? 30_000;
+      if (
+        inst.failedAt === undefined ||
+        Date.now() - inst.failedAt < cooldown
+      ) {
+        return Promise.reject(new Error(detail));
+      }
+      /* Cooldown over: fresh demand earns a fresh supervisor (a new
+         crash budget), not another lap on the exhausted one. */
+      inst.supervisor = undefined;
+      inst.failedAt = undefined;
+      inst.state = "idle";
+    }
     const p = new Promise<EngineConnection>((resolve, reject) => {
       inst.waiters.push({ resolve, reject });
     });
     this.buildSupervisor(inst).ensureRunning();
     return p;
+  }
+
+  /**
+   * Stop supervising a failed non-default row once nothing needs it
+   * (D-#761 review — the loop kept burning after the only employee on
+   * the runtime was removed). The row returns to `idle`; the next real
+   * demand rebuilds a supervisor with a full crash budget.
+   */
+  async release(id: string): Promise<void> {
+    if (id === DEFAULT_RUNTIME) return;
+    const inst = this.instances.get(id);
+    if (!inst) return;
+    if (inst.state !== "failed" && inst.state !== "stopped") return;
+    /* A row that can never launch (adapter not in this build) has no
+       supervisor to free — releasing it would flip failed→idle on every
+       demand cycle and re-report the failure each time. It stays
+       `failed`: `ensure` answers cheaply from the recorded verdict. */
+    if (inst.spec.adapterPresent && !inst.spec.adapterPresent()) return;
+    await inst.supervisor?.stop();
+    inst.supervisor = undefined;
+    inst.conn = undefined;
+    inst.state = "idle";
+    this.opts.hooks.onStatusChange?.();
   }
 
   /** Boot only the default runtime — today's engines-up order, unchanged. */
@@ -162,10 +228,24 @@ export class EngineRegistry {
     this.instances.get(id)?.supervisor?.restartForPluginRefresh();
   }
 
-  /** Install probe — `available` on the row; run once at boot. */
+  /** Install probe — `available` on the row; run once at boot. A
+      recipe in the catalog is not availability (D-#761 review — the
+      packaged app reported acp:devin hirable with no adapter in the
+      build): the adapter binary must exist before the agent probe is
+      even worth running. */
   async probeAvailable(env?: NodeJS.ProcessEnv) {
     await Promise.all(
       this.list().map(async (inst) => {
+        if (inst.spec.adapterPresent && !inst.spec.adapterPresent()) {
+          inst.available = false;
+          inst.detail = `${inst.spec.label} adapter is not part of this build`;
+          this.opts.log.info("runtime probe", {
+            runtime: inst.spec.id,
+            available: false,
+            detail: inst.detail,
+          });
+          return;
+        }
         if (!inst.spec.acpSpec) {
           inst.available = true;
           return;
@@ -210,12 +290,21 @@ export class EngineRegistry {
       probeMissesBeforeRestart: opts.probeMissesBeforeRestart,
       onConnection: (conn, reconnect, gapCause) => {
         inst.conn = conn;
+        /* A live conn clears the recorded failure — a released row that
+           later comes up must not keep answering "failed" to parked
+           sends (the verdict belongs to the cycle that produced it). */
+        inst.failedAt = undefined;
+        inst.detail = undefined;
         for (const w of inst.waiters.splice(0)) w.resolve(conn);
         opts.hooks.onConnection(inst.spec.id, conn, reconnect, gapCause);
       },
       onState: (st, detail) => {
         inst.state = st;
         inst.detail = detail;
+        /* The demand-cooldown clock starts at the LAST failure — a row
+           that keeps failing answers `ensure` cheaply instead of
+           re-driving a doomed launch per caller. */
+        if (st === "failed") inst.failedAt = Date.now();
         if (st === "failed" || st === "stopped") {
           inst.conn = undefined;
           for (const w of inst.waiters.splice(0)) {

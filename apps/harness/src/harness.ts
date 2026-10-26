@@ -62,7 +62,11 @@ import {
   employeeIdFor,
   findConversation,
   postSystem,
+  releaseIdleFailedRuntimes,
   resolveEmployee,
+  runtimeFailedFor,
+  runtimeFailureDetail,
+  runtimeForConversation,
   updateConversation,
 } from "./harness/conversations";
 import type { HarnessCtx, SessionBinding } from "./harness/ctx";
@@ -640,6 +644,23 @@ export class Harness {
     detail?: string,
     runtime?: string,
   ): void {
+    /* D-#761 review: a terminal failure settles every send parked on
+       this runtime — a `!binding` park has no flush timer, so without
+       this it would wait on an engine that can never come. The drop
+       surfaces the error on the thread (and a task wake on a hand-off
+       parent); then, with nothing left needing the runtime, its
+       supervisor is released. */
+    if (state === "failed" && runtime && runtime !== DEFAULT_RUNTIME) {
+      void (async () => {
+        for (const convId of [...this.early.keys()]) {
+          const conv = await this.findConversation(convId);
+          if (conv && (await this.runtimeForConversation(conv)) === runtime) {
+            await this.dropEarlyWithError(convId).catch(() => {});
+          }
+        }
+        await this.releaseIdleFailedRuntimes();
+      })().catch(() => {});
+    }
     if (!this.hostId) return;
     this.opts.relay
       .request("harness.report", {
@@ -679,6 +700,13 @@ export class Harness {
   async ensureRuntime(runtime: string): Promise<EngineConnection | undefined> {
     const norm = normalizeRuntime(runtime);
     try {
+      /* A runtime the registry doesn't know (a unit fixture's direct-
+         attach map, or a stale employee.runtime naming a row this
+         build's catalog lacks) resolves from already-attached conns —
+         never lazily started and never blocking the default lane. */
+      if (this.runtimes && !this.runtimes.has(norm)) {
+        return this.connForRuntime(norm);
+      }
       return (await this.runtimes?.ensure(norm)) ?? this.connForRuntime(norm);
     } catch (error) {
       this.opts.log.warn("runtime unavailable", {
@@ -811,6 +839,16 @@ export class Harness {
   declare private flushEarly: (convId: string) => Promise<void>;
   declare private scheduleEarlyFlush: (convId: string) => void;
   declare private dropEarlyWithError: (convId: string) => Promise<void>;
+  declare private conversationFromAtom: (
+    conversationId: string,
+  ) => Conversation | undefined;
+  declare private findConversation: (
+    conversationId: string,
+  ) => Promise<Conversation | undefined>;
+  declare private runtimeForConversation: (
+    conv: Conversation | undefined,
+  ) => Promise<string>;
+  declare private releaseIdleFailedRuntimes: () => Promise<void>;
 
   /* ------------------------- #346 idle reaper ------------------------- */
 
@@ -919,8 +957,12 @@ Object.assign(Harness.prototype, {
   wireScheduler,
   reconcileAsks,
   relayWrite,
+  releaseIdleFailedRuntimes,
   resolveEmployee,
   resyncBinding,
+  runtimeFailedFor,
+  runtimeFailureDetail,
+  runtimeForConversation,
   rewindConversation,
   scheduleSteerReconcile,
   sendCanProduceTurn,

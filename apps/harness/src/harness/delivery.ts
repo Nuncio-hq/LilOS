@@ -1,5 +1,6 @@
 import type { AppMessage } from "@lilos/contracts/app";
 import type { HarnessCtx, SessionBinding } from "./ctx";
+import { noteTaskWake } from "./task-wake";
 
 /**
  * message -> engine, in arrival order: per-conversation
@@ -141,15 +142,24 @@ export async function deliverOrdered(
       return;
     }
     if (!binding) {
-      // Engine still starting/restarting: hold the message; attachEngine
-      // flushes this queue once a connection exists (the dedupe set above
-      // would otherwise drop it forever).
       const waiting = this.early.get(conv.id) ?? [];
       waiting.push(message);
       this.early.set(conv.id, waiting);
       // The watermark already claimed this send — keep the claim alive so
       // the post-attach flush can't swallow it.
       if (isRedeliver) this.redeliver.add(message.id);
+      /* D-#761 review: the conv's runtime already reached a terminal
+         `failed` — parking it behind a dead engine would sit forever
+         (nothing re-drives a flush on a runtime that never connects).
+         Surface it now, same as a failed prompt. */
+      if (await this.runtimeFailedFor(conv)) {
+        void this.dropEarlyWithError(conv.id).catch(() => {});
+        return;
+      }
+      // Engine still starting/restarting: hold the message; attachEngine
+      // flushes this queue once a connection exists (the dedupe set above
+      // would otherwise drop it forever). If the start then fails the
+      // `failed` state change drops the park with an error surface.
       this.opts.log.debug("message held for engine", {
         conversationId: conv.id,
         waiting: waiting.length,
@@ -240,10 +250,27 @@ export function scheduleEarlyFlush(this: HarnessCtx, convId: string): void {
     void this.flushEarly(convId)
       .then(() => {
         /* Drained (or the conv went away): reset the budget. Still
-           parked — the flush could not bind yet; retry again. */
-        if (!this.early.get(convId)?.length)
+           parked — decide whether more waiting can help. The conv
+           gone (the employee was removed — D-#761 review) drops
+           silently; its runtime terminally failed drops with the
+           engine-error surface, no further polls; anything else is a
+           transient start/restart — keep the bounded park. */
+        if (!this.early.get(convId)?.length) {
           this.earlyFlushAttempts.delete(convId);
-        else this.scheduleEarlyFlush(convId);
+          return;
+        }
+        void (async () => {
+          const conv = await this.findConversation(convId);
+          if (!conv) {
+            this.early.delete(convId);
+            this.earlyFlushAttempts.delete(convId);
+            await this.releaseIdleFailedRuntimes();
+            return;
+          }
+          if (await this.runtimeFailedFor(conv)) {
+            await this.dropEarlyWithError(convId).catch(() => {});
+          } else this.scheduleEarlyFlush(convId);
+        })().catch(() => {});
       })
       .catch((error) => {
         this.opts.log.warn("early flush retry failed", {
@@ -261,9 +288,12 @@ export function scheduleEarlyFlush(this: HarnessCtx, convId: string): void {
   this.earlyFlushTimers.set(convId, timer);
 }
 
-/** Retry budget spent: surface the parked batch as an engine error and
-    stop holding it (the send keeps its `delivered` claim — it is settled
-    like a failed prompt, not owed a later redelivery). */
+/** Retry budget spent — or the conv's runtime reached a terminal
+    `failed` (D-#761 review): surface the parked batch as an engine
+    error and stop holding it (the send keeps its `delivered` claim —
+    it is settled like a failed prompt, not owed a later redelivery).
+    A task child reports the failure to its parent as a failed task
+    wake so the hand-off is not left waiting forever. */
 export async function dropEarlyWithError(
   this: HarnessCtx,
   convId: string,
@@ -273,10 +303,16 @@ export async function dropEarlyWithError(
   this.early.delete(convId);
   this.earlyFlushAttempts.delete(convId);
   const message = waiting[0];
-  const detail = "session could not be bound after several attempts";
-  this.opts.log.error("dropping held messages: bind retries exhausted", {
+  /* `findConversation`, not the atom: a just-hired child's row can lag
+     the atom, and losing it here would lose the parent's failed wake. */
+  const conv = await this.findConversation(convId);
+  const detail =
+    (await this.runtimeFailureDetail(conv)) ??
+    "session could not be bound after several attempts";
+  this.opts.log.error("dropping held messages: engine could not start", {
     conversationId: convId,
     count: waiting.length,
+    detail,
   });
   await this.postSystem(
     { channelId: message.channelId, conversationId: convId },
@@ -286,4 +322,17 @@ export async function dropEarlyWithError(
   await this.updateConversation(convId, {
     turnFailure: { kind: "generic", text: `Engine error: ${detail}` },
   });
+  /* A hand-off child whose engine never started still owes its parent
+     a wake — otherwise the ticket waits on a turn that can never run. */
+  if (conv?.parentId && conv.ticketId) {
+    noteTaskWake(this, {
+      taskId: conv.ticketId,
+      turnId: `bind:${convId}:${message.id}`,
+      outcome: "failed",
+      result: `Engine error: ${detail}`,
+    });
+  }
+  /* The drop may have been this runtime's last demand — idle its
+     failed row instead of supervising a dead engine forever. */
+  await this.releaseIdleFailedRuntimes();
 }

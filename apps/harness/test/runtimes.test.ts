@@ -309,6 +309,158 @@ describe("two runtimes at once (D-#761)", () => {
   }, 30_000);
 });
 
+describe("a runtime that cannot start (D-#761 review)", () => {
+  /** A world whose acp:devin row can never connect — the harness drives
+      the registry exactly as index.ts does. The default runtime stays on
+      the fixture's attached FakeEngine (the registry holds only acp). */
+  async function failingWorld() {
+    const homeDir = mkhome();
+    const log = createMemoryLogger();
+    const reg = new EngineRegistry(
+      [
+        {
+          id: ACP,
+          label: "Devin",
+          launcher: () => externalEngineLauncher("mem://acp-dead"),
+          seedAgents: [
+            { id: "devin", name: "Devin", detail: { isDefault: true } },
+          ],
+        },
+      ],
+      {
+        connect: () => Promise.reject(new Error("adapter dead")),
+        log,
+        minBackoffMs: 1,
+        maxBackoffMs: 4,
+        reconnectAttempts: 1,
+        maxConsecutiveCrashes: 2,
+        failedRetryCooldownMs: 60_000,
+        hooks: {
+          onConnection: (runtime, conn, _r, gap) =>
+            w.harness.attachEngine(conn, gap, runtime),
+          onStateChange: (runtime, state, detail) =>
+            w.harness.onEngineStateChange(state, detail, runtime),
+        },
+      },
+    );
+    const w = await setupWorld({
+      homeDir,
+      harnessExtra: { runtimes: reg },
+    });
+    return { w, reg, log, homeDir };
+  }
+
+  it("a parked send ends in a visible failure, then the runtime idles", async () => {
+    const { w, reg } = await failingWorld();
+    try {
+      const { employee: dev } = await w.user.request<{
+        employee: { id: string };
+      }>("employees.create", {
+        name: "Devin",
+        role: "coder",
+        runtime: ACP,
+      });
+      const { channel: ch } = await w.user.request<{
+        channel: { id: string };
+      }>("channels.openDm", { employeeId: dev.id });
+      await send(w, ch.id, "hello Devin");
+      /* The send parks in `early` while the supervisor's bounded budget
+         burns, then surfaces like a failed prompt — note + turnFailure —
+         instead of parking forever behind endless retries. */
+      await waitFor(async () => {
+        const { conversations } = await w.user.request<{
+          conversations: {
+            channelId: string;
+            turnFailure?: { text: string } | null;
+          }[];
+        }>("conversations.list", {});
+        const c = conversations.find((c) => c.channelId === ch.id);
+        return c?.turnFailure ? c : undefined;
+      }, "turnFailure on the waiting thread");
+      const { messages } = await w.user.request<{
+        messages: { authorKind: string; text: string }[];
+      }>("messages.list", { channelId: ch.id });
+      expect(
+        messages.some(
+          (m) => m.authorKind === "system" && /engine/i.test(m.text),
+        ),
+      ).toBe(true);
+      /* With the thread settled, nothing needs acp:devin — supervision
+         of the dead row stops (the row idles, no restart churn). */
+      await waitFor(
+        () => (reg.get(ACP)?.state === "idle" ? true : undefined),
+        "failed runtime released",
+      );
+    } finally {
+      await reg.stop();
+      await w.cleanup();
+    }
+  }, 30_000);
+
+  it("a task child on a dead runtime wakes its parent as failed", async () => {
+    const { w, reg, homeDir } = await failingWorld();
+    try {
+      const { employee: caller, channel: callerChannel } =
+        await openDmConversation(w.user);
+      const { employee: worker } = await w.user.request<{
+        employee: { id: string };
+      }>("employees.create", {
+        name: "Devin",
+        role: "coder",
+        runtime: ACP,
+      });
+      const { conversation: parent } = await w.user.request<{
+        conversation: { id: string };
+      }>("conversations.open", {
+        channelId: callerChannel.id,
+        text: "Plan the feature",
+        cwd: homeDir,
+      });
+      await waitFor(async () => {
+        const { conversations } = await w.user.request<{
+          conversations: { id: string; finishedSeq: number }[];
+        }>("conversations.list", {});
+        return conversations.find((c) => c.id === parent.id)?.finishedSeq
+          ? true
+          : undefined;
+      }, "parent root turn");
+      const ops = createAppOps({
+        relay: w.harnessRelay,
+        runningTurnId: () => undefined,
+        log: w.log,
+        home: homeDir,
+      })("s1", {
+        employeeId: caller.id,
+        channelId: callerChannel.id,
+        conversationId: parent.id,
+      });
+      if (!ops) throw new Error("no appOps");
+      await ops.taskCreate({
+        agent: "Devin",
+        prompt: "Sketch the module",
+        isolation: "shared",
+      });
+      void worker;
+      /* The child's runtime never starts — the parent still hears about
+         it as a failed task wake instead of waiting forever. */
+      await waitFor(async () => {
+        const { messages } = await w.user.request<{
+          messages: { taskWake?: boolean; text: string }[];
+        }>("messages.list", {
+          channelId: callerChannel.id,
+          conversationId: parent.id,
+        });
+        return messages.some((m) => m.taskWake && /fail/i.test(m.text))
+          ? true
+          : undefined;
+      }, "failed task wake on the parent");
+    } finally {
+      await reg.stop();
+      await w.cleanup();
+    }
+  }, 30_000);
+});
+
 describe("EngineRegistry (D-#761)", () => {
   const seed: AgentDescriptor = {
     id: "devin",
@@ -316,7 +468,13 @@ describe("EngineRegistry (D-#761)", () => {
     detail: { isDefault: true },
   };
 
-  function world(opts: { failUrls?: Set<string> } = {}) {
+  function world(
+    opts: {
+      failUrls?: Set<string>;
+      adapterMissing?: Set<string>;
+      failedRetryCooldownMs?: number;
+    } = {},
+  ) {
     const log = createMemoryLogger();
     const attached: { runtime: string; reconnect: boolean }[] = [];
     const states: { runtime: string; state: string; detail?: string }[] = [];
@@ -332,6 +490,7 @@ describe("EngineRegistry (D-#761)", () => {
         label: "Devin",
         launcher: () => externalEngineLauncher("mem://acp"),
         seedAgents: [seed],
+        adapterPresent: () => !opts.adapterMissing?.has(ACP),
       },
     ];
     const reg = new EngineRegistry(specs, {
@@ -350,6 +509,7 @@ describe("EngineRegistry (D-#761)", () => {
       maxBackoffMs: 4,
       reconnectAttempts: 1,
       maxConsecutiveCrashes: 2,
+      failedRetryCooldownMs: opts.failedRetryCooldownMs ?? 60_000,
       hooks: {
         onConnection: (runtime, _conn, reconnect) =>
           attached.push({ runtime, reconnect }),
@@ -402,6 +562,62 @@ describe("EngineRegistry (D-#761)", () => {
     await reg.start();
     const rows = reg.statusRows();
     expect(rows[0]?.state).toBeDefined();
+    await reg.stop();
+  });
+
+  /* A packaged build without lilos-engine-acp must NOT report the
+     runtime hirable (real-app review of #859: the row claimed
+     `available: true` with the adapter absent). The recipe alone is not
+     availability — the adapter has to exist on disk. */
+  it("a runtime whose adapter is not in the build reports unavailable", async () => {
+    const { reg } = world({ adapterMissing: new Set([ACP]) });
+    await reg.probeAvailable({ PATH: "/usr/bin" });
+    const row = reg.statusRows().find((r) => r.id === ACP);
+    expect(row?.available).toBe(false);
+    expect(row?.detail).toMatch(/adapter/i);
+    /* And a demand fails plainly instead of spawning a supervisor cycle. */
+    await expect(reg.ensure(ACP)).rejects.toThrow(/adapter|not.*build/i);
+  });
+
+  /* Real-app review of #859: every ensure() re-drove a fresh
+     start→fail cycle (starting→restarting→failed logs thousands of
+     times a minute). A failed row answers demands with the recorded
+     reason for the cooldown window — only then does a new demand earn
+     ONE fresh bounded start cycle. */
+  it("a failed runtime rejects demand without re-launching inside the cooldown", async () => {
+    const { reg, states } = world({ failUrls: new Set(["mem://acp"]) });
+    await reg.start();
+    await expect(reg.ensure(ACP)).rejects.toThrow();
+    await waitFor(
+      () =>
+        states.some((s) => s.runtime === ACP && s.state === "failed")
+          ? true
+          : undefined,
+      "acp:devin failed",
+    );
+    const starts = () =>
+      states.filter((s) => s.runtime === ACP && s.state === "starting").length;
+    const cycles = starts();
+    await expect(reg.ensure(ACP)).rejects.toThrow();
+    await expect(reg.ensure(ACP)).rejects.toThrow();
+    expect(starts()).toBe(cycles);
+    await reg.stop();
+  });
+
+  /* Same review: the runtime kept supervising after the only employee
+     on it was removed. `release` frees the supervisor of a failed
+     non-default row — the row idles until real demand returns. */
+  it("release() idles a failed non-default runtime", async () => {
+    const { reg } = world({ failUrls: new Set(["mem://acp"]) });
+    await reg.start();
+    await expect(reg.ensure(ACP)).rejects.toThrow();
+    await waitFor(
+      () => (reg.get(ACP)?.state === "failed" ? true : undefined),
+      "failed",
+    );
+    await reg.release(ACP);
+    expect(reg.get(ACP)?.state).toBe("idle");
+    expect(reg.get(ACP)?.supervisor).toBeUndefined();
     await reg.stop();
   });
 

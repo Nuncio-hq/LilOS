@@ -65,7 +65,15 @@ export async function handleMessages(c: RelayCtx): Promise<false | undefined> {
           includeDropped: parsed.data.includeDropped,
         });
         respond(peer, id, page);
-      } catch {
+      } catch (error) {
+        /* D-#761 review: only a genuinely missing channel is not_found —
+           the store's `unknown channel` throw. Any other store error
+           (a real DB fault) must surface as itself, not masquerade as
+           a missing channel and send the caller hunting phantom rows. */
+        if (
+          !(error instanceof Error && /^unknown channel /.test(error.message))
+        )
+          throw error;
         throw new RpcError(
           JsonRpcCode.notFound,
           "not_found",

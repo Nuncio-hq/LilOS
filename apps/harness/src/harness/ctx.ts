@@ -510,6 +510,21 @@ export interface HarnessCtx {
   resolveEmployee(
     conv: Conversation | undefined,
   ): Promise<Employee | undefined>;
+  /** The runtime a conversation binds to — the stored engineRef's
+      qualifier wins, else the channel employee's runtime (D-#761). */
+  runtimeForConversation(conv: Conversation | undefined): Promise<string>;
+  /** The conv's non-default runtime reached a terminal `failed` state —
+      waiting on it can only burn retries (D-#761 review). */
+  runtimeFailedFor(conv: Conversation | undefined): Promise<boolean>;
+  /** Plain reason the conv's runtime failed (for the thread's error
+      surface); undefined when the runtime is not failed. */
+  runtimeFailureDetail(
+    conv: Conversation | undefined,
+  ): Promise<string | undefined>;
+  /** Free the supervisor of every failed non-default runtime nothing
+      needs — no bindings, no parked sends, no ensure waiters (D-#761
+      review: supervision must not outlive its last user). */
+  releaseIdleFailedRuntimes(): Promise<void>;
   conversationFromAtom(conversationId: string): Conversation | undefined;
   findConversation(conversationId: string): Promise<Conversation | undefined>;
   updateConversation(

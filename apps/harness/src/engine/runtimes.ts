@@ -4,6 +4,7 @@ import { ACP_AGENTS } from "@lilos/engine-acp/shims/registry";
 import type { HarnessConfig } from "../config";
 import type { Logger } from "../log";
 import {
+  acpAdapterPresent,
   acpEngineLauncher,
   type EngineLauncher,
   type LaunchedEngine,
@@ -35,6 +36,10 @@ export interface RuntimeSpec {
   /** The curated ACP recipe — presence marks an `acp:*` row and feeds the
       install probe + roster seed. */
   acpSpec?: AcpLaunchSpec;
+  /** The adapter binary this row launches exists on disk RIGHT NOW —
+      checked at probe AND demand time (D-#761 review: a recipe alone
+      claimed `available: true` in a build that shipped no adapter). */
+  adapterPresent?: () => boolean;
   /** Roster seeds served by `agents.list` before the engine has started. */
   seedAgents?: AgentDescriptor[];
   /** Engine-side env (surfaces credentials) for a launched child. */
@@ -128,6 +133,11 @@ export function buildRuntimeCatalog(options: {
       label: spec.agent?.name ?? agentId,
       launcher: () => acpEngineLauncher(acpArgs),
       acpSpec: spec,
+      adapterPresent: () =>
+        acpAdapterPresent({
+          repoRoot,
+          ...(options.acpServeBin ? { serveBin: options.acpServeBin } : {}),
+        }),
       ...(spec.agent ? { seedAgents: [spec.agent] } : {}),
       ...(options.engineEnv ? { engineEnv: options.engineEnv } : {}),
     });
