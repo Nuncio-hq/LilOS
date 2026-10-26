@@ -170,6 +170,43 @@ describe("task wake queue (D-#844)", () => {
     expect(calls).toHaveLength(0);
   });
 
+  it("a timer firing ahead of the wall clock re-arms — the #873 flake", async () => {
+    vi.useFakeTimers();
+    /* The coalesce timer's monotonic clock can land a millisecond or two
+       ahead of `Date.now()`. The early flush then polls a window that is
+       still open; the old code returned without re-arming and the batch
+       sat in `pending` forever — the parent never woke. A hand-driven
+       `now` injects that ordering deterministically. */
+    let now = 1_000_000;
+    const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => now);
+    try {
+      const convs = new Map<string, Conversation>([
+        ["child", conv("child", { parentId: "p", ticketId: "T-8" })],
+      ]);
+      const { ctx, calls } = fakeCtx(convs);
+      noteTaskWake(ctx, { taskId: "T-8", turnId: "t-1", outcome: "finished" });
+
+      // The timer fires on schedule while `Date.now()` still reads
+      // inside the window: poll declines, nothing is posted yet.
+      await vi.advanceTimersByTimeAsync(TASK_WAKE_COALESCE_MS);
+      await micro();
+      expect(calls.filter((c) => c.method === "tasks.wake")).toHaveLength(0);
+
+      // The wall clock reaches the deadline; the re-armed remainder
+      // timer must deliver the batch — exactly once.
+      now += TASK_WAKE_COALESCE_MS;
+      await vi.advanceTimersByTimeAsync(TASK_WAKE_COALESCE_MS);
+      await micro();
+      const wakes = calls.filter((c) => c.method === "tasks.wake");
+      expect(wakes).toHaveLength(1);
+      expect(
+        (wakes[0]!.params.events as { taskId: string }[]).map((e) => e.taskId),
+      ).toEqual(["T-8"]);
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
   it("register re-enters owed wakes — the restart catch-up", async () => {
     vi.useFakeTimers();
     const { ctx, calls } = fakeCtx(new Map(), undefined, async (method) => {
