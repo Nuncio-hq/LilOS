@@ -8,6 +8,7 @@ import {
   relayRpc,
   type Stack,
   skipFirstRun,
+  v3Main,
   v3Peek,
   v3Sidebar,
 } from "./helpers/stack";
@@ -158,33 +159,35 @@ test("click-to-rename on the agent page: Enter saves, the roster follows", async
   await side(page)
     .getByRole("button", { name: /Nova/ })
     .click({ timeout: 60_000 });
-  const peek = v3Peek(page);
+  /* A sidebar pick is a jump (D-#769): the agent page fills the main
+     column, no agentPage. */
+  const agentPage = v3Main(page);
   await expect(
-    peek.getByRole("heading", { level: 1, name: "Nova" }),
+    agentPage.getByRole("heading", { level: 1, name: "Nova" }),
   ).toBeVisible({ timeout: 30_000 });
 
   /* The name is the control: click it, type, Enter. `employees.update`
      writes it — the engine profile and the sidebar row both follow. */
-  await peek.getByRole("button", { name: "Nova" }).click();
-  const box = peek.getByLabel("Agent name");
+  await agentPage.getByRole("button", { name: "Nova" }).click();
+  const box = agentPage.getByLabel("Agent name");
   await expect(box).toHaveValue("Nova");
   await box.fill("Nova Two");
   await box.press("Enter");
   await expect(
-    peek.getByRole("heading", { level: 1, name: "Nova Two" }),
+    agentPage.getByRole("heading", { level: 1, name: "Nova Two" }),
   ).toBeVisible({ timeout: 30_000 });
   await expect(
     side(page).getByRole("button", { name: /Nova Two/ }),
   ).toBeVisible();
 
   // ⋯ → Rename is the same box's other door; Esc only closes the box.
-  await peek.getByRole("button", { name: "Agent actions" }).click();
-  await peek.getByRole("menuitem", { name: "Rename" }).click();
-  await expect(peek.getByLabel("Agent name")).toHaveValue("Nova Two");
+  await agentPage.getByRole("button", { name: "Agent actions" }).click();
+  await agentPage.getByRole("menuitem", { name: "Rename" }).click();
+  await expect(agentPage.getByLabel("Agent name")).toHaveValue("Nova Two");
   await page.keyboard.press("Escape");
-  await expect(peek.getByLabel("Agent name")).toHaveCount(0);
+  await expect(agentPage.getByLabel("Agent name")).toHaveCount(0);
   await expect(
-    peek.getByRole("heading", { level: 1, name: "Nova Two" }),
+    agentPage.getByRole("heading", { level: 1, name: "Nova Two" }),
   ).toBeVisible();
 
   /* And it is the real record: the relay answers employees.list with the
@@ -232,10 +235,10 @@ test("evidence: Agents + ＋, the dialog, and the rename box — light, dark, ph
     .getByRole("button", { name: /Nova Two/ })
     .click();
   await expect(
-    v3Peek(page).getByRole("heading", { level: 1, name: "Nova Two" }),
+    v3Main(page).getByRole("heading", { level: 1, name: "Nova Two" }),
   ).toBeVisible({ timeout: 30_000 });
-  await v3Peek(page).getByRole("button", { name: "Nova Two" }).click();
-  await expect(v3Peek(page).getByLabel("Agent name")).toHaveValue("Nova Two");
+  await v3Main(page).getByRole("button", { name: "Nova Two" }).click();
+  await expect(v3Main(page).getByLabel("Agent name")).toHaveValue("Nova Two");
   await shot(page, "rename-light");
   await page.keyboard.press("Escape");
 
