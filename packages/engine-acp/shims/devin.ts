@@ -21,11 +21,15 @@ export const devinSpec: AcpLaunchSpec = {
   verify: { args: ["--version"], timeoutMs: 15_000 },
   /* The roster seed — the harness's first-run hire reads `agents.list`
      and hires `detail.isDefault`, so this row is what "Devin" looks like
-     to Oscar before he ever opens a thread. */
+     to Oscar before he ever opens a thread. `model` seeds the session
+     default (#851): `swe-2-max` is the free SWE-2 tier's top model —
+     Oscar's rule is real turns never pick a billed model (`*-lightning`,
+     GPT-6, Claude, Adaptive) unless he chooses one himself. */
   agent: {
     id: "devin",
     name: "Devin",
     description: "Devin CLI over ACP — Cognition's agent, signed in locally.",
+    model: "swe-2-max",
     detail: { isDefault: true },
   },
   clientCapabilities: {

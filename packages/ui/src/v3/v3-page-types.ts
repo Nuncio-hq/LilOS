@@ -142,6 +142,7 @@ export type V3Actions = {
     profile: string;
     name: string;
     role: string;
+    runtime?: string;
   }) => Promise<string>;
   /** Starts a ⌘K draft plan: its tickets (and the threads that can start now). */
   startPlan?: (plan: Extract<V3Draft, { kind: "plan" }>, text: string) => void;

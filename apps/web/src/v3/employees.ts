@@ -107,6 +107,9 @@ export async function listHirableProfiles(): Promise<V3Profile[]> {
         ...(model ? { model: modelLabel(model) } : {}),
         skills: full.skillCount ?? a.skillCount ?? 0,
         ...(full.soul ? { soul: full.soul } : {}),
+        /* The merged roster stamps which runtime lists the profile; a
+           coding runtime's row hires there, not onto the default. */
+        ...(a.runtime ? { runtime: a.runtime } : {}),
       };
     }),
   );
@@ -121,8 +124,11 @@ export async function hireFromProfile(p: {
   profile: string;
   name: string;
   role: string;
+  runtime?: string;
 }): Promise<string> {
-  const agent = await relay.describeAgent(p.profile).catch(() => undefined);
+  const agent = await relay
+    .describeAgent(p.profile, p.runtime)
+    .catch(() => undefined);
   const employee = await hireEmployee(
     {
       name: p.name,
@@ -131,6 +137,7 @@ export async function hireFromProfile(p: {
       instructions: agent?.soul ?? "",
     },
     p.profile,
+    p.runtime,
   );
   return employee.id;
 }

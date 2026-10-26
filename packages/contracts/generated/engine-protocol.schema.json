@@ -2418,6 +2418,10 @@
                     "type": "string"
                   },
                   "additionalProperties": {}
+                },
+                "runtime": {
+                  "type": "string",
+                  "minLength": 1
                 }
               },
               "required": [
@@ -2486,6 +2490,10 @@
                   "type": "string"
                 },
                 "additionalProperties": {}
+              },
+              "runtime": {
+                "type": "string",
+                "minLength": 1
               }
             },
             "required": [
@@ -2572,6 +2580,10 @@
                   "type": "string"
                 },
                 "additionalProperties": {}
+              },
+              "runtime": {
+                "type": "string",
+                "minLength": 1
               }
             },
             "required": [
@@ -2665,6 +2677,10 @@
                   "type": "string"
                 },
                 "additionalProperties": {}
+              },
+              "runtime": {
+                "type": "string",
+                "minLength": 1
               }
             },
             "required": [

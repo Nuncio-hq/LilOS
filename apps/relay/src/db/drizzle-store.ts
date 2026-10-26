@@ -170,8 +170,14 @@ type EmployeeRow = typeof schema.employees.$inferSelect;
    optional, not nullable — fold null to absent at the boundary, the same
    way a conversation's projectId is folded. */
 const rowToEmployee = (row: EmployeeRow): Employee => {
-  const { reportsTo, ...rest } = row;
-  return reportsTo ? { ...rest, reportsTo } : rest;
+  const { reportsTo, runtime, ...rest } = row;
+  /* NULL folds to absent at the boundary — the contract fields are
+     optional, not nullable (runtime = the default engine, D-#761). */
+  return {
+    ...rest,
+    ...(reportsTo ? { reportsTo } : {}),
+    ...(runtime ? { runtime } : {}),
+  };
 };
 
 type ScheduledTaskRow = typeof schema.scheduledTasks.$inferSelect;

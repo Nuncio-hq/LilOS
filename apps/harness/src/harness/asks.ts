@@ -1,6 +1,7 @@
 import type { Ask } from "@lilos/contracts/app";
 import type { EngineRequest } from "@lilos/contracts/engine";
 import { engineErrorCode } from "../engine/client";
+import { parseSessionRef } from "../engine/runtimes";
 import type { HarnessCtx, SessionBinding } from "./ctx";
 import { waitLine } from "./now-line";
 import { isTransientRelayError, REQUEST_NOT_FOUND } from "./rpc";
@@ -31,7 +32,9 @@ export async function openAsk(
   /* D-#772: the turn is waiting on the user, so the quiet window pauses.
      A full-access approval never reaches here — the user is not waiting. */
   pauseStuckWatch(this, binding);
-  const key = `${binding.sessionId}:${requestId}`;
+  /* D-#761: the maps key on the qualified session ref — two engines may
+     hold the same engine-local id, and only the owner's ask must pair. */
+  const key = `${this.sessionKey(binding.runtime, binding.sessionId)}:${requestId}`;
   const open = async () => {
     const result = await this.opts.relay.request<{ ask: Ask }>("asks.open", {
       channelId: binding.channelId,
@@ -42,7 +45,7 @@ export async function openAsk(
     });
     this.askByRequest.set(key, result.ask.id);
     this.requestByAsk.set(result.ask.id, {
-      sessionId: binding.sessionId,
+      sessionId: this.sessionKey(binding.runtime, binding.sessionId),
       requestId,
     });
     /* The relay dedupes a replayed open, and it can come back already
@@ -89,7 +92,7 @@ export async function autoApprove(
   requestId: string,
   request: EngineRequest,
 ): Promise<void> {
-  const conn = this.engine;
+  const conn = this.connFor(binding);
   if (!conn || request.kind !== "approval") return;
   const options = request.options;
   const outcome = options.includes("once") ? "once" : (options[0] ?? "once");
@@ -170,7 +173,11 @@ export async function onAskResolved(this: HarnessCtx, ask: Ask) {
   if (!rec) return; // resolved engine-side already
   this.requestByAsk.delete(ask.id);
   this.askByRequest.delete(`${rec.sessionId}:${rec.requestId}`);
-  const conn = this.engine;
+  /* D-#761: rec.sessionId is the qualified session key — resolve the
+     owning binding's engine, not a global conn; the engine call strips
+     the qualifier back to the id the engine issued. */
+  const ref = parseSessionRef(rec.sessionId);
+  const conn = this.connForRuntime(ref.runtime);
   if (!conn) {
     // Engine detached mid-forward: keep the mapping so the next
     // reconcileAsks can retry — dropping it parks the turn forever.
@@ -180,7 +187,7 @@ export async function onAskResolved(this: HarnessCtx, ask: Ask) {
   }
   try {
     await conn.request("request.respond", {
-      sessionId: rec.sessionId,
+      sessionId: ref.sessionId,
       requestId: rec.requestId,
       outcome: ask.outcome,
       ...(ask.answer ? { answer: ask.answer } : {}),

@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { authorizeLoopbackUpgrade } from "@lilos/contracts/auth";
 import { MAX_FRAME_BYTES } from "@lilos/contracts/engine";
 import { scrubLilosEnv, takeEngineProtocolToken } from "@lilos/contracts/env";
-import { devinSpec } from "../shims/devin.js";
+import { ACP_AGENTS } from "../shims/registry.js";
 import { AcpEngine } from "../src/engine.js";
 import type { AcpLaunchSpec } from "../src/launch.js";
 import { probeExecutable, resolveExecutable } from "../src/launch.js";
@@ -42,12 +42,9 @@ const arg = (name: string): string | undefined => {
 };
 const flag = (name: string) => process.argv.includes(`--${name}`);
 
-/* The curated registry (D-#845): known agents the launcher can name —
-   verified install recipe + shim, no credential storage. The remote ACP
-   registry is a later slice; the table is where its entries will land. */
-const REGISTRY: Record<string, AcpLaunchSpec> = {
-  devin: devinSpec,
-};
+/* The curated registry (D-#845) lives in `shims/registry.ts` — shared
+   with the harness's runtime catalog (D-#761). */
+const REGISTRY = ACP_AGENTS;
 
 const spec: AcpLaunchSpec = (() => {
   const agent = arg("agent");

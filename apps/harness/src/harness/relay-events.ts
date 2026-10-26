@@ -129,8 +129,8 @@ export function onRelayEvent(
          gets the hint when the engine declares approval_policy. */
       if (binding && conv.access !== binding.access) {
         binding.access = conv.access;
-        const conn = this.engine;
-        if (conn && this.hasCapability("approval_policy")) {
+        const conn = this.connFor(binding);
+        if (conn && this.hasCapabilityFor(binding.runtime, "approval_policy")) {
           void conn
             .request("session.setAccess", {
               sessionId: binding.sessionId,
@@ -330,9 +330,11 @@ export async function onChannelRemoved(this: HarnessCtx, channelId: string) {
   this.channelWatch.get(channelId)?.();
   this.channelWatch.delete(channelId);
   this.channelSeen.delete(channelId);
-  const conn = this.engine;
   for (const binding of [...this.bindings.values()]) {
     if (binding.channelId !== channelId) continue;
+    /* D-#761: the employee's sessions live on ITS runtime — stop them on
+       the engine that owns them, not a global conn. */
+    const conn = this.connFor(binding);
     this.unbind(binding);
     this.early.delete(binding.conversationId);
     this.pendingInterrupts.delete(binding.conversationId);
@@ -342,7 +344,11 @@ export async function onChannelRemoved(this: HarnessCtx, channelId: string) {
       if (at.conversationId === binding.conversationId)
         this.stopExempt.delete(id);
     for (const key of [...this.askByRequest.keys()]) {
-      if (key.startsWith(`${binding.sessionId}:`)) {
+      if (
+        key.startsWith(
+          `${this.sessionKey(binding.runtime, binding.sessionId)}:`,
+        )
+      ) {
         const askId = this.askByRequest.get(key);
         this.askByRequest.delete(key);
         if (askId) this.requestByAsk.delete(askId);

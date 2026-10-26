@@ -33,7 +33,7 @@ export async function doRebindConversation(
 ) {
   const conv = this.conversationFromAtom(binding.conversationId);
   const employee = await this.resolveEmployee(conv);
-  const conn = this.engine;
+  const conn = this.connFor(binding);
   if (!conn) return;
   const agent = await this.ensureAgent(conn, employee);
   const ceoAtStart = await employeeHoldsCeo(
@@ -60,7 +60,9 @@ export async function doRebindConversation(
   const rebound: SessionBinding = {
     ...binding,
     sessionId: started.sessionId,
-    ref: started.ref ?? started.sessionId,
+    /* D-#761: the rebound ref keeps the runtime qualifier — the session
+       still lives on the same engine. */
+    ref: this.sessionKey(binding.runtime, started.ref ?? started.sessionId),
     engineSessionId: started.engineSessionId,
     gatewaySession: surface?.session,
     lastSeq: 0,
@@ -91,12 +93,15 @@ export async function doRebindConversation(
   };
   if (binding.steerReconcileTimer) clearTimeout(binding.steerReconcileTimer);
   this.bindings.set(binding.conversationId, rebound);
-  this.conversationBySession.set(started.sessionId, binding.conversationId);
+  this.conversationBySession.set(
+    this.sessionKey(binding.runtime, started.sessionId),
+    binding.conversationId,
+  );
   // Idle, not active: a rebind with an empty queue has nothing running —
   // "active" would leave the conversation spinning forever. Requeued
   // messages flip it back to active via their own turn.started.
   await this.updateConversation(binding.conversationId, {
-    engineRef: started.sessionId,
+    engineRef: rebound.ref,
     state: "idle",
   });
   /* The old session is gone: an accepted-but-unlanded steer can never
@@ -160,8 +165,8 @@ export function mirrorMeta(
     archived: conv.archived,
     titleSource: conv.titleSource,
   });
-  const conn = this.engine;
-  if (!conn || !this.hasCapability("session_meta")) return;
+  const conn = this.connFor(binding);
+  if (!conn || !this.hasCapabilityFor(binding.runtime, "session_meta")) return;
   /* Only USER-chosen titles mirror onto the engine (#137): mirroring an
      engine-written title back via session.setTitle would mark it
      user-provenance on the engine side (Hermes `title_source=user`) and

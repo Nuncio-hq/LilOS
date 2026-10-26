@@ -37,7 +37,7 @@ export async function execSlashCommand(
   message: AppMessage,
   cmd: { name: string; args: string },
 ): Promise<SlashOutcome> {
-  const conn = this.engine;
+  const conn = this.connFor(binding);
   if (!conn) return { kind: "requeued" };
   try {
     const res = await conn.request<CommandsExecResult>(

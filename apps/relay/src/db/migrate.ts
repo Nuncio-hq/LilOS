@@ -527,6 +527,13 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
         ON tickets(task_parent_id, task_request_id)`,
     ],
   },
+  {
+    /* D-#761: the agent's engine runtime — NULL means the default engine
+       ("hermes"), so every existing employee keeps binding where it did;
+       a coding agent carries its ACP runtime (`acp:devin`). */
+    version: 36,
+    statements: [`ALTER TABLE employees ADD COLUMN runtime TEXT`],
+  },
 ];
 
 /**

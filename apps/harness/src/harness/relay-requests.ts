@@ -13,6 +13,7 @@ import {
   type FoldersDetailResult,
   type FoldersDiscoverResult,
 } from "@lilos/contracts/app";
+import type { AgentDescriptor } from "@lilos/contracts/engine";
 import { EventsSinceParams } from "@lilos/contracts/engine";
 import {
   callHost,
@@ -29,6 +30,7 @@ import {
   worktreeAdd,
 } from "@lilos/host";
 import { engineErrorCode } from "../engine/client";
+import { normalizeRuntime, parseSessionRef } from "../engine/runtimes";
 import type { HarnessCtx } from "./ctx";
 import {
   ENGINE_CALL_DEADLINE_MS,
@@ -88,9 +90,13 @@ export async function rewindConversation(
   /* Engine first: a refusal (INVALID_STATE — a turn is running) must leave
      everything untouched, before any file or queue mutation. */
   let engineRewound = false;
-  const conn = this.engine;
-  const sessionId = live?.sessionId ?? params.engineRef ?? undefined;
-  if (conn && sessionId && this.hasCapability("rewind")) {
+  /* D-#761: the rewind targets the runtime owning the session — the live
+     binding's, or the one a stored engineRef's qualifier names. */
+  const ref = params.engineRef ? parseSessionRef(params.engineRef) : undefined;
+  const runtime = live?.runtime ?? ref?.runtime ?? "hermes";
+  const conn = live ? this.connFor(live) : this.connForRuntime(runtime);
+  const sessionId = live?.sessionId ?? ref?.sessionId ?? undefined;
+  if (conn && sessionId && this.hasCapabilityFor(runtime, "rewind")) {
     try {
       await conn.request("session.rewind", {
         sessionId,
@@ -173,16 +179,19 @@ export async function moveConversationFolder(
   const binding = this.bindings.get(params.conversationId);
   if (binding?.promptGates.size) await Promise.all(binding.promptGates);
   const live = binding ? this.liveBinding(binding) : undefined;
-  const sessionId = live?.sessionId ?? params.engineRef ?? undefined;
+  /* D-#761: the move lands on the runtime owning the session. */
+  const ref = params.engineRef ? parseSessionRef(params.engineRef) : undefined;
+  const runtime = live?.runtime ?? ref?.runtime ?? "hermes";
+  const sessionId = live?.sessionId ?? ref?.sessionId ?? undefined;
   let engineMoved = false;
   if (sessionId) {
-    const conn = this.engine;
+    const conn = live ? this.connFor(live) : this.connForRuntime(runtime);
     if (!conn) {
       throw Object.assign(new Error("engine not connected"), {
         code: ENGINE_UNAVAILABLE,
       });
     }
-    if (!this.hasCapability("workspace_move")) {
+    if (!this.hasCapabilityFor(runtime, "workspace_move")) {
       throw Object.assign(
         new Error(
           "this engine can't move a session's folder — start the next thread in it instead",
@@ -225,7 +234,7 @@ export async function moveConversationFolder(
  * (harness = the only engine talker, D-#26). Only the declared passthrough
  * set is honored; anything else is a JSON-RPC method-not-found.
  */
-export function onRelayRequest(
+export async function onRelayRequest(
   this: HarnessCtx,
   method: string,
   params: Record<string, unknown>,
@@ -280,17 +289,38 @@ export function onRelayRequest(
       code: -32601,
     });
   }
-  const conn = this.engine;
+  /* D-#761: a session-scoped call (`session.ask`, `session.compact`,
+     `commands.list {sessionId}`) routes on the QUALIFIED session ref it
+     names; a roster call (`agents.*`, `models.list`, `commands.list`)
+     routes on its `runtime` hint — app→harness routing metadata that is
+     stripped before the engine ever sees it. `agents.list` alone merges
+     started rosters with unstarted runtimes' seeds (the hire flow must
+     offer a coding agent before its engine has ever run). */
+  const rawSession = params.sessionId;
+  const parsed =
+    typeof rawSession === "string" ? parseSessionRef(rawSession) : undefined;
+  const runtime = normalizeRuntime(
+    (params.runtime as string | undefined) ?? parsed?.runtime,
+  );
+  if (method === "agents.list" && this.runtimes) {
+    return this.agentsListMerged();
+  }
+  const conn = await this.ensureRuntime(runtime);
   if (!conn) {
     throw Object.assign(new Error("engine not connected"), {
       code: ENGINE_UNAVAILABLE,
     });
   }
+  const forwarded = { ...params };
+  delete forwarded.runtime;
+  if (parsed && parsed.runtime !== "hermes") {
+    forwarded.sessionId = parsed.sessionId;
+  }
   /* #482: a timeout (no numeric code — transport deadline, not an engine
      error frame) is re-minted `engine_unavailable` so the app surfaces a
      typed miss instead of a generic engine_error. */
   return conn
-    .request(method, params, ENGINE_CALL_DEADLINE_MS)
+    .request(method, forwarded, ENGINE_CALL_DEADLINE_MS)
     .catch((error) => {
       if (engineErrorCode(error) === undefined)
         throw Object.assign(
@@ -301,6 +331,41 @@ export function onRelayRequest(
         );
       throw error;
     });
+}
+
+/**
+ * D-#761: the roster every runtime contributes to — live rosters from
+ * started engines, plus each idle runtime's seed agents so the hire flow
+ * can offer e.g. Devin before its engine has ever started. First listing
+ * wins on an id collision (the default engine's own agent is not shadowed
+ * by a seed carrying the same id).
+ */
+export async function agentsListMerged(this: HarnessCtx) {
+  const merged = new Map<string, AgentDescriptor>();
+  for (const inst of this.runtimes?.list() ?? []) {
+    const conn = this.connForRuntime(inst.spec.id);
+    if (!conn) continue;
+    try {
+      const { agents } = await conn.request<{ agents: AgentDescriptor[] }>(
+        "agents.list",
+        {},
+      );
+      for (const agent of agents) {
+        if (!merged.has(agent.id))
+          merged.set(agent.id, { ...agent, runtime: inst.spec.id });
+      }
+    } catch {
+      // A busy/refusing engine contributes nothing — seeds still apply.
+    }
+  }
+  for (const inst of this.runtimes?.list() ?? []) {
+    if (this.connForRuntime(inst.spec.id)) continue;
+    for (const agent of inst.spec.seedAgents ?? []) {
+      if (!merged.has(agent.id))
+        merged.set(agent.id, { ...agent, runtime: inst.spec.id });
+    }
+  }
+  return { agents: [...merged.values()] };
 }
 
 /**

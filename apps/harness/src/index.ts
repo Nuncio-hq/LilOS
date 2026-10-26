@@ -20,7 +20,6 @@ import type {
   ScheduledTask,
   SystemStatusResult,
 } from "@lilos/contracts/app";
-import type { ForgePrListItem } from "@lilos/contracts/host";
 import { createCheckpointStore } from "@lilos/host";
 import { SURFACES_ENV } from "@lilos/surfaces";
 import packageJson from "../package.json";
@@ -29,7 +28,8 @@ import { FakeConnect, HermesConnect } from "./connect";
 import { reconcileBeforeEngine } from "./connect-boot";
 import { connectEngineWs } from "./engine/client";
 import { resolveHermesBin } from "./engine/discover";
-import { EngineSupervisor } from "./engine/supervisor";
+import { EngineRegistry } from "./engine/registry";
+import { buildRuntimeCatalog, DEFAULT_RUNTIME } from "./engine/runtimes";
 import { authorizeFeedUpgrade, createFeedHandler } from "./feed";
 import { Harness } from "./harness";
 import { createAppOps } from "./harness/app-ops";
@@ -151,6 +151,56 @@ const connect =
       ? new FakeConnect({ relay, log, onChange: onConnectRows })
       : undefined;
 
+/* D-#761: one supervised engine per runtime — the configured default plus
+   a lazily-started `acp:<agent>` row per curated ACP registry entry. Each
+   row owns its supervisor/probe/restart, so a coding agent's crash never
+   touches Hermes threads (and vice versa). The registry attaches every
+   conn through the same attachEngine path, tagged with its runtime id.
+   (`harness` is const'd below — the hooks only run once an engine
+   attaches, long after it exists.) */
+const engineEnv = {
+  [SURFACES_ENV.baseUrl]: surfaces.url,
+  [SURFACES_ENV.engineToken]: surfaces.engineToken,
+};
+const runtimes = new EngineRegistry(
+  buildRuntimeCatalog({
+    config,
+    repoRoot,
+    log,
+    defaultLauncher: () =>
+      launcherFor(
+        config,
+        repoRoot,
+        log,
+        {
+          fake: bundledEngine("lilos-engine-fake"),
+          // "nous" not "hermes" in the file name: managed Macs kill
+          // *hermes* executables by name (#141); the engine id stays
+          // "hermes".
+          hermes: bundledEngine("lilos-engine-nous"),
+          acp: bundledEngine("lilos-engine-acp"),
+        },
+        engineEnv,
+      ),
+    acpServeBin: bundledEngine("lilos-engine-acp"),
+    engineEnv,
+  }),
+  {
+    connect: (url) => connectEngineWs(url),
+    log,
+    hooks: {
+      onConnection: (runtime, conn, _reconnect, gapCause) =>
+        harness.attachEngine(conn, gapCause, runtime),
+      onStateChange: (runtime, state, detail) =>
+        harness.onEngineStateChange(state, detail, runtime),
+      onStatusChange: () => onConnectRows(),
+    },
+  },
+);
+/* The default engine's supervisor — status probe + plugin refresh ride
+   the default row only (D-#761: coding runtimes have no plugin). */
+const supervisor = runtimes.supervisorFor(DEFAULT_RUNTIME);
+
 const harness = new Harness({
   relay,
   sleep: createSleepGuard(process.platform, log),
@@ -167,6 +217,7 @@ const harness = new Harness({
      on `session.start`. */
   surfacesAttach: config.engine.kind === "hermes" ? "plugin" : "mcp",
   connect,
+  runtimes,
   onNeedEngine: () => supervisor.ensureRunning(),
   version: releaseVersion,
   /* #346 AC-3: idle-close — suspend a session quiet past the timeout so
@@ -174,30 +225,6 @@ const harness = new Harness({
   sessionIdleMs: config.sessionIdleMs,
   /* #459: e2e bind-delay probe — see config.ts. */
   bindDelayMs: config.bindDelayMs,
-});
-
-const supervisor = new EngineSupervisor({
-  launcher: launcherFor(
-    config,
-    repoRoot,
-    log,
-    {
-      fake: bundledEngine("lilos-engine-fake"),
-      // "nous" not "hermes" in the file name: managed Macs kill *hermes*
-      // executables by name (#141); the engine id stays "hermes".
-      hermes: bundledEngine("lilos-engine-nous"),
-      acp: bundledEngine("lilos-engine-acp"),
-    },
-    {
-      [SURFACES_ENV.baseUrl]: surfaces.url,
-      [SURFACES_ENV.engineToken]: surfaces.engineToken,
-    },
-  ),
-  connect: (url) => connectEngineWs(url),
-  onConnection: (conn, _reconnect, gapCause) =>
-    harness.attachEngine(conn, gapCause),
-  onState: (state, detail) => harness.onEngineStateChange(state, detail),
-  log,
 });
 
 let engineStarted = false;
@@ -219,7 +246,13 @@ await reconcileBeforeEngine(
   () => (connect ? connect.reconcile() : Promise.resolve()),
   () => {
     engineStarted = true;
-    void supervisor.start();
+    /* D-#761: boot starts the DEFAULT runtime only — every other row
+       stays `idle` until a thread or a routed call first demands it. */
+    void runtimes.start();
+    /* The hire flow needs `available` on the roster rows — probe each
+       runtime's install recipe in the background; the result rides the
+       next harness.report heartbeat. */
+    void runtimes.probeAvailable();
   },
   { log },
 );
@@ -233,6 +266,7 @@ statusReporter = new StatusReporter({
   model: "model" in config.engine ? config.engine.model : undefined,
   liveSessions: () => harness.liveSessionCount,
   connect: connect ? () => connect.report() : undefined,
+  runtimes: () => runtimes.statusRows(),
   logTail: () => [...log.lines],
 });
 const stopStatusReporter = statusReporter.start();
@@ -256,7 +290,9 @@ const wakeWatch = watchWake({
   driftMs: 15_000,
   onWake: (gapMs) => {
     log.info("woke from sleep", { gapMs });
-    supervisor.notifyWake();
+    /* D-#761: a Mac sleep froze every engine conn — each supervisor
+       re-probes its own. */
+    runtimes.notifyWake();
     /* Slept-through schedule slots surface on the next tick anyway — this
        just makes them land on wake, not up to 30s later. */
     void harness.scheduler?.tick();
@@ -322,7 +358,7 @@ const shutdown = async () => {
   feed.close();
   if (connectTimer !== undefined) clearInterval(connectTimer);
   pluginRestart.stop();
-  await supervisor.stop();
+  await runtimes.stop();
   await harness.stop();
   await surfaces.close();
   process.exit(0);

@@ -239,7 +239,9 @@ export function unbind(this: HarnessCtx, binding: SessionBinding) {
     binding.gatewaySession = undefined;
     void this.opts.surfaces?.destroy(gw).catch(() => {});
   }
-  this.conversationBySession.delete(binding.sessionId);
+  this.conversationBySession.delete(
+    this.sessionKey(binding.runtime, binding.sessionId),
+  );
   this.bindings.delete(binding.conversationId);
 }
 
