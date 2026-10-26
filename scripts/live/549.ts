@@ -191,6 +191,10 @@ const appOps: AppOps = {
   askUser: async () => {
     throw new Error("not exercised in this script");
   },
+  codingAgents: async () => ({}),
+  codingAgentsSet: async () => {
+    throw new Error("not exercised in this script");
+  },
   hireEmployee: async () => {
     throw new Error("not exercised in this script");
   },

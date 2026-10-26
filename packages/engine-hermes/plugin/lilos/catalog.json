@@ -5481,6 +5481,219 @@
         "lilos/area": "schedule",
         "lilos/access": "approval"
       }
+    },
+    {
+      "name": "coding_agents",
+      "description": "The user's stored default model + effort for each outside coding agent (claude, cursor, devin, antigravity). A missing agent or field means that CLI's own default — pass flags only for stored values.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "agents": {
+            "type": "object",
+            "properties": {
+              "claude": {
+                "type": "object",
+                "properties": {
+                  "model": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "effort": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "additionalProperties": false
+              },
+              "cursor": {
+                "type": "object",
+                "properties": {
+                  "model": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "effort": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "additionalProperties": false
+              },
+              "devin": {
+                "type": "object",
+                "properties": {
+                  "model": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "effort": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "additionalProperties": false
+              },
+              "antigravity": {
+                "type": "object",
+                "properties": {
+                  "model": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "effort": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "agents"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "_meta": {
+        "lilos/area": "coding",
+        "lilos/access": "read"
+      }
+    },
+    {
+      "name": "coding_agents_set",
+      "description": "Ask the user to change the stored default model and/or effort for one coding agent (`null` clears a field back to the CLI default). Waits for approval; returns the updated defaults.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "agent": {
+            "type": "string",
+            "enum": [
+              "claude",
+              "cursor",
+              "devin",
+              "antigravity"
+            ]
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "effort": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "agent"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "agents": {
+            "type": "object",
+            "properties": {
+              "claude": {
+                "type": "object",
+                "properties": {
+                  "model": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "effort": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "additionalProperties": false
+              },
+              "cursor": {
+                "type": "object",
+                "properties": {
+                  "model": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "effort": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "additionalProperties": false
+              },
+              "devin": {
+                "type": "object",
+                "properties": {
+                  "model": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "effort": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "additionalProperties": false
+              },
+              "antigravity": {
+                "type": "object",
+                "properties": {
+                  "model": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "effort": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "agents"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "_meta": {
+        "lilos/area": "coding",
+        "lilos/access": "approval"
+      }
     }
   ]
 }

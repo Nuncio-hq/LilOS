@@ -26,6 +26,8 @@ describe("AC-2 tool surface contracts", () => {
       "browser_read",
       "browser_scroll",
       "browser_type",
+      "coding_agents",
+      "coding_agents_set",
       "context",
       "folder_add",
       "goal_create",

@@ -1,5 +1,6 @@
 export * from "./browser";
 export * from "./ceo";
+export * from "./coding-agents";
 export * from "./desktop";
 export * from "./domain";
 export * from "./inbox";

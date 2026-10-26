@@ -34,6 +34,11 @@ const MARKDOWN_ALLOWED = [
   /^(README|CONTRIBUTING|SECURITY|LICENSE|THIRD_PARTY_NOTICES|AGENTS|CLAUDE)\.md$/,
   /^\.github\/ISSUE_TEMPLATE\/[^/]+\.md$/,
   /^\.agents\/skills\/[^/]+\/SKILL\.md$/,
+  /* D-#835: SKILL.md is the skill format the `lilos` engine plugin ships —
+     `register_skill` requires that exact name under its skills/ dir. (The
+     engine package name stays unwritten: this file is itself on the
+     vendor-neutral seam.) */
+  /^packages\/engine-[^/]+\/plugin\/[^/]+\/skills\/[^/]+\/SKILL\.md$/,
 ];
 
 const TAG = "D-" + "#"; // split so this file never cites a decision itself
