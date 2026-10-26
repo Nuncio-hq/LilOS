@@ -1,5 +1,5 @@
 import { CalendarClockIcon, ListIcon, PlusIcon } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect } from "react";
 import { cn } from "../lib/utils";
 import { Btn, Page, Tabs, Title, useTick } from "./v3-bits";
 import type { V3Data } from "./v3-data-types";
@@ -118,13 +118,25 @@ function GroupBy({
   );
 }
 
-function ThreadList(p: V3PageProps & { group: ThreadGroup }) {
+function ThreadList(
+  p: V3PageProps & { group: ThreadGroup; openWorking?: boolean },
+) {
   const { data, group } = p;
   /* A wake time passing quietly returns its thread to Active; tick so the
      list re-reads the clock without waiting for a touch. */
   useTick(30_000);
   const s = sectionedThreads(data);
   const { folds, setFold } = useFoldPrefs();
+  /* Home's "+N more" lands here (D-#868): open the Working fold — a device
+     pref, so it stays open — and bring it into view. */
+  useEffect(() => {
+    if (p.openWorking) {
+      setFold("working", true);
+      document
+        .querySelector('[data-fold="working"]')
+        ?.scrollIntoView({ block: "nearest" });
+    }
+  }, [p.openWorking, setFold]);
   const row = (t: V3Thread, drop?: "project" | "agent") => (
     <ThreadRow key={t.id} {...p} t={t} drop={drop} />
   );
@@ -267,11 +279,21 @@ function ThreadList(p: V3PageProps & { group: ThreadGroup }) {
   );
 }
 
-export function V3Threads(props: V3PageProps & { view?: "scheduled" }) {
+export function V3Threads(
+  props: V3PageProps & { view?: "scheduled" | "working" },
+) {
   const { view, go, data } = props;
   const scheduled = view === "scheduled";
   const starter = defaultAgent(data);
-  const { group, setGroup } = useThreadGroupPref();
+  const { group: pref, setGroup } = useThreadGroupPref();
+  /* The Working fold lives in the Section grouping, so the "+N more"
+     landing (view=working, D-#868) draws that grouping whatever the saved
+     pref is — picking another grouping clears the landing. */
+  const group = view === "working" ? "section" : pref;
+  const onGroup = (g: ThreadGroup) => {
+    setGroup(g);
+    if (view === "working") go({ page: "threads" });
+  };
   return (
     <Page wide>
       <Title>Threads</Title>
@@ -302,10 +324,12 @@ export function V3Threads(props: V3PageProps & { view?: "scheduled" }) {
       {!scheduled && (
         <div className="mt-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
           <Summary data={data} threads={listedThreads(data.threads)} />
-          <GroupBy group={group} onGroup={setGroup} />
+          <GroupBy group={group} onGroup={onGroup} />
         </div>
       )}
-      {!scheduled && <ThreadList {...props} group={group} />}
+      {!scheduled && (
+        <ThreadList {...props} group={group} openWorking={view === "working"} />
+      )}
       {scheduled && <ScheduledView {...props} />}
     </Page>
   );

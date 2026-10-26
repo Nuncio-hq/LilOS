@@ -25,7 +25,9 @@ export type V3Route =
   | { page: "inbox" }
   | { page: "work"; view?: "waiting" | "board" | "project" | "timeline" }
   | { page: "ticket"; id: string }
-  | { page: "threads"; view?: "scheduled" }
+  /* `view: "working"` is Home's "+N more" landing (D-#868): Threads with
+     the Working fold open. */
+  | { page: "threads"; view?: "scheduled" | "working" }
   | { page: "thread"; id: string }
   | { page: "goals" }
   | { page: "goal"; id: string }
