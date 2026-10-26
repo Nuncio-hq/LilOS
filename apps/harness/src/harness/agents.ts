@@ -1,4 +1,10 @@
 import type { Conversation, Employee } from "@lilos/contracts/app";
+import {
+  CODING_AGENTS_SETTING_KEY,
+  type CodingAgentDefaults,
+  CodingAgentId,
+  parseCodingAgents,
+} from "@lilos/contracts/app";
 import type { AgentDescriptor, McpServer } from "@lilos/contracts/engine";
 import { expandPath } from "@lilos/host";
 import type { EngineConnection } from "../engine/client";
@@ -76,7 +82,34 @@ export async function ensureAgent(
   }
 }
 
-export function sessionParams(
+/**
+ * The owner's stored default for this employee's coding agent (D-#835): the
+ * `codingAgents` KV row, keyed by agent id — which is the employee's
+ * engine handle when the hire named the CLI itself (Devin → "devin").
+ * Non-coding profiles and unreadable rows get nothing; the row is a
+ * fallback, never an override — a thread pick, a per-job `task_create`
+ * stamp, or an employee pin still wins (#846).
+ */
+export async function codingAgentDefaults(
+  this: HarnessCtx,
+  employee: Employee | undefined,
+): Promise<CodingAgentDefaults | undefined> {
+  const id = CodingAgentId.safeParse(
+    (employee?.profile ?? employee?.name ?? "").toLowerCase(),
+  );
+  if (!id.success) return undefined;
+  try {
+    const r = await this.opts.relay.request<{ value: unknown }>(
+      "settings.get",
+      { key: CODING_AGENTS_SETTING_KEY },
+    );
+    return parseCodingAgents(r.value)[id.data];
+  } catch {
+    return undefined;
+  }
+}
+
+export async function sessionParams(
   this: HarnessCtx,
   employee: Employee | undefined,
   agentId: string,
@@ -87,12 +120,18 @@ export function sessionParams(
     agent: agentId,
     ...(employee?.model ? { model: employee.model } : {}),
   };
+  /* D-#846: precedence is conversation pick / per-job override (both live
+     on the row) > the stored per-agent default (the codingAgents KV,
+     D-#835) > the employee/sessionParamsFor pin > the agent's own default
+     (its advertised currentValue). The KV holds model + effort only;
+     provider and fast keep their existing sources. */
+  const stored = await this.codingAgentDefaults(employee);
   // A pick pinned on the conversation (#30/#92) wins over the profile
   // default — each field falls back independently so a bare `model` pin
   // (old rows) still resolves its provider/effort on the engine.
-  const model = conv?.model ?? base.model;
+  const model = conv?.model ?? stored?.model ?? base.model;
   const provider = conv?.provider ?? base.provider;
-  const effort = conv?.effort ?? base.effort;
+  const effort = conv?.effort ?? stored?.effort ?? base.effort;
   const fast = conv?.fast ?? base.fast;
   // D-#113: a thread owns its folder through its project — the folder is
   // the conversation's `cwd` (`conversations.open { cwd }`, stored nullable
