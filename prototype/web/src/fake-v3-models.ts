@@ -9,15 +9,28 @@ export const MODEL_OPTIONS: ModelOption[] = [
   { id: "sonnet", name: "Sonnet 5", provider: "anthropic", efforts: ["low", "medium", "high"], defaultEffort: "medium" },
   { id: "haiku", name: "Haiku 5", provider: "anthropic", fast: true },
   { id: "gpt", name: "GPT-6", provider: "openai", efforts: ["low", "medium", "high"], defaultEffort: "medium" },
+  /* Helper runtimes' own models (D-#847): a Devin/Cursor/Antigravity helper
+     thread's composer chip reads the model its agent actually runs — the
+     shared catalog knows them so the chip can, but the picker hides them. */
+  { id: "swe-2", name: "SWE-2", provider: "devin", efforts: ["low", "medium", "high"], defaultEffort: "high" },
+  { id: "composer", name: "Composer 1", provider: "cursor", efforts: ["low", "medium", "high"], defaultEffort: "medium" },
+  { id: "gemini", name: "Gemini 3 Pro", provider: "google", efforts: ["low", "medium", "high"], defaultEffort: "high" },
 ]
 
 export const MODEL_PROVIDERS: ModelProvider[] = [
   { id: "anthropic", name: "Anthropic" },
   { id: "openai", name: "OpenAI" },
+  { id: "devin", name: "Devin" },
+  { id: "cursor", name: "Cursor" },
+  { id: "google", name: "Google" },
 ]
 
-/** GPT-6 starts hidden: the prototype's company runs on Anthropic models. */
-export const MODEL_VISIBILITY: ModelVisibility = { providers: [], models: ["openai::gpt"] }
+/** GPT-6 and the helper runtimes' models start hidden: the prototype's
+   company runs on Anthropic models. */
+export const MODEL_VISIBILITY: ModelVisibility = {
+  providers: [],
+  models: ["openai::gpt", "devin::swe-2", "cursor::composer", "google::gemini"],
+}
 
 /** A model's key in a visibility list (ids are unique only per provider). */
 export const modelKey = (m: Pick<ModelOption, "id" | "provider">) => `${m.provider ?? ""}::${m.id}`

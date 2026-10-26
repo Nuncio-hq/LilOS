@@ -116,6 +116,60 @@ export const threadsOf = (d: V3Data, ticketId: string): V3Thread[] =>
         (a.openedAt ?? 0) - (b.openedAt ?? 0),
     );
 
+/* Helper threads (D-#844): a `task_*` hand-off runs as an ordinary thread
+   with `parentId` lineage to the thread that created it. Helpers have no
+   row of their own in the lists — they show through their parent, the same
+   rule T3 Code applies to subagent threads in its sidebar (D-#847). */
+
+/** A thread record by id, active or archived. */
+export const threadOf = (d: V3Data, id: string): V3Thread | undefined =>
+  d.threads.find((t) => t.id === id) ??
+  d.archivedThreads?.find((t) => t.id === id);
+
+/** A thread's helpers, oldest first. */
+export const childrenOf = (d: V3Data, parentId: string): V3Thread[] =>
+  d.threads
+    .filter((t) => t.parentId === parentId)
+    .sort(
+      (a, b) =>
+        a.startedAt.localeCompare(b.startedAt) ||
+        (a.openedAt ?? 0) - (b.openedAt ?? 0),
+    );
+
+/** The threads lists draw: helper threads have no row of their own
+   (D-#847). */
+export const listedThreads = (threads: readonly V3Thread[]): V3Thread[] =>
+  threads.filter((t) => t.parentId === undefined);
+
+/** The thread whose row stands in for `id`: a helper has no row, so an open
+   helper marks its nearest non-helper ancestor (T3's
+   `resolveSidebarRowThreadId`). A broken chain — a missing parent or a
+   cycle — resolves to the thread itself, which matches no row. */
+export const listedAncestorOf = (d: V3Data, id: string): string => {
+  const seen = new Set<string>();
+  let t = threadOf(d, id);
+  while (t?.parentId && !seen.has(t.id)) {
+    seen.add(t.id);
+    t = threadOf(d, t.parentId);
+  }
+  return t?.id ?? id;
+};
+
+/** The helper statuses that still count as work in flight for the parent. */
+const HELPER_LIVE: V3Status[] = ["working", "waiting", "needs", "stuck"];
+
+/** A thread's helpers still on the job. */
+export const liveHelpersOf = (d: V3Data, parentId: string): V3Thread[] =>
+  childrenOf(d, parentId).filter((t) => HELPER_LIVE.includes(t.status));
+
+/** What a thread reads as on the boards: a parent only waiting on helpers
+   is working, not idle — its helpers are the work (D-#847). */
+export const boardStatus = (d: V3Data, t: V3Thread): V3Status =>
+  (t.status === "waiting" || t.status === "idle") &&
+  liveHelpersOf(d, t.id).length > 0
+    ? "working"
+    : t.status;
+
 /** How urgent a status is on a person, most urgent first: what needs you,
    then what is stuck or running, then what ended. An agent wears its most
    urgent thread's status. */
@@ -157,7 +211,8 @@ export function reportsOf(
 /** An agent's status is its current thread's; a finished or absent thread
    means the agent is idle until it gets the next ticket. */
 export function agentStatus(d: V3Data, agentId: string): V3Status {
-  const s = agentThread(d, agentId)?.status;
+  const t = agentThread(d, agentId);
+  const s = t && boardStatus(d, t);
   return !s || s === "done" ? "idle" : s;
 }
 
@@ -171,7 +226,8 @@ export function agentDot(d: V3Data, agentId: string): V3Status {
   let dot: V3Status = "idle";
   for (const t of d.threads) {
     if (t.agentId !== agentId) continue;
-    const s = t.status === "done" ? (t.unseen ? "done" : "idle") : t.status;
+    const s =
+      t.status === "done" ? (t.unseen ? "done" : "idle") : boardStatus(d, t);
     if (urgency(s) < urgency(dot)) dot = s;
   }
   return dot;
@@ -226,8 +282,10 @@ export const LIVE_RANK: Partial<Record<V3Status, number>> = {
   done: 3,
 };
 
-export const onLiveBoard = (t: V3Thread): boolean =>
-  t.status in LIVE_RANK && (t.status !== "done" || t.unseen === true);
+export const onLiveBoard = (d: V3Data, t: V3Thread): boolean => {
+  const s = boardStatus(d, t);
+  return s in LIVE_RANK && (s !== "done" || t.unseen === true);
+};
 
 /** How many threads wear one status. Home and Threads both read this, so
     the two pages cannot disagree (D-#774). Status itself is `threadStatus`
@@ -241,9 +299,18 @@ export const threadsIn = (
 export const unseenThreads = (threads: readonly V3Thread[]): V3Thread[] =>
   threads.filter((t) => t.status === "done" && t.unseen);
 
-/** Agents with nothing on the live board. */
+/** Agents with nothing on the live board. A helper's own thread is hidden
+   from the board, but it still marks its agent busy (D-#847). */
 export function asleepAgents(d: V3Data): V3Agent[] {
-  const busy = new Set(d.threads.filter(onLiveBoard).map((t) => t.agentId));
+  const busy = new Set(
+    d.threads
+      .filter((t) =>
+        t.parentId === undefined
+          ? onLiveBoard(d, t)
+          : HELPER_LIVE.includes(t.status),
+      )
+      .map((t) => t.agentId),
+  );
   return d.agents.filter((a) => !busy.has(a.id));
 }
 

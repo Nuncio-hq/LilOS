@@ -2,7 +2,14 @@ import { FolderIcon, TargetIcon, UsersIcon } from "lucide-react";
 import { useState } from "react";
 import { Meter, Page, Prop, Section, Title } from "./v3-bits";
 import { AgentAvatar, CeoMark, ProjectMark } from "./v3-marks";
-import { agentOf, FORMER_AGENT, goalProgress, projectOf } from "./v3-model";
+import {
+  agentOf,
+  boardStatus,
+  FORMER_AGENT,
+  goalProgress,
+  listedThreads,
+  projectOf,
+} from "./v3-model";
 import { RowButton } from "./v3-open-record";
 import type { V3PageProps } from "./v3-page-types";
 import { ThreadRow, TicketRow } from "./v3-rows";
@@ -36,13 +43,22 @@ export function V3ProjectPage({ data, go, id }: V3PageProps & { id: string }) {
   const open = tickets.filter((t) => t.status !== "done");
   const done = tickets.filter((t) => t.status === "done");
   const ticketIds = new Set(tickets.map((t) => t.id));
-  const mine = data.threads.filter(
+  /* Helpers have no row here either (D-#847): they show inside their parent. */
+  const mine = listedThreads(data.threads).filter(
     (t) =>
       t.projectId === project.id ||
       (t.ticketId !== undefined && ticketIds.has(t.ticketId)),
   );
-  const live = mine.filter((t) => t.status !== "done" && t.status !== "idle");
-  const past = mine.filter((t) => t.status === "done" || t.status === "idle");
+  /* Board status (D-#847): a parent waiting on helpers stays in the live
+     set even while its own status idles. */
+  const live = mine.filter((t) => {
+    const s = boardStatus(data, t);
+    return s !== "done" && s !== "idle";
+  });
+  const past = mine.filter((t) => {
+    const s = boardStatus(data, t);
+    return s === "done" || s === "idle";
+  });
   const pastShown = allPast ? past : past.slice(0, PAST_SHOWN);
   // Who is on it: the owners of its open tickets and whoever has a live thread.
   const onIt = [

@@ -3,9 +3,16 @@ import { type ReactNode, useState } from "react";
 import { cn } from "../lib/utils";
 import { Meter, span, TicketId } from "./v3-bits";
 import type { V3Data } from "./v3-data-types";
+import { HelpersHint } from "./v3-helpers";
 import { ThreadPill } from "./v3-live";
-import { agentOf, threadTag } from "./v3-model";
-import { RowButton } from "./v3-open-record";
+import {
+  agentOf,
+  boardStatus,
+  listedAncestorOf,
+  threadOf,
+  threadTag,
+} from "./v3-model";
+import { RowButton, useOpenRoute } from "./v3-open-record";
 import type { V3PageProps } from "./v3-page-types";
 import { AgentName } from "./v3-rows";
 import { useRenameMenu } from "./v3-thread-menu";
@@ -30,10 +37,20 @@ function RowTitle({
   t: V3Thread;
   editing: ReactNode | undefined;
 }) {
+  const parent = t.parentId ? threadOf(data, t.parentId) : undefined;
   return (
     <span className="flex min-w-0 items-center">
       <TicketId id={threadTag(data, t)} className="shrink-0" />
       {editing ?? <span className="truncate">{t.title}</span>}
+      {parent && (
+        <span
+          className="ml-1.5 shrink-0 truncate text-[12px] text-muted-foreground/60"
+          title={`helper of ${parent.title}`}
+        >
+          ↩ {parent.title}
+        </span>
+      )}
+      <HelpersHint data={data} thread={t} className="ml-1.5 text-[12px]" />
     </span>
   );
 }
@@ -58,12 +75,17 @@ function ThreadRow({
     onRename: renameThread && ((title) => renameThread(t.id, title)),
     onArchive: archiveThread && ((to) => archiveThread(t.id, to)),
   });
+  // An open helper marks its nearest listed ancestor's row (D-#847).
+  const open = useOpenRoute();
   return (
     // `data-thread-row`, not `data-thread`: that one marks the open thread's
     // transcript, and the list sits under the peek on the same page.
     <div data-thread-row={t.id} data-archived={archived || undefined}>
       <RowButton
         opens={{ page: "thread", id: t.id }}
+        marked={
+          open?.page === "thread" && listedAncestorOf(data, open.id) === t.id
+        }
         onClick={() => go({ page: "thread", id: t.id })}
         className={cn(
           "group/thread grid items-center border-[var(--v3-line)] border-b py-2.5",
@@ -115,7 +137,7 @@ export function AllRow(p: Row & { hasContext: boolean }) {
     <ThreadRow {...p} grid={hasContext ? ALL_GRID.context : ALL_GRID.plain}>
       <AgentName data={data} agent={agentOf(data, t.agentId)} />
       <span>
-        <ThreadPill status={t.status} />
+        <ThreadPill status={boardStatus(data, t)} />
       </span>
       <span className="hidden text-muted-foreground @min-[700px]:block">
         {t.startedAt}
@@ -139,14 +161,14 @@ export function AllRow(p: Row & { hasContext: boolean }) {
 
 /** By agent: the agent is the heading, so the row is title, status, time. */
 export function AgentThreadRow(p: Row) {
-  const { t } = p;
+  const { t, data } = p;
   return (
     <ThreadRow
       {...p}
       grid="grid-cols-[minmax(96px,1fr)_auto_58px_24px] gap-3 @min-[700px]:grid-cols-[minmax(0,1fr)_auto_48px_80px_24px] @min-[700px]:gap-4"
       className="py-2 text-[13.5px]"
     >
-      <ThreadPill status={t.status} />
+      <ThreadPill status={boardStatus(data, t)} />
       <span className="text-right text-muted-foreground">
         {span(t.minutes)}
       </span>

@@ -1,15 +1,19 @@
 import { cn } from "../lib/utils";
 import { ago, Spinner, TicketId } from "./v3-bits";
 import type { V3Data } from "./v3-data-types";
+import { HelpersHint } from "./v3-helpers";
 import { AgentAvatar, CeoMark, StatusDot, StatusPill } from "./v3-marks";
 import {
   agentOf,
+  boardStatus,
   companyOn,
   FORMER_AGENT,
+  listedAncestorOf,
+  threadOf,
   threadTag,
   ticketOf,
 } from "./v3-model";
-import { RowButton } from "./v3-open-record";
+import { RowButton, useOpenRoute } from "./v3-open-record";
 import type { V3Route } from "./v3-page-types";
 import type { V3Agent, V3ConnectorDef, V3Thread, V3Ticket } from "./v3-types";
 
@@ -135,14 +139,21 @@ export function ThreadRow({
       ? thread.ticketId
       : undefined
     : threadTag(data, thread);
+  /* A helper row appears only on agent-scoped lists: it names its parent.
+     An open helper marks its nearest listed ancestor's row (D-#847). */
+  const parent = thread.parentId ? threadOf(data, thread.parentId) : undefined;
+  const open = useOpenRoute();
   return (
     <RowButton
       opens={{ page: "thread", id: thread.id }}
+      marked={
+        open?.page === "thread" && listedAncestorOf(data, open.id) === thread.id
+      }
       onClick={() => go({ page: "thread", id: thread.id })}
       className="flex min-h-[40px] items-center gap-3 border-[var(--v3-line)] border-b py-1.5 text-[14px]"
     >
       <span className="grid w-4 shrink-0 place-items-center">
-        {thread.status === "working" ? (
+        {boardStatus(data, thread) === "working" ? (
           <Spinner />
         ) : (
           <StatusDot status={thread.status} />
@@ -158,14 +169,21 @@ export function ThreadRow({
               : ""}
           </span>
         )}
+        {parent && (
+          <span className="ml-2.5 text-[12.5px] text-muted-foreground/70">
+            helper of {parent.title}
+          </span>
+        )}
       </span>
+      <HelpersHint data={data} thread={thread} />
       {byAgent && (
         <span className="w-[100px] shrink-0 text-[13.5px] text-muted-foreground @min-[680px]:w-[170px]">
           <AgentName data={data} agent={who} size={18} />
         </span>
       )}
       <span className="w-[96px] shrink-0">
-        <StatusPill status={thread.status} />
+        {/* A parent waiting on helpers reads as Working (D-#847). */}
+        <StatusPill status={boardStatus(data, thread)} />
       </span>
       <span className="w-11 shrink-0 text-right text-[13px] text-muted-foreground">
         {ago(thread.minutes)}

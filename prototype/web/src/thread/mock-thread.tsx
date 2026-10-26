@@ -1,8 +1,10 @@
 import {
   type AttachedFile,
+  boardStatus,
   FocusView,
   type ModelChoice,
   type PlanAction,
+  ThreadLineage,
   ThreadView,
   type V3Ask,
   type V3PageProps,
@@ -43,6 +45,7 @@ export function MockThread(
 
 function Body({
   data,
+  go,
   act,
   id,
   session,
@@ -259,12 +262,18 @@ function Body({
 
   return (
     <div data-thread-panel className="flex h-full min-h-0 min-w-0 flex-col">
+      {/* A hand-off is an ordinary thread with lineage (D-#847): the page
+          leads with the parent a helper belongs to, or the helpers a
+          parent is waiting on — nothing on an ordinary thread. */}
+      <ThreadLineage data={data} thread={t} go={go} act={act} />
       {session ? (
         <FocusView
           bare
           {...shared}
           work={model.work}
-          threadStatus={t.status}
+          /* The header wears the board status too (D-#847): a parent waiting
+             on helpers reads Working here as on every list. */
+          threadStatus={boardStatus(data, t)}
           onBack={() => onSession(false)}
           say={say}
           host={host}
@@ -282,7 +291,7 @@ function Body({
           {...shared}
           work={t.ticketId ? model.work : null}
           onOpenPath={onOpenPath}
-          threadStatus={t.status}
+          threadStatus={boardStatus(data, t)}
           browser={!!act.browserOpen}
           onOpenTab={(next) => {
             setTab(next)
