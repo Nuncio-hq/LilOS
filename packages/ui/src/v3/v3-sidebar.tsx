@@ -171,6 +171,9 @@ export function V3Sidebar({
           onClick={() => go({ page: "threads" })}
           right={<Count n={live} />}
         />
+        {/* No thread list here (#862 feedback): the sidebar stays the
+            table of contents — the sectioned list lives on the Threads
+            page only. */}
         {data.features.tickets && (
           <Item
             icon={<TargetIcon />}

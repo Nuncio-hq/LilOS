@@ -122,31 +122,38 @@ test("statuses and this week's counts, including a thread that recovered from st
     await expect(stat("threads stuck")).toHaveClass(/text-red-600/);
     await expect(stat("threads failed")).toHaveClass(/text-red-600/);
 
-    await page.goto(`${stack.webUrl}/#?page=threads&view=agent`);
-    const block = main(page)
-      .locator("h3", { hasText: agent.name })
-      .locator("xpath=following-sibling::*[1]");
+    /* The same list grouped by agent (#862's "Group by" switch): this
+       agent's fold holds its threads, statuses as dots. Match the fold by
+       its agent marker, not its text — the avatar's letter chip leads the
+       name, so a starts-with match would miss. */
+    await page.goto(`${stack.webUrl}/#?page=threads`);
+    await main(page).getByRole("radio", { name: "Agent", exact: true }).click();
+    const block = main(page).locator(`[data-fold="agent:${agent.id}"]`);
     await expect(
-      block.getByRole("button").filter({ hasText: "Finished" }),
+      block.locator('[data-thread-row]:has([data-v3-status="done"])'),
     ).toHaveCount(finished);
     await expect(
-      block.getByRole("button").filter({ hasText: "Failed" }),
+      block.locator('[data-thread-row]:has([data-v3-status="failed"])'),
     ).toHaveCount(failed);
     await expect(
-      block.getByRole("button").filter({ hasText: "Working" }),
-    ).toContainText(/release note/i);
+      block
+        .locator('[data-thread-row]:has([data-v3-status="working"])')
+        .filter({ hasText: /release note/i }),
+    ).toHaveCount(1);
     /* The live tally is 0. The recovered thread's title is "Stuck" and its
-       pill says Finished, so a button named Stuck is not a stuck thread.
+       dot says done, so a title named Stuck is not a stuck thread.
        The week number above is the stamp. */
     await expect(
       main(page).getByText("0 stuck", { exact: true }),
     ).toBeVisible();
     await expect(
-      block.locator("span.rounded-full", { hasText: /^Stuck$/ }),
+      block.locator('[data-thread-row]:has([data-v3-status="stuck"])'),
     ).toHaveCount(0);
-    await expect(
-      block.getByRole("button", { name: /Stuck Finished/ }),
-    ).toBeVisible();
+    const stuckTitled = block
+      .locator("[data-thread-row]")
+      .filter({ hasText: /^Stuck/ });
+    await expect(stuckTitled).toHaveCount(1);
+    await expect(stuckTitled.locator('[data-v3-status="done"]')).toHaveCount(1);
   } finally {
     await stack.stop();
   }

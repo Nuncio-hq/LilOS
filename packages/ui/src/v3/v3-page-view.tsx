@@ -38,9 +38,7 @@ export function V3PageView({
       {page.page === "work" && (
         <V3Work {...props} view={page.view ?? "waiting"} />
       )}
-      {page.page === "threads" && (
-        <V3Threads {...props} view={page.view ?? "live"} />
-      )}
+      {page.page === "threads" && <V3Threads {...props} view={page.view} />}
       {page.page === "goals" && <V3Goals {...props} />}
       {page.page === "people" && (
         <V3People {...props} view={page.view ?? "table"} />

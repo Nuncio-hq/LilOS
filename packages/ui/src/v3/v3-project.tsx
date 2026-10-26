@@ -12,7 +12,8 @@ import {
 } from "./v3-model";
 import { RowButton } from "./v3-open-record";
 import type { V3PageProps } from "./v3-page-types";
-import { ThreadRow, TicketRow } from "./v3-rows";
+import { TicketRow } from "./v3-rows";
+import { ThreadRow } from "./v3-threads-rows";
 
 /* A project page (D-#771): the folder, the threads that live in it, live and
    past, and, once the company has tickets, its goals and tickets. A thread is
@@ -21,7 +22,12 @@ import { ThreadRow, TicketRow } from "./v3-rows";
 /** Past threads shown before "Show all": a busy project has hundreds. */
 const PAST_SHOWN = 12;
 
-export function V3ProjectPage({ data, go, id }: V3PageProps & { id: string }) {
+export function V3ProjectPage({
+  data,
+  go,
+  act,
+  id,
+}: V3PageProps & { id: string }) {
   const project = projectOf(data, id);
   const [showDone, setShowDone] = useState(false);
   const [allPast, setAllPast] = useState(false);
@@ -188,10 +194,10 @@ export function V3ProjectPage({ data, go, id }: V3PageProps & { id: string }) {
           <ThreadRow
             key={t.id}
             data={data}
-            thread={t}
+            t={t}
             go={go}
-            byAgent
-            inProject
+            act={act}
+            drop="project"
           />
         ))}
       </div>
@@ -207,10 +213,10 @@ export function V3ProjectPage({ data, go, id }: V3PageProps & { id: string }) {
           <ThreadRow
             key={t.id}
             data={data}
-            thread={t}
+            t={t}
             go={go}
-            byAgent
-            inProject
+            act={act}
+            drop="project"
           />
         ))}
       </div>

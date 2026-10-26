@@ -314,7 +314,7 @@ async function trial(shotsDir: string): Promise<Map<number, Window>> {
              would not restart the document. */
           await bench.seedTo(n);
           await page.goto("about:blank");
-          await page.goto(`${preview.url}/#?page=threads&view=all`);
+          await page.goto(`${preview.url}/#?page=threads`);
           const rows = page.locator("#v3-main [data-thread-row]");
           await expect.poll(() => rows.count(), { timeout: 60_000 }).toBe(n);
           const m0 = await snap(cdp, page);

@@ -57,6 +57,8 @@ export function askActions({ setData, getData, toast }: Engine): Pick<
         status: closes ? "done" : "working",
         askId: undefined,
         unseen: false,
+        /* A closed ask ends the thread's turn — it came back to you (#862). */
+        cameBackAt: closes ? Date.now() : undefined,
         now: closes
           ? undefined
           : { kind: "web", text: "Launching the ads", elapsed: "0s" },
@@ -152,6 +154,7 @@ export function askActions({ setData, getData, toast }: Engine): Pick<
             stuck: undefined,
             askId: undefined,
             summary: "Stopped by you",
+            cameBackAt: Date.now(),
           }),
           tickets: ticket
             ? ticketPatch(d, ticket.id, {
@@ -241,6 +244,7 @@ export function askActions({ setData, getData, toast }: Engine): Pick<
                 live: undefined,
                 stuck: undefined,
                 summary: `Handed to ${to.name}`,
+                cameBackAt: Date.now(),
               },
             ),
           ],

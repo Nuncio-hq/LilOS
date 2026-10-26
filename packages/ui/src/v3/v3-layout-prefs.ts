@@ -126,3 +126,60 @@ export function useLayoutPrefs(): LayoutPrefs {
 
   return { sidebarW, setSidebarW, peekW, setPeekW, hidden, setHidden };
 }
+
+/* The shelves of the thread list fold on this device only (#862): a fold
+   choice belongs to the screen it was made on, so it sits in localStorage
+   with the layout widths, not in the relay state that syncs to the phone. */
+const FOLDS_KEY = "lilos-v3-folds";
+/** A fold's key: the three shelves ("working" | "snoozed" | "settled"), or
+    a group head in the Group-by views ("agent:<id>", "project:<id>"). */
+export type FoldKey = string;
+
+function readFolds(): Partial<Record<FoldKey, boolean>> {
+  try {
+    const raw = read(FOLDS_KEY);
+    return raw ? (JSON.parse(raw) as Partial<Record<FoldKey, boolean>>) : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Which folds are open on this device: Working, Snoozed and Settled all
+    start folded, and whatever you open stays open here only. */
+export function useFoldPrefs(): {
+  folds: Partial<Record<FoldKey, boolean>>;
+  setFold: (key: FoldKey, open: boolean) => void;
+} {
+  const [folds, setFolds] = useState(readFolds);
+  const setFold = useCallback((key: FoldKey, open: boolean) => {
+    setFolds((f) => {
+      const next = { ...f, [key]: open };
+      write(FOLDS_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+  return { folds, setFold };
+}
+
+/* The thread list's grouping ("Group by: Section | Agent | Project") is a
+   view preference, not thread state: it lives with the folds, on this
+   device only (#862). */
+const GROUP_KEY = "lilos-v3-thread-group";
+export type ThreadGroup = "section" | "agent" | "project";
+
+/** How Threads groups its list; default Section (the shelves). */
+export function useThreadGroupPref(): {
+  group: ThreadGroup;
+  setGroup: (group: ThreadGroup) => void;
+} {
+  const [group, setGroupState] = useState<ThreadGroup>(() => {
+    const g = read(GROUP_KEY);
+    return g === "agent" || g === "project" ? g : "section";
+  });
+  const setGroup = useCallback((g: ThreadGroup) => {
+    setGroupState(g);
+    // The default is stored as nothing: Section leaves no trace.
+    write(GROUP_KEY, g === "section" ? null : g);
+  }, []);
+  return { group, setGroup };
+}

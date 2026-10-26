@@ -37,6 +37,14 @@ const sideItem = (page: Page, item: "Needs you" | "Threads") =>
   v3Sidebar(page).getByRole("button", { name: new RegExp(`^${item}`) });
 const card = (page: Page, title: RegExp) =>
   main(page).getByRole("button").filter({ hasText: title }).first();
+/* Running threads fold under Working (#862): open the shelf before a row
+   assertion reaches it. */
+const openWorking = async (page: Page) => {
+  const fold = main(page).locator(
+    '[data-fold="working"] > button[aria-expanded="false"]',
+  );
+  if (await fold.count()) await fold.click();
+};
 /** The agent's row in Home's Team table (an ask row names the agent too). */
 const teamRow = (page: Page) =>
   main(page)
@@ -60,12 +68,17 @@ test("a running turn reads Working on Home, Threads and the sidebar, until it is
     v3Peek(page).getByRole("button", { name: /^stop \(⌘\.\)$/i }),
   ).toBeVisible({ timeout: 30_000 });
 
-  // Threads: a Working card, counted live in the summary and the sidebar.
+  // Threads: a Working row, counted live in the summary and the sidebar.
+  // Running threads sit folded under Working (#862) — open the shelf, then
+  // read the status dot (words are only for Needs-you/Failed pills).
   await goTo(page, "Threads");
   await expect(main(page).getByText(/1 working/)).toBeVisible({
     timeout: 30_000,
   });
-  await expect(card(page, /release note/)).toContainText("Working");
+  await openWorking(page);
+  await expect(
+    card(page, /release note/).locator('[data-v3-status="working"]'),
+  ).toBeVisible();
   await expect(sideItem(page, "Threads")).toHaveText(/^Threads\s*1$/);
 
   // Home: the same agent, the same word, the same thread as what it works on.
@@ -104,15 +117,20 @@ test("an approval is a Needs you count, a Threads card and a Home row; approving
     timeout: 60_000,
   });
 
-  // Threads: the thread is a "Needs you" card carrying the command and the
-  // two answers; the board counts it.
+  // Threads: the thread's row wears the "Needs you" pill; the ask card with
+  // the command and the two answers is inside the thread itself (#862's one
+  // row per thread carries no card detail). The list counts it.
   await goTo(page, "Threads");
   const asking = card(page, /add a footer to the page/i);
   await expect(asking).toContainText("Needs you");
-  await expect(asking).toContainText("patch");
-  await expect(asking.getByRole("button", { name: "Approve" })).toBeVisible();
-  await expect(asking.getByRole("button", { name: "Deny" })).toBeVisible();
   await expect(main(page).getByText(/1 needs you/)).toBeVisible();
+  await asking.click();
+  const askCard = v3Peek(page).locator("[data-ask-id]").first();
+  await expect(askCard).toContainText("patch wants to run", {
+    timeout: 30_000,
+  });
+  await expect(askCard.getByRole("button", { name: "Deny" })).toBeVisible();
+  await v3Peek(page).getByRole("button", { name: "Close" }).click();
 
   // Home: the agent reads Needs you, and the ask is a row with its answers.
   await goTo(page, "Home");
@@ -145,15 +163,14 @@ test("an approval is a Needs you count, a Threads card and a Home row; approving
 
   // The turn's answer is in the thread; nobody has opened it yet, so it is
   // counted as finished-not-seen on Needs you (a result to look at) and on
-  // Threads (a Finished card, not a line in Earlier today).
+  // Threads (a done row in Active, not a line in Earlier today).
   await expect(main(page).getByText("1 results to look at")).toBeVisible();
   await goTo(page, "Threads");
   await expect(main(page).getByText(/1 finished, not seen/)).toBeVisible();
   const unseen = card(page, /add a footer to the page/i);
-  await expect(unseen).toContainText("Finished");
-  await expect(unseen).toContainText("Commit");
+  await expect(unseen.locator('[data-v3-status="done"]')).toBeVisible();
 
-  // Opening the thread is what sees it: the count and the card go, on every
+  // Opening the thread is what sees it: the count and the row go, on every
   // surface, and the thread moves down to Earlier today.
   await unseen.click();
   await expect(v3Peek(page)).toContainText("Allowed once", {

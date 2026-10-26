@@ -13,6 +13,8 @@ export const ATTENTION_THREADS: V3Data["threads"] = [
     agentId: "ceo",
     title: "Rename the app to “QRit Pro”?",
     status: "needs",
+    // The question came back to you 12 minutes ago (#862).
+    cameBackAt: Date.now() - 12 * 60_000,
     startedAt: "11:52",
     minutes: 12,
     step: 4,
@@ -42,6 +44,7 @@ export const ATTENTION_THREADS: V3Data["threads"] = [
     agentId: "builder",
     title: "Summarise yesterday’s PRs",
     status: "failed",
+    cameBackAt: Date.now() - 17 * 60_000,
     startedAt: "11:48",
     minutes: 1,
     context: 6,
@@ -64,6 +67,8 @@ export const ATTENTION_THREADS: V3Data["threads"] = [
     agentId: "builder",
     title: "Remember the sidebar width",
     status: "needs",
+    // The newest hand up — first row of Active (#862).
+    cameBackAt: Date.now() - 3 * 60_000,
     startedAt: "11:57",
     minutes: 3,
     context: 12,

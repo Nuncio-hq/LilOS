@@ -109,7 +109,7 @@ test("no CEO copy, and a person can be given a ticket", async ({ page }) => {
     ["#?page=inbox", "Good afternoon"],
     ["#?page=needs", "Needs you"],
     ["#?page=threads", "Threads"],
-    ["#?page=threads&view=all", "Threads"],
+    ["#?page=threads", "Threads"],
     ["#?page=threads&view=agent", "Threads"],
     ["#?page=threads&view=scheduled", "Threads"],
     ["#?page=people", "People"],

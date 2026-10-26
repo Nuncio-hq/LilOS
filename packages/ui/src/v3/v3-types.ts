@@ -385,6 +385,32 @@ export type V3Thread = {
   workbench?: V3Workbench;
   /** The last Rewind on this thread, shown as a quiet line in the chat. */
   rewound?: { dropped: number; files: boolean };
+  /* Where the thread sits in the list (#862, the T3 Code sidebar's model):
+     Pinned stays on top, a snooze sleeps it until its wake time, and a
+     settled thread parks on the Settled shelf — its `settledAt`, and why.
+     All three are relay state, the same on Mac and phone; only folding
+     Working is the device's own choice. */
+  /** Pinned to the top of the list, epoch ms (newest pin first; reordering
+      by drag comes later). Settling takes the pin off. */
+  pinnedAt?: number;
+  /** Hidden until then, epoch ms: the thread keeps working underneath and
+      comes back early when it needs you, fails or gets stuck, or you
+      message it. */
+  snoozedUntil?: number;
+  /** When the thread last came back to you — it finished, failed, asked or
+      woke — epoch ms. The Active list orders by it, newest first. */
+  cameBackAt?: number;
+  /** When it settled, epoch ms (what the shelf shows). */
+  settledAt?: number;
+  /** Why the shelf has it: a sweep parked it after it sat idle three days,
+      or when its PR merged or closed. Absent on a settled thread = you
+      settled it yourself. */
+  settledWhy?:
+    | { kind: "idle" }
+    | { kind: "pr"; num: number; state: "merged" | "closed" };
+  /** Auto-settle switched off for this thread: the idle/PR sweep leaves it
+      in the list (Auto-settle → Disabled on its menu). */
+  autoSettleOff?: boolean;
 };
 
 /** One message that matched a ⌘K search. The thread's title and whether it

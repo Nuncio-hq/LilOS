@@ -33,7 +33,7 @@ import {
  * side peek. The session filter is the ⌘K palette (it searches thread titles
  * and messages); a thread's rename / archive / unarchive are its row's ⋯ menu
  * on Threads (and the header's), and an archived thread lives under
- * Threads → All → Archived.
+ * Threads → All → Settled.
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
@@ -364,7 +364,7 @@ test("AC-3 rename + archive persist across restart", async ({ page }) => {
   await expect(listRow(page, ROOT_ROW)).toBeVisible({ timeout: 30_000 });
 
   // Rename it in place from its row's menu, then archive it.
-  await page.goto(`${stack.webUrl}/#?page=threads&view=all`);
+  await page.goto(`${stack.webUrl}/#?page=threads`);
   const row = page.locator(`[data-thread-row="${convId}"]`);
   await expect(row).toBeVisible({ timeout: 30_000 });
   const menu = (r: Locator) =>
@@ -380,14 +380,14 @@ test("AC-3 rename + archive persist across restart", async ({ page }) => {
   });
   await row.hover();
   await menu(row).click();
-  await page.getByRole("menuitem", { name: "Archive thread" }).click();
+  await page.getByRole("menuitem", { name: "Settle thread" }).click();
   // The archived thread leaves the list for the Archived section; the keeper
   // stays where it was.
   await expect(row).toHaveCount(0, { timeout: 15_000 });
   await expect(listRow(page, "Keeper thread")).toBeVisible();
-  await page.getByRole("button", { name: /Archived \(1\)/ }).click();
+  await page.locator('#v3-main [data-fold="settled"] > button').click();
   const archived = page.locator(
-    `[data-archived-list] [data-thread-row="${convId}"]`,
+    `[data-settled-list] [data-thread-row="${convId}"]`,
   );
   await expect(archived).toContainText("Repo summary thread");
   await page.screenshot({ path: `${SHOTS}/ac3-archived.png` });
@@ -398,21 +398,27 @@ test("AC-3 rename + archive persist across restart", async ({ page }) => {
   await page.goto("about:blank");
   stack = await boot("restart2", stack.home);
   await openApp(stack, page);
-  await page.goto(`${stack.webUrl}/#?page=threads&view=all`);
+  await page.goto(`${stack.webUrl}/#?page=threads`);
   await expect(listRow(page, "Keeper thread")).toBeVisible({ timeout: 30_000 });
   await expect(
-    page.locator(`[data-thread-row="${convId}"]:not([data-archived])`),
+    page.locator(`[data-thread-row="${convId}"]:not([data-settled])`),
   ).toHaveCount(0);
-  await page.getByRole("button", { name: /Archived \(1\)/ }).click();
+  /* The fold's open state is device-local and the restart reuses the same
+     origin, so it may already be open here — only open it when it is not
+     (an unconditional click would toggle it closed). */
+  const settledFold = page.locator('#v3-main [data-fold="settled"] > button');
+  await expect(settledFold).toBeVisible({ timeout: 30_000 });
+  if ((await settledFold.getAttribute("aria-expanded")) === "false")
+    await settledFold.click();
   await expect(archived).toContainText("Repo summary thread", {
     timeout: 30_000,
   });
   // Unarchived from its menu, it is back in the list under the name it was
   // given, and the keeper was never touched.
   await menu(archived).click();
-  await page.getByRole("menuitem", { name: "Unarchive thread" }).click();
+  await page.getByRole("menuitem", { name: "Un-settle thread" }).click();
   await expect(
-    page.locator(`[data-thread-row="${convId}"]:not([data-archived])`),
+    page.locator(`[data-thread-row="${convId}"]:not([data-settled])`),
   ).toContainText("Repo summary thread", { timeout: 30_000 });
   await expect(listRow(page, "Keeper thread")).toBeVisible();
 });

@@ -21,6 +21,7 @@ import type {
   TranscriptNote,
   Work,
 } from "../types";
+import type { ThreadPark } from "../v3/v3-thread-menu";
 import type { V3Status } from "../v3/v3-types";
 
 /* The props the thread panel (ThreadView) and the session view (FocusView)
@@ -146,9 +147,12 @@ export interface ThreadFrameProps {
   onAccess?: (a: ConversationAccess) => void;
   /* Rename the title in place / put the thread away (true) or back (false):
      the header's ⋯ menu draws the items whose handler is passed, none → no
-     menu. `thread.archived` says which way Archive reads. */
+     menu. `thread.archived` says which way Settle reads (the wire still
+     says archived until the backend slice renames it, #862). `park`
+     carries the menu's pin / snooze / auto-settle choices the app backs. */
   onRename?: (title: string) => void;
   onArchive?: (archived: boolean) => void;
+  park?: ThreadPark;
   /* #554: the host's wired find bar, rendered as an overlay inside the
      conversation scrollport (desktop ⌘F); absent = no find UI. */
   findBar?: ReactNode;
