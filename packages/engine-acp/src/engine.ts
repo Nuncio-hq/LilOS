@@ -44,6 +44,10 @@ import {
 } from "./mapping.js";
 import { acpApprovalRequest, acpPermissionAnswer } from "./permissions.js";
 import { AcpSession, cancelAllAcpAsks, type PendingAcpAsk } from "./session.js";
+import {
+  type AcpClientTerminals,
+  resolveEmbeddedTerminalContent,
+} from "./terminals.js";
 
 /**
  * D-#764 — the generic ACP engine: any agent speaking the pinned ACP schema
@@ -64,6 +68,18 @@ export interface AcpEngineOptions {
   env?: Record<string, string>;
   /** `initialize.clientInfo`. */
   clientInfo?: { name: string; version: string };
+  /**
+   * `initialize.clientCapabilities` override — the shim advertises what
+   * the agent needs (e.g. `terminal: true` for agents that run commands
+   * through the client). Defaults to no delegation.
+   */
+  clientCapabilities?: acp.ClientCapabilities;
+  /**
+   * Client-side `terminal/*` serving (D-#845) — required when
+   * `clientCapabilities.terminal` is advertised; the engine also resolves
+   * `{type:"terminal"}` tool-call content against the manager's buffers.
+   */
+  terminals?: AcpClientTerminals;
   /** Per-session event-log cap (#431). */
   eventLogCap?: number;
   /**
@@ -115,6 +131,20 @@ export class AcpEngine {
       ...(this.opts.env ? { env: this.opts.env } : {}),
       cwd: process.cwd(),
       ...(this.opts.clientInfo ? { clientInfo: this.opts.clientInfo } : {}),
+      ...(this.opts.clientCapabilities
+        ? { clientCapabilities: this.opts.clientCapabilities }
+        : {}),
+      ...(this.opts.terminals
+        ? {
+            terminals: {
+              create: (r) => this.opts.terminals!.create(r),
+              output: async (r) => this.opts.terminals!.output(r),
+              waitForExit: (r) => this.opts.terminals!.waitForExit(r),
+              kill: (r) => this.opts.terminals!.kill(r),
+              release: (r) => this.opts.terminals!.release(r),
+            },
+          }
+        : {}),
       handlers: {
         onPermission: (params) => this.onPermission(params),
         onUpdate: (params) => this.onUpdate(params),
@@ -144,6 +174,7 @@ export class AcpEngine {
 
   async close() {
     for (const s of this.sessions.values()) cancelAllAcpAsks(s);
+    await this.opts.terminals?.disposeAll();
     await this.conn?.close();
     this.conn = undefined;
   }
@@ -597,7 +628,14 @@ export class AcpEngine {
   private onUpdate(params: acp.SessionNotification) {
     const s = this.sessionForAcp(params.sessionId);
     if (!s) return;
-    handleAcpUpdate(s, params, {
+    /* `{type:"terminal"}` tool-call content resolves against the client
+       terminals' buffers before the shared mapping sees it — the mapping
+       itself stays terminal-agnostic (D-#845). */
+    const t = this.opts.terminals;
+    const notification = t
+      ? resolveEmbeddedTerminalContent(params, t.readOutputSnapshot)
+      : params;
+    handleAcpUpdate(s, notification, {
       onSessionInfo: (sess, u) => {
         /* session_info_update carries the agent-computed title — the "llm"
            stage of #137's auto-title. */

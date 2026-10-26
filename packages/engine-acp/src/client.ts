@@ -1,6 +1,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { Readable, Writable } from "node:stream";
 import * as acp from "@agentclientprotocol/sdk";
+import { scrubLilosEnv } from "@lilos/contracts/env";
 import { ACP_PROTOCOL_VERSION } from "./pin.js";
 
 /**
@@ -21,6 +22,29 @@ export interface AcpConnectionOptions {
   cwd: string;
   /** Identity reported in `initialize.clientInfo`. */
   clientInfo?: { name: string; version: string };
+  /**
+   * `initialize.clientCapabilities` — defaults to no fs/terminal
+   * delegation. An agent whose commands run through the client's
+   * terminals advertises `terminal: true` and passes `terminals` too
+   * (the shim decides; the seam stays neutral, D-#845).
+   */
+  clientCapabilities?: acp.ClientCapabilities;
+  /** `terminal/*` method handlers — required when the capability is on. */
+  terminals?: {
+    create(
+      r: acp.CreateTerminalRequest,
+    ): Promise<acp.CreateTerminalResponse>;
+    output(r: acp.TerminalOutputRequest): Promise<acp.TerminalOutputResponse>;
+    waitForExit(
+      r: acp.WaitForTerminalExitRequest,
+    ): Promise<acp.WaitForTerminalExitResponse>;
+    kill(
+      r: acp.KillTerminalRequest,
+    ): Promise<acp.KillTerminalResponse | void>;
+    release(
+      r: acp.ReleaseTerminalRequest,
+    ): Promise<acp.ReleaseTerminalResponse | void>;
+  };
   /** `session/request_permission` + `session/update` handlers. */
   handlers: {
     onPermission(
@@ -52,10 +76,14 @@ export class AcpConnection {
 
   /** Spawn the agent, wire the stream, run `initialize`. */
   static async open(opts: AcpConnectionOptions): Promise<AcpConnection> {
+    /* D-#412: the agent child gets the allow-listed env — PATH, HOME and
+       the proxies/provider keys a signed-in CLI needs pass through;
+       LILOS_* internal state (relay token, state dirs) never crosses the
+       spawn boundary. Explicit grants still merge after the scrub. */
     const env = {
-      ...(process.env as Record<string, string>),
+      ...scrubLilosEnv(process.env),
       ...opts.env,
-    };
+    } as Record<string, string>;
     const [bin, ...args] = opts.command;
     const proc = spawn(bin, args, {
       env,
@@ -74,14 +102,30 @@ export class AcpConnection {
       () => ({
         requestPermission: (params) => opts.handlers.onPermission(params),
         sessionUpdate: (params) => opts.handlers.onUpdate(params),
+        ...(opts.terminals
+          ? {
+              createTerminal: (p: acp.CreateTerminalRequest) =>
+                opts.terminals!.create(p),
+              terminalOutput: (p: acp.TerminalOutputRequest) =>
+                opts.terminals!.output(p),
+              waitForTerminalExit: (p: acp.WaitForTerminalExitRequest) =>
+                opts.terminals!.waitForExit(p),
+              killTerminal: (p: acp.KillTerminalRequest) =>
+                opts.terminals!.kill(p),
+              releaseTerminal: (p: acp.ReleaseTerminalRequest) =>
+                opts.terminals!.release(p),
+            }
+          : {}),
       }),
       stream,
     );
     const init = await conn.initialize({
       protocolVersion: ACP_PROTOCOL_VERSION,
       clientInfo: opts.clientInfo ?? { name: "lilos", version: "0" },
-      /* No fs/terminal delegation: the agent keeps its own tools. */
-      clientCapabilities: {
+      /* Default: no fs/terminal delegation — the agent keeps its own
+         tools. Agents that route commands through client terminals pass
+         both the capability flag and the handlers (D-#845). */
+      clientCapabilities: opts.clientCapabilities ?? {
         fs: { readTextFile: false, writeTextFile: false },
         terminal: false,
       },

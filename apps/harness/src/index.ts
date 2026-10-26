@@ -183,6 +183,7 @@ const supervisor = new EngineSupervisor({
       // "nous" not "hermes" in the file name: managed Macs kill *hermes*
       // executables by name (#141); the engine id stays "hermes".
       hermes: bundledEngine("lilos-engine-nous"),
+      acp: bundledEngine("lilos-engine-acp"),
     },
     {
       [SURFACES_ENV.baseUrl]: surfaces.url,
