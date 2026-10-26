@@ -356,6 +356,9 @@ export class AcpEngine {
   /**
    * One turn: turn.started -> session/prompt -> update frames -> the
    * response IS the turn end (ACP has no separate completion event).
+   * `turn.started` fires inside the prompt pump's onStart — a send queued
+   * behind an in-flight prompt opens its turn only once it's on the wire,
+   * so two turns are never open at once.
    */
   private async runTurn(
     s: AcpSession,
@@ -365,35 +368,50 @@ export class AcpEngine {
   ): Promise<PromptResult> {
     const conn = await this.connection();
     this.autoTitle(s, "derived", firstText(content));
-    s.turn = { turnId, phase: "reasoning" };
-    s.emit("turn.started", {
-      turnId,
-      ...(s.model ? { model: s.model } : {}),
-      ...(s.effort ? { effort: s.effort } : {}),
-      ...(s.fast !== undefined ? { fast: s.fast } : {}),
-      ...(ref ? { ref } : {}),
-    });
-    s.setState("running");
+    const startTurn = () => {
+      /* Stopped/suspended while queued: the send still hits the wire (the
+         queue cannot recall it) but the dead session opens no turn. */
+      if (s.state === "closed") return;
+      s.turn = { turnId, phase: "reasoning" };
+      s.emit("turn.started", {
+        turnId,
+        ...(s.model ? { model: s.model } : {}),
+        ...(s.effort ? { effort: s.effort } : {}),
+        ...(s.fast !== undefined ? { fast: s.fast } : {}),
+        ...(ref ? { ref } : {}),
+      });
+      s.setState("running");
+    };
     try {
-      const res = await conn.prompt(s.acpSessionId, content.map(toAcpContent));
+      const res = await conn.prompt(
+        s.acpSessionId,
+        content.map(toAcpContent),
+        startTurn,
+      );
       const usage = acpTurnUsage(s.usage, res.usage ?? undefined);
       if (usage) s.usage = usage;
       const stopReason = acpStopReason(res.stopReason);
-      s.emit("turn.completed", {
-        turnId,
-        stopReason,
-        ...(usage ? { usage } : {}),
-      });
+      /* session.stop/suspend mid-turn already closed the turn as cancelled —
+         only the live owner emits the completion (one terminal frame). */
+      if (s.turn?.turnId === turnId) {
+        s.emit("turn.completed", {
+          turnId,
+          stopReason,
+          ...(usage ? { usage } : {}),
+        });
+      }
       return { turnId, stopReason, ...(usage ? { usage } : {}) };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       const code = (e as { code?: unknown }).code;
-      s.emit("turn.completed", {
-        turnId,
-        stopReason: "refusal",
-        error: msg,
-        ...(typeof code === "number" ? { errorCode: code } : {}),
-      });
+      if (s.turn?.turnId === turnId) {
+        s.emit("turn.completed", {
+          turnId,
+          stopReason: "refusal",
+          error: msg,
+          ...(typeof code === "number" ? { errorCode: code } : {}),
+        });
+      }
       return { turnId, stopReason: "refusal" };
     } finally {
       s.turn = undefined;
@@ -406,9 +424,11 @@ export class AcpEngine {
 
   private async interrupt(p: InterruptParams) {
     const s = this.require(p.sessionId);
-    if (!s.turn) return { interrupted: false };
     const conn = this.conn;
     if (!conn || !s.acpSessionId) return { interrupted: false };
+    /* A turn still queued behind an in-flight prompt cancels too. */
+    if (!s.turn && !conn.promptBusyFor(s.acpSessionId))
+      return { interrupted: false };
     /* A parked permission ask blocks the agent's own unwind — the protocol
        has the client answer it cancelled on session/cancel, so resolve ours
        first, then send the cancel. */
@@ -458,12 +478,24 @@ export class AcpEngine {
             ]);
             const usage = acpTurnUsage(s.usage, res.usage ?? undefined);
             if (usage) s.usage = usage;
-            s.emit("turn.completed", {
-              turnId,
-              stopReason: acpStopReason(res.stopReason),
-              ...(usage ? { usage } : {}),
-            });
-          } catch {
+            if (s.turn?.turnId === turnId) {
+              s.emit("turn.completed", {
+                turnId,
+                stopReason: acpStopReason(res.stopReason),
+                ...(usage ? { usage } : {}),
+              });
+            }
+          } catch (e) {
+            if (s.turn?.turnId === turnId) {
+              const msg = e instanceof Error ? e.message : String(e);
+              const code = (e as { code?: unknown }).code;
+              s.emit("turn.completed", {
+                turnId,
+                stopReason: "refusal",
+                error: msg,
+                ...(typeof code === "number" ? { errorCode: code } : {}),
+              });
+            }
             break;
           } finally {
             s.turn = undefined;

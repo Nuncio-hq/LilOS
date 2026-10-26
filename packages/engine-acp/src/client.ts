@@ -41,6 +41,9 @@ export class AcpConnection {
   /** Serialized prompt pump — ACP runs one `session/prompt` per session at
      a time; queued sends become the next turn (#308's queued-steer leg). */
   private promptQueues = new Map<string, Promise<unknown>>();
+  /** Sessions with a prompt in flight or queued — interrupt must still
+     cancel a send that has not reached the wire yet. */
+  private promptBusy = new Map<string, number>();
 
   private constructor(
     readonly initializeResult: acp.InitializeResponse,
@@ -139,6 +142,10 @@ export class AcpConnection {
       return this.conn.prompt({ sessionId, prompt: content });
     };
     const prev = this.promptQueues.get(sessionId) ?? Promise.resolve();
+    this.promptBusy.set(
+      sessionId,
+      (this.promptBusy.get(sessionId) ?? 0) + 1,
+    );
     const next = prev.then(run, run);
     this.promptQueues.set(
       sessionId,
@@ -147,7 +154,19 @@ export class AcpConnection {
         () => {},
       ),
     );
+    const clear = () => {
+      const n = (this.promptBusy.get(sessionId) ?? 1) - 1;
+      if (n <= 0) this.promptBusy.delete(sessionId);
+      else this.promptBusy.set(sessionId, n);
+    };
+    void next.then(clear, clear);
     return next;
+  }
+
+  /** A prompt is on the wire or queued behind one — session/cancel reaches
+     it either way. */
+  promptBusyFor(sessionId: string): boolean {
+    return (this.promptBusy.get(sessionId) ?? 0) > 0;
   }
 
   /** `session/cancel` notification — best-effort abort of the live turn. */
