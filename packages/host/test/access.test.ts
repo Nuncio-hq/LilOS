@@ -64,6 +64,7 @@ afterAll(() => {
 const never = <T>() => new Promise<T>(() => {});
 const inDesktop = join(D, "x");
 const inDocs = join(DOCS, "x");
+const inDl = join(DL, "x");
 
 describe("isAccessError signatures (#875)", () => {
   it("names a killed child, the TCC errnos and git's wording", () => {
@@ -292,12 +293,18 @@ describe("listings and discovery skip a walled child (#875)", () => {
 
 describe("blocked-flag expiry (#875)", () => {
   /* A read the OS never answers arms the flag; the flag expires after
-     30 s so the next probe re-reads fresh instead of gating forever on
-     a stuck watcher (r2 finding 2). */
-  it("a never-settling read flags, expires, then re-checks", async () => {
+     30 s so probes re-try the real op — but a confirm on the still-
+     pending read re-arms on it, never a second read (r3). */
+  it("a never-settling read flags, expires, re-arms, then a late grant opens", async () => {
     vi.useFakeTimers();
     try {
-      setConfirmRead(() => never()); // consent wait nobody answers
+      let answer!: (v: unknown) => void;
+      setConfirmRead(
+        () =>
+          new Promise<unknown>((r) => {
+            answer = r;
+          }),
+      );
       const p = confirmFolderBlocked(inDocs);
       await vi.advanceTimersByTimeAsync(1_000); // the confirm's own bound
       await expect(p).resolves.toBe(true);
@@ -305,9 +312,36 @@ describe("blocked-flag expiry (#875)", () => {
       expect(() => assertFolderReadable(inDocs)).toThrow(/folder access/i);
       vi.advanceTimersByTime(31_000); // flag ages out
       expect(() => assertFolderReadable(inDocs)).not.toThrow();
-      setConfirmRead(null); // access arrived — the re-check reads for real
+      // …but the read is still out: a confirm re-arms on it, not a new one.
+      await expect(confirmFolderBlocked(inDocs)).resolves.toBe(true);
+      answer([]); // late grant — the held read resolves, watcher done
+      await Promise.resolve();
+      await Promise.resolve(); // two hops: w settles, then its cleanup
+      setConfirmRead(null);
       await expect(confirmFolderBlocked(inDocs)).resolves.toBe(false);
       expect(() => assertFolderReadable(inDocs)).not.toThrow();
+    } finally {
+      setConfirmRead(null);
+      vi.useRealTimers();
+    }
+  });
+
+  it("expiries on a still-pending read never start another (r3)", async () => {
+    vi.useFakeTimers();
+    try {
+      let reads = 0;
+      setConfirmRead(() => {
+        reads += 1;
+        return never();
+      });
+      const p = confirmFolderBlocked(inDl);
+      await vi.advanceTimersByTimeAsync(1_000);
+      await expect(p).resolves.toBe(true);
+      for (let i = 0; i < 3; i++) {
+        vi.advanceTimersByTime(31_000); // each expiry re-checks
+        await expect(confirmFolderBlocked(inDl)).resolves.toBe(true);
+      }
+      expect(reads).toBe(1); // one hanging read per folder, ever
     } finally {
       setConfirmRead(null);
       vi.useRealTimers();

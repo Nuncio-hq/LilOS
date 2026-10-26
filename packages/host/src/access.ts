@@ -82,10 +82,11 @@ export const asAccessError = (
    A walled folder costs the process one hanging readdir at a time; a
    pile of repeated confirms can't exhaust the fs worker pool (D-#875).
 
-   The blocked flag expires after STUCK_TTL_MS: a readdir that never
-   settles (a stuck iCloud Desktop, a consent wait under launchd that
-   never returns EINTR) otherwise gates every read in that folder until
-   the harness restarts — expiry re-checks with a FRESH read instead. */
+   The blocked flag expires after STUCK_TTL_MS so probes keep re-checking
+   the real op instead of gating forever — but expiry re-arms on the
+   still-pending read rather than starting another: a truly stuck folder
+   (iCloud) otherwise parks one more fs thread every 30 s. At most one
+   in-flight read per folder, ever. */
 const STUCK_TTL_MS = 30_000;
 const watchers = new Map<ProtectedFolder, Promise<boolean>>();
 const blockedUntil = new Map<ProtectedFolder, number>();
@@ -131,12 +132,18 @@ export function assertFolderReadable(abs: string): void {
  *  the second flags the folder for STUCK_TTL_MS — repeat probes fail fast
  *  while the watcher listens for the late grant; a refused read needs no
  *  flag (probes fail fast on their own and the next one sees a grant).
- *  An expired flag drops the stale watcher and re-reads fresh. */
+ *  An expired flag on a still-pending read just re-arms — that read IS
+ *  the unanswered wall, and a second one would only park another fs
+ *  thread on the same stuck syscall. */
 export async function confirmFolderBlocked(abs: string): Promise<boolean> {
   const folder = protectedFolder(abs);
   if (!folder) return false;
   if ((blockedUntil.get(folder) ?? 0) > Date.now()) return true;
-  watchers.delete(folder); // flag expired — ask anew, not the stale watch
+  if (watchers.has(folder)) {
+    /* The earlier read is still out — re-arm on it, never a second read. */
+    blockedUntil.set(folder, Date.now() + STUCK_TTL_MS);
+    return true;
+  }
   const read = await Promise.race([
     folderRead(folder),
     new Promise<null>((r) => setTimeout(() => r(null), CONFIRM_MS)),
