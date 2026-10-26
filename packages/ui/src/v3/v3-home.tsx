@@ -18,11 +18,13 @@ import {
   agentTicket,
   askTag,
   asleepAgents,
+  boardStatus,
   companyOn,
   defaultAgent,
   FORMER_AGENT,
   goalProgress,
   LIVE_RANK,
+  listedThreads,
   nextRunLabel,
   projectOf,
   resultsToLookAt,
@@ -101,10 +103,13 @@ function CountStrip({
   /** The company's roster ("N agents", "N outside workers", asleep idle). */
   team?: boolean;
 }) {
+  /* Helpers fold into their parent (D-#847): a parent waiting on them
+     counts as working. */
+  const listed = listedThreads(data.threads);
   const counts: Partial<Record<V3Status, number>> = {
-    working: threadsIn(data.threads, "working"),
-    needs: threadsIn(data.threads, "needs"),
-    stuck: threadsIn(data.threads, "stuck"),
+    working: listed.filter((t) => boardStatus(data, t) === "working").length,
+    needs: threadsIn(listed, "needs"),
+    stuck: threadsIn(listed, "stuck"),
     idle: asleepAgents(data).length,
   };
   const outside = data.agents.filter((a) => a.kind === "outside").length;
@@ -433,17 +438,21 @@ const THREADS_HOME = 6;
 
 function DailyHome({ data, go, act }: V3PageProps) {
   const starter = defaultAgent(data);
+  /* Helper threads have no row here (D-#847): a parent waiting on helpers
+     sorts with the work in flight, not with the idle. */
   const byRank = (a: V3Thread, b: V3Thread) =>
-    (LIVE_RANK[a.status] ?? 9) - (LIVE_RANK[b.status] ?? 9);
+    (LIVE_RANK[boardStatus(data, a)] ?? 9) -
+    (LIVE_RANK[boardStatus(data, b)] ?? 9);
+  const listed = listedThreads(data.threads);
   const groups = data.projects
     .map((p) => ({
       project: p,
-      threads: data.threads
+      threads: listed
         .filter((t) => threadProjectId(data, t) === p.id)
         .sort(byRank),
     }))
     .filter((g) => g.threads.length > 0);
-  const chats = data.threads
+  const chats = listed
     .filter((t) => threadProjectId(data, t) === undefined)
     .sort(byRank);
   const group = (title: ReactNode, threads: V3Thread[], link?: () => void) => (
