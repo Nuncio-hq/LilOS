@@ -14,7 +14,9 @@ import type {
   Project,
   RecentFolder,
   ScheduledTask,
+  TaskWakeEvent,
   Ticket,
+  TicketTask,
 } from "@lilos/contracts/app";
 import {
   assertReportsAcyclic,
@@ -160,6 +162,7 @@ export function createMemoryStore(): RelayStore {
       claimed: false,
       text: input.text,
       ...(input.ceoWake ? { ceoWake: true as const } : {}),
+      ...(input.taskWake ? { taskWake: true as const } : {}),
       ...(input.model !== undefined ? { model: input.model } : {}),
       ...(input.provider !== undefined ? { provider: input.provider } : {}),
       ...(input.effort !== undefined ? { effort: input.effort } : {}),
@@ -211,6 +214,7 @@ export function createMemoryStore(): RelayStore {
       ...(input.cwd !== undefined ? { cwd: input.cwd } : {}),
       ...(input.projectId !== undefined ? { projectId: input.projectId } : {}),
       ...(input.ticketId !== undefined ? { ticketId: input.ticketId } : {}),
+      ...(input.parentId !== undefined ? { parentId: input.parentId } : {}),
       ...(input.ceoWake ? { ceoThread: true as const } : {}),
       ...(input.workspace !== undefined ? { workspace: input.workspace } : {}),
       ...openTitle(input),
@@ -587,6 +591,175 @@ export function createMemoryStore(): RelayStore {
         .sort((a, b) => b.row.createdAt - a.row.createdAt || b.index - a.index)
         .map((x) => x.row);
     },
+    /* D-#844: the memory store mirrors the SQLite transaction — one
+       synchronous block, retried requestIds hit the stored ticket. */
+    async createTask(input) {
+      if (input.requestId) {
+        const stored = [...tickets.values()].find(
+          (t) =>
+            t.task?.parentConversationId === input.parentConversationId &&
+            t.task.requestId === input.requestId,
+        );
+        const conversation = stored
+          ? conversations.get(stored.task!.childConversationId)
+          : undefined;
+        const rootMessage = conversation
+          ? messages.get(conversation.rootMessageId)
+          : undefined;
+        if (stored && conversation && rootMessage) {
+          return { ticket: stored, conversation, rootMessage, created: false };
+        }
+      }
+      const taken = [...tickets.values()].filter(
+        (t) => t.projectId === input.projectId,
+      );
+      const number = taken.reduce((m, t) => Math.max(m, t.number), 0) + 1;
+      const at = now();
+      const opened = openConversationSync({
+        channelId: input.channelId,
+        title: input.title,
+        titleSource: "user",
+        text: input.prompt,
+        authorId: "user",
+        access: input.access,
+        ...(input.cwd !== undefined ? { cwd: input.cwd } : {}),
+        projectId: input.projectId,
+        parentId: input.parentConversationId,
+        ...(input.model !== undefined ? { model: input.model } : {}),
+        ...(input.provider !== undefined ? { provider: input.provider } : {}),
+        ...(input.effort !== undefined ? { effort: input.effort } : {}),
+        ...(input.fast !== undefined ? { fast: input.fast } : {}),
+      });
+      const ticket: Ticket = {
+        id: `${input.projectKey}-${number}`,
+        number,
+        title: input.title,
+        projectId: input.projectId,
+        ownerId: input.employeeId,
+        status: "working",
+        progress: [],
+        updates: [],
+        statusAt: at,
+        task: {
+          parentConversationId: input.parentConversationId,
+          childConversationId: opened.conversation.id,
+          childChannelId: input.channelId,
+          ...(input.requestId ? { requestId: input.requestId } : {}),
+        },
+        createdAt: at,
+      };
+      tickets.set(ticket.id, ticket);
+      opened.conversation.ticketId = ticket.id;
+      return {
+        ticket,
+        conversation: opened.conversation,
+        rootMessage: opened.rootMessage,
+        created: true,
+      };
+    },
+    async findTaskTicket(parentConversationId, requestId) {
+      return (
+        [...tickets.values()].find(
+          (t) =>
+            t.task?.parentConversationId === parentConversationId &&
+            t.task.requestId === requestId,
+        ) ?? null
+      );
+    },
+    async childConversations(parentId) {
+      return [...conversations.values()]
+        .filter((c) => c.parentId === parentId)
+        .sort((a, b) => a.createdAt - b.createdAt);
+    },
+    /* D-#844: one synchronous pass — fenced events drop, surviving events
+       post one wake per parent and stamp the tickets; see drizzle-store. */
+    async postTaskWake(events, text) {
+      const latest = new Map<
+        string,
+        { event: TaskWakeEvent; task: TicketTask; ticket: Ticket }
+      >();
+      const turnIdsByTask = new Map<string, string[]>();
+      for (const event of events) {
+        const ids = turnIdsByTask.get(event.taskId) ?? [];
+        ids.push(event.turnId);
+        turnIdsByTask.set(event.taskId, ids);
+        const ticket = tickets.get(event.taskId);
+        const task = ticket?.task;
+        if (!ticket || !task || task.cancelledAt) continue;
+        if (task.wakedTurnIds?.includes(event.turnId)) continue;
+        const child = conversations.get(task.childConversationId);
+        if (
+          task.lastResult &&
+          child &&
+          task.lastResult.finishedSeq >= child.finishedSeq
+        )
+          continue;
+        latest.set(event.taskId, { event, task, ticket });
+      }
+      const groups = new Map<
+        string,
+        { event: TaskWakeEvent; task: TicketTask; ticket: Ticket }[]
+      >();
+      for (const entry of latest.values()) {
+        const group = groups.get(entry.task.parentConversationId) ?? [];
+        group.push(entry);
+        groups.set(entry.task.parentConversationId, group);
+      }
+      const delivered: string[] = [];
+      const stamped: Ticket[] = [];
+      const posted: AppMessage[] = [];
+      for (const [parentId, group] of groups) {
+        const parent = conversations.get(parentId);
+        if (parent) {
+          const { message } = appendMessage({
+            channelId: parent.channelId,
+            conversationId: parent.id,
+            authorId: "system",
+            authorKind: "system",
+            text: text(group.map((g) => g.event)),
+            taskWake: true,
+          });
+          posted.push(message);
+        }
+        for (const { event, task, ticket } of group) {
+          const child = conversations.get(task.childConversationId);
+          const nextTask: TicketTask = {
+            ...task,
+            wakedTurnIds: [
+              ...(task.wakedTurnIds ?? []),
+              ...(turnIdsByTask.get(ticket.id) ?? []),
+            ],
+            lastResult: {
+              turnId: event.turnId,
+              outcome: event.outcome,
+              text: event.result ?? "",
+              finishedSeq: child?.finishedSeq ?? 0,
+              at: now(),
+            },
+          };
+          const status = event.outcome === "finished" ? "done" : "failed";
+          let next = applyWrite(ticket, { task: nextTask }, now());
+          next = applyWrite(next, { status }, now());
+          if (next.status === "done" && ticket.status !== "done") {
+            next = finish(next, now());
+            for (const waiter of tickets.values()) {
+              if (
+                waiter.waitingOn?.kind === "ticket" &&
+                waiter.waitingOn.ticketId === ticket.id
+              ) {
+                const moved = wakeWaiter(waiter, next, now(), newId("upd"));
+                tickets.set(moved.id, moved);
+                stamped.push(moved);
+              }
+            }
+          }
+          tickets.set(next.id, next);
+          stamped.push(next);
+          delivered.push(next.id);
+        }
+      }
+      return { delivered, messages: posted, tickets: stamped };
+    },
     async listRecentFolders() {
       return [...folders.values()].sort((a, b) => b.lastUsedAt - a.lastUsedAt);
     },
@@ -855,7 +1028,11 @@ export function createMemoryStore(): RelayStore {
         if (!channel) continue;
         const owed = conversationMessages(conversation.id).filter(
           (m) =>
-            (m.authorKind === "user" || m.ceoWake === true) &&
+            /* D-#844: a task wake owes the parent a turn like a user
+               send or a CEO wake — restart pending covers it. */
+            (m.authorKind === "user" ||
+              m.ceoWake === true ||
+              m.taskWake === true) &&
             !m.rewound &&
             !m.dropped &&
             !m.removed &&

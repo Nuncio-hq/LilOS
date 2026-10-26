@@ -10,6 +10,7 @@ import type {
   ProfileSettings,
   ScheduledTask,
   SystemStatusResult,
+  Task,
   Ticket,
 } from "@lilos/contracts/app";
 import {
@@ -62,11 +63,26 @@ export function createAppOps(deps: {
         );
         return message;
       },
+      /* D-#844: `thread`'s child target — a user message on the child's
+         channel is its next prompt, same as the owner typing there. */
+      postToThread: async (p) => {
+        const { message } = await relay.request<{ message: AppMessage }>(
+          "messages.post",
+          {
+            channelId: p.channelId,
+            conversationId: p.conversationId,
+            authorKind: "user",
+            authorId: "user",
+            text: p.text,
+          },
+        );
+        return message;
+      },
       readConversation: async (opts) => {
         const page = await relay.request<{ messages: AppMessage[] }>(
           "messages.list",
           {
-            channelId: binding.channelId,
+            channelId: opts?.channelId ?? binding.channelId,
             conversationId: opts?.conversationId ?? binding.conversationId,
             ...(opts?.afterSeq !== undefined
               ? { afterSeq: opts.afterSeq }
@@ -195,6 +211,65 @@ export function createAppOps(deps: {
           },
         );
         return r.update;
+      },
+      /* D-#844: the task_* leg. `parentConversationId` is the bound
+         thread — the relay scopes every op to children it created, so a
+         task id from anywhere else reads not_found. `agent` resolves to
+         an employee by id first, then by exact (case-insensitive) name;
+         an ambiguous name fails loudly instead of picking one. */
+      taskCreate: async (p) => {
+        const { employees } = await relay.request<{ employees: Employee[] }>(
+          "employees.list",
+          {},
+        );
+        const needle = p.agent.trim();
+        const byId = employees.find((e) => e.id === needle);
+        const named = employees.filter(
+          (e) => e.name.toLowerCase() === needle.toLowerCase(),
+        );
+        const employee = byId ?? (named.length === 1 ? named[0] : undefined);
+        if (!employee) {
+          throw new Error(
+            named.length > 1
+              ? `agent "${p.agent}" names ${named.length} employees — use the id from team_list`
+              : `unknown agent "${p.agent}" — team_list has the roster`,
+          );
+        }
+        const r = await relay.request<{ task: Task }>("tasks.create", {
+          parentConversationId: binding.conversationId,
+          employeeId: employee.id,
+          prompt: p.prompt,
+          ...(p.title !== undefined ? { title: p.title } : {}),
+          ...(p.requestId !== undefined ? { requestId: p.requestId } : {}),
+          ...(p.model !== undefined ? { model: p.model } : {}),
+          ...(p.provider !== undefined ? { provider: p.provider } : {}),
+          ...(p.effort !== undefined ? { effort: p.effort } : {}),
+          ...(p.fast !== undefined ? { fast: p.fast } : {}),
+        });
+        return r.task;
+      },
+      taskRead: async (taskId) => {
+        const r = await relay.request<{ task: Task }>("tasks.read", {
+          taskId,
+          parentConversationId: binding.conversationId,
+        });
+        return r.task;
+      },
+      taskCancel: async (taskId) => {
+        const r = await relay.request<{ task: Task }>("tasks.cancel", {
+          taskId,
+          parentConversationId: binding.conversationId,
+        });
+        return r.task;
+      },
+      taskChildren: async () => {
+        const r = await relay.request<{
+          conversations: Conversation[];
+          tickets: Ticket[];
+        }>("tasks.children", {
+          parentConversationId: binding.conversationId,
+        });
+        return r;
       },
       status: () =>
         relay.request<SystemStatusResult>("system.status", { logLines: 0 }),

@@ -94,6 +94,45 @@ export const Goal = z.object({
 });
 export type Goal = z.infer<typeof Goal>;
 
+/**
+ * The orchestration half of a task ticket (D-#844). The ticket IS the task
+ * record (D-#179 — no job/subagent table); this blob carries the lineage
+ * and the wake bookkeeping. `wakedTurnIds` is the relay's exactly-once
+ * fence: a rebound engine session replays `turn.completed`, so the note
+ * and the post both check it before a wake goes out. `lastResult.finishedSeq`
+ * additionally fences the restart catch-up scan, which cannot know the
+ * turn id a finished-only replay would carry.
+ */
+export const TicketTask = z.object({
+  /** The thread that created the task — every task op scopes to it. */
+  parentConversationId: z.string().min(1),
+  /** The child's own thread — an ordinary conversation with `parentId`. */
+  childConversationId: z.string().min(1),
+  /** The child's channel — internal routing the app leg needs for
+      follow-up reads/posts; set once at create. */
+  childChannelId: z.string().min(1),
+  /** The creating call's idempotency key — unique per parent thread. */
+  requestId: z.string().min(1).optional(),
+  /** Set by `tasks.cancel`; a cancelled task never wakes the parent. */
+  cancelledAt: Timestamp.optional(),
+  /** Child turn ids whose result was already delivered (the fence above). */
+  wakedTurnIds: z.array(z.string().min(1)).optional(),
+  /** The last delivered result, so `tasks.read`/`task_wait` answer it. */
+  lastResult: z
+    .object({
+      turnId: z.string().min(1),
+      outcome: z.enum(["finished", "stopped", "failed"]),
+      text: z.string(),
+      /** The child's `finishedSeq` when the wake posted — the catch-up
+          fence (D-#844). */
+      finishedSeq: z.int().min(0),
+      at: Timestamp,
+    })
+    .strict()
+    .optional(),
+});
+export type TicketTask = z.infer<typeof TicketTask>;
+
 export const Ticket = z.object({
   id: z.string().min(1),
   number: z.number().int().positive(),
@@ -111,6 +150,8 @@ export const Ticket = z.object({
   startsAt: z.string().optional(),
   statusAt: Timestamp,
   doneAt: Timestamp.optional(),
+  /** Present on an agent hand-off ticket (D-#844) — absent elsewhere. */
+  task: TicketTask.optional(),
   createdAt: Timestamp,
 });
 export type Ticket = z.infer<typeof Ticket>;
@@ -226,3 +267,169 @@ export const TicketUpsertedEvent = z.object({
   actorId: z.string().min(1).optional(),
 });
 export type TicketUpsertedEvent = z.infer<typeof TicketUpsertedEvent>;
+
+/* --------------------------- tasks (D-#844) ------------------------------ */
+
+/** Cap on a child's result inlined into the parent's wake — `task_read`
+    has the whole thread past it. */
+export const TASK_RESULT_MAX_BYTES = 8 * 1024;
+
+/** What an agent reads back — derived from the ticket's task blob;
+    `running` until the child turn ends or the task is cancelled. */
+export const TaskStatus = z.enum([
+  "running",
+  "finished",
+  "stopped",
+  "failed",
+  "cancelled",
+]);
+export type TaskStatus = z.infer<typeof TaskStatus>;
+
+/** The agent-facing task view: the ticket's task blob flattened for the
+    `task_*` tools — never the raw ticket (D-#844). */
+export const Task = z.object({
+  /** The task/ticket id (`LIL-12`). */
+  id: z.string().min(1),
+  title: z.string().min(1),
+  status: TaskStatus,
+  /** The employee doing the work. */
+  agentId: z.string().min(1),
+  agentName: z.string().optional(),
+  /** The child thread the task runs as — `thread_read`/`thread_post`
+      reach it (parent-scoped). */
+  threadId: z.string().min(1),
+  /** The child's channel — internal routing, not a place (D-#25); the
+      app leg needs it to scope follow-up reads/posts. */
+  channelId: z.string().min(1),
+  /** The parent thread — the only thread allowed to read/wait/cancel. */
+  parentThreadId: z.string().min(1),
+  /** The finished turn's text, capped at TASK_RESULT_MAX_BYTES. */
+  result: z.string().optional(),
+  resultOutcome: z.enum(["finished", "stopped", "failed"]).optional(),
+  createdAt: Timestamp,
+  finishedAt: Timestamp.optional(),
+  cancelledAt: Timestamp.optional(),
+});
+export type Task = z.infer<typeof Task>;
+
+/** Host-only: the calling session's thread is the scope (the `agent` tool
+    param resolves to an employee id in the app leg). Access, cwd and
+    project derive from the parent conversation — never requested. */
+export const TasksCreateParams = z
+  .object({
+    parentConversationId: z.string().min(1),
+    employeeId: z.string().min(1),
+    /** The child's whole input — its thread opens with this and nothing
+        else; the parent's history is never copied (D-#844). */
+    prompt: z.string().min(1),
+    title: z.string().trim().min(1).optional(),
+    /** The caller's idempotency key — a repeat returns the same task
+        (T3 `clientRequestId`, D-#844). */
+    requestId: z.string().min(1).max(200).optional(),
+    /** Optional model pick for the child thread (same fields as
+        `conversations.open`). */
+    model: z.string().min(1).optional(),
+    provider: z.string().optional(),
+    effort: z.string().optional(),
+    fast: z.boolean().optional(),
+  })
+  .strict();
+export type TasksCreateParams = z.infer<typeof TasksCreateParams>;
+export const TasksCreateResult = z.object({
+  task: Task,
+  ticket: Ticket,
+  conversation: Conversation,
+  rootMessage: AppMessage,
+});
+export type TasksCreateResult = z.infer<typeof TasksCreateResult>;
+
+/** `parentConversationId` is host-supplied — the scope check; a task id
+    another thread created reads `not_found` (D-#844). */
+export const TasksScopedParams = z
+  .object({
+    taskId: z.string().min(1),
+    parentConversationId: z.string().min(1),
+  })
+  .strict();
+export type TasksScopedParams = z.infer<typeof TasksScopedParams>;
+/** Shared envelope for `tasks.read`/`tasks.cancel`. */
+export const TaskEnvelope = z.object({ task: Task });
+export type TaskEnvelope = z.infer<typeof TaskEnvelope>;
+
+/** The harness's batch post: one coalesced parent wake per call. The
+    relay drops events already delivered (`wakedTurnIds`) and every
+    cancelled task, then posts one `taskWake` message and stamps each
+    surviving ticket — the write and the post stay atomic (D-#844). */
+export const TaskWakeEvent = z
+  .object({
+    taskId: z.string().min(1),
+    /** The child turn whose end this reports — the replay fence key. */
+    turnId: z.string().min(1),
+    outcome: z.enum(["finished", "stopped", "failed"]),
+    /** Inlined result text, already capped at TASK_RESULT_MAX_BYTES. */
+    result: z.string().optional(),
+  })
+  .strict();
+export type TaskWakeEvent = z.infer<typeof TaskWakeEvent>;
+export const TasksWakeParams = z
+  .object({ events: z.array(TaskWakeEvent).min(1).max(50) })
+  .strict();
+export type TasksWakeParams = z.infer<typeof TasksWakeParams>;
+export const TasksWakeResult = z.object({
+  /** Task ids this call actually posted + stamped — a replayed turn id
+      drops out, so the caller knows what really woke the parent. */
+  delivered: z.array(z.string()),
+});
+export type TasksWakeResult = z.infer<typeof TasksWakeResult>;
+
+/** The caller's live child threads — the `thread_*` follow-up scope
+    lookup (D-#844). Host-only plumbing, never a tool. */
+export const TasksChildrenParams = z
+  .object({ parentConversationId: z.string().min(1) })
+  .strict();
+export type TasksChildrenParams = z.infer<typeof TasksChildrenParams>;
+export const TasksChildrenResult = z.object({
+  /** The parent's live child threads. */
+  conversations: z.array(Conversation),
+  /** Their task tickets — the threadId ↔ taskId map for `thread` params. */
+  tickets: z.array(Ticket),
+});
+export type TasksChildrenResult = z.infer<typeof TasksChildrenResult>;
+
+/** Cut a result to the wake's inline cap (D-#844) — utf8 bytes, on a
+    code-point boundary. */
+export function capTaskResult(text: string): string {
+  const bytes = new TextEncoder().encode(text);
+  if (bytes.length <= TASK_RESULT_MAX_BYTES) return text;
+  let end = TASK_RESULT_MAX_BYTES;
+  while (end > 0 && (bytes[end] & 0xc0) === 0x80) end--;
+  return new TextDecoder().decode(bytes.subarray(0, end));
+}
+
+/**
+ * The wake text the parent reads as its next prompt — one line per child
+ * turn, result inlined (D-#844). `lookup` supplies title/agentName so the
+ * line names who reported. The cap lands HERE, not on the stored result —
+ * `lastResult` keeps the full text so `task_read` answers what the wake
+ * cut (thread_read has the whole transcript either way).
+ */
+export function formatTaskWake(
+  events: readonly TaskWakeEvent[],
+  lookup: (
+    taskId: string,
+  ) => { title?: string; agentName?: string } | undefined,
+): string {
+  const lines = ["Your task results:"];
+  for (const event of events) {
+    const meta = lookup(event.taskId);
+    const name = meta?.agentName ? ` (${meta.agentName})` : "";
+    const title = meta?.title ? ` "${meta.title}"` : "";
+    const head = `- ${event.taskId}${title}${name} ${event.outcome}`;
+    const result = event.result?.trim();
+    lines.push(result ? `${head}: ${capTaskResult(result)}` : head);
+  }
+  lines.push(
+    "Use task_read for the record or thread_read on the child thread for the transcript.",
+  );
+  return lines.join("\n");
+}

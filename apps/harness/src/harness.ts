@@ -139,6 +139,7 @@ import {
   stopOwns,
 } from "./harness/stops";
 import { stopStuckWatches } from "./harness/stuck";
+import { stopTaskLoop } from "./harness/task-wake";
 import {
   aliasSurfaces,
   createSurfaces,
@@ -512,8 +513,11 @@ export class Harness {
     this.reaper.stop();
     this.scheduler?.stop();
     /* D-#772: a quiet timer must not fire after the harness stops.
-       D-#777: the CEO coalesce timer is the same kind of quiet timer. */
+       D-#777: the CEO coalesce timer is the same kind of quiet timer.
+       D-#844: the task-wake timer too — pending batches re-enter via
+       `harness.register`'s `taskWakes` catch-up on the next start. */
     stopCeoLoop(this as unknown as HarnessCtx);
+    stopTaskLoop(this as unknown as HarnessCtx);
     stopStuckWatches(this.bindings.values());
     for (const t of this.earlyFlushTimers.values()) clearTimeout(t);
     this.earlyFlushTimers.clear();

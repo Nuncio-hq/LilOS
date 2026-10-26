@@ -374,6 +374,10 @@
         "text": {
           "type": "string",
           "minLength": 1
+        },
+        "thread": {
+          "type": "string",
+          "minLength": 1
         }
       },
       "required": [
@@ -433,6 +437,10 @@
               ]
             },
             "ceoWake": {
+              "type": "boolean",
+              "const": true
+            },
+            "taskWake": {
               "type": "boolean",
               "const": true
             },
@@ -631,6 +639,10 @@
                 ]
               },
               "ceoWake": {
+                "type": "boolean",
+                "const": true
+              },
+              "taskWake": {
                 "type": "boolean",
                 "const": true
               },

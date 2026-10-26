@@ -200,6 +200,13 @@ export const Conversation = z.object({
    * other thread. Clients cannot set it.
    */
   ceoThread: z.literal(true).optional(),
+  /**
+   * The thread that handed this one a task (D-#844): `tasks.create`
+   * stamps the caller's conversation here so a turn ending on the child
+   * knows whose wake to queue. Relay-set once at create, immutable,
+   * never client-written. Absent on every non-child thread.
+   */
+  parentId: z.string().min(1).optional(),
   /** Workstream mode stamped at open (#156); absent = direct/just chat. */
   workspace: WorkspaceIntent.optional(),
   /**
@@ -370,6 +377,12 @@ export const AppMessage = z.object({
    * flag. The relay sets it, and only for a host system message.
    */
   ceoWake: z.literal(true).optional(),
+  /**
+   * A task wake (D-#844): a child task's finished turn waking the parent
+   * thread. Same rule as `ceoWake` — the flag, not the text, makes the
+   * engine take it as a prompt and the restart pending list owe it.
+   */
+  taskWake: z.literal(true).optional(),
   /** Attachment refs for display; bytes are fetched per id. */
   attachments: z.array(MessageAttachment).optional(),
   /**
@@ -445,6 +458,8 @@ export const SummaryMessage = z.object({
   text: z.string(),
   /** The row is a CEO wake (D-#777). Same flag as `AppMessage.ceoWake`. */
   ceoWake: z.literal(true).optional(),
+  /** The row is a task wake (D-#844). Same flag as `AppMessage.taskWake`. */
+  taskWake: z.literal(true).optional(),
   seq: z.int().min(1),
   createdAt: Timestamp,
   /** The hidden row still headlines its summary (a rewind to the root);
@@ -470,6 +485,7 @@ export function toSummaryMessage(m: AppMessage): SummaryMessage {
     authorKind: m.authorKind,
     text: m.text,
     ...(m.ceoWake ? { ceoWake: true as const } : {}),
+    ...(m.taskWake ? { taskWake: true as const } : {}),
     seq: m.seq,
     createdAt: m.createdAt,
     ...(m.rewound ? { rewound: true as const } : {}),

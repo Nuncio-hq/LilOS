@@ -15,6 +15,9 @@ import {
   type ScheduleCreateParams,
   type ScheduleTaskRef,
   type ScheduleUpdateParams,
+  type TaskCreateParams,
+  type TaskIdParams,
+  type TaskWaitParams,
   type TeamHireParams,
   type TeamSetCeoParams,
   type TeamUpdateParams,
@@ -205,6 +208,18 @@ export async function callTool(
       break;
     case "thread_start":
       result = await backend.threadStart(p as ThreadStartParams);
+      break;
+    case "task_create":
+      result = await backend.taskCreate(p as TaskCreateParams);
+      break;
+    case "task_read":
+      result = await backend.taskRead(p as TaskIdParams);
+      break;
+    case "task_wait":
+      result = await backend.taskWait(p as TaskWaitParams);
+      break;
+    case "task_cancel":
+      result = await backend.taskCancel(p as TaskIdParams);
       break;
     default:
       throw new SurfaceError("not_found", `unhandled tool: ${name}`);

@@ -27,6 +27,7 @@ import type {
   ScheduledRunRecord,
   ScheduledTask,
   TaskSchedule,
+  TaskWakeEvent,
   Ticket,
   TicketStatus,
   TicketStep,
@@ -94,8 +95,40 @@ export interface TicketPatch {
   waitingOn?: TicketWaitingOn | null;
   progress?: TicketStep[];
   result?: Ticket["result"] | null;
+  /** D-#844: whole-blob replace — the handler merges, the store stamps. */
+  task?: Ticket["task"];
   startsAt?: string | null;
   stuckWhy?: string | null;
+}
+
+/** `tasks.create` (D-#844): the ticket is the task record; the child is
+    an ordinary thread whose root message is `prompt` and nothing else. */
+export interface NewTask {
+  /** Task + thread title — the caller's `title`, else the prompt's head. */
+  title: string;
+  /** The calling thread — the child's `parentId` and every op's scope. */
+  parentConversationId: string;
+  /** The agent doing the work — ticket owner, child channel owner. */
+  employeeId: string;
+  /** The employee's dm channel — opened before this call. */
+  channelId: string;
+  /** The child's whole input — never the parent's transcript. */
+  prompt: string;
+  /** The parent's project — the ticket and thread file under it. */
+  projectId: string;
+  projectKey: string;
+  /** The parent's level — the child's access is never broader (D-#106). */
+  access: ConversationAccess;
+  /** The child's working folder — the parent's. */
+  cwd?: string;
+  /** The caller's pick for the child session (#92-style fields). */
+  model?: string;
+  provider?: string;
+  effort?: string;
+  fast?: boolean;
+  /** Idempotency key — a retry under the same parent returns the
+      stored task (`created: false`). */
+  requestId?: string;
 }
 
 /** A project's name when none is given: the folder's last segment; the home
@@ -225,6 +258,9 @@ export interface OpenConversationInput {
   /** The ticket this thread is a hand of (D-#776). Only `tickets.assign`
       sets it — a normal open is not on a ticket. */
   ticketId?: string;
+  /** D-#844: the thread that handed this one a task — only `tasks.create`
+      (via `createTask`) sets it. */
+  parentId?: string;
   /** The access level stamped at open (#106) — the relay resolves
       `params.access ?? Settings' defaultAccess ?? "ask"` before landing. */
   access?: ConversationAccess;
@@ -285,6 +321,9 @@ export interface AppendMessageInput {
   /** Host-only (D-#777): this message is a CEO wake. Storing it also
       marks the conversation as the standing thread. */
   ceoWake?: true;
+  /** Host-only (D-#844): this message is a task wake — a child's
+      finished turn prompting the parent thread. */
+  taskWake?: true;
 }
 
 export interface ListMessagesQuery {
@@ -506,6 +545,46 @@ export interface RelayStore {
   }): Promise<CompanyUpdate>;
   /** Threads that are a hand of this ticket, newest first. */
   threadsOnTicket(ticketId: string): Promise<Conversation[]>;
+
+  /* ------------------- agent hand-off tasks (D-#844) ------------------- */
+  /**
+   * Ticket + child thread in one transaction — `assignTicket`'s shape.
+   * `requestId` lands on the ticket's task columns, so a retry under the
+   * same parent answers the stored pair (`created: false`) — the
+   * (parent, requestId) index is what makes the repeat a hit. The child's
+   * `access` is the parent's own, never broader (D-#106).
+   */
+  createTask(input: NewTask): Promise<{
+    ticket: Ticket;
+    conversation: Conversation;
+    rootMessage: AppMessage;
+    created: boolean;
+  }>;
+  /** The task a caller's `requestId` already made under this parent. */
+  findTaskTicket(
+    parentConversationId: string,
+    requestId: string,
+  ): Promise<Ticket | null>;
+  /** Threads this parent created via `tasks.create` — the `thread_*`
+      follow-up scope (D-#844). */
+  childConversations(parentId: string): Promise<Conversation[]>;
+  /**
+   * One coalesced wake per parent, all writes in one step: drop events
+   * for cancelled tasks, turn ids already in `wakedTurnIds`, and results
+   * the child's `finishedSeq` already covers (`lastResult.finishedSeq`),
+   * then post each parent's `taskWake` message and stamp each surviving
+   * ticket — the post and the fence commit together (D-#844). `text`
+   * formats one parent's batch; the stamp flips the ticket done/failed
+   * and wakes its waiters like any finish (D-#776).
+   */
+  postTaskWake(
+    events: readonly TaskWakeEvent[],
+    text: (events: readonly TaskWakeEvent[]) => string,
+  ): Promise<{
+    delivered: string[];
+    messages: AppMessage[];
+    tickets: Ticket[];
+  }>;
 
   listConversations(query: ListConversationsQuery): Promise<Conversation[]>;
   /**

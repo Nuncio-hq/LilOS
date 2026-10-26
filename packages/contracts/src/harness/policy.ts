@@ -8,15 +8,16 @@ import type { ToolArea } from "./tools.js";
  * prepends it to the session prompt.
  *
  * Versioned (`[LilOS host policy vN]`) — bump N when the rules change so a
- * stale prompt is diagnosable. Kept under 2000 chars: it rides in every
- * engine context. v10 adds the `coding` area (D-#835). The CEO brief is not
- * in this text: it has its own section and its own cap (D-#777). The
- * `team` line does not name CEO-only tools (`team_set_ceo`,
- * `ticket_assign`, `update_post`): a session that does not hold the
- * position must not hear about them.
+ * stale prompt is diagnosable. Kept short: it rides in every engine
+ * context — the cap moved to 2200 when v11 added the `task` area
+ * (D-#844); v10 added `coding` (D-#835). The CEO brief is not in this
+ * text: it has its own section and its own cap (D-#777). The `team` line
+ * does not name CEO-only tools (`team_set_ceo`, `ticket_assign`,
+ * `update_post`): a session that does not hold the position must not
+ * hear about them.
  */
-export const HOST_POLICY_VERSION = 10;
-export const HOST_POLICY_MAX_CHARS = 2000;
+export const HOST_POLICY_VERSION = 11;
+export const HOST_POLICY_MAX_CHARS = 2200;
 export const HOST_POLICY_MARKER = `[LilOS host policy v${HOST_POLICY_VERSION}]`;
 
 /* Render order for the policy bullets: root tools first, session workhorses
@@ -24,6 +25,7 @@ export const HOST_POLICY_MARKER = `[LilOS host policy v${HOST_POLICY_VERSION}]`;
 const TOOL_AREA_ORDER: readonly ToolArea[] = [
   "root",
   "thread",
+  "task",
   "team",
   "terminal",
   "browser",
@@ -45,6 +47,9 @@ const AREA_LINES: Record<ToolArea, string> = {
   ].join("\n"),
   thread:
     "- `thread_*`: your threads — `thread_read`/`thread_search`/`thread_list`/`thread_prs`, `thread_post` to answer, `thread_set_title` to retitle yours while its title is auto, `thread_start` to ask for a new thread. Posting is a real message, allowed here, never in another thread.",
+  /* D-#844: the child is an agent's ordinary thread; `thread` takes its
+     task or thread id so `thread_read`/`thread_post` follow up there. */
+  task: "- `task_*`: `task_create` hands a job to another agent as a child thread that reports back on its own; `task_read`/`task_wait`/`task_cancel` manage it, and `thread_*`'s `thread` param reaches the child.",
   /* Hiring stays on this line: every agent may propose it, and it still
      asks the owner (D-#341). `team_set_ceo` is CEO-only, so it is not
      named here — a non-CEO session would otherwise hear about a tool it

@@ -76,6 +76,8 @@ export type TicketWrite = {
   waitingOn?: TicketWaitingOn | null;
   progress?: TicketStep[];
   result?: Ticket["result"] | null;
+  /** D-#844: the hand-off blob — whole replace, the handler merges. */
+  task?: Ticket["task"];
   startsAt?: string | null;
   stuckWhy?: string | null;
 };
@@ -105,6 +107,7 @@ export function applyWrite(
     next = { ...next, progress: patch.progress };
   if (patch.result === null) next = drop(next, "result");
   else if (patch.result !== undefined) next = { ...next, result: patch.result };
+  if (patch.task !== undefined) next = { ...next, task: patch.task };
   if (patch.startsAt === null) next = drop(next, "startsAt");
   else if (patch.startsAt !== undefined)
     next = { ...next, startsAt: patch.startsAt };

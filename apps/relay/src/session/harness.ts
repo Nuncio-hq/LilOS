@@ -8,6 +8,7 @@ import {
 import { buildSystemStatus } from "../status";
 import type { RelayCtx } from "./ctx";
 import { badParams, JsonRpcCode, RpcError } from "./rpc";
+import { taskWakesPending } from "./tasks";
 
 /** #413: order-insensitive signature of a report's connect rows — a roster
     reported in a different order is not a change worth broadcasting. */
@@ -101,6 +102,9 @@ export async function handleHarness(c: RelayCtx): Promise<false | undefined> {
       respond(peer, id, {
         hostId: host.hostId,
         pending: await store.listPendingTurns(),
+        /* D-#844: task wakes owed from before the restart ride the same
+           handshake — the host re-notes them into its coalescing queue. */
+        taskWakes: await taskWakesPending(c),
       });
       return;
     }

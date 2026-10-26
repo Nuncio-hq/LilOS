@@ -39,6 +39,7 @@ import {
 } from "./session/rpc";
 import { handleSchedules } from "./session/schedules";
 import { handleSettings } from "./session/settings";
+import { handleTasks } from "./session/tasks";
 import { handleTickets } from "./session/tickets";
 import { handleTurns } from "./session/turns";
 import { handleUpdates } from "./session/updates";
@@ -216,6 +217,11 @@ const METHOD_HANDLERS: ReadonlyMap<
   ["schedules.update", handleSchedules],
   ["schedules.delete", handleSchedules],
   ["schedules.runNow", handleSchedules],
+  ["tasks.create", handleTasks],
+  ["tasks.read", handleTasks],
+  ["tasks.cancel", handleTasks],
+  ["tasks.wake", handleTasks],
+  ["tasks.children", handleTasks],
   ["turns.interrupt", handleTurns],
   ["session.events", handleHostEvents],
   ["engine.event", handleHostEvents],
