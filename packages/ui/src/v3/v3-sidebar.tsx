@@ -17,7 +17,7 @@ import { cn } from "../lib/utils";
 import { Kbd } from "./v3-bits";
 import type { V3Data } from "./v3-data-types";
 import { AgentAvatar, CeoMark, ProjectMark, StatusDot } from "./v3-marks";
-import { agentDot, companyOn, listedThreads, onLiveBoard } from "./v3-model";
+import { agentDot, boardStatus, companyOn, listedThreads } from "./v3-model";
 import type { V3PageRoute, V3RecordRoute, V3Route } from "./v3-page-types";
 import { type SidebarMode, SidebarToggle } from "./v3-topbar";
 
@@ -63,11 +63,13 @@ export function V3Sidebar({
   onBlur: () => void;
 }) {
   const open = data.tickets.filter((t) => t.status !== "done").length;
-  /* The badge counts the live board, same rule the board uses: helpers have
-     no row (D-#847), and a parent waiting on them counts as working. */
-  const live = listedThreads(data.threads).filter((t) =>
-    onLiveBoard(data, t),
-  ).length;
+  /* The badge counts threads in play, not the board — a finished-unseen
+     thread stays on the board (D-#563) but does not badge. Helpers have no
+     row (D-#847); a parent waiting on them counts as working. */
+  const live = listedThreads(data.threads).filter((t) => {
+    const s = boardStatus(data, t);
+    return s !== "done" && s !== "idle";
+  }).length;
   const on = (p: V3Route["page"], id?: string) =>
     id === undefined ? page.page === p : opened?.page === p && opened.id === id;
 
