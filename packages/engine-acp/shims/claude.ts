@@ -4,7 +4,9 @@ import type { AcpLaunchSpec } from "../src/launch.js";
  * D-#866 — the Claude Code shim: Anthropic's official ACP adapter
  * `claude-agent-acp` (ACP registry `claude-acp`, npm
  * `@agentclientprotocol/claude-agent-acp`), kept out of src/ like every
- * agent recipe. Install: `npm i -g @agentclientprotocol/claude-agent-acp`.
+ * agent recipe. An installed adapter on PATH wins; otherwise the pinned
+ * `provision.npm` distribution is fetched once into the LilOS cache
+ * (`~/.lilos/acp`) and run by a local JS runtime — no manual install.
  *
  * The adapter wraps the Claude Agent SDK's own native `claude` binary —
  * the user's own Claude Code login (keychain) carries the session, so
@@ -31,6 +33,15 @@ export const claudeSpec: AcpLaunchSpec = {
   id: "claude",
   command: ["claude-agent-acp"],
   verify: { args: ["--version"], timeoutMs: 15_000 },
+  /* Registry `npx` channel (D-#866): exact pin, provisioned on first
+     use into the LilOS cache when no installed adapter is found. */
+  provision: {
+    npm: {
+      package: "@agentclientprotocol/claude-agent-acp",
+      version: "0.96.0",
+      bin: "claude-agent-acp",
+    },
+  },
   /* The roster seed — what "Claude Code" looks like to Oscar before he
      ever opens a thread; the harness's first-run hire reads isDefault. */
   agent: {

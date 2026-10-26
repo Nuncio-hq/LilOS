@@ -1,5 +1,5 @@
 import type { AcpLaunchSpec } from "../src/launch.js";
-import { probeExecutable, resolveExecutable } from "../src/launch.js";
+import { probeAgentCommand } from "../src/provision.js";
 import { claudeSpec } from "./claude.js";
 import { devinSpec } from "./devin.js";
 
@@ -21,19 +21,14 @@ export const ACP_AGENTS: Record<string, AcpLaunchSpec> = {
 
 /**
  * D-#761: install check for the runtime catalog — resolve the recipe's
- * binary on PATH, then run `<bin> <verifyArgs>`; exit 0 means hirable.
- * Returns the verify output for the status row's detail line.
+ * launch command (an installed binary on PATH, else the spec's
+ * provisioned distribution per D-#866), then run it with the verify
+ * args; exit 0 means hirable. A provisioning failure — offline, no
+ * runtime, no installer — lands on the status row's detail line.
  */
 export async function probeAcpSpec(
   spec: AcpLaunchSpec,
   env?: NodeJS.ProcessEnv,
 ): Promise<{ ok: boolean; output: string }> {
-  const [program] = spec.command;
-  if (!program) return { ok: false, output: "empty launch command" };
-  const bin = resolveExecutable(program, env);
-  if (!bin) return { ok: false, output: `${program} not on PATH` };
-  return probeExecutable(bin, spec.verify?.args ?? ["--version"], {
-    ...(env ? { env } : {}),
-    ...(spec.verify?.timeoutMs ? { timeoutMs: spec.verify.timeoutMs } : {}),
-  });
+  return probeAgentCommand(spec, env);
 }

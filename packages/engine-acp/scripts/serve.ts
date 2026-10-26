@@ -5,7 +5,8 @@ import { scrubLilosEnv, takeEngineProtocolToken } from "@lilos/contracts/env";
 import { ACP_AGENTS } from "../shims/registry.js";
 import { AcpEngine } from "../src/engine.js";
 import type { AcpLaunchSpec } from "../src/launch.js";
-import { probeExecutable, resolveExecutable } from "../src/launch.js";
+import { probeExecutable } from "../src/launch.js";
+import { resolveAgentCommand } from "../src/provision.js";
 import { AcpClientTerminals } from "../src/terminals.js";
 import { acpEventFrame, handleJsonRpc } from "../src/transport.js";
 
@@ -95,33 +96,41 @@ const spec: AcpLaunchSpec = (() => {
   process.exit(2);
 })();
 
-/* Verified install (T3's AcpRegistrySupport idea, D-#845): the binary
-   must resolve on PATH (plus the well-known user dirs) and answer the
-   spec's probe before we serve — a missing runner fails at launch, not
-   at the first prompt. */
-const bin = spec.command[0];
-const resolved = resolveExecutable(bin);
-if (!resolved) {
+/* Verified install (T3's AcpRegistrySupport idea, D-#845; npm recipe
+   per D-#866): the spec's launch command must resolve — an installed
+   binary on PATH, else the pinned npm distribution fetched once into
+   the LilOS cache — and answer the probe before we serve. A missing
+   runner or a failed fetch fails at launch with the reason, never
+   inside the first prompt turn. Provision reads the engine's env
+   (post-token-drop): LILOS_ACP_CACHE stays visible here so the cache
+   root resolves; the agent child's env is scrubbed in the seam. */
+const r = resolveAgentCommand(spec, process.env);
+if (!r.ok || !r.command) {
   console.error(
-    `engine-acp: "${bin}" not found on PATH — install ${spec.id} (its own login carries the session; LilOS stores no credentials) or pass --command`,
+    `engine-acp: ${spec.id} is not launchable — ${r.output || "unresolved command"} ` +
+      `(install it yourself or pass --command; its own login carries the session)`,
   );
   process.exit(1);
 }
+const command = r.command;
 if (spec.verify) {
-  const probe = await probeExecutable(resolved, spec.verify.args, {
-    env: scrubLilosEnv(process.env),
-    ...(spec.verify.timeoutMs !== undefined
-      ? { timeoutMs: spec.verify.timeoutMs }
-      : {}),
-  });
+  const probe = await probeExecutable(
+    command[0] as string,
+    [...command.slice(1), ...spec.verify.args],
+    {
+      env: scrubLilosEnv(process.env),
+      ...(spec.verify.timeoutMs !== undefined
+        ? { timeoutMs: spec.verify.timeoutMs }
+        : {}),
+    },
+  );
   if (!probe.ok) {
     console.error(
-      `engine-acp: "${bin} ${spec.verify.args.join(" ")}" failed (install verification) — ${probe.output || "non-zero exit"}`,
+      `engine-acp: "${command.join(" ")}" failed (install verification) — ${probe.output || "non-zero exit"}`,
     );
     process.exit(1);
   }
 }
-const command = [resolved, ...spec.command.slice(1)];
 
 const terminals = spec.clientCapabilities?.terminal
   ? new AcpClientTerminals({
@@ -147,7 +156,7 @@ const engine = new AcpEngine({
   ...(spec.modeForAccess ? { modeForAccess: spec.modeForAccess } : {}),
   ...(spec.defaultEffort ? { defaultEffort: spec.defaultEffort } : {}),
   ...(spec.sessionMeta ? { sessionMeta: spec.sessionMeta } : {}),
-  ...(spec.env ? { env: spec.env } : {}),
+  ...(spec.env || r.env ? { env: { ...spec.env, ...r.env } } : {}),
   ...(spec.dropEnv ? { dropEnv: spec.dropEnv } : {}),
 });
 const clients = new Set<{ send: (s: string) => void }>();

@@ -26,6 +26,18 @@ describe("the claude registry entry (D-#866)", () => {
     expect(claudeSpec.agent?.detail).toMatchObject({ isDefault: true });
   });
 
+  test("the registry's npx channel is the exact pinned package", () => {
+    /* D-#866: no manual install — an absent adapter is provisioned from
+       this exact pin into the LilOS cache, never a floating version. */
+    expect(claudeSpec.provision).toEqual({
+      npm: {
+        package: "@agentclientprotocol/claude-agent-acp",
+        version: "0.96.0",
+        bin: "claude-agent-acp",
+      },
+    });
+  });
+
   test("ACP stays pinned to v1 (D-#764)", () => {
     /* 0.96's knob and the earlier experimental flag both say v1 — an
        adapter serving the v2 preview can never be negotiated. */
