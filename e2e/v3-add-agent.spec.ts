@@ -1,3 +1,6 @@
+import { mkdirSync, statSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import {
   bootStack,
@@ -18,6 +21,9 @@ import {
  * The agent's page header is click-to-rename (and ⋯ → Rename), Enter saving
  * through `employees.update`. The old Hire page stays on `?company=1`.
  */
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const SHOTS = path.join(here, "..", "test-results", "v3-add-agent");
 
 let stack: Stack;
 test.beforeAll(async () => {
@@ -190,4 +196,69 @@ test("click-to-rename on the agent page: Enter saves, the roster follows", async
     {},
   );
   expect(employees.some((e) => e.name === "Nova Two")).toBe(true);
+});
+
+/** The PR's pictures: each shot is taken only once the surface it names is
+    on screen with its real data (a running stack, not a blank page). */
+const shot = async (page: Page, name: string) => {
+  const file = path.join(SHOTS, `${name}.png`);
+  await page.screenshot({ path: file });
+  expect(statSync(file).size, `${name}.png is a real picture`).toBeGreaterThan(
+    10_000,
+  );
+};
+
+test("evidence: Agents + ＋, the dialog, and the rename box — light, dark, phone", async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  mkdirSync(SHOTS, { recursive: true });
+  await skipFirstRun(page);
+  await page.setViewportSize({ width: 1288, height: 900 });
+  await page.goto(`${stack.webUrl}/`);
+  await expect(
+    side(page).getByRole("button", { name: /Nova Two/ }),
+  ).toBeVisible({ timeout: 30_000 });
+  await shot(page, "agents-sidebar-light");
+
+  await side(page).getByRole("button", { name: "Add agent" }).click();
+  await expect(who(page)).toBeVisible({ timeout: 30_000 });
+  await shot(page, "add-agent-light");
+  await page.keyboard.press("Escape");
+  await expect(dialog(page)).toHaveCount(0);
+
+  // The agent page's click-to-rename, box open.
+  await side(page)
+    .getByRole("button", { name: /Nova Two/ })
+    .click();
+  await expect(
+    v3Peek(page).getByRole("heading", { level: 1, name: "Nova Two" }),
+  ).toBeVisible({ timeout: 30_000 });
+  await v3Peek(page).getByRole("button", { name: "Nova Two" }).click();
+  await expect(v3Peek(page).getByLabel("Agent name")).toHaveValue("Nova Two");
+  await shot(page, "rename-light");
+  await page.keyboard.press("Escape");
+
+  /* Dark: the theme the shell reads on load. The name box left open by Esc
+     is gone on the fresh mount. */
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.goto(`${stack.webUrl}/`);
+  await expect(
+    side(page).getByRole("button", { name: /Nova Two/ }),
+  ).toBeVisible({ timeout: 30_000 });
+  await side(page).getByRole("button", { name: "Add agent" }).click();
+  await expect(who(page)).toBeVisible({ timeout: 30_000 });
+  await shot(page, "add-agent-dark");
+  await page.keyboard.press("Escape");
+
+  /* Phone: the dialog still fits — one column, Who? a scrollable list. */
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${stack.webUrl}/`);
+  await expect(
+    side(page).getByRole("button", { name: "Add agent" }),
+  ).toBeVisible({ timeout: 30_000 });
+  await side(page).getByRole("button", { name: "Add agent" }).click();
+  await expect(who(page)).toBeVisible({ timeout: 30_000 });
+  await shot(page, "add-agent-phone");
 });

@@ -136,24 +136,23 @@ export function V3AddAgent({
     [profiles, data.runtimes, data.agents],
   );
   const choice = choices[picked] ?? choices[0];
-  /* Name follows the picked kind until you type one of your own. */
-  useEffect(() => {
-    if (!touched && choice) setName(choice.name);
-  }, [choice, touched]);
+  /* A name you have not typed IS the picked kind's name — derived, not
+     synced, so it is never a frame behind the choice list filling in. */
+  const shownName = touched ? name : (choice?.name ?? "");
 
   const submit = async () => {
-    if (!choice || choice.unavailable || !name.trim() || busy) return;
+    if (!choice || choice.unavailable || !shownName.trim() || busy) return;
     setBusy(true);
     try {
       const id = choice.profile
         ? await act.hireProfile?.({
             profile: choice.profile,
-            name: name.trim(),
+            name: shownName.trim(),
             role: choice.role ?? "",
             ...(choice.runtime ? { runtime: choice.runtime } : {}),
           })
         : await act.hire?.({
-            name: name.trim(),
+            name: shownName.trim(),
             role: choice.role ?? "",
             /* No model asked for: "" = the runtime's own default. */
             model: "",
@@ -168,7 +167,8 @@ export function V3AddAgent({
   };
 
   const loading = profiles === undefined;
-  const canHire = !!choice && !choice.unavailable && !!name.trim() && !busy;
+  const canHire =
+    !!choice && !choice.unavailable && !!shownName.trim() && !busy;
   return (
     <div
       className="fixed inset-0 z-40 grid place-items-center bg-black/30 p-4 sm:p-6"
@@ -203,7 +203,7 @@ export function V3AddAgent({
               aria-label="Who?"
               className="overflow-hidden rounded-lg border"
             >
-              {loading && (
+              {loading && choices.length === 0 && (
                 <p className="px-3 py-3 text-center text-muted-foreground text-xs">
                   Checking who can be hired…
                 </p>
@@ -260,7 +260,7 @@ export function V3AddAgent({
             </label>
             <input
               id="add-agent-name"
-              value={name}
+              value={shownName}
               // biome-ignore lint/a11y/noAutofocus: the name is the one thing left after Who?
               autoFocus
               onFocus={(e) => e.currentTarget.select()}
