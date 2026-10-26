@@ -127,6 +127,120 @@ describe("acpPermissionAnswer — the wire response", () => {
   });
 });
 
+/* The adapter's real ExitPlanMode list (claude-agent-acp
+   permissions/options/tools.js): every mode change rides kind
+   `allow_always`, `exit-plan-clear-auto` first — r8's trap, where an
+   "Always" pick cleared Claude's context and switched the session to
+   `auto` so Claude approved its own tools under an Ask pill. */
+const CLAUDE_EXIT_PLAN_OPTIONS: acp.PermissionOption[] = [
+  {
+    optionId: "exit-plan-clear-auto",
+    name: "Yes, clear context and use auto mode",
+    kind: "allow_always",
+  },
+  {
+    optionId: "exit-plan-auto",
+    name: "Yes, and use auto mode",
+    kind: "allow_always",
+  },
+  {
+    optionId: "exit-plan-bypass",
+    name: "Yes, and bypass permissions",
+    kind: "allow_always",
+  },
+  {
+    optionId: "exit-plan-default",
+    name: "Yes, manually approve edits",
+    kind: "allow_once",
+  },
+  { optionId: "reject", name: "No, keep planning", kind: "reject_once" },
+];
+
+const CLAUDE_EXIT_PLAN_ACCEPT_EDITS: acp.PermissionOption[] = [
+  {
+    optionId: "exit-plan-clear-accept-edits",
+    name: "Yes, clear context and auto-accept edits",
+    kind: "allow_always",
+  },
+  {
+    optionId: "exit-plan-accept-edits",
+    name: "Yes, auto-accept edits",
+    kind: "allow_always",
+  },
+  {
+    optionId: "exit-plan-default",
+    name: "Yes, manually approve edits",
+    kind: "allow_once",
+  },
+  { optionId: "reject", name: "No, keep planning", kind: "reject_once" },
+];
+
+describe("Claude's ExitPlanMode card — mode-changing options can never be picked (r8)", () => {
+  test("the card offers only outcomes that keep mode default — no 'Always' that means 'auto'", () => {
+    expect(acpOfferedOutcomes(CLAUDE_EXIT_PLAN_OPTIONS)).toEqual([
+      "once",
+      "deny",
+    ]);
+    expect(acpOfferedOutcomes(CLAUDE_EXIT_PLAN_ACCEPT_EDITS)).toEqual([
+      "once",
+      "deny",
+    ]);
+  });
+
+  test("no outcome ever picks an id that switches mode or clears context", () => {
+    const DANGEROUS = /^exit-plan-(?!default$)/;
+    for (const outcome of ["once", "session", "always", "deny"] as const)
+      for (const opts of [
+        CLAUDE_EXIT_PLAN_OPTIONS,
+        CLAUDE_EXIT_PLAN_ACCEPT_EDITS,
+      ]) {
+        const id = acpPickOptionId(opts, outcome);
+        if (id !== undefined) expect(id).not.toMatch(DANGEROUS);
+      }
+  });
+
+  test("Always/Once land on exit-plan-default — affirmative, mode stays default", () => {
+    expect(acpPickOptionId(CLAUDE_EXIT_PLAN_OPTIONS, "once")).toBe(
+      "exit-plan-default",
+    );
+    expect(acpPickOptionId(CLAUDE_EXIT_PLAN_OPTIONS, "always")).toBe(
+      "exit-plan-default",
+    );
+    expect(acpPickOptionId(CLAUDE_EXIT_PLAN_ACCEPT_EDITS, "always")).toBe(
+      "exit-plan-default",
+    );
+    expect(acpPickOptionId(CLAUDE_EXIT_PLAN_OPTIONS, "deny")).toBe("reject");
+  });
+
+  test("the wire answer reports the downgrade — Always granted Once", () => {
+    const { response, granted } = acpPermissionAnswer(
+      req(CLAUDE_EXIT_PLAN_OPTIONS),
+      "always",
+    );
+    expect(response).toEqual({
+      outcome: { outcome: "selected", optionId: "exit-plan-default" },
+    });
+    expect(granted).toBe("once");
+  });
+
+  test("a normal card's true allow_always is untouched", () => {
+    /* allow-with-updates is the adapter's real durable grant — still a
+       genuine Always on non-plan cards. */
+    const toolCard: acp.PermissionOption[] = [
+      { optionId: "allow-once", name: "Yes", kind: "allow_once" },
+      {
+        optionId: "allow-with-updates",
+        name: "Yes, and don't ask again",
+        kind: "allow_always",
+      },
+      { optionId: "reject", name: "No", kind: "reject_once" },
+    ];
+    expect(acpPickOptionId(toolCard, "always")).toBe("allow-with-updates");
+    expect(acpPickOptionId(toolCard, "once")).toBe("allow-once");
+    expect(acpOfferedOutcomes(toolCard)).toEqual(["once", "always", "deny"]);
+  });
+});
+
 describe("acpApprovalRequest — request.opened ask construction", () => {
   test("the ask is an approval with the tool call's command and offered outcomes", () => {
     expect(acpApprovalRequest(req())).toEqual({

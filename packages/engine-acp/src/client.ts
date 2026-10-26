@@ -106,11 +106,17 @@ export class AcpConnection {
   private promptBusy = new Map<string, number>();
   /** A session-creating RPC that outlived its bound and is still in
      flight. While it is, another `session/new` would stack a second
-     agent child behind the same wedge — subsequent creates fail fast
-     with the same error instead (r7 nit: up to 6 leaked `claude`
-     children per stuck send). Clears when the RPC settles; teardown
-     drops it with the process. */
-  private wedgedCreate?: { req: Promise<unknown>; message: string };
+     agent child behind the same wedge — subsequent creates FROM THAT
+     CALLER (`new:<cwd>` / `load:<sessionId>`) fail fast with the same
+     error instead, while other conversations create normally, each
+     with its own bound (r7 nit, r8 keying: one global guard had B's
+     wedge refusing healthy C starts and suspended-A resumes on the
+     shared adapter). Entries clear when their RPC settles; teardown
+     drops them with the process. */
+  private readonly wedgedCreates = new Map<
+    string,
+    { req: Promise<unknown>; message: string }
+  >();
   /** Creates still in flight — includes a wedged one until it settles.
      The engine counts these plus live sessions before reaping a wedged
      adapter, so teardown never kills a create that might still answer. */
@@ -123,10 +129,12 @@ export class AcpConnection {
     private readonly onDead?: () => void,
   ) {}
 
-  /** The child exited or a wedged request tore it down — reopen instead of
-      queuing behind a corpse. */
+  /** The child exited or the transport closed — reopen instead of
+      queuing behind a corpse. `signal.aborted` lands with the very
+     close that rejects in-flight requests; the proc-exit flag can lag
+     a turn behind it (r8 — resume's liveness re-check reads this). */
   get dead(): boolean {
-    return this.gone;
+    return this.gone || this.conn?.signal.aborted === true;
   }
 
   /**
@@ -267,6 +275,13 @@ export class AcpConnection {
       c.conn = undefined;
       c.proc = undefined;
     });
+    /* The transport's close reports the same death one turn earlier —
+       it is what rejects in-flight requests — and covers the half-dead
+       shape (stdio closed, proc lingering) that proc `exit` misses. */
+    void Promise.resolve(conn.closed).then(
+      () => c.markDead(),
+      () => {},
+    );
     return c;
   }
 
@@ -282,25 +297,28 @@ export class AcpConnection {
     return Math.min(timeoutMs ?? this.createTimeoutMs, this.createTimeoutMs);
   }
 
-  /** Shared bound for the session-creating RPCs. The callers check
-      `wedgedCreate` BEFORE building `req` — once the RPC is on the wire
-      the child already exists, so the guard lives ahead of it. A
-      timeout (when `arm`) raises the guard: while the abandoned RPC is
-      still in flight, every later create rejects fast with the same
-      message rather than stacking another agent child behind the wedge
-      (r7 nit). A late answer's orphaned ACP session is closed on settle. */
+  /** Shared bound for the session-creating RPCs, keyed per caller. The
+     callers check `wedgedCreates` for their key BEFORE building `req`
+     — once the RPC is on the wire the child already exists, so the
+     guard lives ahead of it. A timeout (when `arm`) raises the guard
+     for THAT key: while the abandoned RPC is still in flight, later
+     creates from the same caller reject fast with the same message
+     rather than stacking another agent child behind the wedge (r7
+     nit, r8 keying). A late answer's orphaned ACP session is closed
+     on settle. */
   private create<T>(
     req: Promise<T>,
     ms: number,
     reason: () => string,
     arm: boolean,
+    key: string,
   ): Promise<T> {
     req.catch(() => {});
     this.pendingCreates.add(req);
     const settle = (res?: T) => {
       this.pendingCreates.delete(req);
-      if (this.wedgedCreate?.req !== req) return;
-      this.wedgedCreate = undefined;
+      if (this.wedgedCreates.get(key)?.req !== req) return;
+      this.wedgedCreates.delete(key);
       /* The wedge answered after we abandoned it — the ACP session it
          created has no owner; close it so the late child doesn't leak
          (the adapter stays — it may still hold live work). */
@@ -315,7 +333,7 @@ export class AcpConnection {
       /* Abandoned: no caller waits on it anymore, so it stops counting
          as a live create (a late answer still takes the settle path). */
       this.pendingCreates.delete(req);
-      if (arm) this.wedgedCreate = { req, message: reason() };
+      if (arm) this.wedgedCreates.set(key, { req, message: reason() });
     });
   }
 
@@ -340,10 +358,13 @@ export class AcpConnection {
     opts?: { timeoutMs?: number; armWedge?: boolean },
   ): Promise<acp.NewSessionResponse> {
     if (!this.conn) throw new Error("connection closed");
-    /* r7 nit: a wedged create is still in flight — another session/new
-       would stack a second child behind it. Fail fast before the wire
-       call, with the same error, until the wedged RPC settles. */
-    if (this.wedgedCreate) throw new Error(this.wedgedCreate.message);
+    /* r7 nit + r8: a wedged create from THIS caller (same cwd → same
+       conversation) is still in flight — another session/new would
+       stack a second child behind it. Fail fast before the wire call,
+       with the same error, until the wedged RPC settles. Other
+       callers' keys are untouched — they create normally. */
+    const wedged = this.wedgedCreates.get(`new:${p.cwd}`);
+    if (wedged) throw new Error(wedged.message);
     const req = this.conn.newSession({
       cwd: p.cwd,
       mcpServers: p.mcpServers ?? [],
@@ -355,6 +376,7 @@ export class AcpConnection {
       ms,
       () => `agent did not answer session/new in ${ms}ms`,
       opts?.armWedge !== false,
+      `new:${p.cwd}`,
     );
   }
 
@@ -370,7 +392,11 @@ export class AcpConnection {
     opts?: { timeoutMs?: number; armWedge?: boolean },
   ): Promise<acp.LoadSessionResponse> {
     if (!this.conn) throw new Error("connection closed");
-    if (this.wedgedCreate) throw new Error(this.wedgedCreate.message);
+    /* Same keyed guard as `newSession`, per resumed session id — a
+       wedged resume blocks only that session's retry, never another
+       conversation's load or start. */
+    const wedged = this.wedgedCreates.get(`load:${p.sessionId}`);
+    if (wedged) throw new Error(wedged.message);
     const req = this.conn.loadSession({
       sessionId: p.sessionId,
       cwd: p.cwd,
@@ -383,6 +409,7 @@ export class AcpConnection {
       ms,
       () => `agent did not answer session/load in ${ms}ms`,
       opts?.armWedge !== false,
+      `load:${p.sessionId}`,
     );
   }
 

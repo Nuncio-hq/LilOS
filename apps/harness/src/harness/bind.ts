@@ -258,6 +258,10 @@ export async function bindConversation(
         runningJobs: new Set(),
         suspended: false,
       };
+      /* The `conv` snapshot predates the `events.since` await — mirror
+         the current row so a flip during it can't land stale. */
+      binding.access =
+        this.conversationFromAtom(conv.id)?.access ?? binding.access;
       this.bindings.set(conv.id, binding);
       this.conversationBySession.set(
         this.sessionKey(runtime, storedRef.sessionId),
@@ -374,6 +378,11 @@ export async function bindConversation(
   binding.ref = qualifySessionRef(runtime, started.ref ?? started.sessionId);
   binding.engineSessionId = started.engineSessionId;
   binding.gatewaySession = surface?.session;
+  /* r8: `access` was copied before a `session.start` that can run 60s —
+     a pill flip in that window updates the conversation row but found
+     no binding to mirror onto. Re-read the live row now so the stored
+     binding can't carry a stale "full" into request.opened. */
+  binding.access = this.conversationFromAtom(conv.id)?.access ?? binding.access;
   this.bindings.set(conv.id, binding);
   this.conversationBySession.set(
     this.sessionKey(runtime, started.sessionId),

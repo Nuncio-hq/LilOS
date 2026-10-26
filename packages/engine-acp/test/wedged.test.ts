@@ -113,6 +113,113 @@ describe("wedged agent containment (D-#866)", () => {
     }
   });
 
+  test("a wedge blocks only its own caller — other conversations create and suspended sessions resume (r8)", {
+    timeout: 30_000,
+  }, async () => {
+    /* The reviewer's wedge-block.ts: B's wedged session/new must not
+       poison the shared adapter for anyone else. A healthy C creates
+       normally, suspended A resumes via session/load — each with its
+       own bound — while only B's own retry fails fast. The r7 global
+       guard failed both with B's error + the folder hint. */
+    const engine = make({ LILOS_FAKE_HANG_CWD: "/tmp/wedged-cwd" });
+    try {
+      await engine.dispatch("describe", {});
+      const a = (await engine.dispatch("session.start", {
+        agent: "x",
+        cwd: "/tmp/healthy-cwd",
+      })) as { sessionId: string };
+      const t1 = (await engine.dispatch("prompt", {
+        sessionId: a.sessionId,
+        content: [{ type: "text", text: "first" }],
+      })) as { stopReason?: string };
+      expect(t1.stopReason).not.toBe("refusal");
+      /* B wedges its session/new — the adapter is kept (A is live). */
+      await expect(
+        engine.dispatch("session.start", {
+          agent: "x",
+          cwd: "/tmp/wedged-cwd",
+        }),
+      ).rejects.toThrow(/did not answer session\/new/);
+      /* Suspend A: its next prompt re-creates via session/load on the
+         same adapter — under a `load:<id>` key, untouched by B's
+         `new:<cwd>` wedge. */
+      await engine.dispatch("session.suspend", { sessionId: a.sessionId });
+      /* C — a different caller key — creates normally on the same
+         adapter while B's RPC is still wedged. */
+      const c = (await engine.dispatch("session.start", {
+        agent: "x",
+        cwd: "/tmp/third-cwd",
+      })) as { sessionId: string };
+      expect(c.sessionId).toMatch(/^s-/);
+      const aTurn = (await engine.dispatch("prompt", {
+        sessionId: a.sessionId,
+        content: [{ type: "text", text: "back from suspend" }],
+      })) as { stopReason?: string };
+      expect(aTurn.stopReason).not.toBe("refusal");
+      const cTurn = (await engine.dispatch("prompt", {
+        sessionId: c.sessionId,
+        content: [{ type: "text", text: "c works" }],
+      })) as { stopReason?: string };
+      expect(cTurn.stopReason).not.toBe("refusal");
+      /* B's OWN retry still fails fast — the guard holds per caller,
+         well inside the bound. */
+      const t0 = Date.now();
+      await expect(
+        engine.dispatch("session.start", {
+          agent: "x",
+          cwd: "/tmp/wedged-cwd",
+        }),
+      ).rejects.toThrow(/did not answer session\/new/);
+      expect(Date.now() - t0).toBeLessThan(TIMEOUT);
+    } finally {
+      await engine.close();
+    }
+  });
+
+  test("an adapter that dies mid-resume leaves the session suspended — the next prompt re-resumes (r8 nit)", {
+    timeout: 30_000,
+  }, async () => {
+    /* Adapter death between session/load and the pick reapply: the
+       resume used to mark the session live on a dead ACP id — the next
+       prompt then hit the -32603 refusal shape. With the liveness
+       re-check the resume throws, the session stays suspended, and the
+       next demand re-creates it on the fresh adapter. */
+    const engine = make({
+      LILOS_FAKE_EXIT_ON_LOAD_MS: "100",
+      LILOS_FAKE_SLOW_CONFIG_MS: "400",
+    });
+    try {
+      await engine.dispatch("describe", {});
+      const a = (await engine.dispatch("session.start", {
+        agent: "x",
+        cwd: "/tmp/healthy-cwd",
+        model: "fake-deep",
+      })) as { sessionId: string };
+      await engine.dispatch("prompt", {
+        sessionId: a.sessionId,
+        content: [{ type: "text", text: "first" }],
+      });
+      await engine.dispatch("session.suspend", { sessionId: a.sessionId });
+      /* The load answers; the adapter exits +100ms while the pick's
+         config write is still inside its 400ms sleep — conn.dead is
+         set before resume could mark live. */
+      await expect(
+        engine.dispatch("prompt", {
+          sessionId: a.sessionId,
+          content: [{ type: "text", text: "during death" }],
+        }),
+      ).rejects.toThrow(/adapter restarted|did not answer|closed/i);
+      /* Fresh adapter, fresh ACP id — the prompt answers, no refusal. */
+      const t2 = (await engine.dispatch("prompt", {
+        sessionId: a.sessionId,
+        content: [{ type: "text", text: "after death" }],
+      })) as { stopReason?: string };
+      expect(t2.stopReason).not.toBe("refusal");
+    } finally {
+      await engine.close();
+    }
+  });
+
   test("a dead adapter marks sessions suspended — the next prompt re-creates on the fresh adapter", {
     timeout: 30_000,
   }, async () => {

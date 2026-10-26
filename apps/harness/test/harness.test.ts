@@ -601,6 +601,61 @@ describe("workspace harness", () => {
     }
   }, 20_000);
 
+  it("an access flip inside the bind window routes the first ask to a card, not auto-approve (r8)", async () => {
+    /* r8: bind copied `conv.access` before `session.start` — a pill
+       flip inside that (up to 60s) window updated only the relay row:
+       `conversation.updated` found no binding to mirror onto, so the
+       stored binding kept "full" and Claude's asks were auto-approved
+       under an Ask pill. request.opened now reads the live row and
+       the store re-reads it too. */
+    const w = await setupWorldBase({
+      tick: 1,
+      harnessExtra: { bindDelayMs: 300 },
+    });
+    try {
+      const { channel } = await openDmConversation(w.user);
+      const { conversation } = await w.user.request<{
+        conversation: { id: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "Add a footer to the page",
+        access: "full",
+      });
+      /* Flip to Ask inside the 300ms bind delay — the row turns before
+         the binding exists. */
+      await new Promise((r) => setTimeout(r, 50));
+      await w.user.request("conversations.setAccess", {
+        conversationId: conversation.id,
+        access: "ask",
+      });
+      /* The turn's first approval must open a card — pre-fix it was
+         answered invisibly by auto-approve. */
+      const ask = await waitFor(async () => {
+        const { asks } = await w.user.request<{ asks: Ask[] }>("asks.list", {
+          conversationId: conversation.id,
+          state: "open",
+        });
+        return asks.find((a) => a.request.kind === "approval");
+      }, "approval card after bind-window flip");
+      expect(ask).toBeTruthy();
+      /* And the stored binding itself mirrors the live row, not the
+         pre-start snapshot. */
+      await waitFor(
+        async () =>
+          (
+            w.harness as unknown as {
+              bindings: Map<string, { access: string }>;
+            }
+          ).bindings.get(conversation.id)?.access === "ask"
+            ? true
+            : undefined,
+        "binding stores ask",
+      );
+    } finally {
+      await w.cleanup();
+    }
+  }, 20_000);
+
   it("AC-5 rebinds the conversation when the engine rotates the session ref", async () => {
     const w = await setupWorld();
     try {

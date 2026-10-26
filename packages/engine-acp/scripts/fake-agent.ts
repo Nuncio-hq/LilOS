@@ -89,6 +89,10 @@ const SLOW_CONFIG_MS = Number(process.env.LILOS_FAKE_SLOW_CONFIG_MS ?? 0);
    `_meta` — the catalog probe's meta is observable even though the probe
    session is closed before it can be prompted. */
 const META_LOG = process.env.LILOS_FAKE_META_LOG;
+/* `LILOS_FAKE_EXIT_ON_LOAD_MS=<ms>` — the adapter answers session/load
+   then exits that long after: the r8-nit shape, an adapter dying
+   mid-resume while the engine still writes the session's pick. */
+const EXIT_ON_LOAD_MS = Number(process.env.LILOS_FAKE_EXIT_ON_LOAD_MS ?? 0);
 
 const sessions = new Map<string, FakeSession>();
 /** allow_always grants — the profile allowlist lives agent-side and
@@ -367,6 +371,8 @@ const agent = (conn: acp.AgentSideConnection): acp.Agent => ({
         META_LOG,
         `${JSON.stringify({ op: "load", meta: s.meta ?? null })}\n`,
       );
+    if (EXIT_ON_LOAD_MS > 0)
+      setTimeout(() => process.exit(0), EXIT_ON_LOAD_MS).unref();
     return {
       modes: {
         currentModeId: s.mode,

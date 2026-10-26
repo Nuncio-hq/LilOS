@@ -46,6 +46,18 @@ const KIND_OUTCOMES: Record<string, ApprovalOption> = {
   reject_always: "deny",
 };
 
+/** Option ids that switch the session's permission mode or clear its
+   context — never a valid answer, never an offered outcome. Claude's
+   ExitPlanMode card lists every mode change under kind `allow_always`
+   (`exit-plan-clear-auto` first), so an "Always" answer picked by kind
+   reset Claude's context and switched the session to `auto` — Claude
+   then approved its own tools and no asks reached Oscar even under an
+   Ask pill (r8). The only affirmative keeping mode `default` is
+   `exit-plan-default` ("Yes, manually approve edits"); the family
+   pattern covers the clear-context and mode variants it ships now and
+   any the adapter adds later. */
+const MODE_CHANGING_OPTION = /^exit-plan-(?!default$)/;
+
 /** Canonical optionIds tried first per outcome, before any fallback. */
 const PREFERRED_IDS: Record<ApprovalOption, readonly string[]> = {
   once: ["allow_once"],
@@ -65,12 +77,15 @@ export function acpPermissionOutcome(
   return KIND_OUTCOMES[o.kind ?? ""];
 }
 
-/** Offered LilOS outcomes in option-list order; `["deny"]` when nothing maps. */
+/** Offered LilOS outcomes in option-list order; `["deny"]` when nothing
+    maps. Mode-changing options are excluded — an "Always" button that
+    grants `auto` mode instead of a standing allow would lie. */
 export function acpOfferedOutcomes(
   options: readonly AcpPermissionOptionLike[],
 ): ApprovalOption[] {
   const out: ApprovalOption[] = [];
   for (const o of options) {
+    if (MODE_CHANGING_OPTION.test(o.optionId)) continue;
     const oc = acpPermissionOutcome(o);
     if (oc && !out.includes(oc)) out.push(oc);
   }
@@ -79,17 +94,38 @@ export function acpOfferedOutcomes(
 
 /**
  * The optionId answering `outcome`: the canonical id first, then the
- * first option that resolves to the outcome (kind fallback for unknown ids).
- * `undefined` when the outcome is not offerable — never a different grant.
+ * first option that resolves to the outcome (kind fallback for unknown
+ * ids) — among options that keep the session's permission mode.
+ * `undefined` when the outcome is not offerable — never a different
+ * grant. When the outcome's ONLY matches were mode-changers (every
+ * `allow_always` on Claude's ExitPlanMode card), an affirmative answer
+ * lands on the affirmative that keeps `default` (`exit-plan-default`)
+ * and `granted` reports the downgrade — a plain missing outcome still
+ * answers `undefined` (#133).
  */
 export function acpPickOptionId(
   options: readonly AcpPermissionOptionLike[],
   outcome: ApprovalOutcome,
 ): string | undefined {
+  const safe = options.filter((o) => !MODE_CHANGING_OPTION.test(o.optionId));
   for (const id of PREFERRED_IDS[outcome as ApprovalOption] ?? []) {
-    if (options.some((o) => o.optionId === id)) return id;
+    if (safe.some((o) => o.optionId === id)) return id;
   }
-  return options.find((o) => acpPermissionOutcome(o) === outcome)?.optionId;
+  const direct = safe.find((o) => acpPermissionOutcome(o) === outcome);
+  if (direct) return direct.optionId;
+  if (
+    (outcome === "always" || outcome === "session") &&
+    options.some(
+      (o) =>
+        MODE_CHANGING_OPTION.test(o.optionId) &&
+        acpPermissionOutcome(o) === outcome,
+    )
+  )
+    return safe.find((o) => {
+      const oc = acpPermissionOutcome(o);
+      return oc === "once" || oc === "session";
+    })?.optionId;
+  return undefined;
 }
 
 /** The `command` line a permission card shows — tool title/name or its input. */
@@ -138,7 +174,13 @@ export function acpPermissionAnswer(
       response: { outcome: { outcome: "cancelled" } },
       granted: "cancel",
     };
-  const granted = acpPermissionOutcome({ optionId }) ?? outcome;
+  /* Report the picked option's real outcome — resolving by bare id
+     loses the kind (an unregistered id like `exit-plan-default` would
+     echo the requested outcome and hide the downgrade). */
+  const granted =
+    acpPermissionOutcome(
+      options.find((o) => o.optionId === optionId) ?? { optionId },
+    ) ?? outcome;
   return {
     response: { outcome: { outcome: "selected", optionId } },
     granted,

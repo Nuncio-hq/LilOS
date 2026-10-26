@@ -347,11 +347,15 @@ export function onEngineEvent(
       if (binding) {
         /* D-#106 AC-2: Full access is enforced here, engine-neutral — the
            harness answers `approval` requests itself (`once`) and the
-           card never reaches the user; other kinds still surface. */
-        if (
-          binding.access === "full" &&
-          event.payload.request.kind === "approval"
-        ) {
+           card never reaches the user; other kinds still surface.
+           Read the CURRENT conversation row, not the binding's copy
+           (r8): a flip during the up-to-60s `session.start` lands
+           before the binding is stored, leaving a stale "full" that
+           auto-approves every ask under an Ask pill. */
+        const access =
+          this.conversationFromAtom(binding.conversationId)?.access ??
+          binding.access;
+        if (access === "full" && event.payload.request.kind === "approval") {
           void this.autoApprove(
             binding,
             event.payload.requestId,

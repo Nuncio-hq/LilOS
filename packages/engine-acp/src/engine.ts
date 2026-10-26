@@ -1053,8 +1053,9 @@ export class AcpEngine {
    * shared adapter (r7 nit — the harness's bind retries each spawned
    * another `claude`, up to 6 per stuck send). With no other live
    * sessions to protect, closing the connection reaps the whole tree;
-   * with live sessions the conn's wedged-create guard already fails
-   * later creates fast, so nothing stacks behind the wedge.
+   * with live sessions the conn's per-caller wedged-create guard
+   * already fails that caller's retries fast (r8), so nothing stacks
+   * behind the wedge — and healthy conversations keep creating.
    */
   private async reapWedgedCreate(
     conn: AcpConnection,
@@ -1122,6 +1123,13 @@ export class AcpEngine {
       await this.applyPick(s, s.pick, (line) =>
         s.emit("session.note", { text: line }),
       );
+    /* r8 nit: the adapter may have died between `session/load` and these
+       writes — `onAdapterGone` skips still-suspended sessions, so marking
+       this one live would leave it prompting a dead ACP id (the r6
+       -32603 refusal shape). Keep it suspended: the next demand
+       re-resumes on the fresh adapter and mints a live id. */
+    if (conn.dead)
+      throw new Error("agent adapter restarted while the session resumed");
     s.suspended = false;
     s.state = "idle";
     s.emit("session.started", {
