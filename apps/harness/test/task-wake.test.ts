@@ -247,30 +247,10 @@ describe("task hand-off end-to-end (engine-fake, D-#844)", () => {
       expect(created.task.status).toBe("running");
       expect(created.rootMessage.text).toBe("Summarize the milestones");
 
-      // The child turn runs on the worker's channel; its finish posts one
-      // taskWake onto the parent's thread.
-      const wake = await waitFor(async () => {
-        const { messages } = await w.user.request<{ messages: AppMessage[] }>(
-          "messages.list",
-          { channelId: parent.channelId, conversationId: parent.id },
-        );
-        return messages.find((m) => m.taskWake === true);
-      }, "parent taskWake message");
-      expect(wake.text).toContain(created.task.id);
-      expect(wake.conversationId).toBe(parent.id);
-
-      // The wake is the parent's next prompt — the fake engine answers it,
-      // proving the loop closed without the user typing anything.
-      try {
-        await waitFor(async () => {
-          const { messages } = await w.user.request<{ messages: AppMessage[] }>(
-            "messages.list",
-            { channelId: parent.channelId, conversationId: parent.id },
-          );
-          const after = messages.filter((m) => m.seq > wake.seq);
-          return after.find((m) => m.authorKind === "employee");
-        }, "parent answer to the wake");
-      } catch (error) {
+      /* The first waitFor times out with the same dump the second one
+         carries — CI gave only "timed out waiting for parent taskWake
+         message" (#873), which says nothing about where the loop broke. */
+      const dump = async () => {
         const { messages: parentMsgs } = await w.user.request<{
           messages: AppMessage[];
         }>("messages.list", {
@@ -332,6 +312,40 @@ describe("task hand-off end-to-end (engine-fake, D-#844)", () => {
               )
               .join("\n"),
         );
+      };
+      // The child turn runs on the worker's channel; its finish posts one
+      // taskWake onto the parent's thread.
+      let wake: AppMessage;
+      try {
+        wake = await waitFor(async () => {
+          const { messages } = await w.user.request<{
+            messages: AppMessage[];
+          }>("messages.list", {
+            channelId: parent.channelId,
+            conversationId: parent.id,
+          });
+          return messages.find((m) => m.taskWake === true);
+        }, "parent taskWake message");
+      } catch (error) {
+        await dump();
+        throw error;
+      }
+      expect(wake.text).toContain(created.task.id);
+      expect(wake.conversationId).toBe(parent.id);
+
+      // The wake is the parent's next prompt — the fake engine answers it,
+      // proving the loop closed without the user typing anything.
+      try {
+        await waitFor(async () => {
+          const { messages } = await w.user.request<{ messages: AppMessage[] }>(
+            "messages.list",
+            { channelId: parent.channelId, conversationId: parent.id },
+          );
+          const after = messages.filter((m) => m.seq > wake.seq);
+          return after.find((m) => m.authorKind === "employee");
+        }, "parent answer to the wake");
+      } catch (error) {
+        await dump();
         throw error;
       }
 
