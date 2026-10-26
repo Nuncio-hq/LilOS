@@ -292,6 +292,10 @@ export type V3Data = {
   /** The company is set up; false shows the first-run welcome. */
   setUp: boolean;
   /** What this company has switched on. `tickets` (M2): Work, Goals, Inbox
-     and the CEO's update; off, those stay out of sight rather than empty. */
-  features: { tickets: boolean };
+     and the CEO's update; off, those stay out of sight rather than empty.
+     `company` (D-#836): the whole company layer — tickets, the CEO position,
+     hiring, the team table and its counts, the company name. Absent or true
+     is on; `false` is paused: every record stays in `data` and the actions
+     still work, the shell just never draws it (see `shownData`). */
+  features: { tickets: boolean; company?: boolean };
 };

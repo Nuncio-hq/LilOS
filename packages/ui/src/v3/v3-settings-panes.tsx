@@ -1,6 +1,7 @@
 import { type ReactNode, useState } from "react";
 import { Btn, Section, Spinner } from "./v3-bits";
 import { EscLayer, useFocusBack } from "./v3-keys";
+import { companyOn } from "./v3-model";
 import type { V3PageProps } from "./v3-page-types";
 import { LinkRow, Row, Segmented, useRun } from "./v3-settings-bits";
 
@@ -157,19 +158,26 @@ export function GeneralPane({ data, go, act }: V3PageProps) {
       : editors;
   return (
     <>
-      <Section title="You and the company" className="mt-6" />
-      <Fact
-        label="Company"
-        value={data.company}
-        onRename={
-          askToRename ? () => act.ask("Rename the company to ") : undefined
-        }
-        onSave={
-          act.saveProfile
-            ? (company) => act.saveProfile?.({ company })
-            : undefined
-        }
+      <Section
+        title={companyOn(data) ? "You and the company" : "You"}
+        className="mt-6"
       />
+      {/* With the company layer paused (D-#836) there is no company name to
+          show or rename; the saved value is untouched. */}
+      {companyOn(data) && (
+        <Fact
+          label="Company"
+          value={data.company}
+          onRename={
+            askToRename ? () => act.ask("Rename the company to ") : undefined
+          }
+          onSave={
+            act.saveProfile
+              ? (company) => act.saveProfile?.({ company })
+              : undefined
+          }
+        />
+      )}
       <Fact
         label="Your name"
         value={data.me}

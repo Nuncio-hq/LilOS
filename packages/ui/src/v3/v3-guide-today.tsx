@@ -1,5 +1,6 @@
 import { Page, Section, Title } from "./v3-bits";
 import { Statuses } from "./v3-guide-bits";
+import { companyOn } from "./v3-model";
 import { RowButton } from "./v3-open-record";
 import type { V3PageProps } from "./v3-page-types";
 
@@ -8,6 +9,7 @@ import type { V3PageProps } from "./v3-page-types";
    live data so the page matches what you see elsewhere. */
 
 export function V3GuideToday({ data, go }: Pick<V3PageProps, "data" | "go">) {
+  const company = companyOn(data);
   const agents = data.agents.filter((a) => a.kind !== "outside").length;
   const threads = data.threads.length;
   const rows: {
@@ -19,8 +21,11 @@ export function V3GuideToday({ data, go }: Pick<V3PageProps, "data" | "go">) {
     {
       name: "Agent",
       eg: `${agents} ${agents === 1 ? "agent" : "agents"}`,
-      df: "Someone on your team, with a role and a model. Hire more from People.",
-      to: () => go({ page: "people" }),
+      df: company
+        ? "Someone on your team, with a role and a model. Hire more from People."
+        : /* The paused layer (D-#836) has no People page to send you to. */
+          "Someone who works for you, with a role and a model.",
+      to: company ? () => go({ page: "people" }) : undefined,
     },
     {
       name: "Thread",
@@ -87,7 +92,7 @@ export function V3GuideToday({ data, go }: Pick<V3PageProps, "data" | "go">) {
 
   return (
     <Page wide>
-      <Title>How the company works</Title>
+      <Title>{company ? "How the company works" : "How it works"}</Title>
       <p className="-mt-1 text-[15px] text-muted-foreground">
         Agents do the work. You answer when they ask.
       </p>

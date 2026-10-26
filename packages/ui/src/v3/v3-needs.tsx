@@ -6,6 +6,7 @@ import {
   agentNameOf,
   agentOf,
   askTag,
+  companyOn,
   FORMER_AGENT,
   resultsToLookAt,
   threadsOf,
@@ -128,7 +129,12 @@ export function V3Needs({ data, go, act }: V3PageProps) {
     return () => window.removeEventListener("keydown", onKey);
   }, [act, allow, asks, current, index]);
 
-  const stuck = data.tickets.filter((t) => t.status === "stuck" && t.fallback);
+  /* "The CEO will handle it" is a company-layer promise: with the layer
+     paused (D-#836) the fallback still happens underneath, the page just
+     does not announce it. */
+  const stuck = companyOn(data)
+    ? data.tickets.filter((t) => t.status === "stuck" && t.fallback)
+    : [];
   const results = useMemo(() => resultsToLookAt(data), [data]);
 
   const others = asks.filter((a) => a !== current);
@@ -217,7 +223,7 @@ export function V3Needs({ data, go, act }: V3PageProps) {
                     </>
                   }
                 >
-                  {a.fallback && (
+                  {companyOn(data) && a.fallback && (
                     <span className={CHIP}>
                       {a.fallback.at} {a.fallback.does}
                     </span>

@@ -1,8 +1,49 @@
 import type { V3Ask, V3Data } from "./v3-data-types";
+import type { V3Route } from "./v3-page-types";
 import { soonestRun } from "./v3-schedule-text";
 import type { V3Agent, V3Status, V3Thread, V3Ticket } from "./v3-types";
 
 /* Lookups every v3 page shares. Pure; the shell owns the data. */
+
+/** The company layer is on unless the app paused it (D-#836). */
+export const companyOn = (d: V3Data): boolean => d.features.company !== false;
+
+/** What the shell hands its pages (D-#836). With the company layer paused
+   the data is unchanged underneath — tickets, goals, the CEO position and
+   every action keep working — but as far as a page can see there is no CEO
+   (`ceoId` checks all answer no: no crowns, no brief, no "the CEO will
+   handle") and the company has no tickets feature (Work, Goals, Inbox and
+   every `features.tickets` control stay off). Nothing is deleted: flip the
+   flag and it all comes back. */
+export const shownData = (d: V3Data): V3Data =>
+  companyOn(d)
+    ? d
+    : { ...d, ceoId: undefined, features: { ...d.features, tickets: false } };
+
+/** Where a route lands with the company layer paused (D-#836). Pages of the
+   hidden layer (Work, Goals, Inbox, People, Hire) fall back to Home; a
+   ticket or goal record opens the project it belongs to, so an old link or
+   a leftover in the trail still shows something real. Everything else —
+   threads, projects, agents, settings — is the daily app's own. Called with
+   the real data (it still has the records); a page maps to a page and a
+   record to a record, so the nav's shape survives. */
+export const shownRoute = (d: V3Data, r: V3Route): V3Route => {
+  if (companyOn(d)) return r;
+  switch (r.page) {
+    case "work":
+    case "goals":
+    case "inbox":
+    case "people":
+    case "hire":
+      return { page: "home" };
+    case "ticket":
+      return { page: "project", id: ticketOf(d, r.id)?.projectId ?? "" };
+    case "goal":
+      return { page: "project", id: goalOf(d, r.id)?.projectId ?? "" };
+    default:
+      return r;
+  }
+};
 
 /** An id can outlive its agent: a fired agent's threads, asks and schedules
    stay on record. A miss is undefined, never another agent in its place. */
@@ -27,18 +68,27 @@ export const ticketOf = (d: V3Data, id: string): V3Ticket | undefined =>
 export const projectOf = (d: V3Data, id: string) =>
   d.projects.find((p) => p.id === id);
 
+/** The project a thread lives in: its own, or its ticket's (D-#771). */
+export const threadProjectId = (d: V3Data, t: V3Thread): string | undefined =>
+  t.projectId ?? (t.ticketId ? ticketOf(d, t.ticketId)?.projectId : undefined);
+
 /** What a thread is filed under, as a short label: its ticket, else the
    project it lives in, else "Chat" (a plain chat, in no project). The trail,
-   the rows and the cards all say it the same way. */
-export const threadTag = (d: V3Data, t: V3Thread): string =>
-  t.ticketId ??
-  (t.projectId ? projectOf(d, t.projectId)?.name : undefined) ??
-  "Chat";
+   the rows and the cards all say it the same way. With the company layer
+   paused (D-#836) a ticket names nothing you can see, so the tag is the
+   thread's project instead. */
+export const threadTag = (d: V3Data, t: V3Thread): string => {
+  const project = threadProjectId(d, t);
+  const name = project ? projectOf(d, project)?.name : undefined;
+  if (!companyOn(d)) return name ?? "Chat";
+  return t.ticketId ?? name ?? "Chat";
+};
 
 /** The same label for an ask: its ticket, else where the thread it was asked
-   in lives. */
+   in lives. Paused, the thread's place stands in for the ticket's id. */
 export const askTag = (d: V3Data, a: V3Ask): string => {
   const thread = d.threads.find((t) => t.id === a.threadId);
+  if (!companyOn(d)) return thread ? threadTag(d, thread) : "Chat";
   return a.ticketId ?? (thread ? threadTag(d, thread) : "Chat");
 };
 
@@ -229,7 +279,7 @@ export function resultsToLookAt(data: V3Data): LookAtRow[] {
       unseen: true,
     });
   }
-  for (const t of data.tickets) {
+  for (const t of companyOn(data) ? data.tickets : []) {
     if (
       t.status !== "done" ||
       (t.doneAgo ?? Number.POSITIVE_INFINITY) >= 180 ||

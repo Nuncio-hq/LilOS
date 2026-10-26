@@ -15,7 +15,7 @@ import type { V3Data, V3Draft } from "./v3-data-types";
 import { EscLayer } from "./v3-keys";
 import { SIDEBAR_W, shellSizes, useLayoutPrefs } from "./v3-layout-prefs";
 import { CeoEmployeeContext } from "./v3-marks";
-import { defaultAgent } from "./v3-model";
+import { companyOn, defaultAgent, shownData, shownRoute } from "./v3-model";
 import { step } from "./v3-nav";
 import { OpenRecord } from "./v3-open-record";
 import type {
@@ -75,17 +75,24 @@ export type V3ShellProps = {
    you, Threads and Work all agree). It owns movement: a page on the left,
    what you opened from it in the side peek on the right (see v3-nav.ts). */
 export function V3Shell({
-  data,
+  data: companyData,
   actions,
   nav,
   onNav,
-  draft,
+  draft: askDraft,
   renderThread,
   banner,
   searchRequest,
   sidebarRequest,
   onThemeChange,
 }: V3ShellProps) {
+  /* D-#836: the company layer is a feature the app switches on, never a
+     second UI. With `features.company` false the pages below get shownData —
+     every record and action is the company's own, but the CEO position and
+     the tickets feature read as absent, and the ⌘K CEO stays a plain
+     search. One flag, everywhere at once. */
+  const data = useMemo(() => shownData(companyData), [companyData]);
+  const draft = companyOn(companyData) ? askDraft : undefined;
   const [palette, setPalette] = useState<string | null>(null);
   /* A ⌘K message hit: the thread to open and the message to show in it. Held
      here, not in the URL: a reload or a shared link opens the thread at its
@@ -116,18 +123,21 @@ export function V3Shell({
       window.matchMedia("(prefers-color-scheme: dark)").matches);
 
   /* Two ways to move, one rule each: the page opens a record fresh; the peek
-     extends its trail. Changing page always starts at the page's top. */
+     extends its trail. Changing page always starts at the page's top. Every
+     route passes shownRoute first (D-#836): nothing a page does can land on
+     a page or record of the paused company layer. */
   const goFromPage = useCallback(
     (r: V3Route) => {
-      onNav((n) => step(n, r, "page"));
-      if (!("id" in r))
+      const to = shownRoute(companyData, r);
+      onNav((n) => step(n, to, "page"));
+      if (!("id" in to))
         document.getElementById("v3-main")?.scrollTo({ top: 0 });
     },
-    [onNav],
+    [onNav, companyData],
   );
   const goFromPeek = useCallback(
-    (r: V3Route) => onNav((n) => step(n, r, "peek")),
-    [onNav],
+    (r: V3Route) => onNav((n) => step(n, shownRoute(companyData, r), "peek")),
+    [onNav, companyData],
   );
   const closePeek = useCallback(
     () => onNav((n) => ({ ...n, peek: [], full: false })),
@@ -252,8 +262,19 @@ export function V3Shell({
     goFromPage({ page: "work", view: "waiting" });
   };
 
-  const page = nav.page;
-  const top = nav.peek[nav.peek.length - 1];
+  /* What is shown, not what was asked for: a nav from a saved URL or an
+     older session can still name a hidden page or record, so it is shown
+     where shownRoute lands (D-#836). The nav itself is never rewritten —
+     Back/Forward and the app's own bookkeeping stay untouched. */
+  const page = shownRoute(companyData, nav.page) as V3Nav["page"];
+  const trail = useMemo(
+    () =>
+      nav.peek.map(
+        (r) => shownRoute(companyData, r) as (typeof nav.peek)[number],
+      ),
+    [nav.peek, companyData],
+  );
+  const top = trail[trail.length - 1];
   const props = { data, go: goFromPage, act };
   const widened = !!top && !!nav.full;
   const beside = !!top && !nav.full;
@@ -377,7 +398,7 @@ export function V3Shell({
                 )}
                 go={goFromPeek}
                 act={peekAct}
-                trail={nav.peek}
+                trail={trail}
                 full={!!nav.full}
                 pageName={PAGE_NAME[page.page]}
                 onBack={() =>
