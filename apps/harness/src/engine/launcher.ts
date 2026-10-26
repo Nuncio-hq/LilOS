@@ -439,6 +439,79 @@ export function hermesEngineLauncher(options: {
   };
 }
 
+/**
+ * D-#845 — the generic ACP engine's argv: a bundled `lilos-engine-acp`
+ * binary when the packaged app ships one, else `bun serve.ts` inside the
+ * repo. `--agent` names a registry entry (`devin`, ...); `--command`
+ * runs a local ACP command verbatim. The serve script resolves and
+ * verifies the agent binary itself — a missing CLI exits plainly before
+ * LISTENING, which the supervisor reports as a start failure.
+ */
+export function acpServeCommand(options: {
+  repoRoot: string;
+  /** Registry entry id (default: the serve script's own default). */
+  agent?: string;
+  /** Local command verbatim — overrides --agent. */
+  command?: string[];
+  /** Pre-compiled adapter binary inside the packaged app. */
+  serveBin?: string;
+  bun?: string;
+  /** Argv marker for e2e leak assertions (`pgrep -f "--tag <tag>"`). */
+  tag?: string;
+}): string[] {
+  const script = join(options.repoRoot, "packages/engine-acp/scripts/serve.ts");
+  const serve = options.serveBin
+    ? [options.serveBin]
+    : existsSync(script)
+      ? [options.bun ?? "bun", script]
+      : (() => {
+          throw new Error(
+            "The ACP engine adapter (lilos-engine-acp) is not part of this build — it ships in dev bundles only. Remove LILOS_ENGINE=acp or use a dev build.",
+          );
+        })();
+  return [
+    ...serve,
+    "--port",
+    "0",
+    "--watch-stdin",
+    ...(options.command?.length
+      ? ["--command", options.command.join(" ")]
+      : options.agent
+        ? ["--agent", options.agent]
+        : []),
+    ...(options.tag ? ["--tag", options.tag] : []),
+  ];
+}
+
+/** ACP engine through the command launcher — registry entry or local
+    command; the agent's own login runs the session (D-#845). */
+export function acpEngineLauncher(options: {
+  repoRoot: string;
+  agent?: string;
+  command?: string[];
+  serveBin?: string;
+  bun?: string;
+  tag?: string;
+  /** Extra env for the adapter — the gateway surfaces credentials ride
+     this so the ACP agent's `lilos mcp` child can reach the gateway. */
+  env?: Record<string, string>;
+  log: Logger;
+}): EngineLauncher {
+  return {
+    name: `engine-acp-${options.agent ?? "command"}`,
+    // Build argv inside start(): a bundle without the adapter fails as a
+    // supervised crash with a plain reason, not a harness boot error.
+    start: async () =>
+      startWithProtocolToken({
+        name: `engine-acp-${options.agent ?? "command"}`,
+        command: acpServeCommand(options),
+        readyPattern: /LISTENING (ws:\/\/\S+)/,
+        env: options.env,
+        log: options.log,
+      }),
+  };
+}
+
 /** `hermes --version`, best-effort; undefined when the answer has no semver. */
 function probeHermesVersion(hermesBin: string): string | undefined {
   try {

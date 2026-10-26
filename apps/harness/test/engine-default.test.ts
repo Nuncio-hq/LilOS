@@ -3,7 +3,11 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { launcherFor, resolveHarnessConfig } from "../src/config";
-import { fakeServeCommand, hermesServeCommand } from "../src/engine/launcher";
+import {
+  acpServeCommand,
+  fakeServeCommand,
+  hermesServeCommand,
+} from "../src/engine/launcher";
 import { createMemoryLogger } from "../src/log";
 
 /**
@@ -29,7 +33,9 @@ afterEach(() => {
 });
 
 /** A repo-root stand-in carrying the engine serve entrypoints. */
-const mkRepo = (...adapters: ("engine-hermes" | "engine-fake")[]) => {
+const mkRepo = (
+  ...adapters: ("engine-hermes" | "engine-fake" | "engine-acp")[]
+) => {
   const root = mkdtempSync(join(tmpdir(), "lilos-repo-"));
   for (const a of adapters) {
     const dir = join(root, "packages", a, "scripts");
@@ -138,6 +144,53 @@ describe("AC-4 (#85) the fake engine stays behind an explicit setting", () => {
       serveBin: "/app/Contents/MacOS/lilos-engine-fake",
     });
     expect(argv[0]).toBe("/app/Contents/MacOS/lilos-engine-fake");
+  });
+});
+
+describe("D-#845 the generic ACP engine", () => {
+  it("LILOS_ENGINE=acp picks the devin registry entry by default", () => {
+    expect(resolveHarnessConfig(env({ LILOS_ENGINE: "acp" })).engine).toEqual({
+      kind: "acp",
+      agent: "devin",
+    });
+  });
+
+  it("LILOS_ACP_AGENT picks another registry entry", () => {
+    expect(
+      resolveHarnessConfig(
+        env({ LILOS_ENGINE: "acp", LILOS_ACP_AGENT: "claude" }),
+      ).engine,
+    ).toEqual({ kind: "acp", agent: "claude" });
+  });
+
+  it("LILOS_ACP_COMMAND runs a local command and wins over the default", () => {
+    const cfg = resolveHarnessConfig(
+      env({ LILOS_ENGINE: "acp", LILOS_ACP_COMMAND: "bun agent.ts" }),
+    );
+    expect(cfg.engine).toEqual({
+      kind: "acp",
+      command: ["bun", "agent.ts"],
+    });
+  });
+
+  it("the acp serve command carries --agent or --command through", () => {
+    const root = mkRepo("engine-acp");
+    const byAgent = acpServeCommand({ repoRoot: root, agent: "devin" });
+    expect(byAgent.slice(-3)).toEqual(["--watch-stdin", "--agent", "devin"]);
+    expect(byAgent).toContain("--port");
+    const byCmd = acpServeCommand({
+      repoRoot: root,
+      command: ["bun", "agent.ts"],
+    });
+    expect(byCmd).toContain("--command");
+    expect(byCmd[byCmd.indexOf("--command") + 1]).toBe("bun agent.ts");
+    expect(byCmd).not.toContain("--agent");
+  });
+
+  it("a bundle without the adapter errors plainly instead of substituting", () => {
+    expect(() =>
+      acpServeCommand({ repoRoot: "/nonexistent-repo", agent: "devin" }),
+    ).toThrow(/acp/i);
   });
 });
 

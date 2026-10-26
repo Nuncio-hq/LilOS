@@ -169,19 +169,29 @@ export function handleAcpUpdate<S extends AcpSessionView>(
       const out = u.rawOutput;
       const callId = String(u.toolCallId ?? "");
       const tool = toolName(u);
+      /* Spec ToolCallContent carries `content` blocks too — an agent
+         reporting output there (e.g. a resolved terminal buffer, D-#845)
+         lands as text when rawOutput is absent. */
+      const contentText = (Array.isArray(u.content) ? u.content : [])
+        .map((c) =>
+          (c as { type?: unknown })?.type === "content"
+            ? textOf((c as { content?: unknown }).content)
+            : "",
+        )
+        .filter(Boolean)
+        .join("\n");
+      const output =
+        out !== undefined && out !== null
+          ? typeof out === "string"
+            ? out
+            : JSON.stringify(out).slice(0, 4000)
+          : contentText || undefined;
       s.emit("tool.completed", {
         turnId,
         toolCallId: callId,
         tool,
         status,
-        ...(out !== undefined && out !== null
-          ? {
-              output:
-                typeof out === "string"
-                  ? out
-                  : JSON.stringify(out).slice(0, 4000),
-            }
-          : {}),
+        ...(output !== undefined ? { output } : {}),
       });
       hooks?.onToolCallUpdate?.(s, u, { callId, tool, status, out });
       break;
