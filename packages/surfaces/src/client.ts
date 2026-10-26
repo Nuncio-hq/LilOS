@@ -6,6 +6,9 @@ import {
   type BrowserReadResult,
   type BrowserScrollResult,
   type BrowserTypeResult,
+  type CodingAgentsResult,
+  type CodingAgentsSetParams,
+  type CodingAgentsSetResult,
   type ContextResult,
   type FolderAddResult,
   type GoalCreateParams,
@@ -139,6 +142,10 @@ export function toolBackend(opts: ToolClientOptions): SurfaceBackend {
       call("schedule_delete", p) as Promise<ScheduleDeletedResult>,
     scheduleRunNow: (p) =>
       call("schedule_run_now", p) as Promise<ScheduleTaskResult>,
+    codingAgents: () =>
+      call("coding_agents", {}) as Promise<CodingAgentsResult>,
+    codingAgentsSet: (p) =>
+      call("coding_agents_set", p) as Promise<CodingAgentsSetResult>,
     threadList: () => call("thread_list", {}) as Promise<ThreadListResult>,
     threadSearch: (p) =>
       call("thread_search", p) as Promise<ThreadSearchResult>,

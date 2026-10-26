@@ -320,6 +320,17 @@ def register(ctx):
     if env is None:
         return
 
+    # D-#835: the coding-agent hand-off skills ship inside the plugin and
+    # reach Hermes exactly like the tools — registered here, read-only, and
+    # re-copied into installed profiles/app bundles by Connect's
+    # plugin-hash refresh (D-#817). Env-gated like the tools so the plugin
+    # stays inert outside LilOS. Each resolves as `lilos:<name>` via
+    # skill_view and `terminal` carries the hand-off to the CLI.
+    _skills_dir = Path(__file__).with_name("skills")
+    if _skills_dir.is_dir():
+        for _skill_md in sorted(_skills_dir.glob("*/SKILL.md")):
+            ctx.register_skill(_skill_md.parent.name, _skill_md)
+
     for tool in _catalog():
         name = str(tool.get("name") or "")
         if not name:

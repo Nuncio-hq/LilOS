@@ -17,6 +17,7 @@ class _Ctx:
         self.tools = []
         self.sections = []
         self.section_fns = []
+        self.skills = []
 
     def register_hook(self, name, fn):
         pass
@@ -30,6 +31,9 @@ class _Ctx:
 
     def register_tool(self, name, toolset, spec, handler, **kwargs):
         self.tools.append(name)
+
+    def register_skill(self, name, path, **kwargs):
+        self.skills.append({"name": name, "path": str(path)})
 
 
 plugin = sys.argv[1]
@@ -48,6 +52,7 @@ report = {
     "seconds": time.monotonic() - t0,
     "tools": ctx.tools,
     "sections": ctx.sections,
+    "skills": ctx.skills,
     "ceo_blank": ceo_blank,
 }
 

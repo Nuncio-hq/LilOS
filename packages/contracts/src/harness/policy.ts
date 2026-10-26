@@ -9,13 +9,13 @@ import type { ToolArea } from "./tools.js";
  *
  * Versioned (`[LilOS host policy vN]`) — bump N when the rules change so a
  * stale prompt is diagnosable. Kept under 2000 chars: it rides in every
- * engine context. v9 keeps v8's areas (ticket, goal). The CEO brief is not
+ * engine context. v10 adds the `coding` area (D-#835). The CEO brief is not
  * in this text: it has its own section and its own cap (D-#777). The
  * `team` line does not name CEO-only tools (`team_set_ceo`,
  * `ticket_assign`, `update_post`): a session that does not hold the
  * position must not hear about them.
  */
-export const HOST_POLICY_VERSION = 9;
+export const HOST_POLICY_VERSION = 10;
 export const HOST_POLICY_MAX_CHARS = 2000;
 export const HOST_POLICY_MARKER = `[LilOS host policy v${HOST_POLICY_VERSION}]`;
 
@@ -33,6 +33,7 @@ const TOOL_AREA_ORDER: readonly ToolArea[] = [
   "ticket",
   "goal",
   "schedule",
+  "coding",
 ];
 
 const AREA_LINES: Record<ToolArea, string> = {
@@ -60,6 +61,9 @@ const AREA_LINES: Record<ToolArea, string> = {
   goal: "- `goal_*`: company goals. `goal_create` asks.",
   schedule:
     "- `schedule_*`: your scheduled tasks — `schedule_list` reads; writes ask the user to approve.",
+  /* D-#835: hand-off skills read these before running a coding-agent CLI. */
+  coding:
+    "- `coding_*`: `coding_agents` reads the user's stored model + effort default per outside coding agent; `coding_agents_set` asks the user to change it.",
   workbench:
     "- `workbench_*`: `workbench_previews` lists your preview servers; `workbench_open` opens the Files, Changes, PR, or Preview tab you name, never an editor on the Mac.",
   browser:

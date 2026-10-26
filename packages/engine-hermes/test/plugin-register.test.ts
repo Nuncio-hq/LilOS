@@ -41,6 +41,7 @@ test("register() returns fast with the full catalog against a dead gateway", () 
     seconds: number;
     tools: string[];
     sections: { name: string; max_chars: number }[];
+    skills: { name: string; path: string }[];
     ceo_blank: string;
   };
   /* Generous bound for slow CI: the old path needed the whole 15 s urllib
@@ -56,6 +57,19 @@ test("register() returns fast with the full catalog against a dead gateway", () 
     { name: "lilos.ceo_brief", max_chars: 2000 },
   ]);
   expect(out.ceo_blank).toBe("");
+  /* D-#835: the four coding-agent hand-off skills register from files
+     inside the plugin dir — a file glob, so the dead gateway can't slow
+     it and D-#817's content hash recopies them on change. */
+  expect(out.skills.map((s) => s.name).sort()).toEqual([
+    "coding-antigravity",
+    "coding-claude",
+    "coding-cursor",
+    "coding-devin",
+  ]);
+  for (const s of out.skills) {
+    expect(s.path).toContain("plugin/lilos/skills/");
+    expect(s.path.endsWith("SKILL.md")).toBe(true);
+  }
 });
 
 test("#549 AC-2: browser_exec/browser_vault_* get a truthful block inside a LilOS session", () => {

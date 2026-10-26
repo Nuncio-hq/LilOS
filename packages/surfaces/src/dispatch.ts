@@ -6,6 +6,7 @@ import {
   type BrowserOpenParams,
   type BrowserScrollParams,
   type BrowserTypeParams,
+  type CodingAgentsSetParams,
   type FolderAddParams,
   type GoalCreateParams,
   type GuideParams,
@@ -176,6 +177,12 @@ export async function callTool(
       break;
     case "update_post":
       result = await backend.updatePost(p as UpdatePostParams);
+      break;
+    case "coding_agents":
+      result = await backend.codingAgents();
+      break;
+    case "coding_agents_set":
+      result = await backend.codingAgentsSet(p as CodingAgentsSetParams);
       break;
 
     case "thread_post":
