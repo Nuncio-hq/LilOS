@@ -1,3 +1,5 @@
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Harness } from "@lilos/engine-conformance";
@@ -199,6 +201,37 @@ describe("shim env policy reaches the agent child (D-#866)", () => {
       });
     } finally {
       h.close();
+    }
+  }, 30_000);
+
+  test("the catalog probe session carries the ask meta too (D-#866 r4)", async () => {
+    /* The scratch probe still spawns the agent's child — it must not be
+       born under the user's bypassPermissions default either. The fake
+       logs every session/new _meta; the FIRST line is the probe's. */
+    const dir = mkdtempSync(join(tmpdir(), "acp-meta-"));
+    const log = join(dir, "meta.log");
+    const engine = new AcpEngine({
+      name: "engine-acp-meta-probe",
+      command: ["bun", FAKE_AGENT],
+      env: { LILOS_FAKE_META_LOG: log },
+      sessionMeta: claudeSpec.sessionMeta,
+    });
+    const h = new Harness(connectAcp(engine));
+    try {
+      await h.request("describe", {});
+      /* The probe fires on connection open — bounded wait for its line. */
+      for (let i = 0; i < 50 && !existsSync(log); i++)
+        await new Promise((r) => setTimeout(r, 100));
+      const first = readFileSync(log, "utf8").trim().split("\n")[0];
+      expect(JSON.parse(first)).toEqual({
+        op: "new",
+        meta: {
+          claudeCode: { options: { allowDangerouslySkipPermissions: false } },
+        },
+      });
+    } finally {
+      h.close();
+      rmSync(dir, { recursive: true, force: true });
     }
   }, 30_000);
 });

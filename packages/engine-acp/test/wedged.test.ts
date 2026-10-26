@@ -124,11 +124,15 @@ describe("wedged agent containment (D-#866)", () => {
       LILOS_FAKE_GRANDCHILD_PIDFILE: pidfile,
     });
     try {
-      /* Probe wedges in the background — describe waits only for the
-           probe's own bounded (non-fatal) settle, then answers. */
+      /* r4: describe IS the supervisor's liveness probe — D-#482 runs it
+           at probeTimeoutMs=1_500 with two misses restarting the adapter.
+           It must answer from whatever the catalog holds, never wait on
+           the probe session at all — the 8s grace starved it into a
+           restart loop in the installed app. */
+      const SUPERVISOR_PROBE_TIMEOUT_MS = 1_500;
       const t0 = Date.now();
       const d = await engine.dispatch("describe", {});
-      expect(Date.now() - t0).toBeLessThan(TIMEOUT * 3);
+      expect(Date.now() - t0).toBeLessThan(SUPERVISOR_PROBE_TIMEOUT_MS);
       expect(d).toMatchObject({ name: "engine-acp-wedge-test" });
       /* A real session on a non-matching cwd works — the wedged probe
            didn't take the adapter down (fatal:false). */

@@ -184,8 +184,12 @@ function install(
 
 export interface ResolvedAgentCommand {
   ok: boolean;
-  /** Verified argv — `[bin, ...]` or `[runner, entry, ...]`. */
+  /** Launch argv — `[bin, ...spec args]` or `[runner, entry, ...spec args]`. */
   command?: string[];
+  /** The verify probe's argv WITHOUT the launch args — `devin --version`,
+      not `devin acp --model x --version` (launch args before verify args
+      broke the Devin probe — D-#866 r4). */
+  probeHead?: string[];
   /** Extra env the resolved command needs (Electron-as-node). */
   env?: Record<string, string>;
   /** Why resolution failed — goes on the runtime's status detail. */
@@ -206,7 +210,13 @@ export function resolveAgentCommand(
   const [bin, ...rest] = spec.command;
   if (!bin) return { ok: false, output: "empty launch command" };
   const resolved = resolveExecutable(bin, env);
-  if (resolved) return { ok: true, command: [resolved, ...rest], output: "" };
+  if (resolved)
+    return {
+      ok: true,
+      command: [resolved, ...rest],
+      probeHead: [resolved],
+      output: "",
+    };
 
   const npm = spec.provision?.npm;
   if (!npm) return { ok: false, output: `${bin} not on PATH` };
@@ -231,6 +241,7 @@ export function resolveAgentCommand(
   return {
     ok: true,
     command: [runner.argv0, entry() ?? "", ...rest],
+    probeHead: [runner.argv0, entry() ?? ""],
     ...(runner.env ? { env: runner.env } : {}),
     output: "",
   };
@@ -242,8 +253,9 @@ export async function probeAgentCommand(
   env?: NodeJS.ProcessEnv,
 ): Promise<{ ok: boolean; output: string }> {
   const r = resolveAgentCommand(spec, env);
-  if (!r.ok || !r.command) return { ok: false, output: r.output };
-  const [bin, ...args] = r.command;
+  const head = r.probeHead ?? r.command;
+  if (!r.ok || !head?.length) return { ok: false, output: r.output };
+  const [bin, ...args] = head;
   return probeExecutable(
     bin,
     [...args, ...(spec.verify?.args ?? ["--version"])],

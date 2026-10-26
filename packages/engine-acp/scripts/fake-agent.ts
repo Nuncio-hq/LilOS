@@ -27,7 +27,7 @@
  * and a model/thought_level/speed config catalog with ask/code modes.
  */
 import { spawn } from "node:child_process";
-import { existsSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, writeFileSync } from "node:fs";
 import * as acp from "@agentclientprotocol/sdk";
 
 const MODELS = [
@@ -82,6 +82,10 @@ const RESET_ON_LOAD = process.env.LILOS_FAKE_RESET_ON_LOAD === "1";
 const HANG_CWD = process.env.LILOS_FAKE_HANG_CWD;
 const HANG_ONCE = process.env.LILOS_FAKE_HANG_ONCE;
 const GRANDCHILD_PIDFILE = process.env.LILOS_FAKE_GRANDCHILD_PIDFILE;
+/* `LILOS_FAKE_META_LOG=<file>` appends one JSON line per session/new|load
+   `_meta` — the catalog probe's meta is observable even though the probe
+   session is closed before it can be prompted. */
+const META_LOG = process.env.LILOS_FAKE_META_LOG;
 
 const sessions = new Map<string, FakeSession>();
 /** allow_always grants — the profile allowlist lives agent-side and
@@ -329,6 +333,11 @@ const agent = (conn: acp.AgentSideConnection): acp.Agent => ({
       meta: params._meta,
     };
     sessions.set(s.id, s);
+    if (META_LOG)
+      appendFileSync(
+        META_LOG,
+        `${JSON.stringify({ op: "new", meta: s.meta ?? null })}\n`,
+      );
     return {
       sessionId: s.id,
       modes: {
@@ -350,6 +359,11 @@ const agent = (conn: acp.AgentSideConnection): acp.Agent => ({
     if (RESET_ON_LOAD) s.config.clear();
     s.cancelled = false;
     s.meta = params._meta;
+    if (META_LOG)
+      appendFileSync(
+        META_LOG,
+        `${JSON.stringify({ op: "load", meta: s.meta ?? null })}\n`,
+      );
     return {
       modes: {
         currentModeId: s.mode,

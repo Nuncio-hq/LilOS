@@ -305,10 +305,26 @@ export async function dropEarlyWithError(
   const message = waiting[0];
   /* `findConversation`, not the atom: a just-hired child's row can lag
      the atom, and losing it here would lose the parent's failed wake. */
-  const conv = await this.findConversation(convId);
-  const detail =
-    (await this.runtimeFailureDetail(conv)) ??
-    "session could not be bound after several attempts";
+  /* D-#866 (r4): every step below must land independently — a throw in
+     one used to be swallowed whole by the callers' `.catch(() => {})`,
+     leaving the thread `idle` with no error surface. Each surface write
+     gets its own catch + loud warn instead. */
+  const conv = await this.findConversation(convId).catch((error) => {
+    this.opts.log.warn("drop: conversation lookup failed", {
+      conversationId: convId,
+      error: String(error),
+    });
+    return undefined;
+  });
+  let detail = "session could not be bound after several attempts";
+  try {
+    detail = (await this.runtimeFailureDetail(conv)) ?? detail;
+  } catch (error) {
+    this.opts.log.warn("drop: runtime failure detail lookup failed", {
+      conversationId: convId,
+      error: String(error),
+    });
+  }
   this.opts.log.error("dropping held messages: engine could not start", {
     conversationId: convId,
     count: waiting.length,
@@ -318,21 +334,43 @@ export async function dropEarlyWithError(
     { channelId: message.channelId, conversationId: convId },
     `Engine error: ${detail}`,
     `sys:${convId}:${message.id}:engine-error`,
+  ).catch((error) =>
+    this.opts.log.warn("drop: system error post failed", {
+      conversationId: convId,
+      error: String(error),
+    }),
   );
   await this.updateConversation(convId, {
     turnFailure: { kind: "generic", text: `Engine error: ${detail}` },
-  });
+  }).catch((error) =>
+    this.opts.log.warn("drop: failed-turn surface write failed", {
+      conversationId: convId,
+      error: String(error),
+    }),
+  );
   /* A hand-off child whose engine never started still owes its parent
      a wake — otherwise the ticket waits on a turn that can never run. */
   if (conv?.parentId && conv.ticketId) {
-    noteTaskWake(this, {
-      taskId: conv.ticketId,
-      turnId: `bind:${convId}:${message.id}`,
-      outcome: "failed",
-      result: `Engine error: ${detail}`,
-    });
+    try {
+      noteTaskWake(this, {
+        taskId: conv.ticketId,
+        turnId: `bind:${convId}:${message.id}`,
+        outcome: "failed",
+        result: `Engine error: ${detail}`,
+      });
+    } catch (error) {
+      this.opts.log.warn("drop: parent wake failed", {
+        conversationId: convId,
+        error: String(error),
+      });
+    }
   }
   /* The drop may have been this runtime's last demand — idle its
      failed row instead of supervising a dead engine forever. */
-  await this.releaseIdleFailedRuntimes();
+  await this.releaseIdleFailedRuntimes().catch((error) =>
+    this.opts.log.warn("drop: failed-runtime release failed", {
+      conversationId: convId,
+      error: String(error),
+    }),
+  );
 }

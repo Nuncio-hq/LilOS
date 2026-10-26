@@ -132,11 +132,6 @@ export interface AcpEngineOptions {
   createTimeoutMs?: number;
 }
 
-/* How long describe() may wait on the catalog probe — a healthy agent
-   answers in ~1s; the installed app's slow first init ran ~14s, and
-   callers bound describe around 15s, so the grace stays well under that. */
-const DESCRIBE_PROBE_GRACE_MS = 8_000;
-
 export class AcpEngine {
   private conn?: AcpConnection;
   private sessions = new Map<string, AcpSession>();
@@ -234,8 +229,22 @@ export class AcpEngine {
      session's own bound still enforces the wedge (D-#866). */
   private async probeCatalog(c: AcpConnection) {
     try {
+      /* D-#866 (r4): the scratch session still spawns the agent's child —
+         it must carry the same `ask` meta as a gated session so NO session
+         is ever born under the user's bypassPermissions default. */
       const probe = await c.newSession(
-        { cwd: process.cwd() },
+        {
+          cwd: process.cwd(),
+          ...(this.opts.sessionMeta
+            ? {
+                meta: this.opts.sessionMeta({
+                  agent: this.opts.agent?.id ?? "",
+                  cwd: process.cwd(),
+                  access: "ask",
+                }),
+              }
+            : {}),
+        },
         { fatal: false },
       );
       learnSessionConfig(this.catalog, probe);
@@ -336,17 +345,13 @@ export class AcpEngine {
 
   private async describe(): Promise<DescribeResult> {
     const conn = await this.connection();
-    /* The backgrounded probe fills the catalog a beat after open — wait a
-       short grace so the common describe still reports the learned
-       surface, but a slow/wedged agent can't hold describe hostage
-       (D-#866). models.list waits the probe out fully instead. */
-    const probe = this.catalogProbe;
-    if (probe && this.catalog.options.size === 0) {
-      await Promise.race([
-        probe,
-        new Promise((r) => setTimeout(r, DESCRIBE_PROBE_GRACE_MS)),
-      ]);
-    }
+    /* describe is the host's LIVENESS probe (D-#482: 1.5s deadline, two
+       misses restart the adapter) — it answers immediately from whatever
+       the catalog holds right now. A slow first session/new under a fresh
+       app ancestry (~14s) starving this into a restart loop was the r4
+       failure: NO grace, no wait — the catalog fills whenever the
+       backgrounded probe lands, and only `models.list`/the capability
+       gate await it. */
     return {
       name: this.opts.name ?? "engine-acp",
       version: this.opts.version ?? "0.0.0",

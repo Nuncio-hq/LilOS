@@ -10,6 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, test } from "vitest";
+import { devinSpec } from "../shims/devin.js";
 import type { AcpLaunchSpec } from "../src/launch.js";
 import {
   probeAgentCommand,
@@ -162,6 +163,42 @@ describe("resolveAgentCommand", () => {
     expect(
       readdirSync(join(home, "acp-cache")).filter((d) => !d.startsWith(".")),
     ).toEqual([]);
+    rmSync(home, { recursive: true, force: true });
+  });
+});
+
+describe("probeAgentCommand", () => {
+  test("a PATH binary's probe drops the launch args — `devin --version`, never `devin acp … --version`", async () => {
+    /* r4 regression: merging spec.command args into the verify probe
+       produced `devin acp --model swe-2-high --version`, which the real
+       CLI rejects — the runtime reported available:false on a healthy
+       install. The fake fails if its first arg is not --version, so only
+       the bare binary + verify args pass. */
+    const home = tmp();
+    const binDir = join(home, "bin");
+    mkdirSync(binDir);
+    writeFileSync(
+      join(binDir, "devin"),
+      '#!/bin/sh\n[ "$1" = "--version" ] || { echo "unexpected argument $1" >&2; exit 2; }\necho "devin acp 9.9.9"\n',
+    );
+    chmodSync(join(binDir, "devin"), 0o755);
+    const p = await probeAgentCommand(devinSpec, {
+      ...env(home),
+      PATH: `${binDir}:${dirname(RUNTIME)}`,
+    });
+    expect(p.ok).toBe(true);
+    expect(p.output).toContain("devin acp 9.9.9");
+    /* The launch form keeps the spec's args — only the probe drops them. */
+    const r = resolveAgentCommand(devinSpec, {
+      ...env(home),
+      PATH: `${binDir}:${dirname(RUNTIME)}`,
+    });
+    expect(r.command).toEqual([
+      join(binDir, "devin"),
+      "acp",
+      "--model",
+      "swe-2-high",
+    ]);
     rmSync(home, { recursive: true, force: true });
   });
 });
