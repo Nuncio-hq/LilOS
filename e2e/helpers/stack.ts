@@ -737,6 +737,11 @@ export const v3Sidebar = (page: playwright.Page): playwright.Locator =>
 export const v3Peek = (page: playwright.Page): playwright.Locator =>
   page.getByRole("complementary", { name: "Opened record" });
 
+/** The page column: where a record lands when the open is a jump — sidebar,
+ *  palette, notification, or a link the current page doesn't own (D-#769). */
+export const v3Main = (page: playwright.Page): playwright.Locator =>
+  page.locator("#v3-main");
+
 /**
  * Start a chat with `agent` the way a person does: the new-chat draft beside
  * Threads, type, Send. Resolves once the draft has swapped for its thread

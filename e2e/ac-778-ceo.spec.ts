@@ -5,6 +5,7 @@ import {
   pickPorts,
   relayRpc,
   startChat,
+  v3Main,
   v3Peek,
   v3Sidebar,
 } from "./helpers/stack";
@@ -136,15 +137,16 @@ test("Make CEO moves the chip everywhere and redraws the org chart", async ({
     ).toHaveCount(1);
     await box.fill("Say hi from the palette");
     await box.press("Enter");
-    /* Ask the CEO is openAsk: a draft with the holder, not a second send path. */
-    await expect(page).toHaveURL(new RegExp(`open=newchat:${quillId}`), {
+    /* Ask the CEO is openAsk — a palette jump, so the draft lands as the
+       page (D-#769): a draft with the holder, not a second send path. */
+    await expect(page).toHaveURL(new RegExp(`page=newchat&id=${quillId}`), {
       timeout: 30_000,
     });
-    await expect(v3Peek(page).getByPlaceholder("Message Quill…")).toHaveValue(
+    await expect(v3Main(page).getByPlaceholder("Message Quill…")).toHaveValue(
       "Say hi from the palette",
     );
-    await expect(v3Peek(page).locator(CHIP)).toBeVisible();
-    await expect(v3Peek(page)).toContainText("Quill");
+    await expect(v3Main(page).locator(CHIP)).toBeVisible();
+    await expect(v3Main(page)).toContainText("Quill");
   } finally {
     await stack.stop();
   }

@@ -115,9 +115,14 @@ async function waitForPost(
     .toContain(`${convId}:${kind}`);
 }
 
-/** Where a notification click (or a link) puts a conversation: beside Threads. */
+/** Where a `goto`d thread URL puts a conversation: beside Threads. */
 const openedThread = (conversationId: string) =>
   new RegExp(`page=threads&open=thread:${conversationId}$`);
+
+/** Where a notification click puts it: the thread IS the page — a
+ *  notification is a jump, not an item the page lists (D-#769). */
+const threadPage = (conversationId: string) =>
+  new RegExp(`page=thread&id=${conversationId}$`);
 
 /** The default agent's dot in the sidebar: the per-employee badge. */
 const agentDot = (page: Page, status: string) =>
@@ -174,10 +179,10 @@ test("AC-1/AC-2/AC-3 (engine-fake): notify only when not in view, click opens th
   expect(askPost?.title).toContain("approval");
   expect(askPost?.body).toBeTruthy();
 
-  // AC-2 + #195 AC-3: a notification click opens that exact conversation in
-  // the side peek beside Threads (the thread, not the widened session view).
+  // AC-2 + #195 AC-3: a notification click opens that exact conversation —
+  // a jump, so the thread is the page (not the widened session view).
   await clickNotification(page, convB);
-  await expect(page).toHaveURL(openedThread(convB));
+  await expect(page).toHaveURL(threadPage(convB));
   await expect(page.locator("[data-thread-panel]")).toBeVisible({
     timeout: 30_000,
   });
@@ -231,7 +236,7 @@ test("AC-1/AC-2/AC-3 (engine-fake): notify only when not in view, click opens th
   // Clicking the failed notification opens conv D's panel with its error
   // visible.
   await clickNotification(page, convD);
-  await expect(page).toHaveURL(openedThread(convD));
+  await expect(page).toHaveURL(threadPage(convD));
   await expect(page.locator("[data-thread-panel]")).toBeVisible({
     timeout: 30_000,
   });
@@ -280,5 +285,5 @@ test("AC-32 live: done notification + click-through under real hermes", async ({
 
   await waitForPost(page, convB, "done", 240_000);
   await clickNotification(page, convB);
-  await expect(page).toHaveURL(openedThread(convB));
+  await expect(page).toHaveURL(threadPage(convB));
 });

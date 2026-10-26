@@ -6,6 +6,7 @@ import {
   bootStack,
   pickPorts,
   skipFirstRun,
+  v3Main,
   v3Peek,
   v3Sidebar,
 } from "./helpers/stack";
@@ -116,7 +117,7 @@ test("AC-2 first run folds name+company into the Welcome, prefilled; AC-1 the ch
     await v3Sidebar(page)
       .getByRole("button", { name: /Default/ })
       .click();
-    await v3Peek(page).getByRole("button", { name: "Message" }).click();
+    await v3Main(page).getByRole("button", { name: "Message" }).click();
     await v3Peek(page)
       .getByPlaceholder("Message Default…")
       .fill("hello identity");

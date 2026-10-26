@@ -220,9 +220,9 @@ async function openApp(stack: Procs, page: Page) {
     timeout: 60_000, // the first run spawns the engine; suite runs are parallel
   });
   await row.click();
-  await expect(page).toHaveURL(/open=agent:[^&,]+/);
+  await expect(page).toHaveURL(/[#?&]page=agent&id=[^&,]+/);
   const id = decodeURIComponent(
-    /open=agent:([^&,]+)/.exec(page.url())?.[1] ?? "",
+    /[?&]id=([^&,]+)/.exec(page.url())?.[1] ?? "",
   );
   // Any mid-flight full reload bumps the count past what this goto saw —
   // and the navigation entry flips to "reload" even when goto survived it.

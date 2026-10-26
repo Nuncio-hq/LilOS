@@ -6,6 +6,7 @@ import {
   bootStack,
   pickPorts,
   skipFirstRun,
+  v3Main,
   v3Peek,
   v3Sidebar,
 } from "./helpers/stack";
@@ -84,10 +85,12 @@ test("a fresh home: Welcome, a real engine check, then Home with the first agent
     await expect(side.getByRole("button", { name: /Default/i })).toHaveCount(0);
     await expect(page.locator("main")).toContainText("1 agent");
 
-    // Its model is the one picked, and its folder is the chat's folder.
+    // Its model is the one picked, and its folder is the chat's folder. The
+    // sidebar pick is a jump — the agent is the page now (D-#769); Message's
+    // draft peeks beside it.
     await side.getByRole("button", { name: /Ada/ }).click();
-    await expect(v3Peek(page)).toContainText("Fake Reasoning");
-    await v3Peek(page).getByRole("button", { name: "Message" }).click();
+    await expect(v3Main(page)).toContainText("Fake Reasoning");
+    await v3Main(page).getByRole("button", { name: "Message" }).click();
     await expect(v3Peek(page).getByTitle(/^Project · /)).toHaveAttribute(
       "title",
       new RegExp(path.basename(folder)),

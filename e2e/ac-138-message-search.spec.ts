@@ -179,14 +179,14 @@ test("AC-2/3/4 message hits: found by message text, snippet marked, archived onl
   await expect(palette.locator("[data-archived-hit]")).toHaveCount(2);
   await page.screenshot({ path: `${SHOTS}/ac2-message-hits.png` });
 
-  // AC-3: picking the user's long follow-up opens its thread beside Threads,
-  // scrolled to and flashing THAT message.
+  // AC-3: picking the user's long follow-up is a palette jump — the thread
+  // becomes the page (D-#769), scrolled to and flashing THAT message.
   const clicked = hitRows.filter({ hasText: "mid-ingest" }).first();
   const hitId = await clicked.getAttribute("data-message-hit");
   expect(hitId).toBeTruthy();
   await clicked.click();
   await expect(page).toHaveURL(
-    new RegExp(`open=thread:${encodeURIComponent(convA)}`),
+    new RegExp(`page=thread&id=${encodeURIComponent(convA)}`),
     { timeout: 10_000 },
   );
   await expect(panel).toBeVisible();
@@ -206,7 +206,7 @@ test("AC-2/3/4 message hits: found by message text, snippet marked, archived onl
   await expect(archivedHit.first()).toBeVisible({ timeout: 15_000 });
   await archivedHit.first().click();
   await expect(page).toHaveURL(
-    new RegExp(`open=thread:${encodeURIComponent(convB)}`),
+    new RegExp(`page=thread&id=${encodeURIComponent(convB)}`),
     { timeout: 10_000 },
   );
   await panel

@@ -136,7 +136,7 @@ for (const theme of ["light", "dark"] as const) {
       const first = v3Sidebar(page).getByRole("button", { name: /Ada/ });
       await first.click();
       const id = decodeURIComponent(
-        /open=agent:([^&,]+)/.exec(page.url())?.[1] ?? "",
+        /[?&]id=([^&,]+)/.exec(page.url())?.[1] ?? "",
       );
       expect(id).not.toBe("");
       const convId = await startChat(

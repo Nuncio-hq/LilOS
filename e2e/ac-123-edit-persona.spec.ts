@@ -6,6 +6,7 @@ import {
   pickPorts,
   type Stack,
   skipFirstRun,
+  v3Main,
   v3Peek,
   v3Sidebar,
 } from "./helpers/stack";
@@ -84,30 +85,31 @@ test.afterAll(async () => {
   await stackA?.stop();
 });
 
-/** Open the app past first run and Default's page in the side peek. */
+/** Open the app past first run and Default's page — a sidebar pick is a
+ *  jump, so the record is the page column (D-#769). */
 async function openDefault(stack: Stack, page: Page) {
   await skipFirstRun(page);
   await page.goto(`${stack.webUrl}/`);
   const row = v3Sidebar(page).getByRole("button", { name: /Default/ });
   await expect(row).toBeVisible({ timeout: 30_000 });
   await row.click();
-  const peek = v3Peek(page);
+  const record = v3Main(page);
   await expect(
-    peek.getByRole("heading", { level: 1, name: "Default" }),
+    record.getByRole("heading", { level: 1, name: "Default" }),
   ).toBeVisible();
-  return peek;
+  return record;
 }
 
 /** Edit mode on the open agent page. */
-async function openEdit(peek: ReturnType<typeof v3Peek>) {
-  await peek.getByRole("button", { name: "Edit" }).click();
-  await expect(peek.getByRole("button", { name: "Save" })).toBeVisible();
+async function openEdit(record: ReturnType<typeof v3Main>) {
+  await record.getByRole("button", { name: "Edit" }).click();
+  await expect(record.getByRole("button", { name: "Save" })).toBeVisible();
 }
 
 /** The Model menu in edit mode: pick `label`. */
-async function pickModel(peek: ReturnType<typeof v3Peek>, label: string) {
-  await peek.getByRole("button", { name: "Model", exact: true }).click();
-  await peek
+async function pickModel(record: ReturnType<typeof v3Main>, label: string) {
+  await record.getByRole("button", { name: "Model", exact: true }).click();
+  await record
     .getByRole("menu", { name: "Model" })
     .getByRole("menuitemradio", { name: label })
     .click();
@@ -142,43 +144,45 @@ async function replyInSession(page: Page, text: string) {
 test("AC-1 the Edit mode shows only the fields the engine advertises", async ({
   page,
 }) => {
-  const peek = await openDefault(stackA, page);
-  await openEdit(peek);
+  const record = await openDefault(stackA, page);
+  await openEdit(record);
   // engine-fake advertises description/soul/model (and name, which the
   // company record already owns) — the page renders exactly those, plus the
   // record's role.
-  await expect(peek.getByRole("textbox", { name: "Name" })).toBeVisible();
-  await expect(peek.getByRole("textbox", { name: "Role" })).toBeVisible();
+  await expect(record.getByRole("textbox", { name: "Name" })).toBeVisible();
+  await expect(record.getByRole("textbox", { name: "Role" })).toBeVisible();
   await expect(
-    peek.getByRole("textbox", { name: "Description" }),
+    record.getByRole("textbox", { name: "Description" }),
   ).toBeVisible();
-  await expect(peek.getByText(/Applies to new threads/)).toBeVisible(); // AC-4's note
+  await expect(record.getByText(/Applies to new threads/)).toBeVisible(); // AC-4's note
   await expect(
-    peek.getByRole("textbox", { name: "Instructions" }),
+    record.getByRole("textbox", { name: "Instructions" }),
   ).toBeVisible();
   await expect(
-    peek.getByRole("button", { name: "Model", exact: true }),
+    record.getByRole("button", { name: "Model", exact: true }),
   ).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-1-edit-dialog.png` });
-  await peek.getByRole("button", { name: "Cancel" }).click();
-  await expect(peek.getByRole("button", { name: "Save" })).toHaveCount(0);
-  await expect(peek.getByRole("button", { name: "Edit" })).toBeVisible();
+  await record.getByRole("button", { name: "Cancel" }).click();
+  await expect(record.getByRole("button", { name: "Save" })).toHaveCount(0);
+  await expect(record.getByRole("button", { name: "Edit" })).toBeVisible();
 });
 
 test("AC-1b Esc cancels the edit without closing the page; Save stays reachable in a short window", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 600 });
-  const peek = await openDefault(stackA, page);
-  await openEdit(peek);
-  // Esc steps out of the edit, never out of the peek behind it.
-  await peek.getByRole("textbox", { name: "Instructions" }).press("Escape");
-  await expect(peek.getByRole("button", { name: "Save" })).toHaveCount(0);
-  await expect(v3Peek(page)).toBeVisible();
+  const record = await openDefault(stackA, page);
+  await openEdit(record);
+  // Esc steps out of the edit, never out of the record — the record IS the
+  // page (D-#769), so it stays and no peek was ever there.
+  await record.getByRole("textbox", { name: "Instructions" }).press("Escape");
+  await expect(record.getByRole("button", { name: "Save" })).toHaveCount(0);
+  await expect(page).toHaveURL(/[#?&]page=agent&id=/);
+  await expect(record.getByRole("button", { name: "Edit" })).toBeVisible();
 
-  await openEdit(peek);
+  await openEdit(record);
   // The header's Save is inside the window; saving unchanged keeps the page.
-  const save = peek.getByRole("button", { name: "Save" });
+  const save = record.getByRole("button", { name: "Save" });
   await expect(save).toBeVisible();
   await expect(save).toBeEnabled();
   const box = await save.boundingBox();
@@ -187,25 +191,25 @@ test("AC-1b Esc cancels the edit without closing the page; Save stays reachable 
   expect(box.y).toBeGreaterThanOrEqual(0);
   expect(box.y + box.height).toBeLessThanOrEqual(600);
   await save.click();
-  await expect(peek.getByRole("button", { name: "Edit" })).toBeVisible();
+  await expect(record.getByRole("button", { name: "Edit" })).toBeVisible();
 });
 
 test("AC-2 saving a new persona + model writes the engine profile (agents.update → agents.describe)", async ({
   page,
 }) => {
-  const peek = await openDefault(stackA, page);
-  await openEdit(peek);
-  await peek
+  const record = await openDefault(stackA, page);
+  await openEdit(record);
+  await record
     .getByRole("textbox", { name: "Instructions" })
     .fill("You are Default v2. Answer in exactly one word.");
-  await peek
+  await record
     .getByRole("textbox", { name: "Description" })
     .fill("persona updated from LilOS");
-  await pickModel(peek, "Fake Small");
+  await pickModel(record, "Fake Small");
   await page.screenshot({ path: `${SHOTS}/ac-2-edited-dialog.png` });
-  await peek.getByRole("button", { name: "Save" }).click();
+  await record.getByRole("button", { name: "Save" }).click();
   // "Save" reads "Saving…" while in flight: Edit is back once it has landed.
-  await expect(peek.getByRole("button", { name: "Edit" })).toBeVisible();
+  await expect(record.getByRole("button", { name: "Edit" })).toBeVisible();
 
   const agent = await describeAgent(stackA, "default");
   expect(agent.soul).toBe("You are Default v2. Answer in exactly one word.");
@@ -217,20 +221,20 @@ test("AC-2 saving a new persona + model writes the engine profile (agents.update
   const [listed] = await rpc(stackA.relayWs, stackA.relayToken, [
     { method: "employees.list", params: {} },
   ]);
-  const record = (
+  const record_row = (
     listed.result as {
       employees: { name: string; model: string; instructions: string }[];
     }
   ).employees.find((e) => e.name === "Default");
-  expect(record?.model).toBe("fake-small");
-  expect(record?.instructions).toBe(
+  expect(record_row?.model).toBe("fake-small");
+  expect(record_row?.instructions).toBe(
     "You are Default v2. Answer in exactly one word.",
   );
 
   // The still-open page reads the mirrored record — new soul + model.
-  await expect(peek.getByText("You are Default v2.")).toBeVisible();
+  await expect(record.getByText("You are Default v2.")).toBeVisible();
   // #194: the page shows the model's display name, not the id.
-  await expect(peek.getByText("Fake Small", { exact: true })).toBeVisible();
+  await expect(record.getByText("Fake Small", { exact: true })).toBeVisible();
 });
 
 test("AC-4 a running session keeps its model; the next new session uses the updated default", async ({
@@ -248,12 +252,12 @@ test("AC-4 a running session keeps its model; the next new session uses the upda
   await v3Sidebar(page)
     .getByRole("button", { name: /Default/ })
     .click();
-  const peek = v3Peek(page);
-  await openEdit(peek);
-  await pickModel(peek, "Fake Reasoning");
-  await peek.getByRole("button", { name: "Save" }).click();
+  const record = v3Main(page);
+  await openEdit(record);
+  await pickModel(record, "Fake Reasoning");
+  await record.getByRole("button", { name: "Save" }).click();
   // "Save" reads "Saving…" while in flight: Edit is back once it has landed.
-  await expect(peek.getByRole("button", { name: "Edit" })).toBeVisible();
+  await expect(record.getByRole("button", { name: "Edit" })).toBeVisible();
   const agent = await describeAgent(stackA, "default");
   expect(agent.model).toBe("fake-reasoning");
 

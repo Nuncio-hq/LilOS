@@ -9,6 +9,7 @@ import {
   relayRpc,
   type Stack,
   startChat,
+  v3Main,
   v3Peek,
 } from "./helpers/stack";
 
@@ -94,8 +95,10 @@ test("a ticket from the owner and from an agent lands on Work and its project", 
   await expect(main(page).getByRole("button", { name: "New" })).toBeVisible({
     timeout: 30_000,
   });
+  /* New opens the ask draft — a destination, not an item the page lists, so
+     it IS the page now (D-#769). */
   await main(page).getByRole("button", { name: "New" }).click();
-  const draft = v3Peek(page);
+  const draft = v3Main(page);
   await expect(draft.getByText("New chat", { exact: true })).toBeVisible({
     timeout: 30_000,
   });
@@ -130,13 +133,15 @@ test("a ticket from the owner and from an agent lands on Work and its project", 
   await expect(main(page).getByText("From the agent")).toBeVisible();
   await shot(page, "ac-1-work");
 
-  /* A project opens beside the page (D-#771), and its tickets are on that
-     record — the same place the project spec reads a thread. */
+  /* A project linked straight IS the page (D-#769) — its tickets are on
+     that record, the same place the project spec reads a thread. */
   await page.goto(`${stack.webUrl}/#?page=project&id=${proj.id}`);
-  const peek = v3Peek(page);
-  await expect(peek.getByText("Open tickets")).toBeVisible({ timeout: 30_000 });
-  await expect(peek.getByText("From you")).toBeVisible();
-  await expect(peek.getByText("From the agent")).toBeVisible();
+  const projPage = v3Main(page);
+  await expect(projPage.getByText("Open tickets")).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(projPage.getByText("From you")).toBeVisible();
+  await expect(projPage.getByText("From the agent")).toBeVisible();
 });
 
 test("assign opens the owner's thread; reassign adds a second hand", async ({
