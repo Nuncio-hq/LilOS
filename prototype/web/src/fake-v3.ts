@@ -1,5 +1,6 @@
 import { HIRE_TEMPLATES, type V3Data, type V3Draft, type V3Profile } from "@lilos/ui/v3-data"
 import { ATTENTION_ASKS, ATTENTION_THREADS } from "./fake-v3-attention"
+import { CODING_AGENTS, CODING_ASKS, CODING_THREADS } from "./fake-v3-coding"
 import { CONNECTORS, OUTSIDE_THREADS, OUTSIDE_TICKETS, OUTSIDE_WORKERS } from "./fake-v3-outside"
 import { MODEL_OPTIONS, MODEL_PROVIDERS, MODEL_VISIBILITY, modelIdOf } from "./fake-v3-models"
 import { AGENT_NOTES, SKILLS } from "./fake-v3-files"
@@ -742,7 +743,7 @@ export const V3_DATA: V3Data = {
   today: "Monday, 19 October",
   ceoId: "ceo",
   // The picker starts on each agent's own model (outside workers have none).
-  agents: [...AGENTS, ...OUTSIDE_WORKERS].map((a) => ({
+  agents: [...AGENTS, ...CODING_AGENTS, ...OUTSIDE_WORKERS].map((a) => ({
     ...a,
     modelId: modelIdOf(MODEL_OPTIONS, a.model),
     ...(AGENT_NOTES[a.id] ? { notes: AGENT_NOTES[a.id] } : {}),
@@ -752,11 +753,11 @@ export const V3_DATA: V3Data = {
   projects: PROJECTS,
   goals: GOALS,
   tickets: [...TICKETS, ...OUTSIDE_TICKETS],
-  threads: [...THREADS, ...ATTENTION_THREADS, ...OUTSIDE_THREADS].map((t) =>
+  threads: [...THREADS, ...CODING_THREADS, ...ATTENTION_THREADS, ...OUTSIDE_THREADS].map((t) =>
     WORKBENCHES[t.id] ? { ...t, workbench: WORKBENCHES[t.id] } : t,
   ),
   archivedThreads: [],
-  asks: [...ASKS, ...ATTENTION_ASKS],
+  asks: [...ASKS, ...ATTENTION_ASKS, ...CODING_ASKS],
   updates: UPDATES,
   schedules: SCHEDULES,
   browser: BROWSER,

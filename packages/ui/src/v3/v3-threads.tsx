@@ -8,11 +8,14 @@ import {
 import type { ReactNode } from "react";
 import { cn } from "../lib/utils";
 import { Btn, Page, Section, Tabs, Title } from "./v3-bits";
+import type { V3Data } from "./v3-data-types";
 import { AgentAvatar, CeoMark, DOT } from "./v3-marks";
 import {
   asleepAgents,
+  boardStatus,
   defaultAgent,
   LIVE_RANK,
+  listedThreads,
   onLiveBoard,
   threadsIn,
   unseenThreads,
@@ -41,13 +44,14 @@ const TABS: { id: View; label: string; icon: ReactNode }[] = [
 /** How many finished threads "Earlier today" lists; All has the rest. */
 const EARLIER = 12;
 
-function Summary({ threads }: { threads: V3Thread[] }) {
+function Summary({ data, threads }: { data: V3Data; threads: V3Thread[] }) {
   /* The same counts Home prints (D-#774). Zeros stay: this page is the
-     board, and an empty board should say so. */
+     board, and an empty board should say so. A parent waiting on helpers
+     counts as working (D-#847). */
   const items: { status: V3Status; count: number; word: string }[] = [
     {
       status: "working",
-      count: threadsIn(threads, "working"),
+      count: threads.filter((t) => boardStatus(data, t) === "working").length,
       word: "working",
     },
     { status: "needs", count: threadsIn(threads, "needs"), word: "needs you" },
@@ -77,13 +81,21 @@ function Summary({ threads }: { threads: V3Thread[] }) {
 
 function Live(p: V3PageProps) {
   const { data, go } = p;
-  const board = data.threads
-    .filter(onLiveBoard)
-    .sort((a, b) => (LIVE_RANK[a.status] ?? 9) - (LIVE_RANK[b.status] ?? 9));
+  /* Helpers have no card of their own (D-#847); the parent waiting on them
+     lands in the working band. */
+  const board = listedThreads(data.threads)
+    .filter((t) => onLiveBoard(data, t))
+    .sort(
+      (a, b) =>
+        (LIVE_RANK[boardStatus(data, a)] ?? 9) -
+        (LIVE_RANK[boardStatus(data, b)] ?? 9),
+    );
   // An agent with nothing on the board is asleep; its card says what wakes it.
   const asleep = asleepAgents(data);
   // Threads arrive newest first, so the head of the list is the newest.
-  const finished = data.threads.filter((t) => t.status === "done" && !t.unseen);
+  const finished = listedThreads(data.threads).filter(
+    (t) => t.status === "done" && !t.unseen,
+  );
   const earlier = finished.slice(0, EARLIER);
 
   return (
@@ -138,7 +150,7 @@ function All(p: V3PageProps) {
         )}
         <span />
       </div>
-      {data.threads.map((t) => (
+      {listedThreads(data.threads).map((t) => (
         <AllRow key={t.id} {...p} t={t} hasContext={hasContext} />
       ))}
       <Archived
@@ -216,7 +228,9 @@ export function V3Threads(props: V3PageProps & { view: View }) {
           </Btn>
         )}
       </div>
-      {view !== "scheduled" && <Summary threads={data.threads} />}
+      {view !== "scheduled" && (
+        <Summary data={data} threads={listedThreads(data.threads)} />
+      )}
       {view === "live" && <Live {...props} />}
       {view === "all" && <All {...props} />}
       {view === "agent" && <ByAgent {...props} />}

@@ -3,9 +3,10 @@ import { type ReactNode, useState } from "react";
 import { cn } from "../lib/utils";
 import { Meter, span, TicketId } from "./v3-bits";
 import type { V3Data } from "./v3-data-types";
+import { HelpersHint } from "./v3-helpers";
 import { ThreadPill } from "./v3-live";
-import { agentOf, threadTag } from "./v3-model";
-import { RowButton } from "./v3-open-record";
+import { agentOf, listedAncestorOf, threadOf, threadTag } from "./v3-model";
+import { RowButton, useOpenRoute } from "./v3-open-record";
 import type { V3PageProps } from "./v3-page-types";
 import { AgentName } from "./v3-rows";
 import { useRenameMenu } from "./v3-thread-menu";
@@ -30,10 +31,20 @@ function RowTitle({
   t: V3Thread;
   editing: ReactNode | undefined;
 }) {
+  const parent = t.parentId ? threadOf(data, t.parentId) : undefined;
   return (
     <span className="flex min-w-0 items-center">
       <TicketId id={threadTag(data, t)} className="shrink-0" />
       {editing ?? <span className="truncate">{t.title}</span>}
+      {parent && (
+        <span
+          className="ml-1.5 shrink-0 truncate text-[12px] text-muted-foreground/60"
+          title={`helper of ${parent.title}`}
+        >
+          ↩ {parent.title}
+        </span>
+      )}
+      <HelpersHint data={data} thread={t} className="ml-1.5 text-[12px]" />
     </span>
   );
 }
@@ -58,12 +69,17 @@ function ThreadRow({
     onRename: renameThread && ((title) => renameThread(t.id, title)),
     onArchive: archiveThread && ((to) => archiveThread(t.id, to)),
   });
+  // An open helper marks its nearest listed ancestor's row (D-#847).
+  const open = useOpenRoute();
   return (
     // `data-thread-row`, not `data-thread`: that one marks the open thread's
     // transcript, and the list sits under the peek on the same page.
     <div data-thread-row={t.id} data-archived={archived || undefined}>
       <RowButton
         opens={{ page: "thread", id: t.id }}
+        marked={
+          open?.page === "thread" && listedAncestorOf(data, open.id) === t.id
+        }
         onClick={() => go({ page: "thread", id: t.id })}
         className={cn(
           "group/thread grid items-center border-[var(--v3-line)] border-b py-2.5",

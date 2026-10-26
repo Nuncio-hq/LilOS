@@ -52,6 +52,13 @@ export {
 export { V3Banner } from "./v3/v3-banner";
 export { STEP_VERB } from "./v3/v3-bits";
 export type * from "./v3/v3-data-types";
+export {
+  HelperRow,
+  HelpersBlock,
+  HelpersHint,
+  ParentLine,
+  ThreadLineage,
+} from "./v3/v3-helpers";
 export { agentNameOf, agentOf } from "./v3/v3-model";
 export {
   navFromParams,

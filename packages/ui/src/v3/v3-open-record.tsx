@@ -16,6 +16,12 @@ export function useOpenRecord() {
     open?.page === page && open.id === id;
 }
 
+/** The record open in the side peek, raw (for ancestor-aware marking: an
+   open helper marks its nearest listed ancestor's row, D-#847). */
+export function useOpenRoute() {
+  return useContext(OpenRecord);
+}
+
 /** The mark for an open row: a quiet tint and an ink bar on its left edge. */
 export const OPEN_ROW =
   "bg-[var(--v3-hover)] shadow-[inset_2px_0_0_var(--foreground)]";
@@ -27,14 +33,20 @@ export function RowButton({
   children,
   className,
   opens,
+  marked,
 }: {
   onClick: () => void;
   children: ReactNode;
   className?: string;
   opens?: V3RecordRoute;
+  /** Marks the row for a record that is not `opens` itself — an open helper
+     thread marks its nearest listed ancestor's row (D-#847). */
+  marked?: boolean;
 }) {
   const open = useContext(OpenRecord);
-  const selected = !!opens && open?.page === opens.page && open.id === opens.id;
+  const selected =
+    (!!opens && open?.page === opens.page && open.id === opens.id) ||
+    marked === true;
   return (
     // A row holds buttons of its own, so it cannot be a <button>.
     <div

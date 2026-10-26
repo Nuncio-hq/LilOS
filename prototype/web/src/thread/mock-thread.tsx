@@ -3,6 +3,7 @@ import {
   FocusView,
   type ModelChoice,
   type PlanAction,
+  ThreadLineage,
   ThreadView,
   type V3Ask,
   type V3PageProps,
@@ -43,6 +44,7 @@ export function MockThread(
 
 function Body({
   data,
+  go,
   act,
   id,
   session,
@@ -259,6 +261,10 @@ function Body({
 
   return (
     <div data-thread-panel className="flex h-full min-h-0 min-w-0 flex-col">
+      {/* A hand-off is an ordinary thread with lineage (D-#847): the page
+          leads with the parent a helper belongs to, or the helpers a
+          parent is waiting on — nothing on an ordinary thread. */}
+      <ThreadLineage data={data} thread={t} go={go} act={act} />
       {session ? (
         <FocusView
           bare
