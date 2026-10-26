@@ -1,8 +1,9 @@
 // @vitest-environment happy-dom
-/* Model picker v2 (Codex-style): one popover with the reasoning slider, the
-   fast toggle and a "Model ›" drill-in list grouped by provider. Issue #30's
-   ACs still hold (engine list, pick reports the engine id, no picker without
-   the capability); the rest pins the v2 behaviour agreed with the client. */
+/* Model picker v2 (Codex-style): one popover with the reasoning-effort
+   dropdown, the fast toggle and a "Model ›" drill-in list grouped by
+   provider. Issue #30's ACs still hold (engine list, pick reports the engine
+   id, no picker without the capability); the rest pins the v2 behaviour
+   agreed with the client, and #868 the quiet rows. */
 import {
   act,
   cleanup,
@@ -130,6 +131,24 @@ const openModels = async () => {
   );
   if (!row) throw new Error("no Model row");
   await act(async () => fireEvent.click(row));
+};
+/* The effort dropdown (D-#868): the main view's Reasoning row opens the
+   pane that lists the engine's levels. */
+const openEffort = async () => {
+  /* The trigger toggles — open only when the popover isn't already. */
+  if (!body().querySelector('[data-slot="popover-content"]')) await open();
+  const row = body().querySelector(
+    'button[aria-label="Reasoning"]',
+  ) as HTMLElement | null;
+  if (!row) throw new Error("no Reasoning row");
+  await act(async () => fireEvent.click(row));
+};
+const pickEffort = async (label: string) => {
+  const menu = body().querySelector('[aria-label="Reasoning levels"]');
+  if (!menu) throw new Error("no effort menu");
+  await act(async () =>
+    fireEvent.click(within(menu as HTMLElement).getByText(label)),
+  );
 };
 
 function Harness(
@@ -429,50 +448,60 @@ describe("model picker v2", () => {
        host (`/model` opens the picker). */
     await open();
     expect(opens).toEqual([true]);
-    expect(body().querySelector('input[type="range"]')).toBeNull();
+    expect(body().querySelector('[data-slot="popover-content"]')).toBeNull();
     await act(async () => r.rerender(view({ modelOpen: true })));
-    expect(body().querySelector('input[type="range"]')).not.toBeNull();
+    expect(
+      body().querySelector('[data-slot="popover-content"]'),
+    ).not.toBeNull();
   });
 
-  test("the slider has exactly the steps the engine reported for THIS model", async () => {
+  test("the Reasoning dropdown lists exactly the levels the engine reported for THIS model", async () => {
     const { rerender } = render(<Harness />);
-    await open();
-    // No per-level tick buttons (Codex-style drag); the range input carries the ladder.
-    expect(body().querySelector('button[aria-label="Medium"]')).toBeNull();
-    const range = () => {
-      const el = body().querySelector(
-        'input[type="range"]',
-      ) as HTMLInputElement;
-      return [el.min, el.max, el.getAttribute("aria-valuetext")];
-    };
-    // gpt-test-5 reports 5 levels → 0..4, currently Medium.
-    expect(range()).toEqual(["0", "4", "Medium"]);
-    // Hermes' full ladder (engine couldn't say per model) → 7 steps.
+    await openEffort();
+    const levels = () =>
+      [
+        ...body().querySelectorAll(
+          '[aria-label="Reasoning levels"] [role="menuitemradio"]',
+        ),
+      ] as HTMLElement[];
+    // gpt-test-5 reports 5 levels, currently Medium.
+    expect(levels().map((b) => b.textContent?.trim())).toEqual([
+      "Low",
+      "Medium",
+      "High",
+      "Extra high",
+      "Max",
+    ]);
+    expect(
+      levels().find((b) => b.getAttribute("aria-checked") === "true")
+        ?.textContent,
+    ).toBe("Medium");
+    // Hermes' full ladder (engine couldn't say per model) → all 7. The
+    // effort pane stays open across the rerender.
     rerender(<Harness value={choiceFor("qwen", MODELS)} />);
-    expect(range()).toEqual(["0", "6", "Medium"]);
-    // No efforts → no slider at all.
+    expect(levels()).toHaveLength(7);
+    // No efforts → no Reasoning row at all. Close and reopen to land back
+    // on the main view.
     rerender(<Harness value={choiceFor("gpt-test-4o", MODELS)} />);
-    expect(body().querySelector('[role="slider"]')).toBeNull();
-    expect(body().textContent).toContain("no reasoning control");
+    await open();
+    await open();
+    expect(
+      body().querySelector('button[aria-label="Reasoning"]'),
+    ).toBeNull();
   });
 
-  test("an effort step reports the pick; the trigger shows model · effort", async () => {
+  test("an effort pick reports the pick; the trigger shows model · effort", async () => {
     const picks: ModelChoice[] = [];
     render(<Harness picks={picks} />);
     expect(trigger().textContent).toContain("GPT test 5");
     expect(trigger().textContent).toContain("Medium");
-    await open();
-    // Keyboard on the slider moves one level: Medium → High.
-    await act(async () =>
-      fireEvent.keyDown(
-        body().querySelector('input[type="range"]') as HTMLElement,
-        { key: "ArrowRight" },
-      ),
-    );
+    await openEffort();
+    await pickEffort("High");
     expect(picks.at(-1)).toMatchObject({
       model: "gpt-test-5",
       effort: "high",
     });
+    expect(trigger().textContent).toContain("High");
   });
 
   test("fast toggle renders only for a model with a fast tier", async () => {
@@ -516,12 +545,8 @@ describe("model picker v2", () => {
         <Harness picks={picks} value={choiceFor("gpt-test-5", MODELS)} />,
       ),
     );
-    await act(async () =>
-      fireEvent.keyDown(
-        body().querySelector('input[type="range"]') as HTMLElement,
-        { key: "ArrowRight" },
-      ),
-    );
+    await openEffort();
+    await pickEffort("High");
     expect(picks.at(-1)).toMatchObject({
       model: "gpt-test-5",
       effort: "high",
@@ -552,25 +577,16 @@ describe("model picker v2", () => {
       ),
     );
     expect(body().querySelector('[aria-label="Fast"]')).toBeNull();
-    await act(async () =>
-      fireEvent.keyDown(
-        body().querySelector('input[type="range"]') as HTMLElement,
-        { key: "ArrowRight" },
-      ),
-    );
+    await openEffort();
+    await pickEffort("High");
     expect(picks.at(-1)).toMatchObject({ fast: false, effort: "high" });
   });
 
   test("an echo with a normalised effort replaces the draft", async () => {
     const picks: ModelChoice[] = [];
     const { rerender } = render(<Harness picks={picks} />);
-    await open();
-    await act(async () =>
-      fireEvent.keyDown(
-        body().querySelector('input[type="range"]') as HTMLElement,
-        { key: "ArrowRight" },
-      ),
-    );
+    await openEffort();
+    await pickEffort("High");
     expect(picks.at(-1)).toMatchObject({ effort: "high" });
     expect(trigger().textContent).toContain("High");
     await act(async () =>
@@ -607,12 +623,8 @@ describe("model picker v2", () => {
         body().querySelector('button[aria-label="Fast mode"]') as HTMLElement,
       ),
     );
-    await act(async () =>
-      fireEvent.keyDown(
-        body().querySelector('input[type="range"]') as HTMLElement,
-        { key: "ArrowRight" },
-      ),
-    );
+    await openEffort();
+    await pickEffort("High");
     expect(picks).toHaveLength(3);
     expect(picks[2]).toMatchObject({
       model: "gpt-test-5",
@@ -662,12 +674,8 @@ describe("model picker v2", () => {
       ),
     );
     expect(trigger().querySelector('[aria-label="Fast"]')).toBeNull();
-    await act(async () =>
-      fireEvent.keyDown(
-        body().querySelector('input[type="range"]') as HTMLElement,
-        { key: "ArrowRight" },
-      ),
-    );
+    await openEffort();
+    await pickEffort("High");
     expect(picks.at(-1)).toMatchObject({ fast: false, effort: "high" });
   });
 
@@ -782,11 +790,13 @@ describe("model choice rules", () => {
     );
     await open();
     expect(body().textContent).toContain("Engine default");
-    // The slider is parked on the ladder's middle stop, not a claimed level.
-    const range = body().querySelector(
-      'input[type="range"]',
-    ) as HTMLInputElement;
-    expect(range.getAttribute("aria-valuetext")).toBe("High");
+    // The dropdown claims no level — the engine never reported one for it.
+    await openEffort();
+    expect(
+      body().querySelector(
+        '[aria-label="Reasoning levels"] [aria-checked="true"]',
+      ),
+    ).toBeNull();
   });
 });
 

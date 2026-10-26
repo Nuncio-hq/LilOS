@@ -45,7 +45,6 @@ import type {
   ModelProvider,
   Thread,
 } from "../types";
-import { EffortSlider } from "./effort-slider";
 import { isHidden } from "./model-visibility";
 import { ModelVisibilityDialog } from "./model-visibility-dialog";
 
@@ -216,11 +215,12 @@ export function withSessionModel(
   ];
 }
 
-/* Codex-style picker (issue: model picker v2): one popover holding the
-   reasoning-effort slider, the fast toggle and a "Model ›" row that opens the
-   searchable model list. Everything applies from the next turn. The slider has
-   exactly the steps the engine reported for THIS model; a model without
-   `efforts` gets no slider. Refresh / Edit models render only with handlers. */
+/* Codex-style picker (issue: model picker v2): one popover holding quiet
+   rows — the model, the reasoning-effort dropdown and Fast — plus a "Model ›"
+   row that opens the searchable model list. Everything applies from the next
+   turn. The dropdown lists exactly the levels the engine reported for THIS
+   model (D-#868); a model without `efforts` gets no Reasoning row. Refresh /
+   Edit models render only with handlers. */
 const samePick = (a: ModelChoice, b: ModelChoice) =>
   a.model === b.model &&
   a.provider === b.provider &&
@@ -249,7 +249,7 @@ export function ModelPicker({
   const [ownOpen, setOwnOpen] = useState(false);
   const open = openProp ?? ownOpen;
   const setOpen = onOpenChange ?? setOwnOpen;
-  const [view, setView] = useState<"main" | "models">("main");
+  const [view, setView] = useState<"main" | "models" | "effort">("main");
   const [editing, setEditing] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   /* A catalog refresh that ran and still didn't offer the session's model is
@@ -305,12 +305,6 @@ export function ModelPicker({
     shown0.effort && efforts.includes(shown0.effort)
       ? shown0.effort
       : defaultEffort(cur);
-  /* Unset effort (engine default in effect): park the thumb mid-ladder — a
-     display position only, `effort` stays undefined for the label. */
-  const idx =
-    effort && efforts.includes(effort)
-      ? efforts.indexOf(effort)
-      : Math.floor(Math.max(efforts.length - 1, 0) / 2);
   const fast = !!(cur?.fast && shown0.fast);
   const choose = (c: ModelChoice) => {
     setPicked(c);
@@ -432,70 +426,14 @@ export function ModelPicker({
           aria-label="Model and reasoning"
         >
           {view === "main" ? (
-            <div className="flex flex-col">
-              <div className="flex items-center gap-2 px-3 pt-3">
-                {cur?.fast ? (
-                  <button
-                    type="button"
-                    aria-label="Fast mode"
-                    aria-pressed={fast}
-                    title={fast ? "Fast mode on" : "Fast mode off"}
-                    onClick={() => choose({ ...shown0, effort, fast: !fast })}
-                    className={cn(
-                      "grid size-7 place-items-center rounded-md hover:bg-muted",
-                      fast ? "text-primary" : "text-muted-foreground",
-                    )}
-                  >
-                    <ZapIcon className={cn("size-4", fast && "fill-current")} />
-                  </button>
-                ) : (
-                  <span className="size-7" />
-                )}
-                <div className="min-w-0 flex-1 text-center">
-                  <div className="text-[11px] text-muted-foreground">
-                    Reasoning
-                  </div>
-                  <div
-                    key={effort ?? "none"}
-                    className={cn(
-                      "truncate",
-                      effort
-                        ? "fade-in slide-in-from-bottom-1 animate-in bg-linear-to-r from-indigo-500 via-violet-500 to-fuchsia-500 bg-clip-text font-medium text-base text-transparent duration-300 motion-reduce:animate-none"
-                        : "text-muted-foreground text-sm",
-                    )}
-                  >
-                    {effort
-                      ? effortLabel(effort)
-                      : efforts.length
-                        ? "Engine default"
-                        : "Not adjustable"}
-                  </div>
-                </div>
-                <span className="size-7" />
-              </div>
-              {efforts.length > 1 ? (
-                <div className="px-4 pt-3 pb-3">
-                  <EffortSlider
-                    efforts={efforts}
-                    index={idx}
-                    label={effortLabel}
-                    onPick={(e) => choose({ ...shown0, effort: e, fast })}
-                    /* The label follows the thumb live; the wire call fires
-                       once on release (`onPick`). */
-                    onPreview={(e) => setPicked({ ...shown0, effort: e, fast })}
-                  />
-                </div>
-              ) : (
-                <p className="px-4 pt-1 pb-3 text-center text-muted-foreground text-xs">
-                  {efforts.length === 1
-                    ? "This model has one reasoning level."
-                    : "This model has no reasoning control."}
-                </p>
-              )}
+            /* One quiet row per thing the pick owns (D-#868): the model,
+               then the effort ladder the engine reported as a plain
+               dropdown, then Fast — no slider. */
+            <div className="flex flex-col divide-y divide-border py-1">
               <button
                 type="button"
                 onClick={() => setView("models")}
-                className="flex items-center gap-2 border-t px-3 py-2.5 text-left hover:bg-muted"
+                className="flex items-center gap-2 px-3 py-2.5 text-left hover:bg-muted"
               >
                 <ModelLogo
                   provider={cur?.provider}
@@ -515,6 +453,85 @@ export function ModelPicker({
                 <span className="text-muted-foreground text-xs">Model</span>
                 <ChevronRightIcon className="size-4 text-muted-foreground" />
               </button>
+              {efforts.length > 0 && (
+                <button
+                  type="button"
+                  aria-label="Reasoning"
+                  onClick={() => setView("effort")}
+                  className="flex items-center gap-2 px-3 py-2.5 text-left hover:bg-muted"
+                >
+                  <span className="min-w-0 flex-1 truncate text-sm">
+                    {effort ? effortLabel(effort) : "Engine default"}
+                  </span>
+                  <span className="text-muted-foreground text-xs">
+                    Reasoning
+                  </span>
+                  <ChevronRightIcon className="size-4 text-muted-foreground" />
+                </button>
+              )}
+              {cur?.fast && (
+                <button
+                  type="button"
+                  aria-label="Fast mode"
+                  aria-pressed={fast}
+                  title={fast ? "Fast mode on" : "Fast mode off"}
+                  onClick={() => choose({ ...shown0, effort, fast: !fast })}
+                  className="flex items-center gap-2 px-3 py-2.5 text-left hover:bg-muted"
+                >
+                  <ZapIcon
+                    className={cn(
+                      "size-3.5",
+                      fast ? "fill-primary text-primary" : "text-muted-foreground",
+                    )}
+                  />
+                  <span className="min-w-0 flex-1 truncate text-sm">
+                    Fast mode
+                  </span>
+                  <span className="text-muted-foreground text-xs">
+                    {fast ? "On" : "Off"}
+                  </span>
+                </button>
+              )}
+            </div>
+          ) : view === "effort" ? (
+            /* The plain dropdown the issue asks for (D-#868): the levels
+               the engine reported, one row each — nothing invented. */
+            <div className="flex flex-col">
+              <div className="flex items-center gap-1 px-1 pt-1">
+                <button
+                  type="button"
+                  aria-label="Back"
+                  onClick={() => setView("main")}
+                  className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-muted"
+                >
+                  <ChevronLeftIcon className="size-4" />
+                </button>
+                <span className="flex-1 pr-7 text-center text-xs text-muted-foreground">
+                  Reasoning
+                </span>
+              </div>
+              <div role="menu" aria-label="Reasoning levels" className="py-1">
+                {efforts.map((e) => (
+                  <button
+                    key={e}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={e === effort}
+                    onClick={() => {
+                      choose({ ...shown0, effort: e, fast });
+                      setView("main");
+                    }}
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-muted"
+                  >
+                    <span className="grid w-3.5 place-items-center">
+                      {e === effort && (
+                        <CheckIcon className="size-3.5 text-foreground" />
+                      )}
+                    </span>
+                    {effortLabel(e)}
+                  </button>
+                ))}
+              </div>
             </div>
           ) : (
             <Command
