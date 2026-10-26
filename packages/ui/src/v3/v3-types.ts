@@ -311,6 +311,11 @@ export type V3Reply = {
    ticket, or a plain chat (no ticket) that can be turned into one. */
 export type V3Thread = {
   id: string;
+  /** The thread this one is a helper of (D-#844): a `task_*` hand-off runs
+     as an ordinary thread with `parentId` lineage back to the thread that
+     created it. Absent = a top-level thread. Helpers have no row of their
+     own in the lists; they show through their parent. */
+  parentId?: string;
   /** Absent = a chat, not tied to a ticket. */
   ticketId?: string;
   /** The project the thread lives in (D-#771), whose folder the agent works

@@ -3,10 +3,19 @@ import type { ReactNode } from "react";
 import { cn } from "../lib/utils";
 import { Btn, Meter, Spinner, TicketId, useTick } from "./v3-bits";
 import type { V3Data } from "./v3-data-types";
+import { HelperRow } from "./v3-helpers";
 import { elapsedAt, streamTail, ThreadPill, turnCount } from "./v3-live";
 import { AgentAvatar, CeoMark } from "./v3-marks";
-import { agentOf, FORMER_AGENT, threadTag } from "./v3-model";
-import { useOpenRecord } from "./v3-open-record";
+import {
+  agentOf,
+  boardStatus,
+  childrenOf,
+  FORMER_AGENT,
+  listedAncestorOf,
+  liveHelpersOf,
+  threadTag,
+} from "./v3-model";
+import { useOpenRoute } from "./v3-open-record";
 import type { V3PageProps } from "./v3-page-types";
 import { viaOf } from "./v3-rows";
 import type { V3Agent, V3Thread } from "./v3-types";
@@ -186,7 +195,11 @@ export function ThreadCard({
   act,
 }: V3PageProps & { t: V3Thread }) {
   const agent = agentOf(data, t.agentId);
-  const isOpen = useOpenRecord();
+  const openRoute = useOpenRoute();
+  /* An open helper marks its nearest listed ancestor's card (D-#847). */
+  const selected =
+    openRoute?.page === "thread" &&
+    listedAncestorOf(data, openRoute.id) === t.id;
   const open = () => {
     if (t.unseen) act.markSeen(t.id);
     go({ page: "thread", id: t.id });
@@ -207,10 +220,18 @@ export function ThreadCard({
   // and Open, instead of an empty alert line.
   const reason = t.status === "stuck" || t.stuck !== undefined;
   const turns = turnCount(t);
+  /* A parent waiting on helpers reads as Working (D-#847): no separate
+     pill — its helpers are the work, and the card lists them. */
+  const helpers = childrenOf(data, t.id);
+  const hasLiveHelpers = liveHelpersOf(data, t.id).length > 0;
 
   return (
-    <Frame onOpen={open} selected={isOpen("thread", t.id)}>
-      <Head data={data} agent={agent} pill={<ThreadPill status={t.status} />} />
+    <Frame onOpen={open} selected={selected}>
+      <Head
+        data={data}
+        agent={agent}
+        pill={<ThreadPill status={boardStatus(data, t)} />}
+      />
       <div className="font-semibold text-[14.5px] leading-[1.35]">
         {t.unseen && (
           <span
@@ -225,6 +246,19 @@ export function ThreadCard({
       </div>
 
       {t.status === "working" && <WorkingBody t={t} />}
+
+      {hasLiveHelpers && (
+        /* Rows open the helper, not the card under them. */
+        <div
+          className="flex flex-col"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          {helpers.map((k) => (
+            <HelperRow key={k.id} data={data} thread={k} go={go} act={act} />
+          ))}
+        </div>
+      )}
 
       {t.status === "needs" && (
         <>

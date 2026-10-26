@@ -294,6 +294,7 @@ packages/engine-*             adapter owning an engine</code></pre>
 <li id="d-844"><b>D-#844</b> <code>task_*</code>: a task is a ticket; the child thread gets only its prompt; finishes coalesce into one fenced parent wake; a cancel never wakes. <em>Not: a jobs table, approval to create.</em> <small>#844</small> <kbd>apps/relay/src/session/tasks.ts</kbd></li>
 <li id="d-848"><b>D-#848</b> A git caller's <code>task_create</code> child forks HEAD to a worktree by default via the #156 workspace intent; <code>"shared"</code> shares the folder; uncommitted edits never copy. <em>Not: a second worktree path, auto-merge.</em> <small>#848</small> <kbd>apps/harness/src/harness/task-isolation.ts</kbd></li>
 <li id="d-761"><b>D-#761</b> Engine per runtime (<code>Employee.runtime</code>): lazy start, adapter+failure gates, runtime::session refs. <em>Not: shared engine, retry loops.</em> <small>#761</small> <kbd>apps/harness/src/engine/registry.ts</kbd></li>
+<li id="d-847"><b>D-#847</b> A helper is a thread with <code>parentId</code>: no list row, shown on its parent; waiting parents read Working; parent Stop ends only its turn. <em>Not: helper rows, a stop cascade.</em> <small>#847</small> <kbd>packages/ui/src/v3/v3-model.ts</kbd></li>
 </ul>
 <h3 id="decisions-testing">Testing</h3>
 <ul class="decisions">

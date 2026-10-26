@@ -191,7 +191,7 @@ export function peopleActions({ setData, getData, toast }: Engine): Pick<
       }));
       // The engine's profile stays (D-#29): its row stays too, with nobody on it.
       setData((d) => patchConnect(d, (c) => ({ ...c, rows: c.rows.map((r) => (r.profile === profile ? { ...r, employee: undefined } : r)) })));
-      toast(`${gone} removed from the company`);
+      toast(`${gone} removed from LilOS`);
       return Promise.resolve();
     },
     saveNote: (agentId, note) => {

@@ -133,6 +133,9 @@ export function askActions({ setData, getData, toast }: Engine): Pick<
       toast(`Answered: ${option}`);
     },
     stop: (threadId) => {
+      /* Stop ends the thread's own turn only (D-#847): a handed-off helper
+         outlives its parent — it keeps running and is stopped on its own
+         row, and its ask stays open until answered or it is stopped. */
       cancelTurn(threadId);
       setData((d) => {
         const th = d.threads.find((t) => t.id === threadId);
@@ -140,11 +143,14 @@ export function askActions({ setData, getData, toast }: Engine): Pick<
         const ticket = d.tickets.find((t) => t.id === th.ticketId);
         return {
           ...d,
+          /* An ask the stopped thread was holding is gone with it. */
+          asks: d.asks.filter((a) => a.threadId !== threadId),
           threads: threadPatch(d, (t) => t.id === threadId, {
             status: "idle",
             now: undefined,
             live: undefined,
             stuck: undefined,
+            askId: undefined,
             summary: "Stopped by you",
           }),
           tickets: ticket

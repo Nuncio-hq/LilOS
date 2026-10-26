@@ -168,14 +168,33 @@ export function turnRows(c: Ctx, turn: V3Turn, opts: { newest: boolean; opening:
   const { newest, opening } = opts
   const rows: Reply[] = []
   const { prompt } = turn
+  /* A turn a helper of this thread opened with a task_* note (D-#844's wake)
+     is that helper's message — a left-side agent row, never a right-side
+     bubble that would read as the user's (D-#847). */
+  const helperNote =
+    prompt?.by !== undefined &&
+    prompt.by !== "you" &&
+    c.data.threads.some((k) => k.parentId === c.t.id && k.agentId === prompt.by)
   if (prompt && !opening)
-    rows.push({
-      from: prompt.by === "you" ? VIEWER_ID : prompt.by,
-      time: prompt.at,
-      id: promptId(c.t, turn.n),
-      text: prompt.text,
-      ...(prompt.files?.length ? { attachments: prompt.files } : {}),
-    })
+    rows.push(
+      helperNote
+        ? {
+            from: prompt.by,
+            time: prompt.at,
+            id: promptId(c.t, turn.n),
+            text: prompt.text,
+            phase: "done",
+            agentInitiated: true,
+            ...(prompt.files?.length ? { attachments: prompt.files } : {}),
+          }
+        : {
+            from: prompt.by === "you" ? VIEWER_ID : prompt.by,
+            time: prompt.at,
+            id: promptId(c.t, turn.n),
+            text: prompt.text,
+            ...(prompt.files?.length ? { attachments: prompt.files } : {}),
+          },
+    )
   // The opening turn's prompt is the thread's root message (the view draws it); a turn with
   // none (an agent opened the thread) is the agent's own reply, never your bubble.
   const text = turn.answer ?? turn.summary ?? ""
