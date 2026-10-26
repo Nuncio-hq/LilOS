@@ -1,6 +1,7 @@
 import type {
   AppMessage,
   Ask,
+  CodingAgentDefaults,
   Conversation,
   ConversationLife,
   ConversationsMoveFolderHostParams,
@@ -487,7 +488,7 @@ export interface HarnessCtx {
     agentId: string,
     conv?: Conversation,
     mcpServer?: McpServer,
-  ): {
+  ): Promise<{
     agent: string;
     model?: string;
     provider?: string;
@@ -496,7 +497,10 @@ export interface HarnessCtx {
     cwd: string;
     access?: ConversationAccess;
     mcpServers?: McpServer[];
-  };
+  }>;
+  codingAgentDefaults(
+    employee: Employee | undefined,
+  ): Promise<CodingAgentDefaults | undefined>;
   bindingNow(binding: SessionBinding): string;
   noteNow(binding: SessionBinding): void;
   employeeNowLine(employeeId: string): string;

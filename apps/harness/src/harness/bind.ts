@@ -342,9 +342,10 @@ export async function bindConversation(
     sessionId: string;
     ref?: string;
     engineSessionId?: string;
+    notes?: string[];
   }>(
     "session.start",
-    this.sessionParams(employee, agent, conv, surface?.mcpServer),
+    await this.sessionParams(employee, agent, conv, surface?.mcpServer),
   );
   this.aliasSurfaces(surface?.session, started.engineSessionId);
   binding.sessionId = started.sessionId;
@@ -364,5 +365,14 @@ export async function bindConversation(
     engineRef: binding.ref,
     state: "active",
   });
+  /* D-#846: picks the session couldn't take ride home in the result —
+     posting them now (post-binding) shows the same system note a
+     session.note event would, without the registration race. */
+  for (const [i, text] of (started.notes ?? []).entries())
+    this.postSystem(
+      binding,
+      text,
+      `sys:${conv.id}:note:${started.sessionId}:start:${i}`,
+    ).catch(() => {});
   return binding;
 }

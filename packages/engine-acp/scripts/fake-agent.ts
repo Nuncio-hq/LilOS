@@ -52,6 +52,19 @@ interface FakeSession {
   titled: boolean;
 }
 
+/* Test knobs (env, comma lists): LILOS_FAKE_CONFIG narrows which config
+   options session/new advertises (e.g. "thought_level" → no model option);
+   LILOS_FAKE_RESET_ON_LOAD=1 clears a session's config at session/load —
+   an agent that returns to defaults must see the stored pick re-applied
+   (#846). */
+const ADVERTISED = new Set(
+  (process.env.LILOS_FAKE_CONFIG ?? "model,thought_level,speed")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean),
+);
+const RESET_ON_LOAD = process.env.LILOS_FAKE_RESET_ON_LOAD === "1";
+
 const sessions = new Map<string, FakeSession>();
 /** allow_always grants — the profile allowlist lives agent-side and
     survives sessions, so the second leg never re-asks (#133 AC). */
@@ -64,7 +77,7 @@ const words = (n: number) =>
   Array.from({ length: n }, (_, i) => `w${i % 97}`).join(" ");
 
 function configOptions(s: FakeSession): acp.SessionConfigOption[] {
-  return [
+  const all: acp.SessionConfigOption[] = [
     {
       id: "model",
       name: "Model",
@@ -94,6 +107,7 @@ function configOptions(s: FakeSession): acp.SessionConfigOption[] {
       options: SPEEDS.map((v) => ({ value: v, name: v })),
     } as acp.SessionConfigOption,
   ];
+  return all.filter((o) => ADVERTISED.has(o.id));
 }
 
 const textBlock = (text: string): acp.ContentBlock => ({
@@ -296,8 +310,10 @@ const agent = (conn: acp.AgentSideConnection): acp.Agent => ({
     if (!s)
       throw { code: -32002, message: `no stored session ${params.sessionId}` };
     /* session/load reopens a closed session — transcript and codewords
-       survive (what suspend-resume proves). */
+       survive (what suspend-resume proves). RESET_ON_LOAD simulates an
+       agent whose reloaded session drops back to config defaults. */
     s.closed = false;
+    if (RESET_ON_LOAD) s.config.clear();
     s.cancelled = false;
     return {
       modes: {

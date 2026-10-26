@@ -59,9 +59,9 @@ import {
  * over stdio runs through the shared mapping (`mapping.ts`,
  * `capabilities.ts`, `permissions.ts`) and answers the LilOS engine
  * protocol. Agent identity never appears — `command` argv is the only
- * agent-specific input the caller supplies. Per-job model/effort/mode
- * application lands in #846; this slice maps the descriptors and the
- * session-scoped config writes they sit on.
+ * agent-specific input the caller supplies. Per-job model/effort/fast
+ * picks write through the config options the live session advertised
+ * (D-#846); a pick it cannot take is skipped with a session note.
  */
 
 export interface AcpEngineOptions {
@@ -339,11 +339,20 @@ export class AcpEngine {
     s.acpSessionId = res.sessionId;
     this.sessions.set(id, s);
     this.learnSession(s, res);
-    /* Apply the requested pick over session/set_config_option — honest:
-       only what the session advertised gets written (#846 owns the full
-       per-job selection surface). */
-    const pick = p.model ?? persona?.model;
-    await this.applyPick(s, pick === p.model ? p : { ...p, model: pick });
+    /* D-#846: the requested pick (composer row, persona pin, stored
+       default — all arrive as session.start params) writes only through
+       options THIS session advertised; skips go home in the result — an
+       emitted session.note would race the host's binding registration. */
+    const notes: string[] = [];
+    await this.applyPick(
+      s,
+      {
+        model: p.model ?? persona?.model,
+        effort: p.effort,
+        fast: p.fast,
+      },
+      (line) => notes.push(line),
+    );
     /* Access hint: only when the session advertised modes and the engine
        knows this agent's mode vocabulary. */
     if (p.access && s.modes && this.opts.modeForAccess) {
@@ -358,7 +367,11 @@ export class AcpEngine {
       ...(s.fast !== undefined ? { fast: s.fast } : {}),
     });
     s.setState("idle");
-    return { sessionId: id, engineSessionId: s.acpSessionId };
+    return {
+      sessionId: id,
+      engineSessionId: s.acpSessionId,
+      ...(notes.length ? { notes } : {}),
+    };
   }
 
   /** Fold a session/new (or load) response into the catalogs. */
@@ -396,20 +409,83 @@ export class AcpEngine {
     }
   }
 
-  /** session.start's model/effort/fast picks -> config_option writes. */
-  private async applyPick(s: AcpSession, p: SessionStartParams) {
-    const modelOpt = catalogModelOption(this.catalog);
-    if (p.model && modelOpt?.choices.some((c) => c.value === p.model)) {
-      await this.writeConfig(s, modelOpt.id, p.model).catch(() => {});
+  /**
+   * This session's advertised config table — the only truth a pick may
+   * write through (D-#846's trap: the engine-wide catalog is a union of
+   * every session's advertisement; an option this session never offered
+   * is skipped, not forced).
+   */
+  private sessionConfig(s: AcpSession): AcpSessionConfig {
+    return { options: s.configOptions };
+  }
+
+  /**
+   * One pick (session.start fields, session.setModel params, or the
+   * session's own stored pick on resume) -> config_option writes. Each
+   * field either lands — recorded on `s.pick` so resume can re-apply it —
+   * or reports through `skip` (D-#846: visible, never a failed start).
+   * The caller owns delivery: session.start returns the lines (its events
+   * race the host's binding), bound-session paths emit `session.note`.
+   */
+  private async applyPick(
+    s: AcpSession,
+    pick: { model?: string; effort?: string; fast?: boolean },
+    skip: (line: string) => void,
+  ) {
+    const cfg = this.sessionConfig(s);
+    if (pick.model !== undefined) {
+      const opt = catalogModelOption(cfg);
+      if (
+        !opt?.choices.some((c) => c.value === pick.model) ||
+        !(await this.writePick(s, "model", opt.id, pick.model, pick.model))
+      )
+        skip(this.skipText(`model "${pick.model}"`));
     }
-    const effortOpt = catalogEffortOption(this.catalog);
-    if (p.effort && effortOpt?.choices.some((c) => c.value === p.effort)) {
-      await this.writeConfig(s, effortOpt.id, p.effort).catch(() => {});
+    if (pick.effort !== undefined) {
+      const opt = catalogEffortOption(cfg);
+      if (
+        !opt?.choices.some((c) => c.value === pick.effort) ||
+        !(await this.writePick(s, "effort", opt.id, pick.effort, pick.effort))
+      )
+        skip(this.skipText(`effort "${pick.effort}"`));
     }
-    const fastOpt = catalogFastOption(this.catalog);
-    if (p.fast !== undefined && fastOpt) {
-      const value = p.fast ? fastOpt.fastValue : offValue(fastOpt);
-      await this.writeConfig(s, fastOpt.option.id, value).catch(() => {});
+    if (pick.fast !== undefined) {
+      const fast = catalogFastOption(cfg);
+      if (fast) {
+        const value = pick.fast ? fast.fastValue : offValue(fast);
+        if (
+          !(await this.writePick(s, "fast", fast.option.id, value, pick.fast))
+        )
+          skip(this.skipText("the fast tier"));
+      } else if (pick.fast) skip(this.skipText("the fast tier"));
+      /* fast:false with no fast-tier option is already the agent's
+         standard route — nothing to write, nothing to note. */
+    }
+  }
+
+  /** The one-line note a skipped pick produces, wherever it surfaces. */
+  private skipText(what: string) {
+    return `Skipped ${what} — the agent didn't take it; running its own default.`;
+  }
+
+  /**
+   * One session/set_config_option write. On success the requested value
+   * joins `s.pick` (the resume replay set); a refusal reports `false` —
+   * the caller words and delivers the skip note.
+   */
+  private async writePick<K extends "model" | "effort" | "fast">(
+    s: AcpSession,
+    field: K,
+    configId: string,
+    value: string,
+    picked: NonNullable<AcpSession["pick"]>[K],
+  ): Promise<boolean> {
+    try {
+      await this.writeConfig(s, configId, value);
+      s.pick = { ...s.pick, [field]: picked };
+      return true;
+    } catch {
+      return false;
     }
   }
 
@@ -811,6 +887,13 @@ export class AcpEngine {
       res = created;
     }
     this.learnSession(s, res);
+    /* D-#846: a reloaded session may drop back to agent defaults — re-apply
+       the pick the session took before it suspended. The binding already
+       exists wherever resume runs, so skips can ride session.note. */
+    if (s.pick)
+      await this.applyPick(s, s.pick, (line) =>
+        s.emit("session.note", { text: line }),
+      );
     s.suspended = false;
     s.state = "idle";
     s.emit("session.started", {
@@ -842,31 +925,36 @@ export class AcpEngine {
   ): Promise<SessionSetModelResult> {
     const s = this.require(p.sessionId);
     if (s.suspended) await this.resume(s);
-    if (p.model !== undefined) {
-      const opt = catalogModelOption(this.catalog);
-      if (!opt?.choices.some((c) => c.value === p.model))
-        throw new RpcError(
-          RPC_ERRORS.MODEL_NOT_FOUND,
-          `unknown model ${p.model}`,
-        );
-      await this.writeConfig(s, opt.id, p.model);
-    }
-    if (p.effort !== undefined) {
-      const opt = catalogEffortOption(this.catalog);
-      if (!opt?.choices.some((c) => c.value === p.effort))
-        throw new RpcError(
-          RPC_ERRORS.MODEL_NOT_FOUND,
-          `unknown effort ${p.effort}`,
-        );
-      await this.writeConfig(s, opt.id, p.effort);
-    }
-    if (p.fast !== undefined) {
-      const fast = catalogFastOption(this.catalog);
-      if (fast) {
-        const value = p.fast ? fast.fastValue : offValue(fast);
-        await this.writeConfig(s, fast.option.id, value);
-      }
-    }
+    const cfg = this.sessionConfig(s);
+    const modelOpt = catalogModelOption(cfg);
+    const effortOpt = catalogEffortOption(cfg);
+    /* Validate the whole pick before any write — an unlisted value refuses
+       outright (-32005) so a pick never half-lands (model applied, effort
+       rejected). An OPTION the session never advertised is different: skip
+       it with a note (D-#846) and answer the session's real state. */
+    if (
+      p.model !== undefined &&
+      modelOpt &&
+      !modelOpt.choices.some((c) => c.value === p.model)
+    )
+      throw new RpcError(
+        RPC_ERRORS.MODEL_NOT_FOUND,
+        `unknown model ${p.model}`,
+      );
+    if (
+      p.effort !== undefined &&
+      effortOpt &&
+      !effortOpt.choices.some((c) => c.value === p.effort)
+    )
+      throw new RpcError(
+        RPC_ERRORS.MODEL_NOT_FOUND,
+        `unknown effort ${p.effort}`,
+      );
+    await this.applyPick(
+      s,
+      { model: p.model, effort: p.effort, fast: p.fast },
+      (line) => s.emit("session.note", { text: line }),
+    );
     return {
       model: s.model ?? p.model,
       ...(s.effort ? { effort: s.effort } : {}),
