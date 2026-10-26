@@ -456,6 +456,8 @@ function AgentMenu({ onRename }: { onRename: () => void }) {
         type="button"
         onClick={() => menu.setOpen((o) => !o)}
         aria-label="Agent actions"
+        aria-haspopup="menu"
+        aria-expanded={menu.open}
         className="grid size-7 place-items-center rounded-lg text-muted-foreground hover:bg-[var(--v3-hover)] hover:text-foreground"
       >
         <EllipsisIcon className="size-4" />

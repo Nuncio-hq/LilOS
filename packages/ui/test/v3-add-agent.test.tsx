@@ -260,6 +260,52 @@ describe("the dialog", () => {
     expect(onHired).toHaveBeenCalledWith("emp_new");
   });
 
+  test("a roster refetch keeps the picked row, even if the list moved", async () => {
+    /* The shell rebuilds `act` on every data emit, which refires the
+       profiles fetch — the selection is keyed, not indexed, so a new row
+       ahead of the pick cannot steal it. */
+    let list = profiles;
+    const act_ = actions({ listProfiles: vi.fn(async () => list) });
+    const onClose = vi.fn();
+    const { rerender } = render(
+      <V3AddAgent
+        data={data()}
+        act={act_}
+        onHired={vi.fn()}
+        onClose={onClose}
+      />,
+    );
+    await screen.findByRole("radiogroup", { name: "Who?" });
+    await act(async () => {});
+    fireEvent.click(row("Devin"));
+    list = [{ id: "newbie", name: "Newbie", skills: 0 }, ...profiles];
+    rerender(
+      <V3AddAgent
+        data={data()}
+        act={{ ...act_ }}
+        onHired={vi.fn()}
+        onClose={onClose}
+      />,
+    );
+    await act(async () => {});
+    expect(row("Devin").getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByLabelText("Name")).toHaveProperty("value", "Devin");
+  });
+
+  test("while the roster loads, Hire waits — a runtime row would miss its seed", async () => {
+    const act_ = actions({
+      listProfiles: vi.fn(() => new Promise<V3Profile[]>(() => {})),
+    });
+    mount(act_);
+    await screen.findByRole("radiogroup", { name: "Who?" });
+    // Runtime rows are already listed (they come from data, not the fetch).
+    fireEvent.click(row("Devin"));
+    expect(screen.getByRole("button", { name: "Hire" })).toHaveProperty(
+      "disabled",
+      true,
+    );
+  });
+
   test("a runtime with no seed hires fresh on it", async () => {
     const act_ = actions();
     mount(

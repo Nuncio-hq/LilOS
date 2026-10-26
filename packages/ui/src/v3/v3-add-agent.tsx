@@ -108,7 +108,10 @@ export function V3AddAgent({
      key while the dialog is top-most). */
   const layerRef = useUiLayerEl<HTMLDivElement>({ onEscape: onClose });
   const [profiles, setProfiles] = useState<V3Profile[]>();
-  const [picked, setPicked] = useState(0);
+  /* The selection is the row's key, not its index: `act` changes whenever
+     data emits (which refires the roster fetch below and rebuilds the
+     list), and an index would then point at a different kind. */
+  const [picked, setPicked] = useState<string>();
   const [name, setName] = useState("");
   const [touched, setTouched] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -135,13 +138,20 @@ export function V3AddAgent({
       }),
     [profiles, data.runtimes, data.agents],
   );
-  const choice = choices[picked] ?? choices[0];
+  const choice =
+    choices.find((c) => c.key === picked) ??
+    choices.find((c) => !c.unavailable) ??
+    choices[0];
   /* A name you have not typed IS the picked kind's name — derived, not
      synced, so it is never a frame behind the choice list filling in. */
   const shownName = touched ? name : (choice?.name ?? "");
 
   const submit = async () => {
-    if (!choice || choice.unavailable || !shownName.trim() || busy) return;
+    /* Loading matters for runtime rows: until the roster answers, a
+       runtime's seed profile is not known and Hire would create a fresh
+       profile instead of linking it. */
+    if (loading || !choice || choice.unavailable || !shownName.trim() || busy)
+      return;
     setBusy(true);
     try {
       const id = choice.profile
@@ -166,9 +176,9 @@ export function V3AddAgent({
     }
   };
 
-  const loading = profiles === undefined;
+  const loading = profiles === undefined && !!act.listProfiles;
   const canHire =
-    !!choice && !choice.unavailable && !!shownName.trim() && !busy;
+    !loading && !!choice && !choice.unavailable && !!shownName.trim() && !busy;
   return (
     <div
       className="fixed inset-0 z-40 grid place-items-center bg-black/30 p-4 sm:p-6"
@@ -220,7 +230,7 @@ export function V3AddAgent({
                   role="radio"
                   aria-checked={c === choice}
                   disabled={!!c.unavailable}
-                  onClick={() => setPicked(i)}
+                  onClick={() => setPicked(c.key)}
                   data-choice={c.key}
                   className={cn(
                     "flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors",

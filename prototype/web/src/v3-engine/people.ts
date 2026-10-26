@@ -82,7 +82,9 @@ export function peopleActions({ setData, getData, toast }: Engine): Pick<
             skills: [],
             spend: { used: 0, cap: 10, period: "week" },
             instructions: [
-              `You are ${name}, the company’s ${role.toLowerCase()}. The CEO gives you tickets; finish them and report back in one short update.`,
+              role.trim()
+                ? `You are ${name}, the company’s ${role.toLowerCase()}. The CEO gives you tickets; finish them and report back in one short update.`
+                : `You are ${name}, one of the company’s agents. The CEO gives you tickets; finish them and report back in one short update.`,
             ],
             // Empty, not absent: the page can add a file (D-#19).
             notes: [],

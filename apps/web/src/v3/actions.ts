@@ -53,7 +53,12 @@ function employeeIdOf(conversationId: string): string | undefined {
     has one, else one plain line naming the role (the engine's soul text). */
 const instructionsFor = (name: string, role: string): string =>
   HIRE_TEMPLATES.find((t) => t.role.toLowerCase() === role.toLowerCase())
-    ?.instructions ?? `You are ${name}, the company's ${role.toLowerCase()}.`;
+    ?.instructions ??
+  /* A runtime hire can carry no role line at all (#870) — never end the
+     sentence on "the company's ." */
+  (role.trim()
+    ? `You are ${name}, the company's ${role.toLowerCase()}.`
+    : `You are ${name}, one of the company's agents.`);
 
 /** `/` in a new chat's box: the engine's commands for this agent and folder. */
 function draftCommands(
