@@ -39,6 +39,19 @@ const DEFAULT_AGENT = { id: "default", name: "Default" };
 /** The thread's access pill (the draft composer has none). */
 const pill = (page: Page) =>
   page.locator('[data-thread-panel] [data-slot="access-pill"]');
+/* The pill's one click opens a dropdown (#868): pick the level's row. The
+   menu renders in a portal at document level. */
+const pickAccess = async (page: Page, level: "ask" | "full") => {
+  await page
+    .getByRole("menuitemradio", {
+      name: level === "full" ? /Full access/ : /^Ask\b/,
+    })
+    .click();
+};
+const setAccess = async (page: Page, level: "ask" | "full") => {
+  await pill(page).click();
+  await pickAccess(page, level);
+};
 const openCard = (page: Page) =>
   page.locator('[data-ask-id][data-ask-state="open"]');
 const settled = (page: Page) => page.locator("[data-turnsettled]").last();
@@ -84,11 +97,10 @@ test("AC-1+AC-2+AC-4+AC-3 the pill drives the mode; cards offer the four options
     await expect(pill(page)).toHaveAttribute("data-access", "ask");
     await expect(pill(page)).toContainText("Ask");
 
-    /* ── One click → Full access: orange shield + label, no dialog ── */
-    await pill(page).click();
+    /* ── Dropdown → Full access: orange shield, no dialog ── */
+    await setAccess(page, "full");
     await expect(pill(page)).toHaveAttribute("data-access", "full");
     await expect(pill(page)).toContainText("Full access");
-    await expect(pill(page)).toHaveAttribute("aria-pressed", "true");
     await page.screenshot({ path: `${SHOTS}/ac-1-pill-full.png` });
 
     /* ── Full access: the gated turn completes with no card at all ── */
@@ -100,7 +112,7 @@ test("AC-1+AC-2+AC-4+AC-3 the pill drives the mode; cards offer the four options
 
     /* ── The thread's own pill persisted Full access; switch back to Ask ── */
     await expect(pill(page)).toHaveAttribute("data-access", "full");
-    await pill(page).click();
+    await setAccess(page, "ask");
     await expect(pill(page)).toHaveAttribute("data-access", "ask");
 
     /* ── Ask: the card offers Once / This thread / Always / Deny ── */
@@ -116,7 +128,7 @@ test("AC-1+AC-2+AC-4+AC-3 the pill drives the mode; cards offer the four options
 
     /* ── AC-1 mid-turn: flip to Full while the card is open — the NEXT
        approval never becomes a card. */
-    await pill(page).click();
+    await setAccess(page, "full");
     await expect(pill(page)).toHaveAttribute("data-access", "full");
     await card.getByRole("button", { name: "Once", exact: true }).click();
     await expect(settled(page)).toBeVisible({ timeout: 90_000 });
@@ -255,6 +267,7 @@ test("AC-3 the new-chat draft's Ask / Full access pill starts on Settings' defau
 
     /* ── A pick flips it; another agent's draft is not that agent's pick ── */
     await draftPill(page).click();
+    await pickAccess(page, "full");
     await expect(draftPill(page)).toHaveAttribute("data-access", "full");
     await expect(draftPill(page)).toContainText("Full access");
     await draftAgent(page, "Blanca");
@@ -281,6 +294,7 @@ test("AC-3 the new-chat draft's Ask / Full access pill starts on Settings' defau
       timeout: 30_000,
     });
     await draftPill(page).click();
+    await pickAccess(page, "ask");
     await expect(draftPill(page)).toHaveAttribute("data-access", "ask");
     await sendDraft(page, "Blanca");
     await expect(pill(page)).toHaveAttribute("data-access", "ask");
@@ -365,6 +379,7 @@ test("AC-1 the Full access pill actually paints orange, light and dark (#106)", 
       const p = pill(page);
       await expect(p).toBeVisible();
       await p.click();
+      await pickAccess(page, "full");
       await expect(p).toHaveAttribute("data-access", "full");
       const c = await ink();
       console.log(`#106 pill ${scheme} hovered`, JSON.stringify(c));

@@ -69,6 +69,7 @@ test("AC-1 a LilOS note renders centred, never as Oscar's bubble", async ({
   const pill = page.locator('[data-thread-panel] [data-slot="access-pill"]');
   await expect(pill).toBeVisible({ timeout: 30_000 });
   await pill.click();
+  await page.getByRole("menuitemradio", { name: /Full access/ }).click();
   await expect(pill).toHaveAttribute("data-access", "full");
 
   await send(page, "Add a footer to the page");
@@ -137,6 +138,7 @@ test('AC-3 message search labels a system note "LilOS"', async ({ page }) => {
   const pill = page.locator('[data-thread-panel] [data-slot="access-pill"]');
   await expect(pill).toBeVisible({ timeout: 30_000 });
   await pill.click();
+  await page.getByRole("menuitemradio", { name: /Full access/ }).click();
   await expect(pill).toHaveAttribute("data-access", "full");
   await send(page, "Add a footer to the page");
   /* The turn ending is the signal, not this thread's own note: the harness
