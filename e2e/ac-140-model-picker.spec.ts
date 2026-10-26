@@ -36,6 +36,7 @@ test.beforeAll(async () => {
   test.setTimeout(120_000);
   stack = await bootStack("ac140", await pickPorts(), {
     LILOS_ENGINE: "fake",
+    LILOS_COMPANY: "1",
   });
 });
 test.afterAll(async () => {

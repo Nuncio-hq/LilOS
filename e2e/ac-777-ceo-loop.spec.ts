@@ -35,7 +35,9 @@ let goalId: string;
 test.beforeAll(async () => {
   test.setTimeout(180_000);
   mkdirSync(SHOTS, { recursive: true });
-  stack = await bootStack("ac777", await pickPorts());
+  stack = await bootStack("ac777", await pickPorts(), {
+    LILOS_COMPANY: "1",
+  });
 });
 test.afterAll(async () => {
   await stack?.stop();

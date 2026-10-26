@@ -86,6 +86,7 @@ for (const theme of ["light", "dark"] as const) {
     const main = (p: Page) => p.locator("#v3-main");
     const stack = await bootStack(`v3shot-${theme[0]}`, await pickPorts(), {
       LILOS_USER_NAME: "Test User",
+      LILOS_COMPANY: "1",
     });
     try {
       await page.setViewportSize(SIZE);

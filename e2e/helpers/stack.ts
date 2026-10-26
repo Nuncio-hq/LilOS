@@ -855,10 +855,11 @@ export async function startChatInFolder(
 
 /**
  * The company's first agent (the one the harness hires when the roster is
- * empty): past first run, open its sidebar row and read the id off the hash
- * the row opens (`#?open=agent:<id>`). The name is the row's own text, since
- * it is "Default" on engine-fake and "default" on hermes. The agent's page is
- * left open in the peek.
+ * empty): past first run, open its page in the side peek (`#?open=agent:<id>`)
+ * and read its name off the record. D-#836 took the roster row out of the
+ * paused sidebar, so the id comes off the relay's employees.list — same
+ * record the row used to show (oldest hire first; "Default" on engine-fake,
+ * "default" on hermes). The agent's page is left open in the peek.
  */
 export async function openDefaultAgent(
   page: playwright.Page,
@@ -868,22 +869,24 @@ export async function openDefaultAgent(
   const { expect } = playwright;
   await skipFirstRun(page);
   await page.goto(`${webUrl}/`);
-  const row = v3Sidebar(page).getByRole("button", { name: /default/i });
-  await expect(row).toBeVisible({ timeout });
-  /* The last line is the name. The avatar's letter is the line above it,
-     and the CEO chip is its own word once someone holds the position
-     (D-#778) — drop that word, keep the name. */
-  const lines = (await row.innerText())
-    .split("\n")
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0 && l !== "CEO");
-  const name = (lines.pop() ?? "").replace(/\s+CEO$/, "").trim();
-  await row.click();
-  await expect(page).toHaveURL(/open=agent:[^&,]+/);
-  const id = decodeURIComponent(
-    /open=agent:([^&,]+)/.exec(page.url())?.[1] ?? "",
+  const cfg = (await (
+    await fetch(`${webUrl}/lilos-config.json`, { cache: "no-store" })
+  ).json()) as { relayWs: string; relayToken?: string };
+  const { employees } = await relayRpc<{
+    employees: { id: string; name: string }[];
+  }>(
+    page,
+    { relayWs: cfg.relayWs, relayToken: cfg.relayToken ?? "" },
+    "employees.list",
+    {},
   );
-  return { id, name };
+  const agent = employees.find((e) => /default/i.test(e.name)) ?? employees[0];
+  if (!agent) throw new Error("employees.list returned nobody");
+  await page.goto(agentUrl(webUrl, agent.id));
+  await expect(
+    v3Peek(page).getByRole("heading", { level: 1, name: agent.name }),
+  ).toBeVisible({ timeout });
+  return { id: agent.id, name: agent.name };
 }
 
 /**

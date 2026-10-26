@@ -36,6 +36,7 @@ test.beforeAll(async () => {
   test.setTimeout(120_000);
   stack = await bootStack("v3settings", await pickPorts(), {
     LILOS_USER_NAME: "Test User",
+    LILOS_COMPANY: "1",
     ...(lan
       ? {
           LILOS_RELAY_TAILSCALE_IP: lan,

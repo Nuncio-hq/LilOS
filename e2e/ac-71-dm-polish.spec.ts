@@ -35,7 +35,9 @@ const SHOTS = path.join(repo, "test-results", "ac-71");
 let stack: Stack;
 test.beforeAll(async () => {
   test.setTimeout(120_000);
-  stack = await bootStack("ac71", await pickPorts());
+  stack = await bootStack("ac71", await pickPorts(), {
+    LILOS_COMPANY: "1",
+  });
 });
 test.afterAll(async () => {
   await stack?.stop();
@@ -223,7 +225,12 @@ test("AC-7 model display names — picker groups and the turn footer", async ({
 
 test("AC-5 the Electron app menu is named LilOS", async () => {
   test.setTimeout(180_000);
-  const { app, win } = await launchDesktop(stack);
+  /* D-#836: the stack runs the company layer (the agent-dot leg above);
+     `?company=1` carries it into the desktop window — its config is the
+     preload's, not the web server's endpoint the env knob feeds. */
+  const { app, win } = await launchDesktop(stack, {
+    hash: `${stack.webUrl}/?company=1`,
+  });
   try {
     expect(await app.evaluate(({ app }) => app.getName())).toBe("LilOS");
     await expect(

@@ -45,7 +45,9 @@ test("statuses and this week's counts, including a thread that recovered from st
   page,
 }) => {
   test.setTimeout(240_000);
-  const stack = await bootStack("ac775-week", await pickPorts());
+  const stack = await bootStack("ac775-week", await pickPorts(), {
+    LILOS_COMPANY: "1",
+  });
   try {
     const agent = await openDefaultAgent(page, stack.webUrl);
     await startChat(
@@ -156,7 +158,9 @@ test("editing instructions persists, and the next thread's session starts on tha
   page,
 }) => {
   test.setTimeout(180_000);
-  const stack = await bootStack("ac775-soul", await pickPorts());
+  const stack = await bootStack("ac775-soul", await pickPorts(), {
+    LILOS_COMPANY: "1",
+  });
   try {
     const sentence = "You answer the people page in one short sentence.";
     const agent = await openDefaultAgent(page, stack.webUrl);
@@ -218,7 +222,9 @@ test("editing instructions persists, and the next thread's session starts on tha
 
 test("Hire, then message the new agent at once", async ({ page }) => {
   test.setTimeout(180_000);
-  const stack = await bootStack("ac775-hire", await pickPorts());
+  const stack = await bootStack("ac775-hire", await pickPorts(), {
+    LILOS_COMPANY: "1",
+  });
   try {
     await skipFirstRun(page);
     await page.goto(`${stack.webUrl}/`);
@@ -284,7 +290,9 @@ test("the org chart reflects reportsTo, and the owner is the profile name", asyn
   page,
 }) => {
   test.setTimeout(180_000);
-  const stack = await bootStack("ac775-org", await pickPorts());
+  const stack = await bootStack("ac775-org", await pickPorts(), {
+    LILOS_COMPANY: "1",
+  });
   try {
     const agent = await openDefaultAgent(page, stack.webUrl);
     await relayRpc(page, stack, "profile.update", { userName: "Nia" });
