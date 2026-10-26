@@ -50,6 +50,8 @@ export async function doRebindConversation(
   }>(
     "session.start",
     await this.sessionParams(employee, agent, conv, surface?.mcpServer),
+    /* D-#866: same 60s window as the bind path — see bind.ts. */
+    60_000,
   );
   this.aliasSurfaces(surface?.session, started.engineSessionId);
   // Session lost on the engine (fresh engine/orphan grace expired): a turn

@@ -118,7 +118,10 @@ if (spec.verify) {
     command[0] as string,
     [...command.slice(1), ...spec.verify.args],
     {
-      env: scrubLilosEnv(process.env),
+      /* r.env carries the resolved runner's env (ELECTRON_RUN_AS_NODE for
+         the packaged fallback) — without it the Electron runner launches
+         the app instead of node and the verify can never pass. */
+      env: { ...scrubLilosEnv(process.env), ...(r.env ?? {}) },
       ...(spec.verify.timeoutMs !== undefined
         ? { timeoutMs: spec.verify.timeoutMs }
         : {}),

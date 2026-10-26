@@ -28,6 +28,14 @@ import type { AcpLaunchSpec } from "../src/launch.js";
  * permission asks ride session/request_permission into LilOS; `auto`
  * would let Claude decide alone and hide asks from Oscar. `full` prefers
  * `bypassPermissions`, then `auto`, then `acceptEdits`.
+ *
+ * The mode has to land AT session/new, not after: the spawned `claude`
+ * binds canUseTool's auto-approve (the CLAUDE_SDK_CAN_USE_TOOL_SHADOWED
+ * warning) to the mode in its argv, so a session born under the user's
+ * `permissions.defaultMode` (Oscar's is `bypassPermissions`) stays
+ * un-gated even after a set_mode. `sessionMeta` opts `ask` sessions out
+ * of the skip flag — the adapter clamps the initial mode to `default`
+ * and drops bypassPermissions from that session's catalog entirely.
  */
 export const claudeSpec: AcpLaunchSpec = {
   id: "claude",
@@ -69,6 +77,16 @@ export const claudeSpec: AcpLaunchSpec = {
     "CLOUD_ML_REGION",
     "AWS_REGION",
   ],
+  /* `ask` sessions spawn without --allow-dangerously-skip-permissions:
+     the adapter resolves its initial mode through resolvePermissionMode,
+     which clamps bypassPermissions to `default` when the flag is off —
+     real gating from the first prompt, not a post-hoc set_mode that the
+     spawned CLI ignores (see the header note). `full` passes no meta, so
+     bypass stays allowed and the mode lands via set_mode as before. */
+  sessionMeta: (p) =>
+    p.access === "ask"
+      ? { claudeCode: { options: { allowDangerouslySkipPermissions: false } } }
+      : {},
   modeForAccess: (access, modes) => {
     const ids = new Set(modes.map((m) => m.id));
     const prefer =

@@ -346,6 +346,11 @@ export async function bindConversation(
   }>(
     "session.start",
     await this.sessionParams(employee, agent, conv, surface?.mcpServer),
+    /* D-#866: an ACP agent's first session legitimately outlives the 15s
+       default — its spawned child pays a one-time security-context init
+       under a fresh app ancestry (~14s observed installed). The engine's
+       own create bound (45s) errors a true wedge before this fires. */
+    60_000,
   );
   this.aliasSurfaces(surface?.session, started.engineSessionId);
   binding.sessionId = started.sessionId;

@@ -92,6 +92,25 @@ describe("the claude registry entry (D-#866)", () => {
     );
     expect(claudeSpec.modeForAccess?.("full", [])).toBeUndefined();
   });
+
+  test("ask sessions are born without the skip flag (D-#866)", () => {
+    /* The spawned `claude` binds its permission gating to the mode in its
+       argv — a set_mode after session/new cannot un-shadow it (proven
+       against adapter 0.96.0: born-bypass sessions kept auto-approving
+       after set_mode 'default'). `sessionMeta` opts `ask` out at
+       creation so the adapter clamps the initial mode itself. */
+    expect(
+      claudeSpec.sessionMeta?.({ agent: "t", cwd: "/x", access: "ask" }),
+    ).toEqual({
+      claudeCode: { options: { allowDangerouslySkipPermissions: false } },
+    });
+    /* `full` and hinted-less starts pass nothing — bypass stays allowed
+       and the mode lands via set_mode. */
+    expect(
+      claudeSpec.sessionMeta?.({ agent: "t", cwd: "/x", access: "full" }),
+    ).toEqual({});
+    expect(claudeSpec.sessionMeta?.({ agent: "t", cwd: "/x" })).toEqual({});
+  });
 });
 
 /* The dropEnv mechanism the shim relies on, through the real spawn path:
@@ -141,6 +160,45 @@ describe("shim env policy reaches the agent child (D-#866)", () => {
       h.close();
       delete process.env.ACP_TEST_ROUTER;
       delete process.env.ACP_TEST_GRANT;
+    }
+  }, 30_000);
+
+  test("sessionMeta reaches session/new AND the resume re-create", async () => {
+    /* The fake agent echoes the `_meta` it received on a `meta` prompt —
+       proves the shim's meta crosses the wire on start and again on the
+       suspend→loadSession re-create (an `ask` session must come back
+       without the skip flag too). */
+    const engine = new AcpEngine({
+      name: "engine-acp-meta-probe",
+      command: ["bun", FAKE_AGENT],
+      sessionMeta: (p) => (p.access === "ask" ? { flag: "no-bypass" } : {}),
+    });
+    const h = new Harness(connectAcp(engine));
+    const metaOf = async (sessionId: string) => {
+      await h.request("prompt", {
+        sessionId,
+        content: [{ type: "text", text: "meta" }],
+      });
+      const ev = h.events
+        .filter((e) => e.sessionId === sessionId && e.type === "tool.completed")
+        .at(-1);
+      return (ev?.payload as { output?: string } | undefined)?.output;
+    };
+    try {
+      const { sessionId } = (await h.request("session.start", {
+        agent: "t",
+        cwd: process.cwd(),
+        access: "ask",
+      })) as { sessionId: string };
+      expect(JSON.parse((await metaOf(sessionId)) ?? "null")).toEqual({
+        flag: "no-bypass",
+      });
+      await h.request("session.suspend", { sessionId });
+      expect(JSON.parse((await metaOf(sessionId)) ?? "null")).toEqual({
+        flag: "no-bypass",
+      });
+    } finally {
+      h.close();
     }
   }, 30_000);
 });

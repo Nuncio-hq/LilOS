@@ -58,6 +58,9 @@ export class AcpSession implements AcpSessionView {
   >();
   /** Session-mode state when advertised. */
   modes?: { current: string; available: { id: string; name?: string }[] };
+  /** The access hint session.start ran under — a suspend/resume re-creates
+     the ACP session, so the shim's sessionMeta needs it again (D-#866). */
+  access?: "ask" | "full";
   /** The pick this session resolved (config currentValues + our writes). */
   model?: string;
   effort?: string;

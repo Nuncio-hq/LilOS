@@ -122,7 +122,20 @@ export interface AcpEngineOptions {
    * the harness's first-run hire. Defaults to a generic "default" row.
    */
   agent?: AgentDescriptor;
+  /**
+   * Bound on agent round-trips that can wedge on the agent's own child
+   * (session/new·load·set-mode·set-config·close — never `prompt`, which is
+   * a live turn). On timeout the adapter's whole process tree is killed
+   * and the next demand reopens it — a wedge becomes one clean error
+   * instead of a pile of orphaned children (D-#866's installed-app find).
+   */
+  createTimeoutMs?: number;
 }
+
+/* How long describe() may wait on the catalog probe — a healthy agent
+   answers in ~1s; the installed app's slow first init ran ~14s, and
+   callers bound describe around 15s, so the grace stays well under that. */
+const DESCRIBE_PROBE_GRACE_MS = 8_000;
 
 export class AcpEngine {
   private conn?: AcpConnection;
@@ -138,6 +151,9 @@ export class AcpEngine {
      same lifetime as the session map. */
   private agents: AcpAgentRoster;
   private opening?: Promise<AcpConnection>;
+  /** The backgrounded catalog probe — models.list awaits it so a first
+     call still returns the advertised table, never an empty race (D-#866). */
+  private catalogProbe?: Promise<void>;
   private pumping = new Set<string>();
 
   constructor(private readonly opts: AcpEngineOptions) {
@@ -162,11 +178,18 @@ export class AcpEngine {
 
   /** Lazily spawn the agent + `initialize` once; describe() needs it. */
   private async connection(): Promise<AcpConnection> {
+    /* A dead adapter (wedged-request teardown or an unexpected exit) is
+       dropped here — the next demand spawns a fresh one instead of
+       queuing behind the corpse (D-#866). */
+    if (this.conn?.dead) this.conn = undefined;
     if (this.conn) return this.conn;
     this.opening ??= AcpConnection.open({
       command: this.opts.command,
       ...(this.opts.env ? { env: this.opts.env } : {}),
       ...(this.opts.dropEnv ? { dropEnv: this.opts.dropEnv } : {}),
+      ...(this.opts.createTimeoutMs !== undefined
+        ? { createTimeoutMs: this.opts.createTimeoutMs }
+        : {}),
       cwd: process.cwd(),
       ...(this.opts.clientInfo ? { clientInfo: this.opts.clientInfo } : {}),
       ...(this.opts.clientCapabilities
@@ -190,23 +213,36 @@ export class AcpEngine {
     }).then(async (c) => {
       this.conn = c;
       /* The config-option/mode catalog lives on session/new, not
-         initialize — one scratch probe session learns it up front so
-         describe/models.list are honest before the first real session
-         (#764: advertised surface only, never guessed). */
-      try {
-        const probe = await c.newSession({ cwd: process.cwd() });
-        learnSessionConfig(this.catalog, probe);
-        await c.closeSession(probe.sessionId);
-      } catch {
-        /* An agent that cannot open a session cannot run turns either —
-           the empty catalog just means no models capability yet. */
-      }
+         initialize — one scratch probe session learns it. It runs
+         BACKGROUNDED (D-#866): describe()/models.list answer from
+         initialize + whatever the catalog has accrued — a slow first
+         child init under a fresh macOS ancestry (~14s on the installed
+         app) must not put the probe on describe's critical path. */
+      this.catalogProbe = this.probeCatalog(c);
       return c;
     });
     try {
       return await this.opening;
     } finally {
       this.opening = undefined;
+    }
+  }
+
+  /** The catalog probe — a scratch session/new so describe/models.list are
+     honest before the first real session (#764). Non-fatal on timeout: a
+     wedged probe drops the catalog fill, never the adapter — a real
+     session's own bound still enforces the wedge (D-#866). */
+  private async probeCatalog(c: AcpConnection) {
+    try {
+      const probe = await c.newSession(
+        { cwd: process.cwd() },
+        { fatal: false },
+      );
+      learnSessionConfig(this.catalog, probe);
+      await c.closeSession(probe.sessionId);
+    } catch {
+      /* An agent that cannot open a session cannot run turns either —
+         the empty catalog just means no models capability yet. */
     }
   }
 
@@ -233,14 +269,21 @@ export class AcpEngine {
         `invalid params: ${parsed.error.message}`,
       );
     /* Capability-gated methods exist only while describe() declares their
-       capability — the app never calls them otherwise (D-#19). */
+       capability — the app never calls them otherwise (D-#19). The catalog
+       probe is backgrounded now (D-#866), so a gated call arriving before
+       the probe lands waits it out and re-derives once — bounded +
+       non-fatal, never a hang. */
     if (contract.capability) {
-      const declared = (await this.describe()).capabilities.map((c) => c.id);
-      if (!declared.includes(contract.capability))
-        throw new RpcError(
-          RPC_ERRORS.METHOD_NOT_FOUND,
-          `${method} needs the ${contract.capability} capability`,
-        );
+      const declared = async () =>
+        (await this.describe()).capabilities.map((c) => c.id);
+      if (!(await declared()).includes(contract.capability)) {
+        await this.catalogProbe;
+        if (!(await declared()).includes(contract.capability))
+          throw new RpcError(
+            RPC_ERRORS.METHOD_NOT_FOUND,
+            `${method} needs the ${contract.capability} capability`,
+          );
+      }
     }
     switch (method) {
       case "describe":
@@ -293,6 +336,17 @@ export class AcpEngine {
 
   private async describe(): Promise<DescribeResult> {
     const conn = await this.connection();
+    /* The backgrounded probe fills the catalog a beat after open — wait a
+       short grace so the common describe still reports the learned
+       surface, but a slow/wedged agent can't hold describe hostage
+       (D-#866). models.list waits the probe out fully instead. */
+    const probe = this.catalogProbe;
+    if (probe && this.catalog.options.size === 0) {
+      await Promise.race([
+        probe,
+        new Promise((r) => setTimeout(r, DESCRIBE_PROBE_GRACE_MS)),
+      ]);
+    }
     return {
       name: this.opts.name ?? "engine-acp",
       version: this.opts.version ?? "0.0.0",
@@ -352,6 +406,7 @@ export class AcpEngine {
       this.opts.eventLogCap,
     );
     s.acpSessionId = res.sessionId;
+    s.access = p.access;
     this.sessions.set(id, s);
     this.learnSession(s, res);
     /* D-#846: the requested pick (composer row, persona pin, stored
@@ -886,6 +941,14 @@ export class AcpEngine {
   private async resume(s: AcpSession) {
     const conn = await this.connection();
     const caps = conn.agentCapabilities;
+    /* The shim's sessionMeta is access-aware (D-#866): an `ask` session
+       must come BACK without the skip flag too — re-create paths below
+       pass the same meta or it is born under the settings default. */
+    const meta = this.opts.sessionMeta?.({
+      agent: s.agent,
+      cwd: s.cwd,
+      ...(s.access ? { access: s.access } : {}),
+    });
     let res:
       | Pick<acp.NewSessionResponse, "configOptions" | "modes">
       | undefined;
@@ -895,13 +958,17 @@ export class AcpEngine {
           sessionId: s.acpSessionId,
           cwd: s.cwd,
           mcpServers: [],
+          ...(meta ? { meta } : {}),
         });
       } catch {
         /* A dead session still resumes — fresh session/new below. */
       }
     }
     if (!res) {
-      const created = await conn.newSession({ cwd: s.cwd });
+      const created = await conn.newSession({
+        cwd: s.cwd,
+        ...(meta ? { meta } : {}),
+      });
       s.acpSessionId = created.sessionId;
       res = created;
     }
@@ -929,6 +996,10 @@ export class AcpEngine {
 
   private async modelsList(_p: ModelsListParams): Promise<ModelsListResult> {
     await this.connection();
+    /* The probe carries the catalog for a fresh engine — wait for it (it
+       is bounded + non-fatal, so a wedge resolves as an empty catalog,
+       never a hang). */
+    await this.catalogProbe;
     const models = catalogModels(this.catalog);
     const current = catalogModelOption(this.catalog)?.currentValue;
     return {

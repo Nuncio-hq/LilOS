@@ -26,6 +26,8 @@
  * prompt capabilities, http+sse MCP, list/resume/close session lifecycle,
  * and a model/thought_level/speed config catalog with ask/code modes.
  */
+import { spawn } from "node:child_process";
+import { existsSync, writeFileSync } from "node:fs";
 import * as acp from "@agentclientprotocol/sdk";
 
 const MODELS = [
@@ -50,6 +52,9 @@ interface FakeSession {
   closed: boolean;
   cancelled: boolean;
   titled: boolean;
+  /** Last `_meta` seen on session/new|load — the `meta` prompt echoes it
+     (D-#866: sessionMeta actually reaching the agent is the assertion). */
+  meta?: unknown;
 }
 
 /* Test knobs (env, comma lists): LILOS_FAKE_CONFIG narrows which config
@@ -64,6 +69,19 @@ const ADVERTISED = new Set(
     .filter(Boolean),
 );
 const RESET_ON_LOAD = process.env.LILOS_FAKE_RESET_ON_LOAD === "1";
+
+/* D-#866 wedge simulation: `LILOS_FAKE_HANG_CWD=<substr>` makes session/new
+   never resolve for sessions whose cwd contains it (the probe's cwd can be
+   excluded by choosing a substring only real sessions carry).
+   `LILOS_FAKE_HANG_ONCE=<file>` limits the wedge to the first matching
+   call — the file is created when the hang starts, so a respawned adapter
+   (the engine's teardown-and-reopen path) serves normally after.
+   `LILOS_FAKE_GRANDCHILD_PIDFILE=<file>` additionally spawns a `sleep`
+   grandchild in the same process group and records its pid — the wedged-
+   teardown tests assert the whole tree dies, not just the adapter. */
+const HANG_CWD = process.env.LILOS_FAKE_HANG_CWD;
+const HANG_ONCE = process.env.LILOS_FAKE_HANG_ONCE;
+const GRANDCHILD_PIDFILE = process.env.LILOS_FAKE_GRANDCHILD_PIDFILE;
 
 const sessions = new Map<string, FakeSession>();
 /** allow_always grants — the profile allowlist lives agent-side and
@@ -283,6 +301,21 @@ const agent = (conn: acp.AgentSideConnection): acp.Agent => ({
   }),
 
   newSession: async (params) => {
+    if (
+      HANG_CWD &&
+      params.cwd.includes(HANG_CWD) &&
+      !(HANG_ONCE && existsSync(HANG_ONCE))
+    ) {
+      if (HANG_ONCE) writeFileSync(HANG_ONCE, "wedged");
+      if (GRANDCHILD_PIDFILE) {
+        const g = spawn("sleep", ["300"], { stdio: "ignore" });
+        writeFileSync(GRANDCHILD_PIDFILE, String(g.pid));
+        g.unref();
+      }
+      /* The wedged agent: a session/new that never settles — what the
+         installed app's stalled `claude` child looked like to the engine. */
+      await new Promise(() => {});
+    }
     const s: FakeSession = {
       id: `acp-fake-${++nextSession}`,
       cwd: params.cwd,
@@ -293,6 +326,7 @@ const agent = (conn: acp.AgentSideConnection): acp.Agent => ({
       closed: false,
       cancelled: false,
       titled: false,
+      meta: params._meta,
     };
     sessions.set(s.id, s);
     return {
@@ -315,6 +349,7 @@ const agent = (conn: acp.AgentSideConnection): acp.Agent => ({
     s.closed = false;
     if (RESET_ON_LOAD) s.config.clear();
     s.cancelled = false;
+    s.meta = params._meta;
     return {
       modes: {
         currentModeId: s.mode,
@@ -450,6 +485,25 @@ const agent = (conn: acp.AgentSideConnection): acp.Agent => ({
         title: `env ${name}`,
         status: "completed",
         rawOutput: process.env[name] ?? "<unset>",
+      } as acp.SessionUpdate);
+      await sendText(conn, s.id, "LILOS_OK");
+    } else if (/^meta$/i.test(text.trim())) {
+      /* The `_meta` the client sent on session/new|load — proves a shim's
+         sessionMeta really crosses the wire (D-#866). */
+      const toolCallId = `call-${++nextToolCall}`;
+      await send(conn, s.id, {
+        sessionUpdate: "tool_call",
+        toolCallId,
+        title: "meta",
+        kind: "read",
+        status: "in_progress",
+      } as acp.SessionUpdate);
+      await send(conn, s.id, {
+        sessionUpdate: "tool_call_update",
+        toolCallId,
+        title: "meta",
+        status: "completed",
+        rawOutput: JSON.stringify(s.meta ?? null),
       } as acp.SessionUpdate);
       await sendText(conn, s.id, "LILOS_OK");
     } else if (/read or search tool|relay package/i.test(text)) {
