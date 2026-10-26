@@ -5,7 +5,13 @@ import { Meter, span, TicketId } from "./v3-bits";
 import type { V3Data } from "./v3-data-types";
 import { HelpersHint } from "./v3-helpers";
 import { ThreadPill } from "./v3-live";
-import { agentOf, listedAncestorOf, threadOf, threadTag } from "./v3-model";
+import {
+  agentOf,
+  boardStatus,
+  listedAncestorOf,
+  threadOf,
+  threadTag,
+} from "./v3-model";
 import { RowButton, useOpenRoute } from "./v3-open-record";
 import type { V3PageProps } from "./v3-page-types";
 import { AgentName } from "./v3-rows";
@@ -131,7 +137,7 @@ export function AllRow(p: Row & { hasContext: boolean }) {
     <ThreadRow {...p} grid={hasContext ? ALL_GRID.context : ALL_GRID.plain}>
       <AgentName data={data} agent={agentOf(data, t.agentId)} />
       <span>
-        <ThreadPill status={t.status} />
+        <ThreadPill status={boardStatus(data, t)} />
       </span>
       <span className="hidden text-muted-foreground @min-[700px]:block">
         {t.startedAt}
@@ -155,14 +161,14 @@ export function AllRow(p: Row & { hasContext: boolean }) {
 
 /** By agent: the agent is the heading, so the row is title, status, time. */
 export function AgentThreadRow(p: Row) {
-  const { t } = p;
+  const { t, data } = p;
   return (
     <ThreadRow
       {...p}
       grid="grid-cols-[minmax(96px,1fr)_auto_58px_24px] gap-3 @min-[700px]:grid-cols-[minmax(0,1fr)_auto_48px_80px_24px] @min-[700px]:gap-4"
       className="py-2 text-[13.5px]"
     >
-      <ThreadPill status={t.status} />
+      <ThreadPill status={boardStatus(data, t)} />
       <span className="text-right text-muted-foreground">
         {span(t.minutes)}
       </span>

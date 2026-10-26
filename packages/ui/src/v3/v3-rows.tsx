@@ -5,6 +5,7 @@ import { HelpersHint } from "./v3-helpers";
 import { AgentAvatar, CeoMark, StatusDot, StatusPill } from "./v3-marks";
 import {
   agentOf,
+  boardStatus,
   companyOn,
   FORMER_AGENT,
   listedAncestorOf,
@@ -152,7 +153,7 @@ export function ThreadRow({
       className="flex min-h-[40px] items-center gap-3 border-[var(--v3-line)] border-b py-1.5 text-[14px]"
     >
       <span className="grid w-4 shrink-0 place-items-center">
-        {thread.status === "working" ? (
+        {boardStatus(data, thread) === "working" ? (
           <Spinner />
         ) : (
           <StatusDot status={thread.status} />
@@ -181,7 +182,8 @@ export function ThreadRow({
         </span>
       )}
       <span className="w-[96px] shrink-0">
-        <StatusPill status={thread.status} />
+        {/* A parent waiting on helpers reads as Working (D-#847). */}
+        <StatusPill status={boardStatus(data, thread)} />
       </span>
       <span className="w-11 shrink-0 text-right text-[13px] text-muted-foreground">
         {ago(thread.minutes)}

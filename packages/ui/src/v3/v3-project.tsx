@@ -4,6 +4,7 @@ import { Meter, Page, Prop, Section, Title } from "./v3-bits";
 import { AgentAvatar, CeoMark, ProjectMark } from "./v3-marks";
 import {
   agentOf,
+  boardStatus,
   FORMER_AGENT,
   goalProgress,
   listedThreads,
@@ -48,8 +49,16 @@ export function V3ProjectPage({ data, go, id }: V3PageProps & { id: string }) {
       t.projectId === project.id ||
       (t.ticketId !== undefined && ticketIds.has(t.ticketId)),
   );
-  const live = mine.filter((t) => t.status !== "done" && t.status !== "idle");
-  const past = mine.filter((t) => t.status === "done" || t.status === "idle");
+  /* Board status (D-#847): a parent waiting on helpers stays in the live
+     set even while its own status idles. */
+  const live = mine.filter((t) => {
+    const s = boardStatus(data, t);
+    return s !== "done" && s !== "idle";
+  });
+  const past = mine.filter((t) => {
+    const s = boardStatus(data, t);
+    return s === "done" || s === "idle";
+  });
   const pastShown = allPast ? past : past.slice(0, PAST_SHOWN);
   // Who is on it: the owners of its open tickets and whoever has a live thread.
   const onIt = [

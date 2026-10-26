@@ -1,5 +1,6 @@
 import {
   type AttachedFile,
+  boardStatus,
   FocusView,
   type ModelChoice,
   type PlanAction,
@@ -270,7 +271,9 @@ function Body({
           bare
           {...shared}
           work={model.work}
-          threadStatus={t.status}
+          /* The header wears the board status too (D-#847): a parent waiting
+             on helpers reads Working here as on every list. */
+          threadStatus={boardStatus(data, t)}
           onBack={() => onSession(false)}
           say={say}
           host={host}
@@ -288,7 +291,7 @@ function Body({
           {...shared}
           work={t.ticketId ? model.work : null}
           onOpenPath={onOpenPath}
-          threadStatus={t.status}
+          threadStatus={boardStatus(data, t)}
           browser={!!act.browserOpen}
           onOpenTab={(next) => {
             setTab(next)

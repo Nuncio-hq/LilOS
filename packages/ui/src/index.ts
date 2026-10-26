@@ -59,7 +59,7 @@ export {
   ParentLine,
   ThreadLineage,
 } from "./v3/v3-helpers";
-export { agentNameOf, agentOf } from "./v3/v3-model";
+export { agentNameOf, agentOf, boardStatus } from "./v3/v3-model";
 export {
   navFromParams,
   paramsFromNav,

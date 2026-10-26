@@ -7,6 +7,7 @@ import { ThreadPill } from "./v3-live";
 import { AgentAvatar, StatusDot } from "./v3-marks";
 import {
   agentOf,
+  boardStatus,
   childrenOf,
   FORMER_AGENT,
   liveHelpersOf,
@@ -116,7 +117,7 @@ export function ParentLine({
         <AgentAvatar data={data} agent={who} size={16} />
         <span className="truncate">{who?.name ?? FORMER_AGENT}</span>
       </span>
-      <StatusDot status={parent.status} />
+      <StatusDot status={boardStatus(data, parent)} />
     </RowButton>
   );
 }

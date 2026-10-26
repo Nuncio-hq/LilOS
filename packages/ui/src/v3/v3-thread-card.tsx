@@ -5,9 +5,10 @@ import { Btn, Meter, Spinner, TicketId, useTick } from "./v3-bits";
 import type { V3Data } from "./v3-data-types";
 import { HelperRow } from "./v3-helpers";
 import { elapsedAt, streamTail, ThreadPill, turnCount } from "./v3-live";
-import { AgentAvatar, CeoMark, StatusPill } from "./v3-marks";
+import { AgentAvatar, CeoMark } from "./v3-marks";
 import {
   agentOf,
+  boardStatus,
   childrenOf,
   FORMER_AGENT,
   listedAncestorOf,
@@ -219,24 +220,17 @@ export function ThreadCard({
   // and Open, instead of an empty alert line.
   const reason = t.status === "stuck" || t.stuck !== undefined;
   const turns = turnCount(t);
-  /* A parent only waiting on helpers is working, not idle (D-#847): the
-     card says so and lists who it waits on. */
+  /* A parent waiting on helpers reads as Working (D-#847): no separate
+     pill — its helpers are the work, and the card lists them. */
   const helpers = childrenOf(data, t.id);
-  const waitingOnHelpers =
-    t.status === "waiting" && liveHelpersOf(data, t.id).length > 0;
+  const hasLiveHelpers = liveHelpersOf(data, t.id).length > 0;
 
   return (
     <Frame onOpen={open} selected={selected}>
       <Head
         data={data}
         agent={agent}
-        pill={
-          waitingOnHelpers ? (
-            <StatusPill status="waiting" label="Waiting on helpers" />
-          ) : (
-            <ThreadPill status={t.status} />
-          )
-        }
+        pill={<ThreadPill status={boardStatus(data, t)} />}
       />
       <div className="font-semibold text-[14.5px] leading-[1.35]">
         {t.unseen && (
@@ -253,7 +247,7 @@ export function ThreadCard({
 
       {t.status === "working" && <WorkingBody t={t} />}
 
-      {waitingOnHelpers && (
+      {hasLiveHelpers && (
         /* Rows open the helper, not the card under them. */
         <div
           className="flex flex-col"

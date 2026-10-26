@@ -133,37 +133,19 @@ export function askActions({ setData, getData, toast }: Engine): Pick<
       toast(`Answered: ${option}`);
     },
     stop: (threadId) => {
-      /* Stopping a parent stops its helpers too (D-#847): an orphaned helper
-         would keep running with nobody to report to. */
-      const LIVE = new Set(["working", "waiting", "needs", "stuck"]);
-      const stopIds = new Set([threadId]);
-      let grew = true;
-      while (grew) {
-        grew = false;
-        for (const t of getData().threads) {
-          if (
-            t.parentId !== undefined &&
-            stopIds.has(t.parentId) &&
-            !stopIds.has(t.id) &&
-            LIVE.has(t.status)
-          ) {
-            stopIds.add(t.id);
-            grew = true;
-          }
-        }
-      }
-      for (const id of stopIds) cancelTurn(id);
+      /* Stop ends the thread's own turn only (D-#847): a handed-off helper
+         outlives its parent — it keeps running and is stopped on its own
+         row, and its ask stays open until answered or it is stopped. */
+      cancelTurn(threadId);
       setData((d) => {
         const th = d.threads.find((t) => t.id === threadId);
         if (!th) return d;
         const ticket = d.tickets.find((t) => t.id === th.ticketId);
         return {
           ...d,
-          /* An ask a stopped thread was holding is gone with it. */
-          asks: d.asks.filter(
-            (a) => a.threadId === undefined || !stopIds.has(a.threadId),
-          ),
-          threads: threadPatch(d, (t) => stopIds.has(t.id), {
+          /* An ask the stopped thread was holding is gone with it. */
+          asks: d.asks.filter((a) => a.threadId !== threadId),
+          threads: threadPatch(d, (t) => t.id === threadId, {
             status: "idle",
             now: undefined,
             live: undefined,

@@ -201,7 +201,8 @@ export function reportsOf(
 /** An agent's status is its current thread's; a finished or absent thread
    means the agent is idle until it gets the next ticket. */
 export function agentStatus(d: V3Data, agentId: string): V3Status {
-  const s = agentThread(d, agentId)?.status;
+  const t = agentThread(d, agentId);
+  const s = t && boardStatus(d, t);
   return !s || s === "done" ? "idle" : s;
 }
 
@@ -215,7 +216,8 @@ export function agentDot(d: V3Data, agentId: string): V3Status {
   let dot: V3Status = "idle";
   for (const t of d.threads) {
     if (t.agentId !== agentId) continue;
-    const s = t.status === "done" ? (t.unseen ? "done" : "idle") : t.status;
+    const s =
+      t.status === "done" ? (t.unseen ? "done" : "idle") : boardStatus(d, t);
     if (urgency(s) < urgency(dot)) dot = s;
   }
   return dot;

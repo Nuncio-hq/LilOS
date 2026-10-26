@@ -70,15 +70,17 @@ export const CODING_AGENTS: V3Data["agents"] = [
 ]
 
 /* One parent, four helpers in different states: two still running, one
-   finished, one stopped to ask. The parent itself is `waiting` — on the
-   boards it reads as working, never idle, while any helper is live. */
+   finished, one stopped to ask. The parent itself is `working` — it
+   delegated mid-turn and is still on the merge prep. Stopping it ends its
+   own turn only; the helpers outlive it (D-#847). A parent that waited or
+   went idle with helpers live would read the same Working on the boards. */
 export const CODING_THREADS: V3Data["threads"] = [
   {
     id: "t-lil-helpers",
     projectId: "lilos",
     agentId: "builder",
     title: "Prove the ac-544 fix across the suite",
-    status: "waiting",
+    status: "working",
     startedAt: "11:30",
     minutes: 34,
     step: 9,
@@ -86,10 +88,11 @@ export const CODING_THREADS: V3Data["threads"] = [
     model: "Opus 5.5 · High",
     folder: "~/Code/LilOS",
     branch: "fix/ac-544",
+    now: { kind: "edit", text: "merge.ts · staging the landed fixes", elapsed: "40s" },
     tail: ["4 helpers on it", "Devin · Claude Code · Cursor · Antigravity"],
     plan: [
       { text: "Hand the four tracks to helpers", state: "done" },
-      { text: "Wait for their results", state: "current" },
+      { text: "Collect their results", state: "current" },
       { text: "Merge the patch and open the PR", state: "todo" },
     ],
     turns: [
@@ -120,7 +123,7 @@ export const CODING_THREADS: V3Data["threads"] = [
           { kind: "delegate", target: "Antigravity · review the patch diff", meta: "task_review" },
         ],
         answer:
-          "Four helpers are on it — trace, sweep, port and review. I'll wait here and wake on each result.",
+          "Four helpers are on it — trace, sweep, port and review. I'll prep the merge here while they run.",
       },
     ],
   },
