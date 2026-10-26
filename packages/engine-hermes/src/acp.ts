@@ -1,15 +1,15 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { Readable, Writable } from "node:stream";
 import * as acp from "@agentclientprotocol/sdk";
-import type {
-  ContentBlock,
-  EngineRequest,
-  McpServer,
-  PlanStep,
-  PlanStepStatus,
-  SessionStartParams,
-} from "@lilos/contracts/engine";
-import { acpOfferedOutcomes, acpPickOptionId } from "./acp-permissions.js";
+import type { ContentBlock, SessionStartParams } from "@lilos/contracts/engine";
+import {
+  type AcpUpdateHooks,
+  acpApprovalRequest,
+  acpPermissionAnswer,
+  handleAcpUpdate,
+  toAcpContent,
+  toAcpMcp,
+} from "@lilos/engine-acp";
 import type { HermesEngine } from "./engine.js";
 import { mapSubagentStatus, parseToolResultJson } from "./mapping.js";
 import type { Session } from "./session.js";
@@ -22,6 +22,15 @@ import type { Session } from "./session.js";
  * approvals arrive as `session/request_permission`; compression rotation is
  * reported via `session_info_update`'s `_meta.hermes.sessionProvenance`
  * (acp_adapter/provenance.py).
+ *
+ * D-#764 — the wire translation itself lives in packages/engine-acp:
+ * `handleAcpUpdate` maps update kinds -> engine events, `acpApprovalRequest`
+ * / `acpPermissionAnswer` map permission asks (optionId-first — the #133
+ * allow_session/allow_always trap). What stays here is Hermes-only surface:
+ * the spawn argv (`hermes acp --profile`), the access -> mode ids Hermes
+ * uses (`accept_edits`/`dont_ask`), `_meta.lilos` provenance on
+ * `session/new`, and the hooks that synthesize subagent.* rows off
+ * delegate_task calls and process rows off terminal calls.
  */
 export interface AcpOptions {
   /** Path to the `hermes` binary. */
@@ -225,24 +234,17 @@ export class AcpDriver {
 
   private static reqCounter = 0;
 
+  /**
+   * `session/request_permission` -> LilOS approval ask via the shared map
+   * (D-#764): the optionId — not the kind — carries the real answer;
+   * Hermes sends two `allow_always`-kind options where `allow_session` is
+   * session-scoped, not offerable as LilOS "always" (#133).
+   */
   private async onPermission(
     s: Session,
     params: acp.RequestPermissionRequest,
   ): Promise<acp.RequestPermissionResponse> {
-    const options = params.options ?? [];
-    // Hermes sends two `allow_always`-kind options — allow_session is
-    // session-scoped, not offerable as LilOS "always" (#133).
-    const lilos = acpOfferedOutcomes(options);
-    const tc = params.toolCall;
-    const command =
-      (typeof tc?.title === "string" && tc.title) ||
-      (typeof tc?.name === "string" && tc.name) ||
-      JSON.stringify(tc?.rawInput ?? {});
-    const request: EngineRequest = {
-      kind: "approval",
-      command,
-      options: lilos,
-    };
+    const request = acpApprovalRequest(params);
     const wireId = `acp-${++AcpDriver.reqCounter}`;
     // No wire send: the promise return IS the answer.
     const answered = this.engine.openAsk(
@@ -253,264 +255,119 @@ export class AcpDriver {
       () => {},
     );
     const { outcome } = await answered;
-    if (outcome === "cancel") return { outcome: { outcome: "cancelled" } };
-    // Exact optionId first, kind fallback for unknown ids only; an
-    // unanswerable outcome falls back to deny. With no deny option there is
-    // no safe pick — answering options[0] would be the same silent upgrade
-    // #133 was (a deny could land on allow_session), so cancel instead.
-    const optionId =
-      acpPickOptionId(options, outcome) ?? acpPickOptionId(options, "deny");
-    if (!optionId) return { outcome: { outcome: "cancelled" } };
-    return {
-      outcome: {
-        outcome: "selected",
-        optionId,
-      },
-    };
+    return acpPermissionAnswer(params, outcome).response;
   }
 
   private onUpdate(s: Session, n: acp.SessionNotification) {
-    const u = n.update as Record<string, unknown>;
-    const turnId = s.turn?.turnId ?? s.lastTurnId;
-    switch (u.sessionUpdate) {
-      case "agent_message_chunk": {
-        const c = u.content as { text?: string } | undefined;
-        if (c?.text)
-          s.emit("turn.delta", { turnId, stream: "text", delta: c.text });
-        if (s.turn) s.turn.phase = "text";
-        break;
+    handleAcpUpdate(s, n, hermesHooks(this.engine));
+  }
+}
+
+/** Hermes-only layers over the shared update map (D-#764): subagent row
+    synthesis off delegate_task calls (#179/#309/#327), process tracking
+    off terminal calls, and `_meta.hermes.sessionProvenance` ref bumps. */
+function hermesHooks(engine: HermesEngine): AcpUpdateHooks<Session> {
+  return {
+    onToolCall(s, _u, { callId, tool, input }) {
+      const turnId = s.turn?.turnId ?? s.lastTurnId;
+      /* #179: ACP drops subagent.* frames — synthesize flat rows off the
+         delegate call's task list; per-task status arrives on its update. */
+      if (tool === "delegate_task") {
+        s.delegateStack.push(callId);
+        const tasks = Array.isArray(input.tasks) ? input.tasks : [];
+        tasks.forEach((t, i) => {
+          const subagentId = s.subagentId(`${callId}:${i}`);
+          s.emit("subagent.started", {
+            turnId,
+            subagentId,
+            name: `task ${i + 1}`,
+            task:
+              typeof (t as { goal?: unknown })?.goal === "string"
+                ? ((t as { goal: string }).goal as string)
+                : "",
+            parentToolCallId: callId,
+            startedAt: Date.now(),
+          });
+        });
       }
-      case "agent_thought_chunk": {
-        const c = u.content as { text?: string } | undefined;
-        if (c?.text)
-          s.emit("turn.delta", { turnId, stream: "reasoning", delta: c.text });
-        if (s.turn) s.turn.phase = "reasoning";
-        break;
-      }
-      case "tool_call": {
-        if (s.turn) s.turn.phase = "tools";
-        const callId = String(u.toolCallId ?? "");
-        const tool =
-          (typeof u.name === "string" && u.name) ||
-          (typeof u.title === "string" && u.title) ||
-          "tool";
-        const input =
-          typeof u.rawInput === "object" && u.rawInput !== null
-            ? (u.rawInput as Record<string, unknown>)
-            : {};
-        s.emit("tool.started", { turnId, toolCallId: callId, tool, input });
-        /* #179: ACP drops subagent.* frames — synthesize flat rows off the
-           delegate call's task list; per-task status arrives on its update. */
-        if (tool === "delegate_task") {
-          s.delegateStack.push(callId);
-          const tasks = Array.isArray(input.tasks) ? input.tasks : [];
-          tasks.forEach((t, i) => {
-            const subagentId = s.subagentId(`${callId}:${i}`);
-            s.emit("subagent.started", {
-              turnId,
+      if (tool === "terminal")
+        s.terminalCalls.set(
+          callId,
+          typeof input.command === "string" ? input.command : "",
+        );
+    },
+    onToolCallUpdate(s, _u, { callId, tool, status, out }) {
+      /* #179: close the synthesized rows — per-task statuses parse off the
+         formatted "Task N: ✅/✗/⏱/⚠" lines, else the call's own status.
+         #309: an async delegate's tool call closes with a dispatch
+         receipt ({status:"dispatched"}) — the children keep running;
+         closing their rows here would lie. ACP relays no native
+         subagent.completed, so a dispatched row could never close —
+         #327 marks it untracked instead, and Session.setState settles
+         it stopped once the session leaves "running" (a real close
+         lands only over the WS event path). */
+      const dispatched = (() => {
+        /* The receipt arrives as a JSON string or an already-parsed
+           object — either way `status:"dispatched"` means the children
+           keep running. */
+        const status = (() => {
+          if (typeof out === "string") {
+            try {
+              return (JSON.parse(out) as { status?: unknown }).status;
+            } catch {
+              return undefined;
+            }
+          }
+          if (out !== null && typeof out === "object") {
+            return (out as { status?: unknown }).status;
+          }
+          return undefined;
+        })();
+        return status === "dispatched";
+      })();
+      if (s.delegateStack.includes(callId)) {
+        s.delegateStack = s.delegateStack.filter((id) => id !== callId);
+        const text = typeof out === "string" ? out : "";
+        const perTask = new Map<number, string>();
+        for (const m of text.matchAll(/[✅✗⏱⚠]\s*Task (\d+):\s*(\w+)/g))
+          perTask.set(Number(m[1]), m[2]);
+        if (!dispatched)
+          s.subagentsForCall(callId).forEach((subagentId, i) => {
+            const word = perTask.get(i + 1);
+            s.emit("subagent.completed", {
               subagentId,
-              name: `task ${i + 1}`,
-              task:
-                typeof (t as { goal?: unknown })?.goal === "string"
-                  ? ((t as { goal: string }).goal as string)
-                  : "",
-              parentToolCallId: callId,
-              startedAt: Date.now(),
+              status: word
+                ? mapSubagentStatus(word)
+                : status === "failed"
+                  ? "failed"
+                  : "done",
             });
           });
-        }
-        if (tool === "terminal")
-          s.terminalCalls.set(
-            callId,
-            typeof input.command === "string" ? input.command : "",
-          );
-        break;
+        else
+          for (const id of s.subagentsForCall(callId)) {
+            s.untrackedSubagents.add(id);
+          }
       }
-      case "tool_call_update": {
-        const status = u.status;
-        if (status !== "completed" && status !== "failed") break;
-        const out = u.rawOutput;
-        const callId = String(u.toolCallId ?? "");
-        const tool =
-          (typeof u.name === "string" && u.name) ||
-          (typeof u.title === "string" && u.title) ||
-          "tool";
-        s.emit("tool.completed", {
-          turnId,
-          toolCallId: callId,
-          tool,
-          status: status === "failed" ? "failed" : "completed",
-          ...(out !== undefined && out !== null
-            ? {
-                output:
-                  typeof out === "string"
-                    ? out
-                    : JSON.stringify(out).slice(0, 4000),
-              }
-            : {}),
-        });
-        /* #179: close the synthesized rows — per-task statuses parse off the
-           formatted "Task N: ✅/✗/⏱/⚠" lines, else the call's own status.
-           #309: an async delegate's tool call closes with a dispatch
-           receipt ({status:"dispatched"}) — the children keep running;
-           closing their rows here would lie. ACP relays no native
-           subagent.completed, so a dispatched row could never close —
-           #327 marks it untracked instead, and Session.setState settles
-           it stopped once the session leaves "running" (a real close
-           lands only over the WS event path). */
-        const dispatched = (() => {
-          /* The receipt arrives as a JSON string or an already-parsed
-             object — either way `status:"dispatched"` means the children
-             keep running. */
-          const status = (() => {
-            if (typeof out === "string") {
-              try {
-                return (JSON.parse(out) as { status?: unknown }).status;
-              } catch {
-                return undefined;
-              }
-            }
-            if (out !== null && typeof out === "object") {
-              return (out as { status?: unknown }).status;
-            }
-            return undefined;
-          })();
-          return status === "dispatched";
-        })();
-        if (s.delegateStack.includes(callId)) {
-          s.delegateStack = s.delegateStack.filter((id) => id !== callId);
-          const text = typeof out === "string" ? out : "";
-          const perTask = new Map<number, string>();
-          for (const m of text.matchAll(/[✅✗⏱⚠]\s*Task (\d+):\s*(\w+)/g))
-            perTask.set(Number(m[1]), m[2]);
-          if (!dispatched)
-            s.subagentsForCall(callId).forEach((subagentId, i) => {
-              const word = perTask.get(i + 1);
-              s.emit("subagent.completed", {
-                subagentId,
-                status: word
-                  ? mapSubagentStatus(word)
-                  : status === "failed"
-                    ? "failed"
-                    : "done",
-              });
-            });
-          else
-            for (const id of s.subagentsForCall(callId)) {
-              s.untrackedSubagents.add(id);
-            }
-        }
-        const command = s.terminalCalls.get(callId);
-        s.terminalCalls.delete(callId);
-        if (tool === "terminal" && status === "completed") {
-          const result = parseToolResultJson(out);
-          const procId =
-            typeof result?.session_id === "string" ? result.session_id : "";
-          const pid = typeof result?.pid === "number" ? result.pid : undefined;
-          if (procId) this.engine.startJob(s, procId, command ?? "", pid);
-        }
-        break;
+      const command = s.terminalCalls.get(callId);
+      s.terminalCalls.delete(callId);
+      if (tool === "terminal" && status === "completed") {
+        const result = parseToolResultJson(out);
+        const procId =
+          typeof result?.session_id === "string" ? result.session_id : "";
+        const pid = typeof result?.pid === "number" ? result.pid : undefined;
+        if (procId) engine.startJob(s, procId, command ?? "", pid);
       }
-      case "session_info_update": {
-        const meta = u._meta as
-          | {
-              hermes?: {
-                sessionProvenance?: { currentHermesSessionId?: string };
-              };
-            }
-          | undefined;
-        const ref = meta?.hermes?.sessionProvenance?.currentHermesSessionId;
-        if (ref && ref !== s.ref) this.engine.bumpRef(s, ref);
-        break;
-      }
-      case "usage_update": {
-        /* ACP `used`/`size` are the CURRENT occupancy and the window —
-           the meter's numerator/denominator (#415), not `input`. A
-           malformed value must not clobber the last good reading or
-           poison `turn.completed`'s Usage schema at the relay. */
-        const int = (v: unknown): number | undefined =>
-          typeof v === "number" && Number.isInteger(v) && v >= 0
-            ? v
-            : undefined;
-        const used = int(u.used);
-        const size = int(u.size);
-        if (used !== undefined || (size !== undefined && size > 0)) {
-          const prev = s.usage ?? {
-            input: 0,
-            output: 0,
-            reasoning: 0,
-            cache: 0,
-          };
-          s.usage = {
-            ...prev,
-            ...(used !== undefined ? { context: used } : {}),
-            ...(size !== undefined && size > 0 ? { contextWindow: size } : {}),
-          };
-        }
-        break;
-      }
-      /* #180: ACP `plan` sessionUpdate carries the agent's own working list
-         (Hermes `todo`) as `entries[{content,status,priority}]` — a full
-         snapshot per update, mapped to `plan.updated` kind:"tasks" on a
-         stable per-turn planId. ACP plan entries have no cancelled status;
-         unfinished steps read cancelled via turn.completed on the client. */
-      case "plan": {
-        if (!s.turn) break;
-        const entries = u.entries as
-          | { content?: string; status?: string }[]
-          | undefined;
-        if (!entries?.length) break;
-        const plan = s.turn.plan ?? {
-          planId: `plan-${turnId}`,
-          version: 0,
-        };
-        s.turn.plan = plan;
-        plan.version += 1;
-        const steps: PlanStep[] = entries.map((e) => ({
-          text: e.content ?? "",
-          status: acpPlanStatus(e.status),
-        }));
-        s.emit("plan.updated", {
-          turnId,
-          planId: plan.planId,
-          kind: "tasks",
-          version: plan.version,
-          steps,
-        });
-        break;
-      }
-      default:
-        break;
-    }
-  }
-}
-
-/** #180: ACP plan-entry status -> contracts PlanStepStatus (ACP has none for cancelled). */
-function acpPlanStatus(status: string | undefined): PlanStepStatus {
-  if (status === "in_progress") return "in_progress";
-  if (status === "completed") return "completed";
-  return "pending";
-}
-
-function toAcpContent(b: ContentBlock): acp.ContentBlock {
-  if (b.type === "image")
-    return { type: "image", data: b.data, mimeType: b.mimeType, uri: b.uri };
-  return { type: "text", text: b.text };
-}
-
-function toAcpMcp(m: McpServer): acp.McpServer {
-  if ("type" in m) {
-    return {
-      type: m.type,
-      name: m.name,
-      url: m.url,
-      headers: m.headers,
-    } as never;
-  }
-  return {
-    name: m.name,
-    command: m.command,
-    args: m.args,
-    env: m.env,
-  } as never;
+    },
+    onSessionInfo(s, u) {
+      const meta = (u as { _meta?: unknown })._meta as
+        | {
+            hermes?: {
+              sessionProvenance?: { currentHermesSessionId?: string };
+            };
+          }
+        | undefined;
+      const ref = meta?.hermes?.sessionProvenance?.currentHermesSessionId;
+      if (ref && ref !== s.ref) engine.bumpRef(s, ref);
+    },
+  };
 }
