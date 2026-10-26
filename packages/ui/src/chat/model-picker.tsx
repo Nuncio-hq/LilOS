@@ -10,7 +10,7 @@ import {
   RefreshCwIcon,
   ZapIcon,
 } from "lucide-react";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { ModelSelectorLogo } from "../components/ai-elements/model-selector";
 import { PromptInputButton } from "../components/ai-elements/prompt-input";
 import { Button } from "../components/ui/button";
@@ -227,6 +227,19 @@ const samePick = (a: ModelChoice, b: ModelChoice) =>
   a.effort === b.effort &&
   !!a.fast === !!b.fast;
 
+/* D-#868 — the quiet composer's one pill carries who · model · effort: when
+   the host can switch agents it hands the picker the team, and an "Agent ›"
+   row drills into the same radio list the old Agent chip had (avatars and
+   role lines are the caller's — the picker stays engine-agnostic). */
+export type PickerAgent = {
+  id: string;
+  name: string;
+  /** Trigger-sized avatar (~14px). */
+  avatar: ReactNode;
+  /** Pane row: avatar, name, role — whatever identifies the agent. */
+  node: ReactNode;
+};
+
 export function ModelPicker({
   value,
   models,
@@ -237,6 +250,10 @@ export function ModelPicker({
   onRefresh,
   open: openProp,
   onOpenChange,
+  agent,
+  agents,
+  agentActions,
+  onAgent,
 }: {
   value: ModelChoice;
   models: ModelOption[];
@@ -245,11 +262,20 @@ export function ModelPicker({
      click would. Undefined falls back to the popover's own state. */
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /** The agent the pill speaks for, and the team the Agent pane lists. */
+  agent?: string;
+  agents?: PickerAgent[];
+  /** Action rows under the agent list (Add agent…, Remove…): their ids come
+     back through `onAgent` like a pick — the host tells them apart. */
+  agentActions?: { id: string; node: ReactNode }[];
+  onAgent?: (id: string) => void;
 } & ModelPickerExtras) {
   const [ownOpen, setOwnOpen] = useState(false);
   const open = openProp ?? ownOpen;
   const setOpen = onOpenChange ?? setOwnOpen;
-  const [view, setView] = useState<"main" | "models" | "effort">("main");
+  const [view, setView] = useState<"main" | "models" | "effort" | "agents">(
+    "main",
+  );
   const [editing, setEditing] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   /* A catalog refresh that ran and still didn't offer the session's model is
@@ -313,6 +339,7 @@ export function ModelPicker({
   };
   const pName = (p: string) => providerName(p, providers);
   const logoOf = (p?: string) => providers?.find((x) => x.id === p)?.logo;
+  const curAgent = agents?.find((a) => a.id === agent);
 
   /* The session's own (merged) row is never hidden — the picker must show
      the model the session runs even when its provider is hidden (#140 AC-1). */
@@ -405,6 +432,15 @@ export function ModelPicker({
             />
           }
         >
+          {curAgent && (
+            <>
+              {curAgent.avatar}
+              <span className="max-w-24 truncate">{curAgent.name}</span>
+              <span aria-hidden className="text-muted-foreground/50">
+                ·
+              </span>
+            </>
+          )}
           <ModelLogo provider={cur?.provider} logo={logoOf(cur?.provider)} />
           <span className="max-w-36 truncate">
             {catalogModelName(value.model, merged, value.provider) ??
@@ -426,10 +462,25 @@ export function ModelPicker({
           aria-label="Model and reasoning"
         >
           {view === "main" ? (
-            /* One quiet row per thing the pick owns (D-#868): the model,
-               then the effort ladder the engine reported as a plain
-               dropdown, then Fast — no slider. */
+            /* One quiet row per thing the pick owns (D-#868): the agent when
+               the host can switch it, the model, then the effort ladder the
+               engine reported as a plain dropdown, then Fast — no slider. */
             <div className="flex flex-col divide-y divide-border py-1">
+              {agents && onAgent && (
+                <button
+                  type="button"
+                  aria-label="Agent"
+                  onClick={() => setView("agents")}
+                  className="flex items-center gap-2 px-3 py-2.5 text-left hover:bg-muted"
+                >
+                  {curAgent?.avatar}
+                  <span className="min-w-0 flex-1 truncate text-sm">
+                    {curAgent?.name ?? "Choose agent"}
+                  </span>
+                  <span className="text-muted-foreground text-xs">Agent</span>
+                  <ChevronRightIcon className="size-4 text-muted-foreground" />
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setView("models")}
@@ -481,7 +532,9 @@ export function ModelPicker({
                   <ZapIcon
                     className={cn(
                       "size-3.5",
-                      fast ? "fill-primary text-primary" : "text-muted-foreground",
+                      fast
+                        ? "fill-primary text-primary"
+                        : "text-muted-foreground",
                     )}
                   />
                   <span className="min-w-0 flex-1 truncate text-sm">
@@ -492,6 +545,66 @@ export function ModelPicker({
                   </span>
                 </button>
               )}
+            </div>
+          ) : view === "agents" ? (
+            /* The team as a radio list — the same picks the old Agent chip
+               held. A pick returns to the quiet rows so who · model · effort
+               all settle from the one pill (D-#868); action rows close it. */
+            <div className="flex flex-col">
+              <div className="flex items-center gap-1 px-1 pt-1">
+                <button
+                  type="button"
+                  aria-label="Back"
+                  onClick={() => setView("main")}
+                  className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-muted"
+                >
+                  <ChevronLeftIcon className="size-4" />
+                </button>
+                <span className="flex-1 pr-7 text-center text-xs text-muted-foreground">
+                  Agent
+                </span>
+              </div>
+              <div role="menu" aria-label="Agents" className="py-1">
+                {agents?.map((a) => (
+                  <button
+                    key={a.id}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={a.id === agent}
+                    onClick={() => {
+                      onAgent?.(a.id);
+                      setView("main");
+                    }}
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-muted"
+                  >
+                    <span className="grid w-3.5 shrink-0 place-items-center">
+                      {a.id === agent && (
+                        <CheckIcon className="size-3.5 text-foreground" />
+                      )}
+                    </span>
+                    <span className="flex min-w-0 flex-1 items-center gap-2">
+                      {a.node}
+                    </span>
+                  </button>
+                ))}
+                {agentActions?.map((a) => (
+                  <button
+                    key={a.id}
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      onAgent?.(a.id);
+                      setOpen(false);
+                    }}
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-muted"
+                  >
+                    <span className="w-3.5 shrink-0" />
+                    <span className="flex min-w-0 flex-1 items-center gap-2">
+                      {a.node}
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
           ) : view === "effort" ? (
             /* The plain dropdown the issue asks for (D-#868): the levels

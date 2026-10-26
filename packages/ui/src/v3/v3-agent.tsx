@@ -307,7 +307,12 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
             )}
             <Prop icon={<SparklesIcon />} label="Model">
               {draft && ed?.canModel ? (
-                <ModelField ed={ed} draft={draft} choices={data.modelChoices} />
+                <ModelField
+                  ed={ed}
+                  draft={draft}
+                  choices={data.modelChoices}
+                  catalog={data.modelCatalog}
+                />
               ) : (
                 agent.model
               )}

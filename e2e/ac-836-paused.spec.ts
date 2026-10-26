@@ -105,11 +105,12 @@ test("the sidebar is the daily app's, and Home is the daily Home with its compos
     new RegExp(`^Message ${agent.name}…`),
   );
   await expect(box).toBeVisible();
-  await expect(main(page).getByTitle("Agent", { exact: true })).toBeVisible();
-  await expect(main(page).getByTitle(/^Project · /)).toBeVisible();
+  /* The quiet composer (D-#868): one pill carries who · model · effort. */
   const model = main(page).locator("[data-slot='model-picker-trigger']");
   await expect(model).toBeVisible();
+  await expect(model).toContainText(agent.name);
   await expect(model.locator("[data-effort]")).toBeVisible();
+  await expect(main(page).getByTitle(/^Project · /)).toBeVisible();
   await expect(main(page).locator("[data-slot='access-pill']")).toBeVisible();
   /* The merged list under the composer: the ask's row wears the Needs-you
      pill and its Deny/Approve on the row itself. */
@@ -212,8 +213,11 @@ test("agents stay reachable: composer picker, the agent page and the trail", asy
   await peek.getByRole("button", { name: "Message" }).click();
   const draft = peek.getByPlaceholder(new RegExp(`^Message ${agent.name}…`));
   await expect(draft).toBeVisible({ timeout: 30_000 });
-  await peek.getByTitle("Agent", { exact: true }).click();
-  const menu = page.getByRole("menu");
+  /* The agent list is a pane in the one pill now (D-#868): open the pill,
+     "Agent ›", every agent is a radio row. */
+  await peek.locator("[data-slot='model-picker-trigger']").click();
+  await page.getByRole("button", { name: "Agent", exact: true }).click();
+  const menu = page.getByRole("menu", { name: "Agents" });
   await expect(
     menu.getByRole("menuitemradio", { name: new RegExp(agent.name) }),
   ).toBeVisible();

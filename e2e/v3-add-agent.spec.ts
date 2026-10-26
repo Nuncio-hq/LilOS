@@ -125,11 +125,13 @@ test("the composer's 'Add agent…' opens the same dialog and selects the hire",
   await skipFirstRun(page);
   await page.goto(`${stack.webUrl}/#?page=threads&open=newchat:none`);
   const peek = v3Peek(page);
-  const chip = peek.getByTitle("Agent", { exact: true });
+  /* 'Add agent…' sits in the one pill's Agent pane (#868). */
+  const chip = peek.locator('[data-slot="model-picker-trigger"]');
   await expect(chip).toBeVisible({ timeout: 30_000 });
   await chip.click();
-  await peek
-    .getByRole("menu")
+  await page.getByRole("button", { name: "Agent", exact: true }).click();
+  await page
+    .getByRole("menu", { name: "Agents" })
     .getByRole("menuitem", { name: "Add agent…" })
     .click();
 

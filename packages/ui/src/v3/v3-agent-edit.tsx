@@ -1,5 +1,6 @@
 import { BellIcon, PencilIcon } from "lucide-react";
 import { type KeyboardEvent, type Ref, useState } from "react";
+import { ModelPicker } from "../chat/model-picker";
 import { cn } from "../lib/utils";
 import { Btn, Prop, Section } from "./v3-bits";
 import { ChipMenu } from "./v3-chip-menu";
@@ -233,11 +234,28 @@ export function ModelField({
   ed,
   draft,
   choices,
+  catalog,
 }: {
   ed: AgentEditor;
   draft: Draft;
   choices: string[];
+  catalog?: V3Data["modelCatalog"];
 }) {
+  /* The same picker the composer has (D-#868) once the app can translate
+     its stored label to a pick and back (`modelCatalog.pickOf`/`labelOf`);
+     without them the field keeps the plain menu. */
+  if (catalog?.pickOf && catalog.labelOf) {
+    const labelOf = catalog.labelOf;
+    return (
+      <ModelPicker
+        value={catalog.pickOf(draft.model)}
+        models={catalog.options}
+        onChoice={(c) => ed.set({ model: labelOf(c) })}
+        providers={catalog.providers}
+        visibility={catalog.visibility}
+      />
+    );
+  }
   return (
     <ChipMenu
       below

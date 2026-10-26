@@ -1,5 +1,5 @@
 import { MessageSquareIcon, PencilLineIcon } from "lucide-react";
-import { choiceFor, ModelPicker } from "../chat/model-picker";
+import { choiceFor, ModelPicker, type PickerAgent } from "../chat/model-picker";
 import type { ModelChoice } from "../types";
 import { ChipMenu } from "./v3-chip-menu";
 import type { V3Data } from "./v3-data-types";
@@ -117,9 +117,11 @@ export function ProjectChip({
   );
 }
 
-/** The model chip: the engine's full picker (effort, Fast, providers, Edit
-    models, Refresh) where the app has the catalog; else the plain menu over
-    the model names. `pick` is what the picker last chose, if anything. */
+/** The one quiet pill (D-#868): who · model · effort in the engine's full
+    picker where the app has the catalog — the agent is a pane inside it, so
+    there is one pill to open, not two. Else the plain menu over the model
+    names (the agent keeps its own chip then). `pick` is what the picker
+    last chose, if anything. */
 export function ModelChip({
   data,
   act,
@@ -130,6 +132,10 @@ export function ModelChip({
   onLabel,
   open,
   onOpen,
+  agent,
+  agents,
+  agentActions,
+  onAgent,
 }: {
   data: V3Data;
   act: V3Actions;
@@ -143,6 +149,11 @@ export function ModelChip({
   /** `/model` opens the picker the box already owns. */
   open: boolean;
   onOpen: (open: boolean) => void;
+  /** Who the pill speaks for and the team its Agent pane lists. */
+  agent?: string;
+  agents?: PickerAgent[];
+  agentActions?: { id: string; node: React.ReactNode }[];
+  onAgent?: (id: string) => void;
 }) {
   const cat = data.modelCatalog;
   if (!cat) {
@@ -179,6 +190,10 @@ export function ModelChip({
       onRefresh={cat.refreshable ? act.refreshModels : undefined}
       open={open}
       onOpenChange={onOpen}
+      agent={agent}
+      agents={agents}
+      agentActions={agentActions}
+      onAgent={onAgent}
     />
   );
 }

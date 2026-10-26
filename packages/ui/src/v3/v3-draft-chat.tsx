@@ -278,80 +278,94 @@ export function ChatDraft({
     return true;
   };
 
-  const chips = (
-    <>
-      <ChipMenu
-        title="Agent"
-        value={agent.id}
-        onPick={(id) =>
-          id === REMOVE_AGENT
-            ? setRemoveId(agent.id)
-            : id === ADD_AGENT
-              ? /* "Add agent…" hires on the spot and the new agent becomes
-                   this draft's chip — ready to message (#870). */
-                act.addAgent?.((hired) => {
-                  setAgent(hired);
-                  input.current?.focus();
-                })
-              : setAgent(id)
-        }
-        triggerRef={agentChip}
-        label={
-          <>
-            <AgentAvatar data={data} agent={agent} size={16} />
-            <span className="truncate">{agent.name}</span>
-          </>
-        }
-        options={[
-          ...data.agents.map((a) => ({
-            id: a.id,
+  /* Who hears the draft. The quiet composer (D-#868) folds this into the
+     one pill with the model and effort — an "Agent" pane in the same picker.
+     The standalone chip remains where there is no pill to fold into: an
+     outside worker has no model, and without the engine's catalog the model
+     is a plain menu. The rows are the same either way. */
+  const agentRows = data.agents.map((a) => ({
+    id: a.id,
+    name: a.name,
+    avatar: <AgentAvatar data={data} agent={a} size={16} />,
+    node: (
+      <>
+        <AgentAvatar data={data} agent={a} size={18} />
+        <span className="shrink-0">{a.name}</span>
+        {a.id === data.ceoId && <CeoMark />}
+        <span className="truncate text-[12.5px] text-muted-foreground/70">
+          {a.role}
+        </span>
+      </>
+    ),
+  }));
+  /* The picker's overflow: the same Remove the agent's own page has, for the
+     agent the pill shows. `removable` keeps the row off for an outside
+     worker, the CEO and the last LilOS agent (#856). Then the ＋ beside
+     Agents' other way in (#870). */
+  const agentActions = [
+    ...(act.removeAgent && removable(data, agent)
+      ? [
+          {
+            id: REMOVE_AGENT,
+            action: true,
             node: (
               <>
-                <AgentAvatar data={data} agent={a} size={18} />
-                <span className="shrink-0">{a.name}</span>
-                {a.id === data.ceoId && <CeoMark />}
-                <span className="truncate text-[12.5px] text-muted-foreground/70">
-                  {a.role}
+                <Trash2Icon className="size-3.5 shrink-0 text-muted-foreground" />
+                <span className="truncate">
+                  Remove {agent.name} from LilOS…
                 </span>
               </>
             ),
-          })),
-          /* The picker's overflow: the same Remove the agent's own page has,
-             for the agent the chip shows. `removable` keeps the row off for
-             an outside worker, the CEO and the last LilOS agent (#856). */
-          ...(act.removeAgent && removable(data, agent)
-            ? [
-                {
-                  id: REMOVE_AGENT,
-                  action: true,
-                  node: (
-                    <>
-                      <Trash2Icon className="size-3.5 shrink-0 text-muted-foreground" />
-                      <span className="truncate">
-                        Remove {agent.name} from LilOS…
-                      </span>
-                    </>
-                  ),
-                },
-              ]
-            : []),
-          /* Last row: the ＋ beside Agents' other way in (#870). */
-          ...(act.addAgent
-            ? [
-                {
-                  id: ADD_AGENT,
-                  action: true,
-                  node: (
-                    <>
-                      <PlusIcon className="size-3.5 shrink-0 text-muted-foreground" />
-                      <span className="truncate">Add agent…</span>
-                    </>
-                  ),
-                },
-              ]
-            : []),
-        ]}
-      />
+          },
+        ]
+      : []),
+    ...(act.addAgent
+      ? [
+          {
+            id: ADD_AGENT,
+            action: true,
+            node: (
+              <>
+                <PlusIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                <span className="truncate">Add agent…</span>
+              </>
+            ),
+          },
+        ]
+      : []),
+  ];
+  const onAgentPick = (id: string) =>
+    id === REMOVE_AGENT
+      ? setRemoveId(agent.id)
+      : id === ADD_AGENT
+        ? /* "Add agent…" hires on the spot and the new agent becomes this
+             draft's — ready to message (#870). */
+          act.addAgent?.((hired) => {
+            setAgent(hired);
+            input.current?.focus();
+          })
+        : setAgent(id);
+
+  const chips = (
+    <>
+      {(outside || !data.modelCatalog) && (
+        <ChipMenu
+          title="Agent"
+          value={agent.id}
+          onPick={onAgentPick}
+          triggerRef={agentChip}
+          label={
+            <>
+              <AgentAvatar data={data} agent={agent} size={16} />
+              <span className="truncate">{agent.name}</span>
+            </>
+          }
+          options={[
+            ...agentRows.map((a) => ({ id: a.id, node: a.node })),
+            ...agentActions,
+          ]}
+        />
+      )}
       <ProjectChip
         projects={data.projects}
         project={project}
@@ -370,6 +384,10 @@ export function ChatDraft({
           onLabel={setModel}
           open={pickOpen}
           onOpen={setPickOpen}
+          agent={agent.id}
+          agents={agentRows}
+          agentActions={agentActions}
+          onAgent={onAgentPick}
         />
       )}
       {data.chatAccess && (

@@ -222,12 +222,16 @@ test("AC-3+AC-9 Settings Approvals: policy pick, honest copy, and the default se
 const draftPill = (page: Page) =>
   v3Peek(page).locator('[data-slot="access-pill"]');
 
-/** Switch the open draft to another agent through its Agent chip. */
+/** Switch the open draft to another agent — the agent pane lives inside the
+    one pill with model and effort (#868): open it, "Agent ›", pick the row. */
 async function draftAgent(page: Page, name: string) {
-  await v3Peek(page).getByTitle("Agent", { exact: true }).click();
-  await v3Peek(page)
+  await v3Peek(page).locator('[data-slot="model-picker-trigger"]').click();
+  await page.getByRole("button", { name: "Agent", exact: true }).click();
+  await page
+    .getByRole("menu", { name: "Agents" })
     .getByRole("menuitemradio", { name: new RegExp(name) })
     .click();
+  await page.keyboard.press("Escape");
   await expect(v3Peek(page).getByPlaceholder(`Message ${name}…`)).toBeVisible();
 }
 

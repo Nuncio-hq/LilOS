@@ -3,6 +3,7 @@ import { ATTENTION_ASKS, ATTENTION_THREADS } from "./fake-v3-attention"
 import { CODING_AGENTS, CODING_ASKS, CODING_THREADS } from "./fake-v3-coding"
 import { CONNECTORS, OUTSIDE_THREADS, OUTSIDE_TICKETS, OUTSIDE_WORKERS } from "./fake-v3-outside"
 import { MODEL_OPTIONS, MODEL_PROVIDERS, MODEL_VISIBILITY, modelIdOf } from "./fake-v3-models"
+import { modelPick, pickLabel } from "./thread/model-pick"
 import { AGENT_NOTES, SKILLS } from "./fake-v3-files"
 import { BROWSER, DEVICES, SCHEDULES, SETTINGS, WORKBENCHES } from "./fake-v3-tools"
 
@@ -899,6 +900,20 @@ export const V3_DATA: V3Data = {
       new URLSearchParams(location.search).get("company") === "1",
   },
 }
+
+/* The agent page's ModelField is the shared picker (D-#868): it asks these
+   to read the stored "Opus 5.5 · High"-style label and to write a pick back
+   as one — the label grammar lives in model-pick.ts with the thread chips. */
+V3_DATA.modelCatalog!.pickOf = (label) => {
+  const p = modelPick(V3_DATA, label)
+  return {
+    model: p.model ?? "",
+    provider: p.provider,
+    effort: p.effort,
+    fast: p.fast,
+  }
+}
+V3_DATA.modelCatalog!.labelOf = (c) => pickLabel(V3_DATA, c)
 
 /* The fake CEO behind ⌘K. A question gets a reply built from the live data;
    anything else becomes a draft plan under the project the line names. */

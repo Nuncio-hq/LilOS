@@ -1,7 +1,12 @@
 /* The company around the records: schedules, the phone, settings, what waits
    on you, the CEO's drafts, and `V3Data`, everything a page reads. */
 
-import type { ModelOption, ModelProvider, ModelVisibility } from "../types";
+import type {
+  ModelChoice,
+  ModelOption,
+  ModelProvider,
+  ModelVisibility,
+} from "../types";
 import type { V3HireTemplate } from "./hire-templates";
 import type {
   V3Agent,
@@ -288,6 +293,13 @@ export type V3Data = {
     visibility?: ModelVisibility;
     /** The engine can re-read its catalog (`refreshModels`). */
     refreshable?: boolean;
+    /* The stored agent-model label's grammar is the app's (the prototype's
+       carry effort, the real app's carry a provider on a name clash), so the
+       one shared picker on an agent's page (D-#868) asks these to read and
+       write `agent.model`. Absent: the model field keeps the plain menu
+       over `modelChoices`. */
+    pickOf?: (label: string) => ModelChoice;
+    labelOf?: (pick: ModelChoice) => string;
   };
   /** The app starts a chat on the access you pick (Ask / Full access): the
      new-chat box shows the pill, starting on `settings.approvals`. Absent: no
