@@ -119,8 +119,16 @@ export interface NewTask {
   projectKey: string;
   /** The parent's level — the child's access is never broader (D-#106). */
   access: ConversationAccess;
-  /** The child's working folder — the parent's. */
+  /** The child's working folder — the parent's, or the worktree the
+      host resolved for an isolated hand-off (D-#848). */
   cwd?: string;
+  /** D-#848: the #156 `workspace` intent an isolated child carries —
+      `mode:"new"` makes the bind materialize `cwd` as a worktree of
+      `repoPath` before `session.start`, same as a workstream open. */
+  workspace?: WorkspaceIntent;
+  /** D-#848: stamped on the task blob — where the child ran when a
+      worktree was forked (the thread can later move folders). */
+  worktree?: { path: string; branch: string };
   /** The caller's pick for the child session (#92-style fields). */
   model?: string;
   provider?: string;

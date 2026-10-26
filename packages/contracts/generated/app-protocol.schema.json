@@ -9929,6 +9929,24 @@
               "type": "string",
               "minLength": 1
             },
+            "worktree": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "branch": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "path",
+                "branch"
+              ],
+              "additionalProperties": false
+            },
             "requestId": {
               "type": "string",
               "minLength": 1
@@ -10278,6 +10296,24 @@
                   "childChannelId": {
                     "type": "string",
                     "minLength": 1
+                  },
+                  "worktree": {
+                    "type": "object",
+                    "properties": {
+                      "path": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "branch": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "path",
+                      "branch"
+                    ],
+                    "additionalProperties": false
                   },
                   "requestId": {
                     "type": "string",
@@ -10635,6 +10671,24 @@
                 "childChannelId": {
                   "type": "string",
                   "minLength": 1
+                },
+                "worktree": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "branch": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "branch"
+                  ],
+                  "additionalProperties": false
                 },
                 "requestId": {
                   "type": "string",
@@ -11337,6 +11391,24 @@
                     "type": "string",
                     "minLength": 1
                   },
+                  "worktree": {
+                    "type": "object",
+                    "properties": {
+                      "path": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "branch": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "path",
+                      "branch"
+                    ],
+                    "additionalProperties": false
+                  },
                   "requestId": {
                     "type": "string",
                     "minLength": 1
@@ -11702,6 +11774,24 @@
                 "childChannelId": {
                   "type": "string",
                   "minLength": 1
+                },
+                "worktree": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "branch": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "branch"
+                  ],
+                  "additionalProperties": false
                 },
                 "requestId": {
                   "type": "string",
@@ -12489,6 +12579,24 @@
                 "childChannelId": {
                   "type": "string",
                   "minLength": 1
+                },
+                "worktree": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "branch": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "branch"
+                  ],
+                  "additionalProperties": false
                 },
                 "requestId": {
                   "type": "string",

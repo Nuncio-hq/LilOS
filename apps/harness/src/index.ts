@@ -74,6 +74,9 @@ const surfaces = await serveSurfaces(0, {
     relay,
     runningTurnId: (conversationId) => harness.runningTurnFor(conversationId),
     log,
+    /* No `homeDir` reaches `new Harness` below — its home is `homedir()`,
+       and `~`-collapsed paths on the wire mean that same directory. */
+    home: homedir(),
   }),
 
   log,
