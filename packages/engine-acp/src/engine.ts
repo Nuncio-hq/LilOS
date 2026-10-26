@@ -71,6 +71,13 @@ export interface AcpEngineOptions {
   /** The agent's stdio command — `["bun","scripts/fake-agent.ts"]` etc. */
   command: string[];
   env?: Record<string, string>;
+  /**
+   * Env names removed from the inherited env before the agent spawns (the
+   * shim's env policy — e.g. provider-auth vars that must not reroute the
+   * agent off the user's own login). Inherited names only; explicit `env`
+   * grants still land.
+   */
+  dropEnv?: readonly string[];
   /** `initialize.clientInfo`. */
   clientInfo?: { name: string; version: string };
   /**
@@ -159,6 +166,7 @@ export class AcpEngine {
     this.opening ??= AcpConnection.open({
       command: this.opts.command,
       ...(this.opts.env ? { env: this.opts.env } : {}),
+      ...(this.opts.dropEnv ? { dropEnv: this.opts.dropEnv } : {}),
       cwd: process.cwd(),
       ...(this.opts.clientInfo ? { clientInfo: this.opts.clientInfo } : {}),
       ...(this.opts.clientCapabilities

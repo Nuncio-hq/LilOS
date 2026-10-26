@@ -32,6 +32,15 @@ export interface AcpLaunchSpec {
   agent?: AgentDescriptor;
   /** Install check: `<bin> <verifyArgs>` must exit 0 before serving. */
   verify?: { args: string[]; timeoutMs?: number };
+  /** Extra env on the agent child — merged after the D-#412 scrub. */
+  env?: Record<string, string>;
+  /**
+   * Env names removed from the inherited env before the agent spawns —
+   * a shim's refusal to leak provider-auth vars that would reroute the
+   * session off the user's own login. Applies to the inherited env only;
+   * an explicit `env` grant still lands (D-#412 ordering).
+   */
+  dropEnv?: readonly string[];
   /** `initialize.clientCapabilities` override (e.g. terminal on). */
   clientCapabilities?: acp.ClientCapabilities;
   /** Client-side `terminal/*` serving options for this agent. */

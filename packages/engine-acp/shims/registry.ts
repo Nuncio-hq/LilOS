@@ -1,5 +1,6 @@
 import type { AcpLaunchSpec } from "../src/launch.js";
 import { probeExecutable, resolveExecutable } from "../src/launch.js";
+import { claudeSpec } from "./claude.js";
 import { devinSpec } from "./devin.js";
 
 /**
@@ -15,6 +16,7 @@ import { devinSpec } from "./devin.js";
  */
 export const ACP_AGENTS: Record<string, AcpLaunchSpec> = {
   devin: devinSpec,
+  claude: claudeSpec,
 };
 
 /**

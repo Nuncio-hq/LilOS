@@ -18,6 +18,13 @@ export interface AcpConnectionOptions {
   command: string[];
   /** Extra env for the child — merged over process.env. */
   env?: Record<string, string>;
+  /**
+   * Env names removed from the inherited env before spawn — the engine
+   * package's policy for names a child must not see even when the host
+   * env carries them. Inherited names only; explicit `env` grants are
+   * merged after and still land (D-#412 ordering).
+   */
+  dropEnv?: readonly string[];
   /** Spawn cwd (also sent as the session's `cwd` by newSession). */
   cwd: string;
   /** Identity reported in `initialize.clientInfo`. */
@@ -76,8 +83,12 @@ export class AcpConnection {
        the proxies/provider keys a signed-in CLI needs pass through;
        LILOS_* internal state (relay token, state dirs) never crosses the
        spawn boundary. Explicit grants still merge after the scrub. */
+    const inherited = scrubLilosEnv(process.env);
+    /* The engine package's own drop list applies to inherited names only —
+       an explicit `env` grant merged below still wins. */
+    for (const key of opts.dropEnv ?? []) delete inherited[key];
     const env = {
-      ...scrubLilosEnv(process.env),
+      ...inherited,
       ...opts.env,
     } as Record<string, string>;
     const [bin, ...args] = opts.command;

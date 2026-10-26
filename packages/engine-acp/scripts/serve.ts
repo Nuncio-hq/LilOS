@@ -147,6 +147,8 @@ const engine = new AcpEngine({
   ...(spec.modeForAccess ? { modeForAccess: spec.modeForAccess } : {}),
   ...(spec.defaultEffort ? { defaultEffort: spec.defaultEffort } : {}),
   ...(spec.sessionMeta ? { sessionMeta: spec.sessionMeta } : {}),
+  ...(spec.env ? { env: spec.env } : {}),
+  ...(spec.dropEnv ? { dropEnv: spec.dropEnv } : {}),
 });
 const clients = new Set<{ send: (s: string) => void }>();
 engine.onEvent((e) => {
