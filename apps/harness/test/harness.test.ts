@@ -684,16 +684,14 @@ describe("workspace harness", () => {
       w.harness.attachEngine(back);
 
       await waitFor(
-        () =>
-          backCalls.find((c) => c.method === "prompt"),
+        () => backCalls.find((c) => c.method === "prompt"),
         "queued send prompted on its own after resync",
       );
       await waitFor(async () => {
         const { messages } = await listConvMessages(w.user, channel.id);
         const list = messages.filter(
           (m) =>
-            m.authorKind === "employee" &&
-            m.conversationId === conversation.id,
+            m.authorKind === "employee" && m.conversationId === conversation.id,
         );
         return list.length >= 2 ? list : undefined;
       }, "mid-restart send answered");
@@ -769,14 +767,11 @@ describe("workspace harness", () => {
         const { messages } = await listConvMessages(w.user, channel.id);
         const list = messages.filter(
           (m) =>
-            m.authorKind === "employee" &&
-            m.conversationId === conversation.id,
+            m.authorKind === "employee" && m.conversationId === conversation.id,
         );
         return list.length >= 2 ? list : undefined;
       }, "mid-restart send answered on rebound session");
-      expect(
-        engine2Calls.filter((c) => c.method === "prompt"),
-      ).toHaveLength(1);
+      expect(engine2Calls.filter((c) => c.method === "prompt")).toHaveLength(1);
     } finally {
       await w.cleanup();
     }

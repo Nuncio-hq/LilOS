@@ -716,12 +716,8 @@ export class FakeGateway implements GatewayLike {
         const reply = () =>
           key === "approvals.mode"
             ? Promise.resolve({ key, value: this.approvalsMode })
-            : Promise.reject(
-                new RpcError(4002, `unknown config key: ${key}`),
-              );
-        return this.configGetGate
-          ? this.configGetGate.then(reply)
-          : reply();
+            : Promise.reject(new RpcError(4002, `unknown config key: ${key}`));
+        return this.configGetGate ? this.configGetGate.then(reply) : reply();
       }
       case "complete.slash": {
         /* A fixed menu — the adapter maps text/meta/kind verbatim. */

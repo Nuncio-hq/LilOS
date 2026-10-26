@@ -464,8 +464,7 @@ describe("engine-hermes #106: approval modes", () => {
     };
     expect(d.backend?.state).toBe("running");
     expect(
-      d.capabilities.find((c) => c.id === "approval_policy")?.detail
-        ?.current,
+      d.capabilities.find((c) => c.id === "approval_policy")?.detail?.current,
     ).toBeUndefined();
 
     /* Once the backend unblocks, the in-flight seed lands and the next
