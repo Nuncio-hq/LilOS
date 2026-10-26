@@ -44,8 +44,9 @@ export const sectionOf = (
 
 /** The Active list's order: newest back first — when it last finished,
     failed, asked or woke (`cameBackAt`), falling back to its finish or
-    open time so a thread with neither sinks to the bottom, never top. */
-const backThen = (t: V3Thread, now: number) =>
+    open time so a thread with neither sinks to the bottom, never top.
+    Home's Recent threads sorts the same way (#862). */
+export const backThen = (t: V3Thread, now: number) =>
   t.cameBackAt ??
   t.openedAt ??
   (t.doneAgo !== undefined ? now - t.doneAgo * 60_000 : 0);

@@ -1,4 +1,3 @@
-import { Fragment, type ReactNode } from "react";
 import { cn } from "../lib/utils";
 import {
   ago,
@@ -12,13 +11,7 @@ import {
 } from "./v3-bits";
 import type { V3Data } from "./v3-data-types";
 import { ChatDraft } from "./v3-draft-chat";
-import {
-  AgentAvatar,
-  CeoMark,
-  ProjectMark,
-  StatusDot,
-  StatusPill,
-} from "./v3-marks";
+import { AgentAvatar, CeoMark, StatusDot, StatusPill } from "./v3-marks";
 import {
   agentNameOf,
   agentOf,
@@ -36,16 +29,15 @@ import {
   nextRunLabel,
   projectOf,
   resultsToLookAt,
-  threadProjectId,
   threadsIn,
   ticketOf,
   waitingLabel,
 } from "./v3-model";
 import { RowButton } from "./v3-open-record";
 import type { V3PageProps } from "./v3-page-types";
-import { sectionedThreads } from "./v3-sections";
+import { backThen, sectionedThreads } from "./v3-sections";
 import { ThreadRow } from "./v3-threads-rows";
-import type { V3Agent, V3Status, V3Thread } from "./v3-types";
+import type { V3Agent, V3Status } from "./v3-types";
 
 /* Home: who is working, what needs you, what just finished. Counts are the
    Threads counts (D-#774). The CEO's note and Goals join with tickets (M2). */
@@ -439,10 +431,10 @@ function CompanyHome({ data, go, act }: V3PageProps) {
 }
 
 /* Home with the company layer paused (D-#836): the counts, a box that talks
-   to Hermes, Needs you, and the threads grouped by their project — the
+   to Hermes, Needs you, the pinned threads, and Recent threads — the
    daily app, with tickets, the team table, goals and the CEO's note out of
-   sight but still in the data underneath. Live threads float to the top of
-   each group; "Open" takes you to the project page for the full list. */
+   sight but still in the data underneath. "Open Threads" goes to the list
+   for the rest. */
 const THREADS_HOME = 6;
 
 function DailyHome({ data, go, act }: V3PageProps) {
@@ -450,40 +442,16 @@ function DailyHome({ data, go, act }: V3PageProps) {
   /* A wake time passing quietly returns its thread — tick so Home re-reads
      the clock. */
   useTick(30_000);
-  /* The threads, in the list's own section order (#862): pinned, then
-     what came back to you newest first, then work in progress — snoozed
-     sleeps on its shelf and settled lives on its own. Helpers have no row
-     (D-#847). */
+  /* Home's order (#862): Needs you (open asks), then Pinned — the threads
+     pinned by hand, the same row with its menu so a pin comes off from
+     here — then Recent threads: everything still listed, newest came-back
+     first, minus the pinned (they have their own block) and anything
+     snoozed or settled, which sleeps on its shelf. Helpers have no row
+     (D-#847); a Home section hides when it is empty. */
   const s = sectionedThreads(data);
-  const ordered = [...s.pinned, ...s.active, ...s.working];
-  const groups = data.projects
-    .map((p) => ({
-      project: p,
-      threads: ordered.filter((t) => threadProjectId(data, t) === p.id),
-    }))
-    .filter((g) => g.threads.length > 0);
-  const chats = ordered.filter((t) => threadProjectId(data, t) === undefined);
-  const group = (title: ReactNode, threads: V3Thread[], link?: () => void) => (
-    <Fragment key={typeof title === "string" ? title : threads[0]?.id}>
-      <Section
-        title={title}
-        count={threads.length}
-        link={link ? "Open" : undefined}
-        onLink={link}
-      />
-      <div className="border-[var(--v3-line)] border-t">
-        {threads.slice(0, THREADS_HOME).map((t) => (
-          <ThreadRow
-            key={t.id}
-            data={data}
-            t={t}
-            go={go}
-            act={act}
-            drop="project"
-          />
-        ))}
-      </div>
-    </Fragment>
+  const now = Date.now();
+  const recent = [...s.active, ...s.working].sort(
+    (a, b) => backThen(b, now) - backThen(a, now),
   );
 
   return (
@@ -504,17 +472,31 @@ function DailyHome({ data, go, act }: V3PageProps) {
         </div>
       )}
       <NeedsBlock data={data} go={go} act={act} />
-      {groups.map(({ project, threads }) =>
-        group(
-          <span className="inline-flex items-center gap-2">
-            <ProjectMark name={project.name} tone={project.tone} />
-            {project.name}
-          </span>,
-          threads,
-          () => go({ page: "project", id: project.id }),
-        ),
+      {s.pinned.length > 0 && (
+        <>
+          <Section title="Pinned" count={s.pinned.length} />
+          <div className="border-[var(--v3-line)] border-t">
+            {s.pinned.map((t) => (
+              <ThreadRow key={t.id} data={data} t={t} go={go} act={act} />
+            ))}
+          </div>
+        </>
       )}
-      {chats.length > 0 && group("Chats", chats)}
+      {recent.length > 0 && (
+        <>
+          <Section
+            title="Recent threads"
+            count={recent.length}
+            link="Open Threads"
+            onLink={() => go({ page: "threads" })}
+          />
+          <div className="border-[var(--v3-line)] border-t">
+            {recent.slice(0, THREADS_HOME).map((t) => (
+              <ThreadRow key={t.id} data={data} t={t} go={go} act={act} />
+            ))}
+          </div>
+        </>
+      )}
     </Page>
   );
 }
