@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { type ToastNotice, ToastView, type V3Nav, V3Shell, navFromParams, paramsFromNav, paramsText } from "@lilos/ui"
+import { FolderAccessBanner, FolderAccessStep, type ToastNotice, ToastView, type V3Nav, V3Shell, navFromParams, paramsFromNav, paramsText } from "@lilos/ui"
 import { V3_DATA, v3Draft } from "./fake-v3"
 import { v3Reply } from "./fake-v3-reply"
 import { FolderDialog } from "./folder-host"
@@ -34,6 +34,10 @@ if (pinned === "dark" || pinned === "light") localStorage.setItem("lilos-theme",
 export default function V3App() {
   const [toast, setToast] = useState<ToastNotice | null>(null)
   const [nav, setNav] = useState(navFromUrl)
+  /* #875 folder access surfaces for review: ?fa=ask draws the step,
+     ?fa=blocked the banner, ?fa=both both — mock state, like the dialogs. */
+  const fa = new URLSearchParams(location.search).get("fa")
+  const [faStep, setFaStep] = useState(fa === "ask" || fa === "both")
   // Every move becomes a history entry; Back/Forward read it back.
   useEffect(() => {
     const search = searchFromNav(nav)
@@ -106,10 +110,25 @@ export default function V3App() {
             onSession={(open) => setNav((n) => ({ ...n, full: open }))}
           />
         )}
-        banner={<StatusBanner data={data} onDetails={() => setStatus(true)} />}
+        banner={<>
+          <StatusBanner data={data} onDetails={() => setStatus(true)} />
+          {(fa === "blocked" || fa === "both") && (
+            <FolderAccessBanner folders={["Desktop"]} onSettings={() => onToast("System Settings → Privacy & Security → Files and Folders")} />
+          )}
+        </>}
       />
       {status && <StatusDetails data={data} onClose={() => setStatus(false)} onCopied={() => onToast("Diagnostics copied")} />}
       {asking && <FolderDialog onPick={asking} onClose={() => setAsking(null)} />}
+      {faStep && (
+        <FolderAccessStep
+          folders={["Desktop", "Documents", "Downloads"]}
+          onAllow={() => {
+            setFaStep(false)
+            onToast("macOS asks once per folder — allow each")
+          }}
+          onLater={() => setFaStep(false)}
+        />
+      )}
       {toast && <ToastView toast={toast} />}
     </>
   )

@@ -11,6 +11,7 @@ import {
 import { RelayClient } from "@lilos/client-runtime";
 import {
   DESKTOP_FIND_CHANNEL,
+  DESKTOP_FOLDER_ACCESS_CHANNEL,
   DESKTOP_NOTIFY_CHANNEL,
   DESKTOP_ONLINE_CHANNEL,
   DESKTOP_OPEN_CONVERSATION_CHANNEL,
@@ -36,6 +37,7 @@ import {
 } from "electron";
 import { BrowserHost, registerBrowserSchemes } from "./browser";
 import { diskVersionStore, helperServiceControl } from "./control";
+import { FOLDER_ACCESS_SETTINGS_URL, FolderAccess } from "./folder-access";
 import { appMenuTemplate } from "./menu";
 import { appDocumentUrl, guardWindow } from "./navigation-guard";
 import { postDesktopNotification } from "./notify";
@@ -651,6 +653,31 @@ function watchApprovalGate(): void {
   }, 1_000);
 }
 
+/* D-#875: macOS folder access — the shell owns the TCC touches: only a
+   foreground process's reads raise the answerable prompt, the launchd
+   relay/harness just hang on it. `pending` names protected folders never
+   asked (the app's step explains, `ask()` touches); `blocked` names asked
+   folders whose reads still fail — the banner's Settings button remedies. */
+const folderAccess = new FolderAccess({
+  stateFile: join(stateDir, "folder-access.json"),
+});
+folderAccess.onChange((s) =>
+  mainWindow?.webContents.send(DESKTOP_FOLDER_ACCESS_CHANNEL, s),
+);
+
+ipcMain.handle("lilos:folder-access:state", () => folderAccess.state());
+ipcMain.handle("lilos:folder-access:ask", () => folderAccess.ask());
+ipcMain.handle("lilos:folder-access:ensure", (_e, path: unknown) =>
+  typeof path === "string" ? folderAccess.ensure(path) : folderAccess.state(),
+);
+ipcMain.handle("lilos:folder-access:open-settings", () =>
+  shell.openExternal(FOLDER_ACCESS_SETTINGS_URL),
+);
+
+/* Back in the window after System Settings? Re-probe — a grant toggled
+   there clears `blocked` so the banner drops without a relaunch (#875). */
+app.on("browser-window-focus", () => void folderAccess.refreshBlocked());
+
 ipcMain.handle("lilos:status", statusWithLiveAgents);
 ipcMain.handle("lilos:ensure", () =>
   ensureServices().then(statusWithLiveAgents),
@@ -732,6 +759,11 @@ app.whenReady().then(async () => {
   } else {
     createAppWindow();
   }
+
+  /* D-#875: settle asked folders in the background — a denied read fails
+     fast, a granted one clears `blocked`. Pending folders stay untouched
+     until the ask step's own touch. */
+  void folderAccess.refreshBlocked();
 
   // #539 AC-4: a rollback used to be silent — say it once per failed build.
   if (settle === "rolled-back") {

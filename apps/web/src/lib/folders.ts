@@ -5,6 +5,7 @@
 
 import type { Folder, FsDir, Workspace } from "@lilos/ui/types";
 import { atom } from "nanostores";
+import { ensureFolderAccess, noteFolderAccessError } from "./folder-access";
 import {
   hostBranches,
   hostDiscoverRepos,
@@ -71,9 +72,17 @@ export async function refreshFolders(): Promise<void> {
     home, no trailing slash), so the row is found by what it stored, not by
     what was typed. */
 export async function addFolder(path: string): Promise<Folder | undefined> {
-  const res = await relay.request<{ folder: { path: string } }>("folders.add", {
-    path,
-  });
+  /* D-#875: a folder inside ~/Desktop, ~/Documents or ~/Downloads needs the
+     macOS grant — the desktop probe rises the OS prompt and this await is
+     the user's answer, so folders.add doesn't hit the same wall while the
+     prompt is still up. */
+  await ensureFolderAccess(path);
+  const res = await relay
+    .request<{ folder: { path: string } }>("folders.add", { path })
+    .catch((e) => {
+      noteFolderAccessError(e); // resurfaces the ask step (#875)
+      throw e;
+    });
   await refreshFolders();
   return folders.get().find((f) => f.path === res.folder.path);
 }

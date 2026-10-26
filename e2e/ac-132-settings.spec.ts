@@ -4,7 +4,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron, expect, type Page, test } from "@playwright/test";
-import { electronScreenshot, ensureDesktopPayload } from "./helpers/electron";
+import {
+  electronSafeEnv,
+  electronScreenshot,
+  ensureDesktopPayload,
+} from "./helpers/electron";
 import { bootStack, pickPorts, skipFirstRun, v3Sidebar } from "./helpers/stack";
 
 /**
@@ -306,12 +310,15 @@ test("AC-1 the desktop menu opens Settings on ⌘, and Service Status stays", as
           ? [desktopDir, "--no-sandbox"]
           : [desktopDir],
       env: {
-        ...process.env,
+        ...electronSafeEnv(),
         LILOS_RELAY_HOME: stack.home,
         LILOS_RELAY_PORT: String(stack.ports.relay),
         LILOS_FEED_PORT: String(stack.ports.feed),
         LILOS_WEB_URL: stack.webUrl,
         LILOS_STATE_DIR: stateDir,
+        // #875: the folder-access step isn't this test's subject — skip the
+        // OS ask the way a granted install would.
+        LILOS_SKIP_FOLDER_ASK: "1",
       },
     });
     const win = await app.firstWindow();

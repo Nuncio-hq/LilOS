@@ -737,12 +737,18 @@ export function createRelay(options: RelayOptions): Relay {
           error.data,
         );
       } else {
+        /* A typed host error escaping a relay-side handler (FOLDER_ACCESS
+           from the bounded resolve, D-#875) keeps its numeric code + data
+           so the client can tell "waiting on folder access" from a fault. */
+        const code = (error as { code?: unknown }).code;
+        const typed = typeof code === "number";
         respondError(
           peer,
           id,
-          JsonRpcCode.internal,
+          typed ? code : JsonRpcCode.internal,
           "internal",
           error instanceof Error ? error.message : "internal error",
+          typed ? { host: (error as { data?: unknown }).data } : undefined,
         );
       }
     }

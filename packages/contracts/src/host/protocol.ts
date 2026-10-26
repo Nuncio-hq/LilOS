@@ -37,5 +37,10 @@ export const HOST_ERRORS = {
   /** A git write (`git.commit`/`git.push`/`git.createBranch`) failed; the
      typed reason rides in error data `reason` (stderr in `detail`). */
   GIT_FAILED: -32108,
+  /** A folder read hit macOS's TCC wall — a probe timed out waiting on a
+     consent prompt, or the read was refused outright (#875). The message is
+     the one sentence every surface reports; error data `folder` names the
+     protected folder ("Desktop") when the path sits inside one. */
+  FOLDER_ACCESS: -32109,
 } as const;
 export type HostErrorCode = (typeof HOST_ERRORS)[keyof typeof HOST_ERRORS];

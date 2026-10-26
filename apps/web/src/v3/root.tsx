@@ -10,6 +10,7 @@ import { AddFolderHost } from "./add-folder";
 import { StatusBanner, StatusDetails } from "./banner";
 import { v3DataStore } from "./data";
 import { useShellEffects } from "./effects";
+import { FolderAccessBannerHost, FolderAccessStepHost } from "./folder-access";
 import { moveNav, v3Nav } from "./nav";
 import { visibleNav } from "./shown";
 
@@ -78,7 +79,13 @@ function Company() {
           actions={actions}
           nav={shown}
           onNav={move}
-          banner={<StatusBanner />}
+          banner={
+            <>
+              <StatusBanner />
+              {/* D-#875: a protected folder still refusing reads. */}
+              <FolderAccessBannerHost />
+            </>
+          }
           searchRequest={search}
           sidebarRequest={sidebar}
           // The window's vibrancy follows the theme or the sidebar turns
@@ -110,6 +117,9 @@ function Company() {
       )}
       {/* The new chat's "New project from a folder…" opens this. */}
       <AddFolderHost />
+      {/* D-#875: the macOS folder-access ask — first launch and whenever a
+          picked folder pulls a protected folder into pending. */}
+      <FolderAccessStepHost />
       {/* The banner's Details and first run's "See status" open this one. */}
       <StatusDetails />
       {/* One-line notices (failed sends, the Undo of a rewind). */}

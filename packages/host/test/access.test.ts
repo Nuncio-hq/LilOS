@@ -1,0 +1,394 @@
+import { execFileSync } from "node:child_process";
+import {
+  chmodSync,
+  promises as fsp,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterAll, describe, expect, it, vi } from "vitest";
+import {
+  assertFolderReadable,
+  bounded,
+  confirmFolderBlocked,
+  exists,
+  fsList,
+  gitDiscoverRepos,
+  gitIsRepo,
+  HOST_ERRORS,
+  HostError,
+  isAccessError,
+  setConfirmRead,
+} from "../src/index";
+
+/* D-#875 bounded probes: a read that can't answer — a FIFO `open()` with
+   no writer, a `git` child that never finishes — reports FOLDER_ACCESS
+   ("waiting on macOS folder access for …") only when the protected folder
+   itself is unreadable; a slow-but-granted op reports its own timeout.
+   The probe home is a tmpdir via LILOS_TCC_HOME so this runs on any OS.
+   A chmod 0111 folder stands in for the TCC wall: chdir/stat still pass
+   (the path resolves) but readdir is refused — exactly what a denied
+   consent looks like to the confirm read. Skipped when tests run as root
+   (root bypasses the mode bits). */
+
+const tmp = mkdtempSync(join(tmpdir(), "lilos-access-"));
+const HOME = join(tmp, "home");
+const D = join(HOME, "Desktop");
+const DOCS = join(HOME, "Documents");
+const DL = join(HOME, "Downloads");
+for (const dir of [D, DOCS, DL]) mkdirSync(dir, { recursive: true });
+
+const restoreEnv = {
+  home: process.env.LILOS_TCC_HOME,
+  ms: process.env.LILOS_PROBE_TIMEOUT_MS,
+};
+process.env.LILOS_TCC_HOME = HOME;
+process.env.LILOS_PROBE_TIMEOUT_MS = "40";
+
+const isRoot = process.getuid?.() === 0;
+const deny = (dir: string) => chmodSync(dir, 0o111); // traverse ok, read refused
+const allow = (dir: string) => chmodSync(dir, 0o755);
+
+afterAll(() => {
+  if (restoreEnv.home === undefined) delete process.env.LILOS_TCC_HOME;
+  else process.env.LILOS_TCC_HOME = restoreEnv.home;
+  if (restoreEnv.ms === undefined) delete process.env.LILOS_PROBE_TIMEOUT_MS;
+  else process.env.LILOS_PROBE_TIMEOUT_MS = restoreEnv.ms;
+  for (const dir of [D, DOCS, DL]) allow(dir);
+  rmSync(tmp, { recursive: true, force: true });
+});
+
+const never = <T>() => new Promise<T>(() => {});
+const inDesktop = join(D, "x");
+const inDocs = join(DOCS, "x");
+const inDl = join(DL, "x");
+
+describe("isAccessError signatures (#875)", () => {
+  it("names a killed child, the TCC errnos and git's wording", () => {
+    expect(isAccessError(Object.assign(new Error("x"), { killed: true }))).toBe(
+      true,
+    );
+    for (const code of ["EPERM", "EACCES", "EINTR"])
+      expect(isAccessError({ code }), code).toBe(true);
+    expect(isAccessError({ stderr: "fatal: Operation not permitted" })).toBe(
+      true,
+    );
+    expect(isAccessError({ code: "ENOENT" })).toBe(false);
+    expect(isAccessError(new Error("plain"))).toBe(false);
+  });
+});
+
+describe("bounded() (#875)", () => {
+  it.skipIf(isRoot)(
+    "times a never-landing read out as FOLDER_ACCESS on a denied folder",
+    async () => {
+      deny(D);
+      const err = await bounded(never(), inDesktop).then(
+        () => {
+          throw new Error("should have thrown");
+        },
+        (e) => e,
+      );
+      expect(err).toBeInstanceOf(HostError);
+      expect(err.code).toBe(HOST_ERRORS.FOLDER_ACCESS);
+      expect(err.data).toMatchObject({ folder: "Desktop", path: inDesktop });
+      expect(err.message).toContain("Desktop");
+      allow(D);
+    },
+  );
+
+  it("reports its own timeout when the folder reads fine — no consent cry", async () => {
+    // D is 0755: the 1s confirm readdir lands, so the caller hears the
+    // honest timeout — a slow op is not a TCC wall (review finding 7).
+    await expect(bounded(never(), inDesktop)).rejects.toThrow(/timed out/);
+    await expect(bounded(never(), inDesktop)).rejects.not.toBeInstanceOf(
+      HostError,
+    );
+  });
+
+  it.skipIf(isRoot)("a late grant re-opens the folder", async () => {
+    deny(DOCS);
+    await expect(bounded(never(), inDocs)).rejects.toMatchObject({
+      code: HOST_ERRORS.FOLDER_ACCESS,
+    });
+    allow(DOCS); // granted in System Settings — the very next probe reads.
+    await expect(bounded(Promise.resolve(7), inDocs)).resolves.toBe(7);
+  });
+
+  it.skipIf(isRoot)(
+    "a refused read inside a denied folder reports FOLDER_ACCESS",
+    async () => {
+      deny(DL);
+      const refused = Promise.reject(
+        Object.assign(new Error("nope"), { code: "EPERM" }),
+      );
+      await expect(bounded(refused, join(DL, "x"))).rejects.toMatchObject({
+        code: HOST_ERRORS.FOLDER_ACCESS,
+        data: { folder: "Downloads" },
+      });
+      allow(DL);
+    },
+  );
+
+  it("a refused read inside a GRANTED folder keeps its own errno", async () => {
+    // A chmod'd child is not the wall (review finding 4): EPERM stays EPERM.
+    const refused = Promise.reject(
+      Object.assign(new Error("nope"), { code: "EACCES" }),
+    );
+    await expect(bounded(refused, inDesktop)).rejects.toMatchObject({
+      code: "EACCES",
+    });
+  });
+
+  it("passes ordinary failures straight through", async () => {
+    const missing = Promise.reject(
+      Object.assign(new Error("gone"), { code: "ENOENT" }),
+    );
+    await expect(bounded(missing, inDesktop)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it.skipIf(isRoot)(
+    "a real blocking syscall (FIFO open) reports FOLDER_ACCESS on a denied folder",
+    async () => {
+      const fifo = join(tmp, "blocked.fifo");
+      execFileSync("mkfifo", [fifo]);
+      deny(DOCS);
+      const opening = fsp.open(fifo, "r"); // blocks until a writer pairs
+      await expect(bounded(opening, inDocs)).rejects.toMatchObject({
+        code: HOST_ERRORS.FOLDER_ACCESS,
+        data: { folder: "Documents" },
+      });
+      allow(DOCS);
+      // Pair a writer so the parked open resolves and the test can exit.
+      const w = await fsp.open(fifo, "w");
+      const r = await opening;
+      await r.close();
+      await w.close();
+    },
+  );
+
+  it("outside the protected folders a timeout is just a timeout", async () => {
+    await expect(bounded(never(), join(tmp, "x"), 40)).rejects.toThrow(
+      /timed out/,
+    );
+  });
+});
+
+describe("exists() (#875)", () => {
+  it("answers true/false for real paths without touching the bound", async () => {
+    await expect(exists(tmp)).resolves.toBe(true);
+    await expect(exists(join(tmp, "not-there"))).resolves.toBe(false);
+  });
+
+  it.skipIf(isRoot)(
+    "a permission-denied child inside a readable folder answers false",
+    async () => {
+      const locked = join(DOCS, "locked");
+      mkdirSync(locked);
+      chmodSync(locked, 0o000); // even stat inside fails — one denied child
+      await expect(exists(join(locked, ".git"))).resolves.toBe(false);
+      chmodSync(locked, 0o755);
+    },
+  );
+});
+
+describe("git probe bound (#875)", () => {
+  /* A `git` that never answers — PATH-injected, like the skill-symlink case
+     that hung `session/new` on 27 Oct. LILOS_PROBE_TIMEOUT_MS is 40ms, so
+     the child is SIGKILLed almost at once. The protected cwd lives inside
+     a chmod-0111 folder: spawn's chdir passes (x bit) while the confirm
+     readdir is refused — the deny-by-mode stand-in for the TCC wall. */
+  const fakeBin = join(tmp, "fake-bin");
+  mkdirSync(fakeBin);
+  writeFileSync(join(fakeBin, "git"), "#!/bin/sh\nsleep 60\n");
+  chmodSync(join(fakeBin, "git"), 0o755);
+  const repoInDocs = join(DOCS, "repo");
+  mkdirSync(repoInDocs);
+  const oldPath = process.env.PATH;
+  process.env.PATH = `${fakeBin}:${oldPath ?? ""}`;
+  afterAll(() => {
+    process.env.PATH = oldPath;
+  });
+
+  it.skipIf(isRoot)(
+    "a hanging child on a denied protected cwd reports FOLDER_ACCESS",
+    async () => {
+      deny(DOCS);
+      await expect(gitIsRepo({ path: repoInDocs })).rejects.toMatchObject({
+        code: HOST_ERRORS.FOLDER_ACCESS,
+        data: { folder: "Documents" },
+      });
+      allow(DOCS);
+    },
+  );
+
+  it("a hanging child on a GRANTED protected cwd is a plain timeout", async () => {
+    // Slow git ≠ TCC (review finding 7): the folder reads fine, so the
+    // killed child reports GIT_FAILED, not a consent wait.
+    await expect(gitIsRepo({ path: repoInDocs })).rejects.toMatchObject({
+      code: HOST_ERRORS.GIT_FAILED,
+      message: expect.stringContaining("timed out"),
+    });
+  });
+
+  it("an unprotected cwd keeps the unbounded probe — a slow child still answers", async () => {
+    /* r4: the bound exists for TCC consent waits, which live only inside
+       protected folders. Outside, a 300 ms git must still answer — the
+       40 ms probe bound would have killed it and silently reported
+       "not a repo" (the D-#848 regression). */
+    const slowBin = join(tmp, "slow-bin");
+    mkdirSync(slowBin);
+    writeFileSync(
+      join(slowBin, "git"),
+      "#!/bin/sh\nsleep 0.3\nprintf '/slow/repo\\n'\n",
+    );
+    chmodSync(join(slowBin, "git"), 0o755);
+    const outside = join(tmp, "outside");
+    mkdirSync(outside);
+    const oldPath = process.env.PATH;
+    process.env.PATH = `${slowBin}:${oldPath ?? ""}`;
+    try {
+      const res = await gitIsRepo({ path: outside });
+      expect(res.isRepo).toBe(true); // answered past the bound — no kill
+    } finally {
+      process.env.PATH = oldPath;
+    }
+  });
+
+  it("a spawn failure is infra, not 'not a repo' — it surfaces", async () => {
+    /* r4: gitOr mapped every non-HostError to null, so a dead spawn
+       quietly became isRepo:false → "shared". Errno-string codes are
+       infrastructure; only a numeric exit code means "not a repo". */
+    const emptyBin = join(tmp, "empty-bin");
+    mkdirSync(emptyBin); // no git in here at all → spawn ENOENT
+    const outside = join(tmp, "outside-2");
+    mkdirSync(outside);
+    const oldPath = process.env.PATH;
+    process.env.PATH = emptyBin; // even sh-less: git can't spawn
+    try {
+      await expect(gitIsRepo({ path: outside })).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    } finally {
+      process.env.PATH = oldPath;
+    }
+  });
+});
+
+describe("listings and discovery skip a walled child (#875)", () => {
+  /* Review r2: a blocked protected CHILD must not kill the whole call.
+     chmod 000 stands in for the denied wall — even traversal is refused,
+     so the child's own probes throw FOLDER_ACCESS while the parent's
+     readdir still answers. */
+  it.skipIf(isRoot)(
+    "fsList answers while a protected child is walled",
+    async () => {
+      chmodSync(D, 0o000);
+      const res = await fsList({ path: HOME });
+      const desktop = res.entries.find((e) => e.name === "Desktop");
+      expect(desktop).toMatchObject({ kind: "dir" });
+      expect(desktop?.repo).toBeUndefined();
+      allow(D);
+    },
+  );
+
+  it.skipIf(isRoot)(
+    "fsList ON the walled folder itself still reports FOLDER_ACCESS",
+    async () => {
+      chmodSync(D, 0o000);
+      await expect(fsList({ path: D })).rejects.toMatchObject({
+        code: HOST_ERRORS.FOLDER_ACCESS,
+        data: { folder: "Desktop" },
+      });
+      allow(D);
+    },
+  );
+
+  it.skipIf(isRoot)(
+    "gitDiscoverRepos skips a walled root and keeps the rest",
+    async () => {
+      const dev = join(HOME, "Developer");
+      const proj = join(dev, "proj");
+      mkdirSync(join(proj, ".git"), { recursive: true }); // a repo marker
+      chmodSync(D, 0o000);
+      const res = await gitDiscoverRepos({ roots: [D, dev], depth: 2 });
+      expect(res.repos.some((r) => r.path.endsWith("Developer/proj"))).toBe(
+        true,
+      );
+      allow(D);
+    },
+  );
+});
+
+describe("blocked-flag expiry (#875)", () => {
+  /* A read the OS never answers arms the flag; the flag expires after
+     30 s so probes re-try the real op — but a confirm on the still-
+     pending read re-arms on it, never a second read (r3). */
+  it("a never-settling read flags, expires, re-arms, then a late grant opens", async () => {
+    vi.useFakeTimers();
+    try {
+      let answer!: (v: unknown) => void;
+      setConfirmRead(
+        () =>
+          new Promise<unknown>((r) => {
+            answer = r;
+          }),
+      );
+      const p = confirmFolderBlocked(inDocs);
+      await vi.advanceTimersByTimeAsync(1_000); // the confirm's own bound
+      await expect(p).resolves.toBe(true);
+      // Flagged: repeat probes fail fast instead of parking a syscall.
+      expect(() => assertFolderReadable(inDocs)).toThrow(/folder access/i);
+      vi.advanceTimersByTime(31_000); // flag ages out
+      expect(() => assertFolderReadable(inDocs)).not.toThrow();
+      // …but the read is still out: a confirm re-arms on it, not a new one.
+      await expect(confirmFolderBlocked(inDocs)).resolves.toBe(true);
+      answer([]); // late grant — the held read resolves, watcher done
+      await Promise.resolve();
+      await Promise.resolve(); // two hops: w settles, then its cleanup
+      setConfirmRead(null);
+      await expect(confirmFolderBlocked(inDocs)).resolves.toBe(false);
+      expect(() => assertFolderReadable(inDocs)).not.toThrow();
+    } finally {
+      setConfirmRead(null);
+      vi.useRealTimers();
+    }
+  });
+
+  it("expiries on a still-pending read never start another (r3)", async () => {
+    vi.useFakeTimers();
+    try {
+      let reads = 0;
+      setConfirmRead(() => {
+        reads += 1;
+        return never();
+      });
+      const p = confirmFolderBlocked(inDl);
+      await vi.advanceTimersByTimeAsync(1_000);
+      await expect(p).resolves.toBe(true);
+      for (let i = 0; i < 3; i++) {
+        vi.advanceTimersByTime(31_000); // each expiry re-checks
+        await expect(confirmFolderBlocked(inDl)).resolves.toBe(true);
+      }
+      expect(reads).toBe(1); // one hanging read per folder, ever
+    } finally {
+      setConfirmRead(null);
+      vi.useRealTimers();
+    }
+  });
+
+  it.skipIf(isRoot)(
+    "a refused read reports blocked but doesn't arm the flag — a grant is seen next probe",
+    async () => {
+      deny(DOCS);
+      await expect(confirmFolderBlocked(inDocs)).resolves.toBe(true);
+      allow(DOCS); // granted at once: no 30 s blind spot behind a flag
+      await expect(confirmFolderBlocked(inDocs)).resolves.toBe(false);
+    },
+  );
+});

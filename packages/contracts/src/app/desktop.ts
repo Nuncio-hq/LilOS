@@ -79,6 +79,22 @@ export type DesktopShortcutAction =
  * sidebar vibrancy material turns unreadable (dark text on dark vibrancy). */
 export type ThemeSource = "light" | "dark" | "system";
 
+/** IPC channel: main → renderer, pushes the FolderAccessState after every
+ *  probe batch (#875); the renderer invokes the `lilos:folder-access-*`
+ *  methods for the reads. */
+export const DESKTOP_FOLDER_ACCESS_CHANNEL = "lilos:folder-access" as const;
+
+/** macOS folder access as the shell knows it (D-#875): protected folders
+ *  the app has never asked macOS about (a step must explain, then touch)
+ *  versus folders it asked that still block reads (denied or the prompt is
+ *  unanswered — the banner offers System Settings either way). */
+export interface FolderAccessState {
+  /** Protected folder names never touched ("Desktop", …). */
+  pending: string[];
+  /** Asked folders whose reads still block or fail. */
+  blocked: string[];
+}
+
 /** The #35 update check's verdict as the shell reports it to
  *  Settings → About (#132): "busy" means a check was already in flight.
  *  apps/desktop's `CheckOutcome` is the same set minus "busy". */
@@ -191,6 +207,26 @@ export interface DesktopBridge {
    *  before the page sees it. Absent on plain web — the browser-reserved
    *  chords are simply unbound there. Returns an unsubscribe function. */
   onShortcut?: (cb: (action: DesktopShortcutAction) => void) => () => void;
+  /** macOS folder access (#875): the shell owns TCC state and the touches
+   *  that raise OS prompts; the renderer draws the ask step and the denied
+   *  banner. Absent on plain web — the surfaces never render there. */
+  folderAccess?: {
+    /** Latest state (pending = never asked, blocked = asked, still blocked). */
+    state(): Promise<FolderAccessState>;
+    /** Touch every pending + blocked folder so macOS prompts while the
+     *  user is looking; resolves to the settled state. */
+    ask(): Promise<FolderAccessState>;
+    /** A folder the app just adopted (project add, move): if it sits inside
+     *  a never-asked or blocked protected folder, main touches it so the OS
+     *  prompt rises while the new folder's context is on screen, and the
+     *  promise resolves with the answer — the caller's add/move proceeds
+     *  on a grant, hears FOLDER_ACCESS on a denial. */
+    ensure(path: string): Promise<FolderAccessState>;
+    /** System Settings → Privacy & Security → Files and Folders. */
+    openSettings(): Promise<void>;
+    /** Subscribe to pushed state. Returns an unsubscribe function. */
+    onChange?(cb: (state: FolderAccessState) => void): () => void;
+  };
   /** LilOS Browser shell bridge (WebContentsView host in main; wire shapes
    *  in `./browser`). Absent on plain web — every browser control is
    *  gated on this existing, which is what keeps the feature off web

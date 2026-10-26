@@ -131,6 +131,19 @@ export async function electronScreenshot(
   throw lastErr;
 }
 
+/** `process.env` minus the vars that would make the spawned Electron boot
+ *  as plain Node — an agent/IDE running inside Electron exports
+ *  ELECTRON_RUN_AS_NODE, and `{...process.env}` would carry it into the
+ *  child, where `electron.app` is undefined and the app dies at boot.
+ *  Every `_electron.launch` site builds env through this. */
+export function electronSafeEnv(
+  extra: Record<string, string> = {},
+): Record<string, string> {
+  const env = { ...process.env } as Record<string, string>;
+  delete env.ELECTRON_RUN_AS_NODE;
+  return { ...env, ...extra };
+}
+
 /**
  * Launch the desktop app against a booted stack, past first run.
  *
@@ -167,12 +180,16 @@ export async function launchDesktop(
         ? [desktopDir, "--no-sandbox"]
         : [desktopDir],
     env: {
-      ...process.env,
+      ...electronSafeEnv(),
       LILOS_RELAY_HOME: stack.home,
       LILOS_RELAY_PORT: String(stack.ports.relay),
       LILOS_FEED_PORT: String(stack.ports.feed),
       LILOS_WEB_URL: url,
       LILOS_STATE_DIR: stateDir,
+      /* #875: the folder-access step can't be clicked through on CI (and
+         on Linux there are no TCC prompts at all) — opt the app out the
+         way a granted install would; a spec may unset it via opts.env. */
+      LILOS_SKIP_FOLDER_ASK: "1",
       ...opts.env,
     },
   });

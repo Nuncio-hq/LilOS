@@ -1,4 +1,4 @@
-import { existsSync, promises as fsp } from "node:fs";
+import { promises as fsp } from "node:fs";
 import { join, resolve } from "node:path";
 import type {
   GitBranchesResult,
@@ -17,6 +17,16 @@ import type {
   GitWorktreesResult,
   GitWriteReason,
 } from "@lilos/contracts/host";
+import {
+  assertFolderReadable,
+  bounded,
+  confirmFolderBlocked,
+  exists,
+  folderAccessError,
+  isAccessError,
+  probeTimeoutMs,
+  protectedFolder,
+} from "./access.js";
 import { HOST_ERRORS, HostError } from "./errors.js";
 import { run } from "./exec.js";
 import { collapsePath, expandPath } from "./paths.js";
@@ -24,17 +34,68 @@ import { collapsePath, expandPath } from "./paths.js";
 const MAX_BUFFER = 64 * 1024 * 1024;
 const DISCOVER_CAP = 200;
 const PATCH_CAP = 200 * 1024;
+/* D-#875: a git probe on a TCC-protected folder blocks inside open() until
+   LilOS.app is granted — under launchd the prompt can't even be answered.
+   Probes (`rev-parse`, `status`, `ls-files`, …) race a bound and a killed
+   child is confirmed against the folder itself before crying FOLDER_ACCESS
+   — a plain slow repo still reports its own timeout. Writes are never
+   time-limited: a killed `commit`/`push` leaves index.lock behind and an
+   orphaned child keeps the lock. */
 
-async function git(cwd: string, args: string[]): Promise<string> {
-  const { stdout } = await run("git", args, { cwd, maxBuffer: MAX_BUFFER });
-  return stdout;
+async function git(
+  cwd: string,
+  args: string[],
+  timeout?: number,
+): Promise<string> {
+  /* A repeat probe while the folder's confirm read is still out fails at
+     once, not after the bound (D-#875). */
+  assertFolderReadable(cwd);
+  try {
+    const { stdout } = await run("git", args, {
+      cwd,
+      maxBuffer: MAX_BUFFER,
+      /* Writes pass no timeout — never a bound, never a SIGKILL (D-#875). */
+      ...(timeout === undefined
+        ? {}
+        : { timeout, killSignal: "SIGKILL" as const }),
+    });
+    return stdout;
+  } catch (e) {
+    const killed = (e as { killed?: boolean }).killed === true;
+    /* Confirm the wall before crying consent (D-#875): a slow repo and a
+       chmod'd child only look like TCC until the folder itself is asked. */
+    if ((killed || isAccessError(e)) && (await confirmFolderBlocked(cwd))) {
+      throw folderAccessError(cwd);
+    }
+    if (killed) {
+      throw new HostError(
+        HOST_ERRORS.GIT_FAILED,
+        `git timed out after ${timeout}ms`,
+      );
+    }
+    throw e;
+  }
 }
 
-/** stdout, or null when git exits non-zero (non-repo, missing ref, unborn HEAD). */
+/** A read-only probe — bounded only where a consent prompt can park it:
+ *  a cwd under a protected folder gets probeTimeoutMs(); outside there
+ *  is no TCC wall to wait out, so it keeps the old unbounded behavior —
+ *  a short bound there just turns CPU load into false answers (D-#875,
+ *  D-#848: a timed-out isRepo silently became "shared"). */
+export const gitProbe = (cwd: string, args: string[]): Promise<string> =>
+  git(cwd, args, protectedFolder(cwd) ? probeTimeoutMs() : undefined);
+
+/** stdout, or null when git exits non-zero (non-repo, missing ref, unborn HEAD).
+    A typed HostError (FOLDER_ACCESS) still throws — and so does an infra
+    failure: a spawn EAGAIN or a dead fs is not "not a repo". */
 async function gitOr(cwd: string, args: string[]): Promise<string | null> {
   try {
-    return await git(cwd, args);
-  } catch {
+    return await gitProbe(cwd, args);
+  } catch (e) {
+    if (e instanceof HostError) throw e;
+    /* Exit codes are numbers; anything else (errno strings, signal
+       deaths the bound didn't catch) is infrastructure — surface it. */
+    if (typeof (e as { code?: unknown }).code !== "number") throw e;
     return null;
   }
 }
@@ -71,7 +132,8 @@ export async function repoMark(
   const root = await repoRoot(abs);
   // git resolves symlinks in --show-toplevel (e.g. /var → /private/var);
   // compare against the canonicalized input path.
-  if (!root || resolve(root) !== resolve(await fsp.realpath(abs))) return null;
+  if (!root || resolve(root) !== resolve(await bounded(fsp.realpath(abs), abs)))
+    return null;
   const [head, remote] = await Promise.all([headOf(root), remoteOf(root)]);
   return { head, remote };
 }
@@ -99,7 +161,7 @@ export async function gitBranches(params: {
   const root = await rootOrThrow(params.path);
   const [current, list, remote, remoteDefault] = await Promise.all([
     headOf(root),
-    git(root, ["for-each-ref", "--format=%(refname:short)", "refs/heads"]),
+    gitProbe(root, ["for-each-ref", "--format=%(refname:short)", "refs/heads"]),
     remoteOf(root),
     remoteDefaultOf(root),
   ]);
@@ -132,6 +194,9 @@ type GitOp = "commit" | "push" | "pull" | "createBranch";
 /** stderr/exec detail → a typed GitWriteReason the client maps to plain copy
     (same contract as forge's ghFailed — raw stderr only in `detail`). */
 function gitWriteFailed(op: GitOp, e: unknown): HostError {
+  /* A typed HostError (FOLDER_ACCESS #875) already says what blocked —
+     reclassing it as a write failure would hide the consent wait. */
+  if (e instanceof HostError) return e;
   const err = e as { stderr?: string; stdout?: string; message?: string };
   /* `git commit` prints "nothing added to commit" on *stdout* while real
      push/checkout errors ride stderr — take both so the reason classifier
@@ -244,7 +309,7 @@ export async function gitCommit(params: {
   } catch (e) {
     throw gitWriteFailed("commit", e);
   }
-  const sha = (await git(root, ["rev-parse", "--short", "HEAD"])).trim();
+  const sha = (await gitProbe(root, ["rev-parse", "--short", "HEAD"])).trim();
   const branch = await headOf(root);
   return {
     root: collapsePath(root),
@@ -576,7 +641,7 @@ export async function gitStatus(params: {
   const root = await rootOrThrow(params.path);
   const [branch, raw] = await Promise.all([
     headOf(root),
-    git(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]),
+    gitProbe(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]),
   ]);
   const files = parseStatus(raw);
   return { root: collapsePath(root), branch, clean: files.length === 0, files };
@@ -626,7 +691,7 @@ function countPatch(patch: string): { add: number; del: number } {
 async function untrackedDiff(root: string, path: string): Promise<string> {
   let out = "";
   try {
-    out = await git(root, [
+    out = await gitProbe(root, [
       "diff",
       "--no-index",
       "--no-color",
@@ -657,7 +722,7 @@ export async function gitDiff(params: {
   const base = params.base ?? "HEAD";
   const files: GitDiffFile[] = [];
   if (hasHead) {
-    const raw = await git(root, [
+    const raw = await gitProbe(root, [
       "diff",
       "--no-color",
       "--no-ext-diff",
@@ -700,7 +765,7 @@ export async function gitWorktrees(params: {
   path: string;
 }): Promise<GitWorktreesResult> {
   const root = await rootOrThrow(params.path);
-  const raw = await git(root, ["worktree", "list", "--porcelain"]);
+  const raw = await gitProbe(root, ["worktree", "list", "--porcelain"]);
   /* Blocks separated by blank lines:
        worktree /abs/path
        HEAD <sha>
@@ -758,7 +823,7 @@ export async function worktreeAdd(params: {
   if (dir.startsWith(`${lilos}/`)) {
     await fsp.mkdir(lilos, { recursive: true });
     const gi = join(lilos, ".gitignore");
-    if (!existsSync(gi)) await fsp.writeFile(gi, "*\n");
+    if (!(await exists(gi))) await fsp.writeFile(gi, "*\n");
   }
   await git(root, ["worktree", "add", "-b", params.branch, dir, params.base]);
   return { dir: collapsePath(dir), branch: params.branch };
@@ -771,17 +836,35 @@ export async function gitDiscoverRepos(params: {
   const depth = params.depth ?? 2;
   const repos: { path: string; head: string | null; remote: string | null }[] =
     [];
+  /* A protected dir macOS still blocks is skipped, not fatal — one walled
+     root or child must not drop the rest of the scan (#875). */
+  const isWall = (e: unknown): e is HostError =>
+    e instanceof HostError && e.code === HOST_ERRORS.FOLDER_ACCESS;
   async function scan(dir: string, d: number): Promise<void> {
     if (repos.length >= DISCOVER_CAP) return;
-    if (existsSync(join(dir, ".git"))) {
-      const [head, remote] = await Promise.all([headOf(dir), remoteOf(dir)]);
+    const hasGit = await exists(join(dir, ".git")).catch(
+      (e): false | "blocked" => {
+        if (isWall(e)) return "blocked";
+        throw e;
+      },
+    );
+    if (hasGit === "blocked") return; // the dir's whole subtree is walled
+    if (hasGit) {
+      /* The dir listed, so it's readable — a head/remote probe that still
+         dies (slow repo, weird hooks) just loses its metadata, not the
+         whole scan. */
+      const [head, remote] = await Promise.all([
+        headOf(dir).catch(() => null),
+        remoteOf(dir).catch(() => null),
+      ]);
       repos.push({ path: collapsePath(dir), head, remote });
       return; // don't descend into a repo
     }
     if (d === 0) return;
-    const dirents = await fsp
-      .readdir(dir, { withFileTypes: true })
-      .catch(() => [] as import("node:fs").Dirent[]);
+    const dirents = await bounded(
+      fsp.readdir(dir, { withFileTypes: true }),
+      dir,
+    ).catch(() => [] as import("node:fs").Dirent[]); // walled or unreadable: skip
     for (const de of dirents) {
       if (
         !de.isDirectory() ||

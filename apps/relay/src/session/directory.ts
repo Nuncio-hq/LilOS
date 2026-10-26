@@ -11,7 +11,7 @@ import {
   FoldersListParams,
   ProfileUpdateParams,
 } from "@lilos/contracts/app";
-import { resolveUnderHome } from "@lilos/host";
+import { resolveUnderHomeAsync } from "@lilos/host";
 import { projectFolderOf } from "../projects";
 import type { RelayStore } from "../store";
 import type { RelayCtx } from "./ctx";
@@ -156,7 +156,7 @@ export async function handleDirectory(c: RelayCtx): Promise<false | undefined> {
         /* The phone may add only what its browser could have listed —
            a real folder under the Mac's home (D-#238); stored as the
            canonical form of the resolved one. */
-        const abs = resolveUnderHome(path, homeDir);
+        const abs = await resolveUnderHomeAsync(path, homeDir);
         if (!abs) {
           throw new RpcError(
             JsonRpcCode.forbidden,

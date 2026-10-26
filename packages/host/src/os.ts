@@ -8,6 +8,7 @@ import type {
   OsOpenParams,
   OsOpenResult,
 } from "@lilos/contracts/host";
+import { bounded } from "./access.js";
 import { HOST_ERRORS, HostError } from "./errors.js";
 import { run } from "./exec.js";
 import { expandPath } from "./paths.js";
@@ -147,11 +148,14 @@ export function openPlan(
 }
 
 export async function osOpen(params: OsOpenParams): Promise<OsOpenResult> {
-  const root = await fsp.realpath(expandPath(params.root)).catch(() => {
-    throw new HostError(
-      HOST_ERRORS.PATH_NOT_FOUND,
-      `no such folder: ${params.root}`,
-    );
+  const rootAbs = expandPath(params.root);
+  const root = await bounded(fsp.realpath(rootAbs), rootAbs).catch((e) => {
+    throw e instanceof HostError
+      ? e
+      : new HostError(
+          HOST_ERRORS.PATH_NOT_FOUND,
+          `no such folder: ${params.root}`,
+        );
   });
   const abs = isAbsolute(params.path)
     ? normalize(params.path)
@@ -164,11 +168,13 @@ export async function osOpen(params: OsOpenParams): Promise<OsOpenResult> {
       `${params.path} escapes ${params.root}`,
     );
   }
-  const target = await fsp.realpath(abs).catch(() => {
-    throw new HostError(
-      HOST_ERRORS.PATH_NOT_FOUND,
-      `no such path: ${params.path}`,
-    );
+  const target = await bounded(fsp.realpath(abs), abs).catch((e) => {
+    throw e instanceof HostError
+      ? e
+      : new HostError(
+          HOST_ERRORS.PATH_NOT_FOUND,
+          `no such path: ${params.path}`,
+        );
   });
   if (target !== root && !target.startsWith(root + sep)) {
     throw new HostError(

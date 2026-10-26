@@ -1,3 +1,4 @@
+export * from "./access";
 export * from "./forge";
 export * from "./fs";
 export * from "./git";
