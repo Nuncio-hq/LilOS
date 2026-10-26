@@ -1,5 +1,6 @@
 import type { AcpLaunchSpec } from "../src/launch.js";
-import { probeExecutable, resolveExecutable } from "../src/launch.js";
+import { probeAgentCommand, resolveAgentCommand } from "../src/provision.js";
+import { claudeSpec } from "./claude.js";
 import { devinSpec } from "./devin.js";
 
 /**
@@ -15,23 +16,36 @@ import { devinSpec } from "./devin.js";
  */
 export const ACP_AGENTS: Record<string, AcpLaunchSpec> = {
   devin: devinSpec,
+  claude: claudeSpec,
 };
 
 /**
  * D-#761: install check for the runtime catalog — resolve the recipe's
- * binary on PATH, then run `<bin> <verifyArgs>`; exit 0 means hirable.
- * Returns the verify output for the status row's detail line.
+ * launch command from what is already usable (a PATH binary at/above
+ * the pin, or an already-provisioned cache entry), then run it with
+ * the verify args; exit 0 means hirable. The probe NEVER fetches
+ * (r10 — a boot probe that provisioned acp:claude into every e2e
+ * stack's scratch HOME filled the runner's quota): a not-installed
+ * recipe reports unavailable until a real launch provisions it.
  */
 export async function probeAcpSpec(
   spec: AcpLaunchSpec,
   env?: NodeJS.ProcessEnv,
 ): Promise<{ ok: boolean; output: string }> {
-  const [program] = spec.command;
-  if (!program) return { ok: false, output: "empty launch command" };
-  const bin = resolveExecutable(program, env);
-  if (!bin) return { ok: false, output: `${program} not on PATH` };
-  return probeExecutable(bin, spec.verify?.args ?? ["--version"], {
-    ...(env ? { env } : {}),
-    ...(spec.verify?.timeoutMs ? { timeoutMs: spec.verify.timeoutMs } : {}),
-  });
+  return probeAgentCommand(spec, env);
+}
+
+/**
+ * D-#866 r6: resolve + provision WITHOUT the verify probe — the harness
+ * runs it in its own process BEFORE launching the engine child, so a
+ * cold npm install eats the harness's demand wait rather than the
+ * launcher/startup timeout inside serve.ts (whose own resolve then
+ * hits a warm cache). The engine child's launch check stays — this is
+ * the budget fix, not a skip.
+ */
+export async function resolveAcpSpec(
+  spec: AcpLaunchSpec,
+  env?: NodeJS.ProcessEnv,
+) {
+  return resolveAgentCommand(spec, env);
 }

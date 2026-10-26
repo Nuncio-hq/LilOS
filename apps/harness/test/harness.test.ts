@@ -478,7 +478,11 @@ describe("workspace harness", () => {
     }
   });
 
-  it("AC-1 a mid-turn switch to Full access applies from the next approval (#106)", async () => {
+  it("AC-1 access flips route the very next request — no session churn (#106, D-#866 r7)", async () => {
+    /* r7: the engine never re-gates — every session is born ask-gated
+       and `full` is the harness answering its asks. A pill flip is read
+       at request time, so it lands on the very next tool call, mid-turn
+       included, and the session id never moves. */
     const w = await setupWorld();
     try {
       const { channel } = await openDmConversation(w.user);
@@ -487,40 +491,91 @@ describe("workspace harness", () => {
       }>("conversations.open", {
         channelId: channel.id,
         text: "Add a footer to the page",
-      });
-      const ask = await waitFor(async () => {
-        const { asks } = await w.user.request<{ asks: Ask[] }>("asks.list", {
-          conversationId: conversation.id,
-          state: "open",
-        });
-        return asks.find((a) => a.request.kind === "approval");
-      }, "first approval ask");
-
-      // Flip the pill while the turn is parked on the card — the relay row
-      // writes and `conversation.updated` refreshes the live binding.
-      const { conversation: updated } = await w.user.request<{
-        conversation: { id: string; access: string };
-      }>("conversations.setAccess", {
-        conversationId: conversation.id,
         access: "full",
       });
-      expect(updated.access).toBe("full");
+      const engineRef = async () => {
+        const { conversations } = await w.user.request<{
+          conversations: { id: string; engineRef: string | null }[];
+        }>("conversations.list", {});
+        return (
+          conversations.find((c) => c.id === conversation.id)?.engineRef ??
+          undefined
+        );
+      };
+      const ref = await waitFor(engineRef, "binding");
+      /* The pill writes the relay row; `conversation.updated` reaches the
+         harness asynchronously — wait for the binding mirror so the next
+         approval provably routes on the new level, not on race timing. */
+      const boundAccess = async () =>
+        (
+          w.harness as unknown as {
+            bindings: Map<string, { access: string }>;
+          }
+        ).bindings.get(conversation.id)?.access;
 
-      // Answer the already-open card; the turn's NEXT approval must route
-      // through autoApprove — no second card ever opens.
-      await w.user.request("asks.respond", { askId: ask.id, outcome: "once" });
+      // Full: the first turn's approvals are answered in-band — no cards.
       await waitFor(async () => {
         const { messages } = await listConvMessages(w.user, channel.id);
         return messages.find(
           (m) =>
             m.authorKind === "employee" && m.conversationId === conversation.id,
         );
-      }, "answer after mid-turn switch");
-
+      }, "full-access answer");
       const { asks } = await w.user.request<{ asks: Ask[] }>("asks.list", {
         conversationId: conversation.id,
       });
-      expect(asks).toHaveLength(1);
+      expect(asks).toHaveLength(0);
+
+      // Flip to Ask — the next turn's first approval opens a card.
+      await w.user.request("conversations.setAccess", {
+        conversationId: conversation.id,
+        access: "ask",
+      });
+      await waitFor(
+        async () => ((await boundAccess()) === "ask" ? true : undefined),
+        "binding mirrors ask",
+      );
+      /* An edit-verb prompt takes the mutating script even as a
+         follow-up — its patch/write/commit steps are what ask. */
+      await postMessage(
+        w.user,
+        channel.id,
+        conversation.id,
+        "update the footer too",
+      );
+      const ask = await waitFor(async () => {
+        const { asks } = await w.user.request<{ asks: Ask[] }>("asks.list", {
+          conversationId: conversation.id,
+          state: "open",
+        });
+        return asks.find((a) => a.request.kind === "approval");
+      }, "approval card after ask flip");
+
+      // Flip back to Full while the card is parked — the turn's NEXT
+      // approval routes through autoApprove, no second card ever opens.
+      await w.user.request("conversations.setAccess", {
+        conversationId: conversation.id,
+        access: "full",
+      });
+      await waitFor(
+        async () => ((await boundAccess()) === "full" ? true : undefined),
+        "binding mirrors full",
+      );
+      await w.user.request("asks.respond", { askId: ask.id, outcome: "once" });
+      await waitFor(async () => {
+        const { messages } = await listConvMessages(w.user, channel.id);
+        const answers = messages.filter(
+          (m) =>
+            m.authorKind === "employee" && m.conversationId === conversation.id,
+        );
+        return answers.length >= 2 ? answers : undefined;
+      }, "answer after flip back to full");
+
+      const { asks: after } = await w.user.request<{ asks: Ask[] }>(
+        "asks.list",
+        { conversationId: conversation.id },
+      );
+      expect(after).toHaveLength(1);
       const { messages } = await listConvMessages(w.user, channel.id);
       expect(
         messages.some(
@@ -528,20 +583,78 @@ describe("workspace harness", () => {
         ),
       ).toBe(true);
 
-      // The declared approval_policy capability got the live-session hint.
+      // r7's contract: one session.start for the whole conversation, no
+      // engine-level access writes or session churn across the flips,
+      // and the published engineRef never moved.
+      expect(
+        w.engineCalls.filter((c) => c.method === "session.start"),
+      ).toHaveLength(1);
+      expect(
+        w.engineCalls.filter(
+          (c) =>
+            c.method === "session.setAccess" || c.method === "session.suspend",
+        ),
+      ).toHaveLength(0);
+      expect(await engineRef()).toBe(ref);
+    } finally {
+      await w.cleanup();
+    }
+  }, 20_000);
+
+  it("an access flip inside the bind window routes the first ask to a card, not auto-approve (r8)", async () => {
+    /* r8: bind copied `conv.access` before `session.start` — a pill
+       flip inside that (up to 60s) window updated only the relay row:
+       `conversation.updated` found no binding to mirror onto, so the
+       stored binding kept "full" and Claude's asks were auto-approved
+       under an Ask pill. request.opened now reads the live row and
+       the store re-reads it too. */
+    const w = await setupWorldBase({
+      tick: 1,
+      harnessExtra: { bindDelayMs: 300 },
+    });
+    try {
+      const { channel } = await openDmConversation(w.user);
+      const { conversation } = await w.user.request<{
+        conversation: { id: string };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "Add a footer to the page",
+        access: "full",
+      });
+      /* Flip to Ask inside the 300ms bind delay — the row turns before
+         the binding exists. */
+      await new Promise((r) => setTimeout(r, 50));
+      await w.user.request("conversations.setAccess", {
+        conversationId: conversation.id,
+        access: "ask",
+      });
+      /* The turn's first approval must open a card — pre-fix it was
+         answered invisibly by auto-approve. */
+      const ask = await waitFor(async () => {
+        const { asks } = await w.user.request<{ asks: Ask[] }>("asks.list", {
+          conversationId: conversation.id,
+          state: "open",
+        });
+        return asks.find((a) => a.request.kind === "approval");
+      }, "approval card after bind-window flip");
+      expect(ask).toBeTruthy();
+      /* And the stored binding itself mirrors the live row, not the
+         pre-start snapshot. */
       await waitFor(
-        () =>
-          w.engineCalls.find(
-            (c) =>
-              c.method === "session.setAccess" &&
-              (c.params as { access: string }).access === "full",
-          ),
-        "session.setAccess hint",
+        async () =>
+          (
+            w.harness as unknown as {
+              bindings: Map<string, { access: string }>;
+            }
+          ).bindings.get(conversation.id)?.access === "ask"
+            ? true
+            : undefined,
+        "binding stores ask",
       );
     } finally {
       await w.cleanup();
     }
-  });
+  }, 20_000);
 
   it("AC-5 rebinds the conversation when the engine rotates the session ref", async () => {
     const w = await setupWorld();

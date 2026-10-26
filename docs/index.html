@@ -241,6 +241,7 @@ packages/engine-*             adapter owning an engine</code></pre>
 <li id="d-764"><b>D-#764</b> ACP agents plug in once: pinned schema (v1.26.0, SDK 1.9.0) and one shared mapping in engine-acp, also used by Hermes's ACP path; a fake agent runs conformance. <em>Not: per-vendor SDKs, ACP v2 alpha.</em> <small>#764</small> <kbd>packages/engine-acp/src/pin.ts</kbd></li>
 <li id="d-845"><b>D-#845</b> engine-acp <code>serve.ts</code> runs a verified ACP CLI (<code>--agent</code> or <code>--command</code>) on its own login; quirks live in <code>shims/</code>. <em>Not: stored credentials, vendor names in src/.</em> <small>#845</small> <kbd>packages/engine-acp/scripts/serve.ts</kbd></li>
 <li id="d-846"><b>D-#846</b> Picks write only via options the live session advertised; skips post notes. <em>Not: catalog union, silent drops.</em> <small>#846</small> <kbd>packages/engine-acp/src/engine.ts</kbd></li>
+<li id="d-866"><b>D-#866</b> Claude Code rides <code>claude-agent-acp</code> on pinned v1, npm-pinned into <code>~/.lilos/acp</code> on first real launch; shim drops <code>ANTHROPIC_*</code>. <em>Not: stored keys, v2, manual install.</em> <small>#866</small> <kbd>packages/engine-acp/shims/claude.ts</kbd></li>
 </ul>
 <h3 id="decisions-host">Host</h3>
 <ul class="decisions">

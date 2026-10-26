@@ -1,6 +1,6 @@
 import { execSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
@@ -55,24 +55,32 @@ const SHOTS = path.join(repo, "test-results", "ac-590");
    both rows once an earlier leg left its folder in the recents. */
 const ROOT = mkdtempSync(path.join(tmpdir(), "lilos-590-"));
 const repoDir = path.join(ROOT, "lilos-repo-590");
-mkdirSync(path.join(homedir(), "repos"), { recursive: true }); // ~/repos may not exist on a fresh CI runner
-const HOME_ROOT = mkdtempSync(path.join(homedir(), "repos", "lilos-590-"));
-const homeRepoDir = path.join(HOME_ROOT, "lilos-home-repo-590");
-const homeRepoShown = `~/repos/${path.basename(HOME_ROOT)}/lilos-home-repo-590`;
+/* homeRepoDir lives under the stack's scratch ~/repos (r10 — the host
+   collapses `~` against the harness's home, so a real-home fixture
+   shows absolute and lands outside the home gate entirely). */
+let HOME_ROOT: string;
+let homeRepoDir: string;
+let homeRepoShown: string;
 mkdirSync(repoDir);
-mkdirSync(homeRepoDir);
-for (const d of [repoDir, homeRepoDir]) {
-  execSync(
-    "git init -b trunk && git -c user.email=t@t -c user.name=t commit --allow-empty -m init",
-    { cwd: d },
-  );
-}
+execSync(
+  "git init -b trunk && git -c user.email=t@t -c user.name=t commit --allow-empty -m init",
+  { cwd: repoDir },
+);
 const realRepoDir = realpathSync(repoDir); // /private/var/folders/…
 
 let stack: Stack;
 test.beforeAll(async () => {
   test.setTimeout(120_000);
   stack = await bootStack("ac590", await pickPorts());
+  mkdirSync(path.join(stack.home, "repos"), { recursive: true });
+  HOME_ROOT = mkdtempSync(path.join(stack.home, "repos", "lilos-590-"));
+  homeRepoDir = path.join(HOME_ROOT, "lilos-home-repo-590");
+  homeRepoShown = `~/repos/${path.basename(HOME_ROOT)}/lilos-home-repo-590`;
+  mkdirSync(homeRepoDir);
+  execSync(
+    "git init -b trunk && git -c user.email=t@t -c user.name=t commit --allow-empty -m init",
+    { cwd: homeRepoDir },
+  );
 });
 test.afterAll(async () => {
   await stack?.stop();

@@ -213,7 +213,8 @@ export async function handleTasks(c: RelayCtx): Promise<false | undefined> {
 /** The agent-facing view (D-#844): status derives from the fence fields —
     a result posted means the outcome, `cancelledAt` trumps, else running. */
 function toTask(ticket: Ticket, agentName?: string): Task {
-  const task = ticket.task!;
+  const task = ticket.task;
+  if (!task) throw new Error(`toTask on a non-task ticket ${ticket.id}`);
   const status: TaskStatus = task.cancelledAt
     ? "cancelled"
     : (task.lastResult?.outcome ?? "running");

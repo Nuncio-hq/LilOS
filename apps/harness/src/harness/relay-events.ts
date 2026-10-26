@@ -124,25 +124,13 @@ export function onRelayEvent(
       void this.onScheduledConversationUpdate(conv);
       const seen = this.metaSeen.get(conv.id);
       const binding = this.bindings.get(conv.id);
-      /* #106 AC-1: a pill switch lands mid-turn — the very next
-         request.opened routes on the fresh level, and the live session
-         gets the hint when the engine declares approval_policy. */
-      if (binding && conv.access !== binding.access) {
-        binding.access = conv.access;
-        const conn = this.connFor(binding);
-        if (conn && this.hasCapabilityFor(binding.runtime, "approval_policy")) {
-          void conn
-            .request("session.setAccess", {
-              sessionId: binding.sessionId,
-              access: conv.access,
-            })
-            .catch((error) =>
-              this.opts.log.warn("session.setAccess failed", {
-                error: String(error),
-              }),
-            );
-        }
-      }
+      /* #106 AC-1 / D-#866 r7: the access level is LilOS-side data — the
+         binding simply mirrors the row, and `request.opened` routes on
+         it at ask time (full → autoApprove, else the card). A pill flip
+         therefore lands on the very next tool call, mid-turn included,
+         with no engine round-trip and no session churn — the r6
+         suspend+resume re-gate is gone for good. */
+      if (binding) binding.access = conv.access;
       if (!binding) {
         // No session yet — record the baseline so a later event diffs right.
         if (!seen) {

@@ -253,6 +253,7 @@ statusReporter = new StatusReporter({
   send: (params) => relay.request("harness.report", params),
   supervisor,
   version: releaseVersion,
+  hideCaps: config.hideCaps,
   model: "model" in config.engine ? config.engine.model : undefined,
   liveSessions: () => harness.liveSessionCount,
   connect: connect ? () => connect.report() : undefined,

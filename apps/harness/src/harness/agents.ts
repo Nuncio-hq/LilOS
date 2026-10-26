@@ -151,6 +151,10 @@ export async function sessionParams(
     /* #106: the conversation's access level rides session.start — the
        engine may take it as a native hint (WS yolo / ACP set_mode). */
     ...(conv?.access ? { access: conv.access } : {}),
+    /* D-#866 r9: the conversation id is the caller key a wedged-create
+       guard scopes to — two threads sharing one folder must not share
+       a wedge fate. */
+    ...(conv?.id ? { callerKey: conv.id } : {}),
     ...(mcpServer ? { mcpServers: [mcpServer] } : {}),
   };
 }

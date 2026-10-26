@@ -600,8 +600,8 @@ export function createMemoryStore(nowFn?: () => number): RelayStore {
             t.task?.parentConversationId === input.parentConversationId &&
             t.task.requestId === input.requestId,
         );
-        const conversation = stored
-          ? conversations.get(stored.task!.childConversationId)
+        const conversation = stored?.task
+          ? conversations.get(stored.task.childConversationId)
           : undefined;
         const rootMessage = conversation
           ? messages.get(conversation.rootMessageId)
