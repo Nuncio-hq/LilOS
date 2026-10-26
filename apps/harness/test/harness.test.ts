@@ -491,6 +491,74 @@ describe("workspace harness", () => {
     }
   });
 
+  it("a refused access flip says so in the thread and retries on the next flip (D-#866 r6)", async () => {
+    /* engine-acp's setAccess re-creates the session — a real refusal
+       path. The binding must NOT advance on a failure (the thread
+       would read "ask" while the agent still runs ungated), the reason
+       must land as a system note, and re-flipping retries. */
+    let refusing = true;
+    let setAccessCalls = 0;
+    const w = await setupWorldBase({
+      wrap: (conn) => {
+        const orig = conn.request.bind(conn);
+        return {
+          ...conn,
+          request: <T = unknown>(method: string, params?: unknown) => {
+            if (method === "session.setAccess") {
+              setAccessCalls += 1;
+              if (refusing)
+                return Promise.reject(
+                  new Error("session recreate refused"),
+                ) as Promise<T>;
+            }
+            return orig<T>(method, params);
+          },
+        } as EngineConnection;
+      },
+    });
+    try {
+      const { channel } = await openDmConversation(w.user);
+      const { conversation } = await w.user.request<{
+        conversation: { id: string; engineRef: string | null };
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "hello",
+      });
+      await waitFor(async () => {
+        const { conversations } = await w.user.request<{
+          conversations: { id: string; engineRef: string | null }[];
+        }>("conversations.list", {});
+        return conversations.find((c) => c.id === conversation.id)?.engineRef;
+      }, "binding");
+
+      // Flip to full — the engine refuses.
+      await w.user.request("conversations.setAccess", {
+        conversationId: conversation.id,
+        access: "full",
+      });
+      const note = await waitFor(async () => {
+        const { messages } = await listConvMessages(w.user, channel.id);
+        return messages.find((m) => m.text.includes("Couldn't switch"));
+      }, "access-flip refusal note");
+      expect(note?.text).toContain("Full access");
+      expect(note?.text).toContain("session recreate refused");
+      expect(note?.text).toContain("retry");
+
+      // Re-flipping the pill retries the engine write — it lands now.
+      refusing = false;
+      await w.user.request("conversations.setAccess", {
+        conversationId: conversation.id,
+        access: "full",
+      });
+      await waitFor(
+        () => setAccessCalls >= 2 || undefined,
+        "setAccess retried",
+      );
+    } finally {
+      await w.cleanup();
+    }
+  }, 20_000);
+
   it("AC-5 rebinds the conversation when the engine rotates the session ref", async () => {
     const w = await setupWorld();
     try {

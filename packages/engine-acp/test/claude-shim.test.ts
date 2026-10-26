@@ -106,12 +106,16 @@ describe("the claude registry entry (D-#866)", () => {
     ).toEqual({
       claudeCode: { options: { allowDangerouslySkipPermissions: false } },
     });
-    /* `full` and hinted-less starts pass nothing — bypass stays allowed
-       and the mode lands via set_mode. */
+    /* `full` passes nothing — bypass stays allowed and the mode lands
+       via set_mode. */
     expect(
       claudeSpec.sessionMeta?.({ agent: "t", cwd: "/x", access: "full" }),
     ).toEqual({});
-    expect(claudeSpec.sessionMeta?.({ agent: "t", cwd: "/x" })).toEqual({});
+    /* FAIL-CLOSED (r6): a missing access — or any level the shim does
+       not know — is gated, never silently bypassed. */
+    expect(claudeSpec.sessionMeta?.({ agent: "t", cwd: "/x" })).toEqual({
+      claudeCode: { options: { allowDangerouslySkipPermissions: false } },
+    });
   });
 });
 
@@ -201,6 +205,70 @@ describe("shim env policy reaches the agent child (D-#866)", () => {
       });
     } finally {
       h.close();
+    }
+  }, 30_000);
+
+  test("session.setAccess re-creates a live full session under the ask meta (D-#866 r3)", async () => {
+    /* The adapter binds the bypass flag at session spawn — a full→ask
+       flip mid-thread can only re-gate by being born again. The engine
+       answers setAccess by suspend+resume: the re-create (load here,
+       since the fake advertises loadSession) replays the NEW meta, which
+       the meta log proves. */
+    const dir = mkdtempSync(join(tmpdir(), "acp-access-"));
+    const log = join(dir, "meta.log");
+    const engine = new AcpEngine({
+      name: "engine-acp-access-test",
+      command: ["bun", FAKE_AGENT],
+      env: { LILOS_FAKE_META_LOG: log },
+      sessionMeta: claudeSpec.sessionMeta,
+      modeForAccess: claudeSpec.modeForAccess,
+    });
+    const h = new Harness(connectAcp(engine));
+    const ops = () =>
+      readFileSync(log, "utf8")
+        .trim()
+        .split("\n")
+        .map((l) => JSON.parse(l) as { op: string; meta: unknown });
+    try {
+      /* describe declares approval_policy — the harness's flip path
+         only fires when it is there (r6: it used to be missing, so a
+         running full thread never re-gated). */
+      const d = (await h.request("describe", {})) as {
+        capabilities: { id: string; methods?: string[] }[];
+      };
+      const ap = d.capabilities.find((c) => c.id === "approval_policy");
+      expect(ap?.methods).toContain("session.setAccess");
+
+      const { sessionId } = (await h.request("session.start", {
+        agent: "t",
+        cwd: process.cwd(),
+        access: "full",
+      })) as { sessionId: string };
+      /* Born full → no gate in the meta. */
+      expect(ops().at(-1)).toEqual({ op: "new", meta: {} });
+
+      /* Flip to ask — the live session must be re-created under the
+         gate meta, never left ungated on the old spawn. */
+      const r = (await h.request("session.setAccess", {
+        sessionId,
+        access: "ask",
+      })) as { access: string };
+      expect(r.access).toBe("ask");
+      const last = ops().at(-1);
+      expect(["load", "new"]).toContain(last?.op);
+      expect(last?.meta).toEqual({
+        claudeCode: { options: { allowDangerouslySkipPermissions: false } },
+      });
+
+      /* The session still serves after the re-gate. */
+      const turn = (await h.request("prompt", {
+        sessionId,
+        content: [{ type: "text", text: "still there?" }],
+      })) as { stopReason?: string };
+      expect(turn.stopReason).toBeTruthy();
+    } finally {
+      h.close();
+      rmSync(dir, { recursive: true, force: true });
     }
   }, 30_000);
 

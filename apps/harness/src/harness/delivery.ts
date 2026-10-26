@@ -248,6 +248,14 @@ export async function flushEarlyOrdered(
 const EARLY_FLUSH_RETRY_MS = 1_500;
 const EARLY_FLUSH_RETRY_MAX = 5;
 
+/** The stall shape that earns the macOS folder-consent hint: the ACP
+    `session/new` bound specifically (the engine-acp timeout text), on
+    an `acp:*` runtime. Narrowed in r6 — the r5 regex also matched the
+    generic "could not be bound", so a Hermes drop carried Desktop-folder
+    advice it could not use. Exported for the unit tests. */
+export const acpStallShape = (detail: string, runtime: string): boolean =>
+  runtime.startsWith("acp") && /did not answer session\/new/i.test(detail);
+
 /**
  * Bounded re-attempt of the `early` flush for a send whose bind threw.
  * `attachEngine` already flushes on (re)connect; this covers the engine
@@ -344,26 +352,27 @@ export async function dropEarlyWithError(
       error: String(error),
     });
   }
-  /* D-#866 r5: a start-stall under the packaged app is most often macOS
-     folder consent (TCC) parking the agent's child reads — the parked
-     sends deserve the actionable line, not a bare "timed out". Likely
-     cause, not a certainty: the real reason stays in the message. */
-  if (/did not answer|timed? ?out|deadline|could not be bound/i.test(detail)) {
+  /* D-#866 r5/r6: a start-stall under the packaged app is most often
+     macOS folder consent (TCC) parking the agent's child reads — the
+     parked sends deserve the actionable line, not a bare "timed out".
+     Likely cause, not a certainty: the real reason stays in the
+     message. */
+  {
     let label = "The agent";
+    let runtime = "";
     try {
-      label =
-        (conv &&
-          this.runtimes?.get(await this.runtimeForConversation(conv))?.spec
-            .label) ||
-        label;
+      runtime = conv ? await this.runtimeForConversation(conv) : "";
+      label = this.runtimes?.get(runtime)?.spec.label || label;
     } catch {
       /* label lookup is cosmetic — keep the generic lead */
     }
-    detail =
-      `${label} didn't start in time — ${detail}. ` +
-      `If macOS asked LilOS for access to a folder (Desktop, Documents), ` +
-      `allow it in System Settings → Privacy & Security → Files and ` +
-      `Folders, then send again.`;
+    if (acpStallShape(detail, runtime)) {
+      detail =
+        `${label} didn't start in time — ${detail}. ` +
+        `If macOS asked LilOS for access to a folder (Desktop, Documents), ` +
+        `allow it in System Settings → Privacy & Security → Files and ` +
+        `Folders, then send again.`;
+    }
   }
   this.opts.log.error("dropping held messages: engine could not start", {
     conversationId: convId,

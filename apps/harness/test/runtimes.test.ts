@@ -1,4 +1,5 @@
 import type { AgentDescriptor, EngineEvent } from "@lilos/contracts/engine";
+import type { AcpLaunchSpec } from "@lilos/engine-acp";
 import { connectFake, FakeEngine } from "@lilos/engine-fake";
 import { describe, expect, it } from "vitest";
 import type { EngineConnection } from "../src/engine/client";
@@ -473,6 +474,8 @@ describe("EngineRegistry (D-#761)", () => {
       failUrls?: Set<string>;
       adapterMissing?: Set<string>;
       failedRetryCooldownMs?: number;
+      acpSpec?: AcpLaunchSpec;
+      launched?: string[];
     } = {},
   ) {
     const log = createMemoryLogger();
@@ -488,9 +491,13 @@ describe("EngineRegistry (D-#761)", () => {
       {
         id: ACP,
         label: "Devin",
-        launcher: () => externalEngineLauncher("mem://acp"),
+        launcher: () => {
+          opts.launched?.push(ACP);
+          return externalEngineLauncher("mem://acp");
+        },
         seedAgents: [seed],
         adapterPresent: () => !opts.adapterMissing?.has(ACP),
+        ...(opts.acpSpec ? { acpSpec: opts.acpSpec } : {}),
       },
     ];
     const reg = new EngineRegistry(specs, {
@@ -577,6 +584,47 @@ describe("EngineRegistry (D-#761)", () => {
     expect(row?.detail).toMatch(/adapter/i);
     /* And a demand fails plainly instead of spawning a supervisor cycle. */
     await expect(reg.ensure(ACP)).rejects.toThrow(/adapter|not.*build/i);
+  });
+
+  /* r6: the adapter's npm install runs in the HARNESS before the engine
+     child launches — serve.ts bounded its own resolve+verify inside the
+     launcher's 60s startup, so a cold install there could only ever
+     time out. A resolve that cannot succeed fails `ensure` plainly and
+     NEVER spawns the engine; a resolvable one launches as before. */
+  it("ensure provisions the acp adapter before launching — a failed resolve never spawns", async () => {
+    const launched: string[] = [];
+    /* The failed install must not touch the real ~/.lilos/acp. */
+    const cache = mkhome();
+    const prev = process.env.LILOS_ACP_CACHE;
+    process.env.LILOS_ACP_CACHE = cache;
+    const { reg } = world({
+      launched,
+      acpSpec: {
+        id: "devin",
+        command: ["lilos-definitely-not-on-path-acp"],
+        provision: {
+          npm: {
+            package: "x",
+            version: "file:/nonexistent-pkg",
+            bin: "b",
+          },
+        },
+      },
+    });
+    await reg.start();
+    try {
+      await reg.start();
+      await expect(reg.ensure(ACP)).rejects.toThrow();
+      expect(launched).toEqual([]);
+      /* Second demand inside the cooldown also does not launch — the
+         failed verdict is served, not another install attempt. */
+      await expect(reg.ensure(ACP)).rejects.toThrow();
+      expect(launched).toEqual([]);
+    } finally {
+      await reg.stop();
+      if (prev === undefined) delete process.env.LILOS_ACP_CACHE;
+      else process.env.LILOS_ACP_CACHE = prev;
+    }
   });
 
   /* Real-app review of #859: every ensure() re-drove a fresh

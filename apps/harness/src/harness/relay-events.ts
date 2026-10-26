@@ -126,9 +126,13 @@ export function onRelayEvent(
       const binding = this.bindings.get(conv.id);
       /* #106 AC-1: a pill switch lands mid-turn — the very next
          request.opened routes on the fresh level, and the live session
-         gets the hint when the engine declares approval_policy. */
+         gets the hint when the engine declares approval_policy.
+         D-#866 r3: the binding's access tracks what the ENGINE applied —
+         it advances only when setAccess lands, so a failure keeps the
+         stale value (the next conversation.updated retries the flip)
+         and posts the reason into the thread: a session that could not
+         be re-gated must never look like a successful ask flip. */
       if (binding && conv.access !== binding.access) {
-        binding.access = conv.access;
         const conn = this.connFor(binding);
         if (conn && this.hasCapabilityFor(binding.runtime, "approval_policy")) {
           void conn
@@ -136,11 +140,30 @@ export function onRelayEvent(
               sessionId: binding.sessionId,
               access: conv.access,
             })
-            .catch((error) =>
+            .then(() => {
+              binding.access = conv.access;
+            })
+            .catch(async (error) => {
               this.opts.log.warn("session.setAccess failed", {
                 error: String(error),
-              }),
-            );
+              });
+              const reason =
+                error instanceof Error ? error.message : String(error);
+              await this.postSystem(
+                { channelId: binding.channelId, conversationId: conv.id },
+                `Couldn't switch this thread to ${
+                  conv.access === "ask" ? "Ask" : "Full"
+                } access — ${reason}. The agent keeps its current level; ` +
+                  `send again or flip the access pill once more to retry.`,
+                `sys:${conv.id}:access-flip`,
+              ).catch((e) =>
+                this.opts.log.warn("access-flip error post failed", {
+                  error: String(e),
+                }),
+              );
+            });
+        } else {
+          binding.access = conv.access;
         }
       }
       if (!binding) {

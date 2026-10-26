@@ -82,6 +82,9 @@ const RESET_ON_LOAD = process.env.LILOS_FAKE_RESET_ON_LOAD === "1";
 const HANG_CWD = process.env.LILOS_FAKE_HANG_CWD;
 const HANG_ONCE = process.env.LILOS_FAKE_HANG_ONCE;
 const GRANDCHILD_PIDFILE = process.env.LILOS_FAKE_GRANDCHILD_PIDFILE;
+/* LILOS_FAKE_SLOW_CONFIG_MS=<ms> — set_config_option sleeps first (the
+   r7 start-budget test). */
+const SLOW_CONFIG_MS = Number(process.env.LILOS_FAKE_SLOW_CONFIG_MS ?? 0);
 /* `LILOS_FAKE_META_LOG=<file>` appends one JSON line per session/new|load
    `_meta` — the catalog probe's meta is observable even though the probe
    session is closed before it can be prompted. */
@@ -408,6 +411,10 @@ const agent = (conn: acp.AgentSideConnection): acp.Agent => ({
   setSessionConfigOption: async (params) => {
     const s = sessions.get(params.sessionId);
     if (!s) throw { code: -32002, message: "no session" };
+    /* LILOS_FAKE_SLOW_CONFIG_MS=<ms> — a config write that sits inside
+       the start budget window; the r7 test uses it to prove the chain
+       can't outrun the harness's bind wait. */
+    if (SLOW_CONFIG_MS > 0) await tick(SLOW_CONFIG_MS);
     s.config.set(params.configId, String(params.value));
     return { configOptions: configOptions(s) };
   },
@@ -570,3 +577,21 @@ const stream = acp.ndJsonStream(
 
 const conn = new acp.AgentSideConnection(agent, stream);
 void conn.closed.catch(() => {});
+
+/* r6 close-orphan shape: `LILOS_FAKE_TERM_IGNORING_PIDFILE=<file>` spawns
+   a `sleep` that ignores SIGTERM (an ignored disposition survives exec)
+   in the adapter's process group, records its pid, and — with
+   `LILOS_FAKE_EXIT_AFTER_MS=<ms>` — exits the adapter CLEANLY (code 0)
+   that long after boot. The adapter then exits 0 while the grandchild
+   lives: the repro for close() skipping the group kill whenever the
+   proc already had an exit code. */
+if (process.env.LILOS_FAKE_TERM_IGNORING_PIDFILE) {
+  const g = spawn("sh", ["-c", `trap "" TERM; exec sleep 300`], {
+    stdio: "ignore",
+  });
+  writeFileSync(process.env.LILOS_FAKE_TERM_IGNORING_PIDFILE, String(g.pid));
+  g.unref();
+}
+const FAKE_EXIT_AFTER_MS = Number(process.env.LILOS_FAKE_EXIT_AFTER_MS ?? 0);
+if (FAKE_EXIT_AFTER_MS > 0)
+  setTimeout(() => process.exit(0), FAKE_EXIT_AFTER_MS).unref();

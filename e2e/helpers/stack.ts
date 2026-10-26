@@ -516,6 +516,11 @@ export async function bootStack(
       detached: true,
       env: {
         ...process.env,
+        /* D-#866 r6: the ACP provision cache resolves under HOME (the
+           spawned engine child is LILOS_*-scrubbed, so LILOS_ACP_CACHE
+           never reaches it). Isolating HOME keeps a spec's first-use
+           install out of the real ~/.lilos/acp entirely. */
+        HOME: home,
         LILOS_HOME: home,
         /* #412: the shipped default sends no-folder sessions to the user's
            home — a spec must never work there, so the scratch home pins a

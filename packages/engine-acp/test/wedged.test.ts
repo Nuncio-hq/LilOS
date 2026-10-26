@@ -9,9 +9,13 @@ import { AcpEngine } from "../src/engine.js";
 /**
  * D-#866 — the installed-app wedge: the adapter answered `session/new`
  * never, the harness retried, and every retry orphaned another agent-side
- * child. These tests pin the fix: a bounded create wait, a process-group
- * teardown that kills the agent's whole tree, a dead connection that
- * reopens on demand, and a catalog probe that can never wedge describe().
+ * child. r6 review: a per-session timeout must NOT tear the shared
+ * adapter down — it multiplexes every live session over one process
+ * group, so the "fix" SIGKILLed healthy turns and left other sessions
+ * prompting a stale id (the reviewer's poison.ts). These tests pin the
+ * new contract: the wedged call alone errors, live sessions keep
+ * serving, an adapter DEATH marks every session suspended so the next
+ * use re-creates it, and close() still reaps the whole group.
  */
 
 const FAKE_AGENT = join(
@@ -46,9 +50,13 @@ function make(env: Record<string, string>, timeoutMs = TIMEOUT) {
 }
 
 describe("wedged agent containment (D-#866)", () => {
-  test("session.start on a wedged agent errors inside the bound and kills the whole tree", {
+  test("a wedged session/new abandons that call and keeps serving live sessions", {
     timeout: 30_000,
   }, async () => {
+    /* The reviewer's poison.ts, as a unit test: session A healthy,
+       session B's session/new wedges past the bound — A must NOT then
+       fail with "Internal error" (the old teardown left A prompting a
+       stale id on a fresh adapter). */
     const dir = mkdtempSync(join(tmpdir(), "acp-wedge-"));
     const pidfile = join(dir, "grandchild.pid");
     const engine = make({
@@ -56,18 +64,34 @@ describe("wedged agent containment (D-#866)", () => {
       LILOS_FAKE_GRANDCHILD_PIDFILE: pidfile,
     });
     try {
-      /* describe fills the catalog via a background probe on the engine
-           cwd (no wedge) so the connection is fully warm first. */
       await engine.dispatch("describe", {});
+      const a = (await engine.dispatch("session.start", {
+        agent: "x",
+        cwd: "/tmp/healthy-cwd",
+      })) as { sessionId: string };
+      const t1 = (await engine.dispatch("prompt", {
+        sessionId: a.sessionId,
+        content: [{ type: "text", text: "first" }],
+      })) as { stopReason?: string };
+      expect(t1.stopReason).not.toBe("refusal");
+      /* B wedges past the bound — its start errors; A's adapter must
+         still be alive, and A's next turn must still answer. */
       await expect(
         engine.dispatch("session.start", {
           agent: "x",
           cwd: "/tmp/wedged-cwd",
         }),
       ).rejects.toThrow(/did not answer session\/new/);
+      const t2 = (await engine.dispatch("prompt", {
+        sessionId: a.sessionId,
+        content: [{ type: "text", text: "after the wedge" }],
+      })) as { stopReason?: string };
+      expect(t2.stopReason).not.toBe("refusal");
+      /* The wedged session's grandchild is NOT killed by the timeout —
+         the adapter's group only dies at close(). */
       expect(existsSync(pidfile)).toBe(true);
       const pid = Number(readFileSync(pidfile, "utf8").trim());
-      /* SIGKILL + reap race: give init a beat to collect the zombie. */
+      await engine.close();
       for (let i = 0; i < 20 && !gone(pid); i++) await settle(100);
       expect(gone(pid)).toBe(true);
     } finally {
@@ -76,7 +100,51 @@ describe("wedged agent containment (D-#866)", () => {
     }
   });
 
-  test("a dead adapter is reopened on the next demand — wedged once, then serves", {
+  test("a dead adapter marks sessions suspended — the next prompt re-creates on the fresh adapter", {
+    timeout: 30_000,
+  }, async () => {
+    /* Adapter DEATH is the other half of the contract: sessions holding
+       stale ACP ids must re-create via resume, not refuse. engine.close()
+       is the deterministic death here (a crash takes the same path via
+       the proc exit handler). */
+    const dir = mkdtempSync(join(tmpdir(), "acp-wedge-"));
+    const metaLog = join(dir, "meta.log");
+    const engine = make({
+      LILOS_FAKE_META_LOG: metaLog,
+    });
+    try {
+      await engine.dispatch("describe", {});
+      const a = (await engine.dispatch("session.start", {
+        agent: "x",
+        cwd: "/tmp/healthy-cwd",
+      })) as { sessionId: string };
+      await engine.dispatch("prompt", {
+        sessionId: a.sessionId,
+        content: [{ type: "text", text: "before" }],
+      });
+      /* Adapter dies; sessions are marked suspended — the next demand
+         spawns a fresh adapter whose sessions table is empty, so the
+         resume falls back to session/new (observable in the meta log). */
+      await engine.close();
+      await engine.dispatch("describe", {});
+      const turn = (await engine.dispatch("prompt", {
+        sessionId: a.sessionId,
+        content: [{ type: "text", text: "after" }],
+      })) as { stopReason?: string };
+      expect(turn.stopReason).not.toBe("refusal");
+      const ops = readFileSync(metaLog, "utf8")
+        .trim()
+        .split("\n")
+        .map((l) => (JSON.parse(l) as { op: string }).op);
+      /* new (catalog probe) + new (A) + the re-create after death. */
+      expect(ops.filter((o) => o === "new").length).toBeGreaterThanOrEqual(3);
+    } finally {
+      await engine.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("a wedged session.start inside the budget still leaves the adapter usable", {
     timeout: 30_000,
   }, async () => {
     const dir = mkdtempSync(join(tmpdir(), "acp-wedge-"));
@@ -93,8 +161,8 @@ describe("wedged agent containment (D-#866)", () => {
           cwd: "/tmp/wedged-cwd",
         }),
       ).rejects.toThrow(/did not answer session\/new/);
-      /* The wedge tore the adapter down; the next demand reopens a fresh
-           one, and the sentinel keeps this generation from hanging. */
+      /* The wedged call is abandoned on the SAME adapter — the sentinel
+         means this generation now serves normally, no respawn needed. */
       const res = (await engine.dispatch("session.start", {
         agent: "x",
         cwd: "/tmp/wedged-cwd",
@@ -184,6 +252,84 @@ describe("wedged agent containment (D-#866)", () => {
       await pending.catch(() => {});
       for (let i = 0; i < 20 && !gone(pid); i++) await settle(100);
       expect(gone(pid)).toBe(true);
+    } finally {
+      await engine.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("close() still group-kills when the adapter already exited — a TERM-ignoring child cannot orphan", {
+    timeout: 30_000,
+  }, async () => {
+    /* The reviewer's close-orphan.ts: the adapter exits 0 (SIGTERM
+       grace satisfied) while a session child ignores TERM — the old
+       close() read the proc's exit code and skipped the group SIGKILL,
+       leaving the child reparented to launchd. Unix-only — the repro
+       needs signal dispositions. */
+    if (process.platform === "win32") return;
+    const dir = mkdtempSync(join(tmpdir(), "acp-wedge-"));
+    const pidfile = join(dir, "ignoring.pid");
+    const engine = make({
+      LILOS_FAKE_TERM_IGNORING_PIDFILE: pidfile,
+      LILOS_FAKE_EXIT_AFTER_MS: "1500",
+    });
+    try {
+      await engine.dispatch("describe", {});
+      /* The TERM-ignoring grandchild is up; the adapter exits 0 on its
+         own — wait for both so close() runs with exitCode already set. */
+      for (let i = 0; i < 50 && !existsSync(pidfile); i++) await settle(50);
+      expect(existsSync(pidfile)).toBe(true);
+      const pid = Number(readFileSync(pidfile, "utf8").trim());
+      await settle(2_000);
+      /* close() must still reach the group — the grandchild cannot
+         outlive the connection that owned it. */
+      await engine.close();
+      for (let i = 0; i < 20 && !gone(pid); i++) await settle(100);
+      expect(gone(pid)).toBe(true);
+    } finally {
+      await engine.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("session.start's chain cannot outrun the start budget — slow writes land as notes inside the bound", {
+    timeout: 30_000,
+  }, async () => {
+    /* r7: the harness waits 60s on session.start; an unbounded chain
+       (newSession + config writes + set_mode at 45s each) could finish
+       after the bind already failed, orphaning the session + child.
+       With a small startBudgetMs and a slow config write, the start
+       must answer inside the budget — the starved pick as a note, the
+       session itself still live. */
+    const dir = mkdtempSync(join(tmpdir(), "acp-wedge-"));
+    const engine = new AcpEngine({
+      name: "engine-acp-wedge-test",
+      command: [BUN, FAKE_AGENT],
+      env: { LILOS_FAKE_SLOW_CONFIG_MS: "800" },
+      createTimeoutMs: 2_000,
+      startBudgetMs: 400,
+      clientInfo: { name: "lilos-wedge-test", version: "0" },
+    });
+    try {
+      await engine.dispatch("describe", {});
+      const t0 = Date.now();
+      const res = (await engine.dispatch("session.start", {
+        agent: "x",
+        cwd: "/tmp/slow-cfg",
+        model: "fake-deep",
+      })) as { sessionId: string; notes?: string[] };
+      const elapsed = Date.now() - t0;
+      /* The write was starved by the budget — answered inside it, as a
+         note, not after a 2s RPC timeout tail. */
+      expect(elapsed).toBeLessThan(1_500);
+      expect((res.notes ?? []).join(" ")).toMatch(/Skipped model "fake-deep"/);
+      /* And the session still works — the budget degraded a pick,
+         not the session. */
+      const turn = (await engine.dispatch("prompt", {
+        sessionId: res.sessionId,
+        content: [{ type: "text", text: "hi" }],
+      })) as { stopReason?: string };
+      expect(turn.stopReason).toBeTruthy();
     } finally {
       await engine.close();
       rmSync(dir, { recursive: true, force: true });

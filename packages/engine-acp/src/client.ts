@@ -17,13 +17,24 @@ export interface AcpConnectionOptions {
   /** The agent's stdio command (already-resolved argv; e.g. `["devin","acp"]`). */
   command: string[];
   /**
-   * Bound on `session/new` / `session/load` (D-#866): an agent whose
-   * spawned child never finishes init leaves the ACP request pending
-   * forever — the reviewer's installed-app failure was exactly this, one
-   * wedged `claude` child per harness retry. The bound turns a wedge into
-   * an error plus a full adapter restart instead of a silent pile-up.
+   * Bound on session-scoped requests (`session/new`, `session/load`,
+   * config writes, `session/close`) (D-#866): an agent whose spawned
+   * child never finishes init leaves the ACP request pending forever —
+   * the reviewer's installed-app failure was exactly this, one wedged
+   * `claude` child per harness retry. The bound turns a wedge into an
+   * error for THAT call — never an adapter teardown: the process group
+   * hosts every live session, so one wedged start must not SIGKILL
+   * healthy turns. The wedged session is abandoned, not restarted
+   * (r6 review).
    */
   createTimeoutMs?: number;
+  /**
+   * The adapter died — process exit or `close()`. The engine marks
+   * every session suspended: the next use re-creates it on the fresh
+   * adapter via the normal resume path instead of refusing prompts on
+   * a stale ACP session id (D-#866 r6).
+   */
+  onDead?: () => void;
   /** Extra env for the child — merged over process.env. */
   env?: Record<string, string>;
   /**
@@ -80,8 +91,13 @@ const INIT_TIMEOUT_MS = 15_000;
 export class AcpConnection {
   private proc?: ChildProcess;
   private conn?: acp.ClientSideConnection;
-  /** Set when the child exited or a wedged request forced a teardown. */
+  /** Set when the child exited or close() ran. */
   private gone = false;
+  /** Fires once when the adapter goes away — see `onDead`. */
+  private deadNotified = false;
+  /** The adapter's own process-group id — survives `proc` exit so a
+      close() can still reach children that outlived their parent. */
+  private pgid?: number;
   /** Serialized prompt pump — ACP runs one `session/prompt` per session at
      a time; queued sends become the next turn (#308's queued-steer leg). */
   private promptQueues = new Map<string, Promise<unknown>>();
@@ -93,6 +109,7 @@ export class AcpConnection {
     readonly initializeResult: acp.InitializeResponse,
     private readonly handlers: AcpConnectionOptions["handlers"],
     private readonly createTimeoutMs: number,
+    private readonly onDead?: () => void,
   ) {}
 
   /** The child exited or a wedged request tore it down — reopen instead of
@@ -122,18 +139,16 @@ export class AcpConnection {
     }
   }
 
-  /** A request the agent never answered — the connection is unrecoverable:
-      kill the tree so its session children die with it, then mark dead so
-      the engine reopens on the next demand instead of queuing behind a
-      wedge. */
-  private teardown() {
-    if (this.gone) return;
+  /** The adapter is gone — flip `dead` and notify once. */
+  private markDead() {
     this.gone = true;
-    this.killTree("SIGKILL");
-    this.proc = undefined;
-    this.conn = undefined;
-    this.promptQueues.clear();
-    this.promptBusy.clear();
+    if (this.deadNotified) return;
+    this.deadNotified = true;
+    try {
+      this.onDead?.();
+    } catch {
+      /* a listener throw must not swallow the death itself */
+    }
   }
 
   /** Spawn the agent, wire the stream, run `initialize`. */
@@ -229,11 +244,15 @@ export class AcpConnection {
       init,
       opts.handlers,
       opts.createTimeoutMs ?? CREATE_TIMEOUT_MS,
+      opts.onDead,
     );
     c.proc = proc;
     c.conn = conn;
+    /* `detached` made the adapter its own group leader — remember the
+       group past the proc handle so close() reaches orphaned children. */
+    if (process.platform !== "win32") c.pgid = proc.pid;
     proc.on("exit", () => {
-      c.gone = true;
+      c.markDead();
       c.conn = undefined;
       c.proc = undefined;
     });
@@ -245,17 +264,25 @@ export class AcpConnection {
     return this.initializeResult.agentCapabilities;
   }
 
+  /** Effective bound for a session-scoped call — the caller may only
+      shrink it (the engine's start budget counts down through a chain
+      of RPCs so it lands inside the harness's 60s wait, D-#866 r6). */
+  private bound(timeoutMs?: number): number {
+    return Math.min(timeoutMs ?? this.createTimeoutMs, this.createTimeoutMs);
+  }
+
   /** `session/new` — the agent attaches the given MCP servers.
-      `fatal:false` bounds the wait without tearing the adapter down —
-      the catalog probe uses it: a wedge there is one dropped probe, not a
-      reason to kill sessions the adapter is serving fine. */
+      A wedge here rejects THIS call only — the adapter multiplexes all
+      sessions over one process group, so a per-session timeout must
+      never tear it down (r6 review): one wedged start would otherwise
+      SIGKILL every healthy turn sharing the process. */
   async newSession(
     p: {
       cwd: string;
       mcpServers?: acp.McpServer[];
       meta?: Record<string, unknown>;
     },
-    opts?: { fatal?: boolean },
+    opts?: { timeoutMs?: number },
   ): Promise<acp.NewSessionResponse> {
     if (!this.conn) throw new Error("connection closed");
     const req = this.conn.newSession({
@@ -264,21 +291,25 @@ export class AcpConnection {
       ...(p.meta ? { _meta: p.meta } : {}),
     });
     req.catch(() => {});
+    const ms = this.bound(opts?.timeoutMs);
     return withTimeout(
       req,
-      this.createTimeoutMs,
-      () => `agent did not answer session/new in ${this.createTimeoutMs}ms`,
-      opts?.fatal === false ? undefined : () => this.teardown(),
+      ms,
+      () => `agent did not answer session/new in ${ms}ms`,
     );
   }
 
-  /** `session/load` — resume a stored session (loadSession capability). */
-  async loadSession(p: {
-    sessionId: string;
-    cwd: string;
-    mcpServers?: acp.McpServer[];
-    meta?: Record<string, unknown>;
-  }): Promise<acp.LoadSessionResponse> {
+  /** `session/load` — resume a stored session (loadSession capability).
+      Same non-fatal bound as `newSession` (r6). */
+  async loadSession(
+    p: {
+      sessionId: string;
+      cwd: string;
+      mcpServers?: acp.McpServer[];
+      meta?: Record<string, unknown>;
+    },
+    opts?: { timeoutMs?: number },
+  ): Promise<acp.LoadSessionResponse> {
     if (!this.conn) throw new Error("connection closed");
     const req = this.conn.loadSession({
       sessionId: p.sessionId,
@@ -287,11 +318,11 @@ export class AcpConnection {
       ...(p.meta ? { _meta: p.meta } : {}),
     });
     req.catch(() => {});
+    const ms = this.bound(opts?.timeoutMs);
     return withTimeout(
       req,
-      this.createTimeoutMs,
-      () => `agent did not answer session/load in ${this.createTimeoutMs}ms`,
-      () => this.teardown(),
+      ms,
+      () => `agent did not answer session/load in ${ms}ms`,
     );
   }
 
@@ -347,16 +378,19 @@ export class AcpConnection {
   }
 
   /** `session/set_mode` — only when the session advertised modes. */
-  async setMode(sessionId: string, modeId: string): Promise<void> {
+  async setMode(
+    sessionId: string,
+    modeId: string,
+    opts?: { timeoutMs?: number },
+  ): Promise<void> {
     if (!this.conn) return;
     const req = this.conn.setSessionMode({ sessionId, modeId });
     req.catch(() => {});
+    const ms = this.bound(opts?.timeoutMs);
     await withTimeout(
       req,
-      this.createTimeoutMs,
-      () =>
-        `agent did not answer session/set_mode in ${this.createTimeoutMs}ms`,
-      () => this.teardown(),
+      ms,
+      () => `agent did not answer session/set_mode in ${ms}ms`,
     );
   }
 
@@ -365,6 +399,7 @@ export class AcpConnection {
     sessionId: string,
     configId: string,
     value: string,
+    opts?: { timeoutMs?: number },
   ): Promise<acp.SetSessionConfigOptionResponse> {
     if (!this.conn) throw new Error("connection closed");
     const req = this.conn.setSessionConfigOption({
@@ -373,16 +408,16 @@ export class AcpConnection {
       value,
     });
     req.catch(() => {});
+    const ms = this.bound(opts?.timeoutMs);
     return withTimeout(
       req,
-      this.createTimeoutMs,
-      () =>
-        `agent did not answer session/set_config_option in ${this.createTimeoutMs}ms`,
-      () => this.teardown(),
+      ms,
+      () => `agent did not answer session/set_config_option in ${ms}ms`,
     );
   }
 
-  /** `session/close` when advertised — best-effort. */
+  /** `session/close` when advertised — best-effort, and never fatal:
+      a wedged close leaves the adapter serving its live sessions (r6). */
   async closeSession(sessionId: string): Promise<void> {
     if (!this.conn) return;
     const req = this.conn.closeSession({ sessionId });
@@ -392,10 +427,10 @@ export class AcpConnection {
         req,
         this.createTimeoutMs,
         () => `agent did not answer session/close in ${this.createTimeoutMs}ms`,
-        () => this.teardown(),
       );
     } catch {
-      /* the agent may not advertise session.close */
+      /* the agent may not advertise session.close, or wedged — either
+         way the caller only wanted it gone */
     }
   }
 
@@ -408,7 +443,7 @@ export class AcpConnection {
     } catch {
       /* already closed */
     }
-    this.gone = true;
+    this.markDead();
     const proc = this.proc;
     if (proc && proc.exitCode === null) {
       this.killTree("SIGTERM");
@@ -421,17 +456,25 @@ export class AcpConnection {
           r();
         });
       });
-      if (proc.exitCode === null && proc.pid !== undefined) {
+    }
+    /* The group outlives the adapter: an adapter can answer TERM with a
+       clean exit-0 while its session child ignores the signal (the r6
+       repro left exactly that orphan reparented to launchd). SIGKILL the
+       group whenever we had one — the proc's own exit code is irrelevant
+       to its descendants. */
+    if (process.platform === "win32") {
+      if (proc && proc.exitCode === null) {
         try {
-          if (process.platform === "win32") proc.kill("SIGKILL");
-          else process.kill(-proc.pid, "SIGKILL");
+          proc.kill("SIGKILL");
         } catch {
-          try {
-            proc.kill("SIGKILL");
-          } catch {
-            /* already gone */
-          }
+          /* already gone */
         }
+      }
+    } else if (this.pgid !== undefined) {
+      try {
+        process.kill(-this.pgid, "SIGKILL");
+      } catch {
+        /* group already empty */
       }
     }
     this.proc = undefined;

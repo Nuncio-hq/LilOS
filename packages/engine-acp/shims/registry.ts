@@ -1,5 +1,5 @@
 import type { AcpLaunchSpec } from "../src/launch.js";
-import { probeAgentCommand } from "../src/provision.js";
+import { probeAgentCommand, resolveAgentCommand } from "../src/provision.js";
 import { claudeSpec } from "./claude.js";
 import { devinSpec } from "./devin.js";
 
@@ -31,4 +31,19 @@ export async function probeAcpSpec(
   env?: NodeJS.ProcessEnv,
 ): Promise<{ ok: boolean; output: string }> {
   return probeAgentCommand(spec, env);
+}
+
+/**
+ * D-#866 r6: resolve + provision WITHOUT the verify probe — the harness
+ * runs it in its own process BEFORE launching the engine child, so a
+ * cold npm install eats the harness's demand wait rather than the
+ * launcher/startup timeout inside serve.ts (whose own resolve then
+ * hits a warm cache). The engine child's launch check stays — this is
+ * the budget fix, not a skip.
+ */
+export async function resolveAcpSpec(
+  spec: AcpLaunchSpec,
+  env?: NodeJS.ProcessEnv,
+) {
+  return resolveAgentCommand(spec, env);
 }

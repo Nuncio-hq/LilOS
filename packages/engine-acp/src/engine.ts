@@ -4,6 +4,7 @@ import {
   type AgentsCreateParams,
   type AgentsDescribeParams,
   type AgentsUpdateParams,
+  APPROVAL_POLICY_CAPABILITY,
   type ApprovalOutcome,
   type DescribeResult,
   ENGINE_METHODS,
@@ -17,6 +18,7 @@ import {
   type PromptResult,
   type RequestRespondParams,
   RPC_ERRORS,
+  type SessionSetAccessParams,
   type SessionSetHiddenParams,
   type SessionSetModelParams,
   type SessionSetModelResult,
@@ -125,12 +127,25 @@ export interface AcpEngineOptions {
   /**
    * Bound on agent round-trips that can wedge on the agent's own child
    * (session/new·load·set-mode·set-config·close — never `prompt`, which is
-   * a live turn). On timeout the adapter's whole process tree is killed
-   * and the next demand reopens it — a wedge becomes one clean error
-   * instead of a pile of orphaned children (D-#866's installed-app find).
+   * a live turn). On timeout that one call errors — the adapter is NOT
+   * torn down: it multiplexes every live session over one process
+   * group, so a per-session wedge must never SIGKILL healthy turns
+   * (D-#866's installed-app find; r6 review — the wedged session is
+   * abandoned, adapter-side state for it ages out on the agent).
    */
   createTimeoutMs?: number;
+  /**
+   * Total `session.start` budget (default 50s — inside the harness's
+   * 60s bind wait, D-#866 r7): newSession plus every config/mode write
+   * draws from it so the chain can never finish after the host already
+   * gave up and leave the ACP session + child orphaned. Tests shrink it.
+   */
+  startBudgetMs?: number;
 }
+
+/** Default for {@link AcpEngineOptions.startBudgetMs} — binds.ts gives
+    session.start 60s; 10s of headroom covers transport + bind work. */
+const SESSION_START_BUDGET_MS = 50_000;
 
 export class AcpEngine {
   private conn?: AcpConnection;
@@ -205,6 +220,7 @@ export class AcpEngine {
         onPermission: (params) => this.onPermission(params),
         onUpdate: (params) => this.onUpdate(params),
       },
+      onDead: () => this.onAdapterGone(),
     }).then(async (c) => {
       this.conn = c;
       /* The config-option/mode catalog lives on session/new, not
@@ -232,21 +248,18 @@ export class AcpEngine {
       /* D-#866 (r4): the scratch session still spawns the agent's child —
          it must carry the same `ask` meta as a gated session so NO session
          is ever born under the user's bypassPermissions default. */
-      const probe = await c.newSession(
-        {
-          cwd: process.cwd(),
-          ...(this.opts.sessionMeta
-            ? {
-                meta: this.opts.sessionMeta({
-                  agent: this.opts.agent?.id ?? "",
-                  cwd: process.cwd(),
-                  access: "ask",
-                }),
-              }
-            : {}),
-        },
-        { fatal: false },
-      );
+      const probe = await c.newSession({
+        cwd: process.cwd(),
+        ...(this.opts.sessionMeta
+          ? {
+              meta: this.opts.sessionMeta({
+                agent: this.opts.agent?.id ?? "",
+                cwd: process.cwd(),
+                access: "ask",
+              }),
+            }
+          : {}),
+      });
       learnSessionConfig(this.catalog, probe);
       await c.closeSession(probe.sessionId);
     } catch {
@@ -260,6 +273,33 @@ export class AcpEngine {
     await this.opts.terminals?.disposeAll();
     await this.conn?.close();
     this.conn = undefined;
+  }
+
+  /**
+   * The shared adapter died (process exit or `close()`) — every ACP
+   * session id it held is dead with it. Mark each live session
+   * suspended so the next use re-creates it on the fresh adapter
+   * through the normal resume path, instead of prompting a stale id
+   * and surfacing the adapter's -32603 as a "refusal" (D-#866 r6 —
+   * the reviewer's poison.ts: one wedged start used to poison every
+   * other session with "Internal error" turns).
+   */
+  private onAdapterGone() {
+    for (const s of this.sessions.values()) {
+      if (s.suspended || s.state === "closed") continue;
+      cancelAllAcpAsks(s);
+      s.suspended = true;
+      s.state = "closed";
+      s.emit("session.state", { state: "closed", reason: "suspended" });
+      if (s.turn) {
+        const turn = s.turn;
+        s.turn = undefined;
+        s.emit("turn.completed", {
+          turnId: turn.turnId,
+          stopReason: "cancelled",
+        });
+      }
+    }
   }
 
   // ── dispatch ───────────────────────────────────────────────────────────
@@ -331,6 +371,8 @@ export class AcpEngine {
         };
       case "session.setModel":
         return this.sessionSetModel(parsed.data as SessionSetModelParams);
+      case "session.setAccess":
+        return this.sessionSetAccess(parsed.data as SessionSetAccessParams);
       case "session.setTitle":
         return this.sessionSetTitle(parsed.data as SessionSetTitleParams);
       case "session.setHidden":
@@ -374,6 +416,17 @@ export class AcpEngine {
           ],
           detail: { updatable: ["name", "description", "soul", "model"] },
         },
+        /* D-#866 r6 — `session.setAccess` is engine-owned: the adapter
+           binds the bypass flag at session spawn, so a mid-thread
+           full→ask flip can only re-gate by re-creating the session
+           under the new meta — the method always exists (a suspended
+           session carries the level into its next resume). Only
+           `session.setAccess` is claimed — `approvals.setPolicy` is
+           not implemented. */
+        {
+          ...APPROVAL_POLICY_CAPABILITY,
+          methods: ["session.setAccess"],
+        },
       ],
     };
   }
@@ -392,16 +445,28 @@ export class AcpEngine {
 
   private async sessionStart(p: SessionStartParams) {
     const conn = await this.connection();
+    /* D-#866 r7: the whole start chain (newSession + config writes +
+       set_mode) must answer inside the harness's 60s bind wait — a
+       chain of unbounded per-RPC timeouts could finish after the
+       harness already gave up, orphaning the ACP session + its child.
+       Each call gets what is left of the budget; a starved tail lands
+       as visible skip notes, not a silent no-op. */
+    const startDeadline =
+      Date.now() + (this.opts.startBudgetMs ?? SESSION_START_BUDGET_MS);
+    const left = () => Math.max(0, startDeadline - Date.now());
     /* The persona's profile model is the default the session picks up —
        an explicit session.start.model still wins (D-#845: `agent` is the
        LilOS persona handle; ACP `session/new` has no profile gate, so an
        unknown name still starts under it). */
     const persona = this.agents.resolve(p.agent);
-    const res = await conn.newSession({
-      cwd: p.cwd,
-      mcpServers: (p.mcpServers ?? []).map(toAcpMcp),
-      ...(this.opts.sessionMeta ? { meta: this.opts.sessionMeta(p) } : {}),
-    });
+    const res = await conn.newSession(
+      {
+        cwd: p.cwd,
+        mcpServers: (p.mcpServers ?? []).map(toAcpMcp),
+        ...(this.opts.sessionMeta ? { meta: this.opts.sessionMeta(p) } : {}),
+      },
+      { timeoutMs: left() },
+    );
     const id = `s-${++this.sessionCounter}`;
     const s = new AcpSession(
       id,
@@ -431,12 +496,20 @@ export class AcpEngine {
         fast: p.fast,
       },
       (line) => notes.push(line),
+      left,
     );
     /* Access hint: only when the session advertised modes and the engine
-       knows this agent's mode vocabulary. */
+       knows this agent's mode vocabulary. A failed write is a skip note
+       — the start never reports a gated mode it could not apply. */
     if (p.access && s.modes && this.opts.modeForAccess) {
       const modeId = this.opts.modeForAccess(p.access, s.modes.available);
-      if (modeId) await conn.setMode(s.acpSessionId, modeId).catch(() => {});
+      if (modeId) {
+        const ok = await conn
+          .setMode(s.acpSessionId, modeId, { timeoutMs: left() })
+          .then(() => true)
+          .catch(() => false);
+        if (!ok) notes.push(this.skipText(`the "${modeId}" mode`));
+      }
     }
     s.emit("session.started", {
       agent: p.agent,
@@ -510,13 +583,21 @@ export class AcpEngine {
     s: AcpSession,
     pick: { model?: string; effort?: string; fast?: boolean },
     skip: (line: string) => void,
+    budget?: () => number,
   ) {
     const cfg = this.sessionConfig(s);
     if (pick.model !== undefined) {
       const opt = catalogModelOption(cfg);
       if (
         !opt?.choices.some((c) => c.value === pick.model) ||
-        !(await this.writePick(s, "model", opt.id, pick.model, pick.model))
+        !(await this.writePick(
+          s,
+          "model",
+          opt.id,
+          pick.model,
+          pick.model,
+          budget,
+        ))
       )
         skip(this.skipText(`model "${pick.model}"`));
     }
@@ -524,7 +605,14 @@ export class AcpEngine {
       const opt = catalogEffortOption(cfg);
       if (
         !opt?.choices.some((c) => c.value === pick.effort) ||
-        !(await this.writePick(s, "effort", opt.id, pick.effort, pick.effort))
+        !(await this.writePick(
+          s,
+          "effort",
+          opt.id,
+          pick.effort,
+          pick.effort,
+          budget,
+        ))
       )
         skip(this.skipText(`effort "${pick.effort}"`));
     }
@@ -533,7 +621,14 @@ export class AcpEngine {
       if (fast) {
         const value = pick.fast ? fast.fastValue : offValue(fast);
         if (
-          !(await this.writePick(s, "fast", fast.option.id, value, pick.fast))
+          !(await this.writePick(
+            s,
+            "fast",
+            fast.option.id,
+            value,
+            pick.fast,
+            budget,
+          ))
         )
           skip(this.skipText("the fast tier"));
       } else if (pick.fast) skip(this.skipText("the fast tier"));
@@ -558,9 +653,10 @@ export class AcpEngine {
     configId: string,
     value: string,
     picked: NonNullable<AcpSession["pick"]>[K],
+    budget?: () => number,
   ): Promise<boolean> {
     try {
-      await this.writeConfig(s, configId, value);
+      await this.writeConfig(s, configId, value, budget?.());
       s.pick = { ...s.pick, [field]: picked };
       return true;
     } catch {
@@ -568,11 +664,21 @@ export class AcpEngine {
     }
   }
 
-  /** One session/set_config_option write + the session's pick update. */
-  private async writeConfig(s: AcpSession, configId: string, value: string) {
+  /** One session/set_config_option write + the session's pick update.
+      `timeoutMs` shrinks the call's bound — session.start passes the
+      remainder of its start budget so a slow tail cannot overrun the
+      harness's bind wait (D-#866 r7). */
+  private async writeConfig(
+    s: AcpSession,
+    configId: string,
+    value: string,
+    timeoutMs?: number,
+  ) {
     const conn = this.conn;
     if (!conn) return;
-    const res = await conn.setConfigOption(s.acpSessionId, configId, value);
+    const res = await conn.setConfigOption(s.acpSessionId, configId, value, {
+      timeoutMs,
+    });
     this.applyConfigOptions(s, res.configOptions ?? []);
   }
 
@@ -940,6 +1046,43 @@ export class AcpEngine {
       });
     }
     return { suspended: true };
+  }
+
+  /**
+   * `session.setAccess` — the harness pushes a conversation-level flip
+   * (D-#866 r3). The adapter binds the bypass flag when the session
+   * spawns, so `session/set_mode` on the live session cannot re-gate a
+   * full one to ask — the only honest answer is a re-created session
+   * under the new meta. Suspend+resume IS that path (loadSession
+   * replays the new meta; a fresh session/new gets it too). A suspended
+   * session just carries the level into its next resume. Resume
+   * failure leaves the session suspended — the next prompt retries
+   * the re-gate rather than silently serving the old level.
+   */
+  private async sessionSetAccess(p: SessionSetAccessParams) {
+    const s = this.require(p.sessionId);
+    if (s.access === p.access) return { access: s.access };
+    /* A live session can only re-gate by being born again (the adapter
+       binds the bypass flag at spawn): suspend + resume replays the
+       sessionMeta built from the NEW access. Revert the stored level on
+       failure — a retry with the same target must not read `changed:
+       false` and report success on a session that never re-gated. */
+    if (!s.suspended && s.state !== "closed") {
+      const prev = s.access;
+      s.access = p.access;
+      try {
+        await this.sessionSuspend({ sessionId: s.id });
+        await this.resume(s);
+      } catch (error) {
+        s.access = prev;
+        throw error;
+      }
+    } else {
+      /* Suspended/closed: the level only has to be stamped — the next
+         resume replays it through sessionMeta. */
+      s.access = p.access;
+    }
+    return { access: s.access };
   }
 
   /** Reattach a suspended session — same LilOS id, live ACP session. */

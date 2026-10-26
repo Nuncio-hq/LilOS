@@ -77,16 +77,18 @@ export const claudeSpec: AcpLaunchSpec = {
     "CLOUD_ML_REGION",
     "AWS_REGION",
   ],
-  /* `ask` sessions spawn without --allow-dangerously-skip-permissions:
+  /* Non-`full` sessions spawn without --allow-dangerously-skip-permissions:
      the adapter resolves its initial mode through resolvePermissionMode,
      which clamps bypassPermissions to `default` when the flag is off —
      real gating from the first prompt, not a post-hoc set_mode that the
-     spawned CLI ignores (see the header note). `full` passes no meta, so
-     bypass stays allowed and the mode lands via set_mode as before. */
+     spawned CLI ignores (see the header note). FAIL-CLOSED (r6 review):
+     anything but the explicit `full` grant — a missing access, a new
+     level the shim does not know — is gated; `full` alone passes no
+     meta, so bypass stays allowed and the mode lands via set_mode. */
   sessionMeta: (p) =>
-    p.access === "ask"
-      ? { claudeCode: { options: { allowDangerouslySkipPermissions: false } } }
-      : {},
+    p.access === "full"
+      ? {}
+      : { claudeCode: { options: { allowDangerouslySkipPermissions: false } } },
   modeForAccess: (access, modes) => {
     const ids = new Set(modes.map((m) => m.id));
     const prefer =

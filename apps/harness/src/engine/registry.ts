@@ -1,5 +1,5 @@
 import type { RuntimeStatusRow } from "@lilos/contracts/app";
-import { probeAcpSpec } from "@lilos/engine-acp/shims/registry";
+import { probeAcpSpec, resolveAcpSpec } from "@lilos/engine-acp/shims/registry";
 import type { Logger } from "../log";
 import type { EngineConnection } from "./client";
 import { DEFAULT_RUNTIME, type RuntimeSpec } from "./runtimes";
@@ -59,6 +59,14 @@ export interface RuntimeInstance {
     resolve: (conn: EngineConnection) => void;
     reject: (err: Error) => void;
   }[];
+  /** In-flight/cached provision resolve (D-#866 r6): the harness
+      installs the adapter BEFORE the launcher spawns the engine — a
+      cold npm install can take minutes while startup is bounded at
+      60s, so it must not eat the child's own budget. Shared per row:
+      every `ensure` during one install awaits the same promise; a
+      resolved verdict stays (the cache key is content-addressed), a
+      rejected one clears for the next demand's retry. */
+  provisioning?: Promise<void>;
 }
 
 /** Drop keys whose value is `undefined` — `{...defaults, ...opts}` treats
@@ -185,7 +193,34 @@ export class EngineRegistry {
     const p = new Promise<EngineConnection>((resolve, reject) => {
       inst.waiters.push({ resolve, reject });
     });
-    this.buildSupervisor(inst).ensureRunning();
+    void (async () => {
+      /* D-#866 r6: provision in the harness BEFORE launch — a cold
+         install can take minutes while the child bounds its own
+         resolve+verify inside the launcher's 60s startup wait. The
+         engine child's resolve then hits a warm cache. */
+      if (inst.spec.acpSpec && !inst.provisioning) {
+        const acpSpec = inst.spec.acpSpec;
+        inst.provisioning = (async () => {
+          const r = await resolveAcpSpec(acpSpec);
+          if (!r.ok)
+            throw new Error(r.output || `${inst.spec.label} is not launchable`);
+        })();
+        /* A failed resolve frees the slot for the next demand; the
+           settled value is still awaited below for THIS demand. */
+        inst.provisioning.catch(() => {
+          inst.provisioning = undefined;
+        });
+      }
+      await inst.provisioning;
+      this.buildSupervisor(inst).ensureRunning();
+    })().catch((error: unknown) => {
+      const err = error instanceof Error ? error : new Error(String(error));
+      inst.state = "failed";
+      inst.detail = `engine could not start: ${err.message}`;
+      inst.failedAt = Date.now();
+      for (const w of inst.waiters.splice(0)) w.reject(err);
+      this.opts.hooks.onStateChange(inst.spec.id, "failed", inst.detail);
+    });
     return p;
   }
 
