@@ -174,6 +174,20 @@ export async function deliverOrdered(
         void this.dropEarlyWithError(conv.id).catch(() => {});
         return;
       }
+      /* D-#866 r5: a conn that attached between the bind's conn-check and
+         this park already swept `early` — and this park has no flush
+         timer, so the send would sit forever. Re-check once; a conn that
+         landed mid-await drives the flush now instead. */
+      const runtime = await this.runtimeForConversation(conv);
+      if (this.connForRuntime(runtime)) {
+        void this.flushEarly(conv.id).catch((error) =>
+          this.opts.log.warn("early message flush failed", {
+            conversationId: conv.id,
+            error: String(error),
+          }),
+        );
+        return;
+      }
       // Engine still starting/restarting: hold the message; attachEngine
       // flushes this queue once a connection exists (the dedupe set above
       // would otherwise drop it forever). If the start then fails the
@@ -252,6 +266,14 @@ export async function flushEarlyOrdered(
 const EARLY_FLUSH_RETRY_MS = 1_500;
 const EARLY_FLUSH_RETRY_MAX = 5;
 
+/** The stall shape that earns the macOS folder-consent hint: the ACP
+    `session/new` bound specifically (the engine-acp timeout text), on
+    an `acp:*` runtime. Narrowed in r6 — the r5 regex also matched the
+    generic "could not be bound", so a Hermes drop carried Desktop-folder
+    advice it could not use. Exported for the unit tests. */
+export const acpStallShape = (detail: string, runtime: string): boolean =>
+  runtime.startsWith("acp") && /did not answer session\/new/i.test(detail);
+
 /**
  * Bounded re-attempt of the `early` flush for a send whose bind threw.
  * `attachEngine` already flushes on (re)connect; this covers the engine
@@ -323,10 +345,53 @@ export async function dropEarlyWithError(
   const message = waiting[0];
   /* `findConversation`, not the atom: a just-hired child's row can lag
      the atom, and losing it here would lose the parent's failed wake. */
-  const conv = await this.findConversation(convId);
-  const detail =
-    (await this.runtimeFailureDetail(conv)) ??
-    "session could not be bound after several attempts";
+  /* D-#866 (r4): every step below must land independently — a throw in
+     one used to be swallowed whole by the callers' `.catch(() => {})`,
+     leaving the thread `idle` with no error surface. Each surface write
+     gets its own catch + loud warn instead. */
+  const conv = await this.findConversation(convId).catch((error) => {
+    this.opts.log.warn("drop: conversation lookup failed", {
+      conversationId: convId,
+      error: String(error),
+    });
+    return undefined;
+  });
+  /* The reason the send died, most truthful first: a terminal runtime
+     verdict, else the verbatim bind rejection, else the generic line. */
+  let detail = "session could not be bound after several attempts";
+  try {
+    detail =
+      (await this.runtimeFailureDetail(conv)) ??
+      this.lastBindError.get(convId) ??
+      detail;
+  } catch (error) {
+    this.opts.log.warn("drop: runtime failure detail lookup failed", {
+      conversationId: convId,
+      error: String(error),
+    });
+  }
+  /* D-#866 r5/r6: a start-stall under the packaged app is most often
+     macOS folder consent (TCC) parking the agent's child reads — the
+     parked sends deserve the actionable line, not a bare "timed out".
+     Likely cause, not a certainty: the real reason stays in the
+     message. */
+  {
+    let label = "The agent";
+    let runtime = "";
+    try {
+      runtime = conv ? await this.runtimeForConversation(conv) : "";
+      label = this.runtimes?.get(runtime)?.spec.label || label;
+    } catch {
+      /* label lookup is cosmetic — keep the generic lead */
+    }
+    if (acpStallShape(detail, runtime)) {
+      detail =
+        `${label} didn't start in time — ${detail}. ` +
+        `If macOS asked LilOS for access to a folder (Desktop, Documents), ` +
+        `allow it in System Settings → Privacy & Security → Files and ` +
+        `Folders, then send again.`;
+    }
+  }
   this.opts.log.error("dropping held messages: engine could not start", {
     conversationId: convId,
     count: waiting.length,
@@ -336,21 +401,43 @@ export async function dropEarlyWithError(
     { channelId: message.channelId, conversationId: convId },
     `Engine error: ${detail}`,
     `sys:${convId}:${message.id}:engine-error`,
+  ).catch((error) =>
+    this.opts.log.warn("drop: system error post failed", {
+      conversationId: convId,
+      error: String(error),
+    }),
   );
   await this.updateConversation(convId, {
     turnFailure: { kind: "generic", text: `Engine error: ${detail}` },
-  });
+  }).catch((error) =>
+    this.opts.log.warn("drop: failed-turn surface write failed", {
+      conversationId: convId,
+      error: String(error),
+    }),
+  );
   /* A hand-off child whose engine never started still owes its parent
      a wake — otherwise the ticket waits on a turn that can never run. */
   if (conv?.parentId && conv.ticketId) {
-    noteTaskWake(this, {
-      taskId: conv.ticketId,
-      turnId: `bind:${convId}:${message.id}`,
-      outcome: "failed",
-      result: `Engine error: ${detail}`,
-    });
+    try {
+      noteTaskWake(this, {
+        taskId: conv.ticketId,
+        turnId: `bind:${convId}:${message.id}`,
+        outcome: "failed",
+        result: `Engine error: ${detail}`,
+      });
+    } catch (error) {
+      this.opts.log.warn("drop: parent wake failed", {
+        conversationId: convId,
+        error: String(error),
+      });
+    }
   }
   /* The drop may have been this runtime's last demand — idle its
      failed row instead of supervising a dead engine forever. */
-  await this.releaseIdleFailedRuntimes();
+  await this.releaseIdleFailedRuntimes().catch((error) =>
+    this.opts.log.warn("drop: failed-runtime release failed", {
+      conversationId: convId,
+      error: String(error),
+    }),
+  );
 }

@@ -1,6 +1,6 @@
 import { execSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
-import { homedir } from "node:os";
+
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
@@ -37,18 +37,14 @@ const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
 const SHOTS = path.join(here, "..", "test-results", "ac-771");
 mkdirSync(SHOTS, { recursive: true });
 
-/* Real dirs under ~/repos (a folder dialog pick is a host read, gated to the
-   Mac's home folder). */
-mkdirSync(path.join(homedir(), "repos"), { recursive: true });
-const ROOT = mkdtempSync(path.join(homedir(), "repos", "lilos-771-"));
-const alpha = path.join(ROOT, "lilos-alpha");
-const beta = path.join(ROOT, "lilos-beta");
-const gamma = path.join(ROOT, "lilos-gamma");
-for (const dir of [alpha, beta, gamma]) {
-  mkdirSync(dir);
-  execSync("git init -b main", { cwd: dir });
-}
-const shown = (abs: string) => `~${abs.slice(homedir().length)}`;
+/* Real dirs under the stack's scratch ~/repos (r10 — a folder dialog pick
+   is a host read, gated to the harness's home folder, and `~` collapses
+   against it; a fixture in the real ~/repos is unreachable). */
+let ROOT: string;
+let alpha: string;
+let beta: string;
+let gamma: string;
+const shown = (abs: string) => `~${abs.slice(stack.home.length)}`;
 
 const DEFAULT_AGENT = { id: "default", name: "Default" };
 
@@ -56,10 +52,22 @@ let stack: Stack;
 test.beforeAll(async () => {
   test.setTimeout(120_000);
   stack = await bootStack("ac771", await pickPorts());
+  mkdirSync(path.join(stack.home, "repos"), { recursive: true });
+  ROOT = mkdtempSync(path.join(stack.home, "repos", "lilos-771-"));
+  alpha = path.join(ROOT, "lilos-alpha");
+  beta = path.join(ROOT, "lilos-beta");
+  gamma = path.join(ROOT, "lilos-gamma");
+  for (const dir of [alpha, beta, gamma]) {
+    mkdirSync(dir);
+    execSync("git init -b main", { cwd: dir });
+  }
 });
 test.afterAll(async () => {
+  const home = stack?.home;
   await stack?.stop();
-  rmSync(ROOT, { recursive: true, force: true });
+  /* The restart boot rode `opts.home` (non-owning) — the suite removes
+     the shared home itself. */
+  if (home) rmSync(home, { recursive: true, force: true });
 });
 test.describe.configure({ mode: "serial" });
 
@@ -225,7 +233,9 @@ test("AC-4 after a restart every thread is still under its project; nothing is l
     cwd: gamma,
   });
   const { home } = stack;
-  await stack.stop();
+  /* keepHome: the restart boots on this LILOS_HOME — the owning stack's
+     stop must leave it (r10 scratch-HOME cleanup). */
+  await stack.stop({ keepHome: true });
   // Fresh ports. Rebinding the ports the stopped stack just released is
   // the pick-then-bind gap (#825); the page loads the new origin below.
   stack = await bootStack("ac771b", await pickPorts(), {}, { home });

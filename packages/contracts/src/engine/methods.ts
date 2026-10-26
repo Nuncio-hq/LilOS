@@ -95,6 +95,12 @@ export const SessionStartParams = z.strictObject({
   access: ConversationAccess.optional(),
   /** ACP-shaped MCP server list; the LilOS MCP server rides in here (#23). */
   mcpServers: z.array(McpServer).optional(),
+  /** Stable caller identity — the conversation id. A per-caller guard
+      (a wedged session/new, D-#866 r9) scopes to it so one conversation's
+      retry can't stack a second child while another conversation's
+      start in the same folder proceeds. Absent = engines fall back to
+      their own session/cwd key. */
+  callerKey: z.string().optional(),
 });
 export type SessionStartParams = z.infer<typeof SessionStartParams>;
 

@@ -5,7 +5,7 @@ import { scrubLilosEnv, takeEngineProtocolToken } from "@lilos/contracts/env";
 import { ACP_AGENTS } from "../shims/registry.js";
 import { AcpEngine } from "../src/engine.js";
 import type { AcpLaunchSpec } from "../src/launch.js";
-import { probeExecutable, resolveExecutable } from "../src/launch.js";
+import { resolveAgentCommand, verifyAgentCommand } from "../src/provision.js";
 import { AcpClientTerminals } from "../src/terminals.js";
 import { acpEventFrame, handleJsonRpc } from "../src/transport.js";
 
@@ -95,33 +95,42 @@ const spec: AcpLaunchSpec = (() => {
   process.exit(2);
 })();
 
-/* Verified install (T3's AcpRegistrySupport idea, D-#845): the binary
-   must resolve on PATH (plus the well-known user dirs) and answer the
-   spec's probe before we serve — a missing runner fails at launch, not
-   at the first prompt. */
-const bin = spec.command[0];
-const resolved = resolveExecutable(bin);
-if (!resolved) {
+/* Verified install (T3's AcpRegistrySupport idea, D-#845; npm recipe
+   per D-#866): the spec's launch command must resolve — an installed
+   binary on PATH (at least the pin's version), else the pinned npm
+   distribution fetched once into the LilOS cache — and answer the probe
+   before we serve. A missing runner or a failed fetch fails at launch
+   with the reason, never inside the first prompt turn.
+   Provision reads THIS process's env: the launcher spawns us already
+   LILOS_*-scrubbed, so LILOS_ACP_CACHE never reaches here and the cache
+   root always resolves under HOME — a test or the harness probe that
+   sets the cache override but not HOME sees a DIFFERENT root than this
+   launch does (the r6 comment-fix; the e2e stack isolates HOME for
+   exactly this reason). */
+const r = await resolveAgentCommand(spec, process.env);
+if (!r.ok || !r.command) {
   console.error(
-    `engine-acp: "${bin}" not found on PATH — install ${spec.id} (its own login carries the session; LilOS stores no credentials) or pass --command`,
+    `engine-acp: ${spec.id} is not launchable — ${r.output || "unresolved command"} ` +
+      `(install it yourself or pass --command; its own login carries the session)`,
   );
   process.exit(1);
 }
-if (spec.verify) {
-  const probe = await probeExecutable(resolved, spec.verify.args, {
-    env: scrubLilosEnv(process.env),
-    ...(spec.verify.timeoutMs !== undefined
-      ? { timeoutMs: spec.verify.timeoutMs }
-      : {}),
-  });
-  if (!probe.ok) {
-    console.error(
-      `engine-acp: "${bin} ${spec.verify.args.join(" ")}" failed (install verification) — ${probe.output || "non-zero exit"}`,
-    );
-    process.exit(1);
-  }
+const command = r.command;
+/* The probe runs `probeHead` + verify args — the bare binary/runner
+   entry — never the launch args: `devin --version`, not
+   `devin acp --model swe-2-high --version` (r6 — this site ran the full
+   command + --version and Devin's CLI rejected it, exit 1 on launch
+   while the status row read available). Same check the registry probe
+   runs, shared through verifyAgentCommand. r.env carries the resolved
+   runner's env (ELECTRON_RUN_AS_NODE for the packaged fallback) —
+   without it the Electron runner launches the app instead of node. */
+const probe = await verifyAgentCommand(spec, r, process.env);
+if (!probe.ok) {
+  console.error(
+    `engine-acp: "${command.join(" ")}" failed (install verification) — ${probe.output || "non-zero exit"}`,
+  );
+  process.exit(1);
 }
-const command = [resolved, ...spec.command.slice(1)];
 
 const terminals = spec.clientCapabilities?.terminal
   ? new AcpClientTerminals({
@@ -147,6 +156,8 @@ const engine = new AcpEngine({
   ...(spec.modeForAccess ? { modeForAccess: spec.modeForAccess } : {}),
   ...(spec.defaultEffort ? { defaultEffort: spec.defaultEffort } : {}),
   ...(spec.sessionMeta ? { sessionMeta: spec.sessionMeta } : {}),
+  ...(spec.env || r.env ? { env: { ...spec.env, ...r.env } } : {}),
+  ...(spec.dropEnv ? { dropEnv: spec.dropEnv } : {}),
 });
 const clients = new Set<{ send: (s: string) => void }>();
 engine.onEvent((e) => {

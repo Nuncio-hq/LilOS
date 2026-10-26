@@ -255,32 +255,32 @@ export function deriveCapabilities(
       "turn.completed carries per-turn token usage; usage_update ticks report context occupancy.",
   });
 
-  /* Model/effort/mode descriptors exist only once a session has
-     advertised them — configOptions are a session/new surface, never an
-     initialize one. */
-  const models = catalogModels(learned);
-  if (models.length) {
-    caps.push({
-      id: "models",
-      name: "Model picker",
-      description:
-        "models.list flattens the agent's model config options; session.setModel writes session/set_config_option.",
-      methods: ["models.list", "session.setModel"],
-      detail: {
-        effort: catalogEffortOption(learned) !== undefined,
-        fast: catalogHasFast(learned),
-        ...(learned.modes
-          ? {
-              modes: learned.modes.available.map((m) => ({
-                id: m.id,
-                ...(m.name ? { name: m.name } : {}),
-              })),
-              currentMode: learned.modes.current,
-            }
-          : {}),
-      },
-    });
-  }
+  /* models.list/session.setModel are engine methods the engine always
+     implements — declare the capability unconditionally (a zero-row table
+     or a "no such option" error is still a defined answer). The learned
+     catalog only enriches the detail; it lands whenever the backgrounded
+     probe settles — describe must never wait on it (D-#866 r4: the
+     liveness probe IS describe at a 1.5s bound). */
+  caps.push({
+    id: "models",
+    name: "Model picker",
+    description:
+      "models.list flattens the agent's model config options; session.setModel writes session/set_config_option.",
+    methods: ["models.list", "session.setModel"],
+    detail: {
+      effort: catalogEffortOption(learned) !== undefined,
+      fast: catalogHasFast(learned),
+      ...(learned.modes
+        ? {
+            modes: learned.modes.available.map((m) => ({
+              id: m.id,
+              ...(m.name ? { name: m.name } : {}),
+            })),
+            currentMode: learned.modes.current,
+          }
+        : {}),
+    },
+  });
 
   /* The opaque ACP detail row: the pin this seam speaks plus the session
      config catalog (config options/modes) a generic client can render

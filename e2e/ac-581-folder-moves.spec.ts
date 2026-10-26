@@ -1,6 +1,6 @@
 import { execSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
-import { homedir } from "node:os";
+
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
@@ -38,34 +38,44 @@ const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
 const repo = path.resolve(here, "..");
 const SHOTS = path.join(repo, "test-results", "ac-581");
 
-/* Fixture dirs, made once for the file:
+/* Fixture dirs, made once for the file INSIDE the stack's scratch HOME
+   (r10 — the host gates reads/writes to the harness's home and collapses
+   paths against it, so a fixture in the real ~/repos is unreachable):
    - ROOT/repoDir: a git repo the "Found on this Mac" chips can discover.
      It sits under ~/repos — one of the scan's default roots — so no
      `?roots=` override is needed.
-   - moveDir: under the real $HOME on purpose — moving a live session is
-     a host write, gated to inside the Mac's home folder. */
-mkdirSync(path.join(homedir(), "repos"), { recursive: true }); // ~/repos may not exist on a fresh CI runner
-const ROOT = mkdtempSync(path.join(homedir(), "repos", "lilos-581-"));
-const repoDir = path.join(ROOT, "lilos-repo-581");
-const moveDir = mkdtempSync(path.join(homedir(), "lilos-581-move-"));
-mkdirSync(repoDir);
-execSync(
-  "git init -b trunk && git -c user.email=t@t -c user.name=t commit --allow-empty -m init",
-  { cwd: repoDir },
-);
-const moveName = path.basename(moveDir);
-const moveShown = `~/${moveName}`;
-const otherDir = path.join(ROOT, "lilos-other-581");
-const otherName = path.basename(otherDir);
-mkdirSync(otherDir);
+   - moveDir: under the stack's $HOME on purpose — moving a live session
+     is a host write, gated to inside the machine's home folder. */
+let ROOT: string;
+let repoDir: string;
+let moveDir: string;
+let moveName: string;
+let moveShown: string;
+let otherDir: string;
+let otherName: string;
 /* Discovery answers with collapsePath — a repo under $HOME is the
    `~/x` form in the Found chips, not the absolute path. */
-const repoShown = `~/repos/${path.basename(ROOT)}/lilos-repo-581`;
+let repoShown: string;
 
 let stack: Stack;
 test.beforeAll(async () => {
   test.setTimeout(120_000);
   stack = await bootStack("ac581", await pickPorts());
+  mkdirSync(path.join(stack.home, "repos"), { recursive: true });
+  ROOT = mkdtempSync(path.join(stack.home, "repos", "lilos-581-"));
+  repoDir = path.join(ROOT, "lilos-repo-581");
+  moveDir = mkdtempSync(path.join(stack.home, "lilos-581-move-"));
+  mkdirSync(repoDir);
+  execSync(
+    "git init -b trunk && git -c user.email=t@t -c user.name=t commit --allow-empty -m init",
+    { cwd: repoDir },
+  );
+  moveName = path.basename(moveDir);
+  moveShown = `~/${moveName}`;
+  otherDir = path.join(ROOT, "lilos-other-581");
+  otherName = path.basename(otherDir);
+  mkdirSync(otherDir);
+  repoShown = `~/repos/${path.basename(ROOT)}/lilos-repo-581`;
 });
 test.afterAll(async () => {
   await stack?.stop();

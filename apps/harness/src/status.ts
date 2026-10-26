@@ -48,6 +48,12 @@ export interface StatusReporterOptions {
   logTail?: () => string[];
   /** Deadline for the engine `describe` probe (default 2s). */
   probeTimeoutMs?: number;
+  /** LILOS_HIDE_CAPS: capabilities the app must behave as if the engine
+      lacks. The feed's `describe` is already filtered (`describeAndHire`);
+      this report feeds `system.status`/`welcome.engineHost`, which seed
+      the picker's catalog — unfiltered rows here leak `models` past the
+      hide and the picker renders anyway (D-#866 r5). */
+  hideCaps?: string[];
   /** RSS reader — injectable for tests; default shells `ps`. */
   readRssBytes?: (pid: number) => number | undefined;
   now?: () => number;
@@ -89,12 +95,19 @@ export class StatusReporter {
       supervisor.state.current === "running"
         ? supervisor.state.conn
         : undefined;
+    const hide = new Set(this.opts.hideCaps ?? []);
     if (conn) {
       try {
-        const result = (await withTimeout(
+        const raw = (await withTimeout(
           conn.request<DescribeResult>("describe", {}),
           this.opts.probeTimeoutMs,
         )) as DescribeResult;
+        /* Report the describe AS THE APP SEES IT — hidden capabilities
+           stay hidden on every client surface, this one included. */
+        const result = {
+          ...raw,
+          capabilities: raw.capabilities.filter((c) => !hide.has(c.id)),
+        };
         this.lastProbe = { at: this.opts.now(), result };
         // The picker reads models off this report (issue #30): probe
         // models.list only when the engine declares the capability.

@@ -12,7 +12,7 @@
  */
 import { type ChildProcess, spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -53,7 +53,9 @@ export interface Stack {
   log: () => string;
   /** The harness's own log file (empty until it writes). */
   harnessLog: () => string;
-  stop: () => Promise<void>;
+  /** `keepHome`: a restart leg reuses this LILOS_HOME for its next
+      bootStack (`opts.home`) — the stop must not drop it. */
+  stop: (opts?: { keepHome?: boolean }) => Promise<void>;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -506,8 +508,16 @@ export async function bootStack(
     releaseViteUse(viteUse);
     viteUse = undefined;
   };
+  /* An `opts.home` is the caller's reused LILOS_HOME (ac-92's restart
+     leg) — only a home this boot mkdtemp'd is ours to remove at stop
+     (r10: ~100 stacks per shard used to leave their scratch dirs —
+     and any provisioned adapter caches — behind on the runner). */
+  const ownsHome = opts.home === undefined;
   const home =
     opts.home ?? mkdtempSync(path.join(tmpdir(), `lilos-e2e-${tag}-`));
+  const dropHome = () => {
+    if (ownsHome) rmSync(home, { recursive: true, force: true });
+  };
   const leakTag = engineTag(tag);
   let spawned: ChildProcess | undefined;
   try {
@@ -516,7 +526,18 @@ export async function bootStack(
       detached: true,
       env: {
         ...process.env,
+        /* D-#866 r6: the ACP provision cache resolves under HOME (the
+           spawned engine child is LILOS_*-scrubbed, so LILOS_ACP_CACHE
+           never reaches it). Isolating HOME keeps a spec's first-use
+           install out of the real ~/.lilos/acp entirely. */
+        HOME: home,
         LILOS_HOME: home,
+        /* D-#866 r10: e2e never fetches from npm. Each stack gets a
+           scratch HOME, so a per-stack provisioned adapter would mean
+           ~100 copies of the npm tree per shard — the EDQUOT run.
+           With provisioning off, acp:* rows report "provisioning
+           disabled in tests"; the engine-fake covers the specs. */
+        LILOS_ACP_PROVISION: "0",
         /* #412: the shipped default sends no-folder sessions to the user's
            home — a spec must never work there, so the scratch home pins a
            workdir explicitly. */
@@ -630,10 +651,11 @@ export async function bootStack(
           return "";
         }
       },
-      stop: async () => {
+      stop: async (stopOpts) => {
         await killProc(proc);
         releaseVite();
         await expectNoEngineLeak(leakTag);
+        if (!stopOpts?.keepHome) dropHome();
       },
     };
   } catch (e) {
@@ -641,6 +663,7 @@ export async function bootStack(
     // orphans stack.ts + relay + harness + vite and poisons the next boot.
     if (spawned) await killProc(spawned);
     releaseVite();
+    dropHome();
     throw e;
   }
 }

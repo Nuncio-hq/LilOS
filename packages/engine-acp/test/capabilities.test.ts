@@ -167,6 +167,11 @@ describe("deriveCapabilities — advertisement-driven, never name-driven", () =>
       "usage",
       "session_meta",
       "acp",
+      /* models.list/session.setModel are engine methods that always
+         exist — declared unconditionally so describe never waits on the
+         learned catalog (D-#866 r4: describe is the 1.5s liveness probe).
+         The catalog only enriches its detail. */
+      "models",
     ])
       expect(ids).toContain(id);
     /* Features ACP lacks are absent — never faked (D-#19). */
@@ -179,7 +184,6 @@ describe("deriveCapabilities — advertisement-driven, never name-driven", () =>
       "subagents",
       "background_jobs",
       "image_prompt",
-      "models",
     ])
       expect(ids).not.toContain(id);
   });
@@ -206,11 +210,17 @@ describe("deriveCapabilities — advertisement-driven, never name-driven", () =>
     expect(mcp?.detail?.transports).toEqual(["stdio", "http", "sse"]);
   });
 
-  test("the models capability joins only once a session advertised models", () => {
+  test("the models capability is always declared; the catalog only enriches detail", () => {
+    /* D-#866 r4: describe is the liveness probe — it can never wait on
+       the learned catalog, so `models` (whose methods the engine always
+       implements) is declared unconditionally. Before the catalog lands
+       its detail is empty-false; after, the learned rows join in. */
     const before = deriveCapabilities(init(), { options: new Map() });
-    expect(before.map((c) => c.id)).not.toContain("models");
+    const b = before.find((c) => c.id === "models");
+    expect(b?.methods).toEqual(["models.list", "session.setModel"]);
+    expect(b?.detail?.effort).toBe(false);
+    expect(b?.detail?.modes).toBeUndefined();
     const after = deriveCapabilities(init(), learned());
-    expect(after.map((c) => c.id)).toContain("models");
     const models = after.find((c) => c.id === "models");
     expect(models?.methods).toEqual(["models.list", "session.setModel"]);
     expect(models?.detail?.effort).toBe(true);

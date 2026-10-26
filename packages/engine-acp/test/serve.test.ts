@@ -1,4 +1,12 @@
 import { type ChildProcess, spawn } from "node:child_process";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
@@ -139,6 +147,33 @@ describe("serve.ts entry point (D-#845)", () => {
       /exited 2|unknown agent/,
     );
   }, 20_000);
+
+  test("--agent devin's startup check probes `devin --version`, never the launch argv (r6)", async () => {
+    /* The REAL Devin spec, through serve's own check: the real CLI exits
+       2 on `devin acp --model swe-2-high --version`, so a probe that
+       appends verify args after the launch args kills serve at launch —
+       exit 1, no LISTENING — while the runtime row reads available. The
+       stub reproduces that rejection; only `probeHead + verify.args`
+       (`devin --version`) passes. */
+    const dir = mkdtempSync(join(tmpdir(), "serve-devin-"));
+    const binDir = join(dir, "bin");
+    mkdirSync(binDir);
+    writeFileSync(
+      join(binDir, "devin"),
+      '#!/bin/sh\n[ "$1" = "--version" ] || { echo "unexpected argument $1" >&2; exit 2; }\necho "devin acp 9.9.9"\n',
+    );
+    chmodSync(join(binDir, "devin"), 0o755);
+    const proc = await listen(["--agent", "devin"], {
+      PATH: `${binDir}:${process.env.PATH}`,
+    });
+    /* LISTENING is the assertion: serve reached the socket, so the
+       startup verify ran the stub the only way it accepts —
+       `devin --version`. Under the old argv the probe's exit 2
+       would have killed serve at launch. (No describe here — it would
+       spawn `devin acp` for real, which the stub rightly refuses.) */
+    proc.child.kill("SIGTERM");
+    rmSync(dir, { recursive: true, force: true });
+  }, 45_000);
 
   test("/ws without the protocol token is refused", async () => {
     const proc = await listen(["--command", `bun ${FAKE_AGENT}`]);

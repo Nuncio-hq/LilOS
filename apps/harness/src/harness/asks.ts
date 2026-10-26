@@ -80,11 +80,12 @@ export async function openAsk(
  * vanished (AC-2). Deny-only cards (hardline blocks) answer their only
  * option — Full access can't bypass what the engine refuses to offer.
  * The level is LilOS data on the conversation (`access`, written by
- * `conversations.setAccess` from the composer pill), so this works the same
- * on every engine; the engine's own policy is the separate
- * `approval_policy` capability and `session.setAccess` is only a hint.
- * Not: an engine-specific yolo as the only mechanism, or the level living
- * in engine session state.
+ * `conversations.setAccess` from the composer pill) and read here at
+ * ask time, so a pill flip lands on the very next tool call — mid-turn
+ * included — on every engine, with no session churn (D-#866 r7: the
+ * engine never re-gates; an ACP session always starts ask-gated and
+ * `full` is exactly this auto-answer). Not: an engine-specific yolo as
+ * the only mechanism, or the level living in engine session state.
  */
 export async function autoApprove(
   this: HarnessCtx,

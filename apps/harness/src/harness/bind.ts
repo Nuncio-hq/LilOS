@@ -159,7 +159,20 @@ export async function bindingFor(
   if (existing) return existing;
   const inFlight = this.binds.get(conv.id);
   if (inFlight) return inFlight;
-  const pending = this.bindConversation(conv, channelId).finally(() => {
+  const inner = this.bindConversation(conv, channelId);
+  /* D-#866 r5: the drop surface reads the real bind reason instead of
+     "several attempts". Detached observer — it must NOT extend the
+     awaited `pending` chain: extra settle hops once let a `!binding`
+     park land after attachEngine's `early` sweep, orphaning the send. */
+  void inner.then(
+    () => {
+      this.lastBindError.delete(conv.id);
+    },
+    (error: unknown) => {
+      this.lastBindError.set(conv.id, String(error));
+    },
+  );
+  const pending = inner.finally(() => {
     this.binds.delete(conv.id);
     /* A parked Stop is moot when the bind produced nothing to stop — drop
        it instead of interrupting whatever turn the next bind creates. */
@@ -245,6 +258,10 @@ export async function bindConversation(
         runningJobs: new Set(),
         suspended: false,
       };
+      /* The `conv` snapshot predates the `events.since` await — mirror
+         the current row so a flip during it can't land stale. */
+      binding.access =
+        this.conversationFromAtom(conv.id)?.access ?? binding.access;
       this.bindings.set(conv.id, binding);
       this.conversationBySession.set(
         this.sessionKey(runtime, storedRef.sessionId),
@@ -346,6 +363,11 @@ export async function bindConversation(
   }>(
     "session.start",
     await this.sessionParams(employee, agent, conv, surface?.mcpServer),
+    /* D-#866: an ACP agent's first session legitimately outlives the 15s
+       default — its spawned child pays a one-time security-context init
+       under a fresh app ancestry (~14s observed installed). The engine's
+       own create bound (45s) errors a true wedge before this fires. */
+    60_000,
   );
   this.aliasSurfaces(surface?.session, started.engineSessionId);
   binding.sessionId = started.sessionId;
@@ -356,6 +378,11 @@ export async function bindConversation(
   binding.ref = qualifySessionRef(runtime, started.ref ?? started.sessionId);
   binding.engineSessionId = started.engineSessionId;
   binding.gatewaySession = surface?.session;
+  /* r8: `access` was copied before a `session.start` that can run 60s —
+     a pill flip in that window updates the conversation row but found
+     no binding to mirror onto. Re-read the live row now so the stored
+     binding can't carry a stale "full" into request.opened. */
+  binding.access = this.conversationFromAtom(conv.id)?.access ?? binding.access;
   this.bindings.set(conv.id, binding);
   this.conversationBySession.set(
     this.sessionKey(runtime, started.sessionId),

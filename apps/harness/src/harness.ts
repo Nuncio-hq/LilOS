@@ -379,6 +379,10 @@ export class Harness {
   /** Messages that arrived while the engine was down; drained on attach. */
   private readonly early = new Map<string, AppMessage[]>();
 
+  /** The latest bind rejection per conversation — surfaced verbatim when
+      the parked send is dropped (D-#866 r5). */
+  private readonly lastBindError = new Map<string, string>();
+
   /** Bounded re-bind retries for sends parked in `early` on a bind
       failure (`scheduleEarlyFlush`). */
   private readonly earlyFlushTimers = new Map<

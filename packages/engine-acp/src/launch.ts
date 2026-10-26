@@ -32,6 +32,15 @@ export interface AcpLaunchSpec {
   agent?: AgentDescriptor;
   /** Install check: `<bin> <verifyArgs>` must exit 0 before serving. */
   verify?: { args: string[]; timeoutMs?: number };
+  /** Extra env on the agent child — merged after the D-#412 scrub. */
+  env?: Record<string, string>;
+  /**
+   * Env names removed from the inherited env before the agent spawns —
+   * a shim's refusal to leak provider-auth vars that would reroute the
+   * session off the user's own login. Applies to the inherited env only;
+   * an explicit `env` grant still lands (D-#412 ordering).
+   */
+  dropEnv?: readonly string[];
   /** `initialize.clientCapabilities` override (e.g. terminal on). */
   clientCapabilities?: acp.ClientCapabilities;
   /** Client-side `terminal/*` serving options for this agent. */
@@ -42,15 +51,39 @@ export interface AcpLaunchSpec {
   defaultEffort?: AcpEngineOptions["defaultEffort"];
   /** `_meta` on `session/new` for this agent. */
   sessionMeta?: AcpEngineOptions["sessionMeta"];
+  /**
+   * How the registry distributes this agent when `command[0]` isn't
+   * installed: an exact npm pin fetched once into the LilOS cache and
+   * run by a local JS runtime (D-#866, `provision.ts`). Vendor-neutral —
+   * `{package, version, bin}` is all it knows.
+   */
+  provision?: { npm: NpmDistribution };
+}
+
+/** An exact npm distribution for a shim's adapter — the ACP registry's
+    `npx` channel expressed as a recipe (D-#866). */
+export interface NpmDistribution {
+  /** npm package name, e.g. `@agentclientprotocol/claude-agent-acp`. */
+  package: string;
+  /** Exact version — a pin, never a range. */
+  version: string;
+  /** The package's `bin` name to run (`command[0]`'s real name). */
+  bin: string;
 }
 
 /** Directories a user install lands in that a bare spawn PATH may miss —
-    the same fallback set T3's registry support uses for managed runtimes. */
-const EXTRA_BIN_DIRS = (env: NodeJS.ProcessEnv) => [
-  join(env.HOME ?? homedir(), ".local", "bin"),
-  "/opt/homebrew/bin",
-  "/usr/local/bin",
-];
+    the same fallback set T3's registry support uses for managed runtimes.
+    `LILOS_EXTRA_BIN_DIRS` overrides the list outright (delimiter-split;
+    empty string disables the fallback — tests and pinned environments). */
+const EXTRA_BIN_DIRS = (env: NodeJS.ProcessEnv) =>
+  env.LILOS_EXTRA_BIN_DIRS !== undefined
+    ? env.LILOS_EXTRA_BIN_DIRS.split(delimiter)
+    : [
+        join(env.HOME ?? homedir(), ".local", "bin"),
+        join(env.HOME ?? homedir(), ".bun", "bin"),
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+      ];
 
 /**
  * Resolve `bin` to an executable path: absolute/relative paths check

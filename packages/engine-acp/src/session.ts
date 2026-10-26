@@ -51,6 +51,11 @@ export class AcpSession implements AcpSessionView {
   acpSessionId = "";
   /** Suspended LilOS-side: the next prompt resumes/reattaches (#346). */
   suspended = false;
+  /** The caller's stable key for the wedged-create guard — the
+     conversation id when session.start carried one, else this LilOS
+     id (r9: cwd keying cross-blocked conversations sharing a folder
+     — every folderless chat sits in `~`). */
+  callerKey = "";
   /** The session's live config-option table (from its own session/new). */
   configOptions = new Map<
     string,
@@ -58,6 +63,9 @@ export class AcpSession implements AcpSessionView {
   >();
   /** Session-mode state when advertised. */
   modes?: { current: string; available: { id: string; name?: string }[] };
+  /** The access hint session.start ran under — a suspend/resume re-creates
+     the ACP session, so the shim's sessionMeta needs it again (D-#866). */
+  access?: "ask" | "full";
   /** The pick this session resolved (config currentValues + our writes). */
   model?: string;
   effort?: string;
