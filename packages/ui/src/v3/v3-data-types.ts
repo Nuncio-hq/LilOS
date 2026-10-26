@@ -9,6 +9,7 @@ import type {
   V3ConnectorDef,
   V3Goal,
   V3Project,
+  V3Runtime,
   V3Skill,
   V3Thread,
   V3Ticket,
@@ -224,6 +225,11 @@ export type V3Data = {
       searches. New chats start with the holder when there is one. */
   ceoId?: string;
   agents: V3Agent[];
+  /** The engine runtimes the harness knows (D-#761): the add-agent dialog's
+      Who? offers each non-default row as a hireable kind, greyed with its own
+      plain reason when it cannot run (#870). Absent = the app cannot tell;
+      Who? then lists profiles only. */
+  runtimes?: V3Runtime[];
   /** The company skill library. Absent: Settings has no Skills tab, and an
       agent's page cannot attach or detach (D-#19). */
   skills?: V3Skill[];

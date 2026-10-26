@@ -77,7 +77,11 @@ test("the sidebar is the daily app's, and Home is the daily Home with its compos
     ).toHaveCount(0);
   await expect(side.getByText("People", { exact: true })).toHaveCount(0);
   await expect(side.locator("[data-company-label]")).toHaveCount(0);
-  await expect(side.getByRole("button", { name: /default/i })).toHaveCount(0);
+  /* The roster is there as the Agents section — a flat list with its ＋ to
+     add one (#870): browsable rows, not a page you navigate to. */
+  await expect(side.getByText("Agents", { exact: true })).toBeVisible();
+  await expect(side.getByRole("button", { name: /default/i })).toBeVisible();
+  await expect(side.getByRole("button", { name: "Add agent" })).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/sidebar.png` });
 
   // Home is the daily Home: the composer that talks to the agent — agent,
