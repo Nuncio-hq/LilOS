@@ -145,6 +145,7 @@ const engine = new AcpEngine({
     : {}),
   ...(terminals ? { terminals } : {}),
   ...(spec.modeForAccess ? { modeForAccess: spec.modeForAccess } : {}),
+  ...(spec.defaultEffort ? { defaultEffort: spec.defaultEffort } : {}),
   ...(spec.sessionMeta ? { sessionMeta: spec.sessionMeta } : {}),
 });
 const clients = new Set<{ send: (s: string) => void }>();
