@@ -76,8 +76,13 @@ export function V3Palette({
       ];
     }
     const hit = (s: string) => s.toLowerCase().includes(q);
+    /* Tickets and goals are the hidden layer's records: without the feature
+       (or with the company layer paused, D-#836) search finds no route that
+       would land on them. */
+    const tickets = data.features.tickets ? data.tickets : [];
+    const goals = data.features.tickets ? data.goals : [];
     return [
-      ...data.tickets
+      ...tickets
         .filter((t) => hit(t.id) || hit(t.title))
         .map(
           (t): Jump => ({
@@ -112,7 +117,7 @@ export function V3Palette({
           },
         ];
       }),
-      ...data.goals
+      ...goals
         .filter((g) => hit(g.title))
         .map(
           (g): Jump => ({

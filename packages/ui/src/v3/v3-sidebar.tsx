@@ -17,7 +17,7 @@ import { cn } from "../lib/utils";
 import { Kbd } from "./v3-bits";
 import type { V3Data } from "./v3-data-types";
 import { AgentAvatar, CeoMark, ProjectMark, StatusDot } from "./v3-marks";
-import { agentDot } from "./v3-model";
+import { agentDot, companyOn } from "./v3-model";
 import type { V3PageRoute, V3RecordRoute, V3Route } from "./v3-page-types";
 import { type SidebarMode, SidebarToggle } from "./v3-topbar";
 
@@ -137,7 +137,9 @@ export function V3Sidebar({
           />
         )}
 
-        <Label company>{data.company}</Label>
+        {/* The company name heads the work section — a paused company layer
+            (D-#836) has neither the name nor the Work and Goals under it. */}
+        {companyOn(data) && <Label company>{data.company}</Label>}
         {data.features.tickets && (
           <Item
             icon={<SquareCheckIcon />}
@@ -180,30 +182,37 @@ export function V3Sidebar({
           </>
         )}
 
-        <Label onClick={() => go({ page: "people" })} on={on("people")}>
-          People
-        </Label>
-        {data.agents.map((a) => (
-          <Item
-            key={a.id}
-            icon={<AgentAvatar data={data} agent={a} />}
-            label={a.name}
-            on={on("agent", a.id)}
-            onClick={() => go({ page: "agent", id: a.id })}
-            right={
-              <>
-                {a.id === data.ceoId && <CeoMark />}
-                <StatusDot
-                  status={agentDot(data, a.id)}
-                  className="size-[7px]"
-                />
-              </>
-            }
-          />
-        ))}
+        {/* The roster is the company's team list: with the layer paused
+            (D-#836) the agents still run underneath, they are just not a
+            table of contents you browse. */}
+        {companyOn(data) && (
+          <>
+            <Label onClick={() => go({ page: "people" })} on={on("people")}>
+              People
+            </Label>
+            {data.agents.map((a) => (
+              <Item
+                key={a.id}
+                icon={<AgentAvatar data={data} agent={a} />}
+                label={a.name}
+                on={on("agent", a.id)}
+                onClick={() => go({ page: "agent", id: a.id })}
+                right={
+                  <>
+                    {a.id === data.ceoId && <CeoMark />}
+                    <StatusDot
+                      status={agentDot(data, a.id)}
+                      className="size-[7px]"
+                    />
+                  </>
+                }
+              />
+            ))}
+          </>
+        )}
 
         <div className="flex-1" />
-        {canHire && (
+        {canHire && companyOn(data) && (
           <Item
             icon={<PlusIcon />}
             label="Hire an agent"

@@ -54,25 +54,14 @@ input{width:100%;max-width:420px;padding:8px 12px;border-radius:8px;border:1px s
 </section>
 <section id="direction">
   <h2>Where it is going</h2>
-  <p><span class="tag">agreed with Oscar 2026-10-14, revised 2026-10-15, 2026-10-20 · prototypes merged · not decisions yet</span> A slice becomes decision when it merges; until then decisions below stay in force.</p>
-  <h3>UX v3: calm company, threads by project, no DMs (#749, #767)</h3>
+  <p><span class="tag">agreed with Oscar 2026-10-26 · replaces the 2026-10-14…20 company plan</span> A slice becomes decision when it merges; until then decisions below stay in force.</p>
+  <h3>The daily Hermes app (#836)</h3>
   <ul>
-    <li><b>v3 replaces v2</b> (Oscar, 2026-10-20): Notion-like, colour only for status. People, Work, Goals, live Threads; every row: holder, state, since when, what it waits on.</li>
-    <li>thread (one engine session) under <b>project</b> or as plain chat. No DMs. <b>agent picker</b> beside model: Hermes profile now, other runtimes later via ACP (#111). Reads as conversation, each turn's work folded in.</li>
-    <li><b>⌘K</b> replaces CEO chat: answer or draft plan, one keypress. Records open in side peek (<a href="#d-769">D-#769</a>).</li>
-    <li>Prototype: <code>packages/ui/src/v3</code> at <code>localhost:5173</code> (v3's only screen). thread files under project by folder (<a href="#d-771">D-#771</a>); <a href="#d-25-3">D-#25</a>, <a href="#d-113">D-#113</a> say how.</li>
+    <li>LilOS is the <b>best daily app for Hermes</b>, Mac and iPhone: threads by project, Needs you, one composer with model + effort. Only Oscar uses it for now; work for other users (App Review, site, onboarding) waits.</li>
+    <li>Coding goes to real coding agents: Hermes hands a job to Claude Code, Cursor, Devin or Antigravity with Oscar's stored model + effort (<a href="#d-835">D-#835</a>, #842).</li>
+    <li><b>Paused, not deleted</b>: the AI company (CEO, tickets, goals, People, Hire; #746) behind one flag (<a href="#d-836">D-#836</a>); runtimes beyond Hermes through one shared ACP mapping (#111, #764). Outside bots stay connectors (CLI or MCP); contracts never name a provider.</li>
+    <li>Prototype: <code>packages/ui/src/v3</code> at <code>localhost:5173</code>; <code>?company=1</code> shows the paused layer.</li>
   </ul>
-  <h3>AI company: CEO runs work via tickets (#746)</h3>
-  <ul>
-    <li>Oscar, <b>Chairman</b>, talks to one <b>CEO</b>, a position any agent can hold (Paperclip-style). One agent shape: role, reports-to, runtime + model, instructions, memory, skills, connectors. CEO plans, splits work into tickets, assigns each, checks result, reports back. Acts on its own; only risky actions (spending money, sending outside, dangerous commands) ask Oscar.</li>
-    <li>Lean tickets, Paperclip-style: goal → ticket → one assignee → status, relay-owned, driven by gateway tools (<code>ticket_*</code>). Assignee: LilOS agent, or outside worker CEO names.</li>
-    <li><b>Provider-neutral</b>. Runtimes run threads in a folder: Hermes now; later only via one shared ACP mapping, like T3 Code (contracts first, #764; Codex dropped). Outside always-on bots (Grok Bot, Muse, later) are <b>connectors</b>: their CLI or MCP, on agent's sessions. Contracts, relay, harness, UI types never name provider, wrap its API, or store its credentials. Connectors removed, LilOS builds and runs; new provider needs only its CLI or MCP. <em>Not: a bot contract with one adapter per provider, or bots listed as runtimes (the 2026-10-14 plan).</em></li>
-    <li>Prototype: tickets, goals, CEO, ⌘K plans live in v3 (Work, ticket's page).</li>
-  </ul>
-<pre><code>Oscar (Chairman) → the CEO (a position an agent holds) → tickets (ticket_*)
-LilOS: projects · threads · tickets · agent gateway
-  ├── runtimes (one session per thread): Hermes now · ACP later (#111)
-  └── connectors on an agent (CLI or MCP, never wrapped): grokbot · muse · …</code></pre>
 </section>
 <section id="map">
   <h2>Repo map</h2>
@@ -298,6 +287,7 @@ packages/engine-*             adapter owning the engine (hermes serve)</code></p
 <li id="d-582"><b>D-#582</b> One word per thing in UI copy: **thread** (never "session"), **needs you**, **stop**, Once / This thread / Always / Deny, **No folder**, **Edit models…**. <em>Not: "session" or wire names in UI text, record ids as @handles.</em> <small>#582 · #583 · #589</small> <kbd>packages/ui/src/types.ts</kbd></li>
 <li id="d-778"><b>D-#778</b> CEO is a position: <code>ceoId</code> in the settings KV; one relay op re-points <code>reportsTo</code>; only the holder's threads get the CEO brief and CEO-only tools. <em>Not: a CEO type, a new table.</em> <small>#778</small> <kbd>apps/relay/src/session/ceo.ts</kbd></li>
 <li id="d-777"><b>D-#777</b> CEO loop: its own prompt section; wakes coalesce into one standing thread, never from the CEO's own actions, one turn at a time; a hand-off notes and stops the previous thread; updates are relay records. <em>Not: the brief inside the host policy, a wake per event, or the CEO waking itself.</em> <small>#777</small> <kbd>packages/contracts/src/harness/ceo-wake.ts</kbd></li>
+<li id="d-836"><b>D-#836</b> The company layer pauses behind one flag: <code>features.company === false</code> hides CEO, tickets and their pages; records and actions keep working. <em>Not: deleting records, per-surface gates.</em> <small>#836</small> <kbd>packages/ui/src/v3/v3-model.ts</kbd></li>
 </ul>
 <h3 id="decisions-testing">Testing</h3>
 <ul class="decisions">

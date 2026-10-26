@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { AccessPill } from "../chat/access-pill";
 import { clearDraftIfSent, draftKey, useDraft } from "../lib/drafts";
 import type { AttachedFile, ConversationAccess, ModelChoice } from "../types";
@@ -73,6 +73,71 @@ function DraftChat({
   id,
   fallback,
 }: V3PageProps & { id: string; fallback: V3Agent }) {
+  return (
+    <Page>
+      <ChatDraft
+        data={data}
+        go={go}
+        act={act}
+        id={id}
+        fallback={fallback}
+        head={(agent, starter) => (
+          <>
+            <div className="flex items-center gap-3.5">
+              <AgentAvatar
+                data={data}
+                agent={agent}
+                size={44}
+                className="mt-5"
+              />
+              <div className="min-w-0 flex-1">
+                <Title small kicker="New chat">
+                  {agent.name}
+                  {agent.id === data.ceoId && (
+                    <CeoMark className="ml-2.5 align-middle" />
+                  )}
+                </Title>
+              </div>
+            </div>
+            <p className="-mt-1.5 text-[13.5px] text-muted-foreground/80">
+              {agent.role}
+            </p>
+            <p className="mt-3 text-[15px] text-muted-foreground">
+              Talk to {agent.name} directly.
+            </p>
+            {data.starters && data.starters.length > 0 && (
+              <Starters starters={data.starters} onPick={starter} />
+            )}
+          </>
+        )}
+      />
+    </Page>
+  );
+}
+
+/** The first-message composer, shared by the new-chat record and Home's own
+   box (D-#836): who hears it, where it works and which model sit as quiet
+   chips under the text, one click each. `head` is what the new-chat page
+   draws above the box (its title, role, starters); Home draws no head. The
+   draft it writes is the same `draftKey.dm` store in both places, so what
+   you typed on Home is there when the chat opens as a record. */
+export function ChatDraft({
+  data,
+  go,
+  act,
+  id,
+  fallback,
+  autoFocus = true,
+  head,
+}: V3PageProps & {
+  id: string;
+  fallback: V3Agent;
+  /** Home's box does not steal the page's focus; a record's own box does. */
+  autoFocus?: boolean;
+  /** What the caller draws above the box, per the agent the chip picked. The
+     second argument puts a starter's text in the box and focuses it. */
+  head?: (agent: V3Agent, starter: (text: string) => void) => ReactNode;
+}) {
   const [agentId, setAgent] = useState(
     data.agents.some((a) => a.id === id) ? id : fallback.id,
   );
@@ -109,8 +174,8 @@ function DraftChat({
   const attach = useAttach(data.attachLimits);
 
   useEffect(() => {
-    input.current?.focus({ preventScroll: true });
-  }, []);
+    if (autoFocus) input.current?.focus({ preventScroll: true });
+  }, [autoFocus]);
 
   // The Composer empties the box right after onSend, before we know whether
   // the chat started. That clearing is ignored while one is starting, so if
@@ -247,43 +312,11 @@ function DraftChat({
   );
 
   return (
-    <Page>
-      <div className="flex items-center gap-3.5">
-        <AgentAvatar data={data} agent={agent} size={44} className="mt-5" />
-        <div className="min-w-0 flex-1">
-          <Title small kicker="New chat">
-            {agent.name}
-            {agent.id === data.ceoId && (
-              <CeoMark className="ml-2.5 align-middle" />
-            )}
-          </Title>
-        </div>
-      </div>
-      <p className="-mt-1.5 text-[13.5px] text-muted-foreground/80">
-        {agent.role}
-      </p>
-      <p className="mt-3 text-[15px] text-muted-foreground">
-        Talk to {agent.name} directly.
-      </p>
-
-      {data.starters && data.starters.length > 0 && (
-        <div className="mt-8 flex flex-wrap gap-2">
-          {data.starters.map((s) => (
-            <button
-              key={s}
-              type="button"
-              onClick={() => {
-                edit(s);
-                input.current?.focus();
-              }}
-              className="h-7 rounded-full border border-[var(--v3-line)] px-3 text-[13px] text-muted-foreground transition-colors hover:bg-[var(--v3-hover)] hover:text-foreground"
-            >
-              {s}
-            </button>
-          ))}
-        </div>
-      )}
-
+    <>
+      {head?.(agent, (s) => {
+        edit(s);
+        input.current?.focus();
+      })}
       <div className="mt-3">
         <Composer
           data={data}
@@ -303,6 +336,30 @@ function DraftChat({
           onSend={send}
         />
       </div>
-    </Page>
+    </>
+  );
+}
+
+/** One-click openers: picking one fills the box and focuses it. */
+function Starters({
+  starters,
+  onPick,
+}: {
+  starters: string[];
+  onPick: (text: string) => void;
+}) {
+  return (
+    <div className="mt-8 flex flex-wrap gap-2">
+      {starters.map((s) => (
+        <button
+          key={s}
+          type="button"
+          onClick={() => onPick(s)}
+          className="h-7 rounded-full border border-[var(--v3-line)] px-3 text-[13px] text-muted-foreground transition-colors hover:bg-[var(--v3-hover)] hover:text-foreground"
+        >
+          {s}
+        </button>
+      ))}
+    </div>
   );
 }

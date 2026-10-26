@@ -782,8 +782,16 @@ export const V3_DATA: V3Data = {
   settings: SETTINGS,
   // ?v3&page=welcome shows first run; the rest of the company is ready.
   setUp: true,
-  // The prototype shows the whole company, M2 included.
-  features: { tickets: true },
+  /* The prototype is LilOS the daily app (D-#836): the company layer is
+     paused in the UI, never deleted — every ticket, goal, the CEO and the
+     roster stay in this data and every action still works. `?company=1`
+     shows the layer again, the same records it always had. */
+  features: {
+    tickets: true,
+    company:
+      typeof location !== "undefined" &&
+      new URLSearchParams(location.search).get("company") === "1",
+  },
 }
 
 /* The fake CEO behind ⌘K. A question gets a reply built from the live data;

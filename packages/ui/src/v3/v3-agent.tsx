@@ -28,7 +28,13 @@ import { AgentWeek } from "./v3-agent-week";
 import { ago, Btn, Meter, Page, Prop, Section, Title } from "./v3-bits";
 import { EscLayer, useFocusBack } from "./v3-keys";
 import { AgentAvatar, Avatar, CeoMark, StatusPill } from "./v3-marks";
-import { agentOf, agentStatus, agentThread, agentTicket } from "./v3-model";
+import {
+  agentOf,
+  agentStatus,
+  agentThread,
+  agentTicket,
+  companyOn,
+} from "./v3-model";
 import type { V3PageProps } from "./v3-page-types";
 import { ThreadRow } from "./v3-rows";
 import { soonestNext } from "./v3-schedule-text";
@@ -78,10 +84,17 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
     ? data.connectors.find((c) => c.id === agent.via)
     : undefined;
   const status = agentStatus(data, agent.id);
-  const current = status === "idle" ? undefined : agentTicket(data, agent.id);
+  /* With the company layer paused (D-#836) this page is a person, not a
+     team member: no position moves, no reports-to, no ticket it holds, no
+     week board or spend — those facts stay in the data. */
+  const company = companyOn(data);
+  const current =
+    !company || status === "idle" ? undefined : agentTicket(data, agent.id);
   const live =
     status === "idle" || current ? undefined : agentThread(data, agent.id);
-  const tickets = data.tickets.filter((t) => t.owner === agent.id);
+  const tickets = company
+    ? data.tickets.filter((t) => t.owner === agent.id)
+    : [];
   const threads = data.threads.filter((t) => t.agentId === agent.id);
   const ceo = data.agents.find((a) => a.id === data.ceoId);
   const holdsCeo = !!ceo && agent.id === ceo.id;
@@ -90,7 +103,7 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
   const manager = agent.reportsTo
     ? data.agents.find((a) => a.id === agent.reportsTo)
     : undefined;
-  const reportsTo = `reports to ${manager?.name ?? data.me}`;
+  const reportsTo = company ? `reports to ${manager?.name ?? data.me}` : "";
   /* The hire dialog seeds the role from the profile's description, so on a
      real agent they are often the same sentence. Said once: the line under
      the name keeps it, and the kicker above carries only the rest. */
@@ -159,7 +172,7 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
                   Give a ticket
                 </Btn>
               )}
-              {!outside && !holdsCeo && act.makeCeo && (
+              {!outside && !holdsCeo && company && act.makeCeo && (
                 <button
                   type="button"
                   title={`Move the CEO position to ${agent.name}`}
@@ -290,7 +303,7 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
                 ))}
               </Prop>
             )}
-            {agent.spend && (
+            {company && agent.spend && (
               <Prop icon={<CoinsIcon />} label="Spend">
                 <Meter
                   value={(agent.spend.used / agent.spend.cap) * 100}
@@ -315,7 +328,9 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
         </p>
       )}
 
-      <AgentWeek data={data} go={go} agent={agent} tickets={tickets} />
+      {company && (
+        <AgentWeek data={data} go={go} agent={agent} tickets={tickets} />
+      )}
 
       {!outside && (
         <AgentSchedules data={data} go={go} act={act} agentId={agent.id} />
@@ -379,7 +394,7 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
 
       {/* Quiet and last: taking someone off the team is not what this page is
           for. The CEO position holder stays until the position moves. */}
-      {!outside && !holdsCeo && (
+      {!outside && !holdsCeo && company && (
         <RemoveAgent data={data} go={go} act={act} agent={agent} />
       )}
     </Page>

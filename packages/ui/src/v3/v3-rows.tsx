@@ -2,7 +2,13 @@ import { cn } from "../lib/utils";
 import { ago, Spinner, TicketId } from "./v3-bits";
 import type { V3Data } from "./v3-data-types";
 import { AgentAvatar, CeoMark, StatusDot, StatusPill } from "./v3-marks";
-import { agentOf, FORMER_AGENT, threadTag, ticketOf } from "./v3-model";
+import {
+  agentOf,
+  companyOn,
+  FORMER_AGENT,
+  threadTag,
+  ticketOf,
+} from "./v3-model";
 import { RowButton } from "./v3-open-record";
 import type { V3Route } from "./v3-page-types";
 import type { V3Agent, V3ConnectorDef, V3Thread, V3Ticket } from "./v3-types";
@@ -118,8 +124,17 @@ export function ThreadRow({
   inProject?: boolean;
 }) {
   const who = agentOf(data, thread.agentId);
-  const ticket = thread.ticketId ? ticketOf(data, thread.ticketId) : undefined;
-  const tag = inProject ? thread.ticketId : threadTag(data, thread);
+  const ticket =
+    thread.ticketId && companyOn(data)
+      ? ticketOf(data, thread.ticketId)
+      : undefined;
+  /* With the company layer paused (D-#836) a ticket id names nothing the
+     daily app can show, so an in-project row carries no tag. */
+  const tag = inProject
+    ? companyOn(data)
+      ? thread.ticketId
+      : undefined
+    : threadTag(data, thread);
   return (
     <RowButton
       opens={{ page: "thread", id: thread.id }}

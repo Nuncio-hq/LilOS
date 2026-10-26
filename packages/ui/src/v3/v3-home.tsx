@@ -1,7 +1,15 @@
+import { Fragment, type ReactNode } from "react";
 import { cn } from "../lib/utils";
 import { ago, Btn, Meter, Page, relativeTime, Section, Title } from "./v3-bits";
 import type { V3Data } from "./v3-data-types";
-import { AgentAvatar, CeoMark, StatusDot, StatusPill } from "./v3-marks";
+import { ChatDraft } from "./v3-draft-chat";
+import {
+  AgentAvatar,
+  CeoMark,
+  ProjectMark,
+  StatusDot,
+  StatusPill,
+} from "./v3-marks";
 import {
   agentNameOf,
   agentOf,
@@ -10,18 +18,23 @@ import {
   agentTicket,
   askTag,
   asleepAgents,
+  companyOn,
+  defaultAgent,
   FORMER_AGENT,
   goalProgress,
+  LIVE_RANK,
   nextRunLabel,
   projectOf,
   resultsToLookAt,
+  threadProjectId,
   threadsIn,
   ticketOf,
   waitingLabel,
 } from "./v3-model";
 import { RowButton } from "./v3-open-record";
 import type { V3PageProps } from "./v3-page-types";
-import type { V3Agent, V3Status } from "./v3-types";
+import { ThreadRow } from "./v3-rows";
+import type { V3Agent, V3Status, V3Thread } from "./v3-types";
 
 /* Home: who is working, what needs you, what just finished. Counts are the
    Threads counts (D-#774). The CEO's note and Goals join with tickets (M2). */
@@ -77,95 +90,59 @@ function teamRow(d: V3Data, agent: V3Agent) {
   };
 }
 
-export function V3Home({ data, go, act }: V3PageProps) {
-  /* Working and needs-you count threads, idle counts agents off the live
-     board: the same numbers Threads shows (D-#774). A zero stays hidden. */
+/** The thread counts on the strip: working / needs / stuck, a zero hidden
+   (D-#774). With the company layer paused (D-#836) "idle" is left off too —
+   it counts asleep *agents*, a fact the daily layout does not speak about. */
+function CountStrip({
+  data,
+  team,
+}: {
+  data: V3Data;
+  /** The company's roster ("N agents", "N outside workers", asleep idle). */
+  team?: boolean;
+}) {
   const counts: Partial<Record<V3Status, number>> = {
     working: threadsIn(data.threads, "working"),
     needs: threadsIn(data.threads, "needs"),
     stuck: threadsIn(data.threads, "stuck"),
     idle: asleepAgents(data).length,
   };
-  const rows = data.agents.map((a) => ({ agent: a, row: teamRow(data, a) }));
-  const showWaiting = rows.some((r) => r.row.waiting !== "—");
-  const grid = teamGrid(showWaiting);
-  const results = resultsToLookAt(data);
   const outside = data.agents.filter((a) => a.kind === "outside").length;
-  /* The latest note the CEO wrote. No CEO, no brief (D-#777). */
-  const brief = data.ceoId
-    ? [...data.updates]
-        .filter((u) => u.by === data.ceoId)
-        .sort((a, b) =>
-          a.atSort !== undefined && b.atSort !== undefined
-            ? b.atSort - a.atSort
-            : b.at.localeCompare(a.at),
-        )[0]
-    : undefined;
-  const briefBy = brief ? agentOf(data, brief.by) : undefined;
-
   return (
-    <Page>
-      <Title kicker={data.today}>Good afternoon, {data.me}</Title>
-
-      <div className="flex flex-wrap gap-x-[18px] gap-y-1.5 text-[13.5px] text-muted-foreground">
+    <div className="flex flex-wrap gap-x-[18px] gap-y-1.5 text-[13.5px] text-muted-foreground">
+      {team && (
         <span>
           <b className="font-semibold text-foreground">
             {data.agents.length - outside}
           </b>{" "}
           {data.agents.length - outside === 1 ? "agent" : "agents"}
         </span>
-        {outside > 0 && (
-          <span>
-            <b className="font-semibold text-foreground">{outside}</b> outside{" "}
-            {outside === 1 ? "worker" : "workers"}
-          </span>
-        )}
-        {COUNT_ORDER.map(({ status, word }) =>
-          counts[status] ? (
-            <span key={status} className="inline-flex items-center gap-[7px]">
-              <StatusDot status={status} />
-              <span>
-                <b className="font-semibold text-foreground">
-                  {counts[status]}
-                </b>{" "}
-                {word}
-              </span>
-            </span>
-          ) : null,
-        )}
-      </div>
-
-      {brief && (
-        <div className="mt-6 flex gap-3 rounded-[10px] bg-[var(--v3-soft)] px-[18px] py-4">
-          <AgentAvatar
-            data={data}
-            agent={briefBy}
-            size={24}
-            className="mt-px"
-          />
-          <div className="min-w-0">
-            <div className="flex items-baseline gap-2 text-[13.5px] text-muted-foreground">
-              <span>
-                <b className="font-semibold text-foreground">
-                  {briefBy?.name ?? FORMER_AGENT}
-                </b>{" "}
-                · update at {brief.at}
-              </span>
-              <button
-                type="button"
-                onClick={() => go({ page: "inbox" })}
-                className="ml-auto text-[13px] text-muted-foreground/70 hover:text-foreground"
-              >
-                All updates
-              </button>
-            </div>
-            <p className="mt-[3px] text-[15px] leading-[1.6] text-foreground">
-              {brief.text}
-            </p>
-          </div>
-        </div>
       )}
+      {team && outside > 0 && (
+        <span>
+          <b className="font-semibold text-foreground">{outside}</b> outside{" "}
+          {outside === 1 ? "worker" : "workers"}
+        </span>
+      )}
+      {COUNT_ORDER.map(({ status, word }) =>
+        counts[status] && (team || status !== "idle") ? (
+          <span key={status} className="inline-flex items-center gap-[7px]">
+            <StatusDot status={status} />
+            <span>
+              <b className="font-semibold text-foreground">{counts[status]}</b>{" "}
+              {word}
+            </span>
+          </span>
+        ) : null,
+      )}
+    </div>
+  );
+}
 
+/** The Needs-you section, one row per ask — shared by both Home layouts. */
+function NeedsBlock({ data, go, act }: V3PageProps) {
+  return (
+    <>
       <Section
         title="Needs you"
         count={data.asks.length}
@@ -219,6 +196,68 @@ export function V3Home({ data, go, act }: V3PageProps) {
           ))}
         </div>
       )}
+    </>
+  );
+}
+
+/* The company-layer Home: the team, the CEO's note, results, goals. Drawn
+   whenever `features.company` is on (it is on by default); when the layer
+   is paused the daily layout below replaces it (D-#836). */
+function CompanyHome({ data, go, act }: V3PageProps) {
+  const rows = data.agents.map((a) => ({ agent: a, row: teamRow(data, a) }));
+  const showWaiting = rows.some((r) => r.row.waiting !== "—");
+  const grid = teamGrid(showWaiting);
+  const results = resultsToLookAt(data);
+  /* The latest note the CEO wrote. No CEO, no brief (D-#777). */
+  const brief = data.ceoId
+    ? [...data.updates]
+        .filter((u) => u.by === data.ceoId)
+        .sort((a, b) =>
+          a.atSort !== undefined && b.atSort !== undefined
+            ? b.atSort - a.atSort
+            : b.at.localeCompare(a.at),
+        )[0]
+    : undefined;
+  const briefBy = brief ? agentOf(data, brief.by) : undefined;
+
+  return (
+    <Page>
+      <Title kicker={data.today}>Good afternoon, {data.me}</Title>
+
+      <CountStrip data={data} team />
+
+      {brief && (
+        <div className="mt-6 flex gap-3 rounded-[10px] bg-[var(--v3-soft)] px-[18px] py-4">
+          <AgentAvatar
+            data={data}
+            agent={briefBy}
+            size={24}
+            className="mt-px"
+          />
+          <div className="min-w-0">
+            <div className="flex items-baseline gap-2 text-[13.5px] text-muted-foreground">
+              <span>
+                <b className="font-semibold text-foreground">
+                  {briefBy?.name ?? FORMER_AGENT}
+                </b>{" "}
+                · update at {brief.at}
+              </span>
+              <button
+                type="button"
+                onClick={() => go({ page: "inbox" })}
+                className="ml-auto text-[13px] text-muted-foreground/70 hover:text-foreground"
+              >
+                All updates
+              </button>
+            </div>
+            <p className="mt-[3px] text-[15px] leading-[1.6] text-foreground">
+              {brief.text}
+            </p>
+          </div>
+        </div>
+      )}
+
+      <NeedsBlock data={data} go={go} act={act} />
 
       <Section
         title="Team"
@@ -382,5 +421,91 @@ export function V3Home({ data, go, act }: V3PageProps) {
         </>
       )}
     </Page>
+  );
+}
+
+/* Home with the company layer paused (D-#836): the counts, a box that talks
+   to Hermes, Needs you, and the threads grouped by their project — the
+   daily app, with tickets, the team table, goals and the CEO's note out of
+   sight but still in the data underneath. Live threads float to the top of
+   each group; "Open" takes you to the project page for the full list. */
+const THREADS_HOME = 6;
+
+function DailyHome({ data, go, act }: V3PageProps) {
+  const starter = defaultAgent(data);
+  const byRank = (a: V3Thread, b: V3Thread) =>
+    (LIVE_RANK[a.status] ?? 9) - (LIVE_RANK[b.status] ?? 9);
+  const groups = data.projects
+    .map((p) => ({
+      project: p,
+      threads: data.threads
+        .filter((t) => threadProjectId(data, t) === p.id)
+        .sort(byRank),
+    }))
+    .filter((g) => g.threads.length > 0);
+  const chats = data.threads
+    .filter((t) => threadProjectId(data, t) === undefined)
+    .sort(byRank);
+  const group = (title: ReactNode, threads: V3Thread[], link?: () => void) => (
+    <Fragment key={typeof title === "string" ? title : threads[0]?.id}>
+      <Section
+        title={title}
+        count={threads.length}
+        link={link ? "Open" : undefined}
+        onLink={link}
+      />
+      <div className="border-[var(--v3-line)] border-t">
+        {threads.slice(0, THREADS_HOME).map((t) => (
+          <ThreadRow
+            key={t.id}
+            data={data}
+            thread={t}
+            go={go}
+            byAgent
+            inProject
+          />
+        ))}
+      </div>
+    </Fragment>
+  );
+
+  return (
+    <Page>
+      <Title kicker={data.today}>Good afternoon, {data.me}</Title>
+      <CountStrip data={data} />
+      {starter && (
+        <div className="mt-8">
+          <ChatDraft
+            key={starter.id}
+            data={data}
+            go={go}
+            act={act}
+            id={starter.id}
+            fallback={starter}
+            autoFocus={false}
+          />
+        </div>
+      )}
+      <NeedsBlock data={data} go={go} act={act} />
+      {groups.map(({ project, threads }) =>
+        group(
+          <span className="inline-flex items-center gap-2">
+            <ProjectMark name={project.name} tone={project.tone} />
+            {project.name}
+          </span>,
+          threads,
+          () => go({ page: "project", id: project.id }),
+        ),
+      )}
+      {chats.length > 0 && group("Chats", chats)}
+    </Page>
+  );
+}
+
+export function V3Home(props: V3PageProps) {
+  return companyOn(props.data) ? (
+    <CompanyHome {...props} />
+  ) : (
+    <DailyHome {...props} />
   );
 }

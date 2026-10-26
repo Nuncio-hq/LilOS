@@ -2,7 +2,14 @@ import { cn } from "../lib/utils";
 import { ago, Btn, Meter } from "./v3-bits";
 import type { V3Ask, V3Data } from "./v3-data-types";
 import { AgentAvatar, CeoMark, StatusPill } from "./v3-marks";
-import { agentOf, askTag, FORMER_AGENT, goalOf, ticketOf } from "./v3-model";
+import {
+  agentOf,
+  askTag,
+  companyOn,
+  FORMER_AGENT,
+  goalOf,
+  ticketOf,
+} from "./v3-model";
 import type { V3PageProps, V3Route } from "./v3-page-types";
 
 /* The open ask on the Needs you page: the card with its four answers (ask,
@@ -29,7 +36,12 @@ export function OpenAsk({
   setAllow: (v: boolean) => void;
 }) {
   const from = agentOf(data, ask.from);
-  const ticket = ask.ticketId ? ticketOf(data, ask.ticketId) : undefined;
+  /* With the company layer paused (D-#836) the ticket and goal behind an
+     ask are records the page cannot open: the ask's own thread is where it
+     lives then, and the CEO's default stays unannounced. */
+  const company = companyOn(data);
+  const ticket =
+    company && ask.ticketId ? ticketOf(data, ask.ticketId) : undefined;
   const goal = ticket?.goalId ? goalOf(data, ticket.goalId) : undefined;
   const isQuestion = ask.kind === "question";
   // A missing line is not a row. Hide "The ask" when it repeats the title.
@@ -40,11 +52,12 @@ export function OpenAsk({
     [isQuestion ? "If no" : "If you deny", ask.ifNo, true],
   ];
   // Without a ticket the ask lives in the chat it was raised in.
-  const opens: { label: string; to: V3Route } | undefined = ask.ticketId
-    ? { label: "Open ticket", to: { page: "ticket", id: ask.ticketId } }
-    : ask.threadId
-      ? { label: "Open thread", to: { page: "thread", id: ask.threadId } }
-      : undefined;
+  const opens: { label: string; to: V3Route } | undefined =
+    company && ask.ticketId
+      ? { label: "Open ticket", to: { page: "ticket", id: ask.ticketId } }
+      : ask.threadId
+        ? { label: "Open thread", to: { page: "thread", id: ask.threadId } }
+        : undefined;
 
   return (
     <div className="my-3 mb-1 rounded-[10px] border border-[var(--v3-line)] px-[18px] pt-4 pb-3.5">
@@ -101,7 +114,7 @@ export function OpenAsk({
         )}
       </div>
 
-      {ask.fallback && (
+      {company && ask.fallback && (
         <div className="mt-3 flex">
           <span className={CHIP}>
             If you don't answer by {ask.fallback.at}: the CEO{" "}
