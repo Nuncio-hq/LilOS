@@ -201,7 +201,9 @@ export interface AppOps {
   /* `task_*` — handing a job to another LilOS employee. `tasks.*` on the
      relay; the bound conversation rides every call as `parentConversationId`
      so the scope check lives relay-side. Creating asks no approval. */
-  taskCreate(p: TaskCreateParams): Promise<Task>;
+  /** `note` rides the tool result's heads-up prose (D-#848): where the
+      child works, and that uncommitted edits did not ride along. */
+  taskCreate(p: TaskCreateParams): Promise<{ task: Task; note?: string }>;
   /** The task's current view — `not_found` for a task this thread did
       not create (scope is the stored lineage). */
   taskRead(taskId: string): Promise<Task>;

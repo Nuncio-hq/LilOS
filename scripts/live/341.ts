@@ -21,7 +21,7 @@
 
 import { spawn } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Harness } from "../../apps/harness/src/harness";
@@ -163,6 +163,7 @@ const surfaces = await serveSurfaces(0, {
     relay: hostClient,
     runningTurnId: () => undefined,
     log,
+    home: homedir(),
   }),
   log: {
     debug: () => {},

@@ -193,6 +193,8 @@ export function fakeAppOps(
     codingAgents?: CodingAgentsSetting;
     /** `"decline"` makes every approval op throw `declined` — nothing applies. */
     approve?: "once" | "decline";
+    /** Canned `note` on the task_create result (D-#848's heads-up). */
+    taskNote?: string;
     /** Live CEO holder. Defaults to the bound fake employee so existing
         direct calls of CEO-only tools still pass (D-#778). */
     ceoId?: string;
@@ -206,6 +208,8 @@ export function fakeAppOps(
   started: Array<{ text: string; title?: string; project?: string }>;
   /** The live project list (`createProject` appends to it). */
   projectRows: Project[];
+  /** Every `task_create` param set the scope handed the op (D-#848). */
+  taskCreates: TaskCreateParams[];
 } {
   const posted: string[] = [];
   const titled: string[] = [];
@@ -221,6 +225,7 @@ export function fakeAppOps(
      parent's own thread list doesn't see them). */
   const taskTickets: Ticket[] = [];
   const taskConvs: Conversation[] = [];
+  const taskCreates: TaskCreateParams[] = [];
   /* The fake's gate: the real impl posts an ask and waits; here the
      recorded command stands in for the card and `approve` answers it. */
   const gate = (command: string) => {
@@ -283,6 +288,7 @@ export function fakeAppOps(
     asks,
     started,
     projectRows,
+    taskCreates,
     async postMessage(text: string) {
       posted.push(text);
       const msg = {
@@ -688,12 +694,17 @@ export function fakeAppOps(
     },
     /* D-#844: the fake's task table — a ticket row per task plus the
        child conversation it opened. Repeating `requestId` returns the
-       first task; read/cancel are scoped to the bound parent thread. */
+       first task; read/cancel are scoped to the bound parent thread.
+       D-#848: params are recorded on `taskCreates` (isolation and the
+       rest stay ops-side decisions; the fake does no git). */
     async taskCreate(p: TaskCreateParams) {
+      taskCreates.push(p);
+      const note = opts.taskNote ? { note: opts.taskNote } : {};
       const byReq = p.requestId
         ? taskTickets.find((t) => t.task?.requestId === p.requestId)
         : undefined;
-      if (byReq?.task) return taskView(byReq, taskConvs, employees);
+      if (byReq?.task)
+        return { task: taskView(byReq, taskConvs, employees), ...note };
       const agent =
         employees.find((e) => e.id === p.agent || e.name === p.agent) ??
         employees[0];
@@ -732,7 +743,7 @@ export function fakeAppOps(
         createdAt: Date.now(),
         parentId: convId,
       });
-      return taskView(ticket, taskConvs, employees);
+      return { task: taskView(ticket, taskConvs, employees), ...note };
     },
     async taskRead(taskId: string) {
       const ticket = taskTickets.find(
@@ -786,6 +797,7 @@ function taskView(
     threadId: t.childConversationId,
     channelId: t.childChannelId,
     parentThreadId: t.parentConversationId,
+    ...(t.worktree ? { worktree: t.worktree } : {}),
     ...(t.lastResult !== undefined ? { result: t.lastResult.text } : {}),
     ...(t.lastResult
       ? { resultOutcome: t.lastResult.outcome, finishedAt: t.lastResult.at }

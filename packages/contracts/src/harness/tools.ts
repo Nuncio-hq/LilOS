@@ -732,6 +732,11 @@ export const TaskCreateParams = z.strictObject({
   provider: z.string().optional(),
   effort: z.string().optional(),
   fast: z.boolean().optional(),
+  /** Where the child works (D-#848): `worktree` forks this thread's
+      checkout — a fresh worktree from its current commit; `shared`
+      works in this thread's own folder. Omitted = `worktree` when the
+      folder is a git repo, else `shared`. */
+  isolation: z.enum(["worktree", "shared"]).optional(),
   /** Your idempotency key — a retry returns the same task. */
   requestId: z.string().min(1).max(200).optional(),
 });
@@ -758,8 +763,13 @@ export const TaskWaitParams = z.strictObject({
 });
 export type TaskWaitParams = z.infer<typeof TaskWaitParams>;
 
-/** The agent-facing task view — `Task` from `app/ticket` (D-#844). */
-export const TaskToolResult = z.object({ task: TaskSchema });
+/** The agent-facing task view — `Task` from `app/ticket` (D-#844).
+    `note` is the create-time heads-up prose (D-#848: where the child
+    works, and that uncommitted edits did not ride along). */
+export const TaskToolResult = z.object({
+  task: TaskSchema,
+  note: z.string().optional(),
+});
 export type TaskToolResult = z.infer<typeof TaskToolResult>;
 export const TaskWaitResult = z.object({
   task: TaskSchema,
@@ -1123,7 +1133,7 @@ export const LILOS_TOOLS: Record<string, LilosToolContract> = {
   task_create: {
     params: TaskCreateParams,
     result: TaskToolResult,
-    doc: "Hand a job to another LilOS employee (`agent` = name or id from team_list). The task runs as a visible child thread with only your prompt — the child never sees this thread's history, and its access is yours, never broader. Does not ask. The child's finish wakes this thread with the result inlined (task_read has the rest); `requestId` makes a retry return the same task.",
+    doc: "Hand a job to another LilOS employee (`agent` = name or id from team_list). The task runs as a visible child thread with only your prompt — the child never sees this thread's history, and its access is yours, never broader. Does not ask. In a git repo the child gets its own worktree from your current commit by default (isolation \"shared\" works in this thread's folder instead); your uncommitted changes are never copied and merging back stays a separate step. The child's finish wakes this thread with the result inlined (task_read has the rest); `requestId` makes a retry return the same task.",
     area: "task",
     access: "write",
   },

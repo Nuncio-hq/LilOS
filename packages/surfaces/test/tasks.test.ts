@@ -50,6 +50,20 @@ describe("task_* tools (D-#844)", () => {
     expect(again.task.threadId).toBe(created.task.threadId);
   });
 
+  it("task_create forwards the isolation pick and surfaces the note (D-#848)", async () => {
+    const ops = fakeAppOps([], { taskNote: "works in a fresh worktree" });
+    const scope = makeScope("s-iso", ops);
+    const created = (await call(scope, "task_create", {
+      agent: "Ada",
+      prompt: "Fix the flaky test",
+      isolation: "shared",
+    })) as { task: Record<string, unknown>; note?: string };
+    /* The scope never reinterprets the pick — the app leg (the only
+       process with git) resolves it. */
+    expect(ops.taskCreates[0]?.isolation).toBe("shared");
+    expect(created.note).toBe("works in a fresh worktree");
+  });
+
   it("task_read / task_cancel are scoped to this session's tasks", async () => {
     const ops = fakeAppOps();
     const scope = makeScope("s-own", ops);
