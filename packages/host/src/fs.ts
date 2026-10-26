@@ -8,10 +8,9 @@ import type {
   FsSearchResult,
   FsTreeResult,
 } from "@lilos/contracts/host";
-import { bounded, exists, probeTimeoutMs } from "./access.js";
+import { bounded, exists } from "./access.js";
 import { HOST_ERRORS, HostError } from "./errors.js";
-import { run } from "./exec.js";
-import { repoMark, repoRoot } from "./git.js";
+import { gitProbe, repoMark, repoRoot } from "./git.js";
 import { collapsePath, expandPath } from "./paths.js";
 
 const SKIP = new Set([".git", "node_modules", ".DS_Store"]);
@@ -137,15 +136,12 @@ export async function fsTree(params: {
   const files: string[] = [];
   let truncated = false;
   if (root) {
-    const { stdout } = await bounded(
-      run("git", ["ls-files", "-co", "--exclude-standard", "-z"], {
-        cwd: abs,
-        maxBuffer: 64 * 1024 * 1024,
-        timeout: probeTimeoutMs(),
-        killSignal: "SIGKILL",
-      }),
-      abs,
-    );
+    const stdout = await gitProbe(abs, [
+      "ls-files",
+      "-co",
+      "--exclude-standard",
+      "-z",
+    ]);
     for (const p of stdout.split("\0")) {
       if (p === "") continue;
       files.push(p);
@@ -215,15 +211,12 @@ async function searchEnumerate(abs: string, inputPath: string) {
   const root = await repoRoot(abs);
   if (root) {
     // Same visible set as fs.tree: tracked + untracked, .gitignore honored.
-    const { stdout } = await bounded(
-      run("git", ["ls-files", "-co", "--exclude-standard", "-z"], {
-        cwd: abs,
-        maxBuffer: 64 * 1024 * 1024,
-        timeout: probeTimeoutMs(),
-        killSignal: "SIGKILL",
-      }),
-      abs,
-    );
+    const stdout = await gitProbe(abs, [
+      "ls-files",
+      "-co",
+      "--exclude-standard",
+      "-z",
+    ]);
     const dirs = new Set<string>();
     for (const p of stdout.split("\0")) {
       if (!p) continue;

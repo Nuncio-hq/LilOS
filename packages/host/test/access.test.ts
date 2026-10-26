@@ -236,13 +236,47 @@ describe("git probe bound (#875)", () => {
     });
   });
 
-  it("a hanging child elsewhere is a plain timeout, not a consent cry", async () => {
+  it("an unprotected cwd keeps the unbounded probe — a slow child still answers", async () => {
+    /* r4: the bound exists for TCC consent waits, which live only inside
+       protected folders. Outside, a 300 ms git must still answer — the
+       40 ms probe bound would have killed it and silently reported
+       "not a repo" (the D-#848 regression). */
+    const slowBin = join(tmp, "slow-bin");
+    mkdirSync(slowBin);
+    writeFileSync(
+      join(slowBin, "git"),
+      "#!/bin/sh\nsleep 0.3\nprintf '/slow/repo\\n'\n",
+    );
+    chmodSync(join(slowBin, "git"), 0o755);
     const outside = join(tmp, "outside");
     mkdirSync(outside);
-    await expect(gitIsRepo({ path: outside })).rejects.toMatchObject({
-      code: HOST_ERRORS.GIT_FAILED,
-      message: expect.stringContaining("timed out"),
-    });
+    const oldPath = process.env.PATH;
+    process.env.PATH = `${slowBin}:${oldPath ?? ""}`;
+    try {
+      const res = await gitIsRepo({ path: outside });
+      expect(res.isRepo).toBe(true); // answered past the bound — no kill
+    } finally {
+      process.env.PATH = oldPath;
+    }
+  });
+
+  it("a spawn failure is infra, not 'not a repo' — it surfaces", async () => {
+    /* r4: gitOr mapped every non-HostError to null, so a dead spawn
+       quietly became isRepo:false → "shared". Errno-string codes are
+       infrastructure; only a numeric exit code means "not a repo". */
+    const emptyBin = join(tmp, "empty-bin");
+    mkdirSync(emptyBin); // no git in here at all → spawn ENOENT
+    const outside = join(tmp, "outside-2");
+    mkdirSync(outside);
+    const oldPath = process.env.PATH;
+    process.env.PATH = emptyBin; // even sh-less: git can't spawn
+    try {
+      await expect(gitIsRepo({ path: outside })).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    } finally {
+      process.env.PATH = oldPath;
+    }
   });
 });
 

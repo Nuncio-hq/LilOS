@@ -25,6 +25,7 @@ import {
   folderAccessError,
   isAccessError,
   probeTimeoutMs,
+  protectedFolder,
 } from "./access.js";
 import { HOST_ERRORS, HostError } from "./errors.js";
 import { run } from "./exec.js";
@@ -76,17 +77,25 @@ async function git(
   }
 }
 
-/** A read-only probe — bounded. */
-const gitProbe = (cwd: string, args: string[]): Promise<string> =>
-  git(cwd, args, probeTimeoutMs());
+/** A read-only probe — bounded only where a consent prompt can park it:
+ *  a cwd under a protected folder gets probeTimeoutMs(); outside there
+ *  is no TCC wall to wait out, so it keeps the old unbounded behavior —
+ *  a short bound there just turns CPU load into false answers (D-#875,
+ *  D-#848: a timed-out isRepo silently became "shared"). */
+export const gitProbe = (cwd: string, args: string[]): Promise<string> =>
+  git(cwd, args, protectedFolder(cwd) ? probeTimeoutMs() : undefined);
 
 /** stdout, or null when git exits non-zero (non-repo, missing ref, unborn HEAD).
-    A typed HostError (FOLDER_ACCESS) still throws — the caller must hear it. */
+    A typed HostError (FOLDER_ACCESS) still throws — and so does an infra
+    failure: a spawn EAGAIN or a dead fs is not "not a repo". */
 async function gitOr(cwd: string, args: string[]): Promise<string | null> {
   try {
     return await gitProbe(cwd, args);
   } catch (e) {
     if (e instanceof HostError) throw e;
+    /* Exit codes are numbers; anything else (errno strings, signal
+       deaths the bound didn't catch) is infrastructure — surface it. */
+    if (typeof (e as { code?: unknown }).code !== "number") throw e;
     return null;
   }
 }
