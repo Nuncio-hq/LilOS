@@ -53,16 +53,24 @@ const send = async (page: Page, text: string) => {
 /** The Threads page's All list, where every thread is one row with its
     state pill — the v3 home of what the DM feed's rows said. */
 async function threadsAll(stack: Stack, page: Page) {
-  await page.goto(`${stack.webUrl}/#?page=threads&view=all`);
+  await page.goto(`${stack.webUrl}/#?page=threads`);
   await expect(page.getByText("Every agent thread, live.")).toBeVisible({
     timeout: 30_000,
   });
 }
 
-/** The row for the thread titled like `title` (the fake engine Title-Cases
-    it, so match case-blind). */
+/** The row for the thread titled like `title` on the Threads list (the fake
+    engine Title-Cases it, so match case-blind). The sidebar mirrors the
+    list, so scope to #v3-main's own rows; Working's fold is collapsed by
+    default — open it before locating a running thread (#862). */
 const rowFor = (page: Page, title: RegExp) =>
-  page.getByRole("button").filter({ hasText: title }).first();
+  page.locator("#v3-main [data-thread-row]").filter({ hasText: title });
+const openWorking = async (page: Page) => {
+  const fold = page.locator(
+    '#v3-main [data-fold="working"] > button[aria-expanded="false"]',
+  );
+  if (await fold.count()) await fold.click();
+};
 
 const openCard = (page: Page) =>
   page.locator('[data-ask-id][data-ask-state="open"]');
@@ -184,11 +192,18 @@ test("AC-2 a running turn and a failed turn each say so", async ({ page }) => {
     timeout: 30_000,
   });
   await threadsAll(stack, page);
+  await openWorking(page);
   const running = rowFor(page, /keep the pace/i);
-  await expect(running).toContainText("Working", { timeout: 30_000 });
+  /* The row says "working" with its status dot — words are only for the
+     Needs-you/Failed pills (#862). */
+  await expect(running.locator('[data-v3-status="working"]')).toBeVisible({
+    timeout: 30_000,
+  });
   await page.screenshot({ path: `${SHOTS}/ac-2-row-running.png` });
-  /* The row's word clears once the turn ends. */
-  await expect(running).not.toContainText("Working", { timeout: 120_000 });
+  /* The dot clears once the turn ends. */
+  await expect(running.locator('[data-v3-status="working"]')).toHaveCount(0, {
+    timeout: 120_000,
+  });
 
   /* A turn that dies on an error reads "Failed" on its row. */
   await running.click();
@@ -218,8 +233,11 @@ test('AC-2 a stopped turn says "stopped"', async ({ page }) => {
     page.locator("[data-thread-panel] [data-agentturn]").last(),
   ).toContainText("Stopped");
   await threadsAll(stack, page);
+  await openWorking(page);
   const row = rowFor(page, /hold this turn/i);
-  await expect(row).not.toContainText("Working", { timeout: 30_000 });
+  await expect(row.locator('[data-v3-status="working"]')).toHaveCount(0, {
+    timeout: 30_000,
+  });
   await page.screenshot({ path: `${SHOTS}/ac-2-row-stopped.png` });
 });
 

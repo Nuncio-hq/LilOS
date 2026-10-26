@@ -19,6 +19,7 @@ import type { V3Data } from "./v3-data-types";
 import { AgentAvatar, CeoMark, ProjectMark, StatusDot } from "./v3-marks";
 import { agentDot, boardStatus, companyOn, listedThreads } from "./v3-model";
 import type { V3PageRoute, V3RecordRoute, V3Route } from "./v3-page-types";
+
 import { type SidebarMode, SidebarToggle } from "./v3-topbar";
 
 /* The v3 sidebar is the company's table of contents: the three databases
@@ -164,6 +165,9 @@ export function V3Sidebar({
           onClick={() => go({ page: "threads" })}
           right={<Count n={live} />}
         />
+        {/* No thread list here (#862 feedback): the sidebar stays the
+            table of contents — the sectioned list lives on the Threads
+            page only. */}
         {data.features.tickets && (
           <Item
             icon={<TargetIcon />}

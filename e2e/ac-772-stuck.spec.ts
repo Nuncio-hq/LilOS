@@ -239,14 +239,27 @@ test("six identical searches show Stuck with the reason, above a working thread"
     .click();
   await expect(page.locator("[data-thread-panel] textarea")).toBeFocused();
   await expect(page.locator("main")).toContainText("1 stuck");
-  const texts = await page
-    .locator("main")
-    .locator("[role=button]")
-    .allTextContents();
-  const stuckAt = texts.findIndex((t) => t.includes("Same web search"));
-  const holdAt = texts.findIndex((t) => t.includes("LILOS_TURN_HOLD"));
-  expect(stuckAt).toBeGreaterThanOrEqual(0);
-  expect(holdAt).toBeGreaterThan(stuckAt);
+  /* Ordering under the sectioned list (#862): the stuck thread's row sits
+     in Active, above the Working shelf the held thread folds into. Open
+     that shelf and compare the two rows' positions — the stuck row reads
+     above the working one, as the old board's card did. */
+  const stuckRow = page
+    .locator("#v3-main")
+    .locator('[data-thread-row]:has([data-v3-status="stuck"])');
+  await expect(stuckRow).toHaveCount(1);
+  const workingFold = page.locator('#v3-main [data-fold="working"] > button');
+  await expect(workingFold).toBeVisible();
+  if ((await workingFold.getAttribute("aria-expanded")) === "false")
+    await workingFold.click();
+  const holdRow = page
+    .locator("#v3-main")
+    .locator('[data-thread-row]:has([data-v3-status="working"])');
+  await expect(holdRow).toHaveCount(1);
+  const [stuckBox, holdBox] = await Promise.all([
+    stuckRow.boundingBox(),
+    holdRow.boundingBox(),
+  ]);
+  expect(stuckBox!.y).toBeLessThan(holdBox!.y);
 });
 
 test("a different step clears Stuck", async ({ page }) => {

@@ -220,7 +220,7 @@ test("AC-6 clearing text drops the draft; archive + remove prune theirs", async 
     .locator("[data-thread-panel]")
     .getByRole("button", { name: "Thread actions", exact: true })
     .click();
-  await page.getByRole("menuitem", { name: "Archive thread" }).click();
+  await page.getByRole("menuitem", { name: "Settle thread" }).click();
   await expect
     .poll(async () => (await draftKeys(page)).some((k) => k.endsWith(convA)), {
       timeout: 15_000,
