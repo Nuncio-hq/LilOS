@@ -422,7 +422,11 @@ describe("engine-hermes #106: approval modes", () => {
 
   test("AC-3 approvals.setPolicy -> config.set approvals.mode; describe reports current", async () => {
     const { gw, h } = setup();
-    // `current` seeds from config.get when no setPolicy ran yet.
+    /* `current` seeds from config.get when no setPolicy ran yet — off
+       describe's answer path (#834), so it lands on the next describe. */
+    for (let i = 0; i < 20 && (await capCurrent(h)) === undefined; i++) {
+      await new Promise((r) => setTimeout(r, 5));
+    }
     expect(await capCurrent(h)).toBe("smart");
     expect(await h.request("approvals.setPolicy", { policy: "off" })).toEqual({
       policy: "off",
@@ -432,6 +436,44 @@ describe("engine-hermes #106: approval modes", () => {
     ).toMatchObject({ value: "off" });
     expect(gw.approvalsMode).toBe("off");
     expect(await capCurrent(h)).toBe("off");
+  });
+
+  test("#834 describe never awaits the backend — a stalled config.get cannot stall the liveness probe", async () => {
+    const gw = new FakeGateway();
+    let release!: () => void;
+    gw.configGetGate = new Promise<void>((r) => {
+      release = r;
+    });
+    const engine = new HermesEngine({ gateway: gw });
+    const conn = connectInMemory(engine);
+    const h = new Harness(conn);
+
+    /* The incident: describe awaited `config.get approvals.mode` to seed
+       `current`, so a backend event loop stalled under load made a
+       healthy adapter miss the harness's 1.5 s probe deadline. describe
+       must answer from memory — `current` is omitted until the seed
+       lands — and the read rides off the answer path. */
+    const d = (await Promise.race([
+      h.request("describe"),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("describe hung")), 2_000),
+      ),
+    ])) as {
+      capabilities: { id: string; detail?: { current?: string } }[];
+      backend?: { state?: string };
+    };
+    expect(d.backend?.state).toBe("running");
+    expect(
+      d.capabilities.find((c) => c.id === "approval_policy")?.detail?.current,
+    ).toBeUndefined();
+
+    /* Once the backend unblocks, the in-flight seed lands and the next
+       describe carries `current` again. */
+    release();
+    for (let i = 0; i < 20 && (await capCurrent(h)) === undefined; i++) {
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    expect(await capCurrent(h)).toBe("smart");
   });
 
   test("AC-1 access:full on session.start sends the session yolo hint; session.setAccess toggles it", async () => {
@@ -2247,6 +2289,92 @@ describe("engine-hermes #482: settle + heal invariants", () => {
     });
     expect((done[0].payload as { error?: string }).error).toContain(
       "hermes backend is down",
+    );
+  });
+
+  /* #834: the reviewer's drained send submitted while the REPLACED
+     `hermes serve` still owned the session's active slot — the gateway's
+     4090 lease frees the moment that pid exits, so the adapter retries
+     inside a bounded window instead of surfacing "open in another
+     window" on a send about to succeed. */
+  test("#834 a submit refused on session ownership retries through the draining lease", async () => {
+    const gw = new FakeGateway();
+    const engine = new HermesEngine({
+      gateway: gw,
+      submitOwnershipWaitMs: 10_000,
+      submitOwnershipRetryMs: 20,
+    });
+    const h = new Harness(connectInMemory(engine));
+    const { sessionId } = await start(h);
+
+    gw.submitRefusals = 2;
+    const p = promptAsync(h, sessionId, "still there?");
+    for (let i = 0; i < 200 && gw.submitAttempts < 3; i++)
+      await new Promise((r) => setTimeout(r, 10));
+    expect(gw.submitAttempts).toBe(3); // two refusals, then the send lands
+    gw.complete(gw.lastSid, { text: "yes" });
+
+    const res = await p;
+    expect(res.stopReason).toBe("end_turn");
+    // The transient refusal never surfaced as a refusal frame.
+    const done = h.events.filter((e) => e.type === "turn.completed");
+    expect(done).toHaveLength(1);
+    expect((done[0].payload as { stopReason: string }).stopReason).toBe(
+      "end_turn",
+    );
+  });
+
+  /* The paired hole: a Stop pressed while the submit waits out the lease
+     must abort the pending submit — never land the stopped send once the
+     lease frees. */
+  test("#834 a Stop during the ownership wait aborts the pending submit", async () => {
+    const gw = new FakeGateway();
+    const engine = new HermesEngine({
+      gateway: gw,
+      submitOwnershipWaitMs: 60_000,
+      submitOwnershipRetryMs: 20,
+    });
+    const h = new Harness(connectInMemory(engine));
+    const { sessionId } = await start(h);
+
+    gw.submitRefusals = 1_000; // lease held far past the test window
+    const p = promptAsync(h, sessionId, "stop me");
+    for (let i = 0; i < 200 && gw.submitAttempts < 2; i++)
+      await new Promise((r) => setTimeout(r, 10));
+    expect(gw.submitAttempts).toBeGreaterThan(0);
+
+    await h.request("interrupt", { sessionId });
+    const res = await p;
+    expect(res.stopReason).toBe("cancelled");
+    const done = h.events.filter((e) => e.type === "turn.completed");
+    expect(done).toHaveLength(1);
+    expect((done[0].payload as { stopReason: string }).stopReason).toBe(
+      "cancelled",
+    );
+    expect(gw.runningSids.size).toBe(0); // nothing ever ran backend-side
+  });
+
+  /* The bound's other half: a session genuinely owned by another LIVE
+     surface keeps refusing past the window — the send surfaces the
+     ownership error instead of retrying forever. */
+  test("#834 a session owned by a live surface refuses after the window", async () => {
+    const gw = new FakeGateway();
+    const engine = new HermesEngine({
+      gateway: gw,
+      submitOwnershipWaitMs: 120,
+      submitOwnershipRetryMs: 20,
+    });
+    const h = new Harness(connectInMemory(engine));
+    const { sessionId } = await start(h);
+
+    gw.submitRefusals = 10_000; // a live owner never frees the lease
+    await expect(promptAsync(h, sessionId, "mine")).rejects.toThrow(
+      /open in another Hermes window/,
+    );
+    const done = h.events.filter((e) => e.type === "turn.completed");
+    expect(done).toHaveLength(1);
+    expect((done[0].payload as { stopReason: string }).stopReason).toBe(
+      "refusal",
     );
   });
 

@@ -1,7 +1,11 @@
 import type { Conversation, ConversationLife } from "@lilos/contracts/app";
 import type { EventsSinceResult } from "@lilos/contracts/engine";
 import { expandPath } from "@lilos/host";
-import { engineErrorCode, SESSION_NOT_FOUND } from "../engine/client";
+import {
+  engineErrorCode,
+  RESUME_AWARE_TIMEOUT_MS,
+  SESSION_NOT_FOUND,
+} from "../engine/client";
 import type { ReaperCandidate } from "../reaper";
 import { employeeHoldsCeo } from "./ceo-session";
 import type { HarnessCtx, SessionBinding } from "./ctx";
@@ -177,10 +181,16 @@ export async function bindConversation(
   // (orphan grace, #22) — the stored engineRef still resolves on the engine.
   if (conv.engineRef) {
     try {
-      const replay = await conn.request<EventsSinceResult>("events.since", {
-        sessionId: conv.engineRef,
-        after: 0,
-      });
+      /* #834: reattach rides the adapter's lazy resume too — the resumed
+         session rebuild can outlast the default call deadline. */
+      const replay = await conn.request<EventsSinceResult>(
+        "events.since",
+        {
+          sessionId: conv.engineRef,
+          after: 0,
+        },
+        RESUME_AWARE_TIMEOUT_MS,
+      );
       const binding: SessionBinding = {
         conversationId: conv.id,
         channelId,

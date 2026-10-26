@@ -1,5 +1,6 @@
 import type {
   AppMessage,
+  CodingAgentsSetting,
   CompanyUpdate,
   Conversation,
   ConversationSummary,
@@ -15,6 +16,7 @@ import type {
 import type {
   AskParams,
   AskToolResult,
+  CodingAgentsSetParams,
   GoalCreateParams,
   GoalCreateResult,
   GoalListResult,
@@ -187,6 +189,12 @@ export interface AppOps {
    * A decline throws `SurfaceError("declined")`.
    */
   askUser(p: AskParams): Promise<AskToolResult>;
+  /** `coding_agents` — the user's stored defaults for outside coding agents
+      (D-#835); absent agent/field = that CLI's own default. */
+  codingAgents(): Promise<CodingAgentsSetting>;
+  /** `coding_agents_set` — proposes the change on a card and applies only
+      after the user approves (D-#341/D-#835). */
+  codingAgentsSet(p: CodingAgentsSetParams): Promise<CodingAgentsSetting>;
 }
 
 export interface SurfaceScopeOptions {

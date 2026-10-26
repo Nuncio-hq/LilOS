@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CodingAgentId, CodingAgentsSetting } from "../app/coding-agents.js";
 import {
   AppMessage,
   ConversationState,
@@ -62,6 +63,9 @@ export const TOOL_AREAS = [
   "browser",
   "terminal",
   "schedule",
+  /* D-#835: outside coding-agent hand-offs (Claude Code, Cursor, Devin,
+     Antigravity) — Oscar's stored model + effort defaults per agent. */
+  "coding",
   /* D-#777: CEO-only `update_post`. Not a host-policy bullet — the brief
      describes it, and a non-CEO session is not offered the tool. */
   "update",
@@ -694,6 +698,37 @@ export type ScheduleTaskResult = z.infer<typeof ScheduleTaskResult>;
 export const ScheduleDeletedResult = z.object({ deleted: z.literal(true) });
 export type ScheduleDeletedResult = z.infer<typeof ScheduleDeletedResult>;
 
+/* --------------------------------- coding --------------------------------- */
+
+/**
+ * `coding_agents` — the user's stored default model + effort per outside
+ * coding agent (D-#835). Absent agent or field = that CLI's own default.
+ */
+export const CodingAgentsParams = z.strictObject({});
+export type CodingAgentsParams = z.infer<typeof CodingAgentsParams>;
+export const CodingAgentsResult = z.object({
+  agents: CodingAgentsSetting,
+});
+export type CodingAgentsResult = z.infer<typeof CodingAgentsResult>;
+
+/**
+ * `coding_agents_set` — propose a change to one agent's stored default.
+ * `null` clears a field back to the CLI's own default; an absent field is
+ * unchanged. Approval-gated: the stored record is beyond the session's own
+ * thread (D-#341), so the write waits for the user like other defaults
+ * changes.
+ */
+export const CodingAgentsSetParams = z.strictObject({
+  agent: CodingAgentId,
+  model: z.string().min(1).nullable().optional(),
+  effort: z.string().min(1).nullable().optional(),
+});
+export type CodingAgentsSetParams = z.infer<typeof CodingAgentsSetParams>;
+export const CodingAgentsSetResult = z.object({
+  agents: CodingAgentsSetting,
+});
+export type CodingAgentsSetResult = z.infer<typeof CodingAgentsSetResult>;
+
 /* -------------------------------- registry -------------------------------- */
 
 export interface LilosToolContract {
@@ -1012,6 +1047,20 @@ export const LILOS_TOOLS: Record<string, LilosToolContract> = {
     result: ScheduleTaskResult,
     doc: "Fire one of your scheduled tasks now — a session opens at once. Asks the user to approve.",
     area: "schedule",
+    access: "approval",
+  },
+  coding_agents: {
+    params: CodingAgentsParams,
+    result: CodingAgentsResult,
+    doc: "The user's stored default model + effort for each outside coding agent (claude, cursor, devin, antigravity). A missing agent or field means that CLI's own default — pass flags only for stored values.",
+    area: "coding",
+    access: "read",
+  },
+  coding_agents_set: {
+    params: CodingAgentsSetParams,
+    result: CodingAgentsSetResult,
+    doc: "Ask the user to change the stored default model and/or effort for one coding agent (`null` clears a field back to the CLI default). Waits for approval; returns the updated defaults.",
+    area: "coding",
     access: "approval",
   },
 };

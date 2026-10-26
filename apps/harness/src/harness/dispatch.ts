@@ -56,15 +56,17 @@ export async function sendPrompt(
        the turn it minted) advance now — waiting on the next turn.completed
        alone would strand a send whose dispatch bailed (#377). A dispatch
        that put its message BACK on the queue must not drain, though:
-       re-queue means the engine is busy or gone, and turn.completed or
-       the rebind already re-fires the drain — an immediate one would
-       hot-loop the same prompt (#377 OOM in the loaded suite). */
+       re-queue means the engine is busy or gone, and turn.completed,
+       the rebind, or the next attachEngine resync already re-fires the
+       drain (#834) — an immediate one would hot-loop the same prompt
+       (#377 OOM in the loaded suite). */
     if (!requeued) this.drainQueue(binding);
   }
 }
 
 /** True when the message went back on the queue and awaits an external
-    drain (turn.completed / rebind); false when it settled for good. */
+    drain (turn.completed / rebind / next attachEngine resync, #834);
+    false when it settled for good. */
 export async function dispatchPrompt(
   this: HarnessCtx,
   binding: SessionBinding,
@@ -280,7 +282,8 @@ export async function dispatchPrompt(
       // Transport failure (socket dropped / engine died mid-prompt): the
       // engine may still have taken the turn — its replayed
       // `turn.started.ref` reclaims the message on resync, and the answer
-      // dedupes on the same key either way.
+      // dedupes on the same key either way. The parked copy drains when
+      // resync settles on the new conn (#834).
       const live = this.liveBinding(binding);
       live.consumed.delete(message.id);
       /* #487: a socket that drops during a rebind lands this re-queue

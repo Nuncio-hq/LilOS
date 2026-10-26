@@ -161,6 +161,11 @@ export class Session {
       route; it must not become the session's model (#790). */
   settlingTurn = false;
 
+  /** #834: a Stop landed while prompt()'s submit was waiting out the
+      previous backend's session-ownership lease — the pending submit
+      aborts (`cancelled`) instead of landing a send the user stopped. */
+  submitCancelled = false;
+
   /** Stable LilOS subagentId for a wire-level child key. */
   subagentId(key: string): string {
     let id = this.subIds.get(key);

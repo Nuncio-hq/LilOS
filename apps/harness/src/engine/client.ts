@@ -52,6 +52,14 @@ export const engineErrorCode = (error: unknown): number | undefined => {
 /** Session does not exist on the engine (contract RPC_ERRORS.SESSION_NOT_FOUND). */
 export const SESSION_NOT_FOUND = -32001;
 
+/* #834: an `events.since` that lands on an adapter mid-resume rides the
+   session's lazy rebuild — engine-hermes budgets that at 240 s
+   (GW_RESUME_TIMEOUT_MS), and the incident showed >40 s under load. The
+   15 s default turned a slow resume into a resync failure (queued sends
+   stranded behind a stale runningTurnId, transcripts reporting replay
+   failure); the resync/reattach/feed callers wait the resume out. */
+export const RESUME_AWARE_TIMEOUT_MS = 240_000;
+
 /** Minimal browser-style socket surface both Bun's and `ws` provide. */
 export interface EngineSocket {
   readyState: number;

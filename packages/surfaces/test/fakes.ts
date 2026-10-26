@@ -2,6 +2,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import type {
   AppMessage,
+  CodingAgentsSetting,
   CompanyUpdate,
   Conversation,
   ConversationSummary,
@@ -16,6 +17,7 @@ import type {
   WorkbenchOpenTarget,
 } from "@lilos/contracts/app";
 import type {
+  CodingAgentsSetParams,
   GoalCreateParams,
   ProjectCreateParams,
   ScheduleCreateParams,
@@ -185,6 +187,8 @@ export function fakeAppOps(
     scheduledTasks?: ScheduledTask[];
     /** `project_list` answers (D-#771). */
     projects?: Project[];
+    /** Seed the `codingAgents` KV value (`coding_agents` reads). */
+    codingAgents?: CodingAgentsSetting;
     /** `"decline"` makes every approval op throw `declined` — nothing applies. */
     approve?: "once" | "decline";
     /** Live CEO holder. Defaults to the bound fake employee so existing
@@ -483,6 +487,23 @@ export function fakeAppOps(
       if (p.options?.length)
         return { outcome: "yes" as const, answer: p.options[0] };
       return { outcome: "yes" as const };
+    },
+    /* D-#835: the settings-KV record, gated like the real op. */
+    async codingAgents() {
+      return { ...(opts.codingAgents ?? {}) };
+    },
+    async codingAgentsSet(p: CodingAgentsSetParams) {
+      gate(`coding_agents_set ${p.agent}`);
+      const next = { ...(opts.codingAgents ?? {}) };
+      const entry = { ...(next[p.agent] ?? {}) };
+      if (p.model === null) delete entry.model;
+      else if (p.model !== undefined) entry.model = p.model;
+      if (p.effort === null) delete entry.effort;
+      else if (p.effort !== undefined) entry.effort = p.effort;
+      if (!entry.model && !entry.effort) delete next[p.agent];
+      else next[p.agent] = entry;
+      opts.codingAgents = next;
+      return next;
     },
     async addFolder(path: string) {
       gate(`folder_add ${path}`);
