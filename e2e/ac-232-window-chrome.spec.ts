@@ -139,9 +139,10 @@ test.afterAll(async () => {
 
 test.describe.configure({ mode: "serial" });
 
-/** The v3 shell is up: the sidebar lists the seeded agent. */
+/** The v3 shell is up: its Threads nav is drawn (D-#836 paused the sidebar's
+    agent row, the old signal). */
 const shellReady = (win: Page) =>
-  expect(v3Sidebar(win).getByRole("button", { name: /default/i })).toBeVisible({
+  expect(v3Sidebar(win).getByRole("button", { name: /^Threads/ })).toBeVisible({
     timeout: 60_000,
   });
 

@@ -51,8 +51,10 @@ const openedExternal = (app: ElectronApplication) =>
 
 const ready = async (app: ElectronApplication) => {
   const win = await app.firstWindow();
+  /* D-#836: the paused sidebar has no agent row — the Threads nav is the
+     "the shell is up" signal now. */
   await expect(
-    v3Sidebar(win).getByRole("button", { name: /default/i }),
+    v3Sidebar(win).getByRole("button", { name: /^Threads/ }),
   ).toBeVisible({ timeout: 60_000 });
   return win;
 };

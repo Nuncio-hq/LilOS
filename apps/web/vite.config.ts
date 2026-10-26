@@ -86,6 +86,9 @@ function lilosConfig() {
     relayWs: process.env.LILOS_RELAY_WS ?? "ws://127.0.0.1:4577/ws",
     relayToken: process.env.LILOS_RELAY_TOKEN ?? "",
     engineWs: process.env.LILOS_ENGINE_WS ?? "ws://127.0.0.1:4581/ws",
+    /* D-#836: a stack booted LILOS_COMPANY=1 shows the paused company layer
+       back — how the company-layer e2e specs keep their coverage. */
+    ...(process.env.LILOS_COMPANY === "1" ? { company: true } : {}),
   });
   const handler = (
     _req: unknown,

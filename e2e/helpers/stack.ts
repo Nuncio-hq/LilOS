@@ -529,6 +529,11 @@ export async function bootStack(
            worker share it, booted one after another, so the second finds
            deps already written. A sibling worker never rewrites it. */
         LILOS_VITE_CACHE_DIR: `node_modules/.vite-e2e-w${workerIndex() ?? WORKER}`,
+        /* D-#836: the product's no-env default pauses the company layer,
+           but the suite was written against it — sidebar agent rows are
+           the shared "shell is up" wait. Stacks boot with the layer ON;
+           a paused spec passes `LILOS_COMPANY: "0"` in extraEnv. */
+        LILOS_COMPANY: "1",
         ...extraEnv,
       },
       /* Piped, not inherited: the readiness probe reads `[relay] instanceId`
@@ -855,10 +860,12 @@ export async function startChatInFolder(
 
 /**
  * The company's first agent (the one the harness hires when the roster is
- * empty): past first run, open its sidebar row and read the id off the hash
- * the row navigates to (`#?page=agent&id=<id>` — a sidebar pick is a jump,
- * D-#769). The name is the row's own text, since it is "Default" on
- * engine-fake and "default" on hermes. The agent's page is left open.
+ * empty): past first run, open its page in the side peek (`#?open=agent:<id>`)
+ * and read its name off the record. D-#836 took the roster row out of the
+ * paused sidebar, so the id comes off the relay's employees.list — same
+ * record the row used to show (oldest hire first; "Default" on engine-fake,
+ * "default" on hermes). The agent's page is left open in the peek — an
+ * agent belongs to People, so the peek is where the URL keeps it (D-#769).
  */
 export async function openDefaultAgent(
   page: playwright.Page,
@@ -868,22 +875,24 @@ export async function openDefaultAgent(
   const { expect } = playwright;
   await skipFirstRun(page);
   await page.goto(`${webUrl}/`);
-  const row = v3Sidebar(page).getByRole("button", { name: /default/i });
-  await expect(row).toBeVisible({ timeout });
-  /* The last line is the name. The avatar's letter is the line above it,
-     and the CEO chip is its own word once someone holds the position
-     (D-#778) — drop that word, keep the name. */
-  const lines = (await row.innerText())
-    .split("\n")
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0 && l !== "CEO");
-  const name = (lines.pop() ?? "").replace(/\s+CEO$/, "").trim();
-  await row.click();
-  await expect(page).toHaveURL(/[#?&]page=agent&id=[^&,]+/);
-  const id = decodeURIComponent(
-    /[?&]id=([^&,]+)/.exec(page.url())?.[1] ?? "",
+  const cfg = (await (
+    await fetch(`${webUrl}/lilos-config.json`, { cache: "no-store" })
+  ).json()) as { relayWs: string; relayToken?: string };
+  const { employees } = await relayRpc<{
+    employees: { id: string; name: string }[];
+  }>(
+    page,
+    { relayWs: cfg.relayWs, relayToken: cfg.relayToken ?? "" },
+    "employees.list",
+    {},
   );
-  return { id, name };
+  const agent = employees.find((e) => /default/i.test(e.name)) ?? employees[0];
+  if (!agent) throw new Error("employees.list returned nobody");
+  await page.goto(agentUrl(webUrl, agent.id));
+  await expect(
+    v3Peek(page).getByRole("heading", { level: 1, name: agent.name }),
+  ).toBeVisible({ timeout });
+  return { id: agent.id, name: agent.name };
 }
 
 /**

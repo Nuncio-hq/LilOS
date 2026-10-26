@@ -140,6 +140,9 @@ async function boot(tag: string, home?: string): Promise<Procs> {
         LILOS_ENGINE_WS: `ws://127.0.0.1:${ports.feed}/ws`,
         LILOS_WEB_PORT: String(ports.web),
         LILOS_VITE_CACHE_DIR: viteCacheDir,
+        /* D-#836: the sidebar's agent row (clicked below) is company layer —
+           this stack opts it back in. */
+        LILOS_COMPANY: "1",
       },
       // Captured so the spec can assert no mid-boot re-optimize reload (#84).
       stdio: ["ignore", "pipe", "pipe"],
