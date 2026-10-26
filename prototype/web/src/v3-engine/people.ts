@@ -54,8 +54,13 @@ export function peopleActions({ setData, getData, toast }: Engine): Pick<
         ),
       }));
     },
-    hire: ({ name, role, model }) => {
+    hire: ({ name, role, model, runtime }) => {
       const id = name.toLowerCase().replace(/[^a-z0-9]+/g, "-") || "agent";
+      /* A runtime hire (#870) lands on that kind's runtime; the label it
+         reports is the same string the real employee's card would show. */
+      const runtimeLabel = runtime
+        ? (getData().runtimes?.find((r) => r.id === runtime)?.label ?? runtime)
+        : "Hermes";
       setData((d) => ({
         ...d,
         agents: [
@@ -69,7 +74,7 @@ export function peopleActions({ setData, getData, toast }: Engine): Pick<
             role,
             reportsTo: d.ceoId,
             hired: "today",
-            runtime: `Hermes · profile ${id}`,
+            runtime: `${runtimeLabel} · profile ${id}`,
             profile: id,
             model,
             modelId: modelIdOf(MODEL_OPTIONS, model),
@@ -93,10 +98,13 @@ export function peopleActions({ setData, getData, toast }: Engine): Pick<
     listProfiles: () => Promise.resolve(ENGINE_PROFILES),
     // The agent runs on the profile as it is: the profile's own model and
     // persona come with it, nothing is written to the profile.
-    hireProfile: ({ profile, name, role }) => {
+    hireProfile: ({ profile, name, role, runtime }) => {
       const p = ENGINE_PROFILES.find((x) => x.id === profile);
       if (!p) return Promise.reject(new Error("That profile is not on the engine"));
       const id = `${profile}-${getData().agents.length}`;
+      const runtimeLabel = runtime
+        ? (getData().runtimes?.find((r) => r.id === runtime)?.label ?? runtime)
+        : "Hermes";
       setData((d) => ({
         ...d,
         agents: [
@@ -110,7 +118,7 @@ export function peopleActions({ setData, getData, toast }: Engine): Pick<
             role,
             reportsTo: d.ceoId,
             hired: "today",
-            runtime: `Hermes · profile ${profile}`,
+            runtime: `${runtimeLabel} · profile ${profile}`,
             profile,
             model: p.model ?? d.modelChoices[0],
             modelId: modelIdOf(MODEL_OPTIONS, p.model ?? d.modelChoices[0]),

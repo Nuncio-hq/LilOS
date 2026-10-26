@@ -11,6 +11,7 @@ import {
   type V3Agent,
   type V3Data,
   type V3Project,
+  type V3Runtime,
   type V3Tone,
 } from "@lilos/ui";
 import { atom, computed, onMount, type ReadableAtom } from "nanostores";
@@ -161,6 +162,18 @@ export function v3DataStore(): ReadableAtom<V3Data> {
     relay.status,
     (s) => s.result?.engine?.name ?? "",
   );
+  /* The runtime roster the harness reports (D-#761) — the add-agent
+     dialog's Who? kinds (#870). The catalog emits the default row first. */
+  const runtimeRows = computed(relay.status, (s): V3Runtime[] | undefined =>
+    s.result?.runtimes?.map((r, i) => ({
+      id: r.id,
+      label: r.label,
+      ...(r.available !== undefined ? { available: r.available } : {}),
+      ...(r.state ? { state: r.state } : {}),
+      ...(r.detail ? { detail: r.detail } : {}),
+      ...(i === 0 ? { isDefault: true } : {}),
+    })),
+  );
   const company = computed(
     [profile, osFullName],
     () => [currentName(), currentCompany()] as const,
@@ -175,6 +188,7 @@ export function v3DataStore(): ReadableAtom<V3Data> {
       statusKey,
       minute,
       engineName,
+      runtimeRows,
       company,
       folders,
       modelRowStore(),
@@ -203,6 +217,7 @@ export function v3DataStore(): ReadableAtom<V3Data> {
       _status,
       now,
       engine,
+      runtimeList,
       [me, companyName],
       folderRows,
       modelRows,
@@ -250,6 +265,7 @@ export function v3DataStore(): ReadableAtom<V3Data> {
           ),
         ),
         connectors: [],
+        ...(runtimeList ? { runtimes: runtimeList } : {}),
         projects: projectRows(projects),
         goals: v3Goals(goals),
         tickets: v3Tickets(tickets, now),

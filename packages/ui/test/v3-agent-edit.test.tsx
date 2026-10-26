@@ -409,3 +409,66 @@ describe("remove", () => {
     ).toBeNull();
   });
 });
+
+/* Click-to-rename on the header (#870): the name itself, or ⋯ → Rename,
+   swaps it for a box; Enter (or leaving) saves just the name through
+   updateAgent, Esc keeps the old one and touches nothing behind it. */
+describe("rename in the header", () => {
+  test("clicking the name opens the box; Enter saves through updateAgent", async () => {
+    const act_ = actions();
+    mount(act_);
+    fireEvent.click(screen.getByRole("button", { name: "Reviewer" }));
+    const box = screen.getByLabelText("Agent name");
+    expect(box).toHaveProperty("value", "Reviewer");
+    fireEvent.change(box, { target: { value: "Rex" } });
+    await act(async () => {
+      fireEvent.keyDown(box, { key: "Enter" });
+    });
+    expect(act_.updateAgent).toHaveBeenCalledWith("emp_1", { name: "Rex" });
+    expect(screen.queryByLabelText("Agent name")).toBeNull();
+  });
+
+  test("⋯ → Rename opens the same box", () => {
+    mount(actions());
+    fireEvent.click(screen.getByRole("button", { name: "Agent actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
+    expect(screen.getByLabelText("Agent name")).toBeTruthy();
+  });
+
+  test("Esc keeps the old name and never reaches the peek behind", () => {
+    const shell = shellEsc();
+    const act_ = actions();
+    mount(act_);
+    fireEvent.click(screen.getByRole("button", { name: "Reviewer" }));
+    const box = screen.getByLabelText("Agent name");
+    fireEvent.change(box, { target: { value: "Rex" } });
+    press(box, "Escape");
+    expect(act_.updateAgent).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText("Agent name")).toBeNull();
+    expect(screen.getByRole("button", { name: "Reviewer" })).toBeTruthy();
+    expect(shell.closePeek).not.toHaveBeenCalled();
+    shell.off();
+  });
+
+  test("an unchanged name saves nothing; an outside worker cannot rename", async () => {
+    const act_ = actions();
+    mount(act_);
+    fireEvent.click(screen.getByRole("button", { name: "Reviewer" }));
+    await act(async () => {
+      fireEvent.keyDown(screen.getByLabelText("Agent name"), {
+        key: "Enter",
+      });
+    });
+    expect(act_.updateAgent).not.toHaveBeenCalled();
+    // An outside worker has no engine fields at all — and no rename control.
+    cleanup();
+    mount(
+      act_,
+      data({
+        agents: [{ ...agent, kind: "outside", via: "x" }],
+      }),
+    );
+    expect(screen.queryByRole("button", { name: "Reviewer" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Agent actions" })).toBeNull();
+  });
+});

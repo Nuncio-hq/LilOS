@@ -212,7 +212,7 @@ export function makeV3Actions(caps: V3Capabilities): V3DataActions {
         .catch(() => {}),
     ...(canHire
       ? {
-          hire: async ({ name, role, model }) => {
+          hire: async ({ name, role, model, runtime }) => {
             const pick = pickFromLabel(model);
             const draft: HireDraft = {
               name,
@@ -222,7 +222,9 @@ export function makeV3Actions(caps: V3Capabilities): V3DataActions {
               instructions: instructionsFor(name, role),
             };
             try {
-              return (await hireEmployee(draft, null)).id;
+              /* `runtime` lands a fresh profile on that coding runtime
+                 (D-#761); absent = the default engine. */
+              return (await hireEmployee(draft, null, runtime)).id;
             } catch (e) {
               sayError(describeActionError("Couldn't hire", e));
               throw e;
