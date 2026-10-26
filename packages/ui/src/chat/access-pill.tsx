@@ -4,6 +4,7 @@ import {
   ShieldAlertIcon,
   ShieldQuestionIcon,
 } from "lucide-react";
+import { createPortal } from "react-dom";
 import { PromptInputButton } from "../components/ai-elements/prompt-input";
 import { cn } from "../lib/utils";
 import type { ConversationAccess } from "../types";
@@ -15,10 +16,12 @@ import { useMenu } from "../v3/v3-keys";
  * with a one-line hint — never a toggle you have to guess. The pick applies
  * to the agent's next action, mid-turn included.
  *
- * Built on the v3 useMenu (ChipMenu's pattern), not base-ui's DropdownMenu:
- * that portal+exit-animation pair raced Playwright's actionability checks —
- * a second open went in under a still-detaching first popup and the spec
- * hung until test-timeout. This menu mounts and unmounts in one render.
+ * Built on the v3 useMenu (ChipMenu's pattern), not base-ui's DropdownMenu —
+ * that pair raced Playwright's actionability checks and hung ac-106. But the
+ * PromptInput box is `overflow-hidden`, so the menu still goes through a
+ * portal: in-flow `absolute` gets clipped above the rounded box, and
+ * `fixed` without a portal resolves against the composer's `@container`
+ * (layout containment), not the viewport.
  */
 const OPTIONS: {
   id: ConversationAccess;
@@ -50,6 +53,9 @@ export function AccessPill({
   const full = access === "full";
   const cur = OPTIONS.find((o) => o.id === access) ?? OPTIONS[0];
   const { open, setOpen, trigger, list, close, onKeyDown } = useMenu();
+  /* Anchored to the trigger's rect at open time: the menu is short-lived and
+     any outside press (scroll away included) closes it. */
+  const at = open ? trigger.current?.getBoundingClientRect() : undefined;
   return (
     <span className="relative shrink-0">
       <PromptInputButton
@@ -74,46 +80,54 @@ export function AccessPill({
         <span className="sr-only">{cur.label}</span>
         <ChevronDownIcon className="size-3 opacity-60" />
       </PromptInputButton>
-      {open && (
-        <div
-          ref={list}
-          role="menu"
-          aria-label="Access"
-          tabIndex={-1}
-          onKeyDown={onKeyDown}
-          className="absolute bottom-full left-0 z-20 mb-1 w-64 rounded-lg border border-[var(--v3-line)] bg-popover p-1 shadow-lg"
-        >
-          {OPTIONS.map((o) => (
-            <button
-              key={o.id}
-              type="button"
-              role="menuitemradio"
-              aria-checked={o.id === access}
-              onClick={() => {
-                onAccess(o.id);
-                close();
-              }}
-              className="flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left text-[13px] outline-none hover:bg-[var(--v3-hover)] focus-visible:bg-[var(--v3-hover)]"
-            >
-              <o.Icon
-                className={cn(
-                  "mt-0.5 size-3.5 shrink-0",
-                  o.id === "full" && "text-orange-500",
-                )}
-              />
-              <span className="min-w-0 flex-1">
-                <span className="block">{o.label}</span>
-                <span className="block text-muted-foreground text-xs">
-                  {o.hint}
+      {open &&
+        at &&
+        createPortal(
+          <div
+            ref={list}
+            role="menu"
+            aria-label="Access"
+            tabIndex={-1}
+            onKeyDown={onKeyDown}
+            style={{
+              position: "fixed",
+              left: at.left,
+              bottom: window.innerHeight - at.top + 4,
+            }}
+            className="z-50 w-64 rounded-lg border border-[var(--v3-line)] bg-popover p-1 shadow-lg"
+          >
+            {OPTIONS.map((o) => (
+              <button
+                key={o.id}
+                type="button"
+                role="menuitemradio"
+                aria-checked={o.id === access}
+                onClick={() => {
+                  onAccess(o.id);
+                  close();
+                }}
+                className="flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left text-[13px] outline-none hover:bg-[var(--v3-hover)] focus-visible:bg-[var(--v3-hover)]"
+              >
+                <o.Icon
+                  className={cn(
+                    "mt-0.5 size-3.5 shrink-0",
+                    o.id === "full" && "text-orange-500",
+                  )}
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block">{o.label}</span>
+                  <span className="block text-muted-foreground text-xs">
+                    {o.hint}
+                  </span>
                 </span>
-              </span>
-              {o.id === access && (
-                <CheckIcon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
-              )}
-            </button>
-          ))}
-        </div>
-      )}
+                {o.id === access && (
+                  <CheckIcon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+                )}
+              </button>
+            ))}
+          </div>,
+          document.body,
+        )}
     </span>
   );
 }
