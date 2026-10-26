@@ -686,6 +686,66 @@ const THREADS: V3Data["threads"] = [
       },
     ],
   },
+  /* #854: a chat in a folder that is no project — it runs there and files
+     under Chats (its folder shows), and its folder chip offers "Add as
+     project". Nothing made a project of it on its own. */
+  {
+    id: "t-chat-journal",
+    agentId: "scout",
+    title: "Skim journal-app's onboarding flow",
+    status: "done",
+    startedAt: "09:48",
+    minutes: 4,
+    context: 8,
+    model: "Opus 5.5 · High",
+    folder: "~/Code/journal-app",
+    summary: "Read the five onboarding screens; named two copy fixes",
+    turns: [
+      {
+        n: 1,
+        from: "you at 09:48",
+        took: "4m",
+        prompt: { by: "you", at: "09:48", text: "Skim journal-app's onboarding flow and tell me what it asks before the first journal entry." },
+        steps: [
+          { kind: "search", target: "onboarding", meta: "3 matches" },
+          { kind: "read", target: "src/onboarding/Flow.tsx", meta: "142 lines" },
+          { kind: "read", target: "src/onboarding/steps.tsx", meta: "96 lines" },
+        ],
+        answer:
+          "Five screens before the first entry: value prop, notifications, a sample prompt, iCloud sync, then the paywall. Two copy nits: screen 3 says “journey” where the rest say “journal”, and the paywall never says what the trial costs.\n\nNothing here is a project — say the word and the folder becomes one.",
+      },
+    ],
+  },
+  /* #854: a folder inside a project's folder is that project's — a task
+     worktree chat under LilOS's `.lilos/wt/` files under LilOS with no
+     projectId of its own (containment, not a record on the thread). */
+  {
+    id: "t-chat-wt",
+    agentId: "builder",
+    title: "Try the scroll-pin fix in the ac-544 worktree",
+    status: "done",
+    startedAt: "08:36",
+    minutes: 9,
+    context: 11,
+    model: "Opus 5.5 · High",
+    folder: "~/Code/LilOS/.lilos/wt/ac-544",
+    summary: "Reproduced the jump, sketched the fix the ticket thread landed",
+    turns: [
+      {
+        n: 1,
+        from: "you at 08:36",
+        took: "9m",
+        prompt: { by: "you", at: "08:36", text: "In the ac-544 worktree, poke the scroll restore — is the jump in the pin or the data?" },
+        steps: [
+          { kind: "run", target: "bun test ac-544", meta: "1 failing" },
+          { kind: "read", target: "packages/ui/src/chat/conversation.tsx", meta: "pinRef guard" },
+          { kind: "think", target: "The pin is fine; the open-time restore writes after first paint, so the pane jumps once." },
+        ],
+        answer:
+          "The pin is fine — the restore writes after the first paint, so the pane jumps once before it lands. The fix lives on LIL-81's thread now; this chat just reproduced it.",
+      },
+    ],
+  },
 ]
 
 const ASKS: V3Data["asks"] = [

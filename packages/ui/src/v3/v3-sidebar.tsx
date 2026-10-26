@@ -34,6 +34,7 @@ export function V3Sidebar({
   dark,
   onTheme,
   canHire = true,
+  onNewProject,
   mode,
   width,
   sideRef,
@@ -53,6 +54,9 @@ export function V3Sidebar({
   onTheme: () => void;
   /** The app can create agents; without it the Hire entry is not drawn. */
   canHire?: boolean;
+  /** The app can make a project of a folder: the Projects label gets a +
+     (#854). Absent: no +, the list stands alone. */
+  onNewProject?: () => void;
   mode: SidebarMode;
   width: number;
   sideRef: Ref<HTMLElement>;
@@ -166,10 +170,25 @@ export function V3Sidebar({
           />
         )}
 
-        {/* No projects yet (a company of plain folders): no empty heading. */}
-        {data.projects.length > 0 && (
+        {/* No projects yet (a company of plain folders): no empty heading —
+            unless the + can make the first one (#854). */}
+        {(data.projects.length > 0 || onNewProject) && (
           <>
-            <Label>Projects</Label>
+            <div className="flex items-end">
+              <Label>Projects</Label>
+              {onNewProject && (
+                <button
+                  type="button"
+                  onClick={onNewProject}
+                  aria-label="New project from a folder"
+                  title="New project from a folder"
+                  data-new-project
+                  className="mr-1 mb-[3px] ml-auto grid size-[22px] shrink-0 place-items-center rounded-md text-muted-foreground/70 transition-colors hover:bg-[var(--v3-hover)] hover:text-foreground [&>svg]:size-3.5"
+                >
+                  <PlusIcon />
+                </button>
+              )}
+            </div>
             {data.projects.map((p) => (
               <Item
                 key={p.id}

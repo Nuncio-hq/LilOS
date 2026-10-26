@@ -120,6 +120,17 @@ export type V3Actions = {
      `data.projects`. Closing the dialog says nothing. Absent: the project
      menu has no such row. */
   newProject?: (onCreated: (projectId: string) => void) => void;
+  /** "Add as project" on a folder the company already uses: makes a project
+     of it — one click, name and key taken from the folder — and the threads
+     running in it file under the project on their own (the folder is inside
+     it, #854). A folder that already has a project answers it. Absent: a
+     folder chip offers nothing. */
+  addAsProject?: (folder: string) => void;
+  /** Takes the project record away: the folder and its threads stay and the
+     threads become chats again — nothing on disk is touched (#854). The
+     page has already asked; resolves when it is gone. Absent: the project
+     page has no Remove. */
+  removeProject?: (projectId: string) => Promise<void>;
   markSeen: (threadId: string) => void;
   /** Hires an agent and returns its id, so the Hire page can open it. Rejects
      when the hire failed (the app has already said why). Absent while the

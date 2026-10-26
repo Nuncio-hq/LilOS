@@ -315,6 +315,14 @@ export function V3Shell({
             dark={dark}
             onTheme={() => setTheme(dark ? "light" : "dark")}
             canHire={!!actions.hire}
+            onNewProject={
+              actions.newProject
+                ? () =>
+                    actions.newProject?.((id) =>
+                      goFromPage({ page: "project", id }),
+                    )
+                : undefined
+            }
             mode={mode}
             width={side.w}
             sideRef={pop.side}

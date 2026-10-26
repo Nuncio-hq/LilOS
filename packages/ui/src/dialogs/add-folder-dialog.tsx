@@ -25,6 +25,12 @@ export const NEW_PROJECT_COPY = {
   add: "Create project",
 };
 
+/** The ticket key a project name suggests: its letters, uppercased —
+    "journal-app" → "JOU". The caller still dedupes (two projects can both
+    want "JO"). */
+export const suggestProjectKey = (name: string): string =>
+  (name.replace(/[^a-z0-9]/gi, "").toUpperCase() || "P").slice(0, 3);
+
 /* Add a local folder to a project. Browse or type a path (complete.path), see whether it is a repo and on which
    branch (projects.for_cwd), then attach it: projects.add_folder { id, path } or projects.create { name, folders }.
    `fs` is the machine's folder listing (gateway data in the real app; mock in the prototype) passed in. */
@@ -38,6 +44,7 @@ export function AddFolderDialog({
   onAdd,
   onNeedDir,
   copy,
+  projectFields,
 }: {
   folders: Folder[];
   /* Project targets (prototype #18). Absent = plain "add a folder"
@@ -48,7 +55,10 @@ export function AddFolderDialog({
   fs: Record<string, FsDir>;
   discovered: string[];
   onClose: () => void;
-  onAdd: (path: string, project?: { existing?: string; name: string }) => void;
+  onAdd: (
+    path: string,
+    project?: { existing?: string; name: string; key?: string },
+  ) => void;
   /* Called when the listing needs a dir the `fs` map doesn't have yet — the
      app answers with a host `fs.list` (real app: the harness). Without it the
      dialog renders purely off `fs` (mock). */
@@ -56,6 +66,10 @@ export function AddFolderDialog({
   /* Its own words where the dialog serves something other than "add a folder"
      (the new chat's "New project from a folder…"). */
   copy?: { title: string; hint: string; add: string };
+  /* The picked folder becomes a project (#854): once one resolves, its name
+     and key show prefilled from it and stay editable, and onAdd carries
+     them. Absent: the folder is added as picked. */
+  projectFields?: boolean;
 }) {
   const title = copy?.title ?? "Add a folder";
   /* #581 AC-3: open with NOTHING picked (home listing, Add disabled until
@@ -64,6 +78,11 @@ export function AddFolderDialog({
   const [path, setPath] = useState("");
   const [target, setTarget] = useState<string>(defaultProject ?? "__new");
   const [newName, setNewName] = useState("");
+  /* The project fields belong to the picked folder: they prefill from it,
+   your edits stay while the folder does, and picking another folder
+   prefills again. The key follows the edited name until you touch it. */
+  const [nameEdit, setNameEdit] = useState<{ for: string; v: string }>();
+  const [keyEdit, setKeyEdit] = useState<{ for: string; v: string }>();
   const clean = path.trim().replace(/\/+$/, "") || "~";
   const exact = fs[clean];
   // complete.path: list the typed dir, or the parent filtered by the partial last segment
@@ -85,8 +104,18 @@ export function AddFolderDialog({
   const suggestedName = baseName(clean);
   const projName =
     target === "__new" ? newName.trim() || suggestedName : target;
+  /* #854: the project's name and key, prefilled from the folder's name until
+     the field has been edited for this pick. */
+  const projFields = !!projectFields;
+  const fieldName = nameEdit?.for === clean ? nameEdit.v : suggestedName;
+  const fieldKey =
+    keyEdit?.for === clean ? keyEdit.v : suggestProjectKey(fieldName);
   const crumbs = clean.split("/").map((_, i, a) => a.slice(0, i + 1).join("/"));
-  const canAdd = !!exact && clean !== "~" && !attached;
+  const canAdd =
+    !!exact &&
+    clean !== "~" &&
+    !attached &&
+    (!projFields || (fieldName.trim() !== "" && fieldKey.trim() !== ""));
   /* #576: Esc closes this dialog while it is the top-most layer. */
   const layerRef = useUiLayerEl<HTMLDivElement>({ onEscape: onClose });
   return (
@@ -292,6 +321,52 @@ export function AddFolderDialog({
             </div>
           )}
 
+          {projFields && exact && clean !== "~" && !attached && (
+            <div data-projectfields>
+              <div className="mb-1.5 text-muted-foreground text-xs">
+                Project
+              </div>
+              <div className="grid items-end gap-3 sm:grid-cols-[1fr_7rem]">
+                <div>
+                  <div className="mb-1 text-muted-foreground text-[11px]">
+                    Name
+                  </div>
+                  <Input
+                    value={fieldName}
+                    onChange={(e) =>
+                      setNameEdit({ for: clean, v: e.target.value })
+                    }
+                    spellCheck={false}
+                    data-projectname
+                    className="h-8 text-sm"
+                  />
+                </div>
+                <div>
+                  <div className="mb-1 text-muted-foreground text-[11px]">
+                    Key
+                  </div>
+                  <Input
+                    value={fieldKey}
+                    onChange={(e) =>
+                      setKeyEdit({
+                        for: clean,
+                        v: e.target.value.toUpperCase(),
+                      })
+                    }
+                    spellCheck={false}
+                    data-projectkey
+                    className="h-8 font-mono text-sm"
+                  />
+                </div>
+              </div>
+              <p className="mt-1.5 text-muted-foreground text-[11px] leading-4">
+                The key prefixes the project&apos;s tickets, like{" "}
+                {fieldKey || "KEY"}
+                -12. Both stay editable; the folder is what the project is.
+              </p>
+            </div>
+          )}
+
           {projects && (
             <div>
               <div className="mb-1.5 text-muted-foreground text-xs">
@@ -367,7 +442,15 @@ export function AddFolderDialog({
             disabled={!canAdd}
             onClick={() =>
               projects === undefined
-                ? onAdd(clean)
+                ? onAdd(
+                    clean,
+                    projFields
+                      ? {
+                          name: fieldName.trim(),
+                          key: fieldKey.trim().toUpperCase(),
+                        }
+                      : undefined,
+                  )
                 : onAdd(
                     clean,
                     target === "__new"

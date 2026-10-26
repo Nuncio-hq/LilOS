@@ -311,8 +311,9 @@ export type V3Thread = {
   id: string;
   /** Absent = a chat, not tied to a ticket. */
   ticketId?: string;
-  /** The project the thread lives in (D-#771), whose folder the agent works
-     in; absent = a plain chat, which works in no folder. */
+  /** The project the thread lives in (D-#771); absent = a plain chat. A
+     chat can still run in a `folder` — it files under Chats — and a folder
+     inside a project's folder files the thread under it on its own (#854). */
   projectId?: string;
   agentId: string;
   /** This hand's job on the ticket ("Build two variants"), or the chat's topic. */
@@ -338,7 +339,9 @@ export type V3Thread = {
   context?: number;
   /** Absent = the engine's default model. */
   model?: string;
-  /** Absent = the harness's default folder. */
+  /** Where the agent works. Absent = the harness's default folder; a chat in
+     a folder is still a chat unless the folder is (or sits inside) a
+     project's (#854). */
   folder?: string;
   branch?: string;
   /** The step running now. */

@@ -2,9 +2,16 @@ import { FolderIcon, TargetIcon, UsersIcon } from "lucide-react";
 import { useState } from "react";
 import { Meter, Page, Prop, Section, Title } from "./v3-bits";
 import { AgentAvatar, CeoMark, ProjectMark } from "./v3-marks";
-import { agentOf, FORMER_AGENT, goalProgress, projectOf } from "./v3-model";
+import {
+  agentOf,
+  FORMER_AGENT,
+  goalProgress,
+  projectOf,
+  threadProjectId,
+} from "./v3-model";
 import { RowButton } from "./v3-open-record";
 import type { V3PageProps } from "./v3-page-types";
+import { RemoveProject } from "./v3-project-remove";
 import { ThreadRow, TicketRow } from "./v3-rows";
 
 /* A project page (D-#771): the folder, the threads that live in it, live and
@@ -14,7 +21,12 @@ import { ThreadRow, TicketRow } from "./v3-rows";
 /** Past threads shown before "Show all": a busy project has hundreds. */
 const PAST_SHOWN = 12;
 
-export function V3ProjectPage({ data, go, id }: V3PageProps & { id: string }) {
+export function V3ProjectPage({
+  data,
+  go,
+  act,
+  id,
+}: V3PageProps & { id: string }) {
   const project = projectOf(data, id);
   const [showDone, setShowDone] = useState(false);
   const [allPast, setAllPast] = useState(false);
@@ -35,11 +47,11 @@ export function V3ProjectPage({ data, go, id }: V3PageProps & { id: string }) {
     : [];
   const open = tickets.filter((t) => t.status !== "done");
   const done = tickets.filter((t) => t.status === "done");
-  const ticketIds = new Set(tickets.map((t) => t.id));
+  /* A thread is the project's by its own record, its ticket, or a folder
+     inside the project's — a `.lilos/wt/` worktree lists here on its own
+     (#854). */
   const mine = data.threads.filter(
-    (t) =>
-      t.projectId === project.id ||
-      (t.ticketId !== undefined && ticketIds.has(t.ticketId)),
+    (t) => threadProjectId(data, t) === project.id,
   );
   const live = mine.filter((t) => t.status !== "done" && t.status !== "idle");
   const past = mine.filter((t) => t.status === "done" || t.status === "idle");
@@ -228,6 +240,8 @@ export function V3ProjectPage({ data, go, id }: V3PageProps & { id: string }) {
           )}
         </>
       )}
+
+      <RemoveProject data={data} go={go} act={act} project={project} />
     </Page>
   );
 }

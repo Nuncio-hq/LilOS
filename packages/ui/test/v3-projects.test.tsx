@@ -15,11 +15,15 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { AddFolderDialog } from "../src/dialogs/add-folder-dialog";
+import { ThreadView } from "../src/thread/thread-view";
+import type { Channel, EmpFn, HumanFn, Msg, Thread } from "../src/types";
 import type { V3Data } from "../src/v3/v3-data-types";
 import { V3DraftChat } from "../src/v3/v3-draft-chat";
 import type { V3Actions } from "../src/v3/v3-page-types";
 import { V3Peek } from "../src/v3/v3-peek";
 import { V3ProjectPage } from "../src/v3/v3-project";
+import { V3Sidebar } from "../src/v3/v3-sidebar";
 import type {
   V3Agent,
   V3Project,
@@ -366,5 +370,284 @@ describe("the trail says what a thread is filed under", () => {
 
   test("a ticket's hand keeps its ticket", () => {
     expect(trail(d, "tk")).toBe("ThreadsReviewer · APP-1");
+  });
+});
+
+/* #854: projects are added by hand. A folder alone makes no project — a
+   thread opened in one files under Chats with its folder named; a folder
+   inside a project's folder belongs to that project; adding and removing a
+   project never touch the folder or the threads. */
+describe("projects by hand (#854)", () => {
+  const props = (d: V3Data, act: V3Actions = actions()) => ({
+    data: d,
+    go: vi.fn(),
+    act,
+    id: "p_app",
+  });
+
+  test("a thread's folder inside a project's folder files it under the project", () => {
+    const d = data({
+      projects: [APP],
+      threads: [
+        thread("wt", "done", { folder: "/repo/app/.lilos/wt/ac-1" }),
+        thread("chat", "done", { folder: "/repo/other" }),
+      ],
+    });
+    render(<V3ProjectPage {...props(d)} />);
+    const past = document.querySelector("[data-project-past]") as HTMLElement;
+    expect(within(past).getByText("Title wt")).toBeTruthy();
+    expect(screen.queryByText("Title chat")).toBeNull();
+  });
+
+  test("a folder chat is tagged Chat with its folder's name, on the trail too", () => {
+    const d = data({
+      threads: [thread("c", "done", { folder: "/repo/notes" })],
+    });
+    render(
+      <V3Peek
+        data={d}
+        go={vi.fn()}
+        act={actions()}
+        trail={[{ page: "thread", id: "c" }]}
+        full={false}
+        pageName="Threads"
+        onBack={vi.fn()}
+        onTrail={vi.fn()}
+        onFull={vi.fn()}
+        onClose={vi.fn()}
+        renderThread={() => null}
+      />,
+    );
+    expect(screen.getByRole("navigation", { name: "Trail" }).textContent).toBe(
+      "ThreadsReviewer · Chat · notes",
+    );
+  });
+
+  test("Remove project says the folder and threads stay, then removes", async () => {
+    const removeProject = vi.fn(async () => {});
+    const go = vi.fn();
+    const d = data({ projects: [APP] });
+    render(
+      <V3ProjectPage
+        data={d}
+        go={go}
+        act={actions({ removeProject })}
+        id="p_app"
+      />,
+    );
+    const group = document.querySelector(
+      "[data-remove-project]",
+    ) as HTMLElement;
+    fireEvent.click(
+      within(group).getByRole("button", { name: "Remove project" }),
+    );
+    // The confirm names the kept things — the folder and every thread.
+    expect(group.textContent).toContain("the folder");
+    expect(group.textContent).toContain("/repo/app");
+    expect(group.textContent).toContain("become chats again");
+    await act(async () => {
+      fireEvent.click(
+        within(group).getByRole("button", { name: "Remove project" }),
+      );
+    });
+    expect(removeProject).toHaveBeenCalledWith("p_app");
+    expect(go).toHaveBeenCalledWith({ page: "home" });
+  });
+
+  test("Cancel closes the confirm; without the action there is no Remove", async () => {
+    const removeProject = vi.fn(async () => {});
+    render(
+      <V3ProjectPage
+        data={data({ projects: [APP] })}
+        go={vi.fn()}
+        act={actions({ removeProject })}
+        id="p_app"
+      />,
+    );
+    const group = document.querySelector(
+      "[data-remove-project]",
+    ) as HTMLElement;
+    fireEvent.click(
+      within(group).getByRole("button", { name: "Remove project" }),
+    );
+    fireEvent.click(within(group).getByRole("button", { name: "Cancel" }));
+    expect(within(group).getByRole("button", { name: "Remove project" }));
+    expect(removeProject).not.toHaveBeenCalled();
+    cleanup();
+    render(
+      <V3ProjectPage
+        data={data({ projects: [APP] })}
+        go={vi.fn()}
+        act={actions()}
+        id="p_app"
+      />,
+    );
+    expect(document.querySelector("[data-remove-project]")).toBeNull();
+  });
+
+  test("the + beside Projects asks for a folder; without the action there is no +", () => {
+    const onNewProject = vi.fn();
+    const sidebar = (extra: object) => (
+      <V3Sidebar
+        data={data({ projects: [APP] })}
+        page={{ page: "home" }}
+        go={vi.fn()}
+        onSearch={vi.fn()}
+        dark={false}
+        onTheme={vi.fn()}
+        mode="docked"
+        width={260}
+        sideRef={{ current: null }}
+        onToggle={vi.fn()}
+        onPointerEnter={vi.fn()}
+        onPointerLeave={vi.fn()}
+        onBlur={vi.fn()}
+        {...extra}
+      />
+    );
+    render(sidebar({ onNewProject }));
+    const plus = document.querySelector("[data-new-project]") as HTMLElement;
+    expect(plus).toBeTruthy();
+    fireEvent.click(plus);
+    expect(onNewProject).toHaveBeenCalledTimes(1);
+    cleanup();
+    render(sidebar({}));
+    expect(document.querySelector("[data-new-project]")).toBeNull();
+  });
+
+  test("the folder picker's project fields prefill from the folder and stay editable", async () => {
+    const onAdd = vi.fn();
+    const r = render(
+      <AddFolderDialog
+        folders={[]}
+        fs={{
+          "~": { children: ["journal-app"] },
+          "~/journal-app": { children: [] },
+        }}
+        discovered={[]}
+        onClose={() => {}}
+        onAdd={onAdd}
+        projectFields
+      />,
+    );
+    expect(r.container.querySelector("[data-projectname]")).toBeNull();
+    fireEvent.click(r.container.querySelector('[data-fsrow="journal-app"]')!);
+    const name = r.container.querySelector(
+      "[data-projectname]",
+    ) as HTMLInputElement;
+    const key = r.container.querySelector(
+      "[data-projectkey]",
+    ) as HTMLInputElement;
+    expect(name.value).toBe("journal-app");
+    expect(key.value).toBe("JOU");
+    // Both stay editable — the suggestion is a start, not a lock.
+    fireEvent.change(name, { target: { value: "My journal" } });
+    fireEvent.change(key, { target: { value: "mj" } });
+    expect(key.value).toBe("MJ");
+    fireEvent.click(r.container.querySelector("[data-addbtn]")!);
+    expect(onAdd).toHaveBeenCalledWith("~/journal-app", {
+      name: "My journal",
+      key: "MJ",
+    });
+    // Without projectFields nothing in the dialog asks for a name or key.
+    cleanup();
+    const plain = render(
+      <AddFolderDialog
+        folders={[]}
+        fs={{ "~": { children: ["x"] }, "~/x": { children: [] } }}
+        discovered={[]}
+        onClose={() => {}}
+        onAdd={() => {}}
+      />,
+    );
+    fireEvent.click(plain.container.querySelector('[data-fsrow="x"]')!);
+    expect(plain.container.querySelector("[data-projectname]")).toBeNull();
+  });
+
+  test("a folder chip on a folder chat offers Add as project", async () => {
+    const onAddAsProject = vi.fn();
+    const lead = {
+      id: "builder",
+      name: "Builder",
+      role: "Engineer",
+      status: "online" as const,
+      profile: "p",
+      model: "gpt-test-1",
+      now: "",
+      instructions: "",
+      respondTo: "anyone" as const,
+    };
+    const emp: EmpFn = (id) => (id === "builder" ? lead : undefined);
+    const human: HumanFn = () => undefined;
+    const root: Extract<Msg, { kind: "msg" }> = {
+      kind: "msg",
+      id: "m1",
+      from: "ada",
+      time: "10:00",
+      text: "hi",
+    };
+    const dmChannel: Channel = {
+      id: "dm-builder",
+      name: "Builder",
+      employees: ["builder"],
+      dm: true,
+    };
+    const t: Thread = {
+      session: "s_x",
+      replies: [],
+      ws: {
+        folder: "f1",
+        project: "",
+        repo: "",
+        mode: "direct",
+        base: "main",
+        branch: "main",
+        cwd: "~/code/journal-app",
+      },
+    };
+    const r = render(
+      <ThreadView
+        root={root}
+        thread={t}
+        channel={dmChannel}
+        emp={emp}
+        human={human}
+        running={false}
+        work={null}
+        resolved={{}}
+        onSend={() => {}}
+        onAddAsProject={onAddAsProject}
+      />,
+    );
+    await act(async () => {
+      fireEvent.click(r.container.querySelector("[data-wsbadge]")!);
+    });
+    const item = document.body.querySelector(
+      "[data-add-as-project]",
+    ) as HTMLElement;
+    expect(item.textContent).toContain("Add as project");
+    await act(async () => {
+      fireEvent.click(item);
+    });
+    expect(onAddAsProject).toHaveBeenCalledTimes(1);
+    cleanup();
+    // Without the action the menu carries no such row.
+    render(
+      <ThreadView
+        root={root}
+        thread={t}
+        channel={dmChannel}
+        emp={emp}
+        human={human}
+        running={false}
+        work={null}
+        resolved={{}}
+        onSend={() => {}}
+      />,
+    );
+    await act(async () => {
+      fireEvent.click(document.querySelector("[data-wsbadge]")!);
+    });
+    expect(document.body.querySelector("[data-add-as-project]")).toBeNull();
   });
 });

@@ -446,7 +446,15 @@ function DailyHome({ data, go, act }: V3PageProps) {
   const chats = data.threads
     .filter((t) => threadProjectId(data, t) === undefined)
     .sort(byRank);
-  const group = (title: ReactNode, threads: V3Thread[], link?: () => void) => (
+  const group = (
+    title: ReactNode,
+    threads: V3Thread[],
+    link?: () => void,
+    /* A project group names the project already, so its rows carry no tag;
+       the Chats group has nothing shared to say — a folder chat's row says
+       "Chat · journal-app" (#854). */
+    inProject = true,
+  ) => (
     <Fragment key={typeof title === "string" ? title : threads[0]?.id}>
       <Section
         title={title}
@@ -462,7 +470,7 @@ function DailyHome({ data, go, act }: V3PageProps) {
             thread={t}
             go={go}
             byAgent
-            inProject
+            inProject={inProject}
           />
         ))}
       </div>
@@ -497,7 +505,7 @@ function DailyHome({ data, go, act }: V3PageProps) {
           () => go({ page: "project", id: project.id }),
         ),
       )}
-      {chats.length > 0 && group("Chats", chats)}
+      {chats.length > 0 && group("Chats", chats, undefined, false)}
     </Page>
   );
 }

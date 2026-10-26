@@ -50,6 +50,10 @@ export interface ThreadViewProps extends ThreadFrameProps {
   /* #581: a folder-less DM thread can pick a real folder — the host moves
      the session there (the pick is only offered where the engine can move). */
   onAddFolder?: () => void;
+  /* #854: the thread's folder is no project's — the folder badge's menu
+     offers "Add as project" (one click, the thread files under it). Absent:
+     no such row. */
+  onAddAsProject?: () => void;
 }
 
 /* The right-panel frame around the conversation — channel threads AND DM sessions (issue #19).
@@ -86,6 +90,7 @@ export function ThreadView(props: ThreadViewProps) {
     onRewind,
     rewindWarning,
     onAddFolder,
+    onAddAsProject,
     onCompact,
     onContinue,
     onRename,
@@ -183,6 +188,7 @@ export function ThreadView(props: ThreadViewProps) {
                 repo,
                 isDM,
                 onAddFolder,
+                onAddAsProject,
                 openMenu: onOpenPath
                   ? {
                       editors: editors ?? [],
