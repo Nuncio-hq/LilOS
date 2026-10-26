@@ -27,9 +27,11 @@ import {
   assertReportsAcyclic,
   CEO_SETTING_KEY,
   reportsToAfterCeo,
+  type TaskWakeEvent,
   TicketResult,
   TicketStatus,
   TicketStep,
+  TicketTask,
   TicketWaitingOn,
   toSummaryMessage,
   toSummaryPreview,
@@ -72,6 +74,7 @@ import type {
   NewPairedDevice,
   NewProject,
   NewScheduledTask,
+  NewTask,
   NewTicket,
   OpenConversationInput,
   RelayStore,
@@ -136,6 +139,8 @@ const rowToConversation = (row: ConversationRow): Conversation => {
     cwd: row.cwd ?? undefined,
     projectId: row.projectId ?? undefined,
     ticketId: row.ticketId ?? undefined,
+    /* D-#844: the creating thread's lineage — absent on a non-child. */
+    parentId: row.parentId ?? undefined,
     /* JSON workstream pick (#156); rows opened before v13 have no column
        value — absent, not null. */
     workspace: row.workspace
@@ -191,12 +196,13 @@ const rowToScheduledTask = (row: ScheduledTaskRow): ScheduledTask => ({
 type MessageRow = typeof schema.messages.$inferSelect;
 /** Rows carry attachment refs as JSON text; the domain object unpacks them. */
 const rowToMessage = (row: MessageRow): AppMessage => {
-  const { ceoWake, ...rest } = row;
+  const { ceoWake, taskWake, ...rest } = row;
   return {
     ...rest,
     /* D-#777: omit the flag unless this row is a wake. `false` would
-       fail the literal-true contract. */
+       fail the literal-true contract. Same for D-#844's task wake. */
     ...(ceoWake ? { ceoWake: true as const } : {}),
+    ...(taskWake ? { taskWake: true as const } : {}),
     model: row.model ?? undefined,
     provider: row.provider ?? undefined,
     effort: row.effort ?? undefined,
@@ -208,10 +214,11 @@ const rowToMessage = (row: MessageRow): AppMessage => {
   };
 };
 const messageToRow = (message: AppMessage & { dedupeKey?: string | null }) => {
-  const { ceoWake, ...rest } = message;
+  const { ceoWake, taskWake, ...rest } = message;
   return {
     ...rest,
     ceoWake: ceoWake === true,
+    taskWake: taskWake === true,
     attachments: message.attachments?.length
       ? JSON.stringify(message.attachments)
       : null,
@@ -280,6 +287,8 @@ const rowToTicket = (row: TicketRow): Ticket => {
     ...(row.startsAt ? { startsAt: row.startsAt } : {}),
     statusAt: row.statusAt,
     ...(row.doneAt != null ? { doneAt: row.doneAt } : {}),
+    /* D-#844: JSON `TicketTask` — the hand-off lineage + wake fence. */
+    ...(row.task ? { task: TicketTask.parse(JSON.parse(row.task)) } : {}),
     createdAt: row.createdAt,
   };
 };
@@ -299,6 +308,9 @@ const ticketToRow = (t: Ticket): typeof schema.tickets.$inferInsert => ({
   startsAt: t.startsAt ?? null,
   statusAt: t.statusAt,
   doneAt: t.doneAt ?? null,
+  task: t.task ? JSON.stringify(t.task) : null,
+  taskParentId: t.task?.parentConversationId ?? null,
+  taskRequestId: t.task?.requestId ?? null,
   createdAt: t.createdAt,
 });
 
@@ -389,6 +401,7 @@ export function createDrizzleStore(db: Db): RelayStore {
       claimed: false,
       text: input.text,
       ...(input.ceoWake ? { ceoWake: true as const } : {}),
+      ...(input.taskWake ? { taskWake: true as const } : {}),
       ...(input.model !== undefined ? { model: input.model } : {}),
       ...(input.provider !== undefined ? { provider: input.provider } : {}),
       ...(input.effort !== undefined ? { effort: input.effort } : {}),
@@ -510,6 +523,7 @@ export function createDrizzleStore(db: Db): RelayStore {
       ...(input.cwd !== undefined ? { cwd: input.cwd } : {}),
       ...(input.projectId !== undefined ? { projectId: input.projectId } : {}),
       ...(input.ticketId !== undefined ? { ticketId: input.ticketId } : {}),
+      ...(input.parentId !== undefined ? { parentId: input.parentId } : {}),
       ...(input.ceoWake ? { ceoThread: true as const } : {}),
       ...(input.workspace !== undefined ? { workspace: input.workspace } : {}),
       archived: false,
@@ -1341,6 +1355,250 @@ export function createDrizzleStore(db: Db): RelayStore {
         .all();
       return rows.map(rowToConversation);
     },
+    /* D-#844: ticket + child thread in one transaction, like assignTicket —
+       the (parent, requestId) index makes a retried create a hit. */
+    async createTask(input: NewTask) {
+      return db.transaction((tx) => {
+        if (input.requestId) {
+          const stored = tx
+            .select()
+            .from(schema.tickets)
+            .where(
+              and(
+                eq(schema.tickets.taskParentId, input.parentConversationId),
+                eq(schema.tickets.taskRequestId, input.requestId),
+              ),
+            )
+            .get();
+          if (stored?.task) {
+            const task = TicketTask.parse(JSON.parse(stored.task));
+            const conversation = tx
+              .select()
+              .from(schema.conversations)
+              .where(eq(schema.conversations.id, task.childConversationId))
+              .get();
+            const rootMessage = conversation
+              ? tx
+                  .select()
+                  .from(schema.messages)
+                  .where(eq(schema.messages.id, conversation.rootMessageId))
+                  .get()
+              : undefined;
+            if (conversation && rootMessage) {
+              return {
+                ticket: rowToTicket(stored),
+                conversation: rowToConversation(conversation),
+                rootMessage: rowToMessage(rootMessage),
+                created: false,
+              };
+            }
+          }
+        }
+        const taken = tx
+          .select({ n: schema.tickets.number })
+          .from(schema.tickets)
+          .where(eq(schema.tickets.projectId, input.projectId))
+          .all();
+        const number = taken.reduce((m, r) => Math.max(m, r.n), 0) + 1;
+        const at = now();
+        const opened = openConversationTx(tx, {
+          channelId: input.channelId,
+          title: input.title,
+          titleSource: "user",
+          text: input.prompt,
+          authorId: "user",
+          access: input.access,
+          ...(input.cwd !== undefined ? { cwd: input.cwd } : {}),
+          ...(input.workspace !== undefined
+            ? { workspace: input.workspace }
+            : {}),
+          projectId: input.projectId,
+          parentId: input.parentConversationId,
+          /* ticketId lands once the row's number is known — the update
+             below writes it in the same transaction. */
+          ...(input.model !== undefined ? { model: input.model } : {}),
+          ...(input.provider !== undefined ? { provider: input.provider } : {}),
+          ...(input.effort !== undefined ? { effort: input.effort } : {}),
+          ...(input.fast !== undefined ? { fast: input.fast } : {}),
+        });
+        const ticket: Ticket = {
+          id: `${input.projectKey}-${number}`,
+          number,
+          title: input.title,
+          projectId: input.projectId,
+          ownerId: input.employeeId,
+          status: "working",
+          progress: [],
+          updates: [],
+          statusAt: at,
+          task: {
+            parentConversationId: input.parentConversationId,
+            childConversationId: opened.conversation.id,
+            childChannelId: input.channelId,
+            ...(input.worktree ? { worktree: input.worktree } : {}),
+            ...(input.requestId ? { requestId: input.requestId } : {}),
+          },
+          createdAt: at,
+        };
+        tx.insert(schema.tickets).values(ticketToRow(ticket)).run();
+        tx.update(schema.conversations)
+          .set({ ticketId: ticket.id })
+          .where(eq(schema.conversations.id, opened.conversation.id))
+          .run();
+        return {
+          ticket,
+          conversation: { ...opened.conversation, ticketId: ticket.id },
+          rootMessage: opened.rootMessage,
+          created: true,
+        };
+      });
+    },
+    async findTaskTicket(parentConversationId: string, requestId: string) {
+      const row = db
+        .select()
+        .from(schema.tickets)
+        .where(
+          and(
+            eq(schema.tickets.taskParentId, parentConversationId),
+            eq(schema.tickets.taskRequestId, requestId),
+          ),
+        )
+        .get();
+      return row ? rowToTicket(row) : null;
+    },
+    async childConversations(parentId: string) {
+      const rows = db
+        .select()
+        .from(schema.conversations)
+        .where(eq(schema.conversations.parentId, parentId))
+        .orderBy(asc(schema.conversations.createdAt), asc(sql`rowid`))
+        .all();
+      return rows.map(rowToConversation);
+    },
+    /* D-#844: drop fenced events, group by parent, post + stamp in one
+       transaction — the wake can never be posted without the fence or
+       fenced without the post. Two batch events can name one finish (a
+       replayed turn id and the catch-up scan's seq key): the LAST
+       surviving event per task is the line, and every batch turn id of
+       that task joins the fence so neither re-fires later. */
+    async postTaskWake(events, text) {
+      return db.transaction((tx) => {
+        const latest = new Map<
+          string,
+          { event: TaskWakeEvent; task: TicketTask; ticket: Ticket }
+        >();
+        const turnIdsByTask = new Map<string, string[]>();
+        for (const event of events) {
+          const ids = turnIdsByTask.get(event.taskId) ?? [];
+          ids.push(event.turnId);
+          turnIdsByTask.set(event.taskId, ids);
+          const row = tx
+            .select()
+            .from(schema.tickets)
+            .where(eq(schema.tickets.id, event.taskId))
+            .get();
+          if (!row) continue;
+          const ticket = rowToTicket(row);
+          const task = ticket.task;
+          /* A cancelled task never wakes (D-#844); a replayed turn id and
+             a finish the stored result already covers drop silently. */
+          if (!task || task.cancelledAt) continue;
+          if (task.wakedTurnIds?.includes(event.turnId)) continue;
+          const child = tx
+            .select()
+            .from(schema.conversations)
+            .where(eq(schema.conversations.id, task.childConversationId))
+            .get();
+          if (
+            task.lastResult &&
+            child &&
+            task.lastResult.finishedSeq >= child.finishedSeq
+          )
+            continue;
+          latest.set(event.taskId, { event, task, ticket });
+        }
+        const groups = new Map<
+          string,
+          { event: TaskWakeEvent; task: TicketTask; ticket: Ticket }[]
+        >();
+        for (const entry of latest.values()) {
+          const group = groups.get(entry.task.parentConversationId) ?? [];
+          group.push(entry);
+          groups.set(entry.task.parentConversationId, group);
+        }
+        const delivered: string[] = [];
+        const stamped: Ticket[] = [];
+        const messages: AppMessage[] = [];
+        for (const [parentId, group] of groups) {
+          const parent = tx
+            .select()
+            .from(schema.conversations)
+            .where(eq(schema.conversations.id, parentId))
+            .get();
+          /* A parent thread that no longer exists can never be woken —
+             still stamp the fence so the events stop retrying. */
+          if (parent) {
+            const appended = appendMessageTx({
+              channelId: parent.channelId,
+              conversationId: parent.id,
+              authorId: "system",
+              authorKind: "system",
+              text: text(group.map((g) => g.event)),
+              taskWake: true,
+            });
+            messages.push(appended.message);
+          }
+          for (const { event, task, ticket } of group) {
+            const child = tx
+              .select()
+              .from(schema.conversations)
+              .where(eq(schema.conversations.id, task.childConversationId))
+              .get();
+            const nextTask: TicketTask = {
+              ...task,
+              wakedTurnIds: [
+                ...(task.wakedTurnIds ?? []),
+                ...(turnIdsByTask.get(ticket.id) ?? []),
+              ],
+              lastResult: {
+                turnId: event.turnId,
+                outcome: event.outcome,
+                text: event.result ?? "",
+                finishedSeq: child?.finishedSeq ?? 0,
+                at: now(),
+              },
+            };
+            const status = event.outcome === "finished" ? "done" : "failed";
+            let next = applyWrite(ticket, { task: nextTask }, now());
+            next = applyWrite(next, { status }, now());
+            if (next.status === "done" && ticket.status !== "done") {
+              next = finish(next, now());
+              for (const other of tx.select().from(schema.tickets).all()) {
+                const waiter = rowToTicket(other);
+                if (
+                  waiter.waitingOn?.kind === "ticket" &&
+                  waiter.waitingOn.ticketId === ticket.id
+                ) {
+                  const moved = wakeWaiter(waiter, next, now(), newId("upd"));
+                  tx.update(schema.tickets)
+                    .set(ticketToRow(moved))
+                    .where(eq(schema.tickets.id, moved.id))
+                    .run();
+                  stamped.push(moved);
+                }
+              }
+            }
+            tx.update(schema.tickets)
+              .set(ticketToRow(next))
+              .where(eq(schema.tickets.id, ticket.id))
+              .run();
+            stamped.push(next);
+            delivered.push(ticket.id);
+          }
+        }
+        return { delivered, messages, tickets: stamped };
+      });
+    },
     async listRecentFolders(): Promise<RecentFolder[]> {
       return db
         .select()
@@ -2059,7 +2317,11 @@ export function createDrizzleStore(db: Db): RelayStore {
           .map(rowToMessage)
           .filter(
             (m) =>
-              (m.authorKind === "user" || m.ceoWake === true) &&
+              /* D-#844: a task wake owes the parent a turn like a user
+                 send or a CEO wake — restart pending covers it. */
+              (m.authorKind === "user" ||
+                m.ceoWake === true ||
+                m.taskWake === true) &&
               !m.rewound &&
               !m.dropped &&
               !m.removed &&

@@ -30,6 +30,11 @@ import type {
   ScheduleTaskResult,
   ScheduleUpdateParams,
   SessionBinding,
+  TaskCreateParams,
+  TaskIdParams,
+  TaskToolResult,
+  TaskWaitParams,
+  TaskWaitResult,
   TeamHireParams,
   TeamHireResult,
   TeamListResult,
@@ -41,6 +46,7 @@ import type {
   TerminalRunResult,
   TerminalWriteResult,
   ThreadListResult,
+  ThreadPostParams,
   ThreadPostResult,
   ThreadPrsResult,
   ThreadReadParams,
@@ -128,13 +134,19 @@ export interface SurfaceBackend {
   /** `coding_agents_set` — approval-gated change to one agent's default. */
   codingAgentsSet(p: CodingAgentsSetParams): Promise<CodingAgentsSetResult>;
 
-  threadPost(p: { text: string }): Promise<ThreadPostResult>;
+  threadPost(p: ThreadPostParams): Promise<ThreadPostResult>;
   threadRead(p: ThreadReadParams): Promise<ThreadReadResult>;
   threadList(): Promise<ThreadListResult>;
   threadSearch(p: ThreadSearchParams): Promise<ThreadSearchResult>;
   threadSetTitle(p: ThreadSetTitleParams): Promise<ThreadSetTitleResult>;
   threadPrs(): Promise<ThreadPrsResult>;
   threadStart(p: ThreadStartParams): Promise<ThreadStartResult>;
+  /* D-#844: agent hand-offs — the child is a visible thread under the
+     caller's own; finished turns wake the caller back. */
+  taskCreate(p: TaskCreateParams): Promise<TaskToolResult>;
+  taskRead(p: TaskIdParams): Promise<TaskToolResult>;
+  taskWait(p: TaskWaitParams): Promise<TaskWaitResult>;
+  taskCancel(p: TaskIdParams): Promise<TaskToolResult>;
   /** Present on a session scope. Call time uses it to refuse a CEO-only tool (D-#778). */
   readonly binding?: SessionBinding;
   currentCeoId?(): Promise<string | undefined>;

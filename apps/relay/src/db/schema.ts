@@ -115,6 +115,9 @@ export const conversations = sqliteTable(
     ceoThread: integer("ceo_thread", { mode: "boolean" })
       .notNull()
       .default(false),
+    /** The thread that handed this one a task (D-#844) — relay-set once
+        at `tasks.create`, never client-written. NULL everywhere else. */
+    parentId: text("parent_id"),
     /** Workstream mode stamped at open (#156): JSON WorkspaceIntent; null =
         direct folder / just chat. */
     workspace: text("workspace"),
@@ -240,6 +243,13 @@ export const tickets = sqliteTable(
     startsAt: text("starts_at"),
     statusAt: integer("status_at").notNull(),
     doneAt: integer("done_at"),
+    /* D-#844: the hand-off blob — JSON `TicketTask` (lineage, requestId,
+       wake fence, lastResult); NULL on a non-task ticket. The two real
+       columns beside it exist only for the requestId index below and are
+       written in sync with the blob. */
+    task: text("task"),
+    taskParentId: text("task_parent_id"),
+    taskRequestId: text("task_request_id"),
     createdAt: integer("created_at").notNull(),
   },
   (t) => [
@@ -247,6 +257,9 @@ export const tickets = sqliteTable(
        alone would only repeat its leftmost column. */
     uniqueIndex("tickets_project_number").on(t.projectId, t.number),
     index("tickets_goal").on(t.goalId),
+    /* D-#844: `requestId` repeats land on one task — NULLs stay distinct,
+       so non-task rows and keyless tasks never collide. */
+    uniqueIndex("tickets_task_request").on(t.taskParentId, t.taskRequestId),
   ],
 );
 
@@ -323,6 +336,11 @@ export const messages = sqliteTable(
     /** A CEO wake (D-#777). The text is what the model reads; this flag
         is what the product keys off. */
     ceoWake: integer("ceo_wake", { mode: "boolean" }).notNull().default(false),
+    /** A task wake (D-#844): a child task's finished turn prompting the
+        parent thread — same flag rule as ceo_wake. */
+    taskWake: integer("task_wake", { mode: "boolean" })
+      .notNull()
+      .default(false),
     text: text("text").notNull(),
     /** Display refs JSON (`MessageAttachment[]`); bytes live outside the row. */
     attachments: text("attachments"),

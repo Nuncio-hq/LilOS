@@ -11,6 +11,8 @@ import type {
   RecentFolder,
   ScheduledTask,
   SystemStatusResult,
+  Task,
+  Ticket,
   WorkbenchOpenTarget,
 } from "@lilos/contracts/app";
 import type {
@@ -24,6 +26,7 @@ import type {
   ScheduleCreateParams,
   ScheduleUpdateParams,
   SessionBinding,
+  TaskCreateParams,
   TeamHireParams,
   TeamSetCeoParams,
   TeamUpdateParams,
@@ -104,10 +107,20 @@ export type PtySpawner = (
  */
 export interface AppOps {
   postMessage(text: string): Promise<AppMessage>;
+  /** D-#844: `thread_post` onto a child this thread created — a user-kind
+      message on the child's own channel (the follow-up is the child's
+      next prompt). `scope` only ever names a stored child. */
+  postToThread(p: {
+    channelId: string;
+    conversationId: string;
+    text: string;
+  }): Promise<AppMessage>;
   /** Full visible history of one thread of the bound employee, seq-ascending.
-      `conversationId` omitted = the bound thread itself. */
+      `conversationId` omitted = the bound thread itself; `channelId` is
+      set only for a child thread on another employee's channel (D-#844). */
   readConversation(opts?: {
     conversationId?: string;
+    channelId?: string;
     afterSeq?: number;
   }): Promise<AppMessage[]>;
   /** Every conversation of the bound employee (`conversations.list` on its
@@ -184,6 +197,21 @@ export interface AppOps {
   commentTicket(p: TicketCommentParams): Promise<TicketCommentResult["ticket"]>;
   /** CEO note for the owner. Does not ask (D-#777). */
   postUpdate(p: UpdatePostParams): Promise<CompanyUpdate>;
+  /* --------------------------- tasks (D-#844) --------------------------- */
+  /* `task_*` — handing a job to another LilOS employee. `tasks.*` on the
+     relay; the bound conversation rides every call as `parentConversationId`
+     so the scope check lives relay-side. Creating asks no approval. */
+  /** `note` rides the tool result's heads-up prose (D-#848): where the
+      child works, and that uncommitted edits did not ride along. */
+  taskCreate(p: TaskCreateParams): Promise<{ task: Task; note?: string }>;
+  /** The task's current view — `not_found` for a task this thread did
+      not create (scope is the stored lineage). */
+  taskRead(taskId: string): Promise<Task>;
+  /** Interrupt the child + stamp cancelled; never wakes the parent. */
+  taskCancel(taskId: string): Promise<Task>;
+  /** This thread's child threads + their task tickets — `thread` param
+      resolution reads it (`tasks.children`, D-#844). */
+  taskChildren(): Promise<{ conversations: Conversation[]; tickets: Ticket[] }>;
   /**
    * `ask` (D-#773): post a question or a once/deny approval and wait.
    * A decline throws `SurfaceError("declined")`.

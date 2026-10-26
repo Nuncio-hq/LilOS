@@ -48,6 +48,7 @@ import {
   WorkbenchOpenTarget,
   WorkspaceIntent,
 } from "./domain";
+import { TaskWakeEvent } from "./ticket";
 import { APP_PROTOCOL_VERSION } from "./version";
 
 /**
@@ -310,6 +311,14 @@ export const AppMethod = z.enum([
      host: the CEO tool, or LilOS for a system note. */
   "updates.list",
   "updates.post",
+  /* Agent hand-offs (D-#844), host-only: the `task_*` tools ride these.
+     The task record is a ticket; the child is an ordinary thread with
+     `parentId` lineage. `tasks.wake` posts the coalesced parent wake. */
+  "tasks.create",
+  "tasks.read",
+  "tasks.cancel",
+  "tasks.wake",
+  "tasks.children",
 ]);
 export type AppMethod = z.infer<typeof AppMethod>;
 
@@ -1105,6 +1114,11 @@ export const HarnessRegisterParams = z
 export const HarnessRegisterResult = z.object({
   hostId: z.string().min(1),
   pending: z.array(PendingTurn),
+  /* D-#844: child-task finishes the host never posted a wake for (a
+     restart between a child's turn.completed and `tasks.wake`). Seq-keyed
+     events — the relay already knows the result, the turn id is not
+     recoverable here. */
+  taskWakes: z.array(TaskWakeEvent).optional(),
 });
 
 /**

@@ -10,6 +10,11 @@ import {
   type ScheduleTaskRef,
   type ScheduleUpdateParams,
   type SessionBinding,
+  TASK_WAIT_DEFAULT_MS,
+  TASK_WAIT_MAX_MS,
+  type TaskCreateParams,
+  type TaskIdParams,
+  type TaskWaitParams,
   type TeamHireParams,
   type TeamUpdateParams,
   type ThreadReadParams,
@@ -136,6 +141,9 @@ export class SessionSurfaces implements ViewerScope {
             "goal",
             "schedule",
             "coding",
+            /* D-#844: a bound session can hand work to another employee —
+               `task_*` rides with the app leg like the rest. */
+            "task",
             /* D-#777: attached so a CEO session is offered `update_post`.
                A non-CEO session still does not see it (`ceoOnly`). The
                shared host policy has no line for this area. */
@@ -475,27 +483,67 @@ export class SessionSurfaces implements ViewerScope {
 
   /** `thread` param resolution: id or exact title, among the bound employee's
       threads only — absent = the session's own thread (the binding names it,
-      never the agent). */
+      never the agent). D-#844: a ref can also name a CHILD this thread
+      created (`task_create`) — the task id, the child's thread id, or its
+      title — resolved through `tasks.children`, i.e. the stored lineage. */
   private async resolveThread(ref?: string): Promise<Conversation> {
     const ops = this.requireAppOps();
     const convs = await ops.listThreads();
     const conv = ref
       ? convs.find((c) => c.id === ref || c.title === ref)
       : convs.find((c) => c.id === this.binding?.conversationId);
-    if (!conv) {
-      throw new SurfaceError(
-        "not_found",
-        ref
-          ? `no thread "${ref}" among your threads — threads elsewhere are out of scope`
-          : "this session's thread is not among your threads",
-      );
+    if (conv) return conv;
+    if (ref) {
+      const child = await this.resolveChildThread(ops, ref);
+      if (child) return child;
     }
-    return conv;
+    throw new SurfaceError(
+      "not_found",
+      ref
+        ? `no thread "${ref}" among your threads — threads elsewhere are out of scope`
+        : "this session's thread is not among your threads",
+    );
   }
 
-  threadPost(p: { text: string }) {
+  /** A task child of THIS conversation — by task id (the ticket id), the
+      child's conversation id, or the child thread's title (D-#844). */
+  private async resolveChildThread(
+    ops: AppOps,
+    ref: string,
+  ): Promise<Conversation | undefined> {
+    const { conversations, tickets } = await ops.taskChildren();
+    const task = tickets.find((t) => t.id === ref);
+    return conversations.find(
+      (c) =>
+        c.id === ref ||
+        c.title === ref ||
+        (task !== undefined && c.id === task.task?.childConversationId),
+    );
+  }
+
+  threadPost(p: { text: string; thread?: string }) {
     return this.tracked("thread_post", p.text.slice(0, 60), async () => {
       const ops = this.requireAppOps();
+      /* D-#844: `thread` names a child of this session — the follow-up
+         posts as a user message there (it is the child's next prompt).
+         Posting stays forbidden in every thread that isn't this one or
+         its own children. */
+      if (p.thread !== undefined) {
+        const conv = await this.resolveChildThread(ops, p.thread);
+        if (!conv) {
+          throw new SurfaceError(
+            "not_found",
+            `no child thread "${p.thread}" — only threads this session created with task_create take a post`,
+          );
+        }
+        return {
+          message: await ops.postToThread({
+            channelId: conv.channelId,
+            conversationId: conv.id,
+            text: p.text,
+          }),
+        };
+      }
       return { message: await ops.postMessage(p.text) };
     });
   }
@@ -505,6 +553,9 @@ export class SessionSurfaces implements ViewerScope {
       const conv = await this.resolveThread(p.thread);
       let messages = await ops.readConversation({
         conversationId: conv.id,
+        /* A child lives on its agent's channel — the relay call needs it
+           (channel is internal routing, never a place, D-#25). */
+        channelId: conv.channelId,
         afterSeq: p.afterSeq,
       });
       /* `before` = read further back than a seq — sliced client-side: the
@@ -573,6 +624,55 @@ export class SessionSurfaces implements ViewerScope {
       const ops = this.requireAppOps();
       const conv = await this.resolveThread();
       return { prs: await ops.threadPrs(conv.id) };
+    });
+  }
+
+  /* ------------------------------ task ops -------------------------------- */
+  /* D-#844: hand-offs to another LilOS employee. No approval on create
+     (the child is the caller's own lane); read/wait/cancel reach only
+     tasks this thread made — the relay enforces the lineage. */
+
+  taskCreate(p: TaskCreateParams) {
+    return this.tracked(
+      "task_create",
+      `${p.agent}: ${p.prompt.slice(0, 60)}`,
+      async () => {
+        const ops = this.requireAppOps();
+        return ops.taskCreate(p);
+      },
+    );
+  }
+  taskRead(p: TaskIdParams) {
+    return this.tracked("task_read", p.taskId, async () => {
+      const ops = this.requireAppOps();
+      return { task: await ops.taskRead(p.taskId) };
+    });
+  }
+  taskWait(p: TaskWaitParams) {
+    return this.tracked("task_wait", p.taskId, async () => {
+      const ops = this.requireAppOps();
+      /* Poll the record — the wake itself is what lands in the thread;
+         this is only the caller asking early. A timeout never cancels
+         the child (D-#844): it answers `timedOut` and lets the agent go
+         on. */
+      const deadline =
+        Date.now() +
+        Math.min(p.timeoutMs ?? TASK_WAIT_DEFAULT_MS, TASK_WAIT_MAX_MS);
+      for (;;) {
+        const task = await ops.taskRead(p.taskId);
+        if (task.status !== "running") return { task, timedOut: false };
+        const left = deadline - Date.now();
+        if (left <= 0) return { task, timedOut: true };
+        await new Promise((resolve) =>
+          setTimeout(resolve, Math.min(400, left)),
+        );
+      }
+    });
+  }
+  taskCancel(p: TaskIdParams) {
+    return this.tracked("task_cancel", p.taskId, async () => {
+      const ops = this.requireAppOps();
+      return { task: await ops.taskCancel(p.taskId) };
     });
   }
 

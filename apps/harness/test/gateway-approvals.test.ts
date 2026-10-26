@@ -58,6 +58,7 @@ describe("approval-gated gateway tools", () => {
       relay: recording,
       runningTurnId: () => "turn-1",
       log: w.log,
+      home: "/tmp",
     })("s1", binding);
     if (!appOps) throw new Error("unbound");
     const scope = new SessionSurfaces({

@@ -903,6 +903,10 @@
           "text": {
             "type": "string",
             "minLength": 1
+          },
+          "thread": {
+            "type": "string",
+            "minLength": 1
           }
         },
         "required": [
@@ -962,6 +966,10 @@
                 ]
               },
               "ceoWake": {
+                "type": "boolean",
+                "const": true
+              },
+              "taskWake": {
                 "type": "boolean",
                 "const": true
               },
@@ -1180,6 +1188,10 @@
                   ]
                 },
                 "ceoWake": {
+                  "type": "boolean",
+                  "const": true
+                },
+                "taskWake": {
                   "type": "boolean",
                   "const": true
                 },
@@ -1756,6 +1768,10 @@
                 ]
               },
               "ceoWake": {
+                "type": "boolean",
+                "const": true
+              },
+              "taskWake": {
                 "type": "boolean",
                 "const": true
               },
@@ -2693,6 +2709,101 @@
                   "minimum": 0,
                   "maximum": 9007199254740991
                 },
+                "task": {
+                  "type": "object",
+                  "properties": {
+                    "parentConversationId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "childConversationId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "childChannelId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "worktree": {
+                      "type": "object",
+                      "properties": {
+                        "path": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "branch": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "path",
+                        "branch"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "cancelledAt": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "wakedTurnIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "lastResult": {
+                      "type": "object",
+                      "properties": {
+                        "turnId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "outcome": {
+                          "type": "string",
+                          "enum": [
+                            "finished",
+                            "stopped",
+                            "failed"
+                          ]
+                        },
+                        "text": {
+                          "type": "string"
+                        },
+                        "finishedSeq": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "at": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "turnId",
+                        "outcome",
+                        "text",
+                        "finishedSeq",
+                        "at"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "parentConversationId",
+                    "childConversationId",
+                    "childChannelId"
+                  ],
+                  "additionalProperties": false
+                },
                 "createdAt": {
                   "type": "integer",
                   "minimum": 0,
@@ -2991,6 +3102,101 @@
                 "type": "integer",
                 "minimum": 0,
                 "maximum": 9007199254740991
+              },
+              "task": {
+                "type": "object",
+                "properties": {
+                  "parentConversationId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "childConversationId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "childChannelId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "worktree": {
+                    "type": "object",
+                    "properties": {
+                      "path": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "branch": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "path",
+                      "branch"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "requestId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "cancelledAt": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "wakedTurnIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "lastResult": {
+                    "type": "object",
+                    "properties": {
+                      "turnId": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "outcome": {
+                        "type": "string",
+                        "enum": [
+                          "finished",
+                          "stopped",
+                          "failed"
+                        ]
+                      },
+                      "text": {
+                        "type": "string"
+                      },
+                      "finishedSeq": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "at": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": [
+                      "turnId",
+                      "outcome",
+                      "text",
+                      "finishedSeq",
+                      "at"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "parentConversationId",
+                  "childConversationId",
+                  "childChannelId"
+                ],
+                "additionalProperties": false
               },
               "createdAt": {
                 "type": "integer",
@@ -3413,6 +3619,101 @@
                 "type": "integer",
                 "minimum": 0,
                 "maximum": 9007199254740991
+              },
+              "task": {
+                "type": "object",
+                "properties": {
+                  "parentConversationId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "childConversationId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "childChannelId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "worktree": {
+                    "type": "object",
+                    "properties": {
+                      "path": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "branch": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "path",
+                      "branch"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "requestId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "cancelledAt": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "wakedTurnIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "lastResult": {
+                    "type": "object",
+                    "properties": {
+                      "turnId": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "outcome": {
+                        "type": "string",
+                        "enum": [
+                          "finished",
+                          "stopped",
+                          "failed"
+                        ]
+                      },
+                      "text": {
+                        "type": "string"
+                      },
+                      "finishedSeq": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "at": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": [
+                      "turnId",
+                      "outcome",
+                      "text",
+                      "finishedSeq",
+                      "at"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "parentConversationId",
+                  "childConversationId",
+                  "childChannelId"
+                ],
+                "additionalProperties": false
               },
               "createdAt": {
                 "type": "integer",
@@ -3916,6 +4217,101 @@
                   "minimum": 0,
                   "maximum": 9007199254740991
                 },
+                "task": {
+                  "type": "object",
+                  "properties": {
+                    "parentConversationId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "childConversationId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "childChannelId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "worktree": {
+                      "type": "object",
+                      "properties": {
+                        "path": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "branch": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "path",
+                        "branch"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "cancelledAt": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "wakedTurnIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "lastResult": {
+                      "type": "object",
+                      "properties": {
+                        "turnId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "outcome": {
+                          "type": "string",
+                          "enum": [
+                            "finished",
+                            "stopped",
+                            "failed"
+                          ]
+                        },
+                        "text": {
+                          "type": "string"
+                        },
+                        "finishedSeq": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "at": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "turnId",
+                        "outcome",
+                        "text",
+                        "finishedSeq",
+                        "at"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "parentConversationId",
+                    "childConversationId",
+                    "childChannelId"
+                  ],
+                  "additionalProperties": false
+                },
                 "createdAt": {
                   "type": "integer",
                   "minimum": 0,
@@ -4219,6 +4615,101 @@
                 "type": "integer",
                 "minimum": 0,
                 "maximum": 9007199254740991
+              },
+              "task": {
+                "type": "object",
+                "properties": {
+                  "parentConversationId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "childConversationId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "childChannelId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "worktree": {
+                    "type": "object",
+                    "properties": {
+                      "path": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "branch": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "path",
+                      "branch"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "requestId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "cancelledAt": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "wakedTurnIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "lastResult": {
+                    "type": "object",
+                    "properties": {
+                      "turnId": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "outcome": {
+                        "type": "string",
+                        "enum": [
+                          "finished",
+                          "stopped",
+                          "failed"
+                        ]
+                      },
+                      "text": {
+                        "type": "string"
+                      },
+                      "finishedSeq": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "at": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": [
+                      "turnId",
+                      "outcome",
+                      "text",
+                      "finishedSeq",
+                      "at"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "parentConversationId",
+                  "childConversationId",
+                  "childChannelId"
+                ],
+                "additionalProperties": false
               },
               "createdAt": {
                 "type": "integer",
@@ -4541,6 +5032,101 @@
                 "type": "integer",
                 "minimum": 0,
                 "maximum": 9007199254740991
+              },
+              "task": {
+                "type": "object",
+                "properties": {
+                  "parentConversationId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "childConversationId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "childChannelId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "worktree": {
+                    "type": "object",
+                    "properties": {
+                      "path": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "branch": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "path",
+                      "branch"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "requestId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "cancelledAt": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "wakedTurnIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "lastResult": {
+                    "type": "object",
+                    "properties": {
+                      "turnId": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "outcome": {
+                        "type": "string",
+                        "enum": [
+                          "finished",
+                          "stopped",
+                          "failed"
+                        ]
+                      },
+                      "text": {
+                        "type": "string"
+                      },
+                      "finishedSeq": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "at": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": [
+                      "turnId",
+                      "outcome",
+                      "text",
+                      "finishedSeq",
+                      "at"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "parentConversationId",
+                  "childConversationId",
+                  "childChannelId"
+                ],
+                "additionalProperties": false
               },
               "createdAt": {
                 "type": "integer",
@@ -5480,6 +6066,586 @@
       "_meta": {
         "lilos/area": "schedule",
         "lilos/access": "approval"
+      }
+    },
+    {
+      "name": "task_create",
+      "description": "Hand a job to another LilOS employee (`agent` = name or id from team_list). The task runs as a visible child thread with only your prompt — the child never sees this thread's history, and its access is yours, never broader. Does not ask. In a git repo the child gets its own worktree from your current commit by default (isolation \"shared\" works in this thread's folder instead); your uncommitted changes are never copied and merging back stays a separate step. The child's finish wakes this thread with the result inlined (task_read has the rest); `requestId` makes a retry return the same task.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "agent": {
+            "type": "string",
+            "minLength": 1
+          },
+          "prompt": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "model": {
+            "type": "string",
+            "minLength": 1
+          },
+          "provider": {
+            "type": "string"
+          },
+          "effort": {
+            "type": "string"
+          },
+          "fast": {
+            "type": "boolean"
+          },
+          "isolation": {
+            "type": "string",
+            "enum": [
+              "worktree",
+              "shared"
+            ]
+          },
+          "requestId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "agent",
+          "prompt"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "task": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "running",
+                  "finished",
+                  "stopped",
+                  "failed",
+                  "cancelled"
+                ]
+              },
+              "agentId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "agentName": {
+                "type": "string"
+              },
+              "threadId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "channelId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "parentThreadId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "worktree": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "branch": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "path",
+                  "branch"
+                ],
+                "additionalProperties": false
+              },
+              "result": {
+                "type": "string"
+              },
+              "resultOutcome": {
+                "type": "string",
+                "enum": [
+                  "finished",
+                  "stopped",
+                  "failed"
+                ]
+              },
+              "createdAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "finishedAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "cancelledAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "status",
+              "agentId",
+              "threadId",
+              "channelId",
+              "parentThreadId",
+              "createdAt"
+            ],
+            "additionalProperties": false
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "task"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "_meta": {
+        "lilos/area": "task",
+        "lilos/access": "write"
+      }
+    },
+    {
+      "name": "task_read",
+      "description": "Check one of your tasks — status, its child thread id, and the delivered result. Only children this thread created are visible; a task id another thread created is not found.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "taskId"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "task": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "running",
+                  "finished",
+                  "stopped",
+                  "failed",
+                  "cancelled"
+                ]
+              },
+              "agentId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "agentName": {
+                "type": "string"
+              },
+              "threadId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "channelId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "parentThreadId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "worktree": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "branch": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "path",
+                  "branch"
+                ],
+                "additionalProperties": false
+              },
+              "result": {
+                "type": "string"
+              },
+              "resultOutcome": {
+                "type": "string",
+                "enum": [
+                  "finished",
+                  "stopped",
+                  "failed"
+                ]
+              },
+              "createdAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "finishedAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "cancelledAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "status",
+              "agentId",
+              "threadId",
+              "channelId",
+              "parentThreadId",
+              "createdAt"
+            ],
+            "additionalProperties": false
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "task"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "_meta": {
+        "lilos/area": "task",
+        "lilos/access": "read"
+      }
+    },
+    {
+      "name": "task_wait",
+      "description": "Wait for one of your tasks to finish — returns the task's latest state, or `timedOut` when `timeoutMs` hit with it still running (a timeout never cancels the child).",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "timeoutMs": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "taskId"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "task": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "running",
+                  "finished",
+                  "stopped",
+                  "failed",
+                  "cancelled"
+                ]
+              },
+              "agentId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "agentName": {
+                "type": "string"
+              },
+              "threadId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "channelId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "parentThreadId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "worktree": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "branch": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "path",
+                  "branch"
+                ],
+                "additionalProperties": false
+              },
+              "result": {
+                "type": "string"
+              },
+              "resultOutcome": {
+                "type": "string",
+                "enum": [
+                  "finished",
+                  "stopped",
+                  "failed"
+                ]
+              },
+              "createdAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "finishedAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "cancelledAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "status",
+              "agentId",
+              "threadId",
+              "channelId",
+              "parentThreadId",
+              "createdAt"
+            ],
+            "additionalProperties": false
+          },
+          "timedOut": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "task",
+          "timedOut"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "_meta": {
+        "lilos/area": "task",
+        "lilos/access": "read"
+      }
+    },
+    {
+      "name": "task_cancel",
+      "description": "Cancel one of your running tasks — interrupts the child thread's turn and never wakes this thread. An already-finished or cancelled task just returns its state.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "taskId"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "task": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "running",
+                  "finished",
+                  "stopped",
+                  "failed",
+                  "cancelled"
+                ]
+              },
+              "agentId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "agentName": {
+                "type": "string"
+              },
+              "threadId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "channelId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "parentThreadId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "worktree": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "branch": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "path",
+                  "branch"
+                ],
+                "additionalProperties": false
+              },
+              "result": {
+                "type": "string"
+              },
+              "resultOutcome": {
+                "type": "string",
+                "enum": [
+                  "finished",
+                  "stopped",
+                  "failed"
+                ]
+              },
+              "createdAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "finishedAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "cancelledAt": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "status",
+              "agentId",
+              "threadId",
+              "channelId",
+              "parentThreadId",
+              "createdAt"
+            ],
+            "additionalProperties": false
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "task"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "_meta": {
+        "lilos/area": "task",
+        "lilos/access": "write"
       }
     },
     {

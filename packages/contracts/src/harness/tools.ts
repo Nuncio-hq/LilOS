@@ -11,6 +11,7 @@ import { Project } from "../app/project.js";
 import { ScheduledTask, TaskSchedule } from "../app/schedule.js";
 import {
   Goal as GoalSchema,
+  Task as TaskSchema,
   TicketResult as TicketResultSchema,
   Ticket as TicketSchema,
   TicketStatus,
@@ -63,6 +64,8 @@ export const TOOL_AREAS = [
   "browser",
   "terminal",
   "schedule",
+  /* D-#844: agent hand-offs — `task_create/read/wait/cancel`. */
+  "task",
   /* D-#835: outside coding-agent hand-offs (Claude Code, Cursor, Devin,
      Antigravity) — Oscar's stored model + effort defaults per agent. */
   "coding",
@@ -428,6 +431,10 @@ export type FolderAddResult = z.infer<typeof FolderAddResult>;
  */
 export const ThreadPostParams = z.strictObject({
   text: z.string().min(1),
+  /** D-#844: a child thread this session created (`task_create`'s
+      threadId, task id, or the child's title) — the follow-up posts
+      there and the child runs on it. Absent = your own thread. */
+  thread: z.string().min(1).optional(),
 });
 export type ThreadPostParams = z.infer<typeof ThreadPostParams>;
 export const ThreadPostResult = z.object({
@@ -437,7 +444,9 @@ export type ThreadPostResult = z.infer<typeof ThreadPostResult>;
 
 export const ThreadReadParams = z.strictObject({
   /** Which of your threads — a conversation id or its exact title.
-      Default: this session's own thread. Never another employee's. */
+      Default: this session's own thread. Never another employee's —
+      except a child thread this session created via `task_create`
+      (D-#844), named by the task id, the child's thread id or title. */
   thread: z.string().min(1).optional(),
   /** Newest-N cap after filtering; the backend default applies when omitted. */
   limit: z.int().min(1).optional(),
@@ -697,6 +706,78 @@ export const ScheduleTaskResult = z.object({ task: ScheduledTask });
 export type ScheduleTaskResult = z.infer<typeof ScheduleTaskResult>;
 export const ScheduleDeletedResult = z.object({ deleted: z.literal(true) });
 export type ScheduleDeletedResult = z.infer<typeof ScheduleDeletedResult>;
+
+/* ---------------------------------- task ---------------------------------- */
+
+/**
+ * `task_*` (D-#844): handing a job to another LilOS employee. The task
+ * record is a ticket (D-#776); the work runs as a visible child thread
+ * opened with only `prompt` — the parent's transcript is never copied.
+ * The child's access is the parent's own, never broader (D-#106).
+ * Creating asks no approval; read/wait/cancel and `thread_*` follow-ups
+ * reach only children THIS thread created — the scope is the stored
+ * lineage, never an agent-passed id (D-#36). Employee→employee only:
+ * `agent` names a LilOS employee, not a provider (keep apart from the
+ * engine's own `delegate_task`).
+ */
+export const TaskCreateParams = z.strictObject({
+  /** Employee name or id (`team_list`). */
+  agent: z.string().min(1),
+  /** The child's whole input — its thread opens with this and nothing else. */
+  prompt: z.string().min(1),
+  /** The task/thread title; the prompt's first line when omitted. */
+  title: z.string().trim().min(1).optional(),
+  /** Model pick for the child session (effort/fast ride with it). */
+  model: z.string().min(1).optional(),
+  provider: z.string().optional(),
+  effort: z.string().optional(),
+  fast: z.boolean().optional(),
+  /** Where the child works (D-#848): `worktree` forks this thread's
+      checkout — a fresh worktree from its current commit; `shared`
+      works in this thread's own folder. Omitted = `worktree` when the
+      folder is a git repo, else `shared`. */
+  isolation: z.enum(["worktree", "shared"]).optional(),
+  /** Your idempotency key — a retry returns the same task. */
+  requestId: z.string().min(1).max(200).optional(),
+});
+export type TaskCreateParams = z.infer<typeof TaskCreateParams>;
+
+export const TaskIdParams = z.strictObject({
+  /** The task id `task_create` returned (`LIL-12`). */
+  taskId: z.string().min(1),
+});
+export type TaskIdParams = z.infer<typeof TaskIdParams>;
+
+/** `task_wait`'s ceiling (D-#844): a longer `timeoutMs` clamps here — a
+    tool call cannot park a turn forever, and a timeout never cancels. */
+export const TASK_WAIT_MAX_MS = 120_000;
+/** `task_wait` without a deadline waits this long — long enough for the
+    common child's turn, short enough to keep the turn responsive. */
+export const TASK_WAIT_DEFAULT_MS = 30_000;
+
+export const TaskWaitParams = z.strictObject({
+  taskId: z.string().min(1),
+  /** Ms to wait for a finish before answering anyway — a timeout never
+      cancels the child (backend-bounded). */
+  timeoutMs: z.int().min(0).optional(),
+});
+export type TaskWaitParams = z.infer<typeof TaskWaitParams>;
+
+/** The agent-facing task view — `Task` from `app/ticket` (D-#844).
+    `note` is the create-time heads-up prose (D-#848: where the child
+    works, and that uncommitted edits did not ride along). */
+export const TaskToolResult = z.object({
+  task: TaskSchema,
+  note: z.string().optional(),
+});
+export type TaskToolResult = z.infer<typeof TaskToolResult>;
+export const TaskWaitResult = z.object({
+  task: TaskSchema,
+  /** True when the deadline hit with the task still running — the child
+      is NOT cancelled; wait again or go on. */
+  timedOut: z.boolean(),
+});
+export type TaskWaitResult = z.infer<typeof TaskWaitResult>;
 
 /* --------------------------------- coding --------------------------------- */
 
@@ -1048,6 +1129,34 @@ export const LILOS_TOOLS: Record<string, LilosToolContract> = {
     doc: "Fire one of your scheduled tasks now — a session opens at once. Asks the user to approve.",
     area: "schedule",
     access: "approval",
+  },
+  task_create: {
+    params: TaskCreateParams,
+    result: TaskToolResult,
+    doc: "Hand a job to another LilOS employee (`agent` = name or id from team_list). The task runs as a visible child thread with only your prompt — the child never sees this thread's history, and its access is yours, never broader. Does not ask. In a git repo the child gets its own worktree from your current commit by default (isolation \"shared\" works in this thread's folder instead); your uncommitted changes are never copied and merging back stays a separate step. The child's finish wakes this thread with the result inlined (task_read has the rest); `requestId` makes a retry return the same task.",
+    area: "task",
+    access: "write",
+  },
+  task_read: {
+    params: TaskIdParams,
+    result: TaskToolResult,
+    doc: "Check one of your tasks — status, its child thread id, and the delivered result. Only children this thread created are visible; a task id another thread created is not found.",
+    area: "task",
+    access: "read",
+  },
+  task_wait: {
+    params: TaskWaitParams,
+    result: TaskWaitResult,
+    doc: "Wait for one of your tasks to finish — returns the task's latest state, or `timedOut` when `timeoutMs` hit with it still running (a timeout never cancels the child).",
+    area: "task",
+    access: "read",
+  },
+  task_cancel: {
+    params: TaskIdParams,
+    result: TaskToolResult,
+    doc: "Cancel one of your running tasks — interrupts the child thread's turn and never wakes this thread. An already-finished or cancelled task just returns its state.",
+    area: "task",
+    access: "write",
   },
   coding_agents: {
     params: CodingAgentsParams,

@@ -509,6 +509,24 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
       `ALTER TABLE conversations ADD COLUMN ceo_thread INTEGER NOT NULL DEFAULT 0`,
     ],
   },
+  {
+    /* D-#844: agent hand-offs. `parent_id` is the child's lineage; a
+       task wake is a flag on the wake message like `ceo_wake`; the task
+       record is a JSON `TicketTask` on the ticket (D-#179 — no new
+       table), and `task_parent_id`/`task_request_id` mirror just enough
+       of it for the requestId uniqueness index. */
+    version: 35,
+    statements: [
+      `ALTER TABLE conversations ADD COLUMN parent_id TEXT`,
+      `CREATE INDEX conversations_parent ON conversations(parent_id)`,
+      `ALTER TABLE messages ADD COLUMN task_wake INTEGER NOT NULL DEFAULT 0`,
+      `ALTER TABLE tickets ADD COLUMN task TEXT`,
+      `ALTER TABLE tickets ADD COLUMN task_parent_id TEXT`,
+      `ALTER TABLE tickets ADD COLUMN task_request_id TEXT`,
+      `CREATE UNIQUE INDEX tickets_task_request
+        ON tickets(task_parent_id, task_request_id)`,
+    ],
+  },
 ];
 
 /**
