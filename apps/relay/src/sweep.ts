@@ -9,7 +9,7 @@ import type { RelaySharedCtx } from "./session/ctx";
  * (reason `pr`). Never settles a running turn, a thread stuck mid-turn or
  * waiting on an open ask, a parent whose D-#844 helpers still owe a wake,
  * the standing CEO thread, or a thread whose auto-settle is off. Only
- * Oscar's own messages count as resuming: a user row newer than the PR's
+ * the user's own messages count as resuming: a user row newer than the PR's
  * terminal stamp blocks the PR path (agent activity never does).
  *
  * `state === "active"` is the stored running flag — the relay's proxy for
@@ -81,7 +81,7 @@ export async function autoSettleSweep(c: RelaySharedCtx): Promise<void> {
         if (pr) {
           const terminal = Date.parse(pr.mergedAt ?? pr.closedAt ?? "");
           const resumedAt = await c.store.lastUserMessageAt(conversation.id);
-          /* Resumed after the close: only an Oscar message newer than the
+          /* Resumed after the close: only a user message newer than the
              terminal stamp rescues it — a finished background turn does
              not (T3's resume rule). A pre-#862 host that sends no stamp
              can't prove a resume, so the guard can't fire. */

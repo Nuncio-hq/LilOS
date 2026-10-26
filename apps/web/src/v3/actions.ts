@@ -216,7 +216,10 @@ export function makeV3Actions(caps: V3Capabilities): V3DataActions {
     pinThread: (threadId, pinned) =>
       toastOnFail(
         pinned ? "Couldn't pin the thread" : "Couldn't unpin the thread",
-        relay.request("conversations.pin", { conversationId: threadId, pinned }),
+        relay.request("conversations.pin", {
+          conversationId: threadId,
+          pinned,
+        }),
       ),
     snoozeThread: (threadId, until) =>
       toastOnFail(

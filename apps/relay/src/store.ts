@@ -738,7 +738,7 @@ export interface RelayStore {
   markRewound(conversationId: string, fromSeq: number): Promise<AppMessage[]>;
 
   /**
-   * D-#862: the newest user-authored message's stamp in a thread — Oscar's
+   * D-#862: the newest user-authored message's stamp in a thread — the user's
    * resume clock for the PR-settle guard (only his messages resume a
    * thread; agent turns and background wakes do not). `undefined` when the
    * thread has no user row.

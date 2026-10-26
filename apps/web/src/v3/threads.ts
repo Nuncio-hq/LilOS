@@ -305,7 +305,7 @@ function threadRows(
           : {}),
         /* D-#862: relay park stamps → the sections' fields. `cameBackAt`
            derives client-side: the newest activity, with an open ask's
-           stamp — it IS when the thread last came back to Oscar. */
+           stamp — it IS when the thread last came back to the user. */
         ...(c.pinnedAt !== undefined ? { pinnedAt: c.pinnedAt } : {}),
         ...(c.snoozedUntil !== undefined
           ? { snoozedUntil: c.snoozedUntil }

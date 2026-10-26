@@ -3,7 +3,7 @@ import type { RelaySharedCtx } from "./ctx";
 
 /**
  * D-#862: a snoozed thread wakes early — a new ask, a failed turn, or
- * Oscar's own message. The whole wake is clearing `snoozedUntil` and
+ * the user's own message. The whole wake is clearing `snoozedUntil` and
  * announcing the row on `conversation.updated`; every list's Snoozed
  * filter reads the stamp, so there is nothing else to flip. A call on an
  * awake or settled thread is a no-op — cheap to fire from every trigger.
@@ -22,8 +22,8 @@ export async function wakeSnoozed(
 }
 
 /**
- * D-#862: Oscar typing into a parked thread is resuming it (the issue's
- * "only Oscar's own messages count as resuming"). Snoozed → wakes now;
+ * D-#862: the user typing into a parked thread is resuming it (the issue's
+ * "only the user's own messages count as resuming"). Snoozed → wakes now;
  * settled → back on the live list — and practically, his send could
  * never reach the engine while `archived` still filters the thread out
  * of `listPendingTurns`. Employee/system lines never resume the shelf.

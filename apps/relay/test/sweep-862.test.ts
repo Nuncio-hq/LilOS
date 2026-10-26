@@ -2,15 +2,21 @@
    `idle`); a merged PR settles at once, a closed PR only an idle thread
    (reason `pr`). Never settles a running turn, a stuck or needs-you
    thread, a parent waiting on D-#844 helpers, the CEO thread, or a
-   thread with auto-settle off — and only Oscar's own message after the
+   thread with auto-settle off — and only the user's own message after the
    PR's terminal stamp rescues it from the PR path. Runs against the
    memory store; the PR probe is a stubbed `callHost`. engine-fake only. */
 import type { Conversation } from "@lilos/contracts/app";
 import type { ForgePrListItem } from "@lilos/contracts/host";
 import { describe, expect, it } from "vitest";
 import type { RelaySharedCtx } from "../src/session/ctx";
-import { AUTO_SETTLE_IDLE_MS, autoSettleSweep } from "../src/sweep";
+import { autoSettleSweep } from "../src/sweep";
 import { createMemoryStore, type RelayStore } from "./memory-store";
+
+/** Fixture reads hit rows the test just wrote — `!` stays out of the lint. */
+const must = <T>(v: T | null | undefined, what: string): T => {
+  if (v == null) throw new Error(`fixture row missing: ${what}`);
+  return v;
+};
 
 const NOW = 10_000_000_000; // fixed clock — arbitrary epoch ms
 const DAY = 24 * 60 * 60 * 1000;
@@ -127,13 +133,16 @@ const thread = async (
   });
   const at = NOW - (opts.ageDays ?? 0) * DAY;
   for (const m of msgs.messages) m.createdAt = at;
-  const live = (await rig.store.getConversation(conversation.id))!;
+  const live = must(
+    await rig.store.getConversation(conversation.id),
+    "conversation",
+  );
   live.createdAt = at;
   const stampLast = async (ageDays: number) => {
     const after = await rig.store.listMessages(channel.id, {
       conversationId: conversation.id,
     });
-    after.messages.at(-1)!.createdAt = NOW - ageDays * DAY;
+    must(after.messages.at(-1), "last message").createdAt = NOW - ageDays * DAY;
   };
   if (opts.userMsgAgeDays !== undefined) {
     await rig.store.appendMessage({
@@ -146,7 +155,7 @@ const thread = async (
     await stampLast(opts.userMsgAgeDays);
   }
   /* Recent agent activity — a thread still finishing work is not idle,
-     but it is also not "resumed" (only Oscar's rows count). */
+     but it is also not "resumed" (only the user's rows count). */
   if (opts.empMsgAgeDays !== undefined) {
     await rig.store.appendMessage({
       channelId: channel.id,
@@ -196,14 +205,14 @@ describe("D-#862 auto-settle sweep", () => {
       projectKey: project.project.key,
       title: "helper task",
     });
-    const liveTicket = (await rig.store.getTicket(ticket.id))!;
+    const liveTicket = must(await rig.store.getTicket(ticket.id), "ticket");
     liveTicket.task = {
       parentConversationId: waiting.id,
       childConversationId: "conv_child",
       childChannelId: "ch_child",
     };
     const ceo = await thread(rig, { ageDays: 4 });
-    (await rig.store.getConversation(ceo.id))!.ceoThread = true;
+    must(await rig.store.getConversation(ceo.id), "ceo conv").ceoThread = true;
     const optedOut = await thread(rig, { ageDays: 4 });
     await rig.store.updateConversation(optedOut.id, { autoSettle: false });
 
@@ -226,7 +235,7 @@ describe("D-#862 auto-settle sweep", () => {
   it("a merged PR settles its thread at once — even one that is not idle", async () => {
     const rig = newRig();
     /* Agent still finishing up (recent employee row) — not idle, but
-       Oscar never wrote since the merge, so the PR path settles it. */
+       the user never wrote since the merge, so the PR path settles it. */
     const conv = await thread(rig, {
       ageDays: 4,
       workspace: { repoPath: "/repo", branch: "feat/x" },
@@ -264,9 +273,9 @@ describe("D-#862 auto-settle sweep", () => {
     ).toBeUndefined();
   });
 
-  it("Oscar's message after the PR's terminal stamp rescues the thread", async () => {
+  it("the user's message after the PR's terminal stamp rescues the thread", async () => {
     const rig = newRig();
-    /* Idle before the merge, but Oscar posted AFTER it — resumed. */
+    /* Idle before the merge, but the user posted AFTER it — resumed. */
     const conv = await thread(rig, {
       ageDays: 4,
       workspace: { repoPath: "/repo", branch: "feat/x" },
@@ -286,7 +295,7 @@ describe("D-#862 auto-settle sweep", () => {
       ageDays: 4,
       workspace: { repoPath: "/repo", branch: "feat/x" },
     });
-    /* A fresh agent reply after the merge — not Oscar. */
+    /* A fresh agent reply after the merge — not the user. */
     await rig.store.appendMessage({
       channelId: conv.channelId,
       conversationId: conv.id,

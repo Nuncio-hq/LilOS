@@ -247,7 +247,11 @@ export function toSessionTurns(
       (s) =>
         s.conversation.channelId === ctx.channelId && !s.conversation.archived,
     )
-    .map((s) => ({ turn: toSessionTurn(s, ctx), at: s.last.createdAt, conv: s.conversation }))
+    .map((s) => ({
+      turn: toSessionTurn(s, ctx),
+      at: s.last.createdAt,
+      conv: s.conversation,
+    }))
     /* D-#862: a snoozed thread sleeps on the shelf here too — same stamp,
        same early-wake exceptions as the desktop (an ask, a failure, a
        stuck turn shows anyway). */

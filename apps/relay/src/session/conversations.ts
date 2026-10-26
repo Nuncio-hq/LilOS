@@ -273,7 +273,7 @@ export async function handleConversations(
       respond(peer, id, { conversation });
       return;
     }
-    /* D-#862: thread parking — Oscar's own actions, callable from any
+    /* D-#862: thread parking — the user's own actions, callable from any
        client (Mac settles, the phone sees it on `conversation.updated`).
        The relay owns every stamp; the store keeps the `archived` mirror
        and drops pin/snooze on settle, so the writes below stay small. */

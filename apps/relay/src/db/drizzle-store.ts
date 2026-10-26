@@ -1756,7 +1756,10 @@ export function createDrizzleStore(db: Db): RelayStore {
           /* D-#862: same boundary as turnFailure — the column holds JSON,
              `null` clears. */
           ...(settledPr !== undefined
-            ? { settledPr: settledPr === null ? null : JSON.stringify(settledPr) }
+            ? {
+                settledPr:
+                  settledPr === null ? null : JSON.stringify(settledPr),
+              }
             : {}),
           ...(turnFailure !== undefined
             ? {
@@ -2103,7 +2106,7 @@ export function createDrizzleStore(db: Db): RelayStore {
         : base.orderBy(asc(schema.asks.createdAt)).all();
       return rows.map(rowToAsk);
     },
-    /* D-#862: Oscar's resume clock — the newest user row's stamp, one
+    /* D-#862: the user's resume clock — the newest user row's stamp, one
        aggregate read the sweep runs per PR-linked thread. */
     async lastUserMessageAt(conversationId) {
       const row = db

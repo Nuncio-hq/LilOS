@@ -1,7 +1,7 @@
 /* D-#862 — thread parking as relay state: the four RPCs and their
    `conversation.updated` broadcast, the legacy `archived` alias folding
    into settle at the store seam, the early wakes (a new ask, a failed
-   turn, Oscar's own message), Oscar's message resuming a settled thread,
+   turn, the user's own message), the user's message resuming a settled thread,
    and snoozed push suppression (Needs-you is the one kind that gets
    through). engine-fake only — no real LLM. */
 import type { Conversation } from "@lilos/contracts/app";
@@ -207,9 +207,9 @@ describe("D-#862 early wake", () => {
     );
     const woken = await store.getConversation(conversation.id);
     expect(woken?.snoozedUntil).toBeUndefined();
-    expect(
-      eventsNamed(oscar.frames, "conversation.updated"),
-    ).not.toHaveLength(0);
+    expect(eventsNamed(oscar.frames, "conversation.updated")).not.toHaveLength(
+      0,
+    );
   });
 
   it("a failed turn wakes the snoozed thread", async () => {
@@ -230,7 +230,7 @@ describe("D-#862 early wake", () => {
     });
   });
 
-  it("Oscar's own message wakes a snoozed thread AND un-settles a settled one", async () => {
+  it("the user's own message wakes a snoozed thread AND un-settles a settled one", async () => {
     const { store, oscar, channel, conversation } = await setup();
     await oscar.connection.receive(
       req("conversations.settle", {
@@ -264,7 +264,7 @@ describe("D-#862 early wake", () => {
     for (const post of [
       { authorKind: "employee", text: "answer" },
       { authorKind: "system", text: "note" },
-      /* The host's own user-kind line (its injected turn) is not Oscar. */
+      /* The host's own user-kind line (its injected turn) is not the user. */
       { authorKind: "user", text: "host line" },
     ]) {
       await host.connection.receive(

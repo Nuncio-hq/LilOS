@@ -835,7 +835,12 @@ export function createMemoryStore(): RelayStore {
          a translate-into-clear still clears. */
       if (patch.settledAt !== undefined) {
         if (patch.settledAt != null) {
-          patch = { ...patch, archived: true, pinnedAt: null, snoozedUntil: null };
+          patch = {
+            ...patch,
+            archived: true,
+            pinnedAt: null,
+            snoozedUntil: null,
+          };
         } else {
           patch = {
             ...patch,
@@ -1061,7 +1066,7 @@ export function createMemoryStore(): RelayStore {
         .filter((a) => (state ? a.state === state : true))
         .sort((a, b) => a.createdAt - b.createdAt);
     },
-    /* D-#862: Oscar's resume clock — same rule as the drizzle aggregate. */
+    /* D-#862: the user's resume clock — same rule as the drizzle aggregate. */
     async lastUserMessageAt(conversationId) {
       let at: number | undefined;
       for (const m of messages.values()) {

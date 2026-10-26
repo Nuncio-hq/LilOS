@@ -147,7 +147,7 @@ export const conversations = sqliteTable(
     pinnedAt: integer("pinned_at"),
     /** Settled onto the shelf, epoch ms; NULL = live. */
     settledAt: integer("settled_at"),
-    /** Why it settled: 'manual' (Oscar / a legacy archived write), 'idle'
+    /** Why it settled: 'manual' (the user / a legacy archived write), 'idle'
         (3-day sweep), 'pr' (its PR merged or closed). */
     settledReason: text("settled_reason", {
       enum: ["manual", "idle", "pr"],

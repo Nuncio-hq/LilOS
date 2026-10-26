@@ -3,8 +3,8 @@ import {
   AsksOpenParams,
   AsksRespondParams,
 } from "@lilos/contracts/app";
-import { wakeSnoozed } from "./park";
 import type { RelayCtx } from "./ctx";
+import { wakeSnoozed } from "./park";
 import { badParams, JsonRpcCode, RpcError } from "./rpc";
 
 /**
