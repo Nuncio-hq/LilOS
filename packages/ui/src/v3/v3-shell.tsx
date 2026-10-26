@@ -11,6 +11,7 @@ import { ConversationReflowKey } from "../components/ai-elements/conversation";
 import { draftKey, setDraft } from "../lib/drafts";
 import { useTheme } from "../shell/use-theme";
 import type { Theme } from "../types";
+import { V3AddAgent } from "./v3-add-agent";
 import type { V3Data, V3Draft } from "./v3-data-types";
 import { EscLayer } from "./v3-keys";
 import { SIDEBAR_W, shellSizes, useLayoutPrefs } from "./v3-layout-prefs";
@@ -261,9 +262,28 @@ export function V3Shell({
     },
     [data, draft, goFromPage, goFromPeek],
   );
+  /* The ＋ beside Agents and the composer menu's "Add agent…" share the one
+     small dialog (#870): the shell owns it and hands each opener an
+     `onHired` to run when the hire lands. Offered only where the app can
+     create agents at all (a profile to read, a way to hire). */
+  const [addAgent, setAddAgent] = useState<{
+    onHired: (agentId: string) => void;
+  } | null>(null);
+  const openAddAgent = useMemo(
+    () =>
+      actions.listProfiles && (actions.hireProfile ?? actions.hire)
+        ? (onHired: (agentId: string) => void) => setAddAgent({ onHired })
+        : undefined,
+    [actions],
+  );
+
   const act = useMemo<V3Actions>(
-    () => ({ ...actions, ask: (text) => openAsk(text, "page") }),
-    [actions, openAsk],
+    () => ({
+      ...actions,
+      ask: (text) => openAsk(text, "page"),
+      ...(openAddAgent ? { addAgent: openAddAgent } : {}),
+    }),
+    [actions, openAsk, openAddAgent],
   );
   const peekAct = useMemo<V3Actions>(
     () => ({ ...act, ask: (text) => openAsk(text, "peek") }),
@@ -348,6 +368,14 @@ export function V3Shell({
             dark={dark}
             onTheme={() => setTheme(dark ? "light" : "dark")}
             canHire={!!actions.hire}
+            onAddAgent={
+              openAddAgent
+                ? /* The sidebar's ＋ hires, then opens a chat with the new
+                     agent — it is the composer selection (#870). */
+                  () =>
+                    openAddAgent((id) => goFromPage({ page: "newchat", id }))
+                : undefined
+            }
             mode={mode}
             width={side.w}
             sideRef={pop.side}
@@ -455,6 +483,18 @@ export function V3Shell({
           order, so this strip must come last to stay the pointer's. */}
           {hidden && (
             <SidebarHotZone onEnter={pop.show} onLeave={pop.tuckSoon} />
+          )}
+          {addAgent && (
+            <V3AddAgent
+              data={data}
+              act={act}
+              onClose={() => setAddAgent(null)}
+              onHired={(id) => {
+                const done = addAgent.onHired;
+                setAddAgent(null);
+                done(id);
+              }}
+            />
           )}
           {palette !== null && (
             <V3Palette

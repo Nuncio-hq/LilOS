@@ -124,13 +124,23 @@ export type V3Actions = {
      menu has no such row. */
   newProject?: (onCreated: (projectId: string) => void) => void;
   markSeen: (threadId: string) => void;
+  /** Opens the app's small add-agent dialog (the ＋ beside Agents, "Add
+     agent…" at the bottom of a composer's agent menu — #870): Who? · Name ·
+     Hire, nothing else. `onHired` gets the new agent's id — the caller
+     selects it where it was opened (its composer, a new chat). Absent: no
+     ＋ and no menu row (the app cannot create agents). */
+  addAgent?: (onHired: (agentId: string) => void) => void;
   /** Hires an agent and returns its id, so the Hire page can open it. Rejects
      when the hire failed (the app has already said why). Absent while the
-     engine cannot create agents. */
+     engine cannot create agents. `runtime` lands the new profile on that
+     engine runtime (D-#761); absent = the default engine. */
   hire?: (agent: {
     name: string;
     role: string;
+    /** "" = the engine/runtime's own default model (the add-agent dialog
+        asks for no model). */
     model: string;
+    runtime?: string;
   }) => Promise<string>;
   /** The engine's profiles, read fresh each time the Hire page opens so one
      made or freed elsewhere shows up. Absent where the engine cannot list
