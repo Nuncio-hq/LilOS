@@ -103,6 +103,13 @@ export interface AcpEngineOptions {
    */
   sessionMeta?: (p: SessionStartParams) => Record<string, unknown>;
   /**
+   * Engine-level effort default (D-#761): applied on `session.start` when
+   * the caller picks no effort — the launch spec names an advertised
+   * `thought_level` value (e.g. Devin's free SWE-2 `max`). Absent = the
+   * agent's own default.
+   */
+  defaultEffort?: string;
+  /**
    * The launched agent's roster seed (D-#845): the descriptor
    * `agents.list` opens with — id, display name, `detail.isDefault` for
    * the harness's first-run hire. Defaults to a generic "default" row.
@@ -348,7 +355,11 @@ export class AcpEngine {
       s,
       {
         model: p.model ?? persona?.model,
-        effort: p.effort,
+        /* D-#761: an engine-level default effort (`defaultEffort` on the
+           launch spec — Devin's free SWE-2 `max`) lands when the caller
+           didn't pick one; a session param still wins, and the write only
+           ever goes through options this session advertised. */
+        effort: p.effort ?? this.opts.defaultEffort,
         fast: p.fast,
       },
       (line) => notes.push(line),

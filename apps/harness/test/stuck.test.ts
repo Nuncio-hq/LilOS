@@ -162,6 +162,7 @@ function world(stuck?: { reason: string }) {
   const binding = {
     conversationId: "c1",
     channelId: "ch",
+    runtime: "hermes",
     runningTurnId: "t1",
     stopRequested: false,
     nowWaits: new Map<string, string>(),
@@ -182,6 +183,7 @@ function world(stuck?: { reason: string }) {
     noteNow: () => {},
     postSystem: async () => {},
     scheduleSteerReconcile: () => {},
+    gapCauseByRuntime: new Map(),
     opts: {
       log: { warn: () => {} },
       sleep: { release: () => {} },
@@ -428,6 +430,15 @@ function replay(stuck?: { reason: string }) {
     employeeIdFor: () => undefined,
     scheduleSteerReconcile: () => {},
     drainQueue: () => {},
+    /* D-#761: fixture runtime is the default — the qualifier is the
+       identity map here. */
+    sessionKey: (_runtime: string, id: string) => id,
+    connFor: () => undefined,
+    connForRuntime: () => undefined,
+    hasAutoTitleFor: () => true,
+    aliasSurfaces: () => {},
+    metaSeen: new Map(),
+    gapCauseByRuntime: new Map(),
     opts: {
       log: { warn: () => {}, info: () => {} },
       sleep: { acquire: () => {}, release: () => {} },

@@ -56,6 +56,14 @@ const FAKE_ADAPTER: EngineBinary = {
   outfile: "lilos-engine-fake",
   entry: "packages/engine-fake/scripts/serve.ts",
 };
+const ACP_ADAPTER: EngineBinary = {
+  /* D-#761: the ACP engine adapter every `acp:*` runtime launches —
+     `lilos-engine-acp --agent devin`. A bundle that omits it cannot run
+     a hired coding agent: the harness finds it next to lilos-harness
+     the same way it finds lilos-engine-nous (#85). */
+  outfile: "lilos-engine-acp",
+  entry: "packages/engine-acp/scripts/serve.ts",
+};
 
 export function engineBundlePlan(
   identity: string,
@@ -67,10 +75,10 @@ export function engineBundlePlan(
         "--engine=fake is only valid on ad-hoc builds — a signed build never ships the fake engine.",
       );
     }
-    return { defaultEngine: "hermes", binaries: [HERMES_ADAPTER] };
+    return { defaultEngine: "hermes", binaries: [HERMES_ADAPTER, ACP_ADAPTER] };
   }
   return {
     defaultEngine: engine ?? "fake",
-    binaries: [HERMES_ADAPTER, FAKE_ADAPTER],
+    binaries: [HERMES_ADAPTER, ACP_ADAPTER, FAKE_ADAPTER],
   };
 }

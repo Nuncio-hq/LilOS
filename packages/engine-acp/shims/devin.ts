@@ -17,17 +17,29 @@ import type { AcpLaunchSpec } from "../src/launch.js";
  */
 export const devinSpec: AcpLaunchSpec = {
   id: "devin",
-  command: ["devin", "acp"],
+  /* `--model` sets every new session's default (fuzzy names accepted) —
+     `swe-2-high` is the id the agent's own `category:"model"` config
+     advertises, so the launch flag and the persona pin agree and no
+     "skipped model" note lands on the thread. */
+  command: ["devin", "acp", "--model", "swe-2-high"],
   verify: { args: ["--version"], timeoutMs: 15_000 },
   /* The roster seed — the harness's first-run hire reads `agents.list`
      and hires `detail.isDefault`, so this row is what "Devin" looks like
-     to Oscar before he ever opens a thread. */
+     to Oscar before he ever opens a thread. `model` seeds the session
+     default (#851): `swe-2-high` + `defaultEffort:"max"` is the strongest
+     free SWE-2 pick the ACP session advertises — Oscar's rule is real
+     turns never pick a billed model (`*-lightning`, GPT-6, Claude,
+     Adaptive) unless he chooses one himself. */
   agent: {
     id: "devin",
     name: "Devin",
     description: "Devin CLI over ACP — Cognition's agent, signed in locally.",
+    model: "swe-2-high",
     detail: { isDefault: true },
   },
+  /* `session.start` writes this through the session's `thought_level`
+     when the caller picks no effort — `max` is the free tier's top. */
+  defaultEffort: "max",
   clientCapabilities: {
     fs: { readTextFile: false, writeTextFile: false },
     terminal: true,

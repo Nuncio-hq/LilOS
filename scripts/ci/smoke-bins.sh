@@ -293,6 +293,94 @@ TS
   fi
 fi
 
+# lilos-engine-acp: the ACP adapter every `acp:*` runtime launches (D-#761).
+# agents.list is capability-gated — the adapter must spawn its --command
+# runner and negotiate initialize + session/new before answering, so the
+# runner has to be a live ACP speaker, not `bun --version`. A dependency-
+# free ndjson fake keeps the leg honest with the repo hidden (CI moves
+# the checkout mid-run, so packages/engine-acp/scripts/fake-agent.ts —
+# which imports the ACP SDK — cannot resolve there).
+if have lilos-engine-acp; then
+  ALOG="$TMP/engine-acp.log"
+  APORT="$(port)"
+  ATOKEN="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+  cat >"$TMP/acp-fake-agent.ts" <<'TS'
+import { createInterface } from "node:readline";
+let n = 0;
+const rl = createInterface({ input: process.stdin });
+for await (const line of rl) {
+  if (!line.trim()) continue;
+  let f: { id?: unknown; method?: string };
+  try {
+    f = JSON.parse(line);
+  } catch {
+    continue;
+  }
+  if (f.id === undefined || !f.method) continue;
+  if (f.method === "initialize") {
+    console.log(JSON.stringify({
+      jsonrpc: "2.0",
+      id: f.id,
+      result: {
+        protocolVersion: 1,
+        agentCapabilities: {},
+        agentInfo: { name: "smoke-fake", title: "Smoke Fake", version: "0" },
+      },
+    }));
+  } else if (f.method === "session/new") {
+    console.log(JSON.stringify({
+      jsonrpc: "2.0", id: f.id, result: { sessionId: `smoke-${++n}` },
+    }));
+  } else {
+    console.log(JSON.stringify({
+      jsonrpc: "2.0", id: f.id,
+      error: { code: -32601, message: `${f.method} not implemented` },
+    }));
+  }
+}
+TS
+  ( cd "$TMP" && env LILOS_ENGINE_PROTOCOL_TOKEN="$ATOKEN" \
+      "$RUN/lilos-engine-acp" --port "$APORT" --command "bun $TMP/acp-fake-agent.ts" \
+      >"$ALOG" 2>&1 ) &
+  APID=$!; PIDS="$PIDS $APID"
+  if wait_for "$ALOG" "LISTENING" "$APID" lilos-engine-acp 20; then
+    cat >"$TMP/acp-probe.ts" <<'TS'
+const [port, token] = process.argv.slice(2);
+const timer = setTimeout(() => {
+  console.error("timeout waiting for agents.list");
+  process.exit(1);
+}, 20_000);
+const fail = (m: string): never => {
+  clearTimeout(timer);
+  console.error(m);
+  process.exit(1);
+};
+const ws = new WebSocket(`ws://127.0.0.1:${port}/ws?token=${encodeURIComponent(token)}`);
+ws.addEventListener("close", (e) => fail(`socket closed ${e.code}`));
+ws.addEventListener("error", () => fail("socket error"));
+ws.addEventListener("open", () =>
+  ws.send(JSON.stringify({ jsonrpc: "2.0", id: "a", method: "agents.list", params: {} })),
+);
+ws.addEventListener("message", (ev) => {
+  const f = JSON.parse(String(ev.data)) as { id?: string; result?: { agents?: unknown[] } };
+  if (f.id === "a" && Array.isArray(f.result?.agents) && f.result.agents.length > 0) {
+    clearTimeout(timer);
+    console.log("agents.list answered");
+    process.exit(0);
+  }
+  if (f.id === "a") fail(`agents.list: ${JSON.stringify(f)}`);
+});
+TS
+    if (cd "$TMP" && bun "$TMP/acp-probe.ts" "$APORT" "$ATOKEN"); then
+      ok "lilos-engine-acp booted + answered agents.list"
+    else
+      bad "lilos-engine-acp did not answer its probe"; dump "$ALOG"
+    fi
+  else
+    bad "lilos-engine-acp did not boot"; dump "$ALOG"
+  fi
+fi
+
 # lilos-engine-nous: the real engine adapter — hermes is absent on a CI box.
 # Its own failure path is NOT to die: the supervisor logs the spawn error
 # and keeps retrying with backoff, so a noisy process that stays up is

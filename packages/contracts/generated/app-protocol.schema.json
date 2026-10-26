@@ -774,6 +774,10 @@
           "type": "string",
           "minLength": 1
         },
+        "runtime": {
+          "type": "string",
+          "minLength": 1
+        },
         "createdAt": {
           "type": "integer",
           "minimum": 0,
@@ -863,6 +867,10 @@
               "type": "null"
             }
           ]
+        },
+        "runtime": {
+          "type": "string",
+          "minLength": 1
         }
       }
     },
@@ -924,6 +932,10 @@
                 "type": "boolean"
               },
               "reportsTo": {
+                "type": "string",
+                "minLength": 1
+              },
+              "runtime": {
                 "type": "string",
                 "minLength": 1
               },
@@ -997,6 +1009,10 @@
             "selected",
             "anyone"
           ]
+        },
+        "runtime": {
+          "type": "string",
+          "minLength": 1
         }
       },
       "required": [
@@ -1059,6 +1075,10 @@
               "type": "null"
             }
           ]
+        },
+        "runtime": {
+          "type": "string",
+          "minLength": 1
         }
       },
       "required": [
@@ -1151,6 +1171,10 @@
                 "type": "string",
                 "minLength": 1
               },
+              "runtime": {
+                "type": "string",
+                "minLength": 1
+              },
               "createdAt": {
                 "type": "integer",
                 "minimum": 0,
@@ -1227,6 +1251,10 @@
               "type": "boolean"
             },
             "reportsTo": {
+              "type": "string",
+              "minLength": 1
+            },
+            "runtime": {
               "type": "string",
               "minLength": 1
             },
@@ -6356,6 +6384,10 @@
             },
             "detail": {
               "type": "string"
+            },
+            "runtime": {
+              "type": "string",
+              "minLength": 1
             }
           },
           "required": [
@@ -6538,6 +6570,42 @@
                 "required": [
                   "profile",
                   "state"
+                ]
+              }
+            },
+            "runtimes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "available": {
+                    "type": "boolean"
+                  },
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "starting",
+                      "running",
+                      "restarting",
+                      "failed",
+                      "stopped"
+                    ]
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "label"
                 ]
               }
             }
@@ -6727,6 +6795,42 @@
               "state"
             ]
           }
+        },
+        "runtimes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1
+              },
+              "available": {
+                "type": "boolean"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "starting",
+                  "running",
+                  "restarting",
+                  "failed",
+                  "stopped"
+                ]
+              },
+              "detail": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "label"
+            ]
+          }
         }
       }
     },
@@ -6752,6 +6856,10 @@
             },
             "detail": {
               "type": "string"
+            },
+            "runtime": {
+              "type": "string",
+              "minLength": 1
             }
           },
           "required": [
@@ -7094,6 +7202,42 @@
             "required": [
               "profile",
               "state"
+            ]
+          }
+        },
+        "runtimes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1
+              },
+              "available": {
+                "type": "boolean"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "starting",
+                  "running",
+                  "restarting",
+                  "failed",
+                  "stopped"
+                ]
+              },
+              "detail": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "label"
             ]
           }
         },
@@ -9203,6 +9347,10 @@
               "type": "boolean"
             },
             "reportsTo": {
+              "type": "string",
+              "minLength": 1
+            },
+            "runtime": {
               "type": "string",
               "minLength": 1
             },
@@ -13539,6 +13687,10 @@
             "type": "string"
           },
           "additionalProperties": {}
+        },
+        "runtime": {
+          "type": "string",
+          "minLength": 1
         }
       },
       "required": [
@@ -13589,6 +13741,10 @@
                   "type": "string"
                 },
                 "additionalProperties": {}
+              },
+              "runtime": {
+                "type": "string",
+                "minLength": 1
               }
             },
             "required": [
@@ -13651,6 +13807,10 @@
                 "type": "string"
               },
               "additionalProperties": {}
+            },
+            "runtime": {
+              "type": "string",
+              "minLength": 1
             }
           },
           "required": [
@@ -13731,6 +13891,10 @@
                 "type": "string"
               },
               "additionalProperties": {}
+            },
+            "runtime": {
+              "type": "string",
+              "minLength": 1
             }
           },
           "required": [

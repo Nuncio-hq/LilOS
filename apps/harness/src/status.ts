@@ -42,6 +42,9 @@ export interface StatusReporterOptions {
   liveSessions?: () => number;
   /** Per-profile Connect rows (#339) — the harness's Connect reconciler. */
   connect?: () => ProfileConnection[];
+  /** D-#761: the runtime roster for `status.runtimes` — the hire flow
+      offers a non-default runtime only when its row says `available`. */
+  runtimes?: () => HarnessStatusReport["runtimes"];
   logTail?: () => string[];
   /** Deadline for the engine `describe` probe (default 2s). */
   probeTimeoutMs?: number;
@@ -154,6 +157,7 @@ export class StatusReporter {
       probedAt: this.lastProbe?.at,
       logTail: this.opts.logTail?.().slice(-100),
       ...(this.opts.connect ? { connect: this.opts.connect() } : {}),
+      ...(this.opts.runtimes ? { runtimes: this.opts.runtimes() } : {}),
     };
     await this.opts.send({
       engine: {

@@ -27,25 +27,34 @@ import { clearStuck, finishStuckReplay } from "./stuck";
 /**
  * On (re)connect: cache `describe` (minus hidden capabilities) and hire the
  * `default` engine profile as the first employee when the roster is empty.
+ * D-#761: the describe lands keyed by runtime — `describeResult` stays the
+ * default engine's row. Only the default runtime hires: a coding engine
+ * coming up must not mint an employee for its own agent (the hire flow's
+ * `agents.create` + `employees.create { runtime }` owns that).
  */
 export async function describeAndHire(
   this: HarnessCtx,
   conn: EngineConnection,
+  runtime: string = "hermes",
 ): Promise<void> {
   try {
     const d = await conn.request<DescribeResult>("describe", {});
     const hide = new Set(this.opts.hideCaps ?? []);
-    this.describeResult = {
+    const desc = {
       ...d,
       capabilities: d.capabilities.filter((c) => !hide.has(c.id)),
     };
+    this.describeByRuntime.set(runtime, desc);
+    if (runtime === "hermes") this.describeResult = desc;
   } catch (error) {
-    this.describeResult = undefined;
+    this.describeByRuntime.delete(runtime);
+    if (runtime === "hermes") this.describeResult = undefined;
     this.opts.log.warn("engine describe failed", {
+      runtime,
       error: String(error),
     });
   }
-  if (this.hired) return;
+  if (this.hired || runtime !== "hermes") return;
   this.hired = true;
   try {
     // connect() is idempotent: no-op when already up, waits when the
@@ -94,7 +103,7 @@ export async function resyncBinding(
   this: HarnessCtx,
   binding: SessionBinding,
 ): Promise<void> {
-  const conn = this.engine;
+  const conn = this.connFor(binding);
   if (!conn) return;
   try {
     /* #834: on a just-restarted adapter this read drives the session's
@@ -144,14 +153,16 @@ export function applyReplay(
       () => {},
     );
   }
-  for (const event of replay.events) this.onEngineEvent(event);
+  /* D-#761: replayed events dispatch on the binding's own runtime —
+     `onEngineEvent` resolves the conversation through it. */
+  for (const event of replay.events) this.onEngineEvent(event, binding.runtime);
   /* #137 AC-2: the snapshot title is the engine's persisted truth — it
      lands whatever the (possibly truncated) event log missed. The relay
      still refuses it over a user rename. */
   const snapshotTitle = replay.snapshot.title;
   if (
     snapshotTitle &&
-    this.hasAutoTitle() &&
+    this.hasAutoTitleFor(binding.runtime) &&
     this.metaSeen.get(binding.conversationId)?.titleSource !== "user"
   ) {
     this.updateConversation(binding.conversationId, {
@@ -192,7 +203,7 @@ export async function markTurnInterrupted(
      kind stays `sleep` for both: the contract treats it as the
      slept-or-restarted amber chip (D-#419). */
   const why =
-    this.gapCause === "sleep"
+    (this.gapCauseByRuntime.get(binding.runtime) ?? this.gapCause) === "sleep"
       ? "your Mac went to sleep"
       : "the engine restarted";
   const note = `Stopped partway — ${why}. Send a message to pick up where it left off.`;

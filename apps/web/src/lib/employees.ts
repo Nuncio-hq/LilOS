@@ -32,6 +32,7 @@ const profileSlug = (name: string): string =>
 export async function hireEmployee(
   d: HireDraft,
   profile: string | null,
+  runtime?: string,
 ): Promise<Employee> {
   let profileId = profile;
   if (profileId === null) {
@@ -41,6 +42,7 @@ export async function hireEmployee(
       ...(d.model ? { model: d.model } : {}),
       /* `{provider?, id}` — the id may itself contain `/` (#92 AC-8). */
       ...(d.provider ? { provider: d.provider } : {}),
+      ...(runtime ? { runtime } : {}),
     });
     profileId = agent.id;
   }
@@ -51,6 +53,9 @@ export async function hireEmployee(
     profile: profileId,
     model: d.model,
     instructions: d.instructions,
+    /* D-#761: a profile a non-default runtime listed hires there — absent
+       stays the default engine's hire. */
+    ...(runtime ? { runtime } : {}),
   });
   await relay.request("channels.openDm", { employeeId: employee.id });
   return employee;

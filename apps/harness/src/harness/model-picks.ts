@@ -30,7 +30,7 @@ export async function onModelRequested(
   pick: ModelPick,
 ) {
   const binding = this.bindings.get(conversationId);
-  const conn = this.engine;
+  const conn = binding ? this.connFor(binding) : undefined;
   /* A new pick is a different route from the one a fallback note
      explained. The next fallback says so again (#790). */
   if (binding) {
@@ -110,7 +110,7 @@ export async function setSessionModel(
   binding: SessionBinding,
   pick: ModelPick,
 ): Promise<ConversationPickPatch> {
-  const conn = this.engine;
+  const conn = this.connFor(binding);
   if (!conn) throw new Error("engine not connected");
   const ack = await conn.request<{
     model: string;
@@ -208,7 +208,7 @@ export async function doApplyHeldPick(
   const prev = binding.heldPickPrev;
   binding.heldPick = undefined;
   binding.heldPickPrev = undefined;
-  if (!this.engine) return; // intent stays on the row; session.start applies it
+  if (!this.connFor(binding)) return; // intent stays on the row; session.start applies it
   try {
     const correction = await this.setSessionModel(binding, pick);
     await this.updateConversation(binding.conversationId, correction).catch(

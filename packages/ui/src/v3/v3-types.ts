@@ -158,6 +158,8 @@ export type V3Profile = {
   skills: number;
   /** Its persona text, if the engine describes it. */
   soul?: string;
+  /** Which runtime lists it — hiring onto it lands the agent there. */
+  runtime?: string;
 };
 
 export type V3Project = {
