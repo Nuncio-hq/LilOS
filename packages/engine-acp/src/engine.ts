@@ -1,0 +1,806 @@
+import type * as acp from "@agentclientprotocol/sdk";
+import {
+  type ApprovalOutcome,
+  type DescribeResult,
+  ENGINE_METHODS,
+  ENGINE_PROTOCOL,
+  type EngineEvent,
+  type EventsSinceParams,
+  type InterruptParams,
+  type ModelsListParams,
+  type ModelsListResult,
+  type PromptParams,
+  type PromptResult,
+  type RequestRespondParams,
+  RPC_ERRORS,
+  type SessionSetHiddenParams,
+  type SessionSetModelParams,
+  type SessionSetModelResult,
+  type SessionSetTitleParams,
+  type SessionStartParams,
+  type SessionSteerParams,
+  type SessionStopParams,
+  type SessionSuspendParams,
+} from "@lilos/contracts/engine";
+import {
+  type AcpSessionConfig,
+  catalogEffortOption,
+  catalogFastOption,
+  catalogModelOption,
+  catalogModels,
+  configOptionDescriptor,
+  deriveCapabilities,
+  type EngineConfigOption,
+  learnSessionConfig,
+} from "./capabilities.js";
+import { AcpConnection } from "./client.js";
+import { RpcError } from "./errors.js";
+import {
+  acpStopReason,
+  acpTurnUsage,
+  handleAcpUpdate,
+  toAcpContent,
+  toAcpMcp,
+} from "./mapping.js";
+import { acpApprovalRequest, acpPermissionAnswer } from "./permissions.js";
+import { AcpSession, cancelAllAcpAsks, type PendingAcpAsk } from "./session.js";
+
+/**
+ * D-#764 — the generic ACP engine: any agent speaking the pinned ACP schema
+ * over stdio runs through the shared mapping (`mapping.ts`,
+ * `capabilities.ts`, `permissions.ts`) and answers the LilOS engine
+ * protocol. Agent identity never appears — `command` argv is the only
+ * agent-specific input the caller supplies. Per-job model/effort/mode
+ * application lands in #846; this slice maps the descriptors and the
+ * session-scoped config writes they sit on.
+ */
+
+export interface AcpEngineOptions {
+  /** Engine identity in describe() (e.g. "engine-acp-fake" for the fake). */
+  name?: string;
+  version?: string;
+  /** The agent's stdio command — `["bun","scripts/fake-agent.ts"]` etc. */
+  command: string[];
+  env?: Record<string, string>;
+  /** `initialize.clientInfo`. */
+  clientInfo?: { name: string; version: string };
+  /** Per-session event-log cap (#431). */
+  eventLogCap?: number;
+  /**
+   * Access-level -> mode hint: `session.start.access` maps through here
+   * when the session advertised modes (ACP modes are agent-defined ids —
+   * the generic engine cannot guess them; the engine package knows its
+   * agent's vocabulary and passes the mapping in).
+   */
+  modeForAccess?: (
+    access: "ask" | "full",
+    modes: { id: string; name?: string }[],
+  ) => string | undefined;
+  /**
+   * Extra `_meta` sent on `session/new` (agent-provenance hooks live with
+   * the engine package, not the generic seam).
+   */
+  sessionMeta?: (p: SessionStartParams) => Record<string, unknown>;
+}
+
+export class AcpEngine {
+  private conn?: AcpConnection;
+  private sessions = new Map<string, AcpSession>();
+  private listeners = new Set<(e: EngineEvent) => void>();
+  private sessionCounter = 0;
+  private turnCounter = 0;
+  private requestCounter = 0;
+  /** Session-config catalog learned from session/new advertisements —
+      engine-wide truth that accrues as sessions open (D-#764). */
+  private catalog: AcpSessionConfig = { options: new Map() };
+  private opening?: Promise<AcpConnection>;
+  private pumping = new Set<string>();
+
+  constructor(private readonly opts: AcpEngineOptions) {}
+
+  onEvent(fn: (e: EngineEvent) => void): () => void {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  }
+
+  private emitAll(e: EngineEvent) {
+    for (const fn of this.listeners) fn(e);
+  }
+
+  /** Lazily spawn the agent + `initialize` once; describe() needs it. */
+  private async connection(): Promise<AcpConnection> {
+    if (this.conn) return this.conn;
+    this.opening ??= AcpConnection.open({
+      command: this.opts.command,
+      ...(this.opts.env ? { env: this.opts.env } : {}),
+      cwd: process.cwd(),
+      ...(this.opts.clientInfo ? { clientInfo: this.opts.clientInfo } : {}),
+      handlers: {
+        onPermission: (params) => this.onPermission(params),
+        onUpdate: (params) => this.onUpdate(params),
+      },
+    }).then(async (c) => {
+      this.conn = c;
+      /* The config-option/mode catalog lives on session/new, not
+         initialize — one scratch probe session learns it up front so
+         describe/models.list are honest before the first real session
+         (#764: advertised surface only, never guessed). */
+      try {
+        const probe = await c.newSession({ cwd: process.cwd() });
+        learnSessionConfig(this.catalog, probe);
+        await c.closeSession(probe.sessionId);
+      } catch {
+        /* An agent that cannot open a session cannot run turns either —
+           the empty catalog just means no models capability yet. */
+      }
+      return c;
+    });
+    try {
+      return await this.opening;
+    } finally {
+      this.opening = undefined;
+    }
+  }
+
+  async close() {
+    for (const s of this.sessions.values()) cancelAllAcpAsks(s);
+    await this.conn?.close();
+    this.conn = undefined;
+  }
+
+  // ── dispatch ───────────────────────────────────────────────────────────
+
+  async dispatch(method: string, params: unknown): Promise<unknown> {
+    const contract = ENGINE_METHODS[method];
+    if (!contract)
+      throw new RpcError(
+        RPC_ERRORS.METHOD_NOT_FOUND,
+        `unknown method: ${method}`,
+      );
+    const parsed = contract.params.safeParse(params ?? {});
+    if (!parsed.success)
+      throw new RpcError(
+        RPC_ERRORS.INVALID_PARAMS,
+        `invalid params: ${parsed.error.message}`,
+      );
+    /* Capability-gated methods exist only while describe() declares their
+       capability — the app never calls them otherwise (D-#19). */
+    if (contract.capability) {
+      const declared = (await this.describe()).capabilities.map((c) => c.id);
+      if (!declared.includes(contract.capability))
+        throw new RpcError(
+          RPC_ERRORS.METHOD_NOT_FOUND,
+          `${method} needs the ${contract.capability} capability`,
+        );
+    }
+    switch (method) {
+      case "describe":
+        return this.describe();
+      case "session.start":
+        return this.sessionStart(parsed.data as SessionStartParams);
+      case "prompt":
+        return this.prompt(parsed.data as PromptParams);
+      case "interrupt":
+        return this.interrupt(parsed.data as InterruptParams);
+      case "request.respond":
+        return this.requestRespond(parsed.data as RequestRespondParams);
+      case "events.since":
+        return this.eventsSince(parsed.data as EventsSinceParams);
+      case "session.stop":
+        return this.sessionStop(parsed.data as SessionStopParams);
+      case "session.suspend":
+        return this.sessionSuspend(parsed.data as SessionSuspendParams);
+      case "session.steer":
+        return this.sessionSteer(parsed.data as SessionSteerParams);
+      case "models.list":
+        return this.modelsList(parsed.data as ModelsListParams);
+      case "session.setModel":
+        return this.sessionSetModel(parsed.data as SessionSetModelParams);
+      case "session.setTitle":
+        return this.sessionSetTitle(parsed.data as SessionSetTitleParams);
+      case "session.setHidden":
+        return this.sessionSetHidden(parsed.data as SessionSetHiddenParams);
+      default:
+        throw new RpcError(
+          RPC_ERRORS.METHOD_NOT_FOUND,
+          `unhandled method: ${method}`,
+        );
+    }
+  }
+
+  private async describe(): Promise<DescribeResult> {
+    const conn = await this.connection();
+    return {
+      name: this.opts.name ?? "engine-acp",
+      version: this.opts.version ?? "0.0.0",
+      protocol: ENGINE_PROTOCOL,
+      capabilities: deriveCapabilities(conn.initializeResult, this.catalog),
+    };
+  }
+
+  private require(sessionId: string): AcpSession {
+    const s = this.sessions.get(sessionId);
+    if (!s)
+      throw new RpcError(
+        RPC_ERRORS.SESSION_NOT_FOUND,
+        `no session ${sessionId}`,
+      );
+    return s;
+  }
+
+  // ── session lifecycle ──────────────────────────────────────────────────
+
+  private async sessionStart(p: SessionStartParams) {
+    const conn = await this.connection();
+    const res = await conn.newSession({
+      cwd: p.cwd,
+      mcpServers: (p.mcpServers ?? []).map(toAcpMcp),
+      ...(this.opts.sessionMeta ? { meta: this.opts.sessionMeta(p) } : {}),
+    });
+    const id = `s-${++this.sessionCounter}`;
+    const s = new AcpSession(
+      id,
+      p.agent,
+      p.cwd,
+      (e) => this.emitAll(e),
+      this.opts.eventLogCap,
+    );
+    s.acpSessionId = res.sessionId;
+    this.sessions.set(id, s);
+    this.learnSession(s, res);
+    /* Apply the requested pick over session/set_config_option — honest:
+       only what the session advertised gets written (#846 owns the full
+       per-job selection surface). */
+    await this.applyPick(s, p);
+    /* Access hint: only when the session advertised modes and the engine
+       knows this agent's mode vocabulary. */
+    if (p.access && s.modes && this.opts.modeForAccess) {
+      const modeId = this.opts.modeForAccess(p.access, s.modes.available);
+      if (modeId) await conn.setMode(s.acpSessionId, modeId).catch(() => {});
+    }
+    s.emit("session.started", {
+      agent: p.agent,
+      cwd: p.cwd,
+      ...(s.model ? { model: s.model } : {}),
+      ...(s.effort ? { effort: s.effort } : {}),
+      ...(s.fast !== undefined ? { fast: s.fast } : {}),
+    });
+    s.setState("idle");
+    return { sessionId: id, engineSessionId: s.acpSessionId };
+  }
+
+  /** Fold a session/new (or load) response into the catalogs. */
+  private learnSession(
+    s: AcpSession,
+    res: Pick<acp.NewSessionResponse, "configOptions" | "modes">,
+  ) {
+    learnSessionConfig(this.catalog, res);
+    for (const o of res.configOptions ?? []) {
+      const d = configOptionDescriptor(o);
+      s.configOptions.set(d.id, d);
+      this.applyConfigValue(s, d);
+    }
+    if (res.modes) {
+      s.modes = {
+        current: res.modes.currentModeId,
+        available: res.modes.availableModes.map((m) => ({
+          id: m.id,
+          ...(m.name ? { name: m.name } : {}),
+        })),
+      };
+    }
+  }
+
+  /** A config option's currentValue -> the session's model/effort/fast pick. */
+  private applyConfigValue(s: AcpSession, o: EngineConfigOption) {
+    if (o.currentValue === undefined) return;
+    if (o.category === "model") s.model = o.currentValue;
+    else if (o.category === "thought_level") s.effort = o.currentValue;
+    else if (o.category === "model_config") {
+      /* The fast tier is the value literally named "fast" (or any boolean
+         switch under the same category). */
+      if (o.type === "boolean") s.fast = o.currentValue === "true";
+      else s.fast = o.currentValue === "fast";
+    }
+  }
+
+  /** session.start's model/effort/fast picks -> config_option writes. */
+  private async applyPick(s: AcpSession, p: SessionStartParams) {
+    const modelOpt = catalogModelOption(this.catalog);
+    if (p.model && modelOpt?.choices.some((c) => c.value === p.model)) {
+      await this.writeConfig(s, modelOpt.id, p.model).catch(() => {});
+    }
+    const effortOpt = catalogEffortOption(this.catalog);
+    if (p.effort && effortOpt?.choices.some((c) => c.value === p.effort)) {
+      await this.writeConfig(s, effortOpt.id, p.effort).catch(() => {});
+    }
+    const fastOpt = catalogFastOption(this.catalog);
+    if (p.fast !== undefined && fastOpt) {
+      const value = p.fast ? fastOpt.fastValue : offValue(fastOpt);
+      await this.writeConfig(s, fastOpt.option.id, value).catch(() => {});
+    }
+  }
+
+  /** One session/set_config_option write + the session's pick update. */
+  private async writeConfig(s: AcpSession, configId: string, value: string) {
+    const conn = this.conn;
+    if (!conn) return;
+    const res = await conn.setConfigOption(s.acpSessionId, configId, value);
+    this.applyConfigOptions(s, res.configOptions ?? []);
+  }
+
+  /** A full configOptions array (set response / config_option_update). */
+  private applyConfigOptions(
+    s: AcpSession,
+    options: acp.SessionConfigOption[],
+  ) {
+    for (const o of options) {
+      const d = configOptionDescriptor(o);
+      s.configOptions.set(d.id, d);
+      this.catalog.options.set(d.id, d);
+      this.applyConfigValue(s, d);
+    }
+  }
+
+  // ── turns ──────────────────────────────────────────────────────────────
+
+  private async prompt(p: PromptParams): Promise<PromptResult> {
+    const s = this.require(p.sessionId);
+    if (s.suspended) await this.resume(s);
+    if (s.state === "closed")
+      throw new RpcError(RPC_ERRORS.INVALID_STATE, `session ${s.id} is closed`);
+    const turnId = `t${++this.turnCounter}`;
+    return this.runTurn(s, turnId, p.content, p.ref);
+  }
+
+  /**
+   * One turn: turn.started -> session/prompt -> update frames -> the
+   * response IS the turn end (ACP has no separate completion event).
+   */
+  private async runTurn(
+    s: AcpSession,
+    turnId: string,
+    content: Parameters<typeof toAcpContent>[0][],
+    ref?: string,
+  ): Promise<PromptResult> {
+    const conn = await this.connection();
+    this.autoTitle(s, "derived", firstText(content));
+    s.turn = { turnId, phase: "reasoning" };
+    s.emit("turn.started", {
+      turnId,
+      ...(s.model ? { model: s.model } : {}),
+      ...(s.effort ? { effort: s.effort } : {}),
+      ...(s.fast !== undefined ? { fast: s.fast } : {}),
+      ...(ref ? { ref } : {}),
+    });
+    s.setState("running");
+    try {
+      const res = await conn.prompt(s.acpSessionId, content.map(toAcpContent));
+      const usage = acpTurnUsage(s.usage, res.usage ?? undefined);
+      if (usage) s.usage = usage;
+      const stopReason = acpStopReason(res.stopReason);
+      s.emit("turn.completed", {
+        turnId,
+        stopReason,
+        ...(usage ? { usage } : {}),
+      });
+      return { turnId, stopReason, ...(usage ? { usage } : {}) };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      const code = (e as { code?: unknown }).code;
+      s.emit("turn.completed", {
+        turnId,
+        stopReason: "refusal",
+        error: msg,
+        ...(typeof code === "number" ? { errorCode: code } : {}),
+      });
+      return { turnId, stopReason: "refusal" };
+    } finally {
+      s.turn = undefined;
+      s.lastTurnId = turnId;
+      cancelAllAcpAsks(s);
+      if (s.state !== "closed") s.setState("idle");
+      this.drainSteers(s);
+    }
+  }
+
+  private async interrupt(p: InterruptParams) {
+    const s = this.require(p.sessionId);
+    if (!s.turn) return { interrupted: false };
+    const conn = this.conn;
+    if (!conn || !s.acpSessionId) return { interrupted: false };
+    /* A parked permission ask blocks the agent's own unwind — the protocol
+       has the client answer it cancelled on session/cancel, so resolve ours
+       first, then send the cancel. */
+    cancelAllAcpAsks(s);
+    await conn.cancel(s.acpSessionId);
+    return { interrupted: true };
+  }
+
+  private async sessionSteer(p: SessionSteerParams) {
+    const s = this.require(p.sessionId);
+    if (s.suspended) await this.resume(s);
+    const turnId = s.turn?.turnId;
+    if (!turnId) return { status: "not_running" as const };
+    /* ACP has no mid-turn injection: the steer queues as the next
+       session/prompt — `turn.steered` marks the acceptance and the queued
+       leg's own turn.started echoes its ref (#308). */
+    s.steeredQueue.push({ text: p.text, ...(p.ref ? { ref: p.ref } : {}) });
+    s.emit("turn.steered", { turnId, text: p.text });
+    this.drainSteers(s);
+    return { status: "steered" as const };
+  }
+
+  /** Pump queued steers as implicit legs — each mints its turn id at send
+     time so its frames never merge into the turn it was sent under. */
+  private drainSteers(s: AcpSession) {
+    if (this.pumping.has(s.id) || !s.steeredQueue.length || s.turn) return;
+    this.pumping.add(s.id);
+    void (async () => {
+      const conn = this.conn;
+      try {
+        while (conn && s.steeredQueue.length && !s.suspended) {
+          const queued = s.steeredQueue[0];
+          const turnId = `t${++this.turnCounter}`;
+          s.turn = { turnId, phase: "reasoning" };
+          s.emit("turn.started", {
+            turnId,
+            ...(s.model ? { model: s.model } : {}),
+            ...(s.effort ? { effort: s.effort } : {}),
+            ...(s.fast !== undefined ? { fast: s.fast } : {}),
+            ...(queued.ref ? { ref: queued.ref } : {}),
+          });
+          s.setState("running");
+          s.steeredQueue.shift();
+          try {
+            const res = await conn.prompt(s.acpSessionId, [
+              { type: "text", text: queued.text },
+            ]);
+            const usage = acpTurnUsage(s.usage, res.usage ?? undefined);
+            if (usage) s.usage = usage;
+            s.emit("turn.completed", {
+              turnId,
+              stopReason: acpStopReason(res.stopReason),
+              ...(usage ? { usage } : {}),
+            });
+          } catch {
+            break;
+          } finally {
+            s.turn = undefined;
+            s.lastTurnId = turnId;
+            cancelAllAcpAsks(s);
+            if (s.state !== "closed") s.setState("idle");
+          }
+        }
+      } finally {
+        this.pumping.delete(s.id);
+      }
+    })();
+  }
+
+  // ── asks ───────────────────────────────────────────────────────────────
+
+  /** Agent -> client `session/request_permission`: open the engine ask. */
+  private async onPermission(
+    params: acp.RequestPermissionRequest,
+  ): Promise<acp.RequestPermissionResponse> {
+    const s = this.sessionForAcp(params.sessionId);
+    if (!s) return { outcome: { outcome: "cancelled" } };
+    const request = acpApprovalRequest(params);
+    const requestId = `acp-r${++this.requestCounter}`;
+    const turnId = s.turn?.turnId ?? s.lastTurnId ?? "t0";
+    let settle: PendingAcpAsk["settle"] = () => {};
+    const answered = new Promise<{
+      outcome: ApprovalOutcome;
+      answer?: string;
+    }>((r) => {
+      settle = r;
+    });
+    answered.catch(() => {});
+    s.openRequests.set(requestId, {
+      requestId,
+      turnId,
+      request,
+      seq: s.seq + 1,
+      answered,
+      settle,
+    });
+    s.emit("request.opened", { turnId, requestId, request });
+    if (s.turn) s.turn.phase = "waiting";
+    s.setState("waiting");
+    const { outcome } = await answered;
+    const { response, granted } = acpPermissionAnswer(params, outcome);
+    /* request.resolved echoes the grant actually sent — a downgraded pick
+       surfaces instead of silently sticking (#133). A cancel that beat us
+       here already emitted its own resolved frame; we emit only when the
+       ask is still ours to close. */
+    if (s.openRequests.delete(requestId))
+      s.emit("request.resolved", { requestId, outcome: granted });
+    if (s.state === "waiting" && s.openRequests.size === 0)
+      s.setState("running");
+    return response;
+  }
+
+  private sessionForAcp(acpSessionId: string): AcpSession | undefined {
+    return [...this.sessions.values()].find(
+      (x) => x.acpSessionId === acpSessionId,
+    );
+  }
+
+  private async requestRespond(p: RequestRespondParams) {
+    const s = this.require(p.sessionId);
+    const ask = s.openRequests.get(p.requestId);
+    if (!ask)
+      throw new RpcError(
+        RPC_ERRORS.REQUEST_NOT_FOUND,
+        `no open request ${p.requestId}`,
+      );
+    if (ask.request.kind === "approval") {
+      if (p.outcome === "answer")
+        throw new RpcError(
+          RPC_ERRORS.INVALID_PARAMS,
+          "an approval takes once/session/always/deny/cancel, not answer",
+        );
+      if (
+        p.outcome !== "cancel" &&
+        !ask.request.options.includes(p.outcome as never)
+      )
+        throw new RpcError(
+          RPC_ERRORS.INVALID_PARAMS,
+          `outcome ${p.outcome} not in offered options`,
+        );
+    } else if (p.outcome !== "answer" && p.outcome !== "cancel") {
+      throw new RpcError(
+        RPC_ERRORS.INVALID_PARAMS,
+        "a question takes answer or cancel",
+      );
+    }
+    ask.settle({
+      outcome: p.outcome,
+      ...(p.answer ? { answer: p.answer } : {}),
+    });
+    return { accepted: true as const };
+  }
+
+  private onUpdate(params: acp.SessionNotification) {
+    const s = this.sessionForAcp(params.sessionId);
+    if (!s) return;
+    handleAcpUpdate(s, params, {
+      onSessionInfo: (sess, u) => {
+        /* session_info_update carries the agent-computed title — the "llm"
+           stage of #137's auto-title. */
+        const title = (u as { title?: unknown }).title;
+        if (typeof title === "string" && title)
+          this.autoTitle(sess, "llm", title);
+      },
+      onModeUpdate: (sess, modeId) => {
+        if (sess.modes) sess.modes.current = modeId;
+      },
+      /* The update carries the full configOptions array — refresh the
+         session and engine catalogs from it. */
+      onConfigUpdate: (sess, u) => {
+        const list = (u as unknown as { configOptions?: unknown })
+          .configOptions;
+        if (Array.isArray(list))
+          this.applyConfigOptions(sess, list as acp.SessionConfigOption[]);
+      },
+    });
+  }
+
+  // ── replay / lifecycle ─────────────────────────────────────────────────
+
+  private async eventsSince(p: EventsSinceParams) {
+    const s = this.require(p.sessionId);
+    return s.eventsSince(p.after);
+  }
+
+  private async sessionStop(p: SessionStopParams) {
+    const s = this.sessions.get(p.sessionId);
+    if (!s)
+      throw new RpcError(
+        RPC_ERRORS.SESSION_NOT_FOUND,
+        `no session ${p.sessionId}`,
+      );
+    if (s.state === "closed" && !s.suspended) return { stopped: false };
+    cancelAllAcpAsks(s);
+    const turn = s.turn;
+    s.turn = undefined;
+    const conn = this.conn;
+    if (conn && s.acpSessionId) await conn.closeSession(s.acpSessionId);
+    s.suspended = false;
+    s.state = "closed";
+    s.emit("session.state", { state: "closed" });
+    if (turn) {
+      s.emit("turn.completed", {
+        turnId: turn.turnId,
+        stopReason: "cancelled",
+      });
+    }
+    /* D-#573: stop forgets — the session leaves the map, and every later
+       call answers SESSION_NOT_FOUND like a never-seen one. */
+    this.sessions.delete(s.id);
+    return { stopped: true };
+  }
+
+  /**
+   * #346 suspend: close the live ACP session (session/close when
+   * advertised — the agent's processes die like session.stop) but keep the
+   * LilOS record + log; the next prompt resumes it under the same id —
+   * `session/load` when the agent advertised loadSession, a fresh
+   * `session/new` otherwise (its transcript resets; the LilOS event log
+   * still replays).
+   */
+  private async sessionSuspend(p: SessionSuspendParams) {
+    const s = this.sessions.get(p.sessionId);
+    if (!s)
+      throw new RpcError(
+        RPC_ERRORS.SESSION_NOT_FOUND,
+        `no session ${p.sessionId}`,
+      );
+    if (s.suspended) return { suspended: true };
+    if (s.state === "closed") return { suspended: false };
+    cancelAllAcpAsks(s);
+    const turn = s.turn;
+    s.turn = undefined;
+    const conn = this.conn;
+    if (conn && s.acpSessionId) await conn.closeSession(s.acpSessionId);
+    s.suspended = true;
+    s.state = "closed";
+    s.emit("session.state", { state: "closed", reason: "suspended" });
+    if (turn) {
+      s.emit("turn.completed", {
+        turnId: turn.turnId,
+        stopReason: "cancelled",
+      });
+    }
+    return { suspended: true };
+  }
+
+  /** Reattach a suspended session — same LilOS id, live ACP session. */
+  private async resume(s: AcpSession) {
+    const conn = await this.connection();
+    const caps = conn.agentCapabilities;
+    let res:
+      | Pick<acp.NewSessionResponse, "configOptions" | "modes">
+      | undefined;
+    if (caps?.loadSession === true) {
+      try {
+        res = await conn.loadSession({
+          sessionId: s.acpSessionId,
+          cwd: s.cwd,
+          mcpServers: [],
+        });
+      } catch {
+        /* A dead session still resumes — fresh session/new below. */
+      }
+    }
+    if (!res) {
+      const created = await conn.newSession({ cwd: s.cwd });
+      s.acpSessionId = created.sessionId;
+      res = created;
+    }
+    this.learnSession(s, res);
+    s.suspended = false;
+    s.state = "idle";
+    s.emit("session.started", {
+      agent: s.agent,
+      cwd: s.cwd,
+      ...(s.model ? { model: s.model } : {}),
+      ...(s.effort ? { effort: s.effort } : {}),
+      ...(s.fast !== undefined ? { fast: s.fast } : {}),
+    });
+    s.setState("idle");
+  }
+
+  // ── models ─────────────────────────────────────────────────────────────
+
+  private async modelsList(_p: ModelsListParams): Promise<ModelsListResult> {
+    await this.connection();
+    const models = catalogModels(this.catalog);
+    const current = catalogModelOption(this.catalog)?.currentValue;
+    return {
+      models,
+      ...(current && models.some((m) => m.id === current)
+        ? { default: current }
+        : {}),
+    };
+  }
+
+  private async sessionSetModel(
+    p: SessionSetModelParams,
+  ): Promise<SessionSetModelResult> {
+    const s = this.require(p.sessionId);
+    if (s.suspended) await this.resume(s);
+    if (p.model !== undefined) {
+      const opt = catalogModelOption(this.catalog);
+      if (!opt?.choices.some((c) => c.value === p.model))
+        throw new RpcError(
+          RPC_ERRORS.MODEL_NOT_FOUND,
+          `unknown model ${p.model}`,
+        );
+      await this.writeConfig(s, opt.id, p.model);
+    }
+    if (p.effort !== undefined) {
+      const opt = catalogEffortOption(this.catalog);
+      if (!opt?.choices.some((c) => c.value === p.effort))
+        throw new RpcError(
+          RPC_ERRORS.MODEL_NOT_FOUND,
+          `unknown effort ${p.effort}`,
+        );
+      await this.writeConfig(s, opt.id, p.effort);
+    }
+    if (p.fast !== undefined) {
+      const fast = catalogFastOption(this.catalog);
+      if (fast) {
+        const value = p.fast ? fast.fastValue : offValue(fast);
+        await this.writeConfig(s, fast.option.id, value);
+      }
+    }
+    return {
+      model: s.model ?? p.model,
+      ...(s.effort ? { effort: s.effort } : {}),
+      ...(s.fast !== undefined ? { fast: s.fast } : {}),
+    };
+  }
+
+  // ── session_meta ───────────────────────────────────────────────────────
+
+  /**
+   * #137 two-stage titling: "derived" fires once at the first turn start
+   * (verbatim first line, engine-side — no ACP needed); "llm" upgrades
+   * when the agent's session_info_update carries a title. A user-chosen
+   * title (setTitle) outranks every later upgrade.
+   */
+  private autoTitle(s: AcpSession, stage: "derived" | "llm", text: string) {
+    if (s.userTitle !== undefined) return;
+    if (stage === "derived" && s.titledStage !== undefined) return;
+    if (stage === "llm" && s.titledStage === "llm") return;
+    const title = stage === "derived" ? derivedTitle(text) : text;
+    if (!title) return;
+    s.titledStage = stage;
+    s.title = title;
+    s.emit("session.titled", { title, source: stage });
+  }
+
+  private async sessionSetTitle(p: SessionSetTitleParams) {
+    const s = this.require(p.sessionId);
+    if (s.suspended) await this.resume(s);
+    s.userTitle = p.title;
+    s.title = p.title;
+    return { title: p.title };
+  }
+
+  private async sessionSetHidden(p: SessionSetHiddenParams) {
+    const s = this.require(p.sessionId);
+    s.hidden = p.hidden;
+    return { hidden: s.hidden };
+  }
+}
+
+/** First text block's verbatim first line — the derived title seed. */
+function firstText(content: Parameters<typeof toAcpContent>[0][]): string {
+  const t = content.find(
+    (b): b is { type: "text"; text: string } => b.type === "text",
+  );
+  return t?.text ?? "";
+}
+
+/** Verbatim first clause (up to 8 words) — the derived title. */
+function derivedTitle(promptText: string): string {
+  const line = promptText.trim().split("\n")[0].trim();
+  const words = line.split(/\s+/).filter(Boolean).slice(0, 8);
+  return words.join(" ");
+}
+
+/** The non-fast value of a fast-tier config option (boolean "false", else
+    the first choice that isn't the fast value). */
+function offValue(fast: {
+  option: EngineConfigOption;
+  fastValue: string;
+}): string {
+  if (fast.option.type === "boolean") return "false";
+  return (
+    fast.option.choices.find((c) => c.value !== fast.fastValue)?.value ??
+    fast.fastValue
+  );
+}
