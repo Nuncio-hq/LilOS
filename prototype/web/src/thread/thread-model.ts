@@ -103,6 +103,24 @@ function peopleOf(data: V3Data, t: V3Thread): HumanFn {
         : undefined
 }
 
+/* An agent this thread's helpers run on (D-#847): its task_* note into the
+   parent draws as that helper's own row — avatar, name — not as the user. */
+function helperEmp(data: V3Data, t: V3Thread, id: string): Employee | undefined {
+  const a = agentOf(data, id)
+  if (!a || !data.threads.some((k) => k.parentId === t.id && k.agentId === id)) return undefined
+  return {
+    id: a.id,
+    name: a.name,
+    role: a.role,
+    status: "online",
+    profile: a.profile ?? a.id,
+    model: a.modelId ?? "",
+    now: "",
+    instructions: "",
+    respondTo: "me",
+  }
+}
+
 export function threadModel(
   data: V3Data,
   t: V3Thread,
@@ -217,7 +235,7 @@ export function threadModel(
     thread,
     channel: { id: `ch-${t.id}`, name, dm: true, employees: [lead.id] },
     lead,
-    emp: (id) => (id === lead.id ? lead : undefined),
+    emp: (id) => (id === lead.id ? lead : helperEmp(data, t, id)),
     human: peopleOf(data, t),
     mentionables: data.agents
       .filter((a) => a.id !== t.agentId && a.kind !== "outside")
