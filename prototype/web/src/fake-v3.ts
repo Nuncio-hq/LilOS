@@ -692,7 +692,7 @@ const THREADS: V3Data["threads"] = [
   {
     id: "t-chat-journal",
     agentId: "scout",
-    title: "Skim journal-app's onboarding flow",
+    title: "Skim journal-app's onboarding",
     status: "done",
     startedAt: "09:48",
     minutes: 4,
