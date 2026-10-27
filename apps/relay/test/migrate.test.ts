@@ -73,8 +73,9 @@ describe("relay migrations", () => {
     // v34 adds the CEO wake flag and the standing-thread flag; v35 adds
     // D-#844's task columns + the task wake flag; v36 adds D-#761's
     // employees.runtime; v37 adds D-#862's parking columns; v38 adds its
-    // review's last_park_action_at.
-    expect(out.version).toBe(39);
+    // review's last_park_action_at; v39 adds employees.effort and v40 the
+    // durable employees.description (#872).
+    expect(out.version).toBe(40);
     expect(out.askCols).toContain("hire");
     expect(out.askCols).toContain("why");
     expect(out.askCols).toContain("if_yes");
@@ -185,7 +186,7 @@ describe("relay migrations", () => {
     });
     expect(res.status, res.stderr).toBe(0);
     const out = JSON.parse(res.stdout.trim().split("\n").at(-1) ?? "null");
-    expect(out.version).toBe(39);
+    expect(out.version).toBe(40);
     const archived = out.rows.find(
       (r: { id: string }) => r.id === "old_archived",
     );

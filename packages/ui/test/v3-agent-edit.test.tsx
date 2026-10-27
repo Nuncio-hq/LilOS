@@ -241,13 +241,31 @@ describe("edit in place", () => {
     fireEvent.focus(area);
     fireEvent.change(area, { target: { value: "Nope" } });
     const shell = shellEsc();
+    /* Real focus, not fireEvent.focus: Esc's blur() must actually fire the
+       onBlur commit path — the stale-closure save this test guards. */
+    area.focus();
     press(area, "Escape");
-    await act(async () => {
-      fireEvent.blur(area);
-    });
     expect(act_.updateAgent).toHaveBeenCalledTimes(1);
     expect(shell.closePeek).not.toHaveBeenCalled();
+    expect((area as HTMLTextAreaElement).value).toBe(
+      "Comment with file:line.\n\nNever push to main.",
+    );
     shell.off();
+  });
+
+  test("a failed instructions save keeps the typed text", async () => {
+    const updateAgent = vi.fn().mockRejectedValue(new Error("engine down"));
+    mount(actions({ updateAgent }));
+    const area = screen.getByLabelText("Instructions");
+    area.focus();
+    fireEvent.change(area, { target: { value: "Never skip tests." } });
+    await act(async () => {
+      area.blur();
+    });
+    expect(screen.getByText(/Couldn't save — engine down/)).toBeTruthy();
+    /* The draft is not discarded on a failed commit — blur keeps the typed
+       text until the store echoes a save that landed. */
+    expect((area as HTMLTextAreaElement).value).toBe("Never skip tests.");
   });
 
   test("a guarded model asks in place, then pins alone", async () => {
@@ -269,6 +287,32 @@ describe("edit in place", () => {
       confirmModel: true,
     });
     expect(screen.queryByText("Costs 5x more. Pin it?")).toBeNull();
+  });
+
+  test("a newer pick dismisses a stale model prompt", async () => {
+    const updateAgent = vi
+      .fn<NonNullable<V3Actions["updateAgent"]>>()
+      .mockResolvedValueOnce({ confirmModel: "Costs 5x more. Pin it?" })
+      .mockResolvedValueOnce(undefined);
+    mount(
+      actions({ updateAgent }),
+      data({ modelChoices: ["Sonnet 5", "Haiku 5", "Opus 5.5"] }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Default model" }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("menuitemradio", { name: "Haiku 5" }));
+    });
+    expect(screen.getByText("Costs 5x more. Pin it?")).toBeTruthy();
+    /* Picking a different model supersedes the held prompt — it must not
+       still offer to pin the superseded pick. */
+    fireEvent.click(screen.getByRole("button", { name: "Default model" }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("menuitemradio", { name: "Opus 5.5" }));
+    });
+    expect(screen.queryByText("Costs 5x more. Pin it?")).toBeNull();
+    expect(updateAgent).toHaveBeenLastCalledWith("emp_1", {
+      model: "Opus 5.5",
+    });
   });
 
   test("a failed save says why beside the field", async () => {

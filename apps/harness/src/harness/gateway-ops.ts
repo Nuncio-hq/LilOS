@@ -264,6 +264,13 @@ export function createGatewayApprovalOps(
           ...(p.profile ? { profile: p.profile } : {}),
         },
       );
+      /* #872: the hire lands on the CALLER's runtime — a Devin agent
+         hiring a helper creates its profile on acp:devin, never silently
+         on the default engine. */
+      const { employees: team } = await relay.request<{
+        employees: Employee[];
+      }>("employees.list", {});
+      const runtime = team.find((e) => e.id === binding.employeeId)?.runtime;
       let profileId = p.profile;
       if (!profileId) {
         /* No profile arg → create one from the draft, the way the hire
@@ -275,6 +282,7 @@ export function createGatewayApprovalOps(
             soul: p.instructions,
             model: p.model,
             ...(p.provider ? { provider: p.provider } : {}),
+            ...(runtime ? { runtime } : {}),
           },
         );
         profileId = agent.id;
@@ -288,6 +296,7 @@ export function createGatewayApprovalOps(
           profile: profileId,
           model: p.model,
           instructions: p.instructions,
+          ...(runtime ? { runtime } : {}),
         },
       );
       await relay.request("channels.openDm", { employeeId: employee.id });
@@ -358,11 +367,16 @@ export function createGatewayApprovalOps(
       const employee = employees.find((e) => e.id === binding.employeeId);
       const wantsEngine = p.instructions !== undefined || p.model !== undefined;
       if (wantsEngine && employee?.profile) {
+        /* #872: the write goes to the runtime that owns the profile —
+           without the hint a Devin agent's self-edit landed on Hermes
+           (a same-named profile there, or a plain miss). */
+        const runtime = employee.runtime;
         const r = await relay.request<{
           agent: AgentDescriptor;
           confirmModel?: string;
         }>("agents.update", {
           id: employee.profile,
+          ...(runtime ? { runtime } : {}),
           ...(p.name !== undefined ? { name: p.name } : {}),
           ...(p.instructions !== undefined ? { soul: p.instructions } : {}),
           ...(p.model !== undefined ? { model: p.model } : {}),
@@ -370,6 +384,7 @@ export function createGatewayApprovalOps(
         if (r.confirmModel && p.model !== undefined) {
           await relay.request("agents.update", {
             id: employee.profile,
+            ...(runtime ? { runtime } : {}),
             model: p.model,
             confirmModel: true,
           });

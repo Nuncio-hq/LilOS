@@ -858,8 +858,10 @@ describe("EngineRegistry (D-#761)", () => {
     const starts = () =>
       states.filter((s) => s.runtime === ACP && s.state === "starting").length;
     const cycles = starts();
-    await expect(reg.ensure(ACP)).rejects.toThrow();
-    await expect(reg.ensure(ACP)).rejects.toThrow();
+    /* #872: inside the cooldown the reject carries the registry's recorded
+       reason — "mem://acp refused" — never a bare "engine failed". */
+    await expect(reg.ensure(ACP)).rejects.toThrow(/refused/i);
+    await expect(reg.ensure(ACP)).rejects.toThrow(/refused/i);
     expect(starts()).toBe(cycles);
     await reg.stop();
   });

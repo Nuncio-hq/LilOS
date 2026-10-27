@@ -1,6 +1,7 @@
 import type { RuntimeStatusRow } from "@lilos/contracts/app";
 import type { ModelOption, ModelsListResult } from "@lilos/contracts/engine";
-import type { ModelChoice, V3Runtime, V3Tone } from "@lilos/ui";
+import type { ModelChoice, V3Runtime } from "@lilos/ui";
+import { runtimeLook } from "@lilos/ui";
 import { atom, computed, onMount, type ReadableAtom } from "nanostores";
 import { modelVisibility, relay } from "../lib/runtime";
 import { type ModelRow, modelLabel, modelRows, pickOf } from "./models";
@@ -24,18 +25,36 @@ const catalogs = atom<Record<string, RuntimeCatalog>>({});
 
 /* A row gets asked once per supervisor verdict — `state`/`available`
    changing is the only signal a runtime that failed to answer may answer
-   now, so the key the attempt is remembered under carries them. */
-const attempted = new Map<string, string>();
+   now, so the key the attempt is remembered under carries them. An EMPTY
+   catalog is asked again on the next tick: adapters that fill their model
+   list after `initialize` (the Claude adapter answers, then learns its
+   options on the first session probe) must not pin the picker empty
+   forever (#872). */
+const attempted = new Map<
+  string,
+  { key: string; at: number; empty: boolean }
+>();
+const EMPTY_RETRY_MS = 15_000;
 
 const signatureOf = (r: RuntimeStatusRow): string =>
   `${r.available ?? "?"}:${r.state ?? ""}:${r.detail ?? ""}`;
 
 async function ask(r: RuntimeStatusRow): Promise<void> {
   const key = signatureOf(r);
-  if (attempted.get(r.id) === key) return;
-  attempted.set(r.id, key);
+  const last = attempted.get(r.id);
+  if (
+    last &&
+    last.key === key &&
+    (!last.empty || Date.now() - last.at < EMPTY_RETRY_MS)
+  )
+    return;
   try {
     const res: ModelsListResult = await relay.listModels({ runtime: r.id });
+    attempted.set(r.id, {
+      key,
+      at: Date.now(),
+      empty: (res.models ?? []).length === 0,
+    });
     catalogs.set({
       ...catalogs.get(),
       [r.id]: {
@@ -50,6 +69,7 @@ async function ask(r: RuntimeStatusRow): Promise<void> {
   } catch {
     /* The runtime can't answer (not installed, down) — its agents' pages
        show the model as text until a changed status row re-asks. */
+    attempted.set(r.id, { key, at: Date.now(), empty: false });
   }
 }
 
@@ -96,28 +116,11 @@ export function runtimeRows(): ReadableAtom<V3Runtime[] | undefined> {
           ...(cat && cat.rows.length > 0
             ? { models: cat.rows.map((x) => x.label) }
             : {}),
-          ...(i === 0 ? {} : { tone: runtimeTone(r.id) }),
+          ...(i === 0 ? {} : { tone: runtimeLook(r.id).tone }),
         };
       }),
   );
   return store;
-}
-
-/** A coding runtime's avatar tone (#872): known ids keep their
-    brand-adjacent colour, a new one hashes to a stable pastel — never
-    "n" (that is the gone-agent look). */
-const RUNTIME_TONE: Record<string, V3Tone> = {
-  "acp:devin": "b",
-  "acp:claude": "m",
-};
-const TONES: V3Tone[] = ["c", "b", "r", "m", "s", "d"];
-export function runtimeTone(id: string): V3Tone {
-  const known = RUNTIME_TONE[id];
-  if (known) return known;
-  let x = 0;
-  for (const ch of id.toLowerCase())
-    x = (Math.imul(x, 31) + ch.charCodeAt(0)) >>> 0;
-  return TONES[x % TONES.length];
 }
 
 /** The runtime id `models.list`/`agents.*` route by, or undefined for the
@@ -185,16 +188,6 @@ export function pickForRuntime(
 ): ModelChoice | undefined {
   const row = catalogs.get()[runtime]?.rows.find((r) => r.label === label);
   return row ? pickOf(row.option) : undefined;
-}
-
-/** The profile fields a runtime lets the app write — the status row's
-    `agentsUpdatable`; [] while the runtime hasn't been described. */
-export function updatableFor(runtime: string | undefined): string[] {
-  if (!runtime) return [];
-  return (
-    relay.status.get()?.result?.runtimes?.find((r) => r.id === runtime)
-      ?.agentsUpdatable ?? []
-  );
 }
 
 /** A model id's readable form when its runtime's catalog is unknown:

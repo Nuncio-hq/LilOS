@@ -101,7 +101,7 @@ test("hire a Hermes profile: it lands in Agents, selected and ready to message",
   const name = dlg.getByLabel("Name");
   await expect(name).toHaveValue("Builder");
   await name.fill("Nova");
-  await dlg.getByRole("button", { name: "Hire", exact: true }).click();
+  await dlg.getByRole("button", { name: "Add", exact: true }).click();
 
   /* The dialog closes into a new chat on the hire — the composer IS the
      selection, addressed to it and ready to send. */
@@ -140,7 +140,7 @@ test("the composer's 'Add agent…' opens the same dialog and selects the hire",
   const name = dlg.getByLabel("Name");
   await expect(name).toHaveValue("Marketer");
   await name.fill("Sage");
-  await dlg.getByRole("button", { name: "Hire", exact: true }).click();
+  await dlg.getByRole("button", { name: "Add", exact: true }).click();
 
   /* Same draft, new agent: the box answers to the hire without leaving the
      composer. */

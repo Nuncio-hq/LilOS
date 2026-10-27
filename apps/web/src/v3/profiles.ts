@@ -12,11 +12,34 @@ import { engine, relay } from "../lib/runtime";
    describe has no entry, and the page falls back to the company record. */
 
 /** Profiles are engine-side ids — unique only per runtime, so the store's
-    key carries it: `${runtime}::${profile}` (default runtime = `::id`). */
+    key carries it: `${runtime}::${profile}`. The default runtime keys as
+    `::id` ALWAYS — a record stamped `runtime: "hermes"` (the default id)
+    and one left unstamped name the same profile (#872: the write path
+    keyed `::id` while the read looked under `hermes::id`, so a saved
+    description appeared to revert). */
 export const profileKey = (
   runtime: string | undefined,
   profile: string,
-): string => `${runtime ?? ""}::${profile}`;
+): string => {
+  const defaultId = relay.status.get()?.result?.runtimes?.[0]?.id;
+  const rt = runtime && runtime !== defaultId ? runtime : "";
+  return `${rt}::${profile}`;
+};
+
+/** A runtime whose engine is up or already coming up — describing one of
+    ITS profiles adds nothing to the launch cost. Everything else (idle,
+    stopped, failed, never reported) must not be started just to read a
+    page (D-#866): the record fields answer until real demand starts it. */
+const runtimeLive = (runtime: string | undefined): boolean => {
+  const rows = relay.status.get()?.result?.runtimes ?? [];
+  const row = rows.find((r) => r.id === runtime);
+  return (
+    !!row &&
+    (row.state === "running" ||
+      row.state === "starting" ||
+      row.state === "restarting")
+  );
+};
 
 /** Key (as `profileKey` makes it) → what the owning engine says. */
 const described = atom<Record<string, AgentDescriptor>>({});
@@ -59,9 +82,11 @@ async function load(): Promise<void> {
         const isDefault = !runtime || runtime === defaultId;
         if (isDefault && !hasAgents) return [];
         if (row?.available === false) return [];
+        /* A coding runtime answers only when it is already up — a plain
+           read must never npm-install an engine (D-#866); the record's
+           own fields fill the page until real work starts it. */
+        if (!isDefault && !runtimeLive(runtime)) return [];
         const key = profileKey(runtime, e.profile);
-        /* A re-ask is owed only when the runtime's verdict moved (a row
-           that never ran still answers — asking is how it starts). */
         const sig = row ? `${row.available}:${row.state ?? ""}` : "";
         return [[key, { key, profile: e.profile, runtime, sig }] as const];
       }),

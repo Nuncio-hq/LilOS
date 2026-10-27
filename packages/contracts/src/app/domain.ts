@@ -31,6 +31,10 @@ export const Employee = z.object({
   status: EmployeeStatus,
   profile: z.string(),
   model: z.string(),
+  /** #872: the "what it's for" line. Engines keep personas only in memory
+      (ACP rosters reset on restart), so the durable copy lives here and
+      the harness re-seeds it on the next session start. Absent = none. */
+  description: z.string().optional(),
   /** #872: the agent's default reasoning-effort pick (one of its model's
       `efforts`), stored here so every runtime's sessions share one source.
       Absent = the model's own default effort. */

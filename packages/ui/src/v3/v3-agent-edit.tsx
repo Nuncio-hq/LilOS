@@ -208,6 +208,10 @@ export function ModelProp({
   save?: FieldSave;
 }) {
   const [held, setHeld] = useState<{ words: string; model: string }>();
+  /* A newer pick supersedes a pending prompt: its generation counter
+     invalidates both the open prompt and a late confirmModel reply for
+     the superseded pick (#872). */
+  const pick = useRef(0);
   const canPick = !!save && choices.length > 0;
   return (
     <>
@@ -220,13 +224,12 @@ export function ModelProp({
             value={agent.model}
             onPick={(model) => {
               if (model === agent.model) return;
-              void save
-                .run({ model })
-                .then(
-                  (r) =>
-                    r?.confirmModel &&
-                    setHeld({ words: r.confirmModel, model }),
-                );
+              const n = ++pick.current;
+              setHeld(undefined);
+              void save.run({ model }).then((r) => {
+                if (n === pick.current && r?.confirmModel)
+                  setHeld({ words: r.confirmModel, model });
+              });
             }}
             label={<span className="truncate">{agent.model}</span>}
             options={choices.map((m) => ({ id: m, node: <span>{m}</span> }))}
@@ -236,7 +239,9 @@ export function ModelProp({
         )}
         <SaveNote save={save} />
       </Prop>
-      {held && (
+      {/* A held pick asks once — if the record has since landed on that
+          model (a retry, another surface), the prompt is stale and goes. */}
+      {held && held.model !== agent.model && (
         <div className="mt-1 mb-2 rounded-lg border border-[var(--v3-line)] bg-[var(--v3-soft)] px-3 py-2.5 text-[13.5px]">
           <div className="font-semibold text-foreground">
             The engine asks before pinning this model
@@ -336,8 +341,12 @@ export function InstructionsBlock({
 }) {
   const value = paragraphs.join("\n\n");
   const [draft, setDraft] = useState<string>();
+  /* Esc must beat blur: the flag survives until the blur React dispatches
+     synchronously after it — the stale-closure draft cannot win (#872). */
+  const cancelled = useRef(false);
   /* Keep showing the typed text until the store catches up (the relay's
-     echo is a beat behind the save), then drop the draft. */
+     echo is a beat behind the save), then drop the draft. A failed save
+     never echoes, so the typed text stays — blur never loses it. */
   useEffect(() => {
     if (draft !== undefined && draft.trim() === value.trim())
       setDraft(undefined);
@@ -360,10 +369,18 @@ export function InstructionsBlock({
           rows={Math.min(18, Math.max(4, lines + 1))}
           onFocus={(e) => setDraft(e.currentTarget.value)}
           onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={escapeRestores(() => setDraft(undefined))}
-          onBlur={() => {
-            const next = (draft ?? value).trim();
+          onKeyDown={escapeRestores(() => {
+            cancelled.current = true;
             setDraft(undefined);
+          })}
+          onBlur={() => {
+            if (cancelled.current) {
+              cancelled.current = false;
+              return;
+            }
+            const next = (draft ?? value).trim();
+            /* The draft stays set — the echo effect clears it on a landed
+               save, and a failed one keeps the typed text on screen. */
             if (next !== value.trim()) onCommit(next);
           }}
           className={cn(

@@ -62,6 +62,9 @@ export async function ensureAgent(
       conn.request<{ agent: AgentDescriptor }>("agents.create", {
         name: preferred,
         ...(employee?.instructions ? { soul: employee.instructions } : {}),
+        /* #872: the record's description mirrors back — an in-memory
+           roster (ACP) loses it on restart, the record is the source. */
+        ...(employee?.description ? { description: employee.description } : {}),
         ...(model ? { model } : {}),
         ...(cloneFrom ? { detail: { clone_from: cloneFrom } } : {}),
       });

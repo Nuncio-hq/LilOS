@@ -201,6 +201,43 @@ describe("employees lifecycle + engine passthrough (#29)", () => {
     });
   });
 
+  /* #872: description is durable on the record — engines whose personas
+     live only in memory (ACP rosters) are re-seeded from it on restart. */
+  it("employees.create/update carry the durable description", async () => {
+    const relay = newRelay();
+    await engineHost(relay);
+    const user = await helloed(relay);
+    await user.connection.receive(
+      req("employees.create", {
+        name: "Dev",
+        role: "coder",
+        profile: "dev",
+        description: "Ships PRs.",
+      }),
+    );
+    const created = resultOf(user.frames, lastId()).result as {
+      employee: { id: string; description?: string };
+    };
+    expect(created.employee.description).toBe("Ships PRs.");
+    await user.connection.receive(
+      req("employees.update", {
+        id: created.employee.id,
+        description: "Reviews diffs.",
+      }),
+    );
+    const updated = resultOf(user.frames, lastId()).result as {
+      employee: { description?: string };
+    };
+    expect(updated.employee.description).toBe("Reviews diffs.");
+    await user.connection.receive(req("employees.list"));
+    const listed = resultOf(user.frames, lastId()).result as {
+      employees: { id: string; description?: string }[];
+    };
+    expect(
+      listed.employees.find((e) => e.id === created.employee.id)?.description,
+    ).toBe("Reviews diffs.");
+  });
+
   it("AC-4 employees.remove drops the record + DM graph; the engine profile stays", async () => {
     const relay = newRelay();
     await engineHost(relay);

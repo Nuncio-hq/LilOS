@@ -5,14 +5,32 @@ import type {
   Employee,
   Project,
 } from "@lilos/contracts/app";
+import { connectFake, FakeEngine } from "@lilos/engine-fake";
 import { SessionSurfaces, toolBackend } from "@lilos/surfaces";
 import { describe, expect, it } from "vitest";
 import {
   FakePtySpawner,
   serveGateway,
 } from "../../../packages/surfaces/test/fakes";
+import type { EngineConnection } from "../src/engine/client";
 import { createAppOps } from "../src/harness/app-ops";
-import { openDmConversation, setupWorld, waitFor } from "./helpers";
+import { openDmConversation, setupWorld, type World, waitFor } from "./helpers";
+
+/** A second FakeEngine attached as a non-default runtime, its request log
+    exposed — the fixture for "the write reached acp:devin" (#872). The
+    same shape lives in runtimes.test.ts. */
+function attachRuntime(w: World, runtime: string) {
+  const engine = new FakeEngine({ tick: 1 });
+  const calls: { method: string; params: unknown }[] = [];
+  const raw = connectFake(engine) as unknown as EngineConnection;
+  const origRequest = raw.request.bind(raw);
+  raw.request = <T = unknown>(method: string, params?: unknown): Promise<T> => {
+    calls.push({ method, params });
+    return origRequest<T>(method, params);
+  };
+  w.harness.attachEngine(raw, undefined, runtime);
+  return { engine, conn: raw, calls };
+}
 
 /**
  * The approval-gated gateway tools end to end (D-#341): a tool call posts an
@@ -568,6 +586,75 @@ describe("approval-gated gateway tools", () => {
       await v.answer(ask3.id, "once");
       const res3 = await call3;
       expect(res3.employee.model).toBe("fake-large");
+    } finally {
+      v.gw.server.close();
+      await v.scope.close();
+      await v.w.cleanup();
+    }
+  });
+
+  it("team_update and team_hire route engine writes to the caller's runtime", async () => {
+    const v = await world();
+    /* #872: a second FakeEngine plays acp:devin, the caller's record says
+       it lives there, and every engine-side write must land on ITS conn —
+       the same calls without `runtime` wrote a same-named Hermes profile. */
+    const acp = attachRuntime(v.w, "acp:devin");
+    try {
+      const { agent } = await acp.conn.request<{ agent: { id: string } }>(
+        "agents.create",
+        { name: "dev" },
+      );
+      await v.w.user.request("employees.update", {
+        id: v.binding.employeeId,
+        runtime: "acp:devin",
+        profile: agent.id,
+      });
+      const seen = new Set<string>();
+      const call = v.client.teamUpdate({ model: "fake-large" });
+      const ask = await v.nextAsk(seen);
+      seen.add(ask.id);
+      await v.answer(ask.id, "once");
+      await call;
+      /* The conn saw the write — and the relay-facing params carried the
+         routing hint that got it there. */
+      expect(
+        acp.calls.some(
+          (c) =>
+            c.method === "agents.update" &&
+            (c.params as { id?: string }).id === agent.id,
+        ),
+      ).toBe(true);
+      expect(
+        v.sent.find(
+          (s) =>
+            s.method === "agents.update" &&
+            (s.params as { id?: string }).id === agent.id,
+        )?.params,
+      ).toMatchObject({ runtime: "acp:devin" });
+
+      const hire = v.client.teamHire({
+        name: "Helper",
+        role: "coder",
+        model: "fake-large",
+        instructions: "review diffs",
+      });
+      const ask2 = await v.nextAsk(seen);
+      seen.add(ask2.id);
+      await v.answer(ask2.id, "once");
+      const res = await hire;
+      /* The new persona was created on the caller's engine, and the
+         record + relay params both point at that runtime. */
+      const created = acp.calls.find((c) => c.method === "agents.create");
+      expect(created).toBeTruthy();
+      expect(
+        v.sent.find((s) => s.method === "agents.create")?.params,
+      ).toMatchObject({ runtime: "acp:devin" });
+      expect(
+        v.sent.find((s) => s.method === "employees.create")?.params,
+      ).toMatchObject({ runtime: "acp:devin" });
+      const hired = (await v.employees()).find((e) => e.id === res.employee.id);
+      expect(hired?.runtime).toBe("acp:devin");
+      expect(hired?.profile).toBe(res.employee.profile);
     } finally {
       v.gw.server.close();
       await v.scope.close();

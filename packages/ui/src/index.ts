@@ -69,7 +69,9 @@ export {
   agentDisplayName,
   agentNameOf,
   agentOf,
+  agentTone,
   boardStatus,
+  runtimeLook,
   snoozed,
 } from "./v3/v3-model";
 export {

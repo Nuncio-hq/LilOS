@@ -484,9 +484,12 @@ const pageFieldsOf = (updatable: readonly string[]): AgentPageField[] =>
 /** Which engine-owned fields this agent's runtime lets LilOS write: the
     runtime row's own `updatable` (D-#761) — the default engine's list for
     a default-runtime agent, nothing while a coding runtime hasn't been
-    described. Read-only text beats an input that would fail (#872). */
+    described. Read-only text beats an input that would fail (#872). An
+    agent stamped with a runtime whose ROW hasn't arrived knows nothing —
+    never the default engine's fields on its page. */
 export const agentPageFields = (d: V3Data, a: V3Agent): AgentPageField[] => {
   const rt = runtimeOf(d, a);
+  if (a.runtime && !rt) return [];
   if (rt && !rt.isDefault) return pageFieldsOf(rt.updatable ?? []);
   return d.agentFields ?? [];
 };
@@ -496,6 +499,7 @@ export const agentPageFields = (d: V3Data, a: V3Agent): AgentPageField[] => {
     catalog hasn't landed; the field shows text until then. */
 export const modelChoicesOf = (d: V3Data, a: V3Agent): string[] => {
   const rt = runtimeOf(d, a);
+  if (a.runtime && !rt) return [];
   if (rt && !rt.isDefault) return rt.models ?? [];
   return rt?.models ?? d.modelChoices;
 };
@@ -509,6 +513,7 @@ export const effortLadderOf = (
   a: V3Agent,
 ): { efforts: string[]; defaultEffort?: string } | undefined => {
   const rt = runtimeOf(d, a);
+  if (a.runtime && !rt) return undefined;
   const cat = rt && !rt.isDefault ? d.modelCatalogs?.[rt.id] : d.modelCatalog;
   if (!cat) return undefined;
   const opt =
@@ -530,6 +535,7 @@ export const modelCatalogOf = (
   a: V3Agent,
 ): NonNullable<V3Data["modelCatalog"]> | undefined => {
   const rt = runtimeOf(d, a);
+  if (a.runtime && !rt) return undefined;
   return rt && !rt.isDefault ? d.modelCatalogs?.[rt.id] : d.modelCatalog;
 };
 

@@ -430,6 +430,9 @@ export type HireDraft = {
   provider?: string;
   /** Reuse an existing engine profile instead of minting one. */
   profile?: string;
+  /** #872: the "what it's for" line — mirrored on the record so an engine
+      whose personas live in memory re-seeds it after a restart. */
+  description?: string;
 };
 export type TicketRow = {
   id: string;

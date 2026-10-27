@@ -151,12 +151,23 @@ export function ModelChip({
   const rt = agent.runtime
     ? data.runtimes?.find((r) => r.id === agent.runtime)
     : undefined;
-  const cat =
-    rt && !rt.isDefault ? data.modelCatalogs?.[rt.id] : data.modelCatalog;
+  /* An agent stamped with a runtime whose ROW hasn't arrived knows
+     nothing yet — never the default engine's catalog on its composer
+     (#872). The chip waits for the row rather than offer Hermes's list. */
+  const rtKnown = !agent.runtime || !!rt;
+  const cat = !rtKnown
+    ? undefined
+    : rt && !rt.isDefault
+      ? data.modelCatalogs?.[rt.id]
+      : data.modelCatalog;
   if (!cat) {
     /* A runtime agent whose catalog hasn't landed menus its OWN runtime's
        labels — never the default engine's list on an ACP agent (#872). */
-    const choices = rt && !rt.isDefault ? (rt.models ?? []) : data.modelChoices;
+    const choices = !rtKnown
+      ? []
+      : rt && !rt.isDefault
+        ? (rt.models ?? [])
+        : data.modelChoices;
     return choices.length > 0 ? (
       <ChipMenu
         title="Model"

@@ -186,6 +186,12 @@ interface NewEmployee {
   status: EmployeeStatus;
   profile: string;
   model: string;
+  /** #872: the "what it's for" line — durable on the record so a
+      memory-only engine (ACP personas) is re-seeded from it. */
+  description?: string;
+  /** #872: the agent's effort pin (model ladder label); absent/"" = the
+      model's own default. */
+  effort?: string;
   now: string;
   instructions: string;
   respondTo: RespondTo;

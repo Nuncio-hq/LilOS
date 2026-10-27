@@ -757,6 +757,9 @@
         "model": {
           "type": "string"
         },
+        "description": {
+          "type": "string"
+        },
         "effort": {
           "type": "string"
         },
@@ -847,6 +850,9 @@
         "model": {
           "type": "string"
         },
+        "description": {
+          "type": "string"
+        },
         "effort": {
           "type": "string"
         },
@@ -922,6 +928,9 @@
                 "type": "string"
               },
               "model": {
+                "type": "string"
+              },
+              "description": {
                 "type": "string"
               },
               "effort": {
@@ -1006,6 +1015,9 @@
           "default": "",
           "type": "string"
         },
+        "description": {
+          "type": "string"
+        },
         "now": {
           "default": "",
           "type": "string"
@@ -1059,6 +1071,9 @@
           "type": "string"
         },
         "model": {
+          "type": "string"
+        },
+        "description": {
           "type": "string"
         },
         "effort": {
@@ -1166,6 +1181,9 @@
               "model": {
                 "type": "string"
               },
+              "description": {
+                "type": "string"
+              },
               "effort": {
                 "type": "string"
               },
@@ -1250,6 +1268,9 @@
               "type": "string"
             },
             "model": {
+              "type": "string"
+            },
+            "description": {
               "type": "string"
             },
             "effort": {
@@ -9756,6 +9777,9 @@
               "type": "string"
             },
             "model": {
+              "type": "string"
+            },
+            "description": {
               "type": "string"
             },
             "effort": {

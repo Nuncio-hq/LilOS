@@ -231,7 +231,7 @@ describe("the dialog", () => {
       profile: "ops",
       name: "Ops",
       role: "Runs the nightly chores.",
-      runtime: undefined,
+      description: "Runs the nightly chores.",
     });
     expect(onHired).toHaveBeenCalledWith("emp_new");
   });
@@ -255,6 +255,7 @@ describe("the dialog", () => {
       profile: "devin",
       name: "Devin Two",
       role: "Coding agent by Cognition.",
+      description: "Coding agent by Cognition.",
       runtime: "acp:devin",
     });
     expect(onHired).toHaveBeenCalledWith("emp_new");

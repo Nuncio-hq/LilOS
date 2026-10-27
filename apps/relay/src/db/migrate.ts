@@ -575,6 +575,13 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
     version: 39,
     statements: [`ALTER TABLE employees ADD COLUMN effort TEXT`],
   },
+  {
+    /* #872: the agent's description is durable on the record — engines
+       whose personas live only in memory (ACP rosters) lose it on restart
+       and are re-seeded from here. */
+    version: 40,
+    statements: [`ALTER TABLE employees ADD COLUMN description TEXT`],
+  },
 ];
 
 /**

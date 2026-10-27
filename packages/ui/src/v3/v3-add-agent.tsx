@@ -28,6 +28,9 @@ export type HireChoice = {
   /** Hire by linking this existing engine profile; absent = a fresh profile
      is created on `runtime` first. */
   profile?: string;
+  /** The profile's own one-line description — mirrored onto the record at
+     hire so an idle runtime's page still reads it (#872). */
+  description?: string;
   /** Which runtime the hire lands on; absent = the default engine. */
   runtime?: string;
   /** The plain reason it cannot be hired, when it cannot. */
@@ -69,6 +72,7 @@ export function hireChoices({
       note: p.description ?? p.model,
       role: p.description ?? "",
       profile: p.id,
+      ...(p.description ? { description: p.description } : {}),
       /* The stamp goes through even when no runtime row names it (an older
          harness): the hire still lands where the profile lives. */
       ...(p.runtime ? { runtime: p.runtime } : {}),
@@ -83,6 +87,7 @@ export function hireChoices({
       name: seed?.name ?? r.label,
       note: seed?.description,
       role: seed?.description ?? "",
+      ...(seed?.description ? { description: seed.description } : {}),
       ...(linkable ? { profile: linkable.id } : {}),
       runtime: r.id,
       ...(r.available === false || r.state === "failed"
@@ -160,6 +165,7 @@ export function V3AddAgent({
             name: shownName.trim(),
             role: choice.role ?? "",
             ...(choice.runtime ? { runtime: choice.runtime } : {}),
+            ...(choice.description ? { description: choice.description } : {}),
           })
         : await act.hire?.({
             name: shownName.trim(),
@@ -167,6 +173,7 @@ export function V3AddAgent({
             /* No model asked for: "" = the runtime's own default. */
             model: "",
             ...(choice.runtime ? { runtime: choice.runtime } : {}),
+            ...(choice.description ? { description: choice.description } : {}),
           });
       if (id !== undefined) onHired(id);
     } catch {

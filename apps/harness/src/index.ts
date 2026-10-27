@@ -267,6 +267,10 @@ statusReporter = new StatusReporter({
      and a field it can't change stays read-only instead of failing. */
   runtimes: () =>
     runtimes.statusRows().map((row) => {
+      /* A failed runtime's cached describe is stale (#872): it must not
+         keep fields editable — omitting the list renders them read-only
+         until a fresh describe lands. */
+      if (row.state === "failed") return row;
       const updatable = harness
         .describeForRuntime(row.id)
         ?.capabilities.find((c) => c.id === "agents")?.detail?.updatable;

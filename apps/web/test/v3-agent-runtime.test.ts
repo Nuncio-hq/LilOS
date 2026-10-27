@@ -20,6 +20,8 @@ interface RuntimeRow {
   id: string;
   label: string;
   available?: boolean;
+  state?: string;
+  detail?: string;
   agentsUpdatable?: string[];
 }
 
@@ -63,6 +65,7 @@ vi.mock("../src/lib/runtime", async (orig) => {
 
 import { relay } from "../src/lib/runtime";
 import { saveAgent } from "../src/v3/employees";
+import { profileKey } from "../src/v3/profiles";
 import { runtimeRows } from "../src/v3/runtimes";
 
 const devinEmployee = (): Employee => ({
@@ -100,13 +103,16 @@ beforeEach(() => {
 });
 
 describe("saveAgent on a coding-runtime agent", () => {
-  test("a description edit lands on acp:devin, gated on ITS updatable", async () => {
+  test("a description edit lands on acp:devin, and mirrors onto the record", async () => {
     await saveAgent("emp_devin", { description: "Ships PRs" });
     expect(calls).toEqual([
       [
         "agents.update",
         { id: "devin", runtime: "acp:devin", description: "Ships PRs" },
       ],
+      /* #872: the relay record is the durable copy — an in-memory ACP
+         persona re-seeds from it after a restart. */
+      ["employees.update", { id: "emp_devin", description: "Ships PRs" }],
     ]);
   });
 
@@ -136,7 +142,7 @@ describe("saveAgent on a coding-runtime agent", () => {
     stop();
   });
 
-  test("a field the runtime hasn't declared is never sent", async () => {
+  test("a field the runtime hasn't declared errors loudly, never fakes Saved", async () => {
     setRuntimes([
       { id: "hermes", label: "Hermes" },
       {
@@ -146,12 +152,14 @@ describe("saveAgent on a coding-runtime agent", () => {
         agentsUpdatable: ["model"],
       },
     ]);
-    await saveAgent("emp_devin", { description: "Ships PRs" });
+    await expect(
+      saveAgent("emp_devin", { description: "Ships PRs" }),
+    ).rejects.toThrow(/doesn't let LilOS change the description/);
     // Nothing engine-side, and nothing record-side for description.
     expect(calls).toEqual([]);
   });
 
-  test("a label the runtime's catalog doesn't know is not written", async () => {
+  test("a label the runtime's catalog doesn't know errors, not silently kept", async () => {
     const stop = runtimeRows().subscribe(() => {});
     await vi.waitFor(() =>
       expect(
@@ -160,19 +168,58 @@ describe("saveAgent on a coding-runtime agent", () => {
           ?.find((r) => r.id === "acp:devin")?.models?.length,
       ).toBe(2),
     );
-    await saveAgent("emp_devin", { model: "Opus 5.5" });
+    await expect(saveAgent("emp_devin", { model: "Opus 5.5" })).rejects.toThrow(
+      /isn't in Devin's model list/,
+    );
     expect(calls).toEqual([]);
     stop();
   });
 
-  test("a runtime row that hasn't been described gates everything engine-side", async () => {
+  test("an undescribed runtime row throws; a record-only field still lands", async () => {
     setRuntimes([
       { id: "hermes", label: "Hermes" },
       { id: "acp:devin", label: "Devin", available: true },
     ]);
-    await saveAgent("emp_devin", { name: "Renamed", description: "x" });
+    await expect(saveAgent("emp_devin", { description: "x" })).rejects.toThrow(
+      /hasn't said what it can change yet/,
+    );
+    /* The name is the company's record — it never needed the engine. */
+    await saveAgent("emp_devin", { name: "Renamed" });
     expect(calls).toEqual([
       ["employees.update", { id: "emp_devin", name: "Renamed" }],
     ]);
+  });
+
+  test("a failed runtime's row gives the engine's own reason", async () => {
+    setRuntimes([
+      { id: "hermes", label: "Hermes" },
+      {
+        id: "acp:devin",
+        label: "Devin",
+        available: true,
+        state: "failed",
+        detail: "devin acp exited (code 1)",
+      },
+    ]);
+    await expect(saveAgent("emp_devin", { description: "x" })).rejects.toThrow(
+      /isn't running — devin acp exited \(code 1\)/,
+    );
+    expect(calls).toEqual([]);
+  });
+});
+
+/* #872: the describe store keyed `::id` for writes while page reads looked
+   under `hermes::id` — a saved description appeared to revert. One canonical
+   key: the default runtime always folds to `::`. */
+describe("profileKey", () => {
+  test("the default runtime always keys ::id — stamped or absent alike", () => {
+    expect(profileKey(undefined, "p1")).toBe("::p1");
+    expect(profileKey("hermes", "p1")).toBe("::p1");
+    expect(profileKey("default", "p1")).toBe("default::p1");
+    expect(profileKey("acp:devin", "p1")).toBe("acp:devin::p1");
+    /* Two runtimes' same-named profiles never collide. */
+    expect(profileKey("acp:devin", "x")).not.toBe(
+      profileKey("acp:claude", "x"),
+    );
   });
 });

@@ -440,6 +440,10 @@ export const EmployeePatch = z.object({
   status: EmployeeStatus.optional(),
   profile: z.string().optional(),
   model: z.string().optional(),
+  /* #872: the durable description — engines that keep personas only in
+     memory lose it on restart; the record is the source the harness
+     re-seeds from. */
+  description: z.string().optional(),
   /* #872: the agent-page effort pick — `""` clears the pin back to the
      model's own default. */
   effort: z.string().optional(),
@@ -463,6 +467,9 @@ export const EmployeesCreateParams = z.object({
   status: EmployeeStatus.default("offline"),
   profile: z.string().default(""),
   model: z.string().default(""),
+  /* #872: the hired profile's one-line description, mirrored for memory-only
+     engines (ACP personas reset on restart — the record re-seeds them). */
+  description: z.string().optional(),
   now: z.string().default(""),
   instructions: z.string().default(""),
   respondTo: RespondTo.default("me"),
