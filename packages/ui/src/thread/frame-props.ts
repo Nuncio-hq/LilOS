@@ -61,7 +61,7 @@ export interface ThreadFrameProps {
   lastSent?: string;
   /* Engine-reported models + pick handler (issue #30); no onModel → no picker (D-#19). */
   models?: ModelOption[];
-  onModel?: (c: ModelChoice) => void;
+  onModel?: (c: ModelChoice) => void | Promise<unknown>;
   /* Refresh / Edit models… / provider names — each renders only with its handler. */
   picker?: ModelPickerExtras;
   /* The engine's `models.list.default` — the unpinned-employee pick (#92 AC-5). */

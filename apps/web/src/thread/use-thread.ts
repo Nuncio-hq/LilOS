@@ -292,11 +292,12 @@ export function useThreadWith(
     picker,
     modelOpen: modelOpenFor === conv.id,
     setModelOpen: (o) => setModelOpenFor(o ? conv.id : null),
-    onModel: (c) =>
-      toastOnFail(
-        "Couldn't switch the model",
-        setConversationModel(conv.id, c),
-      ),
+    /* Returned so the picker can take back a pick that failed. */
+    onModel: (c) => {
+      const applied = setConversationModel(conv.id, c);
+      toastOnFail("Couldn't switch the model", applied);
+      return applied;
+    },
     onAccess: (a) =>
       toastOnFail(
         "Couldn't change the access level",

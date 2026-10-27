@@ -85,7 +85,7 @@ test("AC-1+AC-2+AC-4+AC-3 the pill drives the mode; cards offer the four options
     await expect(pill(page)).toHaveAttribute("data-access", "ask");
     await expect(pill(page)).toContainText("Ask");
 
-    /* ── Full access comes from the pill's menu (#886), confirmed once —
+    /* ── Full access comes from the pill's menu (#886), confirmed —
        a single click on the pill only opens it. ── */
     await pill(page).click();
     await expect(pill(page)).toHaveAttribute("data-access", "ask");

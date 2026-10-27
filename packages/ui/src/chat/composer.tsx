@@ -76,7 +76,7 @@ export function Composer({
   models?: ModelOption[];
   /* No onModel (or no models) → no model picker: the control needs its
      handler (issue #19). */
-  onModel?: (c: ModelChoice) => void;
+  onModel?: (c: ModelChoice) => void | Promise<unknown>;
   /* Refresh / Edit models… / provider names — each renders only with its handler. */
   picker?: ModelPickerExtras;
   /* Controlled open on the model picker — `/model` opens it. */

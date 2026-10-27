@@ -594,6 +594,102 @@ describe("model picker v2", () => {
     expect(effortTrigger().textContent).not.toContain("High");
   });
 
+  test("a pick the host could not apply is taken back — the chip shows what the session runs", async () => {
+    let reject: (e: Error) => void = () => {};
+    const failing = new Promise<void>((_, r) => {
+      reject = r;
+    });
+    render(<Harness onChoice={() => failing} />);
+    await openEffort();
+    await pickEffort("High");
+    expect(effortTrigger().textContent).toContain("High");
+    await act(async () => reject(new Error("relay down")));
+    expect(effortTrigger().textContent).toContain("Medium");
+    expect(effortTrigger().textContent).not.toContain("High");
+  });
+
+  test("a failed model pick reverts the model, and a synchronous throw reverts too", async () => {
+    const onChoice = (c: ModelChoice) => {
+      if (c.model === "gpt-test-4o") return Promise.reject(new Error("no"));
+      throw new Error("sync");
+    };
+    render(<Harness onChoice={onChoice} />);
+    await openModels();
+    await act(async () =>
+      fireEvent.click(within(body()).getByText("gpt-test-4o")),
+    );
+    expect(trigger().textContent).toContain("GPT test 5");
+    // The effort chip belongs to the picked model: gpt-test-4o has none,
+    // so a stuck draft would have hidden it.
+    expect(effortTrigger().textContent).toContain("Medium");
+    await openModels();
+    expect(
+      body().querySelector('[cmdk-item][data-checked="true"]')?.textContent,
+    ).toContain("GPT test 5");
+    await openEffort();
+    await pickEffort("High");
+    expect(effortTrigger().textContent).toContain("Medium");
+  });
+
+  test("a failed write leaves a newer pending write on the chip", async () => {
+    const fails: ((e: Error) => void)[] = [];
+    render(
+      <Harness
+        onChoice={() =>
+          new Promise<void>((_, r) => {
+            fails.push(r);
+          })
+        }
+      />,
+    );
+    await openEffort();
+    await pickEffort("High");
+    await openEffort();
+    await pickEffort("Max");
+    expect(effortTrigger().textContent).toContain("Max");
+    await act(async () => fails[0](new Error("first failed")));
+    expect(effortTrigger().textContent).toContain("Max");
+    await act(async () => fails[1](new Error("second failed")));
+    expect(effortTrigger().textContent).toContain("Medium");
+  });
+
+  test("the effort button's accessible name carries the level", async () => {
+    render(<Harness />);
+    expect(effortTrigger().getAttribute("aria-label")).toBe(
+      "Reasoning effort: Medium",
+    );
+    await openEffort();
+    await pickEffort("High");
+    expect(effortTrigger().getAttribute("aria-label")).toBe(
+      "Reasoning effort: High",
+    );
+  });
+
+  test("arrow keys walk the effort rows, wrap, and Home / End jump", async () => {
+    render(<Harness />);
+    await openEffort();
+    const menu = body().querySelector(
+      '[aria-label="Reasoning levels"]',
+    ) as HTMLElement;
+    const rows = [
+      ...menu.querySelectorAll<HTMLElement>("[role=menuitemradio]"),
+    ];
+    // Focus on the menu itself enters at the checked row (Medium) going down…
+    await act(async () => fireEvent.keyDown(menu, { key: "ArrowDown" }));
+    expect(document.activeElement).toBe(rows[1]);
+    await act(async () => fireEvent.keyDown(rows[1], { key: "ArrowDown" }));
+    expect(document.activeElement).toBe(rows[2]);
+    await act(async () => fireEvent.keyDown(menu, { key: "End" }));
+    expect(document.activeElement).toBe(rows.at(-1));
+    // …wraps past the end and back…
+    await act(async () => fireEvent.keyDown(menu, { key: "ArrowDown" }));
+    expect(document.activeElement).toBe(rows[0]);
+    await act(async () => fireEvent.keyDown(menu, { key: "ArrowUp" }));
+    expect(document.activeElement).toBe(rows.at(-1));
+    await act(async () => fireEvent.keyDown(menu, { key: "Home" }));
+    expect(document.activeElement).toBe(rows[0]);
+  });
+
   /* Three writes queued before any echo: model, then Fast, then effort.
      The first echo is only the model write. Popping it and then treating
      the effort mismatch as a rewrite used to wipe High and Fast (#807). */

@@ -11,6 +11,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "../components/ui/popover";
+import { menuArrowKeys } from "../lib/menu-keys";
 import { cn } from "../lib/utils";
 import type { ConversationAccess } from "../types";
 import { FullAccessConfirm } from "./full-access-confirm";
@@ -136,7 +137,14 @@ export function AccessPill({
             Agents run tools without asking in this thread
           </FullAccessConfirm>
         ) : (
-          <div role="menu" aria-label="Access" className="py-1">
+          <div
+            role="menu"
+            aria-label="Access"
+            className="py-1"
+            onKeyDown={(e) => {
+              menuArrowKeys(e);
+            }}
+          >
             {engineNeverAsks && (
               <div className="border-b px-3 pb-2.5 pt-2">
                 <p className="text-[12.5px] leading-snug text-foreground">

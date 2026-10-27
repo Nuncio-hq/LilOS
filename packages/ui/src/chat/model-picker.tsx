@@ -5,12 +5,11 @@ import {
   ChevronRightIcon,
   CpuIcon,
   EyeIcon,
-  GaugeIcon,
   Loader2Icon,
   RefreshCwIcon,
   ZapIcon,
 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ModelSelectorLogo } from "../components/ai-elements/model-selector";
 import { PromptInputButton } from "../components/ai-elements/prompt-input";
 import { Button } from "../components/ui/button";
@@ -45,8 +44,11 @@ import type {
   ModelProvider,
   Thread,
 } from "../types";
+import { EffortPicker } from "./effort-picker";
 import { isHidden } from "./model-visibility";
 import { ModelVisibilityDialog } from "./model-visibility-dialog";
+
+export { effortLabel } from "./effort-picker";
 
 /* Provider slugs we render the models.dev logo for; anything else gets the
    generic chip — never a broken image. */
@@ -121,20 +123,6 @@ function ModelLogo({ provider, logo }: { provider?: string; logo?: string }) {
     <CpuIcon className="size-3.5 text-muted-foreground" />
   );
 }
-
-/* Engine effort ids are kept verbatim; only the label is friendlier. */
-const EFFORT_LABELS: Record<string, string> = {
-  none: "None",
-  minimal: "Minimal",
-  low: "Low",
-  medium: "Medium",
-  high: "High",
-  xhigh: "Extra high",
-  max: "Max",
-  ultra: "Ultra",
-};
-export const effortLabel = (e: string) =>
-  EFFORT_LABELS[e] ?? e.charAt(0).toUpperCase() + e.slice(1);
 
 /* The effort the engine reports for the model — or nothing. The picker
    shows "Engine default" for the unset case rather than inventing a level
@@ -241,7 +229,9 @@ export function ModelPicker({
 }: {
   value: ModelChoice;
   models: ModelOption[];
-  onChoice: (c: ModelChoice) => void;
+  /* A rejected promise means the pick was not applied: the chip lets go of
+     it and shows what the session really runs again. */
+  onChoice: (c: ModelChoice) => void | Promise<unknown>;
   /* Controlled open: the host's `/model` command opens the same picker a
      click would. Undefined falls back to the popover's own state. */
   open?: boolean;
@@ -250,7 +240,6 @@ export function ModelPicker({
   const [ownOpen, setOwnOpen] = useState(false);
   const open = openProp ?? ownOpen;
   const setOpen = onOpenChange ?? setOwnOpen;
-  const [effortOpen, setEffortOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   /* A catalog refresh that ran and still didn't offer the session's model is
@@ -307,10 +296,30 @@ export function ModelPicker({
       ? shown0.effort
       : defaultEffort(cur);
   const fast = !!(cur?.fast && shown0.fast);
+  /* `inflight` mirrored for the async failure path, which runs after the
+     render that queued the write. */
+  const queue = useRef(inflight);
+  queue.current = inflight;
   const choose = (c: ModelChoice) => {
     setPicked(c);
-    setInflight((q) => [...q, c]);
-    onChoice(c);
+    queue.current = [...queue.current, c];
+    setInflight(queue.current);
+    /* A write the host could not apply never echoes, so without this the
+       chip would keep showing a model or effort the session isn't on. Drop
+       just that write; a newer one still pending keeps the chip. */
+    const failed = () => {
+      const at = queue.current.lastIndexOf(c);
+      if (at < 0) return;
+      const rest = queue.current.filter((_, i) => i !== at);
+      queue.current = rest;
+      setInflight(rest);
+      setPicked((p) => (p === c ? (rest.at(-1) ?? null) : p));
+    };
+    try {
+      void Promise.resolve(onChoice(c)).catch(failed);
+    } catch {
+      failed();
+    }
   };
   const pName = (p: string) => providerName(p, providers);
   const logoOf = (p?: string) => providers?.find((x) => x.id === p)?.logo;
@@ -497,57 +506,12 @@ export function ModelPicker({
           </Command>
         </PopoverContent>
       </Popover>
-      {/* The effort dropdown (#886): a plain radio menu of exactly the
-          levels the engine reported for the picked model — nothing
-          invented, no slider. A model with no levels gets no second chip. */}
       {efforts.length > 0 && (
-        <Popover open={effortOpen} onOpenChange={setEffortOpen}>
-          <PopoverTrigger
-            render={
-              <PromptInputButton
-                size="sm"
-                aria-label="Reasoning effort"
-                aria-haspopup="menu"
-                title={`Reasoning effort · ${effort ? effortLabel(effort) : "engine default"}`}
-                className="h-6 min-w-0 shrink gap-1.5 rounded-md px-1.5 font-normal text-[12.5px] text-muted-foreground hover:bg-[var(--v3-hover)] hover:text-foreground aria-expanded:bg-[var(--v3-hover)] aria-expanded:text-foreground"
-                data-slot="effort-picker-trigger"
-              />
-            }
-          >
-            <GaugeIcon className="size-3.5" />
-            <span className="max-w-24 truncate" data-effort>
-              {effort ? effortLabel(effort) : "Engine default"}
-            </span>
-            <ChevronDownIcon className="size-3 opacity-60" />
-          </PopoverTrigger>
-          <PopoverContent
-            side="top"
-            align="start"
-            className="w-44 gap-0 p-0"
-            aria-label="Reasoning effort"
-          >
-            <div role="menu" aria-label="Reasoning levels" className="py-1">
-              {efforts.map((e) => (
-                <button
-                  key={e}
-                  type="button"
-                  role="menuitemradio"
-                  aria-checked={e === effort}
-                  onClick={() => {
-                    choose({ ...shown0, effort: e, fast });
-                    setEffortOpen(false);
-                  }}
-                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] text-foreground outline-none hover:bg-[var(--v3-hover)] focus-visible:bg-[var(--v3-hover)]"
-                >
-                  <span className="grid w-3.5 shrink-0 place-items-center">
-                    {e === effort && <CheckIcon className="size-3.5" />}
-                  </span>
-                  {effortLabel(e)}
-                </button>
-              ))}
-            </div>
-          </PopoverContent>
-        </Popover>
+        <EffortPicker
+          efforts={efforts}
+          effort={effort}
+          onPick={(e) => choose({ ...shown0, effort: e, fast })}
+        />
       )}
       {onVisibility && (
         <ModelVisibilityDialog

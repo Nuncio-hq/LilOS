@@ -162,3 +162,19 @@ describe("access pill — Full confirms every time, per thread (#886)", () => {
     ).toBe("ask");
   });
 });
+
+describe("access pill — arrow keys (#886)", () => {
+  test("↓ ↑ walk Ask / Full access and wrap", () => {
+    render(<AccessPill access="ask" onAccess={vi.fn()} />);
+    open();
+    const rows = within(menu()).getAllByRole("menuitemradio");
+    fireEvent.keyDown(menu(), { key: "ArrowDown" });
+    expect(document.activeElement).toBe(rows[0]); // enters at the checked row
+    fireEvent.keyDown(rows[0], { key: "ArrowDown" });
+    expect(document.activeElement).toBe(rows[1]);
+    fireEvent.keyDown(rows[1], { key: "ArrowDown" });
+    expect(document.activeElement).toBe(rows[0]);
+    fireEvent.keyDown(rows[0], { key: "ArrowUp" });
+    expect(document.activeElement).toBe(rows[1]);
+  });
+});
