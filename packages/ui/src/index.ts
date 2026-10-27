@@ -20,6 +20,8 @@ export type { PlanAction } from "./conversation/plan-card";
 export {
   AddFolderDialog,
   NEW_PROJECT_COPY,
+  NEW_PROJECT_PAUSED_COPY,
+  suggestProjectKey,
 } from "./dialogs/add-folder-dialog";
 export { pairingUrl } from "./dialogs/pairing";
 // focus mode

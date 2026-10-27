@@ -75,7 +75,13 @@ export function FocusHeader({
       kicker={threadKicker({
         title: `Thread ${thread.session}`,
         channel: isDM ? undefined : `#${channel.name}`,
-        folder: focusFolder({ thread, work, isDM, openMenu: folderMenu }),
+        folder: focusFolder({
+          thread,
+          work,
+          isDM,
+          openMenu: folderMenu,
+          onAddAsProject: p.onAddAsProject,
+        }),
       })}
       status={threadStatus}
       started={root.time}

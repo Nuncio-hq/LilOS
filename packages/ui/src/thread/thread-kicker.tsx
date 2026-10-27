@@ -49,6 +49,7 @@ export function panelFolder({
   isDM,
   onAddFolder,
   openMenu,
+  onAddAsProject,
 }: {
   thread: Thread;
   work: Work | null;
@@ -56,8 +57,18 @@ export function panelFolder({
   isDM: boolean;
   onAddFolder?: () => void;
   openMenu?: OpenMenuFor;
+  /** The folder is no project's: the badge's menu offers "Add as project"
+     (#854). Absent (or the folder already is one): no such row. */
+  onAddAsProject?: () => void;
 }): ReactNode {
-  if (thread.ws) return <WsBadge ws={thread.ws} openMenu={openMenu} />;
+  if (thread.ws)
+    return (
+      <WsBadge
+        ws={thread.ws}
+        openMenu={openMenu}
+        onAddAsProject={onAddAsProject}
+      />
+    );
   /* A folder-less thread is a plain chat — no folder label at all (#196). */
   if (isDM && !work && !repo)
     return onAddFolder ? <AddFolder onClick={onAddFolder} /> : null;
@@ -85,13 +96,23 @@ export function focusFolder({
   work,
   isDM,
   openMenu,
+  onAddAsProject,
 }: {
   thread: Thread;
   work: Work | null;
   isDM: boolean;
   openMenu?: OpenMenuFor;
+  /** Same "Add as project" row the panel's badge offers (#854). */
+  onAddAsProject?: () => void;
 }): ReactNode {
-  if (thread.ws) return <WsBadge ws={thread.ws} openMenu={openMenu} />;
+  if (thread.ws)
+    return (
+      <WsBadge
+        ws={thread.ws}
+        openMenu={openMenu}
+        onAddAsProject={onAddAsProject}
+      />
+    );
   if (work?.branch)
     return (
       <span className="inline-flex items-center gap-1">

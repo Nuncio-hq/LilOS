@@ -144,7 +144,7 @@ describe("demo data source (#168)", () => {
     });
   });
 
-  it("files threads into projects like the relay and rows name them (D-#771)", async () => {
+  it("files threads into the seeded LilOS project by containment; other folders stay chats (D-#854)", async () => {
     await noNetwork(async () => {
       const c = client();
       await c.connect();
@@ -152,8 +152,8 @@ describe("demo data source (#168)", () => {
         "projects.list",
         {},
       );
-      /* Every seeded thread with a folder lives in one folder: one project;
-         the folder-less ones stay plain chats. */
+      /* The demo's one project (D-#854 — made by hand): every seeded folder thread under it (by
+         containment), the folder-less ones stay plain chats. */
       expect(projects.map((p) => p.name)).toEqual(["LilOS"]);
       const lil = projects[0];
       expect(lil?.key).toBe("LIL");
@@ -187,15 +187,18 @@ describe("demo data source (#168)", () => {
     });
   });
 
-  it("projects.create answers a folder's project once; a first-use open files a new one (D-#771)", async () => {
+  it("projects.create is get-or-create by folder and adopts covered chats; remove unfilings them (D-#854)", async () => {
     await noNetwork(async () => {
       const c = client();
       await c.connect();
-      const events: Project[] = [];
+      const upserted: Project[] = [];
+      let removedId: string | undefined;
       c.onEvent((method, params) => {
-        const project = params.project;
-        if (method === "project.upserted" && project) {
-          events.push(project as Project);
+        if (method === "project.upserted" && params.project) {
+          upserted.push(params.project as Project);
+        }
+        if (method === "project.removed") {
+          removedId = (params as { projectId: string }).projectId;
         }
       });
       const lil = c.projects.get()[0];
@@ -206,10 +209,10 @@ describe("demo data source (#168)", () => {
       expect(again.project.id).toBe(lil?.id);
       expect(again.project.name).toBe("LilOS");
       expect(c.projects.get()).toHaveLength(1);
-      expect(events).toEqual([]);
+      expect(upserted).toEqual([]);
 
-      /* New chat with a folder nobody used: the folder becomes a project
-         (name = its basename, a fresh key) and the thread files under it. */
+      /* New chat with a folder no project covers: it keeps the folder and
+         stays a chat — nothing is created on its behalf (D-#854). */
       const opened = await c.request<{ conversation: Conversation }>(
         "conversations.open",
         {
@@ -218,11 +221,33 @@ describe("demo data source (#168)", () => {
           cwd: "~/Code/QRit",
         },
       );
-      const qrit = c.projects.get().find((p) => p.folder === "~/Code/QRit");
-      expect(qrit?.name).toBe("QRit");
-      expect(qrit?.key).toBe("QRI");
-      expect(opened.conversation.projectId).toBe(qrit?.id);
-      expect(events.map((p) => p.id)).toEqual([qrit?.id]);
+      expect(opened.conversation.cwd).toBe("~/Code/QRit");
+      expect(opened.conversation.projectId).toBeUndefined();
+      expect(c.projects.get()).toHaveLength(1);
+
+      /* Add the folder as a project by hand: the chat files under it. */
+      const qrit = (
+        await c.request<{ project: Project }>("projects.create", {
+          folder: "~/Code/QRit",
+        })
+      ).project;
+      expect(qrit.name).toBe("QRit");
+      expect(qrit.key).toBe("QRI");
+      expect(upserted.map((p) => p.id)).toEqual([qrit.id]);
+      expect(
+        c.conversations.get().find((x) => x.id === opened.conversation.id)
+          ?.projectId,
+      ).toBe(qrit.id);
+
+      /* Removing it keeps the thread and its folder — it is a chat again. */
+      await c.request("projects.remove", { id: qrit.id });
+      expect(removedId).toBe(qrit.id);
+      expect(c.projects.get().map((p) => p.id)).toEqual([lil?.id]);
+      const chat = c.conversations
+        .get()
+        .find((x) => x.id === opened.conversation.id);
+      expect(chat?.cwd).toBe("~/Code/QRit");
+      expect(chat?.projectId).toBeUndefined();
 
       /* No folder: a plain chat, no project made. */
       const plain = await c.request<{ conversation: Conversation }>(
@@ -230,7 +255,7 @@ describe("demo data source (#168)", () => {
         { channelId: "ch-builder", text: "just chatting" },
       );
       expect(plain.conversation.projectId).toBeUndefined();
-      expect(c.projects.get()).toHaveLength(2);
+      expect(c.projects.get()).toHaveLength(1);
       c.close();
     });
   });

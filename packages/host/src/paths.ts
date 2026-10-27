@@ -35,6 +35,55 @@ const realpathOr = (p: string): string | undefined => {
 };
 
 /**
+ * The canonical spelling a path compares under (D-#854): the filesystem's
+ * own — symlink segments resolved (`realpath`), so `~/link` and `~/real`
+ * name the same folder. A not-yet-created tail resolves through its
+ * nearest existing ancestor, like `resolveUnderHome`; a path nothing under
+ * can resolve (a deleted folder, a test's fake home) keeps its literal
+ * normalized form — matching degrades to the lexical compare that already
+ * ran. The result is `~`-collapsed under the LITERAL home when it lands
+ * under it, even where `home` is itself a symlink (same rule
+ * `resolveUnderHome` keeps).
+ */
+export function canonicalPath(p: string, home = HOME): string {
+  const abs = normalize(expandPath(p, home));
+  /* The whole path, or its nearest existing ancestor + the lexical tail —
+     `~/link/new-sub` still resolves `link` and rejoins `new-sub`. */
+  let real = realpathOr(abs);
+  let probe = abs;
+  const tail: string[] = [];
+  while (!real) {
+    tail.unshift(basename(probe));
+    const parent = dirname(probe);
+    if (parent === probe) break;
+    probe = parent;
+    real = realpathOr(probe);
+  }
+  if (!real) return collapsePath(abs, home);
+  const joined = tail.length ? join(real, ...tail) : real;
+  const realHome = realpathOr(normalize(home));
+  if (realHome && (joined === realHome || joined.startsWith(`${realHome}/`))) {
+    const rel = joined === realHome ? "" : joined.slice(realHome.length + 1);
+    return collapsePath(
+      rel ? join(normalize(home), rel) : normalize(home),
+      home,
+    );
+  }
+  return joined;
+}
+
+/**
+ * The compare key two folder spellings dedupe/match under (D-#854):
+ * `canonicalPath` — and folded on macOS, where `~/Code` and `~/code` are
+ * the same directory. One implementation for the relay's filing, the
+ * project's get-or-create, and the picker's "Found on this Mac" dedupe.
+ */
+export function folderMatchKey(p: string, home = HOME): string {
+  const canonical = canonicalPath(p, home);
+  return process.platform === "darwin" ? canonical.toLowerCase() : canonical;
+}
+
+/**
  * Resolve a caller path to a REAL absolute path under `home` — `undefined`
  * when it escapes: `..` above home, an absolute path outside home, a symlink
  * pointing outside, or a dot-dir segment anywhere below home (hidden folders

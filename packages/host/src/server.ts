@@ -7,7 +7,14 @@ import {
   forgePr,
   forgePrs,
 } from "./forge.js";
-import { fsComplete, fsList, fsRead, fsSearch, fsTree } from "./fs.js";
+import {
+  fsCanonical,
+  fsComplete,
+  fsList,
+  fsRead,
+  fsSearch,
+  fsTree,
+} from "./fs.js";
 import {
   gitBranches,
   gitCommit,
@@ -32,6 +39,7 @@ const HANDLERS: Record<keyof typeof HOST_METHODS, Handler> = {
     methods: Object.keys(HOST_METHODS),
   }),
   "fs.list": fsList,
+  "fs.canonical": fsCanonical,
   "fs.complete": fsComplete,
   "fs.tree": fsTree,
   "fs.search": fsSearch,

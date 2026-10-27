@@ -301,11 +301,14 @@ export const AppMethod = z.enum([
   "schedules.update",
   "schedules.delete",
   "schedules.runNow",
-  /* Projects (D-#771): the folders the company works in. The relay files
-     a thread into its folder's project, creating it on first use; there
-     is no update/remove (nothing renames or retires a project yet). */
+  /* Projects (D-#854): the folders Oscar says are projects — made only by
+     hand, removed only by hand. The relay files a thread under the deepest
+     project whose folder equals or contains its folder; a folder with no
+     project is a chat. Removing detaches — threads, goals, and tickets keep
+     their records, nothing on disk is touched. */
   "projects.list",
   "projects.create",
+  "projects.remove",
   /* Goals and tickets (D-#776). The relay owns the records. Assign is the
      checkout: one transaction sets the owner and opens their thread. */
   "goals.list",
@@ -596,10 +599,11 @@ export const ConversationsOpenParams = z
     effort: z.string().optional(),
     fast: z.boolean().optional(),
     /** Folder the session works in (#113); absent = a plain chat in the
-        harness default workdir. The relay files the thread in this folder's
-        project, creating it on first use (D-#771); a workstream open (#156)
-        sends the worktree path here and files under `workspace.repoPath`'s
-        project. Clients send a folder, never a project id. */
+        harness default workdir. The relay files the thread under the
+        deepest project whose folder equals or contains it (D-#854), else
+        it stays a chat; a workstream open (#156) sends the worktree path
+        here and files under `workspace.repoPath`'s project. Clients send a
+        folder, never a project id. */
     cwd: z.string().min(1).optional(),
     /** Workstream mode (#156): `new` asks the harness to create `cwd` as a
         worktree of `workspace.repoPath` before `session.start`; `existing`
@@ -1572,9 +1576,10 @@ export const AppEventMethod = z.enum([
      every client's task list refresh live (#136). */
   "schedule.upserted",
   "schedule.removed",
-  /* A project appeared or was created (D-#771) — every client's project
-     list refreshes live, including the one a first-use open made. */
+  /* A project appeared or was removed (D-#854) — every client's project
+     list refreshes live. */
   "project.upserted",
+  "project.removed",
   /* A goal or ticket was written (D-#776), including the ones a finished
      ticket wakes. */
   "goal.upserted",

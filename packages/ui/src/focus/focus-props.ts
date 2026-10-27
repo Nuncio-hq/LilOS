@@ -68,4 +68,8 @@ export interface FocusViewProps extends ThreadFrameProps {
   /* #660: the caller mounts the shared <main> landmark itself (the web
      SessionPane) so the pane element survives a view swap — omit → own <main>. */
   bare?: boolean;
+  /* #854: the thread's folder is no project's — the folder badge's menu
+     offers "Add as project" (one click, the thread files under it). Absent:
+     no such row. */
+  onAddAsProject?: () => void;
 }
