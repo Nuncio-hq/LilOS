@@ -26,6 +26,16 @@ export const workMenu = (page: Page): Locator =>
     .filter({ visible: true })
     .first();
 
+/** Any thread ⋯ (Rename, Done, the context meter…), work rows or not — for
+ *  specs that open the menu for something other than the Workbench. */
+export const threadMenu = (page: Page): Locator =>
+  page
+    .locator(
+      '[data-thread-header] [aria-label="Thread actions"], [data-thread-bar] [aria-label="Thread actions"]',
+    )
+    .filter({ visible: true })
+    .first();
+
 /** The header's named "Changes" button — drawn only while files changed, and
  *  never a row of the ⋯ menu (`[data-work-strip]` rows are the others). */
 export const changesButton = (page: Page): Locator =>

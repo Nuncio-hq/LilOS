@@ -26,7 +26,8 @@ import { workMenu, workStrip } from "./helpers/workbench";
  *
  *   LILOS_EVIDENCE=1 bunx playwright test e2e/evidence-886.spec.ts
  *
- * Output lands in test-results/evidence/886/{wide,narrow}/{light,dark}/,
+ * Output lands in test-results/evidence/886/{wide,narrow}-{light,dark}/
+ * (`LILOS_EVIDENCE_OUT` moves the root),
  * named after the audit shot each answers (05 home composer, 06 split
  * composers, 07 thread header + sidebar count, 10 access, 31/32 phone).
  */
@@ -38,7 +39,9 @@ test.skip(
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
 const repo = path.resolve(here, "..");
-const OUT = path.join(repo, "test-results", "evidence", "886");
+const OUT =
+  process.env.LILOS_EVIDENCE_OUT ??
+  path.join(repo, "test-results", "evidence", "886");
 
 /* A git folder with one uncommitted change → the header's "Changes" row. */
 const ROOT = mkdtempSync(path.join(tmpdir(), "lilos-evid-886-"));
@@ -219,6 +222,21 @@ for (const theme of ["light", "dark"] as const) {
 
     /* Sidebar: no Threads count (Needs you keeps its badge). */
     await shot(page, group, "07-sidebar-no-threads-count");
+
+    /* Settings' default access asks the same confirm before saving Full. */
+    await page.goto(`${stack.webUrl}/#?page=settings&view=general`);
+    await page
+      .getByRole("radiogroup", { name: "Approvals" })
+      .getByRole("radio", { name: "Full access" })
+      .click();
+    await expect(
+      page.getByText("New conversations will run tools without asking"),
+    ).toBeVisible();
+    await shot(page, group, "10c-settings-default-full-confirm");
+    await page
+      .locator("[data-full-access-confirm]")
+      .getByRole("button", { name: "Back" })
+      .click();
     await ctx.close();
   });
 

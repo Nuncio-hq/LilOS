@@ -268,7 +268,7 @@ test("AC-3 the new-chat draft's Ask / Full access pill starts on Settings' defau
     });
     await expect(draftPill(page)).toContainText("Ask");
 
-    /* ── A pick flips it (menu + first-time confirm, #886); another
+    /* ── A pick flips it (menu + confirm, #886); another
        agent's draft is not that agent's pick ── */
     await setAccess(page, "full", draftPill(page));
     await expect(draftPill(page)).toContainText("Full access");
@@ -289,6 +289,7 @@ test("AC-3 the new-chat draft's Ask / Full access pill starts on Settings' defau
       .getByRole("radiogroup", { name: "Approvals", exact: true })
       .getByRole("radio", { name: "Full access" })
       .click();
+    await page.locator("[data-access-confirm]").click();
     await page.goto(
       `${stack.webUrl}/#?page=threads&open=newchat:${employee.id}`,
     );

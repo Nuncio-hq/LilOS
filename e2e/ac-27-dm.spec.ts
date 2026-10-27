@@ -500,9 +500,13 @@ test("AC-6 two sessions run in parallel; Threads shows each live phase", async (
       '#v3-main [data-thread-row]:has([data-v3-status="needs"])',
   );
   await expect(live).toHaveCount(2, { timeout: 60_000 });
-  // The sidebar counts the same two as live.
+  // The Working shelf titles the count (the sidebar's Threads row carries
+  // none any more, #886).
   await expect(
-    v3Sidebar(page).getByRole("button", { name: /^Threads\s*2$/ }),
+    page.locator('#v3-main [data-fold="working"] > button'),
+  ).toContainText(/Working \(\d+\)/);
+  await expect(
+    v3Sidebar(page).getByRole("button", { name: "Threads", exact: true }),
   ).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-6-parallel.png` });
 });

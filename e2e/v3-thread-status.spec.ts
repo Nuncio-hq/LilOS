@@ -32,7 +32,7 @@ test.describe.configure({ mode: "serial" });
 const main = (page: Page) => page.locator("#v3-main");
 const goTo = (page: Page, item: "Home" | "Needs you" | "Threads") =>
   v3Sidebar(page).getByRole("button", { name: item }).click();
-/** A sidebar entry with its count: "Needs you 1", "Threads 0". */
+/** A sidebar entry with its count: "Needs you 1" (Threads has none, #886). */
 const sideItem = (page: Page, item: "Needs you" | "Threads") =>
   v3Sidebar(page).getByRole("button", { name: new RegExp(`^${item}`) });
 const card = (page: Page, title: RegExp) =>
