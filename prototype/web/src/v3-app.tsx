@@ -74,7 +74,9 @@ export default function V3App() {
   dataRef.current = data
   // The system status and folder dialogs are the app's, beside the shell (the real app hosts them too).
   const [status, setStatus] = useState(false)
-  const [asking, setAsking] = useState<((path: string) => void) | null>(null)
+  const [asking, setAsking] = useState<
+    ((path: string, project?: { name?: string; key?: string }) => void) | null
+  >(null)
   const actions = useMemo(
     () =>
       makeActions({

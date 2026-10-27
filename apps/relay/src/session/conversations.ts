@@ -17,14 +17,13 @@ import {
   ConversationsSnoozeParams,
   ConversationsSummariesParams,
   ConversationsUpdateParams,
-  type Project,
 } from "@lilos/contracts/app";
 import {
   ConversationAccess,
   type ConversationAccess as ConversationAccessT,
 } from "@lilos/contracts/engine";
 import type { ForgePrsResult } from "@lilos/contracts/host";
-import { openFolderOf, projectFolderOf } from "../projects";
+import { openFolderOf, projectForFolder } from "../projects";
 import type { ConversationPatch } from "../store";
 import { noFolderDedupeKey } from "../store";
 import type { RelayCtx } from "./ctx";
@@ -51,7 +50,6 @@ export async function handleConversations(
     store,
     storeAttachments,
     homeDir,
-    broadcast,
     dropAttachments,
     emit,
     emitMessage,
@@ -111,21 +109,18 @@ export async function handleConversations(
         parsed.data.access ??
         (storedDefault.success ? storedDefault.data : "ask");
       try {
-        /* D-#771: file the thread under its folder's project — created on
-           first use, announced before the thread so a client that gets the
-           conversation already has its project. The client sent a folder,
-           never a project id; no folder → a plain chat. */
+        /* D-#854: file the thread under the deepest project whose folder
+           equals or contains its folder — a lookup, never a create; a
+           folder no project covers is a chat. The client sent a folder,
+           never a project id; no folder → a plain chat too. */
         const folder = openFolderOf(parsed.data, homeDir);
         const filing = folder
-          ? await store.ensureProject({ folder })
+          ? projectForFolder(await store.listProjects(), folder, homeDir)
           : undefined;
-        if (filing?.created) {
-          broadcast("project.upserted", { project: filing.project });
-        }
         const { conversation, rootMessage, created } =
           await store.openConversation({
             ...parsed.data,
-            projectId: filing?.project.id,
+            projectId: filing?.id,
             /* The scheduled marker is host-authored — a client-supplied
                one would fake a task's run and hijack its lastRun stamps. */
             scheduled: isHost(peer) ? parsed.data.scheduled : undefined,
@@ -232,29 +227,32 @@ export async function handleConversations(
           ? { snoozedUntil: null }
           : {}),
       };
-      /* D-#771: `cwd` is how a thread moves between projects —
+      /* D-#854: `cwd` is how a thread moves between projects —
          `conversations.moveFolder` lands here through the harness's
-         host-only `cwd` write — so the filing follows it: the new
-         folder's project (created on first use), or a plain chat when the
-         folder is cleared. A moved workstream thread files under the
-         folder it moved to, not its stale `workspace.repoPath`. */
-      let created: Project | undefined;
+         host-only `cwd` write — so the filing follows it: the deepest
+         project whose folder equals or contains the new folder, or a
+         plain chat (moved somewhere no project covers, or folder
+         cleared). A moved workstream thread files under the folder it
+         moved to, not its stale `workspace.repoPath` — so the intent is
+         cleared with the move (round 2: it would otherwise keep claiming
+         the thread for its old repo through `openFolderOf`). */
       if ("cwd" in rest && (await store.getConversation(conversationId))) {
         if (typeof rest.cwd === "string") {
-          const filing = await store.ensureProject({
-            folder: projectFolderOf(rest.cwd, homeDir),
-          });
-          patch.projectId = filing.project.id;
-          if (filing.created) created = filing.project;
+          const filing = projectForFolder(
+            await store.listProjects(),
+            rest.cwd,
+            homeDir,
+          );
+          patch.projectId = filing?.id ?? null;
         } else {
           patch.projectId = null;
         }
+        patch.workspace = null;
       }
       const conversation = await store.updateConversation(
         conversationId,
         patch,
       );
-      if (created) broadcast("project.upserted", { project: created });
       if (!conversation) {
         throw new RpcError(
           JsonRpcCode.notFound,

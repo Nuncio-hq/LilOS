@@ -306,13 +306,21 @@ export async function handleRequest(
       const folder = as<string>(params, "folder");
       if (!folder) throw new RelayError("bad params", "bad_params");
       const name = as<string>(params, "name");
+      const key = as<string>(params, "key");
       const about = as<string>(params, "about");
       return {
         project: client.projectAt(folder, {
           ...(name ? { name } : {}),
+          ...(key ? { key } : {}),
           ...(about ? { about } : {}),
         }),
       };
+    }
+    case "projects.remove": {
+      const id = as<string>(params, "id");
+      if (!id) throw new RelayError("bad params", "bad_params");
+      client.removeProject(id);
+      return { ok: true };
     }
     case "conversations.list":
       return { conversations: client.conversations.get() };

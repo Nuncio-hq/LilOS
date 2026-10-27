@@ -19,13 +19,18 @@ export function OpenPathMenu({
   onOpen,
   trigger,
   children,
+  extra,
 }: {
   /** Detected editors (os.editors), first = default; [] → Reveal-only. */
   editors: OsEditor[];
-  onOpen: (app: OsApp) => void;
+  /** Absent: the menu holds only `extra` items (no open/reveal to offer). */
+  onOpen?: (app: OsApp) => void;
   /** Trigger element — a <button>/<Button>; `children` render inside it. */
   trigger: ReactElement;
   children?: ReactNode;
+  /** What the menu offers after the open items, under a separator — the
+     folder badge's "Add as project" (#854). */
+  extra?: ReactNode;
 }) {
   return (
     <DropdownMenu>
@@ -33,22 +38,27 @@ export function OpenPathMenu({
         {children}
       </DropdownMenuTrigger>
       <DropdownMenuContent>
-        {editors.map((e) => (
+        {onOpen &&
+          editors.map((e) => (
+            <DropdownMenuItem
+              key={e.id}
+              onClick={() => onOpen(e.id)}
+              data-openwith={e.id}
+            >
+              Open in {e.name}
+            </DropdownMenuItem>
+          ))}
+        {onOpen && editors.length > 0 && <DropdownMenuSeparator />}
+        {onOpen && (
           <DropdownMenuItem
-            key={e.id}
-            onClick={() => onOpen(e.id)}
-            data-openwith={e.id}
+            onClick={() => onOpen("finder")}
+            data-openwith="finder"
           >
-            Open in {e.name}
+            Reveal in Finder
           </DropdownMenuItem>
-        ))}
-        {editors.length > 0 && <DropdownMenuSeparator />}
-        <DropdownMenuItem
-          onClick={() => onOpen("finder")}
-          data-openwith="finder"
-        >
-          Reveal in Finder
-        </DropdownMenuItem>
+        )}
+        {onOpen && extra && <DropdownMenuSeparator />}
+        {extra}
       </DropdownMenuContent>
     </DropdownMenu>
   );

@@ -9,7 +9,7 @@ import {
   type TaskWakeEvent,
   type Ticket,
 } from "@lilos/contracts/app";
-import { openFolderOf } from "../projects";
+import { openFolderOf, projectForFolder } from "../projects";
 import type { RelayCtx } from "./ctx";
 import { badParams, JsonRpcCode, RpcError } from "./rpc";
 
@@ -34,27 +34,20 @@ export async function handleTasks(c: RelayCtx): Promise<false | undefined> {
       if (!parent) notFound("parent conversation");
       const employee = await store.getEmployee(p.employeeId);
       if (!employee) notFound("employee");
-      /* The child files under the parent's project; a parent never filed
-         (opened before projects) falls back to its folder's project like
-         an open would (D-#771). A folder-less chat cannot carry a task
-         ticket. */
+      /* The child joins the parent's project only if the parent has one
+         (D-#854) — an unfiled parent resolves by containment too. A chat
+         in a folder no project covers still hands off: the ticket is
+         detached, its id is `task-n` (never a project key), and the child
+         stays a chat. */
       let project = parent.projectId
         ? await store.getProject(parent.projectId)
         : null;
       if (!project) {
         const folder = openFolderOf(parent, c.homeDir);
-        if (!folder) {
-          throw new RpcError(
-            JsonRpcCode.invalidParams,
-            "invalid_params",
-            "the calling thread has no project or folder",
-          );
-        }
-        const filing = await store.ensureProject({ folder });
-        if (filing.created) {
-          broadcast("project.upserted", { project: filing.project });
-        }
-        project = filing.project;
+        project = folder
+          ? (projectForFolder(await store.listProjects(), folder, c.homeDir) ??
+            null)
+          : null;
       }
       const { channel, created: channelCreated } = await store.openDmChannel(
         employee.id,
@@ -66,8 +59,7 @@ export async function handleTasks(c: RelayCtx): Promise<false | undefined> {
         employeeId: employee.id,
         channelId: channel.id,
         prompt: p.prompt,
-        projectId: project.id,
-        projectKey: project.key,
+        ...(project ? { projectId: project.id, projectKey: project.key } : {}),
         access: parent.access,
         /* D-#848: the host resolves `isolation` into a `cwd` + #156
            `workspace` intent before this call — the child's folder then

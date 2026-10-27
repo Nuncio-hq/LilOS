@@ -71,6 +71,9 @@ async function parentIn(
   const { employee: worker } = await w.user.request<{
     employee: { id: string; name: string };
   }>("employees.create", { name: "Bea", role: "eng" });
+  /* D-#854: a task carries a ticket, so the parent's folder is a project —
+     made by hand, never inferred. */
+  await w.user.request("projects.create", { folder: cwd });
   const { conversation: parent } = await w.user.request<{
     conversation: Conversation;
   }>("conversations.open", {

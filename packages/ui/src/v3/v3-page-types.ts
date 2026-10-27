@@ -123,6 +123,16 @@ export type V3Actions = {
      `data.projects`. Closing the dialog says nothing. Absent: the project
      menu has no such row. */
   newProject?: (onCreated: (projectId: string) => void) => void;
+  /** The chat's folder becomes a project (#854): the app makes one of it —
+     its own dialog prefills name and key from the folder. Absent: a chat's
+     folder chip offers no "Add as project". */
+  addAsProject?: (folder: string) => void;
+  /** The project row's ⋯ → Remove project (#854): the record goes; its
+     threads become chats and its folder is untouched. Resolves when the
+     project is gone from `data.projects`; rejects when it could not be
+     removed (the app has already said why). Absent: project rows carry
+     no ⋯. */
+  removeProject?: (projectId: string) => Promise<void>;
   markSeen: (threadId: string) => void;
   /** Opens the app's small add-agent dialog (the ＋ beside Agents, "Add
      agent…" at the bottom of a composer's agent menu — #870): Who? · Name ·

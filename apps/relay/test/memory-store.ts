@@ -39,10 +39,12 @@ import type {
   TicketPatch,
 } from "../src/store";
 import {
+  CHAT_TASK_PREFIX,
   deriveProjectKey,
   markSnippet,
   messageMatchesTerms,
   newId,
+  nextTicketNumber,
   noFolderDedupeKey,
   openTitle,
   projectNameFor,
@@ -431,21 +433,70 @@ export function createMemoryStore(nowFn?: () => number): RelayStore {
       const existing = [...projects.values()].find(
         (p) => p.folder === input.folder,
       );
-      if (existing) return { project: existing, created: false };
+      const empty = { goals: [] as Goal[], tickets: [] as Ticket[] };
+      if (existing)
+        return { project: existing, created: false, attached: empty };
       const name = input.name ?? projectNameFor(input.folder);
       const project: Project = {
         id: newId("proj"),
         name,
-        key: deriveProjectKey(
-          name,
-          new Set([...projects.values()].map((p) => p.key)),
-        ),
+        /* D-#854 round 2: a typed key lands exactly as typed (the handler
+           checked it's free); only an absent key derives + dedupes. */
+        key:
+          input.key ??
+          deriveProjectKey(
+            name,
+            new Set([...projects.values()].map((p) => p.key)),
+          ),
         folder: input.folder,
         about: input.about ?? "",
         createdAt: input.createdAt ?? now(),
       };
       projects.set(project.id, project);
-      return { project, created: true };
+      /* D-#854: re-add re-attaches the tombstoned ids only — round 3
+         dropped the `KEY-n` prefix sweep: a different folder reusing a
+         key must not claim another removed project's rows. A goal's row
+         has no key — named or via a ticket it owns. */
+      const named = input.reattach;
+      const ticketIds = new Set(named?.ticketIds ?? []);
+      const goalIds = new Set(named?.goalIds ?? []);
+      const ticketsOut = [...tickets.values()].filter(
+        (t) => !t.projectId && ticketIds.has(t.id),
+      );
+      for (const t of ticketsOut) {
+        t.projectId = project.id;
+        if (t.goalId) goalIds.add(t.goalId);
+      }
+      const goalsOut = [...goals.values()].filter(
+        (g) => !g.projectId && goalIds.has(g.id),
+      );
+      for (const g of goalsOut) g.projectId = project.id;
+      return {
+        project,
+        created: true,
+        attached: { goals: goalsOut, tickets: ticketsOut },
+      };
+    },
+    async removeProject(id: string) {
+      const project = projects.get(id);
+      if (!project) return null;
+      const convs = [...conversations.values()].filter(
+        (c) => c.projectId === id,
+      );
+      const goalsOut = [...goals.values()].filter((g) => g.projectId === id);
+      const ticketsOut = [...tickets.values()].filter(
+        (t) => t.projectId === id,
+      );
+      for (const c of convs) delete c.projectId;
+      for (const g of goalsOut) delete g.projectId;
+      for (const t of ticketsOut) delete t.projectId;
+      projects.delete(id);
+      return {
+        project,
+        conversations: convs,
+        goals: goalsOut,
+        tickets: ticketsOut,
+      };
     },
     async listGoals() {
       return [...goals.values()].sort((a, b) => a.createdAt - b.createdAt);
@@ -472,10 +523,12 @@ export function createMemoryStore(nowFn?: () => number): RelayStore {
       return tickets.get(id) ?? null;
     },
     async createTicket(input: NewTicket) {
-      const taken = [...tickets.values()].filter(
-        (t) => t.projectId === input.projectId,
+      /* D-#854 round 2: number from the id prefix, not the live project —
+         detached `KEY-n` rows survive a remove. */
+      const number = nextTicketNumber(
+        [...tickets.values()].map((t) => t.id),
+        input.projectKey,
       );
-      const number = taken.reduce((m, t) => Math.max(m, t.number), 0) + 1;
       const at = now();
       const settled = initialStatus(input);
       const ticket: Ticket = {
@@ -529,7 +582,11 @@ export function createMemoryStore(nowFn?: () => number): RelayStore {
       /* No await: the owner write and the new thread land together (D-#776).
          The owner's channel was opened before this call. */
       const before = tickets.get(input.id);
-      const project = before ? projects.get(before.projectId) : undefined;
+      /* A detached ticket (its project was removed, #854) has no folder
+         to open a thread in — it cannot be picked up. */
+      const project = before?.projectId
+        ? projects.get(before.projectId)
+        : undefined;
       if (!before || !project) return null;
       const ticket = checkout(before, input.ownerId, now());
       tickets.set(ticket.id, ticket);
@@ -610,10 +667,13 @@ export function createMemoryStore(nowFn?: () => number): RelayStore {
           return { ticket: stored, conversation, rootMessage, created: false };
         }
       }
-      const taken = [...tickets.values()].filter(
-        (t) => t.projectId === input.projectId,
+      /* D-#854 round 2: prefix-wide numbering; a chat parent gets the
+         reserved `task-n` prefix (never a project key). */
+      const prefix = input.projectKey ?? CHAT_TASK_PREFIX;
+      const number = nextTicketNumber(
+        [...tickets.values()].map((t) => t.id),
+        prefix,
       );
-      const number = taken.reduce((m, t) => Math.max(m, t.number), 0) + 1;
       const at = now();
       const opened = openConversationSync({
         channelId: input.channelId,
@@ -626,7 +686,9 @@ export function createMemoryStore(nowFn?: () => number): RelayStore {
         ...(input.workspace !== undefined
           ? { workspace: input.workspace }
           : {}),
-        projectId: input.projectId,
+        ...(input.projectId !== undefined
+          ? { projectId: input.projectId }
+          : {}),
         parentId: input.parentConversationId,
         ...(input.model !== undefined ? { model: input.model } : {}),
         ...(input.provider !== undefined ? { provider: input.provider } : {}),
@@ -634,10 +696,10 @@ export function createMemoryStore(nowFn?: () => number): RelayStore {
         ...(input.fast !== undefined ? { fast: input.fast } : {}),
       });
       const ticket: Ticket = {
-        id: `${input.projectKey}-${number}`,
+        id: `${prefix}-${number}`,
         number,
         title: input.title,
-        projectId: input.projectId,
+        ...(input.projectId ? { projectId: input.projectId } : {}),
         ownerId: input.employeeId,
         status: "working",
         progress: [],
@@ -941,6 +1003,8 @@ export function createMemoryStore(nowFn?: () => number): RelayStore {
         "cwd",
         "projectId",
         "stuck",
+        /* D-#854 round 2: a `cwd` move clears the stale #156 intent. */
+        "workspace",
         /* D-#862: park stamps clear the same way. */
         "pinnedAt",
         "settledAt",

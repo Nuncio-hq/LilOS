@@ -48,10 +48,12 @@ import {
 } from "./inbox";
 import {
   Project,
+  ProjectRemovedEvent,
   ProjectResult,
   ProjectsCreateParams,
   ProjectsListParams,
   ProjectsListResult,
+  ProjectsRemoveParams,
   ProjectUpsertedEvent,
 } from "./project";
 import {
@@ -323,13 +325,15 @@ export const appProtocolSchemas = {
   ChannelRemovedEvent,
   EmployeeUpsertedEvent,
   EmployeeRemovedEvent,
-  /* projects (D-#771) */
+  /* projects (D-#854) */
   Project,
   ProjectsListParams,
   ProjectsListResult,
   ProjectsCreateParams,
+  ProjectsRemoveParams,
   ProjectResult,
   ProjectUpsertedEvent,
+  ProjectRemovedEvent,
   /* goals and tickets (D-#776) */
   Goal,
   GoalsListParams,

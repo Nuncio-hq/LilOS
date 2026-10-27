@@ -9,6 +9,7 @@ import {
   goalProgress,
   listedThreads,
   projectOf,
+  threadProjectId,
 } from "./v3-model";
 import { RowButton } from "./v3-open-record";
 import type { V3PageProps } from "./v3-page-types";
@@ -55,20 +56,18 @@ export function V3ProjectPage({
     : [];
   const open = tickets.filter((t) => t.status !== "done");
   const done = tickets.filter((t) => t.status === "done");
-  const ticketIds = new Set(tickets.map((t) => t.id));
-  /* Helpers have no row here either (D-#847): they show inside their parent. */
+  /* A thread is the project's by its own record, its ticket, or a folder
+     inside the project's — a `.lilos/wt/` worktree lists here on its own
+     (#854). Helpers have no row either (D-#847): they show inside their
+     parent. */
   const mine = listedThreads(data.threads).filter(
-    (t) =>
-      t.projectId === project.id ||
-      (t.ticketId !== undefined && ticketIds.has(t.ticketId)),
+    (t) => threadProjectId(data, t) === project.id,
   );
   /* The same statuses the Threads page draws (#887): Pinned · Active ·
      Working · Snoozed · Done — a thread reads the same here as there.
      `sectionedThreads` buckets every thread, so keep only this project's;
      a done thread still belongs to its project. */
-  const inProject = (t: V3Thread) =>
-    t.projectId === project.id ||
-    (t.ticketId !== undefined && ticketIds.has(t.ticketId));
+  const inProject = (t: V3Thread) => threadProjectId(data, t) === project.id;
   const all = sectionedThreads(data);
   const s = {
     pinned: all.pinned.filter(inProject),

@@ -91,7 +91,9 @@ export type TicketUpdate = z.infer<typeof TicketUpdate>;
 export const Goal = z.object({
   id: z.string().min(1),
   title: z.string().min(1),
-  projectId: z.string().min(1),
+  /** Absent when the project that owned it was removed (D-#854) — a goal
+      keeps its record, it just belongs to no project. */
+  projectId: z.string().min(1).optional(),
   due: z.string(),
   why: z.string(),
   /** Absent = the human owns the goal. */
@@ -149,7 +151,9 @@ export const Ticket = z.object({
   id: z.string().min(1),
   number: z.number().int().positive(),
   title: z.string().min(1),
-  projectId: z.string().min(1),
+  /** Absent when the project that owned it was removed (D-#854) — a ticket
+      keeps its record, it just belongs to no project. */
+  projectId: z.string().min(1).optional(),
   goalId: z.string().min(1).optional(),
   /** Absent = nobody holds it yet. */
   ownerId: z.string().min(1).optional(),

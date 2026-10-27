@@ -4,19 +4,23 @@ import {
   AppMethod,
   Conversation,
   Project,
+  ProjectRemovedEvent,
   ProjectsCreateParams,
   ProjectsListParams,
+  ProjectsRemoveParams,
   ProjectUpsertedEvent,
 } from "../src/app/index.js";
 import {
   AGENT_METHOD_TOOLS,
   LILOS_TOOLS,
+  NOT_AGENT_FACING,
   ProjectCreateParams,
   ThreadStartParams,
   toolsForAreas,
 } from "../src/harness/index.js";
 
-/* D-#771: projects on the wire and in the agent catalog. */
+/* D-#854: projects on the wire and in the agent catalog — made and
+   removed by hand, never inferred from a folder being used. */
 
 const project = {
   id: "proj_1",
@@ -27,7 +31,7 @@ const project = {
   createdAt: 1,
 };
 
-describe("D-#771 Project record", () => {
+describe("D-#854 Project record", () => {
   it("is {id, name, key, folder, about, createdAt} with a short uppercase key", () => {
     expect(Project.parse(project)).toEqual(project);
     for (const key of ["lil", "", "TOOLONGKEY", "LI L", "LIL-1"]) {
@@ -54,33 +58,50 @@ describe("D-#771 Project record", () => {
   });
 });
 
-describe("D-#771 wire", () => {
-  it("declares projects.list / projects.create and the project.upserted event", () => {
+describe("D-#854 wire", () => {
+  it("declares projects.list / create / remove and the project events", () => {
     expect(AppMethod.safeParse("projects.list").success).toBe(true);
     expect(AppMethod.safeParse("projects.create").success).toBe(true);
+    expect(AppMethod.safeParse("projects.remove").success).toBe(true);
     expect(AppEventMethod.safeParse("project.upserted").success).toBe(true);
-    // No update/remove: nothing renames or retires a project yet.
+    expect(AppEventMethod.safeParse("project.removed").success).toBe(true);
+    // No update: a project is named at create time.
     for (const method of AppMethod.options) {
-      expect(method).not.toMatch(/^projects\.(update|remove|delete)$/);
+      expect(method).not.toMatch(/^projects\.(update|delete)$/);
     }
     expect(ProjectUpsertedEvent.parse({ project })).toEqual({ project });
+    expect(ProjectRemovedEvent.parse({ projectId: project.id })).toEqual({
+      projectId: project.id,
+    });
   });
 
-  it("projects.create takes a folder; name and about are optional", () => {
+  it("projects.create takes a folder; name, key and about are optional", () => {
     expect(ProjectsCreateParams.parse({ folder: "~/Code/LilOS" })).toEqual({
       folder: "~/Code/LilOS",
     });
     expect(
-      ProjectsCreateParams.parse({ folder: "~/x", name: "  X  ", about: "a" }),
-    ).toEqual({ folder: "~/x", name: "X", about: "a" });
+      ProjectsCreateParams.parse({
+        folder: "~/x",
+        name: "  X  ",
+        key: "X2",
+        about: "a",
+      }),
+    ).toEqual({ folder: "~/x", name: "X", key: "X2", about: "a" });
     expect(ProjectsCreateParams.safeParse({ name: "no folder" }).success).toBe(
       false,
     );
     expect(ProjectsListParams.safeParse({}).success).toBe(true);
   });
+
+  it("projects.remove takes the project by id or key", () => {
+    expect(ProjectsRemoveParams.parse({ id: "proj_1" })).toEqual({
+      id: "proj_1",
+    });
+    expect(ProjectsRemoveParams.safeParse({}).success).toBe(false);
+  });
 });
 
-describe("D-#771 agent tools", () => {
+describe("D-#854 agent tools", () => {
   it("project_list reads; project_create asks the user (D-#341)", () => {
     expect(LILOS_TOOLS.project_list).toMatchObject({
       area: "project",
@@ -92,6 +113,9 @@ describe("D-#771 agent tools", () => {
     });
     expect(AGENT_METHOD_TOOLS["projects.list"]).toBe("project_list");
     expect(AGENT_METHOD_TOOLS["projects.create"]).toBe("project_create");
+    /* Removing a project unfilings Oscar's threads — no agent tool; it is
+       listed in NOT_AGENT_FACING instead (D-#854). */
+    expect(NOT_AGENT_FACING["projects.remove"]).toMatch(/project/);
   });
 
   it("project tools only exist for a session that has the project area", () => {

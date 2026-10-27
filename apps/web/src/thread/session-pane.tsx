@@ -2,8 +2,12 @@ import { FocusView } from "@lilos/ui";
 import type { WbTab } from "@lilos/ui/types";
 import { ThreadBrowser } from "../lib/browser";
 import { DesktopFindBar } from "../lib/desktop-find";
+import { projectForFolder } from "../lib/folders";
+import { useAtom } from "../lib/hooks";
 import { hostAccessors } from "../lib/host";
+import { relay } from "../lib/runtime";
 import { sayNotice } from "../lib/toast";
+import { addFolderAsProject } from "../v3/add-folder";
 import { FilesOnlyBanner, HistoryNotice } from "./thread-banners";
 import type { ThreadData } from "./thread-data";
 import { sessionOpener, startFreshOpener, type ThreadNav } from "./thread-pane";
@@ -37,10 +41,20 @@ export function SessionPane({
   nav: ThreadNav;
 }) {
   const { conv, filesOnly } = d;
+  const projects = useAtom(relay.projects);
+  /* #854: same chip the thread panel shows — a folder no project covers
+     offers "Add as project"; the relay's filing (`conv.projectId`) decides
+     and a `.lilos/wt` cwd pre-picks its repo root (round 2). */
+  const addFolder = conv.workspace?.repoPath ?? conv.cwd;
+  const addAsProject =
+    addFolder && !conv.projectId && !projectForFolder(projects, addFolder)
+      ? () => addFolderAsProject(addFolder)
+      : undefined;
   return (
     <FocusView
       bare
       {...sharedViewProps(d)}
+      onAddAsProject={addAsProject}
       work={d.work}
       onOpenSession={sessionOpener(d, nav)}
       onStopJob={d.onStopJob}

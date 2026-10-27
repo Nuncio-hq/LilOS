@@ -12,6 +12,8 @@ import {
   ForgePrsResult,
 } from "./forge";
 import {
+  FsCanonicalParams,
+  FsCanonicalResult,
   FsCompleteParams,
   FsCompleteResult,
   FsListParams,
@@ -82,6 +84,11 @@ export const HOST_METHODS = {
     params: FsListParams,
     result: FsListResult,
     doc: "Directory children (dirs first) with git-repo marks.",
+  },
+  "fs.canonical": {
+    params: FsCanonicalParams,
+    result: FsCanonicalResult,
+    doc: "Canonical compare keys for paths — symlink-resolved, ~-aware, case-folded on macOS (dedupe lists across spellings).",
   },
   "fs.complete": {
     params: FsCompleteParams,

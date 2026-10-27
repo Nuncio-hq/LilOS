@@ -1,4 +1,4 @@
-import { ConversationResult, ProjectUpsertedEvent } from "@lilos/contracts/app";
+import { ConversationResult } from "@lilos/contracts/app";
 import { describe, expect, it } from "vitest";
 import type { createRelay, RelayWsPeer } from "../src/session";
 import {
@@ -176,7 +176,7 @@ describe("conversations.moveFolder (#581)", () => {
     expect(channel.id).toBeTruthy();
   });
 
-  it("D-#771 files the moved thread under the destination folder's project, created on first use", async () => {
+  it("D-#854 a move into a folder no project covers stays a chat — nothing is created", async () => {
     const relay = newRelay({ homeDir: "/Users/ada" });
     const user = await helloed(relay);
     const host = await fakeHost(relay);
@@ -198,16 +198,56 @@ describe("conversations.moveFolder (#581)", () => {
       },
     );
 
-    // A folder-less thread is a plain chat; moving it into a folder files
-    // it, announcing the project the folder just became.
-    const upserted = eventsNamed(user.frames, "project.upserted");
-    expect(upserted).toHaveLength(1);
-    const { project } = ProjectUpsertedEvent.parse(upserted[0].params);
-    expect(project.folder).toBe("~/code/app");
+    /* The folder stays the thread's, but no project is inferred from it
+       (D-#854): no project.upserted, the thread keeps its cwd and files
+       as a chat. */
+    expect(eventsNamed(user.frames, "project.upserted")).toHaveLength(0);
     const moved = ConversationResult.parse(
       resultOf(user.frames, lastId()).result,
     ).conversation;
-    expect(moved).toMatchObject({ cwd: "~/code/app", projectId: project.id });
+    expect(moved).toMatchObject({ cwd: "~/code/app" });
+    expect(moved.projectId).toBeUndefined();
+  });
+
+  it("D-#854 a move into a project's folder files the thread under it — nested too", async () => {
+    const relay = newRelay({ homeDir: "/Users/ada" });
+    const user = await helloed(relay);
+    const host = await fakeHost(relay);
+    const { conversation } = await setupConversation(user);
+    await user.connection.receive(
+      req("projects.create", { folder: "~/code/app" }),
+    );
+    const { project } = resultOf(user.frames, lastId()).result as {
+      project: { id: string; folder: string };
+    };
+    expect(project.folder).toBe("~/code/app");
+    user.frames.length = 0;
+
+    await moveFolder(
+      user,
+      host,
+      { conversationId: conversation.id, path: "~/code/app/packages/ui" },
+      async () => {
+        await hostUpdate(host, {
+          conversationId: conversation.id,
+          cwd: "~/code/app/packages/ui",
+        });
+        await host.answer("conversations.moveFolder", {
+          result: {
+            cwd: "/Users/ada/code/app/packages/ui",
+            engineMoved: true,
+          },
+        });
+      },
+    );
+
+    const moved = ConversationResult.parse(
+      resultOf(user.frames, lastId()).result,
+    ).conversation;
+    expect(moved).toMatchObject({
+      cwd: "~/code/app/packages/ui",
+      projectId: project.id,
+    });
   });
 
   it("an engine that could not re-home reports the next-turn wording, not a fake move", async () => {

@@ -6,7 +6,7 @@ import type { DemoPlan, DemoScript, SeedConversation } from "./types";
    data — messages + the scripted engine turns that produced them. `hold`
    turns are still open where the prototype showed them live. */
 
-const LILOS_DIR = "~/Desktop/Oscar/LilOS";
+export const LILOS_DIR = "~/Desktop/Oscar/LilOS";
 const OPUS = {
   model: "claude-opus-5-5",
   provider: "anthropic-cliproxy",
