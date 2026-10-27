@@ -87,8 +87,9 @@ test("each agent's row shows its live thread and since when; an idle agent shows
   test.setTimeout(180_000);
   await enter(page);
 
-  await goTo(page, "Threads");
-  await main(page).getByRole("button", { name: "Scheduled" }).click();
+  /* Threads' tab bar went away in #887 — Scheduled still answers at its
+     own URL. */
+  await page.goto(`${stack.webUrl}/#?page=threads&view=scheduled`);
   await main(page).getByRole("button", { name: "New schedule" }).click();
   await main(page).getByPlaceholder("Morning triage").fill("Morning triage");
   await main(page)

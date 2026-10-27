@@ -387,7 +387,7 @@ export type V3Thread = {
   rewound?: { dropped: number; files: boolean };
   /* Where the thread sits in the list (#862, the T3 Code sidebar's model):
      Pinned stays on top, a snooze sleeps it until its wake time, and a
-     settled thread parks on the Settled shelf — its `settledAt`, and why.
+     done thread parks on the Done shelf — its `settledAt`, and why.
      All three are relay state, the same on Mac and phone; only folding
      Working is the device's own choice. */
   /** Pinned to the top of the list, epoch ms (newest pin first; reordering
@@ -409,7 +409,8 @@ export type V3Thread = {
     | { kind: "idle" }
     | { kind: "pr"; num: number; state: "merged" | "closed" };
   /** Auto-settle switched off for this thread: the idle/PR sweep leaves it
-      in the list (Auto-settle → Disabled on its menu). */
+      in the list (the wire's `autoSettle`; the menu's switch went away in
+      #887). */
   autoSettleOff?: boolean;
 };
 

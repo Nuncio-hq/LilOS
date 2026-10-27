@@ -24,7 +24,8 @@ export const SECTION_ORDER: V3Section[] = [
 
 /** Which section a listed thread lives in. `settled` says it is already on
     the shelf — the app's put-away list is `archivedThreads` until the
-    backend slice renames archive to settle (the UI says Settle either way). */
+    backend slice renames archive to settle (the UI says Done either way,
+    #887). */
 export const sectionOf = (
   d: V3Data,
   t: V3Thread,
@@ -96,13 +97,13 @@ export function snoozeBack(until: number, now = Date.now()): string {
   return `back ${d.getDate()} ${d.toLocaleDateString("en-US", { month: "short" })}`;
 }
 
-/** Why a settled thread is on the shelf, as the row shows it: "auto · 3
+/** Why a done thread is on the shelf, as the row shows it: "auto · 3
     days idle" for the sweep, "auto · PR #66 merged" for a finished pull
-    request. A thread you settled yourself names no reason — it is just
-    Settled. */
+    request. A thread you marked done yourself names no reason — it is just
+    Done. */
 export function settledReason(t: V3Thread): string {
   const w = t.settledWhy;
-  if (!w) return "Settled";
+  if (!w) return "Done";
   if (w.kind === "idle") return "auto · 3 days idle";
   return `auto · PR #${w.num} ${w.state}`;
 }

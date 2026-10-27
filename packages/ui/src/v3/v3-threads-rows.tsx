@@ -23,9 +23,9 @@ import type { V3Thread } from "./v3-types";
 /* The one thread row (#862 feedback): the Threads page's single list and
    Home's list both draw it — a status dot (a word-pill only for Needs you /
    Failed, the two a scan should catch), the title, `project · agent`, and
-   the ⋯ menu (pin, settle, snooze — #862). The clock stays quiet until the
-   row is hovered; a snoozed row says when it's back and a settled row says
-   why it parked. */
+   the ⋯ menu (pin, done, snooze — #862, renamed in #887). The clock stays
+   quiet until the row is hovered; a snoozed row says when it's back and a
+   done row says why it parked. */
 
 export function ThreadRow({
   data,
@@ -36,20 +36,14 @@ export function ThreadRow({
   drop,
 }: V3PageProps & {
   t: V3Thread;
-  /** A shelf row: dimmed, and its menu leads with Un-settle. */
+  /** A shelf row: dimmed, and its menu leads with Not done. */
   settled?: boolean;
   /** Inside a group that already names it — the Agent grouping, Home's
       project groups — that half of `project · agent` is spared. */
   drop?: "project" | "agent";
 }) {
-  const {
-    renameThread,
-    archiveThread,
-    pinThread,
-    snoozeThread,
-    wakeThread,
-    setAutoSettle,
-  } = act;
+  const { renameThread, archiveThread, pinThread, snoozeThread, wakeThread } =
+    act;
   const { input, menu } = useRenameMenu({
     title: t.title,
     archived: settled,
@@ -57,18 +51,13 @@ export function ThreadRow({
     onRename: renameThread && ((title) => renameThread(t.id, title)),
     onArchive: archiveThread && ((to) => archiveThread(t.id, to)),
     park: settled
-      ? {
-          autoSettle: !t.autoSettleOff,
-          onAutoSettle: setAutoSettle && ((on) => setAutoSettle(t.id, on)),
-        }
+      ? undefined
       : {
           pinned: t.pinnedAt !== undefined,
           onPin: pinThread && ((to) => pinThread(t.id, to)),
           snoozedUntil: snoozed(t) ? t.snoozedUntil : undefined,
           onSnooze: snoozeThread && ((until) => snoozeThread(t.id, until)),
           onWake: wakeThread && (() => wakeThread(t.id)),
-          autoSettle: !t.autoSettleOff,
-          onAutoSettle: setAutoSettle && ((on) => setAutoSettle(t.id, on)),
         },
   });
   // An open helper marks its nearest listed ancestor's row (D-#847).
@@ -92,8 +81,8 @@ export function ThreadRow({
       ? Math.max(0, Math.round((Date.now() - back) / 60_000))
       : t.minutes;
   return (
-    // `data-settled` marks the shelf rows: a settled thread leaves the list
-    // for the Settled fold and the marker says so (#862).
+    // `data-settled` marks the shelf rows: a done thread leaves the list
+    // for the Done fold and the marker says so (#862).
     <div data-thread-row={t.id} data-settled={settled || undefined}>
       <RowButton
         opens={{ page: "thread", id: t.id }}

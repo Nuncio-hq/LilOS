@@ -238,11 +238,11 @@ export type V3Data = {
   goals: V3Goal[];
   tickets: V3Ticket[];
   threads: V3Thread[];
-  /** Threads settled away, newest first — the Settled shelf (#862; the
-     wire still says `archivedThreads` until the backend slice renames it).
-     They are not in `threads`, so Live, the sidebar and every agent's page
-     forget them; Threads → All keeps them folded at the bottom, where
-     Un-settle brings them back. Absent: the app has no shelf. */
+  /** Threads settled away, newest first — the Done shelf (#862; the wire
+     still says `archivedThreads` until the backend slice renames it). They
+     are not in `threads`, so Live, the sidebar and every agent's page
+     forget them; Threads keeps them folded at the bottom, where Not done
+     brings them back. Absent: the app has no shelf. */
   archivedThreads?: V3Thread[];
   asks: V3Ask[];
   updates: V3Update[];

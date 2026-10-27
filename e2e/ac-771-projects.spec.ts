@@ -127,14 +127,17 @@ test("AC-1 a plain chat has no project; a thread opened in a folder is listed on
   await expect(project).toContainText(shown(alpha).replace(/^~/, ""), {
     timeout: 15_000,
   });
-  // Live or past, the thread is listed here, and the plain chat is not.
-  const listed = project.locator("[data-project-live], [data-project-past]");
-  await expect(listed.getByText(/hello in alpha/i)).toHaveCount(1);
+  /* One list by status (#887): the finished thread parked on the
+     project's Done fold; the plain chat is nowhere here. */
+  const listed = project.locator("[data-project-threads]");
+  const doneFold = listed.locator('[data-fold="settled"] > button');
+  await expect(doneFold).toBeVisible({ timeout: 30_000 });
+  if ((await doneFold.getAttribute("aria-expanded")) === "false")
+    await doneFold.click();
+  await expect(
+    listed.locator("[data-thread-row]").filter({ hasText: /hello in alpha/i }),
+  ).toHaveCount(1);
   await expect(listed.getByText(/just talking/i)).toHaveCount(0);
-  await expect(project.locator("[data-project-past]")).toContainText(
-    /hello in alpha/i,
-    { timeout: 30_000 },
-  );
   await shoot(page, "ac-1-project-page");
   await noDm(page);
 });
@@ -246,11 +249,18 @@ test("AC-4 after a restart every thread is still under its project; nothing is l
       timeout: 60_000,
     });
   await side.getByRole("button", { name: "lilos-gamma" }).click();
+  /* Its turn finished before the restart, so it parked on the project's
+     Done fold (#887). */
+  const gammaThreads = v3Main(page).locator("[data-project-threads]");
+  const gammaDone = gammaThreads.locator('[data-fold="settled"] > button');
+  await expect(gammaDone).toBeVisible({ timeout: 30_000 });
+  if ((await gammaDone.getAttribute("aria-expanded")) === "false")
+    await gammaDone.click();
   await expect(
-    v3Main(page)
-      .locator("[data-project-live], [data-project-past]")
+    gammaThreads
+      .locator("[data-thread-row]")
       .filter({ hasText: /hello in gamma/i }),
-  ).toHaveCount(1, { timeout: 30_000 });
+  ).toHaveCount(1);
   await shoot(page, "ac-4-after-restart");
   await noDm(page);
 });
