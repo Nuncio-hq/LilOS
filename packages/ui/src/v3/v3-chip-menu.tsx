@@ -7,7 +7,7 @@ import { useMenu } from "./v3-keys";
    which model, and the model on an agent's page while you edit it. */
 
 const CHIP =
-  "inline-flex h-6 min-w-0 items-center gap-1.5 rounded-md px-1.5 text-[12.5px] text-muted-foreground transition-colors hover:bg-[var(--v3-hover)] hover:text-foreground";
+  "inline-flex h-6 min-w-0 items-center gap-1.5 rounded-md px-1.5 @max-[560px]:shrink-0 @max-[560px]:gap-0 @max-[560px]:px-1 text-[12.5px] text-muted-foreground transition-colors hover:bg-[var(--v3-hover)] hover:text-foreground";
 
 const ITEM =
   "flex w-full items-center gap-2 px-3 py-1.5 text-left text-foreground outline-none hover:bg-[var(--v3-hover)] focus-visible:bg-[var(--v3-hover)]";
@@ -50,7 +50,7 @@ export function ChipMenu({
     useMenu(triggerRef);
 
   return (
-    <span className="relative min-w-0">
+    <span className="relative flex min-w-0 @max-[560px]:shrink-0">
       <button
         ref={trigger}
         type="button"
@@ -66,7 +66,7 @@ export function ChipMenu({
         )}
       >
         {label}
-        <ChevronDownIcon className="size-3 shrink-0 opacity-60" />
+        <ChevronDownIcon className="size-3 shrink-0 opacity-60 @max-[680px]:hidden" />
       </button>
       {open && (
         <>

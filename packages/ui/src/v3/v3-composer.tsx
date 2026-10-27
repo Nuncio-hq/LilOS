@@ -1,4 +1,4 @@
-import { FolderIcon, GitBranchIcon } from "lucide-react";
+import { ArrowUpIcon, FolderIcon, GitBranchIcon } from "lucide-react";
 import {
   type KeyboardEvent,
   type ReactNode,
@@ -32,7 +32,7 @@ import type { V3Agent } from "./v3-types";
 const MAX_HEIGHT = 180;
 
 const CHIP =
-  "inline-flex h-6 min-w-0 items-center gap-1.5 rounded-md px-1.5 text-[12.5px] text-muted-foreground";
+  "inline-flex h-6 min-w-0 items-center gap-1.5 rounded-md px-1.5 @max-[560px]:shrink-0 @max-[560px]:gap-0 @max-[560px]:px-1 text-[12.5px] text-muted-foreground";
 
 export function Composer({
   data,
@@ -141,7 +141,7 @@ export function Composer({
   const who = (
     <>
       <AgentAvatar data={data} agent={agent} size={16} />
-      <span className="truncate @max-[480px]:hidden">{agent.name}</span>
+      <span className="truncate @max-[560px]:hidden">{agent.name}</span>
       {agent.id === data.ceoId && <CeoMark />}
     </>
   );
@@ -206,11 +206,15 @@ export function Composer({
         />
         <div className="mt-2 flex items-center gap-1">
           {attach && <AttachButton attach={attach} />}
-          {/* #886: one row, never two — chip labels hide for icons under
-              `@max-[480px]`; `min-w-0` lets the flex row shrink chips to
-              their icons instead of wrapping. No overflow clip here:
-              ChipMenu's list opens upward out of the row, and even
-              `overflow-x: clip` eats its hit area where it sticks out. */}
+          {/* #886: one row, never two. #897: width tiers (container queries on the
+              composer box): the model, effort and access chips keep their full
+              labels down to 480px and never shrink or overlap; the chevrons go
+              under 680px, the agent and project names collapse to their icons
+              under 560px (never cut mid-word), everything is icon-only under
+              480px, Send included (an arrow). The key hint
+              leaves at 640px. No overflow clip here: ChipMenu's list opens
+              upward out of the row, and even `overflow-x: clip` eats its hit
+              area where it sticks out. */}
           <div className="flex min-w-0 flex-1 items-center gap-0.5">
             {chips ?? (
               <>
@@ -249,19 +253,25 @@ export function Composer({
               </>
             )}
           </div>
-          <Kbd className="shrink-0 @max-[560px]:hidden">⌘↵</Kbd>
+          <Kbd className="shrink-0 @max-[640px]:hidden">⌘↵</Kbd>
+          {/* #897: under 480px Send is an arrow, so every chip keeps its
+              icon on the row without overlapping it. */}
           <button
             type="button"
             disabled={!sendable}
             onClick={submit}
+            aria-label={working ? "Queue" : "Send"}
             className={cn(
-              "ml-1 inline-flex h-[26px] shrink-0 items-center rounded-[7px] border px-2.5 font-medium text-[13px] transition-[background,transform] enabled:active:scale-[0.97]",
+              "ml-1 inline-flex h-[26px] shrink-0 items-center rounded-[7px] border px-2.5 font-medium text-[13px] transition-[background,transform] enabled:active:scale-[0.97] @max-[480px]:px-1.5",
               sendable
                 ? "border-foreground bg-foreground text-background hover:bg-foreground/85"
                 : "border-[var(--v3-line)] text-muted-foreground/60",
             )}
           >
-            {working ? "Queue" : "Send"}
+            <ArrowUpIcon className="hidden size-3.5 @max-[480px]:block" />
+            <span className="@max-[480px]:hidden">
+              {working ? "Queue" : "Send"}
+            </span>
           </button>
         </div>
       </div>

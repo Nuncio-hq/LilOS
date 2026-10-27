@@ -87,8 +87,11 @@ function DraftChat({
   id,
   fallback,
 }: V3PageProps & { id: string; fallback: V3Agent }) {
+  /* #897: `px-5` — the peek column is what limits the composer's width, and
+     the chips (agent, project, model, effort, access) need every pixel of it
+     to show their labels in full. */
   return (
-    <Page>
+    <Page className="px-5">
       <ChatDraft
         data={data}
         go={go}
@@ -307,7 +310,7 @@ export function ChatDraft({
         label={
           <>
             <AgentAvatar data={data} agent={agent} size={16} />
-            <span className="truncate @max-[480px]:hidden">{agent.name}</span>
+            <span className="truncate @max-[560px]:hidden">{agent.name}</span>
           </>
         }
         options={[

@@ -48,16 +48,16 @@ export function EffortPicker({
             aria-label={`Reasoning effort: ${current}`}
             aria-haspopup="menu"
             title={`Reasoning effort · ${effort ? current : "engine default"}`}
-            className="h-6 min-w-0 shrink gap-1.5 rounded-md px-1.5 font-normal text-[12.5px] text-muted-foreground hover:bg-[var(--v3-hover)] hover:text-foreground aria-expanded:bg-[var(--v3-hover)] aria-expanded:text-foreground"
+            className="h-6 shrink-0 gap-1.5 rounded-md px-1.5 @max-[480px]:gap-0 @max-[480px]:px-1 font-normal text-[12.5px] text-muted-foreground hover:bg-[var(--v3-hover)] hover:text-foreground aria-expanded:bg-[var(--v3-hover)] aria-expanded:text-foreground"
             data-slot="effort-picker-trigger"
           />
         }
       >
         <GaugeIcon className="size-3.5" />
-        <span className="max-w-24 truncate" data-effort>
+        <span className="truncate @max-[480px]:hidden" data-effort>
           {current}
         </span>
-        <ChevronDownIcon className="size-3 opacity-60" />
+        <ChevronDownIcon className="size-3 opacity-60 @max-[680px]:hidden" />
       </PopoverTrigger>
       <PopoverContent
         side="top"
