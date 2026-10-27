@@ -152,7 +152,7 @@ export function OpenAsk({
             <>
               <Btn onClick={() => act.deny(ask.id)}>Deny</Btn>
               <Btn primary onClick={() => act.approve(ask.id, allow)}>
-                Approve{ask.spend ? ` $${ask.spend.amount}` : ""}
+                Allow{ask.spend ? ` $${ask.spend.amount}` : ""}
               </Btn>
             </>
           )}

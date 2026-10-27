@@ -283,7 +283,7 @@ test("a CEO thread's team_set_ceo moves the position only after approval", async
     await expect(main(page)).not.toContainText(quillId);
     await shot(page, "03-approval");
     await main(page)
-      .getByRole("button", { name: "Approve", exact: true })
+      .getByRole("button", { name: "Allow", exact: true })
       .click();
 
     await page.goto(`${stack.webUrl}/#?page=people`);

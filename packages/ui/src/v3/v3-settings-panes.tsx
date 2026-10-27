@@ -9,6 +9,10 @@ import { LinkRow, Row, Segmented, useRun } from "./v3-settings-bits";
    Each control calls act.saveSettings (or saveProfile); a control whose
    action or data the app does not have is not drawn. */
 
+/* #884: only LilOS's own Ask / Full access shows. The engine's Smart /
+   Manual / Off policy row used to sit under it — a second approval system
+   nobody can reason about; `enginePolicy` still reaches the app, it just
+   has no control here. */
 const APPROVALS = [
   {
     id: "ask" as const,
@@ -20,14 +24,6 @@ const APPROVALS = [
     label: "Full access",
     does: "The agent never stops to ask. Faster, and your call to make.",
   },
-];
-
-/* The engine's own policy (`approvals.setPolicy`), under the default above:
-   what the engine does before it ever reaches LilOS's Ask / Full access. */
-const POLICIES = [
-  { id: "smart" as const, label: "Smart" },
-  { id: "manual" as const, label: "Manual" },
-  { id: "off" as const, label: "Off" },
 ];
 
 const INPUT =
@@ -148,7 +144,7 @@ export function Confirm({
 }
 
 export function GeneralPane({ data, go, act }: V3PageProps) {
-  const { approvals, enginePolicy, editor, editors, about } = data.settings;
+  const { approvals, editor, editors, about } = data.settings;
   // The CEO can rename things through ⌘K where the app has no way to do it
   // in place and the company has one.
   const askToRename = !act.saveProfile && !!data.ceoId;
@@ -212,20 +208,6 @@ export function GeneralPane({ data, go, act }: V3PageProps) {
             </li>
           ))}
         </ul>
-        {enginePolicy && (
-          <div className="mt-4">
-            <p className="mb-2 text-[13px] text-muted-foreground">
-              The engine’s own policy. Smart runs routine steps and asks for
-              risky ones. Manual asks every time. Off never asks.
-            </p>
-            <Segmented
-              label="Engine approval policy"
-              value={enginePolicy}
-              options={POLICIES}
-              onChange={(id) => act.saveSettings({ enginePolicy: id })}
-            />
-          </div>
-        )}
       </div>
 
       {editorChoices && editorChoices.length > 0 && editor && (

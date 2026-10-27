@@ -189,7 +189,8 @@ function Body({
       if (!hit) return
       const [askId, label] = hit
       setResolved(r)
-      if (/^denied/i.test(label)) act.deny(askId)
+      /* #884: "You said no" is the deny receipt; older labels began "Denied". */
+      if (/^denied|you said no/i.test(label)) act.deny(askId)
       else act.approve(askId, /always/i.test(label))
     },
     onAnswer: (q: { id: string }, a: { value: string }) => {

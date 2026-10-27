@@ -11,6 +11,7 @@ import type {
   Employee,
 } from "@lilos/contracts/app";
 import type { V3Ask, V3Status, V3Thread } from "@lilos/ui";
+import { askNote, summariseAsk } from "@lilos/ui";
 import type { SessionSignal } from "../lib/session-watch";
 import { modelLabel } from "./models";
 
@@ -54,8 +55,9 @@ export const V3_STATUS: Record<ThreadStatus, V3Status> = {
   idle: "done",
 };
 
-/** What the engine asks, as the ask card's text. */
-function askText(ask: Ask): { title: string; text: string } {
+/** What the engine asks, as the ask card's text. `cwd` names the folder a
+    run sentence lands in ("Run `x` in lilos?"). */
+function askText(ask: Ask, cwd?: string): { title: string; text: string } {
   const r = ask.request;
   if (ask.hire)
     return {
@@ -84,16 +86,14 @@ function askText(ask: Ask): { title: string; text: string } {
     const rest = desc.slice(first.length).trim();
     return { title, text: title === first ? rest || title : desc };
   }
-  /* An engine approval: the command is "The ask" row; a description that
-     already quotes it would say it twice (D-#769), so the title keeps only
-     the rest. */
-  const said = r.description
-    ?.replace(r.command, "")
-    .replace(/[\s:·–—-]+$/u, "")
-    .trim();
+  /* #884: an engine approval is one plain sentence — the same words the
+     thread's card shows — so Home, Needs and the card all ask the same
+     question. A description that adds real context becomes "The ask" row;
+     the usual "wants to run" echo drops out. */
+  const sentence = summariseAsk(r.command, cwd);
   return {
-    title: oneLine(said || "Approve a command", 80),
-    text: r.command,
+    title: sentence,
+    text: askNote(r.command, r.description) ?? sentence,
   };
 }
 
@@ -134,7 +134,7 @@ export function v3Asks(src: ThreadSources): V3Ask[] {
       const conv = convs.get(a.conversationId) as Conversation;
       const from = owners.get(conv.channelId);
       if (!from) return [];
-      const { title, text } = askText(a);
+      const { title, text } = askText(a, conv.cwd);
       const r = a.request;
       return [
         {
@@ -295,7 +295,7 @@ function threadRows(
           ? { summary: oneLine(answer.text, 140) }
           : {}),
         ...(ask
-          ? { askId: ask.id, quote: oneLine(askText(ask).text, 140) }
+          ? { askId: ask.id, quote: oneLine(askText(ask, c.cwd).text, 140) }
           : {}),
         /* D-#772: the live card's reason, only while the status is stuck.
            Threads already floats `stuck` above working (RANK). A mark left

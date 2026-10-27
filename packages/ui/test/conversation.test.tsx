@@ -256,13 +256,13 @@ describe("issue #19 — one conversation from shared pieces", () => {
       /^Retry$/,
       /Review & start/,
       /Not yet/,
-      /^Once$/,
+      /^Allow$/,
       /^Always$/,
       /Deny/,
     ])
       expect(qp.queryByRole("button", { name })).toBeNull();
     // the cards still render their information — only the actions are gone
-    expect(qp.getByText("Approval needed · only Ada can answer")).toBeTruthy();
+    expect(qp.getByText("Approval needed")).toBeTruthy();
     expect(qp.getByText(/Builder asks to start work/)).toBeTruthy();
     // not-sent tray lists items but its Send/Remove actions need handlers
     expect(quietPanel.container.querySelector("[data-notsent]")).toBeTruthy();
@@ -286,7 +286,7 @@ describe("issue #19 — one conversation from shared pieces", () => {
       /Squash and merge/,
       /gpt-test-1/, // model picker trigger shows the model name
       /Review & start/,
-      /^Once$/,
+      /^Allow$/,
       /* #578: the affordance is the row's hover "Rewind" button now. */
       /^Rewind to here$/,
     ])
@@ -320,7 +320,7 @@ describe("issue #19 — one conversation from shared pieces", () => {
     expect(wp.getByRole("button", { name: /Details/ })).toBeTruthy();
     // …and no expand button of its own — the peek header's Widen is the one
     expect(wp.queryByRole("button", { name: "Focus" })).toBeNull();
-    expect(wp.getByRole("button", { name: /^Once$/ })).toBeTruthy();
+    expect(wp.getByRole("button", { name: /^Allow$/ })).toBeTruthy();
     expect(wp.getByRole("button", { name: /Not yet/ })).toBeTruthy();
     expect(
       wiredPanel.container.querySelector("[data-notsent-send]"),

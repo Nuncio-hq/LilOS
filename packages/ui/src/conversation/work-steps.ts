@@ -44,8 +44,10 @@ export function stepKind(s: Step): StepKind {
   return KIND_BY_STEM.find(([re]) => re.test(tool))?.[1] ?? "other";
 }
 
-export const failedStep = (s: Step) =>
-  s.status === "failed" || s.status === "denied";
+/* #884: a denied step is a normal answer, not a failure — it gets its own
+   neutral fact ("you said no") and never adds to the failed count. */
+export const failedStep = (s: Step) => s.status === "failed";
+export const deniedStep = (s: Step) => s.status === "denied";
 
 const PAST: Record<StepKind, string> = {
   read: "Read",
@@ -128,6 +130,7 @@ export function stepFacts(steps: Step[], changed = 0): string[] {
     );
   const failed = steps.filter(failedStep).length;
   if (failed) parts.push(`${failed} failed`);
+  if (steps.some(deniedStep)) parts.push("you said no");
   return parts;
 }
 

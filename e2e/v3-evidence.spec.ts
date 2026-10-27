@@ -152,7 +152,7 @@ for (const theme of ["light", "dark"] as const) {
         .getByRole("button", { name: /^Needs you/ })
         .click();
       await expect(main(page).getByText("1 waiting on you")).toBeVisible();
-      await expect(main(page)).toContainText("patch wants to run");
+      await expect(main(page)).toContainText("Edit README.md?");
       await shot("needs-you");
 
       await v3Sidebar(page)
@@ -180,7 +180,7 @@ for (const theme of ["light", "dark"] as const) {
         .getByRole("button", { name: /^Needs you/ })
         .click();
       const approve = main(page).getByRole("button", {
-        name: "Approve",
+        name: "Allow",
         exact: true,
       });
       await expect(async () => {

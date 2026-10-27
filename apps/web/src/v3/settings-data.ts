@@ -26,7 +26,6 @@ import {
   aboutLines,
   defaultAccess,
   defaultEditor,
-  enginePolicyOf,
   enginePolicyPick,
 } from "../settings/state";
 import { modelLabel, modelRows } from "./models";
@@ -91,14 +90,9 @@ function build(): Slice {
     versions: status.result?.versions,
   });
 
-  /* The engine's own policy shows only while it declares `approval_policy`. */
-  const policy = enginePolicyOf(
-    engineClient.description
-      .get()
-      ?.capabilities.find((c) => c.id === "approval_policy"),
-    enginePolicyPick.get(),
-  );
-
+  /* #884: the engine's own policy stays inside the app (enginePolicyOf /
+     enginePolicyPick still track it) but Settings no longer offers it —
+     two approval systems is one too many. */
   const connectRows = status.result?.connect;
   const connect =
     connectRows === undefined
@@ -134,9 +128,6 @@ function build(): Slice {
   return {
     settings: {
       approvals: defaultAccess.get(),
-      /* D-#161 / D-#772: the phone registers its own per-kind prefs,
-         Stuck included. This Mac does not offer those switches. */
-      ...(policy ? { enginePolicy: policy } : {}),
       ...(editor && editors
         ? { editor: editor.name, editors: editors.map((e) => e.name) }
         : {}),

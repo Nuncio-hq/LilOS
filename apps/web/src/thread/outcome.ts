@@ -12,8 +12,10 @@ export const outcomeLabel = (o: ApprovalOutcome, name: string): string => {
       return `Allowed this thread by ${name}`;
     case "always":
       return "Always allowed here";
+    /* #884: a deny is a normal answer, not a failure — "You said no",
+       never "Denied by …". */
     case "deny":
-      return `Denied by ${name}`;
+      return "You said no";
     case "cancel":
       return "Cancelled";
     case "answer":
@@ -29,7 +31,8 @@ export const outcomeLabel = (o: ApprovalOutcome, name: string): string => {
 };
 
 export function outcomeFromLabel(v: string): ApprovalOutcome {
-  if (v.startsWith("Denied")) return "deny";
+  /* "Denied" covers pre-#884 stored labels. */
+  if (v === "You said no" || v.startsWith("Denied")) return "deny";
   if (v.startsWith("Always")) return "always";
   /* #106: the card's resolved label for the thread-scoped grant — reads
      both the current wording and pre-#582 stored rows. */

@@ -34,7 +34,7 @@ export function askHint(reply: Reply, kind: PendingAsk["kind"]): string | null {
     ? reply.approval.options
     : ["once", "always", "deny"];
   const parts: string[] = [];
-  if (options.includes("once")) parts.push("↵ Allow once");
+  if (options.includes("once")) parts.push("↵ Allow");
   if (options.includes("deny")) parts.push("⌫ Deny");
   return parts.length ? parts.join(" · ") : null;
 }
@@ -100,7 +100,7 @@ export function askKeyDown(e: KeyboardEvent, ctx: AskKeyContext): boolean {
   if (e.key === "Backspace" && options.includes("deny")) {
     ctx.setResolved({
       ...ctx.resolved,
-      [approval.id]: `Denied by ${ctx.viewer}`,
+      [approval.id]: "You said no",
     });
     return true;
   }

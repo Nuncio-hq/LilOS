@@ -515,8 +515,17 @@ export async function bootStack(
   const ownsHome = opts.home === undefined;
   const home =
     opts.home ?? mkdtempSync(path.join(tmpdir(), `lilos-e2e-${tag}-`));
-  const dropHome = () => {
-    if (ownsHome) rmSync(home, { recursive: true, force: true });
+  const dropHome = async () => {
+    if (!ownsHome) return;
+    try {
+      rmSync(home, { recursive: true, force: true });
+    } catch (err) {
+      /* A just-killed child can still be writing into home when rmSync
+         walks it — ENOTEMPTY on macOS. One short settle, one retry. */
+      if ((err as NodeJS.ErrnoException).code !== "ENOTEMPTY") throw err;
+      await new Promise((r) => setTimeout(r, 250));
+      rmSync(home, { recursive: true, force: true });
+    }
   };
   const leakTag = engineTag(tag);
   let spawned: ChildProcess | undefined;
@@ -655,7 +664,7 @@ export async function bootStack(
         await killProc(proc);
         releaseVite();
         await expectNoEngineLeak(leakTag);
-        if (!stopOpts?.keepHome) dropHome();
+        if (!stopOpts?.keepHome) await dropHome();
       },
     };
   } catch (e) {
@@ -663,7 +672,7 @@ export async function bootStack(
     // orphans stack.ts + relay + harness + vite and poisons the next boot.
     if (spawned) await killProc(spawned);
     releaseVite();
-    dropHome();
+    await dropHome();
     throw e;
   }
 }

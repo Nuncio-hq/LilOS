@@ -1,5 +1,4 @@
-import { CheckIcon, XIcon } from "lucide-react";
-import { CodeBlock } from "../components/ai-elements/code-block";
+import { CheckIcon, ChevronDownIcon, XIcon } from "lucide-react";
 import {
   Confirmation,
   ConfirmationAccepted,
@@ -19,8 +18,10 @@ import type {
   Work,
 } from "../types";
 import { VIEWER_ID } from "../types";
+import { useMenu } from "../v3/v3-keys";
 import { StatusPill } from "../v3/v3-marks";
 import { askHint } from "./ask-keys";
+import { askNote, summariseAsk } from "./ask-line";
 import {
   CARD,
   CARD_HEAD,
@@ -147,141 +148,26 @@ export function ReplyCards({
             </div>
           );
         })()}
-      {r.approval &&
-        (() => {
-          const a = r.approval;
-          const answer = (v: string) =>
-            setResolved?.({ ...resolved, [a.id]: v });
+      {r.approval && (
+        <ApprovalCard
+          a={r.approval}
+          done={done || undefined}
+          answer={(v: string) =>
+            setResolved?.({ ...resolved, [r.approval!.id]: v })
+          }
           /* #558: the card the ↵/⌫ keys would answer names its shortcuts —
              only the keys its offered options support (askHint). */
-          const hint =
-            a.id === keyTarget && !done ? askHint(r, "approval") : null;
-          /* #106 AC-4: the card offers the options the engine offered
-             (Once / This thread / Always / Deny) — asks stored before
-             options existed fall back to the original three. */
-          const offered = a.options?.length
-            ? a.options
-            : ["once", "always", "deny"];
-          /* v3 sets the primary answer last, at the right edge. */
-          const actions = [...offered].reverse();
-          const actionMeta: Record<
-            string,
-            {
-              label: string;
-              title: (command: string) => string;
-              resolved: (viewer: string, command: string) => string;
-            }
-          > = {
-            once: {
-              label: "Once",
-              title: () => "Once — it asks again next time",
-              resolved: (v) => `Allowed once by ${v}`,
-            },
-            session: {
-              label: "This thread",
-              title: (c) =>
-                `Allow ${c.slice(0, 60)} for the rest of this thread`,
-              resolved: (v) => `Allowed this thread by ${v}`,
-            },
-            always: {
-              label: "Always",
-              /* "Always" names what it covers — the tooltip spells out the
-                 command it grants; the code block sits right above. */
-              title: (c) => `Always allow ${c.slice(0, 60)}`,
-              resolved: () => "Always allowed here",
-            },
-            deny: {
-              label: "Deny",
-              title: () => "Deny — the agent sees the refusal",
-              resolved: (v) => `Denied by ${v}`,
-            },
-          };
-          return (
-            <Confirmation
-              className={done ? RECEIPT : CARD}
-              data-ask-id={a.id}
-              data-ask-state={done ? "resolved" : "open"}
-              state={done ? "approval-responded" : "approval-requested"}
-              approval={
-                done
-                  ? {
-                      id: a.id,
-                      approved: !done.startsWith("Denied"),
-                      reason: done,
-                    }
-                  : { id: a.id }
-              }
-            >
-              <ConfirmationTitle className={CARD_HEAD}>
-                <ConfirmationRequest>
-                  <StatusPill status="needs" />
-                  <span>Approval needed · only {viewer} can answer</span>
-                </ConfirmationRequest>
-                <ConfirmationAccepted>
-                  <CheckIcon className="size-3.5 text-emerald-600" />
-                  {done}
-                </ConfirmationAccepted>
-                <ConfirmationRejected>
-                  <XIcon className="size-3.5 text-red-600" />
-                  {done}
-                </ConfirmationRejected>
-              </ConfirmationTitle>
-              <ConfirmationRequest>
-                {a.hire ? (
-                  /* A hire proposal is the draft itself, not a command
-                     echo — the same card a channel hire renders. */
-                  <HireCardInline
-                    draft={a.hire}
-                    by={r.from}
-                    emp={emp}
-                    me={viewer}
-                    done={done}
-                    onReview={() => answer(`Allowed once by ${viewer}`)}
-                    onReject={() => answer(`Denied by ${viewer}`)}
-                  />
-                ) : (
-                  <>
-                    <CodeBlock
-                      code={a.command}
-                      language="bash"
-                      className="text-xs [&_pre]:whitespace-pre-wrap [&_pre]:break-all"
-                    />
-                    {/* The caption must say what the command DOES — when the
-                        engine just echoes the command it adds nothing. */}
-                    {a.note.trim() && a.note.trim() !== a.command.trim() ? (
-                      <p className="text-[13.5px] text-muted-foreground leading-normal">
-                        {a.note}
-                      </p>
-                    ) : null}
-                  </>
-                )}
-              </ConfirmationRequest>
-              {setResolved && !a.hire && (
-                <ConfirmationActions className="flex-wrap">
-                  {actions.map((opt, i) => {
-                    const meta = actionMeta[opt];
-                    if (!meta) return null;
-                    return (
-                      <CardButton
-                        key={opt}
-                        primary={i === actions.length - 1}
-                        title={meta.title(a.command)}
-                        onClick={() => answer(meta.resolved(viewer, a.command))}
-                      >
-                        {meta.label}
-                      </CardButton>
-                    );
-                  })}
-                </ConfirmationActions>
-              )}
-              {hint && (
-                <div data-ask-keyhint className={KEY_HINT}>
-                  Answer from the keyboard: {hint}
-                </div>
-              )}
-            </Confirmation>
-          );
-        })()}
+          hint={
+            r.approval.id === keyTarget && !done
+              ? (askHint(r, "approval") ?? undefined)
+              : undefined
+          }
+          canAnswer={!!setResolved}
+          viewer={viewer}
+          by={r.from}
+          emp={emp}
+        />
+      )}
       {r.question && (
         <QuestionCard
           q={r.question}
@@ -295,5 +181,187 @@ export function ReplyCards({
         />
       )}
     </>
+  );
+}
+
+/* #884: an approval asks one plain question — "Edit README.md?" — and offers
+   two answers: Allow and Deny. The extra grant scopes the engine offers
+   (This thread, Always) live under a small ▾ on Allow; the receipt text each
+   choice writes is what the app layer maps back to the wire outcome. A deny
+   is not a failure — the receipt reads "You said no". */
+const GRANT_LABEL: Record<string, string> = {
+  once: "Once",
+  session: "This thread",
+  always: "Always",
+};
+
+const GRANT_RECEIPT: Record<string, (viewer: string) => string> = {
+  once: (v) => `Allowed once by ${v}`,
+  session: (v) => `Allowed this thread by ${v}`,
+  always: () => "Always allowed here",
+};
+
+const GRANT_TITLE: Record<string, string> = {
+  once: "Allow — it asks again next time",
+  session: "Allow it for the rest of this thread",
+  always: "Always allow it here",
+};
+
+function ApprovalCard({
+  a,
+  done,
+  answer,
+  hint,
+  canAnswer,
+  viewer,
+  by,
+  emp,
+}: {
+  a: NonNullable<Reply["approval"]>;
+  /** The receipt text once answered; undefined while it waits. */
+  done?: string;
+  /** Writes the receipt text — the app maps it back to a wire outcome. */
+  answer: (receipt: string) => void;
+  hint?: string;
+  canAnswer: boolean;
+  viewer: string;
+  by: string;
+  emp: EmpFn;
+}) {
+  const menu = useMenu();
+  /* #106 AC-4: the card offers the options the engine offered — asks stored
+     before options existed fall back to the original set. */
+  const offered = a.options?.length ? a.options : ["once", "always", "deny"];
+  const grants = offered.filter((o) => o !== "deny" && o !== "cancel");
+  const main = grants.includes("once") ? "once" : grants[0];
+  const extra = grants.filter((o) => o !== main);
+  const canDeny = offered.includes("deny") || offered.includes("cancel");
+  /* "You said no" is the new deny receipt; stored asks may still carry the
+     old "Denied by …" label — both mean not-approved. */
+  const denied =
+    !!done && (done === "You said no" || done.startsWith("Denied"));
+  const grant = (o: string) =>
+    answer((GRANT_RECEIPT[o] ?? ((v: string) => `Allowed by ${v}`))(viewer));
+  const note = askNote(a.command, a.note);
+  return (
+    <Confirmation
+      className={done ? RECEIPT : CARD}
+      data-ask-id={a.id}
+      data-ask-state={done ? "resolved" : "open"}
+      state={done ? "approval-responded" : "approval-requested"}
+      approval={
+        done ? { id: a.id, approved: !denied, reason: done } : { id: a.id }
+      }
+    >
+      <ConfirmationTitle className={CARD_HEAD}>
+        <ConfirmationRequest>
+          <StatusPill status="needs" />
+          <span>Approval needed</span>
+        </ConfirmationRequest>
+        <ConfirmationAccepted>
+          <CheckIcon className="size-3.5 text-emerald-600" />
+          {done}
+        </ConfirmationAccepted>
+        <ConfirmationRejected>
+          <XIcon className="size-3.5 text-muted-foreground" />
+          {done}
+        </ConfirmationRejected>
+      </ConfirmationTitle>
+      <ConfirmationRequest>
+        {a.hire ? (
+          /* A hire proposal is the draft itself, not a command echo — the
+             same card a channel hire renders. */
+          <HireCardInline
+            draft={a.hire}
+            by={by}
+            emp={emp}
+            me={viewer}
+            done={done}
+            onReview={() => answer(`Allowed once by ${viewer}`)}
+            onReject={() => answer("You said no")}
+          />
+        ) : (
+          <>
+            <div className="text-[14.5px] text-foreground leading-normal">
+              {summariseAsk(a.command)}
+            </div>
+            {note && (
+              <p className="mt-1 text-[13.5px] text-muted-foreground leading-normal">
+                {note}
+              </p>
+            )}
+          </>
+        )}
+      </ConfirmationRequest>
+      {canAnswer && !a.hire && (
+        <ConfirmationActions className="flex-wrap">
+          {canDeny && (
+            <CardButton
+              title="Deny — the agent sees the refusal"
+              onClick={() => answer("You said no")}
+            >
+              Deny
+            </CardButton>
+          )}
+          {main && (
+            <span className="relative flex">
+              <CardButton
+                primary
+                title={GRANT_TITLE[main] ?? "Allow"}
+                onClick={() => grant(main)}
+                className={extra.length ? "rounded-r-none" : undefined}
+              >
+                Allow
+              </CardButton>
+              {extra.length > 0 && (
+                <>
+                  <CardButton
+                    primary
+                    ref={menu.trigger}
+                    aria-haspopup="menu"
+                    aria-expanded={menu.open}
+                    aria-label="More ways to allow"
+                    title="More ways to allow"
+                    onClick={() => menu.setOpen((o) => !o)}
+                    className="rounded-l-none border-l border-background/25 px-1.5"
+                  >
+                    <ChevronDownIcon className="size-3.5" />
+                  </CardButton>
+                  {menu.open && (
+                    <div
+                      ref={menu.list}
+                      role="menu"
+                      onKeyDown={menu.onKeyDown}
+                      className="absolute top-[calc(100%+6px)] right-0 z-20 w-40 rounded-lg border bg-popover p-1 shadow-lg"
+                    >
+                      {extra.map((o) => (
+                        <button
+                          key={o}
+                          type="button"
+                          role="menuitem"
+                          title={GRANT_TITLE[o]}
+                          onClick={() => {
+                            menu.setOpen(false);
+                            grant(o);
+                          }}
+                          className="flex w-full items-center rounded-md px-2 py-1.5 text-[13px] hover:bg-[var(--v3-hover)]"
+                        >
+                          {GRANT_LABEL[o] ?? o}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </span>
+          )}
+        </ConfirmationActions>
+      )}
+      {hint && (
+        <div data-ask-keyhint className={KEY_HINT}>
+          Answer from the keyboard: {hint}
+        </div>
+      )}
+    </Confirmation>
   );
 }

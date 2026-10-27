@@ -143,7 +143,7 @@ export function AskNote({
           ) : (
             <>
               <Btn small primary onClick={() => act.approve(ask.id)}>
-                Approve
+                Allow
               </Btn>
               <Btn small onClick={() => act.deny(ask.id)}>
                 Deny

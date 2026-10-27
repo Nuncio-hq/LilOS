@@ -1,11 +1,10 @@
 import { expect, type Page, test } from "@playwright/test";
 
 /**
- * Rename, settle and un-settle a thread, and the engine approval policy,
- * on the prototype (mock company). A thread's ⋯ menu is on its row and in
- * its own header; a running thread sits folded under Working (#862),
- * and a settled thread leaves the list for the Settled shelf, where it
- * un-settles.
+ * Rename, settle and un-settle a thread on the prototype (mock company).
+ * A thread's ⋯ menu is on its row and in its own header; a running thread
+ * sits folded under Working (#862), and a settled thread leaves the list
+ * for the Settled shelf, where it un-settles.
  */
 
 const T = "t-lil81";
@@ -84,22 +83,26 @@ test("a settled thread leaves the list for the Settled shelf, and un-settles", a
   await expect(settledFold(page)).toHaveText("Settled (3)");
 });
 
-test("Settings → General draws the engine approval policy and keeps the pick", async ({
+/* #884: Settings shows only LilOS's Ask / Full access — the engine's
+   Smart / Manual / Off row is gone even though the mock still feeds it. */
+test("Settings → General keeps Ask / Full access and no engine policy row", async ({
   page,
 }) => {
   await page.goto("/?page=settings&view=general");
-  const policy = page.getByRole("radiogroup", {
-    name: "Engine approval policy",
+  const approvals = page.getByRole("radiogroup", {
+    name: "Approvals",
+    exact: true,
   });
-  await expect(policy).toBeVisible();
+  await expect(approvals).toBeVisible();
   await expect(
-    policy.getByRole("radio", { name: "Smart", exact: true }),
-  ).toHaveAttribute("aria-checked", "true");
-  await policy.getByRole("radio", { name: "Off", exact: true }).click();
+    approvals.getByRole("radio", { name: "Ask before risky commands" }),
+  ).toBeVisible();
   await expect(
-    policy.getByRole("radio", { name: "Off", exact: true }),
-  ).toHaveAttribute("aria-checked", "true");
+    approvals.getByRole("radio", { name: "Full access" }),
+  ).toBeVisible();
   await expect(
-    policy.getByRole("radio", { name: "Smart", exact: true }),
-  ).toHaveAttribute("aria-checked", "false");
+    page.getByRole("radiogroup", { name: "Engine approval policy" }),
+  ).toHaveCount(0);
+  for (const name of ["Smart", "Manual", "Off"])
+    await expect(page.getByRole("radio", { name, exact: true })).toHaveCount(0);
 });

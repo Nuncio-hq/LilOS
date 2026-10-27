@@ -90,6 +90,8 @@ export function WorkStep({
   const kind = stepKind(s);
   const running = !!s.running;
   const bad = !running && failedStep(s);
+  /* #884: denied is an answer, not an error — it stays neutral. */
+  const no = !running && s.status === "denied";
   const Icon = ICON[kind];
   const target = stepTarget(s);
   const hasBody =
@@ -147,6 +149,10 @@ export function WorkStep({
         ) : bad ? (
           <span className="shrink-0 whitespace-nowrap text-[12.5px] text-red-600 dark:text-red-300">
             {s.status}
+          </span>
+        ) : no ? (
+          <span className="shrink-0 whitespace-nowrap text-[12.5px] text-muted-foreground">
+            You said no
           </span>
         ) : s.diff ? (
           <DiffStat add={s.diff.add} del={s.diff.del} />
