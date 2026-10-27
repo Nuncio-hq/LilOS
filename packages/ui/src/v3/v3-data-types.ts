@@ -130,11 +130,15 @@ export type V3Settings = {
     /** What is wrong in plain words, with the next step, as the engine
        reported it; replaces the generic steps. */
     problem?: string;
-    /** Set once "starting" has lasted ~20s straight (#885): which leg
-       holds the start up — the engine's helper never connected, or the
-       engine itself never reported. First run swaps to the problem
-       screen; "starting" alone stays a wait. */
+    /** Set once "starting" has lasted past its leg's wait (#885): ~20s
+       for the engine's helper to connect, ~90s for the engine itself to
+       report — a cold first boot can take that long. First run swaps to
+       the problem screen; "starting" alone stays a wait. */
     stuck?: "harness" | "engine";
+    /** True between the helper's wait and the engine's (~20–90s): the
+       start is only slow, so Start shows a calm note instead of the
+       problem screen or quit advice (#885). */
+    slow?: boolean;
   };
   /** The engine's supervisor leg; down means the engine can never come
      up. Absent where the feed reports no such leg. */

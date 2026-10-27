@@ -65,15 +65,59 @@ export function relayOf(rows: StatusRow[]): V3Settings["relay"] {
   return { state: "down", problem: plain(row) };
 }
 
+/** Consecutive polls on which the harness leg read "down". A leg that
+    registered, degraded or connected resets the count (#885). */
+export function harnessDownStreak(rows: StatusRow[], prev: number): number {
+  return rows.find((r) => r.id === "harness")?.state === "down" ? prev + 1 : 0;
+}
+
 /** The harness leg of `system.status`: a down one means the engine row's
     "starting" can never resolve, so first run treats it as the problem
-    itself rather than a wait (#885). */
-export function harnessOf(rows: StatusRow[]): V3Settings["harness"] {
+    itself rather than a wait (#885). But "no harness connected" at first
+    poll is usually a launch agent that has not registered yet — like the
+    relay's synthesized down, it needs two reads in a row (`downStreak`)
+    before it counts. A degraded heartbeat (stale, maybe still alive)
+    reads "starting", never "down". */
+export function harnessOf(
+  rows: StatusRow[],
+  downStreak = 0,
+): V3Settings["harness"] {
   const row = rows.find((r) => r.id === "harness");
-  if (!row || row.state === "connecting" || row.state === "blocked")
+  if (
+    !row ||
+    row.state === "connecting" ||
+    row.state === "blocked" ||
+    row.state === "degraded"
+  )
     return { state: "starting" };
   if (row.state === "ok") return { state: "ok" };
-  return { state: "down" };
+  return downStreak >= 2 ? { state: "down" } : { state: "starting" };
+}
+
+/* How long a still-"starting" engine may keep Start waiting before each
+   leg gets named (#885): the engine's helper gets ~20s (it either
+   registers or it is broken), the engine itself ~90s — a cold Hermes
+   first boot takes a while. Between 20 and 90s the wait is only worth a
+   calm note on the button (`slow`), never the problem screen. */
+const HELPER_WAIT_MS = 20_000;
+const ENGINE_WAIT_MS = 90_000;
+
+/** Marks `engine` for the wait it has already done: `stuck` names the leg
+    to blame past its window, `slow` asks for patience inside the
+    engine's. Pure except for writing the flags onto `engine`. */
+export function startGate(
+  engine: V3Settings["engine"],
+  harness: V3Settings["harness"],
+  waitedMs: number,
+): void {
+  if (engine.state !== "starting") return;
+  if (harness?.state !== "ok") {
+    if (waitedMs > HELPER_WAIT_MS) engine.stuck = "harness";
+  } else if (waitedMs > ENGINE_WAIT_MS) {
+    engine.stuck = "engine";
+  } else if (waitedMs > HELPER_WAIT_MS) {
+    engine.slow = true;
+  }
 }
 
 /* --------------------------------- models ---------------------------------- */

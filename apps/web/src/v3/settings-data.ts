@@ -33,10 +33,12 @@ import { modelLabel, modelRows } from "./models";
 import {
   deviceOf,
   engineOf,
+  harnessDownStreak,
   harnessOf,
   modelsOf,
   relayOf,
   scheduleOf,
+  startGate,
 } from "./settings-map";
 
 /* What v3 Settings, the schedules and first run read, from the real stores.
@@ -88,15 +90,17 @@ function build(): Slice {
     fatal: relay.fatal.get(),
   });
   const engine = engineOf(rows, status.result);
-  /* #885: "starting" is not a wait forever — a harness that never
-     registers or an engine that never reports would leave first run on
-     "Starting…" with no explanation. After ~20s still starting, `stuck`
-     names which leg holds it up and the problem screen stands in.
-     Re-evaluated on every poll; clears the moment the engine answers. */
+  /* #885: "starting" is not a wait forever, and a missing harness is not
+     instantly down — a launch agent registers after the first poll, so a
+     single down read stays "starting"; a degraded heartbeat does too.
+     `startGate` gives the helper ~20s, the engine itself ~90s, and marks
+     only a calm `slow` note between the two. Re-evaluated every poll;
+     both latches clear the moment their leg answers. */
+  harnessSeenDown = harnessDownStreak(rows, harnessSeenDown);
+  const harness = harnessOf(rows, harnessSeenDown);
   if (engine.state === "starting") {
     engineWaitingSince ??= now;
-    if (now - engineWaitingSince > 20_000)
-      engine.stuck = harnessOf(rows)?.state === "ok" ? "engine" : "harness";
+    startGate(engine, harness, now - engineWaitingSince);
   } else engineWaitingSince = undefined;
   const catalog = engineModels.get();
   const visibility = modelVisibility.get();
@@ -161,7 +165,7 @@ function build(): Slice {
         : {}),
       models: modelsOf(catalog, engineProviders.get(), visibility),
       engine,
-      harness: harnessOf(rows),
+      harness,
       relay: relayOf(rows),
       /* #885: About carries only the app's version; the build · relay ·
          harness line stays for Engine's Troubleshooting section. */
@@ -195,9 +199,11 @@ function build(): Slice {
   };
 }
 
-/* When the engine first read "starting"; reset the moment it resolves.
-   The 20s time-box lives in `build`, which re-runs on every status poll. */
+/* When the engine first read "starting" (reset the moment it resolves),
+   and how many polls in a row the harness read "down". The time-boxes
+   live in `build`, which re-runs on every status poll. */
 let engineWaitingSince: number | undefined;
+let harnessSeenDown = 0;
 
 const INITIAL: Slice = {
   settings: {

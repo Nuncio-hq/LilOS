@@ -28,8 +28,10 @@ export function V3Welcome({ data, go, act }: V3PageProps) {
   const problem = firstRunProblem(data);
   /* #885: a harness still coming up leaves the engine leg "starting"
      (blocked maps here) — Start waits as "Starting…" rather than racing a
-     save the engine cannot answer yet. */
-  const starting = data.settings.engine.state === "starting";
+     save the engine cannot answer yet. `slow` adds the calm note for a
+     start that is only taking a while, not failing. */
+  const engine = data.settings.engine;
+  const starting = engine.state === "starting";
 
   // Whether the engine asks to connect is fixed on arrival: approving it
   // must not make its own step vanish.
@@ -311,9 +313,15 @@ export function V3Welcome({ data, go, act }: V3PageProps) {
             </button>
           )}
           <span className="ml-auto flex items-center gap-2 text-[13px] text-muted-foreground">
-            {!problem && ready && !busy && !(last && starting) && (
+            {!problem && last && starting && engine.slow ? (
+              "Still starting — this can take a minute."
+            ) : (
               <>
-                Press <Kbd>↵</Kbd>
+                {!problem && ready && !busy && !(last && starting) && (
+                  <>
+                    Press <Kbd>↵</Kbd>
+                  </>
+                )}
               </>
             )}
           </span>

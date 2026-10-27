@@ -29,6 +29,7 @@ import type {
   V3Status,
   V3Thread,
 } from "../src/v3/v3-types";
+import { V3Welcome } from "../src/v3/v3-welcome";
 import { EngineProblem, firstRunProblem } from "../src/v3/v3-welcome-engine";
 
 afterEach(cleanup);
@@ -324,6 +325,47 @@ describe("first run", () => {
     expect(firstRunProblem(stuckEngine)).toBe(true);
     render(<EngineProblem data={stuckEngine} act={actions()} />);
     expect(screen.getByText(/engine hasn't answered yet/)).toBeTruthy();
+  });
+
+  test("a slow engine start shows the calm note, no problem screen (#885)", async () => {
+    const slow = data({
+      settings: {
+        engine: { state: "starting", name: "Hermes", slow: true },
+        harness: { state: "ok" },
+        relay: { state: "ok" },
+      },
+    } as never);
+    expect(firstRunProblem(slow)).toBe(false);
+    const { unmount } = render(
+      <V3Welcome data={slow} go={vi.fn()} act={actions()} />,
+    );
+    // To the last step: Start waits as "Starting…" with the note beside.
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByRole("button", { name: "Starting…" })).toBeTruthy();
+    expect(
+      screen.getByText("Still starting — this can take a minute."),
+    ).toBeTruthy();
+    expect(screen.queryByText(/quit LilOS/i)).toBeNull();
+    unmount();
+
+    // Recovery: the engine reports — note and wait clear, Start is live.
+    const ok = data({
+      settings: {
+        engine: { state: "ok", name: "Hermes" },
+        harness: { state: "ok" },
+        relay: { state: "ok" },
+      },
+    } as never);
+    render(<V3Welcome data={ok} go={vi.fn()} act={actions()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(
+      screen.queryByText("Still starting — this can take a minute."),
+    ).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Start", exact: true }),
+    ).toBeTruthy();
   });
 
   test("a healthy relay and engine never show the problem screen", () => {
