@@ -41,6 +41,7 @@ import type {
   EngineRequest,
   Usage,
 } from "@lilos/contracts/engine";
+import { autoTitle } from "@lilos/contracts/engine";
 
 /**
  * Retired system notes dropped on read (#196): the "No folder: working in
@@ -872,23 +873,11 @@ export function newId(prefix: string): string {
 
 /**
  * The name a conversation wears before the engine titles it (#137 AC-3):
- * the first ~6 words / ~60 chars of the first message — the same rule
- * Synara uses — or `Image` for an image-only send. Collapses whitespace so
- * multi-line pastes read as one line.
+ * the first full sentence of the first message, ≤ ~60 chars — the shared
+ * `autoTitle` rule (#886) — or `Image` for an image-only send.
  */
 function placeholderTitle(text: string, hasAttachments: boolean): string {
-  const clean = text.replace(/\s+/g, " ").trim();
-  if (!clean) return hasAttachments ? "Image" : "";
-  const words = clean.split(" ");
-  let title = words.slice(0, 6).join(" ");
-  if (title.length > 60) {
-    // Over-long first words: cut under 60 chars at a word boundary.
-    const cut = title.slice(0, 59);
-    const boundary = cut.lastIndexOf(" ");
-    title = boundary > 0 ? cut.slice(0, boundary) : cut;
-    return `${title}…`;
-  }
-  return words.length > 6 ? `${title}…` : title;
+  return autoTitle(text) || (hasAttachments ? "Image" : "");
 }
 
 /** Resolve the title + provenance for a new conversation (#137). */

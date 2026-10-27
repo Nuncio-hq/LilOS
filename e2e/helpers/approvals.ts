@@ -86,3 +86,24 @@ export async function allowAllWhile(page: Page, until: Promise<unknown>) {
   }
   await until;
 }
+
+/**
+ * Set access through the pill's real menu (#886): open it, pick the option
+ * — Full confirms once ("Agents run tools without asking in this thread")
+ * before it applies; a single click never switches it. `pill` defaults to
+ * the thread composer's; pass the draft's own pill for new-chat specs.
+ */
+export async function setAccess(
+  page: Page,
+  to: "ask" | "full",
+  pill: Locator = page.locator('[data-thread-panel] [data-slot="access-pill"]'),
+) {
+  await pill.click();
+  await page.locator(`[data-access-option="${to}"]`).click();
+  if (to === "full") {
+    // First grant on this profile: the one-time confirm stands in.
+    const confirm = page.locator("[data-access-confirm]");
+    if (await confirm.isVisible()) await confirm.click();
+  }
+  await expect(pill).toHaveAttribute("data-access", to);
+}

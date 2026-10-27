@@ -516,7 +516,10 @@ export async function bootStack(
   const home =
     opts.home ?? mkdtempSync(path.join(tmpdir(), `lilos-e2e-${tag}-`));
   const dropHome = () => {
-    if (ownsHome) rmSync(home, { recursive: true, force: true });
+    /* A still-dying child can write between rm's readdir and its unlink —
+       ENOTEMPTY. rmSync's own retry rides that out (force only covers
+       ENOENT). */
+    if (ownsHome) rmSync(home, { recursive: true, force: true, maxRetries: 5 });
   };
   const leakTag = engineTag(tag);
   let spawned: ChildProcess | undefined;

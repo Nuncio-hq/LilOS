@@ -294,8 +294,9 @@ for (const s of SIZES) {
       );
       const nudge = await sendTurn(page, "Add a changelog note");
       await allowAllWhile(page, expectSettled(nudge));
-      /* The PR is named once: the work strip's PR tab while the panel is
-         hidden, the panel's own PR tab once it is open — no header chip. */
+      /* The PR is named once: the ⋯ menu's PR row while the panel is
+         hidden (#886), the panel's own PR tab once it is open — no header
+         chip. */
       const prEntry = page.locator(
         '[data-work-tab="pr"]:visible, [data-wb-tab="pr"]:visible',
       );

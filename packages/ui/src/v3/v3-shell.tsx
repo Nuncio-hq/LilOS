@@ -179,6 +179,25 @@ export function V3Shell({
     () => setHidden(!hidden),
     [hidden, setHidden],
   );
+  /* #886: under ~700px of window the sidebar can't afford its dock — it
+     collapses behind the ☰ (which pops it over the page rather than
+     docking it back). Widening re-docks a sidebar the auto-hide put away,
+     but a sidebar the user hid stays hid. */
+  const narrow = frameW > 0 && frameW < 700;
+  const autoHid = useRef(false);
+  const wasNarrow = useRef<boolean | undefined>(undefined);
+  useEffect(() => {
+    const crossed = wasNarrow.current !== narrow;
+    wasNarrow.current = narrow;
+    if (!crossed || frameW === 0) return;
+    if (narrow && !hidden) {
+      setHidden(true);
+      autoHid.current = true;
+    } else if (!narrow && autoHid.current && hidden) {
+      setHidden(false);
+      autoHid.current = false;
+    }
+  }, [narrow, frameW, hidden, setHidden]);
   // The desktop View menu's ⌘\ arrives as a request, like ⌘K's.
   const lastSidebar = useRef(sidebarRequest);
   useEffect(() => {
@@ -332,9 +351,14 @@ export function V3Shell({
     </ConversationReflowKey.Provider>
   );
   /* A hidden sidebar leaves its toggle and Search in the toolbar, leading the
-     leftmost segment: the page's, or the peek's once it covers the page. */
+     leftmost segment: the page's, or the peek's once it covers the page.
+     Narrow, the ☰ pops the sidebar over the page instead of docking it
+     back into a window too small for it (#886). */
   const shortcuts = hidden ? (
-    <SidebarShortcuts onShow={toggleSidebar} onSearch={() => setPalette("")} />
+    <SidebarShortcuts
+      onShow={narrow ? pop.show : toggleSidebar}
+      onSearch={() => setPalette("")}
+    />
   ) : undefined;
   /* First run owns the whole window: nothing to navigate yet. The Mac app has
      no title bar (D-#232), so this strip is what the window is moved by and

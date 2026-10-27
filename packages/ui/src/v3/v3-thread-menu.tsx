@@ -20,6 +20,8 @@ import {
   useState,
 } from "react";
 import { cn } from "../lib/utils";
+import { type HeaderTab, WORK_TAB_ICON } from "../thread/work-strip";
+import type { WbTab } from "../types";
 import { Btn } from "./v3-bits";
 import { EscLayer, useMenu } from "./v3-keys";
 
@@ -28,7 +30,10 @@ import { EscLayer, useMenu } from "./v3-keys";
    the items the app can do (`act.pinThread` and friends); with none there
    is no menu at all. Snooze and Auto-settle drill into their own pane
    inside the same menu, so the whole thing still works at phone width.
-   Every row on Threads and the thread's own header use the same pair. */
+   Every row on Threads and the thread's own header use the same pair.
+   In a thread's header the menu also holds what the icon strip used to be
+   (#886): the thread's other work surfaces, labeled, and the context
+   meter — passed in as `work`/`meter` since only the frame knows them. */
 
 const ITEM =
   "flex w-full items-center gap-2 px-3 py-1.5 text-left text-foreground outline-none hover:bg-[var(--v3-hover)] focus-visible:bg-[var(--v3-hover)] [&_svg]:size-3.5 [&_svg]:text-muted-foreground";
@@ -217,6 +222,8 @@ export function ThreadMenu({
   onRename,
   onArchive,
   park,
+  work,
+  meter,
   quiet,
   className,
   triggerRef,
@@ -227,6 +234,11 @@ export function ThreadMenu({
   onRename?: () => void;
   onArchive?: () => void;
   park?: ThreadPark;
+  /** The thread's work surfaces minus Changes — the header's icons moved in
+      here, labeled (#886). `onOpen` opens one beside the chat. */
+  work?: { tabs: HeaderTab[]; onOpen: (t: WbTab) => void };
+  /** The context meter's menu row (the frame builds it — SessionUsage). */
+  meter?: ReactNode;
   /** For a caller that puts the keyboard back on the ⋯ button itself (after
       renaming in place). */
   triggerRef?: RefObject<HTMLButtonElement | null>;
@@ -248,7 +260,8 @@ export function ThreadMenu({
     (!archived &&
       (park?.onPin || park?.onSnooze || (asleep && park?.onWake))) ||
     park?.onAutoSettle !== undefined;
-  if (!onRename && !onArchive && !hasPark) return null;
+  const hasWork = !!work?.tabs.length || !!meter;
+  if (!onRename && !onArchive && !hasPark && !hasWork) return null;
 
   const pick = (run: () => void) => () => {
     setOpen(false);
@@ -295,6 +308,36 @@ export function ThreadMenu({
         >
           {view === "main" && (
             <>
+              {/* The header's old icon strip and the % meter, as labeled
+                  rows (#886) — first, because they came from the header. */}
+              {work?.tabs.length ? (
+                <div data-work-strip>
+                  {work.tabs.map((t) => {
+                    const Icon = WORK_TAB_ICON[t.id];
+                    return (
+                      <button
+                        key={t.id}
+                        type="button"
+                        role="menuitem"
+                        data-work-tab={t.id}
+                        title={`Open ${t.label} beside the chat`}
+                        onClick={pick(() => work.onOpen(t.id))}
+                        className={ITEM}
+                      >
+                        {t.icon ?? <Icon />}
+                        <span className="flex-1">{t.label}</span>
+                        {t.meta && (
+                          <span className="text-[12.5px] text-muted-foreground">
+                            {t.meta}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
+              {meter}
+              {hasWork && (hasPark || onRename || onArchive) && <Divider />}
               {!archived && parkActions?.onPin && (
                 <button
                   type="button"
@@ -515,6 +558,8 @@ export function useRenameMenu({
   onRename,
   onArchive,
   park,
+  work,
+  meter,
 }: {
   title: string;
   archived?: boolean;
@@ -524,6 +569,10 @@ export function useRenameMenu({
   onRename?: (title: string) => void;
   onArchive?: (archived: boolean) => void;
   park?: ThreadPark;
+  /** The header's labeled work surfaces + context meter, listed in the menu
+      (#886) — a thread header passes them; a list row leaves them out. */
+  work?: { tabs: HeaderTab[]; onOpen: (t: WbTab) => void };
+  meter?: ReactNode;
 }): { input: ReactNode | undefined; menu: ReactNode | undefined } {
   const [editing, setEditing] = useState(false);
   // Renaming comes from the ⋯ menu: finishing by key puts the keyboard back on
@@ -542,7 +591,7 @@ export function useRenameMenu({
       />
     ) : undefined;
   const menu =
-    onRename || onArchive || park ? (
+    onRename || onArchive || park || work?.tabs.length || meter ? (
       <ThreadMenu
         triggerRef={trigger}
         quiet={quiet}
@@ -550,6 +599,8 @@ export function useRenameMenu({
         onRename={onRename ? () => setEditing(true) : undefined}
         onArchive={onArchive ? () => onArchive(!archived) : undefined}
         park={park}
+        work={work}
+        meter={meter}
       />
     ) : undefined;
   return { input, menu };

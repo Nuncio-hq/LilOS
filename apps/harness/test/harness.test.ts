@@ -1999,7 +1999,10 @@ describe("auto titles (#137)", () => {
         channelId: channel.id,
         text: "Tell me about the layout of this repo please",
       });
-      expect(conversation.title).toBe("Tell me about the layout of…");
+      // First full sentence ≤ ~60 chars (#886): this message is one sentence.
+      expect(conversation.title).toBe(
+        "Tell me about the layout of this repo please",
+      );
 
       // The turn completes; no engine title may ever write.
       await waitFor(async () => {
@@ -2008,7 +2011,7 @@ describe("auto titles (#137)", () => {
       }, "turn completes");
       const conv = await convById(w.user, conversation.id);
       expect(conv).toMatchObject({
-        title: "Tell me about the layout of…",
+        title: "Tell me about the layout of this repo please",
         titleSource: "auto",
       });
     } finally {

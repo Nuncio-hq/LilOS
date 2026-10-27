@@ -36,23 +36,6 @@ export function FocusHeader({
 }) {
   const { root, thread, channel, work, running, onStart, threadStatus } = p;
   const isDM = !!channel.dm;
-  const { input: titleInput, menu: threadMenu } = useRenameMenu({
-    title: thread.title || plain(root.text),
-    inputClassName: "h-8 [font-size:20px]",
-    archived: thread.archived,
-    onRename: p.onRename,
-    onArchive: p.onArchive,
-  });
-  const folderMenu = useFolderMenu({
-    thread,
-    host: p.host,
-    editors: p.editors,
-    onOpenPath: p.onOpenPath,
-    say: p.say,
-  });
-  /* #583 AC-3: background processes still running under this thread. */
-  const runningJobs =
-    thread.jobs?.filter((j) => j.status === "running").length ?? 0;
   const { replies, pr, jobs } = thread;
   const prPending = pr?.checks.some((c) => c.status === "pending");
   const stripTabs = useMemo(
@@ -67,6 +50,44 @@ export function FocusHeader({
       ),
     [replies, pr, jobs, thread.ws, work?.path, p.browser, prPending],
   );
+  /* #886: Changes is the header's one named surface (while files changed);
+     the other tabs and the context meter are labeled rows inside ⋯. Work
+     items list only while the Workbench is closed — open, the panel's own
+     tab row is the way in. */
+  const changesTab = stripTabs.find((t) => t.id === "changes");
+  const menuTabs = stripTabs.filter((t) => t.id !== "changes");
+  const { input: titleInput, menu: threadMenu } = useRenameMenu({
+    title: thread.title || plain(root.text),
+    inputClassName: "h-8 [font-size:20px]",
+    archived: thread.archived,
+    onRename: p.onRename,
+    onArchive: p.onArchive,
+    work:
+      stripOpen && menuTabs.length
+        ? { tabs: menuTabs, onOpen: onOpenTab }
+        : undefined,
+    meter: thread.usage ? (
+      <SessionUsage
+        menuRow
+        usage={thread.usage}
+        model={model}
+        models={p.models}
+        onCompact={p.onCompact}
+        compactDisabled={running}
+        onContinue={p.onContinue}
+      />
+    ) : undefined,
+  });
+  const folderMenu = useFolderMenu({
+    thread,
+    host: p.host,
+    editors: p.editors,
+    onOpenPath: p.onOpenPath,
+    say: p.say,
+  });
+  /* #583 AC-3: background processes still running under this thread. */
+  const runningJobs =
+    thread.jobs?.filter((j) => j.status === "running").length ?? 0;
   return (
     <ThreadHeader
       session
@@ -99,17 +120,10 @@ export function FocusHeader({
           )}
         </>
       }
-      meter={
-        thread.usage ? (
-          <SessionUsage
-            usage={thread.usage}
-            model={model}
-            models={p.models}
-            onCompact={p.onCompact}
-            compactDisabled={running}
-            onContinue={p.onContinue}
-          />
-        ) : undefined
+      changes={
+        stripOpen && changesTab?.meta
+          ? { n: changesTab.meta, onOpen: () => onOpenTab("changes") }
+          : undefined
       }
       start={
         !work && !isDM && onStart ? (
@@ -118,9 +132,8 @@ export function FocusHeader({
       }
       menu={threadMenu}
       /* #579: no "Open PR" button — asking the employee IS the way to open
-         one. A session that has a PR shows it once, as the strip's PR tab
+         one. A session that has a PR shows it once, as the ⋯ menu's PR row
          (state in its label), and the panel's own PR tab once open. */
-      strip={stripOpen ? { tabs: stripTabs, onOpen: onOpenTab } : undefined}
     />
   );
 }

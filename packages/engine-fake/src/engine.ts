@@ -17,6 +17,7 @@ import {
   type ApprovalOutcome,
   type ApprovalPolicy,
   type ApprovalsSetPolicyParams,
+  autoTitle,
   BACKGROUND_JOBS_CAPABILITY,
   type Capability,
   COMMANDS_CAPABILITY,
@@ -2534,24 +2535,15 @@ function applyFakeDiffToCwd(cwd: string, diff: FileDiff) {
   }
 }
 
-/** Instant-title rule: first line, whitespace-collapsed, ≤48 chars. */
-const MAX_DERIVED_TITLE_CHARS = 48;
-
-function derivedTitle(promptText: string): string {
-  const clean = promptText.split("\n")[0].replace(/\s+/g, " ").trim();
-  if (clean.length <= MAX_DERIVED_TITLE_CHARS) return clean;
-  return `${clean.slice(0, MAX_DERIVED_TITLE_CHARS - 1).trimEnd()}…`;
-}
+/** Instant title: the shared first-full-sentence rule (#886). */
+const derivedTitle = autoTitle;
 
 /** Deterministic stand-in for the small-model rewrite: Title Case the
-    first clause (up to 8 words), so it always differs from `derived`. */
+    sentence the derived rule picked, so it always differs from `derived`. */
 function llmTitle(promptText: string): string {
-  const clause = (promptText.split(/[:;.!\n]/)[0] ?? "")
-    .replace(/\s+/g, " ")
-    .trim();
-  return clause
+  return autoTitle(promptText)
+    .replace(/…$/, "")
     .split(" ")
-    .slice(0, 8)
     .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w))
     .join(" ");
 }

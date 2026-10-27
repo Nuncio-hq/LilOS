@@ -299,7 +299,7 @@ export function ChatDraft({
         label={
           <>
             <AgentAvatar data={data} agent={agent} size={16} />
-            <span className="truncate">{agent.name}</span>
+            <span className="truncate @max-[480px]:hidden">{agent.name}</span>
           </>
         }
         options={[
@@ -355,7 +355,6 @@ export function ChatDraft({
       <ProjectChip
         projects={data.projects}
         project={project}
-        folder={project && data.folders?.find((f) => f.path === project.folder)}
         onPick={setProject}
         onNew={act.newProject && (() => act.newProject?.(setProject))}
       />

@@ -58,14 +58,13 @@ describe("issue #583 waitingComposer", () => {
   test("AC-1 an approval/plan wait says 'waiting for your approval…', never 'working'", () => {
     for (const kind of ["approval", "plan", undefined] as const) {
       const w = waitingComposer("Default", kind);
-      expect(w.placeholder).toContain("Default is waiting for your approval");
-      expect(w.placeholder).not.toMatch(/working/i);
-      expect(w.hint).not.toMatch(/working/i);
+      expect(w).toContain("Default is waiting for your approval");
+      expect(w).not.toMatch(/working/i);
     }
   });
   test("AC-1 a question wait says 'waiting for your answer…'", () => {
     const w = waitingComposer("Default", "question");
-    expect(w.placeholder).toContain("waiting for your answer");
+    expect(w).toContain("waiting for your answer");
   });
 });
 

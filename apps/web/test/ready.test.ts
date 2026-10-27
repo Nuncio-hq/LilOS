@@ -123,6 +123,10 @@ describe("PORT_SLICE (#825)", () => {
       0,
     );
     expect(workerIndex({ VITEST_POOL_ID: "3" })).toBe(3);
+    /* LILOS_PORT_SHIFT slides a run's whole band off a sibling's slices. */
+    expect(
+      workerIndex({ TEST_PARALLEL_INDEX: "1", LILOS_PORT_SHIFT: "6" }),
+    ).toBe(7);
   });
 
   it("falls back to the probe band when no runner index is set", async () => {

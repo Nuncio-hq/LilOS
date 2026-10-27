@@ -17,7 +17,7 @@ import { cn } from "../lib/utils";
 import { Kbd } from "./v3-bits";
 import type { V3Data } from "./v3-data-types";
 import { AgentAvatar, CeoMark, ProjectMark, StatusDot } from "./v3-marks";
-import { agentDot, boardStatus, companyOn, listedThreads } from "./v3-model";
+import { agentDot, companyOn } from "./v3-model";
 import { isRecordRoute } from "./v3-nav";
 import type { V3RecordRoute, V3Route } from "./v3-page-types";
 import { type SidebarMode, SidebarToggle } from "./v3-topbar";
@@ -69,13 +69,6 @@ export function V3Sidebar({
   onBlur: () => void;
 }) {
   const open = data.tickets.filter((t) => t.status !== "done").length;
-  /* The badge counts threads in play, not the board — a finished-unseen
-     thread stays on the board (D-#563) but does not badge. Helpers have no
-     row (D-#847); a parent waiting on them counts as working. */
-  const live = listedThreads(data.threads).filter((t) => {
-    const s = boardStatus(data, t);
-    return s !== "done" && s !== "idle";
-  }).length;
   /* A bare page lights its own entry; a record lights it when it IS the
      page (the sidebar went to it) or sits on top of the peek. */
   const on = (p: V3Route["page"], id?: string) =>
@@ -164,12 +157,14 @@ export function V3Sidebar({
             right={<Count n={open} />}
           />
         )}
+        {/* No number here (#886): the entry is a door to the Threads page,
+            not a count — Needs you keeps its badge because it asks for
+            action. */}
         <Item
           icon={<LayersIcon />}
           label="Threads"
           on={on("threads")}
           onClick={() => go({ page: "threads" })}
-          right={<Count n={live} />}
         />
         {/* No thread list here (#862 feedback): the sidebar stays the
             table of contents — the sectioned list lives on the Threads

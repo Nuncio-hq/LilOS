@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import {
   Context,
   ContextContent,
+  ContextIcon,
   ContextTrigger,
 } from "../components/ai-elements/context";
 import {
@@ -35,6 +36,7 @@ export function SessionUsage({
   onCompact,
   compactDisabled,
   onContinue,
+  menuRow,
 }: {
   usage: Usage;
   /* Engine declared `compact` — the meter's Compact now action. Absent =
@@ -51,6 +53,9 @@ export function SessionUsage({
   model?: string;
   /** Catalog to resolve the display name + a reported context window. */
   models?: ModelOption[];
+  /** Inside the header's ⋯ menu (#886): the trigger is a labeled menu row
+      ("Context · 3.5%") instead of the bare ring+percent button. */
+  menuRow?: boolean;
 }) {
   /* The numerator is the engine's CURRENT occupancy when it reports one
      (#415) — `input`/`output` are lifetime sums that outgrow the window. */
@@ -115,22 +120,57 @@ export function SessionUsage({
   return (
     <Context usedTokens={used} maxTokens={max} usage={u} onOpenChange={setOpen}>
       {/* #590 AC-3: the bare "3.5%" gets a real name — hover reads
-          "Context used: 3.5% of 262k", not an unexplained number. */}
-      <ContextTrigger
-        size="sm"
-        className="h-7 px-1.5 text-xs"
-        title={
-          full
-            ? "Context window full"
-            : `Context used: ${pct(used, max)} of ${n(max)}`
-        }
-        aria-label={
-          full
-            ? "Context window full"
-            : `Context used: ${pct(used, max)} of ${n(max)}`
-        }
-      />
-      <ContextContent className="w-80 divide-y-0 rounded-2xl p-0">
+          "Context used: 3.5% of 262k", not an unexplained number. #886:
+          inside the ⋯ menu it is a labeled row. */}
+      {menuRow ? (
+        <ContextTrigger>
+          <button
+            type="button"
+            role="menuitem"
+            title={
+              full
+                ? "Context window full"
+                : `Context used: ${pct(used, max)} of ${n(max)}`
+            }
+            aria-label={
+              full
+                ? "Context window full"
+                : `Context used: ${pct(used, max)} of ${n(max)}`
+            }
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13.5px] text-foreground outline-none hover:bg-[var(--v3-hover)] focus-visible:bg-[var(--v3-hover)]"
+          >
+            <ContextIcon />
+            <span className="flex-1">Context</span>
+            <span className="text-[12.5px] text-muted-foreground tabular-nums">
+              {full
+                ? "Full"
+                : /* The same one-decimal read the bare trigger showed. */
+                  new Intl.NumberFormat("en-US", {
+                    style: "percent",
+                    maximumFractionDigits: 1,
+                  }).format(max ? used / max : 0)}
+            </span>
+          </button>
+        </ContextTrigger>
+      ) : (
+        <ContextTrigger
+          size="sm"
+          className="h-7 px-1.5 text-xs"
+          title={
+            full
+              ? "Context window full"
+              : `Context used: ${pct(used, max)} of ${n(max)}`
+          }
+          aria-label={
+            full
+              ? "Context window full"
+              : `Context used: ${pct(used, max)} of ${n(max)}`
+          }
+        />
+      )}
+      {/* `data-keepopen` keeps the ⋯ menu this lives in from closing when a
+          press lands inside this portaled card (#886). */}
+      <ContextContent data-keepopen className="w-80 divide-y-0 rounded-2xl p-0">
         <div className="space-y-3 p-4" data-context-panel>
           <div className="flex items-baseline justify-between gap-3">
             <span className="font-semibold text-[13px]">Context window</span>

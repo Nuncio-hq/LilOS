@@ -5,6 +5,7 @@ import {
   type AgentsDescribeParams,
   type AgentsUpdateParams,
   type ApprovalOutcome,
+  autoTitle,
   type DescribeResult,
   ENGINE_METHODS,
   ENGINE_PROTOCOL,
@@ -1259,12 +1260,8 @@ function firstText(content: Parameters<typeof toAcpContent>[0][]): string {
   return t?.text ?? "";
 }
 
-/** Verbatim first clause (up to 8 words) — the derived title. */
-function derivedTitle(promptText: string): string {
-  const line = promptText.trim().split("\n")[0].trim();
-  const words = line.split(/\s+/).filter(Boolean).slice(0, 8);
-  return words.join(" ");
-}
+/** First full sentence — the shared derived-title rule (#886). */
+const derivedTitle = autoTitle;
 
 /** The non-fast value of a fast-tier config option (boolean "false", else
     the first choice that isn't the fast value). */

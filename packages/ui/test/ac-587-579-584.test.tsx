@@ -8,7 +8,7 @@ import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { FocusView } from "../src/focus/focus-view";
 import { setDraft } from "../src/lib/drafts";
-import { WorkStrip, workTabs } from "../src/thread/work-strip";
+import { workTabs } from "../src/thread/work-strip";
 import type {
   Channel,
   EmpFn,
@@ -343,19 +343,15 @@ describe("#579 one way to a PR", () => {
     expect(withPr.container.textContent).not.toContain("Open PR");
     expect(withPr.container.querySelector("[data-prchip]")).toBeNull();
     withPr.unmount();
+    /* #886: the strip's old icon row is a set of labeled rows inside the
+       header's ⋯ menu — `workTabs` is the one list both surfaces drew
+       from, so one `pr` entry here is the PR named once. */
     const opts = { folder: false, browser: false };
-    const strip = render(
-      <WorkStrip tabs={workTabs({ ...THREAD, pr }, opts)} onOpen={() => {}} />,
-    );
-    const tabs = strip.container.querySelectorAll('[data-work-tab="pr"]');
+    const tabs = workTabs({ ...THREAD, pr }, opts).filter((t) => t.id === "pr");
     expect(tabs).toHaveLength(1);
     // The number and the state — what the header chip used to say.
-    expect(tabs[0]?.textContent).toContain("#12 · ready");
-    strip.unmount();
-    const without = render(
-      <WorkStrip tabs={workTabs(THREAD, opts)} onOpen={() => {}} />,
-    );
-    expect(without.container.querySelector('[data-work-tab="pr"]')).toBeNull();
+    expect(tabs[0]?.meta).toContain("#12 · ready");
+    expect(workTabs(THREAD, opts).find((t) => t.id === "pr")).toBeUndefined();
   });
 
   test("AC-2 ship errors name a next step the user can take — never a command", () => {

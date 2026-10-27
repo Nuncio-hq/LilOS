@@ -141,13 +141,18 @@ export function Composer({
   const who = (
     <>
       <AgentAvatar data={data} agent={agent} size={16} />
-      <span className="truncate">{agent.name}</span>
+      <span className="truncate @max-[480px]:hidden">{agent.name}</span>
       {agent.id === data.ceoId && <CeoMark />}
     </>
   );
 
+  /* `@container`: the chips' labels step aside for icons when the box is
+     narrow (#886) — the row never wraps. `z-10`: the container-type makes
+     this a stacking context at the page's base level, and the chips' menus
+     open UPWARD out of the box — without a lift, later siblings (the
+     draft's starters row) cover them and swallow the clicks. */
   return (
-    <div ref={menus.wrapRef} data-composer className="relative">
+    <div ref={menus.wrapRef} data-composer className="@container relative z-10">
       <MentionPopup
         menus={menus}
         employees={people ?? []}
@@ -201,7 +206,12 @@ export function Composer({
         />
         <div className="mt-2 flex items-center gap-1">
           {attach && <AttachButton attach={attach} />}
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-0.5 gap-y-1">
+          {/* #886: one row, never two — chip labels hide for icons under
+              `@max-[480px]`; `min-w-0` lets the flex row shrink chips to
+              their icons instead of wrapping. No overflow clip here:
+              ChipMenu's list opens upward out of the row, and even
+              `overflow-x: clip` eats its hit area where it sticks out. */}
+          <div className="flex min-w-0 flex-1 items-center gap-0.5">
             {chips ?? (
               <>
                 {onAgent ? (
@@ -239,7 +249,7 @@ export function Composer({
               </>
             )}
           </div>
-          <Kbd className="shrink-0">⌘↵</Kbd>
+          <Kbd className="shrink-0 @max-[560px]:hidden">⌘↵</Kbd>
           <button
             type="button"
             disabled={!sendable}

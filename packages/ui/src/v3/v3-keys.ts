@@ -80,6 +80,10 @@ export function useMenu(triggerRef?: RefObject<HTMLButtonElement | null>) {
       const at = e.target as Node | null;
       if (at && (list.current?.contains(at) || trigger.current?.contains(at)))
         return;
+      /* A portaled popup a menu row opened (the context meter's card,
+         #886) is outside `list` but still part of the row — a press there
+         must not close the menu and unmount the card mid-click. */
+      if ((at as Element | null)?.closest?.("[data-keepopen]")) return;
       setOpen(false);
     };
     document.addEventListener("pointerdown", onDown, true);

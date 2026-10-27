@@ -15,11 +15,13 @@ import {
  * shots (#423's ac1/ac2 screenshots): the capsule's `transition-colors` fades
  * `background-color` across the theme flip, so anything captured in the
  * ~150ms window sees the near-opaque light glass over the dark field and the
- * "Medium" chip label, "Enter steers · ⌘. stop" hint and placeholder sit on it
- * at ~1.3:1. The fix: the capsule's fill snaps to the theme token instead of
- * fading (theme.css — transition-property minus background-color).
+ * "Medium" chip label and placeholder sit on it at ~1.3:1. The fix: the
+ * capsule's fill snaps to the theme token instead of fading (theme.css —
+ * transition-property minus background-color). #886 later dropped the
+ * visible key hint — the placeholder and the chip labels are what remain
+ * to measure.
  *
- *   AC-2 the placeholder, the hint and the chip label hold WCAG AA 4.5:1 on
+ *   AC-2 the placeholder and the chip label hold WCAG AA 4.5:1 on
  *      the capsule in dark mode, measured like ac-374 (canvas-normalised
  *      computed colours, ink composited over the effective background);
  *      light mode is pinned to its exact palette. The capsule fill itself is
@@ -44,7 +46,6 @@ const NO_FILL = "rgba(0, 0, 0, 0)";
 
 const CHECKS = [
   { name: "placeholder", sel: `${CAPSULE} textarea`, pseudo: "::placeholder" },
-  { name: "hint", sel: `${CAPSULE} .lilos-hint` },
   {
     name: "chip name",
     sel: `${CAPSULE} [data-slot="model-picker-trigger"] span`,
@@ -179,14 +180,13 @@ async function runningFocus(page: Page) {
   await expect(page.getByRole("button", { name: "Stop (⌘.)" })).toBeVisible({
     timeout: 30_000,
   });
-  /* The issue's exact state: the steer placeholder and the running hint. */
+  /* The issue's exact state: the steer placeholder. The hint that sat
+     beside it went away with #886 — the keys still do it. */
   await expect(page.locator(`${CAPSULE} textarea`)).toHaveAttribute(
     "placeholder",
     /it reads this at the next step/,
   );
-  await expect(page.locator(`${CAPSULE} .lilos-hint`)).toHaveText(
-    "Enter steers · ⌘. stop",
-  );
+  await expect(page.locator(`${CAPSULE} .lilos-hint`)).toHaveCount(0);
   /* The chip is one of the measured surfaces — wait for the catalog, don't
      measure while it's still loading. */
   await expect(
@@ -242,7 +242,6 @@ test("AC-2 placeholder, hint and chip label hold 4.5:1 in dark; light stays byte
     ).toBe(`${rgb[0]},${rgb[1]},${rgb[2]}`);
   };
   pin("placeholder", [134, 134, 139]);
-  pin("hint", [134, 134, 139]);
   /* The v3 chips are the quiet muted ink — the prototype's 12.5px row —
      so the name and the effort read the same grey as the placeholder. */
   pin("chip name", [134, 134, 139]);

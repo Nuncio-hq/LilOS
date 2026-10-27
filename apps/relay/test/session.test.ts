@@ -976,12 +976,12 @@ describe("auto titles + provenance (#137)", () => {
     const { frames, connection } = await helloed(relay);
     const { channel } = await setupChannel(frames, connection);
 
-    // First ~6 words, ellipsis when the message runs on.
+    // First full sentence ≤ ~60 chars (#886): this message is one sentence.
     const c1 = await openConv(frames, connection, {
       channelId: channel.id,
       text: "Fix the composer draft on reload please now",
     });
-    expect(c1.title).toBe("Fix the composer draft on reload…");
+    expect(c1.title).toBe("Fix the composer draft on reload please now");
     expect(c1.titleSource).toBe("auto");
 
     // A short message is its own title — no ellipsis.

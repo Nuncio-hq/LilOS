@@ -1,4 +1,4 @@
-import { MessageSquareIcon, PencilLineIcon } from "lucide-react";
+import { MessageSquareIcon } from "lucide-react";
 import { choiceFor, ModelPicker } from "../chat/model-picker";
 import type { ModelChoice } from "../types";
 import { ChipMenu } from "./v3-chip-menu";
@@ -17,103 +17,80 @@ export const NO_PROJECT = "";
 /** The menu row that asks for a folder and makes a project of it. */
 const NEW_PROJECT = "\u0000new-project";
 
+/* #886: the chip row holds only controls — the picked project (or "No
+   project"). Git facts used to sit beside it ("direct · no git", the
+   branch); they were labels, not controls, so they went away — the engine
+   still learns the folder's git state at send time. */
 export function ProjectChip({
   projects,
   project,
-  folder,
   onPick,
   onNew,
 }: {
   projects: V3Project[];
   /** The chosen project; absent = No project (just chat). */
   project?: V3Project;
-  /** What the app knows of the chosen project's folder (`data.folders`). */
-  folder?: NonNullable<V3Data["folders"]>[number];
   onPick: (projectId: string) => void;
   /** Asks for a folder and makes a project of it, then picks that project. */
   onNew?: () => void;
 }) {
   return (
-    <>
-      <ChipMenu
-        title={`Project · ${project ? project.folder : "none"}`}
-        value={project ? project.id : NO_PROJECT}
-        onPick={(id) => (id === NEW_PROJECT ? onNew?.() : onPick(id))}
-        label={
-          project ? (
+    <ChipMenu
+      title={`Project · ${project ? project.folder : "none"}`}
+      value={project ? project.id : NO_PROJECT}
+      onPick={(id) => (id === NEW_PROJECT ? onNew?.() : onPick(id))}
+      label={
+        project ? (
+          <>
+            <ProjectMark
+              name={project.name}
+              tone={project.tone}
+              className="size-4 text-[9px]"
+            />
+            <span className="truncate @max-[480px]:hidden">{project.name}</span>
+          </>
+        ) : (
+          <>
+            <MessageSquareIcon className="size-3.5 shrink-0" />
+            <span className="truncate @max-[480px]:hidden">No project</span>
+          </>
+        )
+      }
+      options={[
+        ...projects.map((p) => ({
+          id: p.id,
+          node: (
             <>
-              <ProjectMark
-                name={project.name}
-                tone={project.tone}
-                className="size-4 text-[9px]"
-              />
-              <span className="truncate">{project.name}</span>
+              <ProjectMark name={p.name} tone={p.tone} />
+              <span className="shrink-0">{p.name}</span>
+              <span className="truncate font-mono text-[12px] text-muted-foreground/70">
+                {p.folder}
+              </span>
             </>
-          ) : (
+          ),
+        })),
+        {
+          id: NO_PROJECT,
+          node: (
             <>
               <MessageSquareIcon className="size-3.5 shrink-0" />
-              <span className="truncate">No project</span>
+              <span className="truncate">No project · just chat</span>
             </>
-          )
-        }
-        options={[
-          ...projects.map((p) => ({
-            id: p.id,
-            node: (
-              <>
-                <ProjectMark name={p.name} tone={p.tone} />
-                <span className="shrink-0">{p.name}</span>
-                <span className="truncate font-mono text-[12px] text-muted-foreground/70">
-                  {p.folder}
-                </span>
-              </>
-            ),
-          })),
-          {
-            id: NO_PROJECT,
-            node: (
-              <>
-                <MessageSquareIcon className="size-3.5 shrink-0" />
-                <span className="truncate">No project · just chat</span>
-              </>
-            ),
-          },
-          ...(onNew
-            ? [
-                {
-                  id: NEW_PROJECT,
-                  action: true,
-                  node: (
-                    <span className="truncate">New project from a folder…</span>
-                  ),
-                },
-              ]
-            : []),
-        ]}
-      />
-      {/* What the folder gives the chat, in the quiet words the old picker
-          used: no git means edits land in the folder itself. */}
-      {folder?.branch === null && (
-        <span
-          title="Not a git repo: no branches or worktrees, edits land in the folder"
-          className="inline-flex h-6 items-center gap-1.5 px-1.5 text-[12.5px] text-muted-foreground"
-        >
-          <PencilLineIcon className="size-3.5 shrink-0" />
-          direct · no git
-        </span>
-      )}
-      {folder?.branch && (
-        <span
-          title="Direct mode: edits land on the checked-out branch"
-          className="inline-flex h-6 min-w-0 items-center gap-1.5 px-1.5 text-[12.5px] text-muted-foreground"
-        >
-          <PencilLineIcon className="size-3.5 shrink-0" />
-          <span className="min-w-0 truncate font-mono text-[12px]">
-            {folder.branch}
-          </span>
-        </span>
-      )}
-    </>
+          ),
+        },
+        ...(onNew
+          ? [
+              {
+                id: NEW_PROJECT,
+                action: true,
+                node: (
+                  <span className="truncate">New project from a folder…</span>
+                ),
+              },
+            ]
+          : []),
+      ]}
+    />
   );
 }
 
@@ -151,7 +128,7 @@ export function ModelChip({
         title="Model"
         value={label}
         onPick={onLabel}
-        label={<span className="truncate">{label}</span>}
+        label={<span className="truncate @max-[480px]:hidden">{label}</span>}
         options={data.modelChoices.map((m) => ({
           id: m,
           node: <span>{m}</span>,

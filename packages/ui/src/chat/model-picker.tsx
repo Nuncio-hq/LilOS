@@ -412,11 +412,17 @@ export function ModelPicker({
           }
         >
           <ModelLogo provider={cur?.provider} logo={logoOf(cur?.provider)} />
-          <span className="max-w-36 truncate">
+          {/* #886: a narrow box keeps the icon + menu affordance — the name
+              and effort step aside rather than wrap the row. */}
+          <span className="max-w-36 truncate @max-[480px]:hidden">
             {catalogModelName(value.model, merged, value.provider) ??
               value.model}
           </span>
-          {effort && <span data-effort>· {effortLabel(effort)}</span>}
+          {effort && (
+            <span data-effort className="@max-[480px]:hidden">
+              · {effortLabel(effort)}
+            </span>
+          )}
           {fast && (
             <ZapIcon
               aria-label="Fast"

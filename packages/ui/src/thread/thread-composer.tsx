@@ -55,11 +55,10 @@ type ComposerProps = Pick<
    panel and the session view hand it the same props, so `@` mentions, the `/`
    menu, attachments, the model picker, Stop (⌘.) and the queued/not-sent trays
    are the same surface wherever the thread is open. A frame adds only what is
-   its own: the line it shows when idle (`idleHint`), a reason the agent is
-   paused (`paused`), and a tray of its own above the others (`above`). */
+   its own: a reason the agent is paused (`paused`), and a tray of its own
+   above the others (`above`). */
 export function ThreadComposer({
   lead,
-  idleHint,
   paused,
   above,
   ...p
@@ -67,7 +66,6 @@ export function ThreadComposer({
   /** The thread's employee, if known — the composer names whose work it is
       and the model picker starts from their model. */
   lead?: Employee;
-  idleHint: string;
   /** Replaces the placeholder while something else holds the session (the
       human using its terminal). */
   paused?: string;
@@ -81,7 +79,7 @@ export function ThreadComposer({
      approval, plan) is WAITING, not working — the placeholder says what it
      waits on. A question ask also parks the composer itself (Send, not Stop —
      Hermes FIX #515); an approval/plan-parked turn is still interruptible and
-     steerable, so it keeps Stop (⌘.), steers and the running hint — only the
+     steerable, so it keeps Stop (⌘.) and steers — only the
      placeholder names the wait. */
   const waitingReply = thread.replies.find(
     (r) => r.live && r.phase === "waiting",
@@ -104,15 +102,14 @@ export function ThreadComposer({
         paused ??
         (running
           ? waiting
-            ? wait.placeholder
-            : run.placeholder
+            ? wait
+            : run
           : `Message ${leadName ?? "the employee"}…`)
       }
       employees={p.mentionables ?? []}
       onSearchFiles={p.onSearchFiles}
       onSearchCommands={p.onSearchCommands}
       onCommand={p.onCommand}
-      hint={running ? (parkedOnQuestion ? wait.hint : run.hint) : idleHint}
       onSend={p.onSend}
       draft={p.draft}
       onDraftChange={p.onDraftChange}

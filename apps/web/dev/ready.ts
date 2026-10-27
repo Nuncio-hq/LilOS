@@ -115,7 +115,11 @@ export const PORT_SLICE = {
 
 export type SliceUse = keyof typeof PORT_SLICE.offsets;
 
-/** Playwright's parallel index, else vitest's pool id, else no runner. */
+/** Playwright's parallel index, else vitest's pool id, else no runner.
+    `LILOS_PORT_SHIFT` slides the whole run's slice band: on a machine where
+    a sibling worktree's suite already holds the low slices, a run can dodge
+    it (`LILOS_PORT_SHIFT=6` sends workers 0,1 to slices 6,7) instead of
+    waiting the sibling out. */
 export function workerIndex(
   env: NodeJS.ProcessEnv = process.env,
 ): number | undefined {
@@ -127,7 +131,13 @@ export function workerIndex(
       `worker index ${JSON.stringify(raw)} is not a whole number >= 0`,
     );
   }
-  return n;
+  const shift = Number(env.LILOS_PORT_SHIFT ?? "0");
+  if (!Number.isInteger(shift) || shift < 0) {
+    throw new Error(
+      `LILOS_PORT_SHIFT ${JSON.stringify(env.LILOS_PORT_SHIFT)} is not a whole number >= 0`,
+    );
+  }
+  return n + shift;
 }
 
 /** `base + index * stride + offset`. Throws when the index does not fit. */
