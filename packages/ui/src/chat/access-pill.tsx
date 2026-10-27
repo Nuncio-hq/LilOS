@@ -107,9 +107,13 @@ export function AccessPill({
         ) : (
           <ShieldQuestionIcon className="size-3.5" />
         )}
-        {/* The label steps aside for the icon alone in a narrow box (#886). */}
+        {/* #886 narrow = icon + a short label, the same as the model and
+            effort dropdowns beside it. */}
         <span className="@max-[480px]:hidden">
           {full ? "Full access" : "Ask"}
+        </span>
+        <span className="hidden @max-[480px]:inline">
+          {full ? "Full" : "Ask"}
         </span>
         <ChevronDownIcon className="size-3 opacity-60" />
       </PopoverTrigger>

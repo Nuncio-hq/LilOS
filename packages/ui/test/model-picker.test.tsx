@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
-/* Model picker v2 (Codex-style): one popover with the reasoning slider, the
-   fast toggle and a "Model ›" drill-in list grouped by provider. Issue #30's
+/* Model picker (#886): two composer-row dropdowns — a searchable model
+   list grouped by provider, and a plain effort menu of the engine's own
+   levels. Issue #30's
    ACs still hold (engine list, pick reports the engine id, no picker without
    the capability); the rest pins the v2 behaviour agreed with the client. */
 import {
@@ -123,12 +124,35 @@ const trigger = () => {
 const open = async () => {
   await act(async () => fireEvent.click(trigger()));
 };
-const openModels = async () => {
-  await open();
-  const row = [...body().querySelectorAll("button")].find((b) =>
-    b.textContent?.includes("Model"),
+/* #886: the model trigger IS the list — one click lands on the search. */
+const openModels = open;
+const effortTrigger = () => {
+  const el = body().querySelector('[data-slot="effort-picker-trigger"]');
+  if (!el) throw new Error("no effort trigger");
+  return el as HTMLElement;
+};
+const openEffort = async () => {
+  /* The trigger toggles — open only when its menu isn't already. */
+  if (!body().querySelector('[aria-label="Reasoning levels"]'))
+    await act(async () => fireEvent.click(effortTrigger()));
+};
+const pickEffort = async (label: string) => {
+  const menu = body().querySelector('[aria-label="Reasoning levels"]');
+  if (!menu) throw new Error("no effort menu");
+  await act(async () =>
+    fireEvent.click(
+      within(menu as HTMLElement).getByRole("menuitemradio", { name: label }),
+    ),
   );
-  if (!row) throw new Error("no Model row");
+};
+/* Fast is a footer row in the model list now, not a button in the popover. */
+const fastRow = () =>
+  [...body().querySelectorAll("[cmdk-item]")].find((el) =>
+    el.textContent?.includes("Fast mode"),
+  ) as HTMLElement | undefined;
+const clickFast = async () => {
+  const row = fastRow();
+  if (!row) throw new Error("no Fast mode row");
   await act(async () => fireEvent.click(row));
 };
 
@@ -429,46 +453,52 @@ describe("model picker v2", () => {
        host (`/model` opens the picker). */
     await open();
     expect(opens).toEqual([true]);
-    expect(body().querySelector('input[type="range"]')).toBeNull();
+    expect(body().querySelector('[data-slot="popover-content"]')).toBeNull();
     await act(async () => r.rerender(view({ modelOpen: true })));
-    expect(body().querySelector('input[type="range"]')).not.toBeNull();
+    expect(
+      body().querySelector('[data-slot="popover-content"]'),
+    ).not.toBeNull();
   });
 
-  test("the slider has exactly the steps the engine reported for THIS model", async () => {
+  test("the effort dropdown lists exactly the levels the engine reported for THIS model", async () => {
     const { rerender } = render(<Harness />);
-    await open();
-    // No per-level tick buttons (Codex-style drag); the range input carries the ladder.
-    expect(body().querySelector('button[aria-label="Medium"]')).toBeNull();
-    const range = () => {
-      const el = body().querySelector(
-        'input[type="range"]',
-      ) as HTMLInputElement;
-      return [el.min, el.max, el.getAttribute("aria-valuetext")];
-    };
-    // gpt-test-5 reports 5 levels → 0..4, currently Medium.
-    expect(range()).toEqual(["0", "4", "Medium"]);
-    // Hermes' full ladder (engine couldn't say per model) → 7 steps.
+    await openEffort();
+    const levels = () =>
+      [
+        ...body().querySelectorAll(
+          '[aria-label="Reasoning levels"] [role="menuitemradio"]',
+        ),
+      ] as HTMLElement[];
+    // gpt-test-5 reports 5 levels, currently Medium.
+    expect(levels().map((b) => b.textContent?.trim())).toEqual([
+      "Low",
+      "Medium",
+      "High",
+      "Extra high",
+      "Max",
+    ]);
+    expect(
+      levels().find((b) => b.getAttribute("aria-checked") === "true")
+        ?.textContent,
+    ).toBe("Medium");
+    // Hermes' full ladder (engine couldn't say per model) → all 7. The
+    // menu stays open across the rerender.
     rerender(<Harness value={choiceFor("qwen", MODELS)} />);
-    expect(range()).toEqual(["0", "6", "Medium"]);
-    // No efforts → no slider at all.
+    expect(levels()).toHaveLength(7);
+    // No efforts → no effort chip at all.
     rerender(<Harness value={choiceFor("gpt-test-4o", MODELS)} />);
-    expect(body().querySelector('[role="slider"]')).toBeNull();
-    expect(body().textContent).toContain("no reasoning control");
+    expect(
+      body().querySelector('[data-slot="effort-picker-trigger"]'),
+    ).toBeNull();
   });
 
-  test("an effort step reports the pick; the trigger shows model · effort", async () => {
+  test("an effort pick reports the choice; the trigger shows model · effort", async () => {
     const picks: ModelChoice[] = [];
     render(<Harness picks={picks} />);
     expect(trigger().textContent).toContain("GPT test 5");
-    expect(trigger().textContent).toContain("Medium");
-    await open();
-    // Keyboard on the slider moves one level: Medium → High.
-    await act(async () =>
-      fireEvent.keyDown(
-        body().querySelector('input[type="range"]') as HTMLElement,
-        { key: "ArrowRight" },
-      ),
-    );
+    expect(effortTrigger().textContent).toContain("Medium");
+    await openEffort();
+    await pickEffort("High");
     expect(picks.at(-1)).toMatchObject({
       model: "gpt-test-5",
       effort: "high",
@@ -479,18 +509,17 @@ describe("model picker v2", () => {
     const picks: ModelChoice[] = [];
     const { rerender } = render(<Harness picks={picks} />);
     await open();
-    const fast = body().querySelector('button[aria-label="Fast mode"]');
-    expect(fast).toBeTruthy();
-    await act(async () => fireEvent.click(fast as HTMLElement));
+    expect(fastRow()).toBeTruthy();
+    await clickFast();
     expect(picks.at(-1)).toMatchObject({ model: "gpt-test-5", fast: true });
     rerender(<Harness value={choiceFor("qwen", MODELS)} />);
-    expect(body().querySelector('button[aria-label="Fast mode"]')).toBeNull();
+    expect(fastRow()).toBeUndefined();
   });
 
   /* #807: mid-turn pick. The model write echoes before Fast does. That
-     echo must not wipe the draft, or the next slider step composes from
+     echo must not wipe the draft, or the next effort pick composes from
      it and sends Fast back off. */
-  test("a model echo without Fast leaves the Fast draft for the next slider step", async () => {
+  test("a model echo without Fast leaves the Fast draft for the next effort pick", async () => {
     const picks: ModelChoice[] = [];
     const { rerender } = render(
       <Harness picks={picks} value={choiceFor("qwen", MODELS)} />,
@@ -504,11 +533,8 @@ describe("model picker v2", () => {
     await act(async () =>
       fireEvent.click(within(list()).getByText("GPT test 5")),
     );
-    await act(async () =>
-      fireEvent.click(
-        body().querySelector('button[aria-label="Fast mode"]') as HTMLElement,
-      ),
-    );
+    await open();
+    await clickFast();
     expect(picks.at(-1)).toMatchObject({ model: "gpt-test-5", fast: true });
     /* The model write's echo: gpt-test-5 landed, Fast has not. */
     await act(async () =>
@@ -516,12 +542,8 @@ describe("model picker v2", () => {
         <Harness picks={picks} value={choiceFor("gpt-test-5", MODELS)} />,
       ),
     );
-    await act(async () =>
-      fireEvent.keyDown(
-        body().querySelector('input[type="range"]') as HTMLElement,
-        { key: "ArrowRight" },
-      ),
-    );
+    await openEffort();
+    await pickEffort("High");
     expect(picks.at(-1)).toMatchObject({
       model: "gpt-test-5",
       effort: "high",
@@ -536,11 +558,7 @@ describe("model picker v2", () => {
     const picks: ModelChoice[] = [];
     const { rerender } = render(<Harness picks={picks} />);
     await open();
-    await act(async () =>
-      fireEvent.click(
-        body().querySelector('button[aria-label="Fast mode"]') as HTMLElement,
-      ),
-    );
+    await clickFast();
     expect(picks.at(-1)).toMatchObject({ fast: true });
     expect(body().querySelector('[aria-label="Fast"]')).toBeTruthy();
     await act(async () =>
@@ -552,27 +570,18 @@ describe("model picker v2", () => {
       ),
     );
     expect(body().querySelector('[aria-label="Fast"]')).toBeNull();
-    await act(async () =>
-      fireEvent.keyDown(
-        body().querySelector('input[type="range"]') as HTMLElement,
-        { key: "ArrowRight" },
-      ),
-    );
+    await openEffort();
+    await pickEffort("High");
     expect(picks.at(-1)).toMatchObject({ fast: false, effort: "high" });
   });
 
   test("an echo with a normalised effort replaces the draft", async () => {
     const picks: ModelChoice[] = [];
     const { rerender } = render(<Harness picks={picks} />);
-    await open();
-    await act(async () =>
-      fireEvent.keyDown(
-        body().querySelector('input[type="range"]') as HTMLElement,
-        { key: "ArrowRight" },
-      ),
-    );
+    await openEffort();
+    await pickEffort("High");
     expect(picks.at(-1)).toMatchObject({ effort: "high" });
-    expect(trigger().textContent).toContain("High");
+    expect(effortTrigger().textContent).toContain("High");
     await act(async () =>
       rerender(
         <Harness
@@ -581,8 +590,8 @@ describe("model picker v2", () => {
         />,
       ),
     );
-    expect(trigger().textContent).toContain("Low");
-    expect(trigger().textContent).not.toContain("High");
+    expect(effortTrigger().textContent).toContain("Low");
+    expect(effortTrigger().textContent).not.toContain("High");
   });
 
   /* Three writes queued before any echo: model, then Fast, then effort.
@@ -602,32 +611,25 @@ describe("model picker v2", () => {
     await act(async () =>
       fireEvent.click(within(list()).getByText("GPT test 5")),
     );
-    await act(async () =>
-      fireEvent.click(
-        body().querySelector('button[aria-label="Fast mode"]') as HTMLElement,
-      ),
-    );
-    await act(async () =>
-      fireEvent.keyDown(
-        body().querySelector('input[type="range"]') as HTMLElement,
-        { key: "ArrowRight" },
-      ),
-    );
+    await open();
+    await clickFast();
+    await openEffort();
+    await pickEffort("High");
     expect(picks).toHaveLength(3);
     expect(picks[2]).toMatchObject({
       model: "gpt-test-5",
       effort: "high",
       fast: true,
     });
-    expect(trigger().textContent).toContain("High");
+    expect(effortTrigger().textContent).toContain("High");
     expect(trigger().querySelector('[aria-label="Fast"]')).toBeTruthy();
     await act(async () =>
       rerender(
         <Harness picks={picks} value={choiceFor("gpt-test-5", MODELS)} />,
       ),
     );
-    expect(trigger().textContent).toContain("High");
-    expect(trigger().textContent).not.toContain("Medium");
+    expect(effortTrigger().textContent).toContain("High");
+    expect(effortTrigger().textContent).not.toContain("Medium");
     expect(trigger().querySelector('[aria-label="Fast"]')).toBeTruthy();
   });
 
@@ -646,11 +648,7 @@ describe("model picker v2", () => {
       />,
     );
     await open();
-    await act(async () =>
-      fireEvent.click(
-        body().querySelector('button[aria-label="Fast mode"]') as HTMLElement,
-      ),
-    );
+    await clickFast();
     expect(picks.at(-1)).toMatchObject({ fast: true });
     expect(trigger().querySelector('[aria-label="Fast"]')).toBeTruthy();
     await act(async () =>
@@ -662,12 +660,8 @@ describe("model picker v2", () => {
       ),
     );
     expect(trigger().querySelector('[aria-label="Fast"]')).toBeNull();
-    await act(async () =>
-      fireEvent.keyDown(
-        body().querySelector('input[type="range"]') as HTMLElement,
-        { key: "ArrowRight" },
-      ),
-    );
+    await openEffort();
+    await pickEffort("High");
     expect(picks.at(-1)).toMatchObject({ fast: false, effort: "high" });
   });
 
@@ -781,12 +775,20 @@ describe("model choice rules", () => {
       />,
     );
     await open();
-    expect(body().textContent).toContain("Engine default");
-    // The slider is parked on the ladder's middle stop, not a claimed level.
-    const range = body().querySelector(
-      'input[type="range"]',
-    ) as HTMLInputElement;
-    expect(range.getAttribute("aria-valuetext")).toBe("High");
+    /* The effort chip reads "Engine default" — no level is claimed, and
+       none of the menu rows is checked. */
+    expect(effortTrigger().textContent).toContain("Engine default");
+    await openEffort();
+    expect(
+      body().querySelector(
+        '[aria-label="Reasoning levels"] [aria-checked="true"]',
+      ),
+    ).toBeNull();
+    expect(
+      body().querySelectorAll(
+        '[aria-label="Reasoning levels"] [role="menuitemradio"]',
+      ),
+    ).toHaveLength(LADDER.length);
   });
 });
 

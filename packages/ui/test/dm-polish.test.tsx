@@ -89,11 +89,7 @@ describe("issue #71", () => {
     );
     expect(trigger).toBeTruthy();
     await act(async () => fireEvent.click(trigger as HTMLElement));
-    // The popover's "Model ›" row drills into the grouped list.
-    const modelRow = [...document.body.querySelectorAll("button")].find((b) =>
-      b.textContent?.includes("Model"),
-    );
-    await act(async () => fireEvent.click(modelRow as HTMLElement));
+    // #886: the trigger IS the grouped list — no drill step.
     // #194: headings carry the model count ("Fake1" = name + count).
     const headings = [
       ...document.body.querySelectorAll("[cmdk-group-heading]"),

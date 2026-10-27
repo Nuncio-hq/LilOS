@@ -109,7 +109,9 @@ test("the sidebar is the daily app's, and Home is the daily Home with its compos
   await expect(main(page).getByTitle(/^Project · /)).toBeVisible();
   const model = main(page).locator("[data-slot='model-picker-trigger']");
   await expect(model).toBeVisible();
-  await expect(model.locator("[data-effort]")).toBeVisible();
+  await expect(
+    main(page).locator("[data-slot='effort-picker-trigger']"),
+  ).toBeVisible();
   await expect(main(page).locator("[data-slot='access-pill']")).toBeVisible();
   /* The merged list under the composer: the ask's row wears the Needs-you
      pill and its Deny/Approve on the row itself. */

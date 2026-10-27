@@ -88,10 +88,9 @@ function watchConsole(page: Page) {
 const triggers = (page: Page) =>
   page.locator('[data-slot="model-picker-trigger"]');
 
-/** Open a trigger's popover and drill into the searchable model list. */
+/** Open a trigger's dropdown — the trigger IS the searchable list (#886). */
 async function openModelList(page: Page, which: "first" | "last" = "last") {
   await triggers(page)[which]().click();
-  await page.getByRole("button", { name: /Model$/ }).click();
 }
 
 const option = (page: Page, name: string) =>

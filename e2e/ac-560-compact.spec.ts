@@ -10,12 +10,7 @@ import {
   threadUrl,
   v3Peek,
 } from "./helpers/stack";
-import {
-  hideWorkbench,
-  wbPanel,
-  workMenu,
-  workStrip,
-} from "./helpers/workbench";
+import { wbPanel, workMenu, workStrip } from "./helpers/workbench";
 
 /**
  * Issue #560 — context-full UX: the engine's `session.compact` rides the

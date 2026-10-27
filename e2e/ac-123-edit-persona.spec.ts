@@ -302,7 +302,6 @@ test("AC-5 the per-session model picker still overrides the edited default", asy
   // The picker on the open session shows the model it started on; picking
   // Fake Small overrides just this session.
   await v3Peek(page).locator('[data-slot="model-picker-trigger"]').click();
-  await page.getByRole("button", { name: /Model$/ }).click();
   await page.locator("[cmdk-item]", { hasText: /^Fake Small$/ }).click();
   await page.keyboard.press("Escape");
   await replyInSession(page, "one more on the picked model");

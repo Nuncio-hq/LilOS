@@ -129,9 +129,7 @@ test("AC /model opens the picker the surface already owns", async ({
   await chatDefault(page);
   await sendDraft(page, "/model");
   await expect(
-    page
-      .getByRole("dialog")
-      .or(page.locator('[aria-label="Model and reasoning"]')),
+    page.getByRole("dialog").or(page.locator('[aria-label="Model"]')),
   ).toBeVisible({ timeout: 15_000 });
   await page.screenshot({ path: `${SHOTS}/ac-model-picker.png` });
 });
@@ -160,9 +158,7 @@ test("AC the new-chat draft lists the commands too, and /model opens its own pic
   await draftBox(page).fill("/model");
   await draftBox(page).press("Enter");
   await expect(
-    page
-      .getByRole("dialog")
-      .or(page.locator('[aria-label="Model and reasoning"]')),
+    page.getByRole("dialog").or(page.locator('[aria-label="Model"]')),
   ).toBeVisible({ timeout: 15_000 });
   await expect(page).not.toHaveURL(/open=thread:/);
   await page.screenshot({ path: `${SHOTS}/ac-draft-model-picker.png` });

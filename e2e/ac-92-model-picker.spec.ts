@@ -23,9 +23,11 @@ import {
  * Fake Reasoning (7-stop ladder + fast) / Fake Opus 2 (a "/" id) /
  * Fake Fresh (only via `models.list {refresh:true}`).
  *
- * v3: the full picker (effort slider, Fast, "Model ›" list, Refresh, Edit
- * models) is on both composers: the thread panel's, and the new-chat draft
- * beside Threads (the old DM home's new-session composer). Only one is on
+ * v3 + #886: the picker is two composer-row dropdowns — a searchable model
+ * list grouped by provider (search on top, Fast/Refresh/Edit models as
+ * footer rows) and a plain effort menu of the engine's levels. Both live
+ * on both composers: the thread panel's, and the new-chat draft beside
+ * Threads (the old DM home's new-session composer). Only one is on
  * screen at a time, so `triggers` reads whichever is open.
  */
 
@@ -78,15 +80,24 @@ async function chatDefault(stack: Stack, page: Page, text: string) {
 const triggers = (page: Page) =>
   v3Peek(page).locator('[data-slot="model-picker-trigger"]');
 
+/** The effort dropdown — a second chip on the same composer, absent when
+ *  the picked model reports no levels (#886). */
+const effortTriggers = (page: Page) =>
+  v3Peek(page).locator('[data-slot="effort-picker-trigger"]');
+
+/** The open effort menu (a Radix-populated menu at the page root). */
+const effortMenu = (page: Page) =>
+  page.getByRole("menu", { name: "Reasoning levels" });
+
 /** The new-chat draft's model picker: the same one the thread's composer has,
  *  with effort and Fast (only one is on screen at a time). */
 const draftChip = triggers;
+const draftEffort = effortTriggers;
 
-/** Open the session picker's popover and drill into the searchable model
- *  list (the v3 peek holds one thread, so there is one trigger). */
+/** Open the session picker's model list — the trigger IS the dropdown now,
+ *  one click lands on the search box (#886). */
 async function openModelList(page: Page) {
   await triggers(page).click();
-  await page.getByRole("button", { name: /Model$/ }).click();
 }
 
 const option = (page: Page, name: string) =>
@@ -122,9 +133,8 @@ test("AC-1 + AC-5 the new-session composer starts on the employee default and li
   await openNewChat(page, stackA.webUrl);
   const chip = draftChip(page);
   await expect(chip).toContainText("Fake Large");
-  await expect(chip).toContainText("Medium");
+  await expect(draftEffort(page)).toContainText("Medium");
   await chip.click();
-  await page.getByRole("button", { name: /Model$/ }).click();
   await expect(page.getByRole("group", { name: "Fake" })).toBeVisible();
   for (const name of [
     "Fake Small",
@@ -146,9 +156,8 @@ test("AC-1 + AC-5 the new-session composer starts on the employee default and li
   await expect(page).toHaveURL(/open=thread:[^&]+/, { timeout: 30_000 });
   const home = triggers(page);
   await expect(home).toContainText("Fake Large", { timeout: 30_000 });
-  await expect(home).toContainText("Medium");
+  await expect(effortTriggers(page)).toContainText("Medium");
   await home.click();
-  await page.getByRole("button", { name: /Model$/ }).click();
   // Every model the engine reports, under its provider group.
   const group = page.getByRole("group", { name: "Fake" });
   await expect(group).toBeVisible();
@@ -165,34 +174,36 @@ test("AC-1 + AC-5 the new-session composer starts on the employee default and li
   expect(errors).toEqual([]);
 });
 
-test("AC-2 the slider has exactly the picked model's stops; no ticks; Faster/Smarter ends", async ({
+test("AC-2 the effort dropdown lists exactly the picked model's levels; a model with none gets no chip", async ({
   page,
 }) => {
   test.setTimeout(90_000);
   const errors = watchConsole(page);
   await chatDefault(stackA, page, "Check the relay reconnect plan");
-  await triggers(page).click();
-  const slider = page.getByRole("slider", { name: "Reasoning effort" });
-  // fake-large: efforts [low, medium, high] → slider 0..2.
-  await expect(slider).toHaveAttribute("max", "2");
-  await expect(page.getByText("Faster", { exact: true })).toBeVisible();
-  await expect(page.getByText("Smarter", { exact: true })).toBeVisible();
-  // No per-level tick buttons — drag/arrow only.
-  await expect(page.getByRole("button", { name: "High" })).toHaveCount(0);
-  await page.getByRole("button", { name: /Model$/ }).click();
-  // Fake Reasoning reports the full ladder (7 stops).
-  await option(page, "Fake Reasoning").click();
-  await expect(slider).toHaveAttribute("max", "6");
-  // A model without reasoning control shows no slider.
-  await page.getByRole("button", { name: /Model$/ }).click();
-  await option(page, "Fake Small").click();
+  // fake-large: efforts [low, medium, high] — a plain radio menu, Medium on.
+  await effortTriggers(page).click();
+  const items = effortMenu(page).getByRole("menuitemradio");
+  await expect(items).toHaveCount(3);
+  await expect(items.nth(0)).toHaveText("Low");
+  await expect(items.nth(2)).toHaveText("High");
   await expect(
-    page.getByText("This model has no reasoning control."),
-  ).toBeVisible();
-  await expect(slider).toHaveCount(0);
-  // …nor a fast toggle (Fake Small reports no fast tier).
-  await expect(page.getByRole("button", { name: "Fast mode" })).toHaveCount(0);
-  await page.screenshot({ path: `${SHOTS}/ac-2-no-dial.png` });
+    effortMenu(page).getByRole("menuitemradio", { name: "Medium" }),
+  ).toHaveAttribute("aria-checked", "true");
+  await page.keyboard.press("Escape");
+  // Fake Reasoning reports the full ladder (7 levels).
+  await openModelList(page);
+  await option(page, "Fake Reasoning").click();
+  await effortTriggers(page).click();
+  await expect(items).toHaveCount(7);
+  await page.keyboard.press("Escape");
+  // A model without effort levels shows no effort chip at all (#886).
+  await openModelList(page);
+  await option(page, "Fake Small").click();
+  await expect(effortTriggers(page)).toHaveCount(0);
+  // …nor a Fast row in the model list (Fake Small reports no fast tier).
+  await openModelList(page);
+  await expect(option(page, "Fast mode")).toHaveCount(0);
+  await page.screenshot({ path: `${SHOTS}/ac-2-no-effort.png` });
   await page.keyboard.press("Escape");
   expect(errors).toEqual([]);
 });
@@ -210,10 +221,13 @@ test("AC-3 + AC-4 the next turn runs the picked model + effort + fast; the foote
   // A pick while running never errors and applies to the NEXT turn.
   await openModelList(page);
   await option(page, "Fake Reasoning").click();
-  await page.getByRole("button", { name: "Fast mode" }).click();
-  const slider = page.getByRole("slider", { name: "Reasoning effort" });
-  await slider.press("ArrowUp"); // medium → high
-  await page.keyboard.press("Escape");
+  // Fast is a footer row in the reopened list; effort is its own dropdown.
+  await openModelList(page);
+  await option(page, "Fast mode").click();
+  await effortTriggers(page).click();
+  await effortMenu(page)
+    .getByRole("menuitemradio", { name: "High", exact: true })
+    .click();
   // Approve the pending ask so the parked turn can finish.
   for (let i = 0; i < 6; i++) {
     const b = page.getByRole("button", { name: "Once", exact: true });
@@ -269,15 +283,20 @@ test("AC-4 + AC-5 a pick on the new-session composer lands on the FIRST turn; th
   const box = await openNewChat(page, stackA.webUrl);
   const chip = draftChip(page);
   await expect(chip).toContainText("Fake Large");
+  // fake-large reports 3 levels; the pick swaps in its own ladder.
+  await draftEffort(page).click();
+  await expect(effortMenu(page).getByRole("menuitemradio")).toHaveCount(3);
+  await page.keyboard.press("Escape");
   await chip.click();
-  const slider = page.getByRole("slider", { name: "Reasoning effort" });
-  // fake-large reports 3 stops; the pick swaps in its own ladder.
-  await expect(slider).toHaveAttribute("max", "2");
-  await page.getByRole("button", { name: /Model$/ }).click();
   await option(page, "Fake Reasoning").click();
-  await expect(slider).toHaveAttribute("max", "6");
-  await slider.press("ArrowUp"); // medium → high
-  await page.getByRole("button", { name: "Fast mode" }).click();
+  await draftEffort(page).click();
+  const items = effortMenu(page).getByRole("menuitemradio");
+  await expect(items).toHaveCount(7);
+  await effortMenu(page)
+    .getByRole("menuitemradio", { name: "High", exact: true })
+    .click();
+  await chip.click();
+  await option(page, "Fast mode").click();
   await page.keyboard.press("Escape");
   await expect(chip).toContainText("Fake Reasoning");
 
@@ -385,6 +404,7 @@ test("AC-3 (#30) no picker when the engine lacks the models capability", async (
       timeout: 60_000,
     });
     await expect(triggers(page)).toHaveCount(0);
+    await expect(effortTriggers(page)).toHaveCount(0);
     await page.screenshot({ path: `${SHOTS}/ac-3-no-picker.png` });
     await leaveApp(page, stackB);
   } finally {

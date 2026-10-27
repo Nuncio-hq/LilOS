@@ -265,11 +265,7 @@ test("AC-1 a failed model pick shows its reason", async ({ page }) => {
   const trigger = page.locator(PICKER).first();
   await expect(trigger).toBeVisible({ timeout: 30_000 });
   await trigger.click();
-  /* Drill into the model list — its row carries the trailing "Model" tag. */
-  await page
-    .locator('[aria-label="Model and reasoning"]')
-    .getByRole("button", { name: /Model$/ })
-    .click();
+  /* The trigger IS the searchable list now (#886) — no drill step. */
   fail.reject(method("conversations.setModel"));
   /* Searching expands every matching row regardless of provider groups. */
   await page.getByPlaceholder(/search models/i).fill("opus");

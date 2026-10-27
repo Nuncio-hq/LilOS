@@ -52,7 +52,7 @@ const CHECKS = [
   },
   {
     name: "chip effort",
-    sel: `${CAPSULE} [data-slot="model-picker-trigger"] [data-effort]`,
+    sel: `${CAPSULE} [data-slot="effort-picker-trigger"] [data-effort]`,
   },
 ];
 

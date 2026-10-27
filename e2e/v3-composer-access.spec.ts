@@ -29,21 +29,25 @@ async function box(el: Locator) {
 }
 const mid = (b: { y: number; height: number }) => b.y + b.height / 2;
 
-/** The draft composer's four controls — the row #886 holds to one line. */
+/** The draft composer's controls — the row #886 holds to one line. Model
+    and effort are two separate dropdowns now; effort leaves the row when
+    the picked model reports no levels. */
 function controls(peekEl: Locator) {
   return {
     agent: peekEl.getByTitle("Agent", { exact: true }),
     project: peekEl.getByTitle(/^Project · /),
     model: peekEl.locator('[data-slot="model-picker-trigger"]'),
+    effort: peekEl.locator('[data-slot="effort-picker-trigger"]'),
     access: peekEl.locator('[data-slot="access-pill"]'),
     send: peekEl.getByRole("button", { name: "Send" }),
   };
 }
 
-/** All of `controls` visible and mid-aligned — one row, never a stack. */
+/** All of `controls` visible and mid-aligned — one row, never a stack.
+    Pass a subset to check the row that survives a hidden control. */
 async function expectOneRow(peekEl: Locator, c = controls(peekEl)) {
   const boxes = await Promise.all(
-    [c.agent, c.project, c.model, c.access, c.send].map(async (el) => {
+    Object.values(c).map(async (el) => {
       await expect(el).toBeVisible();
       return box(el);
     }),
@@ -85,14 +89,17 @@ test("at 390 px the same row holds as icons, and the composer still sends", asyn
   await expect(input).toBeVisible({ timeout: 30_000 });
   await expectOneRow(peek(page));
 
-  /* Narrow = icons: the words step aside but the buttons stay reachable —
-     the agent chip drops its name and shrinks to the avatar. */
+  /* Narrow = icon + a short label on each dropdown: the agent chip drops
+     its name and shrinks to the avatar, model shows the name clipped, and
+     access shows "Ask" rather than "Full access". */
   const agent = controls(peek(page)).agent;
   await expect(agent.getByText("Builder", { exact: true })).not.toBeVisible();
   const a = await box(agent);
   expect(a.width, "agent chip collapses to its icon").toBeLessThan(48);
   const pill = controls(peek(page)).access;
-  await expect(pill.getByText("Ask", { exact: true })).not.toBeVisible();
+  await expect(pill).toContainText("Ask");
+  const p = await box(pill);
+  expect(p.width, "access collapses to icon + short label").toBeLessThan(80);
 
   /* Usable: type and the Send button arms (the keys do what the dropped
      hint described). */
@@ -134,6 +141,54 @@ test("access is a menu: a choice plus a one-time confirm for Full", async ({
   await pill.click();
   await page.locator('[data-access-option="ask"]').click();
   await expect(pill).toHaveAttribute("data-access", "ask");
+});
+
+/* #886 addendum: model and effort are two plain dropdowns on the same row
+   — a searchable model list grouped by provider, and a menu of exactly the
+   levels the picked model reports. */
+test("model picks by search in a grouped list; effort is a plain menu that hides for a no-effort model", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1288, height: 800 });
+  await page.goto(DRAFT);
+  const model = controls(peek(page)).model;
+  await expect(model).toBeVisible({ timeout: 30_000 });
+
+  /* The trigger opens the list directly: search box on top, providers as
+     groups — no "Model ›" drill, no slider popover. */
+  await model.click();
+  const search = page.getByPlaceholder("Search models…");
+  await expect(search).toBeVisible();
+  /* Provider groups — the current model's is expanded, the rest collapsed;
+     searching fans matches out regardless of the group state. */
+  await expect(page.getByRole("group", { name: "Anthropic" })).toBeVisible();
+  await expect(page.locator('input[type="range"]')).toHaveCount(0);
+  await search.fill("sonnet");
+  await page.locator("[cmdk-item]", { hasText: "Sonnet 5" }).click();
+  await expect(model).toContainText("Sonnet 5");
+
+  /* Effort is its own dropdown: exactly low/medium/high — nothing invented. */
+  const effort = controls(peek(page)).effort;
+  await expect(effort).toBeVisible();
+  await effort.click();
+  const menu = page.getByRole("menu", { name: "Reasoning levels" });
+  const items = menu.getByRole("menuitemradio");
+  await expect(items).toHaveCount(3);
+  await expect(items.nth(0)).toHaveText("Low");
+  await expect(items.nth(1)).toHaveText("Medium");
+  await expect(items.nth(2)).toHaveText("High");
+  await items.nth(2).click();
+  await expect(effort).toContainText("High");
+
+  /* Haiku 5 reports no levels — the effort chip leaves the row. */
+  await model.click();
+  await search.fill("haiku");
+  await page.locator("[cmdk-item]", { hasText: "Haiku 5" }).click();
+  await expect(model).toContainText("Haiku 5");
+  await expect(controls(peek(page)).effort).toHaveCount(0);
+  /* …and the surviving controls still share one row. */
+  const { effort: _gone, ...rest } = controls(peek(page));
+  await expectOneRow(peek(page), rest);
 });
 
 test("a thread open beside Home leaves one composer on screen", async ({

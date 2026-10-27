@@ -165,6 +165,26 @@ for (const theme of ["light", "dark"] as const) {
     await page.locator("[data-access-confirm]").click();
     await expect(pill).toHaveAttribute("data-access", "full");
 
+    /* 09-model-effort-popover → two plain dropdowns on the same row: the
+       model one opens the searchable list grouped by provider, the effort
+       one a menu of exactly the levels the engine reported. */
+    await v3Peek(page).locator('[data-slot="model-picker-trigger"]').click();
+    await expect(page.getByPlaceholder("Search models…")).toBeVisible();
+    await shot(page, group, "09a-model-search-list");
+    await page.keyboard.press("Escape");
+    /* Let the model list finish closing so it isn't a ghost behind the
+       effort menu's shot. */
+    await expect(page.getByPlaceholder("Search models…")).not.toBeVisible();
+    const effortTrigger = v3Peek(page).locator(
+      '[data-slot="effort-picker-trigger"]',
+    );
+    await effortTrigger.click();
+    await expect(
+      page.getByRole("menu", { name: "Reasoning levels" }),
+    ).toBeVisible();
+    await shot(page, group, "09b-effort-menu");
+    await page.keyboard.press("Escape");
+
     /* 16-header-icons-meter → send an edit (access is already Full, so
        no ask waits); the header then names "Changes" and the ⋯ holds the
        rest. The peek's header is where they always show. */
