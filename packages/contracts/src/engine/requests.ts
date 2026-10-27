@@ -20,6 +20,10 @@ export const ApprovalRequest = z.strictObject({
   /** What wants approval, e.g. the shell command or tool call. */
   command: z.string(),
   description: z.string().optional(),
+  /** #884: the raw args payload when `command` is only a title (ACP
+      `toolCall.rawInput`, JSON-stringified) — shown under the card's
+      Details disclosure so the approver sees exactly what runs. */
+  details: z.string().optional(),
   /** Options offered to the client, in display order. */
   options: z.array(ApprovalOption).min(1),
 });

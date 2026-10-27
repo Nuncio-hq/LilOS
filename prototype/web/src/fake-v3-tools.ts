@@ -228,7 +228,6 @@ export const DEVICES: V3Data["devices"] = [{ id: "d-1", name: "iPhone", model: "
 export const SETTINGS: V3Data["settings"] = {
   push: { needsYou: true, finished: false, failed: true },
   approvals: "ask",
-  enginePolicy: "smart",
   editor: "Cursor",
   editors: ["Cursor", "VS Code", "Zed", "Xcode"],
   models: settingsModels(MODEL_OPTIONS, MODEL_PROVIDERS, MODEL_VISIBILITY),

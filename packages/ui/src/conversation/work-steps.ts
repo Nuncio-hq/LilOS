@@ -44,8 +44,10 @@ export function stepKind(s: Step): StepKind {
   return KIND_BY_STEM.find(([re]) => re.test(tool))?.[1] ?? "other";
 }
 
-export const failedStep = (s: Step) =>
-  s.status === "failed" || s.status === "denied";
+/* #884: a denied step is a normal answer, not a failure — it gets its own
+   neutral fact ("you said no") and never adds to the failed count. */
+export const failedStep = (s: Step) => s.status === "failed";
+export const deniedStep = (s: Step) => s.status === "denied";
 
 const PAST: Record<StepKind, string> = {
   read: "Read",
@@ -113,7 +115,9 @@ const COUNTS: { kind: StepKind; verb: string; one: string; many: string }[] = [
     count) — "edited N files" says that number, so the fold and the Changes
     tab agree, and a turn that changed files by a command still says so. */
 export function stepFacts(steps: Step[], changed = 0): string[] {
-  const kinds = steps.map(stepKind);
+  /* A denied step changed nothing — it must not read as "edited 1 file"
+     (its own fact is the neutral "you said no" below). */
+  const kinds = steps.filter((s) => !deniedStep(s)).map(stepKind);
   const parts = COUNTS.flatMap(({ kind, verb, one, many }) => {
     const n =
       kind === "edit" && changed > 0
@@ -128,6 +132,7 @@ export function stepFacts(steps: Step[], changed = 0): string[] {
     );
   const failed = steps.filter(failedStep).length;
   if (failed) parts.push(`${failed} failed`);
+  if (steps.some(deniedStep)) parts.push("you said no");
   return parts;
 }
 

@@ -111,23 +111,25 @@ export function askActions({ setData, getData, toast }: Engine): Pick<
       resolve(
         id,
         "yes",
-        always ? "Approved, and allowed next time without asking" : "Approved",
+        always ? "Allowed, and next time without asking" : "Allowed",
       );
       toast(
         plan
           ? "Plan approved · the agent carries on"
           : always
-            ? "Approved · next time it won’t ask"
-            : "Approved · the agent carries on",
+            ? "Allowed · next time it won’t ask"
+            : "Allowed · the agent carries on",
       );
     },
     deny: (id) => {
       const plan = isPlan(id);
-      resolve(id, "no", "Denied");
+      /* #884: a deny is a decision, not a failure — "You said no" is the
+         one receipt everywhere. */
+      resolve(id, "no", "You said no");
       toast(
         plan
           ? "Plan rejected · nothing was touched"
-          : "Denied · the CEO takes the other route",
+          : "You said no · the CEO takes the other route",
       );
     },
     answer: (id, option) => {

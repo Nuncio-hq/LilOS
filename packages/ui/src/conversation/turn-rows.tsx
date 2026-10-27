@@ -16,6 +16,7 @@ import { LazyShell } from "./lazy-shell";
 import type { PlanAction } from "./plan-card";
 import { PrCard } from "./pr-card";
 import type { QuestionAnswer } from "./question-card";
+import { summariseReceipt } from "./receipt-line";
 import { AgentTurn } from "./turns";
 import { UserTurn } from "./user-turn";
 
@@ -185,6 +186,9 @@ function TurnRowImpl({
      bubble and never an agent card. `data-sysnote` is the spec anchor;
      deduped notes never reach the row at all. */
   if (r.system) {
+    /* #891: an auto-approved receipt reads as the approval card's sentence,
+       with the engine command behind Details — old stored notes included. */
+    const receipt = summariseReceipt(r.text);
     return (
       <LazyShell
         msgId={r.id}
@@ -197,7 +201,17 @@ function TurnRowImpl({
         <SysNote>
           {/* #585: `tool …` spans render as code chips, like the
               assistant's text — never literal backticks. */}
-          <InlineCodeText text={r.text} />
+          <InlineCodeText text={receipt?.text ?? r.text} />
+          {receipt?.details && (
+            <details data-receipt-details className="mt-1 text-left">
+              <summary className="cursor-pointer select-none hover:text-foreground">
+                Details
+              </summary>
+              <pre className="mt-1.5 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-md bg-foreground/[0.04] p-2.5 font-mono text-[12px] leading-normal text-foreground/90">
+                {receipt.details}
+              </pre>
+            </details>
+          )}
         </SysNote>
       </LazyShell>
     );

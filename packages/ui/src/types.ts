@@ -171,7 +171,15 @@ export type Reply = {
   approval?: {
     id: string;
     command: string;
-    note: string;
+    /** The engine's `request.description` verbatim — `summariseApproval`
+        decides whether it is the question (`gw-` asks) or a note. */
+    note?: string;
+    /** `requestId` marks a `gw-` ask; `cwd` names the session folder so the
+        same inputs produce the same sentence as Home/Needs; `details` is
+        the raw args payload (ACP rawInput). */
+    requestId?: string;
+    cwd?: string;
+    details?: string;
     options?: string[];
     /** Gateway `team_hire` ask: the hire draft the card renders. */
     hire?: HireDraft;

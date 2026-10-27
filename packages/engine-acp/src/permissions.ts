@@ -147,9 +147,20 @@ export function acpPermissionCommand(
 export function acpApprovalRequest(
   params: acp.RequestPermissionRequest,
 ): EngineRequest {
+  const command = acpPermissionCommand(params.toolCall);
+  /* #884: when `command` is only a title, the tool call's rawInput is the
+     payload actually being approved — it rides `details` so the card's
+     Details disclosure shows exactly what runs. A rawInput that already
+     IS the command (the no-title fallback) is not sent twice. */
+  const raw = params.toolCall?.rawInput;
+  const details =
+    raw && typeof raw === "object" && Object.keys(raw).length > 0
+      ? JSON.stringify(raw, null, 2)
+      : undefined;
   return {
     kind: "approval",
-    command: acpPermissionCommand(params.toolCall),
+    command,
+    ...(details !== undefined && details !== command ? { details } : {}),
     options: acpOfferedOutcomes(params.options ?? []),
   };
 }

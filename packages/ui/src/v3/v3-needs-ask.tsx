@@ -114,6 +114,24 @@ export function OpenAsk({
         )}
       </div>
 
+      {/* #884: the full payload behind the sentence — the same Details the
+          thread card shows, so an approval can be inspected without opening
+          the thread. Opens itself when it had to clip or could do harm. */}
+      {ask.details && (
+        <details
+          data-approval-details
+          open={ask.detailsOpen === true}
+          className="mt-3"
+        >
+          <summary className="cursor-pointer select-none text-[12.5px] text-muted-foreground/80 hover:text-foreground">
+            Details
+          </summary>
+          <pre className="mt-1.5 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-md bg-foreground/[0.04] p-2.5 font-mono text-[12px] leading-normal text-foreground/90">
+            {ask.details}
+          </pre>
+        </details>
+      )}
+
       {company && ask.fallback && (
         <div className="mt-3 flex">
           <span className={CHIP}>
@@ -152,7 +170,7 @@ export function OpenAsk({
             <>
               <Btn onClick={() => act.deny(ask.id)}>Deny</Btn>
               <Btn primary onClick={() => act.approve(ask.id, allow)}>
-                Approve{ask.spend ? ` $${ask.spend.amount}` : ""}
+                Allow{ask.spend ? ` $${ask.spend.amount}` : ""}
               </Btn>
             </>
           )}

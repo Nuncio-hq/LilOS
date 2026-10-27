@@ -1,7 +1,6 @@
 /* v3 Threads: archived threads leave the live list for `archivedThreads`
    (and come back with the flag), ⌘K's message hits read as the palette
-   needs them (a LilOS note says "system", never "you"), and the engine
-   approval policy Settings shows follows the pick, then the engine. */
+   needs them (a LilOS note says "system", never "you"). */
 import type {
   AppChannel,
   Conversation,
@@ -9,7 +8,7 @@ import type {
   MessageSearchHit,
 } from "@lilos/contracts/app";
 import { describe, expect, test } from "vitest";
-import { enginePolicyOf } from "../src/settings/state";
+
 import { messageHitOf } from "../src/v3/search";
 import {
   type ThreadSources,
@@ -148,28 +147,5 @@ describe("message hits", () => {
 
   test("a hit that belongs to no thread cannot be opened, so it is dropped", () => {
     expect(messageHitOf(hit({ conversationId: null }), now)).toBeUndefined();
-  });
-});
-
-describe("engine approval policy", () => {
-  const cap = (current?: unknown) => ({ detail: { current } });
-
-  test("no declared capability: no control", () => {
-    expect(enginePolicyOf(undefined, "manual")).toBeUndefined();
-  });
-
-  test("the engine's own value shows until you pick", () => {
-    expect(enginePolicyOf(cap("off"), undefined)).toBe("off");
-    expect(enginePolicyOf(cap("manual"), undefined)).toBe("manual");
-  });
-
-  test("your pick stands until the engine echoes it", () => {
-    expect(enginePolicyOf(cap("smart"), "manual")).toBe("manual");
-  });
-
-  test("an unreported or unknown value reads as Smart, the engine default", () => {
-    expect(enginePolicyOf(cap(undefined), undefined)).toBe("smart");
-    expect(enginePolicyOf(cap("yolo"), undefined)).toBe("smart");
-    expect(enginePolicyOf({}, undefined)).toBe("smart");
   });
 });

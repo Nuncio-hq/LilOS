@@ -84,19 +84,26 @@ test("an approval from one thread and a question from another both appear, oldes
   });
 
   await goTo(page, "Needs you");
-  await expect(main(page)).toContainText("patch wants to run");
+  /* #884: the ask is the one plain sentence everywhere — the raw tool+args
+     JSON never shows. */
+  await expect(main(page)).toContainText("Edit README.md?");
   await expect(main(page)).toContainText("Allow this next time");
   await expect(main(page)).toContainText(`${agent.name} asks`);
-  // The command is said once: in "The ask", not again in the title (D-#769).
-  await expect(main(page).getByText('patch {"path":"README.md"}')).toHaveCount(
-    1,
-  );
   // The question waiting underneath is titled by what it asks.
   const question = main(page).getByText(
     "Which environment should this change ship to?",
   );
   await expect(question).toBeVisible();
   await shot(page, "ac-1-approval-open");
+  // The raw command is kept, but only behind Details: closed until opened.
+  const details = main(page)
+    .locator("[data-approval-details]")
+    .filter({ hasText: 'patch {"path":"README.md"}' });
+  await expect(details.locator("pre")).toBeHidden();
+  await details.locator("summary").click();
+  await expect(details.locator("pre")).toContainText(
+    'patch {"path":"README.md"}',
+  );
 
   // The newer question is the one underneath. Open it: no allow-next-time.
   await question.click();
@@ -132,7 +139,7 @@ test("approve from Needs you resumes the turn and the item disappears everywhere
 
   await goTo(page, "Needs you");
   const approve = main(page).getByRole("button", {
-    name: "Approve",
+    name: "Allow",
     exact: true,
   });
   // Earlier criteria already left finished threads here, so "Finished"
@@ -152,7 +159,7 @@ test("approve from Needs you resumes the turn and the item disappears everywhere
   await goTo(page, "Threads");
   const row = card(page, /add a footer to the page/i);
   await expect(row.locator('[data-v3-status="done"]')).toBeVisible();
-  await expect(row.getByRole("button", { name: "Approve" })).toHaveCount(0);
+  await expect(row.getByRole("button", { name: "Allow" })).toHaveCount(0);
   await shot(page, "ac-2-thread-card-finished");
 });
 

@@ -39,6 +39,10 @@ export async function describeAndHire(
 ): Promise<void> {
   try {
     const d = await conn.request<DescribeResult>("describe", {});
+    /* #884 r2: an engine left on `off` stays off — the policy is shared
+       with terminal Hermes, so nothing writes it on its own; the app
+       surfaces it as a warning with a one-click Fix instead. */
+
     const hide = new Set(this.opts.hideCaps ?? []);
     const desc = {
       ...d,

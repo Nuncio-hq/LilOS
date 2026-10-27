@@ -198,7 +198,7 @@ const cachedLiveFor = (i: FoldInputs, resFn: (ref: string) => string) => {
     const key = `${liveNow ? 1 : 0}:${claimId ?? ""}`;
     let rs = entry.variants.get(key);
     if (!rs) {
-      rs = liveReplies(t, i.employeeId, i.asks, resFn, liveNow);
+      rs = liveReplies(t, i.employeeId, i.asks, resFn, liveNow, i.conv.cwd);
       if (claimId !== undefined)
         rs[rs.length - 1] = { ...rs[rs.length - 1], id: claimId };
       entry.variants.set(key, rs);
