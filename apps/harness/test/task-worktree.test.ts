@@ -279,6 +279,17 @@ describe("task_create worktree isolation (D-#848)", () => {
         const kids = conversations.filter((c) => c.parentId);
         return kids.length === 1 ? kids : undefined;
       }, "exactly one child");
+      /* The row lands before the bind finishes — wait for the worktree
+         session before counting registrations. */
+      const wtDir = first.task.worktree?.path ?? "";
+      await waitFor(async () => {
+        const call = w.engineCalls.find(
+          (c) =>
+            c.method === "session.start" &&
+            (c.params as { cwd?: string }).cwd === wtDir,
+        );
+        return call ? true : undefined;
+      }, "child session.start in the worktree");
       expect(
         git(repo, ["worktree", "list", "--porcelain"]).split("worktree ")
           .length - 1,

@@ -29,7 +29,7 @@ import {
   HOST_ERRORS,
   HostError,
   resolveUnderHomeAsync,
-  worktreeAdd,
+  worktreeEnsure,
 } from "@lilos/host";
 import { engineErrorCode } from "../engine/client";
 import { normalizeRuntime, parseSessionRef } from "../engine/runtimes";
@@ -495,26 +495,28 @@ export async function folderDiscover(
 }
 
 /**
- * A `workspace.mode === "new"` open (#156) carries `cwd` as the worktree
- * path the picker computed (`<repo>/.lilos/wt/<slug>`): make it real with
- * `git worktree add -b <branch> <base>` before the first `session.start`,
- * unless a registered worktree already sits there (rebind after a
- * restart, a redelivered turn).
+ * A `workspace` open (#156) carries `cwd` as the worktree path the picker
+ * computed (`<repo>/.lilos/wt/<slug>`): have it in place before any
+ * `session.start` or session reattach — `worktreeEnsure` (D-#881) covers
+ * both the never-created case (mode "new" sends `base`) and the restore
+ * after a settled cleanup, attaching the surviving branch or its remote
+ * copy instead of forking fresh.
  */
 export async function ensureWorktree(
   this: HarnessCtx,
   conv: Conversation,
 ): Promise<void> {
   const ws = conv.workspace;
-  if (ws?.mode !== "new" || !conv.cwd) return;
-  const dir = resolve(expandPath(conv.cwd, this.home));
-  const { worktrees } = await gitWorktrees({ path: ws.repoPath });
-  if (worktrees.some((w) => resolve(expandPath(w.path, this.home)) === dir))
-    return;
-  await worktreeAdd({
+  if (!ws || !conv.cwd) return;
+  /* D-#881: a settle-cleanup or un-settle restore may still be swapping
+     this worktree on its chain — never race it. The chain always
+     resolves; the chain's own link calls `worktreeEnsure` directly. */
+  const pending = this.worktreeCleanup.get(conv.id);
+  if (pending) await pending;
+  await worktreeEnsure({
     path: ws.repoPath,
-    dir,
+    dir: conv.cwd,
     branch: ws.branch,
-    base: ws.base,
+    ...(ws.mode === "new" ? { base: ws.base } : {}),
   });
 }

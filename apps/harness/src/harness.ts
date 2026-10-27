@@ -163,6 +163,7 @@ import {
   scheduleSteerReconcile,
   unbind,
 } from "./harness/turns";
+import { cleanupSettledWorktree } from "./harness/worktree-cleanup";
 import type { Logger } from "./log";
 import { type ReaperCandidate, SessionReaper } from "./reaper";
 import type { TaskScheduler } from "./scheduler";
@@ -432,6 +433,13 @@ export class Harness {
     string,
     { title: string; archived: boolean; titleSource?: "auto" | "user" }
   >();
+
+  /** D-#881: `settledAt` stamp per conversation the worktree cleanup
+      already answered — cleared on un-settle. */
+  private readonly worktreeCleaned = new Map<string, number>();
+
+  /** D-#881: per-conversation serialization for settle/retry bursts. */
+  private readonly worktreeCleanup = new Map<string, Promise<void>>();
 
   /** Latest `describe` result (hideCaps already filtered out) — the
       DEFAULT runtime's row; per-runtime rows live in describeByRuntime. */
@@ -897,6 +905,7 @@ Object.assign(Harness.prototype, {
   bindConversation,
   bindingFor,
   bindingNow,
+  cleanupSettledWorktree,
   codingAgentDefaults,
   conversationFromAtom,
   createSurfaces,

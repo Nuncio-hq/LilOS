@@ -1,5 +1,5 @@
 import { promises as fsp } from "node:fs";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import type {
   GitBranchesResult,
   GitCommitResult,
@@ -827,6 +827,261 @@ export async function worktreeAdd(params: {
   }
   await git(root, ["worktree", "add", "-b", params.branch, dir, params.base]);
   return { dir: collapsePath(dir), branch: params.branch };
+}
+
+/** Canonicalize a dir that may not exist yet: realpath it, else realpath the
+    parent and keep the basename — `git worktree list` prints realpaths, so a
+    `~`- or `/var`-symlinked input would never compare equal otherwise. */
+async function canonDir(dir: string): Promise<string> {
+  const abs = resolve(expandPath(dir));
+  return await fsp.realpath(abs).catch(async () => {
+    const parent = await fsp
+      .realpath(join(abs, ".."))
+      .catch(() => join(abs, ".."));
+    return join(parent, basename(abs));
+  });
+}
+
+/** `merge-base --is-ancestor` — prints nothing on success, so the empty
+    stdout still reads `!== null`; exit 1 (not an ancestor) reads null. */
+const isAncestor = async (root: string, tip: string, into: string) =>
+  (await gitOr(root, ["merge-base", "--is-ancestor", tip, into])) !== null;
+
+/** Refs that prove a workstream branch's tip landed: the remote default
+    (origin/HEAD's branch) plus local main/master/trunk — a merge or a
+    squashed-tip cherry-pick sits on one of them. */
+async function mergedRefs(root: string): Promise<string[]> {
+  const refs: string[] = [];
+  const remoteDefault = await remoteDefaultOf(root);
+  if (remoteDefault) refs.push(`refs/remotes/origin/${remoteDefault}`);
+  for (const d of ["main", "master", "trunk"]) {
+    const ref = `refs/heads/${d}`;
+    if ((await gitOr(root, ["rev-parse", "--verify", ref])) !== null)
+      refs.push(ref);
+  }
+  return refs;
+}
+
+/* D-#881: under `refs/lilos/` lives the cleanup's memory — a branch it
+   deleted gets a marker pointing at its last tip, so `worktreeEnsure` can
+   tell "we pruned it after merge" from "the branch never existed" and say
+   so on the thread instead of silently starting a fresh one. */
+const PRUNED = "refs/lilos/pruned/";
+
+/** `.lilos/.gitignore = *` — the same guard worktreeAdd writes, shared by
+    the ensure path (a worktree dir under `.lilos/` must never dirty the
+    parent checkout's status). */
+async function ensureLilosIgnore(root: string, dir: string): Promise<void> {
+  const lilos = join(root, ".lilos");
+  if (!dir.startsWith(`${lilos}/`)) return;
+  await fsp.mkdir(lilos, { recursive: true });
+  const gi = join(lilos, ".gitignore");
+  if (!(await exists(gi))) await fsp.writeFile(gi, "*\n");
+}
+
+export type WorktreeEnsureResult = {
+  dir: string;
+  branch: string;
+  how: "present" | "attached" | "remote" | "created";
+};
+
+/**
+ * D-#881: materialize a workstream's worktree — the `workspace.mode:"new"`
+ * bind path (#156) and the settled-thread restore (an un-settle or a new
+ * message on a thread whose copy the cleanup took) share it. In order: the
+ * dir is already a registered worktree → nothing; the branch still exists
+ * → attach it; the branch lives only on the remote → attach a tracking
+ * copy; the cleanup's own marker says it was pruned post-merge → refuse so
+ * the caller can explain on the thread; else create at `base` (the
+ * original #156 create). Never `--force`.
+ */
+export async function worktreeEnsure(params: {
+  /** Repo the worktree belongs to (any dir inside its work tree). */
+  path: string;
+  /** Worktree directory to have in place (absolute or `~/`). */
+  dir: string;
+  /** Branch checked out there (`ws/<slug>` convention is the caller's). */
+  branch: string;
+  /** Start point for the never-created case (mode "new" sends it). */
+  base?: string;
+}): Promise<WorktreeEnsureResult> {
+  const root = await rootOrThrow(params.path);
+  const dir = await canonDir(params.dir);
+  const { worktrees } = await gitWorktrees({ path: root });
+  const registered = worktrees.some((w) => resolve(expandPath(w.path)) === dir);
+  if (registered && (await exists(dir))) {
+    return { dir: collapsePath(dir), branch: params.branch, how: "present" };
+  }
+  await ensureLilosIgnore(root, dir);
+  /* A stale registration (dir went missing without `worktree remove`)
+     blocks the add — prune before trying any attach. */
+  if (registered) await git(root, ["worktree", "prune"]);
+  if (
+    (await gitOr(root, [
+      "rev-parse",
+      "--verify",
+      `refs/heads/${params.branch}`,
+    ])) !== null
+  ) {
+    await git(root, ["worktree", "add", dir, params.branch]);
+    return { dir: collapsePath(dir), branch: params.branch, how: "attached" };
+  }
+  const remote = await remoteNameOf(root);
+  if (
+    remote &&
+    (await gitOr(root, [
+      "rev-parse",
+      "--verify",
+      `refs/remotes/${remote}/${params.branch}`,
+    ])) !== null
+  ) {
+    await git(root, [
+      "worktree",
+      "add",
+      "--track",
+      "-b",
+      params.branch,
+      dir,
+      `${remote}/${params.branch}`,
+    ]);
+    return { dir: collapsePath(dir), branch: params.branch, how: "remote" };
+  }
+  const gone = new HostError(
+    HOST_ERRORS.GIT_FAILED,
+    `branch ${params.branch} is gone — local and remote both`,
+    { reason: "gone" },
+  );
+  if (
+    (await gitOr(root, [
+      "rev-parse",
+      "--verify",
+      `${PRUNED}${params.branch}`,
+    ])) !== null
+  ) {
+    throw new HostError(
+      HOST_ERRORS.GIT_FAILED,
+      `branch ${params.branch} is gone — the settled cleanup removed it and the remote has no copy`,
+      { reason: "gone" },
+    );
+  }
+  if (!params.base) throw gone;
+  await git(root, ["worktree", "add", "-b", params.branch, dir, params.base]);
+  return { dir: collapsePath(dir), branch: params.branch, how: "created" };
+}
+
+export type WorktreeRemoveResult = {
+  /** The dir is gone from disk (removed now, or it already was). */
+  removed: boolean;
+  /** The branch went with it — only ever true when its tip proved merged. */
+  branchDeleted: boolean;
+  /** Kept, and why. */
+  kept?: "dirty" | "unpushed" | "foreign";
+  /** Kept detail: porcelain file count (dirty), unpushed commit count. */
+  count?: number;
+};
+
+/**
+ * D-#881: give a settled thread's `.lilos/wt` copy back — never lose work:
+ * a dirty tree (untracked files included), a branch tip no remote branch
+ * and no default branch holds, or a folder git never made at the path all
+ * keep the whole copy and say why (`kept`). `git worktree remove` never
+ * sees `--force`; the branch leaves only through `branch -d` after its tip
+ * proves an ancestor of a merged ref, and a `refs/lilos/pruned/` marker
+ * keeps its tip so `worktreeEnsure` knows it was the cleanup that took it.
+ * `worktree prune` always runs — git's own list stays accurate.
+ */
+export async function worktreeRemove(params: {
+  /** Repo the worktree belongs to (any dir inside its work tree). */
+  path: string;
+  /** The worktree directory to give back. */
+  dir: string;
+  /** The branch checked out there (`ws/<slug>` convention is the caller's). */
+  branch: string;
+}): Promise<WorktreeRemoveResult> {
+  const root = await rootOrThrow(params.path);
+  const dir = await canonDir(params.dir);
+  const { worktrees } = await gitWorktrees({ path: root });
+  const registered = worktrees.some((w) => resolve(expandPath(w.path)) === dir);
+  const present = await exists(dir);
+  /* A folder git never made sitting at the path is someone else's — keep
+     it and say so rather than removing files the repo can't account for. */
+  if (present && !registered) {
+    return { removed: false, branchDeleted: false, kept: "foreign" };
+  }
+  const tip =
+    (
+      await gitOr(root, [
+        "rev-parse",
+        "--verify",
+        `refs/heads/${params.branch}`,
+      ])
+    )?.trim() ?? null;
+  const defaults = await mergedRefs(root);
+  const merged =
+    tip !== null &&
+    (await defaults.reduce<Promise<boolean>>(
+      async (hit, ref) => (await hit) || (await isAncestor(root, tip, ref)),
+      Promise.resolve(false),
+    ));
+  if (present) {
+    const status = await gitStatus({ path: dir });
+    if (!status.clean) {
+      return {
+        removed: false,
+        branchDeleted: false,
+        kept: "dirty",
+        count: status.files.length,
+      };
+    }
+    /* Every commit the remotes already hold is safe — `branch -r
+       --contains` asks all of them at once. Merged counts as safe too:
+       the tip sits on the default line even if no remote ref names it. */
+    if (tip && !merged) {
+      const covered =
+        (await gitOr(root, ["branch", "-r", "--contains", tip]))
+          ?.split("\n")
+          .some((l) => l.trim() !== "") === true;
+      if (!covered) {
+        const count =
+          (await remoteNameOf(root)) !== null
+            ? Number(
+                (
+                  await gitOr(root, [
+                    "rev-list",
+                    "--count",
+                    tip,
+                    "--not",
+                    "--remotes",
+                  ])
+                )?.trim(),
+              ) || undefined
+            : undefined;
+        return {
+          removed: false,
+          branchDeleted: false,
+          kept: "unpushed",
+          count,
+        };
+      }
+    }
+    await git(root, ["worktree", "remove", dir]);
+  }
+  await git(root, ["worktree", "prune"]);
+  let branchDeleted = false;
+  if (tip && merged) {
+    /* Marker first, then `-d` (never `-D`): `-d` is still the guard — it
+       refuses a branch checked out in another worktree. A surviving
+       marker under a live branch is harmless: the restore path checks
+       `refs/heads/` before it ever reads markers. */
+    try {
+      await git(root, ["update-ref", `${PRUNED}${params.branch}`, tip]);
+      await git(root, ["branch", "-d", params.branch]);
+      branchDeleted = true;
+    } catch {
+      /* checked out elsewhere — stays; nothing was lost */
+    }
+  }
+  return { removed: true, branchDeleted };
 }
 
 export async function gitDiscoverRepos(params: {

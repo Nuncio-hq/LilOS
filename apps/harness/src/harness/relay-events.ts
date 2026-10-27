@@ -122,6 +122,15 @@ export function onRelayEvent(
       const conv = parsed.data.conversation;
       ceoOnConversation(this, conv);
       void this.onScheduledConversationUpdate(conv);
+      /* D-#881: a settle stamps `settledAt` on this row — the worktree
+         cleanup reacts here; un-settle clears its marker so a later
+         settle cleans fresh. */
+      void this.cleanupSettledWorktree(conv).catch((error) =>
+        this.opts.log.warn("worktree cleanup failed", {
+          conversationId: conv.id,
+          error: String(error),
+        }),
+      );
       const seen = this.metaSeen.get(conv.id);
       const binding = this.bindings.get(conv.id);
       /* #106 AC-1 / D-#866 r7: the access level is LilOS-side data — the

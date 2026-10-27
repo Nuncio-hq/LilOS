@@ -22,6 +22,11 @@ export async function sendPrompt(
   binding: SessionBinding,
   message: AppMessage,
 ) {
+  /* D-#881: a settle→un-settle cycle may still be re-materializing the
+     thread's worktree under this session — wait out the chain so the
+     prompt lands in a folder that exists. The chain always resolves. */
+  const restore = this.worktreeCleanup.get(binding.conversationId);
+  if (restore) await restore;
   /* #274: interrupts (and rewinds) gate on every in-flight send for this
      binding until its `prompt` frame is on the wire — a Stop fired while
      this send is still in its pre-prompt awaits (attachment fetch, folder
