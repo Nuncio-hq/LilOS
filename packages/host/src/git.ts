@@ -1,5 +1,5 @@
 import { promises as fsp } from "node:fs";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import type {
   GitBranchesResult,
   GitCommitResult,
@@ -827,6 +827,383 @@ export async function worktreeAdd(params: {
   }
   await git(root, ["worktree", "add", "-b", params.branch, dir, params.base]);
   return { dir: collapsePath(dir), branch: params.branch };
+}
+
+/** Canonicalize a dir that may not exist yet: realpath it, else realpath the
+    parent and keep the basename — `git worktree list` prints realpaths, so a
+    `~`- or `/var`-symlinked input would never compare equal otherwise. */
+async function canonDir(dir: string): Promise<string> {
+  const abs = resolve(expandPath(dir));
+  return await fsp.realpath(abs).catch(async () => {
+    const parent = await fsp
+      .realpath(join(abs, ".."))
+      .catch(() => join(abs, ".."));
+    return join(parent, basename(abs));
+  });
+}
+
+/** `merge-base --is-ancestor` — prints nothing on success, so the empty
+    stdout still reads `!== null`; exit 1 (not an ancestor) reads null. */
+const isAncestor = async (root: string, tip: string, into: string) =>
+  (await gitOr(root, ["merge-base", "--is-ancestor", tip, into])) !== null;
+
+/** Refs that prove a workstream branch's tip landed: the remote default
+    (origin/HEAD's branch) plus local main/master/trunk — a merge or a
+    squashed-tip cherry-pick sits on one of them. */
+async function mergedRefs(root: string): Promise<string[]> {
+  const refs: string[] = [];
+  const remoteDefault = await remoteDefaultOf(root);
+  if (remoteDefault) refs.push(`refs/remotes/origin/${remoteDefault}`);
+  for (const d of ["main", "master", "trunk"]) {
+    const ref = `refs/heads/${d}`;
+    if ((await gitOr(root, ["rev-parse", "--verify", ref])) !== null)
+      refs.push(ref);
+  }
+  return refs;
+}
+
+/** `.lilos/.gitignore = *` — the same guard worktreeAdd writes, shared by
+    the ensure path (a worktree dir under `.lilos/` must never dirty the
+    parent checkout's status). */
+async function ensureLilosIgnore(root: string, dir: string): Promise<void> {
+  const lilos = join(root, ".lilos");
+  if (!dir.startsWith(`${lilos}/`)) return;
+  await fsp.mkdir(lilos, { recursive: true });
+  const gi = join(lilos, ".gitignore");
+  if (!(await exists(gi))) await fsp.writeFile(gi, "*\n");
+}
+
+export type WorktreeEnsureResult = {
+  dir: string;
+  branch: string;
+  how: "present" | "attached" | "remote" | "created";
+};
+
+/**
+ * D-#881: materialize a workstream's worktree — the `workspace.mode:"new"`
+ * bind path (#156) and the settled-thread restore (an un-settle or a new
+ * message on a thread whose copy the cleanup took) share it. In order: the
+ * dir is already a registered worktree → nothing; the branch still exists
+ * → attach it; the branch lives only on the remote → attach a tracking
+ * copy; `base` → create (only a genuinely new workstream's FIRST bind
+ * passes one — a restore never reinvents); else "gone" — the caller names
+ * the merged PR on the thread. Never `--force`.
+ */
+export async function worktreeEnsure(params: {
+  /** Repo the worktree belongs to (any dir inside its work tree). */
+  path: string;
+  /** Worktree directory to have in place (absolute or `~/`). */
+  dir: string;
+  /** Branch checked out there (`ws/<slug>` convention is the caller's). */
+  branch: string;
+  /** Start point for the never-created case (mode "new" sends it). */
+  base?: string;
+}): Promise<WorktreeEnsureResult> {
+  const root = await rootOrThrow(params.path);
+  const dir = await canonDir(params.dir);
+  const { worktrees } = await gitWorktrees({ path: root });
+  const registered = worktrees.some((w) => resolve(expandPath(w.path)) === dir);
+  if (registered && (await exists(dir))) {
+    return { dir: collapsePath(dir), branch: params.branch, how: "present" };
+  }
+  await ensureLilosIgnore(root, dir);
+  /* A stale registration (dir went missing without `worktree remove`)
+     blocks the add — prune before trying any attach. */
+  if (registered) await git(root, ["worktree", "prune"]);
+  if (
+    (await gitOr(root, [
+      "rev-parse",
+      "--verify",
+      `refs/heads/${params.branch}`,
+    ])) !== null
+  ) {
+    await git(root, ["worktree", "add", dir, params.branch]);
+    return { dir: collapsePath(dir), branch: params.branch, how: "attached" };
+  }
+  const remote = await remoteNameOf(root);
+  if (
+    remote &&
+    (await gitOr(root, [
+      "rev-parse",
+      "--verify",
+      `refs/remotes/${remote}/${params.branch}`,
+    ])) !== null
+  ) {
+    await git(root, [
+      "worktree",
+      "add",
+      "--track",
+      "-b",
+      params.branch,
+      dir,
+      `${remote}/${params.branch}`,
+    ]);
+    return { dir: collapsePath(dir), branch: params.branch, how: "remote" };
+  }
+  if (params.base) {
+    await git(root, ["worktree", "add", "-b", params.branch, dir, params.base]);
+    return { dir: collapsePath(dir), branch: params.branch, how: "created" };
+  }
+  throw new HostError(
+    HOST_ERRORS.GIT_FAILED,
+    `branch ${params.branch} is gone — local and remote both`,
+    { reason: "gone" },
+  );
+}
+
+export type WorktreeRemoveResult = {
+  /** The dir is gone from disk (removed now, or it already was). */
+  removed: boolean;
+  /** The branch went with it — only ever true when its tip proved merged. */
+  branchDeleted: boolean;
+  /** Kept, and why. */
+  kept?: "dirty" | "ignored" | "unpushed" | "foreign" | "head";
+  /** Kept detail: porcelain file count (dirty), unpushed commit count. */
+  count?: number;
+  /** Kept detail the thread names: ignored file names, the HEAD state, or
+      why the path reads foreign. */
+  detail?: string;
+};
+
+/* D-#881: ignored build output the cleanup may drop — ANY path segment
+   counts (a monorepo's `apps/x/node_modules` is as droppable as the
+   root's), plus OS litter and the `.lilos/attachments` subtree. Anything
+   else ignored (`.env*` is the classic) keeps the whole worktree and
+   gets named on the thread. */
+const IGNORED_OK = new Set([
+  "node_modules",
+  "dist",
+  "build",
+  ".next",
+  ".turbo",
+  "coverage",
+  "test-results",
+]);
+const IGNORED_OK_FILES = new Set([".DS_Store"]);
+
+/** Ignored untracked files minus the build-output allow-list. */
+async function riskyIgnored(dir: string): Promise<string[]> {
+  const raw = await gitOr(dir, [
+    "ls-files",
+    "--others",
+    "--ignored",
+    "--exclude-standard",
+  ]);
+  return (raw ?? "")
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .filter((p) => {
+      const segs = p.split("/");
+      return (
+        !segs.some((s) => IGNORED_OK.has(s)) &&
+        !IGNORED_OK_FILES.has(segs[segs.length - 1] ?? "") &&
+        !p.startsWith(".lilos/attachments/")
+      );
+    });
+}
+
+/** A rebase/merge in flight leaves these in the worktree's private gitdir
+    (`--git-path` resolves per-worktree). Removing mid-operation strands it. */
+const IN_FLIGHT: [string, string][] = [
+  ["rebase-merge", "a rebase is in progress"],
+  ["rebase-apply", "a rebase is in progress"],
+  ["MERGE_HEAD", "a merge is in progress"],
+  ["CHERRY_PICK_HEAD", "a cherry-pick is in progress"],
+  ["REVERT_HEAD", "a revert is in progress"],
+];
+
+/**
+ * D-#881: give a settled thread's `.lilos/wt` copy back — never lose work.
+ * The dir goes only when it sits inside the repo's `.lilos/wt` (checked on
+ * realpaths, so a symlink escape is foreign), is a worktree git registered,
+ * is checked out on the thread's own branch with no merge/rebase in
+ * flight, is clean (untracked files count) AND has no ignored files beyond
+ * the build-output allow-list, and its HEAD commit is covered — held by a
+ * remote branch, an ancestor of a default ref, or equal/ancestor of the
+ * merged PR's head (`mergedHeadForBranch`, the forge's squash-merge
+ * answer). `git worktree remove` never sees `--force`; the branch leaves
+ * via `branch -d` when its tip is ancestor of a merged ref, or `-D` only
+ * when the tip IS the merged PR head (a squash merge proves every commit
+ * landed). `worktree prune` always runs — git's own list stays accurate.
+ */
+export async function worktreeRemove(params: {
+  /** Repo the worktree belongs to (any dir inside its work tree). */
+  path: string;
+  /** The worktree directory to give back. */
+  dir: string;
+  /** The branch the thread's row claims is checked out there. */
+  branch: string;
+  /** Squash-merge oracle — the merged PR's `headRefOid` for the branch
+      (forge.prs), called only when remote/default coverage fails. */
+  mergedHeadForBranch?: (
+    branch: string,
+  ) => Promise<{ oid: string; pr?: number } | undefined>;
+}): Promise<WorktreeRemoveResult> {
+  const root = await rootOrThrow(params.path);
+  const dir = await canonDir(params.dir);
+  const keep = (
+    kept: NonNullable<WorktreeRemoveResult["kept"]>,
+    extra?: { count?: number; detail?: string },
+  ): WorktreeRemoveResult => ({
+    removed: false,
+    branchDeleted: false,
+    kept,
+    ...extra,
+  });
+  /* Only LilOS-made copies go back — the check lives HERE, on realpaths,
+     so a `~`- or symlink-shaped caller path can't smuggle an outside dir
+     past a startsWith test. */
+  const wtRoot = join(
+    await fsp.realpath(root).catch(() => resolve(root)),
+    ".lilos",
+    "wt",
+  );
+  if (!dir.startsWith(`${wtRoot}/`)) {
+    return keep("foreign", { detail: "not inside .lilos/wt" });
+  }
+  const { worktrees } = await gitWorktrees({ path: root });
+  const registered = worktrees.some((w) => resolve(expandPath(w.path)) === dir);
+  const present = await exists(dir);
+  /* A folder git never made sitting at the path is someone else's — keep
+     it and say so rather than removing files the repo can't account for. */
+  if (present && !registered) {
+    return keep("foreign", { detail: "not a registered worktree" });
+  }
+  const tip =
+    (
+      await gitOr(root, [
+        "rev-parse",
+        "--verify",
+        `refs/heads/${params.branch}`,
+      ])
+    )?.trim() ?? null;
+  const defaults = await mergedRefs(root);
+  const ancestorOf = (sha: string, refs: string[]) =>
+    refs.reduce<Promise<boolean>>(
+      async (hit, ref) => (await hit) || (await isAncestor(root, sha, ref)),
+      Promise.resolve(false),
+    );
+  /* The merged-PR oracle runs at most once — gh is a network call. */
+  let mergedHead: { oid: string; pr?: number } | undefined;
+  let mergedHeadAsked = false;
+  const mergedFromPr = async (sha: string): Promise<boolean> => {
+    if (!mergedHeadAsked) {
+      mergedHeadAsked = true;
+      mergedHead = params.mergedHeadForBranch
+        ? await params.mergedHeadForBranch(params.branch).catch(() => undefined)
+        : undefined;
+    }
+    return (
+      mergedHead !== undefined &&
+      (sha === mergedHead.oid || (await isAncestor(root, sha, mergedHead.oid)))
+    );
+  };
+  let headCovered = false;
+  if (present) {
+    /* Judge the worktree's own HEAD, not the row's branch: a detached
+       HEAD (mid-rebase, bisect), an in-flight merge/cherry-pick, or a
+       checkout on some other branch all keep — silently. */
+    const headBranch = await headOf(dir);
+    if (!headBranch) {
+      return keep("head", { detail: "its HEAD is detached" });
+    }
+    if (headBranch !== params.branch) {
+      return keep("head", {
+        detail: `it's checked out on ${headBranch}, not ${params.branch}`,
+      });
+    }
+    for (const [marker, why] of IN_FLIGHT) {
+      const at = await gitOr(dir, ["rev-parse", "--git-path", marker]);
+      if (at && (await exists(resolve(dir, at.trim())))) {
+        return keep("head", { detail: why });
+      }
+    }
+    const status = await gitStatus({ path: dir });
+    if (!status.clean) {
+      return keep("dirty", { count: status.files.length });
+    }
+    const ignored = await riskyIgnored(dir);
+    if (ignored.length > 0) {
+      return keep("ignored", { detail: ignored.slice(0, 3).join(", ") });
+    }
+    const head =
+      (await gitOr(dir, ["rev-parse", "HEAD"]))?.trim() ?? params.branch;
+    /* Every commit the remotes already hold is safe — `branch -r
+       --contains` asks all of them at once. An ancestor of a default
+       ref landed via a real merge; an equal/ancestor of the merged PR's
+       head landed via this repo's usual squash merge (D-#881 review). */
+    headCovered =
+      (await gitOr(root, ["branch", "-r", "--contains", head]))
+        ?.split("\n")
+        .some((l) => l.trim() !== "") === true;
+    if (!headCovered) {
+      headCovered = await ancestorOf(head, defaults);
+    }
+    if (!headCovered) {
+      headCovered = await mergedFromPr(head);
+    }
+    if (!headCovered) {
+      const count =
+        (await remoteNameOf(root)) !== null
+          ? Number(
+              (
+                await gitOr(root, [
+                  "rev-list",
+                  "--count",
+                  head,
+                  "--not",
+                  "--remotes",
+                ])
+              )?.trim(),
+            ) || undefined
+          : undefined;
+      return keep("unpushed", { count });
+    }
+    await git(root, ["worktree", "remove", dir]);
+  }
+  await git(root, ["worktree", "prune"]);
+  let branchDeleted = false;
+  if (tip) {
+    /* `-d` for a provable merge (tip is ancestor of a default ref — git
+       re-checks anyway); `-D` ONLY when the tip IS the merged PR head:
+       a squash merge leaves the branch "unmerged" to git but every
+       commit demonstrably landed. Anything less keeps the branch. */
+    const onDefault = await ancestorOf(tip, defaults);
+    try {
+      if (onDefault) {
+        await git(root, ["branch", "-d", params.branch]);
+        branchDeleted = true;
+      } else if ((await mergedFromPr(tip)) && tip === mergedHead?.oid) {
+        await git(root, ["branch", "-D", params.branch]);
+        branchDeleted = true;
+      }
+    } catch {
+      /* checked out in another worktree — stays; nothing was lost */
+    }
+  }
+  return { removed: true, branchDeleted };
+}
+
+/** Remote-branch names with the remote prefix stripped (`origin/ws/x` →
+    `ws/x`; `origin/HEAD` dropped) — D-#881: slug picking must dodge a name
+    that only lives on the remote, or `worktreeEnsure` would attach it
+    instead of forking fresh. */
+export async function gitRemoteBranches(params: {
+  path: string;
+}): Promise<string[]> {
+  const root = await rootOrThrow(params.path);
+  const list = await gitProbe(root, [
+    "for-each-ref",
+    "--format=%(refname:short)",
+    "refs/remotes",
+  ]);
+  return list
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((s) => s.replace(/^[^/]+\//, ""))
+    .filter((s) => s !== "HEAD");
 }
 
 export async function gitDiscoverRepos(params: {

@@ -284,6 +284,13 @@ export interface HarnessCtx {
     string,
     { title: string; archived: boolean; titleSource?: "auto" | "user" }
   >;
+  /** D-#881: `settledAt` stamp per conversation the worktree cleanup
+      already answered — cleared when the thread un-settles so a later
+      settle cleans fresh. */
+  readonly worktreeCleaned: Map<string, number>;
+  /** D-#881: per-conversation cleanup chain — settle bursts and the
+      retrying row updates queue here, each re-checking inside. */
+  readonly worktreeCleanup: Map<string, Promise<void>>;
   describeResult?: DescribeResult;
   readonly feedListeners: Set<(event: EngineEvent) => void>;
   hired: boolean;
@@ -443,6 +450,7 @@ export interface HarnessCtx {
   folderBrowse(params: FoldersBrowseParams): Promise<FoldersBrowseResult>;
   folderDiscover(): Promise<FoldersDiscoverResult>;
   ensureWorktree(conv: Conversation): Promise<void>;
+  cleanupSettledWorktree(conv: Conversation): Promise<void>;
   onChannelRemoved(channelId: string): Promise<void>;
   watchChannel(channelId: string): void;
   onAskResolved(ask: Ask): Promise<void>;
