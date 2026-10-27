@@ -20,24 +20,36 @@ const NEW_PROJECT = "\u0000new-project";
 
 /* #886: the chip row holds only controls — the picked project (or "No
    project"). Git facts used to sit beside it ("direct · no git", the
-   branch); they were labels, not controls, so they went away — the engine
-   still learns the folder's git state at send time. */
+   branch); they were labels, not controls, so they moved into the chip's
+   tooltip — the engine still learns the folder's git state at send time. */
+export function folderHint(
+  folder: NonNullable<V3Data["folders"]>[number] | undefined,
+): string {
+  if (folder?.branch) return ` · edits land on ⎇ ${folder.branch}`;
+  if (folder?.branch === null)
+    return " · not a git repo, edits land in the folder";
+  return "";
+}
+
 export function ProjectChip({
   projects,
   project,
+  folder,
   onPick,
   onNew,
 }: {
   projects: V3Project[];
   /** The chosen project; absent = No project (just chat). */
   project?: V3Project;
+  /** What the app knows of the chosen project's folder (`data.folders`). */
+  folder?: NonNullable<V3Data["folders"]>[number];
   onPick: (projectId: string) => void;
   /** Asks for a folder and makes a project of it, then picks that project. */
   onNew?: () => void;
 }) {
   return (
     <ChipMenu
-      title={`Project · ${project ? project.folder : "none"}`}
+      title={`Project · ${project ? project.folder : "none"}${project ? folderHint(folder) : ""}`}
       value={project ? project.id : NO_PROJECT}
       onPick={(id) => (id === NEW_PROJECT ? onNew?.() : onPick(id))}
       label={

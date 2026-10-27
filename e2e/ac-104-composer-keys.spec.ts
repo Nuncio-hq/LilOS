@@ -63,7 +63,14 @@ const STOPPED = "Stopped";
    (#583 state word) — negative checks scope to turn elements only. */
 const stoppedChip = (p: import("@playwright/test").Page) =>
   p.locator("[data-agentturn]").getByText(STOPPED);
-const RUNNING_HINT = /Enter (steers|queues) · ⌘\. stop/;
+/* A turn is running while its ■ Stop (⌘.) is on the composer — the old
+   "Enter steers · ⌘. stop" hint is gone (#886). Named by its exact label:
+   a "stopped" thread row also matches /stop/i. */
+const runningStop = (p: import("@playwright/test").Page) =>
+  p
+    .getByRole("button", { name: /^stop \(⌘\.\)$/i })
+    .filter({ visible: true })
+    .first();
 
 test("AC-1 Esc never stops the running turn — ⌘. stops it (same as ■)", async ({
   page,
@@ -76,7 +83,7 @@ test("AC-1 Esc never stops the running turn — ⌘. stops it (same as ■)", as
     page,
     "LILOS_TURN_HOLD Add a release note to the readme",
   );
-  await expect(page.getByText(RUNNING_HINT)).toBeVisible({ timeout: 30_000 });
+  await expect(runningStop(page)).toBeVisible({ timeout: 30_000 });
   /* #577: the send lands on the thread in the peek — hop into the session
      view so Esc's only close target is that surface itself (Esc on the peek
      would close the peek — correct too, but this AC is about the turn, not
@@ -86,7 +93,7 @@ test("AC-1 Esc never stops the running turn — ⌘. stops it (same as ■)", as
   await box.click();
   await page.keyboard.press("Escape");
   await page.waitForTimeout(400);
-  await expect(page.getByText(RUNNING_HINT)).toBeVisible();
+  await expect(runningStop(page)).toBeVisible();
   await expect(stoppedChip(page)).toHaveCount(0);
   await page.keyboard.press("Meta+Period");
   await expect(stoppedChip(page)).toBeVisible({ timeout: 30_000 });
@@ -140,7 +147,7 @@ test("AC-3 Esc closes an open popover/dialog first — the turn keeps running", 
     page,
     "LILOS_TURN_HOLD Add a release note to the readme",
   );
-  await expect(page.getByText(RUNNING_HINT)).toBeVisible({ timeout: 30_000 });
+  await expect(runningStop(page)).toBeVisible({ timeout: 30_000 });
   // #577: the session view is the surface the layers stack on — hop there.
   await panelIntoFocus(page);
 
@@ -153,7 +160,7 @@ test("AC-3 Esc closes an open popover/dialog first — the turn keeps running", 
   await expect(
     page.locator('[data-slot="popover-content"][data-open]'),
   ).toHaveCount(0, { timeout: 15_000 });
-  await expect(page.getByText(RUNNING_HINT)).toBeVisible();
+  await expect(runningStop(page)).toBeVisible();
   await expect(stoppedChip(page)).toHaveCount(0);
   /* `data-open` drops at once but the popover stays mounted and visible
      through its exit animation, and while it does the layer stack counts it
@@ -174,7 +181,7 @@ test("AC-3 Esc closes an open popover/dialog first — the turn keeps running", 
   await dialog.getByRole("button", { name: "Close" }).focus();
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0, { timeout: 15_000 });
-  await expect(page.getByText(RUNNING_HINT)).toBeVisible();
+  await expect(runningStop(page)).toBeVisible();
   await expect(stoppedChip(page)).toHaveCount(0);
   await page.screenshot({ path: `${SHOTS}/ac-3-overlays.png` });
 });
@@ -188,7 +195,7 @@ test("AC-4 ⌘. with a steer draft typed still stops the turn and keeps the text
     page,
     "LILOS_TURN_HOLD Add a release note to the readme",
   );
-  await expect(page.getByText(RUNNING_HINT)).toBeVisible({ timeout: 30_000 });
+  await expect(runningStop(page)).toBeVisible({ timeout: 30_000 });
   // #577: hop to the session view — Esc mid-draft closes it, landing back on
   // the thread (the draft persists through the surface swap, same store).
   await panelIntoFocus(page);

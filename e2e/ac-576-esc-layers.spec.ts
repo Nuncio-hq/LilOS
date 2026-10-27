@@ -50,8 +50,14 @@ test.describe.configure({ mode: "serial" });
    plain now (anchored so the lowercase "stopped" row word and the
    "Stopped." sysnote don't match). */
 const STOPPED = /^Stopped$/;
-/* #576 renamed the running hint to name the real stop shortcut. */
-const RUNNING_HINT = /Enter (steers|queues) · ⌘\. stop/;
+/* A turn is running while its ■ Stop (⌘.) is on the composer — the old
+   "Enter steers · ⌘. stop" hint is gone (#886). Named by its exact label:
+   a "stopped" thread row also matches /stop/i. */
+const runningStop = (p: import("@playwright/test").Page) =>
+  p
+    .getByRole("button", { name: /^stop \(⌘\.\)$/i })
+    .filter({ visible: true })
+    .first();
 
 /** A turn parked mid-run in a thread opened beside Threads. */
 const startHeldTurn = async (page: Page) => {
@@ -69,7 +75,7 @@ test("AC-576-1 Esc during a running turn never stops it — ⌘. does", async ({
 }) => {
   test.setTimeout(120_000);
   await startHeldTurn(page);
-  await expect(page.getByText(RUNNING_HINT)).toBeVisible({ timeout: 30_000 });
+  await expect(runningStop(page)).toBeVisible({ timeout: 30_000 });
   /* #577: hop into Focus — Esc pops it back onto the thread panel (the hint
      stays mounted); on the panel itself Esc closes the panel — also true,
      but this AC is about the turn surviving. */
@@ -82,7 +88,7 @@ test("AC-576-1 Esc during a running turn never stops it — ⌘. does", async ({
   await page.keyboard.press("Escape");
   await expect(page).not.toHaveURL(/full=1/);
   await page.waitForTimeout(400);
-  await expect(page.getByText(RUNNING_HINT)).toBeVisible();
+  await expect(runningStop(page)).toBeVisible();
   await expect(page.getByText(STOPPED)).toHaveCount(0);
 
   // ⌘. is the same stop the ■ button calls.
@@ -96,7 +102,7 @@ test("AC-576-2 Esc closes the top-most surface only — menu → dialog → thre
 }) => {
   test.setTimeout(120_000);
   const conv = await startHeldTurn(page);
-  await expect(page.getByText(RUNNING_HINT)).toBeVisible({ timeout: 30_000 });
+  await expect(runningStop(page)).toBeVisible({ timeout: 30_000 });
   // #577: send lands on the panel — hop to Focus for the layer walk.
   await panelIntoFocus(page);
 

@@ -7,6 +7,12 @@ const shots = "test-results/v3-add-agent";
 
 async function openDialog(page: import("@playwright/test").Page) {
   await page.goto("/");
+  /* Under ~700px the sidebar is hidden behind ☰ (#886): pop it over the
+     page first — the ＋ is a row of that sidebar. */
+  const show = page
+    .locator("[data-sidebar-shortcuts]")
+    .getByRole("button", { name: "Show sidebar" });
+  if (await show.isVisible()) await show.click();
   await expect(page.getByRole("button", { name: "Add agent" })).toBeVisible();
   await page.getByRole("button", { name: "Add agent" }).first().click();
   const dlg = page.getByRole("dialog");

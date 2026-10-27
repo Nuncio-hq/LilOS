@@ -140,8 +140,15 @@ test("a ticket from the owner and from an agent lands on Work and its project", 
   await expect(projPage.getByText("Open tickets")).toBeVisible({
     timeout: 30_000,
   });
-  await expect(projPage.getByText("From you")).toBeVisible();
-  await expect(projPage.getByText("From the agent")).toBeVisible();
+  /* The ticket rows by their key — the two threads that raised them are on
+     this page too and their titles (the prompts, in the user's own casing,
+     #886) carry the same words. */
+  await expect(
+    projPage.getByRole("button", { name: /^LIL-\d+From you/ }),
+  ).toBeVisible();
+  await expect(
+    projPage.getByRole("button", { name: /^LIL-\d+From the agent/ }),
+  ).toBeVisible();
 });
 
 test("assign opens the owner's thread; reassign adds a second hand", async ({

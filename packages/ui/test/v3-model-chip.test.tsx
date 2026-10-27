@@ -6,7 +6,7 @@
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { V3Data } from "../src/v3/v3-data-types";
-import { ModelChip } from "../src/v3/v3-draft-chips";
+import { folderHint, ModelChip } from "../src/v3/v3-draft-chips";
 import type { V3Actions } from "../src/v3/v3-page-types";
 
 afterEach(cleanup);
@@ -74,5 +74,17 @@ describe("ModelChip without a landed catalog", () => {
 
   test("no runtime models and no label: no chip", () => {
     expect(chip(data(undefined), "acp:devin", "").children).toHaveLength(0);
+  });
+});
+
+describe("folderHint — the Project chip's tooltip carries the git facts (#886)", () => {
+  test("a branch, no git, and unknown", () => {
+    expect(folderHint({ branch: "trunk" } as never)).toBe(
+      " · edits land on ⎇ trunk",
+    );
+    expect(folderHint({ branch: null } as never)).toBe(
+      " · not a git repo, edits land in the folder",
+    );
+    expect(folderHint(undefined)).toBe("");
   });
 });

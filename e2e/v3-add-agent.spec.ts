@@ -258,6 +258,11 @@ test("evidence: Agents + ＋, the dialog, and the rename box — light, dark, ph
   await page.emulateMedia({ colorScheme: "light" });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${stack.webUrl}/`);
+  /* Narrow, the sidebar sits behind ☰ (#886): pop it over the page, then ＋. */
+  await page
+    .locator("[data-sidebar-shortcuts]")
+    .getByRole("button", { name: "Show sidebar" })
+    .click({ timeout: 30_000 });
   await expect(
     side(page).getByRole("button", { name: "Add agent" }),
   ).toBeVisible({ timeout: 30_000 });

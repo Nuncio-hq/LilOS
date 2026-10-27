@@ -355,6 +355,7 @@ export function ChatDraft({
       <ProjectChip
         projects={data.projects}
         project={project}
+        folder={project && data.folders?.find((f) => f.path === project.folder)}
         onPick={setProject}
         onNew={act.newProject && (() => act.newProject?.(setProject))}
       />

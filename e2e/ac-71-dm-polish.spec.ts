@@ -206,9 +206,8 @@ test("AC-7 model display names — picker groups and the turn footer", async ({
     })
     .last();
   await expect(trigger).toBeVisible({ timeout: 30_000 });
+  // #886: the trigger opens the searchable provider-grouped list directly.
   await trigger.click();
-  // Picker v2: the popover's "Model ›" row drills into the grouped list.
-  await page.getByRole("button", { name: /Model$/ }).click();
   // #194: the heading carries the provider's display name + count; the
   // session's own provider (fake) starts expanded.
   const fake = page.locator("[cmdk-group-heading]", { hasText: "Fake" });

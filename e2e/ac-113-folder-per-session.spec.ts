@@ -245,12 +245,11 @@ test("AC-3 the project menu and the session header offer direct mode only (no wo
   await menu.getByRole("menuitemradio", { name: /lilos-repo-a/ }).click();
   await expect(chip).toContainText("lilos-repo-a");
   // The project's folder is spelled like the recents (`~/…`, D-#771), so the
-  // draft finds it there: the checked-out branch shows beside the Project
-  // chip instead of "direct · no git".
-  await expect(peek.getByTitle(/Direct mode: edits land/)).toContainText(
-    "trunk",
-    { timeout: 15_000 },
-  );
+  // draft finds it there: the checked-out branch is in the Project chip's
+  // tooltip (#886 took the label off the row), not "not a git repo".
+  await expect(
+    peek.getByTitle(/^Project · .*edits land on ⎇ trunk/),
+  ).toHaveCount(1, { timeout: 15_000 });
   await expect(peek.getByText("direct · no git")).toHaveCount(0);
   await peek.getByPlaceholder("Message Default…").fill("direct mode check");
   await peek.getByRole("button", { name: "Send" }).click();
@@ -349,12 +348,12 @@ test("AC-6 a new chat pre-selects the last session's project; a no-project sessi
   ).toHaveCount(0);
   await expect(page.locator("[data-wsbadge]")).toHaveCount(0);
   await expect(page.getByText(/read-only/i)).toHaveCount(0);
-  // Composer hints reveal once there's a draft — calm at rest (#246), so
-  // type a character first. The composer is named "Message …" in the
-  // thread beside Threads and in the session view alike.
+  // The composer is named "Message …" in the thread beside Threads and in
+  // the session view alike; its row carries no hint line any more (#886),
+  // so a typed character is all there is to see — and still no repo talk.
   const panelBox = page.getByRole("textbox", { name: /^Message [^…]+…$/ });
   await panelBox.pressSequentially("x");
-  await expect(page.getByText(/Message .*…/).first()).toBeVisible();
+  await expect(panelBox).toHaveValue("x");
   await page.screenshot({ path: `${SHOTS}/ac-6-no-folder-panel.png` });
   // The session view shows the same no-folder session (Widen the thread).
   await panelIntoFocus(page);
@@ -370,9 +369,8 @@ test("AC-6 a new chat pre-selects the last session's project; a no-project sessi
   const replyBox = page.getByRole("textbox", { name: /^Message [^…]+…$/ });
   await expect(replyBox).toBeVisible({ timeout: 30_000 });
   await replyBox.pressSequentially("x");
-  await expect(page.getByText(/Message .*…/).first()).toBeVisible({
-    timeout: 15_000,
-  });
+  // (the draft persisted across the reload, so the box may already hold one)
+  await expect(replyBox).toHaveValue(/^x+$/);
   await expect(page.locator("[data-wsbadge]")).toHaveCount(0);
   await expect(page.getByText("discussion", { exact: true })).toHaveCount(0);
   await expect(page.getByText(/read-only/i)).toHaveCount(0);
