@@ -232,16 +232,42 @@ describe("issue #884 round 1 — Details disclosure", () => {
     expect(s.detailsOpen).toBe(true);
   });
 
-  test("gateway prose over 72 chars shows in full", () => {
+  test("a gateway ask's 200-char prose shows in full, Details closed", () => {
     const desc =
-      "Wants to spend $40 on a 3-day Meta Ads test to compare the two hooks against the control.";
+      "Ship the paywall test to every reader in the spring cohort and report the results back to the owner, "
+        .repeat(2)
+        .trim();
+    expect(desc.length).toBeGreaterThan(200);
     const s = summariseApproval({
-      command: "spend",
+      command: 'team_set_ceo {"employeeId":"emp_1"}',
       requestId: "gw-1",
       description: desc,
     });
-    expect(s.headline.length).toBeLessThanOrEqual(72);
-    expect(s.details).toContain(desc);
+    expect(s.headline).toBe(desc);
+    expect(s.note).toBeUndefined();
+    expect(s.headline).not.toContain("…");
+    expect(s.headline).not.toContain("team_set_ceo");
+    expect(s.details).toContain('team_set_ceo {"employeeId":"emp_1"}');
+    expect(s.detailsOpen).toBe(false);
+  });
+
+  test("a gateway ask's multi-line prose wraps as one headline", () => {
+    const s = summariseApproval({
+      command: "Approve?",
+      requestId: "gw-2",
+      description: "Spend $40 on the test.\nThen report back.",
+    });
+    expect(s.headline).toBe("Spend $40 on the test. Then report back.");
+    expect(s.detailsOpen).toBe(false);
+  });
+
+  test("a gateway ask with a risky pattern still opens Details", () => {
+    const s = summariseApproval({
+      command: 'terminal {"command":"rm -rf build"}',
+      requestId: "gw-3",
+      description: "Clear the build folder.",
+    });
+    expect(s.headline).toBe("Clear the build folder.");
     expect(s.detailsOpen).toBe(true);
   });
 

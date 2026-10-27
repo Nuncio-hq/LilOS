@@ -279,16 +279,17 @@ test("a CEO thread's team_set_ceo moves the position only after approval", async
     // Written for a person: the sentence is the title, the rest is the ask,
     // and no tool syntax or internal id reaches the card.
     await expect(main(page)).toContainText("Everyone who reported");
-    // Above the Details disclosure the card shows only the sentence and note;
-    // the raw tool and id live in Details. This gateway ask's description is
-    // over 80 chars, so Details starts open (ask-line.ts `clipped`).
-    const shown = (await main(page).innerText()).split("\nDetails\n")[0];
+    // innerText is what is shown: the raw tool and id sit in the closed
+    // Details disclosure, so they must not appear until it is opened.
+    const shown = await main(page).innerText();
     expect(shown).not.toContain("team_set_ceo");
     expect(shown).not.toContain(quillId);
     await shot(page, "03-approval");
     const details = main(page)
       .locator("[data-approval-details]")
       .filter({ hasText: "team_set_ceo" });
+    await expect(details.locator("pre")).toBeHidden();
+    await details.locator("summary").click();
     await expect(details.locator("pre")).toContainText("team_set_ceo");
     await expect(details.locator("pre")).toContainText(quillId);
     await main(page)

@@ -393,6 +393,7 @@ export function summariseApproval(input: {
   const desc = input.description?.trim() ?? "";
   const raw = input.details?.trim() ?? "";
   const agent = input.agent?.trim() || "The agent";
+  const gateway = Boolean(input.requestId?.startsWith("gw-") && desc);
 
   const fallback = (tool?: string): ApprovalSummary => ({
     headline: `${agent} wants to use ${tool?.replace(/_/g, " ") || "a tool"}`,
@@ -402,15 +403,12 @@ export function summariseApproval(input: {
 
   let headline = "";
   let note: string | undefined;
-  let clipped = false;
 
   /* A gateway `gw-` ask's description is prose written for the owner — it is
-     the question; the command behind it is tool syntax with internal ids. */
-  if (input.requestId?.startsWith("gw-") && desc) {
-    const { title, rest } = firstSentence(desc, st);
-    headline = title;
-    note = rest || undefined;
-    clipped = st.clipped || desc.length > 80;
+     the question, shown whole and never clipped; the command behind it is
+     tool syntax with internal ids that stays behind Details. */
+  if (gateway) {
+    headline = desc.replace(/\s+/g, " ");
   } else if (command === "" || command === "command") {
     /* Empty, or Hermes' literal placeholder `command` — the description or
        the raw args say what this actually is; without either, the honest
@@ -495,7 +493,7 @@ export function summariseApproval(input: {
 
   /* The note: a description that adds words beyond the question. Echoes of
      the ask itself ("patch wants to run: patch {…}") drop out. */
-  if (note === undefined && desc) {
+  if (!gateway && note === undefined && desc) {
     const stripped = desc.replace(/^\S+\s+wants to run:\s*/i, "").trim();
     if (stripped && stripped !== command) note = desc;
   }
@@ -512,21 +510,20 @@ export function summariseApproval(input: {
       : undefined;
 
   /* Open when the sentence clipped (st.clipped covers every embedded
-     target), when the payload is dangerous — or when the args never
-     reached the sentence at all: an over-clip `command` string (an MCP
-     tool name plus big JSON args) or a rawInput payload (ACP `details`)
-     whose size alone proves the headline is a title, not the command. */
+     target) or when the payload is dangerous. Otherwise, a command or ACP
+     rawInput too long to fit sits behind Details whose size alone proves the
+     headline is a title, not the command. A gateway ask is the whole
+     sentence by design, so only a risky pattern opens its Details. */
+  const overClip =
+    !gateway && (command.length > MAX_TARGET || raw.length > MAX_TARGET);
   return {
     headline: headline === "" ? `${agent} wants to use a tool` : headline,
     note,
     details,
     detailsOpen:
-      clipped ||
       st.clipped ||
       (details !== undefined &&
-        (dangerous(details, input.cwd, input.home) ||
-          command.length > MAX_TARGET ||
-          raw.length > MAX_TARGET)),
+        (dangerous(details, input.cwd, input.home) || overClip)),
   };
 }
 
