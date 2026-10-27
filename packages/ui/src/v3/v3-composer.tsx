@@ -208,7 +208,11 @@ export function Composer({
           {attach && <AttachButton attach={attach} />}
           {/* #886: one row, never two — chip labels hide for icons under
               `@max-[480px]`; `min-w-0` lets the flex row shrink chips to
-              their icons instead of wrapping. No overflow clip here:
+              their icons instead of wrapping. #897: the model, effort and
+              access chips never shrink (`shrink-0`) above `@max-[480px]` — the agent and project
+              names (`truncate`) give way first, and the key hint steps aside
+              at `@max-[640px]`, so a label is cut only when the box is
+              really short of room. No overflow clip here:
               ChipMenu's list opens upward out of the row, and even
               `overflow-x: clip` eats its hit area where it sticks out. */}
           <div className="flex min-w-0 flex-1 items-center gap-0.5">
@@ -249,7 +253,7 @@ export function Composer({
               </>
             )}
           </div>
-          <Kbd className="shrink-0 @max-[560px]:hidden">⌘↵</Kbd>
+          <Kbd className="shrink-0 @max-[640px]:hidden">⌘↵</Kbd>
           <button
             type="button"
             disabled={!sendable}

@@ -96,7 +96,7 @@ export function AccessPill({
                   : "Ask — the agent asks before risky commands."
             }
             className={cn(
-              "h-6 shrink gap-1.5 rounded-md px-1.5 font-normal text-[12.5px] text-muted-foreground hover:bg-[var(--v3-hover)] hover:text-foreground aria-expanded:bg-[var(--v3-hover)] aria-expanded:text-foreground",
+              "h-6 shrink-0 @max-[480px]:min-w-0 @max-[480px]:shrink gap-1.5 rounded-md px-1.5 font-normal text-[12.5px] text-muted-foreground hover:bg-[var(--v3-hover)] hover:text-foreground aria-expanded:bg-[var(--v3-hover)] aria-expanded:text-foreground",
               /* Full and the engine warning stay orange on hover too
                  (Codex-style). */
               (full || engineNeverAsks) &&

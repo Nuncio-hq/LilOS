@@ -393,6 +393,9 @@ export function ModelPicker({
     }
   };
 
+  const modelName =
+    catalogModelName(value.model, merged, value.provider) ?? value.model;
+
   return (
     <>
       <Popover
@@ -406,16 +409,18 @@ export function ModelPicker({
           render={
             <PromptInputButton
               size="sm"
-              className="h-6 min-w-0 shrink gap-1.5 rounded-md px-1.5 font-normal text-[12.5px] text-muted-foreground hover:bg-[var(--v3-hover)] hover:text-foreground aria-expanded:bg-[var(--v3-hover)] aria-expanded:text-foreground"
+              title={modelName}
+              className="h-6 shrink-0 @max-[480px]:min-w-0 @max-[480px]:shrink gap-1.5 rounded-md px-1.5 font-normal text-[12.5px] text-muted-foreground hover:bg-[var(--v3-hover)] hover:text-foreground aria-expanded:bg-[var(--v3-hover)] aria-expanded:text-foreground"
               data-slot="model-picker-trigger"
             />
           }
         >
           <ModelLogo provider={cur?.provider} logo={logoOf(cur?.provider)} />
-          {/* #886: narrow box = icon + a short label, never a wrap. */}
-          <span className="max-w-36 truncate @max-[480px]:max-w-16">
-            {catalogModelName(value.model, merged, value.provider) ??
-              value.model}
+          {/* #886: narrow box = icon + a short label, never a wrap. #897: the
+              trigger never shrinks (the agent and project names give way
+              first), so the label is cut only by this cap or the narrow box. */}
+          <span className="max-w-60 truncate @max-[480px]:max-w-16">
+            {modelName}
           </span>
           {fast && (
             <ZapIcon

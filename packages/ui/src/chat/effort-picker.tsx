@@ -48,13 +48,13 @@ export function EffortPicker({
             aria-label={`Reasoning effort: ${current}`}
             aria-haspopup="menu"
             title={`Reasoning effort · ${effort ? current : "engine default"}`}
-            className="h-6 min-w-0 shrink gap-1.5 rounded-md px-1.5 font-normal text-[12.5px] text-muted-foreground hover:bg-[var(--v3-hover)] hover:text-foreground aria-expanded:bg-[var(--v3-hover)] aria-expanded:text-foreground"
+            className="h-6 shrink-0 @max-[480px]:min-w-0 @max-[480px]:shrink gap-1.5 rounded-md px-1.5 font-normal text-[12.5px] text-muted-foreground hover:bg-[var(--v3-hover)] hover:text-foreground aria-expanded:bg-[var(--v3-hover)] aria-expanded:text-foreground"
             data-slot="effort-picker-trigger"
           />
         }
       >
         <GaugeIcon className="size-3.5" />
-        <span className="max-w-24 truncate" data-effort>
+        <span className="truncate" data-effort>
           {current}
         </span>
         <ChevronDownIcon className="size-3 opacity-60" />
