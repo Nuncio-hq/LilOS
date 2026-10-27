@@ -96,7 +96,7 @@ export function AccessPill({
                   : "Ask — the agent asks before risky commands."
             }
             className={cn(
-              "h-6 shrink-0 @max-[480px]:min-w-0 @max-[480px]:shrink gap-1.5 rounded-md px-1.5 font-normal text-[12.5px] text-muted-foreground hover:bg-[var(--v3-hover)] hover:text-foreground aria-expanded:bg-[var(--v3-hover)] aria-expanded:text-foreground",
+              "h-6 shrink-0 gap-1.5 rounded-md px-1.5 @max-[480px]:gap-0 @max-[480px]:px-1 font-normal text-[12.5px] text-muted-foreground hover:bg-[var(--v3-hover)] hover:text-foreground aria-expanded:bg-[var(--v3-hover)] aria-expanded:text-foreground",
               /* Full and the engine warning stay orange on hover too
                  (Codex-style). */
               (full || engineNeverAsks) &&
@@ -118,18 +118,15 @@ export function AccessPill({
         {engineNeverAsks ? (
           /* One label, as #884 specs read it: "Never asks" is short enough
              to keep at every width. */
-          <span>Never asks</span>
+          <span className="@max-[480px]:hidden">Never asks</span>
         ) : (
           <>
             <span className="@max-[480px]:hidden">
               {full ? "Full access" : "Ask"}
             </span>
-            <span className="hidden @max-[480px]:inline">
-              {full ? "Full" : "Ask"}
-            </span>
           </>
         )}
-        <ChevronDownIcon className="size-3 opacity-60" />
+        <ChevronDownIcon className="size-3 opacity-60 @max-[680px]:hidden" />
       </PopoverTrigger>
       <PopoverContent
         side="top"

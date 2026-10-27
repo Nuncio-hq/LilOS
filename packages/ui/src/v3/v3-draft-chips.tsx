@@ -60,12 +60,12 @@ export function ProjectChip({
               tone={project.tone}
               className="size-4 text-[9px]"
             />
-            <span className="truncate @max-[480px]:hidden">{project.name}</span>
+            <span className="truncate @max-[560px]:hidden">{project.name}</span>
           </>
         ) : (
           <>
             <MessageSquareIcon className="size-3.5 shrink-0" />
-            <span className="truncate @max-[480px]:hidden">No project</span>
+            <span className="truncate @max-[560px]:hidden">No project</span>
           </>
         )
       }
@@ -155,7 +155,7 @@ export function ModelChip({
     const body = (
       <>
         <CpuIcon className="size-3.5 shrink-0" />
-        <span className="truncate @max-[480px]:hidden">{label}</span>
+        <span className="truncate @max-[560px]:hidden">{label}</span>
       </>
     );
     if (choices.length > 0)
@@ -175,7 +175,7 @@ export function ModelChip({
       <span
         data-slot="model-chip-static"
         title={`${label} · ${rt.label} lists no other models yet`}
-        className="inline-flex h-6 min-w-0 items-center gap-1.5 px-1.5 text-[12.5px] text-muted-foreground"
+        className="inline-flex h-6 min-w-0 items-center gap-1.5 px-1.5 @max-[560px]:shrink-0 @max-[560px]:gap-0 @max-[560px]:px-1 text-[12.5px] text-muted-foreground"
       >
         {body}
       </span>

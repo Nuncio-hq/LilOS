@@ -410,7 +410,7 @@ export function ModelPicker({
             <PromptInputButton
               size="sm"
               title={modelName}
-              className="h-6 shrink-0 @max-[480px]:min-w-0 @max-[480px]:shrink gap-1.5 rounded-md px-1.5 font-normal text-[12.5px] text-muted-foreground hover:bg-[var(--v3-hover)] hover:text-foreground aria-expanded:bg-[var(--v3-hover)] aria-expanded:text-foreground"
+              className="h-6 shrink-0 gap-1.5 rounded-md px-1.5 @max-[480px]:gap-0 @max-[480px]:px-1 font-normal text-[12.5px] text-muted-foreground hover:bg-[var(--v3-hover)] hover:text-foreground aria-expanded:bg-[var(--v3-hover)] aria-expanded:text-foreground"
               data-slot="model-picker-trigger"
             />
           }
@@ -419,7 +419,7 @@ export function ModelPicker({
           {/* #886: narrow box = icon + a short label, never a wrap. #897: the
               trigger never shrinks (the agent and project names give way
               first), so the label is cut only by this cap or the narrow box. */}
-          <span className="max-w-60 truncate @max-[480px]:max-w-16">
+          <span className="max-w-60 truncate @max-[480px]:hidden">
             {modelName}
           </span>
           {fast && (
@@ -428,7 +428,7 @@ export function ModelPicker({
               className="size-3 fill-primary text-primary"
             />
           )}
-          <ChevronDownIcon className="size-3 opacity-60" />
+          <ChevronDownIcon className="size-3 opacity-60 @max-[680px]:hidden" />
         </PopoverTrigger>
         <PopoverContent
           side="top"

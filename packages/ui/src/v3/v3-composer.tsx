@@ -32,7 +32,7 @@ import type { V3Agent } from "./v3-types";
 const MAX_HEIGHT = 180;
 
 const CHIP =
-  "inline-flex h-6 min-w-0 items-center gap-1.5 rounded-md px-1.5 text-[12.5px] text-muted-foreground";
+  "inline-flex h-6 min-w-0 items-center gap-1.5 rounded-md px-1.5 @max-[560px]:shrink-0 @max-[560px]:gap-0 @max-[560px]:px-1 text-[12.5px] text-muted-foreground";
 
 export function Composer({
   data,
@@ -141,7 +141,7 @@ export function Composer({
   const who = (
     <>
       <AgentAvatar data={data} agent={agent} size={16} />
-      <span className="truncate @max-[480px]:hidden">{agent.name}</span>
+      <span className="truncate @max-[560px]:hidden">{agent.name}</span>
       {agent.id === data.ceoId && <CeoMark />}
     </>
   );
@@ -206,15 +206,15 @@ export function Composer({
         />
         <div className="mt-2 flex items-center gap-1">
           {attach && <AttachButton attach={attach} />}
-          {/* #886: one row, never two — chip labels hide for icons under
-              `@max-[480px]`; `min-w-0` lets the flex row shrink chips to
-              their icons instead of wrapping. #897: the model, effort and
-              access chips never shrink (`shrink-0`) above `@max-[480px]` — the agent and project
-              names (`truncate`) give way first, and the key hint steps aside
-              at `@max-[640px]`, so a label is cut only when the box is
-              really short of room. No overflow clip here:
-              ChipMenu's list opens upward out of the row, and even
-              `overflow-x: clip` eats its hit area where it sticks out. */}
+          {/* #886: one row, never two. #897: width tiers (container queries on the
+              composer box): the model, effort and access chips keep their full
+              labels down to 480px and never shrink or overlap; the chevrons go
+              under 680px, the agent and project names collapse to their icons
+              under 560px (never cut mid-word), everything is icon-only under
+              480px and the effort chip steps aside under 260px. The key hint
+              leaves at 640px. No overflow clip here: ChipMenu's list opens
+              upward out of the row, and even `overflow-x: clip` eats its hit
+              area where it sticks out. */}
           <div className="flex min-w-0 flex-1 items-center gap-0.5">
             {chips ?? (
               <>
