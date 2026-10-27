@@ -29,7 +29,7 @@ import {
 } from "./employees";
 import { pickFromLabel } from "./models";
 import { isDefaultRuntime } from "./runtime-ids";
-import { pickForRuntime } from "./runtimes";
+import { pickForRuntime, refreshRuntimeModels } from "./runtimes";
 import { searchMessages } from "./search";
 import { v3SettingsActions } from "./settings-actions";
 import { employeeOfConversation } from "./threads";
@@ -235,6 +235,11 @@ export function makeV3Actions(caps: V3Capabilities): V3DataActions {
       toastOnFail("Couldn't update the model list", setModelVisibility(v)),
     refreshModels: () =>
       refreshModels().catch((e) => {
+        sayError(describeActionError("Couldn't refresh the model list", e));
+        throw e;
+      }),
+    refreshRuntimeModels: (runtime) =>
+      refreshRuntimeModels(runtime).catch((e) => {
         sayError(describeActionError("Couldn't refresh the model list", e));
         throw e;
       }),

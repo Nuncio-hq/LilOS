@@ -62,6 +62,9 @@ export interface ThreadData {
   defaultModel: string | undefined;
   defaultProvider: string | undefined;
   picker: ModelPickerExtras | undefined;
+  /* #895: the model of a runtime thread whose catalog hasn't landed — the
+     composer shows it as a read-only chip, never Hermes's list. */
+  modelStatic: string | undefined;
   modelOpen: boolean;
   setModelOpen: (open: boolean) => void;
   onModel: (c: ModelChoice) => void | Promise<unknown>;

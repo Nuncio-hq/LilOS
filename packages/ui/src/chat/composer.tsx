@@ -1,5 +1,6 @@
 import { useControllableState } from "@radix-ui/react-use-controllable-state";
 import type { ChatStatus } from "ai";
+import { CpuIcon } from "lucide-react";
 import { useRef, useState } from "react";
 import {
   PromptInput,
@@ -44,6 +45,7 @@ export function Composer({
   models,
   onModel,
   picker,
+  modelStatic,
   modelOpen,
   onModelOpen,
   queued,
@@ -79,6 +81,9 @@ export function Composer({
   onModel?: (c: ModelChoice) => void | Promise<unknown>;
   /* Refresh / Edit models… / provider names — each renders only with its handler. */
   picker?: ModelPickerExtras;
+  /* No models but a pick to show (a runtime thread whose catalog hasn't
+     landed, #895): the model read-only, same chip the new-chat box draws. */
+  modelStatic?: string;
   /* Controlled open on the model picker — `/model` opens it. */
   modelOpen?: boolean;
   onModelOpen?: (open: boolean) => void;
@@ -255,6 +260,17 @@ export function Composer({
                     onOpenChange={onModelOpen}
                     {...picker}
                   />
+                ) : modelStatic && !models?.length ? (
+                  <span
+                    data-slot="model-chip-static"
+                    title={`${modelStatic} · no other models listed yet`}
+                    className="inline-flex h-6 min-w-0 items-center gap-1.5 px-1.5 text-[12.5px] text-muted-foreground"
+                  >
+                    <CpuIcon className="size-3.5 shrink-0" />
+                    <span className="truncate @max-[480px]:hidden">
+                      {modelStatic}
+                    </span>
+                  </span>
                 ) : null}
                 {tools}
               </PromptInputTools>

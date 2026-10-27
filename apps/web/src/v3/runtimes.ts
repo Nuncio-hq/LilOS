@@ -44,6 +44,29 @@ const inflight = new Set<string>();
 const signatureOf = (r: RuntimeStatusRow): string =>
   `${r.available ?? "?"}:${r.state ?? ""}:${r.detail ?? ""}`;
 
+function land(runtime: string, res: ModelsListResult): void {
+  catalogs.set({
+    ...catalogs.get(),
+    [runtime]: {
+      rows: modelRows(res.models ?? [], modelVisibility.get()),
+      options: res.models ?? [],
+      ...(res.default !== undefined ? { default: res.default } : {}),
+      ...(res.defaultProvider !== undefined
+        ? { defaultProvider: res.defaultProvider }
+        : {}),
+    },
+  });
+}
+
+/** #895: Refresh in a runtime's thread re-asks THAT runtime
+    (`models.list {runtime, refresh}`), never Hermes's. Throws on a failed
+    ask (the caller toasts); an answered-empty keeps the rows already known,
+    like the default engine's refresh does. */
+export async function refreshRuntimeModels(runtime: string): Promise<void> {
+  const res = await relay.listModels({ runtime, refresh: true });
+  if (res.models?.length) land(runtime, res);
+}
+
 async function ask(r: RuntimeStatusRow): Promise<void> {
   if (inflight.has(r.id)) return;
   const key = signatureOf(r);
@@ -62,17 +85,7 @@ async function ask(r: RuntimeStatusRow): Promise<void> {
       at: Date.now(),
       empty: (res.models ?? []).length === 0,
     });
-    catalogs.set({
-      ...catalogs.get(),
-      [r.id]: {
-        rows: modelRows(res.models ?? [], modelVisibility.get()),
-        options: res.models ?? [],
-        ...(res.default !== undefined ? { default: res.default } : {}),
-        ...(res.defaultProvider !== undefined
-          ? { defaultProvider: res.defaultProvider }
-          : {}),
-      },
-    });
+    land(r.id, res);
   } catch {
     /* The runtime can't answer (not installed, down) — its agents' pages
        show the model as text until a changed status row re-asks. */

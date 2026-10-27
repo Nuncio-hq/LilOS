@@ -433,7 +433,10 @@ export function resultsToLookAt(data: V3Data): LookAtRow[] {
 /** The runtime row an agent runs on (D-#761): `runtime` names its row;
     absent names the default row — the roster can leave the default's
     agents blank. No rows at all means the shell never learned them. */
-export const runtimeOf = (d: V3Data, a: V3Agent): V3Runtime | undefined => {
+export const runtimeOf = (
+  d: Pick<V3Data, "runtimes">,
+  a: Pick<V3Agent, "runtime">,
+): V3Runtime | undefined => {
   const rows = d.runtimes;
   if (!rows?.length) return undefined;
   if (!a.runtime) return rows.find((r) => r.isDefault) ?? rows[0];
@@ -532,9 +535,7 @@ export const effortLadderOf = (
   d: V3Data,
   a: V3Agent,
 ): { efforts: string[]; defaultEffort?: string } | undefined => {
-  const rt = runtimeOf(d, a);
-  if (a.runtime && !rt) return undefined;
-  const cat = rt && !rt.isDefault ? d.modelCatalogs?.[rt.id] : d.modelCatalog;
+  const cat = modelCatalogOf(d, a);
   if (!cat) return undefined;
   const opt =
     cat.options.find((o) => o.id === a.modelId) ??
@@ -549,10 +550,11 @@ export const effortLadderOf = (
 /* #872 — the composer's model catalog follows the SELECTED agent: a
    runtime agent picks from its own engine's catalog (`modelCatalogs`),
    the default engine's agent from `modelCatalog`. Absent = the plain
-   label menu (`modelChoicesOf`). */
+   label menu (`modelChoicesOf`). #895: the open thread's composer calls
+   the same lookup with its agent's runtime — one rule, two composers. */
 export const modelCatalogOf = (
-  d: V3Data,
-  a: V3Agent,
+  d: Pick<V3Data, "runtimes" | "modelCatalog" | "modelCatalogs">,
+  a: Pick<V3Agent, "runtime">,
 ): NonNullable<V3Data["modelCatalog"]> | undefined => {
   const rt = runtimeOf(d, a);
   if (a.runtime && !rt) return undefined;

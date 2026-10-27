@@ -23,6 +23,7 @@ type ComposerProps = Pick<
   | "models"
   | "onModel"
   | "picker"
+  | "modelStatic"
   | "defaultModel"
   | "defaultProvider"
   | "modelOpen"
@@ -130,6 +131,7 @@ export function ThreadComposer({
       models={p.models}
       onModel={p.onModel}
       picker={p.picker}
+      modelStatic={p.modelStatic}
       modelOpen={p.modelOpen}
       onModelOpen={p.onModelOpen}
       choice={
