@@ -8,17 +8,12 @@ import {
 } from "@lilos/contracts/app";
 import type {
   ApprovalOutcome,
-  ApprovalPolicy,
   ConversationAccess,
 } from "@lilos/contracts/engine";
 import type { ModelChoice, ModelVisibility } from "@lilos/ui";
 import type { AttachedFile } from "@lilos/ui/types";
 import { atom } from "nanostores";
-import {
-  defaultAccess,
-  defaultEditor,
-  enginePolicyPick,
-} from "../settings/state";
+import { defaultAccess, defaultEditor } from "../settings/state";
 import { toAttachmentInputs } from "./attachments";
 import { ensureFolderAccess, noteFolderAccessError } from "./folder-access";
 import { USER_ID } from "./me";
@@ -401,22 +396,6 @@ export async function setDefaultAccess(
 ): Promise<void> {
   defaultAccess.set(access);
   await relay.request("settings.set", { key: "defaultAccess", value: access });
-}
-
-/** #106: the engine's own approval policy — passthrough `approvals.setPolicy`
- *  (method reachability is the caller's job: only engines declaring
- *  `approval_policy` get the control). The engine echoes it on its next
- *  `describe`, which only comes at reconnect, so the pick is kept in
- *  `enginePolicyPick` meanwhile; a refused write puts the old value back. */
-export async function setApprovalPolicy(policy: ApprovalPolicy): Promise<void> {
-  const before = enginePolicyPick.get();
-  enginePolicyPick.set(policy);
-  try {
-    await relay.request("approvals.setPolicy", { policy });
-  } catch (e) {
-    enginePolicyPick.set(before);
-    throw e;
-  }
 }
 
 /** Rename a thread (`conversations.update {title}`). The user's title wins

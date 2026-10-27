@@ -69,10 +69,25 @@ test("the card asks one plain question; its scopes sit under Allow's menu", asyn
   await expect(
     card.getByRole("button", { name: "Deny", exact: true }),
   ).toBeVisible();
-  await expect(page.getByText(/patch \{/)).toHaveCount(0);
   await expect(
     card.getByRole("button", { name: "Once", exact: true }),
   ).toHaveCount(0);
+
+  // Details: the raw args live ONLY inside the disclosure — the question
+  // never shows them, but Oscar can see exactly what he is approving.
+  const details = card.locator("[data-approval-details]");
+  await expect(details).toContainText('patch {"path":"README.md"}');
+  await expect(
+    card.locator(
+      'xpath=.//*[contains(text(),"patch {") and not(ancestor::*[@data-approval-details])]',
+    ),
+  ).toHaveCount(0);
+  /* A safe ask starts closed; clicking Details reveals the mono payload. */
+  await expect(details.locator("pre")).toBeHidden();
+  await details.locator("summary").click();
+  await expect(details.locator("pre")).toBeVisible();
+  await page.screenshot({ path: `${SHOTS}/ac-1-card-details.png` });
+  await details.locator("summary").click();
 
   // The other grant scopes are the ▾ on Allow, not a row of four buttons.
   await card
@@ -86,6 +101,13 @@ test("the card asks one plain question; its scopes sit under Allow's menu", asyn
   ).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-1-card-scopes.png` });
   await page.keyboard.press("Escape");
+
+  // The Needs page row carries the same sentence and the same disclosure.
+  await v3Sidebar(page).getByRole("button", { name: "Needs you" }).click();
+  const needsCard = main(page).locator("[data-approval-details]").first();
+  await expect(needsCard).toContainText('patch {"path":"README.md"}', {
+    timeout: 30_000,
+  });
 
   // Home's needs-you row: the thread's name, the sentence beside it.
   await v3Sidebar(page).getByRole("button", { name: "Home" }).click();

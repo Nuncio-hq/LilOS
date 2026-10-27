@@ -22,12 +22,7 @@ import {
   refreshScheduledTasks,
   watchSchedules,
 } from "../lib/schedules";
-import {
-  aboutLines,
-  defaultAccess,
-  defaultEditor,
-  enginePolicyPick,
-} from "../settings/state";
+import { aboutLines, defaultAccess, defaultEditor } from "../settings/state";
 import { modelLabel, modelRows } from "./models";
 import {
   deviceOf,
@@ -90,9 +85,9 @@ function build(): Slice {
     versions: status.result?.versions,
   });
 
-  /* #884: the engine's own policy stays inside the app (enginePolicyOf /
-     enginePolicyPick still track it) but Settings no longer offers it —
-     two approval systems is one too many. */
+  /* #884 round 1: the engine's own Smart/Manual/Off policy no longer
+     reaches the app at all — the harness pins the engine to the mode
+     that surfaces every ask, so "Ask" here always means asking. */
   const connectRows = status.result?.connect;
   const connect =
     connectRows === undefined
@@ -200,7 +195,6 @@ onMount(slice, () => {
     $scheduledTasks,
     defaultAccess,
     defaultEditor,
-    enginePolicyPick,
     engineClient.description,
     modelVisibility,
     engineModels,

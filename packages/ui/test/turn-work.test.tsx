@@ -60,8 +60,9 @@ describe("work line facts", () => {
       stepFacts([
         step("patch", { path: "README.md" }, { status: "denied" }),
         step("terminal", { command: "y" }),
+        /* #884 r1: a denied patch changed nothing — not "edited 1 file". */
       ]),
-    ).toEqual(["edited 1 file", "ran 1 command", "you said no"]);
+    ).toEqual(["ran 1 command", "you said no"]);
     expect(stepFacts([step("mystery", {})])).toEqual(["1 step"]);
   });
 

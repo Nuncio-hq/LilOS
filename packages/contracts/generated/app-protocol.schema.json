@@ -5003,6 +5003,9 @@
                 "description": {
                   "type": "string"
                 },
+                "details": {
+                  "type": "string"
+                },
                 "options": {
                   "minItems": 1,
                   "type": "array",
@@ -7645,6 +7648,9 @@
                 "description": {
                   "type": "string"
                 },
+                "details": {
+                  "type": "string"
+                },
                 "options": {
                   "minItems": 1,
                   "type": "array",
@@ -7823,6 +7829,9 @@
                       "type": "string"
                     },
                     "description": {
+                      "type": "string"
+                    },
+                    "details": {
                       "type": "string"
                     },
                     "options": {
@@ -8099,6 +8108,9 @@
                         "type": "string"
                       },
                       "description": {
+                        "type": "string"
+                      },
+                      "details": {
                         "type": "string"
                       },
                       "options": {
@@ -9245,6 +9257,9 @@
                     "description": {
                       "type": "string"
                     },
+                    "details": {
+                      "type": "string"
+                    },
                     "options": {
                       "minItems": 1,
                       "type": "array",
@@ -9470,6 +9485,9 @@
                       "type": "string"
                     },
                     "description": {
+                      "type": "string"
+                    },
+                    "details": {
                       "type": "string"
                     },
                     "options": {

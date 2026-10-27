@@ -11,7 +11,7 @@ import type {
   Employee,
 } from "@lilos/contracts/app";
 import type { V3Ask, V3Status, V3Thread } from "@lilos/ui";
-import { askNote, summariseAsk } from "@lilos/ui";
+import { summariseApproval } from "@lilos/ui";
 import type { SessionSignal } from "../lib/session-watch";
 import { modelLabel } from "./models";
 
@@ -57,43 +57,49 @@ export const V3_STATUS: Record<ThreadStatus, V3Status> = {
 
 /** What the engine asks, as the ask card's text. `cwd` names the folder a
     run sentence lands in ("Run `x` in lilos?"). */
-function askText(ask: Ask, cwd?: string): { title: string; text: string } {
+function askText(
+  ask: Ask,
+  cwd?: string,
+  agent?: string,
+): { title: string; text: string; details?: string; detailsOpen: boolean } {
   const r = ask.request;
   if (ask.hire)
     return {
       title: `Hire ${ask.hire.name}`,
       text: `${ask.hire.name} · ${ask.hire.role} on ${ask.hire.model || "the engine's default model"}`,
+      detailsOpen: false,
     };
   // The question is the title; "The ask" row only adds the full text when
   // the title had to cut it (the card hides a row equal to its title).
   if (r.kind === "question")
-    return { title: oneLine(r.question, 80), text: r.question };
+    return {
+      title: oneLine(r.question, 80),
+      text: r.question,
+      detailsOpen: false,
+    };
   if (r.kind === "plan")
     return {
       title: "Review the plan",
       text: "The plan is in the thread; open it to read it before you decide.",
+      detailsOpen: false,
     };
-  /* An agent-tool approval (D-#341, a `gw-` request) is written for the
-     owner in `description`; its `command` is tool syntax with internal ids,
-     not for a person. The first sentence is the title, the rest "The ask"
-     (all of it when the title had to cut the sentence). */
-  if (ask.requestId.startsWith("gw-") && r.description?.trim()) {
-    const desc = r.description.trim();
-    const line = desc.split("\n")[0].trim();
-    const end = /[.!?](?=\s|$)/.exec(line);
-    const first = end ? line.slice(0, end.index + 1) : line;
-    const title = oneLine(first, 80);
-    const rest = desc.slice(first.length).trim();
-    return { title, text: title === first ? rest || title : desc };
-  }
-  /* #884: an engine approval is one plain sentence — the same words the
-     thread's card shows — so Home, Needs and the card all ask the same
-     question. A description that adds real context becomes "The ask" row;
-     the usual "wants to run" echo drops out. */
-  const sentence = summariseAsk(r.command, cwd);
+  /* #884: one call — the card, Home, Needs and this row all ask the same
+     sentence from the same inputs. `requestId` lets a `gw-` ask read its
+     owner-facing description as the question; `details` is the full payload
+     the Needs page's disclosure shows. */
+  const line = summariseApproval({
+    command: r.command,
+    requestId: ask.requestId,
+    description: r.description,
+    details: r.details,
+    cwd,
+    agent,
+  });
   return {
-    title: sentence,
-    text: askNote(r.command, r.description) ?? sentence,
+    title: line.headline,
+    text: line.note ?? line.headline,
+    details: line.details,
+    detailsOpen: line.detailsOpen,
   };
 }
 
@@ -134,7 +140,8 @@ export function v3Asks(src: ThreadSources): V3Ask[] {
       const conv = convs.get(a.conversationId) as Conversation;
       const from = owners.get(conv.channelId);
       if (!from) return [];
-      const { title, text } = askText(a, conv.cwd);
+      const agent = src.employees.find((e) => e.id === from)?.name;
+      const { title, text, details, detailsOpen } = askText(a, conv.cwd, agent);
       const r = a.request;
       return [
         {
@@ -147,6 +154,7 @@ export function v3Asks(src: ThreadSources): V3Ask[] {
           waiting: Math.max(0, Math.round((src.now - a.createdAt) / MIN)),
           at: a.createdAt,
           ask: text,
+          ...(details ? { details, detailsOpen } : {}),
           ...(a.why ? { why: a.why } : {}),
           ...(a.ifYes ? { ifYes: a.ifYes } : {}),
           ...(a.ifNo ? { ifNo: a.ifNo } : {}),

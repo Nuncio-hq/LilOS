@@ -6,6 +6,7 @@ import type {
 import type { DescribeResult, ModelsListResult } from "@lilos/contracts/engine";
 import type { EngineConnection } from "./engine/client";
 import type { EngineHostState } from "./engine/supervisor";
+import { enforceApprovalPolicy } from "./harness/policy";
 import type { Logger } from "./log";
 
 /**
@@ -46,6 +47,8 @@ export interface StatusReporterOptions {
       offers a non-default runtime only when its row says `available`. */
   runtimes?: () => HarnessStatusReport["runtimes"];
   logTail?: () => string[];
+  /** For the policy-enforcement warning path (#884). */
+  log?: Logger;
   /** Deadline for the engine `describe` probe (default 2s). */
   probeTimeoutMs?: number;
   /** LILOS_HIDE_CAPS: capabilities the app must behave as if the engine
@@ -102,6 +105,10 @@ export class StatusReporter {
           conn.request<DescribeResult>("describe", {}),
           this.opts.probeTimeoutMs,
         )) as DescribeResult;
+        /* #884: the probe re-describes every heartbeat — the same pin that
+           runs at attach re-applies here, so a policy that drifted to
+           `off`/`smart` mid-connection is corrected, not just migrated. */
+        await enforceApprovalPolicy(conn, raw, this.opts.log);
         /* Report the describe AS THE APP SEES IT — hidden capabilities
            stay hidden on every client surface, this one included. */
         const result = {

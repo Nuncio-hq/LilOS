@@ -1,4 +1,5 @@
 import { CheckIcon, ChevronDownIcon, XIcon } from "lucide-react";
+import { useState } from "react";
 import {
   Confirmation,
   ConfirmationAccepted,
@@ -21,7 +22,7 @@ import { VIEWER_ID } from "../types";
 import { useMenu } from "../v3/v3-keys";
 import { StatusPill } from "../v3/v3-marks";
 import { askHint } from "./ask-keys";
-import { askNote, summariseAsk } from "./ask-line";
+import { summariseApproval } from "./ask-line";
 import {
   CARD,
   CARD_HEAD,
@@ -242,7 +243,19 @@ function ApprovalCard({
     !!done && (done === "You said no" || done.startsWith("Denied"));
   const grant = (o: string) =>
     answer((GRANT_RECEIPT[o] ?? ((v: string) => `Allowed by ${v}`))(viewer));
-  const note = askNote(a.command, a.note);
+  /* #884: the same `summariseApproval` Home/Needs/thread rows use — same
+     inputs (command, requestId, description, details, cwd), same sentence.
+     `details` is the FULL payload behind the headline: the disclosure
+     opens itself when the sentence clipped or the payload is risky. */
+  const line = summariseApproval({
+    command: a.command,
+    requestId: a.requestId,
+    description: a.note,
+    details: a.details,
+    cwd: a.cwd,
+    agent: emp(by)?.name,
+  });
+  const [detailsOpen, setDetailsOpen] = useState(line.detailsOpen);
   return (
     <Confirmation
       className={done ? RECEIPT : CARD}
@@ -283,12 +296,29 @@ function ApprovalCard({
         ) : (
           <>
             <div className="text-[14.5px] text-foreground leading-normal">
-              {summariseAsk(a.command)}
+              {line.headline}
             </div>
-            {note && (
+            {line.note && (
               <p className="mt-1 text-[13.5px] text-muted-foreground leading-normal">
-                {note}
+                {line.note}
               </p>
+            )}
+            {line.details && (
+              <details
+                data-approval-details
+                open={detailsOpen}
+                onToggle={(e) =>
+                  setDetailsOpen((e.target as HTMLDetailsElement).open)
+                }
+                className="mt-2"
+              >
+                <summary className="cursor-pointer select-none text-[12.5px] text-muted-foreground/80 hover:text-foreground">
+                  Details
+                </summary>
+                <pre className="mt-1.5 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-md bg-foreground/[0.04] p-2.5 font-mono text-[12px] leading-normal text-foreground/90">
+                  {line.details}
+                </pre>
+              </details>
             )}
           </>
         )}

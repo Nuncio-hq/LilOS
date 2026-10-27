@@ -6,10 +6,7 @@
  * written via actions.ts.
  */
 import type { ProfileSettings } from "@lilos/contracts/app";
-import type {
-  ApprovalPolicy,
-  ConversationAccess,
-} from "@lilos/contracts/engine";
+import type { ConversationAccess } from "@lilos/contracts/engine";
 import { atom } from "nanostores";
 
 /** The picked default editor (relay `settings` key `defaultEditor`); null
@@ -20,26 +17,6 @@ export const defaultEditor = atom<string | null>(null);
  *  `settings` key `defaultAccess`); a conversation opens on it and never
  *  remembers a previous session's level. */
 export const defaultAccess = atom<ConversationAccess>("ask");
-
-/** The engine approval policy the user picked this session. The engine's
- *  own value only reaches us on `describe` (at reconnect), so a pick stands
- *  here until then; `undefined` = trust the declared `detail.current`. */
-export const enginePolicyPick = atom<ApprovalPolicy | undefined>(undefined);
-
-/** The policy Settings shows: the pick, else what the engine declared, else
- *  Smart (the engine default). `undefined` while the engine declares no
- *  `approval_policy` capability (D-#19: no capability, no control). */
-export function enginePolicyOf(
-  capability: { detail?: Record<string, unknown> } | undefined,
-  pick: ApprovalPolicy | undefined,
-): ApprovalPolicy | undefined {
-  if (!capability) return undefined;
-  if (pick) return pick;
-  const current = capability.detail?.current;
-  return current === "manual" || current === "off" || current === "smart"
-    ? current
-    : "smart";
-}
 
 /** ⌘, on macOS / Ctrl+, elsewhere — the platform's Settings shortcut. */
 export function isSettingsShortcut(e: {

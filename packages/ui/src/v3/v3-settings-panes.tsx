@@ -11,8 +11,8 @@ import { LinkRow, Row, Segmented, useRun } from "./v3-settings-bits";
 
 /* #884: only LilOS's own Ask / Full access shows. The engine's Smart /
    Manual / Off policy row used to sit under it — a second approval system
-   nobody can reason about; `enginePolicy` still reaches the app, it just
-   has no control here. */
+   nobody can reason about; the harness pins the engine to the mode that
+   surfaces every ask, so nothing here needs to manage it. */
 const APPROVALS = [
   {
     id: "ask" as const,
