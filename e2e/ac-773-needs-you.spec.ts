@@ -89,6 +89,12 @@ test("an approval from one thread and a question from another both appear, oldes
   await expect(main(page)).toContainText("Edit README.md?");
   await expect(main(page)).toContainText("Allow this next time");
   await expect(main(page)).toContainText(`${agent.name} asks`);
+  // The question waiting underneath is titled by what it asks.
+  const question = main(page).getByText(
+    "Which environment should this change ship to?",
+  );
+  await expect(question).toBeVisible();
+  await shot(page, "ac-1-approval-open");
   // The raw command is kept, but only behind Details: closed until opened.
   const details = main(page)
     .locator("[data-approval-details]")
@@ -98,12 +104,6 @@ test("an approval from one thread and a question from another both appear, oldes
   await expect(details.locator("pre")).toContainText(
     'patch {"path":"README.md"}',
   );
-  // The question waiting underneath is titled by what it asks.
-  const question = main(page).getByText(
-    "Which environment should this change ship to?",
-  );
-  await expect(question).toBeVisible();
-  await shot(page, "ac-1-approval-open");
 
   // The newer question is the one underneath. Open it: no allow-next-time.
   await question.click();

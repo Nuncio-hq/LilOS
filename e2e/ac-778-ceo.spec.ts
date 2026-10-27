@@ -280,7 +280,8 @@ test("a CEO thread's team_set_ceo moves the position only after approval", async
     // and no tool syntax or internal id reaches the card.
     await expect(main(page)).toContainText("Everyone who reported");
     // Above the Details disclosure the card shows only the sentence and note;
-    // the raw tool and id live in Details (open here: the args are long).
+    // the raw tool and id live in Details. This gateway ask's description is
+    // over 80 chars, so Details starts open (ask-line.ts `clipped`).
     const shown = (await main(page).innerText()).split("\nDetails\n")[0];
     expect(shown).not.toContain("team_set_ceo");
     expect(shown).not.toContain(quillId);
