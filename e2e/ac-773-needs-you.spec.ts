@@ -89,8 +89,14 @@ test("an approval from one thread and a question from another both appear, oldes
   await expect(main(page)).toContainText("Edit README.md?");
   await expect(main(page)).toContainText("Allow this next time");
   await expect(main(page)).toContainText(`${agent.name} asks`);
-  await expect(main(page).getByText('patch {"path":"README.md"}')).toHaveCount(
-    0,
+  // The raw command is kept, but only behind Details: closed until opened.
+  const details = main(page)
+    .locator("[data-approval-details]")
+    .filter({ hasText: 'patch {"path":"README.md"}' });
+  await expect(details.locator("pre")).toBeHidden();
+  await details.locator("summary").click();
+  await expect(details.locator("pre")).toContainText(
+    'patch {"path":"README.md"}',
   );
   // The question waiting underneath is titled by what it asks.
   const question = main(page).getByText(
