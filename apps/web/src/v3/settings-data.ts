@@ -143,9 +143,9 @@ function build(): Slice {
       models: modelsOf(catalog, engineProviders.get(), visibility),
       engine,
       relay: relayOf(rows),
-      ...(version
-        ? { about: { version: detail ? `${version} · ${detail}` : version } }
-        : {}),
+      /* #885: About carries only the app's version; the build · relay ·
+         harness line stays for Engine's Troubleshooting section. */
+      ...(version ? { about: { version, ...(detail ? { detail } : {}) } } : {}),
       diagnostics: formatDiagnostics({
         result: status.result,
         connection,

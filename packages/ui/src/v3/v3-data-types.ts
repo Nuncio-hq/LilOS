@@ -133,9 +133,14 @@ export type V3Settings = {
   };
   /** The link between this app and the engine. */
   relay: { state: "ok" | "starting" | "down"; problem?: string };
-  /** This app's own version line; absent where it has none to show. */
+  /** This app's own version; absent where it has none to show (#885:
+      About shows only this — the parts' versions are `detail`, kept for
+      Troubleshooting under Engine & models). */
   about?: {
     version: string;
+    /** The rest of the version story (build · relay · harness), for
+        troubleshooting only — never on the About row. */
+    detail?: string;
     /** A question for the CEO about what changed; absent = no such row. */
     whatsNew?: { label: string; ask: string };
   };

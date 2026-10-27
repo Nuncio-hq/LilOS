@@ -38,7 +38,7 @@ export type V3Route =
       page: "settings";
       view?: "general" | "engine" | "phone" | "connectors" | "skills";
     }
-  /** First run: name the company, check the engine, hire the CEO, add a project. */
+  /** First run: your name, the first agent, a project folder. */
   | { page: "welcome" }
   /** A new chat, opened like any record beside the page you are on; `id` is
      the agent it starts with (you already chose who, so no picker first). */
@@ -236,13 +236,17 @@ export type V3Actions = {
   /** The one-time approval that lets the engine's agents see the app;
      rows update in `settings.connect`. Absent without engine support. */
   connectEngine?: () => Promise<void>;
-  /** First run done: the company exists and the app opens on Home. The
-     agent is the first one hired (the CEO, where the company has one); a
-     name or model left out keeps what the engine started it with, and no
-     folder means the first chat picks one. Rejects only if nothing could be
-     saved: the welcome says so and stays open. */
+  /** "Choose folder…" in first run (#885): the app opens its own folder
+     picker (the same one a new chat's project menu uses) and `onPicked`
+     gets the path, which lands in the typed field — a path from typing
+     stays the fallback. Absent: no button, typing only. */
+  pickFolder?: (onPicked: (path: string) => void) => void;
+  /** First run done: the app opens on Home. The agent is the first one
+     (the CEO, where the company has one); a name or model left out keeps
+     what the engine started it with, and no folder means the first chat
+     picks one. Rejects only if nothing could be saved: the welcome says so
+     and stays open. */
   finishSetup: (s: {
-    company: string;
     me: string;
     agentName?: string;
     agentModel?: string;

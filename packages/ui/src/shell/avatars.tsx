@@ -47,7 +47,7 @@ export function HermesAvatar({
   return (
     <span
       role="img"
-      aria-label={name ?? "Employee"}
+      aria-label={name ?? "Agent"}
       className={cn("relative inline-block size-9 shrink-0", className)}
     >
       {/* Working: a blue arc circles the orb (mobile's ring), instead of a dot. */}

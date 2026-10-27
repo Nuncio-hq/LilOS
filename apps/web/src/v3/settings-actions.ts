@@ -21,6 +21,7 @@ import {
 } from "../lib/schedules";
 import { say, sayError } from "../lib/toast";
 import { profilePatch, updateOutcomeMessage } from "../settings/state";
+import { askForFolder } from "./add-folder";
 import { modelLabel, pickFromLabel } from "./models";
 import { detectedEditors, markOnboarded } from "./settings-data";
 import { visibilityOf } from "./settings-map";
@@ -39,6 +40,7 @@ type Mine = Pick<
   | "checkEngine"
   | "checkUpdates"
   | "connectEngine"
+  | "pickFolder"
   | "finishSetup"
   | "skipSetup"
   | "scheduleSave"
@@ -90,7 +92,7 @@ export const v3SettingsActions: Mine = {
     } catch (e) {
       if (e instanceof RelayError && e.code === "tailscale_unavailable")
         return { kind: "no-remote" };
-      sayError("Couldn't reach the relay — try again.");
+      sayError("Couldn't reach LilOS — try again.");
       throw e;
     }
   },
@@ -154,15 +156,18 @@ export const v3SettingsActions: Mine = {
     }
   },
 
-  finishSetup: async ({ company, me, agentName, agentModel, folder }) => {
+  /* First run's "Choose folder…" (#885): the same dialog a new chat's
+     project menu opens; the picked path fills the typed field. */
+  pickFolder: (onPicked) => askForFolder(onPicked),
+
+  finishSetup: async ({ me, agentName, agentModel, folder }) => {
     const steps = await Promise.allSettled([
       relay.updateProfile({
         userName: me,
-        companyName: company || undefined,
         avatarColor: DEFAULT_AVATAR_COLOR,
       }),
       firstAgent(agentName, agentModel),
-      // The first folder is the company's first project (D-#771).
+      // The first folder is the first project (D-#771).
       folder
         ? addFolder(folder).then(() => relay.createProject({ folder }))
         : Promise.resolve(),

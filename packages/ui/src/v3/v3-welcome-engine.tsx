@@ -1,112 +1,66 @@
-import { useEffect } from "react";
+import { InlineCodeText } from "../lib/inline-code";
 import { Btn } from "./v3-bits";
-import type { V3Settings } from "./v3-data-types";
 import type { V3PageProps } from "./v3-page-types";
-import { EngineFix, EngineState, useRun } from "./v3-settings-bits";
-import { CheckRow } from "./v3-welcome-bits";
+import { EngineFix, useRun } from "./v3-settings-bits";
 
-/* First run, step "Engine check": the relay, then the engine, each as the
-   app last found it (never a timer). Blocked until both are fine, with the
-   engine's own words about what to do, and a way to ask again. */
+/* First run's problem screen: it replaces the steps while something the
+   app needs is down — the plain reason, what to do, and a way to check
+   again. No internal names on this surface (#885): the detail lives behind
+   "See status", in the app's diagnostics view. */
 
-/** "Engine" until the engine has said who it is; then "Engine · name
-   version", so the word is not said twice. */
-function engineLabel(engine: V3Settings["engine"]) {
-  if (engine.unnamed) return "Engine";
-  const who = [
-    engine.name,
-    engine.state === "missing" ? undefined : engine.version,
-  ]
-    .filter(Boolean)
-    .join(" ");
-  return `Engine · ${who}`;
+/** True while first run can proceed; false = the problem screen stands in
+   for the steps (the app's relay is unreachable, or the engine reports a
+   state the welcome cannot fix by itself). */
+export function firstRunProblem(data: V3PageProps["data"]): boolean {
+  const { engine, relay } = data.settings;
+  return (
+    relay.state === "down" ||
+    engine.state === "missing" ||
+    engine.state === "old" ||
+    engine.state === "down"
+  );
 }
 
-export function EngineStep({ data, act }: Pick<V3PageProps, "data" | "act">) {
+export function EngineProblem({
+  data,
+  act,
+}: Pick<V3PageProps, "data" | "act">) {
   const { engine, relay } = data.settings;
   const [check, again] = useRun(() => act.checkEngine?.());
-  // Land on a fresh answer rather than whatever the last poll said.
-  useEffect(() => {
-    void act.checkEngine?.();
-  }, []);
-
-  const relayLeg =
-    relay.state === "ok" ? "ok" : relay.state === "starting" ? "run" : "fail";
-  // The engine cannot be known while the relay is not answering.
-  const engineLeg =
-    relay.state !== "ok"
-      ? "wait"
-      : engine.state === "ok"
-        ? "ok"
-        : engine.state === "starting"
-          ? "run"
-          : "fail";
-  const stuck = relayLeg === "fail" || engineLeg === "fail";
-  // The plain reason stays on the row; the raw wire detail (paths, env vars)
-  // is behind the app's status view, one click from a failed leg.
-  const seeStatus = act.showStatus && (
-    <button
-      type="button"
-      onClick={act.showStatus}
-      className="text-muted-foreground underline underline-offset-2 hover:text-foreground"
-    >
-      See status
-    </button>
-  );
-
+  const relayDown = relay.state === "down";
   return (
-    <div className="mt-3">
-      <p className="mb-1 text-[14px] text-muted-foreground">
-        LilOS runs on your Mac. This makes sure everything it needs is there.
+    <div className="mt-3" data-first-run-problem>
+      <p className="text-[15px] font-medium text-foreground">
+        Something LilOS needs isn't running.
       </p>
-      <CheckRow
-        state={relayLeg}
-        label="Local relay"
-        result={
-          relayLeg === "ok" ? (
-            "Connected"
-          ) : (
-            <span className="flex items-center gap-3">
-              Not connected
-              {seeStatus}
-            </span>
-          )
-        }
-      />
-      <CheckRow
-        state={engineLeg}
-        label={engineLabel(engine)}
-        result={
-          engineLeg === "ok" ? (
-            "Ready"
-          ) : (
-            <span className="flex items-center gap-3">
-              <EngineState engine={engine} />
-              {engineLeg === "fail" && seeStatus}
-            </span>
-          )
-        }
-      />
-      {stuck && (
-        <div className="mt-4">
-          {relayLeg === "fail" ? (
-            relay.problem && (
-              <p className="whitespace-pre-line text-[13.5px] text-muted-foreground">
-                {relay.problem}
-              </p>
-            )
-          ) : (
-            <EngineFix engine={engine} />
-          )}
-          {act.checkEngine && (
-            <div className="mt-4">
-              <Btn small onClick={again}>
-                {check === "busy" ? "Checking…" : "Check again"}
-              </Btn>
-            </div>
-          )}
-        </div>
+      {relayDown ? (
+        <p className="mt-2 text-[14px] text-muted-foreground">
+          It couldn't reach the background service it runs on. Quit LilOS and
+          open it again; if this stays, See status has the details.
+        </p>
+      ) : engine.problem ? (
+        <p className="mt-2 whitespace-pre-line text-[14px] text-muted-foreground">
+          <InlineCodeText text={engine.problem} />
+        </p>
+      ) : (
+        <EngineFix engine={engine} />
       )}
+      <div className="mt-5 flex items-center gap-4">
+        {act.checkEngine && (
+          <Btn small onClick={again}>
+            {check === "busy" ? "Checking…" : "Check again"}
+          </Btn>
+        )}
+        {act.showStatus && (
+          <button
+            type="button"
+            onClick={act.showStatus}
+            className="text-[13.5px] text-muted-foreground underline underline-offset-2 hover:text-foreground"
+          >
+            See status
+          </button>
+        )}
+      </div>
     </div>
   );
 }

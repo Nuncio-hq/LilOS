@@ -37,7 +37,8 @@ test.beforeAll(async () => {
   test.setTimeout(120_000);
   stack = await bootStack("ac193", await pickPorts(), {
     // #118: pin the signed-in name so the Welcome's first step (a name is
-    // required to go on) is filled deterministically.
+    // required to go on) is filled deterministically. #885: no company
+    // field anymore — the name is all it asks.
     LILOS_USER_NAME: "Oscar",
   });
 });
@@ -64,13 +65,9 @@ test("AC-1 first-run hire's DM channel exists, and the new chat with it is ready
     timeout: 30_000,
   });
   const next = page.getByRole("button", { name: "Next", exact: true });
-  await next.click(); // → Engine check
-  await expect(
-    page.locator("[data-first-run-step][data-state='ok']"),
-  ).toHaveCount(2, { timeout: 60_000 });
   await next.click(); // → Your first agent
   await next.click(); // → First project
-  await page.getByRole("button", { name: "Open my company" }).click();
+  await page.getByRole("button", { name: "Start" }).click();
 
   // The harness opened the DM channel at hire — it is on the relay already.
   const sidebar = v3Sidebar(page);

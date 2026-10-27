@@ -4,8 +4,9 @@
      you have not seen shows on it (D-#563);
    - the Hire page lists the engine's own profiles as a quiet second section
      and hires one onto the profile (capability by presence);
-   - first run keeps a strip the window can be dragged by, and a failed engine
-     check offers "See status" only where the app has a status view. */
+   - first run keeps a strip the window can be dragged by, and the problem
+     screen (in place of the steps while something is down, #885) offers
+     "See status" only where the app has a status view. */
 import {
   act,
   cleanup,
@@ -28,7 +29,7 @@ import type {
   V3Status,
   V3Thread,
 } from "../src/v3/v3-types";
-import { EngineStep } from "../src/v3/v3-welcome-engine";
+import { EngineProblem, firstRunProblem } from "../src/v3/v3-welcome-engine";
 
 afterEach(cleanup);
 
@@ -253,31 +254,34 @@ describe("first run", () => {
     );
   });
 
-  test("a failed engine check offers See status only with a status view", () => {
+  test("the problem screen offers See status only with a status view", () => {
     const shown = vi.fn();
     const { unmount } = render(
-      <EngineStep data={data()} act={actions({ showStatus: shown })} />,
+      <EngineProblem data={data()} act={actions({ showStatus: shown })} />,
     );
+    expect(firstRunProblem(data())).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "See status" }));
     expect(shown).toHaveBeenCalledTimes(1);
     unmount();
 
-    render(<EngineStep data={data()} act={actions()} />);
+    render(<EngineProblem data={data()} act={actions()} />);
     expect(screen.queryByRole("button", { name: "See status" })).toBeNull();
   });
 
-  test("a healthy engine check has no See status", () => {
-    render(
-      <EngineStep
-        data={data({
-          settings: {
-            engine: { state: "ok", name: "Hermes" },
-            relay: { state: "ok" },
-          },
-        } as never)}
-        act={actions({ showStatus: vi.fn() })}
-      />,
-    );
-    expect(screen.queryByRole("button", { name: "See status" })).toBeNull();
+  test("a healthy relay and engine never show the problem screen", () => {
+    const ok = data({
+      settings: {
+        engine: { state: "ok", name: "Hermes" },
+        relay: { state: "ok" },
+      },
+    } as never);
+    expect(firstRunProblem(ok)).toBe(false);
+    const starting = data({
+      settings: {
+        engine: { state: "starting", name: "Hermes" },
+        relay: { state: "starting" },
+      },
+    } as never);
+    expect(firstRunProblem(starting)).toBe(false);
   });
 });
