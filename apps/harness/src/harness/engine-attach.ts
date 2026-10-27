@@ -40,8 +40,8 @@ export async function describeAndHire(
 ): Promise<void> {
   try {
     const d = await conn.request<DescribeResult>("describe", {});
-    /* #884: an engine left on `off`/`smart` swallows the asks "Ask" access
-       exists for — pin it to `manual` on every (re)connect. */
+    /* #884: an engine left on `off` swallows the asks "Ask" access exists
+       for — pin it back to `smart` on every (re)connect. */
     await enforceApprovalPolicy(conn, d, this.opts.log);
     const hide = new Set(this.opts.hideCaps ?? []);
     const desc = {

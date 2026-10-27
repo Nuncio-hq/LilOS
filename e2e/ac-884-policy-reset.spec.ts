@@ -12,8 +12,10 @@ import {
 /**
  * Issue #884 round 1 — an engine whose global approval policy was left on
  * `off` (the Settings row is gone, so a user cannot undo it) must still let
- * LilOS's Ask actually ask: the harness pins the engine to `manual` on
- * attach, and an ask then surfaces a card instead of being auto-answered.
+ * LilOS's Ask actually ask: the harness pins the engine to `smart` — the
+ * ask-for-the-risky-ones mode behind "Ask before risky commands" — on
+ * attach, and a risky step then surfaces a card instead of being
+ * auto-answered.
  *
  * `LILOS_FAKE_POLICY=off` boots engine-fake in exactly that stale state —
  * without the pin it would answer every gated step itself and no card
@@ -48,7 +50,7 @@ test("an engine reporting Off is reset on connect — an ask shows a card", asyn
   await startChat(page, stack.webUrl, agent, "Add a footer to the page");
 
   /* With `off` auto-answering, no card could appear — its presence proves
-     the harness set the policy back to `manual` on attach. */
+     the harness set the policy back to `smart` on attach. */
   const card = page.locator('[data-ask-id][data-ask-state="open"]').first();
   await expect(card).toContainText("Edit README.md?", { timeout: 90_000 });
   await expect(

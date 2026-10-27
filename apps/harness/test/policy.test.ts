@@ -1,7 +1,9 @@
-/* Issue #884 round 1: the harness pins the engine's global approval policy
-   to `manual` — the mode that makes LilOS's Ask surface a card — on attach
-   and on every describe probe, so a stale `off`/`smart` value or later
-   drift never leaves the owner under an "Ask" pill that never asks. */
+/* Issue #884 round 1: the harness corrects an engine whose global approval
+   policy was left on `off` — pinned back to `smart` (the ask-for-the-risky-
+   ones mode behind LilOS's "Ask before risky commands") on attach and on
+   every describe probe, so a stale `off` or later drift never leaves the
+   owner under an "Ask" pill that never asks. `smart` and `manual` are left
+   alone. */
 
 import type { DescribeResult } from "@lilos/contracts/engine";
 import { describe, expect, it } from "vitest";
@@ -35,22 +37,22 @@ function desc(
 }
 
 describe("issue #884 — enforceApprovalPolicy", () => {
-  it("an engine reporting off is reset to manual", async () => {
+  it("an engine reporting off is reset to smart — the mode behind 'Ask before risky commands'", async () => {
     const calls: string[] = [];
     const d = desc("off");
     await enforceApprovalPolicy(conn(calls), d);
-    expect(calls).toEqual(['approvals.setPolicy {"policy":"manual"}']);
+    expect(calls).toEqual(['approvals.setPolicy {"policy":"smart"}']);
     /* the passed describe is patched so the cache reports the new truth */
-    expect(d.capabilities[0].detail?.current).toBe("manual");
+    expect(d.capabilities[0].detail?.current).toBe("smart");
   });
 
-  it("an engine reporting smart is reset too — smart can answer asks itself", async () => {
+  it("smart is left alone — it already asks for the risky ones", async () => {
     const calls: string[] = [];
     await enforceApprovalPolicy(conn(calls), desc("smart"));
-    expect(calls).toEqual(['approvals.setPolicy {"policy":"manual"}']);
+    expect(calls).toEqual([]);
   });
 
-  it("manual is left alone — no write, no drift", async () => {
+  it("manual is left alone — gating every command is a deliberate choice", async () => {
     const calls: string[] = [];
     await enforceApprovalPolicy(conn(calls), desc("manual"));
     expect(calls).toEqual([]);
@@ -64,7 +66,7 @@ describe("issue #884 — enforceApprovalPolicy", () => {
     expect(calls).toEqual([]);
   });
 
-  it("a capability that cannot spell manual is not written", async () => {
+  it("a capability that cannot spell smart is not written", async () => {
     const calls: string[] = [];
     await enforceApprovalPolicy(conn(calls), desc("off", ["off", "auto"]));
     expect(calls).toEqual([]);

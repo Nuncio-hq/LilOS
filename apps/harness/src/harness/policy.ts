@@ -3,11 +3,13 @@ import type { EngineConnection } from "../engine/client";
 import type { Logger } from "../log";
 
 /**
- * #884 round 1: LilOS's Ask / Full access only works while the engine
- * surfaces every approval — on the engine's own policy scale that mode is
- * `manual`. A user who once set the engine to `off` (or `smart`, which may
- * answer asks itself) would otherwise sit under an "Ask" pill that never
- * produces a card, with Settings no longer able to undo it.
+ * #884 round 1: LilOS's "Ask before risky commands" maps to the engine's
+ * `smart` — its ask-for-the-risky-ones mode. A user who once set the
+ * engine to `off` would otherwise sit under an "Ask" pill that never
+ * produces a card, with Settings no longer able to undo it, so `off` is
+ * the only value corrected — `smart` already asks and `manual` is a
+ * deliberate choice the engine side may keep (pinning to manual would
+ * gate every `ls`, a change Oscar never asked for).
  *
  * Called on every describe — engine attach AND the status probe, which
  * re-describes each heartbeat — so a drifted value is re-applied, not
@@ -22,14 +24,14 @@ export async function enforceApprovalPolicy(
 ): Promise<void> {
   const cap = desc.capabilities.find((c) => c.id === "approval_policy");
   if (!cap) return;
-  if (cap.detail?.current === "manual") return;
-  /* Only engines that can spell `manual` get written — a capability with
+  if (cap.detail?.current !== "off") return;
+  /* Only engines that can spell `smart` get written — a capability with
      other options is a different machine and is left alone. */
   const options = cap.detail?.options;
-  if (Array.isArray(options) && !options.includes("manual")) return;
+  if (Array.isArray(options) && !options.includes("smart")) return;
   try {
-    await conn.request("approvals.setPolicy", { policy: "manual" });
-    cap.detail = { ...cap.detail, current: "manual" };
+    await conn.request("approvals.setPolicy", { policy: "smart" });
+    cap.detail = { ...cap.detail, current: "smart" };
   } catch (error) {
     log?.warn("approval policy reset refused", { error: String(error) });
   }

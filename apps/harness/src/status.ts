@@ -106,8 +106,8 @@ export class StatusReporter {
           this.opts.probeTimeoutMs,
         )) as DescribeResult;
         /* #884: the probe re-describes every heartbeat — the same pin that
-           runs at attach re-applies here, so a policy that drifted to
-           `off`/`smart` mid-connection is corrected, not just migrated. */
+           runs at attach re-applies here, so a policy that drifted back to
+           `off` mid-connection is corrected, not just migrated. */
         await enforceApprovalPolicy(conn, raw, this.opts.log);
         /* Report the describe AS THE APP SEES IT — hidden capabilities
            stay hidden on every client surface, this one included. */
