@@ -14,8 +14,8 @@ import {
  * relay + harness on engine-fake). AC-1 notes render as centred
  * `data-sysnote` rows — never Oscar's right-aligned bubble — and drop when
  * the turn beside them already shows the same status; AC-2 a denied
- * approval keeps the turn and its card ("Denied by …"); AC-3 message search
- * (⌘K's Messages group) labels a system note "LilOS", not Oscar.
+ * approval keeps the turn and its card ("You said no", #884); AC-3 message
+ * search (⌘K's Messages group) labels a system note "LilOS", not Oscar.
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
@@ -113,13 +113,13 @@ test("AC-2 a denied approval keeps the turn and its card", async ({ page }) => {
   await expect(card).toBeVisible({ timeout: 60_000 });
   await card.getByRole("button", { name: "Deny", exact: true }).click();
 
-  /* The card stays with "Denied" — the engine's silent end never blanks
-     the turn out. */
+  /* The card stays with "You said no" — a denied ask is a decision, not a
+     failure, and the engine's silent end never blanks the turn out. */
   await expect(page.locator("[data-turnsettled]").last()).toBeVisible({
     timeout: 90_000,
   });
   const resolved = page.locator('[data-ask-id][data-ask-state="resolved"]', {
-    hasText: /Denied/,
+    hasText: /You said no/,
   });
   await expect(resolved.first()).toBeVisible({ timeout: 30_000 });
   await page.screenshot({ path: `${SHOTS}/ac-2-denied-kept.png` });

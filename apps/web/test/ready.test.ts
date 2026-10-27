@@ -125,6 +125,16 @@ describe("PORT_SLICE (#825)", () => {
     expect(workerIndex({ VITEST_POOL_ID: "3" })).toBe(3);
   });
 
+  it("adds LILOS_TEST_INDEX to the runner index as an offset", () => {
+    expect(
+      workerIndex({ TEST_PARALLEL_INDEX: "1", LILOS_TEST_INDEX: "20" }),
+    ).toBe(21);
+    expect(workerIndex({ LILOS_TEST_INDEX: "20" })).toBeUndefined();
+    expect(() =>
+      workerIndex({ TEST_PARALLEL_INDEX: "0", LILOS_TEST_INDEX: "-1" }),
+    ).toThrow(/offset/);
+  });
+
   it("falls back to the probe band when no runner index is set", async () => {
     const port = await requireSlicePort("web", {});
     expect(port).toBeGreaterThanOrEqual(PORT_SLICE.probeLo);

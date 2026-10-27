@@ -279,11 +279,21 @@ test("a CEO thread's team_set_ceo moves the position only after approval", async
     // Written for a person: the sentence is the title, the rest is the ask,
     // and no tool syntax or internal id reaches the card.
     await expect(main(page)).toContainText("Everyone who reported");
-    await expect(main(page)).not.toContainText("team_set_ceo");
-    await expect(main(page)).not.toContainText(quillId);
+    // innerText is what is shown: the raw tool and id sit in the closed
+    // Details disclosure, so they must not appear until it is opened.
+    const shown = await main(page).innerText();
+    expect(shown).not.toContain("team_set_ceo");
+    expect(shown).not.toContain(quillId);
     await shot(page, "03-approval");
+    const details = main(page)
+      .locator("[data-approval-details]")
+      .filter({ hasText: "team_set_ceo" });
+    await expect(details.locator("pre")).toBeHidden();
+    await details.locator("summary").click();
+    await expect(details.locator("pre")).toContainText("team_set_ceo");
+    await expect(details.locator("pre")).toContainText(quillId);
     await main(page)
-      .getByRole("button", { name: "Approve", exact: true })
+      .getByRole("button", { name: "Allow", exact: true })
       .click();
 
     await page.goto(`${stack.webUrl}/#?page=people`);

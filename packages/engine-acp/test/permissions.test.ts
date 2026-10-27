@@ -246,6 +246,9 @@ describe("acpApprovalRequest — request.opened ask construction", () => {
     expect(acpApprovalRequest(req())).toEqual({
       kind: "approval",
       command: "chmod 777 README.md",
+      /* #884: the rawInput rides `details` — the card's disclosure shows
+         exactly what runs when `command` is only a title. */
+      details: JSON.stringify({ command: "chmod 777 README.md" }, null, 2),
       options: ["once", "session", "always", "deny"],
     });
   });

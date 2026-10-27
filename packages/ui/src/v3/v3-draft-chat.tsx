@@ -385,6 +385,9 @@ export function ChatDraft({
         <AccessPill
           access={access}
           onAccess={(a) => setAccesses((m) => ({ ...m, [agent.id]: a }))}
+          engineNeverAsks={data.settings.engineNeverAsks}
+          engineName={data.settings.engine.name}
+          onFixPolicy={act.fixEnginePolicy}
         />
       )}
     </>

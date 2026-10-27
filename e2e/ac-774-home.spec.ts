@@ -173,7 +173,7 @@ test("approve on Home resolves the ask everywhere, and the result is the same ro
   await enter(page);
   await goTo(page, "Home");
   const approve = main(page).getByRole("button", {
-    name: "Approve",
+    name: "Allow",
     exact: true,
   });
   await expect(approve.first()).toBeVisible({ timeout: 30_000 });
@@ -197,7 +197,7 @@ test("approve on Home resolves the ask everywhere, and the result is the same ro
     main(page).getByRole("button", { name: /add a footer/i }),
   ).toBeVisible();
   await expect(
-    main(page).getByRole("button", { name: "Approve", exact: true }),
+    main(page).getByRole("button", { name: "Allow", exact: true }),
   ).toHaveCount(0);
 
   await goTo(page, "Threads");
@@ -206,7 +206,7 @@ test("approve on Home resolves the ask everywhere, and the result is the same ro
     .filter({ hasText: /add a footer/i })
     .first();
   await expect(card.locator('[data-v3-status="done"]')).toBeVisible();
-  await expect(card.getByRole("button", { name: "Approve" })).toHaveCount(0);
+  await expect(card.getByRole("button", { name: "Allow" })).toHaveCount(0);
 
   // Opening the result from Home is what sees it, on Needs you too.
   await goTo(page, "Home");

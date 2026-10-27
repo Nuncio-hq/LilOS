@@ -2,7 +2,7 @@ import { RelayError } from "@lilos/client-runtime";
 import { pairingUrl, type V3DataActions } from "@lilos/ui";
 import { agentDisplayName } from "@lilos/ui/v3-data";
 import {
-  setApprovalPolicy,
+  fixEnginePolicy,
   setDefaultAccess,
   setDefaultEditor,
   setModelVisibility,
@@ -41,6 +41,7 @@ type Mine = Pick<
   | "checkEngine"
   | "checkUpdates"
   | "connectEngine"
+  | "fixEnginePolicy"
   | "pickFolder"
   | "finishSetup"
   | "skipSetup"
@@ -117,11 +118,6 @@ export const v3SettingsActions: Mine = {
         "Couldn't save that setting",
         setDefaultAccess(patch.approvals),
       );
-    if (patch.enginePolicy)
-      toastOnFail(
-        "Couldn't update the approval policy",
-        setApprovalPolicy(patch.enginePolicy),
-      );
     const editor = detectedEditors.get()?.find((e) => e.name === patch.editor);
     if (editor)
       toastOnFail("Couldn't save that setting", setDefaultEditor(editor.id));
@@ -161,6 +157,10 @@ export const v3SettingsActions: Mine = {
       throw e;
     }
   },
+  /* #884: the warning's one-click repair — `smart`, once, on the click;
+     the next describe probe confirms what the optimistic patch showed. */
+  fixEnginePolicy: () =>
+    toastOnFail("Couldn't update that setting", fixEnginePolicy()),
 
   /* First run's "Choose folder…" (#885): the same dialog a new chat's
      project menu opens; the picked path fills the typed field. */

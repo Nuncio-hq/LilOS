@@ -74,6 +74,10 @@ export interface HarnessConfig {
       helpers provably survive a card that paints late on a loaded box.
       `0`/unset = open immediately. */
   askOpenDelayMs: number;
+  /** #884: e2e hook (`LILOS_FAKE_POLICY`) — the policy engine-fake reports
+      on boot; `off` reproduces the "Ask never asks" bug the attach pin
+      corrects. Only forwarded to the fake launcher. */
+  fakePolicy?: "smart" | "manual" | "off";
 }
 
 const DEFAULT_RELAY_URL = "ws://127.0.0.1:4577/ws";
@@ -169,6 +173,9 @@ export function resolveHarnessConfig(
     /* #621 e2e hook: hold each approval's `request.opened` in engine-fake
        (argv, not env — the engine spawn scrubs LILOS_*). */
     askOpenDelayMs: Number(env.LILOS_ASK_OPEN_DELAY_MS ?? 0) || 0,
+    fakePolicy: ["smart", "manual", "off"].includes(env.LILOS_FAKE_POLICY ?? "")
+      ? (env.LILOS_FAKE_POLICY as "smart" | "manual" | "off")
+      : undefined,
   };
 }
 
@@ -193,6 +200,7 @@ export function launcherFor(
         ...(config.askOpenDelayMs
           ? { askOpenDelayMs: config.askOpenDelayMs }
           : {}),
+        ...(config.fakePolicy ? { policy: config.fakePolicy } : {}),
         log,
       });
     case "hermes":

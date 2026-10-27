@@ -430,7 +430,9 @@ test("AC-5 kill the relay mid-turn, restore: output complete, no duplicates", as
   // "Add a footer" pauses on an approval ask — a deterministic mid-turn hold.
   const agent = await openApp(stack, page);
   await startChat(page, stack.webUrl, agent, "Add a footer to the page");
-  const allow = page.getByRole("button", { name: "Once", exact: true }).first();
+  const allow = page
+    .getByRole("button", { name: "Allow", exact: true })
+    .first();
   await expect(allow).toBeVisible({ timeout: 60_000 });
 
   // Relay down mid-turn; the harness's answer can't reach the app yet.
@@ -446,7 +448,7 @@ test("AC-5 kill the relay mid-turn, restore: output complete, no duplicates", as
   while (Date.now() < deadline) {
     if (await done.isVisible().catch(() => false)) break;
     const again = page
-      .getByRole("button", { name: "Once", exact: true })
+      .getByRole("button", { name: "Allow", exact: true })
       .first();
     if (await again.isVisible().catch(() => false))
       await again.click().catch(() => {});

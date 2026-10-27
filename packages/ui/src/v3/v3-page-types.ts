@@ -251,6 +251,10 @@ export type V3Actions = {
   /** The one-time approval that lets the engine's agents see the app;
      rows update in `settings.connect`. Absent without engine support. */
   connectEngine?: () => Promise<void>;
+  /** #884: the one-click repair for an engine reporting `off` — sets its
+     global policy to `smart` once (the Settings warning, the access
+     pill's menu). Absent where the app can't reach the engine. */
+  fixEnginePolicy?: () => void;
   /** "Choose folder…" in first run (#885): the app opens its own folder
      picker (the same one a new chat's project menu uses) and `onPicked`
      gets the path, which lands in the typed field — a path from typing

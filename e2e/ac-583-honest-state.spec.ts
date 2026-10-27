@@ -130,7 +130,7 @@ test("AC-1+#586 the composer names the employee, then says it's waiting for Osca
   await page.screenshot({ path: `${SHOTS}/ac-1-waiting-composer.png` });
 
   /* Answer Once on every card the turn raises so it finishes. */
-  await answerOpenAsks(page, "Once");
+  await answerOpenAsks(page, "Allow");
   await expect(page.locator("[data-turnsettled]").last()).toBeVisible({
     timeout: 90_000,
   });

@@ -115,7 +115,10 @@ export const PORT_SLICE = {
 
 export type SliceUse = keyof typeof PORT_SLICE.offsets;
 
-/** Playwright's parallel index, else vitest's pool id, else no runner. */
+/** Playwright's parallel index, else vitest's pool id, else no runner.
+   LILOS_TEST_INDEX offsets the runner index — the escape hatch for two
+   runner processes sharing one machine on the same parallel index (#884:
+   six worktrees, one Mac). */
 export function workerIndex(
   env: NodeJS.ProcessEnv = process.env,
 ): number | undefined {
@@ -127,7 +130,15 @@ export function workerIndex(
       `worker index ${JSON.stringify(raw)} is not a whole number >= 0`,
     );
   }
-  return n;
+  const shift = env.LILOS_TEST_INDEX;
+  if (shift === undefined || shift === "") return n;
+  const s = Number(shift);
+  if (!Number.isInteger(s) || s < 0) {
+    throw new Error(
+      `worker index offset ${JSON.stringify(shift)} is not a whole number >= 0`,
+    );
+  }
+  return n + s;
 }
 
 /** `base + index * stride + offset`. Throws when the index does not fit. */

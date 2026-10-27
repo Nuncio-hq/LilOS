@@ -827,7 +827,7 @@ const ASKS: V3Data["asks"] = [
     ticketId: "HB-11",
     from: "marketer",
     kind: "approval",
-    title: "Approve $40 for the Meta Ads test",
+    title: "Spend $40 on the Meta Ads test?",
     waiting: 41,
     ask: "Spend $40 on a 3-day Meta Ads test of the 3 best hooks from HB-9.",
     why: "The hooks scored best with 50 readers. Paid traffic is the fastest way to see which one converts.",

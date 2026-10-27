@@ -26,8 +26,7 @@ import {
   aboutLines,
   defaultAccess,
   defaultEditor,
-  enginePolicyOf,
-  enginePolicyPick,
+  engineNeverAsks,
 } from "../settings/state";
 import { modelLabel, modelRows } from "./models";
 import {
@@ -114,14 +113,11 @@ function build(): Slice {
     versions: status.result?.versions,
   });
 
-  /* The engine's own policy shows only while it declares `approval_policy`. */
-  const policy = enginePolicyOf(
-    engineClient.description
-      .get()
-      ?.capabilities.find((c) => c.id === "approval_policy"),
-    enginePolicyPick.get(),
-  );
-
+  /* #884 round 1: the engine's own Smart/Manual/Off policy row is gone —
+     "Ask" here is LilOS's own access default. An engine still reporting
+     `off` is detected from the describe (engineNeverAsks) and shown as a
+     warning + one-click Fix, never written silently: the same global
+     policy serves the user's terminal Hermes. */
   const connectRows = status.result?.connect;
   const connect =
     connectRows === undefined
@@ -168,9 +164,11 @@ function build(): Slice {
   return {
     settings: {
       approvals: defaultAccess.get(),
-      /* D-#161 / D-#772: the phone registers its own per-kind prefs,
-         Stuck included. This Mac does not offer those switches. */
-      ...(policy ? { enginePolicy: policy } : {}),
+      /* #884: the engine reports `off` — Ask is a lie until the Fix. The
+         describe lands through the status probe; this field re-reads it. */
+      ...(engineNeverAsks(engineClient.description.get())
+        ? { engineNeverAsks: true }
+        : {}),
       ...(editor && editors
         ? { editor: editor.name, editors: editors.map((e) => e.name) }
         : {}),
@@ -251,7 +249,6 @@ onMount(slice, () => {
     $scheduledTasks,
     defaultAccess,
     defaultEditor,
-    enginePolicyPick,
     engineClient.description,
     modelVisibility,
     engineModels,

@@ -109,7 +109,7 @@ test("AC-558-1 a waiting approval card shows the hint and ↵ allows once", asyn
   // The focused (only pending) card shows the shortcut hint.
   const hint = card.locator("[data-ask-keyhint]");
   await expect(hint).toBeVisible();
-  await expect(hint).toContainText("↵ Allow once");
+  await expect(hint).toContainText("↵ Allow");
   await expect(hint).toContainText("⌫ Deny");
   await page.screenshot({ path: `${SHOTS}/ac-1-hint.png` });
 

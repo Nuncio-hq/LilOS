@@ -319,7 +319,7 @@ export const CODING_ASKS: V3Data["asks"] = [
     threadId: "t-h-cursor",
     from: "cursor",
     kind: "approval",
-    title: "Allow `bun run verify`?",
+    title: "Run `bun run verify`?",
     waiting: 6,
     ask: "Cursor wants to run the full verify — typecheck, lint and the test suite, about six minutes — before it calls the port done.",
     why: "The legacy list shares the scroll path; a green suite is the only proof the port did not regress it.",

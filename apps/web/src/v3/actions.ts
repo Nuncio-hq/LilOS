@@ -102,15 +102,22 @@ export function makeV3Actions(caps: V3Capabilities): V3DataActions {
     void respondToRequest(askId, outcome, answer).catch(() => {});
   const askOf = (id: string) => asks.get().find((a) => a.id === id);
   return {
-    approve: (askId, alwaysAllow) =>
-      respond(
+    approve: (askId, alwaysAllow) => {
+      const r = askOf(askId)?.request;
+      /* #884: Home/Needs' Allow is the card's main button — the first grant
+         the engine offered (once when present), not a hard-coded "once". */
+      const grants =
+        r?.kind === "approval" ? r.options.filter((o) => o !== "deny") : [];
+      const main = grants.includes("once") ? "once" : grants[0];
+      return respond(
         askId,
-        askOf(askId)?.request.kind === "plan"
+        r?.kind === "plan"
           ? "approve"
-          : alwaysAllow
+          : alwaysAllow && grants.includes("always")
             ? "always"
-            : "once",
-      ),
+            : (main ?? "once"),
+      );
+    },
     deny: (askId) =>
       respond(askId, askOf(askId)?.request.kind === "plan" ? "reject" : "deny"),
     answer: (askId, option) => {
