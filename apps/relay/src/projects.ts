@@ -1,5 +1,5 @@
 import type { Project, WorkspaceIntent } from "@lilos/contracts/app";
-import { collapsePath, expandPath } from "@lilos/host";
+import { canonicalPath, collapsePath, expandPath } from "@lilos/host";
 
 /**
  * Filing a thread under a project (D-#854). The relay is the one place that
@@ -40,23 +40,37 @@ export function openFolderOf(
 }
 
 /**
+ * The spelling a folder is compared by (D-#854): canonical — symlinks
+ * resolved via the filesystem — and case-folded on macOS, where
+ * `~/Code/LilOS` and `~/code/lilos` are the same directory. Two spellings
+ * of one folder dedupe and file identically on the Mac and the phone.
+ */
+export function folderKeyOf(path: string, home: string): string {
+  const canonical = canonicalPath(path, home);
+  return process.platform === "darwin" ? canonical.toLowerCase() : canonical;
+}
+
+/**
  * The project a folder files under (D-#854): the project whose folder IS it,
  * or the deepest project whose folder contains it — a repo's subfolders and
- * its `.lilos/wt/<slug>` worktrees belong to the repo's project. Stored
- * folders are already in the one canonical spelling, so containment is a
- * segment-boundary prefix compare. No match → undefined: a chat.
+ * its `.lilos/wt/<slug>` worktrees belong to the repo's project. Containment
+ * compares the canonical spelling (`folderKeyOf`), a segment-boundary prefix
+ * match. No match → undefined: a chat.
  */
 export function projectForFolder(
   projects: readonly Project[],
   folder: string,
   home: string,
 ): Project | undefined {
-  const want = projectFolderOf(folder, home);
+  const want = folderKeyOf(projectFolderOf(folder, home), home);
   let best: Project | undefined;
+  let bestKey: string | undefined;
   for (const project of projects) {
-    if (best && project.folder.length <= best.folder.length) continue;
-    if (want === project.folder || want.startsWith(`${project.folder}/`)) {
+    const key = folderKeyOf(project.folder, home);
+    if (best && key.length <= (bestKey as string).length) continue;
+    if (want === key || want.startsWith(`${key}/`)) {
       best = project;
+      bestKey = key;
     }
   }
   return best;

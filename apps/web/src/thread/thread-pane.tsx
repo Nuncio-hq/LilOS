@@ -75,10 +75,14 @@ export function ThreadPane({
   const { conv, filesOnly } = d;
   const projects = useAtom(relay.projects);
   /* #854: a folder no project covers is a chat — its badge's menu offers
-     "Add as project" (the folder dialog pre-picked, name and key editable). */
+     "Add as project" (the folder dialog pre-picked, name and key editable).
+     Round 2: the relay's own filing (`conv.projectId`) decides — a raw-cwd
+     check could disagree after a move — and the pre-pick is the repo root
+     when the cwd is a `.lilos/wt` copy, so the project adopts the chat. */
+  const addFolder = conv.workspace?.repoPath ?? conv.cwd;
   const addAsProject =
-    conv.cwd && !projectForFolder(projects, conv.cwd)
-      ? () => addFolderAsProject(conv.cwd as string)
+    addFolder && !conv.projectId && !projectForFolder(projects, addFolder)
+      ? () => addFolderAsProject(addFolder)
       : undefined;
   return (
     <>

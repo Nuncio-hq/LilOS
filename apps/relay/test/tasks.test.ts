@@ -27,9 +27,13 @@ const home = () => mkdtempSync(join(tmpdir(), "lilos-tasks-"));
 
 type AnyResult = Record<string, any>;
 
-/** Registered host + two employees: the caller's own thread in a folder
-    made a project first (D-#854 — a chat carries no task ticket). */
-async function worldWithParent(storeHome: string) {
+/** Registered host + two employees: the caller's own thread in a folder.
+    `opts.project` makes that folder a project first; default the parent is
+    a plain chat in it (D-#854 — a chat still hands off fine). */
+async function worldWithParent(
+  storeHome: string,
+  opts: { project?: boolean } = {},
+) {
   const { store, relay } = newWorld(storeHome);
   const host = await helloed(relay);
   await host.connection.receive(
@@ -53,8 +57,10 @@ async function worldWithParent(storeHome: string) {
   const { channel: callerChannel } = resultOf(host.frames, lastId())
     .result as AnyResult;
   const cwd = join(storeHome, "work");
-  await host.connection.receive(req("projects.create", { folder: cwd }));
-  host.frames.length = 0;
+  if (opts.project) {
+    await host.connection.receive(req("projects.create", { folder: cwd }));
+    host.frames.length = 0;
+  }
   await host.connection.receive(
     req("conversations.open", {
       channelId: callerChannel.id,
@@ -66,7 +72,7 @@ async function worldWithParent(storeHome: string) {
   const { conversation: parent } = resultOf(host.frames, lastId())
     .result as AnyResult;
   host.frames.length = 0;
-  return { store, relay, host, caller, worker, parent, callerChannel };
+  return { store, relay, host, caller, worker, parent, callerChannel, cwd };
 }
 
 const createTask = async (
@@ -81,9 +87,12 @@ const createTask = async (
 };
 
 describe("tasks.create (D-#844)", () => {
-  it("opens a child thread with the prompt only, parent lineage, and the parent's access", async () => {
+  it("hands off from a plain chat parent — the child is a chat too (D-#854)", async () => {
     const dir = home();
-    const { host, worker, parent, callerChannel } = await worldWithParent(dir);
+    const { host, worker, parent, callerChannel, cwd } =
+      await worldWithParent(dir);
+    // The parent runs in a folder nobody made a project of — a chat.
+    expect(parent.projectId).toBeUndefined();
 
     const r = await createTask(host, {
       parentConversationId: parent.id,
@@ -91,20 +100,23 @@ describe("tasks.create (D-#844)", () => {
       prompt: "Draft the changelog for v2",
       title: "Changelog draft",
     });
-    expect(r.task.id).toMatch(/^.+-\d+$/);
+    /* A chat's task has no project key to mint a KEY-n ticket from — its
+       id is `task-n`, and the ticket stays detached like the child. */
+    expect(r.task.id).toMatch(/^task-\d+$/);
     expect(r.task.status).toBe("running");
     expect(r.task.threadId).toBe(r.conversation.id);
     expect(r.task.parentThreadId).toBe(parent.id);
     expect(r.task.agentName).toBe("Bea");
 
-    // The child is an ordinary thread: same project, parent lineage, the
-    // parent's own access — never broader (D-#106).
+    // The child is an ordinary thread: a chat like its parent, carrying
+    // the lineage and the parent's own access — never broader (D-#106).
     expect(r.conversation.parentId).toBe(parent.id);
-    expect(r.conversation.projectId).toBe(parent.projectId);
+    expect(r.conversation.projectId).toBeUndefined();
     expect(r.conversation.access).toBe("ask");
-    expect(r.conversation.cwd).toBe(join(dir, "work"));
+    expect(r.conversation.cwd).toBe(cwd);
     // Its channel is the worker's DM — not the parent's.
     expect(r.conversation.channelId).not.toBe(callerChannel.id);
+    expect(r.ticket.projectId).toBeUndefined();
     expect(r.ticket.task.childConversationId).toBe(r.conversation.id);
     expect(r.ticket.task.parentConversationId).toBe(parent.id);
     expect(r.ticket.ownerId).toBe(worker.id);
@@ -125,6 +137,22 @@ describe("tasks.create (D-#844)", () => {
         }),
       }),
     ]);
+  });
+
+  it("joins the parent's project when the parent has one", async () => {
+    const dir = home();
+    const { host, worker, parent } = await worldWithParent(dir, {
+      project: true,
+    });
+    expect(parent.projectId).toBeTruthy();
+    const r = await createTask(host, {
+      parentConversationId: parent.id,
+      employeeId: worker.id,
+      prompt: "Sweep the yard",
+    });
+    expect(r.task.id).toMatch(/^WOR-\d+$/); // the project key mints the id
+    expect(r.conversation.projectId).toBe(parent.projectId);
+    expect(r.ticket.projectId).toBe(parent.projectId);
   });
 
   it("rejects a non-host caller", async () => {
@@ -217,7 +245,7 @@ describe("tasks.create (D-#844)", () => {
     expect(r.task.worktree).toBeUndefined();
   });
 
-  it("refuses a folder-less parent — a chat carries no project to file under", async () => {
+  it("hands off from a folder-less chat too — the child is a plain chat (D-#854)", async () => {
     const dir = home();
     const { host, worker, callerChannel } = await worldWithParent(dir);
     // A thread opened with no cwd has no folder and no project (D-#771).
@@ -230,15 +258,17 @@ describe("tasks.create (D-#844)", () => {
     const { conversation: plain } = resultOf(host.frames, lastId())
       .result as AnyResult;
     expect(plain.projectId).toBeUndefined();
+    expect(plain.cwd).toBeUndefined();
 
-    await host.connection.receive(
-      req("tasks.create", {
-        parentConversationId: plain.id,
-        employeeId: worker.id,
-        prompt: "anywhere",
-      }),
-    );
-    expect(errorData(host.frames, lastId())).toBe("invalid_params");
+    const r = await createTask(host, {
+      parentConversationId: plain.id,
+      employeeId: worker.id,
+      prompt: "anywhere",
+    });
+    expect(r.task.id).toMatch(/^task-\d+$/);
+    expect(r.conversation.parentId).toBe(plain.id);
+    expect(r.conversation.projectId).toBeUndefined();
+    expect(r.conversation.cwd).toBeUndefined();
   });
 });
 

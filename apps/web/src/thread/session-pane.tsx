@@ -43,10 +43,12 @@ export function SessionPane({
   const { conv, filesOnly } = d;
   const projects = useAtom(relay.projects);
   /* #854: same chip the thread panel shows — a folder no project covers
-     offers "Add as project". */
+     offers "Add as project"; the relay's filing (`conv.projectId`) decides
+     and a `.lilos/wt` cwd pre-picks its repo root (round 2). */
+  const addFolder = conv.workspace?.repoPath ?? conv.cwd;
   const addAsProject =
-    conv.cwd && !projectForFolder(projects, conv.cwd)
-      ? () => addFolderAsProject(conv.cwd as string)
+    addFolder && !conv.projectId && !projectForFolder(projects, addFolder)
+      ? () => addFolderAsProject(addFolder)
       : undefined;
   return (
     <FocusView

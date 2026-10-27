@@ -26,7 +26,13 @@ import { relay } from "../lib/runtime";
    nothing. */
 
 const asking = atom<{
-  onAdded: (path: string, project?: { name: string; key: string }) => void;
+  /* D-#854 round 2: returning the `projects.create` promise lets the
+     dialog hold itself open on a rejection — its message lands inline.
+     `key` may be absent (paused mode lets the relay derive it). */
+  onAdded: (
+    path: string,
+    project?: { name: string; key?: string },
+  ) => Promise<unknown> | void;
   folder?: string;
 } | null>(null);
 
@@ -34,7 +40,10 @@ const asking = atom<{
     it is in the recents. `folder` pre-picks a path (a chat's "Add as
     project" opens on the folder the chat already runs in, #854). */
 export function askForFolder(
-  onAdded: (path: string, project?: { name: string; key: string }) => void,
+  onAdded: (
+    path: string,
+    project?: { name: string; key?: string },
+  ) => Promise<unknown> | void,
   opts?: { folder?: string },
 ): void {
   toastOnFail("Couldn't scan for repos", loadDiscovered());
@@ -43,18 +52,16 @@ export function askForFolder(
 
 /** "Add as project" on a chat's folder chip (D-#854): the same dialog the
     sidebar's ＋ opens, pre-picked to the chat's folder — name and key
-    prefill and stay editable — then `projects.create`. */
+    prefill and stay editable — then `projects.create`. The promise reaches
+    the dialog so a refused key or folder shows inline there. */
 export function addFolderAsProject(folder: string): void {
   askForFolder(
     (path, pick) =>
-      toastOnFail(
-        "Couldn't create the project",
-        relay.createProject({
-          folder: path,
-          ...(pick?.name ? { name: pick.name } : {}),
-          ...(pick?.key ? { key: pick.key } : {}),
-        }),
-      ),
+      relay.createProject({
+        folder: path,
+        ...(pick?.name ? { name: pick.name } : {}),
+        ...(pick?.key ? { key: pick.key } : {}),
+      }),
     { folder },
   );
 }
@@ -71,6 +78,7 @@ export function AddFolderHost() {
   const recents = useAtom(folders);
   const fsListing = useAtom(fsRows);
   const discoveredRows = useAtom(discovered);
+  const projectRows = useAtom(relay.projects);
   /* The folders the app already knows come first, one click each, then what
      the scan found: a folder given earlier but never used has no project
      yet, and this is where it becomes one. */
@@ -92,21 +100,24 @@ export function AddFolderHost() {
       discovered={found}
       onNeedDir={loadDir}
       onClose={() => asking.set(null)}
-      onAdd={(path, project) => {
-        asking.set(null);
-        toastOnFail(
-          "Couldn't add the folder",
-          addToRecents(path).then((f) => {
-            if (f)
-              ask.onAdded(
+      takenKeys={projectRows.map((p) => p.key)}
+      onAdd={(path, project) =>
+        /* The dialog closes itself on resolve and shows a rejection
+           inline — no asking.set or toast here. */
+        addToRecents(path).then((f) =>
+          f
+            ? ask.onAdded(
                 f.path,
                 project?.name
-                  ? { name: project.name, key: project.key ?? "" }
+                  ? {
+                      name: project.name,
+                      ...(project.key ? { key: project.key } : {}),
+                    }
                   : undefined,
-              );
-          }),
-        );
-      }}
+              )
+            : undefined,
+        )
+      }
     />,
     document.body,
   );

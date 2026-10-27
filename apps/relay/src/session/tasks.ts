@@ -35,9 +35,10 @@ export async function handleTasks(c: RelayCtx): Promise<false | undefined> {
       const employee = await store.getEmployee(p.employeeId);
       if (!employee) notFound("employee");
       /* The child joins the parent's project only if the parent has one
-         (D-#854) — an unfiled parent resolves by containment too, but a
-         chat in a folder no project covers cannot carry a task ticket:
-         its id is `KEY-n`, and there is no key without a project. */
+         (D-#854) — an unfiled parent resolves by containment too. A chat
+         in a folder no project covers still hands off: the ticket is
+         detached, its id is `task-n` (never a project key), and the child
+         stays a chat. */
       let project = parent.projectId
         ? await store.getProject(parent.projectId)
         : null;
@@ -47,13 +48,6 @@ export async function handleTasks(c: RelayCtx): Promise<false | undefined> {
           ? (projectForFolder(await store.listProjects(), folder, c.homeDir) ??
             null)
           : null;
-      }
-      if (!project) {
-        throw new RpcError(
-          JsonRpcCode.invalidParams,
-          "invalid_params",
-          "the calling thread has no project — add its folder as a project first",
-        );
       }
       const { channel, created: channelCreated } = await store.openDmChannel(
         employee.id,
@@ -65,8 +59,7 @@ export async function handleTasks(c: RelayCtx): Promise<false | undefined> {
         employeeId: employee.id,
         channelId: channel.id,
         prompt: p.prompt,
-        projectId: project.id,
-        projectKey: project.key,
+        ...(project ? { projectId: project.id, projectKey: project.key } : {}),
         access: parent.access,
         /* D-#848: the host resolves `isolation` into a `cwd` + #156
            `workspace` intent before this call — the child's folder then

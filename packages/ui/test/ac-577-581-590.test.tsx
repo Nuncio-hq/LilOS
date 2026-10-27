@@ -272,11 +272,11 @@ describe("issue #581 — folders", () => {
     expect(r.container.textContent).not.toContain("prefixes");
     expect(r.container.textContent).toContain("Pick a folder for this project");
     expect(r.container.querySelector("span[dir='rtl']")).not.toBeNull();
-    // onAdd still carries the key — derived from the name, never asked for.
+    // onAdd carries only the name — the relay derives the key silently, so
+    // a taken suggestion can never error on a field the user can't see.
     fireEvent.click(r.container.querySelector("[data-addbtn]")!);
     expect(onAdd).toHaveBeenCalledWith("~/code", {
       name: "code",
-      key: "COD",
     });
     r.unmount();
     /* The company layer shows the key back: the field and its words are
@@ -298,6 +298,95 @@ describe("issue #581 — folders", () => {
         .value,
     ).toBe("COD");
     expect(on.container.textContent).toContain("prefixes");
+  });
+
+  test("#854 company: the typed key is kept — an invalid or taken one blocks with an inline error", async () => {
+    const fs = {
+      "~": { children: ["lilos-app"] },
+      "~/lilos-app": {
+        children: [],
+        git: { branches: ["main"], remote: "o/app" },
+      },
+    };
+    const onAdd = vi.fn();
+    const r = render(
+      <AddFolderDialog
+        folders={[]}
+        projectFields
+        copy={NEW_PROJECT_COPY}
+        fs={fs}
+        discovered={[]}
+        takenKeys={["TAKEN"]}
+        onClose={() => {}}
+        onAdd={onAdd}
+      />,
+    );
+    fireEvent.click(r.container.querySelector('[data-fsrow="lilos-app"]')!);
+    const key = () =>
+      r.container.querySelector("[data-projectkey]") as HTMLInputElement;
+    const addBtn = () =>
+      r.container.querySelector("[data-addbtn]") as HTMLButtonElement;
+    // The suggested key is legal; a longer typed key is kept verbatim.
+    fireEvent.change(key(), { target: { value: "LILOSAPP" } });
+    expect(key().value).toBe("LILOSAPP");
+    expect(addBtn().disabled).toBe(false);
+    // Invalid characters: the add stays put and the field explains itself.
+    fireEvent.change(key(), { target: { value: "NO-GOOD" } });
+    expect(addBtn().disabled).toBe(true);
+    expect(r.container.textContent).toContain("1–8");
+    // A key another project has: same, named.
+    fireEvent.change(key(), { target: { value: "TAKEN" } });
+    expect(addBtn().disabled).toBe(true);
+    expect(r.container.textContent).toContain("already");
+    // And back to legal → enabled, and the typed key reaches onAdd verbatim.
+    fireEvent.change(key(), { target: { value: "LILOSAPP" } });
+    expect(addBtn().disabled).toBe(false);
+    fireEvent.click(addBtn());
+    expect(onAdd).toHaveBeenCalledWith("~/lilos-app", {
+      name: "lilos-app",
+      key: "LILOSAPP",
+    });
+  });
+
+  test("#854 company: a create failure stays open and names why inline", async () => {
+    const fs = {
+      "~": { children: ["app"] },
+      "~/app": {
+        children: [],
+        git: { branches: ["main"], remote: "o/app" },
+      },
+    };
+    const onClose = vi.fn();
+    const onAdd = vi
+      .fn()
+      .mockRejectedValue(new Error("Key APP is already taken by LilOS"));
+    const r = render(
+      <AddFolderDialog
+        folders={[]}
+        projectFields
+        copy={NEW_PROJECT_COPY}
+        fs={fs}
+        discovered={[]}
+        onClose={onClose}
+        onAdd={onAdd}
+      />,
+    );
+    fireEvent.click(r.container.querySelector('[data-fsrow="app"]')!);
+    fireEvent.click(r.container.querySelector("[data-addbtn]")!);
+    await vi.waitFor(() =>
+      expect(r.container.textContent).toContain(
+        "Key APP is already taken by LilOS",
+      ),
+    );
+    // The dialog stays open — the user can fix the key and retry.
+    expect(onClose).not.toHaveBeenCalled();
+    expect(
+      (r.container.querySelector("[data-addbtn]") as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
+    onAdd.mockResolvedValue(undefined);
+    fireEvent.click(r.container.querySelector("[data-addbtn]")!);
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalled());
   });
 });
 

@@ -272,13 +272,12 @@ test("AC-3 the sidebar ＋ opens the folder picker — name and key prefilled, e
   const side = v3Sidebar(page);
   const row = side.getByRole("button", { name: "lilos-beta", exact: true });
   await expect(row).toBeVisible({ timeout: 30_000 });
-  /* The key still got made — derived from the name, never asked for. */
+  /* The key still got made — derived from the name (a multi-word name's
+     initials, `deriveProjectKey`), never asked for. */
   const { projects } = await relayRpc<{
     projects: { key: string; folder: string }[];
   }>(page, stack, "projects.list", {});
-  expect(projects.find((p) => p.folder.endsWith("lilos-beta"))?.key).toBe(
-    "LIL",
-  );
+  expect(projects.find((p) => p.folder.endsWith("lilos-beta"))?.key).toBe("LB");
   /* Creating it opened the project page (the peek closed) — reopen the
      chat; its trail now names the project it filed under (D-#854). */
   await page.goto(threadUrl(stack.webUrl, betaChat));

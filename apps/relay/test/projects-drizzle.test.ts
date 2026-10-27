@@ -182,3 +182,114 @@ describe("projects migration + remove on the real store (D-#854)", () => {
     expect(out.missing).toBeNull();
   });
 });
+
+/* The remove → re-add round trip on the real store: detached rows carry
+   `KEY-n` ids a recreated project would collide with unless numbering
+   looks past live rows, and the re-add re-attaches the rows the removal
+   detached (D-#854 round 2). */
+const READD_SCRIPT = `
+import { Database } from "bun:sqlite";
+import { drizzle } from "drizzle-orm/bun-sqlite";
+import { createDrizzleStore } from "./src/db/drizzle-store.ts";
+import { applyMigrations } from "./src/db/migrate.ts";
+import * as schema from "./src/db/schema.ts";
+
+const db = new Database(":memory:");
+db.exec("PRAGMA foreign_keys = ON");
+applyMigrations(db);
+const store = createDrizzleStore(drizzle(db, { schema }));
+
+db.exec("INSERT INTO employees (id, name, created_at) VALUES ('e1', 'Ada', 1)");
+db.exec("INSERT INTO channels (id, kind, employee_id, last_seq, created_at) VALUES ('c1', 'dm', 'e1', 5, 1)");
+
+const first = await store.ensureProject({ folder: "~/Code/LilOS", name: "LilOS" });
+const t1 = await store.createTicket({ projectId: first.project.id, projectKey: first.project.key, title: "One" });
+const goal = await store.createGoal({ projectId: first.project.id, title: "Ship" });
+const task = await store.createTask({
+  title: "Job",
+  parentConversationId: "p1",
+  employeeId: "e1",
+  channelId: "c1",
+  prompt: "Do it",
+  projectId: first.project.id,
+  projectKey: first.project.key,
+  access: "ask",
+});
+await store.removeProject(first.project.id);
+
+// The re-add: same folder, same key — a fresh project id. The handler's
+// tombstone ids ride reattach (the goal has no LIL- id to sweep).
+const second = await store.ensureProject({
+  folder: "~/Code/LilOS", name: "LilOS", key: "LIL",
+  reattach: { goalIds: [goal.id], ticketIds: [t1.id, task.ticket.id] },
+});
+// The detached goal + tickets re-attach to the new row.
+const ticketsBack = await store.listTickets(second.project.id);
+const goalsBack = await store.listGoals();
+// Numbering looks past the detached LIL-1/LIL-2 — no UNIQUE collision.
+const t3 = await store.createTicket({ projectId: second.project.id, projectKey: second.project.key, title: "Three" });
+const task2 = await store.createTask({
+  title: "Job2",
+  parentConversationId: "p1",
+  employeeId: "e1",
+  channelId: "c1",
+  prompt: "Do it again",
+  projectId: second.project.id,
+  projectKey: second.project.key,
+  access: "ask",
+});
+// And a task with no project is legal — a chat's hand-off stays detached.
+const chat = await store.createTask({
+  title: "Chat job",
+  parentConversationId: "p1",
+  employeeId: "e1",
+  channelId: "c1",
+  prompt: "Loose",
+  access: "ask",
+});
+
+console.log(JSON.stringify({
+  key: second.project.key,
+  sameId: second.project.id === first.project.id,
+  ticketsBack: ticketsBack.map((t) => t.id).sort(),
+  goalBack: goalsBack.find((g) => g.id === goal.id)?.projectId ?? null,
+  t3: t3.id,
+  task2: task2.ticket.id,
+  chat: { id: chat.ticket.id, projectId: chat.ticket.projectId ?? null, convProjectId: chat.conversation.projectId ?? null },
+}));
+`;
+
+describe("remove → re-add on the real store (D-#854)", () => {
+  it("re-attaches detached rows and numbers past them — no id collision", () => {
+    const run = spawnSync(BUN, ["-e", READD_SCRIPT], {
+      cwd: RELAY_DIR,
+      encoding: "utf8",
+      timeout: 30_000,
+    });
+    expect(run.status, run.stderr).toBe(0);
+    const out = JSON.parse(run.stdout.trim().split("\n").at(-1) ?? "null") as {
+      key: string;
+      sameId: boolean;
+      ticketsBack: string[];
+      goalBack: string | null;
+      t3: string;
+      task2: string;
+      chat: {
+        id: string;
+        projectId: string | null;
+        convProjectId: string | null;
+      };
+    };
+    expect(out.key).toBe("LIL"); // the typed key lands as typed
+    expect(out.sameId).toBe(false);
+    expect(out.ticketsBack).toEqual(["LIL-1", "LIL-2"]); // ticket + task re-attached
+    expect(out.goalBack).not.toBeNull(); // the goal came back too
+    expect(out.t3).toBe("LIL-3"); // no collision with the detached rows
+    expect(out.task2).toBe("LIL-4");
+    expect(out.chat).toEqual({
+      id: "task-1",
+      projectId: null,
+      convProjectId: null,
+    });
+  });
+});

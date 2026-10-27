@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { mkdirSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import type { Conversation, Project } from "@lilos/contracts/app";
 import { describe, expect, it } from "vitest";
@@ -113,6 +113,52 @@ describe("projects.list / projects.create", () => {
     expect(project).toMatchObject({ name: "Journal", key: "JRN" });
   });
 
+  it("keeps a typed key exactly as typed — never shortened to a stem", async () => {
+    const { user } = await setup();
+    const { project } = await call<{ project: Project }>(
+      user,
+      "projects.create",
+      { folder: "~/Code/lilos", name: "LilOS", key: "LILOS" },
+    );
+    // LILOS is a legal key (1–8 uppercase alphanumerics): it lands as typed.
+    expect(project.key).toBe("LILOS");
+  });
+
+  it("refuses a key a live project already has — the dialog shows the error", async () => {
+    const { user } = await setup();
+    await call(user, "projects.create", {
+      folder: "~/Code/a",
+      name: "Alpha",
+      key: "ALPHA",
+    });
+    await user.connection.receive(
+      req("projects.create", {
+        folder: "~/Code/b",
+        name: "Beta",
+        key: "ALPHA",
+      }),
+    );
+    expect(errorData(user.frames, lastId())).toBe("conflict");
+    // Nothing was made: the folder stays a plain chat target.
+    expect((await projects(user)).map((p) => p.folder)).toEqual(["~/Code/a"]);
+    // But a taken key on the SAME folder is just the get-or-create hit.
+    const again = await call<{ project: Project }>(user, "projects.create", {
+      folder: "~/Code/a",
+      name: "Anything",
+      key: "ALPHA",
+    });
+    expect(again.project.folder).toBe("~/Code/a");
+  });
+
+  it("rejects a malformed key before anything is stored", async () => {
+    const { user } = await setup();
+    await user.connection.receive(
+      req("projects.create", { folder: "~/Code/x", key: "lowercase!" }),
+    );
+    expect(errorData(user.frames, lastId())).toBe("invalid_params");
+    expect(await projects(user)).toEqual([]);
+  });
+
   it("broadcasts project.upserted to every peer on create, once", async () => {
     const { relay, user } = await setup();
     const other = await helloed(relay);
@@ -180,13 +226,20 @@ describe("projects.list / projects.create", () => {
         .project.folder;
     expect(await folderOf(`${HOME}/Code/a/`)).toBe("~/Code/a");
     expect(await folderOf("~/Code/a")).toBe("~/Code/a"); // same project
-    expect(await folderOf(HOME)).toBe("~");
     expect(await folderOf("/opt/shared/repo/")).toBe("/opt/shared/repo");
     expect((await projects(user)).map((p) => p.folder)).toEqual([
       "~/Code/a",
-      "~",
       "/opt/shared/repo",
     ]);
+  });
+
+  it("refuses a project that is the whole home folder or the root", async () => {
+    const { user } = await setup();
+    for (const folder of ["~", HOME, "/", "~/"]) {
+      await user.connection.receive(req("projects.create", { folder }));
+      expect(errorData(user.frames, lastId()), folder).toBe("invalid_params");
+    }
+    expect(await projects(user)).toEqual([]);
   });
 
   it("adopts the threads already in the folder — they were chats before it existed", async () => {
@@ -226,6 +279,76 @@ describe("projects.list / projects.create", () => {
     // Each adopted thread arrives as its own conversation.updated.
     const updates = eventsNamed(other.frames, "conversation.updated").length;
     expect(updates).toBeGreaterThanOrEqual(2);
+  });
+
+  it("a nested project adopts the threads a shallower project filed — most-specific wins", async () => {
+    const { user, channel } = await setup();
+    const outer = await call<{ project: Project }>(user, "projects.create", {
+      folder: "~/Code",
+    });
+    // Threads filed under ~/Code before the deeper project exists.
+    const moved = await open(user, channel.id, { cwd: "~/Code/LilOS" });
+    const stays = await open(user, channel.id, { cwd: "~/Code/qrit" });
+    expect(moved.projectId).toBe(outer.project.id);
+    expect(stays.projectId).toBe(outer.project.id);
+
+    const inner = await call<{ project: Project }>(user, "projects.create", {
+      folder: "~/Code/LilOS",
+    });
+    const filed = async (id: string) =>
+      (
+        await call<{ conversations: Conversation[] }>(
+          user,
+          "conversations.list",
+          {},
+        )
+      ).conversations.find((c) => c.id === id)?.projectId;
+    // The deeper project takes the threads it covers; the rest stay put.
+    expect(await filed(moved.id)).toBe(inner.project.id);
+    expect(await filed(stays.id)).toBe(outer.project.id);
+
+    // And the other direction: a shallower project made later never steals
+    // threads a deeper one already filed.
+    const pkg = await call<{ project: Project }>(user, "projects.create", {
+      folder: "~/work/app",
+    });
+    const filedDeep = await open(user, channel.id, { cwd: "~/work/app/x" });
+    expect(filedDeep.projectId).toBe(pkg.project.id);
+    await call(user, "projects.create", { folder: "~/work" });
+    expect(await filed(filedDeep.id)).toBe(pkg.project.id);
+  });
+
+  it("matches folders across case and symlink spellings (macOS filesystem)", async () => {
+    const home = mkhome();
+    homes.push(home);
+    mkdirSync(join(home, "Code", "LilOS"), { recursive: true });
+    symlinkSync(join(home, "Code", "LilOS"), join(home, "LinkToLilOS"));
+    const { relay } = newWorld(home);
+    const user = await helloed(relay);
+    const { channel } = await setupChannel(user.frames, user.connection);
+
+    // The project is made through the symlink spelling.
+    const { project } = await call<{ project: Project }>(
+      user,
+      "projects.create",
+      { folder: "~/LinkToLilOS" },
+    );
+
+    // A thread in the real folder — another spelling of the same directory.
+    const real = await open(user, channel.id, { cwd: "~/Code/LilOS" });
+    expect(real.projectId).toBe(project.id);
+
+    // macOS's case-insensitive fs: the wrong-case spelling is the same folder.
+    if (process.platform === "darwin") {
+      const wrongCase = await open(user, channel.id, {
+        cwd: "~/code/lilos",
+      });
+      expect(wrongCase.projectId).toBe(project.id);
+    }
+
+    // And the symlinked spelling for a thread files the same way.
+    const linked = await open(user, channel.id, { cwd: "~/LinkToLilOS/sub" });
+    expect(linked.projectId).toBe(project.id);
   });
 });
 
@@ -423,6 +546,59 @@ describe("moving a thread re-files it (D-#854)", () => {
     );
     expect(errorData(user.frames, lastId())).toBe("forbidden");
   });
+
+  it("a moved workstream drops its stale workspace — the old repo no longer claims it", async () => {
+    const { relay, user, channel } = await setup();
+    const h = await host(relay);
+    /* A workstream thread: cwd is the .lilos/wt worktree, workspace.repoPath
+       is the repo it forked (D-#848/#156). */
+    const thread = await open(user, channel.id, {
+      cwd: "~/Code/LilOS/.lilos/wt/fix-login",
+      workspace: {
+        mode: "new",
+        repoPath: "~/Code/LilOS",
+        branch: "fix-login",
+        base: "main",
+      },
+    });
+    expect(thread.workspace?.repoPath).toBe("~/Code/LilOS");
+
+    // The host moves it to a plain folder — the workspace intent is stale.
+    await hostMove(h, thread.id, "~/elsewhere");
+    const moved = (
+      await call<{ conversations: Conversation[] }>(
+        user,
+        "conversations.list",
+        {},
+      )
+    ).conversations.find((c) => c.id === thread.id);
+    expect(moved?.cwd).toBe("~/elsewhere");
+    expect(moved?.workspace).toBeUndefined();
+
+    // Making a project of the OLD repo must not adopt the moved thread.
+    await call(user, "projects.create", { folder: "~/Code/LilOS" });
+    let current = (
+      await call<{ conversations: Conversation[] }>(
+        user,
+        "conversations.list",
+        {},
+      )
+    ).conversations.find((c) => c.id === thread.id);
+    expect(current?.projectId).toBeUndefined();
+
+    // But a project over the NEW folder does.
+    const home = await call<{ project: Project }>(user, "projects.create", {
+      folder: "~/elsewhere",
+    });
+    current = (
+      await call<{ conversations: Conversation[] }>(
+        user,
+        "conversations.list",
+        {},
+      )
+    ).conversations.find((c) => c.id === thread.id);
+    expect(current?.projectId).toBe(home.project.id);
+  });
 });
 
 describe("projects.remove (D-#854)", () => {
@@ -507,17 +683,115 @@ describe("projects.remove (D-#854)", () => {
     expect(await projects(user)).toEqual([outer.project]);
   });
 
-  it("answers not_found for an unknown id and deletes nothing", async () => {
+  it("is idempotent — a second remove (or a stale id) answers ok and deletes nothing", async () => {
     const { user, channel } = await setup();
+    const { project } = await call<{ project: Project }>(
+      user,
+      "projects.create",
+      { folder: "~/Code/LilOS" },
+    );
     const thread = await open(user, channel.id, { cwd: "~/Code/LilOS" });
-    await user.connection.receive(req("projects.remove", { id: "nope" }));
-    expect(errorData(user.frames, lastId())).toBe("not_found");
-    expect((await projects(user)).length).toBe(0);
+    await call(user, "projects.remove", { id: project.id });
+    // A double-click or a retried menu pick: the record is already gone,
+    // which is the end state the caller asked for.
+    const again = await call<{ ok: boolean }>(user, "projects.remove", {
+      id: project.id,
+    });
+    expect(again.ok).toBe(true);
+    // An id that was never a project answers the same way — nothing is
+    // deleted either way.
+    const never = await call<{ ok: boolean }>(user, "projects.remove", {
+      id: "nope",
+    });
+    expect(never.ok).toBe(true);
     const { conversations } = await call<{ conversations: Conversation[] }>(
       user,
       "conversations.list",
       {},
     );
     expect(conversations.find((c) => c.id === thread.id)).toBeTruthy();
+    expect(
+      conversations.find((c) => c.id === thread.id)?.projectId,
+    ).toBeUndefined();
+  });
+
+  it("keeps ticket ids climbing across a remove + re-add — no collision (D-#844)", async () => {
+    const { user } = await setup();
+    const { project } = await call<{ project: Project }>(
+      user,
+      "projects.create",
+      { folder: "~/Code/LilOS", name: "LilOS", key: "LIL" },
+    );
+    const t1 = await call<{ ticket: { id: string } }>(user, "tickets.create", {
+      project: project.id,
+      title: "First",
+    });
+    expect(t1.ticket.id).toBe("LIL-1");
+    await call(user, "projects.remove", { id: project.id });
+    // Same folder again → the key LIL is free and reused; the next ticket
+    // must NOT collide with the detached LIL-1.
+    const again = await call<{ project: Project }>(user, "projects.create", {
+      folder: "~/Code/LilOS",
+      name: "LilOS",
+      key: "LIL",
+    });
+    const t2 = await call<{ ticket: { id: string } }>(user, "tickets.create", {
+      project: again.project.id,
+      title: "Second",
+    });
+    expect(t2.ticket.id).toBe("LIL-2");
+  });
+
+  it("re-adding a removed project's folder re-attaches its goals and tickets", async () => {
+    const { user } = await setup();
+    const { project } = await call<{ project: Project }>(
+      user,
+      "projects.create",
+      { folder: "~/Code/LilOS", name: "LilOS", key: "LIL" },
+    );
+    const { goal } = await call<{ goal: { id: string } }>(
+      user,
+      "goals.create",
+      { project: project.id, title: "Ship it" },
+    );
+    const { ticket } = await call<{ ticket: { id: string } }>(
+      user,
+      "tickets.create",
+      { project: project.id, title: "Do the thing", goalId: goal.id },
+    );
+    expect(ticket.id).toBe("LIL-1");
+    await call(user, "projects.remove", { id: project.id });
+
+    const re = await call<{ project: Project }>(user, "projects.create", {
+      folder: "~/Code/LilOS",
+      name: "LilOS",
+      key: "LIL",
+    });
+    expect(re.project.id).not.toBe(project.id);
+
+    const { goals } = await call<{
+      goals: { id: string; projectId?: string }[];
+    }>(user, "goals.list", {});
+    expect(goals.find((g) => g.id === goal.id)?.projectId).toBe(re.project.id);
+    const { tickets } = await call<{
+      tickets: { id: string; projectId?: string }[];
+    }>(user, "tickets.list", {});
+    const back = tickets.find((t) => t.id === ticket.id);
+    expect(back?.projectId).toBe(re.project.id);
+
+    // The re-attached ticket can be picked up again — tickets.assign opens
+    // its thread in the project's folder like a fresh one.
+    const { employee } = await call<{ employee: { id: string } }>(
+      user,
+      "employees.create",
+      { name: "Ada", role: "eng" },
+    );
+    const assigned = await call<{
+      ticket: { id: string };
+      conversation: Conversation;
+    }>(user, "tickets.assign", { id: ticket.id, ownerId: employee.id });
+    expect(assigned.ticket.id).toBe("LIL-1");
+    expect(assigned.conversation.cwd).toBe("~/Code/LilOS");
+    expect(assigned.conversation.projectId).toBe(re.project.id);
   });
 });

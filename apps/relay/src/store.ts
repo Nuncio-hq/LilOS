@@ -59,12 +59,17 @@ export interface NewProject {
   folder: string;
   /** Defaults to the folder's basename. */
   name?: string;
-  /** The dialog's editable pick (D-#854); absent → derived from the name. A
-      taken tag gets the usual counter suffix, never an error. */
+  /** The dialog's editable pick (D-#854) — lands exactly as typed (the wire
+      schema already bounds it to `^[A-Z0-9]{1,8}$`); absent → derived from
+      the name and deduped. A taken key is the caller's error, not a
+      renumber. */
   key?: string;
   about?: string;
   /** Stamp for a backfilled project: when its oldest thread opened. */
   createdAt?: number;
+  /** Re-add of a removed project's folder (D-#854): the goal and ticket
+      ids its removal detached — they re-attach to the new row, same ids. */
+  reattach?: { goalIds?: readonly string[]; ticketIds?: readonly string[] };
 }
 
 /** A goal the relay creates (D-#776). `ownerId` absent means the human. */
@@ -117,9 +122,12 @@ export interface NewTask {
   channelId: string;
   /** The child's whole input — never the parent's transcript. */
   prompt: string;
-  /** The parent's project — the ticket and thread file under it. */
-  projectId: string;
-  projectKey: string;
+  /** The project the ticket and thread file under — the parent's, or the
+      one containing the child's folder. Absent (a chat parent, D-#854):
+      the ticket is detached and its id is `task-n`, and the child stays a
+      chat. */
+  projectId?: string;
+  projectKey?: string;
   /** The parent's level — the child's access is never broader (D-#106). */
   access: ConversationAccess;
   /** The child's working folder — the parent's, or the worktree the
@@ -177,6 +185,28 @@ export function deriveProjectKey(
   let key = stem;
   for (let n = 2; taken.has(key); n++) key = `${stem}${n}`;
   return key;
+}
+
+/**
+ * The next ticket number for a key (D-#854 round 2): max numeric suffix
+ * over EVERY ticket id that carries it — including rows a removed project
+ * left detached — so a recreated project never re-mints `KEY-1` onto a
+ * surviving row (`UNIQUE constraint failed: tickets.id`). A chat's task
+ * tickets number under the reserved lowercase prefix `task` — outside the
+ * `[A-Z0-9]` key charset, so it can never collide with a project key.
+ */
+export const CHAT_TASK_PREFIX = "task";
+export function nextTicketNumber(
+  ids: Iterable<string>,
+  prefix: string,
+): number {
+  const re = new RegExp(`^${prefix}-(\\d+)$`);
+  let max = 0;
+  for (const id of ids) {
+    const m = re.exec(id);
+    if (m) max = Math.max(max, Number(m[1]));
+  }
+  return max + 1;
 }
 
 /** A hire. When a CEO holds the position, `createEmployee` defaults
@@ -241,8 +271,13 @@ export interface ConversationPatch {
       card; `null` clears it (next `turn.started`). */
   turnFailure?: TurnFailure | null;
   /** Host-only (#581): the thread's working folder — `conversations.moveFolder`
-      writes it after re-homing the session; `null` clears it. */
+      writes it after re-homing the session; `null` clears it. A `cwd` write
+      also clears `workspace` — a moved workstream's `repoPath` would
+      otherwise keep filing it under the repo it left (D-#854). */
   cwd?: string | null;
+  /** The #156 workspace intent a workstream open carried. Written only as
+      `null` — a `cwd` move clearing the stale intent (D-#854). */
+  workspace?: WorkspaceIntent | null;
   /** The project the thread lives in (D-#771) — relay-set when `cwd` lands
       (open, move, backfill), never a wire field; `null` = a plain chat. */
   projectId?: string | null;
@@ -518,12 +553,18 @@ export interface RelayStore {
    * spelling — `projectFolderOf` normalizes). One atomic step, so two opens
    * into a new folder
    * can never make two projects: `created: false` answers the stored row
-   * unchanged (name/about are only applied on create). The key is derived
-   * from the name and made unique here.
+   * unchanged (name/about are only applied on create). A typed `key` lands
+   * verbatim (the handler checks it's free); an absent one is derived from
+   * the name and deduped. On create, `reattach` ids and detached rows whose
+   * ticket id carries the new key (`KEY-n`) rejoin the project — the
+   * remove → re-add round trip (D-#854); `attached` lists them for the
+   * handler's broadcasts.
    */
-  ensureProject(
-    input: NewProject,
-  ): Promise<{ project: Project; created: boolean }>;
+  ensureProject(input: NewProject): Promise<{
+    project: Project;
+    created: boolean;
+    attached: { goals: Goal[]; tickets: Ticket[] };
+  }>;
   /**
    * `projects.remove` (D-#854): the record goes; its threads, goals, and
    * tickets only lose their `projectId` — nothing else is deleted and no

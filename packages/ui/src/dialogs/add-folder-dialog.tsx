@@ -39,6 +39,22 @@ export const NEW_PROJECT_PAUSED_COPY = {
 export const suggestProjectKey = (name: string): string =>
   (name.replace(/[^a-z0-9]/gi, "").toUpperCase() || "P").slice(0, 3);
 
+/* D-#854 round 2: the key the wire accepts — 1–8 ASCII capitals or
+   digits. A typed key lands verbatim on the relay, so the dialog is where
+   a bad one is refused with words, not silently reshaped. */
+export const PROJECT_KEY_RE = /^[A-Z0-9]{1,8}$/;
+
+/** Why the typed key can't be used — the inline line under the field. */
+export const projectKeyError = (
+  key: string,
+  takenKeys: readonly string[],
+): string | undefined =>
+  !PROJECT_KEY_RE.test(key)
+    ? "1–8 letters and digits (A–Z, 0–9)"
+    : takenKeys.includes(key)
+      ? `Key ${key} is already taken — pick another`
+      : undefined;
+
 /* Add a local folder to a project. Browse or type a path (complete.path), see whether it is a repo and on which
    branch (projects.for_cwd), then attach it: projects.add_folder { id, path } or projects.create { name, folders }.
    `fs` is the machine's folder listing (gateway data in the real app; mock in the prototype) passed in. */
@@ -55,6 +71,7 @@ export function AddFolderDialog({
   projectFields,
   folder,
   company = true,
+  takenKeys,
 }: {
   folders: Folder[];
   /* Project targets (prototype #18). Absent = plain "add a folder"
@@ -65,10 +82,12 @@ export function AddFolderDialog({
   fs: Record<string, FsDir>;
   discovered: string[];
   onClose: () => void;
+  /* D-#854 round 2: a promise's rejection lands inline — the dialog stays
+     open so a taken key or a refused folder can be fixed and retried. */
   onAdd: (
     path: string,
     project?: { existing?: string; name: string; key?: string },
-  ) => void;
+  ) => void | Promise<unknown>;
   /* Called when the listing needs a dir the `fs` map doesn't have yet — the
      app answers with a host `fs.list` (real app: the harness). Without it the
      dialog renders purely off `fs` (mock). */
@@ -84,6 +103,10 @@ export function AddFolderDialog({
      show. Paused, both stay off and the key derives from the name silently
      — onAdd still carries it. */
   company?: boolean;
+  /* Live project keys — the typed key is checked against them before the
+     create call so a conflict is an inline line, not a relay error
+     (D-#854 round 2). */
+  takenKeys?: readonly string[];
   /* Pre-picked path (a chat's "Add as project" opens on the folder the
      chat already runs in). */
   folder?: string;
@@ -100,6 +123,10 @@ export function AddFolderDialog({
    prefills again. The key follows the edited name until you touch it. */
   const [nameEdit, setNameEdit] = useState<{ for: string; v: string }>();
   const [keyEdit, setKeyEdit] = useState<{ for: string; v: string }>();
+  /* A rejected onAdd lands here — the dialog stays open and the line under
+     the footer says what the caller reported (D-#854 round 2). */
+  const [submitError, setSubmitError] = useState<string>();
+  const [submitting, setSubmitting] = useState(false);
   const clean = path.trim().replace(/\/+$/, "") || "~";
   const exact = fs[clean];
   // complete.path: list the typed dir, or the parent filtered by the partial last segment
@@ -127,12 +154,20 @@ export function AddFolderDialog({
   const fieldName = nameEdit?.for === clean ? nameEdit.v : suggestedName;
   const fieldKey =
     keyEdit?.for === clean ? keyEdit.v : suggestProjectKey(fieldName);
+  /* The typed key's refusal line (company mode only — paused derives it
+     silently, so it can never be invalid or taken on screen). */
+  const keyError =
+    projFields && company && fieldKey.trim() !== ""
+      ? projectKeyError(fieldKey.trim(), takenKeys ?? [])
+      : undefined;
   const crumbs = clean.split("/").map((_, i, a) => a.slice(0, i + 1).join("/"));
   const canAdd =
     !!exact &&
     clean !== "~" &&
     !attached &&
-    (!projFields || (fieldName.trim() !== "" && fieldKey.trim() !== ""));
+    !submitting &&
+    (!projFields ||
+      (fieldName.trim() !== "" && fieldKey.trim() !== "" && !keyError));
   /* #576: Esc closes this dialog while it is the top-most layer. */
   const layerRef = useUiLayerEl<HTMLDivElement>({ onEscape: onClose });
   return (
@@ -380,11 +415,20 @@ export function AddFolderDialog({
                       }
                       spellCheck={false}
                       data-projectkey
+                      aria-invalid={!!keyError}
                       className="h-8 font-mono text-sm"
                     />
                   </div>
                 )}
               </div>
+              {keyError && (
+                <p
+                  className="mt-1.5 text-destructive text-[11px] leading-4"
+                  data-keyerror
+                >
+                  {keyError}
+                </p>
+              )}
               {company && (
                 <p className="mt-1.5 text-muted-foreground text-[11px] leading-4">
                   The key prefixes the project&apos;s tickets, like{" "}
@@ -449,17 +493,26 @@ export function AddFolderDialog({
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2 border-t px-5 py-3">
-          {/* #581 AC-3: the footer names the folder being added, never the
-              wire call — no `folders.add {…}` JSON-RPC on screen. */}
-          {/* rtl truncates from the left: the pick's own name is the part
-              worth keeping on screen (the crumbs above carry the rest). */}
-          <span
-            className="min-w-0 flex-1 basis-60 truncate text-left font-mono text-[11px] text-muted-foreground"
-            dir="rtl"
-            title={clean !== "~" ? clean : undefined}
-          >
-            {clean !== "~" ? clean : ""}
-          </span>
+          {submitError ? (
+            <span
+              className="min-w-0 flex-1 basis-60 text-left text-[11px] text-destructive"
+              data-submiterror
+            >
+              {submitError}
+            </span>
+          ) : (
+            /* #581 AC-3: the footer names the folder being added, never the
+               wire call — no `folders.add {…}` JSON-RPC on screen. */
+            /* rtl truncates from the left: the pick's own name is the part
+               worth keeping on screen (the crumbs above carry the rest). */
+            <span
+              className="min-w-0 flex-1 basis-60 truncate text-left font-mono text-[11px] text-muted-foreground"
+              dir="rtl"
+              title={clean !== "~" ? clean : undefined}
+            >
+              {clean !== "~" ? clean : ""}
+            </span>
+          )}
           <Button
             variant="outline"
             size="sm"
@@ -471,24 +524,49 @@ export function AddFolderDialog({
           <Button
             size="sm"
             disabled={!canAdd}
-            onClick={() =>
-              projects === undefined
-                ? onAdd(
-                    clean,
-                    projFields
-                      ? {
-                          name: fieldName.trim(),
-                          key: fieldKey.trim().toUpperCase(),
-                        }
-                      : undefined,
-                  )
-                : onAdd(
-                    clean,
-                    target === "__new"
-                      ? { name: projName }
-                      : { existing: target, name: target },
-                  )
-            }
+            onClick={() => {
+              const result =
+                projects === undefined
+                  ? onAdd(
+                      clean,
+                      projFields
+                        ? {
+                            name: fieldName.trim(),
+                            /* Paused sends no key — the relay derives one
+                               and dedupes it silently; a taken suggestion
+                               can never become an error for a field the
+                               user can't see (D-#854 round 2). */
+                            ...(company
+                              ? { key: fieldKey.trim().toUpperCase() }
+                              : {}),
+                          }
+                        : undefined,
+                    )
+                  : onAdd(
+                      clean,
+                      target === "__new"
+                        ? { name: projName }
+                        : { existing: target, name: target },
+                    );
+              /* A void onAdd is the plain folder add — the caller closes
+                 the dialog itself. A promise means a project create is in
+                 flight: resolving closes here, a rejection stays open with
+                 its message inline. */
+              if (result) {
+                setSubmitting(true);
+                setSubmitError(undefined);
+                Promise.resolve(result)
+                  .then(() => onClose())
+                  .catch((e) => {
+                    setSubmitError(
+                      e instanceof Error && e.message
+                        ? e.message
+                        : "Couldn’t create the project — try again",
+                    );
+                  })
+                  .finally(() => setSubmitting(false));
+              }
+            }}
             data-addbtn
           >
             {projects === undefined

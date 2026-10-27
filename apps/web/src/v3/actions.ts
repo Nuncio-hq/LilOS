@@ -186,27 +186,28 @@ export function makeV3Actions(caps: V3Capabilities): V3DataActions {
        project is in `relay.projects` by the time `onCreated` runs. */
     newProject: (onCreated) =>
       askForFolder((path, pick) =>
-        toastOnFail(
-          "Couldn't create the project",
-          relay
-            .createProject({
-              folder: path,
-              ...(pick?.name ? { name: pick.name } : {}),
-              ...(pick?.key ? { key: pick.key } : {}),
-            })
-            .then((p) => onCreated(p.id)),
-        ),
+        /* The promise reaches the dialog: a taken key or refused folder
+           shows inline under its footer, the dialog staying open
+           (D-#854 round 2) — no toast swallow here. */
+        relay
+          .createProject({
+            folder: path,
+            ...(pick?.name ? { name: pick.name } : {}),
+            ...(pick?.key ? { key: pick.key } : {}),
+          })
+          .then((p) => onCreated(p.id)),
       ),
     /* A chat's folder chip: the same dialog, pre-picked to the chat's
        folder — the name and key prefill and stay editable (#854). */
     addAsProject: (folder) => addFolderAsProject(folder),
     /* The project row's ⋯ → Remove project (D-#854): the record goes, its
        threads become chats — the confirm line is the menu's. The catch
-       toasts and the promise resolves so the menu's busy state always
-       settles. */
+       toasts and RETHROWS (round 2): the caller navigates Home only when
+       the remove actually happened. */
     removeProject: (projectId) =>
       relay.removeProject(projectId).catch((e) => {
         sayError(describeActionError("Couldn't remove the project", e));
+        throw e;
       }),
     setModelVisibility: (v) =>
       toastOnFail("Couldn't update the model list", setModelVisibility(v)),

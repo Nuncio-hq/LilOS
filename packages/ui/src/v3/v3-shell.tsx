@@ -389,9 +389,9 @@ export function V3Shell({
             onRemoveProject={
               actions.removeProject
                 ? async (id) => {
+                    /* A failed remove rejects — the page stays put; only a
+                       real removal falls back to Home (#854 round 2). */
                     await actions.removeProject?.(id);
-                    /* The record is gone — its page falls back to Home and
-                       it leaves the peek's trail (#854). */
                     onNav((n) => {
                       const peek = n.peek.filter(
                         (r) => !(r.page === "project" && r.id === id),

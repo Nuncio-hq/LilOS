@@ -4,9 +4,26 @@ import {
   ProjectsRemoveParams,
 } from "@lilos/contracts/app";
 import { resolveUnderHomeAsync } from "@lilos/host";
-import { openFolderOf, projectFolderOf, projectForFolder } from "../projects";
+import {
+  folderKeyOf,
+  openFolderOf,
+  projectFolderOf,
+  projectForFolder,
+} from "../projects";
 import type { RelayCtx } from "./ctx";
 import { badParams, JsonRpcCode, RpcError } from "./rpc";
+
+/** D-#854 round 2: a removed project leaves this settings tombstone —
+    the goal/ticket ids it detached — so re-adding the folder puts the
+    company back exactly. Keyed by the folder's canonical compare key so
+    any spelling finds it. */
+const tombstoneKey = (folder: string, homeDir: string) =>
+  `detached.project.${folderKeyOf(folder, homeDir)}`;
+
+interface DetachedRows {
+  goalIds: string[];
+  ticketIds: string[];
+}
 
 /**
  * Projects (D-#854): the folders the owner says are projects — made by hand
@@ -46,24 +63,82 @@ export async function handleProjects(c: RelayCtx): Promise<false | undefined> {
         }
         folder = projectFolderOf(abs, homeDir);
       }
-      const { project, created } = await store.ensureProject({
+      /* D-#854 round 2 guard: `~` or `/` would swallow every folder on the
+         machine — refuse before anything files under it. */
+      const homeKey = folderKeyOf("~", homeDir);
+      const folderKey = folderKeyOf(folder, homeDir);
+      if (folderKey === homeKey || folderKey === folderKeyOf("/", homeDir)) {
+        throw new RpcError(
+          JsonRpcCode.invalidParams,
+          "invalid_params",
+          "a project needs a folder inside it — not the home folder or the filesystem root",
+        );
+      }
+      const existing = await store.listProjects();
+      const mine = existing.find(
+        (p) => folderKeyOf(p.folder, homeDir) === folderKey,
+      );
+      const key = parsed.data.key;
+      if (!mine && key) {
+        const takenBy = existing.find((p) => p.key === key);
+        /* A typed key must land verbatim — a conflict is the caller's to
+           fix, never a silent rename to `KEY2` (D-#854 round 2). */
+        if (takenBy) {
+          throw new RpcError(
+            JsonRpcCode.conflict,
+            "conflict",
+            `Key ${key} is already taken by ${takenBy.name}`,
+            { key, name: takenBy.name },
+          );
+        }
+      }
+      /* The tombstone a remove of this folder left behind — its goal and
+         ticket ids rejoin the new record inside `ensureProject`. */
+      const prior = (await store.getSetting(
+        tombstoneKey(folder, homeDir),
+      )) as DetachedRows | null;
+      const { project, created, attached } = await store.ensureProject({
         folder,
         name: parsed.data.name,
-        key: parsed.data.key,
+        key,
         about: parsed.data.about,
+        ...(prior
+          ? {
+              reattach: {
+                goalIds: prior.goalIds,
+                ticketIds: prior.ticketIds,
+              },
+            }
+          : {}),
       });
       if (created) {
+        await store.setSetting(tombstoneKey(folder, homeDir), null);
         broadcast("project.upserted", { project });
-        /* A folder that becomes a project adopts the threads already in it
-           (and any subfolders it contains — D-#854): they were chats filed
-           before the project existed. */
+        for (const goal of attached.goals) {
+          broadcast("goal.upserted", { goal });
+        }
+        for (const ticket of attached.tickets) {
+          broadcast("ticket.upserted", { ticket });
+        }
+        /* A folder that becomes a project adopts every thread inside it —
+           the chats filed before it existed, and the threads a shallower
+           project held: the most-specific folder owns them (D-#854). */
         const filings: { conversationId: string; projectId: string }[] = [];
-        for (const conversation of await store.listConversations({
+        const convs = await store.listConversations({
           includeArchived: true,
-        })) {
-          if (conversation.projectId !== undefined) continue;
+        });
+        for (const conversation of convs) {
+          if (conversation.projectId === project.id) continue;
           const folder = openFolderOf(conversation, homeDir);
-          if (folder && projectForFolder([project], folder, homeDir)) {
+          if (!folder) continue;
+          /* The new project claims the thread when it is the deepest
+             containing folder — a shallower project that had it loses it. */
+          const best = projectForFolder(
+            [...existing, project],
+            folder,
+            homeDir,
+          );
+          if (best?.id === project.id) {
             filings.push({
               conversationId: conversation.id,
               projectId: project.id,
@@ -87,12 +162,19 @@ export async function handleProjects(c: RelayCtx): Promise<false | undefined> {
       const parsed = ProjectsRemoveParams.safeParse(params);
       if (!parsed.success) throw badParams(parsed.error.issues);
       const removed = await store.removeProject(parsed.data.id);
+      /* D-#854 round 2: a stale or repeated remove answers ok — the record
+         is already gone, which is the state the caller asked for. */
       if (!removed) {
-        throw new RpcError(
-          JsonRpcCode.notFound,
-          "not_found",
-          "project not found",
-        );
+        c.respond(peer, id, { ok: true });
+        return;
+      }
+      /* Tombstone the detached goal/ticket ids under the folder's canonical
+         key — re-adding it puts them back (D-#854 round 2). */
+      if (removed.goals.length || removed.tickets.length) {
+        await store.setSetting(tombstoneKey(removed.project.folder, homeDir), {
+          goalIds: removed.goals.map((g) => g.id),
+          ticketIds: removed.tickets.map((t) => t.id),
+        } satisfies DetachedRows);
       }
       /* The threads re-file by containment under the projects that remain —
          a parent folder's project keeps them, the rest become chats. */

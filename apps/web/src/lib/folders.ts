@@ -70,15 +70,18 @@ export async function refreshFolders(): Promise<void> {
 /** The project owning `folder` (D-#854): its own folder, or the deepest
     project folder containing it — the same containment the relay files by.
     Both spellings are already canonical (`projects.create` normalizes), so
-    a segment-boundary prefix compare suffices. */
+    a segment-boundary prefix compare suffices; the case fold matches the
+    relay's macOS filesystem view (round 2). */
 export function projectForFolder<T extends { folder: string }>(
   projects: readonly T[],
   folder: string,
 ): T | undefined {
+  const folded = folder.toLowerCase();
   let best: T | undefined;
   for (const p of projects) {
     if (best && p.folder.length <= best.folder.length) continue;
-    if (folder === p.folder || folder.startsWith(`${p.folder}/`)) best = p;
+    const theirs = p.folder.toLowerCase();
+    if (folded === theirs || folded.startsWith(`${theirs}/`)) best = p;
   }
   return best;
 }

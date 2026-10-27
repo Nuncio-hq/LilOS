@@ -57,11 +57,15 @@ export function ProjectMenu({
               data-project-remove-confirm
               onClick={() => {
                 setBusy(true);
-                void Promise.resolve(onRemove()).finally(() => {
-                  setBusy(false);
-                  setOpen(false);
-                  setConfirming(false);
-                });
+                /* A failed remove rejects (its toast already ran) — the
+                   menu just settles; only success navigates (#854 r2). */
+                void Promise.resolve(onRemove())
+                  .catch(() => {})
+                  .finally(() => {
+                    setBusy(false);
+                    setOpen(false);
+                    setConfirming(false);
+                  });
               }}
             >
               Remove {name}

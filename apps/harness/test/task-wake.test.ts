@@ -1,3 +1,5 @@
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
 import type { AppMessage, Conversation } from "@lilos/contracts/app";
 import type { EngineEvent } from "@lilos/contracts/engine";
 import { TASK_WAKE_COALESCE_MS } from "@lilos/contracts/harness";
@@ -253,14 +255,17 @@ describe("task hand-off end-to-end (engine-fake, D-#844)", () => {
       const { employee: worker } = await w.user.request<{
         employee: { id: string; name: string };
       }>("employees.create", { name: "Bea", role: "eng" });
-      /* The task's ticket needs the parent's project (D-#854). */
-      await w.user.request("projects.create", { folder: homeDir });
+      /* The task's ticket needs the parent's project (D-#854); a project
+         needs a folder under home, so it nests. */
+      const repoDir = join(homeDir, "repo");
+      mkdirSync(repoDir, { recursive: true });
+      await w.user.request("projects.create", { folder: repoDir });
       const { conversation: parent } = await w.user.request<{
         conversation: { id: string; channelId: string };
       }>("conversations.open", {
         channelId: callerChannel.id,
         text: "Plan the week",
-        cwd: homeDir,
+        cwd: repoDir,
       });
       // Let the parent's own root turn finish before the hand-off.
       await waitFor(async () => {

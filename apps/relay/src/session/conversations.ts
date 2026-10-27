@@ -233,7 +233,9 @@ export async function handleConversations(
          project whose folder equals or contains the new folder, or a
          plain chat (moved somewhere no project covers, or folder
          cleared). A moved workstream thread files under the folder it
-         moved to, not its stale `workspace.repoPath`. */
+         moved to, not its stale `workspace.repoPath` — so the intent is
+         cleared with the move (round 2: it would otherwise keep claiming
+         the thread for its old repo through `openFolderOf`). */
       if ("cwd" in rest && (await store.getConversation(conversationId))) {
         if (typeof rest.cwd === "string") {
           const filing = projectForFolder(
@@ -245,6 +247,7 @@ export async function handleConversations(
         } else {
           patch.projectId = null;
         }
+        patch.workspace = null;
       }
       const conversation = await store.updateConversation(
         conversationId,
