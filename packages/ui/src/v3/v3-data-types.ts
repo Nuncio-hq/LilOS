@@ -107,6 +107,10 @@ export type V3Settings = {
      asks. Absent: this engine has no such setting, so there is nothing to
      choose. Written through `saveSettings({ enginePolicy })`. */
   enginePolicy?: "smart" | "manual" | "off";
+  /** #884: the engine reports `off` — its global policy auto-answers
+     everything, so "Ask" can never produce a card. The composer's access
+     pill warns and `act.fixEnginePolicy` is the one-click repair. */
+  engineNeverAsks?: boolean;
   /** Where "Open in editor" goes (its name). Absent: no editor found. */
   editor?: string;
   /** Editors this Mac has, by name; absent: nothing to choose. */

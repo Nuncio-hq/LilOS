@@ -19,7 +19,12 @@ import type { ConversationAccess } from "../types";
    Full asks once — "Agents run tools without asking in this thread" —
    before it applies (a single click never switches); the yes is remembered
    in localStorage, so later picks go straight through. The switch still
-   applies to the agent's next action, mid-turn included. */
+   applies to the agent's next action, mid-turn included.
+
+   #884: when the engine's global policy reports `off` it auto-answers
+   everything, so the same menu carries the warning + one-click Fix above
+   the Ask/Full rows — one access control, not two (D-#886). The pill
+   reads "Never asks" until the policy is repaired. */
 
 /** localStorage flag: the user already confirmed what Full access does. */
 const FULL_OK = "lilos-full-access-ok";
@@ -35,13 +40,23 @@ const fullOk = () => {
 export function AccessPill({
   access,
   onAccess,
+  engineNeverAsks,
+  engineName,
+  onFixPolicy,
 }: {
   access: ConversationAccess;
   onAccess: (a: ConversationAccess) => void;
+  /** The engine reports `off` — the pill warns and the menu carries Fix. */
+  engineNeverAsks?: boolean;
+  /** Its display name for the warning ("Hermes"). */
+  engineName?: string;
+  /** The Fix — sets the engine's policy back to `smart` once, on click. */
+  onFixPolicy?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const full = access === "full";
+  const name = engineName || "The engine";
   const close = () => {
     /* A programmatic close does not fire onOpenChange — reset the view or
        the menu would reopen still asking. */
@@ -81,28 +96,34 @@ export function AccessPill({
           <PromptInputButton
             size="sm"
             aria-label={
-              full
-                ? "Access: Full — the agent never stops to ask"
-                : "Access: Ask — the agent asks before risky commands"
+              engineNeverAsks
+                ? `${name} is set to never ask — open the warning`
+                : full
+                  ? "Access: Full — the agent never stops to ask"
+                  : "Access: Ask — the agent asks before risky commands"
             }
             aria-haspopup="menu"
             title={
-              full
-                ? "Full access — the agent never stops to ask."
-                : "Ask — the agent asks before risky commands."
+              engineNeverAsks
+                ? `${name} is set to never ask, so Ask won't stop risky commands.`
+                : full
+                  ? "Full access — the agent never stops to ask."
+                  : "Ask — the agent asks before risky commands."
             }
             className={cn(
               "h-6 shrink gap-1.5 rounded-md px-1.5 font-normal text-[12.5px] text-muted-foreground hover:bg-[var(--v3-hover)] hover:text-foreground aria-expanded:bg-[var(--v3-hover)] aria-expanded:text-foreground",
-              /* Full stays orange on hover too (Codex-style). */
-              full &&
+              /* Full and the engine warning stay orange on hover too
+                 (Codex-style). */
+              (full || engineNeverAsks) &&
                 "text-orange-600 hover:bg-orange-500/10 hover:text-orange-600 dark:text-orange-400 dark:hover:bg-orange-500/15 dark:hover:text-orange-400",
             )}
             data-slot="access-pill"
             data-access={access}
+            data-engine-never-asks={engineNeverAsks || undefined}
           />
         }
       >
-        {full ? (
+        {full || engineNeverAsks ? (
           <ShieldAlertIcon className="size-3.5 fill-orange-500/20" />
         ) : (
           <ShieldQuestionIcon className="size-3.5" />
@@ -110,10 +131,10 @@ export function AccessPill({
         {/* #886 narrow = icon + a short label, the same as the model and
             effort dropdowns beside it. */}
         <span className="@max-[480px]:hidden">
-          {full ? "Full access" : "Ask"}
+          {engineNeverAsks ? "Never asks" : full ? "Full access" : "Ask"}
         </span>
         <span className="hidden @max-[480px]:inline">
-          {full ? "Full" : "Ask"}
+          {engineNeverAsks ? "Never" : full ? "Full" : "Ask"}
         </span>
         <ChevronDownIcon className="size-3 opacity-60" />
       </PopoverTrigger>
@@ -148,6 +169,27 @@ export function AccessPill({
           </div>
         ) : (
           <div role="menu" aria-label="Access" className="py-1">
+            {engineNeverAsks && (
+              <div className="border-b px-3 pb-2.5 pt-2">
+                <p className="text-[12.5px] leading-snug text-foreground">
+                  {name} is set to never ask, so Ask won't stop risky commands.
+                </p>
+                {onFixPolicy && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    data-access-fix
+                    onClick={() => {
+                      onFixPolicy();
+                      close();
+                    }}
+                    className="mt-2 w-full rounded-md bg-foreground px-2 py-1.5 text-[12.5px] font-medium text-background hover:bg-foreground/85"
+                  >
+                    Fix — set {name} back to Smart
+                  </button>
+                )}
+              </div>
+            )}
             <button
               type="button"
               role="menuitemradio"
