@@ -33,6 +33,7 @@ import { modelLabel, modelRows } from "./models";
 import {
   deviceOf,
   engineOf,
+  harnessOf,
   modelsOf,
   relayOf,
   scheduleOf,
@@ -87,6 +88,16 @@ function build(): Slice {
     fatal: relay.fatal.get(),
   });
   const engine = engineOf(rows, status.result);
+  /* #885: "starting" is not a wait forever — a harness that never
+     registers or an engine that never reports would leave first run on
+     "Starting…" with no explanation. After ~20s still starting, `stuck`
+     names which leg holds it up and the problem screen stands in.
+     Re-evaluated on every poll; clears the moment the engine answers. */
+  if (engine.state === "starting") {
+    engineWaitingSince ??= now;
+    if (now - engineWaitingSince > 20_000)
+      engine.stuck = harnessOf(rows)?.state === "ok" ? "engine" : "harness";
+  } else engineWaitingSince = undefined;
   const catalog = engineModels.get();
   const visibility = modelVisibility.get();
 
@@ -150,6 +161,7 @@ function build(): Slice {
         : {}),
       models: modelsOf(catalog, engineProviders.get(), visibility),
       engine,
+      harness: harnessOf(rows),
       relay: relayOf(rows),
       /* #885: About carries only the app's version; the build · relay ·
          harness line stays for Engine's Troubleshooting section. */
@@ -183,11 +195,16 @@ function build(): Slice {
   };
 }
 
+/* When the engine first read "starting"; reset the moment it resolves.
+   The 20s time-box lives in `build`, which re-runs on every status poll. */
+let engineWaitingSince: number | undefined;
+
 const INITIAL: Slice = {
   settings: {
     approvals: "ask",
     models: [],
     engine: { name: "Engine", unnamed: true, state: "starting" },
+    harness: { state: "starting" },
     relay: { state: "starting" },
   },
   devices: [],

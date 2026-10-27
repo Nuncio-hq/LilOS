@@ -268,17 +268,62 @@ describe("first run", () => {
     expect(screen.queryByRole("button", { name: "See status" })).toBeNull();
   });
 
-  test("a relay failure carries its own reason, not generic quit text (#885)", () => {
+  test("a down relay shows the plain mapping, never the part's own name (#885)", () => {
+    /* The status rules' real output for an unreachable relay — "Start the
+       relay…" — must not reach the screen; See status keeps the raw text. */
     const down = data({
       settings: {
         engine: { state: "starting", name: "Hermes" },
-        relay: { state: "down", problem: "version mismatch: update LilOS" },
+        relay: {
+          state: "down",
+          problem:
+            "Relay unreachable.\nStart the relay on this Mac, then reopen LilOS.",
+        },
       },
     } as never);
     expect(firstRunProblem(down)).toBe(true);
-    render(<EngineProblem data={down} act={actions()} />);
-    expect(screen.getByText(/version mismatch: update LilOS/)).toBeTruthy();
-    expect(screen.queryByText(/Quit LilOS and open it again/)).toBeNull();
+    const { container } = render(<EngineProblem data={down} act={actions()} />);
+    expect(
+      screen.getByText(/LilOS's background service isn't running/),
+    ).toBeTruthy();
+    expect(
+      container.querySelector("[data-first-run-problem]")?.textContent,
+    ).not.toMatch(/relay/i);
+  });
+
+  test("a down harness leg, or a start that stalls, is the problem (#885)", () => {
+    const downHarness = data({
+      settings: {
+        engine: { state: "starting", name: "Hermes" },
+        harness: { state: "down" },
+        relay: { state: "ok" },
+      },
+    } as never);
+    expect(firstRunProblem(downHarness)).toBe(true);
+    const { unmount } = render(
+      <EngineProblem data={downHarness} act={actions()} />,
+    );
+    expect(screen.getByText(/starts the engine isn't answering/)).toBeTruthy();
+    unmount();
+
+    const stuckHarness = data({
+      settings: {
+        engine: { state: "starting", name: "Hermes", stuck: "harness" },
+        relay: { state: "ok" },
+      },
+    } as never);
+    expect(firstRunProblem(stuckHarness)).toBe(true);
+
+    const stuckEngine = data({
+      settings: {
+        engine: { state: "starting", name: "Hermes", stuck: "engine" },
+        harness: { state: "ok" },
+        relay: { state: "ok" },
+      },
+    } as never);
+    expect(firstRunProblem(stuckEngine)).toBe(true);
+    render(<EngineProblem data={stuckEngine} act={actions()} />);
+    expect(screen.getByText(/engine hasn't answered yet/)).toBeTruthy();
   });
 
   test("a healthy relay and engine never show the problem screen", () => {

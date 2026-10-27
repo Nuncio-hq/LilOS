@@ -1,6 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
+import { bootParts } from "./helpers/parts";
 import { bootStack, pickPorts, type Stack, v3Sidebar } from "./helpers/stack";
 
 /**
@@ -40,7 +41,7 @@ test("AC-1 a healthy stack has no check between the steps — name, agent, folde
 
     await page.getByRole("button", { name: "Next", exact: true }).click(); // agent
     await page.getByRole("button", { name: "Next", exact: true }).click(); // folder
-    await page.getByRole("button", { name: "Start" }).click();
+    await page.getByRole("button", { name: "Start", exact: true }).click();
     await expect(
       v3Sidebar(page).getByRole("button", { name: /Default/ }),
     ).toBeVisible({ timeout: 30_000 });
@@ -102,5 +103,40 @@ test("AC-2 a dead engine shows the plain problem screen; the status dialog opens
     await page.screenshot({ path: `${SHOTS}/ac-2-see-status.png` });
   } finally {
     await stack.stop();
+  }
+});
+
+test("AC-3 a harness that never registers shows the problem screen, not a stuck Start", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  /* Relay up, no harness ever (bootParts harness:false): the harness leg
+     reads down and the engine waits on it — a state "Starting…" must not
+     sit on forever (#885). */
+  const parts = await bootParts("ac589h", await pickPorts(), {
+    harness: false,
+  });
+  try {
+    await page.goto(`${parts.webUrl}/?statusPollMs=500`);
+    await expect(
+      page.getByRole("heading", { name: "Welcome to LilOS" }),
+    ).toBeVisible({ timeout: 30_000 });
+    /* The problem screen stands in for the steps with the plain helper
+       reason — the leg's own name stays behind See status. */
+    const problem = page.locator("[data-first-run-problem]");
+    await expect(problem).toBeVisible({ timeout: 60_000 });
+    await expect(problem).toContainText(
+      /starts the engine isn't answering|hasn't answered/,
+    );
+    const text = await problem.innerText();
+    expect(text).not.toMatch(/\brelay\b|\bharness\b|employee|engine-fake/i);
+    await page.screenshot({ path: `${SHOTS}/ac-3-no-harness.png` });
+    /* No stuck "Starting…" button and no steps to type into. */
+    await expect(
+      page.getByRole("button", { name: "Start", exact: true }),
+    ).toHaveCount(0);
+    await expect(page.locator("body")).not.toContainText("Your name");
+  } finally {
+    await parts.stop();
   }
 });

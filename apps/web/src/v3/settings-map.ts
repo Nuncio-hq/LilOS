@@ -65,6 +65,17 @@ export function relayOf(rows: StatusRow[]): V3Settings["relay"] {
   return { state: "down", problem: plain(row) };
 }
 
+/** The harness leg of `system.status`: a down one means the engine row's
+    "starting" can never resolve, so first run treats it as the problem
+    itself rather than a wait (#885). */
+export function harnessOf(rows: StatusRow[]): V3Settings["harness"] {
+  const row = rows.find((r) => r.id === "harness");
+  if (!row || row.state === "connecting" || row.state === "blocked")
+    return { state: "starting" };
+  if (row.state === "ok") return { state: "ok" };
+  return { state: "down" };
+}
+
 /* --------------------------------- models ---------------------------------- */
 
 /** The catalog as Settings switches: one row per model, on unless hidden. */

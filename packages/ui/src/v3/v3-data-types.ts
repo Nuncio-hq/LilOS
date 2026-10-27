@@ -130,7 +130,15 @@ export type V3Settings = {
     /** What is wrong in plain words, with the next step, as the engine
        reported it; replaces the generic steps. */
     problem?: string;
+    /** Set once "starting" has lasted ~20s straight (#885): which leg
+       holds the start up — the engine's helper never connected, or the
+       engine itself never reported. First run swaps to the problem
+       screen; "starting" alone stays a wait. */
+    stuck?: "harness" | "engine";
   };
+  /** The engine's supervisor leg; down means the engine can never come
+     up. Absent where the feed reports no such leg. */
+  harness?: { state: "ok" | "starting" | "down" };
   /** The link between this app and the engine. */
   relay: { state: "ok" | "starting" | "down"; problem?: string };
   /** This app's own version; absent where it has none to show (#885:

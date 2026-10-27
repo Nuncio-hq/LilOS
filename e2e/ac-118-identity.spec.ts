@@ -92,7 +92,7 @@ test("AC-2 first run folds name+company into the Welcome, prefilled; AC-1 the ch
     const next = page.getByRole("button", { name: "Next", exact: true });
     await next.click(); // → Your first agent
     await next.click(); // → First project
-    await page.getByRole("button", { name: "Start" }).click();
+    await page.getByRole("button", { name: "Start", exact: true }).click();
 
     // Every surface renders the stored identity (AC-1).
     await expect(greeting(page)).toContainText("Ada", { timeout: 30_000 });

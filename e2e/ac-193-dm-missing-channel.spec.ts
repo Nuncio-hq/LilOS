@@ -67,7 +67,7 @@ test("AC-1 first-run hire's DM channel exists, and the new chat with it is ready
   const next = page.getByRole("button", { name: "Next", exact: true });
   await next.click(); // → Your first agent
   await next.click(); // → First project
-  await page.getByRole("button", { name: "Start" }).click();
+  await page.getByRole("button", { name: "Start", exact: true }).click();
 
   // The harness opened the DM channel at hire — it is on the relay already.
   const sidebar = v3Sidebar(page);

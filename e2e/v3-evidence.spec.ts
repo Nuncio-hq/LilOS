@@ -107,7 +107,7 @@ for (const theme of ["light", "dark"] as const) {
       await page.getByRole("button", { name: "Next" }).click();
       await page.getByLabel("Name", { exact: true }).fill("Ada");
       await page.getByRole("button", { name: "Next" }).click();
-      await page.getByRole("button", { name: "Start" }).click();
+      await page.getByRole("button", { name: "Start", exact: true }).click();
 
       /* Home: the first agent, idle, nothing waiting. */
       await expect(page.getByRole("heading", { level: 1 })).toHaveText(

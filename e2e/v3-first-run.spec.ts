@@ -80,7 +80,7 @@ test("a fresh home: Welcome, three plain steps, then Home with the first agent a
     await expect(page.getByLabel(/path/i)).toHaveValue(
       `~/${path.basename(folder)}`,
     );
-    await page.getByRole("button", { name: "Start" }).click();
+    await page.getByRole("button", { name: "Start", exact: true }).click();
 
     // Home, for the person who typed their name.
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(
