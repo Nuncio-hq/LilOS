@@ -13,7 +13,7 @@
  */
 import { Database } from "bun:sqlite";
 import { mkdirSync, writeSync } from "node:fs";
-import { homedir, hostname } from "node:os";
+import { hostname } from "node:os";
 import { join } from "node:path";
 import { systemClock, watchOrphaned } from "@lilos/background";
 import { MAX_FRAME_BYTES } from "@lilos/contracts/engine";
@@ -30,7 +30,6 @@ import { createExpoPushSender } from "./expo";
 import { createLogTail } from "./logtail";
 import { wsUpgradeOriginAllowed } from "./origin";
 import { createPairingService } from "./pairing";
-import { backfillProjects } from "./projects";
 import { createPushFanout } from "./push";
 import { createRelay, type PhoneAccess } from "./session";
 import { advertisedPairingHost, resolveTailscaleProbe } from "./tailscale";
@@ -53,15 +52,9 @@ if (backupPath) console.log(`[relay] db backup written to ${backupPath}`);
 applyMigrations(sqlite);
 
 const store = createDrizzleStore(drizzle(sqlite, { schema }));
-/* D-#771: an install upgrading from before projects has foldered threads
-   with no project — file them as an open would. Idempotent (a filed
-   thread is skipped), so every later boot finds nothing to do. */
-const backfill = await backfillProjects(store, homedir());
-if (backfill.filed > 0) {
-  console.log(
-    `[relay] filed ${backfill.filed} threads under ${backfill.created} new projects`,
-  );
-}
+/* D-#854: no boot filing — the owner adds projects by hand; a folder no project
+   covers stays a chat forever. Old `projectId`s and project rows survive the
+   migrations above untouched. */
 const attachments = createFileAttachmentStore(
   join(config.homeDir, "attachments"),
 );

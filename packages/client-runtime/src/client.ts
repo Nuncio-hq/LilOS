@@ -32,6 +32,7 @@ import {
   type ProfileSettings,
   ProfileUpdatedEvent,
   type Project,
+  ProjectRemovedEvent,
   ProjectUpsertedEvent,
   type RequestId,
   type RpcError,
@@ -217,9 +218,9 @@ const DEFAULT_MAX_DELAY_MS = 4_000;
 export class RelayClient {
   readonly state: WritableAtom<RelayConnectionState> = atom("idle");
   readonly employees: WritableAtom<Employee[]> = atom([]);
-  /** The company's projects (D-#771) — empty until the first directory
+  /** The company's projects (D-#854) — empty until the first directory
       refresh, and on a relay that predates `projects.list`; live via
-      `project.upserted` (including the one a first-use open creates). */
+      `project.upserted` / `project.removed`. */
   readonly projects: WritableAtom<Project[]> = atom([]);
   /** Goals and tickets (D-#776). Empty until the directory refresh, and on
       a relay that predates the methods. Live via `goal.upserted` /
@@ -526,9 +527,10 @@ export class RelayClient {
   /** Get-or-create the project for a folder; a folder that already has one
       answers it. The `project.upserted` broadcast lands the same row in
       every other window — this call upserts locally so the caller can use
-      it at once. */
+      it at once. `name`/`key` are the dialog's editable picks (D-#854). */
   async createProject(input: {
     name?: string;
+    key?: string;
     folder: string;
     about?: string;
   }): Promise<Project> {
@@ -538,6 +540,15 @@ export class RelayClient {
     );
     this.upsertProject(project);
     return project;
+  }
+
+  /** Remove the project record (D-#854): its threads become chats, its
+      goals and tickets stay unfiled, the folder is untouched. The
+      `project.removed` broadcast drops the row here too — this call removes
+      it locally so the caller's UI settles at once. */
+  async removeProject(id: string): Promise<void> {
+    await this.request("projects.remove", { id });
+    this.projects.set(this.projects.get().filter((p) => p.id !== id));
   }
 
   private upsertProject(project: Project): void {
@@ -1347,6 +1358,23 @@ export class RelayClient {
       }
       case "project.upserted": {
         this.upsertProject(ProjectUpsertedEvent.parse(params).project);
+        return;
+      }
+      case "project.removed": {
+        const { projectId } = ProjectRemovedEvent.parse(params);
+        this.projects.set(
+          this.projects.get().filter((p) => p.id !== projectId),
+        );
+        /* The re-filed/detached threads ride `conversation.updated` only to
+           their channel's subscribers — re-read the filings so every client
+           sees chats where the project was (D-#854). Goal/ticket detaches
+           arrive as their own upserts. */
+        void this.request<{ conversations: Conversation[] }>(
+          "conversations.list",
+          { includeArchived: true },
+        )
+          .then(({ conversations }) => this.conversations.set(conversations))
+          .catch(() => {});
         return;
       }
       case "goal.upserted": {

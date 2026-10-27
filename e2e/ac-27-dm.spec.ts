@@ -116,11 +116,15 @@ test("AC-2 sidebar shows People + status only (no channels/projects/tickets)", a
   });
   await expect(sidebar.getByText("People")).toBeVisible();
   /* Work and Goals show with tickets (D-#776). Inbox stays hidden until it
-     has updates. Projects stays out until a project exists. */
+     has updates. Projects' heading always shows — its ＋ is the way in
+     (#854) — but with none yet it lists no row. */
   for (const label of ["Work", "Goals"])
     await expect(sidebar.getByText(label, { exact: true })).toBeVisible();
   await expect(sidebar.getByText("Inbox", { exact: true })).toHaveCount(0);
-  await expect(sidebar.getByText("Projects", { exact: true })).toHaveCount(0);
+  await expect(sidebar.getByText("Projects", { exact: true })).toBeVisible();
+  await expect(
+    sidebar.getByRole("button", { name: "New project from a folder" }),
+  ).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-2-sidebar.png` });
 });
 

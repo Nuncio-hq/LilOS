@@ -20,6 +20,7 @@ import { AgentAvatar, CeoMark, ProjectMark, StatusDot } from "./v3-marks";
 import { agentDot, companyOn } from "./v3-model";
 import { isRecordRoute } from "./v3-nav";
 import type { V3RecordRoute, V3Route } from "./v3-page-types";
+import { ProjectMenu } from "./v3-project-menu";
 import { type SidebarMode, SidebarToggle } from "./v3-topbar";
 
 /* The v3 sidebar is the company's table of contents: the three databases
@@ -36,6 +37,8 @@ export function V3Sidebar({
   onTheme,
   canHire = true,
   onAddAgent,
+  onNewProject,
+  onRemoveProject,
   mode,
   width,
   sideRef,
@@ -60,6 +63,13 @@ export function V3Sidebar({
   /** Opens the add-agent dialog (#870); drawn as the ＋ beside Agents while
      the company layer is paused. Absent = the app cannot create agents. */
   onAddAgent?: () => void;
+  /** Opens the folder picker for a new project (#854) — the ＋ beside
+     Projects; the heading stays even while there are none. Absent = the
+     app cannot create projects. */
+  onNewProject?: () => void;
+  /** A project row's ⋯ → Remove project (#854). Absent = rows carry no
+     menu (the app cannot remove projects). */
+  onRemoveProject?: (projectId: string) => void | Promise<void>;
   mode: SidebarMode;
   width: number;
   sideRef: Ref<HTMLElement>;
@@ -188,17 +198,37 @@ export function V3Sidebar({
           />
         )}
 
-        {/* No projects yet (a company of plain folders): no empty heading. */}
-        {data.projects.length > 0 && (
+        {/* Projects are the owner's by hand (D-#854): the heading and its ＋
+            show even with none, so the way in is never hidden. */}
+        {(data.projects.length > 0 || onNewProject) && (
           <>
-            <Label>Projects</Label>
+            <Label
+              right={
+                onNewProject && (
+                  <button
+                    type="button"
+                    aria-label="New project from a folder"
+                    title="New project from a folder"
+                    data-new-project
+                    onClick={onNewProject}
+                    className="grid size-5 place-items-center rounded text-muted-foreground/70 transition-colors hover:bg-[var(--v3-hover)] hover:text-foreground"
+                  >
+                    <PlusIcon className="size-3.5" />
+                  </button>
+                )
+              }
+            >
+              Projects
+            </Label>
             {data.projects.map((p) => (
-              <Item
+              <ProjectItem
                 key={p.id}
-                icon={<ProjectMark name={p.name} tone={p.tone} />}
-                label={p.name}
+                project={p}
                 on={on("project", p.id)}
-                onClick={() => go({ page: "project", id: p.id })}
+                go={go}
+                onRemove={
+                  onRemoveProject ? () => onRemoveProject(p.id) : undefined
+                }
               />
             ))}
           </>
@@ -304,6 +334,40 @@ function Item({
 
 function Count({ n }: { n: number }) {
   return <span className="text-[12px] text-muted-foreground/70">{n}</span>;
+}
+
+/** A project row: the project it opens plus its ⋯ menu (D-#854). The row
+    is a div — a button cannot hold the menu's own button — with the Item's
+    look split across the two. */
+function ProjectItem({
+  project,
+  on,
+  go,
+  onRemove,
+}: {
+  project: V3Data["projects"][number];
+  on: boolean;
+  go: (r: V3Route) => void;
+  onRemove?: () => void | Promise<void>;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex h-[30px] shrink-0 items-center rounded-md pr-1 transition-colors hover:bg-[var(--v3-hover)]",
+        on && "bg-[var(--v3-hover)] font-medium text-foreground",
+      )}
+    >
+      <button
+        type="button"
+        onClick={() => go({ page: "project", id: project.id })}
+        className="flex h-full min-w-0 flex-1 items-center gap-2.5 whitespace-nowrap px-2 pr-1 text-left [&>svg]:size-4 [&>svg]:shrink-0 [&>svg]:opacity-70"
+      >
+        <ProjectMark name={project.name} tone={project.tone} />
+        <span className="min-w-0 flex-1 truncate">{project.name}</span>
+      </button>
+      <ProjectMenu name={project.name} onRemove={onRemove} />
+    </div>
+  );
 }
 
 function Label({

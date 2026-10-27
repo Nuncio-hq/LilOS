@@ -384,13 +384,15 @@ test("AC-6 a new chat pre-selects the last session's project; a no-project sessi
 test("AC-5 projects persist across reload in the order they were made; the New project dialog offers the reachable recents, never a deleted folder", async ({
   page,
 }) => {
-  // Add two more folders through the dialog (each moves a folder-less thread
-  // there; the relay files it under that folder's project and the folder
-  // joins the recents): one kept, one deleted after.
+  /* Add two more folders through the dialog (each moves a folder-less
+     thread there and the folder joins the recents): one kept, one deleted
+     after. The moves alone leave the threads as chats (D-#854) — the
+     projects are made by hand, in the order they are tested for. */
   for (const dir of [plainDir, goneDir]) {
     await openFolderless(page, `park in ${path.basename(dir)}`);
     await panel(page).locator("[data-add-folder]").click();
     await addViaDialog(page, dir, "Not a git repo");
+    await relayRpc(page, stack, "projects.create", { folder: shown(dir) });
   }
   rmSync(goneDir, { recursive: true, force: true });
 

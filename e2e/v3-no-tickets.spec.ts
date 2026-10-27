@@ -60,7 +60,12 @@ test("the sidebar offers Work and Goals, and a link opens that page", async ({
       side.getByRole("button", { name: new RegExp(`^${name}`) }),
     ).toBeVisible();
   await expect(side.getByRole("button", { name: /^Inbox/ })).toHaveCount(0);
-  await expect(side.getByText("Projects", { exact: true })).toHaveCount(0);
+  /* Projects stay: added by hand, so the section and its ＋ are always there
+     (#854), tickets or not. */
+  await expect(side.getByText("Projects", { exact: true })).toBeVisible();
+  await expect(
+    side.getByRole("button", { name: "New project from a folder" }),
+  ).toBeVisible();
 
   const links: [string, string][] = [
     ["#?page=work", "Work"],

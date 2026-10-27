@@ -2350,7 +2350,6 @@
               "required": [
                 "id",
                 "title",
-                "projectId",
                 "due",
                 "why",
                 "createdAt"
@@ -2442,7 +2441,6 @@
             "required": [
               "id",
               "title",
-              "projectId",
               "due",
               "why",
               "createdAt"
@@ -2832,7 +2830,6 @@
                 "id",
                 "number",
                 "title",
-                "projectId",
                 "status",
                 "progress",
                 "updates",
@@ -3226,7 +3223,6 @@
               "id",
               "number",
               "title",
-              "projectId",
               "status",
               "progress",
               "updates",
@@ -3743,7 +3739,6 @@
               "id",
               "number",
               "title",
-              "projectId",
               "status",
               "progress",
               "updates",
@@ -4340,7 +4335,6 @@
                 "id",
                 "number",
                 "title",
-                "projectId",
                 "status",
                 "progress",
                 "updates",
@@ -4739,7 +4733,6 @@
               "id",
               "number",
               "title",
-              "projectId",
               "status",
               "progress",
               "updates",
@@ -5156,7 +5149,6 @@
               "id",
               "number",
               "title",
-              "projectId",
               "status",
               "progress",
               "updates",

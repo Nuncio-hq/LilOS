@@ -35,6 +35,21 @@ export const FsListResult = z.object({
 });
 export type FsListResult = z.infer<typeof FsListResult>;
 
+// ── fs.canonical ────────────────────────────────────────────────────────────
+/** Batch canonical compare keys for paths (D-#854): symlink-resolved,
+    `~`-aware, case-folded on macOS — the spelling two strings naming one
+    folder share. Clients dedupe lists (e.g. recents vs "Found on this
+    Mac") without needing their own filesystem. */
+export const FsCanonicalParams = z.strictObject({
+  paths: z.array(Path).min(1).max(200),
+});
+export type FsCanonicalParams = z.infer<typeof FsCanonicalParams>;
+export const FsCanonicalResult = z.object({
+  /** `keys[i]` is the compare key for `paths[i]`. */
+  keys: z.array(z.string()),
+});
+export type FsCanonicalResult = z.infer<typeof FsCanonicalResult>;
+
 // ── fs.complete ─────────────────────────────────────────────────────────────
 /** Path autocomplete for pickers: directories only, prefix match on the last segment. */
 export const FsCompleteParams = z.strictObject({ word: z.string() });

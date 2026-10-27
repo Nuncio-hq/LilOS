@@ -95,7 +95,10 @@ test("the project page uses the same statuses", async ({ page }) => {
   await expect(threads.getByText("Pinned", { exact: true })).toBeVisible();
   await expect(row(page, "t-chat-relay")).toBeVisible();
   await expect(threads.getByText("Active", { exact: true })).toBeVisible();
-  await expect(foldButton(page, "", "working")).toContainText("Working (1)");
+  /* Two working: t-lil-helpers (its own project) and t-lil81, filed under
+     LilOS by its ticket LIL-81 — the prototype has no tickets feature, and
+     `threadProjectId` (#854) files it either way, as the Threads tag does. */
+  await expect(foldButton(page, "", "working")).toContainText("Working (2)");
   await expect(foldButton(page, "", "settled")).toContainText("Done (1)");
   /* The old Live/Past split is gone. */
   await expect(main(page).getByText("Live threads")).toHaveCount(0);
