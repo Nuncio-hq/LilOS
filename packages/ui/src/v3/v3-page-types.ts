@@ -258,11 +258,11 @@ export type V3Actions = {
   /** Renames a thread in place (an empty title is not a rename). Absent: the
      app cannot, and no title is editable. */
   renameThread?: (threadId: string, title: string) => void;
-  /** Settles a thread (`true`: it leaves every list for the Settled shelf —
+  /** Settles a thread (`true`: it leaves every list for the Done shelf —
      finished work parked, not deleted — and settling takes its pin off) or
      brings it back to the top of Active. The wire keeps the name
      `archiveThread` until the backend slice renames archive to settle
-     (#862); the UI says Settle. Absent: no settle controls. */
+     (#862); the UI says Done / Not done (#887). Absent: no done controls. */
   archiveThread?: (threadId: string, archived: boolean) => void;
   /** Pins a thread to the top of the list (`true`) or takes the pin off.
      Absent: no pin controls. */
@@ -274,9 +274,9 @@ export type V3Actions = {
   /** Brings a snoozed thread back now ("Wake now"): the snooze is over, it
      returns to where it belongs. Absent: no Wake control. */
   wakeThread?: (threadId: string) => void;
-  /** The per-thread auto-settle switch: `false`, the 3-day-idle and
-     PR-merged sweep leaves this thread alone. Absent: no Auto-settle
-     choice. */
+  /** The per-thread auto-settle flag: `false`, the 3-day-idle and
+     PR-merged sweep leaves this thread alone. The desktop menu dropped its
+     switch (#887); the relay keeps the field and the default stays on. */
   setAutoSettle?: (threadId: string, enabled: boolean) => void;
   /** ⌘K's message search: what people and agents said, newest relevance
      first. Rejects when the search failed (the app has already said why).

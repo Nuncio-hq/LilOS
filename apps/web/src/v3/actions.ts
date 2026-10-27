@@ -205,12 +205,12 @@ export function makeV3Actions(caps: V3Capabilities): V3DataActions {
       ),
     /* D-#862: park actions call their relay methods — the row's stamps
        land on `conversation.updated`, so every client sees them. The view
-       name stays `archiveThread`; the UI says Settle. */
+       name stays `archiveThread`; the UI says Done (#887). */
     archiveThread: (threadId, archived) =>
       toastOnFail(
         archived
-          ? "Couldn't settle the thread"
-          : "Couldn't un-settle the thread",
+          ? "Couldn't mark the thread done"
+          : "Couldn't bring the thread back",
         archiveConversation(threadId, archived),
       ),
     pinThread: (threadId, pinned) =>

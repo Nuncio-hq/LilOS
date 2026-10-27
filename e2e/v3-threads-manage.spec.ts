@@ -1,11 +1,11 @@
 import { expect, type Page, test } from "@playwright/test";
 
 /**
- * Rename, settle and un-settle a thread, and the engine approval policy,
- * on the prototype (mock company). A thread's ⋯ menu is on its row and in
- * its own header; a running thread sits folded under Working (#862),
- * and a settled thread leaves the list for the Settled shelf, where it
- * un-settles.
+ * Rename, mark done and mark not done a thread, and the engine approval
+ * policy, on the prototype (mock company). A thread's ⋯ menu is on its row
+ * and in its own header; a running thread sits folded under Working (#862),
+ * and a done thread leaves the list for the Done shelf, where Not done
+ * brings it back (#887).
  */
 
 const T = "t-lil81";
@@ -57,31 +57,31 @@ test("a thread renames in place from its row and its header", async ({
   await expect(row(page)).toContainText("Renamed in the header");
 });
 
-test("a settled thread leaves the list for the Settled shelf, and un-settles", async ({
+test("a done thread leaves the list for the Done shelf, and Not done brings it back", async ({
   page,
 }) => {
   await page.goto("/?page=threads");
   // The mock's shelf starts with three parked threads (#862).
-  await expect(settledFold(page)).toHaveText("Settled (3)");
+  await expect(settledFold(page)).toHaveText("Done (3)");
   await openWorking(page);
   await row(page).hover();
   await menu(row(page)).click();
-  await page.getByRole("menuitem", { name: "Settle thread" }).click();
+  await page.getByRole("menuitem", { name: "Done", exact: true }).click();
 
-  // Gone from the list; present on the Settled shelf.
+  // Gone from the list; present on the Done shelf.
   await expect(row(page)).toHaveCount(0);
-  await expect(settledFold(page)).toHaveText("Settled (4)");
+  await expect(settledFold(page)).toHaveText("Done (4)");
   await settledFold(page).click();
   const settled = page.locator(`[data-settled-list] [data-thread-row="${T}"]`);
   await expect(settled).toBeVisible();
-  // Settling took the pin and snooze off: the shelf row offers Un-settle.
-  await expect(settled).toContainText("Settled");
+  // Done took the pin and snooze off: the shelf row offers Not done.
+  await expect(settled).toContainText("Done");
 
-  // It still opens, and Un-settle is on its menu.
+  // It still opens, and Not done is on its menu.
   await menu(settled).click();
-  await page.getByRole("menuitem", { name: "Un-settle thread" }).click();
+  await page.getByRole("menuitem", { name: "Not done" }).click();
   await expect(row(page)).toBeVisible();
-  await expect(settledFold(page)).toHaveText("Settled (3)");
+  await expect(settledFold(page)).toHaveText("Done (3)");
 });
 
 test("Settings → General draws the engine approval policy and keeps the pick", async ({
