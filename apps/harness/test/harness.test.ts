@@ -1892,18 +1892,19 @@ describe("auto titles (#137)", () => {
         conversation: { id: string; title: string; titleSource: string };
       }>("conversations.open", {
         channelId: channel.id,
-        text: "Summarize the repo layout",
+        text: "Summarize the repo layout please",
       });
       // AC-3: the placeholder is already on the row before any engine title.
-      expect(conversation.title).toBe("Summarize the repo layout");
+      expect(conversation.title).toBe("Summarize the repo layout please");
       expect(conversation.titleSource).toBe("auto");
 
       // engine-fake emits session.titled derived (turn start) then llm
       // (turn end) — the final title on the conversation is the llm one
-      // (Title Case rewrite of the first clause).
+      // (the fake's stand-in drops the "please"; the user's casing is kept,
+      // #886).
       const conv = await waitFor(async () => {
         const c = await convById(w.user, conversation.id);
-        return c?.title === "Summarize The Repo Layout" ? c : undefined;
+        return c?.title === "Summarize the repo layout" ? c : undefined;
       }, "llm title on conversation");
       expect(conv.titleSource).toBe("auto");
 

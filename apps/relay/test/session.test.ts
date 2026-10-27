@@ -991,12 +991,19 @@ describe("auto titles + provenance (#137)", () => {
     });
     expect(c2.title).toBe("short one");
 
-    // Whitespace collapses before the placeholder is cut.
+    // Whitespace collapses before the placeholder is cut…
     const c3 = await openConv(frames, connection, {
       channelId: channel.id,
-      text: "  hello\n\n  world   again ",
+      text: "  hello   world   again ",
     });
     expect(c3.title).toBe("hello world again");
+
+    // …and a newline ends the title (#886).
+    const c3b = await openConv(frames, connection, {
+      channelId: channel.id,
+      text: "\n  hello world\n\n  and a second paragraph",
+    });
+    expect(c3b.title).toBe("hello world");
 
     // Long words still cap at ~60 chars, cut at a word boundary.
     const c4 = await openConv(frames, connection, {
