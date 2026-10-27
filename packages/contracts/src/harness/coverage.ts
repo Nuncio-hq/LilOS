@@ -125,7 +125,7 @@ export const NOT_AGENT_FACING: Record<string, string> = {
   /* D-#862: thread parking is the owner's list management — an agent never
      shelves, hides or pins a thread in Oscar's list for him. */
   "conversations.settle":
-    "settling is Oscar's shelf action — an agent never decides he is done with a thread (#862)",
+    "settling is Oscar's shelf action — an agent never decides he is done with a thread; the worktree cleanup it triggers is the host's own (#862, #881)",
   "conversations.snooze":
     "snooze hides a thread from Oscar's lists — the owner picks what leaves them (#862)",
   "conversations.pin":
