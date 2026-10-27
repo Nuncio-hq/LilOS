@@ -45,11 +45,12 @@ const openWorking = async (page: Page) => {
   );
   if (await fold.count()) await fold.click();
 };
-/** The agent's row in Home's Team table (an ask row names the agent too). */
+/** The agent's row in Home's Team table (an ask row names the agent too —
+    #884 its meta carries the ask's sentence, which a team row never has). */
 const teamRow = (page: Page) =>
   main(page)
     .getByRole("button", { name: new RegExp(agent.name) })
-    .filter({ hasNotText: /wants to run/ });
+    .filter({ hasNotText: /Edit README/ });
 
 test("a running turn reads Working on Home, Threads and the sidebar, until it is stopped", async ({
   page,
@@ -120,8 +121,8 @@ test("an approval is a Needs you count, a Threads card and a Home row; approving
   });
 
   // Threads: the thread's row wears the "Needs you" pill; the ask card with
-  // the command and the two answers is inside the thread itself (#862's one
-  // row per thread carries no card detail). The list counts it.
+  // the one sentence and the two answers is inside the thread itself (#862's
+  // one row per thread carries no card detail). The list counts it.
   await goTo(page, "Threads");
   const asking = card(page, /add a footer to the page/i);
   await expect(asking).toContainText("Needs you");
@@ -132,31 +133,40 @@ test("an approval is a Needs you count, a Threads card and a Home row; approving
   ).toHaveCount(1);
   await asking.click();
   const askCard = v3Peek(page).locator("[data-ask-id]").first();
-  await expect(askCard).toContainText("patch wants to run", {
+  await expect(askCard).toContainText("Edit README.md?", {
     timeout: 30_000,
   });
-  await expect(askCard.getByRole("button", { name: "Deny" })).toBeVisible();
+  await expect(
+    askCard.getByRole("button", { name: "Deny", exact: true }),
+  ).toBeVisible();
+  await expect(
+    askCard.getByRole("button", { name: "Allow", exact: true }),
+  ).toBeVisible();
   await v3Peek(page).getByRole("button", { name: "Close" }).click();
 
-  // Home: the agent reads Needs you, and the ask is a row with its answers.
+  // Home: the agent reads Needs you, and the ask row names the thread with
+  // the sentence beside it.
   await goTo(page, "Home");
   await expect(teamRow(page)).toContainText("Needs you");
   const homeAsk = main(page)
     .getByRole("button")
-    .filter({ hasText: /patch wants to run/ });
-  await expect(homeAsk.getByRole("button", { name: "Approve" })).toBeVisible();
+    .filter({ hasText: /add a footer to the page/i })
+    .filter({ hasText: /Edit README\.md\?/ });
+  await expect(
+    homeAsk.getByRole("button", { name: "Allow", exact: true }),
+  ).toBeVisible();
 
-  // Needs you: the ask itself, the command it would run, and who asks.
+  // Needs you: the ask itself — the sentence, and who asks.
   await goTo(page, "Needs you");
   await expect(main(page).getByText("1 waiting on you")).toBeVisible();
-  await expect(main(page)).toContainText("patch wants to run");
+  await expect(main(page)).toContainText("Edit README.md?");
   await expect(main(page)).toContainText(`${agent.name} asks`);
 
-  // Approve each ask from here until the turn is over: it only gets past a
+  // Allow each ask from here until the turn is over: it only gets past a
   // gated step because the answer reached it, so reaching "Finished" is the
   // turn resuming.
   const approve = main(page).getByRole("button", {
-    name: "Approve",
+    name: "Allow",
     exact: true,
   });
   const finished = main(page).getByText("Finished", { exact: true });

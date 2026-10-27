@@ -86,7 +86,7 @@ test("tray reserves its height: the approval card stays answerable with a waitin
     await page.setViewportSize({ width: 900, height: 700 });
     await cardAboveTray(page, 900);
 
-    // …and the card stays clickable at the tightest width — "Once"
+    // …and the card stays clickable at the tightest width — "Allow"
     // resolves the ask (the 900px shot hid the button row entirely).
     // Read the ask id BEFORE clicking: the turn's next gated step mints a
     // new ask within ms of this one resolving, and a post-click read on the
@@ -94,7 +94,7 @@ test("tray reserves its height: the approval card stays answerable with a waitin
     // poll below would then track an ask nobody answered (#493).
     const askId = await openCard(page).getAttribute("data-ask-id");
     await openCard(page)
-      .getByRole("button", { name: /^Once$/i })
+      .getByRole("button", { name: /^Allow$/i })
       .click();
     if (askId) {
       await expect

@@ -94,6 +94,12 @@ const goThreads = async (page: Page) => {
   await expect(
     main(page).locator("[data-thread-row], [data-fold]").first(),
   ).toBeAttached({ timeout: 30_000 });
+  /* The seeded turn is still running right after setup on a slow runner, so
+     the thread sits in the Working fold for a moment and then leaves it. A
+     fold that unmounts between ensureOpen's count() and its click leaves the
+     click waiting on a button that never returns (30 s) — let the turn end
+     first. This spec has one thread; nothing else keeps Working alive. */
+  await expect(foldButton(page, "working")).toHaveCount(0, { timeout: 30_000 });
   await openFolds(page);
   await expect(rowAnywhere(page, convId)).toBeVisible({ timeout: 30_000 });
 };

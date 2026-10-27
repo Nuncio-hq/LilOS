@@ -55,6 +55,14 @@ describe("work line facts", () => {
         step("terminal", { command: "y" }),
       ]),
     ).toEqual(["ran 2 commands", "1 failed"]);
+    /* #884: a denied step is a normal answer — "you said no", not a failure. */
+    expect(
+      stepFacts([
+        step("patch", { path: "README.md" }, { status: "denied" }),
+        step("terminal", { command: "y" }),
+        /* #884 r1: a denied patch changed nothing — not "edited 1 file". */
+      ]),
+    ).toEqual(["ran 1 command", "you said no"]);
     expect(stepFacts([step("mystery", {})])).toEqual(["1 step"]);
   });
 

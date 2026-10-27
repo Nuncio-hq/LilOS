@@ -19,14 +19,13 @@ import {
  * access is enforced by the harness (no card ever reaches the user, the
  * turn logs "Auto-approved"); AC-3 new conversations start on Settings'
  * default and never remember the last-used level; AC-4 cards offer
- * Once / This thread / Always / Deny; AC-9 the Settings Approvals copy
- * says what the level gates.
+ * Allow / Deny with the extra scopes under Allow's ▾; AC-9 the Settings
+ * Approvals copy says what the level gates.
  *
  * v3 notes: the pill lives on the thread's composer (the new-chat draft has
  * none), so every leg starts a chat first and reads/flips the pill on its
- * thread. The engine's own approval policy (Smart/Manual/Off) sits under the
- * default access in Settings → General, only while the engine declares
- * `approval_policy`.
+ * thread. #884: the engine's own approval policy (Smart/Manual/Off) no
+ * longer sits under the default access — one approval system, not two.
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
@@ -116,22 +115,32 @@ test("AC-1+AC-2+AC-4+AC-3 the pill drives the mode; cards offer the four options
     await expect(pill(page)).toHaveAttribute("data-access", "full");
     await setAccess(page, "ask");
 
-    /* ── Ask: the card offers Once / This thread / Always / Deny ── */
+    /* ── Ask: the card offers Allow / Deny; the other grant scopes live
+       under Allow's ▾ (#884) ── */
     await send(page, "Change the header color");
     const card = openCard(page).first();
     await expect(card).toBeVisible({ timeout: 30_000 });
-    for (const name of ["Once", "This thread", "Always", "Deny"]) {
+    for (const name of ["Allow", "Deny"]) {
       await expect(
         card.getByRole("button", { name, exact: true }),
       ).toBeVisible();
     }
+    await card
+      .getByRole("button", { name: "More ways to allow", exact: true })
+      .click();
+    for (const name of ["This thread", "Always"]) {
+      await expect(
+        card.getByRole("menuitem", { name, exact: true }),
+      ).toBeVisible();
+    }
+    await page.keyboard.press("Escape");
     await page.screenshot({ path: `${SHOTS}/ac-4-four-options.png` });
 
     /* ── AC-1 mid-turn: flip to Full while the card is open — the NEXT
-       approval never becomes a card. (The earlier grant is remembered, so
-       the menu pick applies straight away.) */
+       approval never becomes a card. (The menu pick applies straight
+       away; Full confirms first.) */
     await setAccess(page, "full");
-    await card.getByRole("button", { name: "Once", exact: true }).click();
+    await card.getByRole("button", { name: "Allow", exact: true }).click();
     await expect(settled(page)).toBeVisible({ timeout: 90_000 });
     // Only that one card ever opened for this turn's other gated steps.
     await expect(openCard(page)).toHaveCount(0);
@@ -173,19 +182,15 @@ test("AC-3+AC-9 Settings Approvals: policy pick, honest copy, and the default se
       page.getByText(/outside its folder|works anywhere/i),
     ).toHaveCount(0);
 
-    /* The engine declares approval_policy → the policy pick renders, on
-       Smart (the engine's default). */
-    const enginePolicy = page.getByRole("radiogroup", {
-      name: "Engine approval policy",
-    });
-    await expect(enginePolicy).toBeVisible();
-    for (const name of ["Smart", "Manual", "Off"])
-      await expect(
-        enginePolicy.getByRole("radio", { name, exact: true }),
-      ).toBeVisible();
+    /* #884: the engine's own Smart/Manual/Off policy row is gone — only the
+       one Ask / Full access system shows. */
     await expect(
-      enginePolicy.getByRole("radio", { name: "Smart", exact: true }),
-    ).toHaveAttribute("aria-checked", "true");
+      page.getByRole("radiogroup", { name: "Engine approval policy" }),
+    ).toHaveCount(0);
+    for (const name of ["Smart", "Manual", "Off"])
+      await expect(page.getByRole("radio", { name, exact: true })).toHaveCount(
+        0,
+      );
     await page.screenshot({ path: `${SHOTS}/ac-9-settings.png` });
 
     /* Default → Full access (after its confirm) seeds the NEXT new
@@ -197,25 +202,6 @@ test("AC-3+AC-9 Settings Approvals: policy pick, honest copy, and the default se
     ).toHaveAttribute("aria-checked", "true");
     await newThread(stack, page);
     await expect(pill(page)).toHaveAttribute("data-access", "full");
-
-    /* …and switching the engine policy lands on the engine: Manual is the
-       pick, and it is still the pick after leaving Settings and coming back
-       (the engine only echoes it on its next describe). */
-    await openSettings(stack, page);
-    await enginePolicy
-      .getByRole("radio", { name: "Manual", exact: true })
-      .click();
-    await expect(
-      enginePolicy.getByRole("radio", { name: "Manual", exact: true }),
-    ).toHaveAttribute("aria-checked", "true");
-    // A hash-only goto moves within the page (no reload): the pick must
-    // come from the app's own state, not a re-read of the engine.
-    await page.goto(`${stack.webUrl}/#?page=threads`);
-    await page.goto(`${stack.webUrl}/#?page=settings&view=general`);
-    await expect(
-      enginePolicy.getByRole("radio", { name: "Manual", exact: true }),
-    ).toHaveAttribute("aria-checked", "true");
-    await page.screenshot({ path: `${SHOTS}/ac-106-engine-policy.png` });
   } finally {
     await stack.stop();
   }

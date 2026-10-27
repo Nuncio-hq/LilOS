@@ -12,6 +12,7 @@ export * from "./browser/browser-types";
 export * from "./chat/agent-chat";
 export { isHidden } from "./chat/model-visibility";
 // conversation (shared by the thread panel and Focus — issue #19)
+export * from "./conversation/ask-line";
 export { FindBar } from "./conversation/find-bar";
 export { setFindSessionOpen } from "./conversation/find-unstub";
 export type { PlanAction } from "./conversation/plan-card";

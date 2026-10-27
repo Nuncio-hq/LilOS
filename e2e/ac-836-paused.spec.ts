@@ -121,7 +121,7 @@ test("the sidebar is the daily app's, and Home is the daily Home with its compos
     main(page).getByRole("heading", { name: /Threads/ }),
   ).toBeVisible();
   await expect(
-    main(page).getByRole("button", { name: "Approve", exact: true }),
+    main(page).getByRole("button", { name: "Allow", exact: true }),
   ).toBeVisible({ timeout: 30_000 });
   await expect(
     main(page).getByText("Needs you", { exact: true }),

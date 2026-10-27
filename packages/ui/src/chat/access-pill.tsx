@@ -115,12 +115,20 @@ export function AccessPill({
         )}
         {/* #886 narrow = icon + a short label, the same as the model and
             effort dropdowns beside it. */}
-        <span className="@max-[480px]:hidden">
-          {engineNeverAsks ? "Never asks" : full ? "Full access" : "Ask"}
-        </span>
-        <span className="hidden @max-[480px]:inline">
-          {engineNeverAsks ? "Never" : full ? "Full" : "Ask"}
-        </span>
+        {engineNeverAsks ? (
+          /* One label, as #884 specs read it: "Never asks" is short enough
+             to keep at every width. */
+          <span>Never asks</span>
+        ) : (
+          <>
+            <span className="@max-[480px]:hidden">
+              {full ? "Full access" : "Ask"}
+            </span>
+            <span className="hidden @max-[480px]:inline">
+              {full ? "Full" : "Ask"}
+            </span>
+          </>
+        )}
         <ChevronDownIcon className="size-3 opacity-60" />
       </PopoverTrigger>
       <PopoverContent

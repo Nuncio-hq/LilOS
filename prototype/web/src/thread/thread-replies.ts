@@ -115,8 +115,10 @@ function agentReply(c: Ctx, turn: V3Turn, newest: boolean, text: string): Reply 
       ? {
           approval: {
             id: ask.ask.id,
-            command: ask.ask.ask,
-            note: [ask.ask.why, ask.ask.ifYes && `If yes: ${ask.ask.ifYes}`, ask.ask.ifNo && `If no: ${ask.ask.ifNo}`]
+            /* #884: the mock's title IS the plain sentence ("Run `bun run
+               verify`?"); the prose carries on as the note under it. */
+            command: ask.ask.title,
+            note: [ask.ask.ask !== ask.ask.title && ask.ask.ask, ask.ask.why, ask.ask.ifYes && `If yes: ${ask.ask.ifYes}`, ask.ask.ifNo && `If no: ${ask.ask.ifNo}`]
               .filter(Boolean)
               .join("\n"),
             options: ["once", "always", "deny"],

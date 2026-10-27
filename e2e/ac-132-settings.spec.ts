@@ -25,7 +25,7 @@ import { openTroubleshooting } from "./helpers/status";
  * with tabs General (you + company, Approvals, "Open files in", About) and
  * "Engine & models" (engine, Status, Models). So "Esc closes" has no
  * counterpart (nothing to dismiss). Approvals is LilOS's own Ask / Full
- * access switch with the engine's policy (Smart / Manual / Off) beneath it.
+ * access switch; #884 dropped the engine's Smart / Manual / Off row.
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/

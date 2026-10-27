@@ -69,7 +69,7 @@ describe("issue #558 pending ask selection", () => {
 
   test("AC-558-2 a resolved card is skipped — the next open one owns the keys", () => {
     const replies = [approvalReply("a1"), approvalReply("a2")];
-    const ask = pendingAsk(replies, { a2: "Denied by you" }, false);
+    const ask = pendingAsk(replies, { a2: "You said no" }, false);
     expect(ask?.reply.approval?.id).toBe("a1");
   });
 
@@ -116,7 +116,7 @@ describe("issue #558 key routing", () => {
         ctx({ ask: { kind: "approval", reply: r }, setResolved }),
       ),
     ).toBe(true);
-    expect(setResolved).toHaveBeenCalledWith({ a1: "Denied by Riley" });
+    expect(setResolved).toHaveBeenCalledWith({ a1: "You said no" });
     setResolved.mockClear();
     // Esc is close-only (#576) — it must never answer a card.
     expect(
@@ -183,12 +183,10 @@ describe("issue #558 key routing", () => {
 
 describe("issue #558 shortcut hint", () => {
   test("AC-558-10 the hint names only the keys the card offers", () => {
-    expect(askHint(approvalReply("a1"), "approval")).toBe(
-      "↵ Allow once · ⌫ Deny",
-    );
+    expect(askHint(approvalReply("a1"), "approval")).toBe("↵ Allow · ⌫ Deny");
     // "once" missing → no ↵; "deny" missing → no ⌫; neither → no hint.
     expect(askHint(approvalReply("a2", ["once", "session"]), "approval")).toBe(
-      "↵ Allow once",
+      "↵ Allow",
     );
     expect(askHint(approvalReply("a3", ["session", "deny"]), "approval")).toBe(
       "⌫ Deny",

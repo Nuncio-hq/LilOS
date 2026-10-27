@@ -10,6 +10,10 @@ import { LinkRow, Row, Segmented, useRun } from "./v3-settings-bits";
    Each control calls act.saveSettings (or saveProfile); a control whose
    action or data the app does not have is not drawn. */
 
+/* #884: only LilOS's own Ask / Full access shows. The engine's Smart /
+   Manual / Off policy row used to sit under it — a second approval system
+   nobody can reason about; the harness pins the engine to the mode that
+   surfaces every ask, so nothing here needs to manage it. */
 const APPROVALS = [
   {
     id: "ask" as const,
@@ -21,14 +25,6 @@ const APPROVALS = [
     label: "Full access",
     does: "The agent never stops to ask. Faster, and your call to make.",
   },
-];
-
-/* The engine's own policy (`approvals.setPolicy`), under the default above:
-   what the engine does before it ever reaches LilOS's Ask / Full access. */
-const POLICIES = [
-  { id: "smart" as const, label: "Smart" },
-  { id: "manual" as const, label: "Manual" },
-  { id: "off" as const, label: "Off" },
 ];
 
 const INPUT =
@@ -149,7 +145,7 @@ export function Confirm({
 }
 
 export function GeneralPane({ data, go, act }: V3PageProps) {
-  const { approvals, enginePolicy, editor, editors, about } = data.settings;
+  const { approvals, editor, editors, about } = data.settings;
   // The CEO can rename things through ⌘K where the app has no way to do it
   // in place and the company has one.
   const askToRename = !act.saveProfile && !!data.ceoId;
@@ -211,19 +207,25 @@ export function GeneralPane({ data, go, act }: V3PageProps) {
             </li>
           ))}
         </ul>
-        {enginePolicy && (
-          <div className="mt-4">
-            <p className="mb-2 text-[13px] text-muted-foreground">
-              The engine’s own policy. Smart runs routine steps and asks for
-              risky ones. Manual asks every time. Off never asks.
-            </p>
-            <Segmented
-              label="Engine approval policy"
-              value={enginePolicy}
-              options={POLICIES}
-              onChange={(id) => act.saveSettings({ enginePolicy: id })}
-            />
-          </div>
+        {/* #884: the engine's global policy says it never asks — the same
+            warning the composer's access pill shows, with the one-click
+            repair. The value is shared with terminal Hermes, so nothing
+            writes it until the user does. */}
+        {data.settings.engineNeverAsks && (
+          <p
+            data-engine-never-asks
+            className="mt-3 flex items-center gap-3 rounded-md border border-orange-500/30 bg-orange-500/[0.07] px-3 py-2 text-[13px] text-foreground dark:border-orange-400/30 dark:bg-orange-400/10"
+          >
+            <span className="min-w-0 flex-1">
+              {data.settings.engine.name} is set to never ask, so Ask won't stop
+              risky commands.
+            </span>
+            {act.fixEnginePolicy && (
+              <Btn small primary onClick={() => act.fixEnginePolicy?.()}>
+                Fix
+              </Btn>
+            )}
+          </p>
         )}
       </div>
 

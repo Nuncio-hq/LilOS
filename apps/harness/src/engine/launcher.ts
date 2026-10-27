@@ -268,6 +268,9 @@ export function fakeServeCommand(options: {
   tag?: string;
   /** #621 e2e hook: delay each approval's `request.opened` emit (ms). */
   askOpenDelayMs?: number;
+  /** #884 e2e hook: the policy the fake reports on boot (`off` reproduces
+      the "Ask never asks" bug the harness now pins back to `manual`). */
+  policy?: "smart" | "manual" | "off";
 }): string[] {
   const script = join(
     options.repoRoot,
@@ -294,6 +297,7 @@ export function fakeServeCommand(options: {
     ...(options.askOpenDelayMs
       ? ["--ask-open-delay", String(options.askOpenDelayMs)]
       : []),
+    ...(options.policy ? ["--policy", options.policy] : []),
   ];
 }
 

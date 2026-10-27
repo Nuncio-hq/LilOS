@@ -102,11 +102,6 @@ export type V3Settings = {
   };
   /** Ask before risky commands, or let agents run anything. */
   approvals: "ask" | "full";
-  /** The engine's own approval policy, under the default above: smart runs
-     routine steps and asks for risky ones, manual asks every time, off never
-     asks. Absent: this engine has no such setting, so there is nothing to
-     choose. Written through `saveSettings({ enginePolicy })`. */
-  enginePolicy?: "smart" | "manual" | "off";
   /** #884: the engine reports `off` — its global policy auto-answers
      everything, so "Ask" can never produce a card. The composer's access
      pill warns and `act.fixEnginePolicy` is the one-click repair. */
@@ -189,6 +184,12 @@ export type V3Ask = {
   /** When the ask opened (ms). Real asks sort by this, oldest first. */
   at?: number;
   ask: string;
+  /* #884: the full payload behind the sentence, for the Details disclosure
+     — unclipped, multi-line. `detailsOpen` starts it open when the
+     headline clipped or the payload is risky. Absent when nothing more
+     than the sentence exists. */
+  details?: string;
+  detailsOpen?: boolean;
   /* Lines the ask carries. A gateway ask may set them; an engine approval
      leaves them absent and the page hides the rows. */
   why?: string;

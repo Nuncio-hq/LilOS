@@ -73,7 +73,6 @@ import {
   DEFAULT_MODEL,
   FAKE_COMMANDS,
   type FakeAgent,
-  type FakeCommand,
   type FakeModel,
   MODEL_CATALOG,
   REFRESH_MODEL,
@@ -277,6 +276,10 @@ export interface FakeEngineOptions {
       well after the gated step, so ask-driving helpers must survive a
       late card. `0`/unset opens immediately (production). */
   askOpenDelayMs?: number;
+  /** #884 e2e hook (`--policy`): the policy `describe` reports on boot —
+      `off` auto-approves gated steps so the harness's reset path can be
+      tested end to end. Default `smart`, like before. */
+  policy?: ApprovalPolicy;
 }
 
 /**
@@ -321,8 +324,10 @@ export class FakeEngine {
    */
   private alwaysGranted = new Set<string>();
   /** #106: the engine's global approval policy — `approvals.setPolicy`
-      writes it and `describe` reports it as `detail.current`. */
-  private policy: ApprovalPolicy = "smart";
+      writes it and `describe` reports it as `detail.current`. `off` acts
+      like a real engine's auto-approve: gated steps resolve `always`
+      without opening a request (#884's "Ask never asks" repro). */
+  private policy: ApprovalPolicy;
   private readonly sessionNamespace: string;
   private readonly eventLogCap: number;
   private readonly askOpenDelayMs: number;
@@ -344,6 +349,7 @@ export class FakeEngine {
     this.sessionNamespace = opts.sessionNamespace ?? randomNamespace();
     this.eventLogCap = opts.eventLogCap ?? EVENT_LOG_CAP;
     this.askOpenDelayMs = opts.askOpenDelayMs ?? 0;
+    this.policy = opts.policy ?? "smart";
     this.registerSystemPromptSection("lilos.host_policy", () => "", {
       maxChars: 2000,
     });
@@ -548,8 +554,9 @@ export class FakeEngine {
       ...(this.capOn("workspace_move") ? [WORKSPACE_MOVE_CAPABILITY] : []),
       ...(this.capOn("commands") ? [COMMANDS_CAPABILITY] : []),
       ...(this.capOn("compact") ? [COMPACT_CAPABILITY] : []),
-      /* #106: the policy the Settings Approvals section writes via
-         approvals.setPolicy — `current` reports the live value. */
+      /* #106: the policy written via approvals.setPolicy — the app turns
+         an `off` report into a warning + one-click Fix (#884); `current`
+         reports the live value. */
       ...(this.capOn("approval_policy")
         ? [
             {
@@ -2359,6 +2366,11 @@ export class FakeEngine {
     turnId: string,
     step: FakeStep,
   ): Promise<ApprovalOutcome> {
+    /* #884: policy `off` is a real engine's auto-approve — no request
+       opens, the grant is `always` and no card ever exists. The harness
+       pins the engine to `manual` on attach, so this branch only runs
+       when that pin is broken or refused. */
+    if (this.policy === "off") return "always";
     if (this.askOpenDelayMs > 0) {
       await new Promise((r) => setTimeout(r, this.askOpenDelayMs));
       if (s.turn?.interrupted) throw new Interrupted();

@@ -6,6 +6,11 @@ import { defineConfig, devices } from "@playwright/test";
  * prototype's mock company instead, through the relative `baseURL` below,
  * served by the vite dev server in `webServer`.
  */
+/* LILOS_PROTO_PORT moves the prototype's dev server + baseURL off 5199 —
+   the escape hatch when a sibling worktree's vite already holds it (#884:
+   six worktrees, one Mac; pairs with LILOS_TEST_INDEX in dev/ready.ts). */
+const PROTO_PORT = Number(process.env.LILOS_PROTO_PORT ?? "5199");
+
 export default defineConfig({
   testDir: "./e2e",
   outputDir: "./test-results",
@@ -20,15 +25,14 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [["list"], ["github"]] : [["list"]],
   use: {
-    baseURL: "http://127.0.0.1:5199",
+    baseURL: `http://127.0.0.1:${PROTO_PORT}`,
     screenshot: "off",
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
     // --host 127.0.0.1: vite binds ::1 by default; the baseURL above is IPv4.
-    command:
-      "bun run --cwd prototype/web dev --host 127.0.0.1 --port 5199 --strictPort",
-    url: "http://127.0.0.1:5199",
+    command: `bun run --cwd prototype/web dev --host 127.0.0.1 --port ${PROTO_PORT} --strictPort`,
+    url: `http://127.0.0.1:${PROTO_PORT}`,
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,
   },

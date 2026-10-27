@@ -66,6 +66,10 @@ export interface ThreadData {
   setModelOpen: (open: boolean) => void;
   onModel: (c: ModelChoice) => void | Promise<unknown>;
   onAccess: (a: ConversationAccess) => void;
+  /* #884: the engine reports `off` — the access pill warns + fixes. */
+  engineOff: boolean;
+  engineName: string | undefined;
+  onFixPolicy: () => void;
   onCommand: (name: string, args: string) => boolean;
   searchFiles: ((q: string) => Promise<FileMention[]>) | undefined;
   searchCommands: ((q: string) => Promise<SlashItem[]>) | undefined;

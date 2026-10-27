@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   aboutLines,
+  engineNeverAsks,
   isSettingsShortcut,
   orderEditors,
   profilePatch,
@@ -80,5 +81,29 @@ describe("AC-4 About shows real versions and the check reports plainly", () => {
     expect(updateOutcomeMessage("apply-ready")).toMatch(/restart/i);
     expect(updateOutcomeMessage("failed")).toMatch(/failed/i);
     expect(updateOutcomeMessage("disabled")).toMatch(/off/i);
+  });
+});
+
+/* #884 r2 — `engineNeverAsks` reads the describe's approval_policy
+   capability: `off` is the only value that turns the warning on. */
+describe("#884 the never-asks warning reads the describe", () => {
+  const cap = (current: string) => ({
+    capabilities: [
+      { id: "approval_policy", detail: { options: ["smart", "off"], current } },
+    ],
+  });
+  it("is true only when the reported current is off", () => {
+    expect(engineNeverAsks(cap("off"))).toBe(true);
+    expect(engineNeverAsks(cap("smart"))).toBe(false);
+    expect(engineNeverAsks(cap("manual"))).toBe(false);
+  });
+  it("is false without the capability or a describe", () => {
+    expect(engineNeverAsks(undefined)).toBe(false);
+    expect(engineNeverAsks({ capabilities: [] })).toBe(false);
+    expect(
+      engineNeverAsks({
+        capabilities: [{ id: "models", detail: { current: "off" } }],
+      }),
+    ).toBe(false);
   });
 });

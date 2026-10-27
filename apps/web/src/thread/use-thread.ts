@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import {
   clearPending,
   describeActionError,
+  fixEnginePolicy,
   hasCapability,
   interruptSession,
   pendingStart,
@@ -32,6 +33,7 @@ import {
   workbenchRequests,
 } from "../lib/runtime";
 import { sayError } from "../lib/toast";
+import { engineNeverAsks } from "../settings/state";
 import { V3_STATUS } from "../v3/threads";
 import { EMPTY_FEED, NO_ASKS } from "./empties";
 import { fileSearch, sessionCommands } from "./searchers";
@@ -83,6 +85,9 @@ export function useThreadWith(
   const home = useAtom(osHome);
   const pendingMap = useAtom(pendingStart);
   const engineState = useAtom(engine.state);
+  /* #884: the describe's `approval_policy` current — `off` turns the
+     composer's access pill into the warning + one-click Fix. */
+  const engineDesc = useAtom(engine.description);
   /* #557: the socket dropped and the client is redialing — the composer
      shows the thin "Reconnecting…" line so a send made in the window reads
      as waiting, not lost. */
@@ -303,6 +308,12 @@ export function useThreadWith(
         "Couldn't change the access level",
         setConversationAccess(conv.id, a),
       ),
+    engineOff: engineNeverAsks(engineDesc),
+    engineName: engineDesc?.name
+      ? engineDesc.name.charAt(0).toUpperCase() + engineDesc.name.slice(1)
+      : undefined,
+    onFixPolicy: () =>
+      toastOnFail("Couldn't update that setting", fixEnginePolicy()),
     /* The host-owned commands (issue #109): `/model` opens the picker the
        surface already owns; `/rewind`/`/undo` rewind the last user message.
        Everything else returns false — the send posts and the engine runs it

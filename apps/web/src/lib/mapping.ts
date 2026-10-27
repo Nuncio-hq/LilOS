@@ -190,6 +190,9 @@ export function liveTurnReply(
   asks: Ask[] = [],
   resolveEmployee: (employeeRef: string) => string = (r) => r,
   liveNow = true,
+  /* #884: the conversation's folder — stamped on the approval so the card
+     asks the same sentence Home/Needs ask ("Run `x` in lilos?"). */
+  cwd?: string,
 ): Reply {
   // Approvals render from relay asks (the responder identity is the ask id);
   // turn.requests only mark the phase "waiting". An open ask wins; else the
@@ -214,9 +217,12 @@ export function liveTurnReply(
       ? {
           id: shown.id,
           command: shown.request.command,
-          note:
-            shown.request.description ??
-            "The agent is asking before it runs this.",
+          ...(shown.request.description
+            ? { note: shown.request.description }
+            : {}),
+          requestId: shown.requestId,
+          ...(cwd ? { cwd } : {}),
+          ...(shown.request.details ? { details: shown.request.details } : {}),
           /* #106 AC-4: the card's buttons follow the options the engine
              offered, not a fixed set. */
           options: shown.request.options,
@@ -320,10 +326,11 @@ export function liveReplies(
   asks: Ask[],
   resolveEmployee: (employeeRef: string) => string = (r) => r,
   liveNow = true,
+  cwd?: string,
 ): Reply[] {
   return [
     ...supersededPlanReplies(turn, employeeId),
-    liveTurnReply(turn, employeeId, asks, resolveEmployee, liveNow),
+    liveTurnReply(turn, employeeId, asks, resolveEmployee, liveNow, cwd),
   ];
 }
 

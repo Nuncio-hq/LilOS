@@ -168,40 +168,45 @@ function NeedsBlock({ data, go, act }: V3PageProps) {
         </p>
       ) : (
         <div className="border-[var(--v3-line)] border-t">
-          {data.asks.map((ask) => (
-            <RowButton
-              key={ask.id}
-              onClick={() => go({ page: "needs" })}
-              className="flex min-h-[52px] items-center gap-3.5 border-[var(--v3-line)] border-b py-[7px]"
-            >
-              <div className="min-w-0 flex-1">
-                <div className="truncate font-medium text-foreground">
-                  {ask.title}
-                </div>
-                <div className="mt-px text-[13px] text-muted-foreground">
-                  {askTag(data, ask)} · {agentNameOf(data, ask.from)} · waiting{" "}
-                  {ago(ask.waiting)}
-                </div>
-              </div>
-              {/* Buttons act on the ask; the row itself opens the full page. */}
-              <div
-                className="flex gap-2"
-                onClick={(e) => e.stopPropagation()}
-                onKeyDown={(e) => e.stopPropagation()}
+          {data.asks.map((ask) => {
+            /* #884: the row names its thread and the sentence says what it
+               decides — "Add a footer to the page" · "Edit README.md?". */
+            const t = ask.threadId ? threadOf(data, ask.threadId) : undefined;
+            return (
+              <RowButton
+                key={ask.id}
+                onClick={() => go({ page: "needs" })}
+                className="flex min-h-[52px] items-center gap-3.5 border-[var(--v3-line)] border-b py-[7px]"
               >
-                {ask.kind === "approval" ? (
-                  <>
-                    <Btn onClick={() => act.deny(ask.id)}>Deny</Btn>
-                    <Btn primary onClick={() => act.approve(ask.id)}>
-                      Approve
-                    </Btn>
-                  </>
-                ) : (
-                  <Btn onClick={() => go({ page: "needs" })}>Reply</Btn>
-                )}
-              </div>
-            </RowButton>
-          ))}
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-medium text-foreground">
+                    {t?.title ?? ask.title}
+                  </div>
+                  <div className="mt-px text-[13px] text-muted-foreground">
+                    {t ? ask.title : askTag(data, ask)} ·{" "}
+                    {agentNameOf(data, ask.from)} · waiting {ago(ask.waiting)}
+                  </div>
+                </div>
+                {/* Buttons act on the ask; the row itself opens the full page. */}
+                <div
+                  className="flex gap-2"
+                  onClick={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => e.stopPropagation()}
+                >
+                  {ask.kind === "approval" ? (
+                    <>
+                      <Btn onClick={() => act.deny(ask.id)}>Deny</Btn>
+                      <Btn primary onClick={() => act.approve(ask.id)}>
+                        Allow
+                      </Btn>
+                    </>
+                  ) : (
+                    <Btn onClick={() => go({ page: "needs" })}>Reply</Btn>
+                  )}
+                </div>
+              </RowButton>
+            );
+          })}
         </div>
       )}
     </>
@@ -449,17 +454,22 @@ function HomeAskRow({ data, ask, go, act }: V3PageProps & { ask: V3Ask }) {
       onClick={() =>
         t ? go({ page: "thread", id: t.id }) : go({ page: "needs" })
       }
-      className="flex min-h-[38px] items-center gap-2.5 rounded-md bg-orange-500/[0.07] px-2.5 py-1 text-[13.5px] dark:bg-orange-400/10"
+      className="flex min-h-[38px] flex-wrap items-center gap-2.5 rounded-md bg-orange-500/[0.07] px-2.5 py-1 text-[13.5px] dark:bg-orange-400/10"
     >
       <StatusDot status="needs" />
       <span className="flex min-w-0 flex-1 items-center gap-1.5">
+        {/* #884: the row names its thread — "Add a footer to the page" — and
+            the sentence sits beside it ("Edit README.md?"). */}
         <span data-thread-title className="truncate text-foreground">
-          {ask.title}
+          {t?.title ?? ask.title}
         </span>
         <ThreadPill status="needs" />
       </span>
-      <span className="@min-[560px]:block hidden max-w-[38%] shrink truncate text-[12.5px] text-muted-foreground/70">
-        {askTag(data, ask)} · {agentNameOf(data, ask.from)}
+      {/* #884 round 1: the question is never hidden — under ~560px it drops
+          to its own line under the title instead of disappearing, so a
+          narrow Home or the peek still shows what is being asked. */}
+      <span className="@min-[560px]:max-w-[38%] @min-[560px]:shrink @min-[560px]:basis-auto @min-[560px]:truncate order-last basis-full min-w-0 truncate text-[12.5px] text-muted-foreground/70">
+        {t ? `${ask.title}` : askTag(data, ask)} · {agentNameOf(data, ask.from)}
       </span>
       {/* The buttons act on the ask; the row itself opens where it lives. */}
       <span
@@ -471,7 +481,7 @@ function HomeAskRow({ data, ask, go, act }: V3PageProps & { ask: V3Ask }) {
           <>
             <Btn onClick={() => act.deny(ask.id)}>Deny</Btn>
             <Btn primary onClick={() => act.approve(ask.id)}>
-              Approve
+              Allow
             </Btn>
           </>
         ) : (

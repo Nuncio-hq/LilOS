@@ -123,7 +123,7 @@ test("AC-2 a mid-turn rename survives the late llm title", async ({ page }) => {
      landed but the llm title is still owed — a deterministic race window. */
   await startChat(page, stack.webUrl, agent, "Add a footer to the page");
   await expect(
-    page.getByRole("button", { name: "Once", exact: true }).first(),
+    page.getByRole("button", { name: "Allow", exact: true }).first(),
   ).toBeVisible({ timeout: 60_000 });
 
   // Rename the running thread: its row and header follow live.
@@ -144,7 +144,7 @@ test("AC-2 a mid-turn rename survives the late llm title", async ({ page }) => {
   await page.screenshot({ path: `${SHOTS}/ac2-renamed-mid-turn.png` });
 
   // Finish the turn: the canned flow asks more than once — keep answering
-  // "Once" until it completes; the llm title must not overwrite the
+  // "Allow" until it completes; the llm title must not overwrite the
   // rename. The turn text lives in the thread panel.
   const doneOn = page
     .locator("[data-thread-panel]")
@@ -154,7 +154,7 @@ test("AC-2 a mid-turn rename survives the late llm title", async ({ page }) => {
   for (;;) {
     if (await doneOn.isVisible().catch(() => false)) break;
     const allow = page
-      .getByRole("button", { name: "Once", exact: true })
+      .getByRole("button", { name: "Allow", exact: true })
       .first();
     if (await allow.isVisible().catch(() => false)) await allow.click();
     if (Date.now() > deadline)

@@ -55,6 +55,16 @@ const engine = new FakeEngine({
      open→paint lag a loaded box adds before the card, so ask-driving
      helpers can be exercised against a late card. 0 opens at once. */
   askOpenDelayMs: arg("ask-open-delay", 0),
+  /* #884 e2e hook (`--policy smart|manual|off`): the policy describe
+     reports; `off` auto-approves gated steps so the harness's reset on
+     attach can be tested end to end. */
+  policy:
+    process.argv.indexOf("--policy") >= 0
+      ? (process.argv[process.argv.indexOf("--policy") + 1] as
+          | "smart"
+          | "manual"
+          | "off")
+      : undefined,
   capabilities: {
     steer: !flag("no-steer") && cap("steer"),
     subagents: cap("subagents"),

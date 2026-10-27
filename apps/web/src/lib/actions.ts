@@ -8,17 +8,12 @@ import {
 } from "@lilos/contracts/app";
 import type {
   ApprovalOutcome,
-  ApprovalPolicy,
   ConversationAccess,
 } from "@lilos/contracts/engine";
 import type { ModelChoice, ModelVisibility } from "@lilos/ui";
 import type { AttachedFile } from "@lilos/ui/types";
 import { atom } from "nanostores";
-import {
-  defaultAccess,
-  defaultEditor,
-  enginePolicyPick,
-} from "../settings/state";
+import { defaultAccess, defaultEditor } from "../settings/state";
 import { toAttachmentInputs } from "./attachments";
 import { ensureFolderAccess, noteFolderAccessError } from "./folder-access";
 import { USER_ID } from "./me";
@@ -401,22 +396,6 @@ export async function setDefaultAccess(
   await relay.request("settings.set", { key: "defaultAccess", value: access });
 }
 
-/** #106: the engine's own approval policy — passthrough `approvals.setPolicy`
- *  (method reachability is the caller's job: only engines declaring
- *  `approval_policy` get the control). The engine echoes it on its next
- *  `describe`, which only comes at reconnect, so the pick is kept in
- *  `enginePolicyPick` meanwhile; a refused write puts the old value back. */
-export async function setApprovalPolicy(policy: ApprovalPolicy): Promise<void> {
-  const before = enginePolicyPick.get();
-  enginePolicyPick.set(policy);
-  try {
-    await relay.request("approvals.setPolicy", { policy });
-  } catch (e) {
-    enginePolicyPick.set(before);
-    throw e;
-  }
-}
-
 /** Rename a thread (`conversations.update {title}`). The user's title wins
  *  over any later engine-derived one (#137, `titleSource`). */
 export async function renameConversation(
@@ -497,4 +476,24 @@ export async function moveConversationFolder(
 export function hasCapability(id: string): boolean {
   const caps = engine.description.get()?.capabilities ?? [];
   return caps.some((c) => c.id === id);
+}
+
+/** #884: the one-click repair for an engine left on `off` — write `smart`
+ *  (the ask-for-the-risky-ones mode behind "Ask before risky commands")
+ *  once, on the user's click; nothing writes the engine's global policy on
+ *  its own — the value is shared with terminal Hermes. The describe only
+ *  re-lands on the next status probe, so the warning clears optimistically
+ *  here; a refused write re-shows it. */
+export async function fixEnginePolicy(): Promise<void> {
+  await relay.request("approvals.setPolicy", { policy: "smart" });
+  const d = engine.description.get();
+  if (d)
+    engine.description.set({
+      ...d,
+      capabilities: d.capabilities.map((c) =>
+        c.id === "approval_policy"
+          ? { ...c, detail: { ...c.detail, current: "smart" } }
+          : c,
+      ),
+    });
 }

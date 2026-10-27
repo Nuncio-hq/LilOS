@@ -203,9 +203,12 @@ describe("Home counts and rows", () => {
       asks: [
         {
           id: "ask-1",
+          threadId: "fresh",
           from: "ada",
           kind: "approval",
-          title: "patch wants to run",
+          /* #884: the ask's own line is the plain sentence; the row names
+             the thread instead. */
+          title: "Edit README.md?",
           waiting: 2,
           at: 1,
           ask: "patch README.md",
@@ -223,11 +226,13 @@ describe("Home counts and rows", () => {
         <V3Home data={d} go={go} act={actions} />
       </OpenRecord.Provider>,
     );
-    expect(
-      screen
-        .getByRole("button", { name: /Add a footer/ })
-        .getAttribute("aria-current"),
-    ).toBe("true");
+    /* #884: "Add a footer" names two rows now — the needs-you row and the
+       result row; only the result carries aria-current. */
+    const footerRows = screen.getAllByRole("button", { name: /Add a footer/ });
+    const openResult = footerRows.find(
+      (b) => b.getAttribute("aria-current") === "true",
+    );
+    expect(openResult).toBeTruthy();
     expect(
       screen
         .getByRole("button", { name: /Old ticket/ })
@@ -236,15 +241,17 @@ describe("Home counts and rows", () => {
     expect(
       screen.getByRole("heading", { name: /Recent results/ }),
     ).toBeTruthy();
-    expect(screen.getByText("Add a footer")).toBeTruthy();
+    expect(screen.getAllByText("Add a footer").length).toBeGreaterThan(0);
     expect(screen.queryByText("Already seen")).toBeNull();
     expect(screen.getByText("Old ticket")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    // The needs-you row names the thread and asks the sentence (#884).
+    expect(screen.getByText(/Edit README\.md\?/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Allow" }));
     expect(actions.approve).toHaveBeenCalledWith("ask-1");
     expect(go).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: /Add a footer/ }));
+    fireEvent.click(openResult as HTMLElement);
     expect(actions.markSeen).toHaveBeenCalledWith("fresh");
     expect(go).toHaveBeenCalledWith({ page: "thread", id: "fresh" });
   });
