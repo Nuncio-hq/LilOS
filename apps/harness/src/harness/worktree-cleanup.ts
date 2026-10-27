@@ -53,9 +53,12 @@ export async function lilosWorktreeDir(
   const repoRaw = resolve(expandPath(ws.repoPath, ctx.home));
   const repo = await fsp.realpath(repoRaw).catch(() => repoRaw);
   const dir = await canonPath(conv.cwd, ctx.home);
+  /* A DIRECT child only — a thread filed on a subfolder inside a
+     worktree is not the worktree's owner (a sharer can be, a deeper
+     path never); its settle is none of the cleanup's business. */
   const under = (r: string) => {
     const wt = join(r, ".lilos", "wt") + sep;
-    return dir.startsWith(wt);
+    return dir.startsWith(wt) && !dir.slice(wt.length).includes(sep);
   };
   return under(repo) || under(repoRaw) ? { repo, dir } : undefined;
 }
@@ -132,17 +135,32 @@ async function doCleanup(ctx: HarnessCtx, conversationId: string) {
   ) {
     return;
   }
-  /* Another LIVE thread inside the same folder loses its cwd mid-turn —
-     a shared-isolation helper or a second thread counts. Settled sharers
-     don't block: their own cleanup answers their own settle. */
+  /* Another thread parked INSIDE this folder blocks while it can still
+     run there — settled or not: a thread settled mid-turn loses the
+     folder under its own running turn, which is exactly the loss this
+     guard exists for. Path first (cheap), then the same activity tests
+     the thread itself gets — a running turn, a send that can still
+     produce one, an open ask. */
   for (const other of list) {
-    if (other.id === live.id || other.settledAt !== undefined || !other.cwd) {
+    if (other.id === live.id || !other.cwd) continue;
+    const cwd = await canonPath(other.cwd, ctx.home);
+    if (cwd !== target.dir && !cwd.startsWith(`${target.dir}${sep}`)) {
       continue;
     }
-    const cwd = await canonPath(other.cwd, ctx.home);
-    if (cwd === target.dir || cwd.startsWith(`${target.dir}${sep}`)) {
+    const otherBinding = ctx.bindings.get(other.id);
+    if (
+      other.settledAt === undefined ||
+      other.state === "active" ||
+      otherBinding?.runningTurnId ||
+      ctx.sendCanProduceTurn(other.id)
+    ) {
       return;
     }
+    const { asks: open } = await ctx.opts.relay.request<{ asks: Ask[] }>(
+      "asks.list",
+      { conversationId: other.id, state: "open" },
+    );
+    if (open.length > 0) return;
   }
   const { asks } = await ctx.opts.relay.request<{ asks: Ask[] }>("asks.list", {
     conversationId: live.id,
@@ -273,13 +291,21 @@ export async function cleanupSettledWorktree(
     /* This settle may have retired the LAST sharer of another settled
        thread's copy (a folder-sharer blocks cleanup while it lives).
        Re-check every settled row still unhandled — each one's stamp
-       dedupes a real no-op. */
+       dedupes a real no-op. Each sibling's cleanup goes on ITS OWN
+       chain: an un-settle landing mid-remove then queues its restore
+       behind the remove and the folder comes back — run inline here it
+       would race this chain and the sibling could find its live thread
+       staring at a deleted folder. Fire-and-forget: awaiting a sibling
+       chain while it awaits ours is a circular wait. */
     for (const other of this.opts.relay.conversations.get()) {
       if (other.id === conv.id || other.settledAt === undefined) continue;
       if (this.worktreeCleaned.get(other.id) === other.settledAt) continue;
-      if (await lilosWorktreeDir(this, other)) {
-        await doCleanup(this, other.id);
-      }
+      void this.cleanupSettledWorktree(other).catch((error) =>
+        this.opts.log.warn("sibling worktree cleanup failed", {
+          conversationId: other.id,
+          error: String(error),
+        }),
+      );
     }
   });
   this.worktreeCleanup.set(

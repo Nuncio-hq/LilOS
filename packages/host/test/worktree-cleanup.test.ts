@@ -202,6 +202,33 @@ describe("worktreeRemove (D-#881)", () => {
     expect(existsSync(dir)).toBe(false);
   });
 
+  it("build output counts on ANY path segment — apps/*/node_modules and .DS_Store drop too", async () => {
+    const dir = await makeWorktree("mono");
+    /* The repo is a monorepo: `apps/web/node_modules` is the rule, not
+       the exception — a first-segment-only allow-list would keep every
+       hand-off that ran install. `.DS_Store` is OS litter, not work. */
+    appendFileSync(
+      join(repo, ".git", "info", "exclude"),
+      "node_modules/\n.DS_Store\n",
+    );
+    mkdirSync(join(dir, "apps", "web", "node_modules", "dep"), {
+      recursive: true,
+    });
+    writeFileSync(
+      join(dir, "apps", "web", "node_modules", "dep", "i.js"),
+      "x\n",
+    );
+    writeFileSync(join(dir, ".DS_Store"), "\0");
+    writeFileSync(join(dir, "apps", ".DS_Store"), "\0");
+    const r = await worktreeRemove({
+      path: repo,
+      dir,
+      branch: "ws/mono",
+    });
+    expect(r).toMatchObject({ removed: true, branchDeleted: true });
+    expect(existsSync(dir)).toBe(false);
+  });
+
   it("a detached HEAD with fresh commits is kept", async () => {
     const dir = await makeWorktree("detached");
     git(["checkout", "-q", "--detach"], dir);

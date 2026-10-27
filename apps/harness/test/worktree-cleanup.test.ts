@@ -437,6 +437,152 @@ describe("settled worktree cleanup (D-#881)", () => {
     }
   }, 30_000);
 
+  it("a sharer settled mid-turn still blocks until its turn ends", async () => {
+    const repo = seedRepo();
+    const w = await setupWorld({ homeDir: mkhome() });
+    try {
+      const { channel } = await openDmConversation(w.user);
+      const { conversation: a, cwd } = await openWorkstream(
+        w,
+        channel.id,
+        repo,
+        "held",
+        "Work here",
+      );
+      await finished(w, a.id);
+      /* B parks on A's folder and gets settled WHILE its turn is still
+         running — the stamp says "done", the folder says "in use".
+         Removing under the running turn is exactly the loss the
+         sharer guard's activity check exists for. */
+      const { conversation: b } = await w.user.request<{
+        conversation: Conversation;
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "stuck:",
+        cwd,
+      });
+      await waitFor(
+        async () => (await convRow(w, b.id))?.state === "active" || undefined,
+        "b turn running",
+      );
+      await settle(w, b.id);
+      await settle(w, a.id);
+      await new Promise((r) => setTimeout(r, 500));
+      expect(existsSync(cwd)).toBe(true);
+      expect(
+        (await messagesIn(w, a.channelId)).some(
+          (m) =>
+            m.conversationId === a.id &&
+            m.authorKind === "system" &&
+            m.text.startsWith("Worktree cleaned up"),
+        ),
+      ).toBe(false);
+      /* B's turn ending updates its row — the rescan re-runs A's check,
+         B is now settled AND idle, and the copy goes. */
+      await w.user.request("turns.interrupt", { conversationId: b.id });
+      await waitFor(
+        () => (!existsSync(cwd) ? true : undefined),
+        "dir gone after B's turn ended",
+      );
+      await systemLine(w, a, "Worktree cleaned up");
+    } finally {
+      await w.cleanup();
+    }
+  }, 30_000);
+
+  it("an un-settle mid-remove restores — the sibling's remove rode its OWN chain", async () => {
+    const repo = seedRepo();
+    const w = await setupWorld({ homeDir: mkhome() });
+    try {
+      const { channel } = await openDmConversation(w.user);
+      const { conversation: a, cwd } = await openWorkstream(
+        w,
+        channel.id,
+        repo,
+        "race",
+        "Work here",
+      );
+      await finished(w, a.id);
+      /* 300 committed files make `git worktree remove` slow enough that
+         an un-settle can land MID-remove — the window where running the
+         sibling's remove on OUR chain would strand the restore (it
+         would peek mid-remove, see the folder, and skip). Push the
+         branch so the copy is removable and the branch survives for
+         the rebuild. */
+      const remote = join(repo, "..", "remote.git");
+      mkdirSync(remote);
+      git(remote, ["init", "--bare", "-q", "-b", "main"]);
+      git(cwd, ["remote", "add", "origin", remote]);
+      for (let i = 0; i < 300; i++) {
+        writeFileSync(
+          join(cwd, `f${String(i).padStart(3, "0")}.txt`),
+          `${i}\n`,
+        );
+      }
+      git(cwd, ["add", "."]);
+      git(cwd, ["commit", "-qm", "bulk"]);
+      git(cwd, ["push", "-qu", "origin", "ws/race"]);
+      const { conversation: b } = await w.user.request<{
+        conversation: Conversation;
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "share the folder",
+        cwd,
+      });
+      await finished(w, b.id);
+      await settle(w, a.id); // blocked — B is live
+      /* B settles → A's cleanup is enqueued ON A'S OWN CHAIN. An
+         un-settle landing while it runs queues its restore behind the
+         remove — the folder comes back instead of vanishing under a
+         live thread. */
+      await settle(w, b.id);
+      await new Promise((r) => setTimeout(r, 50));
+      await settle(w, a.id, false);
+      /* Whatever order the remove and the un-settle actually committed
+         in, the folder ends up present: either the cleanup read the
+         un-settled row and never ran, or it removed and the queued
+         restore rebuilt. The losing outcome — gone under a live thread
+         — is the bug. */
+      await waitFor(
+        () => (existsSync(join(cwd, "f000.txt")) ? true : undefined),
+        "dir back (or never gone)",
+        8_000,
+      );
+    } finally {
+      await w.cleanup();
+    }
+  }, 30_000);
+
+  it("a thread filed on a subfolder inside a worktree settles silently", async () => {
+    const repo = seedRepo();
+    const w = await setupWorld({ homeDir: mkhome() });
+    try {
+      const { channel } = await openDmConversation(w.user);
+      /* cwd is INSIDE a worktree but not the worktree itself — not a
+         direct child of .lilos/wt, so it's none of the cleanup's
+         business: no verdict line, nothing touched. */
+      const { conversation } = await w.user.request<{
+        conversation: Conversation;
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "filed deep",
+        cwd: join(repo, ".lilos", "wt", "deep", "inner"),
+        workspace: { mode: "existing", repoPath: repo, branch: "ws/deep" },
+      });
+      await finished(w, conversation.id);
+      await settle(w, conversation.id);
+      await new Promise((r) => setTimeout(r, 500));
+      expect(
+        (await messagesIn(w, conversation.channelId)).some(
+          (m) =>
+            m.conversationId === conversation.id && m.authorKind === "system",
+        ),
+      ).toBe(false);
+    } finally {
+      await w.cleanup();
+    }
+  }, 30_000);
+
   it("un-settle after the cleanup restores the copy — no message needed", async () => {
     const repo = seedRepo();
     const w = await setupWorld({ homeDir: mkhome() });

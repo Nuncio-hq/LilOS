@@ -965,9 +965,11 @@ export type WorktreeRemoveResult = {
   detail?: string;
 };
 
-/* D-#881: ignored build output the cleanup may drop — first path segment
-   or `.lilos/attachments` subtree. Anything else ignored (`.env*` is the
-   classic) keeps the whole worktree and gets named on the thread. */
+/* D-#881: ignored build output the cleanup may drop — ANY path segment
+   counts (a monorepo's `apps/x/node_modules` is as droppable as the
+   root's), plus OS litter and the `.lilos/attachments` subtree. Anything
+   else ignored (`.env*` is the classic) keeps the whole worktree and
+   gets named on the thread. */
 const IGNORED_OK = new Set([
   "node_modules",
   "dist",
@@ -977,6 +979,7 @@ const IGNORED_OK = new Set([
   "coverage",
   "test-results",
 ]);
+const IGNORED_OK_FILES = new Set([".DS_Store"]);
 
 /** Ignored untracked files minus the build-output allow-list. */
 async function riskyIgnored(dir: string): Promise<string[]> {
@@ -990,11 +993,14 @@ async function riskyIgnored(dir: string): Promise<string[]> {
     .split("\n")
     .map((s) => s.trim())
     .filter(Boolean)
-    .filter(
-      (p) =>
-        !IGNORED_OK.has(p.split("/")[0] ?? "") &&
-        !p.startsWith(".lilos/attachments/"),
-    );
+    .filter((p) => {
+      const segs = p.split("/");
+      return (
+        !segs.some((s) => IGNORED_OK.has(s)) &&
+        !IGNORED_OK_FILES.has(segs[segs.length - 1] ?? "") &&
+        !p.startsWith(".lilos/attachments/")
+      );
+    });
 }
 
 /** A rebase/merge in flight leaves these in the worktree's private gitdir
