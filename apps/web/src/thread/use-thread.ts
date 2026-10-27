@@ -34,6 +34,7 @@ import {
 } from "../lib/runtime";
 import { sayError } from "../lib/toast";
 import { engineNeverAsks } from "../settings/state";
+import { modelLabelFor } from "../v3/runtimes";
 import { V3_STATUS } from "../v3/threads";
 import { EMPTY_FEED, NO_ASKS } from "./empties";
 import { fileSearch, sessionCommands } from "./searchers";
@@ -96,13 +97,15 @@ export function useThreadWith(
   const wbSpots = useAtom(workbenchRequests);
   const { engineDown } = useEngineStatus();
   const { empFn, mentionables } = useEmployeeLookup(employees, engineDown);
-  const { catalog, defaultModel, defaultProvider, picker } = useModelCatalog();
 
   const sid = conv?.engineRef ?? undefined;
   const feed = useAtom(sid ? engine.sessionFeed(sid) : EMPTY_FEED);
   const model = sid ? folds.models[sid] : undefined;
   const channel = channels.find((c) => c.id === conv?.channelId);
   const employee = employees.find((e) => e.id === channel?.employeeId);
+  /* #895: the thread's agent decides whose models the composer lists. */
+  const { catalog, defaultModel, defaultProvider, picker, own } =
+    useModelCatalog(employee?.runtime);
 
   /* Unsent drafts live outside the composer: one key per conversation
      (issue #103). Switching sessions — or reloading — swaps in the stored
@@ -295,6 +298,14 @@ export function useThreadWith(
     defaultModel,
     defaultProvider,
     picker,
+    modelStatic:
+      own && !catalog.length && (conv.model ?? model?.model)
+        ? modelLabelFor(
+            employee.runtime,
+            conv.model ?? model?.model,
+            conv.provider ?? model?.provider,
+          )
+        : undefined,
     modelOpen: modelOpenFor === conv.id,
     setModelOpen: (o) => setModelOpenFor(o ? conv.id : null),
     /* Returned so the picker can take back a pick that failed. */

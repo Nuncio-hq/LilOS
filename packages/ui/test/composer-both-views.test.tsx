@@ -192,3 +192,44 @@ describe.each<ChatStatus>(["ready", "streaming"])(
     });
   },
 );
+
+/* #895: a thread on a runtime whose own catalog hasn't landed keeps its
+   model on screen, read-only — and the picker takes over once it lands. */
+describe("the thread composer's model slot (#895)", () => {
+  const props = {
+    placeholder: "Message Devin…",
+    employees: [BUILDER],
+    onModel: () => {},
+  };
+
+  test("no models + a pick: a read-only chip, no picker", () => {
+    const { container } = render(
+      <Composer {...props} modelStatic="Swe-2-high" />,
+    );
+    const chip = container.querySelector('[data-slot="model-chip-static"]');
+    expect(chip?.textContent).toBe("Swe-2-high");
+    expect(picker(container)).toBeNull();
+  });
+
+  test("models landed: the picker replaces the chip", () => {
+    const { container } = render(
+      <Composer
+        {...props}
+        modelStatic="Swe-2-high"
+        models={[{ id: "swe-2-high", name: "SWE-2 High", provider: "devin" }]}
+      />,
+    );
+    expect(
+      container.querySelector('[data-slot="model-chip-static"]'),
+    ).toBeNull();
+    expect(picker(container)?.textContent).toContain("SWE-2 High");
+  });
+
+  test("nothing to show: neither", () => {
+    const { container } = render(<Composer {...props} />);
+    expect(
+      container.querySelector('[data-slot="model-chip-static"]'),
+    ).toBeNull();
+    expect(picker(container)).toBeNull();
+  });
+});

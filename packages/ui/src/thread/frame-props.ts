@@ -64,6 +64,9 @@ export interface ThreadFrameProps {
   onModel?: (c: ModelChoice) => void | Promise<unknown>;
   /* Refresh / Edit models… / provider names — each renders only with its handler. */
   picker?: ModelPickerExtras;
+  /* A thread on a runtime whose own catalog hasn't landed (#895): its
+     current model, drawn read-only in place of the picker. */
+  modelStatic?: string;
   /* The engine's `models.list.default` — the unpinned-employee pick (#92 AC-5). */
   defaultModel?: string;
   /* The default's provider — a `{provider?, id}` pair disambiguates a shared id. */

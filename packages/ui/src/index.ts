@@ -74,6 +74,7 @@ export {
   agentOf,
   agentTone,
   boardStatus,
+  modelCatalogOf,
   runtimeLook,
   snoozed,
 } from "./v3/v3-model";

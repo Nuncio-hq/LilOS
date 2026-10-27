@@ -47,6 +47,7 @@ export function sharedViewProps(d: ThreadData) {
     transcriptNote: d.transcriptNote,
     models: d.models,
     picker: d.picker,
+    modelStatic: d.modelStatic,
     defaultModel: d.defaultModel,
     defaultProvider: d.defaultProvider,
     onCommand: d.onCommand,
