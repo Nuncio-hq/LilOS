@@ -18,10 +18,10 @@ import {
  * Engine/relay truth is probed over the real JSON-RPC path (session.hello →
  * passthrough `agents.*`/`models.list` → harness → engine-fake).
  *
- * v3: Hire is the page `#?page=hire` (sidebar "Hire an agent"), a role grid +
- * name + model + Hire, creating a NEW engine profile named after the person
+ * v3: Add is the page `#?page=hire` (sidebar "Add an agent"), a role grid +
+ * name + model + Add, creating a NEW engine profile named after the person
  * (AC-2/AC-3), and a second section, "Or bring in an existing profile", that
- * links an engine profile nobody is hired on, keeping the engine's own model
+ * links an engine profile nobody has added yet, keeping the engine's own model
  * and persona (AC-2b, the old dialog's "Use profile"). "New profile"'s
  * template rows, instructions box and engine-model buttons have no v3
  * control; AC-2/AC-3 keep what a person can still do. A name equal to an
@@ -142,40 +142,40 @@ async function openApp(stack: Stack, page: Page) {
 }
 
 const hireHeading = (page: Page) =>
-  page.getByRole("heading", { level: 1, name: "Hire an agent" });
+  page.getByRole("heading", { level: 1, name: "Add an agent" });
 
-/** Sidebar "Hire an agent" → the Hire page. */
+/** Sidebar "Add an agent" → the Add page. */
 async function openHire(page: Page) {
-  await v3Sidebar(page).getByRole("button", { name: "Hire an agent" }).click();
+  await v3Sidebar(page).getByRole("button", { name: "Add an agent" }).click();
   await expect(hireHeading(page)).toBeVisible();
   await expect(page).toHaveURL(/[#&?]page=hire/);
 }
 
-/** A role card on the Hire page (its accessible name starts with the role). */
+/** A role card on the Add page (its accessible name starts with the role). */
 const roleCard = (page: Page, role: string) =>
   page.getByRole("button", { name: new RegExp(`^${role} `) });
 
-/** The Hire form's name field and its segmented model buttons. */
+/** The Add form's name field and its segmented model buttons. */
 const nameField = (page: Page) => page.getByPlaceholder("Name");
 const modelButton = (page: Page, label: string) =>
   page.getByRole("button", { name: label, exact: true });
 
-test("AC-1 the sidebar offers Hire, and opens the Hire page, only when the engine declares `agents`", async ({
+test("AC-1 the sidebar offers Add, and opens the Add page, only when the engine declares `agents`", async ({
   page,
 }) => {
   await openApp(stackA, page);
   const sidebar = v3Sidebar(page);
   await expect(
-    sidebar.getByRole("button", { name: "Hire an agent" }),
+    sidebar.getByRole("button", { name: "Add an agent" }),
   ).toBeVisible();
   /* The page header and the org chart do not repeat it (D-#769). */
   await page.goto(`${stackA.webUrl}/#?page=people`);
   await expect(
-    page.locator("#v3-main").getByRole("button", { name: /Hire an agent/ }),
+    page.locator("#v3-main").getByRole("button", { name: /Add an agent/ }),
   ).toHaveCount(0);
   await page.goto(`${stackA.webUrl}/#?page=people&view=org`);
   await expect(
-    page.locator("#v3-main").getByRole("button", { name: /Hire an agent/ }),
+    page.locator("#v3-main").getByRole("button", { name: /Add an agent/ }),
   ).toHaveCount(0);
   await openHire(page);
   // The role grid is the page's way in (it replaced "Use profile" / "New
@@ -193,32 +193,32 @@ test("AC-1 the sidebar offers Hire, and opens the Hire page, only when the engin
   await roleCard(page, "Engineer").click();
   await expect(nameField(page)).toHaveValue("Engineer");
   await expect(
-    page.getByRole("button", { name: "Hire", exact: true }),
+    page.getByRole("button", { name: "Add", exact: true }),
   ).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-1-hire-dialog.png` });
 
   // D-#19: no `agents` capability advertised → no hire affordance at all.
   // The no-agents stack was booted in beforeAll (#827).
   await openApp(stackB, page);
-  /* Hire is absent both before describe and when the engine declares no
+  /* Add is absent both before describe and when the engine declares no
      agents. The attribute is describe landing; the count is that state. */
   await expect(page.locator("[data-engine-described]")).toBeAttached();
   await expect(
-    v3Sidebar(page).getByRole("button", { name: "Hire an agent" }),
+    v3Sidebar(page).getByRole("button", { name: "Add an agent" }),
   ).toHaveCount(0);
-  // A link to the Hire page says plainly that it can't be used.
+  // A link to the Add page says plainly that it can't be used.
   await page.goto(`${stackB.webUrl}/#?page=hire`);
   await expect(page.locator("[data-engine-described]")).toBeAttached();
   await expect(
     page.getByText(
-      /Hiring is not available while the engine cannot create agents/,
+      /Adding is not available while the engine cannot create agents/,
     ),
   ).toBeVisible();
   await expect(roleCard(page, "Engineer")).toHaveCount(0);
   await page.screenshot({ path: `${SHOTS}/ac-1-no-agents-capability.png` });
 });
 
-test("AC-2 hire a QA agent: the engine profile is created, the employee links it, a second click hires no duplicate", async ({
+test("AC-2 add a QA agent: the engine profile is created, the employee links it, a second click adds no duplicate", async ({
   page,
 }) => {
   await openApp(stackA, page);
@@ -234,11 +234,11 @@ test("AC-2 hire a QA agent: the engine profile is created, the employee links it
   await modelButton(page, "Fake Small").click();
   await page.screenshot({ path: `${SHOTS}/ac-2-use-profile.png` });
   /* Two clicks in one synchronous task: the second always lands while the
-     first hire is in flight, so the pending guard — not timing — is what
-     keeps it from hiring a duplicate. (Two separate dispatches race the
+     first add is in flight, so the pending guard — not timing — is what
+     keeps it from adding a duplicate. (Two separate dispatches race the
      hire finishing and the page moving on, leaving no button for the
      second.) */
-  const hireBtn = page.getByRole("button", { name: "Hire", exact: true });
+  const hireBtn = page.getByRole("button", { name: "Add", exact: true });
   await hireBtn.evaluate((b: HTMLElement) => {
     b.click();
     b.click();
@@ -259,11 +259,11 @@ test("AC-2 hire a QA agent: the engine profile is created, the employee links it
   expect(await agentIds(stackA)).toContain("tester");
 });
 
-/** The Hire page's second section: engine profiles nobody is hired on. */
+/** The Add page's second section: engine profiles nobody has added yet. */
 const existingProfiles = (page: Page) =>
   page.getByRole("region", { name: "Existing engine profiles" });
 
-test("AC-2b hire from an existing engine profile: it is linked, not created again, and keeps the engine's own model and persona", async ({
+test("AC-2b add from an existing engine profile: it is linked, not created again, and keeps the engine's own model and persona", async ({
   page,
 }) => {
   await openApp(stackA, page);
@@ -293,7 +293,7 @@ test("AC-2b hire from an existing engine profile: it is linked, not created agai
 
   // Two clicks in one synchronous task: the second lands while the request
   // is in flight and hires no duplicate.
-  const hireBtn = page.getByRole("button", { name: "Hire", exact: true });
+  const hireBtn = page.getByRole("button", { name: "Add", exact: true });
   await hireBtn.evaluate((b: HTMLElement) => {
     b.click();
     b.click();
@@ -310,9 +310,9 @@ test("AC-2b hire from an existing engine profile: it is linked, not created agai
     v3Sidebar(page).getByRole("button", { name: "Reviewer" }),
   ).toBeVisible();
   await expect(page.getByText(/already exists/i)).toHaveCount(0);
-  // The agent's page says which engine profile it runs.
-  await expect(peek.getByText("Profile", { exact: true })).toBeVisible();
-  await expect(peek.getByText("reviewer", { exact: true })).toBeVisible();
+  /* The agent's page never shows internals — no Profile row, no raw id
+     (#872): the link is the employee record's `profile`. */
+  await expect(peek.getByText("Profile", { exact: true })).toHaveCount(0);
   await page.screenshot({ path: `${SHOTS}/ac-2b-hired-profile.png` });
 
   // The engine side: no new profile was made (agents.create never ran), and
@@ -326,7 +326,7 @@ test("AC-2b hire from an existing engine profile: it is linked, not created agai
   expect(hired[0]?.model).toBe("fake-small");
   expect(hired[0]?.instructions).toMatch(/Read the diff first/);
 
-  // Now an agent runs on it, so the Hire page no longer offers it.
+  // Now an agent runs on it, so the Add page no longer offers it.
   await openHire(page);
   await expect(section.getByRole("button", { name: /^Builder/ })).toBeVisible();
   await expect(section.getByRole("button", { name: /^Reviewer/ })).toHaveCount(
@@ -334,7 +334,7 @@ test("AC-2b hire from an existing engine profile: it is linked, not created agai
   );
 });
 
-test("AC-3 hire an Engineer with a model: agents.create with the slug then the employee; a rejection reads plainly", async ({
+test("AC-3 add an Engineer with a model: agents.create with the slug then the employee; a rejection reads plainly", async ({
   page,
 }) => {
   await openApp(stackA, page);
@@ -345,9 +345,9 @@ test("AC-3 hire an Engineer with a model: agents.create with the slug then the e
   await nameField(page).fill("Senior Engineer");
   await modelButton(page, "Fake Reasoning").click();
   await page.screenshot({ path: `${SHOTS}/ac-3-new-profile.png` });
-  await page.getByRole("button", { name: "Hire", exact: true }).click();
+  await page.getByRole("button", { name: "Add", exact: true }).click();
 
-  // Hiring lands on the new agent's page, opened beside People.
+  // Adding lands on the new agent's page, opened beside People.
   await expect(page).toHaveURL(/[#&?]page=people&open=agent:/);
   const peek = v3Peek(page);
   await expect(
@@ -376,7 +376,7 @@ test("AC-3 hire an Engineer with a model: agents.create with the slug then the e
   await nameField(page).fill("default");
   const rows = await employeeRows(stackA);
   const agentsBefore = await agentIds(stackA);
-  await page.getByRole("button", { name: "Hire", exact: true }).click();
+  await page.getByRole("button", { name: "Add", exact: true }).click();
   await expect(page.getByText(/agent default already exists/i)).toBeVisible();
   await expect(hireHeading(page)).toBeVisible();
   await expect(nameField(page)).toHaveValue("default");
@@ -386,7 +386,7 @@ test("AC-3 hire an Engineer with a model: agents.create with the slug then the e
 
   // Same slug again: retyping the display name hits the duplicate check too.
   await nameField(page).fill("Senior Engineer");
-  await page.getByRole("button", { name: "Hire", exact: true }).click();
+  await page.getByRole("button", { name: "Add", exact: true }).click();
   await expect(
     page.getByText(/agent senior-engineer already exists/i),
   ).toBeVisible();
@@ -394,7 +394,7 @@ test("AC-3 hire an Engineer with a model: agents.create with the slug then the e
   expect((await employeeRows(stackA)).length).toBe(rows.length);
 });
 
-test("AC-4 the model list on the Hire page comes from models.list", async ({
+test("AC-4 the model list on the Add page comes from models.list", async ({
   page,
 }) => {
   await openApp(stackA, page);
@@ -414,14 +414,14 @@ test("AC-4 the model list on the Hire page comes from models.list", async ({
   await page.screenshot({ path: `${SHOTS}/ac-4-model-list.png` });
 });
 
-test("AC-5 after hiring, the sidebar + new chat appear live and the app navigates to the agent", async ({
+test("AC-5 after adding, the sidebar + new chat appear live and the app navigates to the agent", async ({
   page,
 }) => {
   await openApp(stackA, page);
   await openHire(page);
   await roleCard(page, "Growth").click();
   await nameField(page).fill("Growth Lead");
-  await page.getByRole("button", { name: "Hire", exact: true }).click();
+  await page.getByRole("button", { name: "Add", exact: true }).click();
 
   // No reload: SPA navigation lands on the new agent's page beside People.
   await expect(page).toHaveURL(/[#&?]page=people&open=agent:emp_[^&,]+/);
@@ -448,7 +448,7 @@ test("AC-5 after hiring, the sidebar + new chat appear live and the app navigate
   expect((await dmChannelIds(stackA, employeeId)).length).toBe(1);
 });
 
-test("AC-8 the channel-assignment part of the Hire page does not render in the real app", async ({
+test("AC-8 the channel-assignment part of the Add page does not render in the real app", async ({
   page,
 }) => {
   await openApp(stackA, page);
@@ -469,39 +469,53 @@ async function openAgent(page: Page, name: string) {
   return record;
 }
 
-test("AC-6 Edit saves display name + role via employees.update; surfaces update live", async ({
+test("AC-6 the name and description edit in place; surfaces update live", async ({
   page,
 }) => {
   await openApp(stackA, page);
   const record = await openAgent(page, "Senior Engineer");
-  await record.getByRole("button", { name: "Edit" }).click();
 
-  await record.getByRole("textbox", { name: "Name" }).fill("Engineer Prime");
-  await record.getByRole("textbox", { name: "Role" }).fill("Records lead");
-  await page.screenshot({ path: `${SHOTS}/ac-6-edit-dialog.png` });
-  await record.getByRole("button", { name: "Save" }).click();
-  // "Save" reads "Saving…" while in flight: Edit is back once it has landed.
-  await expect(record.getByRole("button", { name: "Edit" })).toBeVisible();
-
-  // The sidebar row and the agent page read the updated record without a
-  // reload; the role is the page's kicker line.
-  await expect(
-    v3Sidebar(page).getByRole("button", { name: "Engineer Prime" }),
-  ).toBeVisible();
+  /* #872 — there is no Edit mode: click the name, type, Enter saves just
+     it; the description is the one line under the name, clicked the same
+     way. */
+  await record
+    .getByRole("heading", { level: 1 })
+    .getByRole("button", { name: "Senior Engineer" })
+    .click();
+  const nameBox = record.getByRole("textbox", { name: "Agent name" });
+  await nameBox.fill("Engineer Prime");
+  await nameBox.press("Enter");
   await expect(
     record.getByRole("heading", { level: 1, name: "Engineer Prime" }),
   ).toBeVisible();
-  await expect(record.getByText(/^Records lead/)).toBeVisible();
+
+  // The one description: a placeholder until it is written, then the line.
+  await record
+    .getByRole("button", { name: "What it is for, in a line" })
+    .click();
+  const desc = record.getByRole("textbox", { name: "Description" });
+  await desc.fill("Keeps the records straight");
+  await page.screenshot({ path: `${SHOTS}/ac-6-inline-edit.png` });
+  await desc.press("Enter");
+  await expect(record.getByText(/^Keeps the records straight/)).toBeVisible();
+
+  // The sidebar row and the page read the updated record without a reload.
+  await expect(
+    v3Sidebar(page).getByRole("button", { name: "Engineer Prime" }),
+  ).toBeVisible();
   await expect(
     v3Sidebar(page).getByRole("button", { name: "Senior Engineer" }),
   ).toHaveCount(0);
   await page.screenshot({ path: `${SHOTS}/ac-6-updated.png` });
   const employees = await employeeRows(stackA);
+  expect(employees.some((e) => e.name === "Engineer Prime")).toBe(true);
+  // The description is the engine profile's — describe proves it landed.
+  const [described] = await rpc(stackA.relayWs, stackA.relayToken, [
+    { method: "agents.describe", params: { id: "senior-engineer" } },
+  ]);
   expect(
-    employees.some(
-      (e) => e.name === "Engineer Prime" && e.role === "Records lead",
-    ),
-  ).toBe(true);
+    (described.result as { agent: { description?: string } }).agent.description,
+  ).toBe("Keeps the records straight");
 });
 
 test("AC-7 Remove deletes the LilOS record + DM, never the engine profile", async ({
@@ -515,14 +529,14 @@ test("AC-7 Remove deletes the LilOS record + DM, never the engine profile", asyn
   expect((await dmChannelIds(stackA, employeeId)).length).toBe(1);
 
   await record.getByRole("button", { name: "Remove from LilOS" }).click();
-  // #856's plain confirmation: what goes (the agent + its LilOS threads) vs
-  // what stays (the engine profile and CLI login).
+  // #856's plain confirmation: what goes (the agent + its LilOS threads);
+  // the chats stay and it can be added back (#872).
   const confirm = record.getByRole("group", {
     name: "Remove Tester from LilOS",
   });
   await expect(confirm.getByText("Remove Tester from LilOS?")).toBeVisible();
   await expect(
-    confirm.getByText(/its engine profile and CLI login/),
+    confirm.getByText(/your chats stay; you can add it back any time/i),
   ).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-7-remove-confirm.png` });
   await confirm.getByRole("button", { name: "Remove from LilOS" }).click();
@@ -542,7 +556,7 @@ test("AC-7 Remove deletes the LilOS record + DM, never the engine profile", asyn
   expect((await dmChannelIds(stackA, employeeId)).length).toBe(0);
   // D-#29: the engine profile is untouched.
   expect(await agentIds(stackA)).toContain("tester");
-  // …and it is hirable again under "Or bring in an existing profile" (the
+  // …and it can be added again under "Or bring in an existing profile" (the
   // old "Use profile" list): only the LilOS record went. The engine named
   // the profile by its slug, so that is what the row reads.
   await openHire(page);

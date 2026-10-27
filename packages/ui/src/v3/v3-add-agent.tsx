@@ -215,12 +215,12 @@ export function V3AddAgent({
             >
               {loading && choices.length === 0 && (
                 <p className="px-3 py-3 text-center text-muted-foreground text-xs">
-                  Checking who can be hired…
+                  Checking who can be added…
                 </p>
               )}
               {!loading && choices.length === 0 && (
                 <p className="px-3 py-3 text-center text-muted-foreground text-xs">
-                  No agent kinds to hire.
+                  No agent kinds to add.
                 </p>
               )}
               {choices.map((c, i) => (
@@ -293,7 +293,7 @@ export function V3AddAgent({
             Cancel
           </Btn>
           <Btn small primary disabled={!canHire} onClick={() => void submit()}>
-            {busy ? "Hiring…" : "Hire"}
+            {busy ? "Adding…" : "Add"}
           </Btn>
         </div>
       </div>

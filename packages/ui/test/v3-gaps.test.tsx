@@ -178,7 +178,7 @@ describe("hire from an existing profile", () => {
       target: { value: "Operator" },
     });
     // A second click while the first is in flight hires once.
-    const hire = screen.getByRole("button", { name: "Hire" });
+    const hire = screen.getByRole("button", { name: "Add" });
     fireEvent.click(hire);
     fireEvent.click(hire);
     await waitFor(() => expect(go).toHaveBeenCalledTimes(2));
@@ -211,24 +211,17 @@ describe("hire from an existing profile", () => {
     }
   });
 
-  test("the agent's page says which engine profile it runs", () => {
+  /* #872 — internals never render: no Profile row, no "Runs on", no hire
+     date, no "Now" — whichever profile the agent runs. */
+  test("the agent's page never shows internals", () => {
     render(
       <V3AgentPage data={data()} go={vi.fn()} act={actions()} id="emp_1" />,
     );
-    expect(screen.getByText("Profile")).toBeTruthy();
-    expect(screen.getByText("reviewer")).toBeTruthy();
-  });
-
-  test("an agent with no known profile has no Profile row", () => {
-    render(
-      <V3AgentPage
-        data={data({ agents: [{ ...agent, profile: undefined }] })}
-        go={vi.fn()}
-        act={actions()}
-        id="emp_1"
-      />,
-    );
     expect(screen.queryByText("Profile")).toBeNull();
+    expect(screen.queryByText("reviewer")).toBeNull();
+    expect(screen.queryByText("Runs on")).toBeNull();
+    expect(screen.queryByText("Now")).toBeNull();
+    expect(screen.queryByText(/hired /)).toBeNull();
   });
 });
 

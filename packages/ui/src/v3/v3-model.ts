@@ -7,6 +7,7 @@ import type {
   V3Status,
   V3Thread,
   V3Ticket,
+  V3Tone,
 } from "./v3-types";
 
 /* Lookups every v3 page shares. Pure; the shell owns the data. */
@@ -421,13 +422,46 @@ export const runtimeOf = (d: V3Data, a: V3Agent): V3Runtime | undefined => {
     id no row names yet still never shows as `acp:devin`. */
 export const runtimeLabelOf = (d: V3Data, a: V3Agent): string | undefined => {
   const raw = runtimeOf(d, a)?.label ?? a.runtime;
-  if (!raw) return undefined;
-  return raw
+  return raw ? prettifyRuntimeId(raw) : undefined;
+};
+
+/** A runtime's words without a row: `acp:devin` reads "Devin", never the
+    raw id (#872). */
+export function prettifyRuntimeId(id: string): string {
+  return id
     .replace(/^acp:/, "")
     .split(/[-_\s]+/)
     .map((w) => w.slice(0, 1).toUpperCase() + w.slice(1))
     .join(" ");
+}
+
+/** Agent and runtime faces share one palette: a stable pastel from a
+    31-polynomial hash, so the same name paints the same on the sidebar,
+    the page and a thread line (#872). `n` stays reserved for the
+    gone-agent "?". */
+const FACE_TONES: V3Tone[] = ["c", "b", "r", "m", "s", "d"];
+export function agentTone(name: string): V3Tone {
+  let x = 0;
+  for (const ch of name.toLowerCase())
+    x = (Math.imul(x, 31) + ch.charCodeAt(0)) >>> 0;
+  return FACE_TONES[x % FACE_TONES.length];
+}
+
+/* A coding runtime's tone (#872): known ids keep their brand-adjacent
+   colour, a new one hashes to a stable pastel. */
+const RUNTIME_TONE: Record<string, V3Tone> = {
+  "acp:devin": "b",
+  "acp:claude": "m",
 };
+
+/** A non-default runtime's mark — the label and tone its agents' avatars
+    wear wherever an avatar is drawn (sidebar, page, thread). */
+export function runtimeLook(id: string): { label: string; tone: V3Tone } {
+  return {
+    label: prettifyRuntimeId(id),
+    tone: RUNTIME_TONE[id] ?? agentTone(id),
+  };
+}
 
 /** Engine-side `updatable` names → the page fields they let you edit
     (soul holds the persona — the page's Instructions). */

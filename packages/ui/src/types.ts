@@ -26,6 +26,10 @@ export type Employee = {
   /* Per-employee notification mute (#561) — a relay-stored flag the card
      renders as a Notifications switch. */
   muted?: boolean;
+  /* D-#761/#872: the engine runtime this agent runs on (`"acp:devin"`…) —
+     the avatar wears its mark; absent or the default id means the default
+     engine's own look. */
+  runtime?: string;
 };
 export type Channel = {
   id: string;

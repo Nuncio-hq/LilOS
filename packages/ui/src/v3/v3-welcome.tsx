@@ -181,7 +181,7 @@ export function V3Welcome({ data, go, act }: V3PageProps) {
               <p className="mt-3 text-[14.5px] text-muted-foreground">
                 {isCeo
                   ? "The CEO is a position, not a person: it splits your goals into tickets, hands them to the right agent, checks every result and writes you a short update. You can give it to anyone later."
-                  : "This is the agent you start chatting with. Name it as you like; you can rename it, and hire more, any time."}
+                  : "This is the agent you start chatting with. Name it as you like; you can rename it, and add more, any time."}
               </p>
               <div className="mt-5 flex items-end gap-3">
                 <Avatar

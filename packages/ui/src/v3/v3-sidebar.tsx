@@ -242,7 +242,7 @@ export function V3Sidebar({
         {canHire && companyOn(data) && (
           <Item
             icon={<PlusIcon />}
-            label="Hire an agent"
+            label="Add an agent"
             on={on("hire")}
             onClick={() => go({ page: "hire" })}
           />

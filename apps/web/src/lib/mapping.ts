@@ -51,6 +51,7 @@ export function toUiEmployee(e: Employee, engineDown = false): UiEmployee {
     instructions: e.instructions,
     respondTo: e.respondTo,
     muted: e.muted,
+    ...(e.runtime ? { runtime: e.runtime } : {}),
   };
 }
 

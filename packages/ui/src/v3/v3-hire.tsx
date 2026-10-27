@@ -92,9 +92,9 @@ export function V3Hire({ data, go, act }: V3PageProps) {
   if (!act.hire) {
     return (
       <Page wide>
-        <Title>Hire an agent</Title>
+        <Title>Add an agent</Title>
         <p className="text-[14.5px] text-muted-foreground">
-          Hiring is not available while the engine cannot create agents.
+          Adding is not available while the engine cannot create agents.
         </p>
       </Page>
     );
@@ -102,7 +102,7 @@ export function V3Hire({ data, go, act }: V3PageProps) {
 
   return (
     <Page wide>
-      <Title>Hire an agent</Title>
+      <Title>Add an agent</Title>
       <p className="text-[14.5px] text-muted-foreground">
         {ceo
           ? "Pick a role. The CEO writes the first instructions; you can edit them later."
@@ -159,14 +159,6 @@ export function V3Hire({ data, go, act }: V3PageProps) {
             <span className={FIELD}>Role</span>
             <div className="mt-1 text-[14px] text-foreground">{tpl.role}</div>
           </div>
-          {/* The engine this company runs on, as it names itself: one today,
-             so a fact, not a choice (no placeholder for engines to come). */}
-          <div>
-            <span className={FIELD}>Runs on</span>
-            <div className="mt-1 text-[14px] text-foreground">
-              {data.settings.engine.name}
-            </div>
-          </div>
           {choices.length > 0 && (
             <div>
               <span className={cn(FIELD, "block")}>Model</span>
@@ -200,7 +192,7 @@ export function V3Hire({ data, go, act }: V3PageProps) {
           )}
           <div className="pt-1">
             <Btn primary onClick={submit}>
-              Hire
+              Add
             </Btn>
           </div>
         </form>

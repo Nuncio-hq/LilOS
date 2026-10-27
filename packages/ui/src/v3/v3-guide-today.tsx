@@ -22,7 +22,7 @@ export function V3GuideToday({ data, go }: Pick<V3PageProps, "data" | "go">) {
       name: "Agent",
       eg: `${agents} ${agents === 1 ? "agent" : "agents"}`,
       df: company
-        ? "Someone on your team, with a role and a model. Hire more from People."
+        ? "Someone on your team, with a role and a model. Add more from the sidebar."
         : /* The paused layer (D-#836) has no People page to send you to. */
           "Someone who works for you, with a role and a model.",
       to: company ? () => go({ page: "people" }) : undefined,

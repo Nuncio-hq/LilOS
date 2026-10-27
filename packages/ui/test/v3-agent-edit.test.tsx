@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 /* An agent's page edits in place, Notion-style (#872): no edit mode, no
-   page Save/Cancel — click the role or description, Enter or leaving saves
+   page Save/Cancel — click the name or description, Enter or leaving saves
    just that field, Esc puts it back; the model's menu saves on pick and a
    guarded model asks before it pins; instructions save on blur. Fields the
    agent's own runtime cannot write (D-#761) render as plain text. The real
@@ -136,6 +136,7 @@ describe("capability by presence", () => {
       data({ agents: two }),
     );
     expect(screen.queryByRole("button", { name: "QA" })).toBeNull();
+    expect(screen.queryByLabelText("Description")).toBeNull();
     expect(screen.queryByRole("switch")).toBeNull();
     expect(
       screen.queryByRole("button", { name: "Remove from LilOS" }),
@@ -161,9 +162,8 @@ describe("capability by presence", () => {
 
   test("the fields the engine does not list read as text, never inputs", () => {
     mount(actions(), data({ agentFields: undefined }));
-    // Name and role are the company's record — still editable.
+    // The name is the company's record — still editable.
     expect(screen.getByRole("button", { name: "Reviewer" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "QA" })).toBeTruthy();
     // Engine-owned fields sit read-only.
     expect(screen.getByText("Reads every diff")).toBeTruthy();
     expect(
@@ -176,22 +176,22 @@ describe("capability by presence", () => {
 });
 
 describe("edit in place", () => {
-  test("the role saves on Enter; Esc cancels without touching the record", async () => {
+  test("the description saves on Enter; Esc cancels without touching the record", async () => {
     const act_ = actions();
     const shell = shellEsc();
     mount(act_);
-    fireEvent.click(screen.getByRole("button", { name: "QA" }));
-    const box = screen.getByLabelText("Role");
+    fireEvent.click(screen.getByRole("button", { name: "Reads every diff" }));
+    const box = screen.getByLabelText("Description");
     fireEvent.change(box, { target: { value: "Reviews" } });
     await act(async () => {
       press(box, "Enter");
     });
     expect(act_.updateAgent).toHaveBeenCalledWith("emp_1", {
-      role: "Reviews",
+      description: "Reviews",
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "QA" }));
-    const again = screen.getByLabelText("Role");
+    fireEvent.click(screen.getByRole("button", { name: "Reads every diff" }));
+    const again = screen.getByLabelText("Description");
     fireEvent.change(again, { target: { value: "Nope" } });
     press(again, "Escape");
     expect(act_.updateAgent).toHaveBeenCalledTimes(1);
@@ -289,9 +289,10 @@ describe("edit in place", () => {
 });
 
 describe("runs on its own runtime", () => {
-  /* A Devin agent's page (#872): "Runs on" is the plain label, there is no
-     Profile (that names a Hermes-side id), the Model menu is Devin's own
-     list — never Hermes's — and its avatar is the runtime's mark. */
+  /* A Devin agent's page (#872): no internals rows at all — no "Runs
+     on", no "Profile", no hired date, no "Now" — the Model menu is
+     Devin's own list, never Hermes's, and the avatar is the runtime's
+     mark. */
   const devinAgent: V3Agent = {
     ...agent,
     id: "emp_devin",
@@ -301,7 +302,7 @@ describe("runs on its own runtime", () => {
     model: "SWE-2 · High",
   };
 
-  test("Runs on Devin, no Profile, Devin's own models", async () => {
+  test("no Runs on or Profile row, Devin's own models", async () => {
     const act_ = actions();
     const { container } = render(
       <V3AgentPage
@@ -311,10 +312,11 @@ describe("runs on its own runtime", () => {
         id="emp_devin"
       />,
     );
-    expect(screen.getByText("Runs on")).toBeTruthy();
-    expect(screen.getByText("Devin")).toBeTruthy();
-    expect(screen.queryByText("acp:devin")).toBeNull();
+    expect(screen.queryByText("Runs on")).toBeNull();
     expect(screen.queryByText("Profile")).toBeNull();
+    expect(screen.queryByText("acp:devin")).toBeNull();
+    expect(screen.queryByText("Now")).toBeNull();
+    expect(screen.queryByText(/hired /)).toBeNull();
     // The runtime's letter and tone, not the agent's own (#872).
     const face = container.querySelector("span[aria-hidden]");
     expect(face?.textContent).toBe("D");
@@ -337,7 +339,7 @@ describe("runs on its own runtime", () => {
     });
   });
 
-  test("a Hermes agent reads Runs on Hermes and keeps its Profile", () => {
+  test("a Hermes agent's page keeps internals off too", () => {
     render(
       <V3AgentPage
         data={data({ agents: two, runtimes: [HERMES, DEVIN] })}
@@ -346,9 +348,15 @@ describe("runs on its own runtime", () => {
         id="emp_1"
       />,
     );
-    expect(screen.getByText("Hermes")).toBeTruthy();
-    expect(screen.getByText("reviewer")).toBeTruthy();
-    expect(screen.getByText("Profile")).toBeTruthy();
+    expect(screen.queryByText("Runs on")).toBeNull();
+    expect(screen.queryByText("Profile")).toBeNull();
+    expect(screen.queryByText("reviewer")).toBeNull();
+    expect(screen.queryByText(/hired /)).toBeNull();
+    // …while the things a person edits are all there.
+    expect(
+      screen.getByRole("button", { name: "Reads every diff" }),
+    ).toBeTruthy();
+    expect(screen.getByLabelText("Instructions")).toBeTruthy();
   });
 
   test("a field the runtime can't write is text; instructions say why", () => {
@@ -437,7 +445,7 @@ describe("remove", () => {
     });
     expect(ask.textContent).toContain("Remove Reviewer from LilOS?");
     expect(ask.textContent).toContain("Reviewer and its 1 thread in LilOS");
-    expect(ask.textContent).toContain("engine profile and CLI login");
+    expect(ask.textContent).toContain("you can add it back any time");
     expect(act_.removeAgent).not.toHaveBeenCalled();
     await act(async () => {
       fireEvent.click(

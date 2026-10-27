@@ -58,8 +58,7 @@ export const claudeSpec: AcpLaunchSpec = {
   agent: {
     id: "claude",
     name: "Claude Code",
-    description:
-      "Claude Code over ACP — Anthropic's official adapter, signed in locally.",
+    description: "Coding agent by Anthropic.",
     detail: { isDefault: true },
   },
   env: {

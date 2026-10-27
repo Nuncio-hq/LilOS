@@ -1016,14 +1016,14 @@ export const ENGINE_PROFILES: V3Profile[] = [
   {
     id: "devin",
     name: "Devin",
-    description: "Devin CLI over ACP — Cognition's agent, signed in locally.",
+    description: "Coding agent by Cognition.",
     skills: 0,
     runtime: "acp:devin",
   },
   {
     id: "claude-code",
     name: "Claude Code",
-    description: "Claude Code over ACP — Anthropic's agent, signed in locally.",
+    description: "Coding agent by Anthropic.",
     skills: 0,
     runtime: "acp:claude",
   },

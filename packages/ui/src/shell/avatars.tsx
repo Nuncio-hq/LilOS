@@ -1,98 +1,35 @@
 import { Avatar, AvatarFallback, AvatarImage } from "../components/ui/avatar";
-import { STATUS_DOT } from "../lib/helpers";
 import { cn } from "../lib/utils";
-import type { Human, Status } from "../types";
+import type { Employee, Human } from "../types";
+import { Avatar as FaceAvatar } from "../v3/v3-marks";
+import { agentTone, runtimeLook } from "../v3/v3-model";
 
-/* An employee's identity: the same soft color orb as the mobile app
-   (packages/ui-native/src/components/orb.tsx) — radial blobs over a base
-   under a glassy highlight. The tone comes from the name so every surface
-   agrees without passing it around (Builder blue, Reviewer violet, Marketer
-   sunset, Default stone — the mobile prototype's picks). */
-const TONES = {
-  blue: ["#3f7ff5", "#4fe3d2", "#7b6cff"],
-  violet: ["#9a5cf0", "#ff6fa8", "#ffb14a"],
-  sunset: ["#f47a3a", "#ffd84d", "#ff5a5f"],
-  mint: ["#2fae8e", "#b6f09a", "#1f7fa8"],
-  rose: ["#e8577a", "#ffc0a8", "#b04ad0"],
-  stone: ["#a79f92", "#cfc6b4", "#8c8478"],
-} as const;
-type Tone = keyof typeof TONES;
-const ORDER = Object.keys(TONES) as Tone[];
-
-/** Name → tone: 31-polynomial hash + murmur3 finalizer; salt 124 lands the seeded names on mobile's tones. */
-export function orbTone(name = ""): Tone {
-  let x = 124;
-  for (const ch of name.toLowerCase())
-    x = (Math.imul(x, 31) + ch.charCodeAt(0)) >>> 0;
-  x ^= x >>> 16;
-  x = Math.imul(x, 0x85ebca6b) >>> 0;
-  x ^= x >>> 13;
-  x = Math.imul(x, 0xc2b2ae35) >>> 0;
-  x ^= x >>> 16;
-  return ORDER[(x >>> 0) % ORDER.length];
-}
-
-export function HermesAvatar({
-  status,
-  name,
+/* An agent's face wherever it appears (#872): the same letter-on-pastel
+   the v3 sidebar and agent page draw — a coding-runtime agent wears its
+   runtime's mark (Devin's "D" on blue), never a grey orb. An unknown id
+   gets the gone-agent "?", not someone else's face. */
+export function EmployeeAvatar({
+  employee: e,
+  size,
   className,
 }: {
-  status?: Status;
-  /* Employee name — picks the orb's tone and labels it. */
-  name?: string;
+  employee: Pick<Employee, "name" | "runtime"> | undefined;
+  size?: number;
   className?: string;
 }) {
-  const [base, a, b] = TONES[orbTone(name)];
-  const working = status === "busy";
+  if (!e)
+    return <FaceAvatar name="?" tone="n" size={size} className={className} />;
+  const mark =
+    e.runtime && e.runtime !== "hermes" && e.runtime !== "default"
+      ? runtimeLook(e.runtime)
+      : undefined;
   return (
-    <span
-      role="img"
-      aria-label={name ?? "Employee"}
-      className={cn("relative inline-block size-9 shrink-0", className)}
-    >
-      {/* Working: a blue arc circles the orb (mobile's ring), instead of a dot. */}
-      {working && (
-        <span
-          data-presence={status}
-          className="lilos-orb-ring absolute -inset-[3px] rounded-full"
-          style={{
-            background:
-              "conic-gradient(from 0deg, var(--work, #007aff) 0 45%, transparent 45%)",
-            mask: "radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px))",
-            WebkitMask:
-              "radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px))",
-          }}
-        />
-      )}
-      <span
-        className="relative block size-full overflow-hidden rounded-full ring-1 ring-white/40 ring-inset"
-        style={{ backgroundColor: base }}
-      >
-        {/* The colour blobs drift slowly, like a lava lamp out of focus. */}
-        <span
-          className="lilos-orb-blobs absolute -inset-1/4"
-          style={{
-            backgroundImage: `radial-gradient(circle closest-side at 62% 70%, ${a}, ${a}00), radial-gradient(circle farthest-side at 30% 62%, ${b}, ${b}00 70%)`,
-          }}
-        />
-        <span
-          className="absolute inset-0"
-          style={{
-            backgroundImage:
-              "radial-gradient(circle farthest-side at 30% 8%, rgba(255,255,255,.45), rgba(255,255,255,0) 55%)",
-          }}
-        />
-      </span>
-      {status && !working && (
-        <span
-          data-presence={status}
-          className={cn(
-            "absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full ring-2 ring-background",
-            STATUS_DOT[status],
-          )}
-        />
-      )}
-    </span>
+    <FaceAvatar
+      name={mark?.label ?? e.name}
+      tone={mark?.tone ?? agentTone(e.name)}
+      size={size}
+      className={className}
+    />
   );
 }
 

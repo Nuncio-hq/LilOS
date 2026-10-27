@@ -1,6 +1,6 @@
 import { UserPlusIcon } from "lucide-react";
 import { Button } from "../components/ui/button";
-import { HermesAvatar } from "../shell/avatars";
+import { EmployeeAvatar } from "../shell/avatars";
 import type { EmpFn, HireDraft } from "../types";
 
 /* The hire-proposal card an employee posts in a channel. Only the signed-in
@@ -27,18 +27,19 @@ export function HireCardInline({
     <div className="mt-1 w-full max-w-xl overflow-hidden rounded-lg border border-violet-300">
       <div className="flex items-center gap-2 bg-violet-50 px-3 py-2 font-medium text-violet-900 text-xs">
         <UserPlusIcon className="size-3.5" />
-        {done ?? `${emp(by)?.name} proposes a hire · only ${me} can approve`}
+        {done ??
+          `${emp(by)?.name} wants to add an agent · only ${me} can approve`}
       </div>
       {!done && (
         <div className="space-y-2 p-3">
           <div className="flex items-center gap-2">
-            <HermesAvatar name={draft.name} className="size-8" />
+            <EmployeeAvatar employee={{ name: draft.name }} size={32} />
             <div>
               <div className="font-semibold">{draft.name}</div>
               <div className="text-muted-foreground text-xs">
                 {draft.role} · {draft.model}
                 {draft.provider ? ` · ${draft.provider}` : ""}
-                {draft.profile ? ` · reusing profile ${draft.profile}` : ""}
+                {draft.profile ? " · existing setup" : ""}
               </div>
             </div>
           </div>
@@ -47,7 +48,7 @@ export function HireCardInline({
           </p>
           <div className="flex gap-1.5">
             <Button size="sm" onClick={onReview}>
-              Review & hire
+              Review & add
             </Button>
             <Button size="sm" variant="ghost" onClick={onReject}>
               Decline

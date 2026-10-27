@@ -18,7 +18,7 @@ import {
 import { useTurnBlockState } from "../lib/block-state";
 import { inline, plural } from "../lib/helpers";
 import { cn } from "../lib/utils";
-import { HermesAvatar } from "../shell/avatars";
+import { EmployeeAvatar } from "../shell/avatars";
 import type { EmpFn, Subagent } from "../types";
 import { StepRow } from "../workbench/step-row";
 
@@ -74,7 +74,7 @@ export function SubagentRow({
     <>
       <span className="grid size-5 shrink-0 place-items-center">
         {helper ? (
-          <HermesAvatar name={helper.name} className="size-5" />
+          <EmployeeAvatar employee={helper} size={20} />
         ) : (
           STATUS_ICON[a.status]
         )}

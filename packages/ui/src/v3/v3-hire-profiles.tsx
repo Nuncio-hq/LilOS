@@ -73,11 +73,6 @@ export function ExistingProfiles({
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[14.5px] text-foreground">
                     {p.name}
-                    {p.id.toLowerCase() !== p.name.toLowerCase() && (
-                      <span className="ml-2 font-mono text-[12.5px] text-muted-foreground">
-                        {p.id}
-                      </span>
-                    )}
                   </span>
                   {p.description && (
                     <span className="block truncate text-[13px] text-muted-foreground">
@@ -177,7 +172,7 @@ function ProfileForm({
       </dl>
       <div className="pt-1">
         <Btn primary onClick={submit}>
-          Hire
+          Add
         </Btn>
       </div>
     </form>

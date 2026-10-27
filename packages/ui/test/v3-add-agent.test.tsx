@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 /* Add agent (#870): the small dialog the ＋ beside Agents and the composer
    menu's "Add agent…" both open — Who? (the engine's hirable profiles plus
-   each runtime `system.status.runtimes` reports), Name, Hire. The model
+   each runtime `system.status.runtimes` reports), Name, Add. The model
    (`hireChoices`) is the roster joined with the runtime report: a profile an
    agent already runs on is never offered, a runtime's own seed profile folds
    into its row, and an unavailable or failed runtime greys instead of
@@ -45,7 +45,7 @@ const profiles: V3Profile[] = [
   {
     id: "devin",
     name: "Devin",
-    description: "Devin CLI over ACP.",
+    description: "Coding agent by Cognition.",
     skills: 0,
     runtime: "acp:devin",
   },
@@ -217,7 +217,7 @@ describe("the dialog", () => {
     expect(box).toHaveProperty("value", "Rex");
   });
 
-  test("Hire on a profile links it; Hire on a runtime creates fresh there", async () => {
+  test("Add on a profile links it; Add on a runtime creates fresh there", async () => {
     const act_ = actions();
     const onHired = vi.fn();
     mount(act_, data(), onHired);
@@ -225,7 +225,7 @@ describe("the dialog", () => {
     await act(async () => {});
     // First pick: the free Hermes profile, linked by id.
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Hire" }));
+      fireEvent.click(screen.getByRole("button", { name: "Add" }));
     });
     expect(act_.hireProfile).toHaveBeenCalledWith({
       profile: "ops",
@@ -236,7 +236,7 @@ describe("the dialog", () => {
     expect(onHired).toHaveBeenCalledWith("emp_new");
   });
 
-  test("Hire on a runtime row lands the hire on that runtime", async () => {
+  test("Add on a runtime row lands the hire on that runtime", async () => {
     const act_ = actions();
     const onHired = vi.fn();
     mount(act_, data(), onHired);
@@ -247,14 +247,14 @@ describe("the dialog", () => {
       target: { value: "Devin Two" },
     });
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Hire" }));
+      fireEvent.click(screen.getByRole("button", { name: "Add" }));
     });
     /* The runtime's seed profile links: the agent hired lands on acp:devin
        running the seed it listed. */
     expect(act_.hireProfile).toHaveBeenCalledWith({
       profile: "devin",
       name: "Devin Two",
-      role: "Devin CLI over ACP.",
+      role: "Coding agent by Cognition.",
       runtime: "acp:devin",
     });
     expect(onHired).toHaveBeenCalledWith("emp_new");
@@ -292,7 +292,7 @@ describe("the dialog", () => {
     expect(screen.getByLabelText("Name")).toHaveProperty("value", "Devin");
   });
 
-  test("while the roster loads, Hire waits — a runtime row would miss its seed", async () => {
+  test("while the roster loads, Add waits — a runtime row would miss its seed", async () => {
     const act_ = actions({
       listProfiles: vi.fn(() => new Promise<V3Profile[]>(() => {})),
     });
@@ -300,13 +300,13 @@ describe("the dialog", () => {
     await screen.findByRole("radiogroup", { name: "Who?" });
     // Runtime rows are already listed (they come from data, not the fetch).
     fireEvent.click(row("Devin"));
-    expect(screen.getByRole("button", { name: "Hire" })).toHaveProperty(
+    expect(screen.getByRole("button", { name: "Add" })).toHaveProperty(
       "disabled",
       true,
     );
   });
 
-  test("a runtime with no seed hires fresh on it", async () => {
+  test("a runtime with no seed adds fresh on it", async () => {
     const act_ = actions();
     mount(
       act_,
@@ -321,7 +321,7 @@ describe("the dialog", () => {
     await act(async () => {});
     fireEvent.click(row("Windsurf"));
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Hire" }));
+      fireEvent.click(screen.getByRole("button", { name: "Add" }));
     });
     expect(act_.hire).toHaveBeenCalledWith({
       name: "Windsurf",
@@ -331,14 +331,14 @@ describe("the dialog", () => {
     });
   });
 
-  test("an empty name cannot hire; Esc closes only the dialog", async () => {
+  test("an empty name cannot add; Esc closes only the dialog", async () => {
     const act_ = actions();
     const { onClose } = mount(act_);
     await screen.findByRole("radiogroup", { name: "Who?" });
     await act(async () => {});
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "" } });
-    const hire = screen.getByRole("button", { name: "Hire" });
-    fireEvent.click(hire);
+    const add = screen.getByRole("button", { name: "Add" });
+    fireEvent.click(add);
     expect(act_.hireProfile).not.toHaveBeenCalled();
     fireEvent.keyDown(window, { key: "Escape" });
     expect(onClose).toHaveBeenCalled();

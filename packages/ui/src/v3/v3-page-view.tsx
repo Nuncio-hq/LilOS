@@ -19,7 +19,7 @@ export const PAGE_NAME: Record<V3PageRoute["page"], string> = {
   threads: "Threads",
   goals: "Goals",
   people: "People",
-  hire: "Hire an agent",
+  hire: "Add an agent",
   guide: "How it works",
   settings: "Settings",
   welcome: "Welcome",

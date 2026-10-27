@@ -2,9 +2,7 @@ import {
   BookOpenIcon,
   ClockIcon,
   CoinsIcon,
-  CpuIcon,
   EllipsisIcon,
-  IdCardIcon,
   PencilIcon,
   PlugIcon,
   SparklesIcon,
@@ -23,15 +21,12 @@ import { RemoveAgent } from "./v3-agent-remove";
 import { RuleSuggestion } from "./v3-agent-rules";
 import { AgentSkills } from "./v3-agent-skills";
 import { AgentWeek } from "./v3-agent-week";
-import { ago, Btn, Meter, Page, Prop, Section, Title } from "./v3-bits";
+import { Btn, Meter, Page, Prop, Section, Title } from "./v3-bits";
 import { useFocusBack, useMenu } from "./v3-keys";
-import { AgentAvatar, Avatar, CeoMark, StatusPill } from "./v3-marks";
+import { AgentAvatar, Avatar, CeoMark } from "./v3-marks";
 import {
   agentOf,
   agentPageFields,
-  agentStatus,
-  agentThread,
-  agentTicket,
   companyOn,
   modelChoicesOf,
   removable,
@@ -46,21 +41,22 @@ import { TitleInput } from "./v3-thread-menu";
 import { ThreadRow } from "./v3-threads-rows";
 import type { V3Agent, V3ConnectorDef } from "./v3-types";
 
-/* One agent, like a person's profile in Notion: what it does, what it runs
-   on, what it has been plugged into, and how far to trust it this week. An
-   outside worker gets the same page minus everything LilOS runs (runtime,
-   model, skills, spend, instructions, notes): LilOS only watches it.
-   What the app cannot tell (runtime, schedule, skills, spend, week)
-   or cannot change (connectors, rules, removing) is left out,
-   never shown as a made-up value or a dead control.
+/* One agent, like a person's profile in Notion: its name, what it is for,
+   the model it thinks with and its standing brief — plus schedules,
+   notifications and its threads. An outside worker gets the same page
+   minus everything LilOS runs (model, skills, spend, instructions, notes):
+   LilOS only watches it. What the app cannot tell or cannot change is left
+   out, never shown as a made-up value or a dead control — and internals
+   (the runtime id, the engine's profile name, the hire date) never show:
+   the runtime speaks through the avatar's look instead (#872).
 
-   There is no edit mode (#872): the name, role, description and
-   instructions each edit in place and save themselves; the model saves
-   the moment it is picked. Fields the agent's runtime cannot write — the
-   ones its engine's `updatable` does not name (D-#761) — render as plain
-   text, and Instructions and Schedules say why they sit read-only or
-   can't fire. Make CEO is the owner's way to move the position (D-#778),
-   including the first time there is no holder yet. */
+   There is no edit mode (#872): the name, description and instructions
+   each edit in place and save themselves; the model saves the moment it
+   is picked. Fields the agent's runtime cannot write — the ones its
+   engine's `updatable` does not name (D-#761) — render as plain text, and
+   Instructions and Schedules say why they sit read-only or can't fire.
+   Make CEO is the owner's way to move the position (D-#778), including
+   the first time there is no holder yet. */
 
 const STATE_WORD: Record<V3ConnectorDef["state"], string> = {
   ready: "Ready",
@@ -90,7 +86,6 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
      fields gate a level deeper, on the owning runtime's `updatable`. */
   const canEdit = !outside && !!act.updateAgent;
   /* One save pipeline per field — each edits and reports on its own. */
-  const roleSave = useFieldSave(act, agent.id);
   const descSave = useFieldSave(act, agent.id);
   const modelSave = useFieldSave(act, agent.id);
   const instrSave = useFieldSave(act, agent.id);
@@ -108,49 +103,30 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
   const via = outside
     ? data.connectors.find((c) => c.id === agent.via)
     : undefined;
-  const status = agentStatus(data, agent.id);
   /* With the company layer paused (D-#836) this page is a person, not a
      team member: no position moves, no reports-to, no ticket it holds, no
      week board or spend — those facts stay in the data. */
   const company = companyOn(data);
-  const current =
-    !company || status === "idle" ? undefined : agentTicket(data, agent.id);
-  const live =
-    status === "idle" || current ? undefined : agentThread(data, agent.id);
   const tickets = company
     ? data.tickets.filter((t) => t.owner === agent.id)
     : [];
   const threads = data.threads.filter((t) => t.agentId === agent.id);
   const ceo = data.agents.find((a) => a.id === data.ceoId);
   const holdsCeo = !!ceo && agent.id === ceo.id;
-  // D-#775: reportsTo names an employee. Absent, or an id that is gone,
-  // means the owner — the profile name, never "You" or a hardcoded one.
-  const manager = agent.reportsTo
-    ? data.agents.find((a) => a.id === agent.reportsTo)
-    : undefined;
-  const reportsTo = company ? `reports to ${manager?.name ?? data.me}` : "";
-  /* The hire dialog seeds the role from the profile's description, so on a
-     real agent they are often the same sentence. Said once: the line under
-     the name keeps it, and the kicker above carries only the rest. */
-  const roleIsDescription =
-    !!agent.description &&
-    agent.role.trim().toLowerCase() === agent.description.trim().toLowerCase();
   const dotted = (...parts: string[]) => parts.filter(Boolean).join(" · ");
-  const hired = `hired ${agent.hired}`;
   const fmt = (n: number) => (Number.isInteger(n) ? `${n}` : n.toFixed(2));
   // The soonest scheduled job that is not paused: Works says when it is due.
   const nextJob = outside
     ? undefined
     : soonestNext(data.schedules.filter((s) => s.agentId === agent.id));
 
-  /* #872 — what the page says about where it runs, and which of its fields
-     the owning runtime lets LilOS write. `rt` absent (no runtimes known)
-     leaves the page in the default engine's world. */
+  /* #872 — the page says what a person needs: a name, what it's for, the
+     model it thinks with, its standing brief. Where it runs is for the
+     avatar's look and the fields its runtime lets LilOS write — never a
+     jargon row ("acp:devin", "Profile: claude", "hired Oct 27" all went).
+     `rt` absent (no runtimes known) leaves the default engine's world. */
   const rt = outside ? undefined : runtimeOf(data, agent);
   const runsOn = outside ? undefined : runtimeLabelOf(data, agent);
-  /* Profile names a Hermes-side id — it would say "default" or "ceo" for a
-     coding runtime's agent, which means nothing there. Hermes only. */
-  const profileIsHermes = rt ? rt.isDefault === true : !data.runtimes?.length;
   const fields = agentPageFields(data, agent);
   const canDescription = canEdit && fields.includes("description");
   const canModel = canEdit && fields.includes("model");
@@ -168,17 +144,6 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
     !outside && agent.notes && act.saveNote ? agent.notes : undefined;
   const skillEditor = !outside && data.skills && act.setAgentSkill;
 
-  const role =
-    roleIsDescription || !canEdit ? null : (
-      <InlineText
-        value={agent.role}
-        placeholder="Add a role"
-        ariaLabel="Role"
-        save={roleSave}
-        onCommit={(v) => void roleSave?.run({ role: v })}
-      />
-    );
-
   return (
     <Page wide>
       <div className="flex items-center gap-4">
@@ -186,23 +151,9 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
         <div className="min-w-0 flex-1">
           <Title
             kicker={
-              outside ? (
-                dotted(
-                  "Outside worker",
-                  `via ${via?.label ?? "a connector"}`,
-                  reportsTo,
-                )
-              ) : (
-                <span className="inline-flex max-w-full flex-wrap items-baseline gap-x-1.5">
-                  {(role || agent.role) && !roleIsDescription ? (
-                    <>
-                      {role ?? agent.role}
-                      <span aria-hidden="true">·</span>
-                    </>
-                  ) : null}
-                  <span>{dotted(reportsTo, hired)}</span>
-                </span>
-              )
+              outside
+                ? dotted("Outside worker", `via ${via?.label ?? "a connector"}`)
+                : undefined
             }
           >
             {renaming && rename ? (
@@ -282,32 +233,6 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
       )}
 
       <div className="mt-3">
-        <Prop icon={<ClockIcon />} label="Now">
-          <StatusPill status={status} />
-          {current ? (
-            <span className="text-foreground">
-              {current.title} ·{" "}
-              <button
-                type="button"
-                onClick={() => go({ page: "ticket", id: current.id })}
-                className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-              >
-                {current.id}
-              </button>{" "}
-              <span className="text-muted-foreground">
-                · {ago(current.since)}
-              </span>
-            </span>
-          ) : live ? (
-            /* The title says what this agent is on. The Threads list below
-               is the one control that opens it (D-#19). */
-            <span className="truncate text-foreground">{live.title}</span>
-          ) : (
-            <span className="text-muted-foreground">
-              {agent.next ?? "Nothing assigned"}
-            </span>
-          )}
-        </Prop>
         {outside ? (
           <Prop icon={<PlugIcon />} label="Reached through">
             {via ? (
@@ -324,28 +249,12 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
             )}
           </Prop>
         ) : (
-          <>
-            {runsOn && (
-              <Prop icon={<CpuIcon />} label="Runs on">
-                {runsOn}
-              </Prop>
-            )}
-            {/* The engine profile this agent runs on, named only where the
-               id means something — Hermes's own profiles (#872). */}
-            {profileIsHermes && agent.profile && (
-              <Prop icon={<IdCardIcon />} label="Profile">
-                <span className="font-mono text-[13px] text-foreground">
-                  {agent.profile}
-                </span>
-              </Prop>
-            )}
-            <ModelProp
-              icon={<SparklesIcon />}
-              agent={agent}
-              choices={modelChoicesOf(data, agent)}
-              save={canModel ? modelSave : undefined}
-            />
-          </>
+          <ModelProp
+            icon={<SparklesIcon />}
+            agent={agent}
+            choices={modelChoicesOf(data, agent)}
+            save={canModel ? modelSave : undefined}
+          />
         )}
         {agent.schedule && (
           <Prop icon={<ClockIcon />} label="Works">
