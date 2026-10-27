@@ -181,6 +181,7 @@ export function ModelChip({
       </span>
     ) : null;
   }
+  const refreshOwn = act.refreshRuntimeModels;
   // Starts on the agent's own model with its default effort (the engine's
   // default when the agent names none), never a past pick.
   const value =
@@ -197,8 +198,18 @@ export function ModelChip({
       onChoice={onPick}
       providers={cat.providers}
       visibility={cat.visibility}
-      onVisibility={act.setModelVisibility}
-      onRefresh={cat.refreshable ? act.refreshModels : undefined}
+      /* Hermes's hide list and refresh belong to Hermes's catalog; a
+         runtime agent's picker re-asks its own runtime (#895). */
+      onVisibility={own ? undefined : act.setModelVisibility}
+      onRefresh={
+        own
+          ? refreshOwn && rt
+            ? () => refreshOwn(rt.id)
+            : undefined
+          : cat.refreshable
+            ? act.refreshModels
+            : undefined
+      }
       open={open}
       onOpenChange={onOpen}
     />

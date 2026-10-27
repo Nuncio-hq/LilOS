@@ -32,7 +32,7 @@ import {
   sessionSignals,
   workbenchRequests,
 } from "../lib/runtime";
-import { sayError } from "../lib/toast";
+import { say, sayError } from "../lib/toast";
 import { engineNeverAsks } from "../settings/state";
 import { modelLabelFor } from "../v3/runtimes";
 import { V3_STATUS } from "../v3/threads";
@@ -298,11 +298,13 @@ export function useThreadWith(
     defaultModel,
     defaultProvider,
     picker,
+    /* The pinned pick, else the session's, else the agent's own default —
+       the chain the picker's `sessionChoice` reads. */
     modelStatic:
-      own && !catalog.length && (conv.model ?? model?.model)
+      own && !catalog.length && (conv.model ?? model?.model ?? employee.model)
         ? modelLabelFor(
             employee.runtime,
-            conv.model ?? model?.model,
+            conv.model ?? model?.model ?? employee.model,
             conv.provider ?? model?.provider,
           )
         : undefined,
@@ -331,6 +333,12 @@ export function useThreadWith(
        (compact rides the engine's own handler until its surface lands). */
     onCommand: (name) => {
       if (name === "model") {
+        /* #895: a runtime whose list hasn't landed still owns `/model` —
+           sending it would hand the agent the literal text as a prompt. */
+        if (!catalog.length && own) {
+          say(`${agentDisplayName(employee)}'s model list hasn't loaded yet`);
+          return true;
+        }
         if (!catalog.length) return false;
         setModelOpenFor(conv.id);
         return true;

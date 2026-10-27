@@ -117,6 +117,9 @@ export type V3Actions = {
   /** Re-reads the engine's model catalog; rejects when it failed (the app has
      already said why). Present only where `modelCatalog.refreshable`. */
   refreshModels?: () => Promise<void>;
+  /** Re-reads one non-default runtime's own catalog (#895); rejects when it
+     failed (the app has already said why). */
+  refreshRuntimeModels?: (runtime: string) => Promise<void>;
   /** "New project from a folder…": the app asks for a folder (its own
      dialog), makes a project of it (a folder that already has one answers
      that project) and calls `onCreated` with its id once it is in

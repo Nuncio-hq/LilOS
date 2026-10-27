@@ -169,6 +169,30 @@ describe("the new chat's Model chip follows the selected agent (#872)", () => {
     expect(within(pop).queryByText("Sonnet 5")).toBeNull();
   });
 
+  test("a Devin agent's picker has no Edit models (Hermes's list) and refreshes Devin's own catalog (#895)", async () => {
+    const refreshRuntimeModels = vi.fn(async () => {});
+    const act0 = {
+      ...actions(),
+      setModelVisibility: vi.fn(),
+      refreshModels: vi.fn(async () => {}),
+      refreshRuntimeModels,
+    } as unknown as V3Actions;
+    render(<V3DraftChat data={data()} go={vi.fn()} act={act0} id="devin" />);
+    await act(async () => {
+      fireEvent.click(trigger()!);
+    });
+    const pop = await screen.findByLabelText("Model", {
+      selector: "[data-slot=popover-content]",
+    });
+    expect(within(pop).queryByText("Edit models…")).toBeNull();
+    await act(async () => {
+      fireEvent.click(within(pop).getByText("Refresh models"));
+    });
+    const devinRt = data().runtimes?.find((r) => !r.isDefault)?.id;
+    expect(refreshRuntimeModels).toHaveBeenCalledWith(devinRt);
+    expect(act0.refreshModels).not.toHaveBeenCalled();
+  });
+
   test("switching the agent switches the catalog and the start model", async () => {
     render(
       <V3DraftChat data={data()} go={vi.fn()} act={actions()} id="devin" />,
