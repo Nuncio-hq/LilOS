@@ -25,6 +25,14 @@ export const NEW_PROJECT_COPY = {
   add: "Create project",
 };
 
+/* With the company layer paused (D-#836) there are no tickets for a key to
+   prefix and no key on screen to explain — the hint just says what the
+   pick is (#854). */
+export const NEW_PROJECT_PAUSED_COPY = {
+  ...NEW_PROJECT_COPY,
+  hint: "Pick a folder for this project",
+};
+
 /** The ticket key a project name suggests: its letters, uppercased —
     "journal-app" → "JOU". The caller still dedupes (two projects can both
     want "JO"). */
@@ -46,6 +54,7 @@ export function AddFolderDialog({
   copy,
   projectFields,
   folder,
+  company = true,
 }: {
   folders: Folder[];
   /* Project targets (prototype #18). Absent = plain "add a folder"
@@ -71,6 +80,10 @@ export function AddFolderDialog({
      and key show prefilled from it and stay editable, and onAdd carries
      them. Absent: the folder is added as picked. */
   projectFields?: boolean;
+  /* The company layer is on (D-#836): the key field and the ticket words
+     show. Paused, both stay off and the key derives from the name silently
+     — onAdd still carries it. */
+  company?: boolean;
   /* Pre-picked path (a chat's "Add as project" opens on the folder the
      chat already runs in). */
   folder?: string;
@@ -330,7 +343,12 @@ export function AddFolderDialog({
               <div className="mb-1.5 text-muted-foreground text-xs">
                 Project
               </div>
-              <div className="grid items-end gap-3 sm:grid-cols-[1fr_7rem]">
+              <div
+                className={cn(
+                  "grid items-end gap-3",
+                  company && "sm:grid-cols-[1fr_7rem]",
+                )}
+              >
                 <div>
                   <div className="mb-1 text-muted-foreground text-[11px]">
                     Name
@@ -345,29 +363,35 @@ export function AddFolderDialog({
                     className="h-8 text-sm"
                   />
                 </div>
-                <div>
-                  <div className="mb-1 text-muted-foreground text-[11px]">
-                    Key
+                {/* Paused (D-#836): no Key field — fieldKey already derives
+                    from the name on its own, and onAdd carries it. */}
+                {company && (
+                  <div>
+                    <div className="mb-1 text-muted-foreground text-[11px]">
+                      Key
+                    </div>
+                    <Input
+                      value={fieldKey}
+                      onChange={(e) =>
+                        setKeyEdit({
+                          for: clean,
+                          v: e.target.value.toUpperCase(),
+                        })
+                      }
+                      spellCheck={false}
+                      data-projectkey
+                      className="h-8 font-mono text-sm"
+                    />
                   </div>
-                  <Input
-                    value={fieldKey}
-                    onChange={(e) =>
-                      setKeyEdit({
-                        for: clean,
-                        v: e.target.value.toUpperCase(),
-                      })
-                    }
-                    spellCheck={false}
-                    data-projectkey
-                    className="h-8 font-mono text-sm"
-                  />
-                </div>
+                )}
               </div>
-              <p className="mt-1.5 text-muted-foreground text-[11px] leading-4">
-                The key prefixes the project&apos;s tickets, like{" "}
-                {fieldKey || "KEY"}
-                -12. Both stay editable; the folder is what the project is.
-              </p>
+              {company && (
+                <p className="mt-1.5 text-muted-foreground text-[11px] leading-4">
+                  The key prefixes the project&apos;s tickets, like{" "}
+                  {fieldKey || "KEY"}
+                  -12. Both stay editable; the folder is what the project is.
+                </p>
+              )}
             </div>
           )}
 
@@ -427,8 +451,11 @@ export function AddFolderDialog({
         <div className="flex flex-wrap items-center gap-2 border-t px-5 py-3">
           {/* #581 AC-3: the footer names the folder being added, never the
               wire call — no `folders.add {…}` JSON-RPC on screen. */}
+          {/* rtl truncates from the left: the pick's own name is the part
+              worth keeping on screen (the crumbs above carry the rest). */}
           <span
-            className="min-w-0 flex-1 basis-60 truncate font-mono text-[11px] text-muted-foreground"
+            className="min-w-0 flex-1 basis-60 truncate text-left font-mono text-[11px] text-muted-foreground"
+            dir="rtl"
             title={clean !== "~" ? clean : undefined}
           >
             {clean !== "~" ? clean : ""}

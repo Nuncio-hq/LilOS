@@ -16,7 +16,11 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { Composer } from "../src/chat/composer";
-import { AddFolderDialog } from "../src/dialogs/add-folder-dialog";
+import {
+  AddFolderDialog,
+  NEW_PROJECT_COPY,
+  NEW_PROJECT_PAUSED_COPY,
+} from "../src/dialogs/add-folder-dialog";
 import { FocusView } from "../src/focus/focus-view";
 import { SessionUsage } from "../src/focus/session-usage";
 import { StatusDialog } from "../src/shell/status";
@@ -234,6 +238,66 @@ describe("issue #581 — folders", () => {
       (r.container.querySelector("[data-addbtn]") as HTMLButtonElement)
         .disabled,
     ).toBe(false);
+  });
+
+  test("#854 paused (D-#836): no Key field or ticket words — the name still drives the key", () => {
+    const fs = {
+      "~": { children: ["code"] },
+      "~/code": {
+        children: [],
+        git: { branches: ["main"], remote: "o/app" },
+      },
+    };
+    const onAdd = vi.fn();
+    const r = render(
+      <AddFolderDialog
+        folders={[]}
+        projectFields
+        company={false}
+        copy={NEW_PROJECT_PAUSED_COPY}
+        fs={fs}
+        discovered={[]}
+        onClose={() => {}}
+        onAdd={onAdd}
+      />,
+    );
+    fireEvent.click(r.container.querySelector('[data-fsrow="code"]')!);
+    // The name prefills from the folder; no key field, no "key prefixes the
+    // tickets" line, and the footer path truncates from the left (rtl).
+    expect(
+      (r.container.querySelector("[data-projectname]") as HTMLInputElement)
+        .value,
+    ).toBe("code");
+    expect(r.container.querySelector("[data-projectkey]")).toBeNull();
+    expect(r.container.textContent).not.toContain("prefixes");
+    expect(r.container.textContent).toContain("Pick a folder for this project");
+    expect(r.container.querySelector("span[dir='rtl']")).not.toBeNull();
+    // onAdd still carries the key — derived from the name, never asked for.
+    fireEvent.click(r.container.querySelector("[data-addbtn]")!);
+    expect(onAdd).toHaveBeenCalledWith("~/code", {
+      name: "code",
+      key: "COD",
+    });
+    r.unmount();
+    /* The company layer shows the key back: the field and its words are
+       the default, for the app where tickets exist. */
+    const on = render(
+      <AddFolderDialog
+        folders={[]}
+        projectFields
+        copy={NEW_PROJECT_COPY}
+        fs={fs}
+        discovered={[]}
+        onClose={() => {}}
+        onAdd={() => {}}
+      />,
+    );
+    fireEvent.click(on.container.querySelector('[data-fsrow="code"]')!);
+    expect(
+      (on.container.querySelector("[data-projectkey]") as HTMLInputElement)
+        .value,
+    ).toBe("COD");
+    expect(on.container.textContent).toContain("prefixes");
   });
 });
 

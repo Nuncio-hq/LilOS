@@ -25,7 +25,8 @@ import {
  * thread under the deepest project containing its folder — never creating
  * one itself. `projects.create`/`projects.remove` are the only ways in or
  * out, and removing detaches: threads become chats, the folder is
- * untouched.
+ * untouched. The stack runs paused (LILOS_COMPANY=0, D-#836) — Oscar's
+ * daily view; the new-project dialog's key field is company-only there.
  *
  *   AC-1 a folder-less thread is a plain chat; one opened in an uncovered
  *        folder is still a chat — its folder shows, and its badge offers
@@ -33,8 +34,9 @@ import {
  *   AC-2 Message on an agent opens the draft beside the page; sending turns
  *        that same peek into the thread (no extra step on the trail).
  *   AC-3 the sidebar's ＋ opens the folder picker with the project's name
- *        and key prefilled (editable); creating it adopts the chats already
- *        running in that folder.
+ *        prefilled and editable — the key derives silently (no tickets in a
+ *        paused app) — and creating it adopts the chats already running in
+ *        that folder.
  *   AC-4 a chat's folder badge offers "Add as project" — the same dialog,
  *        pre-picked to the folder the chat already runs in.
  *   AC-5 a project row's ⋯ → Remove project detaches only the record: its
@@ -66,7 +68,11 @@ let gammaChat = "";
 let stack: Stack;
 test.beforeAll(async () => {
   test.setTimeout(120_000);
-  stack = await bootStack("ac771", await pickPorts());
+  /* Paused — Oscar's daily view (D-#836): the evidence below is the app
+     the way he runs it, not the company layer the suite defaults to. */
+  stack = await bootStack("ac771", await pickPorts(), {
+    LILOS_COMPANY: "0",
+  });
   mkdirSync(path.join(stack.home, "repos"), { recursive: true });
   ROOT = mkdtempSync(path.join(stack.home, "repos", "lilos-771-"));
   alpha = path.join(ROOT, "lilos-alpha");
@@ -150,6 +156,13 @@ test("AC-1 a chat in a folder no project covers is a plain chat — folder shown
   await expect(
     side.getByRole("button", { name: "New project from a folder" }),
   ).toBeVisible();
+  /* This is the paused app (D-#836): the company layer's nav never drew —
+     no Work, Goals, Inbox, People, "Hire an agent", no company label. */
+  for (const name of ["Work", "Goals", "Inbox", "People", "Hire an agent"])
+    await expect(
+      side.getByRole("button", { name: new RegExp(`^${name}`) }),
+    ).toHaveCount(0);
+  await expect(side.locator("[data-company-label]")).toHaveCount(0);
   // A chat with no folder: plain Chat, no folder badge.
   await startChat(page, stack.webUrl, DEFAULT_AGENT, "just talking");
   await expect(trail(page)).toContainText(`${DEFAULT_AGENT.name} · Chat`, {
@@ -226,7 +239,8 @@ test("AC-3 the sidebar ＋ opens the folder picker — name and key prefilled, e
   });
 
   /* The ＋ beside Projects opens the folder picker; the picked folder's
-     name and key prefill and stay editable (D-#854). */
+     name prefills and stays editable (D-#854). Paused, the key derives
+     from the name silently — no Key field, no ticket words (D-#836). */
   await v3Sidebar(page)
     .getByRole("button", { name: "New project from a folder" })
     .click();
@@ -234,14 +248,21 @@ test("AC-3 the sidebar ＋ opens the folder picker — name and key prefilled, e
     name: "New project from a folder",
   });
   await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText("Pick a folder for this project");
   await dialog.locator("[data-pathinput]").fill(beta);
   await expect(dialog.locator("[data-folderinfo]")).toContainText("Git repo", {
     timeout: 30_000,
   });
-  await expect(dialog.locator("[data-projectname]")).toHaveValue("lilos-beta");
-  await expect(dialog.locator("[data-projectkey]")).toHaveValue("LIL");
-  // Editable: a key the company already wants different stays edited.
-  await dialog.locator("[data-projectkey]").fill("BTA");
+  const nameBox = dialog.locator("[data-projectname]");
+  await expect(nameBox).toHaveValue("lilos-beta");
+  // Editable — but the Key field and its ticket words never drew.
+  await nameBox.fill("lilos-beta 2");
+  await expect(nameBox).toHaveValue("lilos-beta 2");
+  await nameBox.fill("lilos-beta");
+  await expect(dialog.locator("[data-projectkey]")).toHaveCount(0);
+  await expect(dialog).not.toContainText("prefixes");
+  // The footer's path truncates from the left — the crumbs already name it.
+  await expect(dialog.locator("[dir='rtl']").first()).toBeVisible();
   await shoot(page, "ac-3-new-project-dialog");
   await dialog.getByRole("button", { name: "Create project" }).click();
   await expect(dialog).toHaveCount(0);
@@ -251,6 +272,13 @@ test("AC-3 the sidebar ＋ opens the folder picker — name and key prefilled, e
   const side = v3Sidebar(page);
   const row = side.getByRole("button", { name: "lilos-beta", exact: true });
   await expect(row).toBeVisible({ timeout: 30_000 });
+  /* The key still got made — derived from the name, never asked for. */
+  const { projects } = await relayRpc<{
+    projects: { key: string; folder: string }[];
+  }>(page, stack, "projects.list", {});
+  expect(projects.find((p) => p.folder.endsWith("lilos-beta"))?.key).toBe(
+    "LIL",
+  );
   /* Creating it opened the project page (the peek closed) — reopen the
      chat; its trail now names the project it filed under (D-#854). */
   await page.goto(threadUrl(stack.webUrl, betaChat));
@@ -289,18 +317,21 @@ test("AC-4 a chat's folder badge offers Add as project — same dialog, pre-pick
   await settled(page);
 
   /* The badge's menu row opens the project dialog already picked to the
-     chat's own folder (D-#854) — name and key prefilled, one Add. */
+     chat's own folder (D-#854) — name prefilled, one Add. Paused: the key
+     stays off this dialog too (D-#836). */
   await panel(page).locator("[data-wsbadge]").click();
   await page.getByRole("menuitem", { name: "Add as project" }).click();
   const dialog = page.getByRole("dialog", {
     name: "New project from a folder",
   });
   await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText("Pick a folder for this project");
   await expect(dialog.locator("[data-pathinput]")).not.toHaveValue("");
   await expect(dialog.locator("[data-folderinfo]")).toContainText("Git repo", {
     timeout: 30_000,
   });
   await expect(dialog.locator("[data-projectname]")).toHaveValue("lilos-gamma");
+  await expect(dialog.locator("[data-projectkey]")).toHaveCount(0);
   await shoot(page, "ac-4-add-as-project-dialog");
   await dialog.getByRole("button", { name: "Create project" }).click();
   await expect(dialog).toHaveCount(0);
@@ -374,7 +405,12 @@ test("AC-6 after a restart the projects and the chats are filed as before; nothi
   await stack.stop({ keepHome: true });
   // Fresh ports. Rebinding the ports the stopped stack just released is
   // the pick-then-bind gap (#825); the page loads the new origin below.
-  stack = await bootStack("ac771", await pickPorts(), {}, { home });
+  stack = await bootStack(
+    "ac771",
+    await pickPorts(),
+    { LILOS_COMPANY: "0" },
+    { home },
+  );
   await page.goto(`${stack.webUrl}/`);
   const side = v3Sidebar(page);
   // lilos-beta survives; lilos-gamma stayed removed; nothing re-filed.

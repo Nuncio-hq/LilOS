@@ -1,8 +1,13 @@
-import { AddFolderDialog, NEW_PROJECT_COPY } from "@lilos/ui";
+import {
+  AddFolderDialog,
+  NEW_PROJECT_COPY,
+  NEW_PROJECT_PAUSED_COPY,
+} from "@lilos/ui";
 import { atom } from "nanostores";
 import { useMemo } from "react";
 import { createPortal } from "react-dom";
 import { toastOnFail } from "../lib/actions";
+import { appConfig } from "../lib/config";
 import {
   addFolder as addToRecents,
   discovered,
@@ -59,6 +64,10 @@ export function addFolderAsProject(folder: string): void {
     ancestor would otherwise pin it to its own box. */
 export function AddFolderHost() {
   const ask = useAtom(asking);
+  /* D-#836: the company layer's flag rides the boot config the v3 data
+     store reads. Paused, the dialog keeps the ticket key off the table —
+     it derives from the name and still reaches projects.create. */
+  const company = useAtom(appConfig)?.company === true;
   const recents = useAtom(folders);
   const fsListing = useAtom(fsRows);
   const discoveredRows = useAtom(discovered);
@@ -75,7 +84,8 @@ export function AddFolderHost() {
       // Nothing is "already added" here: a folder that has a project simply
       // answers it (`projects.create` returns the one it has).
       folders={[]}
-      copy={NEW_PROJECT_COPY}
+      copy={company ? NEW_PROJECT_COPY : NEW_PROJECT_PAUSED_COPY}
+      company={company}
       projectFields
       folder={ask.folder}
       fs={fsListing}
