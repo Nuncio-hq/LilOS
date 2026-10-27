@@ -23,12 +23,15 @@ import { RemoveAgent } from "./v3-agent-remove";
 import { RuleSuggestion } from "./v3-agent-rules";
 import { AgentSkills } from "./v3-agent-skills";
 import { AgentWeek } from "./v3-agent-week";
-import { Btn, Meter, Page, Prop, Section, Title } from "./v3-bits";
+import { ago, Btn, Meter, Page, Prop, Section, Title } from "./v3-bits";
 import { useFocusBack, useMenu } from "./v3-keys";
-import { AgentAvatar, Avatar, CeoMark } from "./v3-marks";
+import { AgentAvatar, Avatar, CeoMark, StatusPill } from "./v3-marks";
 import {
   agentOf,
   agentPageFields,
+  agentStatus,
+  agentThread,
+  agentTicket,
   companyOn,
   effortLadderOf,
   modelChoicesOf,
@@ -111,12 +114,32 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
      team member: no position moves, no reports-to, no ticket it holds, no
      week board or spend — those facts stay in the data. */
   const company = companyOn(data);
+  /* The ticket-mode "Now" row (company layer only — the paused layer's page
+     has no idle row, #872): what it is on, from the ticket or the live
+     thread, else what it is next to do. */
+  const status = agentStatus(data, agent.id);
+  const current =
+    !company || status === "idle" ? undefined : agentTicket(data, agent.id);
+  const live =
+    status === "idle" || current ? undefined : agentThread(data, agent.id);
   const tickets = company
     ? data.tickets.filter((t) => t.owner === agent.id)
     : [];
   const threads = data.threads.filter((t) => t.agentId === agent.id);
   const ceo = data.agents.find((a) => a.id === data.ceoId);
   const holdsCeo = !!ceo && agent.id === ceo.id;
+  // D-#775: reportsTo names an employee. Absent, or an id that is gone,
+  // means the owner — the profile name, never "You" or a hardcoded one.
+  // Company layer only: the paused layer has no org to report into.
+  const manager = agent.reportsTo
+    ? data.agents.find((a) => a.id === agent.reportsTo)
+    : undefined;
+  const reportsTo = company ? `reports to ${manager?.name ?? data.me}` : "";
+  /* The role line (company layer): the hire dialog seeds the role from the
+     profile's description, so said once — the description line keeps it. */
+  const roleIsDescription =
+    !!agent.description &&
+    agent.role.trim().toLowerCase() === agent.description.trim().toLowerCase();
   const dotted = (...parts: string[]) => parts.filter(Boolean).join(" · ");
   const fmt = (n: number) => (Number.isInteger(n) ? `${n}` : n.toFixed(2));
   // The soonest scheduled job that is not paused: Works says when it is due.
@@ -160,8 +183,15 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
           <Title
             kicker={
               outside
-                ? dotted("Outside worker", `via ${via?.label ?? "a connector"}`)
-                : undefined
+                ? dotted(
+                    "Outside worker",
+                    `via ${via?.label ?? "a connector"}`,
+                    reportsTo,
+                  )
+                : company
+                  ? dotted(roleIsDescription ? "" : agent.role, reportsTo) ||
+                    undefined
+                  : undefined
             }
           >
             {renaming && rename ? (
@@ -241,6 +271,32 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
       )}
 
       <div className="mt-3">
+        {company && (
+          <Prop icon={<ClockIcon />} label="Now">
+            <StatusPill status={status} />
+            {current ? (
+              <span className="text-foreground">
+                {current.title} ·{" "}
+                <button
+                  type="button"
+                  onClick={() => go({ page: "ticket", id: current.id })}
+                  className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                >
+                  {current.id}
+                </button>{" "}
+                <span className="text-muted-foreground">
+                  · {ago(current.since)}
+                </span>
+              </span>
+            ) : live ? (
+              <span className="truncate text-foreground">{live.title}</span>
+            ) : (
+              <span className="text-muted-foreground">
+                {agent.next ?? "Nothing assigned"}
+              </span>
+            )}
+          </Prop>
+        )}
         {outside ? (
           <Prop icon={<PlugIcon />} label="Reached through">
             {via ? (

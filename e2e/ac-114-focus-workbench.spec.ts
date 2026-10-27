@@ -442,7 +442,7 @@ test("AC-5 the PR tab reads checks + comments through forge.pr; comment and merg
     page.getByText("GitHub isn't signed in on this machine", { exact: false }),
   ).toBeVisible({ timeout: 15_000 });
   await expect(
-    page.getByText(/Ask Default to sign in, then Retry/, { exact: false }),
+    page.getByText(/Ask Hermes to sign in, then Retry/, { exact: false }),
   ).toBeVisible();
   // No copyable command chip anywhere (#579): a grep over the panel finds
   // nothing that looks like a typed command.

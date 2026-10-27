@@ -56,8 +56,12 @@ const ALLOW: Record<
     why: "company-mode first-run copy",
   },
   "packages/ui/src/v3/v3-hire.tsx": {
-    words: ["CEO"],
+    words: ["CEO", "hire"],
     why: "Hire page",
+  },
+  "packages/ui/src/v3/v3-hire-profiles.tsx": {
+    words: ["hire"],
+    why: "Hire page's existing-profiles section",
   },
   "packages/ui/src/v3/v3-guide.tsx": {
     words: ["CEO"],
@@ -91,6 +95,14 @@ const ALLOW: Record<
     words: ["CEO"],
     strings: ["the CEO"],
     why: "the company-gated fallback chip's fixed part",
+  },
+  "packages/ui/src/v3/v3-page-view.tsx": {
+    words: ["hire"],
+    why: "the Hire page's title",
+  },
+  "packages/ui/src/v3/v3-sidebar.tsx": {
+    words: ["hire"],
+    why: "the company-gated Hire button",
   },
   "packages/ui/src/v3/v3-ticket.tsx": {
     words: ["CEO"],

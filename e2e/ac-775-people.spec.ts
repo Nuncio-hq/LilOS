@@ -174,10 +174,11 @@ test("editing instructions persists, and the next thread's session starts on tha
     const sentence = "You answer the people page in one short sentence.";
     const agent = await openDefaultAgent(page, stack.webUrl);
     const peek = v3Peek(page);
-    await peek.getByRole("button", { name: "Edit" }).click();
-    await peek.getByRole("textbox", { name: "Instructions" }).fill(sentence);
-    await peek.getByRole("button", { name: "Save" }).click();
-    await expect(peek.getByRole("button", { name: "Edit" })).toBeVisible();
+    // #872: instructions edit in place and save when the field loses focus.
+    const box = peek.getByRole("textbox", { name: "Instructions" });
+    await box.fill(sentence);
+    await box.blur();
+    await expect(peek.getByText("Saved", { exact: true })).toBeVisible();
 
     await page.reload();
     await expect(v3Peek(page)).toContainText(sentence);

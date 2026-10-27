@@ -180,7 +180,7 @@ describe("hire from an existing profile", () => {
       target: { value: "Operator" },
     });
     // A second click while the first is in flight hires once.
-    const hire = screen.getByRole("button", { name: "Add" });
+    const hire = screen.getByRole("button", { name: "Hire" });
     fireEvent.click(hire);
     fireEvent.click(hire);
     await waitFor(() => expect(go).toHaveBeenCalledTimes(2));
@@ -213,11 +213,17 @@ describe("hire from an existing profile", () => {
     }
   });
 
-  /* #872 — internals never render: no Profile row, no "Runs on", no hire
-     date, no "Now" — whichever profile the agent runs. */
+  /* #872 — internals never render on the agent's page: no Profile row, no
+     "Runs on", no hire date, no idle "Now" — whichever profile the agent
+     runs. (The paused company layer keeps its ticket-mode "Now" row.) */
   test("the agent's page never shows internals", () => {
     render(
-      <V3AgentPage data={data()} go={vi.fn()} act={actions()} id="emp_1" />,
+      <V3AgentPage
+        data={data({ features: { company: false, tickets: false } })}
+        go={vi.fn()}
+        act={actions()}
+        id="emp_1"
+      />,
     );
     expect(screen.queryByText("Profile")).toBeNull();
     expect(screen.queryByText("reviewer")).toBeNull();

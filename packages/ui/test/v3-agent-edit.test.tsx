@@ -350,7 +350,11 @@ describe("runs on its own runtime", () => {
     const act_ = actions();
     const { container } = render(
       <V3AgentPage
-        data={data({ agents: [devinAgent, other], runtimes: [HERMES, DEVIN] })}
+        data={data({
+          agents: [devinAgent, other],
+          runtimes: [HERMES, DEVIN],
+          features: { company: false, tickets: false },
+        })}
         go={vi.fn()}
         act={act_}
         id="emp_devin"

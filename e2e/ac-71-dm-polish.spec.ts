@@ -88,20 +88,17 @@ test("AC-1 tool events render once — as the tool cards inside the turn", async
   await page.screenshot({ path: `${SHOTS}/ac-1-tool-cards.png` });
 });
 
-test("AC-2 employee avatars render as colour orbs; no image on the page is broken", async ({
+test("AC-2 employee avatars render as the agent's coloured letter; no image on the page is broken", async ({
   page,
 }) => {
   await chatDefault(page, "Say hello then list files");
-  // #224 orb design: an employee avatar is a tone-shifted colour orb
-  // (role=img + the name as its label), not a file <img>. v3 draws it on the
-  // employee's turn in the thread; the shell's own chrome (sidebar, Threads
-  // cards, People) uses the letter chip instead, so the orb is asserted where
-  // it lives. The broken-image check still guards any <img> the page renders.
-  const orbs = page.locator(
-    '[data-thread-panel] [role="img"]:has(.lilos-orb-blobs)',
-  );
-  await expect(orbs.first()).toBeVisible({ timeout: 30_000 });
-  await expect(orbs.first()).toHaveAttribute("aria-label", AGENT.name);
+  // #872: one face everywhere — an agent is its initial on a stable pastel
+  // (the same chip the sidebar and the agent page draw), not a file <img>
+  // and no longer a gradient orb. It sits on the agent's turn in the thread.
+  const faces = page
+    .locator('[data-thread-panel] span[aria-hidden="true"].rounded-full')
+    .filter({ hasText: new RegExp(`^${AGENT.name.slice(0, 1)}$`) });
+  await expect(faces.first()).toBeVisible({ timeout: 30_000 });
   expect(await brokenImages(page)).toEqual([]);
   await page.screenshot({ path: `${SHOTS}/ac-2-avatars.png` });
 });

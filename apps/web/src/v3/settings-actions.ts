@@ -1,5 +1,6 @@
 import { RelayError } from "@lilos/client-runtime";
 import { pairingUrl, type V3DataActions } from "@lilos/ui";
+import { agentDisplayName } from "@lilos/ui/v3-data";
 import {
   setApprovalPolicy,
   setDefaultAccess,
@@ -70,7 +71,12 @@ async function firstAgent(name: string | undefined, label: string | undefined) {
     );
     return;
   }
-  const rename = name && name !== first.name ? { name } : {};
+  /* The field opens on the name people SEE ("Hermes" for the stock seed,
+     #872) — leaving it as shown is not a rename; the record keeps "Default". */
+  const rename =
+    name && name !== first.name && name !== agentDisplayName(first)
+      ? { name }
+      : {};
   const pin = pick ? { model: pick.model } : {};
   if (Object.keys(rename).length + Object.keys(pin).length > 0)
     await relay.updateEmployee(first.id, { ...rename, ...pin });

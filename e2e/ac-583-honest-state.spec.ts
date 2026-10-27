@@ -124,7 +124,7 @@ test("AC-1+#586 the composer names the employee, then says it's waiting for Osca
   await expect(openCard(page).first()).toBeVisible({ timeout: 60_000 });
   await expect(box).toHaveAttribute(
     "placeholder",
-    /Default is waiting for your approval/,
+    /Hermes is waiting for your approval/,
   );
   await expect(box).not.toHaveAttribute("placeholder", /working/i);
   await page.screenshot({ path: `${SHOTS}/ac-1-waiting-composer.png` });
