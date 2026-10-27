@@ -1,6 +1,6 @@
 import type { Conversation, ConversationLife } from "@lilos/contracts/app";
 import type { EventsSinceResult } from "@lilos/contracts/engine";
-import { expandPath } from "@lilos/host";
+import { expandPath, HostError } from "@lilos/host";
 import {
   engineErrorCode,
   RESUME_AWARE_TIMEOUT_MS,
@@ -14,6 +14,7 @@ import {
 import type { ReaperCandidate } from "../reaper";
 import { employeeHoldsCeo } from "./ceo-session";
 import type { HarnessCtx, SessionBinding } from "./ctx";
+import { goneBranchNote } from "./worktree-cleanup";
 
 /**
  * Session binding: create on first send, the #346 idle reaper's
@@ -207,6 +208,38 @@ export async function bindConversation(
     : await this.resolveEmployee(conv);
   const runtime =
     storedRef?.runtime ?? normalizeRuntime(bindingEmployee?.runtime);
+  /* D-#881: the worktree must exist before ANY session path — a `new`
+     workstream's first `session.start`, AND a reattach whose thread's
+     copy the settled cleanup took while it slept (un-settle or a fresh
+     message re-materializes it from the branch first). A branch the
+     cleanup deleted post-merge reads as "gone" — the thread hears that
+     instead of a bare git error. Either failure leaves the thread idle
+     with a system note; the held message re-delivers on next register. */
+  if (conv.workspace) {
+    try {
+      await this.ensureWorktree(conv);
+    } catch (error) {
+      const gone =
+        error instanceof HostError &&
+        (error.data as { reason?: string } | undefined)?.reason === "gone";
+      this.opts.log.error("worktree materialize failed", {
+        conversationId: conv.id,
+        error: String(error),
+      });
+      /* The dedupe key carries the settle stamp — a later cycle's note
+         is its own incident; the un-settle restore posts under the same
+         key so a re-bind never doubles the note. */
+      await this.postSystem(
+        { channelId, conversationId: conv.id },
+        gone
+          ? await goneBranchNote(conv.workspace.repoPath, conv.workspace.branch)
+          : `Couldn't create worktree ${conv.workspace.branch} — ${error instanceof Error ? error.message : String(error)}`,
+        `sys:${conv.id}:worktree:${this.worktreeCleaned.get(conv.id) ?? 0}`,
+      );
+      return undefined;
+    }
+  }
+
   const conn = await this.ensureRuntime(runtime);
   if (!conn) return undefined;
   /* #459: named e2e probe — park the whole bind so "surface session
@@ -288,27 +321,6 @@ export async function bindConversation(
       return binding;
     } catch (error) {
       if (engineErrorCode(error) !== SESSION_NOT_FOUND) throw error;
-    }
-  }
-
-  /* A workstream open (#156 mode "new") materializes its worktree before
-     the first `session.start`; a failure leaves the thread idle with a
-     system note rather than starting the session in the wrong folder.
-     The held message re-delivers on the next register (pending list). */
-  if (conv.workspace?.mode === "new") {
-    try {
-      await this.ensureWorktree(conv);
-    } catch (error) {
-      this.opts.log.error("worktree creation failed", {
-        conversationId: conv.id,
-        error: String(error),
-      });
-      await this.postSystem(
-        { channelId, conversationId: conv.id },
-        `Couldn't create worktree ${conv.workspace.branch} — ${error instanceof Error ? error.message : String(error)}`,
-        `sys:${conv.id}:worktree`,
-      );
-      return undefined;
     }
   }
 

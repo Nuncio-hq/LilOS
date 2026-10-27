@@ -121,6 +121,10 @@ export const ForgePrListItem = z.object({
   /** GitHub draft flag — open + draft renders gray, not green. */
   draft: z.boolean(),
   head: z.string().min(1),
+  /* D-#881: the PR head's commit (`headRefOid`) — the settled worktree
+     cleanup proves a squash merge by comparing it to the local tip.
+     Absent on pre-#881 hosts. */
+  headOid: z.string().optional(),
   base: z.string().min(1),
   /** ISO 8601 (`createdAt`). */
   openedAt: z.string(),

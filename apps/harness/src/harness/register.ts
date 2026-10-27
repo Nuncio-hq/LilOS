@@ -1,5 +1,6 @@
 import {
   APP_PROTOCOL_VERSION,
+  type Conversation,
   type PendingTurn,
   type TaskWakeEvent,
 } from "@lilos/contracts/app";
@@ -46,6 +47,27 @@ export async function onRelayReady(this: HarnessCtx): Promise<void> {
       await this.reconcileAsks();
       await this.sweepNow();
       await this.syncScheduledTasks();
+      /* D-#881: a settle that landed while the host was down never emitted
+         its `conversation.updated` — scan the rows once so those worktrees
+         still get their cleanup. */
+      try {
+        const { conversations } = await this.opts.relay.request<{
+          conversations: Conversation[];
+        }>("conversations.list", { includeArchived: true });
+        for (const conv of conversations) {
+          if (conv.settledAt === undefined) continue;
+          void this.cleanupSettledWorktree(conv).catch((error) =>
+            this.opts.log.warn("settled worktree scan failed", {
+              conversationId: conv.id,
+              error: String(error),
+            }),
+          );
+        }
+      } catch (error) {
+        this.opts.log.warn("settled worktree scan failed", {
+          error: String(error),
+        });
+      }
       for (const channel of this.opts.relay.channels.get()) {
         this.watchChannel(channel.id);
       }

@@ -6,6 +6,7 @@ import {
   expandPath,
   gitBranches,
   gitIsRepo,
+  gitRemoteBranches,
   gitWorktrees,
 } from "@lilos/host";
 
@@ -89,12 +90,13 @@ export async function resolveTaskIsolation(p: {
   const repoPath = resolve(
     expandPath(worktrees.find((w) => !w.bare)?.path ?? root, p.home),
   );
-  const slug = uniqueWorkSlug(
-    repoPath,
-    slugOf(p.seed) || "task",
-    worktrees,
-    (await gitBranches({ path: root })).branches,
-  );
+  /* D-#881: remote branch names count as taken too — a `ws/<slug>` that
+     only lives on the remote would make `worktreeEnsure` attach it
+     instead of forking fresh. */
+  const slug = uniqueWorkSlug(repoPath, slugOf(p.seed) || "task", worktrees, [
+    ...(await gitBranches({ path: root })).branches,
+    ...(await gitRemoteBranches({ path: root }).catch(() => [])),
+  ]);
   const dir = join(repoPath, ".lilos", "wt", slug);
   return {
     cwd: collapsePath(dir, p.home),
