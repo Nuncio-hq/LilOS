@@ -31,12 +31,15 @@ let agent: { id: string; name: string };
 test.beforeAll(async () => {
   test.setTimeout(120_000);
   /* Six workers share the Mac and another run holds this worker's slice —
-     a probed free port under the slice floor serves vite instead. */
-  stack = await bootStack("ac884", {
-    relay: 0,
-    feed: 0,
-    web: await freePort(),
-  });
+     a probed free port under the slice floor serves vite instead. And the
+     stack boots PAUSED (LILOS_COMPANY=0): that is the real app's view —
+     the default LILOS_COMPANY=1 draws the paused company layer instead
+     (D-#836). */
+  stack = await bootStack(
+    "ac884",
+    { relay: 0, feed: 0, web: await freePort() },
+    { LILOS_COMPANY: "0" },
+  );
 });
 test.afterAll(async () => {
   await stack?.stop();
@@ -209,6 +212,20 @@ test("after shots — card, Home row and Settings in light and dark", async ({
     ).toBeVisible({ timeout: 30_000 });
     await page.screenshot({
       path: `${SHOTS}/after-home-${scheme}.png`,
+      fullPage: true,
+    });
+    /* The company layer's Home has its own needs row (NeedsBlock); the
+       ?company=1 search flag draws it on this same paused stack. */
+    await page.goto(`${stack.webUrl}/?company=1#?page=home`);
+    await expect(
+      main(page)
+        .getByRole("button")
+        .filter({ hasText: /add a footer to the page/i })
+        .filter({ hasText: /Edit README\.md\?/ })
+        .first(),
+    ).toBeVisible({ timeout: 30_000 });
+    await page.screenshot({
+      path: `${SHOTS}/after-home-company-${scheme}.png`,
       fullPage: true,
     });
     /* Resolve the open asks so the next scheme's turn starts clean — the
