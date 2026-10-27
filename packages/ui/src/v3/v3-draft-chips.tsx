@@ -1,11 +1,12 @@
-import { MessageSquareIcon, PencilLineIcon } from "lucide-react";
+import { CpuIcon, MessageSquareIcon } from "lucide-react";
 import { choiceFor, ModelPicker } from "../chat/model-picker";
 import type { ModelChoice } from "../types";
 import { ChipMenu } from "./v3-chip-menu";
 import type { V3Data } from "./v3-data-types";
 import { ProjectMark } from "./v3-marks";
+import { modelCatalogOf, runtimeOf } from "./v3-model";
 import type { V3Actions } from "./v3-page-types";
-import type { V3Project } from "./v3-types";
+import type { V3Agent, V3Project } from "./v3-types";
 
 /* The new chat's three working-conditions chips that are not about who: where
    it works (a project, or nowhere), which model (the full picker where the app
@@ -16,6 +17,19 @@ import type { V3Project } from "./v3-types";
 export const NO_PROJECT = "";
 /** The menu row that asks for a folder and makes a project of it. */
 const NEW_PROJECT = "\u0000new-project";
+
+/* #886: the chip row holds only controls — the picked project (or "No
+   project"). Git facts used to sit beside it ("direct · no git", the
+   branch); they were labels, not controls, so they moved into the chip's
+   tooltip — the engine still learns the folder's git state at send time. */
+export function folderHint(
+  folder: NonNullable<V3Data["folders"]>[number] | undefined,
+): string {
+  if (folder?.branch) return ` · edits land on ⎇ ${folder.branch}`;
+  if (folder?.branch === null)
+    return " · not a git repo, edits land in the folder";
+  return "";
+}
 
 export function ProjectChip({
   projects,
@@ -34,86 +48,62 @@ export function ProjectChip({
   onNew?: () => void;
 }) {
   return (
-    <>
-      <ChipMenu
-        title={`Project · ${project ? project.folder : "none"}`}
-        value={project ? project.id : NO_PROJECT}
-        onPick={(id) => (id === NEW_PROJECT ? onNew?.() : onPick(id))}
-        label={
-          project ? (
+    <ChipMenu
+      title={`Project · ${project ? project.folder : "none"}${project ? folderHint(folder) : ""}`}
+      value={project ? project.id : NO_PROJECT}
+      onPick={(id) => (id === NEW_PROJECT ? onNew?.() : onPick(id))}
+      label={
+        project ? (
+          <>
+            <ProjectMark
+              name={project.name}
+              tone={project.tone}
+              className="size-4 text-[9px]"
+            />
+            <span className="truncate @max-[480px]:hidden">{project.name}</span>
+          </>
+        ) : (
+          <>
+            <MessageSquareIcon className="size-3.5 shrink-0" />
+            <span className="truncate @max-[480px]:hidden">No project</span>
+          </>
+        )
+      }
+      options={[
+        ...projects.map((p) => ({
+          id: p.id,
+          node: (
             <>
-              <ProjectMark
-                name={project.name}
-                tone={project.tone}
-                className="size-4 text-[9px]"
-              />
-              <span className="truncate">{project.name}</span>
+              <ProjectMark name={p.name} tone={p.tone} />
+              <span className="shrink-0">{p.name}</span>
+              <span className="truncate font-mono text-[12px] text-muted-foreground/70">
+                {p.folder}
+              </span>
             </>
-          ) : (
+          ),
+        })),
+        {
+          id: NO_PROJECT,
+          node: (
             <>
               <MessageSquareIcon className="size-3.5 shrink-0" />
-              <span className="truncate">No project</span>
+              <span className="truncate">No project · just chat</span>
             </>
-          )
-        }
-        options={[
-          ...projects.map((p) => ({
-            id: p.id,
-            node: (
-              <>
-                <ProjectMark name={p.name} tone={p.tone} />
-                <span className="shrink-0">{p.name}</span>
-                <span className="truncate font-mono text-[12px] text-muted-foreground/70">
-                  {p.folder}
-                </span>
-              </>
-            ),
-          })),
-          {
-            id: NO_PROJECT,
-            node: (
-              <>
-                <MessageSquareIcon className="size-3.5 shrink-0" />
-                <span className="truncate">No project · just chat</span>
-              </>
-            ),
-          },
-          ...(onNew
-            ? [
-                {
-                  id: NEW_PROJECT,
-                  action: true,
-                  node: (
-                    <span className="truncate">New project from a folder…</span>
-                  ),
-                },
-              ]
-            : []),
-        ]}
-      />
-      {/* What the folder gives the chat, in the quiet words the old picker
-          used: no git means edits land in the folder itself. */}
-      {folder?.branch === null && (
-        <span
-          title="Not a git repo: no branches or worktrees, edits land in the folder"
-          className="inline-flex h-6 items-center gap-1.5 px-1.5 text-[12.5px] text-muted-foreground"
-        >
-          <PencilLineIcon className="size-3.5 shrink-0" />
-          direct · no git
-        </span>
-      )}
-      {folder?.branch && (
-        <span
-          title="Direct mode: edits land on the checked-out branch"
-          className="inline-flex h-6 min-w-0 items-center gap-1.5 px-1.5 text-[12.5px] text-muted-foreground"
-        >
-          <PencilLineIcon className="size-3.5 shrink-0" />
-          <span className="min-w-0 truncate font-mono text-[12px]">
-            {folder.branch}
-          </span>
-        </span>
-      )}
-    </>
+          ),
+        },
+        ...(onNew
+          ? [
+              {
+                id: NEW_PROJECT,
+                action: true,
+                node: (
+                  <span className="truncate">New project from a folder…</span>
+                ),
+              },
+            ]
+          : []),
+      ]}
+    />
   );
 }
 
@@ -136,49 +126,59 @@ export function ModelChip({
   act: V3Actions;
   /** The selected agent — its runtime decides which catalog the picker
       lists (#872): Devin's chip shows SWE-2, never Hermes's list. */
-  agent: { runtime?: string };
+  agent: V3Agent;
   /** The agent's own model id: where the picker starts, never a past pick. */
   agentModelId?: string;
   pick?: ModelChoice;
   onPick: (c: ModelChoice) => void;
-  /** The plain menu's choice (a label from `data.modelChoices`). */
+  /** The plain menu's choice (a label from the runtime's `models`). */
   label: string;
   onLabel: (label: string) => void;
   /** `/model` opens the picker the box already owns. */
   open: boolean;
   onOpen: (open: boolean) => void;
 }) {
-  const rt = agent.runtime
-    ? data.runtimes?.find((r) => r.id === agent.runtime)
-    : undefined;
-  /* An agent stamped with a runtime whose ROW hasn't arrived knows
-     nothing yet — never the default engine's catalog on its composer
-     (#872). The chip waits for the row rather than offer Hermes's list. */
+  /* The selected agent's own catalog (#872/#890): `modelCatalogOf` is the
+     one lookup — a runtime agent reads `modelCatalogs[runtime]`, the default
+     engine's agent `modelCatalog`, and an agent whose runtime ROW hasn't
+     arrived reads nothing yet (never Hermes's list on its composer). */
+  const rt = runtimeOf(data, agent);
   const rtKnown = !agent.runtime || !!rt;
-  const cat = !rtKnown
-    ? undefined
-    : rt && !rt.isDefault
-      ? data.modelCatalogs?.[rt.id]
-      : data.modelCatalog;
+  const own = rtKnown && !!rt && !rt.isDefault;
+  const cat = modelCatalogOf(data, agent);
   if (!cat) {
     /* A runtime agent whose catalog hasn't landed menus its OWN runtime's
-       labels — never the default engine's list on an ACP agent (#872). */
-    const choices = !rtKnown
-      ? []
-      : rt && !rt.isDefault
-        ? (rt.models ?? [])
-        : data.modelChoices;
-    return choices.length > 0 ? (
-      <ChipMenu
-        title="Model"
-        value={label}
-        onPick={onLabel}
-        label={<span className="truncate">{label}</span>}
-        options={choices.map((m) => ({
-          id: m,
-          node: <span>{m}</span>,
-        }))}
-      />
+       labels — never the default engine's list on an ACP agent (#872) —
+       and keeps its chip even when the runtime lists none: the agent's own
+       model, read-only, until its catalog arrives (#890). */
+    const choices = !rtKnown ? [] : own ? (rt.models ?? []) : data.modelChoices;
+    const body = (
+      <>
+        <CpuIcon className="size-3.5 shrink-0" />
+        <span className="truncate @max-[480px]:hidden">{label}</span>
+      </>
+    );
+    if (choices.length > 0)
+      return (
+        <ChipMenu
+          title="Model"
+          value={label}
+          onPick={onLabel}
+          label={body}
+          options={(label && !choices.includes(label)
+            ? [label, ...choices]
+            : choices
+          ).map((m) => ({ id: m, node: <span>{m}</span> }))}
+        />
+      );
+    return own && label ? (
+      <span
+        data-slot="model-chip-static"
+        title={`${label} · ${rt.label} lists no other models yet`}
+        className="inline-flex h-6 min-w-0 items-center gap-1.5 px-1.5 text-[12.5px] text-muted-foreground"
+      >
+        {body}
+      </span>
     ) : null;
   }
   // Starts on the agent's own model with its default effort (the engine's

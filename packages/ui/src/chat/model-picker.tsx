@@ -2,7 +2,6 @@ import { useCommandState } from "cmdk";
 import {
   CheckIcon,
   ChevronDownIcon,
-  ChevronLeftIcon,
   ChevronRightIcon,
   CpuIcon,
   EyeIcon,
@@ -10,7 +9,7 @@ import {
   RefreshCwIcon,
   ZapIcon,
 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ModelSelectorLogo } from "../components/ai-elements/model-selector";
 import { PromptInputButton } from "../components/ai-elements/prompt-input";
 import { Button } from "../components/ui/button";
@@ -45,9 +44,11 @@ import type {
   ModelProvider,
   Thread,
 } from "../types";
-import { EffortSlider } from "./effort-slider";
+import { EffortPicker } from "./effort-picker";
 import { isHidden } from "./model-visibility";
 import { ModelVisibilityDialog } from "./model-visibility-dialog";
+
+export { effortLabel } from "./effort-picker";
 
 /* Provider slugs we render the models.dev logo for; anything else gets the
    generic chip — never a broken image. */
@@ -122,20 +123,6 @@ function ModelLogo({ provider, logo }: { provider?: string; logo?: string }) {
     <CpuIcon className="size-3.5 text-muted-foreground" />
   );
 }
-
-/* Engine effort ids are kept verbatim; only the label is friendlier. */
-const EFFORT_LABELS: Record<string, string> = {
-  none: "None",
-  minimal: "Minimal",
-  low: "Low",
-  medium: "Medium",
-  high: "High",
-  xhigh: "Extra high",
-  max: "Max",
-  ultra: "Ultra",
-};
-export const effortLabel = (e: string) =>
-  EFFORT_LABELS[e] ?? e.charAt(0).toUpperCase() + e.slice(1);
 
 /* The effort the engine reports for the model — or nothing. The picker
    shows "Engine default" for the unset case rather than inventing a level
@@ -216,11 +203,13 @@ export function withSessionModel(
   ];
 }
 
-/* Codex-style picker (issue: model picker v2): one popover holding the
-   reasoning-effort slider, the fast toggle and a "Model ›" row that opens the
-   searchable model list. Everything applies from the next turn. The slider has
-   exactly the steps the engine reported for THIS model; a model without
-   `efforts` gets no slider. Refresh / Edit models render only with handlers. */
+/* #886's two plain dropdowns: one trigger opens the searchable model list
+   grouped by provider (search box on top), a second opens the reasoning
+   effort as a radio menu listing exactly the levels the engine reported
+   for THIS model — hidden when it reports none. No popover home, no
+   slider. Fast lives as a row in the model list's footer. Everything
+   applies from the next turn. Refresh / Edit models render only with
+   handlers. */
 const samePick = (a: ModelChoice, b: ModelChoice) =>
   a.model === b.model &&
   a.provider === b.provider &&
@@ -240,7 +229,9 @@ export function ModelPicker({
 }: {
   value: ModelChoice;
   models: ModelOption[];
-  onChoice: (c: ModelChoice) => void;
+  /* A rejected promise means the pick was not applied: the chip lets go of
+     it and shows what the session really runs again. */
+  onChoice: (c: ModelChoice) => void | Promise<unknown>;
   /* Controlled open: the host's `/model` command opens the same picker a
      click would. Undefined falls back to the popover's own state. */
   open?: boolean;
@@ -249,7 +240,6 @@ export function ModelPicker({
   const [ownOpen, setOwnOpen] = useState(false);
   const open = openProp ?? ownOpen;
   const setOpen = onOpenChange ?? setOwnOpen;
-  const [view, setView] = useState<"main" | "models">("main");
   const [editing, setEditing] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   /* A catalog refresh that ran and still didn't offer the session's model is
@@ -305,17 +295,31 @@ export function ModelPicker({
     shown0.effort && efforts.includes(shown0.effort)
       ? shown0.effort
       : defaultEffort(cur);
-  /* Unset effort (engine default in effect): park the thumb mid-ladder — a
-     display position only, `effort` stays undefined for the label. */
-  const idx =
-    effort && efforts.includes(effort)
-      ? efforts.indexOf(effort)
-      : Math.floor(Math.max(efforts.length - 1, 0) / 2);
   const fast = !!(cur?.fast && shown0.fast);
+  /* `inflight` mirrored for the async failure path, which runs after the
+     render that queued the write. */
+  const queue = useRef(inflight);
+  queue.current = inflight;
   const choose = (c: ModelChoice) => {
     setPicked(c);
-    setInflight((q) => [...q, c]);
-    onChoice(c);
+    queue.current = [...queue.current, c];
+    setInflight(queue.current);
+    /* A write the host could not apply never echoes, so without this the
+       chip would keep showing a model or effort the session isn't on. Drop
+       just that write; a newer one still pending keeps the chip. */
+    const failed = () => {
+      const at = queue.current.lastIndexOf(c);
+      if (at < 0) return;
+      const rest = queue.current.filter((_, i) => i !== at);
+      queue.current = rest;
+      setInflight(rest);
+      setPicked((p) => (p === c ? (rest.at(-1) ?? null) : p));
+    };
+    try {
+      void Promise.resolve(onChoice(c)).catch(failed);
+    } catch {
+      failed();
+    }
   };
   const pName = (p: string) => providerName(p, providers);
   const logoOf = (p?: string) => providers?.find((x) => x.id === p)?.logo;
@@ -356,7 +360,7 @@ export function ModelPicker({
       // tier across a model switch must be told it's off (#92 AC-3).
       fast: m.fast ? shown0.fast : false,
     });
-    setView("main");
+    setOpen(false);
   };
   const pickModel = (m: ModelOption) => {
     /* A merged row is a display row, not a pick: the engine's catalog doesn't
@@ -393,14 +397,10 @@ export function ModelPicker({
     <>
       <Popover
         open={open}
-        onOpenChange={(o) => {
-          setOpen(o);
-          if (!o) {
-            setView("main");
-            setPicked(null);
-            setInflight([]);
-          }
-        }}
+        onOpenChange={setOpen}
+        /* A pick closes the dropdown — but the wire draft (picked +
+           in-flight queue) outlives it, so a follow-up pick composes
+           against the draft, not the stale echo (#807). */
       >
         <PopoverTrigger
           render={
@@ -412,11 +412,11 @@ export function ModelPicker({
           }
         >
           <ModelLogo provider={cur?.provider} logo={logoOf(cur?.provider)} />
-          <span className="max-w-36 truncate">
+          {/* #886: narrow box = icon + a short label, never a wrap. */}
+          <span className="max-w-36 truncate @max-[480px]:max-w-16">
             {catalogModelName(value.model, merged, value.provider) ??
               value.model}
           </span>
-          {effort && <span data-effort>· {effortLabel(effort)}</span>}
           {fast && (
             <ZapIcon
               aria-label="Fast"
@@ -429,165 +429,90 @@ export function ModelPicker({
           side="top"
           align="start"
           className="w-80 gap-0 p-0"
-          aria-label="Model and reasoning"
+          aria-label="Model"
         >
-          {view === "main" ? (
-            <div className="flex flex-col">
-              <div className="flex items-center gap-2 px-3 pt-3">
-                {cur?.fast ? (
-                  <button
-                    type="button"
-                    aria-label="Fast mode"
-                    aria-pressed={fast}
-                    title={fast ? "Fast mode on" : "Fast mode off"}
-                    onClick={() => choose({ ...shown0, effort, fast: !fast })}
-                    className={cn(
-                      "grid size-7 place-items-center rounded-md hover:bg-muted",
-                      fast ? "text-primary" : "text-muted-foreground",
-                    )}
-                  >
-                    <ZapIcon className={cn("size-4", fast && "fill-current")} />
-                  </button>
-                ) : (
-                  <span className="size-7" />
-                )}
-                <div className="min-w-0 flex-1 text-center">
-                  <div className="text-[11px] text-muted-foreground">
-                    Reasoning
-                  </div>
-                  <div
-                    key={effort ?? "none"}
-                    className={cn(
-                      "truncate",
-                      effort
-                        ? "fade-in slide-in-from-bottom-1 animate-in bg-linear-to-r from-indigo-500 via-violet-500 to-fuchsia-500 bg-clip-text font-medium text-base text-transparent duration-300 motion-reduce:animate-none"
-                        : "text-muted-foreground text-sm",
-                    )}
-                  >
-                    {effort
-                      ? effortLabel(effort)
-                      : efforts.length
-                        ? "Engine default"
-                        : "Not adjustable"}
-                  </div>
-                </div>
-                <span className="size-7" />
-              </div>
-              {efforts.length > 1 ? (
-                <div className="px-4 pt-3 pb-3">
-                  <EffortSlider
-                    efforts={efforts}
-                    index={idx}
-                    label={effortLabel}
-                    onPick={(e) => choose({ ...shown0, effort: e, fast })}
-                    /* The label follows the thumb live; the wire call fires
-                       once on release (`onPick`). */
-                    onPreview={(e) => setPicked({ ...shown0, effort: e, fast })}
-                  />
-                </div>
-              ) : (
-                <p className="px-4 pt-1 pb-3 text-center text-muted-foreground text-xs">
-                  {efforts.length === 1
-                    ? "This model has one reasoning level."
-                    : "This model has no reasoning control."}
-                </p>
-              )}
-              <button
-                type="button"
-                onClick={() => setView("models")}
-                className="flex items-center gap-2 border-t px-3 py-2.5 text-left hover:bg-muted"
-              >
-                <ModelLogo
-                  provider={cur?.provider}
-                  logo={logoOf(cur?.provider)}
-                />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm">
-                    {catalogModelName(value.model, merged, value.provider) ??
-                      value.model}
-                  </span>
-                  {cur?.provider && (
-                    <span className="block truncate text-muted-foreground text-xs">
-                      {pName(cur.provider)}
-                    </span>
-                  )}
-                </span>
-                <span className="text-muted-foreground text-xs">Model</span>
-                <ChevronRightIcon className="size-4 text-muted-foreground" />
-              </button>
-            </div>
-          ) : (
-            <Command
-              className="rounded-lg!"
-              /* Open with the current model selected → cmdk scrolls its row
-                 into view (#194 AC-1). */
-              defaultValue={
-                cur ? `${cur.provider ?? ""}::${cur.id}` : undefined
-              }
-            >
-              <div className="flex items-center gap-1 pl-1">
-                <button
-                  type="button"
-                  aria-label="Back"
-                  onClick={() => setView("main")}
-                  className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-muted"
-                >
-                  <ChevronLeftIcon className="size-4" />
-                </button>
-                <div className="min-w-0 flex-1">
-                  <CommandInput autoFocus placeholder="Search models…" />
-                </div>
-              </div>
-              <CommandList className="max-h-80">
-                <PickerGroups
-                  groups={groups}
-                  expanded={expanded}
-                  onToggle={toggleGroup}
-                  cur={cur}
-                  pickModel={pickModel}
-                  pName={pName}
-                  logoOf={logoOf}
-                  onRefresh={onRefresh}
-                />
-                {(onRefresh || onVisibility) && (
-                  <>
-                    <CommandSeparator />
-                    <CommandGroup>
-                      {onRefresh && (
-                        <CommandItem
-                          value="__refresh"
-                          disabled={refreshing}
-                          onSelect={() => void refresh()}
-                        >
-                          {refreshing ? (
-                            <Loader2Icon className="animate-spin" />
-                          ) : (
-                            <RefreshCwIcon />
+          <Command
+            className="rounded-lg!"
+            /* Open with the current model selected → cmdk scrolls its row
+               into view (#194 AC-1). */
+            defaultValue={cur ? `${cur.provider ?? ""}::${cur.id}` : undefined}
+          >
+            <CommandInput autoFocus placeholder="Search models…" />
+            <CommandList className="max-h-80">
+              <PickerGroups
+                groups={groups}
+                expanded={expanded}
+                onToggle={toggleGroup}
+                cur={cur}
+                pickModel={pickModel}
+                pName={pName}
+                logoOf={logoOf}
+                onRefresh={onRefresh}
+              />
+              {(cur?.fast || onRefresh || onVisibility) && (
+                <>
+                  <CommandSeparator />
+                  <CommandGroup>
+                    {/* Fast mode is a pick like any other — a footer row on
+                        the model list rather than a third composer chip. */}
+                    {cur?.fast && (
+                      <CommandItem
+                        value="__fast"
+                        onSelect={() =>
+                          choose({ ...shown0, effort, fast: !fast })
+                        }
+                      >
+                        <ZapIcon
+                          className={cn(
+                            fast
+                              ? "fill-primary text-primary"
+                              : "text-muted-foreground",
                           )}
-                          {refreshing ? "Refreshing…" : "Refresh models"}
-                        </CommandItem>
-                      )}
-                      {onVisibility && (
-                        <CommandItem
-                          value="__edit"
-                          onSelect={() => {
-                            setOpen(false);
-                            setView("main");
-                            setEditing(true);
-                          }}
-                        >
-                          <EyeIcon />
-                          Edit models…
-                        </CommandItem>
-                      )}
-                    </CommandGroup>
-                  </>
-                )}
-              </CommandList>
-            </Command>
-          )}
+                        />
+                        <span className="flex-1">Fast mode</span>
+                        {fast && <CheckIcon />}
+                      </CommandItem>
+                    )}
+                    {onRefresh && (
+                      <CommandItem
+                        value="__refresh"
+                        disabled={refreshing}
+                        onSelect={() => void refresh()}
+                      >
+                        {refreshing ? (
+                          <Loader2Icon className="animate-spin" />
+                        ) : (
+                          <RefreshCwIcon />
+                        )}
+                        {refreshing ? "Refreshing…" : "Refresh models"}
+                      </CommandItem>
+                    )}
+                    {onVisibility && (
+                      <CommandItem
+                        value="__edit"
+                        onSelect={() => {
+                          setOpen(false);
+                          setEditing(true);
+                        }}
+                      >
+                        <EyeIcon />
+                        Edit models…
+                      </CommandItem>
+                    )}
+                  </CommandGroup>
+                </>
+              )}
+            </CommandList>
+          </Command>
         </PopoverContent>
       </Popover>
+      {efforts.length > 0 && (
+        <EffortPicker
+          efforts={efforts}
+          effort={effort}
+          onPick={(e) => choose({ ...shown0, effort: e, fast })}
+        />
+      )}
       {onVisibility && (
         <ModelVisibilityDialog
           open={editing}

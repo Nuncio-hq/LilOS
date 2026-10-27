@@ -35,7 +35,7 @@ import {
   ticketOf,
   waitingLabel,
 } from "./v3-model";
-import { RowButton } from "./v3-open-record";
+import { RowButton, useOpenRoute } from "./v3-open-record";
 import type { V3PageProps } from "./v3-page-types";
 import { backThen, sectionedThreads } from "./v3-sections";
 import { ThreadRow } from "./v3-threads-rows";
@@ -494,6 +494,16 @@ function HomeAskRow({ data, ask, go, act }: V3PageProps & { ask: V3Ask }) {
 
 function DailyHome({ data, go, act }: V3PageProps) {
   const starter = defaultAgent(data);
+  /* #886: one composer on screen — while a thread or a draft chat is open
+     beside Home, the peek's box is the one and Home's steps aside. A peek
+     with no composer ("This thread no longer exists.", a project or agent
+     record) leaves Home's. Hidden with CSS, not unmounted: the project,
+     model and access picks in Home's box survive the peek opening and
+     closing. */
+  const open = useOpenRoute();
+  const composerBeside =
+    open?.page === "newchat" ||
+    (open?.page === "thread" && !!threadOf(data, open.id));
   /* A wake time passing quietly returns its thread — tick so Home re-reads
      the clock. */
   useTick(30_000);
@@ -523,7 +533,11 @@ function DailyHome({ data, go, act }: V3PageProps) {
       <Title kicker={data.today}>Good afternoon, {data.me}</Title>
       <CountStrip data={data} />
       {starter && (
-        <div className="mt-8">
+        <div
+          className={cn("mt-8", composerBeside && "hidden")}
+          inert={composerBeside}
+          data-home-composer
+        >
           <ChatDraft
             key={starter.id}
             data={data}

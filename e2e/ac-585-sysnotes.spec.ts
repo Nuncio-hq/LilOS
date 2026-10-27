@@ -1,6 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
+import { setAccess } from "./helpers/approvals";
 import {
   bootStack,
   pickPorts,
@@ -66,10 +67,10 @@ test("AC-1 a LilOS note renders centred, never as Oscar's bubble", async ({
 
   /* Full access → the gated step auto-approves and the harness posts a
      LilOS note ("Auto-approved … — Full access") into the thread. */
-  const pill = page.locator('[data-thread-panel] [data-slot="access-pill"]');
-  await expect(pill).toBeVisible({ timeout: 30_000 });
-  await pill.click();
-  await expect(pill).toHaveAttribute("data-access", "full");
+  await expect(
+    page.locator('[data-thread-panel] [data-slot="access-pill"]'),
+  ).toBeVisible({ timeout: 30_000 });
+  await setAccess(page, "full");
 
   await send(page, "Add a footer to the page");
   const note = page.locator("[data-sysnote]", {
@@ -134,10 +135,10 @@ test('AC-3 message search labels a system note "LilOS"', async ({ page }) => {
     timeout: 90_000,
   });
   /* Make a LilOS note searchable: Full access → "Auto-approved …" posts. */
-  const pill = page.locator('[data-thread-panel] [data-slot="access-pill"]');
-  await expect(pill).toBeVisible({ timeout: 30_000 });
-  await pill.click();
-  await expect(pill).toHaveAttribute("data-access", "full");
+  await expect(
+    page.locator('[data-thread-panel] [data-slot="access-pill"]'),
+  ).toBeVisible({ timeout: 30_000 });
+  await setAccess(page, "full");
   await send(page, "Add a footer to the page");
   /* The turn ending is the signal, not this thread's own note: the harness
      dedupes its auto-approve note per channel on the engine's request id,

@@ -64,7 +64,7 @@ export interface ThreadData {
   picker: ModelPickerExtras | undefined;
   modelOpen: boolean;
   setModelOpen: (open: boolean) => void;
-  onModel: (c: ModelChoice) => void;
+  onModel: (c: ModelChoice) => void | Promise<unknown>;
   onAccess: (a: ConversationAccess) => void;
   /* #884: the engine reports `off` — the access pill warns + fixes. */
   engineOff: boolean;

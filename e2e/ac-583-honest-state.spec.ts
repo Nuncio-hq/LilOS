@@ -1,6 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
+import { setAccess } from "./helpers/approvals";
 import {
   bootStack,
   pickPorts,
@@ -282,8 +283,7 @@ test("AC-2 system notes are quiet lines, never replies — and no reply-count ch
   });
   const pill = page.locator('[data-thread-panel] [data-slot="access-pill"]');
   await expect(pill).toBeVisible({ timeout: 30_000 });
-  await pill.click();
-  await expect(pill).toHaveAttribute("data-access", "full");
+  await setAccess(page, "full");
   await send(page, "Add a footer to the page");
   /* The settle anchor lives inside the agent turn's footer — scope it so
      no stubbed/older anchor can satisfy the wait early. */

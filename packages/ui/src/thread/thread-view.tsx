@@ -22,6 +22,7 @@ import { sessionModelId } from "../lib/context-window";
 import type { OsApp, WbTab } from "../types";
 import { useRenameMenu } from "../v3/v3-thread-menu";
 import type { ThreadFrameProps } from "./frame-props";
+import { idleHint } from "./idle-hint";
 import {
   focusThreadComposer,
   StuckCard,
@@ -103,6 +104,17 @@ export function ThreadView(props: ThreadViewProps) {
   } = props;
   const leadEmp = leadOf(props.lead, thread.replies, emp);
   const isDM = !!channel.dm;
+  const folder = !!thread.ws || !!work?.path;
+  const { replies, pr, jobs } = thread;
+  const prPending = pr?.checks.some((c) => c.status === "pending");
+  const stripTabs = useMemo(
+    () => workTabs({ replies, pr, jobs }, { folder, browser, prPending }),
+    [replies, pr, jobs, folder, browser, prPending],
+  );
+  /* #886: Changes is the header's one named surface, and only while its
+     count is real; every other tab + the context meter list inside ⋯. */
+  const changesTab = stripTabs.find((t) => t.id === "changes");
+  const menuTabs = stripTabs.filter((t) => t.id !== "changes");
   const { input: titleInput, menu: threadMenu } = useRenameMenu({
     title: thread.title || plain(root.text),
     archived: thread.archived,
@@ -110,6 +122,32 @@ export function ThreadView(props: ThreadViewProps) {
     onRename,
     onArchive,
     park,
+    work:
+      onOpenTab && menuTabs.length
+        ? { tabs: menuTabs, onOpen: onOpenTab }
+        : undefined,
+    meter:
+      thread.usage && leadEmp ? (
+        /* The SESSION's model — never the employee's (#294): the
+           panel and Focus resolve through the same helper and the
+           window comes engine-reported on the usage/catalog, not
+           an employee row. */
+        <SessionUsage
+          menuRow
+          usage={thread.usage}
+          model={sessionModelId(
+            thread,
+            leadEmp.model,
+            models,
+            defaultModel,
+            defaultProvider,
+          )}
+          models={models}
+          onCompact={onCompact}
+          compactDisabled={running}
+          onContinue={onContinue}
+        />
+      ) : undefined,
   });
   const keyTarget = useThreadKeys({
     thread,
@@ -121,13 +159,6 @@ export function ThreadView(props: ThreadViewProps) {
     onStop: props.onStop,
     onEscape: onClose,
   });
-  const folder = !!thread.ws || !!work?.path;
-  const { replies, pr, jobs } = thread;
-  const prPending = pr?.checks.some((c) => c.status === "pending");
-  const stripTabs = useMemo(
-    () => workTabs({ replies, pr, jobs }, { folder, browser, prPending }),
-    [replies, pr, jobs, folder, browser, prPending],
-  );
   const startCardOpen = openStartRequest(thread, resolved);
   const bodyRef = useRef<HTMLDivElement>(null);
   const jump = useJumpToHit({
@@ -182,7 +213,12 @@ export function ThreadView(props: ThreadViewProps) {
             title={thread.title || "Thread"}
             titleInput={titleInput}
             kicker={threadKicker({
-              title: `Thread ${thread.session}`,
+              title: [
+                idleHint({ work, repo, pr, isDM, session: false }),
+                `Thread ${thread.session}`,
+              ]
+                .filter(Boolean)
+                .join(" · "),
               channel: isDM ? undefined : `#${channel.name}`,
               folder: panelFolder({
                 thread,
@@ -212,27 +248,10 @@ export function ThreadView(props: ThreadViewProps) {
                 </span>
               ) : undefined
             }
-            meter={
-              thread.usage && leadEmp ? (
-                /* The SESSION's model — never the employee's (#294): the
-                   panel and Focus resolve through the same helper and the
-                   window comes engine-reported on the usage/catalog, not
-                   an employee row. */
-                <SessionUsage
-                  usage={thread.usage}
-                  model={sessionModelId(
-                    thread,
-                    leadEmp.model,
-                    models,
-                    defaultModel,
-                    defaultProvider,
-                  )}
-                  models={models}
-                  onCompact={onCompact}
-                  compactDisabled={running}
-                  onContinue={onContinue}
-                />
-              ) : undefined
+            changes={
+              onOpenTab && changesTab?.meta
+                ? { n: changesTab.meta, onOpen: () => onOpenTab("changes") }
+                : undefined
             }
             start={
               !work && !isDM && onStart ? (
@@ -256,7 +275,6 @@ export function ThreadView(props: ThreadViewProps) {
                 </Button>
               ) : undefined
             }
-            strip={onOpenTab && { tabs: stripTabs, onOpen: onOpenTab }}
           />
           <TurnList
             frame="panel"
@@ -335,21 +353,7 @@ export function ThreadView(props: ThreadViewProps) {
           )}
         />
       )}
-      <ThreadComposer
-        {...props}
-        lead={leadEmp}
-        idleHint={
-          work?.branch
-            ? `Edits go to ⎇ ${work.branch}`
-            : work
-              ? "Ticket only. No repo on this channel."
-              : repo
-                ? "Read-only on main. Start work to edit code."
-                : isDM
-                  ? `Message ${leadEmp?.name ?? "the agent"}…`
-                  : `thread ${thread.session}`
-        }
-      />
+      <ThreadComposer {...props} lead={leadEmp} />
     </div>
   );
 }

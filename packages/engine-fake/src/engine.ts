@@ -17,6 +17,7 @@ import {
   type ApprovalOutcome,
   type ApprovalPolicy,
   type ApprovalsSetPolicyParams,
+  autoTitle,
   BACKGROUND_JOBS_CAPABILITY,
   type Capability,
   COMMANDS_CAPABILITY,
@@ -2546,26 +2547,16 @@ function applyFakeDiffToCwd(cwd: string, diff: FileDiff) {
   }
 }
 
-/** Instant-title rule: first line, whitespace-collapsed, ≤48 chars. */
-const MAX_DERIVED_TITLE_CHARS = 48;
+/** Instant title: the shared first-full-sentence rule (#886). */
+const derivedTitle = autoTitle;
 
-function derivedTitle(promptText: string): string {
-  const clean = promptText.split("\n")[0].replace(/\s+/g, " ").trim();
-  if (clean.length <= MAX_DERIVED_TITLE_CHARS) return clean;
-  return `${clean.slice(0, MAX_DERIVED_TITLE_CHARS - 1).trimEnd()}…`;
-}
-
-/** Deterministic stand-in for the small-model rewrite: Title Case the
-    first clause (up to 8 words), so it always differs from `derived`. */
+/** Deterministic stand-in for the small-model rewrite: the derived sentence
+    without its closing dot or a trailing "please" — the user's own
+    casing is kept (#886: no Title Case). */
 function llmTitle(promptText: string): string {
-  const clause = (promptText.split(/[:;.!\n]/)[0] ?? "")
-    .replace(/\s+/g, " ")
-    .trim();
-  return clause
-    .split(" ")
-    .slice(0, 8)
-    .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w))
-    .join(" ");
+  return autoTitle(promptText)
+    .replace(/…$/, "")
+    .replace(/[\s,]*(?:\bplease)?[\s.]*$/i, "");
 }
 
 const words = (t: string) => t.split(/(?<=\s)/);

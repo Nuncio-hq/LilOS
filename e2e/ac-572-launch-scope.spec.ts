@@ -238,16 +238,19 @@ test("AC-1/AC-2: cold boot replays nothing; background sessions still badge, rin
 
   // ── AC-2: a background turn badges running + rings without a replay ──
   const convA = convs[0];
-  const runningBadge = sidebar.getByRole("button", {
-    name: /^Threads\s*[1-9]\d*$/,
-  });
   await post(convA.id, "slow:400 Say hi to Carol");
-  await expect(runningBadge).toBeVisible({ timeout: 60_000 });
-  /* The Working shelf did not exist at cold boot (nothing ran), so it was
-     never opened — the running session's row lands inside it closed. Open
-     it, then the row's status dot shows the running ring. */
+  /* The running count lives in the Working shelf's title now — the sidebar's
+     Threads row carries none (#886; Needs you keeps its badge). The shelf did
+     not exist at cold boot (nothing ran), so it was never opened — the
+     running session's row lands inside it closed. Open it, then the row's
+     status dot shows the running ring. */
   const workingFold = page.locator('#v3-main [data-fold="working"] > button');
-  await expect(workingFold).toBeVisible({ timeout: 30_000 });
+  await expect(workingFold).toContainText(/Working \(1\)/, {
+    timeout: 60_000,
+  });
+  await expect(
+    sidebar.getByRole("button", { name: "Threads", exact: true }),
+  ).toBeVisible();
   if ((await workingFold.getAttribute("aria-expanded")) === "false")
     await workingFold.click();
   await expect(
@@ -327,9 +330,12 @@ test("AC-1/AC-2: cold boot replays nothing; background sessions still badge, rin
   await expect(approvals).toHaveCount(0, { timeout: 60_000 });
 
   // ── AC-2: the slow background turn completes → done notification + the
-  //    running badge and the feed release follow the turn's end ──
+  //    Working shelf and the feed release follow the turn's end ──
   await expect
     .poll(() => postKeys(page), { timeout: 120_000 })
     .toContain(`${convA.id}:done`);
-  await expect(runningBadge).toHaveCount(0, { timeout: 60_000 });
+  // The Working shelf empties (its fold hides) when the turn ends.
+  await expect(page.locator('#v3-main [data-fold="working"]')).toHaveCount(0, {
+    timeout: 60_000,
+  });
 });

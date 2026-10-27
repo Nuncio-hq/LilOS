@@ -884,18 +884,6 @@ button:not(:disabled):active,
     transform: none;
   }
 }
-/* Composer hints show while there's a draft — and always while a turn is
-   running (the "Enter steers · ⌘. stop" line is the mid-turn affordance).
-   Neither keys off focus, so the row never shifts under a pointer click. */
-.lilos-hint {
-  display: none !important;
-}
-form:has(textarea:not(:placeholder-shown), [aria-label="Stop (⌘.)"])
-  .lilos-hint {
-  display: inline !important;
-  animation: lilos-rise 0.3s ease both;
-}
-
 /* ---- Dialogs ----
    The sheet is near-opaque frosted glass, so text behind never shows through. */
 [data-slot="dialog-content"],

@@ -304,17 +304,6 @@ export function FocusView(props: FocusViewProps) {
                 ? `${lead?.name ?? "The agent"} is paused while you use the terminal`
                 : undefined
             }
-            idleHint={
-              pr?.status === "merged"
-                ? `#${pr.number} merged, ⎇ ${pr.head} deleted · next edit starts a new branch from main`
-                : work?.branch
-                  ? `Edits go to ⎇ ${work.branch}`
-                  : work
-                    ? "Edits land in this folder"
-                    : isDM
-                      ? `Message ${lead?.name ?? "the agent"}…`
-                      : "Read-only on main"
-            }
             above={
               <PlanTray
                 todos={plan.todos}

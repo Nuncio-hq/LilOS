@@ -68,7 +68,7 @@ const shareOf = (usedTokens: number, maxTokens: number) =>
 const isFull = (usedTokens: number, maxTokens: number) =>
   maxTokens > 0 && usedTokens >= maxTokens;
 
-const ContextIcon = () => {
+export const ContextIcon = () => {
   const { usedTokens, maxTokens } = useContextValue();
   const circumference = 2 * Math.PI * ICON_RADIUS;
   const usedPercent = shareOf(usedTokens, maxTokens);

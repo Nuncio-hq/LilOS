@@ -50,12 +50,12 @@ const headerTitle = (page: Page) => page.locator("[data-session-title]");
 const listTitle = (page: Page, title: string) =>
   page.locator("#v3-main").getByText(title).first();
 
-/** Stage ordering: placeholder < derived < llm — titles must never regress.
+/** Stage ordering: placeholder = derived (the first full sentence, user's
+    casing, #886) < llm — titles must never regress and never Title Case.
     The prompt avoids edit-verbs so engine-fake runs a clean read turn. */
 const STAGE = [
-  "Explain the whole repository layout in…", // placeholder: first 6 words + …
-  "Explain the whole repository layout in detail p…", // derived: ≤48 chars
-  "Explain The Whole Repository Layout In Detail Please", // llm upgrade
+  "Explain the whole repository layout in detail please", // placeholder = derived
+  "Explain the whole repository layout in detail", // llm upgrade: drops "please"
 ] as const;
 const PROMPT = "Explain the whole repository layout in detail please";
 
@@ -77,7 +77,7 @@ test("AC-3/AC-4 placeholder then engine titles land live in header, list, search
         .textContent()
         .catch(() => "")) ?? "";
     if (t && seen.at(-1) !== t) seen.push(t);
-    if (t === STAGE[2]) break;
+    if (t === STAGE[1]) break;
     if (Date.now() > deadline)
       throw new Error(`title never reached the llm stage; trace: ${seen}`);
     await page.waitForTimeout(80);
@@ -94,7 +94,7 @@ test("AC-3/AC-4 placeholder then engine titles land live in header, list, search
       stages[i - 1],
     );
   }
-  expect(seen.at(-1)).toBe(STAGE[2]);
+  expect(seen.at(-1)).toBe(STAGE[1]);
   await page.screenshot({ path: `${SHOTS}/ac34-header-llm-title.png` });
 
   // AC-4: the thread's row on the Threads page + title search show the
@@ -103,13 +103,13 @@ test("AC-3/AC-4 placeholder then engine titles land live in header, list, search
   await expect(page).toHaveURL(/page=threads&open=thread:conv_[^&]+$/, {
     timeout: 10_000,
   });
-  await expect(listTitle(page, STAGE[2])).toBeVisible({ timeout: 30_000 });
+  await expect(listTitle(page, STAGE[1])).toBeVisible({ timeout: 30_000 });
   await page.keyboard.press("Meta+k");
   const palette = page.getByRole("dialog", { name: "Search" });
   const hit = palette.getByRole("button", { name: /· thread$/ });
-  await palette.locator("input").fill("Detail Please");
+  await palette.locator("input").fill("repository layout");
   await expect(hit).toHaveCount(1);
-  await expect(hit).toContainText(STAGE[2]);
+  await expect(hit).toContainText(STAGE[1]);
   await palette.locator("input").fill("zzz-no-match");
   await expect(hit).toHaveCount(0);
   await palette.locator("input").fill("");

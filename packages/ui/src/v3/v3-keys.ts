@@ -6,6 +6,7 @@ import {
   useState,
 } from "react";
 import { useUiLayer } from "../chat/ui-layers";
+import { menuArrowKeys } from "../lib/menu-keys";
 
 /* The keyboard behaviour v3's menus and inline editors share, so a keyboard
    user keeps their place: Esc closes the surface you are in and nothing
@@ -80,6 +81,10 @@ export function useMenu(triggerRef?: RefObject<HTMLButtonElement | null>) {
       const at = e.target as Node | null;
       if (at && (list.current?.contains(at) || trigger.current?.contains(at)))
         return;
+      /* A portaled popup a menu row opened (the context meter's card,
+         #886) is outside `list` but still part of the row — a press there
+         must not close the menu and unmount the card mid-click. */
+      if ((at as Element | null)?.closest?.("[data-keepopen]")) return;
       setOpen(false);
     };
     document.addEventListener("pointerdown", onDown, true);
@@ -97,12 +102,7 @@ export function useMenu(triggerRef?: RefObject<HTMLButtonElement | null>) {
       close();
       return;
     }
-    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
-    e.preventDefault();
-    const items = [...(list.current?.querySelectorAll("button") ?? [])];
-    const at = items.indexOf(document.activeElement as HTMLButtonElement);
-    const step = e.key === "ArrowDown" ? 1 : -1;
-    items[(at + step + items.length) % items.length]?.focus();
+    menuArrowKeys(e, "button");
   };
 
   return { open, setOpen, trigger, list, close, onKeyDown };

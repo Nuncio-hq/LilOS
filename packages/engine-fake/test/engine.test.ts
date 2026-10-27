@@ -413,6 +413,25 @@ describe("engine-fake", () => {
     c.close();
   });
 
+  test("AC-5 titles keep the user's casing — no Title Case (#886)", async () => {
+    const c = conn();
+    const titles: string[] = [];
+    c.onEvent((e) => {
+      if (e.type === "session.titled")
+        titles.push((e.payload as { title: string }).title);
+    });
+    const { sessionId } = (await c.request("session.start", {
+      agent: "builder",
+      cwd: "/tmp/lilos-fake",
+    })) as { sessionId: string };
+    await promptText(c, sessionId, "Hi! What can you do for me today?");
+    expect(titles).toEqual([
+      "Hi! What can you do for me today?",
+      "Hi! What can you do for me today?",
+    ]);
+    c.close();
+  });
+
   test("AC-5 the first turn emits a derived title, then an llm title (#137)", async () => {
     const c = conn();
     const events: { type: string; seq: number; payload: unknown }[] = [];
@@ -427,14 +446,16 @@ describe("engine-fake", () => {
       agent: "builder",
       cwd: "/tmp/lilos-fake",
     })) as { sessionId: string };
-    await promptText(c, sessionId, "Explain the relay package to me");
+    await promptText(c, sessionId, "Explain the relay package to me please");
 
     const titled = events
       .filter((e) => e.type === "session.titled")
       .map((e) => e.payload as { title: string; source: string });
     expect(titled.map((t) => t.source)).toEqual(["derived", "llm"]);
-    expect(titled[0].title).toBe("Explain the relay package to me");
-    expect(titled[1].title).not.toBe(titled[0].title);
+    expect(titled[0].title).toBe("Explain the relay package to me please");
+    // The stand-in rewrite drops the "please" and keeps the user's casing —
+    // never Title Case (#886).
+    expect(titled[1].title).toBe("Explain the relay package to me");
 
     // Ordering: derived arrives with the first turn; llm upgrades at its end
     // — both strictly seq-ordered (assertMonotonic covered by conformance).

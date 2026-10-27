@@ -35,7 +35,6 @@ import { choiceFor, ModelPicker } from "./model-picker";
 export function Composer({
   placeholder,
   employees,
-  hint,
   onSend,
   status = "ready",
   onStop,
@@ -63,7 +62,6 @@ export function Composer({
 }: {
   placeholder: string;
   employees: Employee[];
-  hint: string;
   /* Return a promise to delay clearing: a rejected send keeps the text (#103). */
   onSend?: (text: string, files?: AttachedFile[]) => void | Promise<unknown>;
   status?: ChatStatus;
@@ -78,7 +76,7 @@ export function Composer({
   models?: ModelOption[];
   /* No onModel (or no models) → no model picker: the control needs its
      handler (issue #19). */
-  onModel?: (c: ModelChoice) => void;
+  onModel?: (c: ModelChoice) => void | Promise<unknown>;
   /* Refresh / Edit models… / provider names — each renders only with its handler. */
   picker?: ModelPickerExtras;
   /* Controlled open on the model picker — `/model` opens it. */
@@ -243,8 +241,9 @@ export function Composer({
               />
             </PromptInputBody>
             <PromptInputFooter>
-              {/* #590 AC-2: one row of controls at 1024px — no wrap; the hint
-              truncates away before a control ever drops to a second line. */}
+              {/* #590 AC-2 + #886: one row of controls — no wrap, no key
+              hint; the model and access labels step aside for icons before
+              the row could crowd (each hides under `@max-[480px]`). */}
               <PromptInputTools className="min-w-0 flex-1 overflow-hidden">
                 {accept && <AttachButton />}
                 {onModel && models?.length ? (
@@ -258,9 +257,6 @@ export function Composer({
                   />
                 ) : null}
                 {tools}
-                <span className="lilos-hint hidden truncate pl-1 text-[12.5px] text-muted-foreground">
-                  {hint}
-                </span>
               </PromptInputTools>
               <ComposerKbd className="hidden @min-[420px]:inline" />
               {busy && !draft.trim() && onStop && !hideStop ? (

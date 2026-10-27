@@ -1,6 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
+import { setAccess } from "./helpers/approvals";
 import {
   bootStack,
   pickPorts,
@@ -83,11 +84,24 @@ test("AC-1+AC-2+AC-4+AC-3 the pill drives the mode; cards offer the four options
     await expect(pill(page)).toHaveAttribute("data-access", "ask");
     await expect(pill(page)).toContainText("Ask");
 
-    /* ── One click → Full access: orange shield + label, no dialog ── */
+    /* ── Full access comes from the pill's menu (#886), confirmed —
+       a single click on the pill only opens it. ── */
     await pill(page).click();
+    await expect(pill(page)).toHaveAttribute("data-access", "ask");
+    await expect(
+      page.getByRole("menu", { name: "Access", exact: true }),
+    ).toBeVisible();
+    await page.locator('[data-access-option="full"]').click();
+    // Still Ask: picking Full confirms first, it does not apply.
+    await expect(pill(page)).toHaveAttribute("data-access", "ask");
+    await expect(
+      page.getByText("Agents run tools without asking in this thread"),
+    ).toBeVisible();
+    await page.screenshot({ path: `${SHOTS}/ac-1-pill-confirm.png` });
+    await page.locator("[data-access-confirm]").click();
     await expect(pill(page)).toHaveAttribute("data-access", "full");
     await expect(pill(page)).toContainText("Full access");
-    await expect(pill(page)).toHaveAttribute("aria-pressed", "true");
+    await expect(pill(page)).toHaveAttribute("aria-haspopup", "menu");
     await page.screenshot({ path: `${SHOTS}/ac-1-pill-full.png` });
 
     /* ── Full access: the gated turn completes with no card at all ── */
@@ -99,8 +113,7 @@ test("AC-1+AC-2+AC-4+AC-3 the pill drives the mode; cards offer the four options
 
     /* ── The thread's own pill persisted Full access; switch back to Ask ── */
     await expect(pill(page)).toHaveAttribute("data-access", "full");
-    await pill(page).click();
-    await expect(pill(page)).toHaveAttribute("data-access", "ask");
+    await setAccess(page, "ask");
 
     /* ── Ask: the card offers Allow / Deny; the other grant scopes live
        under Allow's ▾ (#884) ── */
@@ -124,9 +137,9 @@ test("AC-1+AC-2+AC-4+AC-3 the pill drives the mode; cards offer the four options
     await page.screenshot({ path: `${SHOTS}/ac-4-four-options.png` });
 
     /* ── AC-1 mid-turn: flip to Full while the card is open — the NEXT
-       approval never becomes a card. */
-    await pill(page).click();
-    await expect(pill(page)).toHaveAttribute("data-access", "full");
+       approval never becomes a card. (The menu pick applies straight
+       away; Full confirms first.) */
+    await setAccess(page, "full");
     await card.getByRole("button", { name: "Allow", exact: true }).click();
     await expect(settled(page)).toBeVisible({ timeout: 90_000 });
     // Only that one card ever opened for this turn's other gated steps.
@@ -180,8 +193,10 @@ test("AC-3+AC-9 Settings Approvals: policy pick, honest copy, and the default se
       );
     await page.screenshot({ path: `${SHOTS}/ac-9-settings.png` });
 
-    /* Default → Full access seeds the NEXT new conversation only. */
+    /* Default → Full access (after its confirm) seeds the NEXT new
+       conversation only. */
     await policy.getByRole("radio", { name: "Full access" }).click();
+    await page.locator("[data-access-confirm]").click();
     await expect(
       policy.getByRole("radio", { name: "Full access" }),
     ).toHaveAttribute("aria-checked", "true");
@@ -239,9 +254,9 @@ test("AC-3 the new-chat draft's Ask / Full access pill starts on Settings' defau
     });
     await expect(draftPill(page)).toContainText("Ask");
 
-    /* ── A pick flips it; another agent's draft is not that agent's pick ── */
-    await draftPill(page).click();
-    await expect(draftPill(page)).toHaveAttribute("data-access", "full");
+    /* ── A pick flips it (menu + confirm, #886); another
+       agent's draft is not that agent's pick ── */
+    await setAccess(page, "full", draftPill(page));
     await expect(draftPill(page)).toContainText("Full access");
     await draftAgent(page, "Blanca");
     await expect(draftPill(page)).toHaveAttribute("data-access", "ask");
@@ -260,14 +275,14 @@ test("AC-3 the new-chat draft's Ask / Full access pill starts on Settings' defau
       .getByRole("radiogroup", { name: "Approvals", exact: true })
       .getByRole("radio", { name: "Full access" })
       .click();
+    await page.locator("[data-access-confirm]").click();
     await page.goto(
       `${stack.webUrl}/#?page=threads&open=newchat:${employee.id}`,
     );
     await expect(draftPill(page)).toHaveAttribute("data-access", "full", {
       timeout: 30_000,
     });
-    await draftPill(page).click();
-    await expect(draftPill(page)).toHaveAttribute("data-access", "ask");
+    await setAccess(page, "ask", draftPill(page));
     await sendDraft(page, "Blanca");
     await expect(pill(page)).toHaveAttribute("data-access", "ask");
   } finally {
@@ -350,8 +365,7 @@ test("AC-1 the Full access pill actually paints orange, light and dark (#106)", 
       }
       const p = pill(page);
       await expect(p).toBeVisible();
-      await p.click();
-      await expect(p).toHaveAttribute("data-access", "full");
+      await setAccess(page, "full", p);
       const c = await ink();
       console.log(`#106 pill ${scheme} hovered`, JSON.stringify(c));
       /* The cursor rests on the pill after the click, so the first read is the

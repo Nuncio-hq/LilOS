@@ -1,4 +1,4 @@
-import { PlayIcon } from "lucide-react";
+import { FileDiffIcon, PlayIcon } from "lucide-react";
 import {
   type ReactNode,
   type RefObject,
@@ -9,27 +9,22 @@ import {
 } from "react";
 import { Button } from "../components/ui/button";
 import { cn } from "../lib/utils";
-import type { Thread, WbTab } from "../types";
+import type { Thread } from "../types";
 import { StatusPill } from "../v3/v3-marks";
 import type { V3Status } from "../v3/v3-types";
-import { type HeaderTab, WorkStrip } from "./work-strip";
 
 /* The head of a conversation — shared by the panel (ThreadView, beside the
    list) and the session view (FocusView), drawn once so the two can't drift:
    the serif title (the folder/branch kicker at its right), then ONE line —
-   status · started · turns on the left, the work strip and the context meter
-   and ⋯ on the right. It is the first child of the conversation's scroller,
-   so it scrolls away with the thread (the title goes with it). What must
-   stay reachable does not: once the header is out of view a slim bar sticks
-   to the top of the column with the title (small), the work strip, the
-   context meter and the ⋯ menu. Those controls live in ONE place at a time —
-   the header while it shows, the bar after — so there is never a second
-   copy to hover, click or find. */
-
-export type WorkStripProps = {
-  tabs: HeaderTab[];
-  onOpen: (tab: WbTab) => void;
-};
+   status · started · turns on the left, "Changes" (only while files
+   changed, #886) and ⋯ on the right. The rest of the thread's icons and the
+   context meter live inside that ⋯ menu. It is the first child of the
+   conversation's scroller, so it scrolls away with the thread (the title
+   goes with it). What must stay reachable does not: once the header is out
+   of view a slim bar sticks to the top of the column with the title
+   (small), Changes, and the ⋯ menu. Those controls live in ONE place at a
+   time — the header while it shows, the bar after — so there is never a
+   second copy to hover, click or find. */
 
 /** How many messages the person has sent — root included; system notes and
     the agent's own turns don't count. */
@@ -77,6 +72,27 @@ export function StartWork({
   );
 }
 
+/** The header's one named work surface (#886): Changes, and only while the
+    count is real — `n` is the changed-file count the caller counted. Every
+    other kind of work (and the context meter) is a labeled row in the ⋯
+    menu beside it. `data-work-tab` keeps the strip's old hook so the
+    button is found where the icon strip was. */
+function ChangesButton({ n, onOpen }: { n: string; onOpen: () => void }) {
+  return (
+    <button
+      type="button"
+      data-work-tab="changes"
+      title="Open Changes beside the chat"
+      onClick={onOpen}
+      className="inline-flex h-[26px] shrink-0 items-center gap-1.5 rounded-md px-2 text-[12.5px] text-muted-foreground transition-colors hover:bg-[var(--v3-hover)] hover:text-foreground"
+    >
+      <FileDiffIcon className="size-3.5" />
+      <span>Changes</span>
+      <span className="text-muted-foreground/70 tabular-nums">{n}</span>
+    </button>
+  );
+}
+
 /* The nearest ancestor that scrolls — the conversation's port. */
 function scrollParent(el: HTMLElement): HTMLElement | null {
   for (let p = el.parentElement; p; p = p.parentElement) {
@@ -115,21 +131,18 @@ function useScrolledAway(ref: RefObject<HTMLElement | null>): boolean {
 
 /* The slim bar. It has no height of its own (a zero-height sticky row whose
    bar hangs from it), so showing or hiding it never moves a turn; `-mb-7`
-   cancels the column's `gap-7` after that empty row. The `bar` container
-   lets the strip show labels only when there is room. */
+   cancels the column's `gap-7` after that empty row. */
 function ThreadBar({
   title,
-  strip,
-  meter,
+  changes,
   menu,
 }: {
   title: string;
-  strip?: WorkStripProps;
-  meter?: ReactNode;
+  changes?: { n: string; onOpen: () => void };
   menu?: ReactNode;
 }) {
   return (
-    <div className="@container/bar sticky top-0 z-20 -mb-7 h-0">
+    <div className="sticky top-0 z-20 -mb-7 h-0">
       <div
         data-thread-bar
         className="-mx-8 absolute inset-x-0 top-0 flex h-10 items-center gap-1.5 border-[var(--v3-line)] border-b bg-[var(--v3-main)] px-8"
@@ -137,13 +150,12 @@ function ThreadBar({
         <div className="min-w-0 flex-1">
           <span
             title={title}
-            className="hidden truncate font-medium text-[13px] text-foreground @[20rem]/bar:block"
+            className="truncate font-medium text-[13px] text-foreground"
           >
             {title}
           </span>
         </div>
-        {strip && <WorkStrip {...strip} placement="bar" />}
-        {meter}
+        {changes && <ChangesButton {...changes} />}
         {menu}
       </div>
     </div>
@@ -159,11 +171,10 @@ export function ThreadHeader({
   started,
   turns,
   note,
-  meter,
+  changes,
   start,
   menu,
   close,
-  strip,
 }: {
   /** The session view's narrower column: the title is 20px, not 22px. */
   session: boolean;
@@ -177,15 +188,15 @@ export function ThreadHeader({
   turns?: number;
   /** A live note after the facts ("1 running in background"). */
   note?: ReactNode;
-  /** The right end of the facts line, in this order: the context meter,
-      Start work, the ⋯ menu, the close ✕. The meter and the menu follow the
-      reader to the sticky bar; Start work and ✕ stay with the header. */
-  meter?: ReactNode;
+  /** Changes + its count — drawn only while files actually changed (#886);
+      absent on a clean thread. `onOpen` opens the surface beside the chat. */
+  changes?: { n: string; onOpen: () => void };
+  /** The right end of the facts line, after Changes: Start work, the ⋯
+      menu, the close ✕. Changes and the menu follow the reader to the
+      sticky bar; Start work and ✕ stay with the header. */
   start?: ReactNode;
   menu?: ReactNode;
   close?: ReactNode;
-  /** The work strip; absent = the thread has no way to open work. */
-  strip?: WorkStripProps;
 }) {
   const header = useRef<HTMLElement>(null);
   const away = useScrolledAway(header);
@@ -197,12 +208,10 @@ export function ThreadHeader({
     if (!away && header.current) natural.current = header.current.offsetHeight;
   });
   const here = !away;
-  const aside = (here && (meter || menu)) || start || close;
+  const aside = (here && (changes || menu)) || start || close;
   return (
     <>
-      {away && (
-        <ThreadBar title={title} strip={strip} meter={meter} menu={menu} />
-      )}
+      {away && <ThreadBar title={title} changes={changes} menu={menu} />}
       {/* No top strip of its own: the window's toolbar is right above, so a
           10px pad is all the title needs. `-mb-3` takes 12px off the column's
           28px gap, so the first turn starts 16px under the line. */}
@@ -240,19 +249,19 @@ export function ThreadHeader({
             </div>
           )}
         </div>
-        {/* The `line` container: wide, status · started · turns, then the
-            work strip, then the meter and ⋯, in one row; narrow, the strip
-            drops to a row of its own (work-strip.tsx owns that switch). */}
-        <div className="@container/line mt-1">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[13px] text-muted-foreground @[30rem]/line:flex-nowrap">
-            <div className="flex min-w-0 flex-1 items-baseline gap-x-2">
+        {/* One line: status · started · turns, then Changes (when real) and
+            the ⋯ that holds every other icon and the context meter (#886).
+            The facts truncate before they could wrap — the line stays one. */}
+        <div className="mt-1">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[13px] text-muted-foreground">
+            <div className="flex min-w-0 flex-1 items-baseline gap-x-2 whitespace-nowrap">
               {status && (
                 <StatusPill
                   status={status}
                   label={status === "done" ? "Finished" : undefined}
                 />
               )}
-              <span className="min-w-0">
+              <span className="min-w-0 truncate">
                 {started ? `Started ${started}` : null}
                 {turns
                   ? `${started ? " · " : ""}${turns} ${turns === 1 ? "turn" : "turns"}`
@@ -260,10 +269,9 @@ export function ThreadHeader({
                 {note}
               </span>
             </div>
-            {here && strip && <WorkStrip {...strip} />}
             {aside && (
               <span className="flex shrink-0 items-center gap-1">
-                {here && meter}
+                {here && changes && <ChangesButton {...changes} />}
                 {start}
                 {here && menu}
                 {close}

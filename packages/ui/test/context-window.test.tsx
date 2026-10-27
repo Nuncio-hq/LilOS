@@ -3,7 +3,7 @@
    the DM thread panel and Focus resolve the session's model through the
    same helper and divide by the engine-reported window; a model with no
    reported window falls back to the labelled estimate (`~`). */
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, test } from "vitest";
 import { FocusView } from "../src/focus/focus-view";
 import {
@@ -97,6 +97,15 @@ const percents = (c: HTMLElement) =>
     .map((s) => s.textContent?.trim() ?? "")
     .filter((t) => /^\d+(\.\d+)?%$/.test(t));
 
+/* #886: the context meter is a labeled row inside the header's ⋯ menu —
+   open it before reading the %. */
+const openMeter = (c: HTMLElement) => {
+  const btn = Array.from(c.querySelectorAll("button")).find(
+    (b) => b.getAttribute("aria-label") === "Thread actions",
+  );
+  if (btn) fireEvent.click(btn);
+};
+
 const props = {
   root,
   emp,
@@ -159,6 +168,7 @@ describe("issue #294 — one session reads the same window everywhere", () => {
       />,
     );
     // Session model's 262k → 36.2%; the employee's 200k would have shown 47.4%.
+    openMeter(panel.container);
     expect(percents(panel.container)).toContain("36.2%");
     expect(percents(panel.container)).not.toContain("47.4%");
   });
@@ -175,6 +185,8 @@ describe("issue #294 — one session reads the same window everywhere", () => {
     const focus = render(
       <FocusView {...props} thread={sessionThread} channel={dmChannel} />,
     );
+    openMeter(panel.container);
+    openMeter(focus.container);
     expect(percents(panel.container)).toEqual(percents(focus.container));
     expect(percents(focus.container)).toContain("36.2%");
   });
@@ -195,6 +207,8 @@ describe("issue #294 — one session reads the same window everywhere", () => {
     const focus = render(
       <FocusView {...props} thread={reported} channel={dmChannel} />,
     );
+    openMeter(panel.container);
+    openMeter(focus.container);
     // 94,800 / 100,000 = 94.8% — neither model's catalog window is used.
     expect(percents(panel.container)).toEqual(percents(focus.container));
     expect(percents(focus.container)).toContain("94.8%");
@@ -238,6 +252,7 @@ describe("issue #415 — occupancy over the window, never above 100%", () => {
         repo="Nuncio-hq/LilOS"
       />,
     );
+    openMeter(panel.container);
     const shown = percents(panel.container);
     expect(shown).toContain("8.1%");
     for (const p of shown)
@@ -264,6 +279,7 @@ describe("issue #415 — occupancy over the window, never above 100%", () => {
         repo="Nuncio-hq/LilOS"
       />,
     );
+    openMeter(panel.container);
     const text = panel.container.textContent ?? "";
     expect(text).toContain("Full");
     for (const p of percents(panel.container))
@@ -285,6 +301,7 @@ describe("issue #415 — occupancy over the window, never above 100%", () => {
         repo="Nuncio-hq/LilOS"
       />,
     );
+    openMeter(panel.container);
     expect(panel.container.textContent ?? "").toContain("Full");
     for (const p of percents(panel.container))
       expect(Number.parseFloat(p), p).toBeLessThanOrEqual(100);

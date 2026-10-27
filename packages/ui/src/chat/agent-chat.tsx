@@ -334,22 +334,20 @@ export function QueuedTray({
 }
 
 /* Running-state composer copy, one source for both surfaces: whether Enter steers the running turn
-   or queues for after it depends on the engine's declared steer capability (issue #9). Idle hints
-   stay surface-specific at the call sites. `agentWork` (#308): while an engine-initiated leg runs
+   or queues for after it depends on the engine's declared steer capability (issue #9). The
+   placeholder carries that truth — the visible "Enter steers · ⌘. stop" hint went away (#886);
+   the keys still do it. `agentWork` (#308): while an engine-initiated leg runs
    there's no user turn to steer — Enter queues. */
 export const runningComposer = (
   name: string,
   steer: boolean,
   agentWork = false,
-) => ({
-  placeholder: agentWork
+) =>
+  agentWork
     ? `Message ${name}… working on its own, it reads this when the turn ends`
     : steer
       ? `Message ${name}… it reads this at the next step`
-      : `Message ${name}… it reads this after the current turn`,
-  hint:
-    steer && !agentWork ? "Enter steers · ⌘. stop" : "Enter queues · ⌘. stop",
-});
+      : `Message ${name}… it reads this after the current turn`;
 
 /* #420 + #583 AC-1: a turn parked on an open ask (question/approval/plan) is
    WAITING, not working — the composer says what it waits on instead of
@@ -359,13 +357,7 @@ export const runningComposer = (
 export const waitingComposer = (
   name: string,
   kind?: "approval" | "question" | "plan",
-) => ({
-  placeholder:
-    kind === "question"
-      ? `${name} is waiting for your answer…`
-      : `${name} is waiting for your approval…`,
-  hint:
-    kind === "question"
-      ? "Answer the card in the thread — the turn continues on its own."
-      : "Answer the card above — the turn continues on its own.",
-});
+) =>
+  kind === "question"
+    ? `${name} is waiting for your answer…`
+    : `${name} is waiting for your approval…`;

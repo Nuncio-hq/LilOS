@@ -316,9 +316,11 @@ describe("issue #19 — one conversation from shared pieces", () => {
     );
     const wp = within(wiredPanel.container);
     expect(wp.getByRole("button", { name: /Start work/ })).toBeTruthy();
-    // the work strip: one button per kind of work, each opens the session on that tab
-    expect(wp.getByRole("navigation", { name: "Thread work" })).toBeTruthy();
-    expect(wp.getByRole("button", { name: /Details/ })).toBeTruthy();
+    /* #886: the work surfaces are labeled rows inside the header's ⋯ menu
+       now — open it and the tabs are there, each opening the session on
+       that tab. */
+    fireEvent.click(wp.getByRole("button", { name: "Thread actions" }));
+    expect(wp.getByRole("menuitem", { name: /Details/ })).toBeTruthy();
     // …and no expand button of its own — the peek header's Widen is the one
     expect(wp.queryByRole("button", { name: "Focus" })).toBeNull();
     expect(wp.getByRole("button", { name: /^Allow$/ })).toBeTruthy();
@@ -462,9 +464,6 @@ describe("issue #196 — a folder-less DM session is a plain chat", () => {
       />,
     );
     expect(within(branch.container).getByText("main")).toBeTruthy();
-    expect(
-      within(branch.container).getByText("Edits go to ⎇ main"),
-    ).toBeTruthy();
     cleanup();
     const plain = render(
       <FocusView
@@ -486,18 +485,12 @@ describe("issue #196 — a folder-less DM session is a plain chat", () => {
     ).toBeTruthy();
   });
 
-  test("AC-2 a channel thread keeps the read-only chip and main hint", () => {
+  test("AC-2 a channel thread keeps the read-only chip", () => {
     const focus = render(<FocusView {...focusProps} />);
     expect(within(focus.container).getByText("read-only")).toBeTruthy();
-    expect(within(focus.container).getByText("Read-only on main")).toBeTruthy();
     cleanup();
     const panel = render(<ThreadView {...panelProps} channel={channel} />);
     expect(within(panel.container).getByText(/main · read-only/)).toBeTruthy();
-    expect(
-      within(panel.container).getByText(
-        "Read-only on main. Start work to edit code.",
-      ),
-    ).toBeTruthy();
   });
 });
 

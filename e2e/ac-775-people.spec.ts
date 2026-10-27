@@ -149,15 +149,15 @@ test("statuses and this week's counts, including a thread that recovered from st
         .locator('[data-thread-row]:has([data-v3-status="working"])')
         .filter({ hasText: /release note/i }),
     ).toHaveCount(1);
-    /* No row carries a stuck dot: the recovered thread's title is "Stuck"
-       but its dot says idle — a title named Stuck is not a stuck thread.
+    /* No row carries a stuck dot: the recovered thread's title is the
+       prompt "stuck: clear" (the user's own casing, #886) but its dot says idle — a title named Stuck is not a stuck thread.
        The week number above is the stamp. */
     await expect(
       list.locator('[data-thread-row]:has([data-v3-status="stuck"])'),
     ).toHaveCount(0);
     const stuckTitled = list
       .locator("[data-thread-row]")
-      .filter({ hasText: /^Stuck/ });
+      .filter({ hasText: /^stuck: clear/ });
     await expect(stuckTitled).toHaveCount(1);
     await expect(stuckTitled.locator('[data-v3-status="idle"]')).toHaveCount(1);
   } finally {

@@ -535,9 +535,11 @@ test("AC-5b a mid-turn image queues as the next prompt instead of steering", asy
   await expect(page.getByText("Approval needed").first()).toBeVisible({
     timeout: 60_000,
   });
-  await expect(page.getByText("Enter steers · ⌘. stop")).toBeVisible({
-    timeout: 30_000,
-  });
+  // Running (Stop ⌘. is on the composer): the next message meets the
+  // steer-or-queue fork. The "Enter steers" hint is gone (#886).
+  await expect(
+    v3Peek(page).getByRole("button", { name: /^stop \(⌘\.\)$/i }),
+  ).toBeVisible({ timeout: 30_000 });
 
   // Mid-turn message WITH an image: `session.steer` is text-only, so the
   // harness must queue it and prompt it (with the image block) next.

@@ -11,3 +11,4 @@ export * from "./models.js";
 export * from "./protocol.js";
 export * from "./replay.js";
 export * from "./requests.js";
+export * from "./titles.js";

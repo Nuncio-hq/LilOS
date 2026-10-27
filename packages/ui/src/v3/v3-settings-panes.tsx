@@ -3,6 +3,7 @@ import { Btn, Section, Spinner } from "./v3-bits";
 import { EscLayer, useFocusBack } from "./v3-keys";
 import { companyOn } from "./v3-model";
 import type { V3PageProps } from "./v3-page-types";
+import { DefaultAccess } from "./v3-settings-access";
 import { LinkRow, Row, Segmented, useRun } from "./v3-settings-bits";
 
 /* Settings → General: you and the company, approvals, the editor, About.
@@ -188,10 +189,8 @@ export function GeneralPane({ data, go, act }: V3PageProps) {
           {data.features.tickets &&
             " Each ticket can still ask about anything public or paid."}
         </p>
-        <Segmented
-          label="Approvals"
+        <DefaultAccess
           value={approvals}
-          options={APPROVALS.map((a) => ({ id: a.id, label: a.label }))}
           onChange={(id) => act.saveSettings({ approvals: id })}
         />
         <ul className="mt-3 space-y-1 text-[13px]">

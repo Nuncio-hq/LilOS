@@ -32,7 +32,7 @@ test.describe.configure({ mode: "serial" });
 const main = (page: Page) => page.locator("#v3-main");
 const goTo = (page: Page, item: "Home" | "Needs you" | "Threads") =>
   v3Sidebar(page).getByRole("button", { name: item }).click();
-/** A sidebar entry with its count: "Needs you 1", "Threads 0". */
+/** A sidebar entry with its count: "Needs you 1" (Threads has none, #886). */
 const sideItem = (page: Page, item: "Needs you" | "Threads") =>
   v3Sidebar(page).getByRole("button", { name: new RegExp(`^${item}`) });
 const card = (page: Page, title: RegExp) =>
@@ -69,7 +69,8 @@ test("a running turn reads Working on Home, Threads and the sidebar, until it is
     v3Peek(page).getByRole("button", { name: /^stop \(⌘\.\)$/i }),
   ).toBeVisible({ timeout: 30_000 });
 
-  // Threads: a Working row, counted in the fold's title and the sidebar.
+  // Threads: a Working row, counted in the fold's title (the sidebar's
+  // Threads row carries no count any more, #886).
   // Running threads sit folded under Working (#862) — open the shelf, then
   // read the status dot (words are only for Needs-you/Failed pills).
   await goTo(page, "Threads");
@@ -79,7 +80,7 @@ test("a running turn reads Working on Home, Threads and the sidebar, until it is
   await expect(
     card(page, /release note/).locator('[data-v3-status="working"]'),
   ).toBeVisible();
-  await expect(sideItem(page, "Threads")).toHaveText(/^Threads\s*1$/);
+  await expect(sideItem(page, "Threads")).toHaveText(/^Threads$/);
 
   // Home: the same agent, the same word, the same thread as what it works on.
   await goTo(page, "Home");
@@ -101,7 +102,7 @@ test("a running turn reads Working on Home, Threads and the sidebar, until it is
      not "finished, not seen". */
   await expect(main(page).locator('[data-fold="working"]')).toHaveCount(0);
   await expect(main(page).locator("[data-thread-unseen]")).toHaveCount(0);
-  await expect(sideItem(page, "Threads")).toHaveText(/^Threads\s*0$/);
+  await expect(sideItem(page, "Threads")).toHaveText(/^Threads$/);
   await goTo(page, "Home");
   await expect(teamRow(page)).toContainText("Idle");
 });

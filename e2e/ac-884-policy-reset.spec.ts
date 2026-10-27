@@ -58,6 +58,14 @@ test("an engine reporting Off warns — Fix makes a risky step ask", async ({
   const pill = v3Peek(page).locator('[data-slot="access-pill"]');
   await expect(pill).toHaveText("Never asks", { timeout: 30_000 });
 
+  /* The warning also sits in the pill's own menu, above Ask / Full access —
+     one access control, with Fix in it (#886 folds #884 into it). */
+  await pill.click();
+  const menuWarning = page.getByRole("menu", { name: "Access" });
+  await expect(menuWarning).toContainText("never ask, so Ask won't stop");
+  await expect(menuWarning.getByRole("menuitemradio")).toHaveCount(2);
+  await page.keyboard.press("Escape");
+
   /* Settings says the same, in one line, with the repair beside it. */
   await page.goto(`${stack.webUrl}/#?page=settings&view=general`);
   const warning = page

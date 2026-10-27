@@ -33,16 +33,22 @@ const TOGGLE: Record<SidebarMode, string> = {
 export function SidebarToggle({
   mode,
   onToggle,
+  overlayOnly,
 }: {
   mode: SidebarMode;
   onToggle: () => void;
+  /** Narrow window (#886): popped it is an overlay to close, never one to
+      "keep open" — it cannot dock. */
+  overlayOnly?: boolean;
 }) {
+  const label =
+    overlayOnly && mode === "popped" ? "Close sidebar" : TOGGLE[mode];
   return (
     <button
       type="button"
       onClick={onToggle}
-      title={`${TOGGLE[mode]} (⌘\\)`}
-      aria-label={TOGGLE[mode]}
+      title={`${label} (⌘\\)`}
+      aria-label={label}
       className={toolbarBtn}
     >
       <PanelLeftIcon />

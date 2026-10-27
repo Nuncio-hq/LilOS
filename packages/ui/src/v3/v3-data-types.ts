@@ -103,8 +103,8 @@ export type V3Settings = {
   /** Ask before risky commands, or let agents run anything. */
   approvals: "ask" | "full";
   /** #884: the engine reports `off` — its global policy auto-answers
-     everything, so "Ask" can never produce a card. The pane shows the
-     warning and `act.fixEnginePolicy` is the one-click repair. */
+     everything, so "Ask" can never produce a card. The composer's access
+     pill warns and `act.fixEnginePolicy` is the one-click repair. */
   engineNeverAsks?: boolean;
   /** Where "Open in editor" goes (its name). Absent: no editor found. */
   editor?: string;
@@ -314,7 +314,8 @@ export type V3Data = {
   /* #872: each non-default runtime's own catalog, keyed by runtime id —
      the composer picks from the SELECTED agent's engine, never the
      default's. A runtime whose catalog hasn't landed has no entry (its
-     chip then menus the runtime row's plain labels). */
+     chip then menus the runtime row's plain labels). `modelCatalogOf` is
+     the single lookup the picker's data input flows through. */
   modelCatalogs?: Record<string, NonNullable<V3Data["modelCatalog"]>>;
   /** The app starts a chat on the access you pick (Ask / Full access): the
      new-chat box shows the pill, starting on `settings.approvals`. Absent: no

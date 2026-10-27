@@ -140,7 +140,9 @@ export function Title({
       <h1
         className={cn(
           "lilos-v3-serif mb-3.5 font-bold leading-[1.15] text-foreground",
-          small ? "text-[30px]" : "text-[38px]",
+          /* #886: a narrow pane steps the display size down so the greeting
+             never clips. */
+          small ? "text-[30px]" : "text-[38px] @max-[560px]:text-[30px]",
         )}
       >
         {children}

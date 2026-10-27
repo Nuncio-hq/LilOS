@@ -90,7 +90,13 @@ describe("issue #660 — the pane's single <main>", () => {
   test("a bare Focus renders no <main> of its own — the host's pane is the only landmark", () => {
     const { container } = render(<MainPane>{focus(true)}</MainPane>);
     expect(container.querySelectorAll("main")).toHaveLength(1);
-    expect(container.querySelector("main")?.textContent).toContain("Builder");
+    // The Focus really rendered inside it — the composer names the lead
+    // (#886: the old visible hint is gone; the placeholder still says it).
+    expect(
+      container
+        .querySelector("main")
+        ?.querySelector('[placeholder="Message Builder…"]'),
+    ).toBeTruthy();
   });
 
   test("a bare Focus alone is landmark-free; without bare it mounts its own <main>", () => {

@@ -16,7 +16,7 @@ import {
   threadUrl,
   v3Peek,
 } from "./helpers/stack";
-import { openWorkbench } from "./helpers/workbench";
+import { openWorkbench, threadMenu } from "./helpers/workbench";
 
 /**
  * Issue #590 — desktop polish on the thread surfaces:
@@ -260,7 +260,9 @@ test("AC-3 no internals on screen: no /private paths, the context meter is label
   // Nowhere in the session view should "/private/…" leak.
   await expect(session).not.toContainText("/private/", { timeout: 30_000 });
 
-  /* The context meter reads like a person, not a raw "3.5%". */
+  /* The context meter reads like a person, not a raw "3.5%" — it lives in
+     the header's ⋯ menu now (#886). */
+  await threadMenu(page).click();
   const meter = session.locator("[title^='Context used:']").first();
   await expect(meter).toBeVisible({ timeout: 60_000 });
   await expect(meter).toHaveAttribute(

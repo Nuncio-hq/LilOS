@@ -17,7 +17,7 @@ import { cn } from "../lib/utils";
 import { Kbd } from "./v3-bits";
 import type { V3Data } from "./v3-data-types";
 import { AgentAvatar, CeoMark, ProjectMark, StatusDot } from "./v3-marks";
-import { agentDot, boardStatus, companyOn, listedThreads } from "./v3-model";
+import { agentDot, companyOn } from "./v3-model";
 import { isRecordRoute } from "./v3-nav";
 import type { V3RecordRoute, V3Route } from "./v3-page-types";
 import { ProjectMenu } from "./v3-project-menu";
@@ -46,6 +46,7 @@ export function V3Sidebar({
   onPointerEnter,
   onPointerLeave,
   onBlur,
+  overlayOnly,
 }: {
   data: V3Data;
   /** Where you are — a page, or the record you went straight to (D-#769):
@@ -75,17 +76,14 @@ export function V3Sidebar({
   /** Docks a popped-out sidebar, or hides a docked one. */
   onToggle: () => void;
   onPointerEnter: PointerEventHandler;
-  onPointerLeave: PointerEventHandler;
-  onBlur: () => void;
+  /** Narrow window (#886): the sidebar is only ever an overlay, so its
+      toggle closes it rather than "keeping it open" (docking it). */
+  overlayOnly?: boolean;
+  /** Absent = the overlay stays until closed on purpose. */
+  onPointerLeave?: PointerEventHandler;
+  onBlur?: () => void;
 }) {
   const open = data.tickets.filter((t) => t.status !== "done").length;
-  /* The badge counts threads in play, not the board — a finished-unseen
-     thread stays on the board (D-#563) but does not badge. Helpers have no
-     row (D-#847); a parent waiting on them counts as working. */
-  const live = listedThreads(data.threads).filter((t) => {
-    const s = boardStatus(data, t);
-    return s !== "done" && s !== "idle";
-  }).length;
   /* A bare page lights its own entry; a record lights it when it IS the
      page (the sidebar went to it) or sits on top of the peek. */
   const on = (p: V3Route["page"], id?: string) =>
@@ -106,7 +104,7 @@ export function V3Sidebar({
       onPointerEnter={onPointerEnter}
       onPointerLeave={onPointerLeave}
       onBlur={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget)) onBlur();
+        if (!e.currentTarget.contains(e.relatedTarget)) onBlur?.();
       }}
       className={cn(
         "flex shrink-0 flex-col border-[var(--v3-line)] border-r bg-[var(--v3-side)] text-[14px] text-muted-foreground",
@@ -123,7 +121,11 @@ export function V3Sidebar({
         data-toolbar-lead
         className="lilos-drag flex h-[var(--v3-toolbar-h)] shrink-0 items-center px-3.5"
       >
-        <SidebarToggle mode={mode} onToggle={onToggle} />
+        <SidebarToggle
+          mode={mode}
+          onToggle={onToggle}
+          overlayOnly={overlayOnly}
+        />
       </div>
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-3">
         <Item
@@ -174,12 +176,14 @@ export function V3Sidebar({
             right={<Count n={open} />}
           />
         )}
+        {/* No number here (#886): the entry is a door to the Threads page,
+            not a count — Needs you keeps its badge because it asks for
+            action. */}
         <Item
           icon={<LayersIcon />}
           label="Threads"
           on={on("threads")}
           onClick={() => go({ page: "threads" })}
-          right={<Count n={live} />}
         />
         {/* No thread list here (#862 feedback): the sidebar stays the
             table of contents — the sectioned list lives on the Threads

@@ -13,7 +13,7 @@ import {
   skipFirstRun,
   v3Peek,
 } from "./helpers/stack";
-import { hideWorkbench, workStrip } from "./helpers/workbench";
+import { hideWorkbench, workMenu, workStrip } from "./helpers/workbench";
 
 /**
  * Issue #544 — the Workbench reopens instantly: closing the panel (or
@@ -151,9 +151,10 @@ const rows = (page: Page) => page.getByRole("treeitem");
 async function reopenTimed(page: Page) {
   await hideWorkbench(page).click();
   /* #547 AC-5: the panel hides (display:none) rather than unmounting —
-     "closed" = the shell hidden; its rows stay in the DOM. The strip stands
-     in for it from the next frame. */
+     "closed" = the shell hidden; its rows stay in the DOM. The ⋯ menu's
+     labeled rows stand in for it from the next frame (#886). */
   await expect(page.locator("[data-wb-shell]")).toBeHidden();
+  await workMenu(page).click();
   await expect(workStrip(page)).toBeVisible();
   /* Reopen + measure in-page: t0 = the click itself, t1 = first treeitem
      in the DOM — the number AC-6 compares before/after (target <50ms).
@@ -235,6 +236,7 @@ test("AC-1/2/4: reopen shows last-known rows on the first frame, no Reading hold
      first frame (the tree is replaced by the editor, so no row count). */
   await hideWorkbench(page).click();
   await expect(page.locator("[data-wb-shell]")).toBeHidden();
+  await workMenu(page).click();
   await workStrip(page).locator('[data-work-tab="files"]').click();
   await page.evaluate(
     () => new Promise((r) => requestAnimationFrame(() => r(null))),
