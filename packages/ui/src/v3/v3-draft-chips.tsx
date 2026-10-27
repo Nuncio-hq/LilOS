@@ -4,9 +4,9 @@ import type { ModelChoice } from "../types";
 import { ChipMenu } from "./v3-chip-menu";
 import type { V3Data } from "./v3-data-types";
 import { ProjectMark } from "./v3-marks";
-import { modelCatalogOf } from "./v3-model";
+import { modelCatalogOf, runtimeOf } from "./v3-model";
 import type { V3Actions } from "./v3-page-types";
-import type { V3Project } from "./v3-types";
+import type { V3Agent, V3Project } from "./v3-types";
 
 /* The new chat's three working-conditions chips that are not about who: where
    it works (a project, or nowhere), which model (the full picker where the app
@@ -126,7 +126,7 @@ export function ModelChip({
   act: V3Actions;
   /** The selected agent — its runtime decides which catalog the picker
       lists (#872): Devin's chip shows SWE-2, never Hermes's list. */
-  agent: { runtime?: string };
+  agent: V3Agent;
   /** The agent's own model id: where the picker starts, never a past pick. */
   agentModelId?: string;
   pick?: ModelChoice;
@@ -138,19 +138,14 @@ export function ModelChip({
   open: boolean;
   onOpen: (open: boolean) => void;
 }) {
-  const rt = agent.runtime
-    ? data.runtimes?.find((r) => r.id === agent.runtime)
-    : undefined;
-  /* An agent stamped with a runtime whose ROW hasn't arrived knows
-     nothing yet — never the default engine's catalog on its composer
-     (#872). The chip waits for the row rather than offer Hermes's list. */
+  /* The selected agent's own catalog (#872/#890): `modelCatalogOf` is the
+     one lookup — a runtime agent reads `modelCatalogs[runtime]`, the default
+     engine's agent `modelCatalog`, and an agent whose runtime ROW hasn't
+     arrived reads nothing yet (never Hermes's list on its composer). */
+  const rt = runtimeOf(data, agent);
   const rtKnown = !agent.runtime || !!rt;
   const own = rtKnown && !!rt && !rt.isDefault;
-  const cat = !rtKnown
-    ? undefined
-    : own
-      ? data.modelCatalogs?.[rt.id]
-      : data.modelCatalog;
+  const cat = modelCatalogOf(data, agent);
   if (!cat) {
     /* A runtime agent whose catalog hasn't landed menus its OWN runtime's
        labels — never the default engine's list on an ACP agent (#872) —

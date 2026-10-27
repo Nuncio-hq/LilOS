@@ -8,6 +8,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import type { V3Data } from "../src/v3/v3-data-types";
 import { folderHint, ModelChip } from "../src/v3/v3-draft-chips";
 import type { V3Actions } from "../src/v3/v3-page-types";
+import type { V3Agent } from "../src/v3/v3-types";
 
 afterEach(cleanup);
 
@@ -25,7 +26,7 @@ const chip = (d: V3Data, runtime: string | undefined, label: string) =>
     <ModelChip
       data={d}
       act={{} as V3Actions}
-      agent={{ runtime }}
+      agent={{ runtime } as V3Agent}
       onPick={vi.fn()}
       label={label}
       onLabel={vi.fn()}

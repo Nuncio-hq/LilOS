@@ -74,7 +74,13 @@ function data(over: Partial<V3Data> = {}): V3Data {
     modelCatalogs: {
       "acp:devin": {
         options: [
-          { id: "swe-2", name: "SWE-2", provider: "cognition" },
+          {
+            id: "swe-2",
+            name: "SWE-2",
+            provider: "cognition",
+            efforts: ["low", "high"],
+            defaultEffort: "high",
+          },
           { id: "swe-2-high", name: "SWE-2 high", provider: "cognition" },
         ],
         defaultModel: "swe-2",
@@ -102,6 +108,47 @@ const trigger = () =>
 
 /** The Agent chip's menu button. */
 const agentChip = () => screen.getByTitle(/^Agent/);
+
+const effortTrigger = () =>
+  document.querySelector<HTMLElement>('[data-slot="effort-picker-trigger"]');
+
+describe("the composer's Model and Effort dropdowns follow the selected agent's catalog (#886 on #890)", () => {
+  const rows = (pop: HTMLElement) =>
+    [...pop.querySelectorAll("[cmdk-item]")].map((e) => e.textContent);
+
+  test("Devin selected: the model list is SWE-2's, pre-selected with its default effort", async () => {
+    render(
+      <V3DraftChat data={data()} go={vi.fn()} act={actions()} id="devin" />,
+    );
+    expect(trigger()?.textContent).toContain("SWE-2");
+    // The agent's default model's own effort ladder, default pre-selected.
+    expect(effortTrigger()?.getAttribute("aria-label")).toBe(
+      "Reasoning effort: High",
+    );
+    await act(async () => {
+      fireEvent.click(trigger()!);
+    });
+    const pop = await screen.findByLabelText("Model", {
+      selector: "[data-slot=popover-content]",
+    });
+    expect(rows(pop)).toEqual(["SWE-2", "SWE-2 high"]);
+  });
+
+  test("Hermes selected: the model list is Hermes's, and a no-effort model has no effort dropdown", async () => {
+    render(
+      <V3DraftChat data={data()} go={vi.fn()} act={actions()} id="hermes" />,
+    );
+    expect(trigger()?.textContent).toContain("Opus 5.5");
+    expect(effortTrigger()).toBeNull();
+    await act(async () => {
+      fireEvent.click(trigger()!);
+    });
+    const pop = await screen.findByLabelText("Model", {
+      selector: "[data-slot=popover-content]",
+    });
+    expect(rows(pop)).toEqual(["Opus 5.5", "Sonnet 5"]);
+  });
+});
 
 describe("the new chat's Model chip follows the selected agent (#872)", () => {
   test("a Devin agent's picker lists Devin's catalog, never Hermes's", async () => {
