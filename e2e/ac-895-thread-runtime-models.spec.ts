@@ -126,16 +126,21 @@ async function playDevin(page: Page) {
           };
           if (
             methods.get(f.id) === "system.status" &&
-            Array.isArray(f.result?.runtimes) &&
-            !f.result.runtimes.some((r) => r.id === RT)
+            Array.isArray(f.result?.runtimes)
           ) {
-            f.result.runtimes.push({
-              id: RT,
-              label: "Devin",
-              available: true,
-              state: "running",
-              detail: devin.detail,
-            });
+            /* Replace, never append: a host without the devin CLI (CI)
+               already reports `acp:devin` as unavailable, and the app reads
+               the first row with that id. */
+            f.result.runtimes = [
+              ...f.result.runtimes.filter((r) => r.id !== RT),
+              {
+                id: RT,
+                label: "Devin",
+                available: true,
+                state: "running",
+                detail: devin.detail,
+              },
+            ];
             ws.send(JSON.stringify(f));
             return;
           }
