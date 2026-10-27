@@ -97,6 +97,7 @@ beforeEach(() => {
       id: "acp:devin",
       label: "Devin",
       available: true,
+      state: "running",
       agentsUpdatable: ["name", "description", "soul", "model"],
     },
   ]);
@@ -208,6 +209,88 @@ describe("saveAgent on a coding-runtime agent", () => {
   });
 });
 
+/* #872 review: a literal runtime id "default" is the default engine
+   (D-#761 normalizeRuntime) — its edits go to the default engine's
+   updatable list, not a runtime row that does not exist. */
+describe('saveAgent on a record stamped with the literal runtime "default"', () => {
+  test("writes through the default engine", async () => {
+    employee = { ...devinEmployee(), runtime: "default", profile: "ada" };
+    capabilities = [
+      { id: "agents", name: "Agents", detail: { updatable: ["description"] } },
+    ];
+    setRuntimes([{ id: "hermes", label: "Hermes" }]);
+    await saveAgent("emp_devin", { description: "Ships PRs" });
+    expect(calls).toEqual([
+      ["agents.update", { id: "ada", description: "Ships PRs" }],
+      ["employees.update", { id: "emp_devin", description: "Ships PRs" }],
+    ]);
+  });
+});
+
+/* D-#866: the boot catalog ask starts a runtime's engine — only one that
+   is already running may be asked, and a cold start's overlapping status
+   ticks share one `models.list`. */
+describe("the boot catalog ask", () => {
+  const asked = (runtime: string) =>
+    (relay.listModels as ReturnType<typeof vi.fn>).mock.calls.filter(
+      ([p]) => (p as { runtime?: string } | undefined)?.runtime === runtime,
+    ).length;
+
+  test("never asks a hired runtime that is not running", async () => {
+    employee = { ...devinEmployee(), runtime: "acp:idle" };
+    setRuntimes([
+      { id: "hermes", label: "Hermes" },
+      { id: "acp:idle", label: "Idle", available: true, state: "idle" },
+    ]);
+    const stop = runtimeRows().subscribe(() => {});
+    await new Promise((r) => setTimeout(r, 20));
+    expect(asked("acp:idle")).toBe(0);
+    // Once it is running (real demand started it), it is asked.
+    setRuntimes([
+      { id: "hermes", label: "Hermes" },
+      { id: "acp:idle", label: "Idle", available: true, state: "running" },
+    ]);
+    await vi.waitFor(() => expect(asked("acp:idle")).toBe(1));
+    stop();
+  });
+
+  test("overlapping ticks during a cold start share one models.list", async () => {
+    employee = { ...devinEmployee(), runtime: "acp:cold" };
+    let release: () => void = () => {};
+    (relay.listModels as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      () =>
+        new Promise<ModelsListResult>((resolve) => {
+          release = () => resolve({ models: DEVIN_MODELS });
+        }),
+    );
+    const row = { id: "acp:cold", label: "Cold", available: true };
+    setRuntimes([
+      { id: "hermes", label: "Hermes" },
+      { ...row, state: "running" },
+    ]);
+    const stop = runtimeRows().subscribe(() => {});
+    // Two more status ticks land while the first ask is still in flight.
+    setRuntimes([
+      { id: "hermes", label: "Hermes" },
+      { ...row, state: "running" },
+    ]);
+    setRuntimes([
+      { id: "hermes", label: "Hermes" },
+      { ...row, state: "running" },
+    ]);
+    expect(asked("acp:cold")).toBe(1);
+    release();
+    await vi.waitFor(() =>
+      expect(
+        runtimeRows()
+          .get()
+          ?.find((r) => r.id === "acp:cold")?.models,
+      ).toEqual(["SWE-2 High", "SWE-2 Max"]),
+    );
+    stop();
+  });
+});
+
 /* #872: the describe store keyed `::id` for writes while page reads looked
    under `hermes::id` — a saved description appeared to revert. One canonical
    key: the default runtime always folds to `::`. */
@@ -215,7 +298,7 @@ describe("profileKey", () => {
   test("the default runtime always keys ::id — stamped or absent alike", () => {
     expect(profileKey(undefined, "p1")).toBe("::p1");
     expect(profileKey("hermes", "p1")).toBe("::p1");
-    expect(profileKey("default", "p1")).toBe("default::p1");
+    expect(profileKey("default", "p1")).toBe("::p1");
     expect(profileKey("acp:devin", "p1")).toBe("acp:devin::p1");
     /* Two runtimes' same-named profiles never collide. */
     expect(profileKey("acp:devin", "x")).not.toBe(

@@ -2,6 +2,7 @@ import type { AgentDescriptor, DescribeResult } from "@lilos/contracts/engine";
 import type { V3Data } from "@lilos/ui";
 import { atom, computed, onMount, type ReadableAtom } from "nanostores";
 import { engine, relay } from "../lib/runtime";
+import { isDefaultRuntime, runtimeLive } from "./runtimes";
 
 /* The engine profile behind each agent: its persona text and description,
    which the company record only mirrors (the record has no description at
@@ -21,24 +22,7 @@ export const profileKey = (
   runtime: string | undefined,
   profile: string,
 ): string => {
-  const defaultId = relay.status.get()?.result?.runtimes?.[0]?.id;
-  const rt = runtime && runtime !== defaultId ? runtime : "";
-  return `${rt}::${profile}`;
-};
-
-/** A runtime whose engine is up or already coming up — describing one of
-    ITS profiles adds nothing to the launch cost. Everything else (idle,
-    stopped, failed, never reported) must not be started just to read a
-    page (D-#866): the record fields answer until real demand starts it. */
-const runtimeLive = (runtime: string | undefined): boolean => {
-  const rows = relay.status.get()?.result?.runtimes ?? [];
-  const row = rows.find((r) => r.id === runtime);
-  return (
-    !!row &&
-    (row.state === "running" ||
-      row.state === "starting" ||
-      row.state === "restarting")
-  );
+  return `${isDefaultRuntime(runtime) ? "" : runtime}::${profile}`;
 };
 
 /** Key (as `profileKey` makes it) → what the owning engine says. */
@@ -72,14 +56,13 @@ async function load(): Promise<void> {
     engine.description.get()?.capabilities.some((c) => c.id === "agents") ===
     true;
   const rows = relay.status.get()?.result?.runtimes ?? [];
-  const defaultId = rows[0]?.id;
   const wanted = [
     ...new Map(
       relay.employees.get().flatMap((e) => {
         if (!e.profile) return [];
         const runtime = e.runtime;
         const row = runtime ? rows.find((r) => r.id === runtime) : undefined;
-        const isDefault = !runtime || runtime === defaultId;
+        const isDefault = isDefaultRuntime(runtime);
         if (isDefault && !hasAgents) return [];
         if (row?.available === false) return [];
         /* A coding runtime answers only when it is already up — a plain

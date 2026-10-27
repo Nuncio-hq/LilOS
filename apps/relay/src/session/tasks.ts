@@ -92,9 +92,12 @@ export async function handleTasks(c: RelayCtx): Promise<false | undefined> {
             ? { model: employee.model }
             : {}),
         ...(p.provider !== undefined ? { provider: p.provider } : {}),
+        /* The employee's effort belongs to ITS model's ladder — it rides
+           only when the child runs that model. */
         ...(p.effort !== undefined
           ? { effort: p.effort }
-          : employee.effort
+          : employee.effort &&
+              (p.model === undefined || p.model === employee.model)
             ? { effort: employee.effort }
             : {}),
         ...(p.fast !== undefined ? { fast: p.fast } : {}),

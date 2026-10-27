@@ -13,11 +13,7 @@ import type {
   Task,
   Ticket,
 } from "@lilos/contracts/app";
-import {
-  CEO_SETTING_KEY,
-  CODING_AGENTS_SETTING_KEY,
-  parseCodingAgents,
-} from "@lilos/contracts/app";
+import { CEO_SETTING_KEY, codingAgentsOf } from "@lilos/contracts/app";
 import type {
   SessionBinding,
   TicketAssignParams,
@@ -356,14 +352,14 @@ export function createAppOps(deps: {
           target,
         });
       },
-      /* D-#835: the user's stored defaults for outside coding agents. The
-         `codingAgents` KV row is the one place they live; the hand-off
-         skills read it before every run. */
+      /* D-#835: the user's defaults for outside coding agents are the
+         Employee records' own model + effort (#872) — read from the roster. */
       codingAgents: async () => {
-        const r = await relay.request<{ value: unknown }>("settings.get", {
-          key: CODING_AGENTS_SETTING_KEY,
-        });
-        return parseCodingAgents(r.value);
+        const r = await relay.request<{ employees: Employee[] }>(
+          "employees.list",
+          {},
+        );
+        return codingAgentsOf(r.employees);
       },
       /* The live holder. Call time reads this; the start snapshot is separate (D-#778). */
       ceoId: async () => {

@@ -487,6 +487,92 @@ describe("two runtimes at once (D-#761)", () => {
   }, 30_000);
 });
 
+/* #872 review: `checkTaskModel` matches id AND provider (Hermes ids are
+   per provider, D-#8) and re-asks a catalog that was empty or lacks the
+   pick instead of caching the first answer forever. */
+describe("checkTaskModel (#872)", () => {
+  type Row = { id: string; name?: string; provider?: string };
+  async function checkWorld(answers: (() => Row[] | Error)[]) {
+    const w = await setupWorld();
+    const acp = attachRuntime(w, ACP);
+    let asked = 0;
+    const orig = acp.conn.request.bind(acp.conn);
+    acp.conn.request = <T = unknown>(
+      method: string,
+      params?: unknown,
+    ): Promise<T> => {
+      if (method !== "models.list") return orig<T>(method, params);
+      const answer = answers[Math.min(asked, answers.length - 1)]?.();
+      asked += 1;
+      return answer instanceof Error
+        ? Promise.reject(answer)
+        : (Promise.resolve({ models: answer }) as Promise<T>);
+    };
+    const { employee } = await w.user.request<{
+      employee: Parameters<typeof w.harness.checkTaskModel>[0];
+    }>("employees.create", { name: "Devin", role: "coder", runtime: ACP });
+    return { w, employee, asks: () => asked };
+  }
+
+  it("matches the provider, not just the first row with that id", async () => {
+    const { w, employee } = await checkWorld([
+      () => [
+        { id: "shared", name: "Shared A", provider: "a" },
+        { id: "shared", name: "Shared B", provider: "b" },
+      ],
+    ]);
+    try {
+      expect(await w.harness.checkTaskModel(employee, "shared", "b")).toEqual({
+        model: "shared",
+        provider: "b",
+      });
+      await expect(
+        w.harness.checkTaskModel(employee, "shared", "c"),
+      ).rejects.toThrow(/runs on provider/);
+    } finally {
+      await w.cleanup();
+    }
+  });
+
+  it("asks again when the first answer was empty or unreachable", async () => {
+    const { w, employee, asks } = await checkWorld([
+      () => new Error("not up yet"),
+      () => new Error("still not up"),
+      () => [{ id: "swe-2", provider: "cognition" }],
+    ]);
+    try {
+      // Unreachable: the pick passes through raw.
+      expect(await w.harness.checkTaskModel(employee, "swe-2")).toEqual({
+        model: "swe-2",
+      });
+      // The catalog answers now: the unreachable answer was not kept.
+      await expect(w.harness.checkTaskModel(employee, "nope")).rejects.toThrow(
+        /isn't one of Devin's models/,
+      );
+      expect(asks()).toBe(3);
+    } finally {
+      await w.cleanup();
+    }
+  });
+
+  it("a catalog that grows later accepts the new model", async () => {
+    const { w, employee } = await checkWorld([
+      () => [{ id: "old" }],
+      () => [{ id: "old" }, { id: "brand-new" }],
+    ]);
+    try {
+      expect(await w.harness.checkTaskModel(employee, "old")).toEqual({
+        model: "old",
+      });
+      expect(await w.harness.checkTaskModel(employee, "brand-new")).toEqual({
+        model: "brand-new",
+      });
+    } finally {
+      await w.cleanup();
+    }
+  });
+});
+
 describe("a runtime that cannot start (D-#761 review)", () => {
   /** A world whose acp:devin row can never connect — the harness drives
       the registry exactly as index.ts does. The default runtime stays on

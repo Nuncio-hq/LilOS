@@ -11,10 +11,9 @@ import type {
   ScheduledTask,
 } from "@lilos/contracts/app";
 import {
-  applyCodingAgentPatch,
   CEO_SETTING_KEY,
-  CODING_AGENTS_SETTING_KEY,
-  parseCodingAgents,
+  codingAgentOf,
+  codingAgentsOf,
 } from "@lilos/contracts/app";
 import type { AgentDescriptor } from "@lilos/contracts/engine";
 import type {
@@ -396,7 +395,9 @@ export function createGatewayApprovalOps(
           id: binding.employeeId,
           ...(p.name !== undefined ? { name: p.name } : {}),
           ...(p.role !== undefined ? { role: p.role } : {}),
-          ...(p.model !== undefined ? { model: p.model } : {}),
+          /* A new model drops the effort pin — a rung named for the old
+             model's ladder may not exist on the new one (#872). */
+          ...(p.model !== undefined ? { model: p.model, effort: "" } : {}),
           ...(p.instructions !== undefined
             ? { instructions: p.instructions }
             : {}),
@@ -567,9 +568,10 @@ export function createGatewayApprovalOps(
       return { outcome: "yes" as const };
     },
 
-    /* D-#835: one stored default per outside coding agent. The card names
-       the change in words; on "once" the KV row is read, patched and
-       written back so a half-applied default can't land. */
+    /* D-#835: the default model + effort of an outside coding agent lives
+       on its Employee record (the agent page edits the same fields). The
+       card names the change in words; on "once" the record is patched.
+       An agent nobody hired has no record to hold a default. */
     codingAgentsSet: async (p: CodingAgentsSetParams) => {
       const parts: string[] = [];
       if (p.model !== undefined) {
@@ -583,21 +585,37 @@ export function createGatewayApprovalOps(
       const what = parts.join(", ") || "no change";
       await gate({
         command: `coding_agents_set ${p.agent} ${what}`,
-        description: `Change the stored default for the ${p.agent} coding agent: ${what}. Empty fields mean that CLI's own default.`,
+        description: `Change the stored default for the ${p.agent} coding agent: ${what}. Empty fields mean that runtime's own default.`,
       });
-      const cur = await relay.request<{ value: unknown }>("settings.get", {
-        key: CODING_AGENTS_SETTING_KEY,
-      });
-      const next = applyCodingAgentPatch(
-        parseCodingAgents(cur.value),
-        p.agent,
-        p,
+      const { employees } = await relay.request<{ employees: Employee[] }>(
+        "employees.list",
+        {},
       );
-      await relay.request("settings.set", {
-        key: CODING_AGENTS_SETTING_KEY,
-        value: next,
-      });
-      return next;
+      const target = employees.find((e) => codingAgentOf(e) === p.agent);
+      if (!target) {
+        throw new Error(
+          `there is no ${p.agent} agent on the team — hire it first, then its default can be set`,
+        );
+      }
+      /* A new model on its own drops the old effort: a rung named for the
+         previous model's ladder may not exist on the new one. */
+      const effort =
+        p.effort !== undefined
+          ? (p.effort ?? "")
+          : p.model !== undefined
+            ? ""
+            : undefined;
+      const r = await relay.request<{ employee: Employee }>(
+        "employees.update",
+        {
+          id: target.id,
+          ...(p.model !== undefined ? { model: p.model ?? "" } : {}),
+          ...(effort !== undefined ? { effort } : {}),
+        },
+      );
+      return codingAgentsOf(
+        employees.map((e) => (e.id === r.employee.id ? r.employee : e)),
+      );
     },
   };
 }

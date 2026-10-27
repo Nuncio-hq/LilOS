@@ -166,6 +166,36 @@ describe("tasks.create (D-#844)", () => {
     expect(r.conversation.fast).toBeUndefined();
   });
 
+  /* The employee's effort is a rung on ITS model's ladder: an explicit,
+     different model must not wear it. */
+  it("does not stamp the child's effort onto an explicitly different model", async () => {
+    const dir = home();
+    const { host, worker, parent } = await worldWithParent(dir);
+    await host.connection.receive(
+      req("employees.update", {
+        id: worker.id,
+        model: "swe-2-high",
+        effort: "high",
+      }),
+    );
+    host.frames.length = 0;
+    const other = await createTask(host, {
+      parentConversationId: parent.id,
+      employeeId: worker.id,
+      prompt: "Fix the flake",
+      model: "swe-2-fast",
+    });
+    expect(other.conversation.model).toBe("swe-2-fast");
+    expect(other.conversation.effort).toBeUndefined();
+    const same = await createTask(host, {
+      parentConversationId: parent.id,
+      employeeId: worker.id,
+      prompt: "Fix the other flake",
+      model: "swe-2-high",
+    });
+    expect(same.conversation.effort).toBe("high");
+  });
+
   it("stamps an explicit pick on the child verbatim", async () => {
     const dir = home();
     const { host, worker, parent } = await worldWithParent(dir, {

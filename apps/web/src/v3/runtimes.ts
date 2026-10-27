@@ -35,11 +35,31 @@ const attempted = new Map<
   { key: string; at: number; empty: boolean }
 >();
 const EMPTY_RETRY_MS = 15_000;
+/* Runtimes with an ask in flight: a cold start fires several status and
+   employee ticks before the first answer lands, and each would otherwise
+   start its own `models.list` (D-#866). */
+const inflight = new Set<string>();
+
+/** A runtime whose engine is up or already coming up — asking one of ITS
+    models or profiles adds nothing to the launch cost. Everything else
+    (idle, stopped, failed, never reported) must not be started just to
+    read a page (D-#866). */
+export const runtimeLive = (runtime: string | undefined): boolean => {
+  const row = relay.status
+    .get()
+    ?.result?.runtimes?.find((r) => r.id === runtime);
+  return (
+    row?.state === "running" ||
+    row?.state === "starting" ||
+    row?.state === "restarting"
+  );
+};
 
 const signatureOf = (r: RuntimeStatusRow): string =>
   `${r.available ?? "?"}:${r.state ?? ""}:${r.detail ?? ""}`;
 
 async function ask(r: RuntimeStatusRow): Promise<void> {
+  if (inflight.has(r.id)) return;
   const key = signatureOf(r);
   const last = attempted.get(r.id);
   if (
@@ -48,6 +68,7 @@ async function ask(r: RuntimeStatusRow): Promise<void> {
     (!last.empty || Date.now() - last.at < EMPTY_RETRY_MS)
   )
     return;
+  inflight.add(r.id);
   try {
     const res: ModelsListResult = await relay.listModels({ runtime: r.id });
     attempted.set(r.id, {
@@ -70,6 +91,8 @@ async function ask(r: RuntimeStatusRow): Promise<void> {
     /* The runtime can't answer (not installed, down) — its agents' pages
        show the model as text until a changed status row re-asks. */
     attempted.set(r.id, { key, at: Date.now(), empty: false });
+  } finally {
+    inflight.delete(r.id);
   }
 }
 
@@ -77,15 +100,18 @@ onMount(catalogs, () => {
   const sync = () => {
     const rows = relay.status.get()?.result?.runtimes;
     if (!rows?.length) return;
-    /* Only a runtime an agent actually runs on is asked — `models.list`
-       lazy-starts the adapter (D-#761), so asking every registered row
-       would spawn uninstalled hires' engines at boot. */
+    /* Only a runtime an agent runs on AND that is already running is
+       asked — `models.list` lazy-starts the adapter (D-#761), so asking
+       every hired row would spawn idle hires' engines at boot (D-#866).
+       A runtime started by real work changes its status row, which asks
+       again. */
     const inUse = new Set(
       relay.employees.get().flatMap((e) => (e.runtime ? [e.runtime] : [])),
     );
     // The first row is the default engine — its catalog is the global one.
     for (const r of rows.slice(1))
-      if (r.available !== false && inUse.has(r.id)) void ask(r);
+      if (r.available !== false && inUse.has(r.id) && runtimeLive(r.id))
+        void ask(r);
   };
   const stops = [relay.status.listen(sync), relay.employees.listen(sync)];
   sync();
@@ -127,6 +153,15 @@ export function runtimeRows(): ReadableAtom<V3Runtime[] | undefined> {
     default engine — the roster's first row is the default (D-#761). */
 export const defaultRuntimeId = (): string | undefined =>
   relay.status.get()?.result?.runtimes?.[0]?.id;
+
+/** Absent, the literals "default"/"hermes", or the roster's first row all
+    name the default engine (the harness's `normalizeRuntime`, D-#761) —
+    the literals hold even before the status roster has loaded. */
+export const isDefaultRuntime = (runtime: string | undefined): boolean =>
+  !runtime ||
+  runtime === "default" ||
+  runtime === "hermes" ||
+  runtime === defaultRuntimeId();
 
 /* #872: the composer's picker reads the SELECTED agent's catalog — this
    exposes each asked runtime's raw options (effort ladders and Fast tiers

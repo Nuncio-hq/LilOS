@@ -35,7 +35,12 @@ import {
 } from "../lib/runtime";
 import { modelRowStore } from "./models";
 import { profileKey, profileStore } from "./profiles";
-import { modelLabelFor, runtimeCatalogs, runtimeRows } from "./runtimes";
+import {
+  isDefaultRuntime,
+  modelLabelFor,
+  runtimeCatalogs,
+  runtimeRows,
+} from "./runtimes";
 import { v3SettingsSlice } from "./settings-data";
 import { lastChats, v3ArchivedThreads, v3Asks, v3Threads } from "./threads";
 import { v3Goals, v3Tickets, v3Updates } from "./tickets";
@@ -258,12 +263,7 @@ export function v3DataStore(): ReadableAtom<V3Data> {
                a hire before the stamp canonicalised) and an unstamped
                record both read absent, so `runtime` set always means a
                coding runtime whose own row governs the page. */
-            e.runtime &&
-              e.runtime !== "hermes" &&
-              e.runtime !== "default" &&
-              e.runtime !== runtimeList?.[0]?.id
-              ? e.runtime
-              : undefined,
+            isDefaultRuntime(e.runtime) ? undefined : e.runtime,
             e.profile
               ? profiles.byProfile[profileKey(e.runtime, e.profile)]
               : undefined,

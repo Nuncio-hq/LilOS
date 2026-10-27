@@ -5,7 +5,7 @@ import { engine, relay } from "../lib/runtime";
 import { refreshScheduledTasks } from "../lib/schedules";
 import { modelLabel, pickFromLabel } from "./models";
 import { noteProfile, updatableOf } from "./profiles";
-import { defaultRuntimeId, pickForRuntime } from "./runtimes";
+import { isDefaultRuntime, pickForRuntime, runtimeLive } from "./runtimes";
 
 /* Hire-from-profile, edit and remove for the real app (the calls the pre-v3
    Hire and Edit dialogs made). The company record (name, role, mute) always
@@ -37,10 +37,9 @@ export async function saveAgent(
      never silently on Hermes, and the fields it may write are that
      runtime's own `updatable` — absent means read-only, not a try that
      fails. */
-  const runtime =
-    employee.runtime && employee.runtime !== defaultRuntimeId()
-      ? employee.runtime
-      : undefined;
+  const runtime = isDefaultRuntime(employee.runtime)
+    ? undefined
+    : employee.runtime;
   const row = runtime
     ? relay.status.get()?.result?.runtimes?.find((r) => r.id === runtime)
     : undefined;
@@ -167,18 +166,8 @@ export async function listHirableProfiles(): Promise<V3Profile[]> {
      hire from — describing it would launch (maybe npm-install) the engine
      just because the dialog opened (D-#866). Only a runtime already up
      earns the describe. */
-  const rows = relay.status.get()?.result?.runtimes ?? [];
-  const defaultId = rows[0]?.id;
-  const describable = (runtime?: string): boolean => {
-    if (!runtime || runtime === defaultId) return true;
-    const row = rows.find((r) => r.id === runtime);
-    return (
-      !!row &&
-      (row.state === "running" ||
-        row.state === "starting" ||
-        row.state === "restarting")
-    );
-  };
+  const describable = (runtime?: string): boolean =>
+    isDefaultRuntime(runtime) || runtimeLive(runtime);
   return await Promise.all(
     agents.map(async (a) => {
       // The merged roster stamps the runtime the profile lives on (D-#761).

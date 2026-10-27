@@ -593,6 +593,93 @@ describe("approval-gated gateway tools", () => {
     }
   });
 
+  /* D-#835 (#872): the Employee record is the one source of an agent's
+     default model + effort — `coding_agents_set` writes it, `coding_agents`
+     reads it, and a stale `codingAgents` KV row is never consulted. */
+  it("coding_agents_set writes the Employee record; coding_agents reads it", async () => {
+    const v = await world();
+    try {
+      const seen = new Set<string>();
+      const { employee: devin } = await v.w.user.request<{
+        employee: Employee;
+      }>("employees.create", {
+        name: "Devin",
+        role: "engineer",
+        profile: "devin",
+        model: "swe-2-high",
+      });
+      // A leftover KV row from before the migration must change nothing.
+      await v.w.user.request("settings.set", {
+        key: "codingAgents",
+        value: { devin: { model: "stale-kv", effort: "low" } },
+      });
+      expect((await v.client.codingAgents()).agents).toEqual({
+        devin: { model: "swe-2-high" },
+      });
+
+      const call = v.client.codingAgentsSet({
+        agent: "devin",
+        model: "swe-2-max",
+        effort: "high",
+      });
+      const ask = await v.nextAsk(seen);
+      seen.add(ask.id);
+      await v.answer(ask.id, "once");
+      const res = await call;
+      expect(res.agents.devin).toEqual({ model: "swe-2-max", effort: "high" });
+      const rec = (await v.employees()).find((e) => e.id === devin.id);
+      expect(rec).toMatchObject({ model: "swe-2-max", effort: "high" });
+
+      // null clears a field back to the runtime's own default.
+      const call2 = v.client.codingAgentsSet({ agent: "devin", effort: null });
+      const ask2 = await v.nextAsk(seen);
+      seen.add(ask2.id);
+      await v.answer(ask2.id, "once");
+      const res2 = await call2;
+      expect(res2.agents.devin).toEqual({ model: "swe-2-max" });
+
+      // An agent nobody hired has no record to write.
+      const call3 = v.client.codingAgentsSet({ agent: "cursor", model: "x" });
+      const ask3 = await v.nextAsk(seen);
+      seen.add(ask3.id);
+      await v.answer(ask3.id, "once");
+      await expect(call3).rejects.toThrow(/no cursor agent/);
+    } finally {
+      v.gw.server.close();
+      await v.scope.close();
+      await v.w.cleanup();
+    }
+  });
+
+  it("team_update clears the effort pin when the model changes", async () => {
+    const v = await world();
+    try {
+      await v.w.user.request("employees.update", {
+        id: v.binding.employeeId,
+        model: "fake-smart",
+        effort: "high",
+      });
+      expect(
+        (await v.employees()).find((e) => e.id === v.binding.employeeId)
+          ?.effort,
+      ).toBe("high");
+      const call = v.client.teamUpdate({ model: "fake-large" });
+      const ask = await v.nextAsk(new Set());
+      await v.answer(ask.id, "once");
+      const res = await call;
+      expect(res.employee.model).toBe("fake-large");
+      const rec = (await v.employees()).find(
+        (e) => e.id === v.binding.employeeId,
+      );
+      expect(rec?.model).toBe("fake-large");
+      expect(rec?.effort || "").toBe("");
+    } finally {
+      v.gw.server.close();
+      await v.scope.close();
+      await v.w.cleanup();
+    }
+  });
+
   it("team_update and team_hire route engine writes to the caller's runtime", async () => {
     const v = await world();
     /* #872: a second FakeEngine plays acp:devin, the caller's record says

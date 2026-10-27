@@ -32,12 +32,7 @@ import {
   qualifySessionRef,
 } from "./engine/runtimes";
 import type { EngineGapCause, EngineHostState } from "./engine/supervisor";
-import {
-  checkTaskModel,
-  codingAgentDefaults,
-  ensureAgent,
-  sessionParams,
-} from "./harness/agents";
+import { checkTaskModel, ensureAgent, sessionParams } from "./harness/agents";
 import {
   autoApprove,
   onAskResolved,
@@ -911,7 +906,6 @@ Object.assign(Harness.prototype, {
   bindingFor,
   bindingNow,
   cleanupSettledWorktree,
-  codingAgentDefaults,
   conversationFromAtom,
   createSurfaces,
   deliver,
