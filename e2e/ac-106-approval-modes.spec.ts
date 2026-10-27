@@ -188,8 +188,10 @@ test("AC-3+AC-9 Settings Approvals: policy pick, honest copy, and the default se
     ).toHaveAttribute("aria-checked", "true");
     await page.screenshot({ path: `${SHOTS}/ac-9-settings.png` });
 
-    /* Default → Full access seeds the NEXT new conversation only. */
+    /* Default → Full access (after its confirm) seeds the NEXT new
+       conversation only. */
     await policy.getByRole("radio", { name: "Full access" }).click();
+    await page.locator("[data-access-confirm]").click();
     await expect(
       policy.getByRole("radio", { name: "Full access" }),
     ).toHaveAttribute("aria-checked", "true");

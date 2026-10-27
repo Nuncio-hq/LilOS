@@ -13,29 +13,19 @@ import {
 } from "../components/ui/popover";
 import { cn } from "../lib/utils";
 import type { ConversationAccess } from "../types";
+import { FullAccessConfirm } from "./full-access-confirm";
 
 /* #886 — the access pill opens a real menu instead of toggling: Ask and
    Full access, each with the one line that says what it means. Choosing
-   Full asks once — "Agents run tools without asking in this thread" —
-   before it applies (a single click never switches); the yes is remembered
-   in localStorage, so later picks go straight through. The switch still
-   applies to the agent's next action, mid-turn included.
+   Full asks — "Agents run tools without asking in this thread" — before
+   it applies, every time and in every thread (a single click never
+   switches, and a yes never carries over). The switch still applies to the
+   agent's next action, mid-turn included.
 
    #884: when the engine's global policy reports `off` it auto-answers
    everything, so the same menu carries the warning + one-click Fix above
    the Ask/Full rows — one access control, not two (#886). The pill
    reads "Never asks" until the policy is repaired. */
-
-/** localStorage flag: the user already confirmed what Full access does. */
-const FULL_OK = "lilos-full-access-ok";
-
-const fullOk = () => {
-  try {
-    return localStorage.getItem(FULL_OK) === "1";
-  } catch {
-    return false;
-  }
-};
 
 export function AccessPill({
   access,
@@ -64,7 +54,7 @@ export function AccessPill({
     setOpen(false);
   };
   const pick = (next: ConversationAccess) => {
-    if (next === "full" && !full && !fullOk()) {
+    if (next === "full" && !full) {
       setConfirming(true);
       return;
     }
@@ -72,12 +62,6 @@ export function AccessPill({
     close();
   };
   const confirm = () => {
-    try {
-      localStorage.setItem(FULL_OK, "1");
-    } catch {
-      /* Private windows can refuse the write — the confirm still shows
-         next time, which is the safe side. */
-    }
     onAccess("full");
     close();
   };
@@ -145,28 +129,12 @@ export function AccessPill({
         aria-label="Access"
       >
         {confirming ? (
-          <div className="flex flex-col gap-2.5 px-3 py-3">
-            <p className="text-[12.5px] leading-snug text-foreground">
-              Agents run tools without asking in this thread
-            </p>
-            <div className="flex items-center justify-end gap-1.5">
-              <button
-                type="button"
-                onClick={() => setConfirming(false)}
-                className="h-6 rounded-md px-2 text-[12.5px] text-muted-foreground hover:bg-[var(--v3-hover)] hover:text-foreground"
-              >
-                Back
-              </button>
-              <button
-                type="button"
-                data-access-confirm
-                onClick={confirm}
-                className="h-6 rounded-md bg-foreground px-2 text-[12.5px] font-medium text-background hover:bg-foreground/85"
-              >
-                Use Full access
-              </button>
-            </div>
-          </div>
+          <FullAccessConfirm
+            onBack={() => setConfirming(false)}
+            onConfirm={confirm}
+          >
+            Agents run tools without asking in this thread
+          </FullAccessConfirm>
         ) : (
           <div role="menu" aria-label="Access" className="py-1">
             {engineNeverAsks && (

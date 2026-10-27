@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-/* Access pill (#886): Ask/Full menu with a one-time Full confirm — plus
+/* Access pill (#886): Ask/Full menu with a Full confirm every time — plus
    the folded #884 state: when the engine's global policy reports `off`,
    the same menu carries the warning + Fix above the Ask/Full rows and the
    pill reads "Never asks". One access control, not two. */
@@ -93,7 +93,7 @@ describe("access pill — engine never asks (#884 folded into #886's menu)", () 
     expect(menu().textContent).not.toContain("never ask");
   });
 
-  test("Full still confirms once under the engine warning", () => {
+  test("Full still confirms under the engine warning", () => {
     const onAccess = vi.fn();
     render(
       <AccessPill
@@ -115,5 +115,50 @@ describe("access pill — engine never asks (#884 folded into #886's menu)", () 
     ).toBeTruthy();
     fireEvent.click(within(body()).getByText("Use Full access"));
     expect(onAccess).toHaveBeenCalledWith("full");
+  });
+});
+
+describe("access pill — Full confirms every time, per thread (#886)", () => {
+  const pickFull = () => {
+    open();
+    fireEvent.click(
+      within(menu()).getByRole("menuitemradio", { name: /Full access/ }),
+    );
+  };
+
+  test("a yes never carries over: the next Full asks again, nothing is stored", () => {
+    localStorage.clear();
+    const onAccess = vi.fn();
+    const { rerender } = render(
+      <AccessPill access="ask" onAccess={onAccess} />,
+    );
+    pickFull();
+    fireEvent.click(within(body()).getByText("Use Full access"));
+    expect(onAccess).toHaveBeenCalledWith("full");
+    expect(localStorage.length).toBe(0);
+
+    // Another thread (or this one, back on Ask) — the confirm is back.
+    rerender(<AccessPill access="ask" onAccess={onAccess} />);
+    onAccess.mockClear();
+    pickFull();
+    expect(onAccess).not.toHaveBeenCalled();
+    expect(
+      within(body()).getByText(
+        "Agents run tools without asking in this thread",
+      ),
+    ).toBeTruthy();
+  });
+
+  test("Back leaves Ask — no write until the yes", () => {
+    const onAccess = vi.fn();
+    render(<AccessPill access="ask" onAccess={onAccess} />);
+    pickFull();
+    fireEvent.click(within(body()).getByText("Back"));
+    expect(onAccess).not.toHaveBeenCalled();
+    expect(
+      body()
+        .querySelector('[data-slot="access-pill"]')
+        ?.getAttribute("data-access"),
+    ).toBe("ask");
   });
 });

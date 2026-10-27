@@ -128,7 +128,7 @@ test("access is a menu: a choice plus a one-time confirm for Full", async ({
     "The agent never stops to ask.",
   );
 
-  /* Picking Full is still not the switch — it asks once, worded exactly. */
+  /* Picking Full is still not the switch — it asks, worded exactly. */
   await page.locator('[data-access-option="full"]').click();
   await expect(pill).toHaveAttribute("data-access", "ask");
   await expect(
@@ -140,6 +140,16 @@ test("access is a menu: a choice plus a one-time confirm for Full", async ({
   await expect(pill).toHaveAttribute("data-access", "full");
   await pill.click();
   await page.locator('[data-access-option="ask"]').click();
+  await expect(pill).toHaveAttribute("data-access", "ask");
+
+  /* A yes never carries over: the next Full asks again, and Back leaves Ask. */
+  await pill.click();
+  await page.locator('[data-access-option="full"]').click();
+  await expect(page.locator("[data-access-confirm]")).toBeVisible();
+  await page
+    .locator("[data-full-access-confirm]")
+    .getByRole("button", { name: "Back" })
+    .click();
   await expect(pill).toHaveAttribute("data-access", "ask");
 });
 

@@ -104,8 +104,21 @@ test("General and Engine & models show the real company and engine; what you cha
   await expect(fact("Company")).toContainText("Acme Labs");
   await expect(fact("Your name")).toContainText("Rowan Test");
 
-  // Approvals: Full access is one click, and the new default sticks.
+  // Approvals: Full access as the default asks first (Back leaves Ask,
+  // nothing saved), then the yes makes it stick.
   await approvals(page).getByRole("radio", { name: "Full access" }).click();
+  await expect(
+    page.getByText("New conversations will run tools without asking"),
+  ).toBeVisible();
+  await page
+    .locator("[data-full-access-confirm]")
+    .getByRole("button", { name: "Back" })
+    .click();
+  await expect(
+    approvals(page).getByRole("radio", { name: "Full access" }),
+  ).toHaveAttribute("aria-checked", "false");
+  await approvals(page).getByRole("radio", { name: "Full access" }).click();
+  await page.locator("[data-access-confirm]").click();
   await expect(
     approvals(page).getByRole("radio", { name: "Full access" }),
   ).toHaveAttribute("aria-checked", "true");
