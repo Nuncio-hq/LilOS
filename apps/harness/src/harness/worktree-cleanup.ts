@@ -290,21 +290,23 @@ export async function cleanupSettledWorktree(
     if (own) await doCleanup(this, conv.id);
     /* This settle may have retired the LAST sharer of another settled
        thread's copy (a folder-sharer blocks cleanup while it lives).
-       Re-check every settled row still unhandled — each one's stamp
-       dedupes a real no-op. Each sibling's cleanup goes on ITS OWN
-       chain: an un-settle landing mid-remove then queues its restore
-       behind the remove and the folder comes back — run inline here it
-       would race this chain and the sibling could find its live thread
-       staring at a deleted folder. Fire-and-forget: awaiting a sibling
-       chain while it awaits ours is a circular wait. */
+       One BOUNDED pass over the rows: a sibling fires only when it is
+       settled, still unhandled, and actually HAS a worktree (a settled
+       ordinary chat is never "handled" — never gate on that alone),
+       and what goes on ITS OWN chain is the single `doCleanup` step —
+       never this entry point, whose rescan would re-enter the loop
+       once per settled row and never terminate. The sibling's chain
+       keeps the round-2 ordering: an un-settle mid-remove queues its
+       restore behind the remove and the folder comes back. */
     for (const other of this.opts.relay.conversations.get()) {
       if (other.id === conv.id || other.settledAt === undefined) continue;
       if (this.worktreeCleaned.get(other.id) === other.settledAt) continue;
-      void this.cleanupSettledWorktree(other).catch((error) =>
-        this.opts.log.warn("sibling worktree cleanup failed", {
-          conversationId: other.id,
-          error: String(error),
-        }),
+      if (!(await lilosWorktreeDir(this, other))) continue;
+      const prev = this.worktreeCleanup.get(other.id) ?? Promise.resolve();
+      const next = prev.then(() => doCleanup(this, other.id));
+      this.worktreeCleanup.set(
+        other.id,
+        next.catch(() => {}),
       );
     }
   });

@@ -553,6 +553,141 @@ describe("settled worktree cleanup (D-#881)", () => {
     }
   }, 30_000);
 
+  it("a settle rescans settled threads in ONE bounded pass — no recursion", async () => {
+    const repo = seedRepo();
+    const w = await setupWorld({ homeDir: mkhome() });
+    try {
+      const { channel } = await openDmConversation(w.user);
+      /* Ten ordinary settled chats — never worktrees, so they never
+         earn a "handled" mark. The regression: the rescan re-entered
+         the full entry point for every settled row, each re-entry
+         rescanning all the others — the cascade never ended. */
+      const ordinary: Conversation[] = [];
+      for (let i = 0; i < 10; i++) {
+        const { conversation } = await w.user.request<{
+          conversation: Conversation;
+        }>("conversations.open", {
+          channelId: channel.id,
+          text: `chat ${i}`,
+          cwd: repo,
+        });
+        ordinary.push(conversation);
+      }
+      /* Two worktree threads, each parked behind a live sharer so they
+         sit settled-but-unhandled when the trigger settle lands. */
+      const w1 = await openWorkstream(w, channel.id, repo, "one", "work");
+      const w2 = await openWorkstream(w, channel.id, repo, "two", "work");
+      await finished(w, w1.conversation.id);
+      await finished(w, w2.conversation.id);
+      const s1 = (
+        await w.user.request<{ conversation: Conversation }>(
+          "conversations.open",
+          { channelId: channel.id, text: "share one", cwd: w1.cwd },
+        )
+      ).conversation;
+      const s2 = (
+        await w.user.request<{ conversation: Conversation }>(
+          "conversations.open",
+          { channelId: channel.id, text: "share two", cwd: w2.cwd },
+        )
+      ).conversation;
+      await finished(w, s1.id);
+      await finished(w, s2.id);
+      for (const c of ordinary) await settle(w, c.id);
+      await settle(w, w1.conversation.id); // blocked — s1 is live
+      await settle(w, w2.conversation.id); // blocked — s2 is live
+
+      /* Count entry-point invocations: one per row event is the design;
+         a recursive rescan counts in the thousands. */
+      const h = w.harness as unknown as {
+        cleanupSettledWorktree: (conv: Conversation) => Promise<void>;
+      };
+      const orig = h.cleanupSettledWorktree;
+      let calls = 0;
+      h.cleanupSettledWorktree = (conv: Conversation) => {
+        calls++;
+        return orig.call(w.harness, conv);
+      };
+      try {
+        /* Retiring each sharer releases exactly its own worktree — one
+           settle, one bounded rescan, one cleanup step on the sibling's
+           own chain. */
+        await settle(w, s1.id);
+        await waitFor(
+          () => (!existsSync(w1.cwd) ? true : undefined),
+          "w1 gone",
+        );
+        await settle(w, s2.id);
+        await waitFor(
+          () => (!existsSync(w2.cwd) ? true : undefined),
+          "w2 gone",
+        );
+      } finally {
+        h.cleanupSettledWorktree = orig;
+      }
+      await systemLine(w, w1.conversation, "Worktree cleaned up");
+      await systemLine(w, w2.conversation, "Worktree cleaned up");
+      expect(calls).toBeLessThan(30);
+    } finally {
+      await w.cleanup();
+    }
+  }, 30_000);
+
+  it("a restart's startup scan stays bounded with many settled threads", async () => {
+    const repo = seedRepo();
+    const w = await setupWorld({ homeDir: mkhome() });
+    try {
+      const { channel } = await openDmConversation(w.user);
+      /* The app's real shape: ~34 threads, a handful settled ordinary
+         chats among them. The scan lists once and each settled row's
+         own chain does the work — nothing re-enters. */
+      const convs: Conversation[] = [];
+      for (let i = 0; i < 32; i++) {
+        const { conversation } = await w.user.request<{
+          conversation: Conversation;
+        }>("conversations.open", {
+          channelId: channel.id,
+          text: `t${i}`,
+          cwd: repo,
+        });
+        convs.push(conversation);
+      }
+      const w1 = await openWorkstream(w, channel.id, repo, "sweep1", "x");
+      const w2 = await openWorkstream(w, channel.id, repo, "sweep2", "x");
+      await finished(w, w1.conversation.id);
+      await finished(w, w2.conversation.id);
+      for (const c of convs.slice(0, 7)) await settle(w, c.id);
+      await settle(w, w1.conversation.id);
+      await settle(w, w2.conversation.id);
+      await waitFor(
+        () => (!existsSync(w1.cwd) && !existsSync(w2.cwd) ? true : undefined),
+        "pre-scan dirs gone",
+      );
+
+      /* Re-run the register-time scan the way a restart does. */
+      const h = w.harness as unknown as {
+        cleanupSettledWorktree: (conv: Conversation) => Promise<void>;
+        onRelayReady: () => Promise<void>;
+      };
+      const orig = h.cleanupSettledWorktree;
+      let calls = 0;
+      h.cleanupSettledWorktree = (conv: Conversation) => {
+        calls++;
+        return orig.call(w.harness, conv);
+      };
+      try {
+        await h.onRelayReady();
+      } finally {
+        h.cleanupSettledWorktree = orig;
+      }
+      /* One entry call per settled row in the scan list — never a
+         re-entry per settled sibling. */
+      expect(calls).toBeLessThan(60);
+    } finally {
+      await w.cleanup();
+    }
+  }, 60_000);
+
   it("a thread filed on a subfolder inside a worktree settles silently", async () => {
     const repo = seedRepo();
     const w = await setupWorld({ homeDir: mkhome() });
