@@ -211,3 +211,33 @@ describe("host api (temp git repo)", () => {
     expect(missing.error.code).toBe(-32101);
   });
 });
+
+describe("fs.canonical (D-#854 round 3)", () => {
+  it("folds symlink, ~ and case spellings of one folder to a single key", async () => {
+    /* A real dir, its symlink, and a deeper path resolve to the same
+       canonical key; on macOS the wrong-case spelling does too. */
+    const real = join(scanRoot, "repo");
+    const link = join(scanRoot, "repo-link");
+    const { symlinkSync } = await import("node:fs");
+    try {
+      symlinkSync(real, link);
+    } catch {
+      /* exists from a prior run */
+    }
+    const r = (await callHost("fs.canonical", {
+      paths: [real, link, join(link, "deeper"), join(real, "deeper"), "~"],
+    })) as { keys: string[] };
+    expect(r.keys[1]).toBe(r.keys[0]); // symlink resolves to the real dir
+    /* A not-yet-made tail resolves through its existing ancestor — the
+       link spelling and the real spelling still share one key. */
+    expect(r.keys[2]).toBe(r.keys[3]);
+    expect(r.keys[4]).toBe("~"); // the home collapses to its own spelling
+    if (process.platform === "darwin") {
+      const c = (await callHost("fs.canonical", {
+        paths: [real.toLowerCase(), real.toUpperCase()],
+      })) as { keys: string[] };
+      // The case-insensitive fs resolves both spellings to the same key.
+      expect(c.keys[0]).toBe(c.keys[1]);
+    }
+  });
+});

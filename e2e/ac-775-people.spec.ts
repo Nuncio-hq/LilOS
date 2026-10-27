@@ -122,38 +122,44 @@ test("statuses and this week's counts, including a thread that recovered from st
     await expect(stat("threads stuck")).toHaveClass(/text-red-600/);
     await expect(stat("threads failed")).toHaveClass(/text-red-600/);
 
-    /* The same list grouped by agent (#862's "Group by" switch): this
-       agent's fold holds its threads, statuses as dots. Match the fold by
-       its agent marker, not its text — the avatar's letter chip leads the
-       name, so a starts-with match would miss. */
+    /* The one list by status (#887 retired the Group-by switch): this
+       stack has only the one agent, so every row is its thread. Working
+       sits folded — open it to count the rows inside. */
     await page.goto(`${stack.webUrl}/#?page=threads`);
-    await main(page).getByRole("radio", { name: "Agent", exact: true }).click();
-    const block = main(page).locator(`[data-fold="agent:${agent.id}"]`);
+    const list = main(page);
+    const working = list.locator('[data-fold="working"] > button');
+    if ((await working.getAttribute("aria-expanded")) === "false")
+      await working.click();
+    /* #889's one-dot rule: a finish you watched land reads idle — "done"
+       on a row only ever means finished-and-unseen (#563). Every finish
+       here ran under an open peek, so nothing reads done and the two
+       finished rows read idle. */
     await expect(
-      block.locator('[data-thread-row]:has([data-v3-status="done"])'),
+      list.locator('[data-thread-row]:has([data-v3-status="done"])'),
+    ).toHaveCount(0);
+    await expect(list.locator("[data-thread-unseen]")).toHaveCount(0);
+    await expect(
+      list.locator('[data-thread-row]:has([data-v3-status="idle"])'),
     ).toHaveCount(finished);
     await expect(
-      block.locator('[data-thread-row]:has([data-v3-status="failed"])'),
+      list.locator('[data-thread-row]:has([data-v3-status="failed"])'),
     ).toHaveCount(failed);
     await expect(
-      block
+      list
         .locator('[data-thread-row]:has([data-v3-status="working"])')
         .filter({ hasText: /release note/i }),
     ).toHaveCount(1);
-    /* The live tally is 0. The recovered thread's title is "Stuck" and its
-       dot says done, so a title named Stuck is not a stuck thread.
+    /* No row carries a stuck dot: the recovered thread's title is "Stuck"
+       but its dot says idle — a title named Stuck is not a stuck thread.
        The week number above is the stamp. */
     await expect(
-      main(page).getByText("0 stuck", { exact: true }),
-    ).toBeVisible();
-    await expect(
-      block.locator('[data-thread-row]:has([data-v3-status="stuck"])'),
+      list.locator('[data-thread-row]:has([data-v3-status="stuck"])'),
     ).toHaveCount(0);
-    const stuckTitled = block
+    const stuckTitled = list
       .locator("[data-thread-row]")
       .filter({ hasText: /^Stuck/ });
     await expect(stuckTitled).toHaveCount(1);
-    await expect(stuckTitled.locator('[data-v3-status="done"]')).toHaveCount(1);
+    await expect(stuckTitled.locator('[data-v3-status="idle"]')).toHaveCount(1);
   } finally {
     await stack.stop();
   }

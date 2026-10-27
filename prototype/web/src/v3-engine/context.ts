@@ -13,8 +13,12 @@ export type Engine = {
   reply: ReplyFn
   toast: (t: string) => void
   openStatus: () => void
-  /** Opens the folder picker; `onPick` gets the path chosen. Closing it says nothing. */
-  askForFolder: (onPick: (path: string) => void) => void
+  /** Opens the folder picker; `onPick` gets the path chosen — and the
+     project's name and key when the dialog showed them (#854). Closing
+     it says nothing. */
+  askForFolder: (
+    onPick: (path: string, project?: { name?: string; key?: string }) => void,
+  ) => void
 }
 
 export const ticketPatch = (

@@ -1,8 +1,10 @@
+import { baseName } from "../lib/helpers";
 import type { V3Ask, V3Data } from "./v3-data-types";
 import type { V3Route } from "./v3-page-types";
 import { soonestRun } from "./v3-schedule-text";
 import type {
   V3Agent,
+  V3Project,
   V3Runtime,
   V3Status,
   V3Thread,
@@ -82,23 +84,44 @@ export const defaultAgent = (d: V3Data): V3Agent | undefined =>
 export const ticketOf = (d: V3Data, id: string): V3Ticket | undefined =>
   d.tickets.find((t) => t.id === id);
 
-export const projectOf = (d: V3Data, id: string) =>
-  d.projects.find((p) => p.id === id);
+export const projectOf = (d: V3Data, id: string | undefined) =>
+  id === undefined ? undefined : d.projects.find((p) => p.id === id);
 
-/** The project a thread lives in: its own, or its ticket's (D-#771). */
+/** The project a folder belongs to: the one whose folder is it or holds it —
+   a subfolder, a task worktree in the repo's `.lilos/wt/` (D-#848). The
+   deepest match wins when a project sits inside another's folder (#854). */
+export const projectForFolder = (
+  d: V3Data,
+  folder: string | undefined,
+): V3Project | undefined => {
+  if (!folder) return undefined;
+  let best: V3Project | undefined;
+  for (const p of d.projects)
+    if (folder === p.folder || folder.startsWith(`${p.folder}/`))
+      if (!best || p.folder.length > best.folder.length) best = p;
+  return best;
+};
+
+/** The project a thread lives in: its own, or its ticket's (D-#771), else
+   the project its working folder sits in — a folder inside a project's
+   folder is that project's, no project record needed on the thread (#854). */
 export const threadProjectId = (d: V3Data, t: V3Thread): string | undefined =>
-  t.projectId ?? (t.ticketId ? ticketOf(d, t.ticketId)?.projectId : undefined);
+  t.projectId ??
+  (t.ticketId ? ticketOf(d, t.ticketId)?.projectId : undefined) ??
+  projectForFolder(d, t.folder)?.id;
 
 /** What a thread is filed under, as a short label: its ticket, else the
    project it lives in, else "Chat" (a plain chat, in no project). The trail,
    the rows and the cards all say it the same way. With the company layer
    paused (D-#836) a ticket names nothing you can see, so the tag is the
-   thread's project instead. */
+   thread's project instead. A chat that runs in a folder names it, so a
+   folder that is no project is still easy to spot (#854). */
 export const threadTag = (d: V3Data, t: V3Thread): string => {
   const project = threadProjectId(d, t);
   const name = project ? projectOf(d, project)?.name : undefined;
-  if (!companyOn(d)) return name ?? "Chat";
-  return t.ticketId ?? name ?? "Chat";
+  const tag = name ?? (t.folder ? `Chat · ${baseName(t.folder)}` : "Chat");
+  if (!companyOn(d)) return tag;
+  return t.ticketId ?? tag;
 };
 
 /** The same label for an ask: its ticket, else where the thread it was asked

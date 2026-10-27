@@ -19,6 +19,8 @@ export type { PlanAction } from "./conversation/plan-card";
 export {
   AddFolderDialog,
   NEW_PROJECT_COPY,
+  NEW_PROJECT_PAUSED_COPY,
+  suggestProjectKey,
 } from "./dialogs/add-folder-dialog";
 export { pairingUrl } from "./dialogs/pairing";
 // focus mode
@@ -96,3 +98,4 @@ export { skillSlug } from "./v3/v3-settings-skills";
 export { V3Shell } from "./v3/v3-shell";
 export type { ThreadPark } from "./v3/v3-thread-menu";
 export type * from "./v3/v3-types";
+export { EngineProblem, firstRunProblem } from "./v3/v3-welcome-engine";

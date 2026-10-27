@@ -128,7 +128,7 @@ test("AC-1 the agent page carries the card's rows: engine, profile, model, now; 
   // The Instructions are the engine profile's own persona (the page reads
   // `agents.describe`), so the stock Default shows engine-fake's soul text.
   await expect(record.getByText("Instructions", { exact: true })).toBeVisible();
-  await expect(record.getByText(/You are the default employee/)).toBeVisible({
+  await expect(record.getByText(/You are the default agent/)).toBeVisible({
     timeout: 30_000,
   });
   // The old modal's signature: a "Soul" row — gone.

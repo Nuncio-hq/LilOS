@@ -53,7 +53,7 @@ export function transcriptNoteFor(
       text: `Working transcript unavailable — ${
         feed.error ??
         (engineState !== "ready"
-          ? "the engine feed is disconnected (harness down or restarting)"
+          ? "the engine is down or restarting"
           : "still syncing")
       }`,
     };

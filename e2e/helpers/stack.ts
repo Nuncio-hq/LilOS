@@ -516,14 +516,14 @@ export async function bootStack(
   const home =
     opts.home ?? mkdtempSync(path.join(tmpdir(), `lilos-e2e-${tag}-`));
   const dropHome = () => {
-    /* A still-exiting child can drop a last file mid-remove — rmSync's
-       own retry beats the ENOTEMPTY a force-remove can race. */
+    /* A stopping stack can still be writing its last files: ENOTEMPTY
+       retries give the shutdown a beat to finish before the rm fails. */
     if (ownsHome)
       rmSync(home, {
         recursive: true,
         force: true,
         maxRetries: 5,
-        retryDelay: 100,
+        retryDelay: 200,
       });
   };
   const leakTag = engineTag(tag);
@@ -797,7 +797,10 @@ export async function startChat(
   return decodeURIComponent(/open=thread:([^&,]+)/.exec(page.url())?.[1] ?? "");
 }
 
-/** One JSON-RPC call on the relay from inside the page (hello + request). */
+/** One JSON-RPC call on the relay from inside the page (hello + request).
+    The page must already sit on an http(s) origin — on `about:blank` the
+    browser sends `Origin: null` and the relay refuses the upgrade with a
+    bare "ws error" (#625's upgrade gate). `page.goto(webUrl)` first. */
 export async function relayRpc<T>(
   page: playwright.Page,
   stack: Pick<Stack, "relayWs" | "relayToken">,

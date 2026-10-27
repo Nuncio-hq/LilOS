@@ -18,6 +18,7 @@ import {
   VIEWER_ID,
   type Work,
 } from "@lilos/ui"
+import { threadProjectId } from "@lilos/ui/v3-data"
 import { modelIdOf } from "../fake-v3-models"
 import { modelPick } from "./model-pick"
 import { type Ask, type Ctx, promptId, turnRows, turnTime } from "./thread-replies"
@@ -190,7 +191,9 @@ export function threadModel(
   }
 
   const jobs = jobsOf(t, wb)
-  const project = t.projectId ? data.projects.find((p) => p.id === t.projectId) : undefined
+  // The project the thread files under — its own record, its ticket's, or
+  // the project whose folder holds the thread's (#854).
+  const project = data.projects.find((p) => p.id === threadProjectId(data, t))
   const pick = modelPick(data, label)
   const window = options?.find((o) => o.id === pick.model)?.contextWindow ?? WINDOW
   const used = t.context !== undefined ? Math.round((t.context / 100) * window) : undefined

@@ -19,7 +19,7 @@ import { asks, relay } from "../lib/runtime";
 import { sendKeyDoneForSend, sendKeyForSend } from "../lib/send-key";
 import { sayError } from "../lib/toast";
 import { fileSearch } from "../thread/searchers";
-import { askForFolder } from "./add-folder";
+import { addFolderAsProject, askForFolder } from "./add-folder";
 import { openStatus } from "./banner";
 import {
   hireFromProfile,
@@ -200,12 +200,30 @@ export function makeV3Actions(caps: V3Capabilities): V3DataActions {
        relay makes the folder's project (or answers the one it has). The new
        project is in `relay.projects` by the time `onCreated` runs. */
     newProject: (onCreated) =>
-      askForFolder((path) =>
-        toastOnFail(
-          "Couldn't create the project",
-          relay.createProject({ folder: path }).then((p) => onCreated(p.id)),
-        ),
+      askForFolder((path, pick) =>
+        /* The promise reaches the dialog: a taken key or refused folder
+           shows inline under its footer, the dialog staying open
+           (D-#854 round 2) — no toast swallow here. */
+        relay
+          .createProject({
+            folder: path,
+            ...(pick?.name ? { name: pick.name } : {}),
+            ...(pick?.key ? { key: pick.key } : {}),
+          })
+          .then((p) => onCreated(p.id)),
       ),
+    /* A chat's folder chip: the same dialog, pre-picked to the chat's
+       folder — the name and key prefill and stay editable (#854). */
+    addAsProject: (folder) => addFolderAsProject(folder),
+    /* The project row's ⋯ → Remove project (D-#854): the record goes, its
+       threads become chats — the confirm line is the menu's. The catch
+       toasts and RETHROWS (round 2): the caller navigates Home only when
+       the remove actually happened. */
+    removeProject: (projectId) =>
+      relay.removeProject(projectId).catch((e) => {
+        sayError(describeActionError("Couldn't remove the project", e));
+        throw e;
+      }),
     setModelVisibility: (v) =>
       toastOnFail("Couldn't update the model list", setModelVisibility(v)),
     refreshModels: () =>
@@ -220,12 +238,12 @@ export function makeV3Actions(caps: V3Capabilities): V3DataActions {
       ),
     /* D-#862: park actions call their relay methods — the row's stamps
        land on `conversation.updated`, so every client sees them. The view
-       name stays `archiveThread`; the UI says Settle. */
+       name stays `archiveThread`; the UI says Done (#887). */
     archiveThread: (threadId, archived) =>
       toastOnFail(
         archived
-          ? "Couldn't settle the thread"
-          : "Couldn't un-settle the thread",
+          ? "Couldn't mark the thread done"
+          : "Couldn't bring the thread back",
         archiveConversation(threadId, archived),
       ),
     pinThread: (threadId, pinned) =>
@@ -281,7 +299,7 @@ export function makeV3Actions(caps: V3Capabilities): V3DataActions {
                  (D-#761); absent = the default engine. */
               return (await hireEmployee(draft, null, runtime)).id;
             } catch (e) {
-              sayError(describeActionError("Couldn't hire", e));
+              sayError(describeActionError("Couldn't add the agent", e));
               throw e;
             }
           },
@@ -294,7 +312,7 @@ export function makeV3Actions(caps: V3Capabilities): V3DataActions {
             try {
               return await hireFromProfile(p);
             } catch (e) {
-              sayError(describeActionError("Couldn't hire", e));
+              sayError(describeActionError("Couldn't add the agent", e));
               throw e;
             }
           },

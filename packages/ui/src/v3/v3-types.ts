@@ -217,7 +217,8 @@ export type V3Project = {
 export type V3Goal = {
   id: string;
   title: string;
-  projectId: string;
+  /** Absent once its project was removed: the goal stays, unfiled (#854). */
+  projectId?: string;
   due: string;
   why: string;
 };
@@ -250,7 +251,8 @@ export type V3Comment = {
 export type V3Ticket = {
   id: string;
   title: string;
-  projectId: string;
+  /** Absent once its project was removed: the ticket stays, unfiled (#854). */
+  projectId?: string;
   goalId?: string;
   /** Agent id. */
   owner: string;
@@ -360,8 +362,9 @@ export type V3Thread = {
   parentId?: string;
   /** Absent = a chat, not tied to a ticket. */
   ticketId?: string;
-  /** The project the thread lives in (D-#771), whose folder the agent works
-     in; absent = a plain chat, which works in no folder. */
+  /** The project the thread lives in (D-#771); absent = a plain chat. A
+     chat can still run in a `folder` — it files under Chats — and a folder
+     inside a project's folder files the thread under it on its own (#854). */
   projectId?: string;
   agentId: string;
   /** This hand's job on the ticket ("Build two variants"), or the chat's topic. */
@@ -387,7 +390,9 @@ export type V3Thread = {
   context?: number;
   /** Absent = the engine's default model. */
   model?: string;
-  /** Absent = the harness's default folder. */
+  /** Where the agent works. Absent = the harness's default folder; a chat in
+     a folder is still a chat unless the folder is (or sits inside) a
+     project's (#854). */
   folder?: string;
   branch?: string;
   /** The step running now. */
@@ -409,7 +414,7 @@ export type V3Thread = {
   rewound?: { dropped: number; files: boolean };
   /* Where the thread sits in the list (#862, the T3 Code sidebar's model):
      Pinned stays on top, a snooze sleeps it until its wake time, and a
-     settled thread parks on the Settled shelf — its `settledAt`, and why.
+     done thread parks on the Done shelf — its `settledAt`, and why.
      All three are relay state, the same on Mac and phone; only folding
      Working is the device's own choice. */
   /** Pinned to the top of the list, epoch ms (newest pin first; reordering
@@ -431,7 +436,8 @@ export type V3Thread = {
     | { kind: "idle" }
     | { kind: "pr"; num: number; state: "merged" | "closed" };
   /** Auto-settle switched off for this thread: the idle/PR sweep leaves it
-      in the list (Auto-settle → Disabled on its menu). */
+      in the list (the wire's `autoSettle`; the menu's switch went away in
+      #887). */
   autoSettleOff?: boolean;
 };
 

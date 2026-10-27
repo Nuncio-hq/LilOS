@@ -73,9 +73,10 @@ describe("relay migrations", () => {
     // v34 adds the CEO wake flag and the standing-thread flag; v35 adds
     // D-#844's task columns + the task wake flag; v36 adds D-#761's
     // employees.runtime; v37 adds D-#862's parking columns; v38 adds its
-    // review's last_park_action_at; v40 adds employees.effort, v41 the
-    // durable employees.description and v42 folds the legacy codingAgents KV
-    // onto the matching employees (#872).
+    // review's last_park_action_at; v39 makes goal/ticket project_id
+    // nullable for D-#854's project removal; v40 adds employees.effort, v41
+    // the durable employees.description and v42 folds the legacy
+    // codingAgents KV onto the matching employees (#872).
     expect(out.version).toBe(42);
     expect(out.askCols).toContain("hire");
     expect(out.askCols).toContain("why");

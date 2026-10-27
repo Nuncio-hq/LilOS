@@ -6,7 +6,14 @@ import { rmSync } from "node:fs";
  * Runs against bun:sqlite in the entry point; the statements themselves are
  * plain SQL so a later driver swap reuses them verbatim.
  */
-export const MIGRATIONS: { version: number; statements: string[] }[] = [
+export const MIGRATIONS: {
+  version: number;
+  statements: string[];
+  /** Table rebuilds that drop a referenced table (v39) need
+      `PRAGMA foreign_keys` OFF — a no-op inside a transaction, so the
+      runner toggles it around the whole migration. */
+  foreignKeysOff?: boolean;
+}[] = [
   {
     version: 1,
     statements: [
@@ -569,6 +576,61 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
     ],
   },
   {
+    /* D-#854: `projects.remove` detaches instead of deleting — a goal or
+       ticket outlives its project, so `project_id` goes nullable. SQLite
+       can't relax NOT NULL in place: both tables are rebuilt under
+       foreign_keys OFF (conversations.ticket_id references tickets, and
+       the DROP would trip on the rows that stay). Column lists must match
+       the live schema in `db/schema.ts` (goals/tickets + the v35 task
+       columns). */
+    version: 39,
+    foreignKeysOff: true,
+    statements: [
+      `CREATE TABLE goals_new (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        project_id TEXT REFERENCES projects(id),
+        due TEXT NOT NULL DEFAULT '',
+        why TEXT NOT NULL DEFAULT '',
+        owner_id TEXT,
+        created_at INTEGER NOT NULL
+      )`,
+      `INSERT INTO goals_new SELECT * FROM goals`,
+      `DROP TABLE goals`,
+      `ALTER TABLE goals_new RENAME TO goals`,
+      `CREATE INDEX goals_project ON goals(project_id)`,
+      `CREATE TABLE tickets_new (
+        id TEXT PRIMARY KEY,
+        project_id TEXT REFERENCES projects(id),
+        number INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        goal_id TEXT REFERENCES goals(id),
+        owner_id TEXT,
+        status TEXT NOT NULL,
+        waiting_on TEXT,
+        progress TEXT NOT NULL DEFAULT '[]',
+        result TEXT,
+        updates TEXT NOT NULL DEFAULT '[]',
+        stuck_why TEXT,
+        starts_at TEXT,
+        status_at INTEGER NOT NULL,
+        done_at INTEGER,
+        created_at INTEGER NOT NULL,
+        task TEXT,
+        task_parent_id TEXT,
+        task_request_id TEXT
+      )`,
+      `INSERT INTO tickets_new SELECT * FROM tickets`,
+      `DROP TABLE tickets`,
+      `ALTER TABLE tickets_new RENAME TO tickets`,
+      `CREATE UNIQUE INDEX tickets_project_number
+        ON tickets(project_id, number)`,
+      `CREATE INDEX tickets_goal ON tickets(goal_id)`,
+      `CREATE UNIQUE INDEX tickets_task_request
+        ON tickets(task_parent_id, task_request_id)`,
+    ],
+  },
+  {
     /* #872: the agent page's effort pick is a per-agent default on the
        employee row — one store every runtime's sessions read (NULL = the
        model's own default). (#883 took v39.) */
@@ -652,9 +714,24 @@ export function applyMigrations(db: Database): void {
   const current = row.user_version;
   for (const migration of MIGRATIONS) {
     if (migration.version <= current) continue;
+    /* `PRAGMA foreign_keys` is a no-op inside a transaction, so a migration
+       that drops a referenced table (v39 rebuilds goals/tickets) toggles it
+       outside the commit — and restores whatever the connection had, not a
+       blanket ON (prod opens with it on; bare test DBs run with it off). */
+    let hadForeignKeys = false;
+    if (migration.foreignKeysOff) {
+      const { foreign_keys: on } = db.query("PRAGMA foreign_keys").get() as {
+        foreign_keys: number;
+      };
+      hadForeignKeys = on === 1;
+      db.exec("PRAGMA foreign_keys = OFF");
+    }
     db.transaction(() => {
       for (const statement of migration.statements) runStatement(db, statement);
       db.exec(`PRAGMA user_version = ${migration.version}`);
     })();
+    if (migration.foreignKeysOff) {
+      db.exec(`PRAGMA foreign_keys = ${hadForeignKeys ? "ON" : "OFF"}`);
+    }
   }
 }

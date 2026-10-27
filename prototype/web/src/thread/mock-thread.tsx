@@ -11,6 +11,7 @@ import {
   type V3PageProps,
   type WbTab,
 } from "@lilos/ui"
+import { projectForFolder } from "@lilos/ui/v3-data"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { nowClock } from "../v3-engine/chat-sim"
 import { MockBrowser } from "./mock-browser"
@@ -221,17 +222,15 @@ function Body({
     },
     onRename: act.renameThread && ((title: string) => act.renameThread?.(t.id, title)),
     onArchive: act.archiveThread && ((to: boolean) => act.archiveThread?.(t.id, to)),
-    /* The ⋯ menu's park choices (#862): pin, snooze/wake, auto-settle —
-       each drawn only with its action. A settled thread's menu suppresses
-       them in the shared menu itself. */
+    /* The ⋯ menu's park choices (#862): pin, snooze/wake — each drawn only
+       with its action. A done thread's menu suppresses them in the shared
+       menu itself. */
     park: {
       pinned: t.pinnedAt !== undefined,
       onPin: act.pinThread && ((to: boolean) => act.pinThread?.(t.id, to)),
       snoozedUntil: snoozed(t) ? t.snoozedUntil : undefined,
       onSnooze: act.snoozeThread && ((until: number) => act.snoozeThread?.(t.id, until)),
       onWake: act.wakeThread && (() => act.wakeThread?.(t.id)),
-      autoSettle: !t.autoSettleOff,
-      onAutoSettle: act.setAutoSettle && ((on: boolean) => act.setAutoSettle?.(t.id, on)),
     },
     onSend: sendHere,
     pending: model.pending,
@@ -272,6 +271,12 @@ function Body({
     onSearchCommands,
   }
   const onOpenPath = (path: string, app: string) => say(`Opened ${path} in ${app}`)
+  /* #854: the folder the thread runs in is no project's (not inside one
+     either) — its chip offers "Add as project". */
+  const onAddAsProject =
+    act.addAsProject && t.folder && !projectForFolder(data, t.folder)
+      ? () => act.addAsProject?.(t.folder ?? "")
+      : undefined
 
   return (
     <div data-thread-panel className="flex h-full min-h-0 min-w-0 flex-col">
@@ -299,12 +304,14 @@ function Body({
           caps={{ plan: true, subagents: true, background: true }}
           onSuggest={(files) => `Update ${files.join(", ")}`.slice(0, 72)}
           onOpenPath={onOpenPath}
+          onAddAsProject={onAddAsProject}
         />
       ) : (
         <ThreadView
           {...shared}
           work={t.ticketId ? model.work : null}
           onOpenPath={onOpenPath}
+          onAddAsProject={onAddAsProject}
           threadStatus={boardStatus(data, t)}
           browser={!!act.browserOpen}
           onOpenTab={(next) => {

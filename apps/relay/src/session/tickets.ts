@@ -266,7 +266,7 @@ async function projectBy(
 async function goalOnProject(
   store: RelayCtx["store"],
   id: string,
-  projectId: string,
+  projectId: string | undefined,
 ): Promise<Goal> {
   const hit = (await store.listGoals()).find((g) => g.id === id);
   if (!hit) notFound("goal");

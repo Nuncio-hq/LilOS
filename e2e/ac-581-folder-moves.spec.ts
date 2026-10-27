@@ -7,6 +7,7 @@ import { expect, type Page, test } from "@playwright/test";
 import {
   bootStack,
   pickPorts,
+  relayRpc,
   type Stack,
   startChatInFolder,
   startFolderlessChat,
@@ -130,11 +131,14 @@ test("AC-1 the new-chat folder follows the last session's folder — a move coun
   page,
 }) => {
   test.setTimeout(180_000);
+  /* Leg 1 — the repo is a project already (D-#854: made by hand), and the
+     thread's own dialog moves the session into it: a move counts, so the
+     next new chat's pick is that project, even after a reload. The page
+     needs an http(s) origin first — about:blank sends `Origin: null` and
+     the relay refuses the upgrade (#625). */
+  await page.goto(`${stack.webUrl}/`);
+  await relayRpc(page, stack, "projects.create", { folder: repoShown });
   await openFolderless(page, "folder-less first");
-
-  /* Leg 1 — add the repo through the thread's own dialog (the discovered
-     chip → repo card → Add): the session moves there, and the next new
-     chat's pick is that folder, even after a reload. */
   await panel(page).locator("[data-add-folder]").click();
   const dialog = page.locator("[data-addfolder]");
   await expect(dialog).toBeVisible();

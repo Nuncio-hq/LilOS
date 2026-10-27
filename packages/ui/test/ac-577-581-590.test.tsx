@@ -16,7 +16,11 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { Composer } from "../src/chat/composer";
-import { AddFolderDialog } from "../src/dialogs/add-folder-dialog";
+import {
+  AddFolderDialog,
+  NEW_PROJECT_COPY,
+  NEW_PROJECT_PAUSED_COPY,
+} from "../src/dialogs/add-folder-dialog";
 import { FocusView } from "../src/focus/focus-view";
 import { SessionUsage } from "../src/focus/session-usage";
 import { StatusDialog } from "../src/shell/status";
@@ -234,6 +238,155 @@ describe("issue #581 — folders", () => {
       (r.container.querySelector("[data-addbtn]") as HTMLButtonElement)
         .disabled,
     ).toBe(false);
+  });
+
+  test("#854 paused (D-#836): no Key field or ticket words — the name still drives the key", () => {
+    const fs = {
+      "~": { children: ["code"] },
+      "~/code": {
+        children: [],
+        git: { branches: ["main"], remote: "o/app" },
+      },
+    };
+    const onAdd = vi.fn();
+    const r = render(
+      <AddFolderDialog
+        folders={[]}
+        projectFields
+        company={false}
+        copy={NEW_PROJECT_PAUSED_COPY}
+        fs={fs}
+        discovered={[]}
+        onClose={() => {}}
+        onAdd={onAdd}
+      />,
+    );
+    fireEvent.click(r.container.querySelector('[data-fsrow="code"]')!);
+    // The name prefills from the folder; no key field, no "key prefixes the
+    // tickets" line, and the footer path truncates from the left (rtl).
+    expect(
+      (r.container.querySelector("[data-projectname]") as HTMLInputElement)
+        .value,
+    ).toBe("code");
+    expect(r.container.querySelector("[data-projectkey]")).toBeNull();
+    expect(r.container.textContent).not.toContain("prefixes");
+    expect(r.container.textContent).toContain("Pick a folder for this project");
+    expect(r.container.querySelector("span[dir='rtl']")).not.toBeNull();
+    // onAdd carries only the name — the relay derives the key silently, so
+    // a taken suggestion can never error on a field the user can't see.
+    fireEvent.click(r.container.querySelector("[data-addbtn]")!);
+    expect(onAdd).toHaveBeenCalledWith("~/code", {
+      name: "code",
+    });
+    r.unmount();
+    /* The company layer shows the key back: the field and its words are
+       the default, for the app where tickets exist. */
+    const on = render(
+      <AddFolderDialog
+        folders={[]}
+        projectFields
+        copy={NEW_PROJECT_COPY}
+        fs={fs}
+        discovered={[]}
+        onClose={() => {}}
+        onAdd={() => {}}
+      />,
+    );
+    fireEvent.click(on.container.querySelector('[data-fsrow="code"]')!);
+    expect(
+      (on.container.querySelector("[data-projectkey]") as HTMLInputElement)
+        .value,
+    ).toBe("COD");
+    expect(on.container.textContent).toContain("prefixes");
+  });
+
+  test("#854 company: the typed key is kept — an invalid or taken one blocks with an inline error", async () => {
+    const fs = {
+      "~": { children: ["lilos-app"] },
+      "~/lilos-app": {
+        children: [],
+        git: { branches: ["main"], remote: "o/app" },
+      },
+    };
+    const onAdd = vi.fn();
+    const r = render(
+      <AddFolderDialog
+        folders={[]}
+        projectFields
+        copy={NEW_PROJECT_COPY}
+        fs={fs}
+        discovered={[]}
+        takenKeys={["TAKEN"]}
+        onClose={() => {}}
+        onAdd={onAdd}
+      />,
+    );
+    fireEvent.click(r.container.querySelector('[data-fsrow="lilos-app"]')!);
+    const key = () =>
+      r.container.querySelector("[data-projectkey]") as HTMLInputElement;
+    const addBtn = () =>
+      r.container.querySelector("[data-addbtn]") as HTMLButtonElement;
+    // The suggested key is legal; a longer typed key is kept verbatim.
+    fireEvent.change(key(), { target: { value: "LILOSAPP" } });
+    expect(key().value).toBe("LILOSAPP");
+    expect(addBtn().disabled).toBe(false);
+    // Invalid characters: the add stays put and the field explains itself.
+    fireEvent.change(key(), { target: { value: "NO-GOOD" } });
+    expect(addBtn().disabled).toBe(true);
+    expect(r.container.textContent).toContain("1–8");
+    // A key another project has: same, named.
+    fireEvent.change(key(), { target: { value: "TAKEN" } });
+    expect(addBtn().disabled).toBe(true);
+    expect(r.container.textContent).toContain("already");
+    // And back to legal → enabled, and the typed key reaches onAdd verbatim.
+    fireEvent.change(key(), { target: { value: "LILOSAPP" } });
+    expect(addBtn().disabled).toBe(false);
+    fireEvent.click(addBtn());
+    expect(onAdd).toHaveBeenCalledWith("~/lilos-app", {
+      name: "lilos-app",
+      key: "LILOSAPP",
+    });
+  });
+
+  test("#854 company: a create failure stays open and names why inline", async () => {
+    const fs = {
+      "~": { children: ["app"] },
+      "~/app": {
+        children: [],
+        git: { branches: ["main"], remote: "o/app" },
+      },
+    };
+    const onClose = vi.fn();
+    const onAdd = vi
+      .fn()
+      .mockRejectedValue(new Error("Key APP is already taken by LilOS"));
+    const r = render(
+      <AddFolderDialog
+        folders={[]}
+        projectFields
+        copy={NEW_PROJECT_COPY}
+        fs={fs}
+        discovered={[]}
+        onClose={onClose}
+        onAdd={onAdd}
+      />,
+    );
+    fireEvent.click(r.container.querySelector('[data-fsrow="app"]')!);
+    fireEvent.click(r.container.querySelector("[data-addbtn]")!);
+    await vi.waitFor(() =>
+      expect(r.container.textContent).toContain(
+        "Key APP is already taken by LilOS",
+      ),
+    );
+    // The dialog stays open — the user can fix the key and retry.
+    expect(onClose).not.toHaveBeenCalled();
+    expect(
+      (r.container.querySelector("[data-addbtn]") as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
+    onAdd.mockResolvedValue(undefined);
+    fireEvent.click(r.container.querySelector("[data-addbtn]")!);
+    await vi.waitFor(() => expect(onClose).toHaveBeenCalled());
   });
 });
 

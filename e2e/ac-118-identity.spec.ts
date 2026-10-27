@@ -76,41 +76,33 @@ test("AC-2 first run folds name+company into the Welcome, prefilled; AC-1 the ch
       page.getByRole("heading", { name: "Welcome to LilOS" }),
     ).toBeVisible({ timeout: 30_000 });
 
-    /* The identity fields sit together on the Welcome's first step — folded
-       into one screen, no separate screen per field. (v3's Welcome has four
-       steps — You and your company / Engine check / Your first agent /
-       First project — not the old card's three; the "3 steps or fewer" cap
-       is gone with that card.) */
+    /* The name field sits on the Welcome's first step, prefilled from the
+       OS user. (#885 dropped the company field — the name is all first run
+       asks about you.) */
     const steps = page.getByRole("listitem").filter({ hasText: /\w/ });
     await expect(page.locator("[aria-current='step']")).toContainText(
-      "You and your company",
+      "Your name",
     );
     expect(await steps.count()).toBeGreaterThan(0);
     const nameInput = page.getByLabel("Your name");
-    const companyInput = page.getByLabel("Company name");
     await expect(nameInput).toHaveValue("Test User", { timeout: 30_000 });
-    await expect(companyInput).toHaveValue("Test's Co");
     await page.screenshot({ path: `${SHOTS}/ac-2-first-run-prefilled.png` });
 
     await nameInput.fill("Ada");
-    await companyInput.fill("Ada Labs");
     const next = page.getByRole("button", { name: "Next", exact: true });
-    await next.click(); // → Engine check
-    // The engine check holds the way on until relay and engine are fine.
-    await expect(
-      page.locator("[data-first-run-step][data-state='ok']"),
-    ).toHaveCount(2, { timeout: 60_000 });
     await next.click(); // → Your first agent
     await next.click(); // → First project
-    await page.getByRole("button", { name: "Open my company" }).click();
+    await page.getByRole("button", { name: "Start", exact: true }).click();
 
     // Every surface renders the stored identity (AC-1).
     await expect(greeting(page)).toContainText("Ada", { timeout: 30_000 });
-    await expect(companyLabel(page)).toHaveText("Ada Labs");
+    /* #885: first run no longer asks a company name — the label derives
+       from the person's name ("Ada's Co"). */
+    await expect(companyLabel(page)).toHaveText("Ada's Co");
     // The company shows once: the toolbar names nothing, the page names
     // itself.
     await expect(page.locator("[data-v3-topbar]")).not.toContainText(
-      "Ada Labs",
+      "Ada's Co",
     );
 
     // The user's own message (`data-msg` wrapping the `data-userturn` bubble) is authored "Ada" in the thread panel — the name is on the line under the bubble, read by assistive tech.
@@ -133,12 +125,13 @@ test("AC-2 first run folds name+company into the Welcome, prefilled; AC-1 the ch
     await expect(ownTurn).toContainText("Ada", { timeout: 30_000 });
     await page.screenshot({ path: `${SHOTS}/ac-1-surfaces.png` });
 
-    // And it is actually relay-owned: sqlite carries the row.
+    // And it is actually relay-owned: sqlite carries the row. #885: no
+    // company field, so `company_name` stays unset — the label derives.
     await expect
       .poll(() => storedSettings(stack.home), { timeout: 10_000 })
       .toEqual({
         user_name: "Ada",
-        company_name: "Ada Labs",
+        company_name: null,
         avatar_color: "bg-blue-600",
       });
   } finally {

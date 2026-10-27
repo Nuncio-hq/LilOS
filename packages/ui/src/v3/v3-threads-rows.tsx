@@ -1,5 +1,6 @@
 import { ChevronRightIcon, PinIcon } from "lucide-react";
 import type { ReactNode } from "react";
+import { baseName } from "../lib/helpers";
 import { cn } from "../lib/utils";
 import { ago } from "./v3-bits";
 import { HelpersHint } from "./v3-helpers";
@@ -23,9 +24,9 @@ import type { V3Thread } from "./v3-types";
 /* The one thread row (#862 feedback): the Threads page's single list and
    Home's list both draw it — a status dot (a word-pill only for Needs you /
    Failed, the two a scan should catch), the title, `project · agent`, and
-   the ⋯ menu (pin, settle, snooze — #862). The clock stays quiet until the
-   row is hovered; a snoozed row says when it's back and a settled row says
-   why it parked. */
+   the ⋯ menu (pin, done, snooze — #862, renamed in #887). The clock stays
+   quiet until the row is hovered; a snoozed row says when it's back and a
+   done row says why it parked. */
 
 export function ThreadRow({
   data,
@@ -36,20 +37,14 @@ export function ThreadRow({
   drop,
 }: V3PageProps & {
   t: V3Thread;
-  /** A shelf row: dimmed, and its menu leads with Un-settle. */
+  /** A shelf row: dimmed, and its menu leads with Not done. */
   settled?: boolean;
   /** Inside a group that already names it — the Agent grouping, Home's
       project groups — that half of `project · agent` is spared. */
   drop?: "project" | "agent";
 }) {
-  const {
-    renameThread,
-    archiveThread,
-    pinThread,
-    snoozeThread,
-    wakeThread,
-    setAutoSettle,
-  } = act;
+  const { renameThread, archiveThread, pinThread, snoozeThread, wakeThread } =
+    act;
   const { input, menu } = useRenameMenu({
     title: t.title,
     archived: settled,
@@ -57,29 +52,35 @@ export function ThreadRow({
     onRename: renameThread && ((title) => renameThread(t.id, title)),
     onArchive: archiveThread && ((to) => archiveThread(t.id, to)),
     park: settled
-      ? {
-          autoSettle: !t.autoSettleOff,
-          onAutoSettle: setAutoSettle && ((on) => setAutoSettle(t.id, on)),
-        }
+      ? undefined
       : {
           pinned: t.pinnedAt !== undefined,
           onPin: pinThread && ((to) => pinThread(t.id, to)),
           snoozedUntil: snoozed(t) ? t.snoozedUntil : undefined,
           onSnooze: snoozeThread && ((until) => snoozeThread(t.id, until)),
           onWake: wakeThread && (() => wakeThread(t.id)),
-          autoSettle: !t.autoSettleOff,
-          onAutoSettle: setAutoSettle && ((on) => setAutoSettle(t.id, on)),
         },
   });
   // An open helper marks its nearest listed ancestor's row (D-#847).
   const open = useOpenRoute();
   const board = boardStatus(data, t);
+  /* One dot per row (#889 round 1): the dot is the board status — except
+     a finished thread you have seen reads idle, so a green "done" only
+     shows while the finish is still unseen (#563). The sky dot it used
+     to sit beside was the same colour as "working"; `data-thread-unseen`
+     rides the row root now. */
+  const dot = t.status === "done" && !t.unseen ? "idle" : board;
   const parent = t.parentId ? threadOf(data, t.parentId) : undefined;
   const project = threadProjectId(data, t);
   const projectName = project ? projectOf(data, project)?.name : undefined;
   const asleep = snoozed(t);
   const meta = [
-    drop === "project" ? undefined : projectName,
+    /* A foldered chat has no project to name — the row says where it runs
+       instead (#854). */
+    drop === "project"
+      ? undefined
+      : (projectName ??
+        (t.folder ? `Chat · ${baseName(t.folder)}` : undefined)),
     drop === "agent" ? undefined : agentNameOf(data, t.agentId),
   ]
     .filter(Boolean)
@@ -92,9 +93,15 @@ export function ThreadRow({
       ? Math.max(0, Math.round((Date.now() - back) / 60_000))
       : t.minutes;
   return (
-    // `data-settled` marks the shelf rows: a settled thread leaves the list
-    // for the Settled fold and the marker says so (#862).
-    <div data-thread-row={t.id} data-settled={settled || undefined}>
+    // `data-settled` marks the shelf rows: a done thread leaves the list
+    // for the Done fold and the marker says so (#862). `data-thread-unseen`
+    // is the #563 hook — the finish nobody has looked at, which the dot
+    // reads as "done".
+    <div
+      data-thread-row={t.id}
+      data-settled={settled || undefined}
+      data-thread-unseen={t.unseen || undefined}
+    >
       <RowButton
         opens={{ page: "thread", id: t.id }}
         marked={
@@ -106,21 +113,12 @@ export function ThreadRow({
           settled && "text-muted-foreground",
         )}
       >
-        <StatusDot status={board} />
+        <StatusDot status={dot} />
         <span className="flex min-w-0 flex-1 items-center gap-1.5">
           {t.pinnedAt !== undefined && (
             <PinIcon
               aria-label="Pinned"
               className="size-3 shrink-0 text-muted-foreground/70"
-            />
-          )}
-          {t.unseen && (
-            <span
-              aria-hidden
-              // Test hook: the row's unseen dot (#563) — the merged list
-              // carries what the card board did (#862).
-              data-thread-unseen
-              className="inline-block size-[7px] shrink-0 rounded-full bg-sky-600 dark:bg-sky-400"
             />
           )}
           {input ?? (

@@ -108,8 +108,9 @@ export async function sessionParams(
   const fast = conv?.fast ?? base.fast;
   // D-#113: a thread owns its folder through its project — the folder is
   // the conversation's `cwd` (`conversations.open { cwd }`, stored nullable
-  // on the relay row), and a folder used for the first time becomes a project
-  // (the relay files it, D-#771). The engine gets it as `cwd` on
+  // on the relay row), and the relay files it under the project whose
+  // folder contains it, if one exists (D-#854: a folder is never made a
+  // project on a thread's behalf). The engine gets it as `cwd` on
   // `session.start`; absent = a plain chat → the harness default workdir. A
   // live move goes through `session.moveWorkspace` (D-#581).
   // Not: a per-employee fixed workdir — one employee works many folders.

@@ -66,11 +66,12 @@ export const channels = sqliteTable(
 );
 
 /**
- * Projects (D-#771): a folder the company works in. `folder` is the
- * `~`-collapsed path recents use (`projectFolderOf`) and unique — one project per folder — and `key` is the unique short
- * uppercase tag. Rows are only ever created by the relay itself (first use
- * of a folder, `projects.create`); nothing renames or deletes them yet, so
- * a thread's `project_id` never dangles.
+ * Projects (D-#854): a folder the owner declares the company works in. `folder` is
+ * the `~`-collapsed path recents use (`projectFolderOf`) and unique — one
+ * project per folder — and `key` is the unique short uppercase tag. Rows
+ * exist only because the owner made one (`projects.create`); `projects.remove`
+ * drops the row and detaches its threads, goals and tickets — it never
+ * deletes them, so a thread's `project_id` clears rather than dangles.
  */
 export const projects = sqliteTable(
   "projects",
@@ -234,15 +235,14 @@ export const conversations = sqliteTable(
 /**
  * Goals (D-#776): what the company wants. `owner_id` null means the human.
  * Progress is not stored — it is the goal's tickets, done over all.
+ * `project_id` is nullable (D-#854): a removed project lets its goals go.
  */
 export const goals = sqliteTable(
   "goals",
   {
     id: text("id").primaryKey(),
     title: text("title").notNull(),
-    projectId: text("project_id")
-      .notNull()
-      .references(() => projects.id),
+    projectId: text("project_id").references(() => projects.id),
     due: text("due").notNull().default(""),
     why: text("why").notNull().default(""),
     ownerId: text("owner_id"),
@@ -261,9 +261,9 @@ export const tickets = sqliteTable(
   "tickets",
   {
     id: text("id").primaryKey(),
-    projectId: text("project_id")
-      .notNull()
-      .references(() => projects.id),
+    /* Nullable (D-#854): a removed project lets its tickets go — the row
+       and its `KEY-n` id stay. */
+    projectId: text("project_id").references(() => projects.id),
     number: integer("number").notNull(),
     title: text("title").notNull(),
     goalId: text("goal_id").references(() => goals.id),

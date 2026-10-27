@@ -71,7 +71,9 @@ test("the sidebar is the daily app's, and Home is the daily Home with its compos
       side.getByRole("button", { name: new RegExp(`^${name}`) }),
     ).toBeVisible();
   await expect(side.getByText("Projects", { exact: true })).toBeVisible();
-  await expect(side.getByRole("button", { name: /LilOS/ })).toBeVisible();
+  await expect(
+    side.getByRole("button", { name: "LilOS", exact: true }),
+  ).toBeVisible();
   for (const name of ["Work", "Goals", "Inbox", "People", "Hire an agent"])
     await expect(
       side.getByRole("button", { name: new RegExp(`^${name}`) }),

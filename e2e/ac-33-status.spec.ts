@@ -11,6 +11,7 @@ import {
   openDetails,
   openEnginePane,
   openPolled,
+  openTroubleshooting,
 } from "./helpers/status";
 
 /**
@@ -60,7 +61,8 @@ test.describe("AC-1-4 (#33) live system status", () => {
       await openPolled(page, parts.webUrl);
       await expectHealthy(page);
 
-      const main = await openEnginePane(page);
+      await openEnginePane(page);
+      const main = await openTroubleshooting(page);
       await expect(main).toContainText("Local relay");
       /* The heartbeat carries the engine's RSS and session count into the
          row's reason; the bundle prints that row verbatim. */
@@ -176,7 +178,8 @@ test.describe("AC-1-4 (#33) live system status", () => {
       await dialog.getByRole("button", { name: "Close" }).click();
 
       // …and the bundle says which side is stale.
-      const main = await openEnginePane(page);
+      await openEnginePane(page);
+      const main = await openTroubleshooting(page);
       await main.getByRole("button", { name: "Copy diagnostics" }).click();
       await expect
         .poll(() => clipboard(page), { timeout: 15_000 })
@@ -193,7 +196,8 @@ test.describe("AC-1-4 (#33) live system status", () => {
     try {
       await openPolled(page, parts.webUrl);
       await expectHealthy(page);
-      const main = await openEnginePane(page);
+      await openEnginePane(page);
+      const main = await openTroubleshooting(page);
       /* The heartbeat's describe probe (engine name, RSS) lands on the
          harness's first full report, a beat after the relay and engine rows
          read healthy — the bundle is read until it carries the engine

@@ -1,6 +1,7 @@
 import { promises as fsp } from "node:fs";
 import { join } from "node:path";
 import type {
+  FsCanonicalResult,
   FsCompleteResult,
   FsEntry,
   FsListResult,
@@ -11,7 +12,7 @@ import type {
 import { bounded, exists } from "./access.js";
 import { HOST_ERRORS, HostError } from "./errors.js";
 import { gitProbe, repoMark, repoRoot } from "./git.js";
-import { collapsePath, expandPath } from "./paths.js";
+import { collapsePath, expandPath, folderMatchKey } from "./paths.js";
 
 const SKIP = new Set([".git", "node_modules", ".DS_Store"]);
 const COMPLETE_CAP = 50;
@@ -31,6 +32,16 @@ const hasGitDir = (abs: string) => exists(join(abs, ".git"));
 
 function pathNotFound(path: string, kind: "folder" | "file"): HostError {
   return new HostError(HOST_ERRORS.PATH_NOT_FOUND, `no such ${kind}: ${path}`);
+}
+
+/** Canonical compare keys for the given paths (D-#854): the picker's
+    "Found on this Mac" dedupes recents against a repo scan without its
+    own filesystem — `~/code/x` and `~/Code/x` share one key on a Mac, as
+    does a symlinked spelling. `keys[i]` answers `paths[i]`. */
+export async function fsCanonical(params: {
+  paths: string[];
+}): Promise<FsCanonicalResult> {
+  return { keys: params.paths.map((p) => folderMatchKey(p)) };
 }
 
 export async function fsList(params: { path: string }): Promise<FsListResult> {

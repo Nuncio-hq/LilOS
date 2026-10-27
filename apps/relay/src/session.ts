@@ -185,6 +185,7 @@ const METHOD_HANDLERS: ReadonlyMap<
   ["channels.openDm", handleDirectory],
   ["projects.list", handleProjects],
   ["projects.create", handleProjects],
+  ["projects.remove", handleProjects],
   ["goals.list", handleTickets],
   ["goals.create", handleTickets],
   ["tickets.list", handleTickets],

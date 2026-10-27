@@ -455,6 +455,7 @@
         "schedules.runNow",
         "projects.list",
         "projects.create",
+        "projects.remove",
         "goals.list",
         "goals.create",
         "tickets.list",
@@ -500,6 +501,7 @@
         "schedule.upserted",
         "schedule.removed",
         "project.upserted",
+        "project.removed",
         "goal.upserted",
         "ticket.upserted",
         "update.upserted"
@@ -9948,6 +9950,10 @@
           "type": "string",
           "minLength": 1
         },
+        "key": {
+          "type": "string",
+          "pattern": "^[A-Z0-9]{1,8}$"
+        },
         "folder": {
           "type": "string",
           "minLength": 1
@@ -9958,6 +9964,19 @@
       },
       "required": [
         "folder"
+      ]
+    },
+    "ProjectsRemoveParams": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "id"
       ]
     },
     "ProjectResult": {
@@ -10052,6 +10071,19 @@
         "project"
       ]
     },
+    "ProjectRemovedEvent": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "projectId"
+      ]
+    },
     "Goal": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
@@ -10087,7 +10119,6 @@
       "required": [
         "id",
         "title",
-        "projectId",
         "due",
         "why",
         "createdAt"
@@ -10139,7 +10170,6 @@
             "required": [
               "id",
               "title",
-              "projectId",
               "due",
               "why",
               "createdAt"
@@ -10218,7 +10248,6 @@
           "required": [
             "id",
             "title",
-            "projectId",
             "due",
             "why",
             "createdAt"
@@ -10267,7 +10296,6 @@
           "required": [
             "id",
             "title",
-            "projectId",
             "due",
             "why",
             "createdAt"
@@ -10622,7 +10650,6 @@
         "id",
         "number",
         "title",
-        "projectId",
         "status",
         "progress",
         "updates",
@@ -10990,7 +11017,6 @@
               "id",
               "number",
               "title",
-              "projectId",
               "status",
               "progress",
               "updates",
@@ -11365,7 +11391,6 @@
             "id",
             "number",
             "title",
-            "projectId",
             "status",
             "progress",
             "updates",
@@ -12084,7 +12109,6 @@
               "id",
               "number",
               "title",
-              "projectId",
               "status",
               "progress",
               "updates",
@@ -12468,7 +12492,6 @@
             "id",
             "number",
             "title",
-            "projectId",
             "status",
             "progress",
             "updates",
@@ -13326,7 +13349,6 @@
             "id",
             "number",
             "title",
-            "projectId",
             "status",
             "progress",
             "updates",

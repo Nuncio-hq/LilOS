@@ -21,11 +21,12 @@ import {
  * Serial legs on one stack: the dot is created on client A, seen on client
  * B, cleared by A's open.
  *
- * v3 shows the unseen mark on the thread's card on the Threads board (the
- * sky dot, `data-thread-unseen`) and on the person: the agent's sidebar dot
- * follows its most urgent thread (needs > working > failed > unseen > idle),
- * so a finish nobody has looked at reads `done` — its own status colour —
- * until the thread is opened and the dot falls back to `idle`.
+ * v3 shows the unseen mark on the thread's row on the Threads board (the
+ * `done` dot — one dot per row since #889's review, `data-thread-unseen`)
+ * and on the person: the agent's sidebar dot follows its most urgent
+ * thread (needs > working > failed > unseen > idle), so a finish nobody
+ * has looked at reads `done` — its own status colour — until the thread
+ * is opened and the dot falls back to `idle`.
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url));

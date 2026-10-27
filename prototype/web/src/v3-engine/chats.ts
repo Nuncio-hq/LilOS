@@ -135,10 +135,10 @@ export function chatActions({ setData, getData, reply, toast }: Engine): Pick<
         archivedThreads: d.archivedThreads?.map(rename),
       }));
     },
-    /* The wire still says archive; the product says Settle (#862). A
-       settled thread parks on the shelf with its pin and snooze off — pins
-       and wake times live on the list, not the shelf. Un-settle brings it
-       back on top of Active. */
+    /* The wire still says archive; the product says Done (#862, renamed
+       #887). A done thread parks on the shelf with its pin and snooze off —
+       pins and wake times live on the list, not the shelf. Not done brings
+       it back on top of Active. */
     archiveThread: (threadId, archived) => {
       setData((d) => {
         const from = archived ? d.threads : (d.archivedThreads ?? []);
@@ -163,7 +163,7 @@ export function chatActions({ setData, getData, reply, toast }: Engine): Pick<
           ? { ...d, threads: rest, archivedThreads: [next, ...(d.archivedThreads ?? [])] }
           : { ...d, threads: [next, ...d.threads], archivedThreads: rest };
       });
-      toast(archived ? "Settled · it parks on Threads → All → Settled" : "Un-settled · it is back in your threads");
+      toast(archived ? "Done · it parks on Threads → Done" : "Back · it is in your threads");
     },
   }
 }

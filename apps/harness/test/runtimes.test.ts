@@ -1,4 +1,5 @@
-import { readdirSync } from "node:fs";
+import { mkdirSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import type { AgentDescriptor, EngineEvent } from "@lilos/contracts/engine";
 import type { AcpLaunchSpec } from "@lilos/engine-acp";
 import { connectFake, FakeEngine } from "@lilos/engine-fake";
@@ -311,14 +312,18 @@ describe("two runtimes at once (D-#761)", () => {
         role: "coder",
         runtime: ACP,
       });
+      /* tasks.create files the child under the parent's project — made by
+         hand here (D-#854); a folder-less caller can't carry the ticket
+         (D-#844). A project needs a folder under home, so it nests. */
+      const repoDir = join(homeDir, "repo");
+      mkdirSync(repoDir, { recursive: true });
+      await w.user.request("projects.create", { folder: repoDir });
       const { conversation: parent } = await w.user.request<{
         conversation: { id: string };
       }>("conversations.open", {
         channelId: callerChannel.id,
         text: "Plan the feature",
-        /* tasks.create files the child under the parent's project — a
-           folder-less caller can't carry the ticket (D-#844). */
-        cwd: homeDir,
+        cwd: repoDir,
       });
       await waitFor(async () => {
         const { conversations } = await w.user.request<{
@@ -673,12 +678,15 @@ describe("a runtime that cannot start (D-#761 review)", () => {
         role: "coder",
         runtime: ACP,
       });
+      const repoDir = join(homeDir, "repo");
+      mkdirSync(repoDir, { recursive: true });
+      await w.user.request("projects.create", { folder: repoDir });
       const { conversation: parent } = await w.user.request<{
         conversation: { id: string };
       }>("conversations.open", {
         channelId: callerChannel.id,
         text: "Plan the feature",
-        cwd: homeDir,
+        cwd: repoDir,
       });
       await waitFor(async () => {
         const { conversations } = await w.user.request<{

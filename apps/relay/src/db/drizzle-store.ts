@@ -52,6 +52,7 @@ import {
   inArray,
   isNotNull,
   isNull,
+  like,
   lt,
   lte,
   max,
@@ -83,9 +84,11 @@ import type {
   TicketPatch,
 } from "../store";
 import {
+  CHAT_TASK_PREFIX,
   deriveProjectKey,
   NO_FOLDER_DEDUPE_LIKE,
   newId,
+  nextTicketNumber,
   noFolderDedupeKey,
   openTitle,
   projectNameFor,
@@ -279,10 +282,15 @@ const rowToDevice = (row: PairedDeviceRow): PairedDevice => ({
 
 type ProfileRow = typeof schema.profile.$inferSelect;
 type GoalRow = typeof schema.goals.$inferSelect;
-/* NULL owner means the human (D-#776). The contract field is optional. */
+/* NULL owner means the human (D-#776), NULL project a removed project
+   (D-#854). Both contract fields are optional. */
 const rowToGoal = (row: GoalRow): Goal => {
-  const { ownerId, ...rest } = row;
-  return ownerId ? { ...rest, ownerId } : rest;
+  const { ownerId, projectId, ...rest } = row;
+  return {
+    ...rest,
+    ...(projectId ? { projectId } : {}),
+    ...(ownerId ? { ownerId } : {}),
+  };
 };
 
 type TicketRow = typeof schema.tickets.$inferSelect;
@@ -297,7 +305,8 @@ const rowToTicket = (row: TicketRow): Ticket => {
     id: row.id,
     number: row.number,
     title: row.title,
-    projectId: row.projectId,
+    /* NULL projectId = its project was removed (D-#854). */
+    ...(row.projectId ? { projectId: row.projectId } : {}),
     ...(row.goalId ? { goalId: row.goalId } : {}),
     ...(row.ownerId ? { ownerId: row.ownerId } : {}),
     status: TicketStatus.parse(row.status),
@@ -316,7 +325,7 @@ const rowToTicket = (row: TicketRow): Ticket => {
 };
 const ticketToRow = (t: Ticket): typeof schema.tickets.$inferInsert => ({
   id: t.id,
-  projectId: t.projectId,
+  projectId: t.projectId ?? null,
   number: t.number,
   title: t.title,
   goalId: t.goalId ?? null,
@@ -1159,12 +1168,14 @@ export function createDrizzleStore(db: Db): RelayStore {
          indexes on folder and key back it, and nothing awaits between the
          read and the insert. */
       return db.transaction((tx) => {
+        const empty = { goals: [] as Goal[], tickets: [] as Ticket[] };
         const existing = tx
           .select()
           .from(schema.projects)
           .where(eq(schema.projects.folder, input.folder))
           .get();
-        if (existing) return { project: existing, created: false };
+        if (existing)
+          return { project: existing, created: false, attached: empty };
         const taken = new Set(
           tx
             .select({ key: schema.projects.key })
@@ -1176,13 +1187,90 @@ export function createDrizzleStore(db: Db): RelayStore {
         const project: Project = {
           id: newId("proj"),
           name,
-          key: deriveProjectKey(name, taken),
+          /* D-#854 round 2: a typed key lands exactly as typed — the
+             handler already refused a taken one; only an absent key is
+             derived from the name and deduped. */
+          key: input.key ?? deriveProjectKey(name, taken),
           folder: input.folder,
           about: input.about ?? "",
           createdAt: input.createdAt ?? now(),
         };
         tx.insert(schema.projects).values(project).run();
-        return { project, created: true };
+        /* Re-add of a removed project (D-#854): the tombstone the remove
+           wrote (`input.reattach` — its goal/ticket ids) is the exact set.
+           Round 3: NO prefix sweep — a different folder reusing this key
+           must not claim another removed project's rows. A goal's own row
+           has no key — it re-attaches named or via a ticket it owns. */
+        const named = input.reattach;
+        const ticketIds = new Set(named?.ticketIds ?? []);
+        const goalIds = new Set(named?.goalIds ?? []);
+        const ticketRows = tx
+          .select()
+          .from(schema.tickets)
+          .where(isNull(schema.tickets.projectId))
+          .all()
+          .filter((t) => ticketIds.has(t.id));
+        for (const t of ticketRows) if (t.goalId) goalIds.add(t.goalId);
+        const tickets = ticketRows.flatMap((row) =>
+          tx
+            .update(schema.tickets)
+            .set({ projectId: project.id })
+            .where(eq(schema.tickets.id, row.id))
+            .returning()
+            .all()
+            .map(rowToTicket),
+        );
+        const goalRows = tx
+          .select()
+          .from(schema.goals)
+          .where(isNull(schema.goals.projectId))
+          .all()
+          .filter((g) => goalIds.has(g.id));
+        const goals = goalRows.flatMap((row) =>
+          tx
+            .update(schema.goals)
+            .set({ projectId: project.id })
+            .where(eq(schema.goals.id, row.id))
+            .returning()
+            .all()
+            .map(rowToGoal),
+        );
+        return { project, created: true, attached: { goals, tickets } };
+      });
+    },
+    async removeProject(id: string) {
+      /* D-#854: detach every reference, then delete only the project row —
+         order matters under foreign_keys ON. */
+      return db.transaction((tx) => {
+        const project = tx
+          .select()
+          .from(schema.projects)
+          .where(eq(schema.projects.id, id))
+          .get();
+        if (!project) return null;
+        const conversations = tx
+          .update(schema.conversations)
+          .set({ projectId: null })
+          .where(eq(schema.conversations.projectId, id))
+          .returning()
+          .all()
+          .map(rowToConversation);
+        const goals = tx
+          .update(schema.goals)
+          .set({ projectId: null })
+          .where(eq(schema.goals.projectId, id))
+          .returning()
+          .all()
+          .map(rowToGoal);
+        const tickets = tx
+          .update(schema.tickets)
+          .set({ projectId: null })
+          .where(eq(schema.tickets.projectId, id))
+          .returning()
+          .all()
+          .map(rowToTicket);
+        tx.delete(schema.projects).where(eq(schema.projects.id, id)).run();
+        return { project, conversations, goals, tickets };
       });
     },
     async listGoals(): Promise<Goal[]> {
@@ -1228,12 +1316,18 @@ export function createDrizzleStore(db: Db): RelayStore {
     },
     async createTicket(input: NewTicket): Promise<Ticket> {
       return db.transaction((tx) => {
-        const taken = tx
-          .select({ n: schema.tickets.number })
+        /* D-#854 round 2: number from the id prefix, not the live project —
+           rows a removed project left detached still carry `KEY-n` ids a
+           recreated project must not re-mint. */
+        const ids = tx
+          .select({ id: schema.tickets.id })
           .from(schema.tickets)
-          .where(eq(schema.tickets.projectId, input.projectId))
+          .where(like(schema.tickets.id, `${input.projectKey}-%`))
           .all();
-        const number = taken.reduce((m, r) => Math.max(m, r.n), 0) + 1;
+        const number = nextTicketNumber(
+          ids.map((r) => r.id),
+          input.projectKey,
+        );
         const at = now();
         const settled = initialStatus(input);
         const ticket: Ticket = {
@@ -1310,11 +1404,15 @@ export function createDrizzleStore(db: Db): RelayStore {
           .where(eq(schema.tickets.id, input.id))
           .get();
         if (!row) return null;
-        const project = tx
-          .select()
-          .from(schema.projects)
-          .where(eq(schema.projects.id, row.projectId))
-          .get();
+        /* A detached ticket (its project was removed, #854) has no folder
+           to open a thread in — it cannot be picked up. */
+        const project = row.projectId
+          ? tx
+              .select()
+              .from(schema.projects)
+              .where(eq(schema.projects.id, row.projectId))
+              .get()
+          : undefined;
         if (!project) return null;
         const at = now();
         const ticket = checkout(rowToTicket(row), input.ownerId, at);
@@ -1427,12 +1525,19 @@ export function createDrizzleStore(db: Db): RelayStore {
             }
           }
         }
-        const taken = tx
-          .select({ n: schema.tickets.number })
+        /* D-#854 round 2: same prefix-wide numbering as createTicket —
+           detached `KEY-n` task rows survive a remove. A chat parent has
+           no key: the reserved `task-n` prefix (never a project key). */
+        const prefix = input.projectKey ?? CHAT_TASK_PREFIX;
+        const ids = tx
+          .select({ id: schema.tickets.id })
           .from(schema.tickets)
-          .where(eq(schema.tickets.projectId, input.projectId))
+          .where(like(schema.tickets.id, `${prefix}-%`))
           .all();
-        const number = taken.reduce((m, r) => Math.max(m, r.n), 0) + 1;
+        const number = nextTicketNumber(
+          ids.map((r) => r.id),
+          prefix,
+        );
         const at = now();
         const opened = openConversationTx(tx, {
           channelId: input.channelId,
@@ -1455,10 +1560,10 @@ export function createDrizzleStore(db: Db): RelayStore {
           ...(input.fast !== undefined ? { fast: input.fast } : {}),
         });
         const ticket: Ticket = {
-          id: `${input.projectKey}-${number}`,
+          id: `${prefix}-${number}`,
           number,
           title: input.title,
-          projectId: input.projectId,
+          ...(input.projectId ? { projectId: input.projectId } : {}),
           ownerId: input.employeeId,
           status: "working",
           progress: [],
@@ -1713,8 +1818,9 @@ export function createDrizzleStore(db: Db): RelayStore {
       }
       /* turnFailure crosses the patch API as the domain object (#419);
          the column holds its JSON like `workspace`/`usage` — serialize at
-         the boundary, `null` clears. */
-      const { turnFailure, stuck, settledPr, ...cols } = patch;
+         the boundary, `null` clears. `workspace` joins them (D-#854): a
+         `cwd` move clears the stale intent. */
+      const { turnFailure, stuck, settledPr, workspace, ...cols } = patch;
       /* D-#862 review: park writes. `archived` stays the legacy settle
          alias — an explicit settledAt wins over a stray archived flag and
          the mirror column always follows settledAt. Settling drops pin
@@ -1811,6 +1917,12 @@ export function createDrizzleStore(db: Db): RelayStore {
             ? {
                 turnFailure:
                   turnFailure === null ? null : JSON.stringify(turnFailure),
+              }
+            : {}),
+          ...(workspace !== undefined
+            ? {
+                workspace:
+                  workspace === null ? null : JSON.stringify(workspace),
               }
             : {}),
           /* D-#772: same boundary as turnFailure — the column holds JSON,

@@ -598,7 +598,7 @@ const THREADS: V3Data["threads"] = [
     title: "Build two variants",
     status: "done",
     cameBackAt: BACK(65),
-    // Its menu reads Auto-settle · Disabled (#862): this one never parks
+    // The wire flag `autoSettle` is off on this one (#862): it never parks
     // itself while the test runs.
     autoSettleOff: true,
     startedAt: "09:20",
@@ -717,12 +717,60 @@ const THREADS: V3Data["threads"] = [
       },
     ],
   },
+  /* #854 demo data: a chat in a folder no project covers (Add as project
+     from its chip) and a chat running in a LilOS worktree (files under the
+     LilOS project by containment). */
+  {
+    id: "t-chat-journal",
+    agentId: "builder",
+    title: "Sketch a journal entry screen",
+    status: "done",
+    cameBackAt: BACK(190),
+    startedAt: "07:40",
+    minutes: 12,
+    context: 9,
+    model: "Opus 5.5 · High",
+    folder: "~/Code/journal-app",
+    summary: "Drafted the layout, no files saved",
+    turns: [
+      {
+        n: 1,
+        from: "you at 07:40",
+        took: "3m",
+        prompt: { by: "you", at: "07:40", text: "Sketch a minimal journal entry screen for this app." },
+        answer:
+          "A single card: the date up top, one growing text area, a mood row under it. Save on blur. Want me to scaffold it?",
+      },
+    ],
+  },
+  {
+    id: "t-chat-wt",
+    agentId: "builder",
+    title: "Fix the sidebar footer in the worktree",
+    status: "done",
+    cameBackAt: BACK(300),
+    startedAt: "06:55",
+    minutes: 18,
+    context: 22,
+    model: "Opus 5.5 · High",
+    folder: "~/Code/LilOS/.lilos/wt/ac-544",
+    summary: "Aligned the footer with the row padding",
+    turns: [
+      {
+        n: 1,
+        from: "you at 06:55",
+        took: "4m",
+        prompt: { by: "you", at: "06:55", text: "The sidebar footer sits 2px low in this worktree." },
+        answer: "Matched the row padding — the footer now sits on the same baseline.",
+      },
+    ],
+  },
 ]
 
-/* The Settled shelf (#862): the three ways a thread lands there — you
-   put it away yourself (no reason named), the idle sweep parked it after
-   three quiet days, or its PR merged. The wire calls the shelf
-   `archivedThreads`; Un-settle brings a row back on top of Active. */
+/* The Done shelf (#862): the three ways a thread lands there — you marked
+   it done yourself (no reason named), the idle sweep parked it after three
+   quiet days, or its PR merged. The wire calls the shelf `archivedThreads`;
+   Not done brings a row back on top of Active. */
 const SETTLED: V3Data["threads"] = [
   {
     id: "t-settle-theme",

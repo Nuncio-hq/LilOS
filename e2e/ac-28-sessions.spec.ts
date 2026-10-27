@@ -31,9 +31,9 @@ import {
  *
  * v3: the session list is the Threads page and a conversation opens in the
  * side peek. The session filter is the ⌘K palette (it searches thread titles
- * and messages); a thread's rename / archive / unarchive are its row's ⋯ menu
- * on Threads (and the header's), and an archived thread lives under
- * Threads → All → Settled.
+ * and messages); a thread's rename / done / not-done are its row's ⋯ menu on
+ * Threads (and the header's), and a done thread lives under the Done
+ * fold (#887).
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
@@ -380,7 +380,7 @@ test("AC-3 rename + archive persist across restart", async ({ page }) => {
   });
   await row.hover();
   await menu(row).click();
-  await page.getByRole("menuitem", { name: "Settle thread" }).click();
+  await page.getByRole("menuitem", { name: "Done", exact: true }).click();
   // The archived thread leaves the list for the Archived section; the keeper
   // stays where it was.
   await expect(row).toHaveCount(0, { timeout: 15_000 });
@@ -416,7 +416,7 @@ test("AC-3 rename + archive persist across restart", async ({ page }) => {
   // Unarchived from its menu, it is back in the list under the name it was
   // given, and the keeper was never touched.
   await menu(archived).click();
-  await page.getByRole("menuitem", { name: "Un-settle thread" }).click();
+  await page.getByRole("menuitem", { name: "Not done" }).click();
   await expect(
     page.locator(`[data-thread-row="${convId}"]:not([data-settled])`),
   ).toContainText("Repo summary thread", { timeout: 30_000 });
