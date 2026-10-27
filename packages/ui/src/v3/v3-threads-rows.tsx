@@ -63,6 +63,12 @@ export function ThreadRow({
   // An open helper marks its nearest listed ancestor's row (D-#847).
   const open = useOpenRoute();
   const board = boardStatus(data, t);
+  /* One dot per row (#889 round 1): the dot is the board status — except
+     a finished thread you have seen reads idle, so a green "done" only
+     shows while the finish is still unseen (#563). The sky dot it used
+     to sit beside was the same colour as "working"; `data-thread-unseen`
+     rides the row root now. */
+  const dot = t.status === "done" && !t.unseen ? "idle" : board;
   const parent = t.parentId ? threadOf(data, t.parentId) : undefined;
   const project = threadProjectId(data, t);
   const projectName = project ? projectOf(data, project)?.name : undefined;
@@ -82,8 +88,14 @@ export function ThreadRow({
       : t.minutes;
   return (
     // `data-settled` marks the shelf rows: a done thread leaves the list
-    // for the Done fold and the marker says so (#862).
-    <div data-thread-row={t.id} data-settled={settled || undefined}>
+    // for the Done fold and the marker says so (#862). `data-thread-unseen`
+    // is the #563 hook — the finish nobody has looked at, which the dot
+    // reads as "done".
+    <div
+      data-thread-row={t.id}
+      data-settled={settled || undefined}
+      data-thread-unseen={t.unseen || undefined}
+    >
       <RowButton
         opens={{ page: "thread", id: t.id }}
         marked={
@@ -95,21 +107,12 @@ export function ThreadRow({
           settled && "text-muted-foreground",
         )}
       >
-        <StatusDot status={board} />
+        <StatusDot status={dot} />
         <span className="flex min-w-0 flex-1 items-center gap-1.5">
           {t.pinnedAt !== undefined && (
             <PinIcon
               aria-label="Pinned"
               className="size-3 shrink-0 text-muted-foreground/70"
-            />
-          )}
-          {t.unseen && (
-            <span
-              aria-hidden
-              // Test hook: the row's unseen dot (#563) — the merged list
-              // carries what the card board did (#862).
-              data-thread-unseen
-              className="inline-block size-[7px] shrink-0 rounded-full bg-sky-600 dark:bg-sky-400"
             />
           )}
           {input ?? (

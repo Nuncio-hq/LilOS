@@ -130,8 +130,16 @@ test("statuses and this week's counts, including a thread that recovered from st
     const working = list.locator('[data-fold="working"] > button');
     if ((await working.getAttribute("aria-expanded")) === "false")
       await working.click();
+    /* #889's one-dot rule: a finish you watched land reads idle — "done"
+       on a row only ever means finished-and-unseen (#563). Every finish
+       here ran under an open peek, so nothing reads done and the two
+       finished rows read idle. */
     await expect(
       list.locator('[data-thread-row]:has([data-v3-status="done"])'),
+    ).toHaveCount(0);
+    await expect(list.locator("[data-thread-unseen]")).toHaveCount(0);
+    await expect(
+      list.locator('[data-thread-row]:has([data-v3-status="idle"])'),
     ).toHaveCount(finished);
     await expect(
       list.locator('[data-thread-row]:has([data-v3-status="failed"])'),
@@ -142,7 +150,7 @@ test("statuses and this week's counts, including a thread that recovered from st
         .filter({ hasText: /release note/i }),
     ).toHaveCount(1);
     /* No row carries a stuck dot: the recovered thread's title is "Stuck"
-       but its dot says done — a title named Stuck is not a stuck thread.
+       but its dot says idle — a title named Stuck is not a stuck thread.
        The week number above is the stamp. */
     await expect(
       list.locator('[data-thread-row]:has([data-v3-status="stuck"])'),
@@ -151,7 +159,7 @@ test("statuses and this week's counts, including a thread that recovered from st
       .locator("[data-thread-row]")
       .filter({ hasText: /^Stuck/ });
     await expect(stuckTitled).toHaveCount(1);
-    await expect(stuckTitled.locator('[data-v3-status="done"]')).toHaveCount(1);
+    await expect(stuckTitled.locator('[data-v3-status="idle"]')).toHaveCount(1);
   } finally {
     await stack.stop();
   }

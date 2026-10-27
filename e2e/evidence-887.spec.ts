@@ -9,7 +9,6 @@ import {
   openDefaultAgent,
   relayRpc,
   type Stack,
-  skipFirstRun,
   startChat,
   startChatInFolder,
   v3Main,
@@ -68,6 +67,17 @@ test.describe.configure({ mode: "serial" });
 const main = (page: Page) => v3Main(page);
 const shot = (page: Page, name: string) =>
   page.screenshot({ path: path.join(OUT, `${name}.png`), fullPage: false });
+/** One shot per colour scheme — Oscar reads both. */
+const shotBoth = async (page: Page, name: string) => {
+  for (const scheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    await page.screenshot({
+      path: path.join(OUT, `${name}-${scheme}.png`),
+      animations: "disabled",
+    });
+  }
+  await page.emulateMedia({ colorScheme: "light" });
+};
 const row = (page: Page, id: string) =>
   main(page).locator(`[data-thread-row="${id}"]`);
 const foldButton = (page: Page, fold: string) =>
@@ -166,4 +176,56 @@ test("after: the project page uses the same statuses", async ({ page }) => {
      its own thread under Active. */
   await expect(threads.getByText("Active", { exact: true })).toBeVisible();
   await shot(page, "project-statuses");
+});
+
+test("after: company layer off — Oscar's view, light and dark", async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  /* Oscar's app runs the company layer paused (D-#836): the same list and
+     menus under LILOS_COMPANY=0 — no Work / Goals / People chrome. */
+  const off = await bootStack(
+    "v3done887off",
+    { relay: 0, feed: 0, web: await freePort() },
+    { LILOS_COMPANY: "0" },
+  );
+  try {
+    const agent = await openDefaultAgent(page, off.webUrl);
+    const pinned = await startChat(page, off.webUrl, agent, "pin evidence");
+    const active = await startChat(page, off.webUrl, agent, "active evidence");
+    await startChat(
+      page,
+      off.webUrl,
+      agent,
+      "LILOS_TURN_HOLD working evidence",
+    );
+    const snoozed = await startChat(page, off.webUrl, agent, "snooze evidence");
+    const done = await startChat(page, off.webUrl, agent, "done evidence");
+    await page.goto(`${off.webUrl}/#?page=threads`);
+    await expect(row(page, done)).toBeVisible({ timeout: 30_000 });
+
+    await menu(page, pinned);
+    await page.getByRole("menuitem", { name: "Pin thread" }).click();
+    await menu(page, snoozed);
+    await page.getByRole("menuitem", { name: "Snooze" }).click();
+    await page.getByRole("menuitem", { name: "1 h" }).click();
+    await expect(foldButton(page, "snoozed")).toContainText("Snoozed (1)");
+    await menu(page, done);
+    await page.getByRole("menuitem", { name: "Done", exact: true }).click();
+    await expect(foldButton(page, "settled")).toContainText("Done (1)");
+
+    await ensureOpen(page, "working");
+    await ensureOpen(page, "snoozed");
+    await ensureOpen(page, "settled");
+    await shotBoth(page, "threads-list-company-off");
+
+    await menu(page, active);
+    await shotBoth(page, "thread-menu-company-off");
+    await page.keyboard.press("Escape");
+    await menu(page, done);
+    await shotBoth(page, "not-done-menu-company-off");
+    await page.keyboard.press("Escape");
+  } finally {
+    await off.stop();
+  }
 });
