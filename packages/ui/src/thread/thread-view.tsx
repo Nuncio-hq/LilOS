@@ -22,6 +22,7 @@ import { sessionModelId } from "../lib/context-window";
 import type { OsApp, WbTab } from "../types";
 import { useRenameMenu } from "../v3/v3-thread-menu";
 import type { ThreadFrameProps } from "./frame-props";
+import { idleHint } from "./idle-hint";
 import {
   focusThreadComposer,
   StuckCard,
@@ -207,7 +208,12 @@ export function ThreadView(props: ThreadViewProps) {
             title={thread.title || "Thread"}
             titleInput={titleInput}
             kicker={threadKicker({
-              title: `Thread ${thread.session}`,
+              title: [
+                idleHint({ work, repo, pr, isDM, session: false }),
+                `Thread ${thread.session}`,
+              ]
+                .filter(Boolean)
+                .join(" · "),
               channel: isDM ? undefined : `#${channel.name}`,
               folder: panelFolder({
                 thread,

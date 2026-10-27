@@ -26,11 +26,13 @@ export function threadKicker({
   channel?: string;
   /** The folder/branch part, already drawn; absent = none to show. */
   folder?: ReactNode;
+  /** The hover text: where the next edit lands (`idleHint`), then the
+      thread's own number. */
   title?: string;
 }): ReactNode {
   if (!channel && !folder) return undefined;
   return (
-    <span title={title}>
+    <span title={title} data-thread-kicker>
       {channel && `Thread · ${channel}`}
       {channel && folder && " · "}
       {folder}

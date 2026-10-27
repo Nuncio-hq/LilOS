@@ -2,6 +2,7 @@ import { CircleDotIcon } from "lucide-react";
 import { useMemo } from "react";
 import { plain } from "../chat/agent-chat";
 import { PHASE_LABEL } from "../lib/helpers";
+import { idleHint } from "../thread/idle-hint";
 import { StartWork, sentTurns, ThreadHeader } from "../thread/thread-header";
 import { focusFolder, threadKicker } from "../thread/thread-kicker";
 import { workTabs } from "../thread/work-strip";
@@ -94,7 +95,12 @@ export function FocusHeader({
       title={thread.title || plain(root.text)}
       titleInput={titleInput}
       kicker={threadKicker({
-        title: `Thread ${thread.session}`,
+        title: [
+          idleHint({ work, pr, isDM, session: true }),
+          `Thread ${thread.session}`,
+        ]
+          .filter(Boolean)
+          .join(" · "),
         channel: isDM ? undefined : `#${channel.name}`,
         folder: focusFolder({ thread, work, isDM, openMenu: folderMenu }),
       })}
