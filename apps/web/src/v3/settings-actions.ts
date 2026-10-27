@@ -172,13 +172,22 @@ export const v3SettingsActions: Mine = {
         ? addFolder(folder).then(() => relay.createProject({ folder }))
         : Promise.resolve(),
     ]);
-    const failed = steps.filter((s) => s.status === "rejected").length;
-    // Only when nothing saved does the welcome stay (it says so itself).
-    if (failed === steps.length) throw new Error("setup saved nothing");
+    /* #885: onboarded means the setup actually landed — a partial save
+       (agent refused while the engine was still coming up, a folder the
+       host rejected) throws the plain reason the welcome shows inline,
+       and the welcome stays until every part saves. */
+    const bad = steps.findIndex((s) => s.status === "rejected");
+    if (bad >= 0) {
+      throw new Error(
+        [
+          "Couldn't save your name — try again.",
+          "Couldn't save the agent — the engine may still be starting; try again.",
+          "Couldn't add that folder — check the path and try again.",
+        ][bad],
+      );
+    }
     markOnboarded();
-    if (failed > 0)
-      sayError("Part of that didn't save. Check Settings and your agents.");
-    else say("All set");
+    say("All set");
   },
   skipSetup: markOnboarded,
 

@@ -266,7 +266,7 @@ export function makeV3Actions(caps: V3Capabilities): V3DataActions {
                  (D-#761); absent = the default engine. */
               return (await hireEmployee(draft, null, runtime)).id;
             } catch (e) {
-              sayError(describeActionError("Couldn't hire", e));
+              sayError(describeActionError("Couldn't add the agent", e));
               throw e;
             }
           },
@@ -279,7 +279,7 @@ export function makeV3Actions(caps: V3Capabilities): V3DataActions {
             try {
               return await hireFromProfile(p);
             } catch (e) {
-              sayError(describeActionError("Couldn't hire", e));
+              sayError(describeActionError("Couldn't add the agent", e));
               throw e;
             }
           },

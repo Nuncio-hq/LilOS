@@ -73,9 +73,17 @@ function build(): Slice {
   const threadIds = new Set(relay.conversations.get().map((c) => c.id));
   const status = relay.status.get();
   const connection = relay.state.get();
+  /* #885: no status result isn't a failure — the first poll may not have
+     landed, and one failed poll is a blip. A synthesized "down" needs a
+     sustained miss: two failed polls in a row. Before that the legs read
+     "connecting", so first run shows its steps, not a false problem. */
+  const statusDown = !status.result && (status.failures ?? 0) >= 2;
   const rows: StatusRow[] = toStatusComponents({
     result: status.result,
-    connection,
+    connection:
+      !status.result && !statusDown && connection === "ready"
+        ? "connecting"
+        : connection,
     fatal: relay.fatal.get(),
   });
   const engine = engineOf(rows, status.result);

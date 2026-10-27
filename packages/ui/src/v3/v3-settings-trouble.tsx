@@ -1,4 +1,5 @@
 import { CopyIcon } from "lucide-react";
+import { useEffect, useState } from "react";
 import { Btn, Section, Spinner } from "./v3-bits";
 import type { V3Settings } from "./v3-data-types";
 import { AgentAvatar, CeoMark } from "./v3-marks";
@@ -52,16 +53,21 @@ export function EngineTrouble({ data, go, act }: V3PageProps) {
     ].join("\n");
   const relayTone = RELAY_WORD[relay.state];
   // Something it holds is down: the section opens by itself so the fix is
-  // not behind a fold.
+  // not behind a fold — and stays open once opened (#885; a recovery must
+  // not snap the fold shut under the reader).
   const failing =
     relay.state === "down" ||
     engine.state === "missing" ||
     engine.state === "old" ||
     engine.state === "down";
+  const [opened, setOpened] = useState(false);
+  useEffect(() => {
+    if (failing) setOpened(true);
+  }, [failing]);
 
   return (
     <details
-      open={failing || undefined}
+      open={opened || undefined}
       className="mt-8 border-[var(--v3-line)] border-t"
     >
       <summary className="cursor-pointer select-none py-3 text-[13px] text-muted-foreground hover:text-foreground">

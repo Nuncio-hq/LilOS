@@ -10,6 +10,7 @@ import {
   v3Peek,
   v3Sidebar,
 } from "./helpers/stack";
+import { openTroubleshooting } from "./helpers/status";
 import { openWorkbench } from "./helpers/workbench";
 
 /**
@@ -214,6 +215,7 @@ for (const theme of ["light", "dark"] as const) {
       await expect(main(page)).toContainText("Test's Co", { timeout: 30_000 });
       await shot("settings-general");
       await page.goto(`${stack.webUrl}/#?page=settings&view=engine`);
+      await openTroubleshooting(page);
       await expect(main(page)).toContainText("Engine-fake", {
         timeout: 30_000,
       });

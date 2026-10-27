@@ -30,8 +30,13 @@ const BANNED: Record<string, RegExp> = {
 
 /** file (repo-relative) -> banned keys that stay allowed there, with why.
     An entry that stops matching a real string fails the test: an old
-    excuse must not hide a new sentence. */
-const ALLOW: Record<string, { words: string[]; why: string }> = {
+    excuse must not hide a new sentence. `strings` pins the allowance to
+    listed substrings — anything else banned in the same file still flags
+    (#885: a whole-file excuse must not hide a new sentence). */
+const ALLOW: Record<
+  string,
+  { words: string[]; why: string; strings?: string[] }
+> = {
   /* #885's own escape hatch: the Troubleshooting surface keeps the real
      names, because that is what a bug report quotes. */
   "packages/ui/src/v3/v3-settings-trouble.tsx": {
@@ -86,6 +91,11 @@ const ALLOW: Record<string, { words: string[]; why: string }> = {
     words: ["CEO"],
     why: "company-gated rows",
   },
+  "packages/ui/src/v3/v3-needs-ask.tsx": {
+    words: ["CEO"],
+    strings: ["the CEO"],
+    why: "the company-gated fallback chip's fixed part",
+  },
   "packages/ui/src/v3/v3-page-view.tsx": {
     words: ["hire"],
     why: "the Hire page's title",
@@ -115,8 +125,9 @@ const ALLOW: Record<string, { words: string[]; why: string }> = {
     why: "the CEO's-next-run row, company-gated",
   },
   "apps/web/src/v3/actions.ts": {
-    words: ["CEO", "hire"],
-    why: "company-layer toasts",
+    words: ["CEO"],
+    strings: ["Couldn't make them CEO"],
+    why: "the company-layer toast",
   },
 
   /* #872's scope (the add-agent dialog and the agent page): the rewording
@@ -174,15 +185,23 @@ function* visibleStrings(src: string): Generator<string> {
   for (const re of LITERALS) {
     for (const m of clean.matchAll(re)) {
       const s = unquote(m[0]).replace(/\$\{[^}]*\}/g, " ");
-      if (!CODE_TOKEN.test(s)) yield s;
+      /* Code tokens never render as words — except `acp:`, which IS the
+         banned thing wherever it appears. */
+      if (CODE_TOKEN.test(s) && !BANNED["acp:"].test(s)) continue;
+      yield s;
     }
     // Blank the matched literals so leftover `>`/`<` (and stray quotes in
     // JSX text like "don't") can't desync the JSX-text pass.
     clean = clean.replace(re, '""');
   }
-  // JSX text between tags — `=>`/`->` before the `>` means it was code.
-  for (const m of clean.matchAll(/(?<![=-])>([^<>"`{}]*)</g)) {
-    const s = m[1];
+  /* JSX text between tags, including the segments around a {expr}: the
+     run ends at the next `<`, and only flat `{…}` expressions fit (a
+     nested element inside braces doesn't — those literals were already
+     scanned above). `=>`/`->` before the `>` means it was code. */
+  for (const m of clean.matchAll(
+    /(?<![=-])>([^<>"`{}]*(?:\{[^{}]*\}[^<>"`{}]*)*)</g,
+  )) {
+    const s = m[1].replace(/\{[^{}]*\}/g, " ");
     if (!/[a-zA-Z]/.test(s)) continue;
     if (/;|=>|\bconst\b|\breturn\b|=/.test(s)) continue;
     yield s;
@@ -193,18 +212,25 @@ describe("no internal names where a user reads (#885)", () => {
   test("user-visible strings in apps/web and packages/ui stay plain", () => {
     const hits: string[] = [];
     const allowUse = new Map<string, Set<string>>();
+    const allowTextUse = new Map<string, Set<string>>();
     for (const scope of SCOPES) {
       for (const file of walk(scope)) {
         const rel = relative(REPO, file);
-        const allow = new Set(ALLOW[rel]?.words ?? []);
+        const entry = ALLOW[rel];
         const strings = [...visibleStrings(readFileSync(file, "utf8"))];
         for (const [key, re] of Object.entries(BANNED)) {
           for (const s of strings) {
             if (!re.test(s)) continue;
-            if (allow.has(key)) {
+            const pin = entry?.strings?.find((sub) => s.includes(sub));
+            if (entry?.words.includes(key) && (!entry.strings || pin)) {
               const used = allowUse.get(rel) ?? new Set<string>();
               allowUse.set(rel, used);
               used.add(key);
+              if (pin) {
+                const usedText = allowTextUse.get(rel) ?? new Set<string>();
+                allowTextUse.set(rel, usedText);
+                usedText.add(pin);
+              }
               continue;
             }
             hits.push(`${rel}  ${key}:  "${s.trim().slice(0, 80)}"`);
@@ -216,7 +242,11 @@ describe("no internal names where a user reads (#885)", () => {
     // An allowance nobody needs anymore is itself flagged: it would hide a
     // new sentence behind an old excuse.
     const stale = Object.entries(ALLOW)
-      .filter(([f, { words }]) => words.some((w) => !allowUse.get(f)?.has(w)))
+      .filter(
+        ([f, { words, strings }]) =>
+          words.some((w) => !allowUse.get(f)?.has(w)) ||
+          strings?.some((sub) => !allowTextUse.get(f)?.has(sub)),
+      )
       .map(([f, { words, why }]) => `${f} (${words.join(", ")} — ${why})`);
     expect(stale).toEqual([]);
   });

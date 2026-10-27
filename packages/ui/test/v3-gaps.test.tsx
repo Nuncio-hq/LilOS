@@ -268,6 +268,19 @@ describe("first run", () => {
     expect(screen.queryByRole("button", { name: "See status" })).toBeNull();
   });
 
+  test("a relay failure carries its own reason, not generic quit text (#885)", () => {
+    const down = data({
+      settings: {
+        engine: { state: "starting", name: "Hermes" },
+        relay: { state: "down", problem: "version mismatch: update LilOS" },
+      },
+    } as never);
+    expect(firstRunProblem(down)).toBe(true);
+    render(<EngineProblem data={down} act={actions()} />);
+    expect(screen.getByText(/version mismatch: update LilOS/)).toBeTruthy();
+    expect(screen.queryByText(/Quit LilOS and open it again/)).toBeNull();
+  });
+
   test("a healthy relay and engine never show the problem screen", () => {
     const ok = data({
       settings: {

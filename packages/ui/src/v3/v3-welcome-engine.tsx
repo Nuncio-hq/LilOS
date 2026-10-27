@@ -34,10 +34,16 @@ export function EngineProblem({
         Something LilOS needs isn't running.
       </p>
       {relayDown ? (
-        <p className="mt-2 text-[14px] text-muted-foreground">
-          It couldn't reach the background service it runs on. Quit LilOS and
-          open it again; if this stays, See status has the details.
-        </p>
+        relay.problem ? (
+          <p className="mt-2 whitespace-pre-line text-[14px] text-muted-foreground">
+            <InlineCodeText text={relay.problem} />
+          </p>
+        ) : (
+          <p className="mt-2 text-[14px] text-muted-foreground">
+            It couldn't reach the background service it runs on. Quit LilOS and
+            open it again; if this stays, See status has the details.
+          </p>
+        )
       ) : engine.problem ? (
         <p className="mt-2 whitespace-pre-line text-[14px] text-muted-foreground">
           <InlineCodeText text={engine.problem} />

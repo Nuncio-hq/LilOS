@@ -26,6 +26,10 @@ export function V3Welcome({ data, go, act }: V3PageProps) {
   // The steps swap for a plain problem screen while the app cannot start
   // (#885): nothing here fixes it by typing, so typing waits.
   const problem = firstRunProblem(data);
+  /* #885: a harness still coming up leaves the engine leg "starting"
+     (blocked maps here) — Start waits as "Starting…" rather than racing a
+     save the engine cannot answer yet. */
+  const starting = data.settings.engine.state === "starting";
 
   // Whether the engine asks to connect is fixed on arrival: approving it
   // must not make its own step vanish.
@@ -71,7 +75,7 @@ export function V3Welcome({ data, go, act }: V3PageProps) {
   const last = step === steps.length - 1;
 
   const next = async () => {
-    if (!ready || busy || problem) return;
+    if (!ready || busy || problem || (last && starting)) return;
     setError(undefined);
     if (id === "connect") {
       setBusy(true);
@@ -97,8 +101,12 @@ export function V3Welcome({ data, go, act }: V3PageProps) {
         ...(folder ? { folder } : {}),
       });
       go({ page: "home" });
-    } catch {
-      setError("Couldn't finish setting up. Try again.");
+    } catch (e) {
+      setError(
+        e instanceof Error && e.message
+          ? e.message
+          : "Couldn't finish setting up. Try again.",
+      );
       setBusy(false);
     }
   };
@@ -110,6 +118,14 @@ export function V3Welcome({ data, go, act }: V3PageProps) {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Enter" || e.repeat || e.isComposing) return;
       if (e.target instanceof HTMLElement && e.target.closest("button, a"))
+        return;
+      /* A dialog over the welcome (the folder picker, the status view) owns
+         Enter itself — tab-completion in its path box must not finish
+         first run under it (#885). */
+      if (
+        e.target instanceof HTMLElement &&
+        e.target.closest('[role="dialog"], [data-addfolder]')
+      )
         return;
       void latest.current();
     };
@@ -295,7 +311,7 @@ export function V3Welcome({ data, go, act }: V3PageProps) {
             </button>
           )}
           <span className="ml-auto flex items-center gap-2 text-[13px] text-muted-foreground">
-            {!problem && ready && !busy && (
+            {!problem && ready && !busy && !(last && starting) && (
               <>
                 Press <Kbd>↵</Kbd>
               </>
@@ -309,11 +325,18 @@ export function V3Welcome({ data, go, act }: V3PageProps) {
               primary
               onClick={() => void next()}
               className={cn(
-                (!ready || busy) && "cursor-not-allowed opacity-50",
+                (!ready || busy || (last && starting)) &&
+                  "cursor-not-allowed opacity-50",
               )}
               title={ready ? undefined : "Fill this in to go on"}
             >
-              {last ? "Start" : id === "connect" ? "Connect" : "Next"}
+              {last && starting
+                ? "Starting…"
+                : last
+                  ? "Start"
+                  : id === "connect"
+                    ? "Connect"
+                    : "Next"}
             </Btn>
           )}
         </div>
