@@ -306,7 +306,12 @@ export async function cleanupSettledWorktree(
       const next = prev.then(() => doCleanup(this, other.id));
       this.worktreeCleanup.set(
         other.id,
-        next.catch(() => {}),
+        next.catch((error) =>
+          this.opts.log.warn("worktree cleanup failed", {
+            conversationId: other.id,
+            error: String(error),
+          }),
+        ),
       );
     }
   });
