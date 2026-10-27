@@ -145,6 +145,11 @@ export interface ThreadFrameProps {
      Both or neither (D-#19: no access record, no control). */
   access?: ConversationAccess;
   onAccess?: (a: ConversationAccess) => void;
+  /* #884: the engine reports `off` — the pill becomes the warning +
+     one-click Fix. `engineName` names the warning ("Hermes"). */
+  engineOff?: boolean;
+  engineName?: string;
+  onFixPolicy?: () => void;
   /* Rename the title in place / put the thread away (true) or back (false):
      the header's ⋯ menu draws the items whose handler is passed, none → no
      menu. `thread.archived` says which way Settle reads (the wire still

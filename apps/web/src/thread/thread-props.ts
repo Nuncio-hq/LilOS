@@ -59,6 +59,10 @@ export function sharedViewProps(d: ThreadData) {
     onModelOpen: d.setModelOpen,
     access: d.conv.access,
     onAccess: d.onAccess,
+    /* #884: the engine reports `off` — the composer's pill warns + fixes. */
+    engineOff: d.engineOff,
+    engineName: d.engineName,
+    onFixPolicy: d.onFixPolicy,
     /* The header's ⋯ menu: rename in place, settle/un-settle — the same
        wording the row menu on Threads uses. */
     onRename: (title: string) =>

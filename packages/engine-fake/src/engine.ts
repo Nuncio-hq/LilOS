@@ -553,9 +553,9 @@ export class FakeEngine {
       ...(this.capOn("workspace_move") ? [WORKSPACE_MOVE_CAPABILITY] : []),
       ...(this.capOn("commands") ? [COMMANDS_CAPABILITY] : []),
       ...(this.capOn("compact") ? [COMPACT_CAPABILITY] : []),
-      /* #106: the policy written via approvals.setPolicy — the harness
-         pins `off` back to `smart` (#884); `current` reports the live
-         value. */
+      /* #106: the policy written via approvals.setPolicy — the app turns
+         an `off` report into a warning + one-click Fix (#884); `current`
+         reports the live value. */
       ...(this.capOn("approval_policy")
         ? [
             {

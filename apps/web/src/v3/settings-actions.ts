@@ -1,6 +1,7 @@
 import { RelayError } from "@lilos/client-runtime";
 import { pairingUrl, type V3DataActions } from "@lilos/ui";
 import {
+  fixEnginePolicy,
   setDefaultAccess,
   setDefaultEditor,
   setModelVisibility,
@@ -38,6 +39,7 @@ type Mine = Pick<
   | "checkEngine"
   | "checkUpdates"
   | "connectEngine"
+  | "fixEnginePolicy"
   | "finishSetup"
   | "skipSetup"
   | "scheduleSave"
@@ -147,6 +149,10 @@ export const v3SettingsActions: Mine = {
       throw e;
     }
   },
+  /* #884: the warning's one-click repair — `smart`, once, on the click;
+     the next describe probe confirms what the optimistic patch showed. */
+  fixEnginePolicy: () =>
+    toastOnFail("Couldn't update that setting", fixEnginePolicy()),
 
   finishSetup: async ({ company, me, agentName, agentModel, folder }) => {
     const steps = await Promise.allSettled([

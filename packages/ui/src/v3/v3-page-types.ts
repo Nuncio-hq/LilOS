@@ -236,6 +236,10 @@ export type V3Actions = {
   /** The one-time approval that lets the engine's agents see the app;
      rows update in `settings.connect`. Absent without engine support. */
   connectEngine?: () => Promise<void>;
+  /** #884: the one-click repair for an engine reporting `off` — sets its
+     global policy to `smart` once (the Settings warning, the access
+     pill's menu). Absent where the app can't reach the engine. */
+  fixEnginePolicy?: () => void;
   /** First run done: the company exists and the app opens on Home. The
      agent is the first one hired (the CEO, where the company has one); a
      name or model left out keeps what the engine started it with, and no

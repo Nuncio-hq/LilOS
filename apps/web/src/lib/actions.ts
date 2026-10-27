@@ -479,3 +479,23 @@ export function hasCapability(id: string): boolean {
   const caps = engine.description.get()?.capabilities ?? [];
   return caps.some((c) => c.id === id);
 }
+
+/** #884: the one-click repair for an engine left on `off` — write `smart`
+ *  (the ask-for-the-risky-ones mode behind "Ask before risky commands")
+ *  once, on the user's click; nothing writes the engine's global policy on
+ *  its own — the value is shared with terminal Hermes. The describe only
+ *  re-lands on the next status probe, so the warning clears optimistically
+ *  here; a refused write re-shows it. */
+export async function fixEnginePolicy(): Promise<void> {
+  await relay.request("approvals.setPolicy", { policy: "smart" });
+  const d = engine.description.get();
+  if (d)
+    engine.description.set({
+      ...d,
+      capabilities: d.capabilities.map((c) =>
+        c.id === "approval_policy"
+          ? { ...c, detail: { ...c.detail, current: "smart" } }
+          : c,
+      ),
+    });
+}

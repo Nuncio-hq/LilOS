@@ -500,9 +500,10 @@ export function summariseApproval(input: {
     if (stripped && stripped !== command) note = desc;
   }
 
-  /* Details: everything the engine sent — description, the raw command with
-     its args, the adapter's rawInput payload — unclipped, multi-line. */
-  const parts = [desc, command !== "command" ? command : "", raw].filter(
+  /* Details: the raw command with its args FIRST — the thing being
+     approved stays on top — then the description and the adapter's
+     rawInput payload. Unclipped, multi-line. */
+  const parts = [command !== "command" ? command : "", desc, raw].filter(
     (x) => x !== "",
   );
   const details =
@@ -510,6 +511,11 @@ export function summariseApproval(input: {
       ? parts.join("\n\n")
       : undefined;
 
+  /* Open when the sentence clipped (st.clipped covers every embedded
+     target), when the payload is dangerous — or when the args never
+     reached the sentence at all: an over-clip `command` string (an MCP
+     tool name plus big JSON args) or a rawInput payload (ACP `details`)
+     whose size alone proves the headline is a title, not the command. */
   return {
     headline: headline === "" ? `${agent} wants to use a tool` : headline,
     note,
@@ -517,7 +523,10 @@ export function summariseApproval(input: {
     detailsOpen:
       clipped ||
       st.clipped ||
-      (details !== undefined && dangerous(details, input.cwd, input.home)),
+      (details !== undefined &&
+        (dangerous(details, input.cwd, input.home) ||
+          command.length > MAX_TARGET ||
+          raw.length > MAX_TARGET)),
   };
 }
 

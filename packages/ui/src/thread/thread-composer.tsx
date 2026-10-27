@@ -44,6 +44,9 @@ type ComposerProps = Pick<
   | "onAttachError"
   | "access"
   | "onAccess"
+  | "engineOff"
+  | "engineName"
+  | "onFixPolicy"
   | "pending"
   | "reconnecting"
   | "onRemovePending"
@@ -145,7 +148,13 @@ export function ThreadComposer({
       }
       tools={
         p.access !== undefined && p.onAccess ? (
-          <AccessPill access={p.access} onAccess={p.onAccess} />
+          <AccessPill
+            access={p.access}
+            onAccess={p.onAccess}
+            engineNeverAsks={p.engineOff}
+            engineName={p.engineName}
+            onFixPolicy={p.onFixPolicy}
+          />
         ) : undefined
       }
       queued={

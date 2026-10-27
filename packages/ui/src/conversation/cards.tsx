@@ -150,7 +150,11 @@ export function ReplyCards({
           );
         })()}
       {r.approval && (
+        /* #884 r2: `key` on the ASK, not the reply — two asks in one turn
+           reuse this slot, and a stale `detailsOpen` must not carry a
+           closed disclosure onto a risky ask that should open it. */
         <ApprovalCard
+          key={r.approval.id}
           a={r.approval}
           done={done || undefined}
           answer={(v: string) =>

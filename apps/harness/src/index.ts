@@ -259,7 +259,6 @@ statusReporter = new StatusReporter({
   connect: connect ? () => connect.report() : undefined,
   runtimes: () => runtimes.statusRows(),
   logTail: () => [...log.lines],
-  log,
 });
 const stopStatusReporter = statusReporter.start();
 

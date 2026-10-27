@@ -22,7 +22,12 @@ import {
   refreshScheduledTasks,
   watchSchedules,
 } from "../lib/schedules";
-import { aboutLines, defaultAccess, defaultEditor } from "../settings/state";
+import {
+  aboutLines,
+  defaultAccess,
+  defaultEditor,
+  engineNeverAsks,
+} from "../settings/state";
 import { modelLabel, modelRows } from "./models";
 import {
   deviceOf,
@@ -85,9 +90,11 @@ function build(): Slice {
     versions: status.result?.versions,
   });
 
-  /* #884 round 1: the engine's own Smart/Manual/Off policy no longer
-     reaches the app at all — the harness pins the engine to the mode
-     that surfaces every ask, so "Ask" here always means asking. */
+  /* #884 round 1: the engine's own Smart/Manual/Off policy row is gone —
+     "Ask" here is LilOS's own access default. An engine still reporting
+     `off` is detected from the describe (engineNeverAsks) and shown as a
+     warning + one-click Fix, never written silently: the same global
+     policy serves the user's terminal Hermes. */
   const connectRows = status.result?.connect;
   const connect =
     connectRows === undefined
@@ -123,6 +130,11 @@ function build(): Slice {
   return {
     settings: {
       approvals: defaultAccess.get(),
+      /* #884: the engine reports `off` — Ask is a lie until the Fix. The
+         describe lands through the status probe; this field re-reads it. */
+      ...(engineNeverAsks(engineClient.description.get())
+        ? { engineNeverAsks: true }
+        : {}),
       ...(editor && editors
         ? { editor: editor.name, editors: editors.map((e) => e.name) }
         : {}),

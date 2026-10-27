@@ -7,23 +7,24 @@ import {
   openDefaultAgent,
   type Stack,
   startChat,
+  v3Peek,
 } from "./helpers/stack";
 
 /**
- * Issue #884 round 1 — an engine whose global approval policy was left on
- * `off` (the Settings row is gone, so a user cannot undo it) must still let
- * LilOS's Ask actually ask: the harness pins the engine to `smart` — the
- * ask-for-the-risky-ones mode behind "Ask before risky commands" — on
- * attach, and a risky step then surfaces a card instead of being
- * auto-answered.
+ * Issue #884 round 2 — an engine whose global approval policy was left on
+ * `off` must not be silently rewritten (the same policy serves Oscar's
+ * terminal Hermes): LilOS surfaces one plain warning — on the composer's
+ * access pill and in Settings — with a one-click Fix that sets it back to
+ * `smart`, the ask-for-the-risky-ones mode behind "Ask before risky
+ * commands". Until the click, `off` auto-answers every gated step and no
+ * card can appear; after it, a risky step surfaces one.
  *
- * `LILOS_FAKE_POLICY=off` boots engine-fake in exactly that stale state —
- * without the pin it would answer every gated step itself and no card
- * would ever appear.
+ * `LILOS_FAKE_POLICY=off` boots engine-fake in exactly that stale state.
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
 const repo = path.resolve(here, "..");
+const SHOTS = path.join(repo, "test-results", "ac-884");
 
 let stack: Stack;
 test.beforeAll(async () => {
@@ -42,21 +43,40 @@ test.afterAll(async () => {
 
 test.describe.configure({ mode: "serial" });
 
-test("an engine reporting Off is reset on connect — an ask shows a card", async ({
+test("an engine reporting Off warns — Fix makes a risky step ask", async ({
   page,
 }) => {
   test.setTimeout(240_000);
+  /* Settled frames for the evidence shots — routes fade in otherwise. */
+  await page.emulateMedia({ reducedMotion: "reduce" });
   const agent = await openDefaultAgent(page, stack.webUrl);
-  await startChat(page, stack.webUrl, agent, "Add a footer to the page");
 
-  /* With `off` auto-answering, no card could appear — its presence proves
-     the harness set the policy back to `smart` on attach. */
+  /* The composer's access pill reads the warning, not "Ask". */
+  await page.goto(
+    `${stack.webUrl}/#?page=threads&open=newchat:${encodeURIComponent(agent.id)}`,
+  );
+  const pill = v3Peek(page).locator('[data-slot="access-pill"]');
+  await expect(pill).toHaveText("Never asks", { timeout: 30_000 });
+
+  /* Settings says the same, in one line, with the repair beside it. */
+  await page.goto(`${stack.webUrl}/#?page=settings&view=general`);
+  const warning = page
+    .locator("[data-engine-never-asks]")
+    .filter({ hasText: "never ask," });
+  await expect(warning).toBeVisible();
+  await page.screenshot({ path: `${SHOTS}/ac-4-policy-warning.png` });
+  await warning.getByRole("button", { name: "Fix" }).click();
+  await expect(warning).toHaveCount(0);
+
+  /* With `smart` restored the risky step surfaces a card — `off` would
+     have auto-answered it. */
+  await startChat(page, stack.webUrl, agent, "Add a footer to the page");
   const card = page.locator('[data-ask-id][data-ask-state="open"]').first();
   await expect(card).toContainText("Edit README.md?", { timeout: 90_000 });
   await expect(
     card.getByRole("button", { name: "Allow", exact: true }),
   ).toBeVisible();
   await page.screenshot({
-    path: path.join(repo, "test-results", "ac-884", "ac-4-policy-reset.png"),
+    path: path.join(SHOTS, "ac-4-policy-reset.png"),
   });
 });

@@ -208,6 +208,26 @@ export function GeneralPane({ data, go, act }: V3PageProps) {
             </li>
           ))}
         </ul>
+        {/* #884: the engine's global policy says it never asks — the same
+            warning the composer's access pill shows, with the one-click
+            repair. The value is shared with terminal Hermes, so nothing
+            writes it until the user does. */}
+        {data.settings.engineNeverAsks && (
+          <p
+            data-engine-never-asks
+            className="mt-3 flex items-center gap-3 rounded-md border border-orange-500/30 bg-orange-500/[0.07] px-3 py-2 text-[13px] text-foreground dark:border-orange-400/30 dark:bg-orange-400/10"
+          >
+            <span className="min-w-0 flex-1">
+              {data.settings.engine.name} is set to never ask, so Ask won't stop
+              risky commands.
+            </span>
+            {act.fixEnginePolicy && (
+              <Btn small primary onClick={() => act.fixEnginePolicy?.()}>
+                Fix
+              </Btn>
+            )}
+          </p>
+        )}
       </div>
 
       {editorChoices && editorChoices.length > 0 && editor && (
