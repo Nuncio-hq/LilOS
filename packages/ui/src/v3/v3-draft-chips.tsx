@@ -1,4 +1,4 @@
-import { MessageSquareIcon } from "lucide-react";
+import { CpuIcon, MessageSquareIcon } from "lucide-react";
 import { choiceFor, ModelPicker } from "../chat/model-picker";
 import type { ModelChoice } from "../types";
 import { ChipMenu } from "./v3-chip-menu";
@@ -132,19 +132,38 @@ export function ModelChip({
   const cat = modelCatalogOf(data, agent);
   if (!cat) {
     /* A runtime agent whose catalog hasn't landed menus its OWN runtime's
-       labels — never the default engine's list on an ACP agent (#872). */
-    const choices = rt && !rt.isDefault ? (rt.models ?? []) : data.modelChoices;
-    return choices.length > 0 ? (
-      <ChipMenu
-        title="Model"
-        value={label}
-        onPick={onLabel}
-        label={<span className="truncate @max-[480px]:hidden">{label}</span>}
-        options={choices.map((m) => ({
-          id: m,
-          node: <span>{m}</span>,
-        }))}
-      />
+       labels — never the default engine's list on an ACP agent (#872) —
+       and keeps its chip even when the runtime lists none: the agent's own
+       model, read-only, until its catalog arrives (#890). */
+    const own = rt && !rt.isDefault;
+    const choices = own ? (rt.models ?? []) : data.modelChoices;
+    const body = (
+      <>
+        <CpuIcon className="size-3.5 shrink-0" />
+        <span className="truncate @max-[480px]:hidden">{label}</span>
+      </>
+    );
+    if (choices.length > 0)
+      return (
+        <ChipMenu
+          title="Model"
+          value={label}
+          onPick={onLabel}
+          label={body}
+          options={(label && !choices.includes(label)
+            ? [label, ...choices]
+            : choices
+          ).map((m) => ({ id: m, node: <span>{m}</span> }))}
+        />
+      );
+    return own && label ? (
+      <span
+        data-slot="model-chip-static"
+        title={`${label} · ${rt.label} lists no other models yet`}
+        className="inline-flex h-6 min-w-0 items-center gap-1.5 px-1.5 text-[12.5px] text-muted-foreground"
+      >
+        {body}
+      </span>
     ) : null;
   }
   // Starts on the agent's own model with its default effort (the engine's
