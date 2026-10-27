@@ -43,6 +43,7 @@ export function V3Sidebar({
   onPointerEnter,
   onPointerLeave,
   onBlur,
+  overlayOnly,
 }: {
   data: V3Data;
   /** Where you are — a page, or the record you went straight to (D-#769):
@@ -65,8 +66,12 @@ export function V3Sidebar({
   /** Docks a popped-out sidebar, or hides a docked one. */
   onToggle: () => void;
   onPointerEnter: PointerEventHandler;
-  onPointerLeave: PointerEventHandler;
-  onBlur: () => void;
+  /** Narrow window (#886): the sidebar is only ever an overlay, so its
+      toggle closes it rather than "keeping it open" (docking it). */
+  overlayOnly?: boolean;
+  /** Absent = the overlay stays until closed on purpose. */
+  onPointerLeave?: PointerEventHandler;
+  onBlur?: () => void;
 }) {
   const open = data.tickets.filter((t) => t.status !== "done").length;
   /* A bare page lights its own entry; a record lights it when it IS the
@@ -89,7 +94,7 @@ export function V3Sidebar({
       onPointerEnter={onPointerEnter}
       onPointerLeave={onPointerLeave}
       onBlur={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget)) onBlur();
+        if (!e.currentTarget.contains(e.relatedTarget)) onBlur?.();
       }}
       className={cn(
         "flex shrink-0 flex-col border-[var(--v3-line)] border-r bg-[var(--v3-side)] text-[14px] text-muted-foreground",
@@ -106,7 +111,11 @@ export function V3Sidebar({
         data-toolbar-lead
         className="lilos-drag flex h-[var(--v3-toolbar-h)] shrink-0 items-center px-3.5"
       >
-        <SidebarToggle mode={mode} onToggle={onToggle} />
+        <SidebarToggle
+          mode={mode}
+          onToggle={onToggle}
+          overlayOnly={overlayOnly}
+        />
       </div>
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-3">
         <Item

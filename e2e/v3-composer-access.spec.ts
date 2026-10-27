@@ -8,8 +8,8 @@ import { v3Main, v3Peek, v3Sidebar } from "./helpers/stack";
  *   - agent · folder · model/effort · access stay on ONE row at 1288 px and
  *     at 390 px (icons only when narrow), "direct · no git" and the cut-off
  *     key hint are gone;
- *   - Ask/Full is a menu, and Full needs a menu choice plus a one-time
- *     confirm — one click on the pill never switches it;
+ *   - Ask/Full is a menu, and Full needs a menu choice plus a confirm,
+ *     every time — one click on the pill never switches it;
  *   - a thread open beside Home leaves exactly one composer on screen;
  *   - the sidebar's Threads entry carries no count (Needs you keeps its
  *     badge), and under ~700 px the sidebar collapses behind its toggle
@@ -107,7 +107,7 @@ test("at 390 px the same row holds as icons, and the composer still sends", asyn
   await expect(controls(peek(page)).send).toBeEnabled();
 });
 
-test("access is a menu: a choice plus a one-time confirm for Full", async ({
+test("access is a menu: a choice plus a confirm every time for Full", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1288, height: 800 });
@@ -216,14 +216,58 @@ test("a thread open beside Home leaves one composer on screen", async ({
   await expect(peek(page).locator("[data-composer] textarea")).toBeVisible({
     timeout: 30_000,
   });
-  await expect(main(page).locator("[data-composer]")).toHaveCount(0);
-  await expect(page.locator("[data-composer]")).toHaveCount(1);
+  await expect(main(page).locator("[data-composer]:visible")).toHaveCount(0);
+  await expect(page.locator("[data-composer]:visible")).toHaveCount(1);
 
   /* Closing the peek brings Home's box straight back. */
   await peek(page).getByRole("button", { name: "Close" }).click();
   await expect(main(page).getByPlaceholder(/Message /)).toBeVisible({
     timeout: 30_000,
   });
+});
+
+test("a peek with no composer leaves Home's box on screen", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1288, height: 800 });
+  await page.goto("/?page=home&open=thread:t-gone-for-good");
+  await expect(peek(page)).toContainText("no longer exists", {
+    timeout: 30_000,
+  });
+  await expect(page.locator("[data-composer]:visible")).toHaveCount(1);
+  await expect(
+    main(page)
+      .locator("[data-home-composer]")
+      .getByPlaceholder(/Message /),
+  ).toBeVisible();
+});
+
+test("Home's picks survive a thread opening beside it and closing", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1288, height: 800 });
+  await page.goto("/?page=home");
+  const home = main(page).locator("[data-home-composer]");
+  await expect(home.getByPlaceholder(/Message /)).toBeVisible({
+    timeout: 30_000,
+  });
+  await home.getByTitle(/^Project · /).click();
+  await page.getByRole("menuitemradio", { name: /No project/ }).click();
+  await expect(home.getByTitle("Project · none")).toBeVisible();
+
+  /* Open a thread from Home's own list (a URL load would reset Home): its
+     box is the one on screen, and Home's is hidden, not unmounted. */
+  await main(page).locator("[data-thread-title]").first().click();
+  await expect(peek(page).locator("[data-composer] textarea")).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(home.locator("[data-composer]")).toBeHidden();
+  await expect(page.locator("[data-composer]:visible")).toHaveCount(1);
+
+  /* Closing the peek brings the same box back, still on "No project". */
+  await peek(page).getByRole("button", { name: "Close" }).click();
+  await expect(home.getByPlaceholder(/Message /)).toBeVisible();
+  await expect(home.getByTitle("Project · none")).toBeVisible();
 });
 
 test("the sidebar's Threads row carries no count; Needs you keeps its badge", async ({
@@ -274,6 +318,93 @@ test("below ~700 px the sidebar collapses behind its toggle and the greeting rea
   ).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(popped).not.toBeVisible();
+});
+
+const HIDDEN_KEY = "lilos-v3-sidebar-hidden";
+const storedHidden = (page: Page) =>
+  page.evaluate((k) => localStorage.getItem(k), HIDDEN_KEY);
+
+test("narrow: the overlay closes on ☰, outside tap and Esc, and never docks", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.goto("/?page=home");
+  await expect(page.locator('[data-sidebar="hidden"]')).toHaveCount(1, {
+    timeout: 30_000,
+  });
+  const toggle = page
+    .locator("[data-sidebar-shortcuts]")
+    .getByRole("button", { name: "Show sidebar" });
+  await expect(toggle).toBeVisible();
+  const popped = page.locator('[data-sidebar="popped"]');
+  const docked = page.locator('[data-sidebar="docked"]');
+
+  /* ☰ opens it; its own toggle reads "Close", not "Keep open", and closes. */
+  await toggle.click();
+  await expect(popped).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Keep sidebar open" }),
+  ).toHaveCount(0);
+  await popped.getByRole("button", { name: "Close sidebar" }).click();
+  await expect(popped).not.toBeVisible();
+  await expect(docked).toHaveCount(0);
+
+  /* Moving the pointer away does not tuck it — it stays until closed. */
+  await toggle.click();
+  await expect(popped).toBeVisible();
+  await page.mouse.move(380, 400);
+  await page.waitForTimeout(500);
+  await expect(popped).toBeVisible();
+
+  /* A tap outside closes it. */
+  await page.mouse.click(380, 500);
+  await expect(popped).not.toBeVisible();
+
+  /* ⌘\ toggles the overlay and Esc closes it. */
+  await page.keyboard.press("Meta+\\");
+  await expect(popped).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(popped).not.toBeVisible();
+  await page.keyboard.press("Meta+\\");
+  await expect(popped).toBeVisible();
+  await page.keyboard.press("Meta+\\");
+  await expect(popped).not.toBeVisible();
+
+  /* Picking a page closes it too. */
+  await toggle.click();
+  await popped.getByRole("button", { name: "Threads", exact: true }).click();
+  await expect(popped).not.toBeVisible();
+  await expect(docked).toHaveCount(0);
+
+  /* Nothing the window did is the user's own choice. */
+  expect(await storedHidden(page)).toBeNull();
+});
+
+test("the window's hide is not the user's: a reload narrow and widening keep it docked; the user's own hide stays", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.goto("/?page=home");
+  await expect(page.locator('[data-sidebar="hidden"]')).toHaveCount(1, {
+    timeout: 30_000,
+  });
+  await page.reload();
+  await expect(page.locator('[data-sidebar="hidden"]')).toHaveCount(1, {
+    timeout: 30_000,
+  });
+  await page.setViewportSize({ width: 1288, height: 800 });
+  await expect(page.locator('[data-sidebar="docked"]')).toHaveCount(1);
+
+  /* The user's own ⌘\ wide persists and survives a narrow trip. */
+  await page.keyboard.press("Meta+\\");
+  await expect(page.locator('[data-sidebar="hidden"]')).toHaveCount(1);
+  expect(await storedHidden(page)).toBe("1");
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.setViewportSize({ width: 1288, height: 800 });
+  await expect(page.locator('[data-sidebar="hidden"]')).toHaveCount(1);
+  await page.keyboard.press("Meta+\\");
+  await expect(page.locator('[data-sidebar="docked"]')).toHaveCount(1);
+  expect(await storedHidden(page)).toBeNull();
 });
 
 test("widening back re-docks only the sidebar the window itself hid", async ({

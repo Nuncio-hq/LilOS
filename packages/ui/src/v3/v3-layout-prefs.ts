@@ -9,6 +9,9 @@ const SIDEBAR_KEY = "lilos-v3-sidebar-w";
 const PEEK_KEY = "lilos-v3-peek-w";
 const HIDDEN_KEY = "lilos-v3-sidebar-hidden";
 
+/** Under this window width the sidebar is an overlay only (#886). */
+export const NARROW_W = 700;
+
 export const SIDEBAR_W = { def: 236, min: 200, max: 360 } as const;
 /** The page never gets narrower than this: the peek gives way first. */
 export const PAGE_MIN = 320;

@@ -14,7 +14,12 @@ import type { Theme } from "../types";
 import { V3AddAgent } from "./v3-add-agent";
 import type { V3Data, V3Draft } from "./v3-data-types";
 import { EscLayer } from "./v3-keys";
-import { SIDEBAR_W, shellSizes, useLayoutPrefs } from "./v3-layout-prefs";
+import {
+  NARROW_W,
+  SIDEBAR_W,
+  shellSizes,
+  useLayoutPrefs,
+} from "./v3-layout-prefs";
 import { CeoEmployeeContext } from "./v3-marks";
 import { companyOn, defaultAgent, shownData, shownRoute } from "./v3-model";
 import { isRecordRoute, step } from "./v3-nav";
@@ -166,38 +171,36 @@ export function V3Shell({
      shrinking it never crushes the page: the peek gives way first, then the
      sidebar. */
   const prefs = useLayoutPrefs();
-  const { hidden, setHidden } = prefs;
   const [frame, frameW] = useWidth();
-  const { side, peek } = shellSizes(frameW, prefs);
+  /* #886: under ~700px of window the sidebar can't afford its dock, so the
+     window hides it — derived from the width, never written to `prefs`, so
+     it is a different thing from the user's own hide (⌘\ / Hide sidebar):
+     widening re-docks exactly what the user left docked, a reload at 390px
+     forgets nothing, and nothing the window did can undo a choice. Narrow,
+     the sidebar is an overlay only: ☰ and ⌘\ open and close it, a tap
+     outside, Esc or picking a page close it — "docking" it back would
+     squeeze the page into the narrow window. */
+  const narrow = frameW > 0 && frameW < NARROW_W;
+  const hidden = narrow || prefs.hidden;
+  const { side, peek } = shellSizes(frameW, { ...prefs, hidden });
   const pop = useSidebarPopout(hidden);
   const mode: SidebarMode = !hidden
     ? "docked"
     : pop.popped
       ? "popped"
       : "hidden";
-  const toggleSidebar = useCallback(
-    () => setHidden(!hidden),
-    [hidden, setHidden],
-  );
-  /* #886: under ~700px of window the sidebar can't afford its dock — it
-     collapses behind the ☰ (which pops it over the page rather than
-     docking it back). Widening re-docks a sidebar the auto-hide put away,
-     but a sidebar the user hid stays hid. */
-  const narrow = frameW > 0 && frameW < 700;
-  const autoHid = useRef(false);
-  const wasNarrow = useRef<boolean | undefined>(undefined);
-  useEffect(() => {
-    const crossed = wasNarrow.current !== narrow;
-    wasNarrow.current = narrow;
-    if (!crossed || frameW === 0) return;
-    if (narrow && !hidden) {
-      setHidden(true);
-      autoHid.current = true;
-    } else if (!narrow && autoHid.current && hidden) {
-      setHidden(false);
-      autoHid.current = false;
-    }
-  }, [narrow, frameW, hidden, setHidden]);
+  const { setHidden } = prefs;
+  const { popped, show, tuck } = pop;
+  /* Read at the key press, not at the render that built the handler: a ⌘\
+     right after the window crossed 700px must act on where it is now. */
+  const sidebarNow = useRef({ narrow, popped, userHidden: prefs.hidden });
+  sidebarNow.current = { narrow, popped, userHidden: prefs.hidden };
+  const toggleSidebar = useCallback(() => {
+    const now = sidebarNow.current;
+    if (!now.narrow) setHidden(!now.userHidden);
+    else if (now.popped) tuck();
+    else show();
+  }, [show, tuck, setHidden]);
   // The desktop View menu's ⌘\ arrives as a request, like ⌘K's.
   const lastSidebar = useRef(sidebarRequest);
   useEffect(() => {
@@ -206,7 +209,6 @@ export function V3Shell({
     toggleSidebar();
   }, [sidebarRequest, toggleSidebar]);
 
-  const { popped, tuck } = pop;
   /* Esc over a floating sidebar tucks it. It is a layer, not a bubble-phase
      branch: a widened thread under it is a layer too and takes Esc in the
      capture phase first — narrowing the page while the sidebar stayed open.
@@ -356,7 +358,7 @@ export function V3Shell({
      back into a window too small for it (#886). */
   const shortcuts = hidden ? (
     <SidebarShortcuts
-      onShow={narrow ? pop.show : toggleSidebar}
+      onShow={toggleSidebar}
       onSearch={() => setPalette("")}
     />
   ) : undefined;
@@ -387,7 +389,11 @@ export function V3Shell({
             data={data}
             page={page}
             open={top}
-            go={goFromNav}
+            go={(r) => {
+              goFromNav(r);
+              // Narrow, the overlay has done its job once a page is picked.
+              if (narrow) tuck();
+            }}
             onSearch={() => setPalette("")}
             dark={dark}
             onTheme={() => setTheme(dark ? "light" : "dark")}
@@ -404,10 +410,21 @@ export function V3Shell({
             width={side.w}
             sideRef={pop.side}
             onToggle={toggleSidebar}
+            overlayOnly={narrow}
             onPointerEnter={pop.cancel}
-            onPointerLeave={pop.tuckSoon}
-            onBlur={pop.tuckSoon}
+            /* The overlay is closed on purpose when narrow (a tap outside,
+               ☰, Esc) — leaving it with the pointer or focus does not. */
+            onPointerLeave={narrow ? undefined : pop.tuckSoon}
+            onBlur={narrow ? undefined : pop.tuckSoon}
           />
+          {narrow && popped && (
+            <div
+              aria-hidden
+              data-sidebar-scrim
+              onPointerDown={tuck}
+              className="absolute inset-0 z-30 bg-black/20"
+            />
+          )}
           {!hidden && (
             <ResizeHandle
               label="Resize sidebar"
@@ -505,7 +522,7 @@ export function V3Shell({
           </div>
           {/* After the toolbar's drag regions: the OS applies them in document
           order, so this strip must come last to stay the pointer's. */}
-          {hidden && (
+          {hidden && !narrow && (
             <SidebarHotZone onEnter={pop.show} onLeave={pop.tuckSoon} />
           )}
           {addAgent && (
