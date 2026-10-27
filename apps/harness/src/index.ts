@@ -67,6 +67,10 @@ const surfaces = await serveSurfaces(0, {
     /* No `homeDir` reaches `new Harness` below — its home is `homedir()`,
        and `~`-collapsed paths on the wire mean that same directory. */
     home: homedir(),
+    /* #872: a task hand-off's model pick resolves on the CHILD's runtime
+       — the factory binds before `harness` exists, but only runs after. */
+    checkTaskModel: (employee, model, provider) =>
+      harness.checkTaskModel(employee, model, provider),
   }),
 
   log,

@@ -100,6 +100,9 @@ export type V3Agent = {
      new-chat picker starts on it with its own effort. Absent: the engine's
      default model. */
   modelId?: string;
+  /** #872: the agent-page effort pin (one of the model's `efforts`), stored
+      on the relay record. Absent: the model's own default effort. */
+  effort?: string;
   /** Your newest chat with this agent, by when it began: the project it
      lived in (absent = a plain chat) and the first message you wrote, as you
      wrote it. The next new chat starts in the same project (or none), and ↑
@@ -140,6 +143,8 @@ export type V3AgentPatch = {
   role?: string;
   description?: string;
   model?: string;
+  /* #872: the page's Default effort pick — `""` clears the pin. */
+  effort?: string;
   instructions?: string;
   muted?: boolean;
   confirmModel?: boolean;

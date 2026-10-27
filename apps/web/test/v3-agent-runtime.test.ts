@@ -131,7 +131,7 @@ describe("saveAgent on a coding-runtime agent", () => {
           provider: "devin",
         },
       ],
-      ["employees.update", { id: "emp_devin", model: "swe-2-max" }],
+      ["employees.update", { id: "emp_devin", model: "swe-2-max", effort: "" }],
     ]);
     stop();
   });

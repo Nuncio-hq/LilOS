@@ -757,6 +757,9 @@
         "model": {
           "type": "string"
         },
+        "effort": {
+          "type": "string"
+        },
         "now": {
           "type": "string"
         },
@@ -844,6 +847,9 @@
         "model": {
           "type": "string"
         },
+        "effort": {
+          "type": "string"
+        },
         "now": {
           "type": "string"
         },
@@ -916,6 +922,9 @@
                 "type": "string"
               },
               "model": {
+                "type": "string"
+              },
+              "effort": {
                 "type": "string"
               },
               "now": {
@@ -1052,6 +1061,9 @@
         "model": {
           "type": "string"
         },
+        "effort": {
+          "type": "string"
+        },
         "now": {
           "type": "string"
         },
@@ -1154,6 +1166,9 @@
               "model": {
                 "type": "string"
               },
+              "effort": {
+                "type": "string"
+              },
               "now": {
                 "type": "string"
               },
@@ -1235,6 +1250,9 @@
               "type": "string"
             },
             "model": {
+              "type": "string"
+            },
+            "effort": {
               "type": "string"
             },
             "now": {
@@ -9738,6 +9756,9 @@
               "type": "string"
             },
             "model": {
+              "type": "string"
+            },
+            "effort": {
               "type": "string"
             },
             "now": {

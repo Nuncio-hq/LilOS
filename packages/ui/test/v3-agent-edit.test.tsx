@@ -171,7 +171,7 @@ describe("capability by presence", () => {
     ).toBeNull();
     expect(screen.queryByLabelText("Description")).toBeNull();
     expect(screen.queryByLabelText("Instructions")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Model" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Default model" })).toBeNull();
   });
 });
 
@@ -216,7 +216,7 @@ describe("edit in place", () => {
   test("the model saves the moment it is picked", async () => {
     const act_ = actions();
     mount(act_);
-    fireEvent.click(screen.getByRole("button", { name: "Model" }));
+    fireEvent.click(screen.getByRole("button", { name: "Default model" }));
     await act(async () => {
       fireEvent.click(screen.getByRole("menuitemradio", { name: "Haiku 5" }));
     });
@@ -256,7 +256,7 @@ describe("edit in place", () => {
       .mockResolvedValueOnce({ confirmModel: "Costs 5x more. Pin it?" })
       .mockResolvedValueOnce(undefined);
     mount(actions({ updateAgent }));
-    fireEvent.click(screen.getByRole("button", { name: "Model" }));
+    fireEvent.click(screen.getByRole("button", { name: "Default model" }));
     await act(async () => {
       fireEvent.click(screen.getByRole("menuitemradio", { name: "Haiku 5" }));
     });
@@ -322,7 +322,7 @@ describe("runs on its own runtime", () => {
     expect(face?.textContent).toBe("D");
     expect(face?.className).toContain("bg-[#e5eef5]");
 
-    fireEvent.click(screen.getByRole("button", { name: "Model" }));
+    fireEvent.click(screen.getByRole("button", { name: "Default model" }));
     expect(
       screen.getByRole("menuitemradio", { name: "SWE-2 · Medium" }),
     ).toBeTruthy();

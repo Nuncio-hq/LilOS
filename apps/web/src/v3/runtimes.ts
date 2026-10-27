@@ -125,6 +125,36 @@ export function runtimeTone(id: string): V3Tone {
 export const defaultRuntimeId = (): string | undefined =>
   relay.status.get()?.result?.runtimes?.[0]?.id;
 
+/* #872: the composer's picker reads the SELECTED agent's catalog — this
+   exposes each asked runtime's raw options (effort ladders and Fast tiers
+   included), keyed by runtime id. The default engine's catalog is not
+   here; `data.modelCatalog` already carries it. */
+type RuntimeCatalogSlice = {
+  options: ModelOption[];
+  defaultModel?: string;
+  defaultProvider?: string;
+};
+let catalogStore: ReadableAtom<Record<string, RuntimeCatalogSlice>> | undefined;
+export function runtimeCatalogs(): ReadableAtom<
+  Record<string, RuntimeCatalogSlice>
+> {
+  catalogStore ??= computed(catalogs, (cats) =>
+    Object.fromEntries(
+      Object.entries(cats).map(([id, c]) => [
+        id,
+        {
+          options: c.options,
+          ...(c.default !== undefined ? { defaultModel: c.default } : {}),
+          ...(c.defaultProvider !== undefined
+            ? { defaultProvider: c.defaultProvider }
+            : {}),
+        },
+      ]),
+    ),
+  );
+  return catalogStore;
+}
+
 /** The label a runtime-owned model id shows as — the owning catalog's own
     words. A catalog that hasn't landed falls back to the tidied id ("the
     engine's own words"), never a guess from the default list (#872). */

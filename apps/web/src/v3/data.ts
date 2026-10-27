@@ -35,7 +35,7 @@ import {
 } from "../lib/runtime";
 import { modelRowStore } from "./models";
 import { profileKey, profileStore } from "./profiles";
-import { modelLabelFor, runtimeRows } from "./runtimes";
+import { modelLabelFor, runtimeCatalogs, runtimeRows } from "./runtimes";
 import { v3SettingsSlice } from "./settings-data";
 import { lastChats, v3ArchivedThreads, v3Asks, v3Threads } from "./threads";
 import { v3Goals, v3Tickets, v3Updates } from "./tickets";
@@ -120,6 +120,7 @@ function toAgent(
        list on an ACP agent (#872). */
     model: modelLabelFor(e.runtime, e.model),
     ...(e.model ? { modelId: e.model } : {}),
+    ...(e.effort ? { effort: e.effort } : {}),
     ...(lastChat ? { lastChat } : {}),
     ...(profile?.description ? { description: profile.description } : {}),
     ...(e.muted ? { muted: true } : {}),
@@ -189,6 +190,7 @@ export function v3DataStore(): ReadableAtom<V3Data> {
       company,
       folders,
       modelRowStore(),
+      runtimeCatalogs(),
       v3SettingsSlice,
       profileStore(),
       engineModels,
@@ -218,6 +220,7 @@ export function v3DataStore(): ReadableAtom<V3Data> {
       [me, companyName],
       folderRows,
       modelRows,
+      runtimeCats,
       settingsSlice,
       profiles,
       catalog,
@@ -293,6 +296,11 @@ export function v3DataStore(): ReadableAtom<V3Data> {
                 ...(canRefreshModels(description) ? { refreshable: true } : {}),
               },
             }
+          : {}),
+        /* #872: the composer's picker follows the selected agent — these
+           are the non-default runtimes' own catalogs, keyed by id. */
+        ...(Object.keys(runtimeCats).length
+          ? { modelCatalogs: runtimeCats }
           : {}),
         // A chat opens on the access you pick: Settings' default is the start.
         chatAccess: true,

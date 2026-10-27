@@ -309,7 +309,11 @@ describe("#872 agentDisplayName — the untouched stock agent reads Hermes", () 
       }),
     ).toBe("Default");
     expect(
-      agentDisplayName({ name: "Devin", profile: "devin", runtime: "acp:devin" }),
+      agentDisplayName({
+        name: "Devin",
+        profile: "devin",
+        runtime: "acp:devin",
+      }),
     ).toBe("Devin");
     expect(
       agentDisplayName({

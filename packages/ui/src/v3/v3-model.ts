@@ -500,6 +500,39 @@ export const modelChoicesOf = (d: V3Data, a: V3Agent): string[] => {
   return rt?.models ?? d.modelChoices;
 };
 
+/* #872 — the page's Default effort row: the levels the agent's OWN
+   runtime reports for its model (`efforts` on the catalog option,
+   ordered low → high by the engine). Absent = the runtime reports no
+   levels, and the row stays off the page. */
+export const effortLadderOf = (
+  d: V3Data,
+  a: V3Agent,
+): { efforts: string[]; defaultEffort?: string } | undefined => {
+  const rt = runtimeOf(d, a);
+  const cat = rt && !rt.isDefault ? d.modelCatalogs?.[rt.id] : d.modelCatalog;
+  if (!cat) return undefined;
+  const opt =
+    cat.options.find((o) => o.id === a.modelId) ??
+    cat.options.find((o) => o.id === cat.defaultModel);
+  if (!opt?.efforts?.length) return undefined;
+  return {
+    efforts: opt.efforts,
+    ...(opt.defaultEffort ? { defaultEffort: opt.defaultEffort } : {}),
+  };
+};
+
+/* #872 — the composer's model catalog follows the SELECTED agent: a
+   runtime agent picks from its own engine's catalog (`modelCatalogs`),
+   the default engine's agent from `modelCatalog`. Absent = the plain
+   label menu (`modelChoicesOf`). */
+export const modelCatalogOf = (
+  d: V3Data,
+  a: V3Agent,
+): NonNullable<V3Data["modelCatalog"]> | undefined => {
+  const rt = runtimeOf(d, a);
+  return rt && !rt.isDefault ? d.modelCatalogs?.[rt.id] : d.modelCatalog;
+};
+
 /** Why this agent's runtime can't take scheduled jobs right now — the
     probe's or supervisor's own words. `undefined` means it can: a row
     that never ran still starts on demand, so absence is not a reason. */

@@ -86,9 +86,14 @@ export async function saveAgent(
     ...(patch.muted !== undefined ? { muted: patch.muted } : {}),
     ...("soul" in engineEdit ? { instructions: patch.instructions } : {}),
     // A held model is not pinned yet: the record keeps the old one.
+    /* #872: a model change clears the effort pin — a level named for the
+       old model's ladder may not exist on the new one. */
     ...("model" in engineEdit && !confirmModel
-      ? { model: engineEdit.model }
+      ? { model: engineEdit.model, effort: "" }
       : {}),
+    /* The effort pin is the relay record's own (every runtime's sessions
+       read it at start, D-#846) — no engine write, no updatable flag. */
+    ...(patch.effort !== undefined ? { effort: patch.effort } : {}),
   };
   if (Object.keys(record).length > 0) await relay.updateEmployee(id, record);
   return confirmModel ? { confirmModel } : undefined;

@@ -440,6 +440,9 @@ export const EmployeePatch = z.object({
   status: EmployeeStatus.optional(),
   profile: z.string().optional(),
   model: z.string().optional(),
+  /* #872: the agent-page effort pick — `""` clears the pin back to the
+     model's own default. */
+  effort: z.string().optional(),
   now: z.string().optional(),
   instructions: z.string().optional(),
   respondTo: RespondTo.optional(),

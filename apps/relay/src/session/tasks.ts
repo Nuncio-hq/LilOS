@@ -81,12 +81,23 @@ export async function handleTasks(c: RelayCtx): Promise<false | undefined> {
         ...(p.cwd !== undefined && p.workspace?.mode === "new"
           ? { worktree: { path: p.cwd, branch: p.workspace.branch } }
           : {}),
-        /* An unpicked session field inherits the parent's — the child
-           starts where the caller runs. */
-        model: p.model ?? parent.model,
-        provider: p.provider ?? parent.provider,
-        effort: p.effort ?? parent.effort,
-        fast: p.fast ?? parent.fast,
+        /* #872: the child runs on ITS agent's pick — explicit choice (the
+           host already checked it against the child's runtime catalog),
+           else the child employee's stored default, else absent and the
+           child's engine applies its own. Never the parent's: a pick made
+           for another runtime's catalog would silently fail there. */
+        ...(p.model !== undefined
+          ? { model: p.model }
+          : employee.model
+            ? { model: employee.model }
+            : {}),
+        ...(p.provider !== undefined ? { provider: p.provider } : {}),
+        ...(p.effort !== undefined
+          ? { effort: p.effort }
+          : employee.effort
+            ? { effort: employee.effort }
+            : {}),
+        ...(p.fast !== undefined ? { fast: p.fast } : {}),
         ...(p.requestId ? { requestId: p.requestId } : {}),
       });
       /* A requestId hit re-answers the stored task without re-announcing

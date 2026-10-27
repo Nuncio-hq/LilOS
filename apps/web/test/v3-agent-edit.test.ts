@@ -100,6 +100,7 @@ describe("saveAgent", () => {
           role: "Builds",
           instructions: "new",
           model: "haiku",
+          effort: "",
         },
       ],
     ]);
@@ -164,7 +165,7 @@ describe("saveAgent", () => {
           confirmModel: true,
         },
       ],
-      ["employees.update", { id: "emp_1", model: "haiku" }],
+      ["employees.update", { id: "emp_1", model: "haiku", effort: "" }],
     ]);
   });
 

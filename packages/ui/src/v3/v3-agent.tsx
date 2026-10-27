@@ -3,6 +3,7 @@ import {
   ClockIcon,
   CoinsIcon,
   EllipsisIcon,
+  GaugeIcon,
   PencilIcon,
   PlugIcon,
   SparklesIcon,
@@ -10,6 +11,7 @@ import {
 import { useState } from "react";
 import { Connectors, PILL } from "./v3-agent-connectors";
 import {
+  EffortProp,
   InlineText,
   InstructionsBlock,
   ModelProp,
@@ -28,6 +30,7 @@ import {
   agentOf,
   agentPageFields,
   companyOn,
+  effortLadderOf,
   modelChoicesOf,
   removable,
   runtimeLabelOf,
@@ -88,6 +91,7 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
   /* One save pipeline per field — each edits and reports on its own. */
   const descSave = useFieldSave(act, agent.id);
   const modelSave = useFieldSave(act, agent.id);
+  const effortSave = useFieldSave(act, agent.id);
   const instrSave = useFieldSave(act, agent.id);
   /* Click-to-rename (#870): the name itself, or ⋯ → Rename, swaps it for a
      box; Enter (or leaving) saves just the name, Esc keeps the old one. */
@@ -131,6 +135,10 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
   const canDescription = canEdit && fields.includes("description");
   const canModel = canEdit && fields.includes("model");
   const canInstructions = canEdit && fields.includes("instructions");
+  /* The effort pin is the relay record's — editable wherever the agent is
+     (no engine updatable flag); the row only exists when the runtime
+     reports levels for the agent's model. */
+  const effortLadder = canEdit ? effortLadderOf(data, agent) : undefined;
   /* Whether the app positively knows this engine's field list — it can say
      why a field sits read-only, not just sit it. */
   const fieldsKnown =
@@ -254,6 +262,17 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
             agent={agent}
             choices={modelChoicesOf(data, agent)}
             save={canModel ? modelSave : undefined}
+          />
+        )}
+        {/* #872: the standing effort pick — only where the runtime reports
+            levels for the agent's model; the pin is the relay record's,
+            relay-owned so it needs no engine updatable flag. */}
+        {effortLadder && (
+          <EffortProp
+            icon={<GaugeIcon />}
+            agent={agent}
+            ladder={effortLadder}
+            save={effortSave}
           />
         )}
         {agent.schedule && (

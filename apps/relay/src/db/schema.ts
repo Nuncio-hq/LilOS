@@ -25,6 +25,9 @@ export const employees = sqliteTable("employees", {
     .default("offline"),
   profile: text("profile").notNull().default(""),
   model: text("model").notNull().default(""),
+  /** #872: the agent's default effort pick — NULL means the model's own
+      default. */
+  effort: text("effort"),
   now: text("now").notNull().default(""),
   instructions: text("instructions").notNull().default(""),
   respondTo: text("respond_to", { enum: ["me", "selected", "anyone"] })

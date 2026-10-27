@@ -376,6 +376,115 @@ describe("two runtimes at once (D-#761)", () => {
       await w.cleanup();
     }
   }, 30_000);
+
+  /* #872: the hand-off's model is the CHILD runtime's business — an
+     explicit name is checked against its catalog (a cross-runtime pick
+     rejects), a display name resolves to the catalog's own id/provider,
+     and no pick at all starts on the child employee's stored default. */
+  it("task_create resolves the model on the child's runtime catalog", async () => {
+    const homeDir = mkhome();
+    const w = await setupWorld({ homeDir });
+    const acp = attachRuntime(w, ACP);
+    /* The child's engine lists only SWE-2 — the parent's Opus must reject. */
+    const orig = acp.conn.request.bind(acp.conn);
+    acp.conn.request = <T = unknown>(
+      method: string,
+      params?: unknown,
+    ): Promise<T> =>
+      method === "models.list"
+        ? (Promise.resolve({
+            models: [{ id: "swe-2", name: "SWE-2", provider: "cognition" }],
+            default: "swe-2",
+            defaultProvider: "cognition",
+          }) as Promise<T>)
+        : orig<T>(method, params);
+    try {
+      const { employee: caller, channel: callerChannel } =
+        await openDmConversation(w.user);
+      const { employee: worker } = await w.user.request<{
+        employee: { id: string };
+      }>("employees.create", {
+        name: "Devin",
+        role: "coder",
+        runtime: ACP,
+      });
+      const { conversation: parent } = await w.user.request<{
+        conversation: { id: string };
+      }>("conversations.open", {
+        channelId: callerChannel.id,
+        text: "Plan the feature",
+        cwd: homeDir,
+      });
+      await waitFor(async () => {
+        const { conversations } = await w.user.request<{
+          conversations: { id: string; finishedSeq: number }[];
+        }>("conversations.list", {});
+        return conversations.find((c) => c.id === parent.id)?.finishedSeq
+          ? true
+          : undefined;
+      }, "parent root turn");
+      const ops = createAppOps({
+        relay: w.harnessRelay,
+        runningTurnId: () => undefined,
+        log: w.log,
+        home: homeDir,
+        checkTaskModel: (employee, model, provider) =>
+          w.harness.checkTaskModel(employee, model, provider),
+      })("s1", {
+        employeeId: caller.id,
+        channelId: callerChannel.id,
+        conversationId: parent.id,
+      });
+      if (!ops) throw new Error("no appOps");
+
+      // A name only the parent's engine knows rejects, loudly.
+      await expect(
+        ops.taskCreate({
+          agent: "Devin",
+          prompt: "x",
+          isolation: "shared",
+          model: "opus-5-5",
+        }),
+      ).rejects.toThrow(/isn't one of Devin's models/);
+
+      // The child's own display name resolves to its catalog id + provider.
+      const r = await ops.taskCreate({
+        agent: "Devin",
+        prompt: "Sketch the module",
+        isolation: "shared",
+        model: "SWE-2",
+      });
+      const { conversations } = await w.user.request<{
+        conversations: {
+          id: string;
+          parentId?: string;
+          model?: string;
+          provider?: string;
+        }[];
+      }>("conversations.list", {});
+      const child = conversations.find((c) => c.id === r.task.threadId);
+      expect(child?.model).toBe("swe-2");
+      expect(child?.provider).toBe("cognition");
+
+      /* No pick at all: the child employee's stored default stamps (the
+         relay's own #872 fallback — the parent's pick would be wrong). */
+      await w.user.request("employees.update", {
+        id: worker.id,
+        model: "swe-2",
+      });
+      const r2 = await ops.taskCreate({
+        agent: "Devin",
+        prompt: "Second task",
+        isolation: "shared",
+      });
+      const { conversations: after } = await w.user.request<{
+        conversations: { id: string; model?: string }[];
+      }>("conversations.list", {});
+      expect(after.find((c) => c.id === r2.task.threadId)?.model).toBe("swe-2");
+    } finally {
+      await w.cleanup();
+    }
+  }, 30_000);
 });
 
 describe("a runtime that cannot start (D-#761 review)", () => {

@@ -211,12 +211,12 @@ export function ModelProp({
   const canPick = !!save && choices.length > 0;
   return (
     <>
-      <Prop icon={icon} label="Model">
+      <Prop icon={icon} label="Default model">
         {canPick ? (
           <ChipMenu
             below
-            title="Model"
-            ariaLabel="Model"
+            title="Default model"
+            ariaLabel="Default model"
             value={agent.model}
             onPick={(model) => {
               if (model === agent.model) return;
@@ -261,6 +261,49 @@ export function ModelProp({
         </div>
       )}
     </>
+  );
+}
+
+/* #872 — the agent's standing effort pick: the levels its runtime reports
+   for its model, plus "Model default" which clears the pin (`effort: ""`
+   on the record). Saved the moment a pick lands; a runtime that reports
+   no levels gets no row at all (the caller checks `ladder`). */
+export function EffortProp({
+  icon,
+  agent,
+  ladder,
+  save,
+}: {
+  icon: ReactNode;
+  agent: V3Agent;
+  /** The current model's effort ladder — the engine's own ordering. */
+  ladder: { efforts: string[]; defaultEffort?: string };
+  save?: FieldSave;
+}) {
+  const shown = agent.effort ?? "Model default";
+  return (
+    <Prop icon={icon} label="Default effort">
+      {save ? (
+        <ChipMenu
+          below
+          title="Default effort"
+          ariaLabel="Default effort"
+          value={shown}
+          onPick={(next) => {
+            if (next !== shown)
+              void save.run({ effort: next === "Model default" ? "" : next });
+          }}
+          label={<span className="truncate">{shown}</span>}
+          options={["Model default", ...ladder.efforts].map((e) => ({
+            id: e,
+            node: <span>{e}</span>,
+          }))}
+        />
+      ) : (
+        shown
+      )}
+      <SaveNote save={save} />
+    </Prop>
   );
 }
 

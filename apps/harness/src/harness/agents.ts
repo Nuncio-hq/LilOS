@@ -8,6 +8,7 @@ import {
 import type { AgentDescriptor, McpServer } from "@lilos/contracts/engine";
 import { expandPath } from "@lilos/host";
 import type { EngineConnection } from "../engine/client";
+import { normalizeRuntime } from "../engine/runtimes";
 import type { HarnessCtx } from "./ctx";
 
 /**
@@ -121,17 +122,28 @@ export async function sessionParams(
     ...(employee?.model ? { model: employee.model } : {}),
   };
   /* D-#846: precedence is conversation pick / per-job override (both live
-     on the row) > the stored per-agent default (the codingAgents KV,
-     D-#835) > the employee/sessionParamsFor pin > the agent's own default
-     (its advertised currentValue). The KV holds model + effort only;
-     provider and fast keep their existing sources. */
+     on the row) > the employee pin (the agent page's "Default model" —
+     `employee.model`/`effort`, #872) > the stored per-agent default (the
+     codingAgents KV, D-#835) > the sessionParamsFor pin > the agent's own
+     default (its advertised currentValue). The KV holds model + effort
+     only; provider and fast keep their existing sources. */
   const stored = await this.codingAgentDefaults(employee);
   // A pick pinned on the conversation (#30/#92) wins over the profile
   // default — each field falls back independently so a bare `model` pin
   // (old rows) still resolves its provider/effort on the engine.
-  const model = conv?.model ?? stored?.model ?? base.model;
+  /* `""` is the record's empty, not a pick — fold it so the KV/engine
+     defaults still apply. */
+  const model =
+    conv?.model ??
+    (employee?.model || undefined) ??
+    stored?.model ??
+    base.model;
   const provider = conv?.provider ?? base.provider;
-  const effort = conv?.effort ?? stored?.effort ?? base.effort;
+  const effort =
+    conv?.effort ??
+    (employee?.effort || undefined) ??
+    stored?.effort ??
+    base.effort;
   const fast = conv?.fast ?? base.fast;
   // D-#113: a thread owns its folder through its project — the folder is
   // the conversation's `cwd` (`conversations.open { cwd }`, stored nullable
@@ -156,5 +168,54 @@ export async function sessionParams(
        a wedge fate. */
     ...(conv?.id ? { callerKey: conv.id } : {}),
     ...(mcpServer ? { mcpServers: [mcpServer] } : {}),
+  };
+}
+
+/* #872 — `task_create`'s explicit model is checked against the CHILD
+   agent's own runtime catalog: a name only the parent's engine knows
+   throws here, never silently starts on the wrong runtime. The answer is
+   the catalog's own id/provider (a display name resolves to its id). A
+   runtime whose catalog cannot be listed passes the pick through raw —
+   the engine itself then accepts or rejects it. */
+export async function checkTaskModel(
+  this: HarnessCtx,
+  employee: Employee,
+  model: string,
+  provider?: string,
+): Promise<{ model: string; provider?: string }> {
+  const runtime = normalizeRuntime(employee.runtime);
+  let rows = this.modelCatalogs.get(runtime);
+  if (!rows) {
+    const conn =
+      this.connForRuntime(runtime) ?? (await this.ensureRuntime(runtime));
+    rows = conn
+      ? conn
+          .request<{
+            models?: { id: string; name?: string; provider?: string }[];
+          }>("models.list", {})
+          .then((r) => r.models ?? [])
+          .catch(() => [])
+      : Promise.resolve([]);
+    this.modelCatalogs.set(runtime, rows);
+  }
+  const list = await rows;
+  if (!list.length) return { model, ...(provider ? { provider } : {}) };
+  const hit = list.find((m) => m.id === model || m.name === model);
+  if (!hit)
+    throw new Error(
+      `model "${model}" isn't one of ${employee.name}'s models — its runtime offers: ${list
+        .slice(0, 6)
+        .map((m) => m.name ?? m.id)
+        .join(", ")}`,
+    );
+  if (provider && hit.provider && hit.provider !== provider)
+    throw new Error(
+      `"${model}" runs on provider "${hit.provider}" for ${employee.name}, not "${provider}"`,
+    );
+  return {
+    model: hit.id,
+    ...((hit.provider ?? provider)
+      ? { provider: hit.provider ?? provider }
+      : {}),
   };
 }

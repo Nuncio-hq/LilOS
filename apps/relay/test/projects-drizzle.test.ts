@@ -125,7 +125,7 @@ describe("projects migration + backfill on the real store (D-#771)", () => {
        stuck; v31 (D-#775) adds reports_to and stuck_at; v32 (D-#776) adds
        goals and tickets. v33 (D-#777) adds company updates; v34 adds
        the wake flags. */
-    expect(out.versionAfter).toBe(38);
+    expect(out.versionAfter).toBe(39);
     expect(out.colsAfter).toContain("project_id");
     expect(out.colsAfter).toContain("stuck");
     expect(out.colsAfter).toContain("stuck_at");

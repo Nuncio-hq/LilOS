@@ -29,7 +29,15 @@ type AnyResult = Record<string, any>;
 
 /** Registered host + two employees: the caller's own thread (with a cwd
     so it files under a project) and the agent the task hands off to. */
-async function worldWithParent(storeHome: string) {
+async function worldWithParent(
+  storeHome: string,
+  parentPick?: {
+    model?: string;
+    provider?: string;
+    effort?: string;
+    fast?: boolean;
+  },
+) {
   const { store, relay } = newWorld(storeHome);
   const host = await helloed(relay);
   await host.connection.receive(
@@ -58,6 +66,10 @@ async function worldWithParent(storeHome: string) {
       text: "Plan the release",
       cwd: join(storeHome, "work"),
       access: "ask",
+      ...(parentPick?.model ? { model: parentPick.model } : {}),
+      ...(parentPick?.provider ? { provider: parentPick.provider } : {}),
+      ...(parentPick?.effort ? { effort: parentPick.effort } : {}),
+      ...(parentPick?.fast !== undefined ? { fast: parentPick.fast } : {}),
     }),
   );
   const { conversation: parent } = resultOf(host.frames, lastId())
@@ -122,6 +134,55 @@ describe("tasks.create (D-#844)", () => {
         }),
       }),
     ]);
+  });
+
+  /* #872: an unpicked hand-off runs on the CHILD agent's stored defaults —
+     the parent's pick stays the parent's, even for effort/provider. */
+  it("runs an unpicked hand-off on the child's defaults, never the parent's pick", async () => {
+    const dir = home();
+    const { host, worker, parent } = await worldWithParent(dir, {
+      model: "opus-5-5",
+      provider: "anthropic",
+      effort: "max",
+    });
+    await host.connection.receive(
+      req("employees.update", {
+        id: worker.id,
+        model: "swe-2-high",
+        effort: "high",
+      }),
+    );
+    host.frames.length = 0;
+
+    const r = await createTask(host, {
+      parentConversationId: parent.id,
+      employeeId: worker.id,
+      prompt: "Fix the flake",
+    });
+    expect(r.conversation.model).toBe("swe-2-high");
+    expect(r.conversation.effort).toBe("high");
+    // The parent's provider never crosses to the child.
+    expect(r.conversation.provider).toBeUndefined();
+    expect(r.conversation.fast).toBeUndefined();
+  });
+
+  it("stamps an explicit pick on the child verbatim", async () => {
+    const dir = home();
+    const { host, worker, parent } = await worldWithParent(dir, {
+      model: "opus-5-5",
+      provider: "anthropic",
+    });
+    const r = await createTask(host, {
+      parentConversationId: parent.id,
+      employeeId: worker.id,
+      prompt: "Fix the flake",
+      model: "swe-2",
+      provider: "cognition",
+      effort: "low",
+    });
+    expect(r.conversation.model).toBe("swe-2");
+    expect(r.conversation.provider).toBe("cognition");
+    expect(r.conversation.effort).toBe("low");
   });
 
   it("rejects a non-host caller", async () => {

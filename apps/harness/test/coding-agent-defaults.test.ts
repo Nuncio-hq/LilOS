@@ -49,6 +49,42 @@ describe("codingAgents KV default -> session.start (#846)", () => {
     }
   });
 
+  /* #872: the agent page's Default model/effort is the employee record's
+     pin — it lands ahead of the KV default so every runtime shares the
+     one source the page edits. */
+  it("the employee pin beats the stored KV default", async () => {
+    const w = await setupWorld();
+    try {
+      await w.user.request("settings.set", {
+        key: "codingAgents",
+        value: { devin: { model: "fake-smart", effort: "high" } },
+      });
+      const { employee: e } = await w.user.request<{
+        employee: { id: string };
+      }>("employees.create", {
+        name: "Devin",
+        role: "engineer",
+        profile: "devin",
+      });
+      await w.user.request("employees.update", {
+        id: e.id,
+        model: "fake-reasoning",
+        effort: "low",
+      });
+      const { channel } = await w.user.request<{
+        channel: { id: string };
+      }>("channels.openDm", { employeeId: e.id });
+      await w.user.request("conversations.open", {
+        channelId: channel.id,
+        text: "hi",
+      });
+      const params = await startParams(w);
+      expect(params).toMatchObject({ model: "fake-reasoning", effort: "low" });
+    } finally {
+      await w.cleanup();
+    }
+  });
+
   it("a conversation pin beats the stored default", async () => {
     const w = await setupWorld({ attachEngine: false });
     try {

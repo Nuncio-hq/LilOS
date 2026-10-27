@@ -31,6 +31,10 @@ export const Employee = z.object({
   status: EmployeeStatus,
   profile: z.string(),
   model: z.string(),
+  /** #872: the agent's default reasoning-effort pick (one of its model's
+      `efforts`), stored here so every runtime's sessions share one source.
+      Absent = the model's own default effort. */
+  effort: z.string().optional(),
   now: z.string(),
   instructions: z.string(),
   respondTo: RespondTo,

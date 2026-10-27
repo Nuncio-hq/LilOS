@@ -568,6 +568,13 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
       `ALTER TABLE conversations ADD COLUMN last_park_action_at INTEGER`,
     ],
   },
+  {
+    /* #872: the agent page's effort pick is a per-agent default on the
+       employee row — one store every runtime's sessions read (NULL = the
+       model's own default). */
+    version: 39,
+    statements: [`ALTER TABLE employees ADD COLUMN effort TEXT`],
+  },
 ];
 
 /**
