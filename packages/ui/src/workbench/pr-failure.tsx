@@ -14,7 +14,7 @@ import { WbBtn, WbEmpty } from "./wb-bits";
 export function PrFailure({
   error,
   onRetry,
-  employeeName = "the employee",
+  employeeName = "the agent",
 }: {
   error: PrError;
   onRetry?: () => void;

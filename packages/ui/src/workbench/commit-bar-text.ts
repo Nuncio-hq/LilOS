@@ -33,7 +33,7 @@ const COPY: Record<
 
 export function shipText(error: ShipError, employeeName?: string): string {
   const known = error.reason && COPY[error.reason];
-  const text = known ? known(employeeName ?? "the employee") : "";
+  const text = known ? known(employeeName ?? "the agent") : "";
   return text || error.text || "Something went wrong.";
 }
 

@@ -94,7 +94,7 @@ export function ModelVisibilityDialog({
         <DialogHeader className="px-4 pt-4">
           <DialogTitle>Models</DialogTitle>
           <DialogDescription>
-            Choose which models show in the picker. Applies to every employee.
+            Choose which models show in the picker. Applies to every agent.
           </DialogDescription>
         </DialogHeader>
         <label className="mx-4 flex items-center gap-2 rounded-lg border border-input px-2.5 py-1.5 text-sm">

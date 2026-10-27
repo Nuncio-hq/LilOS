@@ -10,6 +10,7 @@ import {
   v3Peek,
   v3Sidebar,
 } from "./helpers/stack";
+import { openTroubleshooting } from "./helpers/status";
 import { openWorkbench } from "./helpers/workbench";
 
 /**
@@ -33,7 +34,6 @@ const SIZE = { width: 1288, height: 900 };
  *  them. */
 const SHOTS = [
   "first-run-you",
-  "first-run-engine",
   "home",
   "needs-you",
   "threads-board",
@@ -105,21 +105,9 @@ for (const theme of ["light", "dark"] as const) {
       await expect(page.getByLabel("Your name")).toHaveValue("Test User");
       await shot("first-run-you");
       await page.getByRole("button", { name: "Next" }).click();
-      const legs = page.locator("[data-first-run-step]");
-      await expect(legs.nth(0)).toHaveAttribute("data-state", "ok", {
-        timeout: 30_000,
-      });
-      await expect(legs.nth(1)).toHaveAttribute("data-state", "ok", {
-        timeout: 60_000,
-      });
-      await expect(legs.nth(1)).toContainText("Engine-fake", {
-        timeout: 30_000,
-      });
-      await shot("first-run-engine");
-      await page.getByRole("button", { name: "Next" }).click();
       await page.getByLabel("Name", { exact: true }).fill("Ada");
       await page.getByRole("button", { name: "Next" }).click();
-      await page.getByRole("button", { name: "Open my company" }).click();
+      await page.getByRole("button", { name: "Start", exact: true }).click();
 
       /* Home: the first agent, idle, nothing waiting. */
       await expect(page.getByRole("heading", { level: 1 })).toHaveText(
@@ -227,6 +215,7 @@ for (const theme of ["light", "dark"] as const) {
       await expect(main(page)).toContainText("Test's Co", { timeout: 30_000 });
       await shot("settings-general");
       await page.goto(`${stack.webUrl}/#?page=settings&view=engine`);
+      await openTroubleshooting(page);
       await expect(main(page)).toContainText("Engine-fake", {
         timeout: 30_000,
       });

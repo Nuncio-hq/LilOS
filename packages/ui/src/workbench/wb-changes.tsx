@@ -101,7 +101,7 @@ export function ChangesTab({
 }) {
   const addT = diffs.reduce((s, d) => s + d.add, 0);
   const delT = diffs.reduce((s, d) => s + d.del, 0);
-  const name = lead?.name ?? "the employee";
+  const name = lead?.name ?? "the agent";
   return (
     <>
       {/* #393 AC-9: a fade where the list scrolls under the sticky ship
@@ -121,7 +121,7 @@ export function ChangesTab({
               </WbEmpty>
             ) : isDM ? (
               <WbEmpty>
-                Read-only thread. {lead?.name ?? "The employee"} reads code but
+                Read-only thread. {lead?.name ?? "The agent"} reads code but
                 can't edit here. Edits happen on a ticket in a channel with a
                 repo.
               </WbEmpty>

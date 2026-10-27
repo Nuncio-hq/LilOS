@@ -6,6 +6,7 @@ import {
   v3Peek,
   v3Sidebar,
 } from "./helpers/stack";
+import { openTroubleshooting } from "./helpers/status";
 
 /**
  * Hire in the v3 shell (real stack: relay + harness on engine-fake). Hiring
@@ -102,6 +103,9 @@ test("Hire a Researcher: the new agent is in the sidebar and People, opened besi
     await expect(v3Peek(page)).toContainText("Fake Reasoning");
     await expect(side.getByRole("button", { name: /Nova/ })).toBeVisible();
     await page.goto(`${stack.webUrl}/#?page=settings&view=engine`);
+    /* Agents on this engine sits inside Troubleshooting since #885 — the
+       fold is closed when nothing is failing, so open it first. */
+    await openTroubleshooting(page);
     await expect(
       main(page).getByRole("button", { name: /Nova/ }),
     ).toContainText("Connected", { timeout: 30_000 });
