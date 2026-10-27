@@ -67,9 +67,7 @@ export function V3ProjectPage({
      Working · Snoozed · Done — a thread reads the same here as there.
      `sectionedThreads` buckets every thread, so keep only this project's;
      a done thread still belongs to its project. */
-  const inProject = (t: V3Thread) =>
-    t.projectId === project.id ||
-    (t.ticketId !== undefined && ticketIds.has(t.ticketId));
+  const inProject = (t: V3Thread) => threadProjectId(data, t) === project.id;
   const all = sectionedThreads(data);
   const s = {
     pinned: all.pinned.filter(inProject),
