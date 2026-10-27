@@ -1,8 +1,11 @@
 // @vitest-environment happy-dom
-/* An agent's page edits and removes the agent in place. The real app's shape
-   (no CEO, no tickets, the engine's fields in `agentFields`) is the fixture:
-   a control the app cannot back must not be drawn, Esc must close the editing
-   and not the peek behind it, and a save writes only what changed. */
+/* An agent's page edits in place, Notion-style (#872): no edit mode, no
+   page Save/Cancel — click the role or description, Enter or leaving saves
+   just that field, Esc puts it back; the model's menu saves on pick and a
+   guarded model asks before it pins; instructions save on blur. Fields the
+   agent's own runtime cannot write (D-#761) render as plain text. The real
+   app's shape (no CEO, no tickets) is the fixture; removing and the name's
+   click-to-rename keep working as they did. */
 import {
   act,
   cleanup,
@@ -14,7 +17,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { V3AgentPage } from "../src/v3/v3-agent";
 import type { V3Data } from "../src/v3/v3-data-types";
 import type { V3Actions, V3Route } from "../src/v3/v3-page-types";
-import type { V3Agent } from "../src/v3/v3-types";
+import type { V3Agent, V3Runtime } from "../src/v3/v3-types";
 
 afterEach(cleanup);
 
@@ -24,6 +27,7 @@ const agent: V3Agent = {
   tone: "b",
   role: "QA",
   hired: "1 Oct",
+  profile: "reviewer",
   model: "Sonnet 5",
   description: "Reads every diff",
   instructions: ["Comment with file:line.", "Never push to main."],
@@ -39,6 +43,23 @@ const other: V3Agent = {
   instructions: [],
 };
 const two: V3Agent[] = [agent, other];
+
+const HERMES: V3Runtime = {
+  id: "hermes",
+  label: "Hermes",
+  available: true,
+  isDefault: true,
+  updatable: ["name", "description", "soul", "model"],
+  models: ["Sonnet 5", "Haiku 5"],
+};
+const DEVIN: V3Runtime = {
+  id: "acp:devin",
+  label: "Devin",
+  available: true,
+  tone: "b",
+  updatable: ["name", "description", "soul", "model"],
+  models: ["SWE-2 · High", "SWE-2 · Medium"],
+};
 
 const data = (over: Partial<V3Data> = {}): V3Data =>
   ({
@@ -109,12 +130,12 @@ const press = (el: Element, key: string) =>
   fireEvent.keyDown(el, { key, bubbles: true });
 
 describe("capability by presence", () => {
-  test("no updateAgent/removeAgent: no Edit, no mute switch, no Remove", () => {
+  test("no updateAgent/removeAgent: nothing editable, no mute, no Remove", () => {
     mount(
       actions({ updateAgent: undefined, removeAgent: undefined }),
       data({ agents: two }),
     );
-    expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "QA" })).toBeNull();
     expect(screen.queryByRole("switch")).toBeNull();
     expect(
       screen.queryByRole("button", { name: "Remove from LilOS" }),
@@ -131,108 +152,113 @@ describe("capability by presence", () => {
         id="emp_1"
       />,
     );
-    expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "QA" })).toBeNull();
+    expect(screen.queryByLabelText("Instructions")).toBeNull();
     expect(
       screen.queryByRole("button", { name: "Remove from LilOS" }),
     ).toBeNull();
   });
 
-  test("the fields the engine does not list are not offered", () => {
+  test("the fields the engine does not list read as text, never inputs", () => {
     mount(actions(), data({ agentFields: undefined }));
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    expect(screen.getByLabelText("Name")).toBeTruthy();
-    expect(screen.getByLabelText("Role")).toBeTruthy();
-    expect(screen.queryByLabelText("Instructions")).toBeNull();
+    // Name and role are the company's record — still editable.
+    expect(screen.getByRole("button", { name: "Reviewer" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "QA" })).toBeTruthy();
+    // Engine-owned fields sit read-only.
+    expect(screen.getByText("Reads every diff")).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Reads every diff" }),
+    ).toBeNull();
     expect(screen.queryByLabelText("Description")).toBeNull();
+    expect(screen.queryByLabelText("Instructions")).toBeNull();
     expect(screen.queryByRole("button", { name: "Model" })).toBeNull();
   });
 });
 
-describe("edit", () => {
-  test("Save writes only what changed", async () => {
+describe("edit in place", () => {
+  test("the role saves on Enter; Esc cancels without touching the record", async () => {
     const act_ = actions();
+    const shell = shellEsc();
     mount(act_);
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    fireEvent.change(screen.getByLabelText("Name"), {
-      target: { value: "  Maker " },
-    });
-    fireEvent.change(screen.getByLabelText("Instructions"), {
-      target: { value: "Ship small PRs." },
-    });
+    fireEvent.click(screen.getByRole("button", { name: "QA" }));
+    const box = screen.getByLabelText("Role");
+    fireEvent.change(box, { target: { value: "Reviews" } });
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+      press(box, "Enter");
     });
     expect(act_.updateAgent).toHaveBeenCalledWith("emp_1", {
-      name: "Maker",
-      instructions: "Ship small PRs.",
+      role: "Reviews",
     });
-    // Saved: back to reading.
-    expect(screen.queryByLabelText("Name")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "QA" }));
+    const again = screen.getByLabelText("Role");
+    fireEvent.change(again, { target: { value: "Nope" } });
+    press(again, "Escape");
+    expect(act_.updateAgent).toHaveBeenCalledTimes(1);
+    expect(shell.closePeek).not.toHaveBeenCalled();
+    shell.off();
   });
 
-  test("the model is picked from the app's choices", async () => {
+  test("the description saves on blur", async () => {
     const act_ = actions();
     mount(act_);
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    fireEvent.click(screen.getByRole("button", { name: "Model" }));
-    fireEvent.click(screen.getByRole("menuitemradio", { name: "Haiku 5" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reads every diff" }));
+    const box = screen.getByLabelText("Description");
+    fireEvent.change(box, { target: { value: "Ships PRs" } });
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+      fireEvent.blur(box);
+    });
+    expect(act_.updateAgent).toHaveBeenCalledWith("emp_1", {
+      description: "Ships PRs",
+    });
+  });
+
+  test("the model saves the moment it is picked", async () => {
+    const act_ = actions();
+    mount(act_);
+    fireEvent.click(screen.getByRole("button", { name: "Model" }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("menuitemradio", { name: "Haiku 5" }));
     });
     expect(act_.updateAgent).toHaveBeenCalledWith("emp_1", {
       model: "Haiku 5",
     });
   });
 
-  test("an unchanged form just closes; an empty name cannot be saved", async () => {
+  test("instructions save on blur; Esc puts the old text back", async () => {
     const act_ = actions();
     mount(act_);
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const area = screen.getByLabelText("Instructions");
+    fireEvent.focus(area);
+    fireEvent.change(area, { target: { value: "Ship small PRs." } });
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+      fireEvent.blur(area);
     });
-    expect(act_.updateAgent).not.toHaveBeenCalled();
-    expect(screen.queryByLabelText("Name")).toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    fireEvent.change(screen.getByLabelText("Name"), { target: { value: " " } });
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(act_.updateAgent).toHaveBeenCalledWith("emp_1", {
+      instructions: "Ship small PRs.",
     });
-    expect(act_.updateAgent).not.toHaveBeenCalled();
-    expect(screen.getByLabelText("Name")).toBeTruthy();
-  });
 
-  test("Esc cancels the editing and the peek behind it keeps its key", () => {
+    fireEvent.focus(area);
+    fireEvent.change(area, { target: { value: "Nope" } });
     const shell = shellEsc();
-    const act_ = actions();
-    mount(act_);
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    fireEvent.change(screen.getByLabelText("Name"), {
-      target: { value: "Maker" },
+    press(area, "Escape");
+    await act(async () => {
+      fireEvent.blur(area);
     });
-    press(screen.getByLabelText("Role"), "Escape");
-    expect(screen.queryByLabelText("Name")).toBeNull();
-    expect(screen.getByRole("heading", { name: /Reviewer/ })).toBeTruthy();
-    expect(act_.updateAgent).not.toHaveBeenCalled();
+    expect(act_.updateAgent).toHaveBeenCalledTimes(1);
     expect(shell.closePeek).not.toHaveBeenCalled();
-    // Reading again, Esc is the shell's.
-    press(document.body, "Escape");
-    expect(shell.closePeek).toHaveBeenCalledTimes(1);
     shell.off();
   });
 
-  test("a guarded model waits for a confirm, then pins alone", async () => {
+  test("a guarded model asks in place, then pins alone", async () => {
     const updateAgent = vi
       .fn<NonNullable<V3Actions["updateAgent"]>>()
       .mockResolvedValueOnce({ confirmModel: "Costs 5x more. Pin it?" })
       .mockResolvedValueOnce(undefined);
     mount(actions({ updateAgent }));
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     fireEvent.click(screen.getByRole("button", { name: "Model" }));
-    fireEvent.click(screen.getByRole("menuitemradio", { name: "Haiku 5" }));
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+      fireEvent.click(screen.getByRole("menuitemradio", { name: "Haiku 5" }));
     });
     expect(screen.getByText("Costs 5x more. Pin it?")).toBeTruthy();
     await act(async () => {
@@ -245,19 +271,129 @@ describe("edit", () => {
     expect(screen.queryByText("Costs 5x more. Pin it?")).toBeNull();
   });
 
-  test("a failed save keeps what you typed", async () => {
-    const updateAgent = vi.fn().mockRejectedValue(new Error("nope"));
+  test("a failed save says why beside the field", async () => {
+    const updateAgent = vi.fn().mockRejectedValue(new Error("engine down"));
     mount(actions({ updateAgent }));
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    fireEvent.change(screen.getByLabelText("Name"), {
-      target: { value: "Maker" },
-    });
+    fireEvent.click(screen.getByRole("button", { name: "Reads every diff" }));
+    const box = screen.getByLabelText("Description");
+    fireEvent.change(box, { target: { value: "Ships PRs" } });
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+      fireEvent.blur(box);
     });
-    expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe(
-      "Maker",
+    expect(screen.getByText(/Couldn't save — engine down/)).toBeTruthy();
+    // What you typed is not lost — the text stays the app's record of it.
+    expect(
+      screen.getByRole("button", { name: "Reads every diff" }),
+    ).toBeTruthy();
+  });
+});
+
+describe("runs on its own runtime", () => {
+  /* A Devin agent's page (#872): "Runs on" is the plain label, there is no
+     Profile (that names a Hermes-side id), the Model menu is Devin's own
+     list — never Hermes's — and its avatar is the runtime's mark. */
+  const devinAgent: V3Agent = {
+    ...agent,
+    id: "emp_devin",
+    name: "Coder",
+    runtime: "acp:devin",
+    profile: "devin",
+    model: "SWE-2 · High",
+  };
+
+  test("Runs on Devin, no Profile, Devin's own models", async () => {
+    const act_ = actions();
+    const { container } = render(
+      <V3AgentPage
+        data={data({ agents: [devinAgent, other], runtimes: [HERMES, DEVIN] })}
+        go={vi.fn()}
+        act={act_}
+        id="emp_devin"
+      />,
     );
+    expect(screen.getByText("Runs on")).toBeTruthy();
+    expect(screen.getByText("Devin")).toBeTruthy();
+    expect(screen.queryByText("acp:devin")).toBeNull();
+    expect(screen.queryByText("Profile")).toBeNull();
+    // The runtime's letter and tone, not the agent's own (#872).
+    const face = container.querySelector("span[aria-hidden]");
+    expect(face?.textContent).toBe("D");
+    expect(face?.className).toContain("bg-[#e5eef5]");
+
+    fireEvent.click(screen.getByRole("button", { name: "Model" }));
+    expect(
+      screen.getByRole("menuitemradio", { name: "SWE-2 · Medium" }),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("menuitemradio", { name: "Sonnet 5" }),
+    ).toBeNull();
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("menuitemradio", { name: "SWE-2 · Medium" }),
+      );
+    });
+    expect(act_.updateAgent).toHaveBeenCalledWith("emp_devin", {
+      model: "SWE-2 · Medium",
+    });
+  });
+
+  test("a Hermes agent reads Runs on Hermes and keeps its Profile", () => {
+    render(
+      <V3AgentPage
+        data={data({ agents: two, runtimes: [HERMES, DEVIN] })}
+        go={vi.fn()}
+        act={actions()}
+        id="emp_1"
+      />,
+    );
+    expect(screen.getByText("Hermes")).toBeTruthy();
+    expect(screen.getByText("reviewer")).toBeTruthy();
+    expect(screen.getByText("Profile")).toBeTruthy();
+  });
+
+  test("a field the runtime can't write is text; instructions say why", () => {
+    render(
+      <V3AgentPage
+        data={data({
+          agents: [devinAgent, other],
+          runtimes: [HERMES, { ...DEVIN, updatable: ["name", "model"] }],
+        })}
+        go={vi.fn()}
+        act={actions()}
+        id="emp_devin"
+      />,
+    );
+    expect(screen.getByText("Reads every diff")).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Reads every diff" }),
+    ).toBeNull();
+    expect(screen.queryByLabelText("Instructions")).toBeNull();
+    expect(screen.getByText("LilOS can't change these on Devin")).toBeTruthy();
+  });
+
+  test("an unavailable runtime's schedules read greyed with the reason", () => {
+    render(
+      <V3AgentPage
+        data={data({
+          agents: [{ ...devinAgent, runtime: "acp:cursor" }, other],
+          runtimes: [
+            HERMES,
+            DEVIN,
+            {
+              id: "acp:cursor",
+              label: "Cursor",
+              available: false,
+              detail: "cursor-agent is not on PATH",
+            },
+          ],
+        })}
+        go={vi.fn()}
+        act={actions()}
+        id="emp_devin"
+      />,
+    );
+    expect(screen.getByText(/Can't run right now/)).toBeTruthy();
+    expect(screen.queryByText("New schedule")).toBeNull();
   });
 });
 

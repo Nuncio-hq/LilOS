@@ -17,6 +17,8 @@ vi.mock("../src/lib/runtime", async (orig) => {
   const actual = await orig<typeof import("../src/lib/runtime")>();
   const relay = {
     employees: { get: () => [employee], listen: () => () => {} },
+    // profiles.ts re-signs its per-runtime asks off the roster.
+    status: { get: () => ({}), listen: () => () => {} },
     // Reading the profile behind the employee (profiles.ts), as the engine says it.
     describeAgent: vi.fn(async (id: string) => ({ id, name: id })),
     updateAgent: vi.fn(async (p: unknown) => {

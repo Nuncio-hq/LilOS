@@ -1,7 +1,13 @@
 import type { V3Ask, V3Data } from "./v3-data-types";
 import type { V3Route } from "./v3-page-types";
 import { soonestRun } from "./v3-schedule-text";
-import type { V3Agent, V3Status, V3Thread, V3Ticket } from "./v3-types";
+import type {
+  V3Agent,
+  V3Runtime,
+  V3Status,
+  V3Thread,
+  V3Ticket,
+} from "./v3-types";
 
 /* Lookups every v3 page shares. Pure; the shell owns the data. */
 
@@ -399,3 +405,71 @@ export function resultsToLookAt(data: V3Data): LookAtRow[] {
   }
   return rows.sort((a, b) => a.minutes - b.minutes);
 }
+
+/** The runtime row an agent runs on (D-#761): `runtime` names its row;
+    absent names the default row — the roster can leave the default's
+    agents blank. No rows at all means the shell never learned them. */
+export const runtimeOf = (d: V3Data, a: V3Agent): V3Runtime | undefined => {
+  const rows = d.runtimes;
+  if (!rows?.length) return undefined;
+  if (!a.runtime) return rows.find((r) => r.isDefault) ?? rows[0];
+  return rows.find((r) => r.id === a.runtime);
+};
+
+/** A plain name for "Runs on" (#872): the row's label — "Devin",
+    "Claude Code"; the launcher name "hermes" reads as "Hermes". A runtime
+    id no row names yet still never shows as `acp:devin`. */
+export const runtimeLabelOf = (d: V3Data, a: V3Agent): string | undefined => {
+  const raw = runtimeOf(d, a)?.label ?? a.runtime;
+  if (!raw) return undefined;
+  return raw
+    .replace(/^acp:/, "")
+    .split(/[-_\s]+/)
+    .map((w) => w.slice(0, 1).toUpperCase() + w.slice(1))
+    .join(" ");
+};
+
+/** Engine-side `updatable` names → the page fields they let you edit
+    (soul holds the persona — the page's Instructions). */
+const PAGE_FIELD = {
+  description: "description",
+  model: "model",
+  soul: "instructions",
+} as const;
+type AgentPageField = NonNullable<V3Data["agentFields"]>[number];
+
+const pageFieldsOf = (updatable: readonly string[]): AgentPageField[] =>
+  updatable.flatMap((f) =>
+    f in PAGE_FIELD ? [PAGE_FIELD[f as keyof typeof PAGE_FIELD]] : [],
+  );
+
+/** Which engine-owned fields this agent's runtime lets LilOS write: the
+    runtime row's own `updatable` (D-#761) — the default engine's list for
+    a default-runtime agent, nothing while a coding runtime hasn't been
+    described. Read-only text beats an input that would fail (#872). */
+export const agentPageFields = (d: V3Data, a: V3Agent): AgentPageField[] => {
+  const rt = runtimeOf(d, a);
+  if (rt && !rt.isDefault) return pageFieldsOf(rt.updatable ?? []);
+  return d.agentFields ?? [];
+};
+
+/** The model labels this agent's own runtime offers — Devin's SWE-2
+    options, never Hermes's list on an ACP agent (#872). Empty while its
+    catalog hasn't landed; the field shows text until then. */
+export const modelChoicesOf = (d: V3Data, a: V3Agent): string[] => {
+  const rt = runtimeOf(d, a);
+  if (rt && !rt.isDefault) return rt.models ?? [];
+  return rt?.models ?? d.modelChoices;
+};
+
+/** Why this agent's runtime can't take scheduled jobs right now — the
+    probe's or supervisor's own words. `undefined` means it can: a row
+    that never ran still starts on demand, so absence is not a reason. */
+export const schedulesOff = (d: V3Data, a: V3Agent): string | undefined => {
+  const rt = runtimeOf(d, a);
+  if (!rt) return undefined;
+  const label = rt.label ?? a.name;
+  if (rt.available === false) return rt.detail ?? `${label} is not available`;
+  if (rt.state === "failed") return rt.detail ?? `${label} isn't running`;
+  return undefined;
+};

@@ -1,10 +1,10 @@
 import type { V3Data } from "@lilos/ui/v3-data"
 
 /* ?v3 mock: the coding agents a thread can hand work to (D-#844, #847).
-   Each is an agent whose runtime is its own engine and whose model carries
-   its own effort, so a helper row reads "who runs it and how hard it
-   thinks". The hand-offs below are ordinary threads with `parentId` back to
-   the thread that asked — Builder fans one job out, then waits. */
+   `runtime` is the roster's runtime id (`acp:<agent>`, D-#761) — the page
+   resolves the plain label from `data.runtimes`, so an agent never carries
+   a display string here (#872). A helper whose runtime is not installed
+   (Cursor, Antigravity) shows the page's read-only/can't-run treatment. */
 
 export const CODING_AGENTS: V3Data["agents"] = [
   {
@@ -13,8 +13,9 @@ export const CODING_AGENTS: V3Data["agents"] = [
     tone: "m",
     role: "Coding agent",
     hired: "8 Oct",
-    runtime: "Claude Code",
-    profile: "claude-code",
+    runtime: "acp:claude",
+    profile: "claude",
+    description: "Claude Code over ACP — Anthropic's agent, signed in locally.",
     model: "Opus 5.5 · High",
     schedule: "When a thread hands it work",
     skills: [],
@@ -28,8 +29,9 @@ export const CODING_AGENTS: V3Data["agents"] = [
     tone: "b",
     role: "Coding agent",
     hired: "8 Oct",
-    runtime: "Devin",
+    runtime: "acp:devin",
     profile: "devin",
+    description: "Devin CLI over ACP — Cognition's agent, signed in locally.",
     model: "SWE-2 · High",
     schedule: "When a thread hands it work",
     skills: [],
@@ -43,8 +45,9 @@ export const CODING_AGENTS: V3Data["agents"] = [
     tone: "r",
     role: "Coding agent",
     hired: "12 Oct",
-    runtime: "Cursor",
+    runtime: "acp:cursor",
     profile: "cursor",
+    description: "Cursor's coding agent over ACP.",
     model: "Composer 1 · Medium",
     schedule: "When a thread hands it work",
     skills: [],
@@ -58,8 +61,9 @@ export const CODING_AGENTS: V3Data["agents"] = [
     tone: "s",
     role: "Coding agent",
     hired: "12 Oct",
-    runtime: "Antigravity",
+    runtime: "acp:antigravity",
     profile: "antigravity",
+    description: "Google's Antigravity agent over ACP.",
     model: "Gemini 3 Pro · High",
     schedule: "When a thread hands it work",
     skills: [],

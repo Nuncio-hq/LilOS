@@ -704,6 +704,12 @@ export const RuntimeStatusRow = z.object({
   available: z.boolean().optional(),
   state: EngineHostState.optional(),
   detail: z.string().optional(),
+  /* Once the runtime has run and been described: the profile fields its
+     `agents` capability lets the app write (`detail.updatable`, D-#19),
+     verbatim. Absent = never described — an agent page on this runtime
+     keeps its engine fields read-only rather than offering a write the
+     engine would refuse (#872). */
+  agentsUpdatable: z.array(z.string()).optional(),
 });
 export type RuntimeStatusRow = z.infer<typeof RuntimeStatusRow>;
 

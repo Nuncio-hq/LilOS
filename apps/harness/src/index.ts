@@ -257,7 +257,24 @@ statusReporter = new StatusReporter({
   model: "model" in config.engine ? config.engine.model : undefined,
   liveSessions: () => harness.liveSessionCount,
   connect: connect ? () => connect.report() : undefined,
-  runtimes: () => runtimes.statusRows(),
+  /* D-#761/#872: each row also carries the profile fields its runtime's
+     `agents` capability lets the app write, once that engine has been
+     described — a coding agent's page edits against ITS runtime's list,
+     and a field it can't change stays read-only instead of failing. */
+  runtimes: () =>
+    runtimes.statusRows().map((row) => {
+      const updatable = harness
+        .describeForRuntime(row.id)
+        ?.capabilities.find((c) => c.id === "agents")?.detail?.updatable;
+      return Array.isArray(updatable)
+        ? {
+            ...row,
+            agentsUpdatable: updatable.filter(
+              (f): f is string => typeof f === "string",
+            ),
+          }
+        : row;
+    }),
   logTail: () => [...log.lines],
 });
 const stopStatusReporter = statusReporter.start();

@@ -6935,6 +6935,12 @@
                   },
                   "detail": {
                     "type": "string"
+                  },
+                  "agentsUpdatable": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
                   }
                 },
                 "required": [
@@ -7158,6 +7164,12 @@
               },
               "detail": {
                 "type": "string"
+              },
+              "agentsUpdatable": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
               }
             },
             "required": [
@@ -7567,6 +7579,12 @@
               },
               "detail": {
                 "type": "string"
+              },
+              "agentsUpdatable": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
               }
             },
             "required": [

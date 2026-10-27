@@ -606,15 +606,26 @@ export class RelayClient {
    * `agents.update` — edit a profile's persona/model (#123). The engine may
    * answer `confirmModel` instead of applying a guarded model: the caller
    * asks the user and re-sends with `confirmModel: true`.
+   *
+   * `runtime` is an app→harness routing hint (D-#761) — the write lands on
+   * the engine that owns the profile; the harness strips it before the
+   * engine sees the update, so the engine-side schema stays strict.
    */
-  async updateAgent(params: AgentsUpdateParams): Promise<AgentsUpdateResult> {
+  async updateAgent(
+    params: AgentsUpdateParams & { runtime?: string },
+  ): Promise<AgentsUpdateResult> {
     return await this.request<AgentsUpdateResult>(
       "agents.update",
       params as Record<string, unknown>,
     );
   }
 
-  async listModels(params?: { refresh?: boolean }): Promise<ModelsListResult> {
+  /* `runtime` routes to that runtime's own catalog (D-#761): an ACP agent's
+     page offers its engine's models, never the default engine's (#872). */
+  async listModels(params?: {
+    refresh?: boolean;
+    runtime?: string;
+  }): Promise<ModelsListResult> {
     return await this.request<ModelsListResult>("models.list", params ?? {});
   }
 

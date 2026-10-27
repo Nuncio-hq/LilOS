@@ -230,6 +230,73 @@ describe("two runtimes at once (D-#761)", () => {
     }
   }, 20_000);
 
+  it("a roster call's `runtime` hint routes to that engine, stripped", async () => {
+    /* #872: the agent page's describe/update/models.list carry the owning
+       runtime id as app→harness metadata — the call must land on that
+       engine's conn and the engine must never see the hint. */
+    const w = await setupWorld({ homeDir: mkhome() });
+    const acp = attachRuntime(w, ACP);
+    try {
+      /* Seed agents are shared seed objects across FakeEngine instances,
+         so an agent created on the ACP side is the clean subject. */
+      await w.user.request("agents.create", {
+        name: "devin",
+        runtime: ACP,
+        description: "Cognition's coding agent",
+      });
+      const described = await w.user.request<{ agent: { id: string } }>(
+        "agents.describe",
+        { id: "devin", runtime: ACP },
+      );
+      expect(described.agent.id).toBe("devin");
+
+      await w.user.request("agents.update", {
+        id: "devin",
+        runtime: ACP,
+        description: "edited on the owning runtime",
+      });
+      const models = await w.user.request<{ models: { id: string }[] }>(
+        "models.list",
+        { runtime: ACP },
+      );
+      expect(models.models.length).toBeGreaterThan(0);
+
+      const landed = acp.calls.filter(
+        (c) =>
+          c.method === "agents.create" ||
+          c.method === "agents.describe" ||
+          c.method === "agents.update" ||
+          c.method === "models.list",
+      );
+      expect(landed.map((c) => c.method).sort()).toEqual([
+        "agents.create",
+        "agents.describe",
+        "agents.update",
+        "models.list",
+      ]);
+      for (const c of landed) {
+        expect(c.params).not.toHaveProperty("runtime");
+      }
+      expect(
+        w.engineCalls.filter(
+          (c) =>
+            c.method === "agents.create" ||
+            c.method === "agents.describe" ||
+            c.method === "agents.update" ||
+            c.method === "models.list",
+        ),
+      ).toHaveLength(0);
+
+      /* And the write stayed on ACP — the default engine never heard of
+         the `devin` profile. */
+      await expect(
+        w.user.request("agents.describe", { id: "devin" }),
+      ).rejects.toThrow(/no agent devin/);
+    } finally {
+      await w.cleanup();
+    }
+  }, 20_000);
+
   it("a task_create hand-off lands the child on the agent's runtime", async () => {
     const homeDir = mkhome();
     const w = await setupWorld({ homeDir });

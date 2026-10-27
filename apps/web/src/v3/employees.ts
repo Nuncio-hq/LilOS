@@ -5,6 +5,7 @@ import { engine, relay } from "../lib/runtime";
 import { refreshScheduledTasks } from "../lib/schedules";
 import { modelLabel, pickFromLabel } from "./models";
 import { noteProfile, updatableOf } from "./profiles";
+import { defaultRuntimeId, pickForRuntime, updatableFor } from "./runtimes";
 
 /* Hire-from-profile, edit and remove for the real app (the calls the pre-v3
    Hire and Edit dialogs made). The company record (name, role, mute) always
@@ -31,11 +32,26 @@ export async function saveAgent(
 ): Promise<{ confirmModel?: string } | undefined> {
   const employee = relay.employees.get().find((e) => e.id === id);
   if (!employee) throw new Error("This agent is no longer on the team");
-  const can = new Set(updatableOf(engine.description.get()));
+  /* #872 — everything engine-side routes to the runtime that owns the
+     profile (D-#761): a Devin agent's description/model land on acp:devin,
+     never silently on Hermes, and the fields it may write are that
+     runtime's own `updatable` — absent means read-only, not a try that
+     fails. */
+  const runtime =
+    employee.runtime && employee.runtime !== defaultRuntimeId()
+      ? employee.runtime
+      : undefined;
+  const can = new Set(
+    runtime ? updatableFor(runtime) : updatableOf(engine.description.get()),
+  );
   // The page shows a model by its picker label; the engine wants its id and
   // provider. A label that names no catalog model has nothing to write.
   const pick =
-    patch.model === undefined ? undefined : pickFromLabel(patch.model);
+    patch.model === undefined
+      ? undefined
+      : runtime
+        ? pickForRuntime(runtime, patch.model)
+        : pickFromLabel(patch.model);
   const engineEdit = {
     ...(patch.name !== undefined && can.has("name")
       ? { name: patch.name }
@@ -56,8 +72,12 @@ export async function saveAgent(
   };
   let confirmModel: string | undefined;
   if (employee.profile && Object.keys(engineEdit).length > 0) {
-    const r = await relay.updateAgent({ id: employee.profile, ...engineEdit });
-    noteProfile(employee.profile, r.agent);
+    const r = await relay.updateAgent({
+      id: employee.profile,
+      ...(runtime ? { runtime } : {}),
+      ...engineEdit,
+    });
+    noteProfile(employee.profile, runtime, r.agent);
     confirmModel = r.confirmModel;
   }
   const record: EmployeePatch = {
@@ -97,7 +117,8 @@ export async function listHirableProfiles(): Promise<V3Profile[]> {
   const agents = await relay.listAgents();
   return await Promise.all(
     agents.map(async (a) => {
-      const full = await relay.describeAgent(a.id).catch(() => a);
+      // The merged roster stamps the runtime the profile lives on (D-#761).
+      const full = await relay.describeAgent(a.id, a.runtime).catch(() => a);
       const model = full.model ?? a.model;
       const description = full.description ?? a.description;
       return {

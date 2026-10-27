@@ -146,7 +146,9 @@ export function Avatar({
 }
 
 /** An agent's face wherever it appears: a LilOS agent's letter on its tone,
-   or an outside worker's connector mark. An agent that is gone (its id
+   or an outside worker's connector mark. A coding-runtime agent wears its
+   runtime — the row's letter on the row's tone — so Devin and Claude Code
+   never look like two brown "D"s (#872). An agent that is gone (its id
    outlived it) shows a neutral "?" instead of another agent's face. */
 export function AgentAvatar({
   data,
@@ -165,10 +167,17 @@ export function AgentAvatar({
     agent.kind === "outside"
       ? data.connectors.find((c) => c.id === agent.via)
       : undefined;
+  const rt =
+    agent.kind !== "outside" && agent.runtime
+      ? data.runtimes?.find((r) => r.id === agent.runtime)
+      : undefined;
+  /* The default runtime keeps the agent's own look — Hermes's people are
+     LilOS faces; only another runtime marks its agents (#872). */
+  const marked = rt && !rt.isDefault;
   return (
     <Avatar
-      name={agent.name}
-      tone={agent.tone}
+      name={marked ? rt.label : agent.name}
+      tone={marked && rt.tone ? rt.tone : agent.tone}
       size={size}
       className={className}
       look={via?.look}

@@ -88,6 +88,8 @@ export type V3Agent = {
   /* What the relay cannot tell (a runtime per agent, its schedule, skills,
      spend, memory, week) is absent, and the agent page hides that part
      instead of showing a made-up value. */
+  /** The runtime id (`"hermes"`, `"acp:devin"`, D-#761) — `data.runtimes`
+      carries its label, colour and what its engine lets the page write. */
   runtime?: string;
   /** The engine profile the agent runs on (its id on the engine), where the
      app knows it. The profile is which runtime. Instructions, notes and
@@ -161,6 +163,21 @@ export type V3Runtime = {
   /** The runtime the app already runs as its default engine: its profiles
      are Who?'s profile rows, not a kind of their own. */
   isDefault?: boolean;
+  /* #872 — a runtime agent's page reads its own engine, never the
+     default's: which profile fields it lets the app write, and which
+     models its own picker may offer. */
+  /** The `agents` capability's `detail.updatable` (engine words — "soul",
+      "model", …), once the runtime has been described. Absent = not
+      described yet: engine-owned fields stay read-only, never editable-
+      then-failing. */
+  updatable?: string[];
+  /** Its own model picker labels (`models.list` on that engine). Absent =
+      not asked yet or no catalog — the Model field shows the current
+      model as text. */
+  models?: string[];
+  /** Avatar colour for agents on this runtime — the runtime's mark, so a
+      Devin agent never looks like a Hermes one. */
+  tone?: V3Tone;
 };
 
 /** An engine profile as the engine reports it: a persona with a model and

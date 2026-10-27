@@ -16,7 +16,7 @@ const AGENTS: V3Data["agents"] = [
     tone: "c",
     role: "Runs the company",
     hired: "1 Oct",
-    runtime: "Hermes · profile ceo",
+    runtime: "hermes",
     profile: "ceo",
     model: "Opus 5.5 · High",
     schedule: "Always on · checks every ticket every 15 min",
@@ -35,7 +35,7 @@ const AGENTS: V3Data["agents"] = [
     role: "Engineer",
     reportsTo: "ceo",
     hired: "1 Oct",
-    runtime: "Hermes · profile builder",
+    runtime: "hermes",
     profile: "builder",
     model: "Opus 5.5 · High",
     schedule: "When given a ticket",
@@ -54,7 +54,7 @@ const AGENTS: V3Data["agents"] = [
     role: "QA",
     reportsTo: "ceo",
     hired: "4 Oct",
-    runtime: "Hermes · profile reviewer",
+    runtime: "hermes",
     profile: "reviewer",
     model: "Sonnet 5 · Medium",
     schedule: "When a ticket needs review",
@@ -70,7 +70,7 @@ const AGENTS: V3Data["agents"] = [
     role: "Growth",
     reportsTo: "ceo",
     hired: "2 Oct",
-    runtime: "Hermes · profile marketer",
+    runtime: "hermes",
     profile: "marketer",
     model: "Sonnet 5 · Medium",
     schedule: "When given a ticket · posts at 9:00",
@@ -86,7 +86,7 @@ const AGENTS: V3Data["agents"] = [
     role: "Researcher",
     reportsTo: "ceo",
     hired: "2 Oct",
-    runtime: "Hermes · profile scout",
+    runtime: "hermes",
     profile: "scout",
     model: "Sonnet 5 · Medium",
     schedule: "When given a ticket · checks in every 30 min",
@@ -109,7 +109,7 @@ const AGENTS: V3Data["agents"] = [
     role: "Design",
     reportsTo: "ceo",
     hired: "6 Oct",
-    runtime: "Hermes · profile designer",
+    runtime: "hermes",
     profile: "designer",
     model: "Sonnet 5 · Medium",
     schedule: "Weekdays 14:00–18:00",
@@ -853,19 +853,52 @@ export const V3_DATA: V3Data = {
      greyed with the probe's reason, so the add-agent dialog shows a Who?
      like the real app's (#870). */
   runtimes: [
-    { id: "hermes", label: "Hermes", available: true, isDefault: true },
-    { id: "acp:devin", label: "Devin", available: true },
-    { id: "acp:claude-code", label: "Claude Code", available: true },
+    /* #872 — `updatable`/`models`/`tone` are what the agent page reads per
+       runtime: each coding runtime lists its own picker's labels and the
+       fields its engine takes (ACP declares all four), and `tone` is its
+       agents' avatar colour. An unavailable row has never been described —
+       its agents' fields stay read-only, schedules grey with the reason. */
+    {
+      id: "hermes",
+      label: "Hermes",
+      available: true,
+      isDefault: true,
+      updatable: ["name", "description", "soul", "model"],
+      models: ["Opus 5.5 · High", "Sonnet 5 · Medium", "Haiku 5 · Fast"],
+    },
+    {
+      id: "acp:devin",
+      label: "Devin",
+      available: true,
+      tone: "b",
+      updatable: ["name", "description", "soul", "model"],
+      models: ["SWE-2 · High", "SWE-2 · Medium", "SWE-2 · Low"],
+    },
+    {
+      id: "acp:claude",
+      label: "Claude Code",
+      available: true,
+      tone: "m",
+      updatable: ["name", "description", "soul", "model"],
+      models: [
+        "Opus 5.5 · High",
+        "Opus 5.5 · Medium",
+        "Sonnet 5 · Medium",
+        "Haiku 5 · Fast",
+      ],
+    },
     {
       id: "acp:cursor",
       label: "Cursor",
       available: false,
+      tone: "r",
       detail: "cursor-agent is not on PATH",
     },
     {
       id: "acp:antigravity",
       label: "Antigravity",
       available: false,
+      tone: "s",
       detail: "antigravity is not installed — install it and restart LilOS",
     },
   ],
@@ -992,6 +1025,6 @@ export const ENGINE_PROFILES: V3Profile[] = [
     name: "Claude Code",
     description: "Claude Code over ACP — Anthropic's agent, signed in locally.",
     skills: 0,
-    runtime: "acp:claude-code",
+    runtime: "acp:claude",
   },
 ]

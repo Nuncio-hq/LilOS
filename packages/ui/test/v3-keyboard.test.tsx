@@ -295,22 +295,21 @@ describe("thread row menus", () => {
 });
 
 describe("focus returns to the control that opened an editor or confirm", () => {
-  test("agent Edit: Save and Cancel go back to Edit", async () => {
+  test("an agent field: Enter and Esc both land back on the field", async () => {
     mountAgent();
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    fireEvent.change(screen.getByLabelText("Name"), {
-      target: { value: "Maker" },
-    });
+    fireEvent.click(screen.getByRole("button", { name: "QA" }));
+    const box = screen.getByLabelText("Role");
+    fireEvent.change(box, { target: { value: "Reviews" } });
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+      press(box, "Enter");
     });
     expect(document.activeElement).toBe(
-      screen.getByRole("button", { name: "Edit" }),
+      screen.getByRole("button", { name: "QA" }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "QA" }));
     press(screen.getByLabelText("Role"), "Escape");
     expect(document.activeElement).toBe(
-      screen.getByRole("button", { name: "Edit" }),
+      screen.getByRole("button", { name: "QA" }),
     );
   });
 

@@ -11,7 +11,6 @@ import {
   type V3Agent,
   type V3Data,
   type V3Project,
-  type V3Runtime,
   type V3Tone,
 } from "@lilos/ui";
 import { atom, computed, onMount, type ReadableAtom } from "nanostores";
@@ -33,8 +32,9 @@ import {
   sessionModels,
   sessionSignals,
 } from "../lib/runtime";
-import { modelLabel, modelRowStore } from "./models";
-import { profileStore } from "./profiles";
+import { modelRowStore } from "./models";
+import { profileKey, profileStore } from "./profiles";
+import { modelLabelFor, runtimeRows } from "./runtimes";
 import { v3SettingsSlice } from "./settings-data";
 import { lastChats, v3ArchivedThreads, v3Asks, v3Threads } from "./threads";
 import { v3Goals, v3Tickets, v3Updates } from "./tickets";
@@ -112,7 +112,9 @@ function toAgent(
     }),
     ...(runtime ? { runtime } : {}),
     ...(e.profile ? { profile: e.profile } : {}),
-    model: modelLabel(e.model),
+    /* The owning runtime's catalog labels it — never the default engine's
+       list on an ACP agent (#872). */
+    model: modelLabelFor(e.runtime, e.model),
     ...(e.model ? { modelId: e.model } : {}),
     ...(lastChat ? { lastChat } : {}),
     ...(profile?.description ? { description: profile.description } : {}),
@@ -162,18 +164,9 @@ export function v3DataStore(): ReadableAtom<V3Data> {
     relay.status,
     (s) => s.result?.engine?.name ?? "",
   );
-  /* The runtime roster the harness reports (D-#761) — the add-agent
-     dialog's Who? kinds (#870). The catalog emits the default row first. */
-  const runtimeRows = computed(relay.status, (s): V3Runtime[] | undefined =>
-    s.result?.runtimes?.map((r, i) => ({
-      id: r.id,
-      label: r.label,
-      ...(r.available !== undefined ? { available: r.available } : {}),
-      ...(r.state ? { state: r.state } : {}),
-      ...(r.detail ? { detail: r.detail } : {}),
-      ...(i === 0 ? { isDefault: true } : {}),
-    })),
-  );
+  /* The runtime roster the harness reports, with each runtime's own model
+     catalog and field list folded in (D-#761, #872 — see v3/runtimes.ts). */
+  const runtimeList = runtimeRows();
   const company = computed(
     [profile, osFullName],
     () => [currentName(), currentCompany()] as const,
@@ -188,7 +181,7 @@ export function v3DataStore(): ReadableAtom<V3Data> {
       statusKey,
       minute,
       engineName,
-      runtimeRows,
+      runtimeList,
       company,
       folders,
       modelRowStore(),
@@ -258,8 +251,10 @@ export function v3DataStore(): ReadableAtom<V3Data> {
         agents: employees.map((e) =>
           toAgent(
             e,
-            e.runtime ?? (engine || undefined),
-            profiles.byProfile[e.profile],
+            e.runtime ?? runtimeList?.[0]?.id ?? (engine || undefined),
+            e.profile
+              ? profiles.byProfile[profileKey(e.runtime, e.profile)]
+              : undefined,
             chats.get(e.id),
             weeks.get(e.id) ?? { finished: 0, failed: 0, stuck: 0 },
           ),
