@@ -264,10 +264,11 @@ export function Composer({
                   <span
                     data-slot="model-chip-static"
                     title={`${modelStatic} · no other models listed yet`}
-                    className="inline-flex h-6 min-w-0 items-center gap-1.5 px-1.5 text-[12.5px] text-muted-foreground"
+                    className="inline-flex h-6 shrink-0 items-center gap-1.5 px-1.5 @max-[480px]:gap-0 @max-[480px]:px-1 text-[12.5px] text-muted-foreground"
                   >
                     <CpuIcon className="size-3.5 shrink-0" />
-                    <span className="truncate @max-[480px]:hidden">
+                    {/* #897: the same no-shrink rule as the model picker. */}
+                    <span className="max-w-60 truncate @max-[480px]:hidden">
                       {modelStatic}
                     </span>
                   </span>
