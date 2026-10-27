@@ -67,6 +67,22 @@ export async function refreshFolders(): Promise<void> {
   folders.set(await Promise.all(res.folders.map((f) => probeFolder(f.path))));
 }
 
+/** The project owning `folder` (D-#854): its own folder, or the deepest
+    project folder containing it — the same containment the relay files by.
+    Both spellings are already canonical (`projects.create` normalizes), so
+    a segment-boundary prefix compare suffices. */
+export function projectForFolder<T extends { folder: string }>(
+  projects: readonly T[],
+  folder: string,
+): T | undefined {
+  let best: T | undefined;
+  for (const p of projects) {
+    if (best && p.folder.length <= best.folder.length) continue;
+    if (folder === p.folder || folder.startsWith(`${p.folder}/`)) best = p;
+  }
+  return best;
+}
+
 /** Add a picked path to the shared recents, then refresh the rows. The
     relay stores its own spelling of the folder (D-#771: `~/x` under the
     home, no trailing slash), so the row is found by what it stored, not by

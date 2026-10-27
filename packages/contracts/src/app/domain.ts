@@ -186,10 +186,11 @@ export const Conversation = z.object({
    */
   cwd: z.string().min(1).optional(),
   /**
-   * The project this thread lives in (D-#771); absent = a plain chat. Set
-   * only by the relay, from the folder the thread opens or moves into —
-   * a workstream thread (`cwd` = its worktree) files under `repoPath`'s
-   * project. Clients send a `cwd`, never a project id.
+   * The project this thread lives in (D-#854); absent = a plain chat. Set
+   * only by the relay — the deepest project whose folder equals or
+   * contains the thread's folder (a workstream thread's `cwd` is its
+   * worktree, filed under `repoPath`'s project). Clients send a `cwd`,
+   * never a project id; no project is ever made on a thread's behalf.
    */
   projectId: z.string().min(1).optional(),
   /**

@@ -376,6 +376,39 @@ export function V3Shell({
                     openAddAgent((id) => goFromPage({ page: "newchat", id }))
                 : undefined
             }
+            onNewProject={
+              actions.newProject
+                ? /* The ＋ beside Projects: the app's folder picker makes it,
+                     then the new project opens (#854). */
+                  () =>
+                    actions.newProject?.((id) =>
+                      goFromPage({ page: "project", id }),
+                    )
+                : undefined
+            }
+            onRemoveProject={
+              actions.removeProject
+                ? async (id) => {
+                    await actions.removeProject?.(id);
+                    /* The record is gone — its page falls back to Home and
+                       it leaves the peek's trail (#854). */
+                    onNav((n) => {
+                      const peek = n.peek.filter(
+                        (r) => !(r.page === "project" && r.id === id),
+                      );
+                      return {
+                        ...n,
+                        page:
+                          n.page.page === "project" && n.page.id === id
+                            ? ({ page: "home" } as V3Route)
+                            : n.page,
+                        peek,
+                        full: peek.length ? n.full : false,
+                      };
+                    });
+                  }
+                : undefined
+            }
             mode={mode}
             width={side.w}
             sideRef={pop.side}

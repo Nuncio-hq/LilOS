@@ -1,5 +1,6 @@
 import { ChevronRightIcon, PinIcon } from "lucide-react";
 import type { ReactNode } from "react";
+import { baseName } from "../lib/helpers";
 import { cn } from "../lib/utils";
 import { ago } from "./v3-bits";
 import { HelpersHint } from "./v3-helpers";
@@ -79,7 +80,12 @@ export function ThreadRow({
   const projectName = project ? projectOf(data, project)?.name : undefined;
   const asleep = snoozed(t);
   const meta = [
-    drop === "project" ? undefined : projectName,
+    /* A foldered chat has no project to name — the row says where it runs
+       instead (#854). */
+    drop === "project"
+      ? undefined
+      : (projectName ??
+        (t.folder ? `Chat · ${baseName(t.folder)}` : undefined)),
     drop === "agent" ? undefined : agentNameOf(data, t.agentId),
   ]
     .filter(Boolean)

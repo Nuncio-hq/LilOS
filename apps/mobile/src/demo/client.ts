@@ -36,6 +36,7 @@ import {
   DEMO_SEEDS,
   firstTurnScript,
   followUpScript,
+  LILOS_DIR,
   RESUME_ON_OPEN,
   SLEEP_THREAD,
 } from "./seeds";
@@ -93,8 +94,8 @@ const DEMO_SESSION_PFX = "ses_demo_";
 export class DemoClient {
   readonly state: WritableAtom<RelayConnectionState> = atom("idle");
   readonly employees: WritableAtom<Employee[]> = atom([]);
-  /** The company's projects (D-#771), made the way the relay makes them:
-     a thread's folder becomes a project on first use. */
+  /** The company's projects (D-#854), made the way the relay makes them:
+     only on an explicit `projects.create`. */
   readonly projects: WritableAtom<Project[]> = atom([]);
   readonly channels: WritableAtom<AppChannel[]> = atom([]);
   readonly conversations: WritableAtom<Conversation[]> = atom([]);
@@ -142,6 +143,10 @@ export class DemoClient {
      client's "ready then directory lands" ordering. */
   async connect(): Promise<WelcomeResult> {
     const now = Date.now();
+    /* D-#854: the demo's one project exists because Oscar made it — the
+       seeded LilOS threads file under it by containment; any other seeded
+       folder stays a chat. */
+    this.projectAt(LILOS_DIR, { name: "LilOS", key: "LIL" });
     for (const seed of DEMO_SEEDS) await this.seedConv(seed, now);
     this.employees.set(demoEmployees(now));
     this.channels.set(
@@ -446,13 +451,13 @@ export class DemoClient {
     this.conversationSummaries.set(list.map((x, i) => (i === idx ? next : x)));
   }
 
-  /* ---------- projects (D-#771) ---------- */
+  /* ---------- projects (D-#854) ---------- */
 
-  /** The project for `folder` — made on first use, like the relay — and
-     announced the way the relay does. */
+  /** The project for `folder`, made only on an explicit `projects.create` —
+     get-or-create like the relay — and announced the way the relay does. */
   projectAt(
     folder: string,
-    fields: { name?: string; about?: string } = {},
+    fields: { name?: string; key?: string; about?: string } = {},
   ): Project {
     const { project, created } = projectForFolder(
       this.projects.get(),
@@ -462,17 +467,73 @@ export class DemoClient {
     );
     if (created) {
       this.projects.set([...this.projects.get(), project]);
+      /* D-#854: creating the project adopts the chats its folder already
+         covers, the way the relay re-files them. */
+      for (const conv of this.convs.values()) {
+        if (conv.conv.projectId) continue;
+        if (this.projectIdOf(conv.conv) === project.id) {
+          conv.conv = { ...conv.conv, projectId: project.id };
+          this.fire("conversation.updated", { conversation: conv.conv });
+        }
+      }
+      this.syncConversationAtoms();
       this.fire("project.upserted", { project });
     }
     return project;
   }
 
-  /** The id a thread files under, or undefined for a plain chat. */
+  /** The atoms keep their own copies of each Conversation — after a
+     re-file, refresh them from the convs map so the lists match. */
+  private syncConversationAtoms(): void {
+    this.conversations.set(
+      this.conversations.get().map((c) => this.convs.get(c.id)?.conv ?? c),
+    );
+    this.conversationSummaries.set(
+      this.conversationSummaries.get().map((s) => ({
+        ...s,
+        conversation: this.convs.get(s.conversation.id)?.conv ?? s.conversation,
+      })),
+    );
+  }
+
+  /** `projects.remove` (D-#854): the record goes; its threads stay as
+     chats, the folder is untouched, and a chat still inside another
+     project's folder re-files under it. */
+  removeProject(id: string): void {
+    const project = this.projects
+      .get()
+      .find((p) => p.id === id || p.key === id);
+    if (!project) throw new RelayError("unknown project", "not_found");
+    this.projects.set(this.projects.get().filter((p) => p.id !== project.id));
+    for (const conv of this.convs.values()) {
+      if (conv.conv.projectId !== project.id) continue;
+      const next = this.projectIdOf(conv.conv);
+      if (next) {
+        conv.conv = { ...conv.conv, projectId: next };
+      } else {
+        const { projectId: _gone, ...chat } = conv.conv;
+        conv.conv = chat;
+      }
+      this.fire("conversation.updated", { conversation: conv.conv });
+    }
+    this.syncConversationAtoms();
+    this.fire("project.removed", { projectId: project.id });
+  }
+
+  /** The id a thread files under (D-#854): the deepest project whose
+     folder equals or contains the thread's folder — a lookup, never a
+     create; a folder no project covers is a plain chat. */
   private projectIdOf(
     conv: Pick<Conversation, "cwd" | "workspace">,
   ): string | undefined {
     const folder = filingFolder(conv);
-    return folder ? this.projectAt(folder).id : undefined;
+    if (!folder) return undefined;
+    let best: Project | undefined;
+    for (const p of this.projects.get()) {
+      if (best && p.folder.length <= best.folder.length) continue;
+      if (folder === p.folder || folder.startsWith(`${p.folder}/`)) best = p;
+    }
+    return best?.id;
   }
 
   /* ---------- seeded history ---------- */

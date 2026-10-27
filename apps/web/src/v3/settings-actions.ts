@@ -162,7 +162,8 @@ export const v3SettingsActions: Mine = {
         avatarColor: DEFAULT_AVATAR_COLOR,
       }),
       firstAgent(agentName, agentModel),
-      // The first folder is the company's first project (D-#771).
+      // The first folder the owner picks becomes the company's first project
+      // — a hand-made one (D-#854).
       folder
         ? addFolder(folder).then(() => relay.createProject({ folder }))
         : Promise.resolve(),

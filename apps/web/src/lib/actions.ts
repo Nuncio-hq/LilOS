@@ -70,9 +70,9 @@ export async function sendDm(
       resend so a stored-but-unanswered first attempt dedupes on the
       relay instead of double-posting. */
   dedupeKey?: string,
-  /** Folder the new thread works in (#113): the relay files it under that
-      folder's project, creating the project on first use (D-#771); ignored on
-      thread replies. */
+  /** Folder the new thread works in (#113): the relay files it under the
+      project whose folder contains it (D-#854), else it stays a chat;
+      ignored on thread replies. */
   cwd?: string,
   /** #106: the access level the fresh conversation opens on — the
       composer's pill choice; absent → the relay applies Settings'

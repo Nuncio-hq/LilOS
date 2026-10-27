@@ -276,10 +276,15 @@ const rowToDevice = (row: PairedDeviceRow): PairedDevice => ({
 
 type ProfileRow = typeof schema.profile.$inferSelect;
 type GoalRow = typeof schema.goals.$inferSelect;
-/* NULL owner means the human (D-#776). The contract field is optional. */
+/* NULL owner means the human (D-#776), NULL project a removed project
+   (D-#854). Both contract fields are optional. */
 const rowToGoal = (row: GoalRow): Goal => {
-  const { ownerId, ...rest } = row;
-  return ownerId ? { ...rest, ownerId } : rest;
+  const { ownerId, projectId, ...rest } = row;
+  return {
+    ...rest,
+    ...(projectId ? { projectId } : {}),
+    ...(ownerId ? { ownerId } : {}),
+  };
 };
 
 type TicketRow = typeof schema.tickets.$inferSelect;
@@ -294,7 +299,8 @@ const rowToTicket = (row: TicketRow): Ticket => {
     id: row.id,
     number: row.number,
     title: row.title,
-    projectId: row.projectId,
+    /* NULL projectId = its project was removed (D-#854). */
+    ...(row.projectId ? { projectId: row.projectId } : {}),
     ...(row.goalId ? { goalId: row.goalId } : {}),
     ...(row.ownerId ? { ownerId: row.ownerId } : {}),
     status: TicketStatus.parse(row.status),
@@ -313,7 +319,7 @@ const rowToTicket = (row: TicketRow): Ticket => {
 };
 const ticketToRow = (t: Ticket): typeof schema.tickets.$inferInsert => ({
   id: t.id,
-  projectId: t.projectId,
+  projectId: t.projectId ?? null,
   number: t.number,
   title: t.title,
   goalId: t.goalId ?? null,
@@ -1173,13 +1179,50 @@ export function createDrizzleStore(db: Db): RelayStore {
         const project: Project = {
           id: newId("proj"),
           name,
-          key: deriveProjectKey(name, taken),
+          /* D-#854: the dialog's editable key wins; a taken or absent one
+             gets the usual derived-and-deduped tag. */
+          key: deriveProjectKey(input.key ?? name, taken),
           folder: input.folder,
           about: input.about ?? "",
           createdAt: input.createdAt ?? now(),
         };
         tx.insert(schema.projects).values(project).run();
         return { project, created: true };
+      });
+    },
+    async removeProject(id: string) {
+      /* D-#854: detach every reference, then delete only the project row —
+         order matters under foreign_keys ON. */
+      return db.transaction((tx) => {
+        const project = tx
+          .select()
+          .from(schema.projects)
+          .where(eq(schema.projects.id, id))
+          .get();
+        if (!project) return null;
+        const conversations = tx
+          .update(schema.conversations)
+          .set({ projectId: null })
+          .where(eq(schema.conversations.projectId, id))
+          .returning()
+          .all()
+          .map(rowToConversation);
+        const goals = tx
+          .update(schema.goals)
+          .set({ projectId: null })
+          .where(eq(schema.goals.projectId, id))
+          .returning()
+          .all()
+          .map(rowToGoal);
+        const tickets = tx
+          .update(schema.tickets)
+          .set({ projectId: null })
+          .where(eq(schema.tickets.projectId, id))
+          .returning()
+          .all()
+          .map(rowToTicket);
+        tx.delete(schema.projects).where(eq(schema.projects.id, id)).run();
+        return { project, conversations, goals, tickets };
       });
     },
     async listGoals(): Promise<Goal[]> {
@@ -1307,11 +1350,15 @@ export function createDrizzleStore(db: Db): RelayStore {
           .where(eq(schema.tickets.id, input.id))
           .get();
         if (!row) return null;
-        const project = tx
-          .select()
-          .from(schema.projects)
-          .where(eq(schema.projects.id, row.projectId))
-          .get();
+        /* A detached ticket (its project was removed, #854) has no folder
+           to open a thread in — it cannot be picked up. */
+        const project = row.projectId
+          ? tx
+              .select()
+              .from(schema.projects)
+              .where(eq(schema.projects.id, row.projectId))
+              .get()
+          : undefined;
         if (!project) return null;
         const at = now();
         const ticket = checkout(rowToTicket(row), input.ownerId, at);

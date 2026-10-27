@@ -1,12 +1,13 @@
 import type { Project, WorkspaceIntent } from "@lilos/contracts/app";
 import { collapsePath, expandPath } from "@lilos/host";
-import type { RelayStore } from "./store";
 
 /**
- * Filing a thread under a project (D-#771). The relay is the one place that
+ * Filing a thread under a project (D-#854). The relay is the one place that
  * does it, so every client — the web app, the phone, an agent's
- * `thread_start` — sees the same projects without ever sending a project id:
+ * `thread_start` — sees the same filing without ever sending a project id:
  * they send the folder they mean (`cwd`) and the relay resolves it here.
+ * Nothing here creates a project — the owner adds them by hand; a folder with
+ * no project is a chat.
  */
 /**
  * The ONE spelling a project's folder is stored and compared in: the
@@ -39,44 +40,24 @@ export function openFolderOf(
 }
 
 /**
- * The boot backfill for installs upgrading from before projects: files every
- * conversation that has a folder but no project, exactly as an open would —
- * one project per distinct folder (created on first sight, stamped with its
- * oldest thread's date, so keys and order follow history), a workstream
- * thread under its repo folder. Folder-less conversations stay plain chats.
- * Idempotent: a filed conversation is skipped, so a second boot finds
- * nothing to do and a half-finished first boot resumes.
+ * The project a folder files under (D-#854): the project whose folder IS it,
+ * or the deepest project whose folder contains it — a repo's subfolders and
+ * its `.lilos/wt/<slug>` worktrees belong to the repo's project. Stored
+ * folders are already in the one canonical spelling, so containment is a
+ * segment-boundary prefix compare. No match → undefined: a chat.
  */
-export async function backfillProjects(
-  store: RelayStore,
+export function projectForFolder(
+  projects: readonly Project[],
+  folder: string,
   home: string,
-): Promise<{ filed: number; created: number }> {
-  const byFolder = new Map<string, Project>();
-  for (const project of await store.listProjects()) {
-    byFolder.set(project.folder, project);
-  }
-  const before = byFolder.size;
-  const filings: { conversationId: string; projectId: string }[] = [];
-  // Oldest first (the store's order): the first thread into a folder names
-  // and dates its project.
-  for (const conversation of await store.listConversations({
-    includeArchived: true,
-  })) {
-    if (conversation.projectId) continue;
-    const folder = openFolderOf(conversation, home);
-    if (!folder) continue;
-    let project = byFolder.get(folder);
-    if (!project) {
-      project = (
-        await store.ensureProject({
-          folder,
-          createdAt: conversation.createdAt,
-        })
-      ).project;
-      byFolder.set(folder, project);
+): Project | undefined {
+  const want = projectFolderOf(folder, home);
+  let best: Project | undefined;
+  for (const project of projects) {
+    if (best && project.folder.length <= best.folder.length) continue;
+    if (want === project.folder || want.startsWith(`${project.folder}/`)) {
+      best = project;
     }
-    filings.push({ conversationId: conversation.id, projectId: project.id });
   }
-  await store.setConversationProjects(filings);
-  return { filed: filings.length, created: byFolder.size - before };
+  return best;
 }

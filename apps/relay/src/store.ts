@@ -52,13 +52,16 @@ export const NO_FOLDER_DEDUPE_LIKE = "sys:%:no-folder";
 export const noFolderDedupeKey = (key: string | null | undefined): boolean =>
   !!key && key.startsWith("sys:") && key.endsWith(":no-folder");
 
-/** A project as the relay creates it (D-#771). */
+/** A project as the relay creates it (D-#854 — by hand only). */
 export interface NewProject {
   /** The canonical `~`-collapsed spelling (`projectFolderOf`) — the unique key
       of the record, the same one the recents list uses. */
   folder: string;
   /** Defaults to the folder's basename. */
   name?: string;
+  /** The dialog's editable pick (D-#854); absent → derived from the name. A
+      taken tag gets the usual counter suffix, never an error. */
+  key?: string;
   about?: string;
   /** Stamp for a backfilled project: when its oldest thread opened. */
   createdAt?: number;
@@ -521,6 +524,19 @@ export interface RelayStore {
   ensureProject(
     input: NewProject,
   ): Promise<{ project: Project; created: boolean }>;
+  /**
+   * `projects.remove` (D-#854): the record goes; its threads, goals, and
+   * tickets only lose their `projectId` — nothing else is deleted and no
+   * folder is touched. Answers the removed project plus the detached rows
+   * (null `projectId` already applied) so the handler can re-file the
+   * threads by containment and broadcast what changed. Null = unknown id.
+   */
+  removeProject(id: string): Promise<{
+    project: Project;
+    conversations: Conversation[];
+    goals: Goal[];
+    tickets: Ticket[];
+  } | null>;
 
   /* --------------------- goals and tickets (D-#776) -------------------- */
   listGoals(): Promise<Goal[]>;

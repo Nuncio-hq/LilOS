@@ -18,8 +18,10 @@ What Oscar sees:
 - A thread in a project works in that project's folder (its working folder
   and Workbench are the project's); a plain chat has no folder of its own and
   runs in the default workdir.
-- A folder used for the first time becomes a project automatically — the relay
-  files the thread there. One folder is one project.
+- Projects are Oscar's to make — the sidebar's ＋ adds one from a folder,
+  a chat's folder chip offers Add as project, and a project row's ⋯ removes
+  it (its threads stay as chats; the folder is untouched). A thread in a
+  folder no project covers is a plain chat that keeps working there.
 - A thread's list row shows state (idle/active/closed), last activity and
   linked PRs; opening one shows the visible messages plus the live turn
   overlay.

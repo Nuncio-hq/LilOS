@@ -22,17 +22,22 @@ const DISK: Record<string, FsDir> = {
 /** Found on this Mac: what the scan turned up. */
 const FOUND = ["~/Code/journal-app", "~/Code/dotfiles", "~/Code/LilOS", "~/Code/heardback", "~/Code/qrit"]
 
-export function FolderDialog({ onPick, onClose }: { onPick: (path: string) => void; onClose: () => void }) {
+/** The name and key the dialog's project fields carry (#854): prefilled
+    from the folder, editable there. */
+export type PickedProject = { name?: string; key?: string }
+
+export function FolderDialog({ onPick, onClose }: { onPick: (path: string, project?: PickedProject) => void; onClose: () => void }) {
   return (
     <AddFolderDialog
       folders={[]}
       copy={NEW_PROJECT_COPY}
+      projectFields
       fs={DISK}
       discovered={FOUND}
       onClose={onClose}
-      onAdd={(path) => {
+      onAdd={(path, project) => {
         onClose()
-        onPick(path)
+        onPick(path, project)
       }}
     />
   )

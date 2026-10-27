@@ -437,7 +437,7 @@ export function createMemoryStore(nowFn?: () => number): RelayStore {
         id: newId("proj"),
         name,
         key: deriveProjectKey(
-          name,
+          input.key ?? name,
           new Set([...projects.values()].map((p) => p.key)),
         ),
         folder: input.folder,
@@ -446,6 +446,27 @@ export function createMemoryStore(nowFn?: () => number): RelayStore {
       };
       projects.set(project.id, project);
       return { project, created: true };
+    },
+    async removeProject(id: string) {
+      const project = projects.get(id);
+      if (!project) return null;
+      const convs = [...conversations.values()].filter(
+        (c) => c.projectId === id,
+      );
+      const goalsOut = [...goals.values()].filter((g) => g.projectId === id);
+      const ticketsOut = [...tickets.values()].filter(
+        (t) => t.projectId === id,
+      );
+      for (const c of convs) delete c.projectId;
+      for (const g of goalsOut) delete g.projectId;
+      for (const t of ticketsOut) delete t.projectId;
+      projects.delete(id);
+      return {
+        project,
+        conversations: convs,
+        goals: goalsOut,
+        tickets: ticketsOut,
+      };
     },
     async listGoals() {
       return [...goals.values()].sort((a, b) => a.createdAt - b.createdAt);
@@ -529,7 +550,11 @@ export function createMemoryStore(nowFn?: () => number): RelayStore {
       /* No await: the owner write and the new thread land together (D-#776).
          The owner's channel was opened before this call. */
       const before = tickets.get(input.id);
-      const project = before ? projects.get(before.projectId) : undefined;
+      /* A detached ticket (its project was removed, #854) has no folder
+         to open a thread in — it cannot be picked up. */
+      const project = before?.projectId
+        ? projects.get(before.projectId)
+        : undefined;
       if (!before || !project) return null;
       const ticket = checkout(before, input.ownerId, now());
       tickets.set(ticket.id, ticket);

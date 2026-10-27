@@ -2,13 +2,14 @@ import { z } from "zod";
 import { Timestamp } from "./domain";
 
 /**
- * Projects (D-#771): a project is a folder the company works in. A thread
- * lives in a project (`Conversation.projectId`) or is a plain chat — there
- * is no third home. The relay owns the records and is the only place that
- * files a thread (`conversations.open` / `conversations.moveFolder` with a
- * folder), creating the folder's project on first use, so every client sees
- * the same filing. Not: a client-side grouping by `cwd`, or a project per
- * thread.
+ * Projects (D-#854): Oscar decides what a project is — one is made only by
+ * hand (`projects.create`, the sidebar's + or a chat chip's Add as project),
+ * never inferred from a folder being used. A thread files under the deepest
+ * project whose folder equals or contains its folder (`Conversation.projectId`
+ * — the relay writes it), or is a plain Chat with the folder still shown.
+ * `projects.remove` takes only the record: the folder and every thread stay,
+ * the threads become chats. Not: a project created on first use (D-#771's
+ * old rule), a client-side grouping by `cwd`, or a project per thread.
  */
 
 /** A short uppercase tag — "LIL" — unique across projects. */
@@ -36,12 +37,14 @@ export const ProjectsListResult = z.object({ projects: z.array(Project) });
 export type ProjectsListResult = z.infer<typeof ProjectsListResult>;
 
 /**
- * `name` defaults to the folder's basename. A folder that already has a
- * project answers that project (nothing is created or renamed), so a retry
- * and the first-use filing in `conversations.open` can never make two.
+ * `name` defaults to the folder's basename; `key` defaults to the derived
+ * tag — the dialog prefills both and the user may edit them (#854). A folder
+ * that already has a project answers that project (nothing is created or
+ * renamed), so a retry can never make two.
  */
 export const ProjectsCreateParams = z.object({
   name: z.string().trim().min(1).optional(),
+  key: ProjectKey.optional(),
   folder: z.string().min(1),
   about: z.string().optional(),
 });
@@ -50,7 +53,22 @@ export type ProjectsCreateParams = z.infer<typeof ProjectsCreateParams>;
 export const ProjectResult = z.object({ project: Project });
 export type ProjectResult = z.infer<typeof ProjectResult>;
 
+/**
+ * `projects.remove` (D-#854) — takes only the project record. Its threads
+ * keep their folders and re-file by containment (another project may still
+ * cover them; most become chats), its tickets and goals keep their records
+ * without a project. Nothing on disk is touched.
+ */
+export const ProjectsRemoveParams = z.object({ id: z.string().min(1) });
+export type ProjectsRemoveParams = z.infer<typeof ProjectsRemoveParams>;
+
 /** Broadcast to every peer whenever a project appears (like
-    `employee.upserted`) — including the one a first-use open creates. */
+    `employee.upserted`). */
 export const ProjectUpsertedEvent = z.object({ project: Project });
 export type ProjectUpsertedEvent = z.infer<typeof ProjectUpsertedEvent>;
+
+/** Broadcast on `projects.remove` so every client drops the record. */
+export const ProjectRemovedEvent = z.object({
+  projectId: z.string().min(1),
+});
+export type ProjectRemovedEvent = z.infer<typeof ProjectRemovedEvent>;

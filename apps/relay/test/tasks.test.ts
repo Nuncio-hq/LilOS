@@ -27,8 +27,8 @@ const home = () => mkdtempSync(join(tmpdir(), "lilos-tasks-"));
 
 type AnyResult = Record<string, any>;
 
-/** Registered host + two employees: the caller's own thread (with a cwd
-    so it files under a project) and the agent the task hands off to. */
+/** Registered host + two employees: the caller's own thread in a folder
+    made a project first (D-#854 — a chat carries no task ticket). */
 async function worldWithParent(storeHome: string) {
   const { store, relay } = newWorld(storeHome);
   const host = await helloed(relay);
@@ -52,11 +52,14 @@ async function worldWithParent(storeHome: string) {
   );
   const { channel: callerChannel } = resultOf(host.frames, lastId())
     .result as AnyResult;
+  const cwd = join(storeHome, "work");
+  await host.connection.receive(req("projects.create", { folder: cwd }));
+  host.frames.length = 0;
   await host.connection.receive(
     req("conversations.open", {
       channelId: callerChannel.id,
       text: "Plan the release",
-      cwd: join(storeHome, "work"),
+      cwd,
       access: "ask",
     }),
   );

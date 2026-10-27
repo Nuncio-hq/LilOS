@@ -244,13 +244,15 @@ describe("two runtimes at once (D-#761)", () => {
         role: "coder",
         runtime: ACP,
       });
+      /* tasks.create files the child under the parent's project — made by
+         hand here (D-#854); a folder-less caller can't carry the ticket
+         (D-#844). */
+      await w.user.request("projects.create", { folder: homeDir });
       const { conversation: parent } = await w.user.request<{
         conversation: { id: string };
       }>("conversations.open", {
         channelId: callerChannel.id,
         text: "Plan the feature",
-        /* tasks.create files the child under the parent's project — a
-           folder-less caller can't carry the ticket (D-#844). */
         cwd: homeDir,
       });
       await waitFor(async () => {
@@ -411,6 +413,7 @@ describe("a runtime that cannot start (D-#761 review)", () => {
         role: "coder",
         runtime: ACP,
       });
+      await w.user.request("projects.create", { folder: homeDir });
       const { conversation: parent } = await w.user.request<{
         conversation: { id: string };
       }>("conversations.open", {

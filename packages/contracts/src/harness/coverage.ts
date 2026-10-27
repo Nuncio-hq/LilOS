@@ -158,6 +158,10 @@ export const NOT_AGENT_FACING: Record<string, string> = {
   "presence.report":
     "the desktop's at-the-Mac signal is a transport heartbeat, not agent data — the relay's push fan-out consumes it (#561)",
   "employees.remove": "only Oscar removes an employee",
+  /* D-#854: removing a project unfilings Oscar's threads — an agent that
+     wants one gone asks him (asks.open), it never files for him. */
+  "projects.remove":
+    "only Oscar removes a project — its threads become his chats",
   /* Host-only (D-#844): the harness posts a child's finished turn as the
      parent's coalesced wake — the agent receives it, it never posts one. */
   "tasks.wake": "host posts the parent wake; the agent is woken by it",

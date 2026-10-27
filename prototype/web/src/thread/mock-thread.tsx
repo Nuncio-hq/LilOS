@@ -11,6 +11,7 @@ import {
   type V3PageProps,
   type WbTab,
 } from "@lilos/ui"
+import { projectForFolder } from "@lilos/ui/v3-data"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { nowClock } from "../v3-engine/chat-sim"
 import { MockBrowser } from "./mock-browser"
@@ -272,6 +273,12 @@ function Body({
     onSearchCommands,
   }
   const onOpenPath = (path: string, app: string) => say(`Opened ${path} in ${app}`)
+  /* #854: the folder the thread runs in is no project's (not inside one
+     either) — its chip offers "Add as project". */
+  const onAddAsProject =
+    act.addAsProject && t.folder && !projectForFolder(data, t.folder)
+      ? () => act.addAsProject?.(t.folder ?? "")
+      : undefined
 
   return (
     <div data-thread-panel className="flex h-full min-h-0 min-w-0 flex-col">
@@ -299,12 +306,14 @@ function Body({
           caps={{ plan: true, subagents: true, background: true }}
           onSuggest={(files) => `Update ${files.join(", ")}`.slice(0, 72)}
           onOpenPath={onOpenPath}
+          onAddAsProject={onAddAsProject}
         />
       ) : (
         <ThreadView
           {...shared}
           work={t.ticketId ? model.work : null}
           onOpenPath={onOpenPath}
+          onAddAsProject={onAddAsProject}
           threadStatus={boardStatus(data, t)}
           browser={!!act.browserOpen}
           onOpenTab={(next) => {

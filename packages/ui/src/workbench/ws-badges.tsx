@@ -2,9 +2,11 @@ import {
   ChevronDownIcon,
   EyeIcon,
   FolderIcon,
+  FolderPlusIcon,
   GitBranchIcon,
   PencilLineIcon,
 } from "lucide-react";
+import { DropdownMenuItem } from "../components/ui/dropdown-menu";
 import type { OsApp, OsEditor, Work, Workspace } from "../types";
 import { OpenPathMenu } from "./open-path";
 
@@ -46,24 +48,41 @@ const badgeClass =
 
 /* Workspace pill in the thread header: which folder/branch this session runs in.
    With `openMenu` (host os.open) the badge is also the Open-in-editor /
-   Reveal-in-Finder menu for the folder itself; without it, a plain label. */
+   Reveal-in-Finder menu for the folder itself; `onAddAsProject` adds the
+   one-click "Add as project" a folder that is no project offers (#854);
+   with neither, a plain label. */
 export function WsBadge({
   ws,
   openMenu,
+  onAddAsProject,
 }: {
   ws: Workspace;
   openMenu?: OpenMenuFor;
+  onAddAsProject?: () => void;
 }) {
-  if (openMenu)
+  if (openMenu || onAddAsProject)
     return (
       <OpenPathMenu
-        editors={openMenu.editors}
-        onOpen={openMenu.onOpen}
+        editors={openMenu?.editors ?? []}
+        onOpen={openMenu?.onOpen}
+        extra={
+          onAddAsProject && (
+            <DropdownMenuItem onClick={onAddAsProject} data-add-as-project>
+              <FolderPlusIcon />
+              Add as project
+            </DropdownMenuItem>
+          )
+        }
         trigger={
           <button
             type="button"
             className={`${badgeClass} cursor-pointer hover:text-foreground`}
-            aria-label={`${ws.cwd} — open in an editor or reveal in Finder`}
+            aria-label={
+              openMenu
+                ? `${ws.cwd} — open in an editor or reveal in Finder`
+                : ws.cwd
+            }
+            title={ws.cwd}
             data-wsbadge
           />
         }

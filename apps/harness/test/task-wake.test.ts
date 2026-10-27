@@ -253,6 +253,8 @@ describe("task hand-off end-to-end (engine-fake, D-#844)", () => {
       const { employee: worker } = await w.user.request<{
         employee: { id: string; name: string };
       }>("employees.create", { name: "Bea", role: "eng" });
+      /* The task's ticket needs the parent's project (D-#854). */
+      await w.user.request("projects.create", { folder: homeDir });
       const { conversation: parent } = await w.user.request<{
         conversation: { id: string; channelId: string };
       }>("conversations.open", {

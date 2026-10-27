@@ -9,6 +9,7 @@ import {
   goalProgress,
   listedThreads,
   projectOf,
+  threadProjectId,
 } from "./v3-model";
 import { RowButton } from "./v3-open-record";
 import type { V3PageProps } from "./v3-page-types";
@@ -48,12 +49,12 @@ export function V3ProjectPage({
     : [];
   const open = tickets.filter((t) => t.status !== "done");
   const done = tickets.filter((t) => t.status === "done");
-  const ticketIds = new Set(tickets.map((t) => t.id));
-  /* Helpers have no row here either (D-#847): they show inside their parent. */
+  /* A thread is the project's by its own record, its ticket, or a folder
+     inside the project's — a `.lilos/wt/` worktree lists here on its own
+     (#854). Helpers have no row either (D-#847): they show inside their
+     parent. */
   const mine = listedThreads(data.threads).filter(
-    (t) =>
-      t.projectId === project.id ||
-      (t.ticketId !== undefined && ticketIds.has(t.ticketId)),
+    (t) => threadProjectId(data, t) === project.id,
   );
   /* Board status (D-#847): a parent waiting on helpers stays in the live
      set even while its own status idles. */
