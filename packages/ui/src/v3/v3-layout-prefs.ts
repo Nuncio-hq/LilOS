@@ -131,8 +131,8 @@ export function useLayoutPrefs(): LayoutPrefs {
    choice belongs to the screen it was made on, so it sits in localStorage
    with the layout widths, not in the relay state that syncs to the phone. */
 const FOLDS_KEY = "lilos-v3-folds";
-/** A fold's key: the three shelves ("working" | "snoozed" | "settled"), or
-    a group head in the Group-by views ("agent:<id>", "project:<id>"). */
+/** A fold's key: the three shelves ("working" | "snoozed" | "settled"); a
+    page can scope its own ("project:<id>:working"). */
 export type FoldKey = string;
 
 function readFolds(): Partial<Record<FoldKey, boolean>> {
@@ -144,7 +144,7 @@ function readFolds(): Partial<Record<FoldKey, boolean>> {
   }
 }
 
-/** Which folds are open on this device: Working, Snoozed and Settled all
+/** Which folds are open on this device: Working, Snoozed and Done all
     start folded, and whatever you open stays open here only. */
 export function useFoldPrefs(): {
   folds: Partial<Record<FoldKey, boolean>>;
@@ -159,27 +159,4 @@ export function useFoldPrefs(): {
     });
   }, []);
   return { folds, setFold };
-}
-
-/* The thread list's grouping ("Group by: Section | Agent | Project") is a
-   view preference, not thread state: it lives with the folds, on this
-   device only (#862). */
-const GROUP_KEY = "lilos-v3-thread-group";
-export type ThreadGroup = "section" | "agent" | "project";
-
-/** How Threads groups its list; default Section (the shelves). */
-export function useThreadGroupPref(): {
-  group: ThreadGroup;
-  setGroup: (group: ThreadGroup) => void;
-} {
-  const [group, setGroupState] = useState<ThreadGroup>(() => {
-    const g = read(GROUP_KEY);
-    return g === "agent" || g === "project" ? g : "section";
-  });
-  const setGroup = useCallback((g: ThreadGroup) => {
-    setGroupState(g);
-    // The default is stored as nothing: Section leaves no trace.
-    write(GROUP_KEY, g === "section" ? null : g);
-  }, []);
-  return { group, setGroup };
 }

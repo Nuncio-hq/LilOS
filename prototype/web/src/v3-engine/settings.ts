@@ -46,10 +46,9 @@ export function settingsActions({ setData, getData, toast, openStatus }: Engine)
     saveProfile: ({ company, me }) => {
       setData((d) => ({ ...d, company: company?.trim() || d.company, me: me?.trim() || d.me }))
     },
-    finishSetup: ({ company, me, agentName, agentModel }) => {
+    finishSetup: ({ me, agentName, agentModel }) => {
       setData((d) => ({
         ...d,
-        company: company || d.company,
         me: me || d.me,
         setUp: true,
         agents: d.agents.map((a) =>

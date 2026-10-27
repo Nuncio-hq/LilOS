@@ -23,7 +23,7 @@ import type { ConversationAccess } from "../types";
 
    #884: when the engine's global policy reports `off` it auto-answers
    everything, so the same menu carries the warning + one-click Fix above
-   the Ask/Full rows — one access control, not two (D-#886). The pill
+   the Ask/Full rows — one access control, not two (#886). The pill
    reads "Never asks" until the policy is repaired. */
 
 /** localStorage flag: the user already confirmed what Full access does. */

@@ -64,7 +64,7 @@ describe("AC-1 describeActionError", () => {
         "Couldn't switch the model",
         new RelayError("request conversations.setModel timed out", "timeout"),
       ),
-    ).toBe("Couldn't switch the model — the relay didn't answer; try again.");
+    ).toBe("Couldn't switch the model — LilOS didn't answer; try again.");
   });
 
   test("a relay app error keeps the relay's reason in plain words", () => {

@@ -233,7 +233,7 @@ const queuedItemFiles = (item: QueuedTrayItem): AttachedFile[] | undefined =>
 export function QueuedTray({
   items,
   steer = false,
-  name = "The employee",
+  name = "The agent",
   onRemove,
   onEdit,
 }: {

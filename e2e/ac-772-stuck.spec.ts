@@ -238,15 +238,17 @@ test("six identical searches show Stuck with the reason, above a working thread"
     .getByRole("button", { name: "Message", exact: true })
     .click();
   await expect(page.locator("[data-thread-panel] textarea")).toBeFocused();
-  await expect(page.locator("main")).toContainText("1 stuck");
-  /* Ordering under the sectioned list (#862): the stuck thread's row sits
-     in Active, above the Working shelf the held thread folds into. Open
-     that shelf and compare the two rows' positions — the stuck row reads
-     above the working one, as the old board's card did. */
+  /* The counter went away with the tabs (#887) — the list says it with
+     the row: one row wearing the stuck dot while the card above names
+     the reason. */
   const stuckRow = page
     .locator("#v3-main")
     .locator('[data-thread-row]:has([data-v3-status="stuck"])');
   await expect(stuckRow).toHaveCount(1);
+  /* Ordering under the sectioned list (#862): the stuck thread's row sits
+     in Active, above the Working shelf the held thread folds into. Open
+     that shelf and compare the two rows' positions — the stuck row reads
+     above the working one, as the old board's card did. */
   const workingFold = page.locator('#v3-main [data-fold="working"] > button');
   await expect(workingFold).toBeVisible();
   if ((await workingFold.getAttribute("aria-expanded")) === "false")

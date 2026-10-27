@@ -11,12 +11,12 @@ import {
 } from "./helpers/stack";
 
 /**
- * D-#862 second slice — park state is relay state, not a mock: Settle,
+ * D-#862 second slice — park state is relay state, not a mock: Done,
  * Snooze and Pin on a real thread (relay + harness on engine-fake), each
  * leg read back after a page reload (persisted, not client cache), and a
  * settle issued by a second client landing live. Rows carry the relay's
  * stamps — pin under Pinned, a snooze under its own fold until Wake now,
- * a settled thread on the Settled shelf where Un-settle brings it back.
+ * a done thread on the Done shelf where Not done brings it back (#887).
  */
 
 let stack: Stack;
@@ -148,33 +148,33 @@ test("snooze folds the thread until Wake now — across a reload", async ({
   expect((await wire(page, convId)).snoozedUntil).toBeUndefined();
 });
 
-test("settle shelves the thread — pin goes with it — across a reload", async ({
+test("done shelves the thread — pin goes with it — across a reload", async ({
   page,
 }) => {
   await goThreads(page);
-  /* Still pinned from the pin leg (snooze/wake never touch it) — settle
+  /* Still pinned from the pin leg (snooze/wake never touch it) — done
      must take the pin with it. */
   expect(typeof (await wire(page, convId)).pinnedAt).toBe("number");
   await menu(page, convId);
-  await page.getByRole("menuitem", { name: "Settle thread" }).click();
-  /* Off every live section; on the shelf; the pin went with the settle. */
+  await page.getByRole("menuitem", { name: "Done", exact: true }).click();
+  /* Off every live section; on the shelf; the pin went with the done. */
   await expect(rowAnywhere(page, convId)).toHaveCount(0);
-  await expect(foldButton(page, "settled")).toContainText("Settled (1)");
+  await expect(foldButton(page, "settled")).toContainText("Done (1)");
   const onWire = await wire(page, convId);
   expect(typeof onWire.settledAt).toBe("number");
   expect(onWire.archived).toBe(true);
   expect(onWire.pinnedAt).toBeUndefined();
 
   await page.reload();
-  await expect(foldButton(page, "settled")).toContainText("Settled (1)", {
+  await expect(foldButton(page, "settled")).toContainText("Done (1)", {
     timeout: 30_000,
   });
   await ensureOpen(page, "settled");
   await expect(inFold(page, "settled", convId)).toBeVisible();
 
-  /* Un-settle brings it back to the live list. */
+  /* Not done brings it back to the live list. */
   await menu(page, convId);
-  await page.getByRole("menuitem", { name: "Un-settle thread" }).click();
+  await page.getByRole("menuitem", { name: "Not done" }).click();
   await expect(inFold(page, "settled", convId)).toHaveCount(0);
   await expect(rowAnywhere(page, convId)).toBeVisible();
   const back = await wire(page, convId);
@@ -193,7 +193,7 @@ test("a settle from a second client lands live — no reload", async ({
     settled: true,
   });
   await expect(rowAnywhere(page, convId)).toHaveCount(0);
-  await expect(foldButton(page, "settled")).toContainText("Settled (1)");
+  await expect(foldButton(page, "settled")).toContainText("Done (1)");
   /* …and back, still without a reload. */
   await relayRpc(page, stack, "conversations.settle", {
     conversationId: convId,

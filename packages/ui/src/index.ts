@@ -88,3 +88,4 @@ export { skillSlug } from "./v3/v3-settings-skills";
 export { V3Shell } from "./v3/v3-shell";
 export type { ThreadPark } from "./v3/v3-thread-menu";
 export type * from "./v3/v3-types";
+export { EngineProblem, firstRunProblem } from "./v3/v3-welcome-engine";

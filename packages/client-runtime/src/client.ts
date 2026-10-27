@@ -430,11 +430,14 @@ export class RelayClient {
         connection: this.state.get(),
         result,
         fetchedAt: Date.now(),
+        failures: 0,
       });
     } catch (e) {
       this.status.set({
         connection: this.state.get(),
         error: e instanceof Error ? e.message : "status poll failed",
+        // #885: a down read needs a sustained miss, not one failed poll.
+        failures: (this.status.get().failures ?? 0) + 1,
       });
     }
   }
@@ -452,7 +455,11 @@ export class RelayClient {
     });
     const timer = setInterval(() => {
       if (this.state.get() === "ready") void this.refreshSystemStatus(logLines);
-      else this.status.set({ connection: this.state.get() });
+      else
+        this.status.set({
+          connection: this.state.get(),
+          failures: this.status.get().failures,
+        });
     }, intervalMs);
     return () => {
       unsub();

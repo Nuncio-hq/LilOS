@@ -140,8 +140,8 @@ function Boot() {
           </div>
           <p className="mt-1 text-muted-foreground">{error}</p>
           <p className="mt-2 text-muted-foreground text-xs">
-            Run <code>bun run dev</code> in apps/web to boot relay + engine +
-            this page together.
+            Run <code>bun run dev</code> in apps/web to boot LilOS's services
+            and this page together.
           </p>
         </div>
       </div>
@@ -152,7 +152,7 @@ function Boot() {
 
 const Connecting = () => (
   <div className="grid h-dvh place-items-center bg-background text-muted-foreground text-sm">
-    Connecting to the local relay…
+    Connecting…
   </div>
 );
 

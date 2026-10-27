@@ -8,6 +8,9 @@ export interface StatusPollState {
   /** ms epoch of the last successful poll. */
   fetchedAt?: number;
   error?: string;
+  /** Consecutive failed polls; 0/absent after a success. A lone failure is
+      a blip — sustained-down UIs wait for 2 (#885). */
+  failures?: number;
 }
 
 /**

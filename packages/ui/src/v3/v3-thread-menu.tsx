@@ -1,16 +1,14 @@
 import {
-  ArchiveIcon,
   ArchiveRestoreIcon,
-  CheckIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
+  CircleCheckIcon,
   EllipsisIcon,
   MoonStarIcon,
   PencilIcon,
   PinIcon,
   PinOffIcon,
   SunriseIcon,
-  TimerResetIcon,
 } from "lucide-react";
 import {
   type ReactNode,
@@ -25,12 +23,14 @@ import type { WbTab } from "../types";
 import { Btn } from "./v3-bits";
 import { EscLayer, useMenu } from "./v3-keys";
 
-/* A thread's quiet ⋯ menu and its inline title editor: pin, settle, snooze
+/* A thread's quiet ⋯ menu and its inline title editor: pin, done, snooze
    and rename — the T3 Code thread menu's shape (#862). The menu draws only
    the items the app can do (`act.pinThread` and friends); with none there
-   is no menu at all. Snooze and Auto-settle drill into their own pane
-   inside the same menu, so the whole thing still works at phone width.
-   Every row on Threads and the thread's own header use the same pair.
+   is no menu at all. Snooze drills into its own pane inside the same menu,
+   so the whole thing still works at phone width. The UI calls parking
+   "Done" (#887): auto-settle still runs on the relay, but its per-thread
+   switch is gone from this menu. Every row on Threads and the thread's own
+   header use the same pair.
    In a thread's header the menu also holds what the icon strip used to be
    (#886): the thread's other work surfaces, labeled, and the context
    meter — passed in as `work`/`meter` since only the frame knows them. */
@@ -38,7 +38,7 @@ import { EscLayer, useMenu } from "./v3-keys";
 const ITEM =
   "flex w-full items-center gap-2 px-3 py-1.5 text-left text-foreground outline-none hover:bg-[var(--v3-hover)] focus-visible:bg-[var(--v3-hover)] [&_svg]:size-3.5 [&_svg]:text-muted-foreground";
 
-/** The pin / snooze / settle choices a thread's menu offers; each is drawn
+/** The pin / snooze / wake choices a thread's menu offers; each is drawn
     only with the handler that backs it. `snoozedUntil` set means the thread
     is asleep now: the menu leads with Wake now instead of Snooze. */
 export type ThreadPark = {
@@ -50,12 +50,9 @@ export type ThreadPark = {
   onSnooze?: (until: number) => void;
   /** Ends the snooze now. */
   onWake?: () => void;
-  /** Auto-settle's state on this thread; `onAutoSettle` flips it. */
-  autoSettle?: boolean;
-  onAutoSettle?: (enabled: boolean) => void;
 };
 
-type MenuView = "main" | "snooze" | "auto" | "custom";
+type MenuView = "main" | "snooze" | "custom";
 
 const HHMM = (t: number) => {
   const d = new Date(t);
@@ -228,8 +225,8 @@ export function ThreadMenu({
   className,
   triggerRef,
 }: {
-  /** On the Settled shelf: Settle reads Un-settle, and Pin/Snooze stay off
-      (a parked thread comes back through Un-settle). */
+  /** On the Done shelf: Done reads Not done, and Pin/Snooze stay off
+      (a parked thread comes back through Not done). */
   archived?: boolean;
   onRename?: () => void;
   onArchive?: () => void;
@@ -254,12 +251,10 @@ export function ThreadMenu({
     if (open) list.current?.querySelector("button")?.focus();
   }, [open, view, list]);
   const asleep = !archived && park?.snoozedUntil !== undefined;
-  /* On the shelf only Un-settle and Auto-settle still apply — the flag
-     rides along, so a settled thread stays settled until you say so. */
+  /* On the shelf Pin and Snooze stay off — the thread comes back through
+     Not done. */
   const hasPark =
-    (!archived &&
-      (park?.onPin || park?.onSnooze || (asleep && park?.onWake))) ||
-    park?.onAutoSettle !== undefined;
+    !archived && (park?.onPin || park?.onSnooze || (asleep && park?.onWake));
   const hasWork = !!work?.tabs.length || !!meter;
   if (!onRename && !onArchive && !hasPark && !hasWork) return null;
 
@@ -356,8 +351,8 @@ export function ThreadMenu({
                   onClick={pick(onArchive)}
                   className={ITEM}
                 >
-                  {archived ? <ArchiveRestoreIcon /> : <ArchiveIcon />}
-                  {archived ? "Un-settle thread" : "Settle thread"}
+                  {archived ? <ArchiveRestoreIcon /> : <CircleCheckIcon />}
+                  {archived ? "Not done" : "Done"}
                 </button>
               )}
               {!archived &&
@@ -395,18 +390,6 @@ export function ThreadMenu({
                 >
                   <PencilIcon />
                   Rename thread
-                </button>
-              )}
-              {parkActions?.onAutoSettle && (
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => setView("auto")}
-                  className={ITEM}
-                >
-                  <TimerResetIcon />
-                  <span className="flex-1">Auto-settle</span>
-                  <ChevronRightIcon />
                 </button>
               )}
             </>
@@ -447,38 +430,6 @@ export function ThreadMenu({
                 parkActions.onSnooze?.(t);
               }}
             />
-          )}
-          {view === "auto" && parkActions?.onAutoSettle && (
-            <>
-              <DrillHead title="Auto-settle" back={back} />
-              {(
-                [
-                  [true, "Enabled"],
-                  [false, "Disabled"],
-                ] as const
-              ).map(([on, label]) => {
-                const checked = (parkActions.autoSettle !== false) === on;
-                return (
-                  <button
-                    key={label}
-                    type="button"
-                    role="menuitemradio"
-                    aria-checked={checked}
-                    onClick={pick(() => parkActions.onAutoSettle?.(on))}
-                    className={ITEM}
-                  >
-                    <span className="w-3.5">
-                      {checked && <CheckIcon className="text-foreground" />}
-                    </span>
-                    {label}
-                  </button>
-                );
-              })}
-              <p className="px-3 py-2 text-[12px] leading-snug text-muted-foreground">
-                A thread settles itself after 3 days idle, or when its PR merges
-                or closes. Disabled, it stays where you put it.
-              </p>
-            </>
           )}
         </div>
       )}
