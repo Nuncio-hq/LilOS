@@ -5,6 +5,7 @@ import { runtimeLook } from "@lilos/ui";
 import { atom, computed, onMount, type ReadableAtom } from "nanostores";
 import { modelVisibility, relay } from "../lib/runtime";
 import { type ModelRow, modelLabel, modelRows, pickOf } from "./models";
+import { defaultRuntimeId, runtimeLive } from "./runtime-ids";
 
 /* D-#761/#872 — what the app knows about each runtime beyond the status
    row: its own model catalog (`models.list` routed to that engine, never
@@ -39,21 +40,6 @@ const EMPTY_RETRY_MS = 15_000;
    employee ticks before the first answer lands, and each would otherwise
    start its own `models.list` (D-#866). */
 const inflight = new Set<string>();
-
-/** A runtime whose engine is up or already coming up — asking one of ITS
-    models or profiles adds nothing to the launch cost. Everything else
-    (idle, stopped, failed, never reported) must not be started just to
-    read a page (D-#866). */
-export const runtimeLive = (runtime: string | undefined): boolean => {
-  const row = relay.status
-    .get()
-    ?.result?.runtimes?.find((r) => r.id === runtime);
-  return (
-    row?.state === "running" ||
-    row?.state === "starting" ||
-    row?.state === "restarting"
-  );
-};
 
 const signatureOf = (r: RuntimeStatusRow): string =>
   `${r.available ?? "?"}:${r.state ?? ""}:${r.detail ?? ""}`;
@@ -148,20 +134,6 @@ export function runtimeRows(): ReadableAtom<V3Runtime[] | undefined> {
   );
   return store;
 }
-
-/** The runtime id `models.list`/`agents.*` route by, or undefined for the
-    default engine — the roster's first row is the default (D-#761). */
-export const defaultRuntimeId = (): string | undefined =>
-  relay.status.get()?.result?.runtimes?.[0]?.id;
-
-/** Absent, the literals "default"/"hermes", or the roster's first row all
-    name the default engine (the harness's `normalizeRuntime`, D-#761) —
-    the literals hold even before the status roster has loaded. */
-export const isDefaultRuntime = (runtime: string | undefined): boolean =>
-  !runtime ||
-  runtime === "default" ||
-  runtime === "hermes" ||
-  runtime === defaultRuntimeId();
 
 /* #872: the composer's picker reads the SELECTED agent's catalog — this
    exposes each asked runtime's raw options (effort ladders and Fast tiers

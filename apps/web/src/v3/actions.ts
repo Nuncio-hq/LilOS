@@ -28,7 +28,8 @@ import {
   saveAgent,
 } from "./employees";
 import { pickFromLabel } from "./models";
-import { defaultRuntimeId, pickForRuntime } from "./runtimes";
+import { isDefaultRuntime } from "./runtime-ids";
+import { pickForRuntime } from "./runtimes";
 import { searchMessages } from "./search";
 import { v3SettingsActions } from "./settings-actions";
 import { employeeOfConversation } from "./threads";
@@ -39,7 +40,7 @@ import { employeeOfConversation } from "./threads";
    wrong-runtime id routed through Hermes. */
 function pickForAgent(agentId: string, label: string) {
   const runtime = relay.employees.get().find((e) => e.id === agentId)?.runtime;
-  return runtime && runtime !== defaultRuntimeId()
+  return runtime && !isDefaultRuntime(runtime)
     ? pickForRuntime(runtime, label)
     : pickFromLabel(label);
 }

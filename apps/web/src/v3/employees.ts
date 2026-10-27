@@ -5,7 +5,8 @@ import { engine, relay } from "../lib/runtime";
 import { refreshScheduledTasks } from "../lib/schedules";
 import { modelLabel, pickFromLabel } from "./models";
 import { noteProfile, updatableOf } from "./profiles";
-import { isDefaultRuntime, pickForRuntime, runtimeLive } from "./runtimes";
+import { isDefaultRuntime, runtimeLive } from "./runtime-ids";
+import { pickForRuntime } from "./runtimes";
 
 /* Hire-from-profile, edit and remove for the real app (the calls the pre-v3
    Hire and Edit dialogs made). The company record (name, role, mute) always

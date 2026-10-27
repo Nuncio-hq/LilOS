@@ -35,12 +35,8 @@ import {
 } from "../lib/runtime";
 import { modelRowStore } from "./models";
 import { profileKey, profileStore } from "./profiles";
-import {
-  isDefaultRuntime,
-  modelLabelFor,
-  runtimeCatalogs,
-  runtimeRows,
-} from "./runtimes";
+import { isDefaultRuntime } from "./runtime-ids";
+import { modelLabelFor, runtimeCatalogs, runtimeRows } from "./runtimes";
 import { v3SettingsSlice } from "./settings-data";
 import { lastChats, v3ArchivedThreads, v3Asks, v3Threads } from "./threads";
 import { v3Goals, v3Tickets, v3Updates } from "./tickets";

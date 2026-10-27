@@ -587,19 +587,21 @@ export const MIGRATIONS: { version: number; statements: string[] }[] = [
        agent's default model + effort. The legacy `codingAgents` KV row
        (keyed claude/cursor/devin/antigravity) moves onto the employee
        whose profile — else name — is that id, once; the row is never read
-       again. The KV pair is one unit: a record that already pins a model
-       keeps its own model + effort untouched. */
+       again. Field by field, as the old precedence fell back: a record
+       keeps what it already pins and takes the rest from the KV (a Devin
+       hire carries swe-2-high, yet the KV effort is what ran with it). */
     version: 42,
     statements: [
       `UPDATE employees SET
-         model = coalesce(json_extract(
+         model = CASE WHEN model = '' THEN coalesce(json_extract(
            (SELECT value FROM settings WHERE key = 'codingAgents'),
-           '$.' || lower(CASE WHEN profile <> '' THEN profile ELSE name END) || '.model'), model),
-         effort = coalesce(json_extract(
+           '$.' || lower(CASE WHEN profile <> '' THEN profile ELSE name END) || '.model'), '')
+           ELSE model END,
+         effort = CASE WHEN coalesce(effort, '') = '' THEN json_extract(
            (SELECT value FROM settings WHERE key = 'codingAgents'),
-           '$.' || lower(CASE WHEN profile <> '' THEN profile ELSE name END) || '.effort'), effort)
-       WHERE model = ''
-         AND lower(CASE WHEN profile <> '' THEN profile ELSE name END)
+           '$.' || lower(CASE WHEN profile <> '' THEN profile ELSE name END) || '.effort')
+           ELSE effort END
+       WHERE lower(CASE WHEN profile <> '' THEN profile ELSE name END)
              IN ('claude', 'cursor', 'devin', 'antigravity')
          AND json_valid((SELECT value FROM settings WHERE key = 'codingAgents'))`,
     ],

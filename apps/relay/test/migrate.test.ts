@@ -259,9 +259,10 @@ describe("relay migrations", () => {
     expect(out.cols.filter((c: string) => c === "description")).toHaveLength(1);
   });
 
-  /* D-#835: the codingAgents KV moves onto the records once. A record that
-     already pins a model keeps its pair; a non-coding employee is left
-     alone; a malformed row migrates nothing. */
+  /* D-#835: the codingAgents KV moves onto the records once, field by
+     field (the old precedence fell back per field): a record keeps the
+     fields it already pins and takes the rest from the KV; a non-coding
+     employee is left alone; a malformed row migrates nothing. */
   it("v42 copies the codingAgents KV onto matching employees", () => {
     const seed = (kv: string) => `
       import { Database } from "bun:sqlite";
@@ -277,6 +278,7 @@ describe("relay migrations", () => {
       add("dev", "Devin", "devin", "");
       add("cla", "Claude Code", "claude", "");
       add("pin", "Cursor", "cursor", "gpt-5");
+      add("hire", "Devin 2", "devin", "swe-2-high");
       add("ada", "Ada", "builder", "");
       db.query("INSERT INTO settings (key, value) VALUES ('codingAgents', ?)").run(${JSON.stringify(
         kv,
@@ -297,11 +299,24 @@ describe("relay migrations", () => {
     const by = Object.fromEntries(rows.map((r: { id: string }) => [r.id, r]));
     expect(by.dev).toMatchObject({ model: "swe-2-high", effort: "max" });
     expect(by.cla).toMatchObject({ model: "", effort: "high" });
-    expect(by.pin).toMatchObject({ model: "gpt-5", effort: null });
+    /* A Devin hire copies swe-2-high into its record — the KV effort is
+       what actually ran with it, so it still lands. */
+    expect(by.hire).toMatchObject({ model: "swe-2-high", effort: "max" });
+    expect(by.pin).toMatchObject({ model: "gpt-5", effort: "low" });
     expect(by.ada).toMatchObject({ model: "", effort: null });
     const junk = runScript(seed("not json"));
-    expect(junk.every((r: { model: string }) => r.model !== "swe-2-high")).toBe(
-      true,
-    );
+    expect(
+      junk.map((r: { id: string; model: string; effort: string | null }) => [
+        r.id,
+        r.model,
+        r.effort,
+      ]),
+    ).toEqual([
+      ["ada", "", null],
+      ["cla", "", null],
+      ["dev", "", null],
+      ["hire", "swe-2-high", null],
+      ["pin", "gpt-5", null],
+    ]);
   });
 });

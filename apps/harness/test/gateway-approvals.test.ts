@@ -638,6 +638,15 @@ describe("approval-gated gateway tools", () => {
       const res2 = await call2;
       expect(res2.agents.devin).toEqual({ model: "swe-2-max" });
 
+      const callClear = v.client.codingAgentsSet({
+        agent: "devin",
+        model: null,
+      });
+      const askClear = await v.nextAsk(seen);
+      seen.add(askClear.id);
+      await v.answer(askClear.id, "once");
+      expect((await callClear).agents.devin).toBeUndefined();
+
       // An agent nobody hired has no record to write.
       const call3 = v.client.codingAgentsSet({ agent: "cursor", model: "x" });
       const ask3 = await v.nextAsk(seen);

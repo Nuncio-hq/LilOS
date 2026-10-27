@@ -2,7 +2,7 @@ import type { AgentDescriptor, DescribeResult } from "@lilos/contracts/engine";
 import type { V3Data } from "@lilos/ui";
 import { atom, computed, onMount, type ReadableAtom } from "nanostores";
 import { engine, relay } from "../lib/runtime";
-import { isDefaultRuntime, runtimeLive } from "./runtimes";
+import { isDefaultRuntime, runtimeLive } from "./runtime-ids";
 
 /* The engine profile behind each agent: its persona text and description,
    which the company record only mirrors (the record has no description at
