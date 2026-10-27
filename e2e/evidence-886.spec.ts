@@ -71,7 +71,7 @@ test.afterAll(async () => {
 });
 test.describe.configure({ mode: "serial" });
 
-const DEFAULT_AGENT = { id: "default", name: "Default" };
+const DEFAULT_AGENT = { id: "default", name: "Hermes" };
 /* Popovers/menus fade in over ~200ms; `toBeVisible` passes at opacity 0,
    so without this the shot can catch a ghost or nothing at all. */
 const shot = (page: Page, group: string, name: string) =>
