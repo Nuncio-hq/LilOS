@@ -789,7 +789,10 @@ export async function startChat(
   return decodeURIComponent(/open=thread:([^&,]+)/.exec(page.url())?.[1] ?? "");
 }
 
-/** One JSON-RPC call on the relay from inside the page (hello + request). */
+/** One JSON-RPC call on the relay from inside the page (hello + request).
+    The page must already sit on an http(s) origin — on `about:blank` the
+    browser sends `Origin: null` and the relay refuses the upgrade with a
+    bare "ws error" (#625's upgrade gate). `page.goto(webUrl)` first. */
 export async function relayRpc<T>(
   page: playwright.Page,
   stack: Pick<Stack, "relayWs" | "relayToken">,
