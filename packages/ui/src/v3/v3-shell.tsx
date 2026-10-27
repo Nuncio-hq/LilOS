@@ -357,10 +357,7 @@ export function V3Shell({
      Narrow, the ☰ pops the sidebar over the page instead of docking it
      back into a window too small for it (#886). */
   const shortcuts = hidden ? (
-    <SidebarShortcuts
-      onShow={toggleSidebar}
-      onSearch={() => setPalette("")}
-    />
+    <SidebarShortcuts onShow={toggleSidebar} onSearch={() => setPalette("")} />
   ) : undefined;
   /* First run owns the whole window: nothing to navigate yet. The Mac app has
      no title bar (D-#232), so this strip is what the window is moved by and
