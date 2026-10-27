@@ -282,6 +282,9 @@ export function ThreadMenu({
         aria-label="Thread actions"
         aria-haspopup="menu"
         aria-expanded={open}
+        /* Marks a ⋯ that holds the work surfaces (not just Rename/Done):
+           the one place a hidden Workbench is on offer. */
+        data-work-menu={work?.tabs.length ? "" : undefined}
         onClick={toggle}
         className={cn(
           "grid size-6 place-items-center rounded-md text-muted-foreground outline-none transition-opacity hover:bg-[var(--v3-hover)] hover:text-foreground",

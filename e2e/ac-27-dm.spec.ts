@@ -191,9 +191,10 @@ test("AC-5 typing mid-turn steers (capability `steer`); stop interrupts", async 
   await expect(page.getByText("Approval needed").first()).toBeVisible({
     timeout: 60_000,
   });
-  await expect(page.getByText("Enter steers · ⌘. stop")).toBeVisible({
-    timeout: 30_000,
-  });
+  // The turn is running and steerable: Stop (⌘.) is on the composer (the
+  // old "Enter steers" hint is gone, #886 — the steer itself is asserted
+  // below by the chip that lands inside the turn).
+  await expect(stopButton(page)).toBeVisible({ timeout: 30_000 });
   await send(page, "also mention bananas");
   // Keep answering while the steered turn finishes — an approval the wait
   // would out-sleep can't park it (#298).
@@ -213,9 +214,7 @@ test("AC-5 typing mid-turn steers (capability `steer`); stop interrupts", async 
     DEFAULT_AGENT,
     "Add a docs note about steering",
   );
-  await expect(page.getByText("Enter steers · ⌘. stop")).toBeVisible({
-    timeout: 30_000,
-  });
+  await expect(stopButton(page)).toBeVisible({ timeout: 30_000 });
   await stopButton(page).click();
   // Wait the turn-ended wire condition before asserting the footer chip
   // (turn.completed -> data-turnsettled), not a wall-clock guess (#257).
@@ -234,10 +233,9 @@ test("AC-5b without the `steer` capability, mid-turn typing queues", async ({
   });
   try {
     await chatDefault(stackB, page, "Add a release note to the readme");
-    // The composer copy tells the truth: no steer → Enter queues.
-    await expect(page.getByText("Enter queues · ⌘. stop")).toBeVisible({
-      timeout: 30_000,
-    });
+    // Running, with no steer capability: the mid-turn message below queues
+    // (the "Enter queues" hint is gone, #886; the tray asserts it).
+    await expect(stopButton(page)).toBeVisible({ timeout: 30_000 });
     await send(page, "also mention bananas");
     await expect(page.getByText("Approval needed").first()).toBeVisible({
       timeout: 60_000,
@@ -400,9 +398,7 @@ test("#315 AC-3/AC-4 without `steer`: a queued send runs next, Remove drops it",
     // Remove first: the queued send leaves the tray and never reaches the
     // conversation or the engine.
     await chatDefault(stackB, page, "Add a release note to the readme");
-    await expect(page.getByText("Enter queues · ⌘. stop")).toBeVisible({
-      timeout: 30_000,
-    });
+    await expect(stopButton(page)).toBeVisible({ timeout: 30_000 });
     /* #577: sends land on the thread in the peek — data-userturn markers
        exist only on the session view this AC asserts against. */
     await panelIntoFocus(page);
