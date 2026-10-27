@@ -73,9 +73,6 @@ async function countWord(page: Page, word: string): Promise<number> {
   return Number(/(\d+)/.exec(text)?.[1] ?? Number.NaN);
 }
 
-const idleCards = (page: Page) =>
-  main(page).getByRole("button").filter({ hasText: "Asleep" });
-
 async function enter(page: Page) {
   await page.setViewportSize({ width: 1440, height: 900 });
   agent = await openDefaultAgent(page, stack.webUrl);
@@ -133,13 +130,16 @@ test("counts match Threads", async ({ page }) => {
   await enter(page);
 
   await goTo(page, "Threads");
-  await expect(main(page).getByText(/1 working/)).toBeVisible({
-    timeout: 30_000,
-  });
-  // Stuck is printed on Threads and left off Home: nothing marks a thread
-  // stuck on this build.
-  await expect(main(page).getByText(/0 stuck/)).toBeVisible();
-  expect(await idleCards(page).count()).toBe(0);
+  /* #887 dropped the count strip: a fold's title carries its count and a
+     needs-you row wears the pill. Stuck and idle stay dots, so Home alone
+     prints their numbers. */
+  const workingFold = main(page).locator('[data-fold="working"] > button');
+  await expect(workingFold).toContainText("Working (1)", { timeout: 30_000 });
+  const needsRows = () =>
+    main(page)
+      .locator("[data-thread-row]")
+      .filter({ has: page.locator('[data-v3-status="needs"]') });
+  expect(await needsRows().count()).toBe(0);
 
   await goTo(page, "Home");
   expect(await countWord(page, "working")).toBe(1);
@@ -155,18 +155,13 @@ test("counts match Threads", async ({ page }) => {
   });
 
   await goTo(page, "Threads");
-  const working = await countWord(page, "working");
-  const needs = await countWord(page, "needs you");
-  const idle = await idleCards(page).count();
-  expect(working).toBe(1);
-  expect(needs).toBe(1);
-  expect(idle).toBe(0);
-  await expect(main(page).getByText(/0 stuck/)).toBeVisible();
+  await expect(workingFold).toContainText("Working (1)");
+  expect(await needsRows().count()).toBe(1);
 
   await goTo(page, "Home");
-  expect(await countWord(page, "working")).toBe(working);
-  expect(await countWord(page, "needs you")).toBe(needs);
-  expect(await countWord(page, "idle")).toBe(idle);
+  expect(await countWord(page, "working")).toBe(1);
+  expect(await countWord(page, "needs you")).toBe(1);
+  expect(await countWord(page, "idle")).toBe(0);
   await expect(main(page).getByText(/stuck/i)).toHaveCount(0);
   await shot(page, "ac-1-counts");
 });
