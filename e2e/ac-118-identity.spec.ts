@@ -107,11 +107,11 @@ test("AC-2 first run folds name+company into the Welcome, prefilled; AC-1 the ch
 
     // The user's own message (`data-msg` wrapping the `data-userturn` bubble) is authored "Ada" in the thread panel — the name is on the line under the bubble, read by assistive tech.
     await v3Sidebar(page)
-      .getByRole("button", { name: /Default/ })
+      .getByRole("button", { name: /Hermes/ })
       .click();
     await v3Main(page).getByRole("button", { name: "Message" }).click();
     await v3Peek(page)
-      .getByPlaceholder("Message Default…")
+      .getByPlaceholder("Message Hermes…")
       .fill("hello identity");
     await v3Peek(page).getByRole("button", { name: "Send" }).click();
     // The draft opened from the person's page: the thread joins that trail.

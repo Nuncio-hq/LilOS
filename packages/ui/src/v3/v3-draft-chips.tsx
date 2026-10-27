@@ -141,14 +141,22 @@ export function ModelChip({
   const rt = agent.runtime
     ? data.runtimes?.find((r) => r.id === agent.runtime)
     : undefined;
-  const cat = modelCatalogOf(data, agent);
+  /* An agent stamped with a runtime whose ROW hasn't arrived knows
+     nothing yet — never the default engine's catalog on its composer
+     (#872). The chip waits for the row rather than offer Hermes's list. */
+  const rtKnown = !agent.runtime || !!rt;
+  const own = rtKnown && !!rt && !rt.isDefault;
+  const cat = !rtKnown
+    ? undefined
+    : own
+      ? data.modelCatalogs?.[rt.id]
+      : data.modelCatalog;
   if (!cat) {
     /* A runtime agent whose catalog hasn't landed menus its OWN runtime's
        labels — never the default engine's list on an ACP agent (#872) —
        and keeps its chip even when the runtime lists none: the agent's own
        model, read-only, until its catalog arrives (#890). */
-    const own = rt && !rt.isDefault;
-    const choices = own ? (rt.models ?? []) : data.modelChoices;
+    const choices = !rtKnown ? [] : own ? (rt.models ?? []) : data.modelChoices;
     const body = (
       <>
         <CpuIcon className="size-3.5 shrink-0" />

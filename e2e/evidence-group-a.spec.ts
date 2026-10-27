@@ -88,12 +88,7 @@ const send = async (page: Page, text: string) => {
     names nobody opens the draft on the default agent. */
 async function chatDefault(page: Page, text: string) {
   await skipFirstRun(page);
-  await startChat(
-    page,
-    stackA.webUrl,
-    { id: "default", name: "Default" },
-    text,
-  );
+  await startChat(page, stackA.webUrl, { id: "default", name: "Hermes" }, text);
 }
 
 const shot = (page: Page, dir: string, name: string) =>

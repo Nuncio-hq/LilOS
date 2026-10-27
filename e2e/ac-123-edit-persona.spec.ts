@@ -17,10 +17,11 @@ import {
  * harness → engine-fake). Each acceptance criterion is a named test. Engine
  * truth is probed over the real JSON-RPC path.
  *
- * v3: the Edit dialog is the agent page's Edit mode (Name, Role, Description,
- * Instructions and a Model menu; Save/Cancel). Persona is the Instructions
- * box; the page is not a dialog, so the short-window leg checks that Esc
- * leaves the page open and Save sits inside the window.
+ * v3 (#872): there is no page-wide edit mode — each field is its own inline
+ * editor that saves on Enter/blur and cancels on Esc, the model chip saves
+ * the moment a pick lands, and fields the engine doesn't advertise sit
+ * read-only. Persona is the Instructions block; "Default model" is the
+ * menu. Esc on the page still leaves it open (D-#769).
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url)); // e2e/
@@ -90,29 +91,51 @@ test.afterAll(async () => {
 async function openDefault(stack: Stack, page: Page) {
   await skipFirstRun(page);
   await page.goto(`${stack.webUrl}/`);
-  const row = v3Sidebar(page).getByRole("button", { name: /Default/ });
+  const row = v3Sidebar(page).getByRole("button", { name: /Hermes/ });
   await expect(row).toBeVisible({ timeout: 30_000 });
   await row.click();
   const record = v3Main(page);
   await expect(
-    record.getByRole("heading", { level: 1, name: "Default" }),
+    record.getByRole("heading", { level: 1, name: "Hermes" }),
   ).toBeVisible();
   return record;
 }
 
-/** Edit mode on the open agent page. */
-async function openEdit(record: ReturnType<typeof v3Main>) {
-  await record.getByRole("button", { name: "Edit" }).click();
-  await expect(record.getByRole("button", { name: "Save" })).toBeVisible();
-}
-
-/** The Model menu in edit mode: pick `label`. */
+/** #872: the agent page's "Default model" menu — pick `label`; the pick
+    saves the moment it lands (no page-level Save exists). */
 async function pickModel(record: ReturnType<typeof v3Main>, label: string) {
-  await record.getByRole("button", { name: "Model", exact: true }).click();
+  await record.getByRole("button", { name: "Default model" }).click();
   await record
-    .getByRole("menu", { name: "Model" })
+    .getByRole("menu", { name: "Default model" })
     .getByRole("menuitemradio", { name: label })
     .click();
+}
+
+/** Commit the Instructions block: type, then blur — the save fires on the
+    way out (#872). A failed save keeps the typed text (unit-tested); the
+    e2e asserts the landed engine write below. */
+async function setInstructions(
+  record: ReturnType<typeof v3Main>,
+  text: string,
+) {
+  const area = record.getByRole("textbox", { name: "Instructions" });
+  await area.click();
+  await area.fill(text);
+  /* Blur is the commit — Tab moves focus off the field. */
+  await area.press("Tab");
+}
+
+/** Edit the description line: it is an inline field — click its text,
+    type, Enter commits (#872). */
+async function setDescription(
+  record: ReturnType<typeof v3Main>,
+  current: RegExp,
+  text: string,
+) {
+  await record.getByRole("button", { name: current }).click();
+  const box = record.getByRole("textbox", { name: "Description" });
+  await box.fill(text);
+  await box.press("Enter");
 }
 
 /** A new chat with Default, sent once the draft's model picker names `model`.
@@ -127,7 +150,7 @@ async function chatWithDefault(page: Page, text: string, model: string) {
   await expect(
     v3Peek(page).locator('[data-slot="model-picker-trigger"]'),
   ).toContainText(model, { timeout: 30_000 });
-  await v3Peek(page).getByPlaceholder("Message Default…").fill(text);
+  await v3Peek(page).getByPlaceholder("Message Hermes…").fill(text);
   await v3Peek(page).getByRole("button", { name: "Send" }).click();
   await expect(page).toHaveURL(/open=thread:[^&]+/, { timeout: 30_000 });
 }
@@ -141,75 +164,72 @@ async function replyInSession(page: Page, text: string) {
   await box.press("Enter");
 }
 
-test("AC-1 the Edit mode shows only the fields the engine advertises", async ({
+test("AC-1 the page offers inline editing for exactly the fields the engine advertises", async ({
   page,
 }) => {
   const record = await openDefault(stackA, page);
-  await openEdit(record);
-  // engine-fake advertises description/soul/model (and name, which the
-  // company record already owns) — the page renders exactly those, plus the
-  // record's role.
-  await expect(record.getByRole("textbox", { name: "Name" })).toBeVisible();
-  await expect(record.getByRole("textbox", { name: "Role" })).toBeVisible();
+  /* #872: no Edit mode — the advertised fields are inline affordances.
+     engine-fake advertises name/description/soul/model → the name is
+     click-to-rename, the description line is an inline editor, the
+     Instructions block is a textarea, and Default model is a menu. No
+     page-level Save/Cancel/Edit exist at all. */
   await expect(
-    record.getByRole("textbox", { name: "Description" }),
-  ).toBeVisible();
-  await expect(record.getByText(/Applies to new threads/)).toBeVisible(); // AC-4's note
+    record.getByRole("button", { name: "Hermes", exact: true }),
+  ).toBeVisible(); // the title is the rename affordance
+  await expect(
+    record.getByRole("button", { name: /Your everyday assistant/ }),
+  ).toBeVisible(); // the description line opens its input
   await expect(
     record.getByRole("textbox", { name: "Instructions" }),
   ).toBeVisible();
   await expect(
-    record.getByRole("button", { name: "Model", exact: true }),
+    record.getByRole("button", { name: "Default model" }),
   ).toBeVisible();
-  await page.screenshot({ path: `${SHOTS}/ac-1-edit-dialog.png` });
-  await record.getByRole("button", { name: "Cancel" }).click();
   await expect(record.getByRole("button", { name: "Save" })).toHaveCount(0);
-  await expect(record.getByRole("button", { name: "Edit" })).toBeVisible();
+  await expect(record.getByRole("button", { name: "Cancel" })).toHaveCount(0);
+  await expect(record.getByRole("button", { name: "Edit" })).toHaveCount(0);
+  // No field named Role exists — description IS the one-line field.
+  await expect(record.getByRole("textbox", { name: "Role" })).toHaveCount(0);
+  await page.screenshot({ path: `${SHOTS}/ac-1-agent-page.png` });
 });
 
-test("AC-1b Esc cancels the edit without closing the page; Save stays reachable in a short window", async ({
+test("AC-1b Esc cancels the inline edit without closing the page", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 600 });
   const record = await openDefault(stackA, page);
-  await openEdit(record);
-  // Esc steps out of the edit, never out of the record — the record IS the
-  // page (D-#769), so it stays and no peek was ever there.
-  await record.getByRole("textbox", { name: "Instructions" }).press("Escape");
-  await expect(record.getByRole("button", { name: "Save" })).toHaveCount(0);
+  /* Esc in the Instructions block puts the old text back and never
+     navigates — the record IS the page (D-#769), so it stays; and the
+     same Esc must NOT commit the typed draft (#872 — the blur the Esc
+     triggers used to save it). */
+  const area = record.getByRole("textbox", { name: "Instructions" });
+  const before = await area.inputValue();
+  await area.click();
+  await area.fill("Nope — never saved.");
+  await area.press("Escape");
+  await expect(area).toHaveValue(before);
   await expect(page).toHaveURL(/[#?&]page=agent&id=/);
-  await expect(record.getByRole("button", { name: "Edit" })).toBeVisible();
-
-  await openEdit(record);
-  // The header's Save is inside the window; saving unchanged keeps the page.
-  const save = record.getByRole("button", { name: "Save" });
-  await expect(save).toBeVisible();
-  await expect(save).toBeEnabled();
-  const box = await save.boundingBox();
-  expect(box).not.toBeNull();
-  if (!box) return;
-  expect(box.y).toBeGreaterThanOrEqual(0);
-  expect(box.y + box.height).toBeLessThanOrEqual(600);
-  await save.click();
-  await expect(record.getByRole("button", { name: "Edit" })).toBeVisible();
+  const agent = await describeAgent(stackA, "default");
+  expect(agent.soul ?? "").not.toContain("Nope");
 });
 
-test("AC-2 saving a new persona + model writes the engine profile (agents.update → agents.describe)", async ({
+test("AC-2 inline edits write the engine profile the moment each lands (agents.update → agents.describe)", async ({
   page,
 }) => {
   const record = await openDefault(stackA, page);
-  await openEdit(record);
-  await record
-    .getByRole("textbox", { name: "Instructions" })
-    .fill("You are Default v2. Answer in exactly one word.");
-  await record
-    .getByRole("textbox", { name: "Description" })
-    .fill("persona updated from LilOS");
+  /* #872: each field saves itself — Instructions on blur, the description
+     on Enter, the model the moment the pick lands. There is no Save. */
+  await setInstructions(
+    record,
+    "You are Default v2. Answer in exactly one word.",
+  );
+  await setDescription(
+    record,
+    /Your everyday assistant/,
+    "persona updated from LilOS",
+  );
   await pickModel(record, "Fake Small");
-  await page.screenshot({ path: `${SHOTS}/ac-2-edited-dialog.png` });
-  await record.getByRole("button", { name: "Save" }).click();
-  // "Save" reads "Saving…" while in flight: Edit is back once it has landed.
-  await expect(record.getByRole("button", { name: "Edit" })).toBeVisible();
+  await page.screenshot({ path: `${SHOTS}/ac-2-edited-page.png` });
 
   const agent = await describeAgent(stackA, "default");
   expect(agent.soul).toBe("You are Default v2. Answer in exactly one word.");
@@ -223,13 +243,21 @@ test("AC-2 saving a new persona + model writes the engine profile (agents.update
   ]);
   const record_row = (
     listed.result as {
-      employees: { name: string; model: string; instructions: string }[];
+      employees: {
+        name: string;
+        model: string;
+        instructions: string;
+        description?: string;
+      }[];
     }
   ).employees.find((e) => e.name === "Default");
   expect(record_row?.model).toBe("fake-small");
   expect(record_row?.instructions).toBe(
     "You are Default v2. Answer in exactly one word.",
   );
+  /* #872: the record also mirrors the description — a memory-only engine
+     re-seeds its persona from it after a restart. */
+  expect(record_row?.description).toBe("persona updated from LilOS");
 
   // The still-open page reads the mirrored record — new soul + model.
   await expect(record.getByText("You are Default v2.")).toBeVisible();
@@ -247,17 +275,14 @@ test("AC-4 a running session keeps its model; the next new session uses the upda
   ).toBeVisible({ timeout: 30_000 });
   const threadHash = new URL(page.url()).hash;
 
-  // Edit the default model mid-conversation: Default's page, Edit, pick,
-  // Save — then come back to the open session.
+  // Edit the default model mid-conversation: the agent page's Default
+  // model menu — the pick saves the moment it lands (#872) — then come
+  // back to the open session.
   await v3Sidebar(page)
-    .getByRole("button", { name: /Default/ })
+    .getByRole("button", { name: /Hermes/ })
     .click();
   const record = v3Main(page);
-  await openEdit(record);
   await pickModel(record, "Fake Reasoning");
-  await record.getByRole("button", { name: "Save" }).click();
-  // "Save" reads "Saving…" while in flight: Edit is back once it has landed.
-  await expect(record.getByRole("button", { name: "Edit" })).toBeVisible();
   const agent = await describeAgent(stackA, "default");
   expect(agent.model).toBe("fake-reasoning");
 

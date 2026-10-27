@@ -83,7 +83,7 @@ async function openApp(page: Page, webUrl: string) {
   await skipFirstRun(page);
   await page.goto(`${webUrl}/`);
   await expect(
-    v3Sidebar(page).getByRole("button", { name: /Default/ }),
+    v3Sidebar(page).getByRole("button", { name: /Hermes/ }),
   ).toBeVisible({ timeout: 30_000 });
 }
 
@@ -206,7 +206,7 @@ test("AC-3 edits in one window land live in another", async ({
     await skipFirstRun(page2);
     await page2.goto(`${stack.webUrl}/`);
     await expect(
-      v3Sidebar(page2).getByRole("button", { name: /Default/ }),
+      v3Sidebar(page2).getByRole("button", { name: /Hermes/ }),
     ).toBeVisible({ timeout: 30_000 });
 
     await openSettings(page);

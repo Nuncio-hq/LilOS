@@ -167,7 +167,7 @@ async function boot(): Promise<Procs> {
 
 /* The seeded employee. An id that names nobody opens the new-chat draft on
    the default agent, which on this one-agent stack is Default. */
-const DEFAULT_AGENT = { id: "default", name: "Default" };
+const DEFAULT_AGENT = { id: "default", name: "Hermes" };
 
 /** The thread panel's composer form and box — the same `[data-thread-panel]`
     in the side peek and in the session view. */

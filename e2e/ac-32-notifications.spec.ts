@@ -127,7 +127,7 @@ const threadPage = (conversationId: string) =>
 /** The default agent's dot in the sidebar: the per-employee badge. */
 const agentDot = (page: Page, status: string) =>
   v3Sidebar(page)
-    .getByRole("button", { name: /default/i })
+    .getByRole("button", { name: /hermes/i })
     .locator(`[data-v3-status="${status}"]`);
 
 test("AC-1/AC-2/AC-3 (engine-fake): notify only when not in view, click opens the conversation, badges count", async ({

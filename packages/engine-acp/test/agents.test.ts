@@ -51,21 +51,22 @@ describe("AcpAgentRoster (D-#845)", () => {
     expect(a.id).toBe("devin-2");
   });
 
-  test("update rewrites persona fields; unknown id is AGENT_NOT_FOUND", () => {
+  test("update rewrites persona fields; a forgotten persona is restored", () => {
     const r = make();
     const a = r.create({ name: "Builder Bot", soul: "v1" });
     const u = r.update({ id: a.id, soul: "v2", description: "d2" });
     expect(u.soul).toBe("v2");
     expect(r.describe(a.id).soul).toBe("v2");
     expect(r.describe(a.id).description).toBe("d2");
+    /* #872: the roster is in-memory — a restart forgets personas while the
+       relay record keeps them. `agents.update` is then the restore path:
+       it re-materialises the row from the patch instead of erroring
+       "no agent" while the record still says the agent exists. */
+    const back = r.update({ id: "nope", name: "Nope", description: "d" });
+    expect(back.id).toBe("nope");
+    expect(r.describe("nope").description).toBe("d");
     try {
-      r.update({ id: "nope", soul: "x" });
-      expect.unreachable();
-    } catch (e) {
-      expect((e as RpcError).code).toBe(-32004);
-    }
-    try {
-      r.describe("nope");
+      r.describe("nobody");
       expect.unreachable();
     } catch (e) {
       expect((e as RpcError).code).toBe(-32004);

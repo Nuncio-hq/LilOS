@@ -34,17 +34,26 @@ export async function hireEmployee(
   profile: string | null,
   runtime?: string,
 ): Promise<Employee> {
+  /* #872: the record stores the canonical runtime — the roster's stamp on
+     a default-engine profile is the default id itself, which must not
+     persist (profile keys, update routing and "which engine owns this"
+     all read `undefined`/the default id as the default engine). */
+  const defaultId = relay.status.get()?.result?.runtimes?.[0]?.id;
+  const rt = runtime && runtime !== defaultId ? runtime : undefined;
   let profileId = profile;
+  let description = d.description;
   if (profileId === null) {
     const agent = await relay.createAgent({
       name: profileSlug(d.name),
       ...(d.instructions ? { soul: d.instructions } : {}),
+      ...(d.description ? { description: d.description } : {}),
       ...(d.model ? { model: d.model } : {}),
       /* `{provider?, id}` — the id may itself contain `/` (#92 AC-8). */
       ...(d.provider ? { provider: d.provider } : {}),
-      ...(runtime ? { runtime } : {}),
+      ...(rt ? { runtime: rt } : {}),
     });
     profileId = agent.id;
+    description ??= agent.description;
   }
   const employee = await relay.createEmployee({
     name: d.name.trim(),
@@ -53,9 +62,10 @@ export async function hireEmployee(
     profile: profileId,
     model: d.model,
     instructions: d.instructions,
+    ...(description ? { description } : {}),
     /* D-#761: a profile a non-default runtime listed hires there — absent
        stays the default engine's hire. */
-    ...(runtime ? { runtime } : {}),
+    ...(rt ? { runtime: rt } : {}),
   });
   await relay.request("channels.openDm", { employeeId: employee.id });
   return employee;

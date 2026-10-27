@@ -57,7 +57,7 @@ test("AC-1/2 a reply renders exactly once while the answer row beats the stream"
   await startChat(
     page,
     stack.webUrl,
-    { id: "default", name: "Default" },
+    { id: "default", name: "Hermes" },
     "first marker",
   );
   /* #577: a send opens the thread in the peek — hop into the session view

@@ -104,10 +104,15 @@ export class AcpAgentRoster {
 
   /** Rewrite persona fields in place — the id never moves. New sessions
       read the updated row at `session.start`; running sessions keep the
-      snapshot they started with. */
+      snapshot they started with. A persona a restart forgot is
+      re-materialised from the patch rather than refused: the durable
+      record lives relay-side (#872), so the update is the restore. */
   update(p: AgentsUpdateParams): AgentDescriptor {
-    const a = this.rows.get(p.id);
-    if (!a) throw new RpcError(RPC_ERRORS.AGENT_NOT_FOUND, `no agent ${p.id}`);
+    let a = this.rows.get(p.id);
+    if (!a) {
+      a = { id: p.id, name: p.name ?? p.id };
+      this.rows.set(p.id, a);
+    }
     this.checkModel(p.model);
     if (p.name !== undefined) a.name = p.name;
     if (p.description !== undefined) a.description = p.description;

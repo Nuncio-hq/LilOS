@@ -20,7 +20,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { V3AgentPage } from "../src/v3/v3-agent";
 import type { V3Data } from "../src/v3/v3-data-types";
 import { V3Hire } from "../src/v3/v3-hire";
-import { agentDot } from "../src/v3/v3-model";
+import { agentDisplayName, agentDot } from "../src/v3/v3-model";
 import type { V3Actions, V3Nav } from "../src/v3/v3-page-types";
 import { V3Shell } from "../src/v3/v3-shell";
 import type {
@@ -213,24 +213,23 @@ describe("hire from an existing profile", () => {
     }
   });
 
-  test("the agent's page says which engine profile it runs", () => {
-    render(
-      <V3AgentPage data={data()} go={vi.fn()} act={actions()} id="emp_1" />,
-    );
-    expect(screen.getByText("Profile")).toBeTruthy();
-    expect(screen.getByText("reviewer")).toBeTruthy();
-  });
-
-  test("an agent with no known profile has no Profile row", () => {
+  /* #872 — internals never render on the agent's page: no Profile row, no
+     "Runs on", no hire date, no idle "Now" — whichever profile the agent
+     runs. (The paused company layer keeps its ticket-mode "Now" row.) */
+  test("the agent's page never shows internals", () => {
     render(
       <V3AgentPage
-        data={data({ agents: [{ ...agent, profile: undefined }] })}
+        data={data({ features: { company: false, tickets: false } })}
         go={vi.fn()}
         act={actions()}
         id="emp_1"
       />,
     );
     expect(screen.queryByText("Profile")).toBeNull();
+    expect(screen.queryByText("reviewer")).toBeNull();
+    expect(screen.queryByText("Runs on")).toBeNull();
+    expect(screen.queryByText("Now")).toBeNull();
+    expect(screen.queryByText(/hired /)).toBeNull();
   });
 });
 
@@ -383,5 +382,55 @@ describe("first run", () => {
       },
     } as never);
     expect(firstRunProblem(starting)).toBe(false);
+  });
+});
+
+describe("#872 agentDisplayName — the untouched stock agent reads Hermes", () => {
+  test("stock seed on the default runtime displays Hermes", () => {
+    expect(agentDisplayName({ name: "Default", profile: "default" })).toBe(
+      "Hermes",
+    );
+    expect(
+      agentDisplayName({
+        name: "Default",
+        profile: "default",
+        runtime: "hermes",
+      }),
+    ).toBe("Hermes");
+    expect(
+      agentDisplayName({
+        name: "default",
+        profile: "default",
+        runtime: null,
+      }),
+    ).toBe("Hermes");
+  });
+
+  test("a name the owner set wins over the display default", () => {
+    expect(agentDisplayName({ name: "Ren", profile: "default" })).toBe("Ren");
+  });
+
+  test("runtime-owned agents keep their own names", () => {
+    expect(
+      agentDisplayName({
+        name: "Default",
+        profile: "default",
+        runtime: "acp:devin",
+      }),
+    ).toBe("Default");
+    expect(
+      agentDisplayName({
+        name: "Devin",
+        profile: "devin",
+        runtime: "acp:devin",
+      }),
+    ).toBe("Devin");
+    expect(
+      agentDisplayName({
+        name: "Claude Code",
+        profile: "claude",
+        runtime: "acp:claude",
+      }),
+    ).toBe("Claude Code");
   });
 });

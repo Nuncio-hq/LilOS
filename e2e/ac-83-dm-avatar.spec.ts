@@ -39,7 +39,7 @@ const repo = path.resolve(here, "..");
 
 const SHOTS = path.join(repo, "test-results", "ac-83");
 const PROMPT = "What does the replay contract carry?"; // engine-fake script
-const AGENT = { id: "default", name: "Default" };
+const AGENT = { id: "default", name: "Hermes" };
 
 /* The thread panel's first agent header: the orb is its first child, the
    name its first childless span, the time the span after it. */
@@ -63,7 +63,7 @@ const tops = (row: Locator) =>
     const yOf = (n: Element | null | undefined) =>
       n ? n.getBoundingClientRect().y : null;
     const nameSpan = [...el.querySelectorAll("span")].find(
-      (n) => n.childElementCount === 0 && n.textContent?.trim() === "Default",
+      (n) => n.childElementCount === 0 && n.textContent?.trim() === "Hermes",
     );
     const avatarTop = yOf(el.firstElementChild);
     const nameTop = yOf(nameSpan);
@@ -235,7 +235,7 @@ test("AC-1/AC-2 the avatar and name line share a top edge (≤4px)", async ({
         name: x(
           [...el.querySelectorAll("span")].find(
             (n) =>
-              n.childElementCount === 0 && n.textContent?.trim() === "Default",
+              n.childElementCount === 0 && n.textContent?.trim() === "Hermes",
           ),
         ),
         // The answer's prose — not the reasoning's, which sits inside the work fold.

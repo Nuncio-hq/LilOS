@@ -33,7 +33,7 @@ import {
   DropdownMenuTrigger,
 } from "../components/ui/dropdown-menu";
 import { cn } from "../lib/utils";
-import { HermesAvatar } from "../shell/avatars";
+import { EmployeeAvatar } from "../shell/avatars";
 import type { EmpFn } from "../types";
 import { BrowserLibrary } from "./browser-library";
 import { BrowserOmnibox } from "./browser-omnibox";
@@ -279,11 +279,7 @@ export function BrowserPanel(p: BrowserPanelProps) {
                         data-hand-to-thread={th.id}
                         onClick={() => p.onHandTo?.(tab.id, th.id)}
                       >
-                        <HermesAvatar
-                          name={e?.name}
-                          status={e?.status}
-                          className="size-5"
-                        />
+                        <EmployeeAvatar employee={e} size={20} />
                         <span className="min-w-0 flex-1">
                           <span className="block truncate">{th.title}</span>
                           <span className="block text-muted-foreground text-xs">
@@ -386,7 +382,7 @@ export function BrowserPanel(p: BrowserPanelProps) {
               : "bg-amber-50 dark:bg-amber-950/30",
           )}
         >
-          <HermesAvatar name={agentEmp.name} className="size-5" />
+          <EmployeeAvatar employee={agentEmp} size={20} />
           {agent.control === "agent" ? (
             <span className="min-w-0 flex-1 truncate">
               <b className="font-semibold">{agentEmp.name}</b> is using this tab

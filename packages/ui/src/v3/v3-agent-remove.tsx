@@ -62,8 +62,7 @@ export function RemoveAsk({
         {running && " Anything running is stopped first."}
       </p>
       <p className="text-muted-foreground">
-        <span className="font-medium text-foreground">Stays:</span> its engine
-        profile and CLI login — history, memory and skills untouched.
+        Your chats stay; you can add it back any time.
       </p>
       <div className="mt-3 flex items-center gap-2">
         <Btn small primary onClick={busy ? undefined : onConfirm}>

@@ -49,7 +49,7 @@ test("AC-645 the thread composer mounts and re-arms while summaries lag", async 
     await startChat(
       page,
       stack.webUrl,
-      { id: "default", name: "Default" },
+      { id: "default", name: "Hermes" },
       "composer under lag",
     );
 

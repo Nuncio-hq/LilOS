@@ -53,7 +53,7 @@ test("the sidebar offers Work and Goals, and a link opens that page", async ({
       side.getByRole("button", { name: new RegExp(`^${name}`) }),
     ).toBeVisible();
   await expect(side.getByText("People", { exact: true })).toBeVisible();
-  await expect(side.getByRole("button", { name: /Default/ })).toBeVisible();
+  await expect(side.getByRole("button", { name: /Hermes/ })).toBeVisible();
 
   for (const name of ["Work", "Goals"])
     await expect(

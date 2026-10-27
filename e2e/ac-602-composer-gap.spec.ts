@@ -381,7 +381,7 @@ test.describe("AC-1/3 real app (engine-fake stack)", () => {
     const conversationId = await startChat(
       page,
       stack.webUrl,
-      { id: "default", name: "Default" },
+      { id: "default", name: "Hermes" },
       "Say hello then list files",
     );
     // #577: a send lands on the peek; the session view opens only from its

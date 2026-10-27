@@ -67,6 +67,10 @@ const surfaces = await serveSurfaces(0, {
     /* No `homeDir` reaches `new Harness` below — its home is `homedir()`,
        and `~`-collapsed paths on the wire mean that same directory. */
     home: homedir(),
+    /* #872: a task hand-off's model pick resolves on the CHILD's runtime
+       — the factory binds before `harness` exists, but only runs after. */
+    checkTaskModel: (employee, model, provider) =>
+      harness.checkTaskModel(employee, model, provider),
   }),
 
   log,
@@ -257,7 +261,28 @@ statusReporter = new StatusReporter({
   model: "model" in config.engine ? config.engine.model : undefined,
   liveSessions: () => harness.liveSessionCount,
   connect: connect ? () => connect.report() : undefined,
-  runtimes: () => runtimes.statusRows(),
+  /* D-#761/#872: each row also carries the profile fields its runtime's
+     `agents` capability lets the app write, once that engine has been
+     described — a coding agent's page edits against ITS runtime's list,
+     and a field it can't change stays read-only instead of failing. */
+  runtimes: () =>
+    runtimes.statusRows().map((row) => {
+      /* A failed runtime's cached describe is stale (#872): it must not
+         keep fields editable — omitting the list renders them read-only
+         until a fresh describe lands. */
+      if (row.state === "failed") return row;
+      const updatable = harness
+        .describeForRuntime(row.id)
+        ?.capabilities.find((c) => c.id === "agents")?.detail?.updatable;
+      return Array.isArray(updatable)
+        ? {
+            ...row,
+            agentsUpdatable: updatable.filter(
+              (f): f is string => typeof f === "string",
+            ),
+          }
+        : row;
+    }),
   logTail: () => [...log.lines],
 });
 const stopStatusReporter = statusReporter.start();

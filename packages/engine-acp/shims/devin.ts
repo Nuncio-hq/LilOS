@@ -33,7 +33,7 @@ export const devinSpec: AcpLaunchSpec = {
   agent: {
     id: "devin",
     name: "Devin",
-    description: "Devin CLI over ACP — Cognition's agent, signed in locally.",
+    description: "Coding agent by Cognition.",
     model: "swe-2-high",
     detail: { isDefault: true },
   },

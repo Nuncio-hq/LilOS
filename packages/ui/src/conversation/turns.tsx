@@ -12,7 +12,7 @@ import {
 import { Shimmer } from "../components/ai-elements/shimmer";
 import { withFileMentionChips } from "../lib/mentions";
 import { catalogModelName } from "../lib/model-name";
-import { HermesAvatar } from "../shell/avatars";
+import { EmployeeAvatar } from "../shell/avatars";
 import type { EmpFn, HumanFn, ModelOption, Reply, WbTab } from "../types";
 import { VIEWER_ID } from "../types";
 import { CeoEmployeeContext, CeoMark } from "../v3/v3-marks";
@@ -163,7 +163,7 @@ export function AgentTurn({
           data-agentwho
           className="mt-1.5 flex items-center gap-2 text-[13.5px] first:mt-0"
         >
-          <HermesAvatar name={e?.name} className="size-5" />
+          <EmployeeAvatar employee={e} size={20} />
           <span className="font-medium text-foreground">{e?.name}</span>
           {e?.id === ceoId && <CeoMark />}
           {r.time && (

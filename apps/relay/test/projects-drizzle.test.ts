@@ -141,7 +141,7 @@ describe("projects migration + remove on the real store (D-#854)", () => {
       run.stdout.trim().split("\n").at(-1) ?? "null",
     ) as Out;
 
-    expect(out.versionAfter).toBe(39);
+    expect(out.versionAfter).toBe(42);
     // NOT NULL → nullable, on the rebuilt table.
     expect(out.ticketPidBefore).toBe(1);
     expect(out.ticketPidAfter).toBe(0);

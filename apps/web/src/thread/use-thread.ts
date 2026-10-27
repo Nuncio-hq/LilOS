@@ -1,6 +1,6 @@
 import { shouldClearPending, threadStatus } from "@lilos/client-runtime";
 import type { Conversation } from "@lilos/contracts/app";
-import { draftKey, useDraft } from "@lilos/ui";
+import { agentDisplayName, draftKey, useDraft } from "@lilos/ui";
 import type { Channel, Msg, Thread, Work } from "@lilos/ui/types";
 import { useEffect, useState } from "react";
 import {
@@ -290,7 +290,7 @@ export function useThreadWith(
       retryConversation(conv, employeeId, folds.pool, summary?.root?.text),
     onCompact: compactCap && sid ? () => compactConversation(conv) : undefined,
     onContinue: () =>
-      void continueInNewSession(conv, employeeId, employee.name),
+      void continueInNewSession(conv, employeeId, agentDisplayName(employee)),
     models: catalog.length ? catalog : undefined,
     defaultModel,
     defaultProvider,
@@ -349,7 +349,7 @@ export function useThreadWith(
       startFreshFrom(conv, target, {
         pool: folds.pool,
         employeeId,
-        agentName: employee.name,
+        agentName: agentDisplayName(employee),
         draft,
         seedFiles: rewind.seedFiles,
       }),

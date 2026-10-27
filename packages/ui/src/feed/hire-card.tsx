@@ -1,6 +1,6 @@
 import { UserPlusIcon } from "lucide-react";
 import { Button } from "../components/ui/button";
-import { HermesAvatar } from "../shell/avatars";
+import { EmployeeAvatar } from "../shell/avatars";
 import type { EmpFn, HireDraft } from "../types";
 
 /* The hire-proposal card an employee posts in a channel. Only the signed-in
@@ -33,13 +33,13 @@ export function HireCardInline({
       {!done && (
         <div className="space-y-2 p-3">
           <div className="flex items-center gap-2">
-            <HermesAvatar name={draft.name} className="size-8" />
+            <EmployeeAvatar employee={{ name: draft.name }} size={32} />
             <div>
               <div className="font-semibold">{draft.name}</div>
               <div className="text-muted-foreground text-xs">
                 {draft.role} · {draft.model}
                 {draft.provider ? ` · ${draft.provider}` : ""}
-                {draft.profile ? ` · reusing profile ${draft.profile}` : ""}
+                {draft.profile ? " · existing setup" : ""}
               </div>
             </div>
           </div>

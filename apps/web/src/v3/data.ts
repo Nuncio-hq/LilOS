@@ -7,12 +7,12 @@ import {
 } from "@lilos/contracts/app";
 import type { AgentDescriptor, DescribeResult } from "@lilos/contracts/engine";
 import {
+  agentDisplayName,
+  agentTone,
   folderLabel,
   type V3Agent,
   type V3Data,
   type V3Project,
-  type V3Runtime,
-  type V3Tone,
 } from "@lilos/ui";
 import { atom, computed, onMount, type ReadableAtom } from "nanostores";
 import { appConfig } from "../lib/config";
@@ -33,8 +33,10 @@ import {
   sessionModels,
   sessionSignals,
 } from "../lib/runtime";
-import { modelLabel, modelRowStore } from "./models";
-import { profileStore } from "./profiles";
+import { modelRowStore } from "./models";
+import { profileKey, profileStore } from "./profiles";
+import { isDefaultRuntime } from "./runtime-ids";
+import { modelLabelFor, runtimeCatalogs, runtimeRows } from "./runtimes";
 import { v3SettingsSlice } from "./settings-data";
 import { lastChats, v3ArchivedThreads, v3Asks, v3Threads } from "./threads";
 import { v3Goals, v3Tickets, v3Updates } from "./tickets";
@@ -53,17 +55,13 @@ onMount(minute, () => {
   return () => clearInterval(t);
 });
 
-const TONES: V3Tone[] = ["c", "b", "r", "m", "s", "d"];
+/* Employees and projects have no colour of their own: `agentTone`
+   (packages/ui) is the one table every surface shares (#872). */
 
 /** Employees and projects have no colour of their own: a stable one from the
     name (or a project's id), so a person or a project looks the same on every
     screen (31-polynomial hash). */
-function toneOf(name: string): V3Tone {
-  let x = 0;
-  for (const ch of name.toLowerCase())
-    x = (Math.imul(x, 31) + ch.charCodeAt(0)) >>> 0;
-  return TONES[x % TONES.length];
-}
+const toneOf = agentTone;
 
 /** The relay's projects, oldest first so the sidebar only ever grows at its
     end. */
@@ -99,10 +97,13 @@ function toAgent(
   lastChat: V3Agent["lastChat"],
   week: WeekCounts,
 ): V3Agent {
+  /* #872: the untouched stock agent reads "Hermes" — the raw record's
+     runtime/profile decide, never the resolved row's. */
+  const name = agentDisplayName(e);
   return {
     id: e.id,
-    name: e.name,
-    tone: toneOf(e.name),
+    name,
+    tone: toneOf(name),
     role: e.role,
     /* Absent reports to the owner; the page shows the profile name (D-#775). */
     ...(e.reportsTo ? { reportsTo: e.reportsTo } : {}),
@@ -112,10 +113,18 @@ function toAgent(
     }),
     ...(runtime ? { runtime } : {}),
     ...(e.profile ? { profile: e.profile } : {}),
-    model: modelLabel(e.model),
+    /* The owning runtime's catalog labels it — never the default engine's
+       list on an ACP agent (#872). */
+    model: modelLabelFor(e.runtime, e.model),
     ...(e.model ? { modelId: e.model } : {}),
+    ...(e.effort ? { effort: e.effort } : {}),
     ...(lastChat ? { lastChat } : {}),
-    ...(profile?.description ? { description: profile.description } : {}),
+    /* The engine's live description wins; the record's copy answers when
+       the runtime hasn't been described (never started, D-#866) or lost
+       its persona to a restart (#872). */
+    ...((profile?.description ?? e.description)
+      ? { description: profile?.description ?? e.description }
+      : {}),
     ...(e.muted ? { muted: true } : {}),
     instructions: (profile?.soul ?? e.instructions)
       .split(/\n{2,}/)
@@ -158,22 +167,9 @@ export function v3DataStore(): ReadableAtom<V3Data> {
         )
         .join(","),
   );
-  const engineName = computed(
-    relay.status,
-    (s) => s.result?.engine?.name ?? "",
-  );
-  /* The runtime roster the harness reports (D-#761) — the add-agent
-     dialog's Who? kinds (#870). The catalog emits the default row first. */
-  const runtimeRows = computed(relay.status, (s): V3Runtime[] | undefined =>
-    s.result?.runtimes?.map((r, i) => ({
-      id: r.id,
-      label: r.label,
-      ...(r.available !== undefined ? { available: r.available } : {}),
-      ...(r.state ? { state: r.state } : {}),
-      ...(r.detail ? { detail: r.detail } : {}),
-      ...(i === 0 ? { isDefault: true } : {}),
-    })),
-  );
+  /* The runtime roster the harness reports, with each runtime's own model
+     catalog and field list folded in (D-#761, #872 — see v3/runtimes.ts). */
+  const runtimeList = runtimeRows();
   const company = computed(
     [profile, osFullName],
     () => [currentName(), currentCompany()] as const,
@@ -187,11 +183,11 @@ export function v3DataStore(): ReadableAtom<V3Data> {
       asks,
       statusKey,
       minute,
-      engineName,
-      runtimeRows,
+      runtimeList,
       company,
       folders,
       modelRowStore(),
+      runtimeCatalogs(),
       v3SettingsSlice,
       profileStore(),
       engineModels,
@@ -216,11 +212,11 @@ export function v3DataStore(): ReadableAtom<V3Data> {
       askRows,
       _status,
       now,
-      engine,
       runtimeList,
       [me, companyName],
       folderRows,
       modelRows,
+      runtimeCats,
       settingsSlice,
       profiles,
       catalog,
@@ -258,8 +254,15 @@ export function v3DataStore(): ReadableAtom<V3Data> {
         agents: employees.map((e) =>
           toAgent(
             e,
-            e.runtime ?? (engine || undefined),
-            profiles.byProfile[e.profile],
+            /* #872: `V3Agent.runtime` means "owned by a NON-default
+               runtime" — a record stamped with the default id (`"hermes"`,
+               a hire before the stamp canonicalised) and an unstamped
+               record both read absent, so `runtime` set always means a
+               coding runtime whose own row governs the page. */
+            isDefaultRuntime(e.runtime) ? undefined : e.runtime,
+            e.profile
+              ? profiles.byProfile[profileKey(e.runtime, e.profile)]
+              : undefined,
             chats.get(e.id),
             weeks.get(e.id) ?? { finished: 0, failed: 0, stuck: 0 },
           ),
@@ -294,6 +297,11 @@ export function v3DataStore(): ReadableAtom<V3Data> {
                 ...(canRefreshModels(description) ? { refreshable: true } : {}),
               },
             }
+          : {}),
+        /* #872: the composer's picker follows the selected agent — these
+           are the non-default runtimes' own catalogs, keyed by id. */
+        ...(Object.keys(runtimeCats).length
+          ? { modelCatalogs: runtimeCats }
           : {}),
         // A chat opens on the access you pick: Settings' default is the start.
         chatAccess: true,

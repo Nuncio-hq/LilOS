@@ -918,7 +918,7 @@ export async function openDefaultAgent(
     await fetch(`${webUrl}/lilos-config.json`, { cache: "no-store" })
   ).json()) as { relayWs: string; relayToken?: string };
   const { employees } = await relayRpc<{
-    employees: { id: string; name: string }[];
+    employees: { id: string; name: string; profile?: string }[];
   }>(
     page,
     { relayWs: cfg.relayWs, relayToken: cfg.relayToken ?? "" },
@@ -927,11 +927,17 @@ export async function openDefaultAgent(
   );
   const agent = employees.find((e) => /default/i.test(e.name)) ?? employees[0];
   if (!agent) throw new Error("employees.list returned nobody");
+  /* #872: the untouched stock profile displays "Hermes" — the record still
+     says "Default" (a rename wins, so only the untouched seed maps). */
+  const shown =
+    agent.profile === "default" && /^default$/i.test(agent.name)
+      ? "Hermes"
+      : agent.name;
   await page.goto(agentUrl(webUrl, agent.id));
   await expect(
-    v3Peek(page).getByRole("heading", { level: 1, name: agent.name }),
+    v3Peek(page).getByRole("heading", { level: 1, name: shown }),
   ).toBeVisible({ timeout });
-  return { id: agent.id, name: agent.name };
+  return { id: agent.id, name: shown };
 }
 
 /**

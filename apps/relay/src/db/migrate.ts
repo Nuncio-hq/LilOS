@@ -630,6 +630,52 @@ export const MIGRATIONS: {
         ON tickets(task_parent_id, task_request_id)`,
     ],
   },
+  {
+    /* #872: the agent page's effort pick is a per-agent default on the
+       employee row — one store every runtime's sessions read (NULL = the
+       model's own default). (#883 took v39.) */
+    version: 40,
+    statements: [`ALTER TABLE employees ADD COLUMN effort TEXT`],
+  },
+  {
+    /* #872: the agent's description is durable on the record — engines
+       whose personas live only in memory (ACP rosters) lose it on restart
+       and are re-seeded from here. */
+    version: 41,
+    statements: [`ALTER TABLE employees ADD COLUMN description TEXT`],
+  },
+  {
+    /* D-#835 (#872): the Employee record is the one source of a coding
+       agent's default model + effort. The legacy `codingAgents` KV row
+       (keyed claude/cursor/devin/antigravity) moves onto every employee
+       whose profile — else name — is that id, once. On main the KV model
+       outranked the record's (`conv ?? stored.model ?? employee.model`)
+       and its effort rode with it, so a KV entry that names a model moves
+       model + effort across together (a Devin hire carries swe-2-high yet
+       swe-2-max is what ran); an effort-only entry keeps the record's
+       model. Entries with no employee stay in the KV, read-only, until
+       one is hired (the relay seeds it then). */
+    version: 42,
+    statements: [
+      `UPDATE employees SET
+         model = coalesce(json_extract(
+           (SELECT value FROM settings WHERE key = 'codingAgents'),
+           '$.' || lower(CASE WHEN profile <> '' THEN profile ELSE name END) || '.model'), model),
+         effort = CASE WHEN json_extract(
+           (SELECT value FROM settings WHERE key = 'codingAgents'),
+           '$.' || lower(CASE WHEN profile <> '' THEN profile ELSE name END) || '.model') IS NOT NULL
+           THEN json_extract(
+             (SELECT value FROM settings WHERE key = 'codingAgents'),
+             '$.' || lower(CASE WHEN profile <> '' THEN profile ELSE name END) || '.effort')
+           ELSE coalesce(json_extract(
+             (SELECT value FROM settings WHERE key = 'codingAgents'),
+             '$.' || lower(CASE WHEN profile <> '' THEN profile ELSE name END) || '.effort'), effort)
+           END
+       WHERE lower(CASE WHEN profile <> '' THEN profile ELSE name END)
+             IN ('claude', 'cursor', 'devin', 'antigravity')
+         AND json_valid((SELECT value FROM settings WHERE key = 'codingAgents'))`,
+    ],
+  },
 ];
 
 /**
@@ -657,6 +703,20 @@ export function backupBeforeMigrations(
   return backup;
 }
 
+/* A dev DB that ran an earlier numbering of the same branch already has
+   the column: an `ALTER TABLE … ADD COLUMN` for one that exists is a no-op,
+   not a "duplicate column name" crash. */
+function runStatement(db: Database, statement: string): void {
+  const add = /^\s*ALTER TABLE (\w+) ADD COLUMN (\w+)/i.exec(statement);
+  if (add) {
+    const cols = db.query(`PRAGMA table_info(${add[1]})`).all() as {
+      name: string;
+    }[];
+    if (cols.some((c) => c.name === add[2])) return;
+  }
+  db.exec(statement);
+}
+
 export function applyMigrations(db: Database): void {
   const row = db.query("PRAGMA user_version").get() as { user_version: number };
   const current = row.user_version;
@@ -675,7 +735,7 @@ export function applyMigrations(db: Database): void {
       db.exec("PRAGMA foreign_keys = OFF");
     }
     db.transaction(() => {
-      for (const statement of migration.statements) db.exec(statement);
+      for (const statement of migration.statements) runStatement(db, statement);
       db.exec(`PRAGMA user_version = ${migration.version}`);
     })();
     if (migration.foreignKeysOff) {

@@ -137,7 +137,7 @@ async function openApp(stack: Stack, page: Page) {
   await skipFirstRun(page);
   await page.goto(`${stack.webUrl}/`);
   await expect(
-    v3Sidebar(page).getByRole("button", { name: /Default/ }),
+    v3Sidebar(page).getByRole("button", { name: /Hermes/ }),
   ).toBeVisible({ timeout: 30_000 });
 }
 
@@ -310,9 +310,9 @@ test("AC-2b hire from an existing engine profile: it is linked, not created agai
     v3Sidebar(page).getByRole("button", { name: "Reviewer" }),
   ).toBeVisible();
   await expect(page.getByText(/already exists/i)).toHaveCount(0);
-  // The agent's page says which engine profile it runs.
-  await expect(peek.getByText("Profile", { exact: true })).toBeVisible();
-  await expect(peek.getByText("reviewer", { exact: true })).toBeVisible();
+  /* The agent's page never shows internals — no Profile row, no raw id
+     (#872): the link is the employee record's `profile`. */
+  await expect(peek.getByText("Profile", { exact: true })).toHaveCount(0);
   await page.screenshot({ path: `${SHOTS}/ac-2b-hired-profile.png` });
 
   // The engine side: no new profile was made (agents.create never ran), and
@@ -469,39 +469,53 @@ async function openAgent(page: Page, name: string) {
   return record;
 }
 
-test("AC-6 Edit saves display name + role via employees.update; surfaces update live", async ({
+test("AC-6 the name and description edit in place; surfaces update live", async ({
   page,
 }) => {
   await openApp(stackA, page);
   const record = await openAgent(page, "Senior Engineer");
-  await record.getByRole("button", { name: "Edit" }).click();
 
-  await record.getByRole("textbox", { name: "Name" }).fill("Engineer Prime");
-  await record.getByRole("textbox", { name: "Role" }).fill("Records lead");
-  await page.screenshot({ path: `${SHOTS}/ac-6-edit-dialog.png` });
-  await record.getByRole("button", { name: "Save" }).click();
-  // "Save" reads "Saving…" while in flight: Edit is back once it has landed.
-  await expect(record.getByRole("button", { name: "Edit" })).toBeVisible();
-
-  // The sidebar row and the agent page read the updated record without a
-  // reload; the role is the page's kicker line.
-  await expect(
-    v3Sidebar(page).getByRole("button", { name: "Engineer Prime" }),
-  ).toBeVisible();
+  /* #872 — there is no Edit mode: click the name, type, Enter saves just
+     it; the description is the one line under the name, clicked the same
+     way. */
+  await record
+    .getByRole("heading", { level: 1 })
+    .getByRole("button", { name: "Senior Engineer" })
+    .click();
+  const nameBox = record.getByRole("textbox", { name: "Agent name" });
+  await nameBox.fill("Engineer Prime");
+  await nameBox.press("Enter");
   await expect(
     record.getByRole("heading", { level: 1, name: "Engineer Prime" }),
   ).toBeVisible();
-  await expect(record.getByText(/^Records lead/)).toBeVisible();
+
+  // The one description: a placeholder until it is written, then the line.
+  await record
+    .getByRole("button", { name: "What it is for, in a line" })
+    .click();
+  const desc = record.getByRole("textbox", { name: "Description" });
+  await desc.fill("Keeps the records straight");
+  await page.screenshot({ path: `${SHOTS}/ac-6-inline-edit.png` });
+  await desc.press("Enter");
+  await expect(record.getByText(/^Keeps the records straight/)).toBeVisible();
+
+  // The sidebar row and the page read the updated record without a reload.
+  await expect(
+    v3Sidebar(page).getByRole("button", { name: "Engineer Prime" }),
+  ).toBeVisible();
   await expect(
     v3Sidebar(page).getByRole("button", { name: "Senior Engineer" }),
   ).toHaveCount(0);
   await page.screenshot({ path: `${SHOTS}/ac-6-updated.png` });
   const employees = await employeeRows(stackA);
+  expect(employees.some((e) => e.name === "Engineer Prime")).toBe(true);
+  // The description is the engine profile's — describe proves it landed.
+  const [described] = await rpc(stackA.relayWs, stackA.relayToken, [
+    { method: "agents.describe", params: { id: "senior-engineer" } },
+  ]);
   expect(
-    employees.some(
-      (e) => e.name === "Engineer Prime" && e.role === "Records lead",
-    ),
-  ).toBe(true);
+    (described.result as { agent: { description?: string } }).agent.description,
+  ).toBe("Keeps the records straight");
 });
 
 test("AC-7 Remove deletes the LilOS record + DM, never the engine profile", async ({
@@ -515,14 +529,14 @@ test("AC-7 Remove deletes the LilOS record + DM, never the engine profile", asyn
   expect((await dmChannelIds(stackA, employeeId)).length).toBe(1);
 
   await record.getByRole("button", { name: "Remove from LilOS" }).click();
-  // #856's plain confirmation: what goes (the agent + its LilOS threads) vs
-  // what stays (the engine profile and CLI login).
+  // #856's plain confirmation: what goes (the agent + its LilOS threads);
+  // the chats stay and it can be added back (#872).
   const confirm = record.getByRole("group", {
     name: "Remove Tester from LilOS",
   });
   await expect(confirm.getByText("Remove Tester from LilOS?")).toBeVisible();
   await expect(
-    confirm.getByText(/its engine profile and CLI login/),
+    confirm.getByText(/your chats stay; you can add it back any time/i),
   ).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/ac-7-remove-confirm.png` });
   await confirm.getByRole("button", { name: "Remove from LilOS" }).click();
@@ -542,7 +556,7 @@ test("AC-7 Remove deletes the LilOS record + DM, never the engine profile", asyn
   expect((await dmChannelIds(stackA, employeeId)).length).toBe(0);
   // D-#29: the engine profile is untouched.
   expect(await agentIds(stackA)).toContain("tester");
-  // …and it is hirable again under "Or bring in an existing profile" (the
+  // …and it can be added again under "Or bring in an existing profile" (the
   // old "Use profile" list): only the LilOS record went. The engine named
   // the profile by its slug, so that is what the row reads.
   await openHire(page);

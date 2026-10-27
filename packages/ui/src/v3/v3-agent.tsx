@@ -2,9 +2,8 @@ import {
   BookOpenIcon,
   ClockIcon,
   CoinsIcon,
-  CpuIcon,
   EllipsisIcon,
-  IdCardIcon,
+  GaugeIcon,
   PencilIcon,
   PlugIcon,
   SparklesIcon,
@@ -12,16 +11,12 @@ import {
 import { useState } from "react";
 import { Connectors, PILL } from "./v3-agent-connectors";
 import {
-  DescriptionField,
-  EditButton,
-  HeldModel,
-  InstructionsField,
-  ModelField,
-  NameField,
+  EffortProp,
+  InlineText,
+  InstructionsBlock,
+  ModelProp,
   NotificationsRow,
-  RoleField,
-  SaveButtons,
-  useAgentEditor,
+  useFieldSave,
 } from "./v3-agent-edit";
 import { AgentNotes } from "./v3-agent-notes";
 import { RemoveAgent } from "./v3-agent-remove";
@@ -29,15 +24,21 @@ import { RuleSuggestion } from "./v3-agent-rules";
 import { AgentSkills } from "./v3-agent-skills";
 import { AgentWeek } from "./v3-agent-week";
 import { ago, Btn, Meter, Page, Prop, Section, Title } from "./v3-bits";
-import { EscLayer, useFocusBack, useMenu } from "./v3-keys";
+import { useFocusBack, useMenu } from "./v3-keys";
 import { AgentAvatar, Avatar, CeoMark, StatusPill } from "./v3-marks";
 import {
   agentOf,
+  agentPageFields,
   agentStatus,
   agentThread,
   agentTicket,
   companyOn,
+  effortLadderOf,
+  modelChoicesOf,
   removable,
+  runtimeLabelOf,
+  runtimeOf,
+  schedulesOff,
 } from "./v3-model";
 import type { V3PageProps } from "./v3-page-types";
 import { soonestNext } from "./v3-schedule-text";
@@ -46,16 +47,22 @@ import { TitleInput } from "./v3-thread-menu";
 import { ThreadRow } from "./v3-threads-rows";
 import type { V3Agent, V3ConnectorDef } from "./v3-types";
 
-/* One agent, like a person's profile in Notion: what it does, what it runs
-   on, what it has been plugged into, and how far to trust it this week. An
-   outside worker gets the same page minus everything LilOS runs (runtime,
-   model, skills, spend, instructions, notes): LilOS only watches it.
-   What the app cannot tell (runtime, schedule, skills, spend, week)
-   or cannot change (connectors, rules, editing, removing) is left out,
-   never shown as a made-up value or a dead control. Make CEO is the
-   owner's way to move the position (D-#778), including the first time
-   there is no holder yet. Editing and removing live in v3-agent-edit /
-   v3-agent-remove. */
+/* One agent, like a person's profile in Notion: its name, what it is for,
+   the model it thinks with and its standing brief — plus schedules,
+   notifications and its threads. An outside worker gets the same page
+   minus everything LilOS runs (model, skills, spend, instructions, notes):
+   LilOS only watches it. What the app cannot tell or cannot change is left
+   out, never shown as a made-up value or a dead control — and internals
+   (the runtime id, the engine's profile name, the hire date) never show:
+   the runtime speaks through the avatar's look instead (#872).
+
+   There is no edit mode (#872): the name, description and instructions
+   each edit in place and save themselves; the model saves the moment it
+   is picked. Fields the agent's runtime cannot write — the ones its
+   engine's `updatable` does not name (D-#761) — render as plain text, and
+   Instructions and Schedules say why they sit read-only or can't fire.
+   Make CEO is the owner's way to move the position (D-#778), including
+   the first time there is no holder yet. */
 
 const STATE_WORD: Record<V3ConnectorDef["state"], string> = {
   ready: "Ready",
@@ -80,32 +87,37 @@ export function V3AgentPage(props: V3PageProps & { id: string }) {
 }
 
 function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
-  const ed = useAgentEditor(data, agent, act);
-  const draft = ed?.draft;
-  // Saving or cancelling swaps the fields back for Edit: the keyboard goes there.
-  const editButton = useFocusBack<HTMLButtonElement>(!!draft);
+  const outside = agent.kind === "outside";
+  /* The app can write this agent's record at all (#856). Engine-owned
+     fields gate a level deeper, on the owning runtime's `updatable`. */
+  const canEdit = !outside && !!act.updateAgent;
+  /* One save pipeline per field — each edits and reports on its own. */
+  const descSave = useFieldSave(act, agent.id);
+  const modelSave = useFieldSave(act, agent.id);
+  const effortSave = useFieldSave(act, agent.id);
+  const instrSave = useFieldSave(act, agent.id);
   /* Click-to-rename (#870): the name itself, or ⋯ → Rename, swaps it for a
-     box; Enter (or leaving) saves just the name through updateAgent, Esc
-     keeps the old one. Only where the app can edit at all. */
+     box; Enter (or leaving) saves just the name, Esc keeps the old one. */
   const [renaming, setRenaming] = useState(false);
   const nameButton = useFocusBack<HTMLButtonElement>(renaming);
-  const rename =
-    ed && !draft
-      ? {
-          save: (name: string) =>
-            void act.updateAgent?.(agent.id, { name }).catch(() => {}),
-          start: () => setRenaming(true),
-        }
-      : undefined;
-  const outside = agent.kind === "outside";
+  const rename = canEdit
+    ? {
+        save: (name: string) =>
+          void act.updateAgent?.(agent.id, { name }).catch(() => {}),
+        start: () => setRenaming(true),
+      }
+    : undefined;
   const via = outside
     ? data.connectors.find((c) => c.id === agent.via)
     : undefined;
-  const status = agentStatus(data, agent.id);
   /* With the company layer paused (D-#836) this page is a person, not a
      team member: no position moves, no reports-to, no ticket it holds, no
      week board or spend — those facts stay in the data. */
   const company = companyOn(data);
+  /* The ticket-mode "Now" row (company layer only — the paused layer's page
+     has no idle row, #872): what it is on, from the ticket or the live
+     thread, else what it is next to do. */
+  const status = agentStatus(data, agent.id);
   const current =
     !company || status === "idle" ? undefined : agentTicket(data, agent.id);
   const live =
@@ -118,23 +130,45 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
   const holdsCeo = !!ceo && agent.id === ceo.id;
   // D-#775: reportsTo names an employee. Absent, or an id that is gone,
   // means the owner — the profile name, never "You" or a hardcoded one.
+  // Company layer only: the paused layer has no org to report into.
   const manager = agent.reportsTo
     ? data.agents.find((a) => a.id === agent.reportsTo)
     : undefined;
   const reportsTo = company ? `reports to ${manager?.name ?? data.me}` : "";
-  /* The hire dialog seeds the role from the profile's description, so on a
-     real agent they are often the same sentence. Said once: the line under
-     the name keeps it, and the kicker above carries only the rest. */
+  /* The role line (company layer): the hire dialog seeds the role from the
+     profile's description, so said once — the description line keeps it. */
   const roleIsDescription =
     !!agent.description &&
     agent.role.trim().toLowerCase() === agent.description.trim().toLowerCase();
   const dotted = (...parts: string[]) => parts.filter(Boolean).join(" · ");
-  const hired = `hired ${agent.hired}`;
   const fmt = (n: number) => (Number.isInteger(n) ? `${n}` : n.toFixed(2));
   // The soonest scheduled job that is not paused: Works says when it is due.
   const nextJob = outside
     ? undefined
     : soonestNext(data.schedules.filter((s) => s.agentId === agent.id));
+
+  /* #872 — the page says what a person needs: a name, what it's for, the
+     model it thinks with, its standing brief. Where it runs is for the
+     avatar's look and the fields its runtime lets LilOS write — never a
+     jargon row ("acp:devin", "Profile: claude", "hired Oct 27" all went).
+     `rt` absent (no runtimes known) leaves the default engine's world. */
+  const rt = outside ? undefined : runtimeOf(data, agent);
+  const runsOn = outside ? undefined : runtimeLabelOf(data, agent);
+  const fields = agentPageFields(data, agent);
+  const canDescription = canEdit && fields.includes("description");
+  const canModel = canEdit && fields.includes("model");
+  const canInstructions = canEdit && fields.includes("instructions");
+  /* The effort pin is the relay record's — editable wherever the agent is
+     (no engine updatable flag); the row only exists when the runtime
+     reports levels for the agent's model. */
+  const effortLadder = canEdit ? effortLadderOf(data, agent) : undefined;
+  /* Whether the app positively knows this engine's field list — it can say
+     why a field sits read-only, not just sit it. */
+  const fieldsKnown =
+    rt && !rt.isDefault
+      ? rt.updatable !== undefined
+      : data.agentFields !== undefined;
+  const schedulesWhy = outside ? undefined : schedulesOff(data, agent);
   /* Notes and the skill toggles need both the records and a handler. The
      real app has neither yet, so those sections stay off the page (D-#19). */
   const notes =
@@ -148,25 +182,19 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
         <div className="min-w-0 flex-1">
           <Title
             kicker={
-              outside ? (
-                dotted(
-                  "Outside worker",
-                  `via ${via?.label ?? "a connector"}`,
-                  reportsTo,
-                )
-              ) : draft && ed ? (
-                <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
-                  <RoleField ed={ed} draft={draft} />
-                  {` · ${dotted(reportsTo, hired)}`}
-                </span>
-              ) : (
-                dotted(roleIsDescription ? "" : agent.role, reportsTo, hired)
-              )
+              outside
+                ? dotted(
+                    "Outside worker",
+                    `via ${via?.label ?? "a connector"}`,
+                    reportsTo,
+                  )
+                : company
+                  ? dotted(roleIsDescription ? "" : agent.role, reportsTo) ||
+                    undefined
+                  : undefined
             }
           >
-            {draft && ed ? (
-              <NameField ed={ed} draft={draft} />
-            ) : renaming && rename ? (
+            {renaming && rename ? (
               <TitleInput
                 value={agent.name}
                 ariaLabel="Agent name"
@@ -198,81 +226,77 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
           </Title>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {draft && ed ? (
-            <SaveButtons ed={ed} />
-          ) : (
-            <>
-              {!outside && (
-                <Btn onClick={() => go({ page: "newchat", id: agent.id })}>
-                  Message
-                </Btn>
-              )}
-              {/* A ticket is drafted through the CEO in ⌘K: tickets only. */}
-              {data.features.tickets && (
-                <Btn primary onClick={() => act.ask(`@${agent.name} `)}>
-                  Give a ticket
-                </Btn>
-              )}
-              {!outside && !holdsCeo && company && act.makeCeo && (
-                <button
-                  type="button"
-                  title={`Move the CEO position to ${agent.name}`}
-                  onClick={() => act.makeCeo?.(agent.id)}
-                  className="h-7 rounded-[7px] px-2 text-[13px] text-muted-foreground transition-colors hover:bg-[var(--v3-hover)] hover:text-foreground"
-                >
-                  Make CEO
-                </button>
-              )}
-              {ed && <EditButton ref={editButton} onClick={ed.start} />}
-              {rename && <AgentMenu onRename={rename.start} />}
-            </>
+          {!outside && (
+            <Btn onClick={() => go({ page: "newchat", id: agent.id })}>
+              Message
+            </Btn>
           )}
+          {/* A ticket is drafted through the CEO in ⌘K: tickets only. */}
+          {data.features.tickets && (
+            <Btn primary onClick={() => act.ask(`@${agent.name} `)}>
+              Give a ticket
+            </Btn>
+          )}
+          {!outside && !holdsCeo && company && act.makeCeo && (
+            <button
+              type="button"
+              title={`Move the CEO position to ${agent.name}`}
+              onClick={() => act.makeCeo?.(agent.id)}
+              className="h-7 rounded-[7px] px-2 text-[13px] text-muted-foreground transition-colors hover:bg-[var(--v3-hover)] hover:text-foreground"
+            >
+              Make CEO
+            </button>
+          )}
+          {rename && <AgentMenu onRename={rename.start} />}
         </div>
       </div>
-      {/* Esc closes the editing, not the peek behind it. */}
-      {draft && ed && <EscLayer onEscape={ed.cancel} />}
 
-      {draft && ed?.canDescription ? (
-        <div className="mt-1">
-          <DescriptionField ed={ed} draft={draft} />
+      {canDescription ? (
+        <div className="mt-1 mb-1">
+          <InlineText
+            value={agent.description ?? ""}
+            placeholder="What it is for, in a line"
+            ariaLabel="Description"
+            save={descSave}
+            onCommit={(v) => void descSave?.run({ description: v })}
+            className="text-[14.5px] text-muted-foreground leading-relaxed"
+          />
         </div>
       ) : (
-        agent.description &&
-        !(draft && roleIsDescription) && (
+        agent.description && (
           <p className="mb-1 text-[14.5px] text-muted-foreground leading-relaxed">
             {agent.description}
           </p>
         )
       )}
-      {ed && <HeldModel ed={ed} />}
 
       <div className="mt-3">
-        <Prop icon={<ClockIcon />} label="Now">
-          <StatusPill status={status} />
-          {current ? (
-            <span className="text-foreground">
-              {current.title} ·{" "}
-              <button
-                type="button"
-                onClick={() => go({ page: "ticket", id: current.id })}
-                className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-              >
-                {current.id}
-              </button>{" "}
-              <span className="text-muted-foreground">
-                · {ago(current.since)}
+        {company && (
+          <Prop icon={<ClockIcon />} label="Now">
+            <StatusPill status={status} />
+            {current ? (
+              <span className="text-foreground">
+                {current.title} ·{" "}
+                <button
+                  type="button"
+                  onClick={() => go({ page: "ticket", id: current.id })}
+                  className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                >
+                  {current.id}
+                </button>{" "}
+                <span className="text-muted-foreground">
+                  · {ago(current.since)}
+                </span>
               </span>
-            </span>
-          ) : live ? (
-            /* The title says what this agent is on. The Threads list below
-               is the one control that opens it (D-#19). */
-            <span className="truncate text-foreground">{live.title}</span>
-          ) : (
-            <span className="text-muted-foreground">
-              {agent.next ?? "Nothing assigned"}
-            </span>
-          )}
-        </Prop>
+            ) : live ? (
+              <span className="truncate text-foreground">{live.title}</span>
+            ) : (
+              <span className="text-muted-foreground">
+                {agent.next ?? "Nothing assigned"}
+              </span>
+            )}
+          </Prop>
+        )}
         {outside ? (
           <Prop icon={<PlugIcon />} label="Reached through">
             {via ? (
@@ -289,30 +313,23 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
             )}
           </Prop>
         ) : (
-          <>
-            {agent.runtime && (
-              <Prop icon={<CpuIcon />} label="Runs on">
-                {agent.runtime}
-              </Prop>
-            )}
-            {/* The engine profile this agent runs on. Instructions, notes and
-               skills on this page are the company's when the app carries
-               them; the profile is only which runtime it is. */}
-            {agent.profile && (
-              <Prop icon={<IdCardIcon />} label="Profile">
-                <span className="font-mono text-[13px] text-foreground">
-                  {agent.profile}
-                </span>
-              </Prop>
-            )}
-            <Prop icon={<SparklesIcon />} label="Model">
-              {draft && ed?.canModel ? (
-                <ModelField ed={ed} draft={draft} choices={data.modelChoices} />
-              ) : (
-                agent.model
-              )}
-            </Prop>
-          </>
+          <ModelProp
+            icon={<SparklesIcon />}
+            agent={agent}
+            choices={modelChoicesOf(data, agent)}
+            save={canModel ? modelSave : undefined}
+          />
+        )}
+        {/* #872: the standing effort pick — only where the runtime reports
+            levels for the agent's model; the pin is the relay record's,
+            relay-owned so it needs no engine updatable flag. */}
+        {effortLadder && (
+          <EffortProp
+            icon={<GaugeIcon />}
+            agent={agent}
+            ladder={effortLadder}
+            save={effortSave}
+          />
         )}
         {agent.schedule && (
           <Prop icon={<ClockIcon />} label="Works">
@@ -375,25 +392,28 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
       )}
 
       {!outside && (
-        <AgentSchedules data={data} go={go} act={act} agentId={agent.id} />
+        <AgentSchedules
+          data={data}
+          go={go}
+          act={act}
+          agentId={agent.id}
+          unavailable={schedulesWhy}
+        />
       )}
 
       {!outside && (
         <>
-          {draft && ed?.canInstructions ? (
-            <InstructionsField ed={ed} draft={draft} />
-          ) : (
-            agent.instructions.length > 0 && (
-              <>
-                <Section title="Instructions" />
-                <div className="space-y-2.5 border-[var(--v3-line)] border-l-2 pl-4 text-[14.5px] leading-relaxed text-foreground">
-                  {agent.instructions.map((p) => (
-                    <p key={p}>{p}</p>
-                  ))}
-                </div>
-              </>
-            )
-          )}
+          <InstructionsBlock
+            paragraphs={agent.instructions}
+            editable={canInstructions}
+            locked={
+              canEdit && !canInstructions && fieldsKnown
+                ? `LilOS can't change these on ${runsOn ?? "this engine"}`
+                : undefined
+            }
+            save={instrSave}
+            onCommit={(text) => void instrSave?.run({ instructions: text })}
+          />
           {notes && (
             <AgentNotes
               notes={notes}

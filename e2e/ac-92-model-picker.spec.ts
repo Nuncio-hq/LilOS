@@ -71,7 +71,7 @@ const leaveApp = (page: Page, stack: Stack) =>
  *  the default agent. */
 async function chatDefault(stack: Stack, page: Page, text: string) {
   await skipFirstRun(page);
-  await startChat(page, stack.webUrl, { id: "default", name: "Default" }, text);
+  await startChat(page, stack.webUrl, { id: "default", name: "Hermes" }, text);
 }
 
 /** The picker on the open session (the thread panel's composer). The old DM
@@ -150,7 +150,7 @@ test("AC-1 + AC-5 the new-session composer starts on the employee default and li
   // The session picker (the thread panel's composer) starts on the same
   // default with its effort, and groups every model under its provider.
   await v3Peek(page)
-    .getByPlaceholder("Message Default…")
+    .getByPlaceholder("Message Hermes…")
     .fill("Check the relay reconnect plan");
   await v3Peek(page).getByRole("button", { name: "Send" }).click();
   await expect(page).toHaveURL(/open=thread:[^&]+/, { timeout: 30_000 });
@@ -313,7 +313,7 @@ test("AC-4 + AC-5 a pick on the new-session composer lands on the FIRST turn; th
   // employee default. The sidebar pick jumped to the person's page (D-#769);
   // the draft it opens peeks beside it.
   await v3Sidebar(page)
-    .getByRole("button", { name: /Default/ })
+    .getByRole("button", { name: /Hermes/ })
     .click();
   await v3Main(page).getByRole("button", { name: "Message" }).click();
   await expect(draftChip(page)).toContainText("Fake Large");

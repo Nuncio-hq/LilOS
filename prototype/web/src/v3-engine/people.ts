@@ -56,11 +56,6 @@ export function peopleActions({ setData, getData, toast }: Engine): Pick<
     },
     hire: ({ name, role, model, runtime }) => {
       const id = name.toLowerCase().replace(/[^a-z0-9]+/g, "-") || "agent";
-      /* A runtime hire (#870) lands on that kind's runtime; the label it
-         reports is the same string the real employee's card would show. */
-      const runtimeLabel = runtime
-        ? (getData().runtimes?.find((r) => r.id === runtime)?.label ?? runtime)
-        : "Hermes";
       setData((d) => ({
         ...d,
         agents: [
@@ -74,7 +69,10 @@ export function peopleActions({ setData, getData, toast }: Engine): Pick<
             role,
             reportsTo: d.ceoId,
             hired: "today",
-            runtime: `${runtimeLabel} · profile ${id}`,
+            /* The roster's runtime id (D-#761); the page resolves the label
+               from `data.runtimes`, so a hire on Devin reads "Runs on Devin",
+               never a baked-in string (#872). */
+            runtime: runtime ?? "hermes",
             profile: id,
             model,
             modelId: modelIdOf(MODEL_OPTIONS, model),
@@ -104,9 +102,6 @@ export function peopleActions({ setData, getData, toast }: Engine): Pick<
       const p = ENGINE_PROFILES.find((x) => x.id === profile);
       if (!p) return Promise.reject(new Error("That profile is not on the engine"));
       const id = `${profile}-${getData().agents.length}`;
-      const runtimeLabel = runtime
-        ? (getData().runtimes?.find((r) => r.id === runtime)?.label ?? runtime)
-        : "Hermes";
       setData((d) => ({
         ...d,
         agents: [
@@ -120,7 +115,7 @@ export function peopleActions({ setData, getData, toast }: Engine): Pick<
             role,
             reportsTo: d.ceoId,
             hired: "today",
-            runtime: `${runtimeLabel} · profile ${profile}`,
+            runtime: runtime ?? "hermes",
             profile,
             model: p.model ?? d.modelChoices[0],
             modelId: modelIdOf(MODEL_OPTIONS, p.model ?? d.modelChoices[0]),

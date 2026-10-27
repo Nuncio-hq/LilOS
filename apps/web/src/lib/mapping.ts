@@ -25,6 +25,7 @@ import type {
   Plan as UiPlan,
   Workspace,
 } from "@lilos/ui/types";
+import { agentDisplayName } from "@lilos/ui/v3-data";
 import { attachmentUrls, toAttachedFiles } from "./attachments";
 
 /** relay domain -> ui/domain type mapping (the only place it lives). */
@@ -36,7 +37,9 @@ import { attachmentUrls, toAttachedFiles } from "./attachments";
 export function toUiEmployee(e: Employee, engineDown = false): UiEmployee {
   return {
     id: e.id,
-    name: e.name,
+    /* #872: the untouched stock agent reads "Hermes" wherever an employee
+       name renders — record still stores "Default". */
+    name: agentDisplayName(e),
     role: e.role,
     status: engineDown
       ? "offline"
@@ -51,6 +54,7 @@ export function toUiEmployee(e: Employee, engineDown = false): UiEmployee {
     instructions: e.instructions,
     respondTo: e.respondTo,
     muted: e.muted,
+    ...(e.runtime ? { runtime: e.runtime } : {}),
   };
 }
 

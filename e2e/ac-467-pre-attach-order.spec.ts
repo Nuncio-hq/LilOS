@@ -154,7 +154,7 @@ test("AC-1 post-reload, no painted frame ever places a newer user row above an o
   await startChat(
     page,
     stack.webUrl,
-    { id: "default", name: "Default" },
+    { id: "default", name: "Hermes" },
     "Add a release note to the readme",
   );
   // #577: a send lands on the thread in the peek; [data-thread] lives in the

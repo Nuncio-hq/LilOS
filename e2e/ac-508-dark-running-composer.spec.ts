@@ -170,7 +170,7 @@ async function runningFocus(page: Page) {
   await page.goto(
     `${stack.webUrl}/?statusPollMs=500#?page=threads&open=newchat:default`,
   );
-  const draft = v3Peek(page).getByPlaceholder("Message Default…");
+  const draft = v3Peek(page).getByPlaceholder("Message Hermes…");
   await expect(draft).toBeVisible({ timeout: 30_000 });
   await draft.fill("LILOS_TURN_HOLD keep this turn running");
   await v3Peek(page).getByRole("button", { name: "Send" }).click();

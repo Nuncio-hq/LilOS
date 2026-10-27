@@ -1,7 +1,6 @@
 import type {
   AppMessage,
   Ask,
-  CodingAgentDefaults,
   Conversation,
   ConversationLife,
   ConversationsMoveFolderHostParams,
@@ -510,9 +509,13 @@ export interface HarnessCtx {
     access?: ConversationAccess;
     mcpServers?: McpServer[];
   }>;
-  codingAgentDefaults(
-    employee: Employee | undefined,
-  ): Promise<CodingAgentDefaults | undefined>;
+  /** #872: `task_create`'s explicit model resolves on the CHILD's own
+      runtime catalog; throws when the pick names nothing there. */
+  checkTaskModel(
+    employee: Employee,
+    model: string,
+    provider?: string,
+  ): Promise<{ model: string; provider?: string }>;
   bindingNow(binding: SessionBinding): string;
   noteNow(binding: SessionBinding): void;
   employeeNowLine(employeeId: string): string;

@@ -54,7 +54,7 @@ async function openStepsThread(page: Page): Promise<Locator> {
     conv = await startChat(
       page,
       stack.webUrl,
-      { id: "default", name: "Default" },
+      { id: "default", name: "Hermes" },
       "longoutput: probe the relay",
     );
   } else {

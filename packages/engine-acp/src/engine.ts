@@ -421,7 +421,11 @@ export class AcpEngine {
             "agents.create",
             "agents.update",
           ],
-          detail: { updatable: ["name", "description", "soul", "model"] },
+          /* #872 — `soul` is NOT in the list: the roster stores persona
+             text but ACP's `session/new` has no field that carries it, so
+             writing it would save nothing real. The page reads the
+             record's copy as read-only text instead of faking Saved. */
+          detail: { updatable: ["name", "description", "model"] },
         },
       ],
     };

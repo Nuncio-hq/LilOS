@@ -45,7 +45,7 @@ test.afterAll(async () => {
 
 test.describe.configure({ mode: "serial" });
 
-const DEFAULT_AGENT = { id: "default", name: "Default" };
+const DEFAULT_AGENT = { id: "default", name: "Hermes" };
 
 /** A new chat with Default, past first run; resolves once its thread is open
     in the peek. */
@@ -107,7 +107,7 @@ test("AC-2 Esc with no turn running does nothing (no Stop → nothing)", async (
   await skipFirstRun(page);
   // No session yet: the new-chat draft never gets onStop — Esc is inert.
   await page.goto(`${stackA.webUrl}/#?page=threads&open=newchat:default`);
-  const draft = v3Peek(page).getByPlaceholder("Message Default…");
+  const draft = v3Peek(page).getByPlaceholder("Message Hermes…");
   await expect(draft).toBeVisible({ timeout: 30_000 });
   await draft.click();
   await page.keyboard.press("Escape");
@@ -232,7 +232,7 @@ async function ac5Recall(stack: Stack, page: Page, shots: string) {
   // ↑ recall reads the last message Oscar SENT — it must not depend on
   // whether the running turn has finished (a steer counts too). The
   // composer placeholder names the state — idle, running or waiting —
-  // and never the new-chat draft's "Message Default…".
+  // and never the new-chat draft's "Message Hermes…".
   const box = panel.getByPlaceholder(/^Message |is waiting/);
   await box.fill("second reply: make it blue");
   await box.press("Enter");
@@ -257,7 +257,7 @@ async function ac5Recall(stack: Stack, page: Page, shots: string) {
 
   // The new-chat draft recalls the last TOP-LEVEL message = this thread's root.
   await page.goto(`${stack.webUrl}/#?page=threads&open=newchat:default`);
-  const draft = v3Peek(page).getByPlaceholder("Message Default…");
+  const draft = v3Peek(page).getByPlaceholder("Message Hermes…");
   await expect(draft).toBeVisible({ timeout: 30_000 });
   /* ↑ recall reads the opener out of the summaries snapshot, which
      LILOS_SUMMARY_DELAY_MS holds back: ↑ in an empty box is a no-op until it

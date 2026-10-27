@@ -33,7 +33,7 @@ const SHOTS = path.join(repo, "test-results", "ac-583");
 
 /* The seeded employee. An id that names nobody opens the new-chat draft on
    the default agent, which on this one-agent stack is Default. */
-const DEFAULT_AGENT = { id: "default", name: "Default" };
+const DEFAULT_AGENT = { id: "default", name: "Hermes" };
 
 /** A new chat's thread in the side peek (past first run). */
 const chat = async (stack: Stack, page: Page, text: string) => {
@@ -106,15 +106,15 @@ test("AC-1+#586 the composer names the employee, then says it's waiting for Osca
   await skipFirstRun(page);
   await page.goto(`${stack.webUrl}/#?page=threads&open=newchat:default`);
 
-  /* #586 AC-1: the idle placeholder names the employee ("Message Default…"
+  /* #586 AC-1: the idle placeholder names the employee ("Message Hermes…"
      on the new-chat draft and inside an idle thread alike) — never
      an engine ref like `20261006_…` or `emp_…`. */
   const draft = v3Peek(page).getByPlaceholder(/^Message /);
-  await expect(draft).toHaveAttribute("placeholder", /Message Default…/);
+  await expect(draft).toHaveAttribute("placeholder", /Message Hermes…/);
   await expect(draft).not.toHaveAttribute("placeholder", /emp_|2026\d{4}/);
   await chat(stack, page, "Say hello once");
   const box = threadBox(page);
-  await expect(box).toHaveAttribute("placeholder", /^Message Default…$/, {
+  await expect(box).toHaveAttribute("placeholder", /^Message Hermes…$/, {
     timeout: 60_000,
   });
   await expect(box).not.toHaveAttribute("placeholder", /emp_|2026\d{4}/);
@@ -125,7 +125,7 @@ test("AC-1+#586 the composer names the employee, then says it's waiting for Osca
   await expect(openCard(page).first()).toBeVisible({ timeout: 60_000 });
   await expect(box).toHaveAttribute(
     "placeholder",
-    /Default is waiting for your approval/,
+    /Hermes is waiting for your approval/,
   );
   await expect(box).not.toHaveAttribute("placeholder", /working/i);
   await page.screenshot({ path: `${SHOTS}/ac-1-waiting-composer.png` });

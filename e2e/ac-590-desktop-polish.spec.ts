@@ -92,7 +92,7 @@ test.describe.configure({ mode: "serial" });
 
 /* The seeded Default employee: an id that names nobody opens the new-chat
    draft on the default agent, so no employee lookup is needed. */
-const DEFAULT_AGENT = { id: "default", name: "Default" };
+const DEFAULT_AGENT = { id: "default", name: "Hermes" };
 
 const panel = (page: Page) => page.locator("[data-thread-panel]");
 

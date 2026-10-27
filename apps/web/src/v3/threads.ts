@@ -1,4 +1,5 @@
 import {
+  agentDisplayName,
   type SessionModel,
   type ThreadStatus,
   threadStatus,
@@ -63,12 +64,18 @@ function askText(
   agent?: string,
 ): { title: string; text: string; details?: string; detailsOpen: boolean } {
   const r = ask.request;
-  if (ask.hire)
+  if (ask.hire) {
+    /* #872: a default-profile proposal reads "Hermes" like every surface. */
+    const who = agentDisplayName({
+      name: ask.hire.name,
+      profile: ask.hire.profile,
+    });
     return {
-      title: `Add agent ${ask.hire.name}`,
-      text: `${ask.hire.name} · ${ask.hire.role} on ${ask.hire.model || "the engine's default model"}`,
+      title: `Add agent ${who}`,
+      text: `${who} · ${ask.hire.role} on ${ask.hire.model || "the engine's default model"}`,
       detailsOpen: false,
     };
+  }
   // The question is the title; "The ask" row only adds the full text when
   // the title had to cut it (the card hides a row equal to its title).
   if (r.kind === "question")

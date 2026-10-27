@@ -759,6 +759,12 @@
         "model": {
           "type": "string"
         },
+        "description": {
+          "type": "string"
+        },
+        "effort": {
+          "type": "string"
+        },
         "now": {
           "type": "string"
         },
@@ -846,6 +852,12 @@
         "model": {
           "type": "string"
         },
+        "description": {
+          "type": "string"
+        },
+        "effort": {
+          "type": "string"
+        },
         "now": {
           "type": "string"
         },
@@ -918,6 +930,12 @@
                 "type": "string"
               },
               "model": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "effort": {
                 "type": "string"
               },
               "now": {
@@ -999,6 +1017,9 @@
           "default": "",
           "type": "string"
         },
+        "description": {
+          "type": "string"
+        },
         "now": {
           "default": "",
           "type": "string"
@@ -1052,6 +1073,12 @@
           "type": "string"
         },
         "model": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "effort": {
           "type": "string"
         },
         "now": {
@@ -1156,6 +1183,12 @@
               "model": {
                 "type": "string"
               },
+              "description": {
+                "type": "string"
+              },
+              "effort": {
+                "type": "string"
+              },
               "now": {
                 "type": "string"
               },
@@ -1237,6 +1270,12 @@
               "type": "string"
             },
             "model": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "effort": {
               "type": "string"
             },
             "now": {
@@ -6946,6 +6985,12 @@
                   },
                   "detail": {
                     "type": "string"
+                  },
+                  "agentsUpdatable": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
                   }
                 },
                 "required": [
@@ -7169,6 +7214,12 @@
               },
               "detail": {
                 "type": "string"
+              },
+              "agentsUpdatable": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
               }
             },
             "required": [
@@ -7578,6 +7629,12 @@
               },
               "detail": {
                 "type": "string"
+              },
+              "agentsUpdatable": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
               }
             },
             "required": [
@@ -9740,6 +9797,12 @@
               "type": "string"
             },
             "model": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "effort": {
               "type": "string"
             },
             "now": {

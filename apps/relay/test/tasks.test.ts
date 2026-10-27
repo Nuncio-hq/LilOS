@@ -29,10 +29,17 @@ type AnyResult = Record<string, any>;
 
 /** Registered host + two employees: the caller's own thread in a folder.
     `opts.project` makes that folder a project first; default the parent is
-    a plain chat in it (D-#854 — a chat still hands off fine). */
+    a plain chat in it (D-#854 — a chat still hands off fine). The pick
+    fields set the parent's own model/effort. */
 async function worldWithParent(
   storeHome: string,
-  opts: { project?: boolean } = {},
+  opts: {
+    project?: boolean;
+    model?: string;
+    provider?: string;
+    effort?: string;
+    fast?: boolean;
+  } = {},
 ) {
   const { store, relay } = newWorld(storeHome);
   const host = await helloed(relay);
@@ -67,6 +74,10 @@ async function worldWithParent(
       text: "Plan the release",
       cwd,
       access: "ask",
+      ...(opts.model ? { model: opts.model } : {}),
+      ...(opts.provider ? { provider: opts.provider } : {}),
+      ...(opts.effort ? { effort: opts.effort } : {}),
+      ...(opts.fast !== undefined ? { fast: opts.fast } : {}),
     }),
   );
   const { conversation: parent } = resultOf(host.frames, lastId())
@@ -137,6 +148,95 @@ describe("tasks.create (D-#844)", () => {
         }),
       }),
     ]);
+  });
+
+  /* #872: an unpicked hand-off runs on the CHILD agent's stored defaults —
+     the parent's pick stays the parent's, even for effort/provider. */
+  it("runs an unpicked hand-off on the child's defaults, never the parent's pick", async () => {
+    const dir = home();
+    const { host, worker, parent } = await worldWithParent(dir, {
+      model: "opus-5-5",
+      provider: "anthropic",
+      effort: "max",
+    });
+    await host.connection.receive(
+      req("employees.update", {
+        id: worker.id,
+        model: "swe-2-high",
+        effort: "high",
+      }),
+    );
+    host.frames.length = 0;
+
+    const r = await createTask(host, {
+      parentConversationId: parent.id,
+      employeeId: worker.id,
+      prompt: "Fix the flake",
+    });
+    expect(r.conversation.model).toBe("swe-2-high");
+    expect(r.conversation.effort).toBe("high");
+    // The parent's provider never crosses to the child.
+    expect(r.conversation.provider).toBeUndefined();
+    expect(r.conversation.fast).toBeUndefined();
+  });
+
+  /* The employee's effort is a rung on ITS model's ladder: an explicit,
+     different model must not wear it. */
+  it("does not stamp the child's effort onto an explicitly different model", async () => {
+    const dir = home();
+    const { host, worker, parent } = await worldWithParent(dir);
+    await host.connection.receive(
+      req("employees.update", {
+        id: worker.id,
+        model: "swe-2-high",
+        effort: "high",
+      }),
+    );
+    host.frames.length = 0;
+    const other = await createTask(host, {
+      parentConversationId: parent.id,
+      employeeId: worker.id,
+      prompt: "Fix the flake",
+      model: "swe-2-fast",
+    });
+    expect(other.conversation.model).toBe("swe-2-fast");
+    expect(other.conversation.effort).toBeUndefined();
+    const same = await createTask(host, {
+      parentConversationId: parent.id,
+      employeeId: worker.id,
+      prompt: "Fix the other flake",
+      model: "swe-2-high",
+    });
+    expect(same.conversation.effort).toBe("high");
+    // The same id under an explicit provider is not known to be the same
+    // model (ids are per provider) — the employee's effort stays home.
+    const provider = await createTask(host, {
+      parentConversationId: parent.id,
+      employeeId: worker.id,
+      prompt: "Fix a third flake",
+      model: "swe-2-high",
+      provider: "other",
+    });
+    expect(provider.conversation.effort).toBeUndefined();
+  });
+
+  it("stamps an explicit pick on the child verbatim", async () => {
+    const dir = home();
+    const { host, worker, parent } = await worldWithParent(dir, {
+      model: "opus-5-5",
+      provider: "anthropic",
+    });
+    const r = await createTask(host, {
+      parentConversationId: parent.id,
+      employeeId: worker.id,
+      prompt: "Fix the flake",
+      model: "swe-2",
+      provider: "cognition",
+      effort: "low",
+    });
+    expect(r.conversation.model).toBe("swe-2");
+    expect(r.conversation.provider).toBe("cognition");
+    expect(r.conversation.effort).toBe("low");
   });
 
   it("joins the parent's project when the parent has one", async () => {

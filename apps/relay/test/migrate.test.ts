@@ -74,8 +74,10 @@ describe("relay migrations", () => {
     // D-#844's task columns + the task wake flag; v36 adds D-#761's
     // employees.runtime; v37 adds D-#862's parking columns; v38 adds its
     // review's last_park_action_at; v39 makes goal/ticket project_id
-    // nullable for D-#854's project removal.
-    expect(out.version).toBe(39);
+    // nullable for D-#854's project removal; v40 adds employees.effort, v41
+    // the durable employees.description and v42 folds the legacy
+    // codingAgents KV onto the matching employees (#872).
+    expect(out.version).toBe(42);
     expect(out.askCols).toContain("hire");
     expect(out.askCols).toContain("why");
     expect(out.askCols).toContain("if_yes");
@@ -186,7 +188,7 @@ describe("relay migrations", () => {
     });
     expect(res.status, res.stderr).toBe(0);
     const out = JSON.parse(res.stdout.trim().split("\n").at(-1) ?? "null");
-    expect(out.version).toBe(39);
+    expect(out.version).toBe(42);
     const archived = out.rows.find(
       (r: { id: string }) => r.id === "old_archived",
     );
@@ -223,5 +225,106 @@ describe("relay migrations", () => {
       settledAt: 4000,
       settledReason: "manual",
     });
+  });
+
+  const runScript = (script: string) => {
+    const res = spawnSync(BUN, ["-e", script], {
+      cwd: RELAY_DIR,
+      encoding: "utf8",
+    });
+    expect(res.status, res.stderr).toBe(0);
+    return JSON.parse(res.stdout.trim().split("\n").at(-1) ?? "null");
+  };
+
+  /* #872: a dev DB that already ran this branch's older numbering has the
+     column but not the version; the migration must not die on it. */
+  it("ADD COLUMN migrations skip a column the DB already has", () => {
+    const out = runScript(`
+      import { Database } from "bun:sqlite";
+      import { MIGRATIONS, applyMigrations } from "./src/db/migrate.ts";
+      const db = new Database(":memory:");
+      for (const m of MIGRATIONS.filter((m) => m.version <= 38)) {
+        for (const s of m.statements) db.exec(s);
+        db.exec("PRAGMA user_version = " + m.version);
+      }
+      db.exec("ALTER TABLE employees ADD COLUMN effort TEXT");
+      db.exec("ALTER TABLE employees ADD COLUMN description TEXT");
+      applyMigrations(db);
+      console.log(JSON.stringify({
+        version: db.query("PRAGMA user_version").get().user_version,
+        cols: db.query("PRAGMA table_info(employees)").all().map((c) => c.name),
+      }));
+    `);
+    expect(out.version).toBe(42);
+    expect(out.cols.filter((c: string) => c === "effort")).toHaveLength(1);
+    expect(out.cols.filter((c: string) => c === "description")).toHaveLength(1);
+  });
+
+  /* D-#835: the codingAgents KV moves onto the records once, field by
+     field (the old precedence fell back per field): a record keeps the
+     fields it already pins and takes the rest from the KV; a non-coding
+     employee is left alone; a malformed row migrates nothing. */
+  it("v42 copies the codingAgents KV onto matching employees", () => {
+    const seed = (kv: string) => `
+      import { Database } from "bun:sqlite";
+      import { MIGRATIONS, applyMigrations } from "./src/db/migrate.ts";
+      const db = new Database(":memory:");
+      for (const m of MIGRATIONS.filter((m) => m.version <= 41)) {
+        for (const s of m.statements) db.exec(s);
+        db.exec("PRAGMA user_version = " + m.version);
+      }
+      const add = (id, name, profile, model) =>
+        db.query("INSERT INTO employees (id, name, profile, model, created_at) VALUES (?, ?, ?, ?, 1)")
+          .run(id, name, profile, model);
+      add("dev", "Devin", "devin", "");
+      add("cla", "Claude Code", "claude", "");
+      add("pin", "Cursor", "cursor", "gpt-5");
+      add("hire", "Devin 2", "devin", "swe-2-high");
+      add("anti", "Antigravity", "antigravity", "gem-pro");
+      add("ada", "Ada", "builder", "");
+      db.query("INSERT INTO settings (key, value) VALUES ('codingAgents', ?)").run(${JSON.stringify(
+        kv,
+      )});
+      applyMigrations(db);
+      console.log(JSON.stringify(db.query("SELECT id, model, effort FROM employees ORDER BY id").all()));
+    `;
+    const rows = runScript(
+      seed(
+        JSON.stringify({
+          devin: { model: "swe-2-max", effort: "max" },
+          claude: { effort: "high" },
+          cursor: { model: "kv-model", effort: "low" },
+          antigravity: { effort: "high" },
+          builder: { model: "x" },
+        }),
+      ),
+    );
+    const by = Object.fromEntries(rows.map((r: { id: string }) => [r.id, r]));
+    expect(by.dev).toMatchObject({ model: "swe-2-max", effort: "max" });
+    expect(by.cla).toMatchObject({ model: "", effort: "high" });
+    /* On main the KV model outranked the record's, and its effort rode
+       with it: a KV entry that names a model moves model + effort across
+       together (a Devin hire copies swe-2-high into its record, yet
+       swe-2-max is what ran). */
+    expect(by.hire).toMatchObject({ model: "swe-2-max", effort: "max" });
+    expect(by.pin).toMatchObject({ model: "kv-model", effort: "low" });
+    // An effort-only entry keeps the record's model and adds the effort.
+    expect(by.anti).toMatchObject({ model: "gem-pro", effort: "high" });
+    expect(by.ada).toMatchObject({ model: "", effort: null });
+    const junk = runScript(seed("not json"));
+    expect(
+      junk.map((r: { id: string; model: string; effort: string | null }) => [
+        r.id,
+        r.model,
+        r.effort,
+      ]),
+    ).toEqual([
+      ["ada", "", null],
+      ["anti", "gem-pro", null],
+      ["cla", "", null],
+      ["dev", "", null],
+      ["hire", "swe-2-high", null],
+      ["pin", "gpt-5", null],
+    ]);
   });
 });

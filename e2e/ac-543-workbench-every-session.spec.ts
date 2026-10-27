@@ -246,7 +246,7 @@ test("AC-4 a folder session is unchanged: every tab renders in the same order", 
   await startChatInFolder(
     page,
     stack,
-    { id: "default", name: "Default" },
+    { id: "default", name: "Hermes" },
     repoDir,
     "slow:100 delegate the relay scan to subagents",
   );

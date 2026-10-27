@@ -12,7 +12,7 @@ import { MessageResponse } from "../components/ai-elements/message";
 import { ScrollArea } from "../components/ui/scroll-area";
 import { plural } from "../lib/helpers";
 import { cn } from "../lib/utils";
-import { HermesAvatar } from "../shell/avatars";
+import { EmployeeAvatar } from "../shell/avatars";
 import type {
   Diff,
   Employee,
@@ -143,7 +143,7 @@ export function PrPanel({
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[12.5px] text-muted-foreground">
               <span className="flex items-center gap-1.5 text-foreground/80">
-                <HermesAvatar name={author} className="size-4" />
+                <EmployeeAvatar employee={lead ?? { name: author }} size={16} />
                 {author}
               </span>
               <span>{pr.repo}</span>

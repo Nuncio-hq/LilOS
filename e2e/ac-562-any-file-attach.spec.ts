@@ -74,7 +74,7 @@ async function settled(page: Page) {
   });
 }
 
-const DEFAULT_AGENT = { id: "default", name: "Default" };
+const DEFAULT_AGENT = { id: "default", name: "Hermes" };
 
 const draft = (page: Page) => v3Peek(page);
 const draftBox = (page: Page) =>

@@ -69,7 +69,7 @@ const startSession = (page: Page, text: string) =>
   startChatInFolder(
     page,
     stack,
-    { id: "default", name: "Default" },
+    { id: "default", name: "Hermes" },
     repoDir,
     text,
   );

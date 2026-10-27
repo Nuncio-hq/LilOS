@@ -14,6 +14,7 @@ import { AgentAvatar, CeoMark } from "./v3-marks";
 import {
   agentOf,
   defaultAgent,
+  modelCatalogOf,
   projectOf,
   removable,
   ticketOf,
@@ -162,10 +163,14 @@ export function ChatDraft({
   const [chosenProject, setProject] = useState<string>();
   const projectId = chosenProject ?? usualProject(data, agent);
   const project = projectOf(data, projectId);
-  const [chosenModel, setModel] = useState<string>();
+  /* #872: the label pick is held PER AGENT like `picks` — a model named on
+     one runtime's list can never stay selected on another agent's chip. */
+  const [labels, setLabels] = useState<Record<string, string>>({});
+  const setModel = (label: string) =>
+    setLabels((m) => ({ ...m, [agent.id]: label }));
   // An outside worker has no model of its own: no chip, and none sent.
   const outside = agent.kind === "outside";
-  const model = outside ? "" : (chosenModel ?? agent.model);
+  const model = outside ? "" : (labels[agent.id] ?? agent.model);
   /* What the full picker chose (model, effort, Fast) and the access pill's
      level, each held per agent as the old home composer held them: they are
      for the chat being written, not settings, and switching the agent chip
@@ -273,7 +278,10 @@ export function ChatDraft({
      has (and is only claimed when it has one). Everything else posts and the
      engine runs it. */
   const onCommand = (name: string) => {
-    if (name !== "model" || !data.modelCatalog || outside) return false;
+    /* #872: the picker exists only where the SELECTED agent's runtime
+       catalog does — a Devin agent's `/model` never opens Hermes's list. */
+    if (name !== "model" || !modelCatalogOf(data, agent) || outside)
+      return false;
     setPickOpen(true);
     return true;
   };

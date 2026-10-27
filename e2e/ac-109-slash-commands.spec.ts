@@ -44,7 +44,7 @@ async function chatDefault(page: Page) {
   await startChat(
     page,
     stack.webUrl,
-    { id: "default", name: "Default" },
+    { id: "default", name: "Hermes" },
     "Say hello",
   );
   await expect(page.locator("[data-turnsettled]").last()).toBeVisible({
@@ -136,7 +136,7 @@ test("AC /model opens the picker the surface already owns", async ({
 
 /** The new-chat draft's box. */
 const draftBox = (page: Page) =>
-  v3Peek(page).getByPlaceholder("Message Default…");
+  v3Peek(page).getByPlaceholder("Message Hermes…");
 
 test("AC the new-chat draft lists the commands too, and /model opens its own picker", async ({
   page,

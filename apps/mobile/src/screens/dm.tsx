@@ -1,4 +1,8 @@
-import { sendKeyDone, sendKeyFor } from "@lilos/client-runtime";
+import {
+  agentDisplayName,
+  sendKeyDone,
+  sendKeyFor,
+} from "@lilos/client-runtime";
 import type {
   AppChannel,
   AppMessage,
@@ -211,7 +215,7 @@ export function Dm({
         employee: employee
           ? {
               id: employee.id,
-              name: employee.name,
+              name: agentDisplayName(employee),
               tone: toneOf(employee.id),
             }
           : { id: employeeId, name: employeeId, tone: "stone" },
@@ -237,13 +241,13 @@ export function Dm({
     navigation.setOptions({
       headerTitle: () => (
         <DmHeaderTitle
-          name={employee.name}
+          name={agentDisplayName(employee)}
           tone={toneOf(employee.id)}
           state={orbState}
           status={status}
           onPress={() =>
             Alert.alert(
-              employee.name,
+              agentDisplayName(employee),
               [
                 employee.role,
                 employee.model ? `Model: ${employee.model}` : "",
@@ -412,7 +416,7 @@ export function Dm({
 
   return (
     <EmployeeDmScreen
-      name={employee.name}
+      name={agentDisplayName(employee)}
       tone={toneOf(employee.id)}
       turns={turns}
       folder={pickLabel(folderOptions, wsPick)}

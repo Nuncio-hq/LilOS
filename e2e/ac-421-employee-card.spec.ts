@@ -110,20 +110,22 @@ const prop = (record: ReturnType<typeof v3Main>, label: string) =>
     .locator("div.flex.min-h-9")
     .filter({ hasText: new RegExp(`^${label}`) });
 
-test("AC-1 the agent page carries the card's rows: engine, profile, model, now; no old-modal Soul row", async ({
+test("AC-1 the agent page carries the card's rows: description, model, instructions; no jargon rows, no old-modal Soul row", async ({
   page,
 }) => {
   test.setTimeout(90_000);
-  const record = await openAgentPage(page, "Default");
+  const record = await openAgentPage(page, "Hermes");
 
-  // The card's grid on the page: Engine → "Runs on", Model, Now (+ Idle).
-  // engine.name lands on the harness's second status report (~10s); the row
-  // is left out until the probe lands.
-  await expect(prop(record, "Runs on")).toContainText("engine-fake", {
+  // #872: the page says what a person needs — what it is for, the model it
+  // thinks with (the editable default), its standing brief. The engine and
+  // profile ids ("Runs on", "Profile") are not rendered anywhere. This
+  // stack runs the company layer, so the ticket-mode "Now" row stays.
+  await expect(record.getByText("Your everyday assistant.")).toBeVisible({
     timeout: 30_000,
   });
-  await expect(prop(record, "Profile")).toContainText("default");
-  await expect(prop(record, "Model")).toBeVisible();
+  await expect(prop(record, "Default model")).toBeVisible();
+  for (const gone of ["Runs on", "Profile"])
+    await expect(prop(record, gone)).toHaveCount(0);
   await expect(prop(record, "Now")).toContainText("Idle");
   // The Instructions are the engine profile's own persona (the page reads
   // `agents.describe`), so the stock Default shows engine-fake's soul text.
@@ -267,26 +269,29 @@ test("AC-3 (#504) shots: with + without instructions, 3 dims × light/dark", asy
       await page.setViewportSize({ width: w, height: h });
       const noSoul = await openAgentPage(page, "Bare");
       await schemeIs(scheme);
-      await expect(prop(noSoul, "Runs on")).toContainText("engine-fake", {
+      await expect(prop(noSoul, "Default model")).toBeVisible({
         timeout: 30_000,
       });
+      await expect(prop(noSoul, "Runs on")).toHaveCount(0);
+      // #872: instructions edit in place, so an empty brief is an empty
+      // field to type into, not a missing section.
       await expect(
-        noSoul.getByText("Instructions", { exact: true }),
-      ).toHaveCount(0);
-      await expect(prop(noSoul, "Now")).toContainText("Idle");
+        noSoul.getByRole("textbox", { name: "Instructions" }),
+      ).toHaveValue("");
       await page.screenshot({
         path: `${SHOTS_504}/card-nosoul-${w}x${h}-${scheme}.png`,
       });
       const soul = await openAgentPage(page, "Souly");
       await schemeIs(scheme);
-      await expect(prop(soul, "Runs on")).toContainText("engine-fake", {
+      await expect(prop(soul, "Default model")).toBeVisible({
         timeout: 30_000,
       });
       await expect(
         soul.getByText("Instructions", { exact: true }),
       ).toBeVisible();
-      await expect(soul.getByText(/You review changes/)).toBeVisible();
-      await expect(prop(soul, "Now")).toContainText("Idle");
+      await expect(
+        soul.getByRole("textbox", { name: "Instructions" }),
+      ).toHaveValue(/You review changes/);
       await page.screenshot({
         path: `${SHOTS_504}/card-soul-${w}x${h}-${scheme}.png`,
       });

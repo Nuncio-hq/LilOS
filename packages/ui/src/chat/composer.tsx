@@ -10,7 +10,7 @@ import {
   PromptInputTextarea,
   PromptInputTools,
 } from "../components/ai-elements/prompt-input";
-import { HermesAvatar } from "../shell/avatars";
+import { EmployeeAvatar } from "../shell/avatars";
 import type {
   AttachedFile,
   Employee,
@@ -167,13 +167,7 @@ export function Composer({
           <MentionPopup
             menus={menus}
             employees={employees}
-            avatar={(e) => (
-              <HermesAvatar
-                name={e.name}
-                status={e.status}
-                className="size-[18px]"
-              />
-            )}
+            avatar={(e) => <EmployeeAvatar employee={e} size={18} />}
           />
           {/* AI Elements prompt-input owns attach UX: pick (hidden input + paperclip), drop on
           the form, paste into the textarea, Backspace-on-empty removes the last chip. */}

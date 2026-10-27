@@ -9,7 +9,7 @@ import {
 import { type CSSProperties, Fragment, useState } from "react";
 import { Button } from "../components/ui/button";
 import { cn } from "../lib/utils";
-import { HermesAvatar } from "../shell/avatars";
+import { EmployeeAvatar } from "../shell/avatars";
 import type { EmpFn } from "../types";
 import { hostOf } from "./browser-omnibox";
 import type { BrowserMode, BrowserTab, BrowserThread } from "./browser-types";
@@ -151,7 +151,7 @@ export function BrowserTabStrip({
                 )}
               >
                 <span className="relative shrink-0">
-                  <HermesAvatar name={e?.name} className="size-4" />
+                  <EmployeeAvatar employee={e} size={16} />
                   {driving && (
                     <span className="absolute -right-0.5 -bottom-0.5 size-1.5 animate-pulse rounded-full bg-violet-500 ring-1 ring-background" />
                   )}
@@ -251,7 +251,7 @@ function TabChip({
       )}
       {e ? (
         <span className="relative shrink-0">
-          <HermesAvatar name={e.name} className="size-4" />
+          <EmployeeAvatar employee={e} size={16} />
           {t.agent?.control === "agent" && (
             <span className="absolute -right-0.5 -bottom-0.5 size-1.5 animate-pulse rounded-full bg-violet-500 ring-1 ring-background" />
           )}

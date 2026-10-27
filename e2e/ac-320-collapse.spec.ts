@@ -30,7 +30,7 @@ async function chatDefault(
   text: string,
 ) {
   await skipFirstRun(page);
-  await startChat(page, stack.webUrl, { id: "default", name: "Default" }, text);
+  await startChat(page, stack.webUrl, { id: "default", name: "Hermes" }, text);
 }
 
 test("AC-1/2/3 collapsing a running turn's steps stays collapsed; approval stays visible", async ({

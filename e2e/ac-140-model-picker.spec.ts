@@ -108,7 +108,7 @@ test("AC-1 + AC-2 a session on a catalog-absent model: hint → Refresh → swit
   await skipFirstRun(page);
   await page.goto(`${stack.webUrl}/#?page=people`);
   await expect(
-    v3Sidebar(page).getByRole("button", { name: /Default/ }),
+    v3Sidebar(page).getByRole("button", { name: /Hermes/ }),
   ).toBeVisible({ timeout: 30_000 });
   const listed = await rpc(stack.home, stack.ports.relay, [
     { method: "employees.list", params: {} },

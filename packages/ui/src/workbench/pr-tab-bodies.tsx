@@ -2,7 +2,7 @@ import { CopyIcon } from "lucide-react";
 import { Textarea } from "../components/ui/textarea";
 import { plural } from "../lib/helpers";
 import { cn } from "../lib/utils";
-import { HermesAvatar, HumanAvatar } from "../shell/avatars";
+import { EmployeeAvatar, HumanAvatar } from "../shell/avatars";
 import type { Employee, GitCommit, HumanFn, PullRequest } from "../types";
 import { CHECK_ICON } from "./pr-merge-box";
 import { CARD, WbBtn } from "./wb-bits";
@@ -136,7 +136,10 @@ export function PrDiscussion({
           {human(c.from) ? (
             <HumanAvatar human={human(c.from)!} />
           ) : (
-            <HermesAvatar className="size-8" />
+            <EmployeeAvatar
+              employee={c.from === lead?.id ? lead : { name: c.from }}
+              size={32}
+            />
           )}
           <div className="min-w-0 flex-1">
             <div className="flex items-baseline gap-2 text-[13px]">

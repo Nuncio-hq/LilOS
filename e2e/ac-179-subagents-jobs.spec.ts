@@ -80,7 +80,7 @@ const FULL_URL = /[#&]full=1(&|$)/;
 
 /* The seeded employee. An id that names nobody opens the new-chat draft on
    the default agent, so the spec needs no employee lookup. */
-const DEFAULT_AGENT = { id: "default", name: "Default" };
+const DEFAULT_AGENT = { id: "default", name: "Hermes" };
 
 /* The Default employee's session AC-1 starts: later tests reopen it as the
    session view. */

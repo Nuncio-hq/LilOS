@@ -135,7 +135,7 @@ async function startSession(page: Page, dir: string, text: string) {
     .getByRole("menuitemradio", { name: new RegExp(path.basename(dir)) })
     .click();
   await expect(chip).toContainText(path.basename(dir), { timeout: 15_000 });
-  await peek.getByPlaceholder("Message Default…").fill(text);
+  await peek.getByPlaceholder("Message Hermes…").fill(text);
   await peek.getByRole("button", { name: "Send" }).click();
   await expect(page).toHaveURL(/open=thread:[^&]+/, { timeout: 30_000 });
 }

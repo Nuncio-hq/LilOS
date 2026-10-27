@@ -58,7 +58,7 @@ let beta: string;
 let gamma: string;
 const shown = (abs: string) => `~${abs.slice(stack.home.length)}`;
 
-const DEFAULT_AGENT = { id: "default", name: "Default" };
+const DEFAULT_AGENT = { id: "default", name: "Hermes" };
 
 /* The chats the suite makes, shared across the serial tests — AC-5 and
    AC-6 reopen what AC-1 and AC-4 filed. */
@@ -326,7 +326,7 @@ test("AC-3 the sidebar ＋ opens the folder picker — name and key prefilled, e
   /* Creating it opened the project page (the peek closed) — reopen the
      chat; its trail now names the project it filed under (D-#854). */
   await page.goto(threadUrl(stack.webUrl, betaChat));
-  await expect(trail(page)).toContainText("Default · lilos-beta", {
+  await expect(trail(page)).toContainText("Hermes · lilos-beta", {
     timeout: 30_000,
   });
   await shoot(page, "ac-3-adopted");
@@ -382,7 +382,7 @@ test("AC-4 a chat's folder badge offers Add as project — same dialog, pre-pick
 
   /* The thread files under the project it made: the trail names it and
      the sidebar lists the row. */
-  await expect(trail(page)).toContainText("Default · lilos-gamma", {
+  await expect(trail(page)).toContainText("Hermes · lilos-gamma", {
     timeout: 30_000,
   });
   const side = v3Sidebar(page);
