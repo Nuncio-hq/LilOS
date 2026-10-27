@@ -112,15 +112,18 @@ export async function handleMessages(c: RelayCtx): Promise<false | undefined> {
          send and nothing retries it. The user's own message resumes a
          parked thread; so does a host-posted follow-up on a task child
          (D-#844/D-#847) — a child's only writer is the host, so without
-         this a settled child can never come back. Employee/system lines
-         on a plain thread never count as resuming. */
+         this a settled child can never come back.
+         D-#881: but only a REAL follow-up counts — `thread`'s postToThread
+         writes authorKind "user" on the child. A host system line (the
+         settled worktree cleanup's own verdict) or an employee utterance
+         is not the owner coming back and must never un-settle the row —
+         the cleanup would otherwise instantly undo itself. */
       const resumes =
         parsed.data.conversationId !== undefined &&
-        (parsed.data.authorKind === "user" && !isHost(peer)
-          ? true
-          : isHost(peer) &&
-            (await store.getConversation(parsed.data.conversationId))
-              ?.parentId !== undefined);
+        parsed.data.authorKind === "user" &&
+        (!isHost(peer) ||
+          (await store.getConversation(parsed.data.conversationId))
+            ?.parentId !== undefined);
       try {
         if (resumes) await resumeParked(c, parsed.data.conversationId);
         const { message, created } = await store.appendMessage({
