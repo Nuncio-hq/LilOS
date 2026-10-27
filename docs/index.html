@@ -263,7 +263,7 @@ packages/engine-*             adapter owning an engine</code></pre>
 <li id="d-539"><b>D-#539</b> Bundle ships <code>playwright</code> + <code>playwright-core</code> as real files under <code>Resources/app/pw</code>, via <code>createRequire</code> on first browser call. <em>Not: package.json shim, bundling playwright, ~500 MB browser cache in DMG.</em> <small>#539</small> <kbd>apps/harness/src/surfaces/browser.ts</kbd></li>
 <li id="d-232"><b>D-#232</b> Native chrome: <code>hiddenInset</code> + sidebar vibrancy; renderer owns drag regions (<code>lilos-drag</code>); one 52px toolbar row. <em>Not: framed window, drawn traffic lights, a second header row.</em> <small>#232 · #797</small> <kbd>apps/desktop/src/window-chrome.ts</kbd></li>
 <li id="d-215"><b>D-#215</b> LilOS Browser pages: main process, one <code>WebContentsView</code> per tab on <code>persist:lilos-browser</code>; renderers are chrome: one state snapshot. <em>Not: <code>&lt;webview&gt;</code>, window per tab, browser state via relay.</em> <small>#215</small> <kbd>apps/desktop/src/browser.ts</kbd></li>
-<li id="d-875"><b>D-#875</b> The app asks for Desktop/Documents/Downloads up front; host probes there are bounded, FOLDER_ACCESS only after a 1s readdir confirms. <em>Not: time-limited writes.</em> <small>#875 PR #879</small> <kbd>apps/desktop/src/folder-access.ts</kbd></li>
+<li id="d-875"><b>D-#875</b> The app asks for Desktop/Documents/Downloads up front; host probes there are bounded, FOLDER_ACCESS only after a 1s readdir confirms. <em>Not: time-limited writes.</em> <small>#875 · PR #879</small> <kbd>apps/desktop/src/folder-access.ts</kbd></li>
 </ul>
 <h3 id="decisions-mobile">Mobile</h3>
 <ul class="decisions">
@@ -298,7 +298,7 @@ packages/engine-*             adapter owning an engine</code></pre>
 <li id="d-761"><b>D-#761</b> Engine per runtime (<code>Employee.runtime</code>): lazy start, adapter+failure gates, runtime::session refs. <em>Not: shared engine, retry loops.</em> <small>#761</small> <kbd>apps/harness/src/engine/registry.ts</kbd></li>
 <li id="d-847"><b>D-#847</b> A helper is a thread with <code>parentId</code>: no list row, shown on its parent; waiting parents read Working; parent Stop ends only its turn. <em>Not: helper rows, a stop cascade.</em> <small>#847</small> <kbd>packages/ui/src/v3/v3-model.ts</kbd></li>
 <li id="d-862"><b>D-#862</b> Pin/settle/snooze are relay state; <code>archived</code> mirrors settled; a sweep settles 3-day-idle and merged-PR threads, never pinned, snoozed or helpers. <em>Not: client stamps, agent tools.</em> <small>#862</small> <kbd>apps/relay/src/sweep.ts</kbd></li>
-<li id="d-881"><b>D-#881</b> A settled thread's <code>.lilos/wt</code> copy goes back on <code>conversation.updated</code> — removed only clean + pushed-or-merged, branch <code>-d</code> only merged, one quiet line; un-settle re-materializes. <em>Not: force-removal, losing unpushed work, an agent tool.</em> <small>#881</small> <kbd>apps/harness/src/harness/worktree-cleanup.ts</kbd></li>
+<li id="d-881"><b>D-#881</b> A settled thread's <code>.lilos/wt</code> copy goes back on its settle — removed only clean (ignored files count), HEAD pushed-or-merged, and unshared; <code>-d</code> merged, <code>-D</code> at the PR head; one quiet line; un-settle restores. <em>Not: force-removal, an agent tool.</em> <small>#881</small> <kbd>apps/harness/src/harness/worktree-cleanup.ts</kbd></li>
 </ul>
 <h3 id="decisions-testing">Testing</h3>
 <ul class="decisions">

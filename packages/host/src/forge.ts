@@ -46,6 +46,10 @@ const PR_LIST_FIELDS = [
   "state",
   "isDraft",
   "headRefName",
+  /* D-#881: the squash-merge oracle — a merged PR's head oid is the local
+     tip's proof that its commits landed even though git never saw a
+     merge. */
+  "headRefOid",
   "baseRefName",
   "createdAt",
   /* D-#862: the terminal stamp the relay's settle sweep guards resumes
@@ -156,6 +160,7 @@ export type GhPrListEntry = {
   state: string;
   isDraft?: boolean;
   headRefName: string;
+  headRefOid?: string;
   baseRefName: string;
   createdAt: string;
   closedAt?: string | null;
@@ -298,6 +303,8 @@ export function mapPrList(entries: GhPrListEntry[]): ForgePrListItem[] {
             : "open",
       draft: v.isDraft === true,
       head: v.headRefName,
+      /* D-#881: gh's headRefOid → the squash-merge oracle input. */
+      ...(v.headRefOid ? { headOid: v.headRefOid } : {}),
       base: v.baseRefName,
       openedAt: v.createdAt,
       /* D-#862: the settle sweep's resume guard needs the terminal

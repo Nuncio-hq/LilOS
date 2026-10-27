@@ -14,6 +14,7 @@ import {
 import type { ReaperCandidate } from "../reaper";
 import { employeeHoldsCeo } from "./ceo-session";
 import type { HarnessCtx, SessionBinding } from "./ctx";
+import { goneBranchNote } from "./worktree-cleanup";
 
 /**
  * Session binding: create on first send, the #346 idle reaper's
@@ -211,7 +212,7 @@ export async function bindConversation(
      workstream's first `session.start`, AND a reattach whose thread's
      copy the settled cleanup took while it slept (un-settle or a fresh
      message re-materializes it from the branch first). A branch the
-     cleanup pruned post-merge reads as "gone" — the thread hears that
+     cleanup deleted post-merge reads as "gone" — the thread hears that
      instead of a bare git error. Either failure leaves the thread idle
      with a system note; the held message re-delivers on next register. */
   if (conv.workspace) {
@@ -225,12 +226,15 @@ export async function bindConversation(
         conversationId: conv.id,
         error: String(error),
       });
+      /* The dedupe key carries the settle stamp — a later cycle's note
+         is its own incident; the un-settle restore posts under the same
+         key so a re-bind never doubles the note. */
       await this.postSystem(
         { channelId, conversationId: conv.id },
         gone
-          ? `The worktree can't come back — branch ${conv.workspace.branch} is gone locally and on the remote. Move the thread's folder to keep working.`
+          ? await goneBranchNote(conv.workspace.repoPath, conv.workspace.branch)
           : `Couldn't create worktree ${conv.workspace.branch} — ${error instanceof Error ? error.message : String(error)}`,
-        `sys:${conv.id}:worktree`,
+        `sys:${conv.id}:worktree:${this.worktreeCleaned.get(conv.id) ?? 0}`,
       );
       return undefined;
     }

@@ -862,12 +862,6 @@ async function mergedRefs(root: string): Promise<string[]> {
   return refs;
 }
 
-/* D-#881: under `refs/lilos/` lives the cleanup's memory — a branch it
-   deleted gets a marker pointing at its last tip, so `worktreeEnsure` can
-   tell "we pruned it after merge" from "the branch never existed" and say
-   so on the thread instead of silently starting a fresh one. */
-const PRUNED = "refs/lilos/pruned/";
-
 /** `.lilos/.gitignore = *` — the same guard worktreeAdd writes, shared by
     the ensure path (a worktree dir under `.lilos/` must never dirty the
     parent checkout's status). */
@@ -891,9 +885,9 @@ export type WorktreeEnsureResult = {
  * message on a thread whose copy the cleanup took) share it. In order: the
  * dir is already a registered worktree → nothing; the branch still exists
  * → attach it; the branch lives only on the remote → attach a tracking
- * copy; the cleanup's own marker says it was pruned post-merge → refuse so
- * the caller can explain on the thread; else create at `base` (the
- * original #156 create). Never `--force`.
+ * copy; `base` → create (only a genuinely new workstream's FIRST bind
+ * passes one — a restore never reinvents); else "gone" — the caller names
+ * the merged PR on the thread. Never `--force`.
  */
 export async function worktreeEnsure(params: {
   /** Repo the worktree belongs to (any dir inside its work tree). */
@@ -946,27 +940,15 @@ export async function worktreeEnsure(params: {
     ]);
     return { dir: collapsePath(dir), branch: params.branch, how: "remote" };
   }
-  const gone = new HostError(
+  if (params.base) {
+    await git(root, ["worktree", "add", "-b", params.branch, dir, params.base]);
+    return { dir: collapsePath(dir), branch: params.branch, how: "created" };
+  }
+  throw new HostError(
     HOST_ERRORS.GIT_FAILED,
     `branch ${params.branch} is gone — local and remote both`,
     { reason: "gone" },
   );
-  if (
-    (await gitOr(root, [
-      "rev-parse",
-      "--verify",
-      `${PRUNED}${params.branch}`,
-    ])) !== null
-  ) {
-    throw new HostError(
-      HOST_ERRORS.GIT_FAILED,
-      `branch ${params.branch} is gone — the settled cleanup removed it and the remote has no copy`,
-      { reason: "gone" },
-    );
-  }
-  if (!params.base) throw gone;
-  await git(root, ["worktree", "add", "-b", params.branch, dir, params.base]);
-  return { dir: collapsePath(dir), branch: params.branch, how: "created" };
 }
 
 export type WorktreeRemoveResult = {
@@ -975,38 +957,112 @@ export type WorktreeRemoveResult = {
   /** The branch went with it — only ever true when its tip proved merged. */
   branchDeleted: boolean;
   /** Kept, and why. */
-  kept?: "dirty" | "unpushed" | "foreign";
+  kept?: "dirty" | "ignored" | "unpushed" | "foreign" | "head";
   /** Kept detail: porcelain file count (dirty), unpushed commit count. */
   count?: number;
+  /** Kept detail the thread names: ignored file names, the HEAD state, or
+      why the path reads foreign. */
+  detail?: string;
 };
 
+/* D-#881: ignored build output the cleanup may drop — first path segment
+   or `.lilos/attachments` subtree. Anything else ignored (`.env*` is the
+   classic) keeps the whole worktree and gets named on the thread. */
+const IGNORED_OK = new Set([
+  "node_modules",
+  "dist",
+  "build",
+  ".next",
+  ".turbo",
+  "coverage",
+  "test-results",
+]);
+
+/** Ignored untracked files minus the build-output allow-list. */
+async function riskyIgnored(dir: string): Promise<string[]> {
+  const raw = await gitOr(dir, [
+    "ls-files",
+    "--others",
+    "--ignored",
+    "--exclude-standard",
+  ]);
+  return (raw ?? "")
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .filter(
+      (p) =>
+        !IGNORED_OK.has(p.split("/")[0] ?? "") &&
+        !p.startsWith(".lilos/attachments/"),
+    );
+}
+
+/** A rebase/merge in flight leaves these in the worktree's private gitdir
+    (`--git-path` resolves per-worktree). Removing mid-operation strands it. */
+const IN_FLIGHT: [string, string][] = [
+  ["rebase-merge", "a rebase is in progress"],
+  ["rebase-apply", "a rebase is in progress"],
+  ["MERGE_HEAD", "a merge is in progress"],
+  ["CHERRY_PICK_HEAD", "a cherry-pick is in progress"],
+  ["REVERT_HEAD", "a revert is in progress"],
+];
+
 /**
- * D-#881: give a settled thread's `.lilos/wt` copy back — never lose work:
- * a dirty tree (untracked files included), a branch tip no remote branch
- * and no default branch holds, or a folder git never made at the path all
- * keep the whole copy and say why (`kept`). `git worktree remove` never
- * sees `--force`; the branch leaves only through `branch -d` after its tip
- * proves an ancestor of a merged ref, and a `refs/lilos/pruned/` marker
- * keeps its tip so `worktreeEnsure` knows it was the cleanup that took it.
- * `worktree prune` always runs — git's own list stays accurate.
+ * D-#881: give a settled thread's `.lilos/wt` copy back — never lose work.
+ * The dir goes only when it sits inside the repo's `.lilos/wt` (checked on
+ * realpaths, so a symlink escape is foreign), is a worktree git registered,
+ * is checked out on the thread's own branch with no merge/rebase in
+ * flight, is clean (untracked files count) AND has no ignored files beyond
+ * the build-output allow-list, and its HEAD commit is covered — held by a
+ * remote branch, an ancestor of a default ref, or equal/ancestor of the
+ * merged PR's head (`mergedHeadForBranch`, the forge's squash-merge
+ * answer). `git worktree remove` never sees `--force`; the branch leaves
+ * via `branch -d` when its tip is ancestor of a merged ref, or `-D` only
+ * when the tip IS the merged PR head (a squash merge proves every commit
+ * landed). `worktree prune` always runs — git's own list stays accurate.
  */
 export async function worktreeRemove(params: {
   /** Repo the worktree belongs to (any dir inside its work tree). */
   path: string;
   /** The worktree directory to give back. */
   dir: string;
-  /** The branch checked out there (`ws/<slug>` convention is the caller's). */
+  /** The branch the thread's row claims is checked out there. */
   branch: string;
+  /** Squash-merge oracle — the merged PR's `headRefOid` for the branch
+      (forge.prs), called only when remote/default coverage fails. */
+  mergedHeadForBranch?: (
+    branch: string,
+  ) => Promise<{ oid: string; pr?: number } | undefined>;
 }): Promise<WorktreeRemoveResult> {
   const root = await rootOrThrow(params.path);
   const dir = await canonDir(params.dir);
+  const keep = (
+    kept: NonNullable<WorktreeRemoveResult["kept"]>,
+    extra?: { count?: number; detail?: string },
+  ): WorktreeRemoveResult => ({
+    removed: false,
+    branchDeleted: false,
+    kept,
+    ...extra,
+  });
+  /* Only LilOS-made copies go back — the check lives HERE, on realpaths,
+     so a `~`- or symlink-shaped caller path can't smuggle an outside dir
+     past a startsWith test. */
+  const wtRoot = join(
+    await fsp.realpath(root).catch(() => resolve(root)),
+    ".lilos",
+    "wt",
+  );
+  if (!dir.startsWith(`${wtRoot}/`)) {
+    return keep("foreign", { detail: "not inside .lilos/wt" });
+  }
   const { worktrees } = await gitWorktrees({ path: root });
   const registered = worktrees.some((w) => resolve(expandPath(w.path)) === dir);
   const present = await exists(dir);
   /* A folder git never made sitting at the path is someone else's — keep
      it and say so rather than removing files the repo can't account for. */
   if (present && !registered) {
-    return { removed: false, branchDeleted: false, kept: "foreign" };
+    return keep("foreign", { detail: "not a registered worktree" });
   }
   const tip =
     (
@@ -1017,71 +1073,131 @@ export async function worktreeRemove(params: {
       ])
     )?.trim() ?? null;
   const defaults = await mergedRefs(root);
-  const merged =
-    tip !== null &&
-    (await defaults.reduce<Promise<boolean>>(
-      async (hit, ref) => (await hit) || (await isAncestor(root, tip, ref)),
+  const ancestorOf = (sha: string, refs: string[]) =>
+    refs.reduce<Promise<boolean>>(
+      async (hit, ref) => (await hit) || (await isAncestor(root, sha, ref)),
       Promise.resolve(false),
-    ));
+    );
+  /* The merged-PR oracle runs at most once — gh is a network call. */
+  let mergedHead: { oid: string; pr?: number } | undefined;
+  let mergedHeadAsked = false;
+  const mergedFromPr = async (sha: string): Promise<boolean> => {
+    if (!mergedHeadAsked) {
+      mergedHeadAsked = true;
+      mergedHead = params.mergedHeadForBranch
+        ? await params.mergedHeadForBranch(params.branch).catch(() => undefined)
+        : undefined;
+    }
+    return (
+      mergedHead !== undefined &&
+      (sha === mergedHead.oid || (await isAncestor(root, sha, mergedHead.oid)))
+    );
+  };
+  let headCovered = false;
   if (present) {
+    /* Judge the worktree's own HEAD, not the row's branch: a detached
+       HEAD (mid-rebase, bisect), an in-flight merge/cherry-pick, or a
+       checkout on some other branch all keep — silently. */
+    const headBranch = await headOf(dir);
+    if (!headBranch) {
+      return keep("head", { detail: "its HEAD is detached" });
+    }
+    if (headBranch !== params.branch) {
+      return keep("head", {
+        detail: `it's checked out on ${headBranch}, not ${params.branch}`,
+      });
+    }
+    for (const [marker, why] of IN_FLIGHT) {
+      const at = await gitOr(dir, ["rev-parse", "--git-path", marker]);
+      if (at && (await exists(resolve(dir, at.trim())))) {
+        return keep("head", { detail: why });
+      }
+    }
     const status = await gitStatus({ path: dir });
     if (!status.clean) {
-      return {
-        removed: false,
-        branchDeleted: false,
-        kept: "dirty",
-        count: status.files.length,
-      };
+      return keep("dirty", { count: status.files.length });
     }
+    const ignored = await riskyIgnored(dir);
+    if (ignored.length > 0) {
+      return keep("ignored", { detail: ignored.slice(0, 3).join(", ") });
+    }
+    const head =
+      (await gitOr(dir, ["rev-parse", "HEAD"]))?.trim() ?? params.branch;
     /* Every commit the remotes already hold is safe — `branch -r
-       --contains` asks all of them at once. Merged counts as safe too:
-       the tip sits on the default line even if no remote ref names it. */
-    if (tip && !merged) {
-      const covered =
-        (await gitOr(root, ["branch", "-r", "--contains", tip]))
-          ?.split("\n")
-          .some((l) => l.trim() !== "") === true;
-      if (!covered) {
-        const count =
-          (await remoteNameOf(root)) !== null
-            ? Number(
-                (
-                  await gitOr(root, [
-                    "rev-list",
-                    "--count",
-                    tip,
-                    "--not",
-                    "--remotes",
-                  ])
-                )?.trim(),
-              ) || undefined
-            : undefined;
-        return {
-          removed: false,
-          branchDeleted: false,
-          kept: "unpushed",
-          count,
-        };
-      }
+       --contains` asks all of them at once. An ancestor of a default
+       ref landed via a real merge; an equal/ancestor of the merged PR's
+       head landed via this repo's usual squash merge (D-#881 review). */
+    headCovered =
+      (await gitOr(root, ["branch", "-r", "--contains", head]))
+        ?.split("\n")
+        .some((l) => l.trim() !== "") === true;
+    if (!headCovered) {
+      headCovered = await ancestorOf(head, defaults);
+    }
+    if (!headCovered) {
+      headCovered = await mergedFromPr(head);
+    }
+    if (!headCovered) {
+      const count =
+        (await remoteNameOf(root)) !== null
+          ? Number(
+              (
+                await gitOr(root, [
+                  "rev-list",
+                  "--count",
+                  head,
+                  "--not",
+                  "--remotes",
+                ])
+              )?.trim(),
+            ) || undefined
+          : undefined;
+      return keep("unpushed", { count });
     }
     await git(root, ["worktree", "remove", dir]);
   }
   await git(root, ["worktree", "prune"]);
   let branchDeleted = false;
-  if (tip && merged) {
-    /* Marker first, then `-d` (never `-D`): `-d` is still the guard — it
-       refuses a branch checked out in another worktree. A surviving
-       marker under a live branch is harmless: the restore path checks
-       `refs/heads/` before it ever reads markers. */
+  if (tip) {
+    /* `-d` for a provable merge (tip is ancestor of a default ref — git
+       re-checks anyway); `-D` ONLY when the tip IS the merged PR head:
+       a squash merge leaves the branch "unmerged" to git but every
+       commit demonstrably landed. Anything less keeps the branch. */
+    const onDefault = await ancestorOf(tip, defaults);
     try {
-      await git(root, ["update-ref", `${PRUNED}${params.branch}`, tip]);
-      await git(root, ["branch", "-d", params.branch]);
-      branchDeleted = true;
+      if (onDefault) {
+        await git(root, ["branch", "-d", params.branch]);
+        branchDeleted = true;
+      } else if ((await mergedFromPr(tip)) && tip === mergedHead?.oid) {
+        await git(root, ["branch", "-D", params.branch]);
+        branchDeleted = true;
+      }
     } catch {
-      /* checked out elsewhere — stays; nothing was lost */
+      /* checked out in another worktree — stays; nothing was lost */
     }
   }
   return { removed: true, branchDeleted };
+}
+
+/** Remote-branch names with the remote prefix stripped (`origin/ws/x` →
+    `ws/x`; `origin/HEAD` dropped) — D-#881: slug picking must dodge a name
+    that only lives on the remote, or `worktreeEnsure` would attach it
+    instead of forking fresh. */
+export async function gitRemoteBranches(params: {
+  path: string;
+}): Promise<string[]> {
+  const root = await rootOrThrow(params.path);
+  const list = await gitProbe(root, [
+    "for-each-ref",
+    "--format=%(refname:short)",
+    "refs/remotes",
+  ]);
+  return list
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((s) => s.replace(/^[^/]+\//, ""))
+    .filter((s) => s !== "HEAD");
 }
 
 export async function gitDiscoverRepos(params: {

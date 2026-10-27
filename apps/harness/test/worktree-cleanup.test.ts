@@ -11,7 +11,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AppMessage, Conversation } from "@lilos/contracts/app";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { connectEngineWs } from "../src/engine/client";
+import { fakeEngineLauncher } from "../src/engine/launcher";
+import { EngineSupervisor } from "../src/engine/supervisor";
 import { createAppOps } from "../src/harness/app-ops";
+import { createMemoryLogger } from "../src/log";
 import {
   copyFixtureRepo,
   homes,
@@ -190,6 +194,22 @@ describe("settled worktree cleanup (D-#881)", () => {
       expect(
         git(repo, ["branch", "--list", "ws/*", "--format=%(refname:short)"]),
       ).toBe("");
+      /* D-#881 review: the quiet line is a host-posted SYSTEM message —
+         the relay's resume rule must leave the settle alone, or every
+         restart would ping-pong remove→line→un-settle→restore. */
+      await new Promise((r) => setTimeout(r, 400));
+      const after = await convRow(w, child.id);
+      expect(after?.settledAt).toBeTypeOf("number");
+      expect(after?.archived).toBe(true);
+      expect(existsSync(dir)).toBe(false);
+      expect(
+        (await messagesIn(w, child.channelId)).filter(
+          (m) =>
+            m.conversationId === child.id &&
+            m.authorKind === "system" &&
+            m.text.startsWith("Worktree cleaned up"),
+        ).length,
+      ).toBe(1);
     } finally {
       await w.cleanup();
     }
@@ -350,7 +370,10 @@ describe("settled worktree cleanup (D-#881)", () => {
         text: "one more thing",
         authorKind: "user",
       });
-      await waitFor(() => (existsSync(cwd) ? true : undefined), "dir back");
+      await waitFor(
+        () => (existsSync(join(cwd, "output.txt")) ? true : undefined),
+        "dir back",
+      );
       await waitFor(async () => {
         const messages = await messagesIn(w, conversation.channelId);
         return messages.filter(
@@ -358,10 +381,157 @@ describe("settled worktree cleanup (D-#881)", () => {
             m.conversationId === conversation.id && m.authorKind === "employee",
         )[1];
       }, "answer on the restored worktree");
-      expect(existsSync(join(cwd, "output.txt"))).toBe(true);
       expect(git(cwd, ["symbolic-ref", "--short", "HEAD"]).trim()).toBe(
         "ws/return",
       );
+    } finally {
+      await w.cleanup();
+    }
+  }, 30_000);
+
+  it("a live thread inside the same folder blocks; its settle releases", async () => {
+    const repo = seedRepo();
+    const w = await setupWorld({ homeDir: mkhome() });
+    try {
+      const { channel } = await openDmConversation(w.user);
+      const { conversation: a, cwd } = await openWorkstream(
+        w,
+        channel.id,
+        repo,
+        "shared",
+        "Work here",
+      );
+      await finished(w, a.id);
+      /* A second LIVE thread parked on the same folder — a shared-
+         isolation helper, a second thread bound to it. Its turn runs
+         there; removing A's copy out from under it is the data-loss
+         case the sharer guard exists for. */
+      const { conversation: b } = await w.user.request<{
+        conversation: Conversation;
+      }>("conversations.open", {
+        channelId: channel.id,
+        text: "share the folder",
+        cwd,
+      });
+      await finished(w, b.id);
+
+      await settle(w, a.id);
+      await new Promise((r) => setTimeout(r, 400));
+      expect(existsSync(cwd)).toBe(true);
+      expect(
+        (await messagesIn(w, a.channelId)).some(
+          (m) => m.conversationId === a.id && m.authorKind === "system",
+        ),
+      ).toBe(false);
+
+      /* The last sharer settling retires the guard — A's copy goes now,
+         and A's thread gets its line. */
+      await settle(w, b.id);
+      await waitFor(
+        () => (!existsSync(cwd) ? true : undefined),
+        "dir gone after the sharer settled",
+      );
+      await systemLine(w, a, "Worktree cleaned up");
+    } finally {
+      await w.cleanup();
+    }
+  }, 30_000);
+
+  it("un-settle after the cleanup restores the copy — no message needed", async () => {
+    const repo = seedRepo();
+    const w = await setupWorld({ homeDir: mkhome() });
+    try {
+      const { channel } = await openDmConversation(w.user);
+      const { conversation, cwd } = await openWorkstream(
+        w,
+        channel.id,
+        repo,
+        "unshelf",
+        "Work here",
+      );
+      await finished(w, conversation.id);
+      /* Push the branch so the copy is removable while the branch
+         survives to be re-attached. */
+      const remote = join(repo, "..", "remote.git");
+      mkdirSync(remote);
+      git(remote, ["init", "--bare", "-q", "-b", "main"]);
+      git(cwd, ["remote", "add", "origin", remote]);
+      writeFileSync(join(cwd, "output.txt"), "result\n");
+      git(cwd, ["add", "."]);
+      git(cwd, ["commit", "-qm", "result"]);
+      git(cwd, ["push", "-qu", "origin", "ws/unshelf"]);
+
+      await settle(w, conversation.id);
+      await waitFor(() => (!existsSync(cwd) ? true : undefined), "dir gone");
+      await systemLine(w, conversation, "Worktree cleaned up");
+
+      /* An un-settle (the shelf button, not a message) must still put
+         the copy back — "dir missing and thread is live" is the whole
+         restore condition, so an un-settle that lands mid-cleanup wins
+         the same way. */
+      await settle(w, conversation.id, false);
+      /* The dir appears before the checkout lands — wait on a file the
+         restore must contain, not the folder itself. */
+      await waitFor(
+        () => (existsSync(join(cwd, "output.txt")) ? true : undefined),
+        "dir back after un-settle",
+      );
+      expect(git(cwd, ["symbolic-ref", "--short", "HEAD"]).trim()).toBe(
+        "ws/unshelf",
+      );
+    } finally {
+      await w.cleanup();
+    }
+  }, 30_000);
+
+  it("an engine restart rebind of a settled thread does NOT re-create the copy", async () => {
+    const repo = seedRepo();
+    const w = await setupWorld({ homeDir: mkhome() });
+    try {
+      const { channel } = await openDmConversation(w.user);
+      const { conversation, cwd } = await openWorkstream(
+        w,
+        channel.id,
+        repo,
+        "reboot",
+        "Work here",
+      );
+      await finished(w, conversation.id);
+      await settle(w, conversation.id);
+      await waitFor(() => (!existsSync(cwd) ? true : undefined), "dir gone");
+      await systemLine(w, conversation, "Worktree cleaned up");
+
+      /* A fresh engine process knows none of the sessions — the resync
+         re-binds the (settled) binding; `ensureWorktree` must refuse:
+         restore is for LIVE threads only. */
+      const log = createMemoryLogger();
+      const supervisor = new EngineSupervisor({
+        launcher: fakeEngineLauncher({ repoRoot: process.cwd(), tick: 1, log }),
+        connect: async (url) => connectEngineWs(url),
+        onConnection: (conn) => w.harness.attachEngine(conn),
+        onState: () => {},
+        log,
+        minBackoffMs: 10,
+        maxConsecutiveCrashes: 3,
+      });
+      const before = (await convRow(w, conversation.id))?.engineRef;
+      await supervisor.start();
+      try {
+        await waitFor(
+          async () => {
+            const ref = (await convRow(w, conversation.id))?.engineRef;
+            return ref && ref !== before ? ref : undefined;
+          },
+          "rebound session ref",
+          8_000,
+        );
+        await new Promise((r) => setTimeout(r, 300));
+        expect(existsSync(cwd)).toBe(false);
+        const after = await convRow(w, conversation.id);
+        expect(after?.settledAt).toBeTypeOf("number");
+      } finally {
+        await supervisor.stop();
+      }
     } finally {
       await w.cleanup();
     }

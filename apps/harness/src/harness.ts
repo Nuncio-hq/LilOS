@@ -435,7 +435,9 @@ export class Harness {
   >();
 
   /** D-#881: `settledAt` stamp per conversation the worktree cleanup
-      already answered — cleared on un-settle. */
+      already answered — kept on un-settle; it also stamps the
+      worktree-note dedupe key so a fresh settle cycle's line is its own
+      incident. */
   private readonly worktreeCleaned = new Map<string, number>();
 
   /** D-#881: per-conversation serialization for settle/retry bursts. */

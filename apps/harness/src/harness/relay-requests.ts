@@ -40,6 +40,7 @@ import {
   INVALID_STATE,
   SESSION_NOT_FOUND,
 } from "./rpc";
+import { lilosWorktreeDir } from "./worktree-cleanup";
 
 /**
  * Relay-forwarded calls the harness answers (D-#26):
@@ -501,13 +502,22 @@ export async function folderDiscover(
  * both the never-created case (mode "new" sends `base`) and the restore
  * after a settled cleanup, attaching the surviving branch or its remote
  * copy instead of forking fresh.
+ *
+ * D-#881: two gates. A SETTLED thread's copy is the cleanup's business —
+ * an engine reattach that re-binds it must not resurrect the folder. And
+ * a thread that was bound before (an engineRef) or rides mode "existing"
+ * only ever RESTORES — into `.lilos/wt`, never `git worktree add` on a
+ * folder that was its own — with no `base`: a branch gone local and
+ * remote reports "gone", not a silent fresh fork.
  */
 export async function ensureWorktree(
   this: HarnessCtx,
   conv: Conversation,
 ): Promise<void> {
   const ws = conv.workspace;
-  if (!ws || !conv.cwd) return;
+  if (!ws || !conv.cwd || conv.settledAt !== undefined) return;
+  const firstBind = ws.mode === "new" && !conv.engineRef;
+  if (!firstBind && !(await lilosWorktreeDir(this, conv))) return;
   /* D-#881: a settle-cleanup or un-settle restore may still be swapping
      this worktree on its chain — never race it. The chain always
      resolves; the chain's own link calls `worktreeEnsure` directly. */
@@ -517,6 +527,6 @@ export async function ensureWorktree(
     path: ws.repoPath,
     dir: conv.cwd,
     branch: ws.branch,
-    ...(ws.mode === "new" ? { base: ws.base } : {}),
+    ...(firstBind ? { base: ws.base } : {}),
   });
 }

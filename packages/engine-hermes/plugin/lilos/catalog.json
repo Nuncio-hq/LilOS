@@ -1375,6 +1375,9 @@
                         "type": "string",
                         "minLength": 1
                       },
+                      "headOid": {
+                        "type": "string"
+                      },
                       "base": {
                         "type": "string",
                         "minLength": 1
@@ -1633,6 +1636,9 @@
                 "head": {
                   "type": "string",
                   "minLength": 1
+                },
+                "headOid": {
+                  "type": "string"
                 },
                 "base": {
                   "type": "string",

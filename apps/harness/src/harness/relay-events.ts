@@ -123,8 +123,8 @@ export function onRelayEvent(
       ceoOnConversation(this, conv);
       void this.onScheduledConversationUpdate(conv);
       /* D-#881: a settle stamps `settledAt` on this row — the worktree
-         cleanup reacts here; un-settle clears its marker so a later
-         settle cleans fresh. */
+         cleanup reacts here; an un-settle restore answers on the same
+         serialized chain. */
       void this.cleanupSettledWorktree(conv).catch((error) =>
         this.opts.log.warn("worktree cleanup failed", {
           conversationId: conv.id,
