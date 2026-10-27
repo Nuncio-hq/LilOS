@@ -59,7 +59,7 @@ function askText(ask: Ask): { title: string; text: string } {
   const r = ask.request;
   if (ask.hire)
     return {
-      title: `Hire ${ask.hire.name}`,
+      title: `Add agent ${ask.hire.name}`,
       text: `${ask.hire.name} · ${ask.hire.role} on ${ask.hire.model || "the engine's default model"}`,
     };
   // The question is the title; "The ask" row only adds the full text when

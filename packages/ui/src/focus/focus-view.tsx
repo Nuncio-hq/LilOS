@@ -312,7 +312,7 @@ export function FocusView(props: FocusViewProps) {
                   : work
                     ? "Edits land in this folder"
                     : isDM
-                      ? `Message ${lead?.name ?? "the employee"}…`
+                      ? `Message ${lead?.name ?? "the agent"}…`
                       : "Read-only on main"
             }
             above={

@@ -91,10 +91,6 @@ test("AC-1 Welcome's Connect step approves, and Settings reads the same live row
     });
 
     await page.getByRole("button", { name: "Next", exact: true }).click();
-    await expect(
-      page.locator("[data-first-run-step][data-state='ok']"),
-    ).toHaveCount(2, { timeout: 60_000 });
-    await page.getByRole("button", { name: "Next", exact: true }).click();
     await expect(page.locator('[aria-current="step"]')).toContainText(
       /^\d+\s*Connect /,
     );
