@@ -69,10 +69,13 @@ test.afterAll(async () => {
 test.describe.configure({ mode: "serial" });
 
 const DEFAULT_AGENT = { id: "default", name: "Default" };
+/* Popovers/menus fade in over ~200ms; `toBeVisible` passes at opacity 0,
+   so without this the shot can catch a ghost or nothing at all. */
 const shot = (page: Page, group: string, name: string) =>
   page.screenshot({
     path: path.join(OUT, group, `${name}.png`),
     fullPage: false,
+    animations: "disabled",
   });
 
 /** Wait for the opened thread's header + composer to be up. */
