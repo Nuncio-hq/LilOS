@@ -453,16 +453,15 @@ export function createMemoryStore(nowFn?: () => number): RelayStore {
         createdAt: input.createdAt ?? now(),
       };
       projects.set(project.id, project);
-      /* D-#854 round 2: re-add re-attaches the tombstoned ids; without a
-         tombstone (pre-existing detached rows) the fallback is any
-         still-detached ticket carrying this key's `KEY-n` id. A goal's row
+      /* D-#854: re-add re-attaches the tombstoned ids only — round 3
+         dropped the `KEY-n` prefix sweep: a different folder reusing a
+         key must not claim another removed project's rows. A goal's row
          has no key — named or via a ticket it owns. */
       const named = input.reattach;
       const ticketIds = new Set(named?.ticketIds ?? []);
       const goalIds = new Set(named?.goalIds ?? []);
-      const prefix = named ? null : new RegExp(`^${project.key}-\\d+$`);
       const ticketsOut = [...tickets.values()].filter(
-        (t) => !t.projectId && (ticketIds.has(t.id) || prefix?.test(t.id)),
+        (t) => !t.projectId && ticketIds.has(t.id),
       );
       for (const t of ticketsOut) {
         t.projectId = project.id;

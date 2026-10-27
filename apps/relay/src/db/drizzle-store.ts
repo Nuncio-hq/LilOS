@@ -1193,22 +1193,20 @@ export function createDrizzleStore(db: Db): RelayStore {
           createdAt: input.createdAt ?? now(),
         };
         tx.insert(schema.projects).values(project).run();
-        /* Re-add of a removed project (D-#854 round 2): the tombstone the
-           remove wrote (`input.reattach` — its goal/ticket ids) is the
-           exact set. Without one — rows detached before tombstones existed
-           — the fallback is any still-detached ticket carrying this key's
-           `KEY-n` id. A goal's own row has no key — it re-attaches named
-           or via a ticket it owns. */
+        /* Re-add of a removed project (D-#854): the tombstone the remove
+           wrote (`input.reattach` — its goal/ticket ids) is the exact set.
+           Round 3: NO prefix sweep — a different folder reusing this key
+           must not claim another removed project's rows. A goal's own row
+           has no key — it re-attaches named or via a ticket it owns. */
         const named = input.reattach;
         const ticketIds = new Set(named?.ticketIds ?? []);
         const goalIds = new Set(named?.goalIds ?? []);
-        const prefix = named ? null : new RegExp(`^${project.key}-\\d+$`);
         const ticketRows = tx
           .select()
           .from(schema.tickets)
           .where(isNull(schema.tickets.projectId))
           .all()
-          .filter((t) => ticketIds.has(t.id) || prefix?.test(t.id));
+          .filter((t) => ticketIds.has(t.id));
         for (const t of ticketRows) if (t.goalId) goalIds.add(t.goalId);
         const tickets = ticketRows.flatMap((row) =>
           tx

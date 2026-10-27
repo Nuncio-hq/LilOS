@@ -8,6 +8,7 @@ import { atom } from "nanostores";
 import { ensureFolderAccess, noteFolderAccessError } from "./folder-access";
 import {
   hostBranches,
+  hostCanonical,
   hostDiscoverRepos,
   hostIsRepo,
   hostList,
@@ -23,6 +24,45 @@ export const fsRows = atom<Record<string, FsDir>>({});
 
 /** "Found on this Mac" repos for the dialog header. */
 export const discovered = atom<string[]>([]);
+
+/* Canonical compare keys for listed paths (D-#854 round 3): a recent
+   stored `~/Code/lilos-alpha` and a scan that found `~/code/lilos-alpha`
+   (or a symlinked spelling) are the same folder — the picker's merge
+   dedupes on the host-computed key. Absent for a path the canonical call
+   didn't cover → the merge falls back to the literal string, today's
+   behavior. */
+export const folderKeys = atom<Record<string, string>>({});
+
+/** Learn the compare keys for `paths` (host-side realpath + fold); a
+    failure just leaves the old keys. */
+async function learnFolderKeys(paths: string[]): Promise<void> {
+  if (!paths.length) return;
+  try {
+    const { keys } = await hostCanonical(paths);
+    const next = { ...folderKeys.get() };
+    paths.forEach((p, i) => {
+      const k = keys[i];
+      if (k) next[p] = k;
+    });
+    folderKeys.set(next);
+  } catch {
+    /* No keys — the merge degrades to a literal compare, like before. */
+  }
+}
+
+/** The dialog's "Found on this Mac" list: the app's recents first, then
+    what the scan found — deduped by canonical key so one folder in two
+    spellings never lists twice (D-#854 round 3). */
+export function foundRows(
+  recents: { path: string; missing?: boolean }[],
+  discoveredRows: string[],
+  keys: Record<string, string>,
+): string[] {
+  const keyOf = (p: string) => keys[p] ?? p;
+  const known = recents.filter((f) => !f.missing).map((f) => f.path);
+  const seen = new Set(known.map(keyOf));
+  return [...known, ...discoveredRows.filter((d) => !seen.has(keyOf(d)))];
+}
 
 /** cwd → repo head (null = probed, not a repo; absent = not probed yet). */
 export const cwdInfo = atom<Record<string, { branch: string } | null>>({});
@@ -65,6 +105,7 @@ export async function refreshFolders(): Promise<void> {
     {},
   );
   folders.set(await Promise.all(res.folders.map((f) => probeFolder(f.path))));
+  void learnFolderKeys(res.folders.map((f) => f.path));
 }
 
 /** The project owning `folder` (D-#854): its own folder, or the deepest
@@ -223,4 +264,7 @@ export async function loadDiscovered(): Promise<void> {
   }
   discovered.set(r.repos.map((x) => x.path));
   fsRows.set({ ...fsRows.get(), ...stubs });
+  /* The dedupe keys ride along — a scanned spelling differing from the
+     stored one (case, symlink) resolves to the same folder. */
+  void learnFolderKeys(r.repos.map((x) => x.path));
 }

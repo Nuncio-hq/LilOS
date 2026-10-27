@@ -94,6 +94,11 @@ export type BranchesResult = {
 };
 
 export const hostList = (path: string) => host<ListResult>("fs.list", { path });
+/** Canonical compare keys for paths (D-#854): the "Found on this Mac"
+    dedupe — `~/code/x`, `~/Code/x` and a symlinked spelling share a key.
+    `keys[i]` answers `paths[i]`; order is the caller's. */
+export const hostCanonical = (paths: string[]) =>
+  host<{ keys: string[] }>("fs.canonical", { paths });
 export const hostIsRepo = (path: string) =>
   host<{ isRepo: boolean }>("git.isRepo", { path });
 export const hostBranches = (path: string) =>

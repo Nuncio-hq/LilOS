@@ -6,7 +6,7 @@
    opening a folder never creates a project anymore. Runs under bun:sqlite
    via a subprocess (vitest itself is Node). */
 import { spawnSync } from "node:child_process";
-import type { Conversation, Project } from "@lilos/contracts/app";
+import type { Project } from "@lilos/contracts/app";
 import { describe, expect, it } from "vitest";
 import { BUN, RELAY_DIR } from "./helpers";
 
@@ -291,5 +291,111 @@ describe("remove → re-add on the real store (D-#854)", () => {
       projectId: null,
       convProjectId: null,
     });
+  });
+});
+
+/* The round-3 data bugs on the real store, through the whole relay:
+   (a) a same-key create on a DIFFERENT folder must not take a removed
+       project's detached rows — reattach is the folder's tombstone only,
+       the `KEY-n` prefix sweep is gone;
+   (b) a variant spelling of a live project's folder answers THAT project —
+       no LIL2 beside LIL. */
+const LIFECYCLE_SCRIPT = `
+import { Database } from "bun:sqlite";
+import { drizzle } from "drizzle-orm/bun-sqlite";
+import { APP_PROTOCOL_VERSION } from "@lilos/contracts/app";
+import { createDrizzleStore } from "./src/db/drizzle-store.ts";
+import { applyMigrations } from "./src/db/migrate.ts";
+import * as schema from "./src/db/schema.ts";
+import { createRelay } from "./src/session";
+
+const db = new Database(":memory:");
+db.exec("PRAGMA foreign_keys = ON");
+applyMigrations(db);
+const store = createDrizzleStore(drizzle(db, { schema }));
+const relay = createRelay({ store, token: "tk", homeDir: "/Users/ada" });
+const frames = [];
+const conn = relay.connect({
+  send: (f) => frames.push(JSON.parse(f)),
+  close: () => {},
+});
+let n = 0;
+const r = async (method, params = {}) => {
+  const id = "q" + n++;
+  await conn.receive(JSON.stringify({ jsonrpc: "2.0", id, method, params }));
+  const f = frames.find((x) => x.id === id);
+  return f.error ? { error: f.error.message } : f.result;
+};
+await r("session.hello", { protocolVersion: APP_PROTOCOL_VERSION, token: "tk" });
+
+const lily = (await r("projects.create", { folder: "~/Code/Lily", key: "LIL" })).project;
+const g = (await r("goals.create", { project: "LIL", title: "Lily goal" })).goal;
+const t = (await r("tickets.create", { project: "LIL", title: "Lily ticket", goalId: g.id })).ticket;
+await r("projects.remove", { id: lily.id });
+const lilos = (await r("projects.create", { folder: "~/Code/LilOS", key: "LIL" })).project;
+const findTicket = async () =>
+  (await r("tickets.list", {})).tickets.find((x) => x.id === t.id)?.projectId ?? null;
+const findGoal = async () =>
+  (await r("goals.list", {})).goals.find((x) => x.id === g.id)?.projectId ?? null;
+const ticketInLilos = await findTicket();
+const goalInLilos = await findGoal();
+const lilosNext = (await r("tickets.create", { project: "LIL", title: "LilOS ticket" })).ticket.id;
+const lily2 = (await r("projects.create", { folder: "~/Code/Lily", key: "LY" })).project;
+const ticketHome = await findTicket();
+const goalHome = await findGoal();
+
+// Same folder again under a variant spelling → the same project row.
+const first = (await r("projects.create", { folder: "~/Code/Other", key: "OTH" })).project;
+const slashed = (await r("projects.create", { folder: "~/Code/Other/" })).project;
+const cased = (await r("projects.create", { folder: "~/code/other" })).project;
+const count = (await r("projects.list", {})).projects.length;
+
+console.log(JSON.stringify({
+  ticketInLilos, goalInLilos, lilosNext, ticketHome, goalHome,
+  lily2: lily2.id, lilos: lilos.id,
+  firstId: first.id, slashedId: slashed.id, slashedKey: slashed.key,
+  casedId: cased.id, darwin: process.platform === "darwin",
+  count,
+}));
+`;
+
+describe("the removed-project data bugs on the real store (D-#854 round 3)", () => {
+  it("a same-key create never steals detached rows; a variant spelling never duplicates", () => {
+    const run = spawnSync(BUN, ["-e", LIFECYCLE_SCRIPT], {
+      cwd: RELAY_DIR,
+      encoding: "utf8",
+      timeout: 30_000,
+    });
+    expect(run.status, run.stderr).toBe(0);
+    const out = JSON.parse(run.stdout.trim().split("\n").at(-1) ?? "null") as {
+      ticketInLilos: string | null;
+      goalInLilos: string | null;
+      lilosNext: string;
+      ticketHome: string | null;
+      goalHome: string | null;
+      lily2: string;
+      lilos: string;
+      firstId: string;
+      slashedId: string;
+      slashedKey: string;
+      casedId: string;
+      darwin: boolean;
+      count: number;
+    };
+    // Lily's rows stayed detached through LilOS's same-key create…
+    expect(out.ticketInLilos).toBeNull();
+    expect(out.goalInLilos).toBeNull();
+    // …while numbering still looked past the detached LIL-1.
+    expect(out.lilosNext).toBe("LIL-2");
+    // …and Lily's own folder's re-add got them back (tombstone by folder).
+    expect(out.ticketHome).toBe(out.lily2);
+    expect(out.goalHome).toBe(out.lily2);
+    // The variant spelling answered the project it already had.
+    expect(out.slashedId).toBe(out.firstId);
+    expect(out.slashedKey).toBe("OTH");
+    if (out.darwin) expect(out.casedId).toBe(out.firstId); // ~/code/other IS it
+    /* LilOS + Lily + Other — no duplicate on macOS (a wrong-case dir on a
+       case-sensitive fs really is another folder, so it counts there). */
+    expect(out.count).toBe(out.darwin ? 3 : 4);
   });
 });

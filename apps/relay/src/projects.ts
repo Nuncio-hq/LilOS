@@ -1,5 +1,5 @@
 import type { Project, WorkspaceIntent } from "@lilos/contracts/app";
-import { canonicalPath, collapsePath, expandPath } from "@lilos/host";
+import { collapsePath, expandPath, folderMatchKey } from "@lilos/host";
 
 /**
  * Filing a thread under a project (D-#854). The relay is the one place that
@@ -44,11 +44,10 @@ export function openFolderOf(
  * resolved via the filesystem — and case-folded on macOS, where
  * `~/Code/LilOS` and `~/code/lilos` are the same directory. Two spellings
  * of one folder dedupe and file identically on the Mac and the phone.
+ * `folderMatchKey` is the host's copy of the same rule (the picker's
+ * "Found on this Mac" dedupe asks it through `fs.canonical`).
  */
-export function folderKeyOf(path: string, home: string): string {
-  const canonical = canonicalPath(path, home);
-  return process.platform === "darwin" ? canonical.toLowerCase() : canonical;
-}
+export const folderKeyOf = folderMatchKey;
 
 /**
  * The project a folder files under (D-#854): the project whose folder IS it,

@@ -350,6 +350,47 @@ describe("projects.list / projects.create", () => {
     const linked = await open(user, channel.id, { cwd: "~/LinkToLilOS/sub" });
     expect(linked.projectId).toBe(project.id);
   });
+
+  it("a variant spelling of an existing project's folder answers that project — no duplicate", async () => {
+    const home = mkhome();
+    mkdirSync(join(home, "Code", "LilOS"), { recursive: true });
+    symlinkSync(join(home, "Code", "LilOS"), join(home, "LinkToLilOS"));
+    const { relay } = newWorld(home);
+    const user = await helloed(relay);
+
+    const { project } = await call<{ project: Project }>(
+      user,
+      "projects.create",
+      { folder: "~/Code/LilOS" },
+    );
+    expect(project.key).toBe("LIL");
+
+    // Trailing slash on the same spelling — one project, everywhere.
+    const slash = await call<{ project: Project }>(user, "projects.create", {
+      folder: "~/Code/LilOS/",
+      key: "LIL",
+    });
+    expect(slash.project.id).toBe(project.id);
+
+    // The symlinked spelling resolves to the same directory.
+    const linked = await call<{ project: Project }>(user, "projects.create", {
+      folder: "~/LinkToLilOS",
+    });
+    expect(linked.project.id).toBe(project.id);
+
+    /* macOS's case-insensitive fs: `~/code/lilos` IS `~/Code/LilOS` —
+       answering with a fresh LIL2 project would split the folder in two
+       (D-#854 round 3). */
+    if (process.platform === "darwin") {
+      const cased = await call<{ project: Project }>(user, "projects.create", {
+        folder: "~/code/lilos",
+        key: "LIL",
+      });
+      expect(cased.project.id).toBe(project.id);
+    }
+
+    expect(await projects(user)).toEqual([project]);
+  });
 });
 
 describe("conversations.open files the thread (D-#854)", () => {
@@ -793,5 +834,75 @@ describe("projects.remove (D-#854)", () => {
     expect(assigned.ticket.id).toBe("LIL-1");
     expect(assigned.conversation.cwd).toBe("~/Code/LilOS");
     expect(assigned.conversation.projectId).toBe(re.project.id);
+  });
+
+  it("a different folder taking the same key never steals a removed project's rows (D-#854 round 3)", async () => {
+    const { user } = await setup();
+    const lily = await call<{ project: Project }>(user, "projects.create", {
+      folder: "~/Code/Lily",
+      name: "Lily",
+      key: "LIL",
+    });
+    const { goal } = await call<{ goal: { id: string } }>(
+      user,
+      "goals.create",
+      { project: lily.project.id, title: "Lily goal" },
+    );
+    const { ticket } = await call<{ ticket: { id: string } }>(
+      user,
+      "tickets.create",
+      { project: lily.project.id, title: "Lily ticket", goalId: goal.id },
+    );
+    expect(ticket.id).toBe("LIL-1");
+    await call(user, "projects.remove", { id: lily.project.id });
+
+    /* A DIFFERENT folder asking for the same key: only that folder's own
+       tombstone may reattach — there is none, so Lily's detached rows are
+       not LilOS's to take (the removed prefix sweep is gone, round 3). */
+    const lilos = await call<{ project: Project }>(user, "projects.create", {
+      folder: "~/Code/LilOS",
+      name: "LilOS",
+      key: "LIL",
+    });
+    const { tickets } = await call<{
+      tickets: { id: string; projectId?: string }[];
+    }>(user, "tickets.list", {});
+    expect(tickets.find((t) => t.id === ticket.id)?.projectId).toBeUndefined();
+    const { goals } = await call<{
+      goals: { id: string; projectId?: string }[];
+    }>(user, "goals.list", {});
+    expect(goals.find((g) => g.id === goal.id)?.projectId).toBeUndefined();
+    /* The same-key create still numbered past the detached LIL-1 — the
+       sweep is gone but prefix-wide numbering is not. */
+    const { ticket: fresh } = await call<{ ticket: { id: string } }>(
+      user,
+      "tickets.create",
+      { project: lilos.project.id, title: "LilOS ticket" },
+    );
+    expect(fresh.id).toBe("LIL-2");
+
+    // Re-adding Lily's own folder (under a fresh key — LIL is taken) puts
+    // her rows back: the tombstone is keyed by folder, not by key.
+    const lily2 = await call<{ project: Project }>(user, "projects.create", {
+      folder: "~/Code/Lily",
+      name: "Lily",
+      key: "LY",
+    });
+    const back = (
+      await call<{ tickets: { id: string; projectId?: string }[] }>(
+        user,
+        "tickets.list",
+        {},
+      )
+    ).tickets.find((t) => t.id === ticket.id);
+    expect(back?.projectId).toBe(lily2.project.id);
+    const goalBack = (
+      await call<{ goals: { id: string; projectId?: string }[] }>(
+        user,
+        "goals.list",
+        {},
+      )
+    ).goals.find((g) => g.id === goal.id);
+    expect(goalBack?.projectId).toBe(lily2.project.id);
   });
 });

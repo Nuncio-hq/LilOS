@@ -187,6 +187,8 @@ export const NOT_AGENT_FACING: Record<string, string> = {
   "host.describe": "host API bookkeeping for the app, not the agent",
   "host.user": "identity prefill for the user",
   "fs.list": "the engine has its own file tools in the session folder",
+  "fs.canonical":
+    "folder-picker bookkeeping — the web host dedupes recents/discovered by canonical key (#854)",
   "fs.complete": "the engine has its own file tools",
   "fs.tree": "the engine has its own file tools",
   "fs.search": "the engine has its own file tools",

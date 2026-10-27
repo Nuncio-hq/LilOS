@@ -73,6 +73,17 @@ export function canonicalPath(p: string, home = HOME): string {
 }
 
 /**
+ * The compare key two folder spellings dedupe/match under (D-#854):
+ * `canonicalPath` — and folded on macOS, where `~/Code` and `~/code` are
+ * the same directory. One implementation for the relay's filing, the
+ * project's get-or-create, and the picker's "Found on this Mac" dedupe.
+ */
+export function folderMatchKey(p: string, home = HOME): string {
+  const canonical = canonicalPath(p, home);
+  return process.platform === "darwin" ? canonical.toLowerCase() : canonical;
+}
+
+/**
  * Resolve a caller path to a REAL absolute path under `home` — `undefined`
  * when it escapes: `..` above home, an absolute path outside home, a symlink
  * pointing outside, or a dot-dir segment anywhere below home (hidden folders

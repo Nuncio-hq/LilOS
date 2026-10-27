@@ -11,7 +11,9 @@ import { appConfig } from "../lib/config";
 import {
   addFolder as addToRecents,
   discovered,
+  folderKeys,
   folders,
+  foundRows,
   fsRows,
   loadDir,
   loadDiscovered,
@@ -79,13 +81,15 @@ export function AddFolderHost() {
   const fsListing = useAtom(fsRows);
   const discoveredRows = useAtom(discovered);
   const projectRows = useAtom(relay.projects);
+  const keys = useAtom(folderKeys);
   /* The folders the app already knows come first, one click each, then what
      the scan found: a folder given earlier but never used has no project
-     yet, and this is where it becomes one. */
-  const found = useMemo(() => {
-    const known = recents.filter((f) => !f.missing).map((f) => f.path);
-    return [...known, ...discoveredRows.filter((d) => !known.includes(d))];
-  }, [recents, discoveredRows]);
+     yet, and this is where it becomes one. The merge dedupes on the
+     canonical key — `~/code/x` and `~/Code/x` are one folder (D-#854 r3). */
+  const found = useMemo(
+    () => foundRows(recents, discoveredRows, keys),
+    [recents, discoveredRows, keys],
+  );
   if (!ask) return null;
   return createPortal(
     <AddFolderDialog

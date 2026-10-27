@@ -78,8 +78,15 @@ export async function handleProjects(c: RelayCtx): Promise<false | undefined> {
       const mine = existing.find(
         (p) => folderKeyOf(p.folder, homeDir) === folderKey,
       );
+      /* Get-or-create (round 3): the canonical folder compare decides —
+         `~/code/lilos` IS the project `~/Code/LilOS` made. Answering it
+         keeps one project per folder; a LIL2 beside it would split it. */
+      if (mine) {
+        c.respond(peer, id, { project: mine });
+        return;
+      }
       const key = parsed.data.key;
-      if (!mine && key) {
+      if (key) {
         const takenBy = existing.find((p) => p.key === key);
         /* A typed key must land verbatim — a conflict is the caller's to
            fix, never a silent rename to `KEY2` (D-#854 round 2). */

@@ -130,6 +130,44 @@
         "additionalProperties": false
       }
     },
+    "fs.canonical": {
+      "doc": "Canonical compare keys for paths — symlink-resolved, ~-aware, case-folded on macOS (dedupe lists across spellings).",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "paths": {
+            "minItems": 1,
+            "maxItems": 200,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "required": [
+          "paths"
+        ],
+        "additionalProperties": false
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "keys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "keys"
+        ],
+        "additionalProperties": false
+      }
+    },
     "fs.complete": {
       "doc": "Directory-path autocomplete for a typed `word`.",
       "params": {
