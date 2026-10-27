@@ -2538,14 +2538,13 @@ function applyFakeDiffToCwd(cwd: string, diff: FileDiff) {
 /** Instant title: the shared first-full-sentence rule (#886). */
 const derivedTitle = autoTitle;
 
-/** Deterministic stand-in for the small-model rewrite: Title Case the
-    sentence the derived rule picked, so it always differs from `derived`. */
+/** Deterministic stand-in for the small-model rewrite: the derived sentence
+    without its closing dot or a trailing "please" — the user's own
+    casing is kept (#886: no Title Case). */
 function llmTitle(promptText: string): string {
   return autoTitle(promptText)
     .replace(/…$/, "")
-    .split(" ")
-    .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w))
-    .join(" ");
+    .replace(/[\s,]*(?:\bplease)?[\s.]*$/i, "");
 }
 
 const words = (t: string) => t.split(/(?<=\s)/);
