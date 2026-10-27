@@ -47,8 +47,9 @@ test("effort chip: no shrink above narrow, no label cap", () => {
   );
   noShrinkAboveNarrow(effortTrigger);
   iconOnlyNarrow(effortTrigger);
-  /* Lowest priority: gone when even icons don't fit. */
-  expect(effortTrigger?.className).toContain("@max-[260px]:hidden");
+  /* Stays on the row at every width (the narrow Send turns into an arrow
+     instead, #897). */
+  expect(effortTrigger?.className).not.toMatch(/:hidden/);
   const label = container.querySelector("[data-effort]");
   expect(label?.textContent).toBe("Extra high");
   expect(label?.className).not.toMatch(/max-w-/);

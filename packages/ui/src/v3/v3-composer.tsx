@@ -1,4 +1,4 @@
-import { FolderIcon, GitBranchIcon } from "lucide-react";
+import { ArrowUpIcon, FolderIcon, GitBranchIcon } from "lucide-react";
 import {
   type KeyboardEvent,
   type ReactNode,
@@ -211,7 +211,7 @@ export function Composer({
               labels down to 480px and never shrink or overlap; the chevrons go
               under 680px, the agent and project names collapse to their icons
               under 560px (never cut mid-word), everything is icon-only under
-              480px and the effort chip steps aside under 260px. The key hint
+              480px, Send included (an arrow). The key hint
               leaves at 640px. No overflow clip here: ChipMenu's list opens
               upward out of the row, and even `overflow-x: clip` eats its hit
               area where it sticks out. */}
@@ -254,18 +254,24 @@ export function Composer({
             )}
           </div>
           <Kbd className="shrink-0 @max-[640px]:hidden">⌘↵</Kbd>
+          {/* #897: under 480px Send is an arrow, so every chip keeps its
+              icon on the row without overlapping it. */}
           <button
             type="button"
             disabled={!sendable}
             onClick={submit}
+            aria-label={working ? "Queue" : "Send"}
             className={cn(
-              "ml-1 inline-flex h-[26px] shrink-0 items-center rounded-[7px] border px-2.5 font-medium text-[13px] transition-[background,transform] enabled:active:scale-[0.97]",
+              "ml-1 inline-flex h-[26px] shrink-0 items-center rounded-[7px] border px-2.5 font-medium text-[13px] transition-[background,transform] enabled:active:scale-[0.97] @max-[480px]:px-1.5",
               sendable
                 ? "border-foreground bg-foreground text-background hover:bg-foreground/85"
                 : "border-[var(--v3-line)] text-muted-foreground/60",
             )}
           >
-            {working ? "Queue" : "Send"}
+            <ArrowUpIcon className="hidden size-3.5 @max-[480px]:block" />
+            <span className="@max-[480px]:hidden">
+              {working ? "Queue" : "Send"}
+            </span>
           </button>
         </div>
       </div>

@@ -55,9 +55,13 @@ async function expectOneRow(peekEl: Locator, c = controls(peekEl)) {
   const mids = boxes.map(mid);
   for (const m of mids)
     expect(Math.abs(m - mids[0]), "chips share one row").toBeLessThan(8);
-  // …and the row reads left to right: chips, then Send.
+  // …and the row reads left to right: chips, then Send — none drawn over
+  // its neighbour (#897: the narrow row used to stack icons on each other).
   for (let i = 1; i < boxes.length; i++)
-    expect(boxes[i].x).toBeGreaterThan(boxes[i - 1].x);
+    expect(
+      boxes[i].x,
+      "no control overlaps the one before it",
+    ).toBeGreaterThanOrEqual(boxes[i - 1].x + boxes[i - 1].width - 0.5);
 }
 
 test("composer keeps its controls on one row at 1288 px, quiet labels dropped", async ({
@@ -89,17 +93,17 @@ test("at 390 px the same row holds as icons, and the composer still sends", asyn
   await expect(input).toBeVisible({ timeout: 30_000 });
   await expectOneRow(peek(page));
 
-  /* Narrow = icon + a short label on each dropdown: the agent chip drops
-     its name and shrinks to the avatar, model shows the name clipped, and
-     access shows "Ask" rather than "Full access". */
+  /* Narrow = icons only (#897): the agent chip drops its name and shrinks
+     to the avatar, and access keeps its level in its title and shield. */
   const agent = controls(peek(page)).agent;
   await expect(agent.getByText("Builder", { exact: true })).not.toBeVisible();
   const a = await box(agent);
   expect(a.width, "agent chip collapses to its icon").toBeLessThan(48);
   const pill = controls(peek(page)).access;
-  await expect(pill).toContainText("Ask");
+  await expect(pill).toHaveAttribute("data-access", "ask");
+  await expect(pill).toHaveAttribute("title", /^Ask/);
   const p = await box(pill);
-  expect(p.width, "access collapses to icon + short label").toBeLessThan(80);
+  expect(p.width, "access collapses to its icon").toBeLessThan(40);
 
   /* Usable: type and the Send button arms (the keys do what the dropped
      hint described). */

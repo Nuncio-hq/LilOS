@@ -48,7 +48,7 @@ export function EffortPicker({
             aria-label={`Reasoning effort: ${current}`}
             aria-haspopup="menu"
             title={`Reasoning effort · ${effort ? current : "engine default"}`}
-            className="h-6 shrink-0 @max-[260px]:hidden gap-1.5 rounded-md px-1.5 @max-[480px]:gap-0 @max-[480px]:px-1 font-normal text-[12.5px] text-muted-foreground hover:bg-[var(--v3-hover)] hover:text-foreground aria-expanded:bg-[var(--v3-hover)] aria-expanded:text-foreground"
+            className="h-6 shrink-0 gap-1.5 rounded-md px-1.5 @max-[480px]:gap-0 @max-[480px]:px-1 font-normal text-[12.5px] text-muted-foreground hover:bg-[var(--v3-hover)] hover:text-foreground aria-expanded:bg-[var(--v3-hover)] aria-expanded:text-foreground"
             data-slot="effort-picker-trigger"
           />
         }
