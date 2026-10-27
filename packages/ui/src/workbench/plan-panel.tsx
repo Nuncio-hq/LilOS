@@ -148,7 +148,7 @@ export function PlanPanel({ plans }: { plans: Plan[] }) {
               {done === total
                 ? "Done"
                 : current.kind === "tasks"
-                  ? "The employee's own list"
+                  ? "The agent's own list"
                   : LABEL[current.status]}
             </span>
             <span className="ml-auto font-mono text-[12px] text-muted-foreground">

@@ -516,7 +516,15 @@ export async function bootStack(
   const home =
     opts.home ?? mkdtempSync(path.join(tmpdir(), `lilos-e2e-${tag}-`));
   const dropHome = () => {
-    if (ownsHome) rmSync(home, { recursive: true, force: true });
+    /* A stopping stack can still be writing its last files: ENOTEMPTY
+       retries give the shutdown a beat to finish before the rm fails. */
+    if (ownsHome)
+      rmSync(home, {
+        recursive: true,
+        force: true,
+        maxRetries: 5,
+        retryDelay: 200,
+      });
   };
   const leakTag = engineTag(tag);
   let spawned: ChildProcess | undefined;

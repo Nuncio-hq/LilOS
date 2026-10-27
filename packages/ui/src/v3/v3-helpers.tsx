@@ -156,15 +156,15 @@ export function HelpersBlock({
 
 /** The park line a thread's own page carries while it is off the lists
    (#862): asleep — "Snoozed · back 14:32", it keeps working underneath —
-   or settled on the shelf. Each draws only with the action that can undo
-   it (Wake now, Un-settle). */
+   or done on the shelf. Each draws only with the action that can undo
+   it (Wake now, Not done). */
 export function ParkLine({
   thread: t,
   settled,
   act,
 }: {
   thread: V3Thread;
-  /** The thread lives on the Settled shelf (`archivedThreads`). */
+  /** The thread lives on the Done shelf (`archivedThreads`). */
   settled?: boolean;
   act: V3PageProps["act"];
 }) {
@@ -179,7 +179,7 @@ export function ParkLine({
         </span>
         {act.archiveThread && (
           <Btn small onClick={() => act.archiveThread?.(t.id, false)}>
-            Un-settle
+            Not done
           </Btn>
         )}
       </div>

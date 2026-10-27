@@ -4,8 +4,9 @@
      you have not seen shows on it (D-#563);
    - the Hire page lists the engine's own profiles as a quiet second section
      and hires one onto the profile (capability by presence);
-   - first run keeps a strip the window can be dragged by, and a failed engine
-     check offers "See status" only where the app has a status view. */
+   - first run keeps a strip the window can be dragged by, and the problem
+     screen (in place of the steps while something is down, #885) offers
+     "See status" only where the app has a status view. */
 import {
   act,
   cleanup,
@@ -28,7 +29,8 @@ import type {
   V3Status,
   V3Thread,
 } from "../src/v3/v3-types";
-import { EngineStep } from "../src/v3/v3-welcome-engine";
+import { V3Welcome } from "../src/v3/v3-welcome";
+import { EngineProblem, firstRunProblem } from "../src/v3/v3-welcome-engine";
 
 afterEach(cleanup);
 
@@ -253,31 +255,133 @@ describe("first run", () => {
     );
   });
 
-  test("a failed engine check offers See status only with a status view", () => {
+  test("the problem screen offers See status only with a status view", () => {
     const shown = vi.fn();
     const { unmount } = render(
-      <EngineStep data={data()} act={actions({ showStatus: shown })} />,
+      <EngineProblem data={data()} act={actions({ showStatus: shown })} />,
     );
+    expect(firstRunProblem(data())).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "See status" }));
     expect(shown).toHaveBeenCalledTimes(1);
     unmount();
 
-    render(<EngineStep data={data()} act={actions()} />);
+    render(<EngineProblem data={data()} act={actions()} />);
     expect(screen.queryByRole("button", { name: "See status" })).toBeNull();
   });
 
-  test("a healthy engine check has no See status", () => {
-    render(
-      <EngineStep
-        data={data({
-          settings: {
-            engine: { state: "ok", name: "Hermes" },
-            relay: { state: "ok" },
-          },
-        } as never)}
-        act={actions({ showStatus: vi.fn() })}
-      />,
+  test("a down relay shows the plain mapping, never the part's own name (#885)", () => {
+    /* The status rules' real output for an unreachable relay — "Start the
+       relay…" — must not reach the screen; See status keeps the raw text. */
+    const down = data({
+      settings: {
+        engine: { state: "starting", name: "Hermes" },
+        relay: {
+          state: "down",
+          problem:
+            "Relay unreachable.\nStart the relay on this Mac, then reopen LilOS.",
+        },
+      },
+    } as never);
+    expect(firstRunProblem(down)).toBe(true);
+    const { container } = render(<EngineProblem data={down} act={actions()} />);
+    expect(
+      screen.getByText(/LilOS's background service isn't running/),
+    ).toBeTruthy();
+    expect(
+      container.querySelector("[data-first-run-problem]")?.textContent,
+    ).not.toMatch(/relay/i);
+  });
+
+  test("a down harness leg, or a start that stalls, is the problem (#885)", () => {
+    const downHarness = data({
+      settings: {
+        engine: { state: "starting", name: "Hermes" },
+        harness: { state: "down" },
+        relay: { state: "ok" },
+      },
+    } as never);
+    expect(firstRunProblem(downHarness)).toBe(true);
+    const { unmount } = render(
+      <EngineProblem data={downHarness} act={actions()} />,
     );
-    expect(screen.queryByRole("button", { name: "See status" })).toBeNull();
+    expect(screen.getByText(/starts the engine isn't answering/)).toBeTruthy();
+    unmount();
+
+    const stuckHarness = data({
+      settings: {
+        engine: { state: "starting", name: "Hermes", stuck: "harness" },
+        relay: { state: "ok" },
+      },
+    } as never);
+    expect(firstRunProblem(stuckHarness)).toBe(true);
+
+    const stuckEngine = data({
+      settings: {
+        engine: { state: "starting", name: "Hermes", stuck: "engine" },
+        harness: { state: "ok" },
+        relay: { state: "ok" },
+      },
+    } as never);
+    expect(firstRunProblem(stuckEngine)).toBe(true);
+    render(<EngineProblem data={stuckEngine} act={actions()} />);
+    expect(screen.getByText(/engine hasn't answered yet/)).toBeTruthy();
+  });
+
+  test("a slow engine start shows the calm note, no problem screen (#885)", async () => {
+    const slow = data({
+      settings: {
+        engine: { state: "starting", name: "Hermes", slow: true },
+        harness: { state: "ok" },
+        relay: { state: "ok" },
+      },
+    } as never);
+    expect(firstRunProblem(slow)).toBe(false);
+    const { unmount } = render(
+      <V3Welcome data={slow} go={vi.fn()} act={actions()} />,
+    );
+    // To the last step: Start waits as "Starting…" with the note beside.
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByRole("button", { name: "Starting…" })).toBeTruthy();
+    expect(
+      screen.getByText("Still starting — this can take a minute."),
+    ).toBeTruthy();
+    expect(screen.queryByText(/quit LilOS/i)).toBeNull();
+    unmount();
+
+    // Recovery: the engine reports — note and wait clear, Start is live.
+    const ok = data({
+      settings: {
+        engine: { state: "ok", name: "Hermes" },
+        harness: { state: "ok" },
+        relay: { state: "ok" },
+      },
+    } as never);
+    render(<V3Welcome data={ok} go={vi.fn()} act={actions()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(
+      screen.queryByText("Still starting — this can take a minute."),
+    ).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Start", exact: true }),
+    ).toBeTruthy();
+  });
+
+  test("a healthy relay and engine never show the problem screen", () => {
+    const ok = data({
+      settings: {
+        engine: { state: "ok", name: "Hermes" },
+        relay: { state: "ok" },
+      },
+    } as never);
+    expect(firstRunProblem(ok)).toBe(false);
+    const starting = data({
+      settings: {
+        engine: { state: "starting", name: "Hermes" },
+        relay: { state: "starting" },
+      },
+    } as never);
+    expect(firstRunProblem(starting)).toBe(false);
   });
 });

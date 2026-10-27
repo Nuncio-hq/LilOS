@@ -289,7 +289,7 @@ const threadRow = (page: Page, title: string) =>
     .locator('[role="button"]', { hasText: title })
     .first();
 
-test("AC-1 failed rename, settle and un-settle show their reasons", async ({
+test("AC-1 failed rename, done and not done show their reasons", async ({
   page,
 }) => {
   await page.setViewportSize(VIEW);
@@ -321,7 +321,7 @@ test("AC-1 failed rename, settle and un-settle show their reasons", async ({
   );
   await expect(page.locator(TOAST)).toContainText(LOST);
 
-  /* Settle — its own method since D-#862, {settled: true}. */
+  /* Done — its own method since D-#862, {settled: true}. */
   fail.heal();
   fail.reject({
     match: (m, p) => m === "conversations.settle" && p.settled === true,
@@ -331,21 +331,21 @@ test("AC-1 failed rename, settle and un-settle show their reasons", async ({
   await row
     .getByRole("button", { name: "Thread actions", exact: true })
     .click();
-  await page.getByRole("menuitem", { name: "Settle thread" }).click();
+  await page.getByRole("menuitem", { name: "Done", exact: true }).click();
   await expect(page.locator(TOAST)).toContainText(
-    "Couldn't settle the thread",
+    "Couldn't mark the thread done",
     { timeout: 15_000 },
   );
   await expect(page.locator(TOAST)).toContainText(LOST);
-  await shot(page, "ac1-settle-toast");
+  await shot(page, "ac1-done-toast");
 
-  /* Un-settle — the row moves under the folded Settled shelf first. */
+  /* Not done — the row moves under the folded Done shelf first. */
   fail.heal();
   await row.hover();
   await row
     .getByRole("button", { name: "Thread actions", exact: true })
     .click();
-  await page.getByRole("menuitem", { name: "Settle thread" }).click();
+  await page.getByRole("menuitem", { name: "Done", exact: true }).click();
   /* The sidebar renders the same fold — scope the shelf click to #v3-main. */
   await page.locator('#v3-main [data-fold="settled"] > button').click();
   const settledMenu = page
@@ -358,15 +358,15 @@ test("AC-1 failed rename, settle and un-settle show their reasons", async ({
     message: ERR,
   });
   await settledMenu.click();
-  await page.getByRole("menuitem", { name: "Un-settle thread" }).click();
+  await page.getByRole("menuitem", { name: "Not done" }).click();
   await expect(page.locator(TOAST)).toContainText(
-    "Couldn't un-settle the thread",
+    "Couldn't bring the thread back",
     { timeout: 15_000 },
   );
   await expect(page.locator(TOAST)).toContainText(LOST);
 });
 
-test("AC-1 the thread's own header renames and settles, and failures say so", async ({
+test("AC-1 the thread's own header renames and marks done, and failures say so", async ({
   page,
 }) => {
   await page.setViewportSize(VIEW);
@@ -408,15 +408,15 @@ test("AC-1 the thread's own header renames and settles, and failures say so", as
     { timeout: 15_000 },
   );
 
-  /* A failed settle toasts too — `conversations.settle` since D-#862. */
+  /* A failed done toasts too — `conversations.settle` since D-#862. */
   fail.reject({
     match: (m, p) => m === "conversations.settle" && p.settled === true,
     message: ERR,
   });
   await menu.click();
-  await page.getByRole("menuitem", { name: "Settle thread" }).click();
+  await page.getByRole("menuitem", { name: "Done", exact: true }).click();
   await expect(page.locator(TOAST)).toContainText(
-    "Couldn't settle the thread",
+    "Couldn't mark the thread done",
     {
       timeout: 15_000,
     },

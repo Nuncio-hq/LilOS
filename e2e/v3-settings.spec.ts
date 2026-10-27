@@ -7,6 +7,7 @@ import {
   skipFirstRun,
   v3Sidebar,
 } from "./helpers/stack";
+import { openTroubleshooting } from "./helpers/status";
 
 /**
  * Settings in the v3 shell (real stack: relay + harness on engine-fake). The
@@ -86,7 +87,9 @@ test("General and Engine & models show the real company and engine; what you cha
   await expect(
     approvals(page).getByRole("radio", { checked: true }),
   ).toHaveText(/Ask before risky commands/);
-  await expect(main(page)).toContainText(/relay \d+\.\d+\.\d+ · harness \d/);
+  // About shows the app version only; the relay/harness builds sit under
+  // Troubleshooting on the Engine tab (#885).
+  await expect(main(page)).toContainText(/LilOS \d+\.\d+\.\d+|\d+\.\d+\.\d+/);
 
   // Rename the company and yourself in place: the sidebar and Home follow.
   const fact = (label: string) =>
@@ -121,8 +124,11 @@ test("General and Engine & models show the real company and engine; what you cha
   // Engine & models: the engine names itself and is running, the relay is
   // connected, and the agents on it are the company's real ones.
   await settings(page, "engine");
+  // The engine card, relay row and checks live inside Troubleshooting (#885).
+  await openTroubleshooting(page);
   await expect(main(page)).toContainText("Engine-fake", { timeout: 30_000 });
   await expect(main(page)).toContainText("0.0.0");
+  await expect(main(page)).toContainText(/relay \d+\.\d+\.\d+ · harness \d/);
   // "Running" is said once — by the engine's card, not again under Status.
   await expect(main(page).getByText("Running")).toHaveCount(1);
   const relayRow = main(page)

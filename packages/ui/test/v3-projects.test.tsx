@@ -4,7 +4,7 @@
      chat", and (where the app can) "New project from a folder…"; it sends the
      picked project's folder, and nothing for a plain chat;
    - the next chat starts where the last one did, a plain chat included;
-   - a project's page lists its live and past threads without tickets;
+   - a project's page lists its threads by status without tickets (#887);
    - the trail and the rows name the project a thread lives in. */
 import {
   act,
@@ -277,7 +277,7 @@ describe("a project's page", () => {
     id: "p_app",
   });
 
-  test("lists its live and its past threads, and nothing from another project", () => {
+  test("lists its threads by status, and nothing from another project", () => {
     const d = data({
       projects: [APP, WEB],
       threads: [
@@ -286,16 +286,21 @@ describe("a project's page", () => {
         thread("other", "working", { projectId: "p_web" }),
         thread("plain", "done"),
       ],
+      archivedThreads: [thread("parked", "done", { projectId: "p_app" })],
     });
     render(<V3ProjectPage {...props(d)} />);
-    const live = document.querySelector("[data-project-live]") as HTMLElement;
-    const past = document.querySelector("[data-project-past]") as HTMLElement;
-    expect(within(live).getByText("Title run")).toBeTruthy();
-    expect(within(past).getByText("Title old")).toBeTruthy();
-    expect(screen.queryByText("Title other")).toBeNull();
-    expect(screen.queryByText("Title plain")).toBeNull();
+    const box = document.querySelector("[data-project-threads]") as HTMLElement;
+    /* Active reads off the list — a finished-but-listed thread sits there
+       (#887); Working and Done fold away. */
+    expect(within(box).getByText("Title old")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Working \(1\)/ }));
+    expect(within(box).getByText("Title run")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Done \(1\)/ }));
+    expect(within(box).getByText("Title parked")).toBeTruthy();
+    expect(within(box).queryByText("Title other")).toBeNull();
+    expect(within(box).queryByText("Title plain")).toBeNull();
     // The page is the project: its rows do not repeat the name.
-    expect(live.textContent).not.toContain("App");
+    expect(box.textContent).not.toContain("App");
     expect(screen.getByText("/repo/app")).toBeTruthy();
   });
 
@@ -310,13 +315,16 @@ describe("a project's page", () => {
     expect(within(on).getByText("Reviewer")).toBeTruthy();
   });
 
-  test("a long past is cut, and Show all brings the rest", () => {
+  test("a long Done is cut, and Show all brings the rest", () => {
     const many = Array.from({ length: 15 }, (_, i) =>
       thread(`t${i}`, "done", { projectId: "p_app" }),
     );
     render(
-      <V3ProjectPage {...props(data({ projects: [APP], threads: many }))} />,
+      <V3ProjectPage
+        {...props(data({ projects: [APP], archivedThreads: many }))}
+      />,
     );
+    fireEvent.click(screen.getByRole("button", { name: /Done \(15\)/ }));
     expect(screen.getAllByText(/^Title t/)).toHaveLength(12);
     fireEvent.click(screen.getByRole("button", { name: /Show all 15/ }));
     expect(screen.getAllByText(/^Title t/)).toHaveLength(15);

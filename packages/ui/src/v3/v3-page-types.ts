@@ -38,7 +38,7 @@ export type V3Route =
       page: "settings";
       view?: "general" | "engine" | "phone" | "connectors" | "skills";
     }
-  /** First run: name the company, check the engine, hire the CEO, add a project. */
+  /** First run: your name, the first agent, a project folder. */
   | { page: "welcome" }
   /** A new chat, opened like any record beside the page you are on; `id` is
      the agent it starts with (you already chose who, so no picker first). */
@@ -246,13 +246,17 @@ export type V3Actions = {
   /** The one-time approval that lets the engine's agents see the app;
      rows update in `settings.connect`. Absent without engine support. */
   connectEngine?: () => Promise<void>;
-  /** First run done: the company exists and the app opens on Home. The
-     agent is the first one hired (the CEO, where the company has one); a
-     name or model left out keeps what the engine started it with, and no
-     folder means the first chat picks one. Rejects only if nothing could be
-     saved: the welcome says so and stays open. */
+  /** "Choose folder…" in first run (#885): the app opens its own folder
+     picker (the same one a new chat's project menu uses) and `onPicked`
+     gets the path, which lands in the typed field — a path from typing
+     stays the fallback. Absent: no button, typing only. */
+  pickFolder?: (onPicked: (path: string) => void) => void;
+  /** First run done: the app opens on Home. The agent is the first one
+     (the CEO, where the company has one); a name or model left out keeps
+     what the engine started it with, and no folder means the first chat
+     picks one. Rejects only if nothing could be saved: the welcome says so
+     and stays open. */
   finishSetup: (s: {
-    company: string;
     me: string;
     agentName?: string;
     agentModel?: string;
@@ -264,11 +268,11 @@ export type V3Actions = {
   /** Renames a thread in place (an empty title is not a rename). Absent: the
      app cannot, and no title is editable. */
   renameThread?: (threadId: string, title: string) => void;
-  /** Settles a thread (`true`: it leaves every list for the Settled shelf —
+  /** Settles a thread (`true`: it leaves every list for the Done shelf —
      finished work parked, not deleted — and settling takes its pin off) or
      brings it back to the top of Active. The wire keeps the name
      `archiveThread` until the backend slice renames archive to settle
-     (#862); the UI says Settle. Absent: no settle controls. */
+     (#862); the UI says Done / Not done (#887). Absent: no done controls. */
   archiveThread?: (threadId: string, archived: boolean) => void;
   /** Pins a thread to the top of the list (`true`) or takes the pin off.
      Absent: no pin controls. */
@@ -280,9 +284,9 @@ export type V3Actions = {
   /** Brings a snoozed thread back now ("Wake now"): the snooze is over, it
      returns to where it belongs. Absent: no Wake control. */
   wakeThread?: (threadId: string) => void;
-  /** The per-thread auto-settle switch: `false`, the 3-day-idle and
-     PR-merged sweep leaves this thread alone. Absent: no Auto-settle
-     choice. */
+  /** The per-thread auto-settle flag: `false`, the 3-day-idle and
+     PR-merged sweep leaves this thread alone. The desktop menu dropped its
+     switch (#887); the relay keeps the field and the default stays on. */
   setAutoSettle?: (threadId: string, enabled: boolean) => void;
   /** ⌘K's message search: what people and agents said, newest relevance
      first. Rejects when the search failed (the app has already said why).

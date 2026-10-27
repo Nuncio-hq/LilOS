@@ -188,13 +188,58 @@ test("AC-1 a chat in a folder no project covers is a plain chat — folder shown
   await expect(
     side.getByRole("button", { name: "lilos-alpha", exact: true }),
   ).toHaveCount(0);
-  // The badge's menu offers "Add as project".
+  /* The badge's menu offers "Add as project" — it opens the project
+     dialog pre-picked to this folder (D-#854). */
   await panel(page).locator("[data-wsbadge]").click();
-  await expect(
-    page.getByRole("menuitem", { name: "Add as project" }),
-  ).toBeVisible();
-  await page.keyboard.press("Escape");
+  const addAs = page.getByRole("menuitem", { name: "Add as project" });
+  await expect(addAs).toBeVisible();
   await shoot(page, "ac-1-folder-chat");
+  await addAs.click();
+  const addDialog = page.getByRole("dialog", {
+    name: "New project from a folder",
+  });
+  await expect(addDialog).toBeVisible();
+  await addDialog.getByRole("button", { name: "Create project" }).click();
+  await expect(addDialog).toHaveCount(0);
+  /* A sidebar project row is a jump: the project IS the page (D-#769),
+     its threads list on it. */
+  await expect(
+    side.getByRole("button", { name: "lilos-alpha", exact: true }),
+  ).toBeVisible({ timeout: 30_000 });
+  await side.getByRole("button", { name: "lilos-alpha", exact: true }).click();
+  const project = v3Main(page);
+  await expect(project.getByText("Project", { exact: true })).toBeVisible();
+  /* One list by status (#887): a finished turn keeps the thread Active —
+     a conversation settles on the relay's idle sweep, not on turn end.
+     The plain chat is nowhere here. */
+  const listed = project.locator("[data-project-threads]");
+  const row = listed
+    .locator("[data-thread-row]")
+    .filter({ hasText: /hello in alpha/i });
+  await expect(row).toHaveCount(1);
+  await expect(listed.getByText(/just talking/i)).toHaveCount(0);
+
+  /* The same statuses the Threads page draws (#887): Done moves the row
+     to the project's Done fold, Not done returns it to Active. */
+  await row
+    .getByRole("button", { name: "Thread actions", exact: true })
+    .click();
+  await page.getByRole("menuitem", { name: "Done", exact: true }).click();
+  const doneFold = listed.locator('[data-fold="settled"] > button');
+  await expect(doneFold).toBeVisible({ timeout: 30_000 });
+  if ((await doneFold.getAttribute("aria-expanded")) === "false")
+    await doneFold.click();
+  await expect(
+    listed.locator("[data-settled-list] [data-thread-row]"),
+  ).toContainText(/hello in alpha/i);
+  await listed
+    .locator("[data-settled-list] [data-thread-row]")
+    .getByRole("button", { name: "Thread actions", exact: true })
+    .click();
+  await page.getByRole("menuitem", { name: "Not done" }).click();
+  await expect(doneFold).toHaveCount(0);
+  await expect(row).toHaveCount(1);
+  await shoot(page, "ac-1-project-page");
   await noDm(page);
 });
 
@@ -293,7 +338,7 @@ test("AC-3 the sidebar ＋ opens the folder picker — name and key prefilled, e
   });
   await expect(
     project
-      .locator("[data-project-live], [data-project-past]")
+      .locator("[data-project-threads] [data-thread-row]")
       .filter({ hasText: /beta chat, pre-project/i }),
   ).toHaveCount(1, { timeout: 30_000 });
   await noDm(page);
@@ -412,27 +457,39 @@ test("AC-6 after a restart the projects and the chats are filed as before; nothi
   );
   await page.goto(`${stack.webUrl}/`);
   const side = v3Sidebar(page);
-  // lilos-beta survives; lilos-gamma stayed removed; nothing re-filed.
-  await expect(
-    side.getByRole("button", { name: "lilos-beta", exact: true }),
-  ).toBeVisible({
-    timeout: 60_000,
-  });
+  // lilos-alpha and lilos-beta survive; lilos-gamma stayed removed.
+  for (const name of ["lilos-alpha", "lilos-beta"])
+    await expect(side.getByRole("button", { name, exact: true })).toBeVisible({
+      timeout: 60_000,
+    });
   await expect(
     side.getByRole("button", { name: "lilos-gamma", exact: true }),
   ).toHaveCount(0);
+  /* Its turn finished before the restart — a finished turn keeps the
+     thread Active (#887); only the relay's idle sweep settles one. */
+  await side.getByRole("button", { name: "lilos-alpha", exact: true }).click();
+  const alphaThreads = v3Main(page).locator("[data-project-threads]");
+  await expect(
+    alphaThreads
+      .locator("[data-thread-row]")
+      .filter({ hasText: /hello in alpha/i }),
+  ).toHaveCount(1, { timeout: 30_000 });
+  /* Reopened, the alpha thread still shows its project in the trail —
+     the same row its project page listed. */
+  await page.goto(threadUrl(stack.webUrl, alphaChat));
+  await expect(trail(page)).toContainText("· lilos-alpha", {
+    timeout: 30_000,
+  });
+  await expect(trail(page)).not.toContainText("Chat ·");
+  // lilos-beta kept the chat that predated the project.
   await side.getByRole("button", { name: "lilos-beta", exact: true }).click();
   await expect(
     v3Main(page)
-      .locator("[data-project-live], [data-project-past]")
+      .locator("[data-project-threads] [data-thread-row]")
       .filter({ hasText: /beta chat, pre-project/i }),
   ).toHaveCount(1, { timeout: 30_000 });
-  /* The alpha and gamma chats are still chats in their folders after the
-     restart — the trails name Chat, not a project. */
-  await page.goto(threadUrl(stack.webUrl, alphaChat));
-  await expect(trail(page)).toContainText("Chat · lilos-alpha", {
-    timeout: 30_000,
-  });
+  /* The gamma chat is still a chat in its folder after the restart —
+     the trail names Chat, not a project. */
   await page.goto(threadUrl(stack.webUrl, gammaChat));
   await expect(trail(page)).toContainText("Chat · lilos-gamma", {
     timeout: 30_000,

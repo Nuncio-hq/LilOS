@@ -282,10 +282,64 @@ describe("task_create worktree isolation (D-#848)", () => {
         const kids = conversations.filter((c) => c.parentId);
         return kids.length === 1 ? kids : undefined;
       }, "exactly one child");
+      /* The row lands before the bind finishes — wait for the worktree
+         session before counting registrations. */
+      const wtDir = first.task.worktree?.path ?? "";
+      await waitFor(async () => {
+        const call = w.engineCalls.find(
+          (c) =>
+            c.method === "session.start" &&
+            (c.params as { cwd?: string }).cwd === wtDir,
+        );
+        return call ? true : undefined;
+      }, "child session.start in the worktree");
       expect(
         git(repo, ["worktree", "list", "--porcelain"]).split("worktree ")
           .length - 1,
       ).toBe(2); // main checkout + the one task worktree
+    } finally {
+      await w.cleanup();
+    }
+  }, 30_000);
+
+  it("a slug that exists only as a remote branch is dodged too (D-#881)", async () => {
+    const repo = seedRepo();
+    const homeDir = mkhome();
+    const w = await setupWorld({ homeDir });
+    try {
+      /* `ws/fix-flaky` lives ONLY on the remote — a stale push from an
+         earlier run. Taking the bare slug would make `worktreeEnsure`
+         attach that branch instead of forking fresh. */
+      const remote = join(repo, "..", "remote.git");
+      mkdirSync(remote);
+      git(remote, ["init", "--bare", "-q", "-b", "main"]);
+      git(repo, ["remote", "add", "origin", remote]);
+      git(repo, ["push", "-qu", "origin", "main:ws/fix-flaky"]);
+      git(repo, ["fetch", "-q", "origin"]);
+
+      const { ops } = await parentIn(w, repo, homeDir);
+      const r = await ops.taskCreate({
+        agent: "Bea",
+        prompt: "Check the flaky test",
+        title: "Fix the flaky test",
+      });
+      expect(r.task.worktree?.branch).not.toBe("ws/fix-flaky");
+      expect(r.task.worktree?.branch).toMatch(/^ws\/fix-flaky-\d+$/);
+      const wtDir = r.task.worktree?.path ?? "";
+      await waitFor(async () => {
+        const call = w.engineCalls.find(
+          (c) =>
+            c.method === "session.start" &&
+            (c.params as { cwd?: string }).cwd === wtDir,
+        );
+        return call ? true : undefined;
+      }, "child session.start in the worktree");
+      /* And it forked fresh — a local branch at the parent's HEAD, not
+         a tracking copy of the remote ws/fix-flaky. */
+      expect(headOf(wtDir)).toBe(headOf(repo));
+      expect(git(repo, ["worktree", "list", "--porcelain"])).toContain(
+        `worktree ${wtDir}`,
+      );
     } finally {
       await w.cleanup();
     }

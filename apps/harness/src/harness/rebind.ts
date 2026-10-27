@@ -32,6 +32,11 @@ export async function doRebindConversation(
   binding: SessionBinding,
 ) {
   const conv = this.conversationFromAtom(binding.conversationId);
+  /* D-#881: the thread's worktree may have been cleaned while this
+     session slept — re-materialize it before the replacement
+     `session.start` runs in `conv.cwd`. A dead branch surfaces as the
+     rebind's own failure, like any other bind error. */
+  if (conv?.workspace) await this.ensureWorktree(conv);
   const employee = await this.resolveEmployee(conv);
   const conn = this.connFor(binding);
   if (!conn) return;

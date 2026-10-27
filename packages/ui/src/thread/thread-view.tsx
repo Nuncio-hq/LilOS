@@ -346,7 +346,7 @@ export function ThreadView(props: ThreadViewProps) {
               : repo
                 ? "Read-only on main. Start work to edit code."
                 : isDM
-                  ? `Message ${leadEmp?.name ?? "the employee"}…`
+                  ? `Message ${leadEmp?.name ?? "the agent"}…`
                   : `thread ${thread.session}`
         }
       />

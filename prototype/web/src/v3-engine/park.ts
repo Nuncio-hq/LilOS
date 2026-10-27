@@ -11,9 +11,10 @@ import { type Engine, threadPatch } from "./context";
    sleep — it keeps working underneath, on its folded shelf, until the wake
    time, a raised hand (needs you / stuck / failed — the model's `snoozed`
    wakes it), or your next message, whichever is first; Wake now ends it;
-   Auto-settle off keeps one thread from parking itself. Settle and
-   Un-settle stay on the wire's archiveThread in chats.ts. All mock — the
-   relay slice syncs these fields across your machines. */
+   autoSettleOff keeps one thread from parking itself (the menu's switch
+   went away in #887; the flag stays). Done and Not done stay on the wire's
+   archiveThread in chats.ts. All mock — the relay slice syncs these fields
+   across your machines. */
 
 /* The ask a snoozed working thread can still raise (the demo for "it wakes
    when it needs you"): what its agent would have asked once it got there,

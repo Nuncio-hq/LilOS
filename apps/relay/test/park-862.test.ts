@@ -313,6 +313,41 @@ describe("D-#862 early wake", () => {
     expect(resumed?.archived).toBe(false);
   });
 
+  it("host system/employee lines on a task child never resume it — only a real follow-up does (D-#881)", async () => {
+    const { store, relay, oscar, channel, conversation } = await setup();
+    const live = await store.getConversation(conversation.id);
+    if (!live) throw new Error("fixture: conversation missing");
+    live.parentId = "conv_parent";
+    const host = await registeredHost(relay);
+    for (const authorKind of ["system", "employee"] as const) {
+      await oscar.connection.receive(
+        req("conversations.settle", {
+          conversationId: conversation.id,
+          settled: true,
+        }),
+      );
+      await host.connection.receive(
+        req("messages.post", {
+          channelId: channel.id,
+          conversationId: conversation.id,
+          authorKind,
+          text: "the cleanup's verdict",
+        }),
+      );
+      const after = await store.getConversation(conversation.id);
+      expect(after?.settledAt, `${authorKind} line un-settled`).toBeTypeOf(
+        "number",
+      );
+      expect(after?.archived).toBe(true);
+      await oscar.connection.receive(
+        req("conversations.settle", {
+          conversationId: conversation.id,
+          settled: false,
+        }),
+      );
+    }
+  });
+
   it("messages.send on a parked tray row resumes the thread — wake frame first", async () => {
     const { store, relay, oscar, channel, conversation } = await setup();
     await oscar.connection.receive(

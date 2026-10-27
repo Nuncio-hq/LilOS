@@ -43,7 +43,7 @@ test.afterAll(async () => {
 
 test.describe.configure({ mode: "serial" });
 
-const ROLE = /stock employee profile/;
+const ROLE = /built-in agent profile/;
 
 /* The person's page: role in the title line, status in the "Now" row. The
    page lists the person's threads below it with their own pills, so the
