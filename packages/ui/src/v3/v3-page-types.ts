@@ -151,6 +151,9 @@ export type V3Actions = {
         asks for no model). */
     model: string;
     runtime?: string;
+    /** The hire row's own description — mirrored onto the record so a
+        memory-only engine's restart re-seeds from it (#872). */
+    description?: string;
   }) => Promise<string>;
   /** The engine's profiles, read fresh each time the Hire page opens so one
      made or freed elsewhere shows up. Absent where the engine cannot list
@@ -166,6 +169,8 @@ export type V3Actions = {
     name: string;
     role: string;
     runtime?: string;
+    /** The profile's one-line description, mirrored onto the record. */
+    description?: string;
   }) => Promise<string>;
   /** Starts a ⌘K draft plan: its tickets (and the threads that can start now). */
   startPlan?: (plan: Extract<V3Draft, { kind: "plan" }>, text: string) => void;

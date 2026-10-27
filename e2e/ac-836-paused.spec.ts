@@ -83,7 +83,7 @@ test("the sidebar is the daily app's, and Home is the daily Home with its compos
   /* The roster is there as the Agents section — a flat list with its ＋ to
      add one (#870): browsable rows, not a page you navigate to. */
   await expect(side.getByText("Agents", { exact: true })).toBeVisible();
-  await expect(side.getByRole("button", { name: /default/i })).toBeVisible();
+  await expect(side.getByRole("button", { name: /hermes/i })).toBeVisible();
   await expect(side.getByRole("button", { name: "Add agent" })).toBeVisible();
   /* Nav-only sidebar (#862's accepted design): the thread rows, shelves and
      folds all live on the Threads page — the sidebar mirrors none of it. */
@@ -259,7 +259,7 @@ test("?company=1 shows the company layer back, untouched", async ({ page }) => {
       side.getByRole("button", { name: new RegExp(`^${name}`) }),
     ).toBeVisible();
   await expect(side.locator("[data-company-label]")).not.toHaveText("");
-  await expect(side.getByRole("button", { name: /default/i })).toBeVisible();
+  await expect(side.getByRole("button", { name: /hermes/i })).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/company.png` });
 
   // And a company route resolves as itself again.

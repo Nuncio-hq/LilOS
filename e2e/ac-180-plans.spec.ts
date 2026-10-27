@@ -47,7 +47,7 @@ test.describe.configure({ mode: "serial" });
 /* A new chat with the seeded Default employee: the draft beside Threads, then
    the thread in the side peek. An id that names nobody opens the draft on the
    default agent. */
-const DEFAULT_AGENT = { id: "default", name: "Default" };
+const DEFAULT_AGENT = { id: "default", name: "Hermes" };
 
 /** Every plan/tasks card in the thread (data-plan carries the planId). */
 const planCards = (page: Page) => page.locator("[data-plan]");

@@ -257,7 +257,15 @@ export function ScheduleList({
 }
 
 /** An agent page's Schedules section: its jobs, and a way to add one. */
-export function AgentSchedules(p: V3PageProps & { agentId: string }) {
+export function AgentSchedules(
+  p: V3PageProps & {
+    agentId: string;
+    /* Why the agent's runtime can't run a job right now (#872): the
+       records still show — they're real — but nothing new gets planned
+       while it can't fire. */
+    unavailable?: string;
+  },
+) {
   const [creating, setCreating] = useState(false);
   const count = p.data.schedules.filter((s) => s.agentId === p.agentId).length;
   return (
@@ -265,9 +273,16 @@ export function AgentSchedules(p: V3PageProps & { agentId: string }) {
       <Section
         title="Schedules"
         count={count}
-        link={creating ? undefined : "New schedule"}
+        link={
+          creating || p.unavailable !== undefined ? undefined : "New schedule"
+        }
         onLink={() => setCreating(true)}
       />
+      {p.unavailable !== undefined && (
+        <p className="mb-3 text-[13px] text-muted-foreground/80">
+          Can't run right now — {p.unavailable}
+        </p>
+      )}
       {creating && (
         <div className="mb-3">
           <ScheduleEditor

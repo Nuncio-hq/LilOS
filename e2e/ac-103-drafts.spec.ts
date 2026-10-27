@@ -45,7 +45,7 @@ test.afterAll(async () => {
 
 test.describe.configure({ mode: "serial" });
 
-const DEFAULT_AGENT = { id: "default", name: "Default" };
+const DEFAULT_AGENT = { id: "default", name: "Hermes" };
 
 /* The thread's reply box in the peek. By textarea, not by placeholder: the
    placeholder follows the turn ("Message X…" idle, "Message X… it reads this…" mid-turn) and
@@ -53,7 +53,7 @@ const DEFAULT_AGENT = { id: "default", name: "Default" };
 const threadComposer = (page: Page) =>
   v3Peek(page).locator("[data-thread-panel] textarea");
 const newChatBox = (page: Page) =>
-  v3Peek(page).getByPlaceholder("Message Default…");
+  v3Peek(page).getByPlaceholder("Message Hermes…");
 
 /** Open a thread from its row on Threads (the page stays behind the peek).
     Earlier serial legs leave other threads, so match on the title text — the

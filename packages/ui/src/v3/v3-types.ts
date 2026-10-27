@@ -88,6 +88,8 @@ export type V3Agent = {
   /* What the relay cannot tell (a runtime per agent, its schedule, skills,
      spend, memory, week) is absent, and the agent page hides that part
      instead of showing a made-up value. */
+  /** The runtime id (`"hermes"`, `"acp:devin"`, D-#761) — `data.runtimes`
+      carries its label, colour and what its engine lets the page write. */
   runtime?: string;
   /** The engine profile the agent runs on (its id on the engine), where the
      app knows it. The profile is which runtime. Instructions, notes and
@@ -98,6 +100,9 @@ export type V3Agent = {
      new-chat picker starts on it with its own effort. Absent: the engine's
      default model. */
   modelId?: string;
+  /** #872: the agent-page effort pin (one of the model's `efforts`), stored
+      on the relay record. Absent: the model's own default effort. */
+  effort?: string;
   /** Your newest chat with this agent, by when it began: the project it
      lived in (absent = a plain chat) and the first message you wrote, as you
      wrote it. The next new chat starts in the same project (or none), and ↑
@@ -138,6 +143,8 @@ export type V3AgentPatch = {
   role?: string;
   description?: string;
   model?: string;
+  /* #872: the page's Default effort pick — `""` clears the pin. */
+  effort?: string;
   instructions?: string;
   muted?: boolean;
   confirmModel?: boolean;
@@ -161,6 +168,21 @@ export type V3Runtime = {
   /** The runtime the app already runs as its default engine: its profiles
      are Who?'s profile rows, not a kind of their own. */
   isDefault?: boolean;
+  /* #872 — a runtime agent's page reads its own engine, never the
+     default's: which profile fields it lets the app write, and which
+     models its own picker may offer. */
+  /** The `agents` capability's `detail.updatable` (engine words — "soul",
+      "model", …), once the runtime has been described. Absent = not
+      described yet: engine-owned fields stay read-only, never editable-
+      then-failing. */
+  updatable?: string[];
+  /** Its own model picker labels (`models.list` on that engine). Absent =
+      not asked yet or no catalog — the Model field shows the current
+      model as text. */
+  models?: string[];
+  /** Avatar colour for agents on this runtime — the runtime's mark, so a
+      Devin agent never looks like a Hermes one. */
+  tone?: V3Tone;
 };
 
 /** An engine profile as the engine reports it: a persona with a model and

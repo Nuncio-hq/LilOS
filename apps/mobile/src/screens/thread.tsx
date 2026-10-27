@@ -1,4 +1,5 @@
 import {
+  agentDisplayName,
   type ChannelMessagesState,
   RelayError,
   type RelaySessionFeedState,
@@ -611,7 +612,11 @@ export function Thread({
           >
             <View className="mt-2 self-stretch">
               <Button
-                label={goneEmployee ? `Back to ${goneEmployee.name}` : "Back"}
+                label={
+                  goneEmployee
+                    ? `Back to ${agentDisplayName(goneEmployee)}`
+                    : "Back"
+                }
                 icon="chevron.left"
                 variant="secondary"
                 testID="thread-gone-back"

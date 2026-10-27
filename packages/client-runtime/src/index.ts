@@ -1,3 +1,4 @@
+export { agentDisplayName } from "./agent-name";
 export type { AppClient } from "./app-client";
 export {
   type ChannelMessagesState,

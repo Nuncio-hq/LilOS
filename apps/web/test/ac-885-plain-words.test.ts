@@ -133,10 +133,6 @@ const ALLOW: Record<
   /* #872's scope (the add-agent dialog and the agent page): the rewording
      of these strings lands in that PR — allow-listed here so the two
      landings do not collide. */
-  "packages/ui/src/v3/v3-add-agent.tsx": {
-    words: ["hire"],
-    why: "the add-agent dialog — #872",
-  },
   "packages/ui/src/v3/v3-agent.tsx": {
     words: ["CEO"],
     why: "the agent page — #872",

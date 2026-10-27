@@ -336,9 +336,11 @@ export type TeamListResult = z.infer<typeof TeamListResult>;
  * `team_hire` — propose a hire; the ask card carries the draft and
  * nothing is written until the user approves. `profile` names an existing
  * engine profile to reuse — omitted, the apply creates one from the draft
- * (`agents.create`) the way the hire dialog does. Hiring stays open to
- * every agent, including a company with no CEO yet, and always asks the
- * owner (D-#341).
+ * (`agents.create`) the way the hire dialog does. The new profile lands
+ * on the CALLER's runtime — a coding agent's helper is its own engine's
+ * persona, not the default engine's (#872). Hiring stays open to every
+ * agent, including a company with no CEO yet, and always asks the owner
+ * (D-#341).
  */
 export const TeamHireParams = z.strictObject({
   name: z.string().min(1),
@@ -381,6 +383,9 @@ export type TeamSetCeoResult = z.infer<typeof TeamSetCeoResult>;
  * model, instructions, who they report to). The employee id comes from
  * the session binding, never from a param: an agent cannot edit a
  * colleague. `reportsTo: null` reports to the owner again (D-#775).
+ * Engine-side writes land on the runtime the record says owns the
+ * profile — a Devin agent's self-edit never lands on the default
+ * engine (#872).
  */
 export const TeamUpdateParams = z
   .strictObject({

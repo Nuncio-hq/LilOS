@@ -360,7 +360,10 @@ export class EngineRegistry {
       },
       onState: (st, detail) => {
         inst.state = st;
-        inst.detail = detail;
+        /* #872: keep the recorded reason on a bare `failed` — a state
+           transition that carries no detail must not erase the reason
+           the cooldown reject and the status row then read. */
+        inst.detail = detail ?? (st === "failed" ? inst.detail : undefined);
         /* The demand-cooldown clock starts at the LAST failure — a row
            that keeps failing answers `ensure` cheaply instead of
            re-driving a doomed launch per caller. */
@@ -368,7 +371,7 @@ export class EngineRegistry {
         if (st === "failed" || st === "stopped") {
           inst.conn = undefined;
           for (const w of inst.waiters.splice(0)) {
-            w.reject(new Error(detail ?? `engine ${st}`));
+            w.reject(new Error(inst.detail ?? `engine ${st}`));
           }
         }
         opts.hooks.onStateChange(inst.spec.id, st, detail);

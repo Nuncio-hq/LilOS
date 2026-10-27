@@ -119,6 +119,7 @@ function helperEmp(data: V3Data, t: V3Thread, id: string): Employee | undefined 
     now: "",
     instructions: "",
     respondTo: "me",
+    ...(a.runtime ? { runtime: a.runtime } : {}),
   }
 }
 
@@ -143,6 +144,7 @@ export function threadModel(
     now: t.now?.text ?? "",
     instructions: agent?.instructions.join("\n") ?? "",
     respondTo: "me",
+    ...(agent?.runtime ? { runtime: agent.runtime } : {}),
   }
   // A thread waiting on you or looping still has its turn open.
   const running = t.status === "working" || t.status === "needs" || t.status === "stuck"

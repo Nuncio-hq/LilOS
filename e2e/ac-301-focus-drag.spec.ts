@@ -83,7 +83,7 @@ test("#301 Focus toggle stays clickable across the panel ⇄ Focus header swap",
     /* "Message" starts the chat, and the send takes the draft's place with
        its thread. */
     await v3Peek(win).getByRole("button", { name: "Message" }).click();
-    const box = v3Peek(win).getByPlaceholder("Message Default…");
+    const box = v3Peek(win).getByPlaceholder("Message Hermes…");
     await expect(box).toBeVisible({ timeout: 30_000 });
     await box.fill("check in");
     await v3Peek(win).getByRole("button", { name: "Send" }).click();

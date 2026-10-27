@@ -31,6 +31,14 @@ export const Employee = z.object({
   status: EmployeeStatus,
   profile: z.string(),
   model: z.string(),
+  /** #872: the "what it's for" line. Engines keep personas only in memory
+      (ACP rosters reset on restart), so the durable copy lives here and
+      the harness re-seeds it on the next session start. Absent = none. */
+  description: z.string().optional(),
+  /** #872: the agent's default reasoning-effort pick (one of its model's
+      `efforts`), stored here so every runtime's sessions share one source.
+      Absent = the model's own default effort. */
+  effort: z.string().optional(),
   now: z.string(),
   instructions: z.string(),
   respondTo: RespondTo,
@@ -705,6 +713,12 @@ export const RuntimeStatusRow = z.object({
   available: z.boolean().optional(),
   state: EngineHostState.optional(),
   detail: z.string().optional(),
+  /* Once the runtime has run and been described: the profile fields its
+     `agents` capability lets the app write (`detail.updatable`, D-#19),
+     verbatim. Absent = never described — an agent page on this runtime
+     keeps its engine fields read-only rather than offering a write the
+     engine would refuse (#872). */
+  agentsUpdatable: z.array(z.string()).optional(),
 });
 export type RuntimeStatusRow = z.infer<typeof RuntimeStatusRow>;
 

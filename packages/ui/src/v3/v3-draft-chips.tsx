@@ -123,6 +123,7 @@ export function ProjectChip({
 export function ModelChip({
   data,
   act,
+  agent,
   agentModelId,
   pick,
   onPick,
@@ -133,6 +134,9 @@ export function ModelChip({
 }: {
   data: V3Data;
   act: V3Actions;
+  /** The selected agent — its runtime decides which catalog the picker
+      lists (#872): Devin's chip shows SWE-2, never Hermes's list. */
+  agent: { runtime?: string };
   /** The agent's own model id: where the picker starts, never a past pick. */
   agentModelId?: string;
   pick?: ModelChoice;
@@ -144,15 +148,33 @@ export function ModelChip({
   open: boolean;
   onOpen: (open: boolean) => void;
 }) {
-  const cat = data.modelCatalog;
+  const rt = agent.runtime
+    ? data.runtimes?.find((r) => r.id === agent.runtime)
+    : undefined;
+  /* An agent stamped with a runtime whose ROW hasn't arrived knows
+     nothing yet — never the default engine's catalog on its composer
+     (#872). The chip waits for the row rather than offer Hermes's list. */
+  const rtKnown = !agent.runtime || !!rt;
+  const cat = !rtKnown
+    ? undefined
+    : rt && !rt.isDefault
+      ? data.modelCatalogs?.[rt.id]
+      : data.modelCatalog;
   if (!cat) {
-    return data.modelChoices.length > 0 ? (
+    /* A runtime agent whose catalog hasn't landed menus its OWN runtime's
+       labels — never the default engine's list on an ACP agent (#872). */
+    const choices = !rtKnown
+      ? []
+      : rt && !rt.isDefault
+        ? (rt.models ?? [])
+        : data.modelChoices;
+    return choices.length > 0 ? (
       <ChipMenu
         title="Model"
         value={label}
         onPick={onLabel}
         label={<span className="truncate">{label}</span>}
-        options={data.modelChoices.map((m) => ({
+        options={choices.map((m) => ({
           id: m,
           node: <span>{m}</span>,
         }))}

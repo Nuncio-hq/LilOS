@@ -28,9 +28,22 @@ import {
   saveAgent,
 } from "./employees";
 import { pickFromLabel } from "./models";
+import { isDefaultRuntime } from "./runtime-ids";
+import { pickForRuntime } from "./runtimes";
 import { searchMessages } from "./search";
 import { v3SettingsActions } from "./settings-actions";
 import { employeeOfConversation } from "./threads";
+
+/* #872: a menu label resolves on the SELECTED agent's runtime catalog — a
+   Devin agent's "SWE-2 high" comes from acp:devin's list, and a label that
+   runtime can't name resolves to nothing (the engine default), never a
+   wrong-runtime id routed through Hermes. */
+function pickForAgent(agentId: string, label: string) {
+  const runtime = relay.employees.get().find((e) => e.id === agentId)?.runtime;
+  return runtime && !isDefaultRuntime(runtime)
+    ? pickForRuntime(runtime, label)
+    : pickFromLabel(label);
+}
 
 /* What a click in v3 does to the real company. Each action maps to the call
    the pre-v3 screens made (respondToRequest, interruptSession, sendDm, …);
@@ -160,9 +173,11 @@ export function makeV3Actions(caps: V3Capabilities): V3DataActions {
         agentId,
         text,
         undefined,
-        // The full picker's choice (model, effort, Fast) when the box has one;
-        // else the plain menu's label turned back into a real model.
-        pick ?? pickFromLabel(model),
+        /* The full picker's choice (model, effort, Fast) when the box has
+           one; else the plain menu's label turned back into a real model —
+           resolved on the SELECTED agent's runtime catalog (#872): a Devin
+           agent's label comes from Devin's list, never Hermes's. */
+        pick ?? pickForAgent(agentId, model),
         files,
         /* #552: the send's own key, as the home composer's was — a retry of
            the same message (a failed send keeps the draft and its chips)

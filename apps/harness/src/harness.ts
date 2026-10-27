@@ -32,11 +32,7 @@ import {
   qualifySessionRef,
 } from "./engine/runtimes";
 import type { EngineGapCause, EngineHostState } from "./engine/supervisor";
-import {
-  codingAgentDefaults,
-  ensureAgent,
-  sessionParams,
-} from "./harness/agents";
+import { checkTaskModel, ensureAgent, sessionParams } from "./harness/agents";
 import {
   autoApprove,
   onAskResolved,
@@ -845,6 +841,8 @@ export class Harness {
   ) => Promise<void>;
 
   declare private resyncBinding: (binding: SessionBinding) => Promise<void>;
+  /* #872: task_create's model check — a prototype mixin like the rest. */
+  declare checkTaskModel: HarnessCtx["checkTaskModel"];
 
   declare private drainQueue: (binding: SessionBinding) => void;
 
@@ -908,7 +906,6 @@ Object.assign(Harness.prototype, {
   bindingFor,
   bindingNow,
   cleanupSettledWorktree,
-  codingAgentDefaults,
   conversationFromAtom,
   createSurfaces,
   deliver,
@@ -985,6 +982,7 @@ Object.assign(Harness.prototype, {
   seqOfMessage,
   sessionHasOpenAsk,
   sessionParams,
+  checkTaskModel,
   setSessionModel,
   slashFor,
   stampCheckpoint,

@@ -71,7 +71,7 @@ test("AC-1 first-run hire's DM channel exists, and the new chat with it is ready
 
   // The harness opened the DM channel at hire — it is on the relay already.
   const sidebar = v3Sidebar(page);
-  await expect(sidebar.getByRole("button", { name: /Default/ })).toBeVisible({
+  await expect(sidebar.getByRole("button", { name: /Hermes/ })).toBeVisible({
     timeout: 30_000,
   });
   const { employees } = await relayRpc<{
@@ -83,9 +83,9 @@ test("AC-1 first-run hire's DM channel exists, and the new chat with it is ready
 
   // Their page → Message: the draft's composer is up and usable. The
   // sidebar pick jumped to the person's page (D-#769); Message peeks beside it.
-  await sidebar.getByRole("button", { name: /Default/ }).click();
+  await sidebar.getByRole("button", { name: /Hermes/ }).click();
   await v3Main(page).getByRole("button", { name: "Message" }).click();
-  const box = v3Peek(page).getByPlaceholder("Message Default…");
+  const box = v3Peek(page).getByPlaceholder("Message Hermes…");
   await expect(box).toBeVisible({ timeout: 15_000 });
   await expect(box).toBeEnabled();
   await page.screenshot({ path: `${SHOTS}/ac-1-empty-state.png` });

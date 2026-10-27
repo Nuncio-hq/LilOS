@@ -2,11 +2,12 @@ import { describe, expect, it } from "vitest";
 import { setupWorld, waitFor } from "./helpers";
 
 /**
- * D-#835 + #846 — the owner's stored per-coding-agent default (the
- * `codingAgents` KV) fills `session.start`'s model/effort when neither the
- * conversation pin nor the employee record named one. The KV keys on the
- * employee's agent handle (`profile`); a per-thread pick or a per-job
- * `task_create` override (both land on the conversation row) still win.
+ * D-#835 + #846 + #872 — the Employee record is the one source of an
+ * agent's default model + effort: `session.start` takes the conversation
+ * pick, else the employee's own pin, else nothing (the runtime's own
+ * default). The legacy `codingAgents` KV row is never read — a stale row
+ * must not outvote what the agent page shows. Per-thread picks and
+ * per-job `task_create` overrides (both land on the conversation row) win.
  */
 
 const hireAndOpen = async (
@@ -29,27 +30,98 @@ const startParams = (w: Awaited<ReturnType<typeof setupWorld>>) =>
     return call ? (call.params as Record<string, unknown>) : undefined;
   }, "session.start params");
 
-describe("codingAgents KV default -> session.start (#846)", () => {
-  it("a stored devin default fills model + effort when nothing is pinned", async () => {
+describe("employee default -> session.start (#846, #872)", () => {
+  it("a KV row written after the hire fills nothing — the runtime's own default applies", async () => {
+    const w = await setupWorld();
+    try {
+      const channel = await hireAndOpen(w, { name: "Devin", profile: "devin" });
+      await w.user.request("settings.set", {
+        key: "codingAgents",
+        value: { devin: { model: "fake-smart", effort: "high" } },
+      });
+      await w.user.request("conversations.open", {
+        channelId: channel.id,
+        text: "hi",
+      });
+      const params = await startParams(w);
+      expect(params.model).toBeUndefined();
+      expect(params.effort).toBeUndefined();
+    } finally {
+      await w.cleanup();
+    }
+  });
+
+  it("a model pin with no effort never inherits the KV effort", async () => {
     const w = await setupWorld();
     try {
       await w.user.request("settings.set", {
         key: "codingAgents",
         value: { devin: { model: "fake-smart", effort: "high" } },
       });
-      const channel = await hireAndOpen(w, { name: "Devin", profile: "devin" });
+      const { employee: e } = await w.user.request<{
+        employee: { id: string };
+      }>("employees.create", {
+        name: "Devin",
+        role: "engineer",
+        profile: "devin",
+      });
+      await w.user.request("employees.update", {
+        id: e.id,
+        model: "fake-reasoning",
+        effort: "",
+      });
+      const { channel } = await w.user.request<{ channel: { id: string } }>(
+        "channels.openDm",
+        { employeeId: e.id },
+      );
       await w.user.request("conversations.open", {
         channelId: channel.id,
         text: "hi",
       });
       const params = await startParams(w);
-      expect(params).toMatchObject({ model: "fake-smart", effort: "high" });
+      expect(params.model).toBe("fake-reasoning");
+      expect(params.effort).toBeUndefined();
     } finally {
       await w.cleanup();
     }
   });
 
-  it("a conversation pin beats the stored default", async () => {
+  /* #872: the agent page's Default model/effort is the employee record's
+     pin — the one source every runtime's sessions read. */
+  it("the employee pin is the default, whatever the KV says", async () => {
+    const w = await setupWorld();
+    try {
+      await w.user.request("settings.set", {
+        key: "codingAgents",
+        value: { devin: { model: "fake-smart", effort: "high" } },
+      });
+      const { employee: e } = await w.user.request<{
+        employee: { id: string };
+      }>("employees.create", {
+        name: "Devin",
+        role: "engineer",
+        profile: "devin",
+      });
+      await w.user.request("employees.update", {
+        id: e.id,
+        model: "fake-reasoning",
+        effort: "low",
+      });
+      const { channel } = await w.user.request<{
+        channel: { id: string };
+      }>("channels.openDm", { employeeId: e.id });
+      await w.user.request("conversations.open", {
+        channelId: channel.id,
+        text: "hi",
+      });
+      const params = await startParams(w);
+      expect(params).toMatchObject({ model: "fake-reasoning", effort: "low" });
+    } finally {
+      await w.cleanup();
+    }
+  });
+
+  it("a conversation pin beats the employee default", async () => {
     const w = await setupWorld({ attachEngine: false });
     try {
       await w.user.request("settings.set", {
@@ -97,6 +169,45 @@ describe("codingAgents KV default -> session.start (#846)", () => {
         model: "fake-reasoning",
         effort: "low",
       });
+    } finally {
+      await w.cleanup();
+    }
+  });
+
+  /* The employee's effort is a rung on ITS model's ladder — a thread that
+     picked another model must not wear it. */
+  it("the employee effort rides only its own model", async () => {
+    const w = await setupWorld();
+    try {
+      const { employee } = await w.user.request<{
+        employee: import("@lilos/contracts/app").Employee;
+      }>("employees.create", {
+        name: "Devin",
+        role: "engineer",
+        profile: "devin",
+        model: "fake-smart",
+      });
+      const emp = { ...employee, effort: "high" };
+      const sp = (conv?: { model?: string; effort?: string }) =>
+        (
+          w.harness as unknown as {
+            sessionParams: (
+              e: unknown,
+              a: string,
+              c?: unknown,
+            ) => Promise<Record<string, unknown>>;
+          }
+        ).sessionParams(emp, "devin", conv);
+      expect(await sp()).toMatchObject({ model: "fake-smart", effort: "high" });
+      expect(await sp({ model: "fake-smart" })).toMatchObject({
+        effort: "high",
+      });
+      const other = await sp({ model: "fake-reasoning" });
+      expect(other.model).toBe("fake-reasoning");
+      expect(other.effort).toBeUndefined();
+      expect(
+        await sp({ model: "fake-reasoning", effort: "low" }),
+      ).toMatchObject({ model: "fake-reasoning", effort: "low" });
     } finally {
       await w.cleanup();
     }

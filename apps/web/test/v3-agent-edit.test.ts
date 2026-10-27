@@ -17,6 +17,8 @@ vi.mock("../src/lib/runtime", async (orig) => {
   const actual = await orig<typeof import("../src/lib/runtime")>();
   const relay = {
     employees: { get: () => [employee], listen: () => () => {} },
+    // profiles.ts re-signs its per-runtime asks off the roster.
+    status: { get: () => ({}), listen: () => () => {} },
     // Reading the profile behind the employee (profiles.ts), as the engine says it.
     describeAgent: vi.fn(async (id: string) => ({ id, name: id })),
     updateAgent: vi.fn(async (p: unknown) => {
@@ -96,8 +98,10 @@ describe("saveAgent", () => {
           id: "emp_1",
           name: "Maker",
           role: "Builds",
+          description: "Ships",
           instructions: "new",
           model: "haiku",
+          effort: "",
         },
       ],
     ]);
@@ -119,13 +123,14 @@ describe("saveAgent", () => {
     ]);
   });
 
-  test("an engine that lists nothing writable still saves the record", async () => {
+  test("an engine that lists nothing writable refuses engine fields, keeps the record", async () => {
     capabilities = agents([]);
-    await saveAgent("emp_1", {
-      role: "Builds",
-      instructions: "new",
-      model: "Haiku 5",
-    });
+    /* #872: a field the engine did not list must fail loudly — a silent
+       drop reads as "Saved". The record-only role still mirrors. */
+    await expect(saveAgent("emp_1", { instructions: "new" })).rejects.toThrow(
+      /doesn't let LilOS change/,
+    );
+    await saveAgent("emp_1", { role: "Builds" });
     expect(calls).toEqual([
       ["employees.update", { id: "emp_1", role: "Builds" }],
     ]);
@@ -162,7 +167,7 @@ describe("saveAgent", () => {
           confirmModel: true,
         },
       ],
-      ["employees.update", { id: "emp_1", model: "haiku" }],
+      ["employees.update", { id: "emp_1", model: "haiku", effort: "" }],
     ]);
   });
 

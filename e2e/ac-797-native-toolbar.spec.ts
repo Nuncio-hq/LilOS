@@ -76,7 +76,7 @@ async function openThread(page: Page, full = false) {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(threadUrl(stack.webUrl, conversationId, full));
   await expect(
-    v3Sidebar(page).getByRole("button", { name: /default/i }),
+    v3Sidebar(page).getByRole("button", { name: /hermes/i }),
   ).toBeVisible({ timeout: 60_000 });
   await panelFocusReady(page);
 }
@@ -319,7 +319,7 @@ test("AC-4 on the Mac the first message of a thread starts ≤ 140px from the wi
   });
   try {
     await expect(
-      v3Sidebar(win).getByRole("button", { name: /default/i }),
+      v3Sidebar(win).getByRole("button", { name: /hermes/i }),
     ).toBeVisible({ timeout: 60_000 });
     await panelFocusReady(win);
     await expect

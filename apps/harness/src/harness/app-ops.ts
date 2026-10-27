@@ -16,6 +16,7 @@ import type {
 import {
   CEO_SETTING_KEY,
   CODING_AGENTS_SETTING_KEY,
+  codingAgentsOf,
   parseCodingAgents,
 } from "@lilos/contracts/app";
 import type {
@@ -50,8 +51,17 @@ export function createAppOps(deps: {
      resolves to (`opts.homeDir ?? homedir()`). Stored `cwd`/`repoPath`
      spellings collapse against it. */
   home: string;
+  /* #872: an explicit `task_create` model is checked against the CHILD
+     agent's own runtime catalog — a name only the parent's engine knows
+     throws here, never silently starts on the wrong runtime. Returns the
+     catalog's own id/provider for the pick. */
+  checkTaskModel?: (
+    employee: Employee,
+    model: string,
+    provider?: string,
+  ) => Promise<{ model: string; provider?: string }>;
 }): (session: string, binding?: SessionBinding) => AppOps | undefined {
-  const { relay, runningTurnId, log, home } = deps;
+  const { relay, runningTurnId, log, home, checkTaskModel } = deps;
   return (_session, binding) => {
     if (!binding) return undefined;
     return {
@@ -263,6 +273,14 @@ export function createAppOps(deps: {
             home,
           });
         }
+        /* #872: a model the caller names resolves on the child's own
+           runtime catalog (a cross-runtime name fails here, loudly);
+           absent means the relay stamps the child's stored default —
+           never the parent's pick. */
+        const pick =
+          p.model !== undefined && checkTaskModel
+            ? await checkTaskModel(employee, p.model, p.provider)
+            : undefined;
         const r = await relay.request<{
           task: Task;
           conversation: Conversation;
@@ -272,8 +290,17 @@ export function createAppOps(deps: {
           prompt: p.prompt,
           ...(p.title !== undefined ? { title: p.title } : {}),
           ...(p.requestId !== undefined ? { requestId: p.requestId } : {}),
-          ...(p.model !== undefined ? { model: p.model } : {}),
-          ...(p.provider !== undefined ? { provider: p.provider } : {}),
+          ...(pick
+            ? {
+                model: pick.model,
+                ...(pick.provider ? { provider: pick.provider } : {}),
+              }
+            : p.model !== undefined
+              ? { model: p.model }
+              : {}),
+          ...(pick === undefined && p.provider !== undefined
+            ? { provider: p.provider }
+            : {}),
           ...(p.effort !== undefined ? { effort: p.effort } : {}),
           ...(p.fast !== undefined ? { fast: p.fast } : {}),
           ...(isolation.cwd !== undefined ? { cwd: isolation.cwd } : {}),
@@ -330,14 +357,21 @@ export function createAppOps(deps: {
           target,
         });
       },
-      /* D-#835: the user's stored defaults for outside coding agents. The
-         `codingAgents` KV row is the one place they live; the hand-off
-         skills read it before every run. */
+      /* D-#835: the user's defaults for outside coding agents are the
+         Employee records' own model + effort (#872); an agent nobody has
+         hired yet reads its legacy KV entry, read-only. */
       codingAgents: async () => {
-        const r = await relay.request<{ value: unknown }>("settings.get", {
-          key: CODING_AGENTS_SETTING_KEY,
-        });
-        return parseCodingAgents(r.value);
+        const r = await relay.request<{ employees: Employee[] }>(
+          "employees.list",
+          {},
+        );
+        const legacy = await relay
+          .request<{ value: unknown }>("settings.get", {
+            key: CODING_AGENTS_SETTING_KEY,
+          })
+          .then((x) => parseCodingAgents(x.value))
+          .catch(() => ({}));
+        return codingAgentsOf(r.employees, legacy);
       },
       /* The live holder. Call time reads this; the start snapshot is separate (D-#778). */
       ceoId: async () => {

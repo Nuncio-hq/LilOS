@@ -5,9 +5,11 @@ import { soonestRun } from "./v3-schedule-text";
 import type {
   V3Agent,
   V3Project,
+  V3Runtime,
   V3Status,
   V3Thread,
   V3Ticket,
+  V3Tone,
 } from "./v3-types";
 
 /* Lookups every v3 page shares. Pure; the shell owns the data. */
@@ -427,3 +429,144 @@ export function resultsToLookAt(data: V3Data): LookAtRow[] {
   }
   return rows.sort((a, b) => a.minutes - b.minutes);
 }
+
+/** The runtime row an agent runs on (D-#761): `runtime` names its row;
+    absent names the default row — the roster can leave the default's
+    agents blank. No rows at all means the shell never learned them. */
+export const runtimeOf = (d: V3Data, a: V3Agent): V3Runtime | undefined => {
+  const rows = d.runtimes;
+  if (!rows?.length) return undefined;
+  if (!a.runtime) return rows.find((r) => r.isDefault) ?? rows[0];
+  return rows.find((r) => r.id === a.runtime);
+};
+
+/** A plain name for "Runs on" (#872): the row's label — "Devin",
+    "Claude Code"; the launcher name "hermes" reads as "Hermes". A runtime
+    id no row names yet still never shows as `acp:devin`. */
+export const runtimeLabelOf = (d: V3Data, a: V3Agent): string | undefined => {
+  const raw = runtimeOf(d, a)?.label ?? a.runtime;
+  return raw ? prettifyRuntimeId(raw) : undefined;
+};
+
+/** A runtime's words without a row: `acp:devin` reads "Devin", never the
+    raw id (#872). */
+export function prettifyRuntimeId(id: string): string {
+  return id
+    .replace(/^acp:/, "")
+    .split(/[-_\s]+/)
+    .map((w) => w.slice(0, 1).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
+/** Agent and runtime faces share one palette: a stable pastel from a
+    31-polynomial hash, so the same name paints the same on the sidebar,
+    the page and a thread line (#872). `n` stays reserved for the
+    gone-agent "?". */
+const FACE_TONES: V3Tone[] = ["c", "b", "r", "m", "s", "d"];
+export function agentTone(name: string): V3Tone {
+  let x = 0;
+  for (const ch of name.toLowerCase())
+    x = (Math.imul(x, 31) + ch.charCodeAt(0)) >>> 0;
+  return FACE_TONES[x % FACE_TONES.length];
+}
+
+/* A coding runtime's tone (#872): known ids keep their brand-adjacent
+   colour, a new one hashes to a stable pastel. */
+const RUNTIME_TONE: Record<string, V3Tone> = { devin: "b", claude: "m" };
+
+/** A non-default runtime's mark — the label and tone its agents' avatars
+    wear wherever an avatar is drawn (sidebar, page, thread). */
+export function runtimeLook(id: string): { label: string; tone: V3Tone } {
+  return {
+    label: prettifyRuntimeId(id),
+    tone: RUNTIME_TONE[id.replace(/^acp:/, "")] ?? agentTone(id),
+  };
+}
+
+/* #872: the rule lives in @lilos/client-runtime so web and mobile render
+   the same name; re-exported here for the v3 surfaces. */
+export { agentDisplayName } from "@lilos/client-runtime";
+
+/** Engine-side `updatable` names → the page fields they let you edit
+    (soul holds the persona — the page's Instructions). */
+const PAGE_FIELD = {
+  description: "description",
+  model: "model",
+  soul: "instructions",
+} as const;
+type AgentPageField = NonNullable<V3Data["agentFields"]>[number];
+
+const pageFieldsOf = (updatable: readonly string[]): AgentPageField[] =>
+  updatable.flatMap((f) =>
+    f in PAGE_FIELD ? [PAGE_FIELD[f as keyof typeof PAGE_FIELD]] : [],
+  );
+
+/** Which engine-owned fields this agent's runtime lets LilOS write: the
+    runtime row's own `updatable` (D-#761) — the default engine's list for
+    a default-runtime agent, nothing while a coding runtime hasn't been
+    described. Read-only text beats an input that would fail (#872). An
+    agent stamped with a runtime whose ROW hasn't arrived knows nothing —
+    never the default engine's fields on its page. */
+export const agentPageFields = (d: V3Data, a: V3Agent): AgentPageField[] => {
+  const rt = runtimeOf(d, a);
+  if (a.runtime && !rt) return [];
+  if (rt && !rt.isDefault) return pageFieldsOf(rt.updatable ?? []);
+  return d.agentFields ?? [];
+};
+
+/** The model labels this agent's own runtime offers — Devin's SWE-2
+    options, never Hermes's list on an ACP agent (#872). Empty while its
+    catalog hasn't landed; the field shows text until then. */
+export const modelChoicesOf = (d: V3Data, a: V3Agent): string[] => {
+  const rt = runtimeOf(d, a);
+  if (a.runtime && !rt) return [];
+  if (rt && !rt.isDefault) return rt.models ?? [];
+  return rt?.models ?? d.modelChoices;
+};
+
+/* #872 — the page's Default effort row: the levels the agent's OWN
+   runtime reports for its model (`efforts` on the catalog option,
+   ordered low → high by the engine). Absent = the runtime reports no
+   levels, and the row stays off the page. */
+export const effortLadderOf = (
+  d: V3Data,
+  a: V3Agent,
+): { efforts: string[]; defaultEffort?: string } | undefined => {
+  const rt = runtimeOf(d, a);
+  if (a.runtime && !rt) return undefined;
+  const cat = rt && !rt.isDefault ? d.modelCatalogs?.[rt.id] : d.modelCatalog;
+  if (!cat) return undefined;
+  const opt =
+    cat.options.find((o) => o.id === a.modelId) ??
+    cat.options.find((o) => o.id === cat.defaultModel);
+  if (!opt?.efforts?.length) return undefined;
+  return {
+    efforts: opt.efforts,
+    ...(opt.defaultEffort ? { defaultEffort: opt.defaultEffort } : {}),
+  };
+};
+
+/* #872 — the composer's model catalog follows the SELECTED agent: a
+   runtime agent picks from its own engine's catalog (`modelCatalogs`),
+   the default engine's agent from `modelCatalog`. Absent = the plain
+   label menu (`modelChoicesOf`). */
+export const modelCatalogOf = (
+  d: V3Data,
+  a: V3Agent,
+): NonNullable<V3Data["modelCatalog"]> | undefined => {
+  const rt = runtimeOf(d, a);
+  if (a.runtime && !rt) return undefined;
+  return rt && !rt.isDefault ? d.modelCatalogs?.[rt.id] : d.modelCatalog;
+};
+
+/** Why this agent's runtime can't take scheduled jobs right now — the
+    probe's or supervisor's own words. `undefined` means it can: a row
+    that never ran still starts on demand, so absence is not a reason. */
+export const schedulesOff = (d: V3Data, a: V3Agent): string | undefined => {
+  const rt = runtimeOf(d, a);
+  if (!rt) return undefined;
+  const label = rt.label ?? a.name;
+  if (rt.available === false) return rt.detail ?? `${label} is not available`;
+  if (rt.state === "failed") return rt.detail ?? `${label} isn't running`;
+  return undefined;
+};

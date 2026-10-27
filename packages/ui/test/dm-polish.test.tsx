@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
-/* Issue #71, ui layer: AC-2 the employee avatar is a colour orb toned by name
-   (no image), AC-4 a waiting surface says "needs you" / "Waiting for
+/* Issue #71, ui layer: AC-2 the employee avatar shows the agent's face toned
+   by name (no image; the orb went in #872 — one letter avatar everywhere),
+   AC-4 a waiting surface says "needs you" / "Waiting for
    approval". (AC-1's avatar-less `Row` column-width check went with
    `feed/row.tsx` in #770, when turns became a full-width `AgentTurn` and a
    right-aligned `UserTurn` bubble with no avatar grid to keep wide. AC-3
@@ -12,7 +13,7 @@ import { ModelPicker } from "../src/chat/model-picker";
 import { TurnWork } from "../src/conversation/turn-work";
 import { AgentTurn } from "../src/conversation/turns";
 import { PHASE_LABEL } from "../src/lib/helpers";
-import { HermesAvatar, orbTone } from "../src/shell/avatars";
+import { EmployeeAvatar } from "../src/shell/avatars";
 import type { Employee } from "../src/types";
 
 if (typeof globalThis.ResizeObserver === "undefined") {
@@ -43,17 +44,17 @@ const EMP: Employee = {
 };
 
 describe("issue #71", () => {
-  test("AC-2 the employee avatar is a colour orb toned by name, no image", () => {
-    const { container } = render(<HermesAvatar name="Default" />);
+  test("AC-2 the employee avatar is the agent's letter face, no image", () => {
+    const { container } = render(<EmployeeAvatar employee={EMP} />);
     // No <img> at all — nothing can 404 in apps/web or under file:// in
     // Electron (was: bundled mark + initial fallback, pre-#224).
     expect(container.querySelector("img")).toBeNull();
-    const orb = container.querySelector('[role="img"]');
-    expect(orb?.getAttribute("aria-label")).toBe("Default");
-    expect(container.querySelector(".lilos-orb-blobs")).toBeTruthy();
-    // Name → tone ties every surface's orb to the same employee.
-    expect(orbTone("Default")).toBe("stone");
-    expect(orbTone("Builder")).toBe("blue");
+    expect(container.textContent).toContain("D");
+    // A coding-runtime agent wears its runtime's mark, not its own letter.
+    const { container: c2 } = render(
+      <EmployeeAvatar employee={{ ...EMP, runtime: "acp:devin" }} />,
+    );
+    expect(c2.textContent).toContain("D");
   });
 
   test("AC-4 a waiting session is labelled `needs you`", () => {

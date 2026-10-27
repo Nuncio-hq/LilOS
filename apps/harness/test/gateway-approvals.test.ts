@@ -5,14 +5,32 @@ import type {
   Employee,
   Project,
 } from "@lilos/contracts/app";
+import { connectFake, FakeEngine } from "@lilos/engine-fake";
 import { SessionSurfaces, toolBackend } from "@lilos/surfaces";
 import { describe, expect, it } from "vitest";
 import {
   FakePtySpawner,
   serveGateway,
 } from "../../../packages/surfaces/test/fakes";
+import type { EngineConnection } from "../src/engine/client";
 import { createAppOps } from "../src/harness/app-ops";
-import { openDmConversation, setupWorld, waitFor } from "./helpers";
+import { openDmConversation, setupWorld, type World, waitFor } from "./helpers";
+
+/** A second FakeEngine attached as a non-default runtime, its request log
+    exposed — the fixture for "the write reached acp:devin" (#872). The
+    same shape lives in runtimes.test.ts. */
+function attachRuntime(w: World, runtime: string) {
+  const engine = new FakeEngine({ tick: 1 });
+  const calls: { method: string; params: unknown }[] = [];
+  const raw = connectFake(engine) as unknown as EngineConnection;
+  const origRequest = raw.request.bind(raw);
+  raw.request = <T = unknown>(method: string, params?: unknown): Promise<T> => {
+    calls.push({ method, params });
+    return origRequest<T>(method, params);
+  };
+  w.harness.attachEngine(raw, undefined, runtime);
+  return { engine, conn: raw, calls };
+}
 
 /**
  * The approval-gated gateway tools end to end (D-#341): a tool call posts an
@@ -568,6 +586,212 @@ describe("approval-gated gateway tools", () => {
       await v.answer(ask3.id, "once");
       const res3 = await call3;
       expect(res3.employee.model).toBe("fake-large");
+    } finally {
+      v.gw.server.close();
+      await v.scope.close();
+      await v.w.cleanup();
+    }
+  });
+
+  /* D-#835 (#872): the Employee record is the one source of an agent's
+     default model + effort — `coding_agents_set` writes it, `coding_agents`
+     reads it, and a stale `codingAgents` KV row is never consulted. */
+  it("coding_agents_set writes the Employee record; coding_agents reads it", async () => {
+    const v = await world();
+    try {
+      const seen = new Set<string>();
+      const { employee: devin } = await v.w.user.request<{
+        employee: Employee;
+      }>("employees.create", {
+        name: "Devin",
+        role: "engineer",
+        profile: "devin",
+        model: "swe-2-high",
+      });
+      // A leftover KV row from before the migration must change nothing.
+      await v.w.user.request("settings.set", {
+        key: "codingAgents",
+        value: { devin: { model: "stale-kv", effort: "low" } },
+      });
+      /* A hired agent reads its record; one nobody hired falls back to the
+         legacy KV entry, read-only. */
+      await v.w.user.request("settings.set", {
+        key: "codingAgents",
+        value: {
+          devin: { model: "stale-kv", effort: "low" },
+          cursor: { model: "gpt-5", effort: "high" },
+        },
+      });
+      expect((await v.client.codingAgents()).agents).toEqual({
+        devin: { model: "swe-2-high" },
+        cursor: { model: "gpt-5", effort: "high" },
+      });
+
+      const call = v.client.codingAgentsSet({
+        agent: "devin",
+        model: "swe-2-max",
+        effort: "high",
+      });
+      const ask = await v.nextAsk(seen);
+      seen.add(ask.id);
+      await v.answer(ask.id, "once");
+      const res = await call;
+      expect(res.agents.devin).toEqual({ model: "swe-2-max", effort: "high" });
+      const rec = (await v.employees()).find((e) => e.id === devin.id);
+      expect(rec).toMatchObject({ model: "swe-2-max", effort: "high" });
+
+      // null clears a field back to the runtime's own default.
+      const call2 = v.client.codingAgentsSet({ agent: "devin", effort: null });
+      const ask2 = await v.nextAsk(seen);
+      seen.add(ask2.id);
+      await v.answer(ask2.id, "once");
+      const res2 = await call2;
+      expect(res2.agents.devin).toEqual({ model: "swe-2-max" });
+
+      const callClear = v.client.codingAgentsSet({
+        agent: "devin",
+        model: null,
+      });
+      const askClear = await v.nextAsk(seen);
+      seen.add(askClear.id);
+      await v.answer(askClear.id, "once");
+      expect((await callClear).agents.devin).toBeUndefined();
+
+      // An agent nobody hired has no record to write — refused up front,
+      // before any approval card, as not_found naming team_hire.
+      const asksBefore = (await v.asks("open")).length;
+      await expect(
+        v.client.codingAgentsSet({ agent: "cursor", model: "x" }),
+      ).rejects.toThrow(
+        /No Cursor agent is hired yet — hire one with team_hire/,
+      );
+      expect((await v.asks("open")).length).toBe(asksBefore);
+      // The legacy KV is never written.
+      expect(
+        (
+          await v.w.user.request<{ value: unknown }>("settings.get", {
+            key: "codingAgents",
+          })
+        ).value,
+      ).toEqual({
+        devin: { model: "stale-kv", effort: "low" },
+        cursor: { model: "gpt-5", effort: "high" },
+      });
+
+      // Two records for one agent move together, as the migration does.
+      const { employee: second } = await v.w.user.request<{
+        employee: Employee;
+      }>("employees.create", {
+        name: "Devin 2",
+        role: "engineer",
+        profile: "devin",
+      });
+      const call4 = v.client.codingAgentsSet({ agent: "devin", model: "m2" });
+      const ask4 = await v.nextAsk(seen);
+      seen.add(ask4.id);
+      await v.answer(ask4.id, "once");
+      await call4;
+      const all = await v.employees();
+      expect(all.find((e) => e.id === devin.id)?.model).toBe("m2");
+      expect(all.find((e) => e.id === second.id)?.model).toBe("m2");
+    } finally {
+      v.gw.server.close();
+      await v.scope.close();
+      await v.w.cleanup();
+    }
+  });
+
+  it("team_update clears the effort pin when the model changes", async () => {
+    const v = await world();
+    try {
+      await v.w.user.request("employees.update", {
+        id: v.binding.employeeId,
+        model: "fake-smart",
+        effort: "high",
+      });
+      expect(
+        (await v.employees()).find((e) => e.id === v.binding.employeeId)
+          ?.effort,
+      ).toBe("high");
+      const call = v.client.teamUpdate({ model: "fake-large" });
+      const ask = await v.nextAsk(new Set());
+      await v.answer(ask.id, "once");
+      const res = await call;
+      expect(res.employee.model).toBe("fake-large");
+      const rec = (await v.employees()).find(
+        (e) => e.id === v.binding.employeeId,
+      );
+      expect(rec?.model).toBe("fake-large");
+      expect(rec?.effort || "").toBe("");
+    } finally {
+      v.gw.server.close();
+      await v.scope.close();
+      await v.w.cleanup();
+    }
+  });
+
+  it("team_update and team_hire route engine writes to the caller's runtime", async () => {
+    const v = await world();
+    /* #872: a second FakeEngine plays acp:devin, the caller's record says
+       it lives there, and every engine-side write must land on ITS conn —
+       the same calls without `runtime` wrote a same-named Hermes profile. */
+    const acp = attachRuntime(v.w, "acp:devin");
+    try {
+      const { agent } = await acp.conn.request<{ agent: { id: string } }>(
+        "agents.create",
+        { name: "dev" },
+      );
+      await v.w.user.request("employees.update", {
+        id: v.binding.employeeId,
+        runtime: "acp:devin",
+        profile: agent.id,
+      });
+      const seen = new Set<string>();
+      const call = v.client.teamUpdate({ model: "fake-large" });
+      const ask = await v.nextAsk(seen);
+      seen.add(ask.id);
+      await v.answer(ask.id, "once");
+      await call;
+      /* The conn saw the write — and the relay-facing params carried the
+         routing hint that got it there. */
+      expect(
+        acp.calls.some(
+          (c) =>
+            c.method === "agents.update" &&
+            (c.params as { id?: string }).id === agent.id,
+        ),
+      ).toBe(true);
+      expect(
+        v.sent.find(
+          (s) =>
+            s.method === "agents.update" &&
+            (s.params as { id?: string }).id === agent.id,
+        )?.params,
+      ).toMatchObject({ runtime: "acp:devin" });
+
+      const hire = v.client.teamHire({
+        name: "Helper",
+        role: "coder",
+        model: "fake-large",
+        instructions: "review diffs",
+      });
+      const ask2 = await v.nextAsk(seen);
+      seen.add(ask2.id);
+      await v.answer(ask2.id, "once");
+      const res = await hire;
+      /* The new persona was created on the caller's engine, and the
+         record + relay params both point at that runtime. */
+      const created = acp.calls.find((c) => c.method === "agents.create");
+      expect(created).toBeTruthy();
+      expect(
+        v.sent.find((s) => s.method === "agents.create")?.params,
+      ).toMatchObject({ runtime: "acp:devin" });
+      expect(
+        v.sent.find((s) => s.method === "employees.create")?.params,
+      ).toMatchObject({ runtime: "acp:devin" });
+      const hired = (await v.employees()).find((e) => e.id === res.employee.id);
+      expect(hired?.runtime).toBe("acp:devin");
+      expect(hired?.profile).toBe(res.employee.profile);
     } finally {
       v.gw.server.close();
       await v.scope.close();

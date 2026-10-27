@@ -1,310 +1,411 @@
-import { BellIcon, PencilIcon } from "lucide-react";
-import { type KeyboardEvent, type Ref, useState } from "react";
+import { BellIcon } from "lucide-react";
+import {
+  type KeyboardEvent,
+  type ReactNode,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { cn } from "../lib/utils";
-import { Btn, Prop, Section } from "./v3-bits";
+import { Btn, Prop } from "./v3-bits";
 import { ChipMenu } from "./v3-chip-menu";
-import type { V3Data } from "./v3-data-types";
+import { EscLayer } from "./v3-keys";
 import type { V3Actions } from "./v3-page-types";
 import { Switch } from "./v3-settings-bits";
 import type { V3Agent, V3AgentPatch } from "./v3-types";
 
-/* Editing an agent from its own page. An Edit button turns the title, the
-   role line, the model and the instructions into fields in place (no dialog);
-   Save writes only what changed, Cancel puts everything back. The page draws
-   none of this unless the app can save (`act.updateAgent`); the model and
-   the instructions only where the engine lets the app write them
-   (`data.agentFields`). Notifications are not part of the edit: a switch
-   applies at once. */
+/* Editing an agent in place, Notion-style (#872): there is no edit mode
+   and no page-wide Save/Cancel. A writable field swaps its text for an
+   input on click and saves just itself on Enter or blur (Esc cancels);
+   the model's menu saves the moment a pick lands, and a held model asks
+   in place before it pins. What the owning runtime's engine cannot write
+   renders as plain text — never an input that would fail. A landed save
+   flashes Saved beside the field; a failed one says why, briefly. */
 
-type Draft = {
-  name: string;
-  role: string;
-  description: string;
-  model: string;
-  instructions: string;
+export type FieldSave = {
+  state: "idle" | "saving" | "saved" | "failed";
+  /** Why the last write failed, in the app's own words. */
+  error?: string;
+  /** Writes one field's patch; resolves the engine's `confirmModel` words
+      when it held a model back, `undefined` on a failure it reports here. */
+  run: (patch: V3AgentPatch) => Promise<{ confirmModel?: string } | undefined>;
 };
 
-export type AgentEditor = {
-  /** Null while reading; the fields' text while editing. */
-  draft: Draft | null;
-  set: (p: Partial<Draft>) => void;
-  start: () => void;
-  cancel: () => void;
-  save: () => void;
-  saving: boolean;
-  /** A name is the one thing a save cannot do without. */
-  valid: boolean;
-  canModel: boolean;
-  canInstructions: boolean;
-  canDescription: boolean;
-  /** The engine's words when it held the new model back until confirmed. */
-  held?: string;
-  pin: () => void;
-  keep: () => void;
-};
-
-const FIELD =
-  "rounded-[7px] border border-foreground/15 bg-background text-foreground outline-none focus:border-foreground/40";
-
-/** The editing state of one agent; undefined where the page cannot edit it
-    (the app has no save, or the agent is an outside worker LilOS only watches). */
-export function useAgentEditor(
-  data: V3Data,
-  agent: V3Agent,
+/** One field's save pipeline: sending, a breath of Saved, or why it failed. */
+export function useFieldSave(
   act: V3Actions,
-): AgentEditor | undefined {
+  agentId: string,
+): FieldSave | undefined {
   const update = act.updateAgent;
-  const [draft, setDraft] = useState<Draft | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [held, setHeld] = useState<string>();
-  if (!update || agent.kind === "outside") return undefined;
-
-  const fields = data.agentFields ?? [];
-  const canModel = fields.includes("model") && data.modelChoices.length > 0;
-  const canInstructions = fields.includes("instructions");
-  const canDescription = fields.includes("description");
-  const text = agent.instructions.join("\n\n");
-
-  const cancel = () => {
-    setDraft(null);
-    setHeld(undefined);
-  };
-  const patchOf = (d: Draft): V3AgentPatch => ({
-    ...(d.name.trim() !== agent.name && { name: d.name.trim() }),
-    ...(d.role.trim() !== agent.role && { role: d.role.trim() }),
-    ...(canDescription &&
-      d.description.trim() !== (agent.description ?? "") && {
-        description: d.description.trim(),
-      }),
-    ...(canModel && d.model !== agent.model && { model: d.model }),
-    ...(canInstructions &&
-      d.instructions.trim() !== text && {
-        instructions: d.instructions.trim(),
-      }),
+  const [s, set] = useState<{ state: FieldSave["state"]; error?: string }>({
+    state: "idle",
   });
-
-  const save = async () => {
-    if (!draft || saving || !draft.name.trim()) return;
-    const patch = patchOf(draft);
-    if (Object.keys(patch).length === 0) return cancel();
-    setSaving(true);
-    try {
-      const r = await update(agent.id, patch);
-      if (r?.confirmModel) setHeld(r.confirmModel);
-      else cancel();
-    } catch {
-      // The app has said why it could not save; the fields stay as typed.
-    } finally {
-      setSaving(false);
-    }
-  };
-
+  useEffect(() => {
+    if (s.state !== "saved" && s.state !== "failed") return;
+    const t = setTimeout(() => set({ state: "idle" }), 2800);
+    return () => clearTimeout(t);
+  }, [s.state]);
+  if (!update) return undefined;
   return {
-    draft,
-    set: (p) => setDraft((d) => d && { ...d, ...p }),
-    start: () => {
-      setHeld(undefined);
-      setDraft({
-        name: agent.name,
-        role: agent.role,
-        description: agent.description ?? "",
-        model: agent.model,
-        instructions: text,
-      });
-    },
-    cancel,
-    save: () => void save(),
-    saving,
-    valid: !!draft?.name.trim(),
-    canModel,
-    canInstructions,
-    canDescription,
-    held,
-    // Everything else the save held was written already: only the model is left.
-    pin: () => {
-      if (!draft) return;
-      void update(agent.id, { model: draft.model, confirmModel: true }).then(
-        cancel,
-        () => {},
-      );
-    },
-    keep: () => {
-      setHeld(undefined);
-      setDraft((d) => d && { ...d, model: agent.model });
+    ...s,
+    run: async (patch) => {
+      set({ state: "saving" });
+      try {
+        const r = await update(agentId, patch);
+        set({ state: "saved" });
+        return r;
+      } catch (e) {
+        // The app has already toasted why; the note beside the field says it too.
+        set({
+          state: "failed",
+          error: e instanceof Error ? e.message : String(e),
+        });
+        return undefined;
+      }
     },
   };
 }
 
-/** `ref` is how the page puts the keyboard back here once the editing closes. */
-export function EditButton({
-  onClick,
-  ref,
+/** The save note beside a field — quiet, gone again in a breath. */
+export function SaveNote({
+  save,
+  className,
 }: {
-  onClick: () => void;
-  ref?: Ref<HTMLButtonElement>;
+  save?: FieldSave;
+  className?: string;
 }) {
+  if (!save || save.state === "idle") return null;
   return (
-    <button
-      ref={ref}
-      type="button"
-      onClick={onClick}
-      className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-[7px] px-2 text-[13px] text-muted-foreground transition-colors hover:bg-[var(--v3-hover)] hover:text-foreground [&_svg]:size-3.5"
+    <span
+      role="status"
+      className={cn(
+        "inline-block max-w-[280px] shrink-0 truncate align-middle text-[12.5px]",
+        save.state === "failed"
+          ? "text-red-600 dark:text-red-400"
+          : "text-muted-foreground/75",
+        className,
+      )}
     >
-      <PencilIcon />
-      Edit
-    </button>
+      {save.state === "saving"
+        ? "Saving…"
+        : save.state === "saved"
+          ? "Saved"
+          : `Couldn't save${save.error ? ` — ${save.error}` : ""}`}
+    </span>
   );
 }
 
-export function SaveButtons({ ed }: { ed: AgentEditor }) {
-  const ready = ed.valid && !ed.saving;
+/* One line of text you click to change. The view is the text (a quiet
+   button when it can change); the input it swaps to commits on Enter or
+   blur, Esc puts the old text back. `onCommit` absent = read-only. */
+export function InlineText({
+  value,
+  onCommit,
+  save,
+  placeholder,
+  ariaLabel,
+  className,
+}: {
+  value: string;
+  onCommit?: (next: string) => void;
+  save?: FieldSave;
+  placeholder?: string;
+  ariaLabel: string;
+  className?: string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const back = useRef<HTMLButtonElement>(null);
+  /* Leaving the box also fires blur once Enter or Esc already decided.
+     A key finish owes the keyboard the field's button — but the button
+     remounts after this render, so the focus lands in the effect below. */
+  const decided = useRef(false);
+  const wantFocus = useRef(false);
+  const wasEditing = useRef(editing);
+  useEffect(() => {
+    if (wasEditing.current && !editing && wantFocus.current)
+      back.current?.focus();
+    wantFocus.current = false;
+    wasEditing.current = editing;
+  }, [editing]);
+  const finish = (commit: boolean, byKey: boolean) => {
+    if (decided.current) return;
+    decided.current = true;
+    wantFocus.current = byKey;
+    setEditing(false);
+    const next = draft.trim();
+    if (commit && next !== value) onCommit?.(next);
+  };
+  return (
+    <span className="inline-flex min-w-0 max-w-full items-baseline gap-2">
+      {editing ? (
+        <>
+          {/* Esc through the layer stack: a peek behind must not take it. */}
+          <EscLayer onEscape={() => finish(false, true)} />
+          <input
+            // biome-ignore lint/a11y/noAutofocus: it opens because you asked to edit
+            autoFocus
+            aria-label={ariaLabel}
+            value={draft}
+            onFocus={(e) => e.currentTarget.select()}
+            onChange={(e) => setDraft(e.target.value)}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
+              e.preventDefault();
+              finish(true, true);
+            }}
+            onBlur={() => finish(true, false)}
+            className={cn(
+              "h-[1.5em] min-w-0 flex-1 rounded-[5px] border border-foreground/25 bg-background px-1 text-foreground outline-none [font:inherit] focus:border-foreground/45",
+              className,
+            )}
+          />
+        </>
+      ) : onCommit ? (
+        <button
+          ref={back}
+          type="button"
+          title="Edit"
+          onClick={() => {
+            decided.current = false;
+            setDraft(value);
+            setEditing(true);
+          }}
+          className={cn(
+            "-mx-1 min-w-0 rounded-[5px] px-1 text-left outline-none transition-colors hover:bg-[var(--v3-hover)] focus-visible:bg-[var(--v3-hover)]",
+            className,
+          )}
+        >
+          {value || (
+            <span className="text-muted-foreground/60">
+              {placeholder ?? "Add…"}
+            </span>
+          )}
+        </button>
+      ) : (
+        <span className={cn("min-w-0", className)}>{value}</span>
+      )}
+      <SaveNote save={save} />
+    </span>
+  );
+}
+
+/* The model prop's chip: the runtime's own picker, saving the pick the
+   moment it lands (#872). A guarded model the engine held back asks in
+   place — Pin anyway re-sends it with the confirm. */
+export function ModelProp({
+  icon,
+  agent,
+  choices,
+  save,
+}: {
+  icon: ReactNode;
+  agent: V3Agent;
+  /** The owning runtime's picker labels; empty = the model stays text. */
+  choices: string[];
+  save?: FieldSave;
+}) {
+  const [held, setHeld] = useState<{ words: string; model: string }>();
+  /* A newer pick supersedes a pending prompt: its generation counter
+     invalidates both the open prompt and a late confirmModel reply for
+     the superseded pick (#872). */
+  const pick = useRef(0);
+  const canPick = !!save && choices.length > 0;
   return (
     <>
-      <Btn
-        primary
-        onClick={ed.save}
-        className={cn(!ready && "pointer-events-none opacity-40")}
-      >
-        {ed.saving ? "Saving…" : "Save"}
-      </Btn>
-      <Btn onClick={ed.cancel}>Cancel</Btn>
+      <Prop icon={icon} label="Default model">
+        {canPick ? (
+          <ChipMenu
+            below
+            title="Default model"
+            ariaLabel="Default model"
+            value={agent.model}
+            onPick={(model) => {
+              if (model === agent.model) return;
+              const n = ++pick.current;
+              setHeld(undefined);
+              void save.run({ model }).then((r) => {
+                if (n === pick.current && r?.confirmModel)
+                  setHeld({ words: r.confirmModel, model });
+              });
+            }}
+            label={<span className="truncate">{agent.model}</span>}
+            options={choices.map((m) => ({ id: m, node: <span>{m}</span> }))}
+          />
+        ) : (
+          agent.model
+        )}
+        <SaveNote save={save} />
+      </Prop>
+      {/* A held pick asks once — if the record has since landed on that
+          model (a retry, another surface), the prompt is stale and goes. */}
+      {held && held.model !== agent.model && (
+        <div className="mt-1 mb-2 rounded-lg border border-[var(--v3-line)] bg-[var(--v3-soft)] px-3 py-2.5 text-[13.5px]">
+          <div className="font-semibold text-foreground">
+            The engine asks before pinning this model
+          </div>
+          <p className="mt-1 text-muted-foreground">{held.words}</p>
+          <div className="mt-2 flex gap-2">
+            <Btn
+              small
+              primary
+              onClick={() => {
+                const model = held.model;
+                setHeld(undefined);
+                void save?.run({ model, confirmModel: true });
+              }}
+            >
+              Pin anyway
+            </Btn>
+            <Btn small onClick={() => setHeld(undefined)}>
+              Keep current model
+            </Btn>
+          </div>
+        </div>
+      )}
     </>
   );
 }
 
-/** Enter saves from a one-line field; ⌘↵ from the instructions. */
-const enterSaves =
-  (ed: AgentEditor, withModifier = false) =>
-  (e: KeyboardEvent) => {
-    if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
-    if (withModifier !== (e.metaKey || e.ctrlKey)) return;
+/* #872 — the agent's standing effort pick: the levels its runtime reports
+   for its model, plus "Model default" which clears the pin (`effort: ""`
+   on the record). Saved the moment a pick lands; a runtime that reports
+   no levels gets no row at all (the caller checks `ladder`). */
+export function EffortProp({
+  icon,
+  agent,
+  ladder,
+  save,
+}: {
+  icon: ReactNode;
+  agent: V3Agent;
+  /** The current model's effort ladder — the engine's own ordering. */
+  ladder: { efforts: string[]; defaultEffort?: string };
+  save?: FieldSave;
+}) {
+  const shown = agent.effort ?? "Model default";
+  return (
+    <Prop icon={icon} label="Default effort">
+      {save ? (
+        <ChipMenu
+          below
+          title="Default effort"
+          ariaLabel="Default effort"
+          value={shown}
+          onPick={(next) => {
+            if (next !== shown)
+              void save.run({ effort: next === "Model default" ? "" : next });
+          }}
+          label={<span className="truncate">{shown}</span>}
+          options={["Model default", ...ladder.efforts].map((e) => ({
+            id: e,
+            node: <span>{e}</span>,
+          }))}
+        />
+      ) : (
+        shown
+      )}
+      <SaveNote save={save} />
+    </Prop>
+  );
+}
+
+const escapeRestores =
+  (cancel: () => void) => (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key !== "Escape") return;
     e.preventDefault();
-    ed.save();
+    e.stopPropagation();
+    cancel();
+    e.currentTarget.blur();
   };
 
-/** The title, as a field in the title's own type. */
-export function NameField({ ed, draft }: { ed: AgentEditor; draft: Draft }) {
-  return (
-    <input
-      aria-label="Name"
-      value={draft.name}
-      // biome-ignore lint/a11y/noAutofocus: it opens because you asked to edit
-      autoFocus
-      onFocus={(e) => e.currentTarget.select()}
-      onChange={(e) => ed.set({ name: e.target.value })}
-      onKeyDown={enterSaves(ed)}
-      className="lilos-v3-serif w-full border-[var(--v3-line)] border-b bg-transparent font-bold text-[38px] text-foreground leading-[1.15] outline-none focus:border-foreground/40"
-    />
-  );
-}
-
-export function RoleField({ ed, draft }: { ed: AgentEditor; draft: Draft }) {
-  return (
-    <input
-      aria-label="Role"
-      value={draft.role}
-      onChange={(e) => ed.set({ role: e.target.value })}
-      onKeyDown={enterSaves(ed)}
-      className={cn(FIELD, "h-6 w-[220px] px-2 text-[13.5px]")}
-    />
-  );
-}
-
-export function DescriptionField({
-  ed,
-  draft,
+/* The Instructions section: an auto-growing text block that saves on
+   blur (#872). `locked` is why the runtime can't take it — shown under
+   the read-only text instead of an editor. */
+export function InstructionsBlock({
+  paragraphs,
+  editable,
+  locked,
+  save,
+  onCommit,
 }: {
-  ed: AgentEditor;
-  draft: Draft;
+  /** The agent's instructions as paragraphs (how the read view splits them). */
+  paragraphs: string[];
+  editable: boolean;
+  /** Why it is read-only, in the runtime's own words where known. */
+  locked?: string;
+  save?: FieldSave;
+  onCommit: (text: string) => void;
 }) {
-  return (
-    <input
-      aria-label="Description"
-      value={draft.description}
-      placeholder="Describe what it is for"
-      onChange={(e) => ed.set({ description: e.target.value })}
-      onKeyDown={enterSaves(ed)}
-      className={cn(FIELD, "mb-1 h-8 w-full px-2.5 text-[14.5px]")}
-    />
-  );
-}
-
-export function ModelField({
-  ed,
-  draft,
-  choices,
-}: {
-  ed: AgentEditor;
-  draft: Draft;
-  choices: string[];
-}) {
-  return (
-    <ChipMenu
-      below
-      title="Model"
-      ariaLabel="Model"
-      value={draft.model}
-      onPick={(model) => ed.set({ model })}
-      label={<span className="truncate">{draft.model}</span>}
-      options={choices.map((m) => ({ id: m, node: <span>{m}</span> }))}
-      className={cn(FIELD, "h-7 px-2.5 text-[14px]")}
-    />
-  );
-}
-
-export function InstructionsField({
-  ed,
-  draft,
-}: {
-  ed: AgentEditor;
-  draft: Draft;
-}) {
-  const lines = draft.instructions.split("\n").length;
+  const value = paragraphs.join("\n\n");
+  const [draft, setDraft] = useState<string>();
+  /* Esc must beat blur: the flag survives until the blur React dispatches
+     synchronously after it — the stale-closure draft cannot win (#872). */
+  const cancelled = useRef(false);
+  /* Keep showing the typed text until the store catches up (the relay's
+     echo is a beat behind the save), then drop the draft. A failed save
+     never echoes, so the typed text stays — blur never loses it. */
+  useEffect(() => {
+    if (draft !== undefined && draft.trim() === value.trim())
+      setDraft(undefined);
+  }, [value, draft]);
+  const lines = (draft ?? value).split("\n").length;
+  const readonlyNote =
+    !editable && paragraphs.length > 0 ? (locked ?? null) : null;
+  if (!editable && paragraphs.length === 0) return null;
   return (
     <>
-      <Section title="Instructions" />
-      <textarea
-        aria-label="Instructions"
-        value={draft.instructions}
-        rows={Math.min(18, Math.max(6, lines + 1))}
-        onChange={(e) => ed.set({ instructions: e.target.value })}
-        onKeyDown={enterSaves(ed, true)}
-        className={cn(
-          FIELD,
-          "w-full resize-y px-3 py-2 text-[14.5px] leading-relaxed",
-        )}
-      />
-      <p className="mt-1.5 text-[13px] text-muted-foreground/70">
-        Applies to new threads. A thread already running keeps the instructions
-        and model it started with.
-      </p>
+      <h3 className="mt-10 mb-1.5 flex items-baseline gap-2 font-semibold text-[15px] text-foreground">
+        Instructions
+        <SaveNote save={save} />
+      </h3>
+      {editable ? (
+        <textarea
+          aria-label="Instructions"
+          value={draft ?? value}
+          placeholder="What it should always do — its standing brief."
+          rows={Math.min(18, Math.max(4, lines + 1))}
+          onFocus={(e) => setDraft(e.currentTarget.value)}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={escapeRestores(() => {
+            cancelled.current = true;
+            setDraft(undefined);
+          })}
+          onBlur={() => {
+            if (cancelled.current) {
+              cancelled.current = false;
+              return;
+            }
+            const next = (draft ?? value).trim();
+            /* The draft stays set — the echo effect clears it on a landed
+               save, and a failed one keeps the typed text on screen. */
+            if (next !== value.trim()) onCommit(next);
+          }}
+          className={cn(
+            "w-full resize-none border-[var(--v3-line)] border-l-2 bg-transparent pl-4 text-[14.5px] leading-relaxed text-foreground outline-none transition-colors placeholder:text-muted-foreground/50",
+            "hover:border-foreground/25 focus:border-foreground/40",
+          )}
+        />
+      ) : (
+        <div className="space-y-2.5 border-[var(--v3-line)] border-l-2 pl-4 text-[14.5px] leading-relaxed text-foreground">
+          {paragraphs.map((p) => (
+            <p key={p}>{p}</p>
+          ))}
+        </div>
+      )}
+      {readonlyNote && (
+        <p className="mt-1.5 text-[13px] text-muted-foreground/70">
+          {readonlyNote}
+        </p>
+      )}
     </>
-  );
-}
-
-/** The engine asked before pinning this model; the rest of the save landed. */
-export function HeldModel({ ed }: { ed: AgentEditor }) {
-  if (!ed.held) return null;
-  return (
-    <div className="mt-4 rounded-lg border border-[var(--v3-line)] bg-[var(--v3-soft)] px-3 py-2.5 text-[13.5px]">
-      <div className="font-semibold text-foreground">
-        The engine asks before pinning this model
-      </div>
-      <p className="mt-1 text-muted-foreground">{ed.held}</p>
-      <div className="mt-2 flex gap-2">
-        <Btn small primary onClick={ed.pin}>
-          Pin anyway
-        </Btn>
-        <Btn small onClick={ed.keep}>
-          Keep current model
-        </Btn>
-      </div>
-    </div>
   );
 }
 
 /** Mute one agent's notifications (banners and pushes alike). Applies at
-    once: it is a setting, not part of the edit. */
+    once: it is a setting, not part of the page's fields. */
 export function NotificationsRow({
   agent,
   act,

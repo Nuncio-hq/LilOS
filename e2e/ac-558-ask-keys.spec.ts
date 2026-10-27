@@ -67,7 +67,7 @@ async function askOutcome(
    on the default agent. */
 async function chatDefault(stack: Stack, page: Page, text: string) {
   await skipFirstRun(page);
-  await startChat(page, stack.webUrl, { id: "default", name: "Default" }, text);
+  await startChat(page, stack.webUrl, { id: "default", name: "Hermes" }, text);
 }
 
 const send = async (page: Page, text: string) => {

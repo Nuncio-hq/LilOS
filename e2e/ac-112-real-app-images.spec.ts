@@ -53,7 +53,7 @@ async function settled(page: Page) {
 
 /** The new-chat draft with Default, open in the peek and still empty. */
 const draftBox = (page: Page) =>
-  v3Peek(page).getByPlaceholder("Message Default…");
+  v3Peek(page).getByPlaceholder("Message Hermes…");
 /** The draft's staged files: chips, and the line that says what was left out. */
 const staged = (page: Page) => v3Peek(page).locator("[data-staged]");
 async function draftDefault(page: Page, base: string) {
@@ -529,7 +529,7 @@ test("AC-5b a mid-turn image queues as the next prompt instead of steering", asy
   await startChat(
     page,
     stack.webUrl,
-    { id: "default", name: "Default" },
+    { id: "default", name: "Hermes" },
     "Add a release note to the readme",
   );
   await expect(page.getByText("Approval needed").first()).toBeVisible({

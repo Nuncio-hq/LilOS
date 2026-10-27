@@ -58,7 +58,7 @@ test("the sidebar's Agents section lists the roster and a ＋ that opens the dia
     timeout: 30_000,
   });
   await expect(
-    side(page).getByRole("button", { name: /Default/ }),
+    side(page).getByRole("button", { name: /Hermes/ }),
   ).toBeVisible();
   await expect(
     side(page).getByRole("button", { name: "Add agent" }),
@@ -76,7 +76,7 @@ test("the sidebar's Agents section lists the roster and a ＋ that opens the dia
     await expect(
       who_.getByRole("radio", { name: new RegExp(name) }),
     ).toBeVisible();
-  await expect(who_.getByRole("radio", { name: /Default/ })).toHaveCount(0);
+  await expect(who_.getByRole("radio", { name: /Hermes/ })).toHaveCount(0);
   /* The runtime catalog row is there whether or not its CLI is installed:
      greyed with the probe's reason when it is not. */
   const devin = who_.getByRole("radio", { name: /Devin/ });
@@ -101,7 +101,7 @@ test("hire a Hermes profile: it lands in Agents, selected and ready to message",
   const name = dlg.getByLabel("Name");
   await expect(name).toHaveValue("Builder");
   await name.fill("Nova");
-  await dlg.getByRole("button", { name: "Hire", exact: true }).click();
+  await dlg.getByRole("button", { name: "Add", exact: true }).click();
 
   /* The dialog closes into a new chat on the hire — the composer IS the
      selection, addressed to it and ready to send. */
@@ -140,7 +140,7 @@ test("the composer's 'Add agent…' opens the same dialog and selects the hire",
   const name = dlg.getByLabel("Name");
   await expect(name).toHaveValue("Marketer");
   await name.fill("Sage");
-  await dlg.getByRole("button", { name: "Hire", exact: true }).click();
+  await dlg.getByRole("button", { name: "Add", exact: true }).click();
 
   /* Same draft, new agent: the box answers to the hire without leaving the
      composer. */

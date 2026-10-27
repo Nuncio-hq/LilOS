@@ -40,7 +40,7 @@ const STREAM_PROMPT = `slow:75 ${PROMPT}`;
    longer ~8 s window to still be streaming by the time the shots are taken
    (#432). */
 const STREAM_PROMPT_DESKTOP = `slow:150 ${PROMPT}`;
-const AGENT = { id: "default", name: "Default" };
+const AGENT = { id: "default", name: "Hermes" };
 
 /* The bubble the user's message renders in. Scoped to the thread panel: the
    Threads list beside the peek has avatars of its own. */

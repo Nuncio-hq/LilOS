@@ -403,7 +403,8 @@ describe("skills", () => {
         id="scout"
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    /* No edit mode (#872): the instructions block edits in place — the
+       textarea is the field. */
     expect(screen.getByLabelText("Instructions")).toBeTruthy();
     expect(screen.getByRole("heading", { name: /^Notes/ })).toBeTruthy();
     expect(screen.getByRole("group", { name: "Using" })).toBeTruthy();

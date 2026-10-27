@@ -57,7 +57,7 @@ async function startSession(page: Page, text: string) {
   await startChatInFolder(
     page,
     stack,
-    { id: "default", name: "Default" },
+    { id: "default", name: "Hermes" },
     repoDir,
     text,
   );

@@ -11,10 +11,10 @@ import type {
   ScheduledTask,
 } from "@lilos/contracts/app";
 import {
-  applyCodingAgentPatch,
   CEO_SETTING_KEY,
-  CODING_AGENTS_SETTING_KEY,
-  parseCodingAgents,
+  CODING_AGENT_NAMES,
+  codingAgentOf,
+  codingAgentsOf,
 } from "@lilos/contracts/app";
 import type { AgentDescriptor } from "@lilos/contracts/engine";
 import type {
@@ -264,6 +264,13 @@ export function createGatewayApprovalOps(
           ...(p.profile ? { profile: p.profile } : {}),
         },
       );
+      /* #872: the hire lands on the CALLER's runtime — a Devin agent
+         hiring a helper creates its profile on acp:devin, never silently
+         on the default engine. */
+      const { employees: team } = await relay.request<{
+        employees: Employee[];
+      }>("employees.list", {});
+      const runtime = team.find((e) => e.id === binding.employeeId)?.runtime;
       let profileId = p.profile;
       if (!profileId) {
         /* No profile arg → create one from the draft, the way the hire
@@ -275,6 +282,7 @@ export function createGatewayApprovalOps(
             soul: p.instructions,
             model: p.model,
             ...(p.provider ? { provider: p.provider } : {}),
+            ...(runtime ? { runtime } : {}),
           },
         );
         profileId = agent.id;
@@ -288,6 +296,7 @@ export function createGatewayApprovalOps(
           profile: profileId,
           model: p.model,
           instructions: p.instructions,
+          ...(runtime ? { runtime } : {}),
         },
       );
       await relay.request("channels.openDm", { employeeId: employee.id });
@@ -358,11 +367,16 @@ export function createGatewayApprovalOps(
       const employee = employees.find((e) => e.id === binding.employeeId);
       const wantsEngine = p.instructions !== undefined || p.model !== undefined;
       if (wantsEngine && employee?.profile) {
+        /* #872: the write goes to the runtime that owns the profile —
+           without the hint a Devin agent's self-edit landed on Hermes
+           (a same-named profile there, or a plain miss). */
+        const runtime = employee.runtime;
         const r = await relay.request<{
           agent: AgentDescriptor;
           confirmModel?: string;
         }>("agents.update", {
           id: employee.profile,
+          ...(runtime ? { runtime } : {}),
           ...(p.name !== undefined ? { name: p.name } : {}),
           ...(p.instructions !== undefined ? { soul: p.instructions } : {}),
           ...(p.model !== undefined ? { model: p.model } : {}),
@@ -370,6 +384,7 @@ export function createGatewayApprovalOps(
         if (r.confirmModel && p.model !== undefined) {
           await relay.request("agents.update", {
             id: employee.profile,
+            ...(runtime ? { runtime } : {}),
             model: p.model,
             confirmModel: true,
           });
@@ -381,7 +396,9 @@ export function createGatewayApprovalOps(
           id: binding.employeeId,
           ...(p.name !== undefined ? { name: p.name } : {}),
           ...(p.role !== undefined ? { role: p.role } : {}),
-          ...(p.model !== undefined ? { model: p.model } : {}),
+          /* A new model drops the effort pin — a rung named for the old
+             model's ladder may not exist on the new one (#872). */
+          ...(p.model !== undefined ? { model: p.model, effort: "" } : {}),
           ...(p.instructions !== undefined
             ? { instructions: p.instructions }
             : {}),
@@ -552,10 +569,23 @@ export function createGatewayApprovalOps(
       return { outcome: "yes" as const };
     },
 
-    /* D-#835: one stored default per outside coding agent. The card names
-       the change in words; on "once" the KV row is read, patched and
-       written back so a half-applied default can't land. */
+    /* D-#835: the default model + effort of an outside coding agent lives
+       on its Employee record (the agent page edits the same fields). An
+       agent nobody hired has no record to hold one — refused BEFORE the
+       card, so the user never approves a change that then fails. Every
+       record for that agent moves together (the migration's rule). */
     codingAgentsSet: async (p: CodingAgentsSetParams) => {
+      const { employees } = await relay.request<{ employees: Employee[] }>(
+        "employees.list",
+        {},
+      );
+      const targets = employees.filter((e) => codingAgentOf(e) === p.agent);
+      if (targets.length === 0) {
+        throw new SurfaceError(
+          "not_found",
+          `No ${CODING_AGENT_NAMES[p.agent]} agent is hired yet — hire one with team_hire, then set its default.`,
+        );
+      }
       const parts: string[] = [];
       if (p.model !== undefined) {
         parts.push(p.model === null ? "clear the model" : `model → ${p.model}`);
@@ -568,21 +598,29 @@ export function createGatewayApprovalOps(
       const what = parts.join(", ") || "no change";
       await gate({
         command: `coding_agents_set ${p.agent} ${what}`,
-        description: `Change the stored default for the ${p.agent} coding agent: ${what}. Empty fields mean that CLI's own default.`,
+        description: `Change the stored default for the ${p.agent} coding agent: ${what}. Empty fields mean that runtime's own default.`,
       });
-      const cur = await relay.request<{ value: unknown }>("settings.get", {
-        key: CODING_AGENTS_SETTING_KEY,
-      });
-      const next = applyCodingAgentPatch(
-        parseCodingAgents(cur.value),
-        p.agent,
-        p,
-      );
-      await relay.request("settings.set", {
-        key: CODING_AGENTS_SETTING_KEY,
-        value: next,
-      });
-      return next;
+      /* A new model on its own drops the old effort: a rung named for the
+         previous model's ladder may not exist on the new one. */
+      const effort =
+        p.effort !== undefined
+          ? (p.effort ?? "")
+          : p.model !== undefined
+            ? ""
+            : undefined;
+      const updated = new Map<string, Employee>();
+      for (const t of targets) {
+        const r = await relay.request<{ employee: Employee }>(
+          "employees.update",
+          {
+            id: t.id,
+            ...(p.model !== undefined ? { model: p.model ?? "" } : {}),
+            ...(effort !== undefined ? { effort } : {}),
+          },
+        );
+        updated.set(t.id, r.employee);
+      }
+      return codingAgentsOf(employees.map((e) => updated.get(e.id) ?? e));
     },
   };
 }

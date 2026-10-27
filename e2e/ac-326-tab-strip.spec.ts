@@ -67,7 +67,7 @@ async function openFocus(page: Page) {
   await startChatInFolder(
     page,
     stack,
-    { id: "default", name: "Default" },
+    { id: "default", name: "Hermes" },
     repoDir,
     "slow:250 delegate LILOS_DELEGATE_ASYNC_HOLD the relay scan to subagents",
   );

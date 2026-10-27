@@ -4,7 +4,7 @@ import {
   toStatusComponents,
 } from "@lilos/client-runtime";
 import type { DesktopAbout } from "@lilos/contracts/app";
-import type { V3Data } from "@lilos/ui";
+import { agentDisplayName, type V3Data } from "@lilos/ui";
 import { atom, computed, onMount, type ReadableAtom } from "nanostores";
 import { toastOnFail } from "../lib/actions";
 import { connectApproved } from "../lib/connect";
@@ -126,13 +126,24 @@ function build(): Slice {
           engine: engine.name,
           approved: connectApproved.get() === true,
           rows: connectRows.length
-            ? connectRows
+            ? connectRows.map((r) => ({
+                ...r,
+                /* #872: the stock profile row reads "Hermes" like every
+                   other surface — the stored employee name is untouched. */
+                employee:
+                  r.employee === undefined
+                    ? r.employee
+                    : agentDisplayName({
+                        name: r.employee,
+                        profile: r.profile,
+                      }),
+              }))
             : relay.employees
                 .get()
                 .filter((e) => e.profile)
                 .map((e) => ({
                   profile: e.profile as string,
-                  employee: e.name,
+                  employee: agentDisplayName(e),
                   state: "not-connected" as const,
                 })),
         };

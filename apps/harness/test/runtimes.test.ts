@@ -231,6 +231,73 @@ describe("two runtimes at once (D-#761)", () => {
     }
   }, 20_000);
 
+  it("a roster call's `runtime` hint routes to that engine, stripped", async () => {
+    /* #872: the agent page's describe/update/models.list carry the owning
+       runtime id as app→harness metadata — the call must land on that
+       engine's conn and the engine must never see the hint. */
+    const w = await setupWorld({ homeDir: mkhome() });
+    const acp = attachRuntime(w, ACP);
+    try {
+      /* Seed agents are shared seed objects across FakeEngine instances,
+         so an agent created on the ACP side is the clean subject. */
+      await w.user.request("agents.create", {
+        name: "devin",
+        runtime: ACP,
+        description: "Cognition's coding agent",
+      });
+      const described = await w.user.request<{ agent: { id: string } }>(
+        "agents.describe",
+        { id: "devin", runtime: ACP },
+      );
+      expect(described.agent.id).toBe("devin");
+
+      await w.user.request("agents.update", {
+        id: "devin",
+        runtime: ACP,
+        description: "edited on the owning runtime",
+      });
+      const models = await w.user.request<{ models: { id: string }[] }>(
+        "models.list",
+        { runtime: ACP },
+      );
+      expect(models.models.length).toBeGreaterThan(0);
+
+      const landed = acp.calls.filter(
+        (c) =>
+          c.method === "agents.create" ||
+          c.method === "agents.describe" ||
+          c.method === "agents.update" ||
+          c.method === "models.list",
+      );
+      expect(landed.map((c) => c.method).sort()).toEqual([
+        "agents.create",
+        "agents.describe",
+        "agents.update",
+        "models.list",
+      ]);
+      for (const c of landed) {
+        expect(c.params).not.toHaveProperty("runtime");
+      }
+      expect(
+        w.engineCalls.filter(
+          (c) =>
+            c.method === "agents.create" ||
+            c.method === "agents.describe" ||
+            c.method === "agents.update" ||
+            c.method === "models.list",
+        ),
+      ).toHaveLength(0);
+
+      /* And the write stayed on ACP — the default engine never heard of
+         the `devin` profile. */
+      await expect(
+        w.user.request("agents.describe", { id: "devin" }),
+      ).rejects.toThrow(/no agent devin/);
+    } finally {
+      await w.cleanup();
+    }
+  }, 20_000);
+
   it("a task_create hand-off lands the child on the agent's runtime", async () => {
     const homeDir = mkhome();
     const w = await setupWorld({ homeDir });
@@ -314,6 +381,228 @@ describe("two runtimes at once (D-#761)", () => {
       await w.cleanup();
     }
   }, 30_000);
+
+  /* #872: the hand-off's model is the CHILD runtime's business — an
+     explicit name is checked against its catalog (a cross-runtime pick
+     rejects), a display name resolves to the catalog's own id/provider,
+     and no pick at all starts on the child employee's stored default. */
+  it("task_create resolves the model on the child's runtime catalog", async () => {
+    const homeDir = mkhome();
+    const w = await setupWorld({ homeDir });
+    const acp = attachRuntime(w, ACP);
+    /* The child's engine lists only SWE-2 — the parent's Opus must reject. */
+    const orig = acp.conn.request.bind(acp.conn);
+    acp.conn.request = <T = unknown>(
+      method: string,
+      params?: unknown,
+    ): Promise<T> =>
+      method === "models.list"
+        ? (Promise.resolve({
+            models: [{ id: "swe-2", name: "SWE-2", provider: "cognition" }],
+            default: "swe-2",
+            defaultProvider: "cognition",
+          }) as Promise<T>)
+        : orig<T>(method, params);
+    try {
+      const { employee: caller, channel: callerChannel } =
+        await openDmConversation(w.user);
+      const { employee: worker } = await w.user.request<{
+        employee: { id: string };
+      }>("employees.create", {
+        name: "Devin",
+        role: "coder",
+        runtime: ACP,
+      });
+      const { conversation: parent } = await w.user.request<{
+        conversation: { id: string };
+      }>("conversations.open", {
+        channelId: callerChannel.id,
+        text: "Plan the feature",
+        cwd: homeDir,
+      });
+      await waitFor(async () => {
+        const { conversations } = await w.user.request<{
+          conversations: { id: string; finishedSeq: number }[];
+        }>("conversations.list", {});
+        return conversations.find((c) => c.id === parent.id)?.finishedSeq
+          ? true
+          : undefined;
+      }, "parent root turn");
+      const ops = createAppOps({
+        relay: w.harnessRelay,
+        runningTurnId: () => undefined,
+        log: w.log,
+        home: homeDir,
+        checkTaskModel: (employee, model, provider) =>
+          w.harness.checkTaskModel(employee, model, provider),
+      })("s1", {
+        employeeId: caller.id,
+        channelId: callerChannel.id,
+        conversationId: parent.id,
+      });
+      if (!ops) throw new Error("no appOps");
+
+      // A name only the parent's engine knows rejects, loudly.
+      await expect(
+        ops.taskCreate({
+          agent: "Devin",
+          prompt: "x",
+          isolation: "shared",
+          model: "opus-5-5",
+        }),
+      ).rejects.toThrow(/isn't one of Devin's models/);
+
+      // The child's own display name resolves to its catalog id + provider.
+      const r = await ops.taskCreate({
+        agent: "Devin",
+        prompt: "Sketch the module",
+        isolation: "shared",
+        model: "SWE-2",
+      });
+      const { conversations } = await w.user.request<{
+        conversations: {
+          id: string;
+          parentId?: string;
+          model?: string;
+          provider?: string;
+        }[];
+      }>("conversations.list", {});
+      const child = conversations.find((c) => c.id === r.task.threadId);
+      expect(child?.model).toBe("swe-2");
+      expect(child?.provider).toBe("cognition");
+
+      /* No pick at all: the child employee's stored default stamps (the
+         relay's own #872 fallback — the parent's pick would be wrong). */
+      await w.user.request("employees.update", {
+        id: worker.id,
+        model: "swe-2",
+      });
+      const r2 = await ops.taskCreate({
+        agent: "Devin",
+        prompt: "Second task",
+        isolation: "shared",
+      });
+      const { conversations: after } = await w.user.request<{
+        conversations: { id: string; model?: string }[];
+      }>("conversations.list", {});
+      expect(after.find((c) => c.id === r2.task.threadId)?.model).toBe("swe-2");
+    } finally {
+      await w.cleanup();
+    }
+  }, 30_000);
+});
+
+/* #872 review: `checkTaskModel` matches id AND provider (Hermes ids are
+   per provider, D-#8) and re-asks a catalog that was empty or lacks the
+   pick instead of caching the first answer forever. */
+describe("checkTaskModel (#872)", () => {
+  type Row = { id: string; name?: string; provider?: string };
+  async function checkWorld(answers: (() => Row[] | Error)[]) {
+    const w = await setupWorld();
+    const acp = attachRuntime(w, ACP);
+    let asked = 0;
+    const orig = acp.conn.request.bind(acp.conn);
+    acp.conn.request = <T = unknown>(
+      method: string,
+      params?: unknown,
+    ): Promise<T> => {
+      if (method !== "models.list") return orig<T>(method, params);
+      const answer = answers[Math.min(asked, answers.length - 1)]?.();
+      asked += 1;
+      return answer instanceof Error
+        ? Promise.reject(answer)
+        : (Promise.resolve({ models: answer }) as Promise<T>);
+    };
+    const { employee } = await w.user.request<{
+      employee: Parameters<typeof w.harness.checkTaskModel>[0];
+    }>("employees.create", { name: "Devin", role: "coder", runtime: ACP });
+    return { w, employee, asks: () => asked };
+  }
+
+  it("matches the provider, not just the first row with that id", async () => {
+    const { w, employee } = await checkWorld([
+      () => [
+        { id: "shared", name: "Shared A", provider: "a" },
+        { id: "shared", name: "Shared B", provider: "b" },
+      ],
+    ]);
+    try {
+      expect(await w.harness.checkTaskModel(employee, "shared", "b")).toEqual({
+        model: "shared",
+        provider: "b",
+      });
+      await expect(
+        w.harness.checkTaskModel(employee, "shared", "c"),
+      ).rejects.toThrow(/runs on provider/);
+    } finally {
+      await w.cleanup();
+    }
+  });
+
+  it("asks again when the first answer was empty or unreachable", async () => {
+    const { w, employee, asks } = await checkWorld([
+      () => new Error("not up yet"),
+      () => [{ id: "swe-2", provider: "cognition" }],
+    ]);
+    try {
+      // Unreachable: the pick passes through raw.
+      expect(await w.harness.checkTaskModel(employee, "swe-2")).toEqual({
+        model: "swe-2",
+      });
+      // The catalog answers now: the unreachable answer was not kept.
+      await expect(w.harness.checkTaskModel(employee, "nope")).rejects.toThrow(
+        /isn't one of Devin's models/,
+      );
+      expect(asks()).toBe(2);
+    } finally {
+      await w.cleanup();
+    }
+  });
+
+  it("a failed re-ask keeps the good catalog; concurrent misses share one ask", async () => {
+    const { w, employee, asks } = await checkWorld([
+      () => [{ id: "old" }],
+      () => new Error("flaky"),
+      () => [{ id: "old" }, { id: "newer" }],
+    ]);
+    try {
+      expect(await w.harness.checkTaskModel(employee, "old")).toEqual({
+        model: "old",
+      });
+      // The re-ask fails: the good catalog still rejects the unknown name
+      // (it is not waved through as "catalog unreachable").
+      await expect(w.harness.checkTaskModel(employee, "newer")).rejects.toThrow(
+        /isn't one of Devin's models/,
+      );
+      expect(asks()).toBe(2);
+      // Two overlapping misses cost one models.list between them.
+      const both = await Promise.all([
+        w.harness.checkTaskModel(employee, "newer"),
+        w.harness.checkTaskModel(employee, "newer"),
+      ]);
+      expect(both.map((b) => b.model)).toEqual(["newer", "newer"]);
+      expect(asks()).toBe(3);
+    } finally {
+      await w.cleanup();
+    }
+  });
+
+  it("a catalog that grows later accepts the new model", async () => {
+    const { w, employee } = await checkWorld([
+      () => [{ id: "old" }],
+      () => [{ id: "old" }, { id: "brand-new" }],
+    ]);
+    try {
+      expect(await w.harness.checkTaskModel(employee, "old")).toEqual({
+        model: "old",
+      });
+      expect(await w.harness.checkTaskModel(employee, "brand-new")).toEqual({
+        model: "brand-new",
+      });
+    } finally {
+      await w.cleanup();
+    }
+  });
 });
 
 describe("a runtime that cannot start (D-#761 review)", () => {
@@ -690,8 +979,10 @@ describe("EngineRegistry (D-#761)", () => {
     const starts = () =>
       states.filter((s) => s.runtime === ACP && s.state === "starting").length;
     const cycles = starts();
-    await expect(reg.ensure(ACP)).rejects.toThrow();
-    await expect(reg.ensure(ACP)).rejects.toThrow();
+    /* #872: inside the cooldown the reject carries the registry's recorded
+       reason — "mem://acp refused" — never a bare "engine failed". */
+    await expect(reg.ensure(ACP)).rejects.toThrow(/refused/i);
+    await expect(reg.ensure(ACP)).rejects.toThrow(/refused/i);
     expect(starts()).toBe(cycles);
     await reg.stop();
   });

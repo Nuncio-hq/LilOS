@@ -1,13 +1,8 @@
 import type { Conversation, Employee } from "@lilos/contracts/app";
-import {
-  CODING_AGENTS_SETTING_KEY,
-  type CodingAgentDefaults,
-  CodingAgentId,
-  parseCodingAgents,
-} from "@lilos/contracts/app";
 import type { AgentDescriptor, McpServer } from "@lilos/contracts/engine";
 import { expandPath } from "@lilos/host";
 import type { EngineConnection } from "../engine/client";
+import { normalizeRuntime } from "../engine/runtimes";
 import type { HarnessCtx } from "./ctx";
 
 /**
@@ -61,6 +56,9 @@ export async function ensureAgent(
       conn.request<{ agent: AgentDescriptor }>("agents.create", {
         name: preferred,
         ...(employee?.instructions ? { soul: employee.instructions } : {}),
+        /* #872: the record's description mirrors back — an in-memory
+           roster (ACP) loses it on restart, the record is the source. */
+        ...(employee?.description ? { description: employee.description } : {}),
         ...(model ? { model } : {}),
         ...(cloneFrom ? { detail: { clone_from: cloneFrom } } : {}),
       });
@@ -82,33 +80,6 @@ export async function ensureAgent(
   }
 }
 
-/**
- * The owner's stored default for this employee's coding agent (D-#835): the
- * `codingAgents` KV row, keyed by agent id — which is the employee's
- * engine handle when the hire named the CLI itself (Devin → "devin").
- * Non-coding profiles and unreadable rows get nothing; the row is a
- * fallback, never an override — a thread pick, a per-job `task_create`
- * stamp, or an employee pin still wins (#846).
- */
-export async function codingAgentDefaults(
-  this: HarnessCtx,
-  employee: Employee | undefined,
-): Promise<CodingAgentDefaults | undefined> {
-  const id = CodingAgentId.safeParse(
-    (employee?.profile ?? employee?.name ?? "").toLowerCase(),
-  );
-  if (!id.success) return undefined;
-  try {
-    const r = await this.opts.relay.request<{ value: unknown }>(
-      "settings.get",
-      { key: CODING_AGENTS_SETTING_KEY },
-    );
-    return parseCodingAgents(r.value)[id.data];
-  } catch {
-    return undefined;
-  }
-}
-
 export async function sessionParams(
   this: HarnessCtx,
   employee: Employee | undefined,
@@ -120,18 +91,25 @@ export async function sessionParams(
     agent: agentId,
     ...(employee?.model ? { model: employee.model } : {}),
   };
-  /* D-#846: precedence is conversation pick / per-job override (both live
-     on the row) > the stored per-agent default (the codingAgents KV,
-     D-#835) > the employee/sessionParamsFor pin > the agent's own default
-     (its advertised currentValue). The KV holds model + effort only;
-     provider and fast keep their existing sources. */
-  const stored = await this.codingAgentDefaults(employee);
-  // A pick pinned on the conversation (#30/#92) wins over the profile
-  // default — each field falls back independently so a bare `model` pin
-  // (old rows) still resolves its provider/effort on the engine.
-  const model = conv?.model ?? stored?.model ?? base.model;
+  /* D-#846/D-#835: precedence is conversation pick / per-job override
+     (both live on the row) > the Employee record (the agent page's
+     "Default model"/"Default effort", #872 — the one source of an agent's
+     default) > the sessionParamsFor pin > the runtime's own default (its
+     advertised currentValue). Nothing else: the old `codingAgents` KV is
+     no longer read. The employee's effort is a rung on ITS model's ladder,
+     so it rides only when the session runs that model. */
+  const model = conv?.model ?? (employee?.model || undefined) ?? base.model;
   const provider = conv?.provider ?? base.provider;
-  const effort = conv?.effort ?? stored?.effort ?? base.effort;
+  /* Ids are per provider (D-#8): the same id under another provider is
+     another model. */
+  const ownModel =
+    !conv?.model ||
+    (conv.model === employee?.model &&
+      (!conv.provider || conv.provider === base.provider));
+  const effort =
+    conv?.effort ??
+    (ownModel ? employee?.effort || undefined : undefined) ??
+    base.effort;
   const fast = conv?.fast ?? base.fast;
   // D-#113: a thread owns its folder through its project — the folder is
   // the conversation's `cwd` (`conversations.open { cwd }`, stored nullable
@@ -158,4 +136,83 @@ export async function sessionParams(
     ...(conv?.id ? { callerKey: conv.id } : {}),
     ...(mcpServer ? { mcpServers: [mcpServer] } : {}),
   };
+}
+
+type CatalogRow = { id: string; name?: string; provider?: string };
+
+/* A runtime's `models.list` in flight, so overlapping misses share one ask. */
+const asking = new WeakMap<HarnessCtx, Map<string, Promise<CatalogRow[]>>>();
+
+/* Ask the runtime for its catalog. Only an answer with rows replaces the
+   cached one — a failed or empty re-ask must not wipe a good catalog. */
+function askCatalog(ctx: HarnessCtx, runtime: string): Promise<CatalogRow[]> {
+  const inflight = asking.get(ctx) ?? new Map<string, Promise<CatalogRow[]>>();
+  asking.set(ctx, inflight);
+  const running = inflight.get(runtime);
+  if (running) return running;
+  const p = (async () => {
+    const conn =
+      ctx.connForRuntime(runtime) ?? (await ctx.ensureRuntime(runtime));
+    if (!conn) return [];
+    const r = await conn.request<{ models?: CatalogRow[] }>("models.list", {});
+    return r.models ?? [];
+  })()
+    .catch((): CatalogRow[] => [])
+    .then((rows) => {
+      if (rows.length) ctx.modelCatalogs.set(runtime, Promise.resolve(rows));
+      return rows;
+    })
+    .finally(() => inflight.delete(runtime));
+  inflight.set(runtime, p);
+  return p;
+}
+
+/* #872 — `task_create`'s explicit model is checked against the CHILD
+   agent's own runtime catalog: a name only the parent's engine knows
+   throws here, never silently starts on the wrong runtime. The answer is
+   the catalog's own id/provider (a display name resolves to its id) —
+   matched on id AND provider, since Hermes ids are per provider (D-#8).
+   A cached catalog that is empty or lacks the pick is asked again once
+   (it may have been unreachable, or grown since), so neither a stale nor
+   an empty first answer settles the check for good. A runtime whose
+   catalog cannot be listed passes the pick through raw — the engine itself
+   then accepts or rejects it. */
+export async function checkTaskModel(
+  this: HarnessCtx,
+  employee: Employee,
+  model: string,
+  provider?: string,
+): Promise<{ model: string; provider?: string }> {
+  const runtime = normalizeRuntime(employee.runtime);
+  const find = (list: readonly CatalogRow[]) =>
+    list.find(
+      (m) =>
+        (m.id === model || m.name === model) &&
+        (!provider || !m.provider || m.provider === provider),
+    );
+  /* A catalog asked for just now is as fresh as a re-ask would be. */
+  const cached = this.modelCatalogs.get(runtime);
+  let list: readonly CatalogRow[] = await (cached ?? askCatalog(this, runtime));
+  let hit = find(list);
+  if (!hit && cached) {
+    const fresh = await askCatalog(this, runtime);
+    if (fresh.length) {
+      list = fresh;
+      hit = find(list);
+    }
+  }
+  if (!list.length) return { model, ...(provider ? { provider } : {}) };
+  if (!hit) {
+    const named = list.find((m) => m.id === model || m.name === model);
+    throw new Error(
+      named
+        ? `"${model}" runs on provider "${named.provider}" for ${employee.name}, not "${provider}"`
+        : `model "${model}" isn't one of ${employee.name}'s models — its runtime offers: ${list
+            .slice(0, 6)
+            .map((m) => m.name ?? m.id)
+            .join(", ")}`,
+    );
+  }
+  const chosen = hit.provider ?? provider;
+  return { model: hit.id, ...(chosen ? { provider: chosen } : {}) };
 }

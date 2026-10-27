@@ -26,7 +26,7 @@ test("Hire a Researcher: the new agent is in the sidebar and People, opened besi
     await skipFirstRun(page);
     await page.goto(`${stack.webUrl}/`);
     const side = v3Sidebar(page);
-    await expect(side.getByRole("button", { name: /Default/ })).toBeVisible({
+    await expect(side.getByRole("button", { name: /Hermes/ })).toBeVisible({
       timeout: 30_000,
     });
     await expect(side.getByRole("button", { name: /Nova/ })).toHaveCount(0);
@@ -77,7 +77,7 @@ test("Hire a Researcher: the new agent is in the sidebar and People, opened besi
 
     // In the sidebar, beside the first agent, and in People as a row.
     await expect(side.getByRole("button", { name: /Nova/ })).toBeVisible();
-    await expect(side.getByRole("button", { name: /Default/ })).toBeVisible();
+    await expect(side.getByRole("button", { name: /Hermes/ })).toBeVisible();
     await expect(main(page).getByRole("heading", { level: 1 })).toHaveText(
       "People",
     );
@@ -125,7 +125,7 @@ test("an engine that cannot create agents has no Hire: not in the sidebar, and i
     await skipFirstRun(page);
     await page.goto(`${stack.webUrl}/`);
     const side = v3Sidebar(page);
-    await expect(side.getByRole("button", { name: /Default/ })).toBeVisible({
+    await expect(side.getByRole("button", { name: /Hermes/ })).toBeVisible({
       timeout: 30_000,
     });
     /* Hire is absent both before describe and when the engine declares no

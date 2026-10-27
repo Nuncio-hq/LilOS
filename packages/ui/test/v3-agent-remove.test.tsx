@@ -135,7 +135,7 @@ describe("the ask the row opens", () => {
     });
     expect(ask.textContent).toContain("Remove Reviewer from LilOS?");
     expect(ask.textContent).toContain("Goes:");
-    expect(ask.textContent).toContain("engine profile and CLI login");
+    expect(ask.textContent).toContain("you can add it back any time");
     expect(act_.removeAgent).not.toHaveBeenCalled();
     await act(async () => {
       fireEvent.click(

@@ -91,7 +91,7 @@ test("a fresh home: Welcome, three plain steps, then Home with the first agent a
     const side = v3Sidebar(page);
     // The agent the engine created on its own was renamed: still one agent.
     await expect(side.getByRole("button", { name: /Ada/ })).toBeVisible();
-    await expect(side.getByRole("button", { name: /Default/i })).toHaveCount(0);
+    await expect(side.getByRole("button", { name: /Hermes/i })).toHaveCount(0);
     await expect(page.locator("main")).toContainText("1 agent");
 
     // Its model is the one picked, and its folder is the chat's folder. The
