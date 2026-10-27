@@ -208,6 +208,16 @@ describe("tasks.create (D-#844)", () => {
       model: "swe-2-high",
     });
     expect(same.conversation.effort).toBe("high");
+    // The same id under an explicit provider is not known to be the same
+    // model (ids are per provider) — the employee's effort stays home.
+    const provider = await createTask(host, {
+      parentConversationId: parent.id,
+      employeeId: worker.id,
+      prompt: "Fix a third flake",
+      model: "swe-2-high",
+      provider: "other",
+    });
+    expect(provider.conversation.effort).toBeUndefined();
   });
 
   it("stamps an explicit pick on the child verbatim", async () => {

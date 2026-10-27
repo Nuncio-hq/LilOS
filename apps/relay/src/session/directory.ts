@@ -1,6 +1,8 @@
 import {
   CEO_SETTING_KEY,
   ChannelsOpenDmParams,
+  CODING_AGENTS_SETTING_KEY,
+  codingAgentOf,
   EmployeesCreateParams,
   EmployeesRemoveParams,
   EmployeesUpdateParams,
@@ -10,12 +12,38 @@ import {
   FoldersDiscoverParams,
   FoldersListParams,
   ProfileUpdateParams,
+  parseCodingAgents,
 } from "@lilos/contracts/app";
 import { resolveUnderHomeAsync } from "@lilos/host";
 import { projectFolderOf } from "../projects";
 import type { RelayStore } from "../store";
 import type { RelayCtx } from "./ctx";
 import { badParams, JsonRpcCode, RpcError } from "./rpc";
+
+/** D-#835 (#872): an agent hired after the KV era starts from the owner's
+    old stored default for it — model + effort together when the entry names
+    a model, effort alone otherwise — and the entry is consumed, so a later
+    re-hire can't revive a value the owner has since changed. Everyone who is
+    not one of the four coding agents is untouched. */
+async function withLegacyCodingDefault(
+  store: RelayStore,
+  input: EmployeesCreateParams,
+): Promise<EmployeesCreateParams & { effort?: string }> {
+  const agent = codingAgentOf(input);
+  if (!agent) return input;
+  const legacy = parseCodingAgents(
+    await store.getSetting(CODING_AGENTS_SETTING_KEY),
+  );
+  const entry = legacy[agent];
+  if (!entry) return input;
+  const { [agent]: _used, ...rest } = legacy;
+  await store.setSetting(CODING_AGENTS_SETTING_KEY, rest);
+  return {
+    ...input,
+    ...(entry.model ? { model: entry.model } : {}),
+    ...(entry.effort ? { effort: entry.effort } : {}),
+  };
+}
 
 /** `reportsTo` is an employee id, never this row, and the chain from the
     manager must not come back here (D-#775). Unknown id is not_found so it
@@ -79,7 +107,9 @@ export async function handleDirectory(c: RelayCtx): Promise<false | undefined> {
     case "employees.create": {
       const parsed = EmployeesCreateParams.safeParse(params);
       if (!parsed.success) throw badParams(parsed.error.issues);
-      const employee = await store.createEmployee(parsed.data);
+      const employee = await store.createEmployee(
+        await withLegacyCodingDefault(store, parsed.data),
+      );
       broadcast("employee.upserted", { employee });
       respond(peer, id, { employee });
       return;

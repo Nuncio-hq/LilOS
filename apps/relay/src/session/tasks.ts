@@ -89,7 +89,8 @@ export async function handleTasks(c: RelayCtx): Promise<false | undefined> {
         ...(p.effort !== undefined
           ? { effort: p.effort }
           : employee.effort &&
-              (p.model === undefined || p.model === employee.model)
+              (p.model === undefined ||
+                (p.model === employee.model && p.provider === undefined))
             ? { effort: employee.effort }
             : {}),
         ...(p.fast !== undefined ? { fast: p.fast } : {}),

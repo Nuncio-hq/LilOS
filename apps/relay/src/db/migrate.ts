@@ -647,22 +647,30 @@ export const MIGRATIONS: {
   {
     /* D-#835 (#872): the Employee record is the one source of a coding
        agent's default model + effort. The legacy `codingAgents` KV row
-       (keyed claude/cursor/devin/antigravity) moves onto the employee
-       whose profile — else name — is that id, once; the row is never read
-       again. Field by field, as the old precedence fell back: a record
-       keeps what it already pins and takes the rest from the KV (a Devin
-       hire carries swe-2-high, yet the KV effort is what ran with it). */
+       (keyed claude/cursor/devin/antigravity) moves onto every employee
+       whose profile — else name — is that id, once. On main the KV model
+       outranked the record's (`conv ?? stored.model ?? employee.model`)
+       and its effort rode with it, so a KV entry that names a model moves
+       model + effort across together (a Devin hire carries swe-2-high yet
+       swe-2-max is what ran); an effort-only entry keeps the record's
+       model. Entries with no employee stay in the KV, read-only, until
+       one is hired (the relay seeds it then). */
     version: 42,
     statements: [
       `UPDATE employees SET
-         model = CASE WHEN model = '' THEN coalesce(json_extract(
+         model = coalesce(json_extract(
            (SELECT value FROM settings WHERE key = 'codingAgents'),
-           '$.' || lower(CASE WHEN profile <> '' THEN profile ELSE name END) || '.model'), '')
-           ELSE model END,
-         effort = CASE WHEN coalesce(effort, '') = '' THEN json_extract(
+           '$.' || lower(CASE WHEN profile <> '' THEN profile ELSE name END) || '.model'), model),
+         effort = CASE WHEN json_extract(
            (SELECT value FROM settings WHERE key = 'codingAgents'),
-           '$.' || lower(CASE WHEN profile <> '' THEN profile ELSE name END) || '.effort')
-           ELSE effort END
+           '$.' || lower(CASE WHEN profile <> '' THEN profile ELSE name END) || '.model') IS NOT NULL
+           THEN json_extract(
+             (SELECT value FROM settings WHERE key = 'codingAgents'),
+             '$.' || lower(CASE WHEN profile <> '' THEN profile ELSE name END) || '.effort')
+           ELSE coalesce(json_extract(
+             (SELECT value FROM settings WHERE key = 'codingAgents'),
+             '$.' || lower(CASE WHEN profile <> '' THEN profile ELSE name END) || '.effort'), effort)
+           END
        WHERE lower(CASE WHEN profile <> '' THEN profile ELSE name END)
              IN ('claude', 'cursor', 'devin', 'antigravity')
          AND json_valid((SELECT value FROM settings WHERE key = 'codingAgents'))`,

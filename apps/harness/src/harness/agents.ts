@@ -99,8 +99,13 @@ export async function sessionParams(
      no longer read. The employee's effort is a rung on ITS model's ladder,
      so it rides only when the session runs that model. */
   const model = conv?.model ?? (employee?.model || undefined) ?? base.model;
-  const ownModel = !conv?.model || conv.model === employee?.model;
   const provider = conv?.provider ?? base.provider;
+  /* Ids are per provider (D-#8): the same id under another provider is
+     another model. */
+  const ownModel =
+    !conv?.model ||
+    (conv.model === employee?.model &&
+      (!conv.provider || conv.provider === base.provider));
   const effort =
     conv?.effort ??
     (ownModel ? employee?.effort || undefined : undefined) ??
@@ -135,21 +140,31 @@ export async function sessionParams(
 
 type CatalogRow = { id: string; name?: string; provider?: string };
 
-/* One `models.list` per runtime, the answer cached as a promise so
-   concurrent callers share it. */
-function fetchCatalog(
-  ctx: HarnessCtx,
-  runtime: string,
-): Promise<readonly CatalogRow[]> {
-  const rows = (async () => {
+/* A runtime's `models.list` in flight, so overlapping misses share one ask. */
+const asking = new WeakMap<HarnessCtx, Map<string, Promise<CatalogRow[]>>>();
+
+/* Ask the runtime for its catalog. Only an answer with rows replaces the
+   cached one — a failed or empty re-ask must not wipe a good catalog. */
+function askCatalog(ctx: HarnessCtx, runtime: string): Promise<CatalogRow[]> {
+  const inflight = asking.get(ctx) ?? new Map<string, Promise<CatalogRow[]>>();
+  asking.set(ctx, inflight);
+  const running = inflight.get(runtime);
+  if (running) return running;
+  const p = (async () => {
     const conn =
       ctx.connForRuntime(runtime) ?? (await ctx.ensureRuntime(runtime));
     if (!conn) return [];
     const r = await conn.request<{ models?: CatalogRow[] }>("models.list", {});
     return r.models ?? [];
-  })().catch(() => []);
-  ctx.modelCatalogs.set(runtime, rows);
-  return rows;
+  })()
+    .catch((): CatalogRow[] => [])
+    .then((rows) => {
+      if (rows.length) ctx.modelCatalogs.set(runtime, Promise.resolve(rows));
+      return rows;
+    })
+    .finally(() => inflight.delete(runtime));
+  inflight.set(runtime, p);
+  return p;
 }
 
 /* #872 — `task_create`'s explicit model is checked against the CHILD
@@ -175,12 +190,16 @@ export async function checkTaskModel(
         (m.id === model || m.name === model) &&
         (!provider || !m.provider || m.provider === provider),
     );
-  let list = await (this.modelCatalogs.get(runtime) ??
-    fetchCatalog(this, runtime));
+  /* A catalog asked for just now is as fresh as a re-ask would be. */
+  const cached = this.modelCatalogs.get(runtime);
+  let list: readonly CatalogRow[] = await (cached ?? askCatalog(this, runtime));
   let hit = find(list);
-  if (!hit) {
-    list = await fetchCatalog(this, runtime);
-    hit = find(list);
+  if (!hit && cached) {
+    const fresh = await askCatalog(this, runtime);
+    if (fresh.length) {
+      list = fresh;
+      hit = find(list);
+    }
   }
   if (!list.length) return { model, ...(provider ? { provider } : {}) };
   if (!hit) {

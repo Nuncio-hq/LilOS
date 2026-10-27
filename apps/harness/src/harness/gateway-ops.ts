@@ -12,6 +12,7 @@ import type {
 } from "@lilos/contracts/app";
 import {
   CEO_SETTING_KEY,
+  CODING_AGENT_NAMES,
   codingAgentOf,
   codingAgentsOf,
 } from "@lilos/contracts/app";
@@ -569,10 +570,22 @@ export function createGatewayApprovalOps(
     },
 
     /* D-#835: the default model + effort of an outside coding agent lives
-       on its Employee record (the agent page edits the same fields). The
-       card names the change in words; on "once" the record is patched.
-       An agent nobody hired has no record to hold a default. */
+       on its Employee record (the agent page edits the same fields). An
+       agent nobody hired has no record to hold one — refused BEFORE the
+       card, so the user never approves a change that then fails. Every
+       record for that agent moves together (the migration's rule). */
     codingAgentsSet: async (p: CodingAgentsSetParams) => {
+      const { employees } = await relay.request<{ employees: Employee[] }>(
+        "employees.list",
+        {},
+      );
+      const targets = employees.filter((e) => codingAgentOf(e) === p.agent);
+      if (targets.length === 0) {
+        throw new SurfaceError(
+          "not_found",
+          `No ${CODING_AGENT_NAMES[p.agent]} agent is hired yet — hire one with team_hire, then set its default.`,
+        );
+      }
       const parts: string[] = [];
       if (p.model !== undefined) {
         parts.push(p.model === null ? "clear the model" : `model → ${p.model}`);
@@ -587,16 +600,6 @@ export function createGatewayApprovalOps(
         command: `coding_agents_set ${p.agent} ${what}`,
         description: `Change the stored default for the ${p.agent} coding agent: ${what}. Empty fields mean that runtime's own default.`,
       });
-      const { employees } = await relay.request<{ employees: Employee[] }>(
-        "employees.list",
-        {},
-      );
-      const target = employees.find((e) => codingAgentOf(e) === p.agent);
-      if (!target) {
-        throw new Error(
-          `there is no ${p.agent} agent on the team — hire it first, then its default can be set`,
-        );
-      }
       /* A new model on its own drops the old effort: a rung named for the
          previous model's ladder may not exist on the new one. */
       const effort =
@@ -605,17 +608,19 @@ export function createGatewayApprovalOps(
           : p.model !== undefined
             ? ""
             : undefined;
-      const r = await relay.request<{ employee: Employee }>(
-        "employees.update",
-        {
-          id: target.id,
-          ...(p.model !== undefined ? { model: p.model ?? "" } : {}),
-          ...(effort !== undefined ? { effort } : {}),
-        },
-      );
-      return codingAgentsOf(
-        employees.map((e) => (e.id === r.employee.id ? r.employee : e)),
-      );
+      const updated = new Map<string, Employee>();
+      for (const t of targets) {
+        const r = await relay.request<{ employee: Employee }>(
+          "employees.update",
+          {
+            id: t.id,
+            ...(p.model !== undefined ? { model: p.model ?? "" } : {}),
+            ...(effort !== undefined ? { effort } : {}),
+          },
+        );
+        updated.set(t.id, r.employee);
+      }
+      return codingAgentsOf(employees.map((e) => updated.get(e.id) ?? e));
     },
   };
 }

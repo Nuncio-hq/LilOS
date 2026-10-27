@@ -280,6 +280,7 @@ describe("relay migrations", () => {
       add("cla", "Claude Code", "claude", "");
       add("pin", "Cursor", "cursor", "gpt-5");
       add("hire", "Devin 2", "devin", "swe-2-high");
+      add("anti", "Antigravity", "antigravity", "gem-pro");
       add("ada", "Ada", "builder", "");
       db.query("INSERT INTO settings (key, value) VALUES ('codingAgents', ?)").run(${JSON.stringify(
         kv,
@@ -290,20 +291,25 @@ describe("relay migrations", () => {
     const rows = runScript(
       seed(
         JSON.stringify({
-          devin: { model: "swe-2-high", effort: "max" },
+          devin: { model: "swe-2-max", effort: "max" },
           claude: { effort: "high" },
           cursor: { model: "kv-model", effort: "low" },
+          antigravity: { effort: "high" },
           builder: { model: "x" },
         }),
       ),
     );
     const by = Object.fromEntries(rows.map((r: { id: string }) => [r.id, r]));
-    expect(by.dev).toMatchObject({ model: "swe-2-high", effort: "max" });
+    expect(by.dev).toMatchObject({ model: "swe-2-max", effort: "max" });
     expect(by.cla).toMatchObject({ model: "", effort: "high" });
-    /* A Devin hire copies swe-2-high into its record — the KV effort is
-       what actually ran with it, so it still lands. */
-    expect(by.hire).toMatchObject({ model: "swe-2-high", effort: "max" });
-    expect(by.pin).toMatchObject({ model: "gpt-5", effort: "low" });
+    /* On main the KV model outranked the record's, and its effort rode
+       with it: a KV entry that names a model moves model + effort across
+       together (a Devin hire copies swe-2-high into its record, yet
+       swe-2-max is what ran). */
+    expect(by.hire).toMatchObject({ model: "swe-2-max", effort: "max" });
+    expect(by.pin).toMatchObject({ model: "kv-model", effort: "low" });
+    // An effort-only entry keeps the record's model and adds the effort.
+    expect(by.anti).toMatchObject({ model: "gem-pro", effort: "high" });
     expect(by.ada).toMatchObject({ model: "", effort: null });
     const junk = runScript(seed("not json"));
     expect(
@@ -314,6 +320,7 @@ describe("relay migrations", () => {
       ]),
     ).toEqual([
       ["ada", "", null],
+      ["anti", "gem-pro", null],
       ["cla", "", null],
       ["dev", "", null],
       ["hire", "swe-2-high", null],

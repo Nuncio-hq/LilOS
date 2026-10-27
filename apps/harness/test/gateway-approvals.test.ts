@@ -613,8 +613,18 @@ describe("approval-gated gateway tools", () => {
         key: "codingAgents",
         value: { devin: { model: "stale-kv", effort: "low" } },
       });
+      /* A hired agent reads its record; one nobody hired falls back to the
+         legacy KV entry, read-only. */
+      await v.w.user.request("settings.set", {
+        key: "codingAgents",
+        value: {
+          devin: { model: "stale-kv", effort: "low" },
+          cursor: { model: "gpt-5", effort: "high" },
+        },
+      });
       expect((await v.client.codingAgents()).agents).toEqual({
         devin: { model: "swe-2-high" },
+        cursor: { model: "gpt-5", effort: "high" },
       });
 
       const call = v.client.codingAgentsSet({
@@ -647,12 +657,41 @@ describe("approval-gated gateway tools", () => {
       await v.answer(askClear.id, "once");
       expect((await callClear).agents.devin).toBeUndefined();
 
-      // An agent nobody hired has no record to write.
-      const call3 = v.client.codingAgentsSet({ agent: "cursor", model: "x" });
-      const ask3 = await v.nextAsk(seen);
-      seen.add(ask3.id);
-      await v.answer(ask3.id, "once");
-      await expect(call3).rejects.toThrow(/no cursor agent/);
+      // An agent nobody hired has no record to write — refused up front,
+      // before any approval card, as not_found naming team_hire.
+      const asksBefore = (await v.asks("open")).length;
+      await expect(
+        v.client.codingAgentsSet({ agent: "cursor", model: "x" }),
+      ).rejects.toThrow(/No Cursor agent is hired yet — hire one with team_hire/);
+      expect((await v.asks("open")).length).toBe(asksBefore);
+      // The legacy KV is never written.
+      expect(
+        (
+          await v.w.user.request<{ value: unknown }>("settings.get", {
+            key: "codingAgents",
+          })
+        ).value,
+      ).toEqual({
+        devin: { model: "stale-kv", effort: "low" },
+        cursor: { model: "gpt-5", effort: "high" },
+      });
+
+      // Two records for one agent move together, as the migration does.
+      const { employee: second } = await v.w.user.request<{
+        employee: Employee;
+      }>("employees.create", {
+        name: "Devin 2",
+        role: "engineer",
+        profile: "devin",
+      });
+      const call4 = v.client.codingAgentsSet({ agent: "devin", model: "m2" });
+      const ask4 = await v.nextAsk(seen);
+      seen.add(ask4.id);
+      await v.answer(ask4.id, "once");
+      await call4;
+      const all = await v.employees();
+      expect(all.find((e) => e.id === devin.id)?.model).toBe("m2");
+      expect(all.find((e) => e.id === second.id)?.model).toBe("m2");
     } finally {
       v.gw.server.close();
       await v.scope.close();

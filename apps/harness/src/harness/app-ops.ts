@@ -13,7 +13,12 @@ import type {
   Task,
   Ticket,
 } from "@lilos/contracts/app";
-import { CEO_SETTING_KEY, codingAgentsOf } from "@lilos/contracts/app";
+import {
+  CEO_SETTING_KEY,
+  CODING_AGENTS_SETTING_KEY,
+  codingAgentsOf,
+  parseCodingAgents,
+} from "@lilos/contracts/app";
 import type {
   SessionBinding,
   TicketAssignParams,
@@ -353,13 +358,20 @@ export function createAppOps(deps: {
         });
       },
       /* D-#835: the user's defaults for outside coding agents are the
-         Employee records' own model + effort (#872) — read from the roster. */
+         Employee records' own model + effort (#872); an agent nobody has
+         hired yet reads its legacy KV entry, read-only. */
       codingAgents: async () => {
         const r = await relay.request<{ employees: Employee[] }>(
           "employees.list",
           {},
         );
-        return codingAgentsOf(r.employees);
+        const legacy = await relay
+          .request<{ value: unknown }>("settings.get", {
+            key: CODING_AGENTS_SETTING_KEY,
+          })
+          .then((x) => parseCodingAgents(x.value))
+          .catch(() => ({}));
+        return codingAgentsOf(r.employees, legacy);
       },
       /* The live holder. Call time reads this; the start snapshot is separate (D-#778). */
       ceoId: async () => {

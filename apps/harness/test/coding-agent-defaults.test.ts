@@ -31,14 +31,14 @@ const startParams = (w: Awaited<ReturnType<typeof setupWorld>>) =>
   }, "session.start params");
 
 describe("employee default -> session.start (#846, #872)", () => {
-  it("a stale KV default fills nothing — the runtime's own default applies", async () => {
+  it("a KV row written after the hire fills nothing — the runtime's own default applies", async () => {
     const w = await setupWorld();
     try {
+      const channel = await hireAndOpen(w, { name: "Devin", profile: "devin" });
       await w.user.request("settings.set", {
         key: "codingAgents",
         value: { devin: { model: "fake-smart", effort: "high" } },
       });
-      const channel = await hireAndOpen(w, { name: "Devin", profile: "devin" });
       await w.user.request("conversations.open", {
         channelId: channel.id,
         text: "hi",

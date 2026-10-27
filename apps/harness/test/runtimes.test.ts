@@ -542,7 +542,6 @@ describe("checkTaskModel (#872)", () => {
   it("asks again when the first answer was empty or unreachable", async () => {
     const { w, employee, asks } = await checkWorld([
       () => new Error("not up yet"),
-      () => new Error("still not up"),
       () => [{ id: "swe-2", provider: "cognition" }],
     ]);
     try {
@@ -554,6 +553,34 @@ describe("checkTaskModel (#872)", () => {
       await expect(w.harness.checkTaskModel(employee, "nope")).rejects.toThrow(
         /isn't one of Devin's models/,
       );
+      expect(asks()).toBe(2);
+    } finally {
+      await w.cleanup();
+    }
+  });
+
+  it("a failed re-ask keeps the good catalog; concurrent misses share one ask", async () => {
+    const { w, employee, asks } = await checkWorld([
+      () => [{ id: "old" }],
+      () => new Error("flaky"),
+      () => [{ id: "old" }, { id: "newer" }],
+    ]);
+    try {
+      expect(await w.harness.checkTaskModel(employee, "old")).toEqual({
+        model: "old",
+      });
+      // The re-ask fails: the good catalog still rejects the unknown name
+      // (it is not waved through as "catalog unreachable").
+      await expect(w.harness.checkTaskModel(employee, "newer")).rejects.toThrow(
+        /isn't one of Devin's models/,
+      );
+      expect(asks()).toBe(2);
+      // Two overlapping misses cost one models.list between them.
+      const both = await Promise.all([
+        w.harness.checkTaskModel(employee, "newer"),
+        w.harness.checkTaskModel(employee, "newer"),
+      ]);
+      expect(both.map((b) => b.model)).toEqual(["newer", "newer"]);
       expect(asks()).toBe(3);
     } finally {
       await w.cleanup();

@@ -482,4 +482,53 @@ describe("employees lifecycle + engine passthrough (#29)", () => {
       (await listed()).find((e) => e.id === bea.employee.id)?.reportsTo,
     ).toBeUndefined();
   });
+
+  /* D-#835 (#872): a coding agent hired after the KV era starts from the
+     owner's old stored default — once. The entry is consumed so a later
+     re-hire doesn't revive a value the owner has since changed. */
+  it("employees.create seeds a coding agent from the legacy codingAgents KV, once", async () => {
+    const relay = newRelay();
+    const user = await helloed(relay);
+    await call(user.connection, user.frames, "settings.set", {
+      key: "codingAgents",
+      value: {
+        devin: { model: "swe-2-max", effort: "max" },
+        cursor: { model: "gpt-5" },
+      },
+    });
+    const devin = (
+      await call(user.connection, user.frames, "employees.create", {
+        name: "Devin",
+        role: "coder",
+        profile: "devin",
+        model: "swe-2-high",
+      })
+    ).result as { employee: { model: string; effort?: string } };
+    expect(devin.employee).toMatchObject({ model: "swe-2-max", effort: "max" });
+    const ada = (
+      await call(user.connection, user.frames, "employees.create", {
+        name: "Ada",
+        role: "eng",
+        profile: "builder",
+      })
+    ).result as { employee: { model: string; effort?: string } };
+    expect(ada.employee.model).toBe("");
+    expect(ada.employee.effort).toBeUndefined();
+    const kv = (
+      await call(user.connection, user.frames, "settings.get", {
+        key: "codingAgents",
+      })
+    ).result as { value: unknown };
+    // devin's entry is consumed; the unhired cursor's stays.
+    expect(kv.value).toEqual({ cursor: { model: "gpt-5" } });
+    const again = (
+      await call(user.connection, user.frames, "employees.create", {
+        name: "Devin 2",
+        role: "coder",
+        profile: "devin",
+        model: "swe-2-high",
+      })
+    ).result as { employee: { model: string; effort?: string } };
+    expect(again.employee.model).toBe("swe-2-high");
+  });
 });

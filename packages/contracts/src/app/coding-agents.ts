@@ -2,6 +2,10 @@ import { z } from "zod";
 
 import type { Employee } from "./domain.js";
 
+/** The legacy KV row (D-#835): migrated onto the Employee records, read
+ *  only for an agent nobody has hired, and consumed when one is. */
+export const CODING_AGENTS_SETTING_KEY = "codingAgents";
+
 /**
  * The user's default model + effort per outside coding agent (#835, D-#835):
  * the **Employee record** (`model`, `effort`) of the agent that runs it is
@@ -20,6 +24,14 @@ export const CODING_AGENT_IDS = [
   "antigravity",
 ] as const;
 export const CodingAgentId = z.enum(CODING_AGENT_IDS);
+
+/** How a person says each agent (for messages). */
+export const CODING_AGENT_NAMES = {
+  claude: "Claude Code",
+  cursor: "Cursor",
+  devin: "Devin",
+  antigravity: "Antigravity",
+} as const satisfies Record<(typeof CODING_AGENT_IDS)[number], string>;
 export type CodingAgentId = z.infer<typeof CodingAgentId>;
 
 /** One agent's stored choice — the CLI flag values verbatim. */
@@ -49,19 +61,32 @@ export function codingAgentOf(
   return id.success ? id.data : undefined;
 }
 
-/** The roster's coding agents with a pin, as the tool reports them. */
+/** A raw KV value into the map; junk yields the empty map. */
+export function parseCodingAgents(value: unknown): CodingAgentsSetting {
+  const parsed = CodingAgentsSetting.safeParse(value);
+  return parsed.success ? parsed.data : {};
+}
+
+/** What `coding_agents` reports: each hired agent's Employee pin (the first
+ *  record for that agent), and — read-only — the legacy KV entry for an
+ *  agent nobody has hired. */
 export function codingAgentsOf(
   employees: readonly Employee[],
+  legacy: CodingAgentsSetting = {},
 ): CodingAgentsSetting {
   const out: CodingAgentsSetting = {};
+  const hired = new Set<CodingAgentId>();
   for (const e of employees) {
     const id = codingAgentOf(e);
-    if (!id || out[id]) continue;
+    if (!id || hired.has(id)) continue;
+    hired.add(id);
     const d: CodingAgentDefaults = {
       ...(e.model ? { model: e.model } : {}),
       ...(e.effort ? { effort: e.effort } : {}),
     };
     if (d.model || d.effort) out[id] = d;
   }
+  for (const id of CODING_AGENT_IDS)
+    if (!hired.has(id) && legacy[id]) out[id] = legacy[id];
   return out;
 }
