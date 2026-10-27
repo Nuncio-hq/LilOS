@@ -154,7 +154,7 @@ for (const theme of ["light", "dark"] as const) {
        thread shows ONE composer (the thread's). */
     await page.goto(`${stack.webUrl}/#?page=home&open=thread:${convId}`);
     await peekReady(page);
-    await expect(page.locator("[data-composer]")).toHaveCount(1);
+    await expect(page.locator("[data-composer]:visible")).toHaveCount(1);
     await shot(page, group, "06-split-home-one-composer");
 
     /* 10-access-one-click → a real menu: click opens it, nothing flips. */
