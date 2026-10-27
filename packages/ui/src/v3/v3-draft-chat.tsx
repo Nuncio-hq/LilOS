@@ -362,6 +362,7 @@ export function ChatDraft({
         <ModelChip
           data={data}
           act={act}
+          agent={agent}
           agentModelId={agent.modelId}
           pick={pick}
           onPick={(c) => setPicks((p) => ({ ...p, [agent.id]: c }))}

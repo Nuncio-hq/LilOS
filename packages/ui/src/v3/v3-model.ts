@@ -78,6 +78,22 @@ export const ticketOf = (d: V3Data, id: string): V3Ticket | undefined =>
 export const projectOf = (d: V3Data, id: string) =>
   d.projects.find((p) => p.id === id);
 
+/* #872 — the composer's model catalog follows the SELECTED agent: a
+   runtime agent picks from its own engine's catalog (`modelCatalogs`),
+   the default engine's agent from `modelCatalog`. Absent = the plain
+   label menu (the runtime row's `models` labels, never the default
+   engine's list). The single lookup every model chip's data input flows
+   through — the per-agent wiring is a body change, not a call-site one. */
+export const modelCatalogOf = (
+  d: V3Data,
+  a: { runtime?: string },
+): NonNullable<V3Data["modelCatalog"]> | undefined => {
+  const rt = a.runtime
+    ? d.runtimes?.find((r) => r.id === a.runtime)
+    : undefined;
+  return rt && !rt.isDefault ? d.modelCatalogs?.[rt.id] : d.modelCatalog;
+};
+
 /** The project a thread lives in: its own, or its ticket's (D-#771). */
 export const threadProjectId = (d: V3Data, t: V3Thread): string | undefined =>
   t.projectId ?? (t.ticketId ? ticketOf(d, t.ticketId)?.projectId : undefined);

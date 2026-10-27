@@ -4,6 +4,7 @@ import type { ModelChoice } from "../types";
 import { ChipMenu } from "./v3-chip-menu";
 import type { V3Data } from "./v3-data-types";
 import { ProjectMark } from "./v3-marks";
+import { modelCatalogOf } from "./v3-model";
 import type { V3Actions } from "./v3-page-types";
 import type { V3Project } from "./v3-types";
 
@@ -100,6 +101,7 @@ export function ProjectChip({
 export function ModelChip({
   data,
   act,
+  agent,
   agentModelId,
   pick,
   onPick,
@@ -110,26 +112,35 @@ export function ModelChip({
 }: {
   data: V3Data;
   act: V3Actions;
+  /** The selected agent — its runtime decides which catalog the picker
+      lists (#872): Devin's chip shows SWE-2, never Hermes's list. */
+  agent: { runtime?: string };
   /** The agent's own model id: where the picker starts, never a past pick. */
   agentModelId?: string;
   pick?: ModelChoice;
   onPick: (c: ModelChoice) => void;
-  /** The plain menu's choice (a label from `data.modelChoices`). */
+  /** The plain menu's choice (a label from the runtime's `models`). */
   label: string;
   onLabel: (label: string) => void;
   /** `/model` opens the picker the box already owns. */
   open: boolean;
   onOpen: (open: boolean) => void;
 }) {
-  const cat = data.modelCatalog;
+  const rt = agent.runtime
+    ? data.runtimes?.find((r) => r.id === agent.runtime)
+    : undefined;
+  const cat = modelCatalogOf(data, agent);
   if (!cat) {
-    return data.modelChoices.length > 0 ? (
+    /* A runtime agent whose catalog hasn't landed menus its OWN runtime's
+       labels — never the default engine's list on an ACP agent (#872). */
+    const choices = rt && !rt.isDefault ? (rt.models ?? []) : data.modelChoices;
+    return choices.length > 0 ? (
       <ChipMenu
         title="Model"
         value={label}
         onPick={onLabel}
         label={<span className="truncate @max-[480px]:hidden">{label}</span>}
-        options={data.modelChoices.map((m) => ({
+        options={choices.map((m) => ({
           id: m,
           node: <span>{m}</span>,
         }))}

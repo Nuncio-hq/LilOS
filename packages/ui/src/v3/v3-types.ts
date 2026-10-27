@@ -161,6 +161,12 @@ export type V3Runtime = {
   /** The runtime the app already runs as its default engine: its profiles
      are Who?'s profile rows, not a kind of their own. */
   isDefault?: boolean;
+  /* #872 — a runtime agent's page reads its own engine, never the
+     default's. */
+  /** Its own model picker labels (`models.list` on that engine). Absent =
+      not asked yet or no catalog — the Model chip shows the agent's own
+      model as text. */
+  models?: string[];
 };
 
 /** An engine profile as the engine reports it: a persona with a model and

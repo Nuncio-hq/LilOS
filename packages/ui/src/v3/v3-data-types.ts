@@ -289,6 +289,12 @@ export type V3Data = {
     /** The engine can re-read its catalog (`refreshModels`). */
     refreshable?: boolean;
   };
+  /* #872: each non-default runtime's own catalog, keyed by runtime id —
+     the composer picks from the SELECTED agent's engine, never the
+     default's. A runtime whose catalog hasn't landed has no entry (its
+     chip then menus the runtime row's plain labels). `modelCatalogOf` is
+     the single lookup the picker's data input flows through. */
+  modelCatalogs?: Record<string, NonNullable<V3Data["modelCatalog"]>>;
   /** The app starts a chat on the access you pick (Ask / Full access): the
      new-chat box shows the pill, starting on `settings.approvals`. Absent: no
      pill; the chat opens on that default. */
