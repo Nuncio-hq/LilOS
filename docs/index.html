@@ -88,7 +88,7 @@ input{width:100%;max-width:420px;padding:8px 12px;border-radius:8px;border:1px s
       <tr><td><code>.agents/skills/</code></td><td>Test desktop app, iOS simulator, web dev stack on this Mac</td></tr>
     </tbody>
   </table>
-  <p><code>bun install</code> (Bun per <code>.bun-version</code>) · <code>bun run prototype:dev</code> → <code>localhost:5173</code> · <code>bun run verify</code> (Biome, typecheck, unit tests, builds, E2E; <code>verify:fast</code> skips E2E) · <code>bun run app:local</code> builds, runs Mac app on real Hermes · <code>bun run mobile:release</code> ships TestFlight · <code>bun run live:hermes</code>: conformance on Hermes. Headers say what they need.</p>
+  <p><code>bun install</code> · <code>bun run prototype:dev</code> → <code>localhost:5173</code> · <code>bun run verify</code> (Biome, typecheck, unit tests, builds, E2E; <code>verify:fast</code> skips E2E) · <code>bun run app:local</code> builds, runs Mac app on real Hermes · <code>bun run mobile:release</code> ships TestFlight · <code>bun run live:hermes</code>: conformance on Hermes. Headers say what they need.</p>
   <p><b>Structure</b> (<a href="#d-3-10">D-#3</a> deps, boundary types, <a href="#d-3-4">D-#3</a> Bun-only APIs, <a href="#d-26">D-#26</a> who talks to engine). Feature folders; split past ~400 lines. Biome skips <code>prototype/web/src</code>, <code>site/</code>, vendored shadcn/AI Elements. Flaky Playwright test gets its own issue.</p>
 </section>
 
@@ -298,7 +298,7 @@ packages/engine-*             adapter owning an engine</code></pre>
 <li id="d-848"><b>D-#848</b> A git caller's <code>task_create</code> child gets a HEAD worktree by default (#156 intent); <code>"shared"</code> shares the folder. <em>Not: copying uncommitted edits, auto-merge.</em> <small>#848</small> <kbd>apps/harness/src/harness/task-isolation.ts</kbd></li>
 <li id="d-761"><b>D-#761</b> Engine per runtime (<code>Employee.runtime</code>): lazy start, adapter+failure gates, runtime::session refs. <em>Not: shared engine, retry loops.</em> <small>#761</small> <kbd>apps/harness/src/engine/registry.ts</kbd></li>
 <li id="d-847"><b>D-#847</b> A helper is a thread with <code>parentId</code>: no list row, shown on its parent; waiting parents read Working; parent Stop ends only its turn. <em>Not: helper rows, a stop cascade.</em> <small>#847</small> <kbd>packages/ui/src/v3/v3-model.ts</kbd></li>
-<li id="d-862"><b>D-#862</b> Pin/settle ("Done")/snooze are relay state; <code>archived</code> mirrors settled; a sweep settles 3-day-idle or merged-PR threads, never pinned, snoozed, helpers. <em>Not: client stamps.</em> <small>#862</small> <kbd>apps/relay/src/sweep.ts</kbd></li>
+<li id="d-862"><b>D-#862</b> Pin/settle ("Done")/snooze are relay state; <code>archived</code> mirrors settled; a sweep settles 3-day-idle or merged-PR threads, never pinned, snoozed, helpers. <em>Not: client stamps, agent tools.</em> <small>#862</small> <kbd>apps/relay/src/sweep.ts</kbd></li>
 <li id="d-881"><b>D-#881</b> A settled thread's <code>.lilos/wt</code> copy goes back on its settle — removed only clean (ignored files count), HEAD pushed-or-merged, and unshared; <code>-d</code> merged, <code>-D</code> at the PR head; one quiet line; un-settle restores. <em>Not: force-removal, an agent tool.</em> <small>#881</small> <kbd>apps/harness/src/harness/worktree-cleanup.ts</kbd></li>
 </ul>
 <h3 id="decisions-testing">Testing</h3>
