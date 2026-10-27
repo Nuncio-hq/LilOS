@@ -56,12 +56,8 @@ const ALLOW: Record<
     why: "company-mode first-run copy",
   },
   "packages/ui/src/v3/v3-hire.tsx": {
-    words: ["CEO", "hire"],
+    words: ["CEO"],
     why: "Hire page",
-  },
-  "packages/ui/src/v3/v3-hire-profiles.tsx": {
-    words: ["hire"],
-    why: "Hire page's existing-profiles section",
   },
   "packages/ui/src/v3/v3-guide.tsx": {
     words: ["CEO"],
@@ -96,14 +92,6 @@ const ALLOW: Record<
     strings: ["the CEO"],
     why: "the company-gated fallback chip's fixed part",
   },
-  "packages/ui/src/v3/v3-page-view.tsx": {
-    words: ["hire"],
-    why: "the Hire page's title",
-  },
-  "packages/ui/src/v3/v3-sidebar.tsx": {
-    words: ["hire"],
-    why: "the company-gated Hire button",
-  },
   "packages/ui/src/v3/v3-ticket.tsx": {
     words: ["CEO"],
     why: "the ticket page",
@@ -133,10 +121,6 @@ const ALLOW: Record<
   /* #872's scope (the add-agent dialog and the agent page): the rewording
      of these strings lands in that PR — allow-listed here so the two
      landings do not collide. */
-  "packages/ui/src/v3/v3-add-agent.tsx": {
-    words: ["hire"],
-    why: "the add-agent dialog — #872",
-  },
   "packages/ui/src/v3/v3-agent.tsx": {
     words: ["CEO"],
     why: "the agent page — #872",

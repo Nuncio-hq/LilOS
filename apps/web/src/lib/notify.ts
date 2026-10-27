@@ -49,7 +49,7 @@ const employeeOf = (
 
 const employeeName = (conv: Conversation, ctx: NotifyContext): string => {
   const e = employeeOf(conv, ctx);
-  return e ? agentDisplayName(e) : "An employee";
+  return e ? agentDisplayName(e) : "An agent";
 };
 
 /** Long text is cut at a word boundary so the banner stays a one-liner —

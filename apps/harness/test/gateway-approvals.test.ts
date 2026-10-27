@@ -662,7 +662,9 @@ describe("approval-gated gateway tools", () => {
       const asksBefore = (await v.asks("open")).length;
       await expect(
         v.client.codingAgentsSet({ agent: "cursor", model: "x" }),
-      ).rejects.toThrow(/No Cursor agent is hired yet — hire one with team_hire/);
+      ).rejects.toThrow(
+        /No Cursor agent is hired yet — hire one with team_hire/,
+      );
       expect((await v.asks("open")).length).toBe(asksBefore);
       // The legacy KV is never written.
       expect(

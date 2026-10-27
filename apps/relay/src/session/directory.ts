@@ -108,7 +108,9 @@ export async function handleDirectory(c: RelayCtx): Promise<false | undefined> {
       const parsed = EmployeesCreateParams.safeParse(params);
       if (!parsed.success) throw badParams(parsed.error.issues);
       const employee = await store.createEmployee(
-        await withLegacyCodingDefault(store, parsed.data),
+        codingAgentOf(parsed.data)
+          ? await withLegacyCodingDefault(store, parsed.data)
+          : parsed.data,
       );
       broadcast("employee.upserted", { employee });
       respond(peer, id, { employee });

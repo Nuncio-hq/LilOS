@@ -472,17 +472,14 @@ export function agentTone(name: string): V3Tone {
 
 /* A coding runtime's tone (#872): known ids keep their brand-adjacent
    colour, a new one hashes to a stable pastel. */
-const RUNTIME_TONE: Record<string, V3Tone> = {
-  "acp:devin": "b",
-  "acp:claude": "m",
-};
+const RUNTIME_TONE: Record<string, V3Tone> = { devin: "b", claude: "m" };
 
 /** A non-default runtime's mark — the label and tone its agents' avatars
     wear wherever an avatar is drawn (sidebar, page, thread). */
 export function runtimeLook(id: string): { label: string; tone: V3Tone } {
   return {
     label: prettifyRuntimeId(id),
-    tone: RUNTIME_TONE[id] ?? agentTone(id),
+    tone: RUNTIME_TONE[id.replace(/^acp:/, "")] ?? agentTone(id),
   };
 }
 
