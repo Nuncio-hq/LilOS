@@ -1,10 +1,9 @@
-import { CheckIcon, XIcon } from "lucide-react";
+import { CheckIcon } from "lucide-react";
 import type { ReactNode, Ref } from "react";
 import { cn } from "../lib/utils";
-import { Spinner } from "./v3-bits";
 
-/* The first-run flow's small parts: a labelled input, a pick-one card, the
-   step indicator and one line of the engine check. */
+/* The first-run flow's small parts: a labelled input, a pick-one card, and
+   the step indicator. */
 
 const FIELD =
   "mt-1.5 h-9 w-full rounded-[7px] border border-foreground/15 bg-background px-3 text-[15px] text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-foreground/40";
@@ -126,49 +125,5 @@ export function Steps({ steps, at }: { steps: string[]; at: number }) {
         </li>
       ))}
     </ol>
-  );
-}
-
-/** One line of the engine check: waiting, checking, fine, or a problem. */
-export function CheckRow({
-  state,
-  label,
-  result,
-}: {
-  state: "wait" | "run" | "ok" | "fail";
-  label: string;
-  result: ReactNode;
-}) {
-  return (
-    <div
-      // Test hook: the leg's real state, read by e2e (#589); never a timer.
-      data-first-run-step
-      data-state={state}
-      className="flex items-center gap-3 border-[var(--v3-line)] border-b py-3"
-    >
-      <span className="grid size-5 shrink-0 place-items-center">
-        {state === "run" && <Spinner />}
-        {state === "ok" && (
-          <CheckIcon className="size-4 text-emerald-600 dark:text-emerald-400" />
-        )}
-        {state === "fail" && (
-          <XIcon className="size-4 text-red-600 dark:text-red-400" />
-        )}
-        {state === "wait" && (
-          <span className="size-3 rounded-full border border-[var(--v3-line)]" />
-        )}
-      </span>
-      <span
-        className={cn(
-          "min-w-0 flex-1 text-[14.5px]",
-          state === "wait" && "text-muted-foreground/70",
-        )}
-      >
-        {label}
-      </span>
-      <span className="text-[13.5px] text-muted-foreground">
-        {state === "wait" ? "" : state === "run" ? "Checking…" : result}
-      </span>
-    </div>
   );
 }

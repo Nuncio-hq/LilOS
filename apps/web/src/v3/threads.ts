@@ -65,7 +65,7 @@ function askText(
   const r = ask.request;
   if (ask.hire)
     return {
-      title: `Hire ${ask.hire.name}`,
+      title: `Add agent ${ask.hire.name}`,
       text: `${ask.hire.name} · ${ask.hire.role} on ${ask.hire.model || "the engine's default model"}`,
       detailsOpen: false,
     };

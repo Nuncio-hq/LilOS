@@ -79,7 +79,7 @@ export function ThreadComposer({
 }) {
   const { thread, running, steer = false, agentWorking = false } = p;
   const leadName = lead?.name;
-  const name = leadName ?? "Employee";
+  const name = leadName ?? "Agent";
   /* #420 + #583 AC-1: a live reply parked on ANY open ask (question,
      approval, plan) is WAITING, not working — the placeholder says what it
      waits on. A question ask also parks the composer itself (Send, not Stop —
@@ -109,7 +109,7 @@ export function ThreadComposer({
           ? waiting
             ? wait.placeholder
             : run.placeholder
-          : `Message ${leadName ?? "the employee"}…`)
+          : `Message ${leadName ?? "the agent"}…`)
       }
       employees={p.mentionables ?? []}
       onSearchFiles={p.onSearchFiles}

@@ -35,7 +35,7 @@ export function ConnectRows({ rows }: { rows: V3ConnectRow[] }) {
   if (rows.length === 0)
     return (
       <p className="border-[var(--v3-line)] border-b py-3 text-[14px] text-muted-foreground">
-        No agents hired yet. New hires ask to connect when they are hired.
+        No agents yet. New agents ask to connect when they are added.
       </p>
     );
   return (

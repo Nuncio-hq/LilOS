@@ -129,12 +129,29 @@ export type V3Settings = {
     /** What is wrong in plain words, with the next step, as the engine
        reported it; replaces the generic steps. */
     problem?: string;
+    /** Set once "starting" has lasted past its leg's wait (#885): ~20s
+       for the engine's helper to connect, ~90s for the engine itself to
+       report — a cold first boot can take that long. First run swaps to
+       the problem screen; "starting" alone stays a wait. */
+    stuck?: "harness" | "engine";
+    /** True between the helper's wait and the engine's (~20–90s): the
+       start is only slow, so Start shows a calm note instead of the
+       problem screen or quit advice (#885). */
+    slow?: boolean;
   };
+  /** The engine's supervisor leg; down means the engine can never come
+     up. Absent where the feed reports no such leg. */
+  harness?: { state: "ok" | "starting" | "down" };
   /** The link between this app and the engine. */
   relay: { state: "ok" | "starting" | "down"; problem?: string };
-  /** This app's own version line; absent where it has none to show. */
+  /** This app's own version; absent where it has none to show (#885:
+      About shows only this — the parts' versions are `detail`, kept for
+      Troubleshooting under Engine & models). */
   about?: {
     version: string;
+    /** The rest of the version story (build · relay · harness), for
+        troubleshooting only — never on the About row. */
+    detail?: string;
     /** A question for the CEO about what changed; absent = no such row. */
     whatsNew?: { label: string; ask: string };
   };
@@ -243,11 +260,11 @@ export type V3Data = {
   goals: V3Goal[];
   tickets: V3Ticket[];
   threads: V3Thread[];
-  /** Threads settled away, newest first — the Settled shelf (#862; the
-     wire still says `archivedThreads` until the backend slice renames it).
-     They are not in `threads`, so Live, the sidebar and every agent's page
-     forget them; Threads → All keeps them folded at the bottom, where
-     Un-settle brings them back. Absent: the app has no shelf. */
+  /** Threads settled away, newest first — the Done shelf (#862; the wire
+     still says `archivedThreads` until the backend slice renames it). They
+     are not in `threads`, so Live, the sidebar and every agent's page
+     forget them; Threads keeps them folded at the bottom, where Not done
+     brings them back. Absent: the app has no shelf. */
   archivedThreads?: V3Thread[];
   asks: V3Ask[];
   updates: V3Update[];

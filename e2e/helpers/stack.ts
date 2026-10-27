@@ -515,17 +515,16 @@ export async function bootStack(
   const ownsHome = opts.home === undefined;
   const home =
     opts.home ?? mkdtempSync(path.join(tmpdir(), `lilos-e2e-${tag}-`));
-  const dropHome = async () => {
-    if (!ownsHome) return;
-    try {
-      rmSync(home, { recursive: true, force: true });
-    } catch (err) {
-      /* A just-killed child can still be writing into home when rmSync
-         walks it — ENOTEMPTY on macOS. One short settle, one retry. */
-      if ((err as NodeJS.ErrnoException).code !== "ENOTEMPTY") throw err;
-      await new Promise((r) => setTimeout(r, 250));
-      rmSync(home, { recursive: true, force: true });
-    }
+  const dropHome = () => {
+    /* A stopping stack can still be writing its last files: ENOTEMPTY
+       retries give the shutdown a beat to finish before the rm fails. */
+    if (ownsHome)
+      rmSync(home, {
+        recursive: true,
+        force: true,
+        maxRetries: 5,
+        retryDelay: 200,
+      });
   };
   const leakTag = engineTag(tag);
   let spawned: ChildProcess | undefined;
@@ -664,7 +663,7 @@ export async function bootStack(
         await killProc(proc);
         releaseVite();
         await expectNoEngineLeak(leakTag);
-        if (!stopOpts?.keepHome) await dropHome();
+        if (!stopOpts?.keepHome) dropHome();
       },
     };
   } catch (e) {
@@ -672,7 +671,7 @@ export async function bootStack(
     // orphans stack.ts + relay + harness + vite and poisons the next boot.
     if (spawned) await killProc(spawned);
     releaseVite();
-    await dropHome();
+    dropHome();
     throw e;
   }
 }

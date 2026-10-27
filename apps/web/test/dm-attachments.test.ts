@@ -167,7 +167,7 @@ describe("describeSendError (AC-4)", () => {
 
   test("unreachable relay and unknown errors get generic lines", () => {
     expect(describeSendError(new RelayError("x", "not_connected"))).toContain(
-      "relay",
+      "LilOS",
     );
     expect(describeSendError(new Error("boom"))).toBe(
       "Couldn't send that. Try again.",

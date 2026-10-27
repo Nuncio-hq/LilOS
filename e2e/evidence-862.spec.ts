@@ -22,7 +22,7 @@ import {
  *
  * Output lands in test-results/evidence/862/. One shot per UI criterion:
  * the Pinned block, the row menu's park actions, the Snoozed shelf, and
- * the Settled shelf — all on the real Threads page against engine-fake.
+ * the Done shelf — all on the real Threads page against engine-fake.
  */
 
 test.skip(
@@ -99,13 +99,13 @@ test("park evidence: pinned, menu, snoozed, settled", async ({ page }) => {
   await ensureOpen(page, "snoozed");
   await shot(page, "snoozed-fold");
 
-  /* Wake it, then settle: the Settled shelf with Un-settle on the menu. */
+  /* Wake it, then Done: the Done shelf with Not done on the menu. */
   await menu(page);
   await page.getByRole("menuitem", { name: "Wake now" }).click();
   await expect(foldButton(page, "snoozed")).toHaveCount(0);
   await menu(page);
-  await page.getByRole("menuitem", { name: "Settle thread" }).click();
-  await expect(foldButton(page, "settled")).toContainText("Settled (1)");
+  await page.getByRole("menuitem", { name: "Done", exact: true }).click();
+  await expect(foldButton(page, "settled")).toContainText("Done (1)");
   await ensureOpen(page, "settled");
-  await shot(page, "settled-shelf");
+  await shot(page, "done-shelf");
 });

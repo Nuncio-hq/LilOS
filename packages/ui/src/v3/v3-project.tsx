@@ -1,10 +1,10 @@
 import { FolderIcon, TargetIcon, UsersIcon } from "lucide-react";
 import { useState } from "react";
-import { Meter, Page, Prop, Section, Title } from "./v3-bits";
+import { Meter, Page, Prop, Section, Title, useTick } from "./v3-bits";
+import { useFoldPrefs } from "./v3-layout-prefs";
 import { AgentAvatar, CeoMark, ProjectMark } from "./v3-marks";
 import {
   agentOf,
-  boardStatus,
   FORMER_AGENT,
   goalProgress,
   listedThreads,
@@ -13,14 +13,17 @@ import {
 import { RowButton } from "./v3-open-record";
 import type { V3PageProps } from "./v3-page-types";
 import { TicketRow } from "./v3-rows";
-import { ThreadRow } from "./v3-threads-rows";
+import { sectionedThreads } from "./v3-sections";
+import { Fold, ThreadRow } from "./v3-threads-rows";
+import type { V3Thread } from "./v3-types";
 
-/* A project page (D-#771): the folder, the threads that live in it, live and
-   past, and, once the company has tickets, its goals and tickets. A thread is
-   in a project or it is a plain chat, so this list is the whole project. */
+/* A project page (D-#771): the folder, then the project's threads in the
+   same statuses the Threads page uses (#887), and, once the company has
+   tickets, its goals and tickets. A thread is in a project or it is a
+   plain chat, so this list is the whole project. */
 
-/** Past threads shown before "Show all": a busy project has hundreds. */
-const PAST_SHOWN = 12;
+/** Done threads shown before "Show all": a busy project has hundreds. */
+const DONE_SHOWN = 12;
 
 export function V3ProjectPage({
   data,
@@ -30,7 +33,11 @@ export function V3ProjectPage({
 }: V3PageProps & { id: string }) {
   const project = projectOf(data, id);
   const [showDone, setShowDone] = useState(false);
-  const [allPast, setAllPast] = useState(false);
+  const [allDone, setAllDone] = useState(false);
+  /* A wake time passing quietly returns its thread to Active; tick so the
+     list re-reads the clock without waiting for a touch. */
+  useTick(30_000);
+  const { folds, setFold } = useFoldPrefs();
   if (!project) {
     return (
       <Page>
@@ -55,22 +62,28 @@ export function V3ProjectPage({
       t.projectId === project.id ||
       (t.ticketId !== undefined && ticketIds.has(t.ticketId)),
   );
-  /* Board status (D-#847): a parent waiting on helpers stays in the live
-     set even while its own status idles. */
-  const live = mine.filter((t) => {
-    const s = boardStatus(data, t);
-    return s !== "done" && s !== "idle";
-  });
-  const past = mine.filter((t) => {
-    const s = boardStatus(data, t);
-    return s === "done" || s === "idle";
-  });
-  const pastShown = allPast ? past : past.slice(0, PAST_SHOWN);
-  // Who is on it: the owners of its open tickets and whoever has a live thread.
+  /* The same statuses the Threads page draws (#887): Pinned · Active ·
+     Working · Snoozed · Done — a thread reads the same here as there.
+     `sectionedThreads` buckets every thread, so keep only this project's;
+     a done thread still belongs to its project. */
+  const inProject = (t: V3Thread) =>
+    t.projectId === project.id ||
+    (t.ticketId !== undefined && ticketIds.has(t.ticketId));
+  const all = sectionedThreads(data);
+  const s = {
+    pinned: all.pinned.filter(inProject),
+    active: all.active.filter(inProject),
+    working: all.working.filter(inProject),
+    snoozed: all.snoozed.filter(inProject),
+    settled: all.settled.filter(inProject),
+  };
+  const total = mine.length + s.settled.length;
+  const doneShown = allDone ? s.settled : s.settled.slice(0, DONE_SHOWN);
+  // Who is on it: the owners of its open tickets and whoever has a thread.
   const onIt = [
     ...new Set([
       ...open.map((t) => t.owner).filter((id) => id.length > 0),
-      ...live.map((t) => t.agentId),
+      ...mine.map((t) => t.agentId),
     ]),
   ];
   const people = onIt.flatMap((id) => agentOf(data, id) ?? []);
@@ -183,52 +196,114 @@ export function V3ProjectPage({
         </>
       )}
 
-      <Section title="Live threads" count={live.length} />
-      <div data-project-live className="border-[var(--v3-line)] border-t">
-        {live.length === 0 && (
-          <p className="py-3 text-[14px] text-muted-foreground">
-            Nothing is running here right now.
+      <Section title="Threads" count={total} />
+      <div data-project-threads className="text-[13.5px]">
+        {total === 0 && (
+          <p className="border-[var(--v3-line)] border-t py-3 text-[14px] text-muted-foreground">
+            No threads here yet.
           </p>
         )}
-        {live.map((t) => (
-          <ThreadRow
-            key={t.id}
-            data={data}
-            t={t}
-            go={go}
-            act={act}
-            drop="project"
-          />
-        ))}
-      </div>
-
-      <Section title="Past threads" count={past.length} />
-      <div data-project-past className="border-[var(--v3-line)] border-t">
-        {past.length === 0 && (
-          <p className="py-3 text-[14px] text-muted-foreground">
-            Finished threads show up here.
-          </p>
+        {s.pinned.length > 0 && (
+          <>
+            <div className="pt-1 pb-1 text-[12.5px] text-muted-foreground/70">
+              Pinned
+            </div>
+            {s.pinned.map((t) => (
+              <ThreadRow
+                key={t.id}
+                data={data}
+                t={t}
+                go={go}
+                act={act}
+                drop="project"
+              />
+            ))}
+          </>
         )}
-        {pastShown.map((t) => (
-          <ThreadRow
-            key={t.id}
-            data={data}
-            t={t}
-            go={go}
-            act={act}
-            drop="project"
-          />
-        ))}
-      </div>
-      {past.length > PAST_SHOWN && (
-        <button
-          type="button"
-          onClick={() => setAllPast((v) => !v)}
-          className="mt-1.5 text-[13.5px] text-muted-foreground hover:text-foreground"
+        {s.active.length > 0 && (
+          <>
+            <div className="pt-2.5 pb-1 text-[12.5px] text-muted-foreground/70">
+              Active
+            </div>
+            {s.active.map((t) => (
+              <ThreadRow
+                key={t.id}
+                data={data}
+                t={t}
+                go={go}
+                act={act}
+                drop="project"
+              />
+            ))}
+          </>
+        )}
+        <Fold
+          title="Working"
+          count={s.working.length}
+          open={folds[`project:${id}:working`] === true}
+          onToggle={(o) => setFold(`project:${id}:working`, o)}
+          marker="working"
         >
-          {allPast ? "▾ Show fewer" : `▸ Show all ${past.length}`}
-        </button>
-      )}
+          {s.working.map((t) => (
+            <ThreadRow
+              key={t.id}
+              data={data}
+              t={t}
+              go={go}
+              act={act}
+              drop="project"
+            />
+          ))}
+        </Fold>
+        <Fold
+          title="Snoozed"
+          count={s.snoozed.length}
+          open={folds[`project:${id}:snoozed`] === true}
+          onToggle={(o) => setFold(`project:${id}:snoozed`, o)}
+          marker="snoozed"
+        >
+          {s.snoozed.map((t) => (
+            <ThreadRow
+              key={t.id}
+              data={data}
+              t={t}
+              go={go}
+              act={act}
+              drop="project"
+            />
+          ))}
+        </Fold>
+        <Fold
+          title="Done"
+          count={s.settled.length}
+          open={folds[`project:${id}:settled`] === true}
+          onToggle={(o) => setFold(`project:${id}:settled`, o)}
+          marker="settled"
+        >
+          <div data-settled-list>
+            {doneShown.map((t) => (
+              <ThreadRow
+                key={t.id}
+                data={data}
+                t={t}
+                go={go}
+                act={act}
+                settled
+                drop="project"
+              />
+            ))}
+          </div>
+          {s.settled.length > DONE_SHOWN && (
+            <button
+              type="button"
+              onClick={() => setAllDone((v) => !v)}
+              className="mt-1.5 text-[13.5px] text-muted-foreground hover:text-foreground"
+            >
+              {allDone ? "▾ Show fewer" : `▸ Show all ${s.settled.length}`}
+            </button>
+          )}
+        </Fold>
+      </div>
 
       {withTickets && (
         <>

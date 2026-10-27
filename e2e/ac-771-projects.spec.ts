@@ -127,14 +127,36 @@ test("AC-1 a plain chat has no project; a thread opened in a folder is listed on
   await expect(project).toContainText(shown(alpha).replace(/^~/, ""), {
     timeout: 15_000,
   });
-  // Live or past, the thread is listed here, and the plain chat is not.
-  const listed = project.locator("[data-project-live], [data-project-past]");
-  await expect(listed.getByText(/hello in alpha/i)).toHaveCount(1);
+  /* One list by status (#887): a finished turn keeps the thread Active —
+     a conversation settles on the relay's idle sweep, not on turn end.
+     The plain chat is nowhere here. */
+  const listed = project.locator("[data-project-threads]");
+  const row = listed
+    .locator("[data-thread-row]")
+    .filter({ hasText: /hello in alpha/i });
+  await expect(row).toHaveCount(1);
   await expect(listed.getByText(/just talking/i)).toHaveCount(0);
-  await expect(project.locator("[data-project-past]")).toContainText(
-    /hello in alpha/i,
-    { timeout: 30_000 },
-  );
+
+  /* The same statuses the Threads page draws (#887): Done moves the row
+     to the project's Done fold, Not done returns it to Active. */
+  await row
+    .getByRole("button", { name: "Thread actions", exact: true })
+    .click();
+  await page.getByRole("menuitem", { name: "Done", exact: true }).click();
+  const doneFold = listed.locator('[data-fold="settled"] > button');
+  await expect(doneFold).toBeVisible({ timeout: 30_000 });
+  if ((await doneFold.getAttribute("aria-expanded")) === "false")
+    await doneFold.click();
+  await expect(
+    listed.locator("[data-settled-list] [data-thread-row]"),
+  ).toContainText(/hello in alpha/i);
+  await listed
+    .locator("[data-settled-list] [data-thread-row]")
+    .getByRole("button", { name: "Thread actions", exact: true })
+    .click();
+  await page.getByRole("menuitem", { name: "Not done" }).click();
+  await expect(doneFold).toHaveCount(0);
+  await expect(row).toHaveCount(1);
   await shoot(page, "ac-1-project-page");
   await noDm(page);
 });
@@ -246,11 +268,14 @@ test("AC-4 after a restart every thread is still under its project; nothing is l
       timeout: 60_000,
     });
   await side.getByRole("button", { name: "lilos-gamma" }).click();
+  /* Its turn finished before the restart — a finished turn keeps the
+     thread Active (#887); only the relay's idle sweep settles one. */
+  const gammaThreads = v3Main(page).locator("[data-project-threads]");
   await expect(
-    v3Main(page)
-      .locator("[data-project-live], [data-project-past]")
+    gammaThreads
+      .locator("[data-thread-row]")
       .filter({ hasText: /hello in gamma/i }),
-  ).toHaveCount(1, { timeout: 30_000 });
+  ).toHaveCount(1);
   await shoot(page, "ac-4-after-restart");
   await noDm(page);
 });

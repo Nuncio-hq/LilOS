@@ -172,7 +172,7 @@ export function describeSendError(e: unknown): string {
       return "Couldn't send that. Try again.";
     }
     if (e.code === "not_connected" || e.code === "timeout")
-      return "Couldn't reach the relay — try again.";
+      return "Couldn't reach LilOS — try again.";
   }
   return "Couldn't send that. Try again.";
 }
@@ -202,7 +202,7 @@ export function describeActionError(action: string, e: unknown): string {
       return `${action} — LilOS is reconnecting; try again in a moment.`;
     }
     if (e.code === "timeout")
-      return `${action} — the relay didn't answer; try again.`;
+      return `${action} — LilOS didn't answer; try again.`;
     if (e.code === "engine_unavailable")
       return `${action} — ${CONNECTION_LOST}`;
     /* "invalid params" is a refused request, not user copy. */
@@ -326,9 +326,7 @@ function waitForRelayReady(deadline: number): Promise<void> {
     const timer = setTimeout(
       () => {
         unsub();
-        reject(
-          new RelayError("relay did not reconnect in time", "not_connected"),
-        );
+        reject(new RelayError("did not reconnect in time", "not_connected"));
       },
       Math.max(0, deadline - Date.now()),
     );

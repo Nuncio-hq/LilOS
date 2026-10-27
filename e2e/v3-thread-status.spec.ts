@@ -69,13 +69,12 @@ test("a running turn reads Working on Home, Threads and the sidebar, until it is
     v3Peek(page).getByRole("button", { name: /^stop \(⌘\.\)$/i }),
   ).toBeVisible({ timeout: 30_000 });
 
-  // Threads: a Working row, counted live in the summary and the sidebar.
+  // Threads: a Working row, counted in the fold's title and the sidebar.
   // Running threads sit folded under Working (#862) — open the shelf, then
   // read the status dot (words are only for Needs-you/Failed pills).
   await goTo(page, "Threads");
-  await expect(main(page).getByText(/1 working/)).toBeVisible({
-    timeout: 30_000,
-  });
+  const workingFold = main(page).locator('[data-fold="working"] > button');
+  await expect(workingFold).toContainText("Working (1)", { timeout: 30_000 });
   await openWorking(page);
   await expect(
     card(page, /release note/).locator('[data-v3-status="working"]'),
@@ -98,8 +97,10 @@ test("a running turn reads Working on Home, Threads and the sidebar, until it is
   await expect(v3Peek(page).getByText(/^Stopped$/)).toBeVisible({
     timeout: 30_000,
   });
-  await expect(main(page).getByText(/0 working/)).toBeVisible();
-  await expect(main(page).getByText(/0 finished, not seen/)).toBeVisible();
+  /* The fold hides when its shelf empties; a turn you stopped yourself is
+     not "finished, not seen". */
+  await expect(main(page).locator('[data-fold="working"]')).toHaveCount(0);
+  await expect(main(page).locator("[data-thread-unseen]")).toHaveCount(0);
   await expect(sideItem(page, "Threads")).toHaveText(/^Threads\s*0$/);
   await goTo(page, "Home");
   await expect(teamRow(page)).toContainText("Idle");
@@ -124,7 +125,11 @@ test("an approval is a Needs you count, a Threads card and a Home row; approving
   await goTo(page, "Threads");
   const asking = card(page, /add a footer to the page/i);
   await expect(asking).toContainText("Needs you");
-  await expect(main(page).getByText(/1 needs you/)).toBeVisible();
+  await expect(
+    main(page)
+      .locator("[data-thread-row]")
+      .filter({ has: page.locator('[data-v3-status="needs"]') }),
+  ).toHaveCount(1);
   await asking.click();
   const askCard = v3Peek(page).locator("[data-ask-id]").first();
   await expect(askCard).toContainText("Edit README.md?", {
@@ -176,7 +181,7 @@ test("an approval is a Needs you count, a Threads card and a Home row; approving
   // Threads (a done row in Active, not a line in Earlier today).
   await expect(main(page).getByText("1 results to look at")).toBeVisible();
   await goTo(page, "Threads");
-  await expect(main(page).getByText(/1 finished, not seen/)).toBeVisible();
+  await expect(main(page).locator("[data-thread-unseen]")).toHaveCount(1);
   const unseen = card(page, /add a footer to the page/i);
   await expect(unseen.locator('[data-v3-status="done"]')).toBeVisible();
 
@@ -187,7 +192,7 @@ test("an approval is a Needs you count, a Threads card and a Home row; approving
     timeout: 30_000,
   });
   await v3Peek(page).getByTitle("Close (Esc)").click();
-  await expect(main(page).getByText(/0 finished, not seen/)).toBeVisible();
+  await expect(main(page).locator("[data-thread-unseen]")).toHaveCount(0);
   await expect(
     main(page)
       .getByRole("button")

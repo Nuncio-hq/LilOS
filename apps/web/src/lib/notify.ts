@@ -47,7 +47,7 @@ const employeeOf = (
 };
 
 const employeeName = (conv: Conversation, ctx: NotifyContext): string =>
-  employeeOf(conv, ctx)?.name ?? "An employee";
+  employeeOf(conv, ctx)?.name ?? "An agent";
 
 /** Long text is cut at a word boundary so the banner stays a one-liner —
     mirrors `apps/relay/src/push.ts truncateBody` (#561). */

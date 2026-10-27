@@ -10,6 +10,7 @@ import {
   ensureDesktopPayload,
 } from "./helpers/electron";
 import { bootStack, pickPorts, skipFirstRun, v3Sidebar } from "./helpers/stack";
+import { openTroubleshooting } from "./helpers/status";
 
 /**
  * Issue #132 — Settings (⌘,): one place for profile, editors, models,
@@ -164,9 +165,10 @@ test("AC-2 every section renders real data", async ({ page }) => {
     ).toHaveAttribute("aria-checked", "true");
     await page.screenshot({ path: `${SHOTS}/ac-2-editors.png` });
 
-    // About: real versions — the relay/harness report theirs.
+    // About: the app version only — relay/harness versions moved to
+    // Troubleshooting (#885).
     await expect(main(page)).toContainText("LilOS");
-    await expect(main(page)).toContainText(/relay \d+\.\d+\.\d+/);
+    await expect(main(page)).toContainText(/\d+\.\d+\.\d+/);
     await page.screenshot({ path: `${SHOTS}/ac-4-about.png` });
 
     // Engine & models: the fake engine's catalog shows up with the count of
@@ -180,10 +182,8 @@ test("AC-2 every section renders real data", async ({ page }) => {
       main(page).getByRole("switch", { name: / on$/ }).first(),
     ).toHaveAttribute("aria-checked", "true");
 
-    // Status: the real legs list.
-    await expect(
-      main(page).getByRole("heading", { name: "Status", level: 3 }),
-    ).toBeVisible();
+    // Status: the real legs list, inside the Troubleshooting fold (#885).
+    await openTroubleshooting(page);
     await expect(main(page)).toContainText("Local relay");
     await expect(
       main(page).getByRole("button", { name: "Copy diagnostics" }),
